@@ -39,6 +39,8 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
+import { useMediaPrefetch } from '../composables/useMediaPrefetch'
+import { MCP_LAUNCH_VIDEO_SRC } from '../views/mcp/McpVideoSources'
 import type { Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -164,6 +166,17 @@ const {
 const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
   isBusy: () => sessionStore.runningTabCount > 0
 })
+
+// Warm the MCP setup film (a ~5 MB remote video) into cache once, so it isn't
+// black on first open. No `runningTabCount` gate: the modal is only reachable
+// from a running instance, which is exactly when we want it warmed.
+const { prefetch: prefetchMedia } = useMediaPrefetch()
+let mcpVideoWarmed = false
+function warmMcpVideo(): void {
+  if (mcpVideoWarmed) return
+  mcpVideoWarmed = true
+  prefetchMedia([MCP_LAUNCH_VIDEO_SRC])
+}
 
 let warmTemplateThumbnailsOnce: Promise<void> | null = null
 function warmTemplateThumbnails(): Promise<void> {
@@ -358,14 +371,20 @@ function handleMcpOpenTerminal(): void {
 }
 
 /** Composite the live ComfyUI canvas through while an overlay panel (feedback
- *  or MCP setup) is mounted. */
+ *  or MCP setup) is mounted. Main holds the panel view hidden until we confirm
+ *  the modal has painted (`signalOverlayReady`), so its opaque pre-transparent
+ *  frame never flashes over the canvas. */
 watch(
   activePanel,
   (next) => {
-    document.body.classList.toggle(
-      'panel-overlay-mode',
-      next === 'feedback' || next === 'mcp-setup'
-    )
+    const isOverlay = next === 'feedback' || next === 'mcp-setup'
+    document.body.classList.toggle('panel-overlay-mode', isOverlay)
+    if (!isOverlay) return
+    // Signal once the modal has mounted (nextTick flushes the DOM). NOT gated on
+    // requestAnimationFrame: the panel view is hidden until main reveals it, and
+    // Chromium pauses rAF for an occluded view, so the callback would never fire
+    // and every open would fall back to main's reveal timeout.
+    void nextTick(() => window.api.signalOverlayReady())
   },
   { immediate: true }
 )
@@ -542,6 +561,10 @@ onMounted(async () => {
     // after a partial-bootstrap failure.
     resolveBootstrap?.()
     resolveBootstrap = null
+    // After bootstrap so it never competes with init; idle-deferred inside the
+    // prefetch. Long cached before the user could reach a running instance's
+    // MCP sidebar.
+    warmMcpVideo()
   }
 })
 

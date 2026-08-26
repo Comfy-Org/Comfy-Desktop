@@ -171,11 +171,25 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   if (mode !== 'comfy') {
     ensurePanelView(windowKey, entry, mode)
   }
+  // Overlay panels (feedback / mcp-setup) reveal only after the renderer acks it
+  // painted the modal (`overlay-ready`), so the panel's opaque pre-transparent
+  // frame never flashes over the canvas. Cleared for non-overlay targets so a
+  // stale flag can't strand the panel hidden.
+  const isOverlay = mode === 'feedback' || mode === 'mcp-setup'
+  entry.pendingOverlayReveal = isOverlay
   forwardToPanelRenderer(entry, 'panel-switch', {
     panel: mode,
     installationId: entry.installationId ?? ''
   })
   entry.layoutViews()
+  // Reveal anyway if the ack never arrives (crash / lost IPC); a late ack no-ops.
+  if (isOverlay) {
+    setTimeout(() => {
+      if (!entry.pendingOverlayReveal || entry.window.isDestroyed()) return
+      entry.pendingOverlayReveal = false
+      entry.layoutViews()
+    }, 400)
+  }
   if (!entry.titleBarView.webContents.isDestroyed()) {
     // Pill stays on the user-visible key, not 'comfy-lifecycle'.
     entry.titleBarView.webContents.send('comfy-titlebar:panel-changed', panel)
@@ -255,6 +269,19 @@ export function registerPanelViewIpc(): void {
     for (const [id, entry] of comfyWindows) {
       if (entry.panelView?.webContents === event.sender) {
         setActivePanel(id, 'comfy')
+        return
+      }
+    }
+  })
+
+  // The panel renderer painted an overlay modal; reveal the until-now-hidden
+  // panel view so it appears with content rather than as an opaque flash.
+  ipcMain.on('comfy-window:overlay-ready', (event) => {
+    for (const entry of comfyWindows.values()) {
+      if (entry.panelView?.webContents === event.sender) {
+        if (!entry.pendingOverlayReveal) return
+        entry.pendingOverlayReveal = false
+        if (!entry.window.isDestroyed()) entry.layoutViews()
         return
       }
     }
