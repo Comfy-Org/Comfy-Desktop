@@ -575,9 +575,6 @@ defineExpose({ startOperation, showOperation })
       />
     </template>
     <div class="brand-progress">
-      <!-- Fixed dead-centre point the beams aim at, independent of the loader
-           stack (which is lifted to clear the footer). Mirrors the original
-           behaviour where the beams pointed at the centred wordmark. -->
       <div class="brand-progress__beam-anchor" aria-hidden="true" />
       <BrandProgressGlyph class="brand-progress__glyph" aria-hidden="true" />
       <div class="brand-progress__stack">
@@ -860,9 +857,6 @@ defineExpose({ startOperation, showOperation })
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Reserve the footer bar's band so the centered stack (scene + bar + the
-     stepper that hangs below it) is centred in the space ABOVE the footer,
-     never descending into the button row. */
   padding-bottom: clamp(88px, 12vh, 148px);
 }
 /* Soft circular ink pool, dead-center, behind the wordmark/bar/text so they
@@ -987,8 +981,6 @@ defineExpose({ startOperation, showOperation })
   border-radius: 16px;
   overflow: hidden;
 }
-/* Zero-size beam target pinned to the hero's true centre, so the spotlights
-   aim at screen-centre regardless of the loader stack's lifted position. */
 .brand-progress__beam-anchor {
   position: absolute;
   top: 50%;
