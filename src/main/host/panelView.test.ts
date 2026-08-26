@@ -23,7 +23,7 @@ import {
   nextWindowKey,
   type ComfyWindowEntry
 } from './registry'
-import { refreshComfyTabBody, setActivePanel } from './panelView'
+import { prewarmAttachedPanel, refreshComfyTabBody, setActivePanel } from './panelView'
 
 interface FakeWindow {
   destroyed: boolean
@@ -141,33 +141,27 @@ describe('setActivePanel', () => {
     expect(fixture.entry.activePanel).toBe('comfy')
   })
 
-  // Chooser-pick in-place attach: the picker drove its launch through a
-  // 'progress' overlay on the (install-less) chooser host. When the install
-  // attaches in place, that host must be reset to 'comfy' before the panel
-  // prewarm — otherwise computeBodyMode stays 'progress' and the rebuilt panel
-  // covers the just-attached canvas with a stranded progress surface.
-  it('resets a progress-mode chooser host to comfy so the prewarm stays hidden', () => {
-    const fixture = makeEntry({ installationId: null, activePanel: 'progress' })
+  // After a chooser-pick in-place attach the picker leaves the host on
+  // 'progress'; prewarmAttachedPanel must reset it to 'comfy' so the rebuilt
+  // panel stays hidden instead of covering the just-attached canvas.
+  it('prewarms the attached panel hidden by resetting a progress host to comfy', () => {
+    const fixture = makeEntry({ installationId: 'inst-A', activePanel: 'progress' })
+    // A pre-set panelView makes the real ensurePanelView short-circuit, so the
+    // helper runs without constructing an Electron WebContentsView.
+    fixture.entry.panelView = {
+      webContents: makeWc()
+    } as unknown as ComfyWindowEntry['panelView']
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
-
-    // Pre-fix state at the prewarm point: mode is 'progress' (panel full, canvas
-    // hidden) even after attachInstall wires up the running session.
-    fixture.entry.installationId = 'inst-A'
     indexInstallationId('inst-A', fixture.entry.windowKey)
     _runningSessions.set('inst-A', {} as never)
-    expect(
-      computeBodyMode(fixture.entry),
-      'without the reset the panel would cover the canvas'
-    ).toBe('progress')
 
-    // The fix: reset to 'comfy' before ensurePanelView.
-    setActivePanel(fixture.entry.windowKey, 'comfy')
+    expect(computeBodyMode(fixture.entry), 'starts stranded on progress').toBe('progress')
+
+    prewarmAttachedPanel(fixture.entry)
 
     expect(fixture.entry.activePanel).toBe('comfy')
-    expect(
-      computeBodyMode(fixture.entry),
-      'the prewarmed panel is hidden and ComfyUI is visible'
-    ).toBe('comfy')
+    expect(computeBodyMode(fixture.entry), 'panel hidden, ComfyUI visible').toBe('comfy')
+    expect(fixture.layoutCalls, 'the prewarm lays the views out').toBeGreaterThan(0)
   })
 })
 

@@ -200,6 +200,21 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
 }
 
 /**
+ * Warm the install-backed panel in the background right after a chooser-pick
+ * in-place attach, so the first Settings/MCP click doesn't build it cold.
+ *
+ * The reset to `'comfy'` MUST precede `ensurePanelView`: the picker drove its
+ * launch through a `'progress'` overlay on this host, and without clearing it
+ * `computeBodyMode` stays `'progress'` — the rebuilt panel would then cover the
+ * just-attached canvas with a stranded progress surface.
+ */
+export function prewarmAttachedPanel(entry: ComfyWindowEntry): void {
+  setActivePanel(entry.windowKey, 'comfy')
+  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
+  entry.layoutViews()
+}
+
+/**
  * Re-evaluate the body mode after a session-state transition and reflect it in the layout.
  * When the mode is `'comfy-lifecycle'`, the panelView renders the lifecycle UI; the pill
  * stays on `'comfy'` either way.
