@@ -19,7 +19,7 @@ vi.mock('../components/ContextMenu.vue', () => ({
   }
 }))
 
-// Test-controllable `useModal` mock — `viewError` routes its readable
+// Test-controllable `useModal` mock - `viewError` routes its readable
 // error through `modal.alert`, and the context menu shares the singleton.
 const mockModal = {
   alert: vi.fn().mockResolvedValue(undefined),
@@ -32,7 +32,7 @@ vi.mock('../composables/useModal', () => ({
 
 const messages = {
   en: {
-    common: { loading: 'Loading…' },
+    common: { loading: 'Loading...' },
     cloud: { label: 'Cloud', desc: 'Try Cloud' },
     dashboard: {
       cloudSection: 'ComfyUI Cloud',
@@ -59,8 +59,8 @@ const messages = {
       searchPlaceholder: 'Search instances',
       noMatches: 'No instances match',
       statusRunning: 'Running',
-      statusLaunching: 'Starting…',
-      statusStopping: 'Stopping…',
+      statusLaunching: 'Starting...',
+      statusStopping: 'Stopping...',
       statusError: 'Error',
       viewErrorTooltip: 'View error details',
       errorTitle: 'Error',
@@ -331,7 +331,7 @@ describe('ChooserView', () => {
     expect((events![0]![0] as Installation).id).toBe('a')
   })
 
-  it('renders no lifecycle CTA cluster on a tile — the instance window owns lifecycle', async () => {
+  it('renders no lifecycle CTA cluster on a tile - the instance window owns lifecycle', async () => {
     // The dashboard no longer carries any stop/launch button. State is
     // shown via a labelled status pill; lifecycle actions live in the
     // instance window.
@@ -357,7 +357,7 @@ describe('ChooserView', () => {
 
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Alpha'))!
     // Status pill sits in the top-right cluster next to the kebab, not in
-    // the meta row — the source pill stays.
+    // the meta row - the source pill stays.
     expect(tile.find('.chooser-tile-actions .chooser-tile-status--running').exists()).toBe(true)
     expect(tile.text()).toContain('Running')
     expect(tile.text()).toContain('Standalone')
@@ -412,7 +412,7 @@ describe('ChooserView', () => {
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Alpha'))!
     await tile.trigger('click')
     await flushPromises()
-    // The crashed window still exists — bring it forward, never relaunch from
+    // The crashed window still exists - bring it forward, never relaunch from
     // the dashboard.
     expect(api.focusComfyWindow).toHaveBeenCalledWith('a')
     expect(wrapper.emitted('pick')).toBeUndefined()
@@ -436,7 +436,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toHaveLength(1)
   })
 
-  it('gives install tiles two lines — no launch-recency row, booted or not', async () => {
+  it('gives install tiles two lines - no launch-recency row, booted or not', async () => {
     installMockApi([
       makeInstall({ id: 'booted', name: 'Booted', lastLaunchedAt: Date.now() - 2 * 60_000 }),
       makeInstall({ id: 'fresh', name: 'Fresh' })
@@ -452,7 +452,7 @@ describe('ChooserView', () => {
     expect(bootedTile.find('.chooser-tile-meta-line').exists()).toBe(true)
   })
 
-  it('renders the update affordance as a bare "Update" pill — the target version lives in the meta line', async () => {
+  it('renders the update affordance as a bare "Update" pill - the target version lives in the meta line', async () => {
     installMockApi([
       makeInstall({
         id: 'u',
@@ -475,7 +475,7 @@ describe('ChooserView', () => {
     installMockApi([
       makeInstall({
         id: 'long',
-        name: 'ComfyUI (Copy) (Copy) (Copy) — an extremely long instance name that must ellipsize',
+        name: 'ComfyUI (Copy) (Copy) (Copy) - an extremely long instance name that must ellipsize',
         statusTag: { style: 'migrate', label: 'Migrate' }
       })
     ])
@@ -517,7 +517,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toBeUndefined()
   })
 
-  it('does not emit pick when the kebab button is clicked — only the menu opens', async () => {
+  it('does not emit pick when the kebab button is clicked - only the menu opens', async () => {
     // The kebab's click handler stop-propagates so the tile click doesn't fire.
     installMockApi([makeInstall({ id: 'a', name: 'Alpha' })])
     const wrapper = mountChooser()
@@ -790,7 +790,7 @@ describe('ChooserView', () => {
     }
   )
 
-  it('refreshes both workspace membership and builds', async () => {
+  it('refreshes workspace membership without loading Builds', async () => {
     const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
     const wrapper = mountChooser()
     await flushPromises()
@@ -801,7 +801,7 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(api.comfybuilder.listWorkspaces).toHaveBeenCalledOnce()
-    expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
+    expect(api.comfybuilder.listBuilds).not.toHaveBeenCalled()
   })
 
   it('shows only installs owned by the selected workspace', async () => {

@@ -10,7 +10,7 @@
  * const session = new CloudSession()
  * await session.login()                                   // system-browser PKCE
  * const workspaces = await session.listWorkspaces()       // choose workspace
- * await session.switchWorkspace(chosen.id)                // re-auth, scoped
+ * await session.switchWorkspace(chosen.id)                // activate scoped credentials
  * const client = new ComfyBuilderClient({ auth: session.asTokenProvider() })
  * const builds = await client.listBuilds()                // scoped to that workspace
  * ```

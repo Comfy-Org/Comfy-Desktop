@@ -113,9 +113,8 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Switch the active workspace (re-runs the browser handoff pre-selecting it).
-   *  The new status also arrives via `onAuthChanged`; the scoped caches are
-   *  dropped so the Build catalog re-fetches for the new workspace. */
+  /** Activate the workspace for remote operations. Main uses cached credentials
+   *  when available and opens browser auth only when authorization is needed. */
   async function switchWorkspace(workspaceId: string): Promise<AuthStatus> {
     const next = await comfybuilderApi.switchWorkspace(workspaceId)
     applyAuthoritativeStatus(next)

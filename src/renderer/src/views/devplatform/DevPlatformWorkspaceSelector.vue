@@ -1,8 +1,8 @@
 <script setup lang="ts">
-/** Dashboard scope selector for unmanaged installs and authenticated workspaces. */
+/** Local dashboard scope selector for unmanaged installs and authenticated workspaces. */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown, Loader2 } from 'lucide-vue-next'
+import { Check, ChevronDown } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { useAuthStore } from '../../stores/authStore'
 
@@ -20,7 +20,6 @@ const store = useAuthStore()
 const menuOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const faceRef = ref<HTMLElement | null>(null)
-const switchingTo = ref<string | null>(null)
 const currentWorkspaceId = computed(() => props.modelValue)
 
 function workspaceLabel(workspace: { name: string; type: string }): string {
@@ -81,29 +80,16 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onPointerDown)
 })
 
-async function onSelectWorkspace(workspaceId: string): Promise<void> {
-  if (switchingTo.value) return
+function onSelectWorkspace(workspaceId: string): void {
   if (workspaceId === currentWorkspaceId.value) {
     closeMenu()
     return
   }
-  switchingTo.value = workspaceId
-  try {
-    if (workspaceId !== store.status.workspaceId) {
-      const status = await store.switchWorkspace(workspaceId)
-      if (!status.signedIn || status.workspaceId !== workspaceId) return
-    }
-    emit('update:modelValue', workspaceId)
-    closeMenu()
-  } catch {
-    // A cancelled browser sign-in leaves the active workspace unchanged.
-  } finally {
-    switchingTo.value = null
-  }
+  emit('update:modelValue', workspaceId)
+  closeMenu()
 }
 
 function onSelectUnmanaged(): void {
-  if (switchingTo.value) return
   emit('update:modelValue', null)
   closeMenu()
 }
@@ -158,7 +144,6 @@ function onSelectUnmanaged(): void {
         type="button"
         class="workspace-selector__item"
         :aria-pressed="currentWorkspaceId === null"
-        :disabled="switchingTo !== null"
         data-testid="devplatform-workspace-unmanaged"
         @click="onSelectUnmanaged"
       >
@@ -182,7 +167,6 @@ function onSelectUnmanaged(): void {
         type="button"
         class="workspace-selector__item"
         :aria-pressed="workspace.id === currentWorkspaceId"
-        :disabled="switchingTo !== null"
         :data-testid="`devplatform-workspace-${workspace.id}`"
         @click="onSelectWorkspace(workspace.id)"
       >
@@ -193,14 +177,8 @@ function onSelectUnmanaged(): void {
             workspace.subscriptionTier
           }}</span>
         </span>
-        <Loader2
-          v-if="switchingTo === workspace.id"
-          :size="15"
-          class="workspace-selector__spinner"
-          aria-hidden="true"
-        />
         <Check
-          v-else-if="workspace.id === currentWorkspaceId"
+          v-if="workspace.id === currentWorkspaceId"
           :size="15"
           class="workspace-selector__check"
           aria-hidden="true"
@@ -308,9 +286,6 @@ function onSelectUnmanaged(): void {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
-.workspace-selector__item:disabled {
-  cursor: default;
-}
 .workspace-selector__retry {
   color: var(--neutral-200);
 }
@@ -333,14 +308,5 @@ function onSelectUnmanaged(): void {
 .workspace-selector__check {
   flex: 0 0 auto;
   color: var(--comfy-yellow);
-}
-.workspace-selector__spinner {
-  flex: 0 0 auto;
-  animation: workspace-selector-spin 900ms linear infinite;
-}
-@keyframes workspace-selector-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

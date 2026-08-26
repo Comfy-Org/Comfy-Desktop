@@ -66,19 +66,6 @@ onMounted(() => {
   }
 })
 
-// The Build catalog is not rendered on the dashboard. It still follows the
-// authenticated workspace so the New Instance wizard is ready and legacy
-// managed installs can be associated with their workspace by exact Build id.
-watch(
-  () => [authStore.isSignedIn, authStore.status.workspaceId] as const,
-  () => {
-    if (authStore.isSignedIn && authStore.builds.length === 0) {
-      void authStore.fetchBuilds().catch(() => {})
-    }
-  },
-  { immediate: true }
-)
-
 // Filter / search / recency logic is shared with the title-bar
 // instance picker popover via `useInstallList` so the two surfaces
 // cannot drift. The chip UI is currently hidden in the brand redesign
@@ -148,11 +135,11 @@ const showNoMatches = computed(
     (searchQuery.value.trim().length > 0 || activeFilter.value !== 'all')
 )
 
-const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
+const refreshingWorkspace = computed(() => authStore.loadingWorkspaces)
 
 async function refreshWorkspace(): Promise<void> {
   emitTelemetryAction('comfy.desktop.workspace.refresh', {})
-  await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
+  await authStore.fetchWorkspaces()
 }
 
 // --- Cluster top offset ---

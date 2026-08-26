@@ -63,7 +63,7 @@ const sources = ref<Source[]>([])
 const currentSource = ref<Source | null>(null)
 const selections = ref<Record<string, FieldOption>>({})
 const instName = ref('')
-/** Placeholder's suggested default (`ComfyUI` → `ComfyUI (2)` if taken). `handleSave`'s blank-field fallback produces the same value, so it's truthful. */
+/** Placeholder's suggested default (`ComfyUI` -> `ComfyUI (2)` if taken). `handleSave`'s blank-field fallback produces the same value, so it's truthful. */
 const suggestedName = ref('')
 const instPath = ref('')
 const defaultInstPath = ref('')
@@ -167,9 +167,9 @@ const entrypoint = ref('unknown')
 /** Flipped true once this wizard session reaches a TERMINAL handoff outcome:
  *  install.dispatched, dispatch_no_entry, or back_to_local_branch. Guards the
  *  onBeforeUnmount `wizard_cancelled` emit so exactly one *terminal* event
- *  fires per open. `add_installation_failed` is an attempt-level failure — it
- *  intentionally leaves this false so a later retry (→ dispatched) or give-up
- *  (→ wizard_cancelled) is still recorded as the true terminal outcome. */
+ *  fires per open. `add_installation_failed` is an attempt-level failure - it
+ *  intentionally leaves this false so a later retry (-> dispatched) or give-up
+ *  (-> wizard_cancelled) is still recorded as the true terminal outcome. */
 const resolved = ref(false)
 
 /** Shared context for the install-handoff funnel events (#1224). */
@@ -199,7 +199,7 @@ const templateHasModels = computed(() => {
 
 const templateIsApiNode = computed(() => isApiNodeTemplate(selectedTemplate.value))
 
-/** Proactive disk guard — shares `isTemplateDiskBlocked` with TemplatePickerStep
+/** Proactive disk guard - shares `isTemplateDiskBlocked` with TemplatePickerStep
  *  so the alert, the disabled Install button, and the save-time hard block can't
  *  drift. */
 const templateInstallBlocked = computed(() => {
@@ -244,7 +244,7 @@ const templateOptions = computed<FieldOption[]>(
 /** Volume can't fit even the smallest model-bearing template (incl. headroom).
  *  When known and true, there's nothing the picker could install, so we skip the
  *  step outright rather than show it with every option blocked. Stays `false`
- *  while disk space is unknown/loading — we only skip on a confirmed shortfall. */
+ *  while disk space is unknown/loading - we only skip on a confirmed shortfall. */
 const diskTooSmallForAnyTemplate = computed(() => {
   if (diskSpaceLoading.value || !diskSpace.value) return false
   if (templateOptions.value.some(isApiNodeTemplate)) return false
@@ -255,7 +255,7 @@ const diskTooSmallForAnyTemplate = computed(() => {
 /** Show the picker step only for the standalone source when it's enabled,
  *  the template field produced options, and the volume can fit at least one
  *  template's models. Gated only by the `skipTemplatePickerStep` user opt-out
- *  (`pickerEnabled`) — shown to everyone on the standalone install path. */
+ *  (`pickerEnabled`) - shown to everyone on the standalone install path. */
 const shouldShowPickerStep = computed(
   () =>
     currentSource.value?.id === 'standalone' &&
@@ -284,7 +284,7 @@ function selectTemplate(option: FieldOption): void {
  *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
   if (shouldShowPickerStep.value) {
-    // Lead with a real template rather than the "None" sentinel — prefer the
+    // Lead with a real template rather than the "None" sentinel - prefer the
     // recommended pick (the lightest "wow"), falling back to the first real one.
     if (selections.value.bundledTemplate?.value === NO_TEMPLATE_VALUE) {
       const lead =
@@ -343,7 +343,7 @@ async function persistDontShowAgain(): Promise<void> {
     try {
       await window.api.setSetting('skipTemplatePickerStep', true)
     } catch {
-      // Non-fatal — the step just shows again next time.
+      // Non-fatal - the step just shows again next time.
     }
   }
 }
@@ -453,7 +453,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  // Onboarding→install drop-off (#1224): the wizard is unmounting without a
+  // Onboarding->install drop-off (#1224): the wizard is unmounting without a
   // resolved handoff outcome, so the user left the install path without
   // dispatching. `skipInstall` sources (Remote Connection) never install, so
   // they're not part of this funnel. The happy-path dispatch, the defensive
@@ -485,7 +485,7 @@ function handleBackToLocalBranch(): void {
 }
 
 interface OpenOpts {
-  /** Set when opened via the first-use localBranch → Start Fresh path; surfaces a Back link that returns to localBranch instead of closing. */
+  /** Set when opened via the first-use localBranch -> Start Fresh path; surfaces a Back link that returns to localBranch instead of closing. */
   cameFromLocalBranch?: boolean
   /** Where this wizard was opened from (`first_use`, `chooser`, `titlebar`, `url`); carried onto the install.dispatched / install.not_started funnel events. */
   entrypoint?: string
@@ -560,8 +560,18 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     instPath.value = defaultInstPath.value
 
     if (workspaceMode.value) {
-      if (authStore.builds.length === 0 && !authStore.loadingBuilds) {
-        void authStore.fetchBuilds()
+      const targetWorkspaceId = workspaceId.value
+      if (!targetWorkspaceId) return
+      try {
+        const status = await authStore.switchWorkspace(targetWorkspaceId)
+        if (gen !== loadGeneration) return
+        if (!status.signedIn || status.workspaceId !== targetWorkspaceId) {
+          emit('close')
+          return
+        }
+        await authStore.fetchBuilds()
+      } catch {
+        if (gen === loadGeneration) emit('close')
       }
       return
     }
@@ -901,7 +911,7 @@ async function handleSave(): Promise<void> {
   }
 
   // Note: the starter-template model download is gated entirely by the chosen
-  // `bundledTemplate` — `buildInstallation` sets `downloadTemplateModels` from
+  // `bundledTemplate` - `buildInstallation` sets `downloadTemplateModels` from
   // the template id, so "Skip & Install" (template = None) means no download.
   // The renderer doesn't sync a separate consent field.
 
@@ -994,7 +1004,7 @@ function getSelectPlaceholder(field: SourceField): string {
   const err = fieldErrors.value.get(field.id)
   if (err) return `Error: ${err}`
   if (fieldOptions.value.has(field.id)) return t('newInstall.noOptions')
-  return '—'
+  return '--'
 }
 
 function onSelectFieldChange(field: SourceField, fieldIndex: number, value: string): void {
@@ -1010,7 +1020,7 @@ function onSelectFieldChange(field: SourceField, fieldIndex: number, value: stri
  *  outright so the wizard doesn't render a "No options" dropdown. */
 function isHiddenWhenEmpty(field: SourceField): boolean {
   // The starter-template field gets its own dedicated step when the picker is
-  // enabled — hide its Advanced-section card so it isn't shown twice. (When the
+  // enabled - hide its Advanced-section card so it isn't shown twice. (When the
   // picker is gated off, the Advanced card stays as the fallback.)
   if (field.id === 'bundledTemplate' && shouldShowPickerStep.value) return true
   if (field.type === 'text' || field.renderAs === 'cards') return false

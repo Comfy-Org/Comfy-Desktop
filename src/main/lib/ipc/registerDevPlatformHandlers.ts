@@ -164,9 +164,9 @@ export function registerDevPlatformHandlers(): void {
     (): Promise<Workspace[]> => session.listWorkspaces()
   )
 
-  // A workspace switch re-runs sign-in pre-selecting the workspace (a PKCE token
-  // is scoped at consent time), so it can open the browser and change identity:
-  // broadcast the new status so every surface re-scopes together.
+  // Cached workspace credentials activate silently. First access or expired,
+  // unusable credentials may run browser auth because cloud tokens are scoped
+  // at consent time. Broadcast the result so every remote surface re-scopes.
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.switchWorkspace,
     async (_event, workspaceId: string): Promise<AuthStatus> => {

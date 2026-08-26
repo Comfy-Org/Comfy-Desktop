@@ -92,11 +92,13 @@ describe('InstallWizardModal install-location field', () => {
 
 describe('InstallWizardModal workspace Builds', () => {
   function signInToWorkspace(builds: Array<Record<string, unknown>>): void {
-    ;(window.api.comfybuilder.getAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+    const status = {
       signedIn: true,
       workspaceId: 'w1',
       workspaceType: 'team'
-    })
+    }
+    ;(window.api.comfybuilder.getAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValue(status)
+    ;(window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(status)
     ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockResolvedValue(builds)
   }
 
@@ -153,6 +155,53 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(wrapper.get('.config-continue').attributes('disabled')).toBeDefined()
   })
 
+  it('activates the selected workspace before loading its Builds', async () => {
+    signInToWorkspace([])
+    ;(window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w2',
+      workspaceType: 'team'
+    })
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'ready', name: 'Workspace Two Build', state: 'installable' }
+    ])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w2' })
+    await flushPromises()
+
+    expect(window.api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(
+      (window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0]
+    ).toBeLessThan(
+      (window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!
+    )
+    expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
+      { value: 'ready', label: 'Workspace Two Build' }
+    ])
+  })
+
+  it('closes without loading Builds when workspace authorization is cancelled', async () => {
+    signInToWorkspace([])
+    ;(window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('cancelled')
+    )
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w2' })
+    await flushPromises()
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(window.api.comfybuilder.listBuilds).not.toHaveBeenCalled()
+  })
+
   it('retries a failed Build catalog request from the wizard', async () => {
     signInToWorkspace([])
     ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>)
@@ -193,7 +242,7 @@ describe('InstallWizardModal workspace Builds', () => {
   })
 })
 
-describe('InstallWizardModal onboarding→install handoff telemetry (#1224)', () => {
+describe('InstallWizardModal onboarding->install handoff telemetry (#1224)', () => {
   interface HandoffEvent {
     actionName: string
     context?: Record<string, unknown>

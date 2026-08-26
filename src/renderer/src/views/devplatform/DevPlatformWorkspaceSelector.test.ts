@@ -84,15 +84,14 @@ describe('DevPlatformWorkspaceSelector', () => {
     expect(wrapper.find('[data-testid="devplatform-workspace-menu"]').exists()).toBe(false)
   })
 
-  it('switches the authenticated workspace before selecting it', async () => {
+  it('selects another workspace locally without activating remote credentials', async () => {
     const wrapper = mountSelector()
     await flushPromises()
     await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
 
     await wrapper.find('[data-testid="devplatform-workspace-w2"]').trigger('click')
-    await flushPromises()
 
-    expect(api.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(api.switchWorkspace).not.toHaveBeenCalled()
     expect(wrapper.emitted('update:modelValue')).toEqual([['w2']])
     expect(wrapper.find('[data-testid="devplatform-workspace-menu"]').exists()).toBe(false)
   })
@@ -107,38 +106,5 @@ describe('DevPlatformWorkspaceSelector', () => {
 
     expect(api.switchWorkspace).not.toHaveBeenCalled()
     expect(wrapper.emitted('update:modelValue')).toEqual([[null]])
-  })
-
-  it('keeps the active workspace when browser re-authentication fails', async () => {
-    api.switchWorkspace.mockRejectedValue(new Error('cancelled'))
-    const wrapper = mountSelector()
-    await flushPromises()
-    await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.find('[data-testid="devplatform-workspace-w2"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').text()).toContain(
-      'Team One'
-    )
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-  })
-
-  it('does not select a workspace when re-authentication returns a different workspace', async () => {
-    api.switchWorkspace.mockResolvedValue({
-      signedIn: true,
-      workspaceType: 'team',
-      workspaceId: 'w1'
-    })
-    const wrapper = mountSelector()
-    await flushPromises()
-    await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
-
-    await wrapper.find('[data-testid="devplatform-workspace-w2"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').text()).toContain(
-      'Team One'
-    )
   })
 })
