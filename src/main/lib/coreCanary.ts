@@ -13,6 +13,7 @@
  * never be introduced through remote configuration.
  */
 import type { ComfyArgsSchema } from './comfy-args'
+import type { InstallationRecord } from '../installations'
 import * as mainTelemetry from './telemetry'
 
 export const CORE_CANARY_FLAG_KEY = 'desktop_core_beta_features'
@@ -23,12 +24,20 @@ const CORE_FLAG_NAME_RE = /^enable-[a-z0-9][a-z0-9-]*$/
 
 export interface CoreCanaryConfig {
   flags: string[]
+  includeExistingInstalls: boolean
 }
 
-const EMPTY_CONFIG: CoreCanaryConfig = Object.freeze({ flags: [] })
+const EMPTY_CONFIG: CoreCanaryConfig = Object.freeze({
+  flags: [],
+  includeExistingInstalls: false
+})
 
 let cached: CoreCanaryConfig = EMPTY_CONFIG
 let initPromise: Promise<void> | null = null
+// The boundary between installs that already existed when this Desktop
+// learned its assignment and installs created afterwards. Infinity fails
+// closed if launch somehow asks before initCoreCanary() runs.
+let newInstallCutoffMs = Number.POSITIVE_INFINITY
 
 function isEnabled(value: mainTelemetry.FeatureFlagValue): boolean {
   return value === true || typeof value === 'string'
@@ -54,7 +63,35 @@ export function parseCoreCanaryConfig(
     seen.add(candidate)
     flags.push(candidate)
   }
-  return flags.length > 0 ? { flags } : EMPTY_CONFIG
+  return flags.length > 0
+    ? {
+        flags,
+        // Existing installs are protected by default. Expanding a canary to
+        // them must be an explicit payload decision.
+        includeExistingInstalls:
+          (payload as { includeExistingInstalls?: unknown }).includeExistingInstalls === true
+      }
+    : EMPTY_CONFIG
+}
+
+/**
+ * Decide whether this installation is in the remotely assigned cohort.
+ *
+ * New-install targeting is durable: once an install created after the boot
+ * evaluation boundary is enrolled, later app restarts continue to apply the
+ * canary while the PostHog assignment remains active. Existing records are
+ * untouched unless `includeExistingInstalls` is explicitly true.
+ */
+export function isCoreCanaryEligible(
+  config: CoreCanaryConfig,
+  installation: Pick<InstallationRecord, 'createdAt' | 'coreCanaryEnrolledAt'>,
+  cutoffMs: number = newInstallCutoffMs
+): boolean {
+  if (config.flags.length === 0) return false
+  if (config.includeExistingInstalls) return true
+  if (typeof installation.coreCanaryEnrolledAt === 'string') return true
+  const createdAtMs = Date.parse(installation.createdAt)
+  return Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs
 }
 
 /**
@@ -63,21 +100,42 @@ export function parseCoreCanaryConfig(
  */
 export function resolveCoreCanaryLaunchArgs(
   config: CoreCanaryConfig,
-  schema: ComfyArgsSchema
+  schema: ComfyArgsSchema,
+  userArgs: string[] = []
 ): string[] {
   if (config.flags.length === 0) return []
   const definitions = new Map(schema.args.map((arg) => [arg.name, arg]))
+  const userFlagNames = new Set(
+    userArgs.filter((arg) => arg.startsWith('--')).map((arg) => arg.slice(2).replace(/=.*$/, ''))
+  )
+  const userExclusiveGroups = new Set(
+    [...userFlagNames]
+      .map((name) => definitions.get(name)?.exclusiveGroup)
+      .filter((group): group is string => typeof group === 'string')
+  )
   return config.flags.flatMap((name) => {
     const definition = definitions.get(name)
-    return definition?.type === 'boolean' && definition.category === 'features'
-      ? [definition.flag]
-      : []
+    if (definition?.type !== 'boolean' || definition.category !== 'features') return []
+
+    // User launch arguments are authoritative. Do not duplicate an identical
+    // flag, introduce its conventional --disable-* opposite, or add another
+    // member of the same argparse mutually-exclusive group.
+    const oppositeName = `disable-${name.slice('enable-'.length)}`
+    if (
+      userFlagNames.has(name) ||
+      userFlagNames.has(oppositeName) ||
+      (definition.exclusiveGroup && userExclusiveGroups.has(definition.exclusiveGroup))
+    ) {
+      return []
+    }
+    return [definition.flag]
   })
 }
 
 /** Boot-time fetch. Idempotent within a process and never rejects. */
 export function initCoreCanary(opts: { distinctId: string; timeoutMs?: number }): Promise<void> {
   if (initPromise) return initPromise
+  newInstallCutoffMs = Date.now()
   initPromise = mainTelemetry
     .getOpsFlagResult(CORE_CANARY_FLAG_KEY, opts.distinctId, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
     .then((result) => {
@@ -99,4 +157,5 @@ export async function getCoreCanaryConfigAsync(): Promise<CoreCanaryConfig> {
 export function _resetForTest(): void {
   cached = EMPTY_CONFIG
   initPromise = null
+  newInstallCutoffMs = Number.POSITIVE_INFINITY
 }

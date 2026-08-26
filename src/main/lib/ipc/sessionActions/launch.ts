@@ -94,7 +94,11 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
-import { getCoreCanaryConfigAsync, resolveCoreCanaryLaunchArgs } from '../../coreCanary'
+import {
+  getCoreCanaryConfigAsync,
+  isCoreCanaryEligible,
+  resolveCoreCanaryLaunchArgs
+} from '../../coreCanary'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
 // --list-feature-flags registry so we never inject unrecognized keys.
@@ -675,7 +679,28 @@ async function runLaunch(
         const userArgs = launchCmd.args.slice(sIdx + 2)
         const filtered = filterUnsupportedArgs(userArgs, schema)
         const canaryConfig = await getCoreCanaryConfigAsync()
-        const coreCanaryArgs = resolveCoreCanaryLaunchArgs(canaryConfig, schema)
+        let canaryEligible = isCoreCanaryEligible(canaryConfig, inst)
+        if (
+          canaryEligible &&
+          !canaryConfig.includeExistingInstalls &&
+          typeof inst.coreCanaryEnrolledAt !== 'string'
+        ) {
+          // Persist only genuinely new-install enrollment. If this write
+          // fails, skip remote flags for this launch rather than applying a
+          // canary we cannot keep stable across restarts.
+          try {
+            const coreCanaryEnrolledAt = new Date().toISOString()
+            const updated = await installations.update(installationId, { coreCanaryEnrolledAt })
+            if (updated) inst = updated
+            else canaryEligible = false
+          } catch (err) {
+            canaryEligible = false
+            console.warn('[core-canary] Failed to persist new-install enrollment:', err)
+          }
+        }
+        const coreCanaryArgs = canaryEligible
+          ? resolveCoreCanaryLaunchArgs(canaryConfig, schema, filtered)
+          : []
         if (coreCanaryArgs.length > 0) {
           console.info('[core-canary] Injecting Core beta feature flags:', coreCanaryArgs)
         }
@@ -700,8 +725,9 @@ async function runLaunch(
           }
         }
 
-        // Canary args precede user args so a future paired `--disable-*`
-        // switch selected explicitly by the user remains authoritative.
+        // Canary args precede user args, and the resolver omits any feature
+        // the user already controls (same flag, --disable-* opposite, or an
+        // argparse-exclusive peer).
         launchCmd.args = [...prefixArgs, ...coreCanaryArgs, ...desktopFlagArgs, ...filtered]
       } catch {
         // Schema not available — pass args as-is.
