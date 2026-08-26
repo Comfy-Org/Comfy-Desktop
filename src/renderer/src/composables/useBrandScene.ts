@@ -109,6 +109,10 @@ export function useBrandScene(
   let rafId = 0
   let playing = false
   const reduced = ref(prefersReducedMotion())
+  // False until the initially-visible clips have painted a real frame. The
+  // caller keeps the scene hidden until then, so the masks never flash their
+  // black fill before the video decodes.
+  const ready = ref(false)
 
   /** Scale the comp-sized stage to its wrapper (contain fits, cover crops). */
   function fitStage(): void {
@@ -245,6 +249,45 @@ export function useBrandScene(
     else play()
   }
 
+  let revealDeadline: ReturnType<typeof setTimeout> | null = null
+
+  /** Flip `ready` once every currently-active clip has presented a frame (or a
+   *  safety deadline passes, so a stalled decode never hides the scene forever).
+   *  Uses requestVideoFrameCallback where available, else the canplay event. */
+  function waitForFirstFrames(): void {
+    const actives = runtimes
+      .map((s) => (s.activeIdx >= 0 ? s.videos[s.activeIdx] : undefined))
+      .filter((v): v is HTMLVideoElement => !!v)
+    if (actives.length === 0) {
+      ready.value = true
+      return
+    }
+
+    let pending = actives.length
+    const done = (): void => {
+      if (--pending <= 0) ready.value = true
+    }
+    for (const ve of actives) {
+      const rvfc = (
+        ve as HTMLVideoElement & {
+          requestVideoFrameCallback?: (cb: () => void) => number
+        }
+      ).requestVideoFrameCallback
+      if (typeof rvfc === 'function') {
+        rvfc.call(ve, () => done())
+      } else if (ve.readyState >= 2 /* HAVE_CURRENT_DATA */) {
+        done()
+      } else {
+        ve.addEventListener('canplay', () => done(), { once: true })
+      }
+    }
+    // Reveal regardless after a short beat; a local clip decodes in well under
+    // this, and a hung one should not strand the loader on an empty screen.
+    revealDeadline = setTimeout(() => {
+      ready.value = true
+    }, 600)
+  }
+
   // Re-fit whenever the box resolves or changes size; onMounted can fire before
   // the aspect-ratio box has a size, which would scale against a stale box.
   let resizeObserver: ResizeObserver | null = null
@@ -253,6 +296,7 @@ export function useBrandScene(
     collectRuntimes()
     fitStage()
     render()
+    waitForFirstFrames()
     window.addEventListener('resize', fitStage)
     const wrap = stageRef.value?.parentElement
     if (wrap && typeof ResizeObserver !== 'undefined') {
@@ -270,8 +314,9 @@ export function useBrandScene(
     document.removeEventListener('visibilitychange', onVisibility)
     resizeObserver?.disconnect()
     resizeObserver = null
+    if (revealDeadline) clearTimeout(revealDeadline)
     pause()
   })
 
-  return { reduced, play, pause }
+  return { reduced, ready, play, pause }
 }

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useBrandScene } from '../composables/useBrandScene'
 import type { BrandScene } from '../lib/brandScene/types'
 import sceneData from '../lib/brandScene/installShowcaseScene.json'
+import { START_POSTERS } from '../lib/brandScene/startPosters'
 
 const props = withDefaults(
   defineProps<{
@@ -15,7 +16,7 @@ const props = withDefaults(
 const data = sceneData as BrandScene
 
 const stageRef = ref<HTMLElement | null>(null)
-useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
+const { ready } = useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
 </script>
 
 <template>
@@ -27,6 +28,13 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
         class="brand-scene"
         :style="{ zIndex: data.scenes.length - si, borderRadius: `${scene.maskRadius}px` }"
       >
+        <img
+          v-if="START_POSTERS[scene.id]"
+          class="brand-scene__poster"
+          :class="{ 'is-hidden': ready }"
+          :src="START_POSTERS[scene.id]"
+          alt=""
+        />
         <video
           v-for="(v, vi) in scene.videos"
           :key="vi"
@@ -63,7 +71,7 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
   width: 0;
   height: 0;
   overflow: hidden;
-  background: #000;
+  background: var(--neutral-900, #19131d);
   will-change: transform, width, height;
 }
 .brand-scene video {
@@ -78,5 +86,24 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
 }
 .brand-scene video.is-active {
   display: block;
+  z-index: 2;
+}
+.brand-scene__poster {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 1;
+  transition: opacity 260ms ease;
+}
+.brand-scene__poster.is-hidden {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-scene__poster {
+    transition: none;
+  }
 }
 </style>
