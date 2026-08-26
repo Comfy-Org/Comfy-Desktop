@@ -4,7 +4,7 @@ import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { getModelDownloadContentScript } from '../lib/comfyContentScript'
 import { getComfyTerminalContentScript } from '../lib/comfyTerminalContentScript'
 import { getMcpSidebarContentScript } from '../lib/mcpSidebarContentScript'
-import { getFlag, recordExposure } from '../lib/experiments'
+import { getFlagAsync, recordExposure } from '../lib/experiments'
 import { closeInstallPopouts } from '../lib/popoutWindows'
 import { _operationAborts, sourceMap } from '../lib/ipc/shared'
 import { readableSymbolColor } from '../lib/theme'
@@ -425,11 +425,16 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     // `comfyTerminalContentScript.ts` for the dedupe guard.
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
-      // Local MCP sidebar icon, flag-gated. Same install gate as the terminal.
-      if (getFlag(MCP_SIDEBAR_FLAG) === true) {
+      // Local MCP sidebar icon, flag-gated. `getFlagAsync` awaits the in-flight
+      // boot fetch so a cold start (empty cache) still resolves the flag before
+      // the gate decides; a sync read here would see the not-yet-populated cache
+      // and never inject. Re-check the view is alive after the await.
+      void (async () => {
+        if ((await getFlagAsync(MCP_SIDEBAR_FLAG)) !== true) return
+        if (comfyContents.isDestroyed()) return
         recordExposure(MCP_SIDEBAR_FLAG, 'enabled', 'cache')
         comfyContents.executeJavaScript(getMcpSidebarContentScript()).catch(() => {})
-      }
+      })()
     }
     // Cloud-only patches (popup-blocked toast suppression + post-signin
     // flicker hide). Skipped for local installs — they don't load cloud
