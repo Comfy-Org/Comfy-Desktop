@@ -67,11 +67,6 @@ interface ExceptionCall {
   properties?: Record<string, unknown>
 }
 const exceptions: ExceptionCall[] = []
-const featureFlagCalls: Array<{
-  key: string
-  distinctId: string
-  options?: { sendFeatureFlagEvents?: boolean }
-}> = []
 const featureFlagResultCalls: Array<{
   key: string
   distinctId: string
@@ -142,14 +137,6 @@ vi.mock('posthog-node', () => ({
     }
     shutdown(): Promise<void> {
       return Promise.resolve()
-    }
-    getFeatureFlag(
-      key: string,
-      distinctId: string,
-      options?: { sendFeatureFlagEvents?: boolean }
-    ): Promise<undefined> {
-      featureFlagCalls.push({ key, distinctId, options })
-      return Promise.resolve(undefined)
     }
     getFeatureFlagResult(
       key: string,
@@ -244,7 +231,6 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   captured.length = 0
   identifies.length = 0
   exceptions.length = 0
-  featureFlagCalls.length = 0
   featureFlagResultCalls.length = 0
   process.env['POSTHOG_API_KEY'] = 'test-key'
   process.env['POSTHOG_ENABLED'] = '1'
@@ -440,22 +426,6 @@ describe('telemetry default event properties', () => {
 })
 
 describe('telemetry anonymous flag reads', () => {
-  it('disables PostHog implicit feature-flag capture', async () => {
-    setupTelemetry({ consent: null, bind: null })
-    telemetry.bindAnonymousId('anonymous-flag-id', 'installation-id')
-    featureFlagCalls.length = 0
-
-    await telemetry.getOpsFlag('free_tier_workflow_submission_enabled', 'anonymous-flag-id', 100)
-
-    expect(featureFlagCalls).toEqual([
-      {
-        key: 'free_tier_workflow_submission_enabled',
-        distinctId: 'anonymous-flag-id',
-        options: { sendFeatureFlagEvents: false }
-      }
-    ])
-  })
-
   it('returns an operational flag value and payload without implicit capture', async () => {
     setupTelemetry({ consent: null, bind: null })
     posthogClientMock.featureFlagResult = {

@@ -1,161 +1,138 @@
 /**
- * PostHog-controlled Core beta features for Desktop launches.
+ * PostHog-controlled Core beta features for newly created installations.
  *
- * The PostHog flag is a boolean/multivariate targeting gate. Its matched JSON
- * payload has this deliberately small contract:
+ * The flag is a boolean/multivariate targeting gate whose matched JSON payload
+ * names the Core CLI flags to pre-fill:
  *
  *     { "flags": ["enable-assets"] }
  *
- * Values are Core CLI flag names without leading dashes. At launch, every
- * requested name is checked against that installation's live `--help` schema.
- * Only boolean `enable-*` switches in Core's `features` category are accepted;
- * paths, network settings, Manager controls, and value-taking arguments can
- * never be introduced through remote configuration.
+ * Enrollment happens exactly once, when the install wizard builds the record:
+ * the enabled flags are appended to that install's `launchArgs` — the same
+ * user-facing field that already carries `--enable-manager` and the CPU
+ * variant's `--cpu` (see `sources/standalone/index.ts`). From then on they are
+ * ordinary launch args: visible and removable in the args-builder UI, and
+ * dropped automatically by `filterUnsupportedArgs` if the install's Core build
+ * doesn't recognise them.
+ *
+ * Nothing reads this at launch, so an install's flags never change under it.
+ * Existing installations are structurally excluded rather than filtered out:
+ * adoption, standalone migration, snapshot restore and copy all build their
+ * records without going through the wizard's `build-installation` handler.
+ *
+ * Turning the PostHog flag off stops new enrollments immediately; it does not
+ * retract args already written, which would need a record migration.
  */
-import type { ComfyArgsSchema } from './comfy-args'
-import type { InstallationRecord } from '../installations'
-import * as mainTelemetry from './telemetry'
+import { makeOpsFlag } from './opsFlag'
+import type { FeatureFlagValue } from './telemetry'
 
 export const CORE_CANARY_FLAG_KEY = 'desktop_core_beta_features'
 
-const DEFAULT_TIMEOUT_MS = 2000
+/**
+ * The Core flags remote configuration may pre-fill.
+ *
+ * Deliberately a hardcoded allowlist rather than a name pattern: there is no
+ * `--help` schema to validate against at record-build time (ComfyUI isn't
+ * downloaded yet), and `enable-*` is not a safe shape on its own —
+ * `--enable-cors-header` takes an optional value and bare means "allow every
+ * origin". Adding an entry here is a reviewed Desktop change; choosing among
+ * them, and who gets them, stays remote.
+ */
+export const CORE_CANARY_ALLOWED_FLAGS: readonly string[] = [
+  'enable-assets',
+  'enable-asset-hashing'
+]
+
 const MAX_FLAGS = 32
-const CORE_FLAG_NAME_RE = /^enable-[a-z0-9][a-z0-9-]*$/
 
-export interface CoreCanaryConfig {
-  flags: string[]
-  includeExistingInstalls: boolean
+/** PostHog's default multivariate flag ships a `control` variant. Treat the
+ *  conventional off-names as disabled so a control group is never enrolled,
+ *  even if the payload was copied across every variant. */
+const OFF_VARIANTS = new Set(['control', 'off', 'false', 'disabled'])
+
+function isEnabled(value: FeatureFlagValue | undefined): boolean {
+  if (value === true) return true
+  return typeof value === 'string' && !OFF_VARIANTS.has(value.toLowerCase())
 }
 
-const EMPTY_CONFIG: CoreCanaryConfig = Object.freeze({
-  flags: [],
-  includeExistingInstalls: false
-})
-
-let cached: CoreCanaryConfig = EMPTY_CONFIG
-let initPromise: Promise<void> | null = null
-// The boundary between installs that already existed when this Desktop
-// learned its assignment and installs created afterwards. Infinity fails
-// closed if launch somehow asks before initCoreCanary() runs.
-let newInstallCutoffMs = Number.POSITIVE_INFINITY
-
-function isEnabled(value: mainTelemetry.FeatureFlagValue): boolean {
-  return value === true || typeof value === 'string'
-}
-
-/** Parse the remote payload without trusting it as command-line input. */
-export function parseCoreCanaryConfig(
-  value: mainTelemetry.FeatureFlagValue,
+/** Parse the remote payload without trusting it as command-line input. Returns
+ *  the allowlisted flag names, or `[]` for anything disabled or malformed. */
+export function parseCoreCanaryFlags(
+  value: FeatureFlagValue | undefined,
   payload: unknown
-): CoreCanaryConfig {
+): string[] {
   if (!isEnabled(value) || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    return EMPTY_CONFIG
+    return []
   }
-
   const requested = (payload as { flags?: unknown }).flags
-  if (!Array.isArray(requested) || requested.length > MAX_FLAGS) return EMPTY_CONFIG
+  if (!Array.isArray(requested) || requested.length > MAX_FLAGS) return []
 
+  const allowed = new Set(CORE_CANARY_ALLOWED_FLAGS)
   const flags: string[] = []
-  const seen = new Set<string>()
   for (const candidate of requested) {
-    if (typeof candidate !== 'string' || !CORE_FLAG_NAME_RE.test(candidate)) continue
-    if (seen.has(candidate)) continue
-    seen.add(candidate)
+    if (typeof candidate !== 'string') continue
+    if (!allowed.has(candidate) || flags.includes(candidate)) continue
     flags.push(candidate)
   }
-  return flags.length > 0
-    ? {
-        flags,
-        // Existing installs are protected by default. Expanding a canary to
-        // them must be an explicit payload decision.
-        includeExistingInstalls:
-          (payload as { includeExistingInstalls?: unknown }).includeExistingInstalls === true
-      }
-    : EMPTY_CONFIG
+  return flags
 }
 
 /**
- * Decide whether this installation is in the remotely assigned cohort.
+ * Merge the enabled flags into a launch-args string.
  *
- * New-install targeting is durable: once an install created after the boot
- * evaluation boundary is enrolled, later app restarts continue to apply the
- * canary while the PostHog assignment remains active. Existing records are
- * untouched unless `includeExistingInstalls` is explicitly true.
+ * Skips a flag the string already sets, and one whose conventional `--disable-*`
+ * opposite is already there — a source's `DEFAULT_LAUNCH_ARGS` is authoritative
+ * over remote configuration.
  */
-export function isCoreCanaryEligible(
-  config: CoreCanaryConfig,
-  installation: Pick<InstallationRecord, 'createdAt' | 'coreCanaryEnrolledAt'>,
-  cutoffMs: number = newInstallCutoffMs
-): boolean {
-  if (config.flags.length === 0) return false
-  if (config.includeExistingInstalls) return true
-  if (typeof installation.coreCanaryEnrolledAt === 'string') return true
-  const createdAtMs = Date.parse(installation.createdAt)
-  return Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs
-}
-
-/**
- * Resolve remote names through the running Core version's discovered schema.
- * This is the trust boundary that turns configuration into argv entries.
- */
-export function resolveCoreCanaryLaunchArgs(
-  config: CoreCanaryConfig,
-  schema: ComfyArgsSchema,
-  userArgs: string[] = []
-): string[] {
-  if (config.flags.length === 0) return []
-  const definitions = new Map(schema.args.map((arg) => [arg.name, arg]))
-  const userFlagNames = new Set(
-    userArgs.filter((arg) => arg.startsWith('--')).map((arg) => arg.slice(2).replace(/=.*$/, ''))
+export function appendCoreCanaryFlags(launchArgs: string, flags: string[]): string {
+  if (flags.length === 0) return launchArgs
+  const present = new Set(
+    launchArgs
+      .split(/\s+/)
+      .filter((token) => token.startsWith('--'))
+      .map((token) => token.slice(2).replace(/=.*$/, ''))
   )
-  const userExclusiveGroups = new Set(
-    [...userFlagNames]
-      .map((name) => definitions.get(name)?.exclusiveGroup)
-      .filter((group): group is string => typeof group === 'string')
-  )
-  return config.flags.flatMap((name) => {
-    const definition = definitions.get(name)
-    if (definition?.type !== 'boolean' || definition.category !== 'features') return []
-
-    // User launch arguments are authoritative. Do not duplicate an identical
-    // flag, introduce its conventional --disable-* opposite, or add another
-    // member of the same argparse mutually-exclusive group.
-    const oppositeName = `disable-${name.slice('enable-'.length)}`
-    if (
-      userFlagNames.has(name) ||
-      userFlagNames.has(oppositeName) ||
-      (definition.exclusiveGroup && userExclusiveGroups.has(definition.exclusiveGroup))
-    ) {
-      return []
-    }
-    return [definition.flag]
-  })
-}
-
-/** Boot-time fetch. Idempotent within a process and never rejects. */
-export function initCoreCanary(opts: { distinctId: string; timeoutMs?: number }): Promise<void> {
-  if (initPromise) return initPromise
-  newInstallCutoffMs = Date.now()
-  initPromise = mainTelemetry
-    .getOpsFlagResult(CORE_CANARY_FLAG_KEY, opts.distinctId, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
-    .then((result) => {
-      cached = result ? parseCoreCanaryConfig(result.value, result.payload) : EMPTY_CONFIG
+  const additions = flags
+    .filter((name) => {
+      if (present.has(name)) return false
+      const opposite = name.startsWith('enable-') ? `disable-${name.slice('enable-'.length)}` : null
+      return !(opposite && present.has(opposite))
     })
-    .catch(() => {
-      cached = EMPTY_CONFIG
-    })
-  return initPromise
+    .map((name) => `--${name}`)
+  return additions.length > 0 ? [launchArgs, ...additions].join(' ').trim() : launchArgs
 }
 
-/** Await the boot fetch so an immediate launch cannot race to the empty fallback. */
-export async function getCoreCanaryConfigAsync(): Promise<CoreCanaryConfig> {
-  if (initPromise) await initPromise
-  return cached
-}
+const flag = makeOpsFlag<string[]>({
+  key: CORE_CANARY_FLAG_KEY,
+  // Fail closed: a miss, a timeout, or an unrecognised payload enrolls nobody.
+  fallback: [],
+  parse: parseCoreCanaryFlags,
+  // The only control surface is a remote JSON blob, so log what the parse
+  // accepted — otherwise a payload naming a flag outside the allowlist is
+  // indistinguishable from the flag being off.
+  logLabel: 'core-canary'
+})
+
+/** Boot-time fetch. Idempotent within a process; never rejects. */
+export const initCoreCanary = flag.init
+
+/** Awaits the in-flight boot fetch so a wizard finishing before it settles
+ *  still sees the resolved flags rather than the fail-closed default. */
+export const getCoreCanaryFlagsAsync = flag.get
 
 /** @internal — exposed for tests. */
-export function _resetForTest(): void {
-  cached = EMPTY_CONFIG
-  initPromise = null
-  newInstallCutoffMs = Number.POSITIVE_INFINITY
+export const _resetForTest = flag._resetForTest
+
+/**
+ * Pre-fill the enabled Core beta flags on a record the install wizard just
+ * built. No-op for sources without launch args (Cloud, remote) and when the
+ * flags are already covered by the source's defaults.
+ */
+export async function withCoreCanaryLaunchArgs<T extends Record<string, unknown>>(
+  record: T
+): Promise<T> {
+  if (typeof record.launchArgs !== 'string') return record
+  const launchArgs = appendCoreCanaryFlags(record.launchArgs, await getCoreCanaryFlagsAsync())
+  if (launchArgs === record.launchArgs) return record
+  console.info('[core-canary] Pre-filled Core beta flags on a new installation:', launchArgs)
+  return { ...record, launchArgs }
 }

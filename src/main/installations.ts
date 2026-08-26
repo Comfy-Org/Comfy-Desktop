@@ -28,10 +28,6 @@ export interface InstallationRecord {
   comfyVersion?: ComfyVersion
   /** Epoch ms of the most recent launch, regardless of source category. */
   lastLaunchedAt?: number
-  /** Set only when an installation created after the Core canary assignment
-   *  was fetched is enrolled into the new-install cohort. Existing installs
-   *  are never backfilled unless the remote payload explicitly opts them in. */
-  coreCanaryEnrolledAt?: string
   /** Most-recent launch ms keyed by source category; written together with
    *  `lastLaunchedAt` via `markLaunched()` so the two stay consistent. */
   lastLaunchedAtByCategory?: Record<string, number>

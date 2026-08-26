@@ -33,6 +33,7 @@ import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
+import { withCoreCanaryLaunchArgs } from '../coreCanary'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
@@ -123,16 +124,20 @@ export function registerAppHandlers(): void {
   })
   ipcMain.handle('check-nvidia-driver', () => checkNvidiaDriver())
 
+  // The wizard's record builder, and the only enrollment point for the Core
+  // beta canary: `buildInstallation` is also called directly by standalone
+  // migration and snapshot restore, which must never enrol an install that
+  // already existed. See `coreCanary.ts`.
   ipcMain.handle(
     'build-installation',
-    (_event, sourceId: string, selections: Record<string, unknown>) => {
+    async (_event, sourceId: string, selections: Record<string, unknown>) => {
       const source = sourceMap[sourceId]
       if (!source) return null
-      return {
+      return withCoreCanaryLaunchArgs({
         sourceId: source.id,
         sourceLabel: source.label,
         ...source.buildInstallation(selections as Record<string, FieldOption | undefined>)
-      }
+      })
     }
   )
 

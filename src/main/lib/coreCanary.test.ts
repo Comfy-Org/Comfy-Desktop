@@ -1,5 +1,7 @@
+// Remote configuration becomes command-line input here, so the payload parse
+// and the args merge are specced tightly. The shared fetch plumbing (single
+// in-flight fetch, awaiting accessor, fail direction) lives in `opsFlag.test.ts`.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ComfyArgsSchema } from './comfy-args'
 
 const getOpsFlagResult = vi.fn()
 vi.mock('./telemetry', () => ({
@@ -7,233 +9,147 @@ vi.mock('./telemetry', () => ({
 }))
 
 import {
+  CORE_CANARY_ALLOWED_FLAGS,
   CORE_CANARY_FLAG_KEY,
   _resetForTest,
-  getCoreCanaryConfigAsync,
+  appendCoreCanaryFlags,
+  getCoreCanaryFlagsAsync,
   initCoreCanary,
-  isCoreCanaryEligible,
-  parseCoreCanaryConfig,
-  resolveCoreCanaryLaunchArgs
+  parseCoreCanaryFlags,
+  withCoreCanaryLaunchArgs
 } from './coreCanary'
-
-const schema: ComfyArgsSchema = {
-  knownFlags: new Set([
-    'enable-assets',
-    'disable-assets',
-    'enable-asset-hashing',
-    'enable-manager',
-    'enable-cors-header'
-  ]),
-  args: [
-    {
-      name: 'enable-assets',
-      flag: '--enable-assets',
-      help: 'Enable assets',
-      type: 'boolean',
-      exclusiveGroup: 'assets',
-      category: 'features'
-    },
-    {
-      name: 'disable-assets',
-      flag: '--disable-assets',
-      help: 'Disable assets',
-      type: 'boolean',
-      exclusiveGroup: 'assets',
-      category: 'features'
-    },
-    {
-      name: 'enable-asset-hashing',
-      flag: '--enable-asset-hashing',
-      help: 'Enable asset hashing',
-      type: 'boolean',
-      category: 'features'
-    },
-    {
-      name: 'enable-manager',
-      flag: '--enable-manager',
-      help: 'Enable Manager',
-      type: 'boolean',
-      category: 'manager'
-    },
-    {
-      name: 'enable-cors-header',
-      flag: '--enable-cors-header',
-      help: 'Set CORS origin',
-      type: 'value',
-      category: 'network'
-    }
-  ]
-}
 
 beforeEach(() => {
   _resetForTest()
   getOpsFlagResult.mockReset()
 })
 
-describe('parseCoreCanaryConfig', () => {
-  it('accepts and deduplicates enabled Core feature names', () => {
+describe('parseCoreCanaryFlags', () => {
+  it('accepts and deduplicates allowlisted Core feature names', () => {
     expect(
-      parseCoreCanaryConfig(true, {
+      parseCoreCanaryFlags(true, {
         flags: ['enable-assets', 'enable-asset-hashing', 'enable-assets']
       })
-    ).toEqual({
-      flags: ['enable-assets', 'enable-asset-hashing'],
-      includeExistingInstalls: false
-    })
+    ).toEqual(['enable-assets', 'enable-asset-hashing'])
   })
 
   it('accepts a multivariate flag assignment as enabled', () => {
-    expect(parseCoreCanaryConfig('canary', { flags: ['enable-assets'] })).toEqual({
-      flags: ['enable-assets'],
-      includeExistingInstalls: false
-    })
+    expect(parseCoreCanaryFlags('canary', { flags: ['enable-assets'] })).toEqual(['enable-assets'])
   })
 
-  it('requires an explicit true value to include existing installations', () => {
-    expect(
-      parseCoreCanaryConfig(true, {
-        flags: ['enable-assets'],
-        includeExistingInstalls: true
-      })
-    ).toEqual({ flags: ['enable-assets'], includeExistingInstalls: true })
-    expect(
-      parseCoreCanaryConfig(true, {
-        flags: ['enable-assets'],
-        includeExistingInstalls: 'true'
-      })
-    ).toEqual({ flags: ['enable-assets'], includeExistingInstalls: false })
-  })
+  it.each([['control'], ['off'], ['false'], ['disabled'], ['CONTROL']])(
+    'treats the %s variant as off so a control group is never enrolled',
+    (variant) => {
+      // PostHog's default multivariate flag ships a `control` variant, and the
+      // payload is easy to copy across every variant by accident.
+      expect(parseCoreCanaryFlags(variant, { flags: ['enable-assets'] })).toEqual([])
+    }
+  )
 
   it.each([
-    [false, { flags: ['enable-assets'] }],
-    [true, null],
-    [true, ['enable-assets']],
-    [true, { flags: 'enable-assets' }],
-    [true, { flags: Array.from({ length: 33 }, () => 'enable-assets') }]
-  ])('fails closed for a disabled flag or malformed payload', (value, payload) => {
-    expect(parseCoreCanaryConfig(value, payload)).toEqual({
-      flags: [],
-      includeExistingInstalls: false
-    })
+    ['a disabled flag', false, { flags: ['enable-assets'] }],
+    ['a missing payload', true, null],
+    ['an array payload', true, ['enable-assets']],
+    ['a non-array flags field', true, { flags: 'enable-assets' }],
+    ['an oversized list', true, { flags: Array.from({ length: 33 }, () => 'enable-assets') }],
+    ['a fetch miss', undefined, undefined]
+  ])('fails closed for %s', (_label, value, payload) => {
+    expect(parseCoreCanaryFlags(value, payload)).toEqual([])
   })
 
-  it('drops raw argv, value-taking syntax, and invalid names', () => {
+  it('drops raw argv, value-taking syntax, and non-string entries', () => {
     expect(
-      parseCoreCanaryConfig(true, {
-        flags: ['--enable-assets', 'enable-assets=true', 'listen', 'enable-assets']
+      parseCoreCanaryFlags(true, {
+        flags: ['--enable-assets', 'enable-assets=true', 42, null, 'enable-assets']
       })
-    ).toEqual({ flags: ['enable-assets'], includeExistingInstalls: false })
+    ).toEqual(['enable-assets'])
+  })
+
+  it('drops any name outside the allowlist', () => {
+    // The allowlist is the whole trust boundary: there is no `--help` schema to
+    // check against at record-build time, and `enable-*` is not a safe shape —
+    // `--enable-cors-header` bare means "allow every origin".
+    expect(
+      parseCoreCanaryFlags(true, {
+        flags: ['enable-cors-header', 'enable-manager', 'enable-future-feature', 'listen']
+      })
+    ).toEqual([])
+    expect(CORE_CANARY_ALLOWED_FLAGS).not.toContain('enable-cors-header')
   })
 })
 
-describe('isCoreCanaryEligible', () => {
-  const newInstallsOnly = {
-    flags: ['enable-assets'],
-    includeExistingInstalls: false
+describe('appendCoreCanaryFlags', () => {
+  it('appends to a source’s existing default args', () => {
+    expect(appendCoreCanaryFlags('--enable-manager', ['enable-assets'])).toBe(
+      '--enable-manager --enable-assets'
+    )
+  })
+
+  it('handles a source whose default args are empty', () => {
+    expect(appendCoreCanaryFlags('', ['enable-assets'])).toBe('--enable-assets')
+  })
+
+  it('returns the args untouched when nothing is enabled', () => {
+    expect(appendCoreCanaryFlags('--enable-manager', [])).toBe('--enable-manager')
+  })
+
+  it('does not duplicate a flag the args already set', () => {
+    expect(appendCoreCanaryFlags('--enable-assets', ['enable-assets'])).toBe('--enable-assets')
+    expect(appendCoreCanaryFlags('--enable-assets=true', ['enable-assets'])).toBe(
+      '--enable-assets=true'
+    )
+  })
+
+  it('yields to a --disable-* opposite already in the args', () => {
+    // A source's DEFAULT_LAUNCH_ARGS is authoritative over remote config.
+    expect(appendCoreCanaryFlags('--disable-assets', ['enable-assets'])).toBe('--disable-assets')
+  })
+
+  it('keeps flags whose args control an unrelated feature', () => {
+    expect(appendCoreCanaryFlags('--cpu --disable-auto-launch', ['enable-assets'])).toBe(
+      '--cpu --disable-auto-launch --enable-assets'
+    )
+  })
+})
+
+describe('withCoreCanaryLaunchArgs', () => {
+  async function enrolledWith(flags: string[]): Promise<void> {
+    getOpsFlagResult.mockResolvedValue({ value: true, payload: { flags } })
+    await initCoreCanary({ distinctId: 'device-id' })
   }
 
-  it('protects installations that predate this boot assignment', () => {
-    expect(
-      isCoreCanaryEligible(
-        newInstallsOnly,
-        { createdAt: '2026-08-26T10:00:00.000Z' },
-        Date.parse('2026-08-26T11:00:00.000Z')
-      )
-    ).toBe(false)
+  it('pre-fills the enabled flags onto a freshly built record', async () => {
+    await enrolledWith(['enable-assets'])
+    await expect(
+      withCoreCanaryLaunchArgs({ sourceId: 'standalone', launchArgs: '--enable-manager' })
+    ).resolves.toEqual({ sourceId: 'standalone', launchArgs: '--enable-manager --enable-assets' })
   })
 
-  it('enrolls installations created after this boot assignment', () => {
-    expect(
-      isCoreCanaryEligible(
-        newInstallsOnly,
-        { createdAt: '2026-08-26T12:00:00.000Z' },
-        Date.parse('2026-08-26T11:00:00.000Z')
-      )
-    ).toBe(true)
+  it('leaves a record without launch args alone', async () => {
+    await enrolledWith(['enable-assets'])
+    const record = { sourceId: 'cloud' }
+    await expect(withCoreCanaryLaunchArgs(record)).resolves.toBe(record)
   })
 
-  it('keeps a new-install enrollment stable across later app boots', () => {
-    expect(
-      isCoreCanaryEligible(
-        newInstallsOnly,
-        {
-          createdAt: '2026-08-26T10:00:00.000Z',
-          coreCanaryEnrolledAt: '2026-08-26T10:01:00.000Z'
-        },
-        Date.parse('2026-08-27T11:00:00.000Z')
-      )
-    ).toBe(true)
+  it('returns the record unchanged when nobody is enrolled', async () => {
+    getOpsFlagResult.mockResolvedValue({ value: false, payload: undefined })
+    await initCoreCanary({ distinctId: 'device-id' })
+    const record = { sourceId: 'standalone', launchArgs: '--enable-manager' }
+    await expect(withCoreCanaryLaunchArgs(record)).resolves.toBe(record)
   })
 
-  it('includes existing installations only when explicitly configured', () => {
-    expect(
-      isCoreCanaryEligible(
-        { ...newInstallsOnly, includeExistingInstalls: true },
-        { createdAt: '2020-01-01T00:00:00.000Z' },
-        Date.now()
-      )
-    ).toBe(true)
-  })
-})
-
-describe('resolveCoreCanaryLaunchArgs', () => {
-  it('injects only supported boolean flags in Core’s features category', () => {
-    const config = {
-      flags: [
-        'enable-assets',
-        'enable-asset-hashing',
-        'enable-manager',
-        'enable-cors-header',
-        'enable-future-feature'
-      ],
-      includeExistingInstalls: false
-    }
-    expect(resolveCoreCanaryLaunchArgs(config, schema)).toEqual([
-      '--enable-assets',
-      '--enable-asset-hashing'
-    ])
+  it('fails closed when the boot fetch never ran', async () => {
+    // No `initCoreCanary`: the wizard must not block, and must not enrol.
+    const record = { sourceId: 'standalone', launchArgs: '--enable-manager' }
+    await expect(withCoreCanaryLaunchArgs(record)).resolves.toBe(record)
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
   })
 
-  it('does not duplicate a feature flag already supplied by the user', () => {
-    const config = { flags: ['enable-assets'], includeExistingInstalls: false }
-    expect(resolveCoreCanaryLaunchArgs(config, schema, ['--enable-assets'])).toEqual([])
-    expect(resolveCoreCanaryLaunchArgs(config, schema, ['--enable-assets=true'])).toEqual([])
-  })
-
-  it('does not conflict with a user-supplied disable or exclusive peer', () => {
-    const config = { flags: ['enable-assets'], includeExistingInstalls: false }
-    expect(resolveCoreCanaryLaunchArgs(config, schema, ['--disable-assets'])).toEqual([])
-  })
-
-  it('preserves canary flags when user args control unrelated features', () => {
-    const config = { flags: ['enable-assets'], includeExistingInstalls: false }
-    expect(resolveCoreCanaryLaunchArgs(config, schema, ['--enable-asset-hashing'])).toEqual([
-      '--enable-assets'
-    ])
-  })
-})
-
-describe('core canary fetch', () => {
-  it('fetches once at boot and exposes the parsed payload', async () => {
-    getOpsFlagResult.mockResolvedValue({
-      value: true,
-      payload: { flags: ['enable-assets'] }
-    })
-    await Promise.all([
-      initCoreCanary({ distinctId: 'installation-id' }),
-      initCoreCanary({ distinctId: 'installation-id' })
-    ])
-
-    expect(getOpsFlagResult).toHaveBeenCalledOnce()
-    expect(getOpsFlagResult).toHaveBeenCalledWith(
-      CORE_CANARY_FLAG_KEY,
-      'installation-id',
-      expect.any(Number)
-    )
-    await expect(getCoreCanaryConfigAsync()).resolves.toEqual({
-      flags: ['enable-assets'],
-      includeExistingInstalls: false
-    })
+  it('fails closed when evaluation fails', async () => {
+    getOpsFlagResult.mockRejectedValue(new Error('offline'))
+    await initCoreCanary({ distinctId: 'device-id' })
+    const record = { sourceId: 'standalone', launchArgs: '' }
+    await expect(withCoreCanaryLaunchArgs(record)).resolves.toBe(record)
   })
 
   it('awaits an in-flight boot fetch instead of racing to the fallback', async () => {
@@ -243,21 +159,27 @@ describe('core canary fetch', () => {
         release = resolve
       })
     )
-    void initCoreCanary({ distinctId: 'installation-id' })
-    const pending = getCoreCanaryConfigAsync()
+    void initCoreCanary({ distinctId: 'device-id' })
+    const pending = withCoreCanaryLaunchArgs({ launchArgs: '' })
     release({ value: true, payload: { flags: ['enable-assets'] } })
-    await expect(pending).resolves.toEqual({
-      flags: ['enable-assets'],
-      includeExistingInstalls: false
-    })
+    await expect(pending).resolves.toEqual({ launchArgs: '--enable-assets' })
   })
+})
 
-  it('fails closed when evaluation fails', async () => {
-    getOpsFlagResult.mockRejectedValue(new Error('offline'))
-    await initCoreCanary({ distinctId: 'installation-id' })
-    await expect(getCoreCanaryConfigAsync()).resolves.toEqual({
-      flags: [],
-      includeExistingInstalls: false
-    })
+describe('core canary fetch', () => {
+  it('reads its own PostHog key once at boot', async () => {
+    getOpsFlagResult.mockResolvedValue({ value: true, payload: { flags: ['enable-assets'] } })
+    await Promise.all([
+      initCoreCanary({ distinctId: 'device-id' }),
+      initCoreCanary({ distinctId: 'device-id' })
+    ])
+
+    expect(getOpsFlagResult).toHaveBeenCalledOnce()
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      CORE_CANARY_FLAG_KEY,
+      'device-id',
+      expect.any(Number)
+    )
+    await expect(getCoreCanaryFlagsAsync()).resolves.toEqual(['enable-assets'])
   })
 })

@@ -230,7 +230,7 @@ let bootstrapTimeMs: number = Date.now()
 let initialized = false
 /** When `true`, all PostHog write paths (capture, identify,
  *  captureException, person-property updates) short-circuit. Set in
- *  `initTelemetry` based on `isPackaged`. Read paths (`getOpsFlag`,
+ *  `initTelemetry` based on `isPackaged`. Read paths (`getOpsFlagResult`,
  *  `loadFeatureFlagsImmediate`, `shutdown`) deliberately ignore this
  *  so devs can still resolve feature flags in `pnpm dev`. */
 let suppressEmit = false
@@ -558,7 +558,7 @@ export function initTelemetry(opts: InitOptions): void {
   // FLAG READS are NOT suppressed: a dev working on a feature gated by
   // a PostHog flag (e.g. `free_tier_workflow_submission_enabled`) needs to actually
   // see the flag's resolved value at boot. Previously the entire
-  // PostHog client was skipped in dev, which made `getOpsFlag` /
+  // PostHog client was skipped in dev, which made `getOpsFlagResult` /
   // `loadFeatureFlagsImmediate` return defaults and stranded any
   // operational-flag or experiment testing. Now the client is
   // always created so reads work; only the emission paths
@@ -1466,57 +1466,25 @@ export async function loadFeatureFlagsImmediate(
 }
 
 /**
- * Fetch a single OPERATIONAL feature flag value with a hard timeout.
+ * Fetch a single OPERATIONAL feature flag together with its matched payload.
  *
- * Bypasses the telemetry consent gate by design: this entry point is
- * reserved for operational flags, not A/B experiments or analytics. Those
- * are server-config pushed *to* the client to protect service
- * availability for everyone - distinct from analytics data collected
- * *from* the user, which `loadFeatureFlagsImmediate` correctly gates on
- * consent. The evaluation call supplies only the installation-stable
- * evaluation key and flag key; no person properties are sent.
+ * Bypasses the telemetry consent gate by design: this entry point is reserved
+ * for operational flags, not A/B experiments or analytics. Those are server
+ * config pushed *to* the client to protect service availability for everyone -
+ * distinct from analytics data collected *from* the user, which
+ * `loadFeatureFlagsImmediate` correctly gates on consent. The evaluation call
+ * supplies only the installation-stable evaluation key and flag key; no person
+ * properties are sent, and implicit `$feature_flag_called` capture is disabled
+ * so an evaluation-only key never creates a PostHog person behind the capture
+ * policy.
  *
  * Returns `undefined` when:
  *   - the PostHog client is not yet initialised
  *   - the network call times out or errors
  *   - the flag is missing on the server
  * Callers must choose a safe fallback so a fetch miss never accidentally
- * degrades the product.
- */
-export async function getOpsFlag(
-  key: string,
-  distinctId: string,
-  timeoutMs: number
-): Promise<FeatureFlagValue | undefined> {
-  if (!client) return undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    // No `personProperties` - ops flags are global, not user-keyed.
-    // We record explicit experiment exposures elsewhere. Disabling the SDK's
-    // implicit `$feature_flag_called` write also prevents this evaluation-only
-    // key from creating a PostHog person behind the capture policy.
-    const flagPromise = client.getFeatureFlag(key, distinctId, {
-      sendFeatureFlagEvents: false
-    })
-    const timeoutPromise = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), timeoutMs)
-    })
-    const result = await Promise.race([flagPromise, timeoutPromise])
-    if (typeof result === 'string' || typeof result === 'boolean') return result
-    return undefined
-  } catch {
-    return undefined
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-  }
-}
-
-/**
- * Fetch a single OPERATIONAL feature flag together with its matched payload.
- *
- * This has the same consent-bypass and fail-closed contract as `getOpsFlag`,
- * but uses the SDK's combined result API so remote configuration needs only
- * one evaluation. Implicit `$feature_flag_called` capture stays disabled.
+ * degrades the product. `makeOpsFlag` (opsFlag.ts) is that wrapper for every
+ * current caller.
  */
 export async function getOpsFlagResult(
   key: string,
