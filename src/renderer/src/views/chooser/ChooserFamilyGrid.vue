@@ -10,7 +10,6 @@ const props = withDefaults(
     installations: Installation[]
     /** Lead with the New Install tile. */
     showNew?: boolean
-    centered?: boolean
     showFreeRunsPill?: boolean
     showWhyCloud?: boolean
     isStoppedActionGated: (inst: Installation) => boolean
@@ -18,7 +17,6 @@ const props = withDefaults(
   }>(),
   {
     showNew: false,
-    centered: false,
     showFreeRunsPill: false,
     showWhyCloud: false,
     isPromotingToWorkspace: () => false
@@ -69,7 +67,6 @@ function unlockTileSize(el: Element): void {
     tag="div"
     name="tile"
     class="chooser-family-grid"
-    :class="{ 'chooser-family-grid--centered': props.centered }"
     @before-leave="lockLeavingTileSize"
     @leave-cancelled="unlockTileSize"
   >
@@ -119,9 +116,6 @@ function unlockTileSize(el: Element): void {
   justify-content: start;
   gap: 16px;
   align-content: start;
-}
-.chooser-family-grid--centered {
-  justify-content: center;
 }
 
 /* Tile FLIP. */

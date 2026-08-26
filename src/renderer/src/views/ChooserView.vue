@@ -396,7 +396,6 @@ const gridHandlers = {
         <section class="chooser-shelf">
           <ChooserFamilyGrid
             show-new
-            centered
             :installations="scopedVisibleInstalls"
             :show-free-runs-pill="showCloudFreeRunsPill"
             :show-why-cloud="showWhyCloud"
