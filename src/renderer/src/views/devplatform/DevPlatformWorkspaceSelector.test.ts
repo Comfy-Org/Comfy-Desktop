@@ -51,7 +51,7 @@ describe('DevPlatformWorkspaceSelector', () => {
       workspaceId: 'w1'
     })
     api.listWorkspaces.mockResolvedValue([
-      { id: 'w1', name: 'Team One', type: 'team', role: 'owner' },
+      { id: 'w1', name: 'Team One', type: 'team', role: 'owner', subscriptionTier: 'PRO' },
       { id: 'w2', name: 'Team Two', type: 'team', role: 'admin' }
     ])
     api.switchWorkspace.mockResolvedValue({
@@ -74,6 +74,9 @@ describe('DevPlatformWorkspaceSelector', () => {
     expect(wrapper.get('[data-testid="devplatform-workspace-selector"] .dp-avatar').text()).toBe(
       'T'
     )
+    await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    expect(wrapper.get('[data-testid="devplatform-workspace-w1"]').text()).toContain('team')
+    expect(wrapper.get('[data-testid="devplatform-workspace-w1"]').text()).not.toContain('PRO')
   })
 
   it('uses an empty neutral avatar when No workspace is selected', async () => {

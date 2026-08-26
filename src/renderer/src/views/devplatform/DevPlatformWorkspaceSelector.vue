@@ -173,9 +173,7 @@ function onSelectUnmanaged(): void {
         <DevPlatformAvatar :name="workspaceLabel(workspace)" />
         <span class="workspace-selector__identity">
           <span class="workspace-selector__item-name">{{ workspaceLabel(workspace) }}</span>
-          <span v-if="workspace.subscriptionTier" class="workspace-selector__item-sub">{{
-            workspace.subscriptionTier
-          }}</span>
+          <span class="workspace-selector__item-sub">{{ workspace.type }}</span>
         </span>
         <Check
           v-if="workspace.id === currentWorkspaceId"
