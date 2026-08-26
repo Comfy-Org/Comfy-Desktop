@@ -16,7 +16,13 @@ vi.mock('electron', () => ({
 }))
 
 import { _runningSessions } from '../lib/ipc/shared'
-import { comfyWindows, indexInstallationId, nextWindowKey, type ComfyWindowEntry } from './registry'
+import {
+  comfyWindows,
+  computeBodyMode,
+  indexInstallationId,
+  nextWindowKey,
+  type ComfyWindowEntry
+} from './registry'
 import { refreshComfyTabBody, setActivePanel } from './panelView'
 
 interface FakeWindow {
@@ -133,6 +139,35 @@ describe('setActivePanel', () => {
     setActivePanel(fixture.entry.windowKey, 'feedback')
     expect(fixture.layoutCalls).toBe(0)
     expect(fixture.entry.activePanel).toBe('comfy')
+  })
+
+  // Chooser-pick in-place attach: the picker drove its launch through a
+  // 'progress' overlay on the (install-less) chooser host. When the install
+  // attaches in place, that host must be reset to 'comfy' before the panel
+  // prewarm — otherwise computeBodyMode stays 'progress' and the rebuilt panel
+  // covers the just-attached canvas with a stranded progress surface.
+  it('resets a progress-mode chooser host to comfy so the prewarm stays hidden', () => {
+    const fixture = makeEntry({ installationId: null, activePanel: 'progress' })
+    comfyWindows.set(fixture.entry.windowKey, fixture.entry)
+
+    // Pre-fix state at the prewarm point: mode is 'progress' (panel full, canvas
+    // hidden) even after attachInstall wires up the running session.
+    fixture.entry.installationId = 'inst-A'
+    indexInstallationId('inst-A', fixture.entry.windowKey)
+    _runningSessions.set('inst-A', {} as never)
+    expect(
+      computeBodyMode(fixture.entry),
+      'without the reset the panel would cover the canvas'
+    ).toBe('progress')
+
+    // The fix: reset to 'comfy' before ensurePanelView.
+    setActivePanel(fixture.entry.windowKey, 'comfy')
+
+    expect(fixture.entry.activePanel).toBe('comfy')
+    expect(
+      computeBodyMode(fixture.entry),
+      'the prewarmed panel is hidden and ComfyUI is visible'
+    ).toBe('comfy')
   })
 })
 

@@ -660,6 +660,11 @@ function onLaunch({
       destroyPanelView(claimed)
       const ok = attachInstall(claimed, { installation, comfyUrl, isLocal: !url })
       if (ok) {
+        // The picker drove its launch through a 'progress' overlay on this host;
+        // clear that back to 'comfy' before the prewarm so computeBodyMode keeps
+        // the rebuilt panel hidden and ComfyUI visible. Otherwise the panel would
+        // cover the just-attached canvas with a stranded progress surface.
+        setActivePanel(claimed.windowKey, 'comfy')
         // Rebuild the panel view now (hidden, mode is 'comfy') so it boots in the
         // background — otherwise the first Settings/MCP click builds it cold.
         ensurePanelView(claimed.windowKey, claimed, computeBodyMode(claimed))

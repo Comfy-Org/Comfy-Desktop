@@ -93,6 +93,10 @@ export function useAssetPrefetch(
 
   function load(url: string): void {
     let settled = false
+    // Initialised to a no-op so a loader that calls `done` synchronously (before
+    // it returns its real canceller) never hits `cancel` in its temporal dead
+    // zone; the real canceller replaces this once `loader` returns.
+    let cancel: () => void = () => {}
     const done = (): void => {
       if (settled) return
       settled = true
@@ -100,8 +104,9 @@ export function useAssetPrefetch(
       inFlight--
       if (!disposed) pump()
     }
-    const cancel = loader(url, done)
-    loaderCancellers.add(cancel)
+    cancel = loader(url, done)
+    // A synchronous settle already ran `done` above; don't register a stale canceller.
+    if (!settled) loaderCancellers.add(cancel)
   }
 
   function prefetch(urls: readonly (string | null | undefined)[]): void {
