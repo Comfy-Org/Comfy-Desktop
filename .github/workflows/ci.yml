@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Ensure PP Formula is not committed
         run: |
@@ -52,7 +52,7 @@ jobs:
           - name: Lint
             command: pnpm run lint
           - name: Typecheck
-            command: pnpm run typecheck
+            command: pnpm run typecheck && pnpm run bridge-types:check
           - name: Test
             command: pnpm run test
           - name: Test (integration)
@@ -60,13 +60,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -76,6 +76,80 @@ jobs:
 
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
+
+  bridge-types-version:
+    name: Bridge types version bumped
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Require a version bump when the contract changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          # The checked-out tree is the merge ref, which already carries main's
+          # later commits; diff the branch tip so only this change is measured.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_JSON=packages/comfyui-desktop-bridge-types/package.json
+          MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          # Glob the declarations: tsc emits one file per source module, so the
+          # set is not fixed.
+          if git diff --quiet "$MERGE_BASE" "$HEAD_SHA" -- \
+            src/types/comfyDesktopBridge.ts \
+            'packages/comfyui-desktop-bridge-types/*.d.ts' \
+            packages/comfyui-desktop-bridge-types/index.js \
+            packages/comfyui-desktop-bridge-types/package.json \
+            packages/comfyui-desktop-bridge-types/LICENSE; then
+            echo "Bridge contract unchanged; no version bump required."
+            exit 0
+          fi
+          read_version() { git show "$1:$PACKAGE_JSON" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version"; }
+          BASE_VERSION=$(read_version "$MERGE_BASE")
+          HEAD_VERSION=$(read_version "$HEAD_SHA")
+          # Exported, not just assigned: the comparator reads them from env.
+          export BASE_VERSION HEAD_VERSION
+          # Prerelease-aware precedence, inline so an unrelated registry outage
+          # cannot fail this PR. Build metadata is ignored, per semver.
+          if ! node -e '
+            const parse = (v) => {
+              const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v)
+              if (!m) throw new Error("not a semantic version: " + v)
+              return { core: [+m[1], +m[2], +m[3]], pre: m[4] ? m[4].split(".") : [] }
+            }
+            const cmpId = (a, b) => {
+              const na = /^\d+$/.test(a), nb = /^\d+$/.test(b)
+              if (na && nb) return +a - +b
+              if (na !== nb) return na ? -1 : 1
+              return a < b ? -1 : a > b ? 1 : 0
+            }
+            const cmp = (a, b) => {
+              for (let i = 0; i < 3; i++) if (a.core[i] !== b.core[i]) return a.core[i] - b.core[i]
+              if (!a.pre.length || !b.pre.length) return b.pre.length - a.pre.length
+              for (let i = 0; i < Math.max(a.pre.length, b.pre.length); i++) {
+                if (a.pre[i] === undefined) return -1
+                if (b.pre[i] === undefined) return 1
+                const d = cmpId(a.pre[i], b.pre[i])
+                if (d) return d
+              }
+              return 0
+            }
+            process.exit(cmp(parse(process.env.HEAD_VERSION), parse(process.env.BASE_VERSION)) > 0 ? 0 : 1)
+          '; then
+            echo "::error title=Bump the bridge types version::This change touches the bridge contract, but ${PACKAGE_JSON} is still $HEAD_VERSION (base: $BASE_VERSION). Merging would leave npm serving the old contract." >&2
+            exit 1
+          fi
+          echo "Bridge contract changed and the version moved $BASE_VERSION -> $HEAD_VERSION."
 
   e2e:
     name: E2E (${{ matrix.platform }})
@@ -96,13 +170,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -118,7 +192,7 @@ jobs:
 
       - name: Upload Playwright failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-${{ matrix.platform }}-failure
           path: |
