@@ -71,6 +71,18 @@ describe('DevPlatformWorkspaceSelector', () => {
     expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').text()).toContain(
       'Team One'
     )
+    expect(wrapper.get('[data-testid="devplatform-workspace-selector"] .dp-avatar').text()).toBe(
+      'T'
+    )
+  })
+
+  it('uses an empty neutral avatar when No workspace is selected', async () => {
+    const wrapper = mountSelector(null)
+    await flushPromises()
+
+    const avatar = wrapper.get('[data-testid="devplatform-workspace-selector"] .dp-avatar')
+    expect(avatar.classes()).toContain('dp-avatar--neutral')
+    expect(avatar.text()).toBe('')
   })
 
   it('closes without switching when the active workspace is selected', async () => {
@@ -102,6 +114,8 @@ describe('DevPlatformWorkspaceSelector', () => {
     await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
     const noWorkspace = wrapper.find('[data-testid="devplatform-workspace-unmanaged"]')
     expect(noWorkspace.text()).toContain('No workspace')
+    expect(noWorkspace.get('.dp-avatar').classes()).toContain('dp-avatar--neutral')
+    expect(noWorkspace.get('.dp-avatar').text()).toBe('')
     await noWorkspace.trigger('click')
 
     expect(api.switchWorkspace).not.toHaveBeenCalled()

@@ -107,7 +107,7 @@ function onSelectUnmanaged(): void {
       :aria-label="$t('devPlatform.workspace.switchLabel')"
       @click="toggleMenu"
     >
-      <DevPlatformAvatar :name="currentWorkspaceName" />
+      <DevPlatformAvatar :name="currentWorkspaceName" :neutral="currentWorkspaceId === null" />
       <span class="workspace-selector__name">{{ currentWorkspaceName }}</span>
       <ChevronDown
         :size="14"
@@ -147,7 +147,7 @@ function onSelectUnmanaged(): void {
         data-testid="devplatform-workspace-unmanaged"
         @click="onSelectUnmanaged"
       >
-        <DevPlatformAvatar :name="$t('devPlatform.workspace.unmanagedLabel')" />
+        <DevPlatformAvatar :name="$t('devPlatform.workspace.unmanagedLabel')" neutral />
         <span class="workspace-selector__identity">
           <span class="workspace-selector__item-name">{{
             $t('devPlatform.workspace.unmanagedLabel')
