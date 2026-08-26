@@ -45,6 +45,19 @@ const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
 /** PostHog flag gating the Local MCP sidebar icon. */
 const MCP_SIDEBAR_FLAG = 'mcp_sidebar_enabled'
 
+/** Gate for the async, flag-resolved MCP sidebar inject. All three must hold:
+ *  the attach is still live (`attachActive` — a detach/hot-swap clears it), the
+ *  flag resolved enabled, and the view wasn't destroyed. `attachActive` is the
+ *  load-bearing one: detach leaves `comfyContents` alive, so `destroyed` alone
+ *  would let a late resolution inject into a detached or re-attached view. */
+export function shouldInjectMcpSidebar(state: {
+  attachActive: boolean
+  enabled: boolean
+  destroyed: boolean
+}): boolean {
+  return state.attachActive && state.enabled && !state.destroyed
+}
+
 /** Entry point that triggered a zoom reset, tagged as `source` on the
  *  `comfy.desktop.zoom.reset` telemetry event. `titlebar` (the zoom pill)
  *  and `menu` (the title menu's "Reset Zoom") flow through the per-install
@@ -180,6 +193,12 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   // install name changes. Closures over the install lifetime — reset
   // by `_installCleanup` below.
   let currentInstallName = installation.name
+
+  // Guards async work scheduled from this attach (e.g. the flag-gated MCP
+  // sidebar inject) that can resolve after the view is detached or hot-swapped
+  // — `_installCleanup` clears it, and `isDestroyed()` alone wouldn't, since
+  // detach leaves `comfyContents` alive.
+  let attachActive = true
   let currentPageTitle = ''
   const refreshOsWindowTitle = (): void => {
     if (comfyWindow.isDestroyed()) return
@@ -430,8 +449,13 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       // the gate decides; a sync read here would see the not-yet-populated cache
       // and never inject. Re-check the view is alive after the await.
       void (async () => {
-        if ((await getFlagAsync(MCP_SIDEBAR_FLAG)) !== true) return
-        if (comfyContents.isDestroyed()) return
+        const enabled = (await getFlagAsync(MCP_SIDEBAR_FLAG)) === true
+        // The await can outlive the attach — see `shouldInjectMcpSidebar`.
+        if (
+          !shouldInjectMcpSidebar({ attachActive, enabled, destroyed: comfyContents.isDestroyed() })
+        ) {
+          return
+        }
         recordExposure(MCP_SIDEBAR_FLAG, 'enabled', 'cache')
         comfyContents.executeJavaScript(getMcpSidebarContentScript()).catch(() => {})
       })()
@@ -641,6 +665,9 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return
     entry._installCleanup = null
+    // Retire async work still pending from this attach so a late resolution
+    // can't touch a detached or re-attached view.
+    attachActive = false
     deactivateFirebaseAuthReporter(comfyContents)
     installationEvents.off('updated', onInstallationUpdated)
     cancelFailRetry()
