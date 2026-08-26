@@ -284,14 +284,9 @@ function selectTemplate(option: FieldOption): void {
  *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
   if (shouldShowPickerStep.value) {
-    // Lead with a real template rather than the "None" sentinel - prefer the
-    // recommended pick (the lightest "wow"), falling back to the first real one.
-    if (selections.value.bundledTemplate?.value === NO_TEMPLATE_VALUE) {
-      const lead =
-        templateOptions.value.find((o) => o.value !== NO_TEMPLATE_VALUE && o.recommended) ??
-        templateOptions.value.find((o) => o.value !== NO_TEMPLATE_VALUE)
-      if (lead) selections.value.bundledTemplate = lead
-    }
+    // No template is pre-selected - the "None" sentinel stays put until the
+    // user actively picks a card, so nobody installs a starter workflow (and
+    // its models) they never chose.
     if (instPath.value) fetchDiskSpace(instPath.value)
     step.value = 'template'
     emitTelemetryAction('comfy.desktop.template.picker_shown', {
@@ -710,7 +705,13 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     fieldOptions.value.set(field.id, options)
 
     if (options.length > 0) {
-      let defaultIndex = options.findIndex((opt) => opt.recommended)
+      // The starter-template field must never default to a `recommended` pick
+      // (e.g. MiniMax) — that pre-selects a workflow, and the models it pulls
+      // in, before the user has chosen anything. It always defaults to the
+      // "None" sentinel (index 0; see `standalone/index.ts`), same as every
+      // other field falls back to index 0 when nothing is `recommended`.
+      let defaultIndex =
+        field.id === 'bundledTemplate' ? 0 : options.findIndex((opt) => opt.recommended)
       if (defaultIndex < 0) defaultIndex = 0
       const defaultOption = options[defaultIndex]
       if (defaultOption) selections.value[field.id] = defaultOption
@@ -1521,7 +1522,6 @@ defineExpose({ open })
   font-size: var(--takeover-fs-caption);
 }
 .template-skip {
-  margin-right: auto;
   border: 1px solid var(--brand-surface-border);
   color: var(--neutral-200);
 }
