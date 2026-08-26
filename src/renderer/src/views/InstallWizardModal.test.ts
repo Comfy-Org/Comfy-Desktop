@@ -54,13 +54,13 @@ beforeEach(() => {
 })
 
 describe('InstallWizardModal heading', () => {
-  it('uses the new-instance title and install-method subtitle', async () => {
+  it('uses the new-instance title and local-install subtitle', async () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
     expect(wrapper.get('.brand-title').text()).toBe('Create a New Instance')
-    expect(wrapper.get('.brand-lead').text()).toBe('How would you like this version installed?')
+    expect(wrapper.get('.brand-lead').text()).toBe('Install fresh ComfyUI.')
   })
 })
 
@@ -149,6 +149,7 @@ describe('InstallWizardModal workspace Builds', () => {
     signInToWorkspace([{ id: 'none', name: 'No Build Yet', state: 'no-build' }])
     const wrapper = await openWorkspaceModal()
 
+    expect(wrapper.get('.brand-lead').text()).toBe('Select a release to install.')
     expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain(
       'No compatible Builds are available to install.'
     )

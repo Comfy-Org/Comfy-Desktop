@@ -1037,7 +1037,11 @@ defineExpose({ open })
   <BrandTakeoverLayout>
     <div v-if="step === 'configure'" ref="brandShellRef" class="config-shell">
       <h1 class="brand-title">{{ $t('newInstall.configureTitle') }}</h1>
-      <p class="brand-lead">{{ $t('newInstall.configureLead') }}</p>
+      <p class="brand-lead">
+        {{
+          $t(workspaceMode ? 'newInstall.configureWorkspaceLead' : 'newInstall.configureLocalLead')
+        }}
+      </p>
       <div class="config-card">
         <div class="config-card__body">
           <div class="config-field">
@@ -1410,6 +1414,9 @@ defineExpose({ open })
   text-align: center;
   padding-block: clamp(1.5rem, 4vh, 3rem);
   min-height: 0;
+}
+.config-shell > .brand-lead {
+  margin: var(--takeover-gap-sm) 0 var(--takeover-gap-md);
 }
 
 .template-shell {
