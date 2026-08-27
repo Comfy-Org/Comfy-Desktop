@@ -124,10 +124,7 @@ export function registerAppHandlers(): void {
   })
   ipcMain.handle('check-nvidia-driver', () => checkNvidiaDriver())
 
-  // The wizard's record builder, and the only enrollment point for the Core
-  // beta canary: `buildInstallation` is also called directly by standalone
-  // migration and snapshot restore, which must never enrol an install that
-  // already existed. See `coreCanary.ts`.
+  // Other record-building paths bypass this handler, so existing installs are not enrolled.
   ipcMain.handle(
     'build-installation',
     async (_event, sourceId: string, selections: Record<string, unknown>) => {

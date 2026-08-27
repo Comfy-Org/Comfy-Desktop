@@ -2,7 +2,7 @@
  * Boot-time ops-flag reader.
  *
  * Ops flags are server config pushed TO the client (kill switches, rollout gates), not
- * analytics collected FROM the user, so they read through `getOpsFlag`, which deliberately
+ * analytics collected FROM the user, so they read through `getOpsFlagResult`, which deliberately
  * BYPASSES the consent gate — a user who declined telemetry still gets the kill switch, and
  * pre-consent surfaces can still resolve a value. The evaluation request supplies only the
  * installation-stable key and the flag key; implicit flag events are disabled.
@@ -40,10 +40,7 @@ export function makeOpsFlag<T>(opts: {
   /** Value held before the fetch resolves, and kept when it fails or returns something
    *  `parse` doesn't recognise. This is the flag's fail direction. */
   fallback: T
-  /** Narrow the raw flag value and the JSON payload attached to the matched value in PostHog.
-   *  Return `undefined` to keep the fallback — that is how an unrecognised payload is
-   *  distinguished from a legitimate value. Flags that carry no payload ignore the second
-   *  argument. */
+  /** Return `undefined` to retain the fallback. */
   parse: (value: FeatureFlagValue | undefined, payload: unknown) => T | undefined
   /** Enables the `[label] init:` / `[label] init error:` boot logs. Omit for no logging. */
   logLabel?: string

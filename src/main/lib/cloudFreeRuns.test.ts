@@ -6,8 +6,7 @@ vi.mock('./telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
 }))
 
-/** The reader hands back `{ value, payload }`; a bare `undefined` is a fetch miss. */
-function result(value: unknown): unknown {
+function flagResult(value: unknown): unknown {
   return value === undefined ? undefined : { value, payload: undefined }
 }
 
@@ -19,7 +18,7 @@ import {
 } from './cloudFreeRuns'
 
 async function resolveWith(value: unknown): Promise<boolean> {
-  getOpsFlagResult.mockResolvedValue(result(value))
+  getOpsFlagResult.mockResolvedValue(flagResult(value))
   await initCloudFreeRuns({ distinctId: 'anon' })
   return getCloudFreeRunsEnabledAsync()
 }
@@ -70,14 +69,14 @@ describe('cloudFreeRuns', () => {
     )
     void initCloudFreeRuns({ distinctId: 'anon' })
     const pending = getCloudFreeRunsEnabledAsync()
-    release(result('on'))
+    release(flagResult('on'))
     // A renderer query landing before the fetch settles must see the
     // resolved value, not the fail-closed default.
     expect(await pending).toBe(true)
   })
 
   it('is idempotent within a process — one fetch regardless of callers', async () => {
-    getOpsFlagResult.mockResolvedValue(result('on'))
+    getOpsFlagResult.mockResolvedValue(flagResult('on'))
     await Promise.all([
       initCloudFreeRuns({ distinctId: 'anon' }),
       initCloudFreeRuns({ distinctId: 'anon' })

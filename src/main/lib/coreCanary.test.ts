@@ -1,6 +1,3 @@
-// Remote configuration becomes command-line input here, so the payload parse
-// and the args merge are specced tightly. The shared fetch plumbing (single
-// in-flight fetch, awaiting accessor, fail direction) lives in `opsFlag.test.ts`.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getOpsFlagResult = vi.fn()
@@ -40,8 +37,6 @@ describe('parseCoreCanaryFlags', () => {
   it.each([['control'], ['off'], ['false'], ['disabled'], ['CONTROL']])(
     'treats the %s variant as off so a control group is never enrolled',
     (variant) => {
-      // PostHog's default multivariate flag ships a `control` variant, and the
-      // payload is easy to copy across every variant by accident.
       expect(parseCoreCanaryFlags(variant, { flags: ['enable-assets'] })).toEqual([])
     }
   )
@@ -66,9 +61,6 @@ describe('parseCoreCanaryFlags', () => {
   })
 
   it('drops any name outside the allowlist', () => {
-    // The allowlist is the whole trust boundary: there is no `--help` schema to
-    // check against at record-build time, and `enable-*` is not a safe shape —
-    // `--enable-cors-header` bare means "allow every origin".
     expect(
       parseCoreCanaryFlags(true, {
         flags: ['enable-cors-header', 'enable-manager', 'enable-future-feature', 'listen']
@@ -101,7 +93,6 @@ describe('appendCoreCanaryFlags', () => {
   })
 
   it('yields to a --disable-* opposite already in the args', () => {
-    // A source's DEFAULT_LAUNCH_ARGS is authoritative over remote config.
     expect(appendCoreCanaryFlags('--disable-assets', ['enable-assets'])).toBe('--disable-assets')
   })
 
@@ -139,7 +130,6 @@ describe('withCoreCanaryLaunchArgs', () => {
   })
 
   it('fails closed when the boot fetch never ran', async () => {
-    // No `initCoreCanary`: the wizard must not block, and must not enrol.
     const record = { sourceId: 'standalone', launchArgs: '--enable-manager' }
     await expect(withCoreCanaryLaunchArgs(record)).resolves.toBe(record)
     expect(getOpsFlagResult).not.toHaveBeenCalled()

@@ -1481,10 +1481,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
 
-    // Core beta features are operational launch configuration, not analytics.
-    // Fetched once at boot so the install wizard can pre-fill the matched
-    // flags into a new install's launch args even when telemetry consent is
-    // undecided or denied. Read only at record creation — see `coreCanary.ts`.
     void initCoreCanary({ distinctId: installationId })
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and

@@ -111,8 +111,6 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 // re-exported by `posthog-node`. Inlining the shape we actually use.
 export type FeatureFlagValue = string | boolean
 
-/** A single operational flag evaluation, including the JSON payload attached
- * to the matched boolean/variant value in PostHog. */
 export interface OpsFlagResult {
   value: FeatureFlagValue
   payload: unknown

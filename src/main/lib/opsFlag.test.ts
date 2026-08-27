@@ -11,8 +11,7 @@ vi.mock('./telemetry', () => ({
 
 import { makeOpsFlag } from './opsFlag'
 
-/** The reader hands back `{ value, payload }`; a bare `undefined` is a fetch miss. */
-function result(value: unknown, payload?: unknown): unknown {
+function flagResult(value: unknown, payload?: unknown): unknown {
   return value === undefined ? undefined : { value, payload }
 }
 
@@ -33,7 +32,7 @@ beforeEach(() => {
 describe('makeOpsFlag', () => {
   it('resolves a recognised value', async () => {
     const flag = makeTestFlag()
-    getOpsFlagResult.mockResolvedValue(result('disabled'))
+    getOpsFlagResult.mockResolvedValue(flagResult('disabled'))
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('disabled')
   })
@@ -42,7 +41,7 @@ describe('makeOpsFlag', () => {
     // `parse` returning undefined is how an unrecognised payload is told apart from a
     // legitimate value — it must not overwrite the fail direction.
     const flag = makeTestFlag()
-    getOpsFlagResult.mockResolvedValue(result(value))
+    getOpsFlagResult.mockResolvedValue(flagResult(value))
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('normal')
   })
@@ -64,27 +63,27 @@ describe('makeOpsFlag', () => {
     )
     void flag.init({ distinctId: 'anon' })
     const pending = flag.get()
-    release(result('disabled'))
+    release(flagResult('disabled'))
     expect(await pending).toBe('disabled')
   })
 
   it('is idempotent within a process — one fetch regardless of callers', async () => {
     const flag = makeTestFlag()
-    getOpsFlagResult.mockResolvedValue(result('degraded'))
+    getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
     await Promise.all([flag.init({ distinctId: 'anon' }), flag.init({ distinctId: 'anon' })])
     expect(getOpsFlagResult).toHaveBeenCalledTimes(1)
   })
 
   it('passes the key, distinct id, and timeout through to the fetch', async () => {
     const flag = makeTestFlag()
-    getOpsFlagResult.mockResolvedValue(result('normal'))
+    getOpsFlagResult.mockResolvedValue(flagResult('normal'))
     await flag.init({ distinctId: 'anon', timeoutMs: 50 })
     expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 50)
   })
 
   it('defaults the timeout when the caller omits one', async () => {
     const flag = makeTestFlag()
-    getOpsFlagResult.mockResolvedValue(result('normal'))
+    getOpsFlagResult.mockResolvedValue(flagResult('normal'))
     await flag.init({ distinctId: 'anon' })
     expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', expect.any(Number))
   })
@@ -98,7 +97,7 @@ describe('makeOpsFlag', () => {
           ? ((payload as { items?: string[] }).items ?? [])
           : undefined
     })
-    getOpsFlagResult.mockResolvedValue(result(true, { items: ['a', 'b'] }))
+    getOpsFlagResult.mockResolvedValue(flagResult(true, { items: ['a', 'b'] }))
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toEqual(['a', 'b'])
   })
@@ -106,7 +105,7 @@ describe('makeOpsFlag', () => {
   it('holds its own cache — two flags do not share state', async () => {
     const a = makeTestFlag()
     const b = makeTestFlag()
-    getOpsFlagResult.mockResolvedValue(result('disabled'))
+    getOpsFlagResult.mockResolvedValue(flagResult('disabled'))
     await a.init({ distinctId: 'anon' })
     expect(await a.get()).toBe('disabled')
     // `b` was never inited, so it has no fetch to await and reports its own fallback.
@@ -115,12 +114,12 @@ describe('makeOpsFlag', () => {
 
   it('_resetForTest clears both the cache and the in-flight fetch', async () => {
     const flag = makeTestFlag()
-    getOpsFlagResult.mockResolvedValue(result('disabled'))
+    getOpsFlagResult.mockResolvedValue(flagResult('disabled'))
     await flag.init({ distinctId: 'anon' })
     flag._resetForTest()
     expect(await flag.get()).toBe('normal')
     // A fresh init must actually re-fetch rather than short-circuit on the old promise.
-    getOpsFlagResult.mockResolvedValue(result('degraded'))
+    getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('degraded')
     expect(getOpsFlagResult).toHaveBeenCalledTimes(2)
