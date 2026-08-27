@@ -16,7 +16,8 @@ import {
   loadTokens,
   loadWorkspaceTokens,
   replaceWorkspaceTokens,
-  saveTokens
+  saveTokens,
+  saveWorkspaceNames
 } from './tokenStore'
 import type { AuthStatus, AuthTokens, Workspace, WorkspaceMember } from './types'
 import { listWorkspaceMembers, listWorkspaces } from './workspaces'
@@ -116,7 +117,9 @@ export class CloudSession {
   async listWorkspaces(): Promise<Workspace[]> {
     const token = await this.getAccessToken()
     if (!token) return []
-    return listWorkspaces(token)
+    const workspaces = await listWorkspaces(token)
+    saveWorkspaceNames(token, workspaces)
+    return workspaces
   }
 
   /** Members of the active workspace, used to resolve Builder creator ids. */

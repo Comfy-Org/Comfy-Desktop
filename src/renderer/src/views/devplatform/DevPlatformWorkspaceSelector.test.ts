@@ -40,6 +40,14 @@ function mountSelector(modelValue: string | null = 'w1') {
   })
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 describe('DevPlatformWorkspaceSelector', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -78,6 +86,31 @@ describe('DevPlatformWorkspaceSelector', () => {
     await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
     expect(wrapper.get('[data-testid="devplatform-workspace-w1"]').text()).toContain('team')
     expect(wrapper.get('[data-testid="devplatform-workspace-w1"]').text()).not.toContain('PRO')
+  })
+
+  it('keeps the cached workspace identity while the startup refresh is pending', async () => {
+    api.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId: 'w1',
+      workspaceName: 'Team One'
+    })
+    const workspaces = deferred<Awaited<ReturnType<typeof api.listWorkspaces>>>()
+    api.listWorkspaces.mockReturnValue(workspaces.promise)
+
+    const wrapper = mountSelector()
+    await flushPromises()
+
+    const selector = wrapper.get('[data-testid="devplatform-workspace-selector"]')
+    expect(selector.text()).toContain('Team One')
+    expect(selector.text()).not.toContain('Loading...')
+    expect(selector.get('.dp-avatar').text()).toBe('T')
+
+    workspaces.resolve([
+      { id: 'w1', name: 'Team One', type: 'team', role: 'owner', subscriptionTier: 'PRO' }
+    ])
+    await flushPromises()
+    expect(selector.text()).toContain('Team One')
   })
 
   it('does not repeat the type under the Personal workspace', async () => {

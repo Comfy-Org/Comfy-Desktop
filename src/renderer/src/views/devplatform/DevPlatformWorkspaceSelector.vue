@@ -31,7 +31,7 @@ const currentWorkspaceName = computed(() => {
   const current = store.workspaces.find((workspace) => workspace.id === currentWorkspaceId.value)
   if (current) return workspaceLabel(current)
   if (store.status.workspaceType !== 'team') return t('devPlatform.workspace.personalLabel')
-  if (store.loadingWorkspaces) return t('common.loading')
+  if (store.status.workspaceName) return store.status.workspaceName
   return t('devPlatform.workspace.currentFallback')
 })
 

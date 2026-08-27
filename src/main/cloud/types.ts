@@ -20,6 +20,8 @@ export interface AuthStatus {
   signedIn: boolean
   email?: string
   workspaceId?: string
+  /** Cached display name for the active workspace. */
+  workspaceName?: string
   workspaceType?: string
   role?: string
 }

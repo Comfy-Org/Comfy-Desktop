@@ -9,7 +9,8 @@ vi.mock('./tokenStore', () => ({
   loadTokens: vi.fn(),
   loadWorkspaceTokens: vi.fn(),
   replaceWorkspaceTokens: vi.fn(),
-  saveTokens: vi.fn()
+  saveTokens: vi.fn(),
+  saveWorkspaceNames: vi.fn()
 }))
 vi.mock('./workspaces', () => ({
   listWorkspaces: vi.fn(async () => [{ id: 'w-1' }]),
@@ -26,7 +27,8 @@ import {
   loadTokens,
   loadWorkspaceTokens,
   replaceWorkspaceTokens,
-  saveTokens
+  saveTokens,
+  saveWorkspaceNames
 } from './tokenStore'
 import type { AuthTokens } from './types'
 import { listWorkspaceMembers, listWorkspaces } from './workspaces'
@@ -319,6 +321,7 @@ describe('CloudSession workspaces', () => {
     const session = new CloudSession()
     await session.listWorkspaces()
     expect(listWorkspaces).toHaveBeenCalledWith(tokens.accessToken)
+    expect(saveWorkspaceNames).toHaveBeenCalledExactlyOnceWith(tokens.accessToken, [{ id: 'w-1' }])
 
     const onSignedOut = vi.fn()
     const provider = session.asTokenProvider(onSignedOut)

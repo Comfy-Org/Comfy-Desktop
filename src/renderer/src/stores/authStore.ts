@@ -109,7 +109,11 @@ export const useAuthStore = defineStore('auth', () => {
     if (revision === seen) workspacesError.value = false
     try {
       const next = await comfybuilderApi.listWorkspaces()
-      if (revision === seen) workspaces.value = next
+      if (revision === seen) {
+        workspaces.value = next
+        const current = next.find((workspace) => workspace.id === status.value.workspaceId)
+        status.value = { ...status.value, workspaceName: current?.name }
+      }
       return workspaces.value
     } catch {
       if (revision === seen) workspacesError.value = true

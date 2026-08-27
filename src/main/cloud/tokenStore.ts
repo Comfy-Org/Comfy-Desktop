@@ -9,7 +9,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
-import type { AuthStatus, AuthTokens } from './types'
+import type { AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
 const VAULT_VERSION = 1
@@ -20,6 +20,7 @@ interface TokenVault {
   activeKey: string
   subject?: string
   bundles: Record<string, AuthTokens>
+  workspaceNames?: Record<string, string>
 }
 
 let cachedVault: TokenVault | null = null
@@ -69,7 +70,12 @@ function isVault(v: unknown): v is TokenVault {
     (vault.subject !== undefined && typeof vault.subject !== 'string') ||
     !vault.bundles ||
     typeof vault.bundles !== 'object' ||
-    Array.isArray(vault.bundles)
+    Array.isArray(vault.bundles) ||
+    (vault.workspaceNames !== undefined &&
+      (!vault.workspaceNames ||
+        typeof vault.workspaceNames !== 'object' ||
+        Array.isArray(vault.workspaceNames) ||
+        !Object.values(vault.workspaceNames).every((name) => typeof name === 'string')))
   ) {
     return false
   }
@@ -160,6 +166,17 @@ export function loadWorkspaceTokens(workspaceId: string | null): AuthTokens | nu
   return loadVault()?.bundles[workspaceKey(workspaceId)] ?? null
 }
 
+/** Cache workspace names only when the response belongs to the current account. */
+export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[]): void {
+  const vault = loadVault()
+  const subject = subjectOf(accessToken)
+  if (!vault || !subject || vault.subject !== subject) return
+  vault.workspaceNames = Object.fromEntries(
+    workspaces.map((workspace) => [workspace.id, workspace.name])
+  )
+  persistVault(vault)
+}
+
 /** Activate a cached workspace. Returns null when it has never been authorized. */
 export function activateWorkspace(workspaceId: string): AuthTokens | null {
   const vault = loadVault()
@@ -208,7 +225,12 @@ export function clearTokens(): void {
 
 export function getAuthStatus(): AuthStatus {
   const t = loadTokens()
-  return t ? statusFromAccessToken(t.accessToken) : { signedIn: false }
+  if (!t) return { signedIn: false }
+  const status = statusFromAccessToken(t.accessToken)
+  const workspaceName = status.workspaceId
+    ? loadVault()?.workspaceNames?.[status.workspaceId]
+    : undefined
+  return workspaceName ? { ...status, workspaceName } : status
 }
 
 /** @internal reset module state between unit tests. */

@@ -102,6 +102,26 @@ describe('useAuthStore', () => {
     expect(store.loadingWorkspaces).toBe(false)
   })
 
+  it('reconciles the cached active workspace name after loading the workspace list', async () => {
+    api.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceName: 'Old name'
+    })
+    api.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Current name', type: 'team', role: 'owner' }
+    ])
+    const store = useAuthStore()
+    await flushPromises()
+
+    await store.fetchWorkspaces()
+    expect(store.status.workspaceName).toBe('Current name')
+
+    api.listWorkspaces.mockResolvedValue([])
+    await store.fetchWorkspaces()
+    expect(store.status.workspaceName).toBeUndefined()
+  })
+
   it('keeps workspaces loading until the current revision fetch settles', async () => {
     api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
     api.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })

@@ -19,10 +19,12 @@ import {
   _resetForTest,
   activateWorkspace,
   clearTokens,
+  getAuthStatus,
   loadTokens,
   loadWorkspaceTokens,
   replaceWorkspaceTokens,
-  saveTokens
+  saveTokens,
+  saveWorkspaceNames
 } from './tokenStore'
 import type { AuthTokens } from './types'
 
@@ -75,6 +77,10 @@ describe('workspace token vault', () => {
   it('clears cached workspaces when browser auth changes account', () => {
     saveTokens(tokens('user-1', 'w1'))
     saveTokens(tokens('user-1', 'w2'))
+    saveWorkspaceNames(loadTokens()!.accessToken, [
+      { id: 'w1', name: 'Workspace One', type: 'team', role: 'owner' },
+      { id: 'w2', name: 'Workspace Two', type: 'team', role: 'member' }
+    ])
 
     const otherAccount = tokens('user-2', 'w3')
     saveTokens(otherAccount)
@@ -82,6 +88,36 @@ describe('workspace token vault', () => {
     expect(loadTokens()).toEqual(otherAccount)
     expect(loadWorkspaceTokens('w1')).toBeNull()
     expect(loadWorkspaceTokens('w2')).toBeNull()
+    expect(getAuthStatus().workspaceName).toBeUndefined()
+  })
+
+  it('restores the active workspace name after a process restart', () => {
+    const active = tokens('user-1', 'w1')
+    saveTokens(active)
+    saveWorkspaceNames(active.accessToken, [
+      { id: 'w1', name: 'Workspace One', type: 'team', role: 'owner' },
+      { id: 'w2', name: 'Workspace Two', type: 'team', role: 'member' }
+    ])
+
+    _resetForTest()
+
+    expect(getAuthStatus()).toMatchObject({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceName: 'Workspace One'
+    })
+  })
+
+  it('rejects workspace names from a request belonging to another account', () => {
+    const stale = tokens('user-1', 'w1')
+    saveTokens(stale)
+    saveTokens(tokens('user-2', 'w2'))
+
+    saveWorkspaceNames(stale.accessToken, [
+      { id: 'w1', name: 'Workspace One', type: 'team', role: 'owner' }
+    ])
+
+    expect(getAuthStatus().workspaceName).toBeUndefined()
   })
 
   it('does not retain bundles when the new account identity cannot be proven', () => {
