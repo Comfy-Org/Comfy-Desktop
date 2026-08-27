@@ -52,6 +52,20 @@ it('applies compact text sizing to both the trigger and teleported listbox', asy
   )
 })
 
+it('shows a loading label without replacing the selectable options', async () => {
+  const wrapper = mountSelect(['One', 'Two'])
+  await wrapper.setProps({ loading: true, loadingLabel: 'Refreshing builds...' })
+
+  expect(wrapper.get('.ui-select-label').text()).toBe('Refreshing builds...')
+  expect(wrapper.get('.ui-select-trigger').attributes('aria-busy')).toBe('true')
+
+  await wrapper.get('.ui-select-trigger').trigger('click')
+  await flushPromises()
+  expect(
+    Array.from(document.querySelectorAll('.ui-select-option-label')).map((el) => el.textContent)
+  ).toEqual(['One', 'Two'])
+})
+
 describe('BaseSelect positioning', () => {
   it('uses the rendered list height to flip a dropdown above the trigger', async () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 380 })

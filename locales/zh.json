@@ -374,6 +374,7 @@
     "selectWorkspaceBuild": "选择构建",
     "noCompatibleBuilds": "没有可安装的兼容构建。",
     "refreshWorkspaceBuilds": "刷新构建",
+    "refreshingWorkspaceBuilds": "正在刷新构建...",
     "buildReleaseValue": "版本 v{version}",
     "buildCreatorValue": "创建者 {creator}",
     "buildRelease": "最新版本",

@@ -199,9 +199,21 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
     expect(wrapper.getComponent(BaseSelect).props('modelValue')).toBe('ready')
 
+    let finishRefresh!: (builds: Array<Record<string, unknown>>) => void
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRefresh = resolve
+      })
+    )
     await wrapper.get('.workspace-build-refresh').trigger('click')
+    expect(wrapper.getComponent(BaseSelect).get('.ui-select-label').text()).toBe(
+      'Refreshing builds...'
+    )
+    expect(wrapper.getComponent(BaseSelect).props('disabled')).toBe(false)
+    finishRefresh([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     await flushPromises()
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledTimes(2)
+    expect(wrapper.getComponent(BaseSelect).get('.ui-select-label').text()).toBe('Ready Build')
   })
 
   it('shows an empty state when no compatible Builds can be installed', async () => {

@@ -17,6 +17,8 @@ interface Props {
   options: BaseSelectOption[]
   ariaLabel?: string
   placeholder?: string
+  loading?: boolean
+  loadingLabel?: string
   disabled?: boolean
   compact?: boolean
 }
@@ -24,6 +26,8 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   ariaLabel: undefined,
   placeholder: '',
+  loading: false,
+  loadingLabel: '',
   disabled: false,
   compact: false
 })
@@ -40,7 +44,11 @@ const popoverStyle = ref<Record<string, string>>({})
 
 const selectedOption = computed(() => props.options.find((o) => o.value === props.modelValue))
 
-const triggerLabel = computed(() => selectedOption.value?.label ?? props.placeholder)
+const triggerLabel = computed(() =>
+  props.loading && props.loadingLabel
+    ? props.loadingLabel
+    : (selectedOption.value?.label ?? props.placeholder)
+)
 
 const listboxId = `ui-listbox-${Math.random().toString(36).slice(2, 9)}`
 const POPOVER_GAP = 2
@@ -233,7 +241,8 @@ onBeforeUnmount(() => {
     :aria-controls="listboxId"
     aria-haspopup="listbox"
     :aria-label="ariaLabel"
-    :data-placeholder="!selectedOption ? '' : undefined"
+    :aria-busy="loading || undefined"
+    :data-placeholder="!selectedOption && !loading ? '' : undefined"
     :disabled="disabled"
     @click="toggle"
     @keydown="onTriggerKeydown"

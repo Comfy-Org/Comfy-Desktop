@@ -374,6 +374,7 @@
     "selectWorkspaceBuild": "Select a Build",
     "noCompatibleBuilds": "No compatible Builds are available to install.",
     "refreshWorkspaceBuilds": "Refresh Builds",
+    "refreshingWorkspaceBuilds": "Refreshing builds...",
     "buildReleaseValue": "Release v{version}",
     "buildCreatorValue": "By {creator}",
     "buildRelease": "Latest release",

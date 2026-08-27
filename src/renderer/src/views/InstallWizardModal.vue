@@ -1208,6 +1208,8 @@ defineExpose({ open })
               v-model="selectedBuildId"
               :options="workspaceBuildOptions"
               :placeholder="$t('newInstall.selectWorkspaceBuild')"
+              :loading="authStore.loadingBuilds"
+              :loading-label="$t('newInstall.refreshingWorkspaceBuilds')"
               :disabled="workspaceBuildOptions.length === 0"
               :aria-label="$t('newInstall.workspaceBuildLabel')"
             />
