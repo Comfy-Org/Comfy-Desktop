@@ -4,7 +4,8 @@ import {
   listCompleteVersions,
   listBuildRows,
   resolveHostArtifact,
-  resolveHostArtifactForVersion
+  resolveHostArtifactForVersion,
+  resolveSelectedHostArtifact
 } from './builds'
 import { clearVersionCache, getCachedVersions } from './versionCache'
 import type { Artifact, Build, BuildVersion, Host } from '../comfybuilder'
@@ -62,7 +63,15 @@ describe('listBuildRows', () => {
         }
       ],
       versionsByBuild: { d1: [version(1, 'complete'), version(2, 'complete')] },
-      artifactsByVersion: { v2: [artifact()] }
+      artifactsByVersion: {
+        v2: [
+          artifact({ id: 'cuda' }),
+          artifact({ id: 'cpu', gpu: 'cpu', accelVariant: 'cpu' }),
+          artifact({ id: 'windows', os: 'windows' }),
+          artifact({ id: 'amd', gpu: 'amd' }),
+          artifact({ id: 'pending', status: 'building' })
+        ]
+      }
     })
     const rows = await listBuildRows(client as never, HOST)
     const row = rows[0]!
@@ -77,7 +86,25 @@ describe('listBuildRows', () => {
       sizeBytes: 1234,
       updatedAt: '2026-07-21T00:00:00Z',
       version: '2',
-      targetOs: ['linux'],
+      targetOs: ['linux', 'windows'],
+      releaseTargets: [
+        {
+          artifactId: 'cuda',
+          releaseVersion: 2,
+          os: 'linux',
+          gpu: 'nvidia',
+          accelVariant: 'cu128',
+          recommended: true
+        },
+        {
+          artifactId: 'cpu',
+          releaseVersion: 2,
+          os: 'linux',
+          gpu: 'cpu',
+          accelVariant: 'cpu',
+          recommended: false
+        }
+      ],
       state: 'installable'
     })
     // The latest complete version (2) is the one resolved, not version 1.
@@ -268,6 +295,48 @@ describe('resolveHostArtifact', () => {
       artifactsByVersion: { v1: [artifact({ os: 'mac', gpu: 'mps' })] }
     })
     expect(await resolveHostArtifact(client as never, HOST, 'd1')).toBeNull()
+  })
+})
+
+describe('resolveSelectedHostArtifact', () => {
+  it('returns an explicitly selected compatible target from the requested release', async () => {
+    const client = stubClient({
+      versionsByBuild: { d1: [version(6, 'complete'), version(5, 'complete')] },
+      artifactsByVersion: {
+        v5: [artifact({ id: 'cuda' }), artifact({ id: 'cpu', gpu: 'cpu' })],
+        v6: [artifact({ id: 'newer' })]
+      }
+    })
+
+    await expect(
+      resolveSelectedHostArtifact(client as never, HOST, 'd1', 5, 'cpu')
+    ).resolves.toMatchObject({ version: 5, artifact: { id: 'cpu' } })
+    expect(client.getVersion).toHaveBeenCalledWith('v5')
+  })
+
+  it.each([
+    ['unknown release', 4, 'ready'],
+    ['unfinished release', 7, 'ready'],
+    ['unknown artifact', 5, 'missing'],
+    ['wrong OS', 5, 'windows'],
+    ['wrong GPU', 5, 'amd'],
+    ['unfinished artifact', 5, 'pending']
+  ])('rejects %s', async (_name, releaseVersion, artifactId) => {
+    const client = stubClient({
+      versionsByBuild: { d1: [version(5, 'complete'), version(7, 'building')] },
+      artifactsByVersion: {
+        v5: [
+          artifact({ id: 'ready' }),
+          artifact({ id: 'windows', os: 'windows' }),
+          artifact({ id: 'amd', gpu: 'amd' }),
+          artifact({ id: 'pending', status: 'building' })
+        ]
+      }
+    })
+
+    await expect(
+      resolveSelectedHostArtifact(client as never, HOST, 'd1', releaseVersion, artifactId)
+    ).resolves.toBeNull()
   })
 })
 

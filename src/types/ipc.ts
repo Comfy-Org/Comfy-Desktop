@@ -20,8 +20,18 @@ export type DevPlatformBuildState =
   | 'installed'
   | 'update-available'
 
-/** One build as a renderer-safe display row. The install-decision fields
- *  (artifact id / download ref) stay main-side; the renderer installs by id. */
+/** One installable target from a published Build release. Storage references,
+ *  integrity values, and other trusted artifact data stay in main. */
+export interface DevPlatformBuildTarget {
+  artifactId: string
+  releaseVersion: number
+  os: 'linux' | 'windows' | 'mac'
+  gpu: 'nvidia' | 'amd' | 'cpu' | 'mps'
+  accelVariant: string
+  recommended: boolean
+}
+
+/** One build as a renderer-safe display row. */
 export interface DevPlatformBuild {
   id: string
   name: string
@@ -46,6 +56,8 @@ export interface DevPlatformBuild {
   blockedReason?: string
   /** OSes targeted by ready artifacts in the latest complete release. */
   targetOs?: string[]
+  /** Runnable targets in the latest complete release, recommended first. */
+  releaseTargets?: DevPlatformBuildTarget[]
   minDesktopVersion?: string
   /** Local-only: present for installed / update-available. A build
    *  version is an integer, matching how the row builder sets it. */
@@ -62,6 +74,8 @@ export interface InstallBuildResult {
 
 export interface InstallBuildRequest {
   buildId: string
+  artifactId?: string
+  releaseVersion?: number
   name?: string
   installRoot?: string
 }

@@ -5,7 +5,12 @@
  * this file just re-exports them under the shorter names the views use, so a
  * component imports `Build` from one local place.
  */
-import type { DevPlatformBuild, DevPlatformBuildState } from '../../../types/ipc'
+import type {
+  DevPlatformBuild,
+  DevPlatformBuildState,
+  DevPlatformBuildTarget
+} from '../../../types/ipc'
 
 export type Build = DevPlatformBuild
 export type BuildState = DevPlatformBuildState
+export type BuildTarget = DevPlatformBuildTarget

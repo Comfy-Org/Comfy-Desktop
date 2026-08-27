@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { en } from '../lib/i18nMessages.ts'
 import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
+import BrandVariantList from '../components/BrandVariantList.vue'
 import { useInstallationStore } from '../stores/installationStore'
 
 function makeI18n() {
@@ -380,6 +381,72 @@ describe('InstallWizardModal workspace Builds', () => {
       installationId: 'managed-1',
       autoLaunchOnFinish: true,
       opKind: 'install'
+    })
+  })
+
+  it('lets users choose among compatible managed Build release targets', async () => {
+    signInToWorkspace([
+      {
+        id: 'ready',
+        name: 'Ready Build',
+        version: '3',
+        state: 'installable',
+        releaseTargets: [
+          {
+            artifactId: 'cuda',
+            releaseVersion: 3,
+            os: 'windows',
+            gpu: 'nvidia',
+            accelVariant: 'cu128',
+            recommended: true
+          },
+          {
+            artifactId: 'cpu',
+            releaseVersion: 3,
+            os: 'windows',
+            gpu: 'cpu',
+            accelVariant: 'cpu',
+            recommended: false
+          }
+        ]
+      }
+    ])
+    ;(window.api.comfybuilder.installBuild as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      entry: { id: 'managed-1', name: 'Ready Build' }
+    })
+    const wrapper = await openWorkspaceModal()
+
+    const advanced = wrapper.get('[data-testid="workspace-build-advanced"]')
+    expect(advanced.classes()).not.toContain('is-open')
+    const targetPicker = wrapper.getComponent(BrandVariantList)
+    expect(targetPicker.props('options')).toEqual([
+      {
+        value: 'cuda',
+        label: 'Windows - NVIDIA (CUDA 12.8)',
+        description: 'Release v3',
+        recommended: true,
+        data: { variantId: 'win-nvidia-cu128' }
+      },
+      {
+        value: 'cpu',
+        label: 'Windows - CPU',
+        description: 'Release v3',
+        recommended: false,
+        data: { variantId: 'win-cpu-cpu' }
+      }
+    ])
+    expect(targetPicker.props('selectedValue')).toBe('cuda')
+
+    await targetPicker.findAll('button')[1]!.trigger('click')
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(window.api.comfybuilder.installBuild).toHaveBeenCalledExactlyOnceWith({
+      buildId: 'ready',
+      artifactId: 'cpu',
+      releaseVersion: 3,
+      installRoot: '/home/user/ComfyUI'
     })
   })
 })

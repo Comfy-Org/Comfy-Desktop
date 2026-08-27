@@ -22,7 +22,12 @@ import {
   getCloudSession,
   setUnauthorizedHandler
 } from '../../devplatform/session'
-import { resolveBuildRows, resolveHost, resolveHostArtifact } from '../../devplatform/builds'
+import {
+  resolveBuildRows,
+  resolveHost,
+  resolveHostArtifact,
+  resolveSelectedHostArtifact
+} from '../../devplatform/builds'
 import type { BuildRow } from '../../devplatform/builds'
 import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/versionCache'
 import type { AuthStatus, Workspace } from '../../cloud'
@@ -312,6 +317,22 @@ export function registerDevPlatformHandlers(): void {
       if (request.installRoot !== undefined && typeof request.installRoot !== 'string') {
         return { ok: false, message: 'Invalid install location.' }
       }
+      const hasArtifactId = request.artifactId !== undefined
+      const hasReleaseVersion = request.releaseVersion !== undefined
+      if (hasArtifactId !== hasReleaseVersion) {
+        return { ok: false, message: 'Invalid Build release selection.' }
+      }
+      const artifactId = typeof request.artifactId === 'string' ? request.artifactId.trim() : ''
+      const releaseVersion = request.releaseVersion
+      if (
+        hasArtifactId &&
+        (!artifactId ||
+          typeof releaseVersion !== 'number' ||
+          !Number.isInteger(releaseVersion) ||
+          releaseVersion < 1)
+      ) {
+        return { ok: false, message: 'Invalid Build release selection.' }
+      }
       const installKey = `${workspaceId}:${buildId}`
       if (installing.has(installKey)) return { ok: false, message: 'Install already starting.' }
       installing.add(installKey)
@@ -336,7 +357,9 @@ export function registerDevPlatformHandlers(): void {
         const build = builds.find((candidate) => candidate.id === buildId)
         if (!build) return { ok: false, message: 'Build not found in the active workspace.' }
         const host = await resolveHost()
-        const resolved = await resolveHostArtifact(client, host, buildId)
+        const resolved = hasArtifactId
+          ? await resolveSelectedHostArtifact(client, host, buildId, releaseVersion!, artifactId)
+          : await resolveHostArtifact(client, host, buildId)
         if (!resolved) return { ok: false, message: 'No installable build for this machine.' }
 
         const { artifact } = resolved

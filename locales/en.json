@@ -386,7 +386,8 @@
     "buildCreator": "Created by",
     "buildModels": "Models",
     "buildCustomNodes": "Custom nodes",
-    "buildSize": "Size"
+    "buildSize": "Size",
+    "buildTarget": "Release target"
   },
   "templateQuit": {
     "title": "Template models are still downloading",

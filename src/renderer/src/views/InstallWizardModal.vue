@@ -37,7 +37,7 @@ import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import TooltipWrap from '../components/TooltipWrap.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
-import type { Build } from '../devplatform/types'
+import type { Build, BuildTarget } from '../devplatform/types'
 
 const emit = defineEmits<{
   close: []
@@ -79,6 +79,7 @@ const initializing = ref(false)
 const sourceError = ref('')
 const workspaceId = ref<string | null>(null)
 const selectedBuildId = ref('')
+const selectedBuildTargetId = ref('')
 const workspaceMode = computed(() => workspaceId.value !== null)
 const workspaceInstallMode = ref<'managed' | 'public'>('managed')
 const managedBuildMode = computed(
@@ -121,6 +122,12 @@ const workspaceBuildOptions = computed<BaseSelectOption[]>(() =>
 const selectedBuild = computed(
   () => workspaceBuilds.value.find((build) => build.id === selectedBuildId.value) ?? null
 )
+const selectedBuildTarget = computed(
+  () =>
+    selectedBuild.value?.releaseTargets?.find(
+      (target) => target.artifactId === selectedBuildTargetId.value
+    ) ?? null
+)
 
 function platformName(os: string): string {
   if (os === 'windows') return 'Windows'
@@ -128,6 +135,38 @@ function platformName(os: string): string {
   if (os === 'linux') return 'Linux'
   return os
 }
+
+function targetAccelerationName(target: BuildTarget): string {
+  if (target.gpu === 'cpu') return 'CPU'
+  if (target.gpu === 'mps') return 'Apple Silicon'
+  if (target.gpu === 'nvidia') {
+    const digits = /^cu(\d+)$/.exec(target.accelVariant)?.[1]
+    if (!digits) return 'NVIDIA'
+    const cudaVersion = digits.length > 1 ? `${digits.slice(0, -1)}.${digits.slice(-1)}` : digits
+    return `NVIDIA (CUDA ${cudaVersion})`
+  }
+  if (target.gpu === 'amd') {
+    return target.accelVariant && target.accelVariant !== 'amd'
+      ? `AMD (${target.accelVariant.toUpperCase()})`
+      : 'AMD'
+  }
+  return target.gpu
+}
+
+function targetVariantId(target: BuildTarget): string {
+  const os = target.os === 'windows' ? 'win' : target.os
+  return `${os}-${target.gpu}-${target.accelVariant}`
+}
+
+const selectedBuildTargetOptions = computed<FieldOption[]>(() =>
+  (selectedBuild.value?.releaseTargets ?? []).map((target) => ({
+    value: target.artifactId,
+    label: `${platformName(target.os)} - ${targetAccelerationName(target)}`,
+    description: t('newInstall.buildReleaseValue', { version: target.releaseVersion }),
+    recommended: target.recommended,
+    data: { variantId: targetVariantId(target) }
+  }))
+)
 
 function buildOptionDescription(build: Build): string | undefined {
   const details = [
@@ -188,7 +227,12 @@ function suggestManagedBuildName(build: Build | null): void {
     .catch(() => {})
 }
 
-watch(selectedBuild, suggestManagedBuildName)
+watch(selectedBuild, (build) => {
+  const targets = build?.releaseTargets ?? []
+  selectedBuildTargetId.value =
+    targets.find((target) => target.recommended)?.artifactId ?? targets[0]?.artifactId ?? ''
+  suggestManagedBuildName(build)
+})
 
 // Per-field state
 const fieldOptions = ref(new Map<string, FieldOption[]>())
@@ -455,7 +499,13 @@ const urlFieldError = computed(() => {
 // Continue gate. `skipInstall` sources (Remote Connection) have no install path, so the path-issue guard is skipped for them.
 const canContinue = computed(() => {
   if (managedBuildMode.value) {
-    return Boolean(selectedBuild.value && !nameError.value && pathIssues.value.length === 0)
+    const targets = selectedBuild.value?.releaseTargets ?? []
+    return Boolean(
+      selectedBuild.value &&
+      (targets.length === 0 || selectedBuildTarget.value) &&
+      !nameError.value &&
+      pathIssues.value.length === 0
+    )
   }
   if (!currentSource.value) return false
   if (nameError.value || urlFieldError.value) return false
@@ -557,6 +607,8 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   workspaceId.value = opts.workspaceId?.trim() || null
   workspaceInstallMode.value = 'managed'
   selectedBuildId.value = ''
+  selectedBuildTargetId.value = ''
+  advancedOpen.value = false
   cameFromLocalBranch.value = opts.cameFromLocalBranch === true
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
@@ -965,6 +1017,12 @@ async function handleWorkspaceBuildSave(): Promise<void> {
   const result = await window.api.comfybuilder
     .installBuild({
       buildId: build.id,
+      ...(selectedBuildTarget.value
+        ? {
+            artifactId: selectedBuildTarget.value.artifactId,
+            releaseVersion: selectedBuildTarget.value.releaseVersion
+          }
+        : {}),
       ...(instName.value.trim() ? { name: instName.value.trim() } : {}),
       ...(instPath.value.trim() ? { installRoot: instPath.value.trim() } : {})
     })
@@ -1331,7 +1389,36 @@ defineExpose({ open })
           </div>
 
           <div
-            v-else
+            v-if="managedBuildMode && selectedBuildTargetOptions.length > 0"
+            ref="advancedRef"
+            class="config-advanced"
+            :class="{ 'is-open': advancedOpen }"
+            data-testid="workspace-build-advanced"
+          >
+            <button
+              type="button"
+              class="config-advanced__summary"
+              :aria-expanded="advancedOpen"
+              @click="advancedOpen = !advancedOpen"
+            >
+              <ChevronRight :size="14" class="config-advanced__chevron" aria-hidden="true" />
+              <span>{{ $t('common.advanced') }}</span>
+            </button>
+            <div class="config-advanced__wrap">
+              <div class="config-advanced__body">
+                <label class="config-label">{{ $t('newInstall.buildTarget') }}</label>
+                <BrandVariantList
+                  :options="selectedBuildTargetOptions"
+                  :selected-value="selectedBuildTargetId"
+                  :aria-label="$t('newInstall.buildTarget')"
+                  @select="selectedBuildTargetId = $event.value"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-if="!managedBuildMode"
             ref="advancedRef"
             class="config-advanced"
             :class="{ 'is-open': advancedOpen }"

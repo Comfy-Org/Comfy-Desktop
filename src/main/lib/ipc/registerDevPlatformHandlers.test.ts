@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveBuildRows: vi.fn(),
   resolveHostArtifact: vi.fn(),
+  resolveSelectedHostArtifact: vi.fn(),
   // installations + shared helpers
   add: vi.fn(),
   get: vi.fn(),
@@ -66,7 +67,8 @@ vi.mock('../../devplatform/session', () => ({
 vi.mock('../../devplatform/builds', () => ({
   resolveHost: mocks.resolveHost,
   resolveBuildRows: mocks.resolveBuildRows,
-  resolveHostArtifact: mocks.resolveHostArtifact
+  resolveHostArtifact: mocks.resolveHostArtifact,
+  resolveSelectedHostArtifact: mocks.resolveSelectedHostArtifact
 }))
 
 vi.mock('../../devplatform/versionCache', () => ({
@@ -591,6 +593,75 @@ describe('registerDevPlatformHandlers', () => {
         status: 'installing'
       })
     )
+  })
+
+  it('installBuild revalidates and persists an explicitly selected release target', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.resolveSelectedHostArtifact.mockResolvedValue({
+      version: 7,
+      artifact: {
+        id: 'art-cpu',
+        os: 'linux',
+        gpu: 'cpu',
+        accelVariant: 'cpu',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
+    })
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.add.mockResolvedValue({ id: 'inst-1', name: 'Image Baseline' })
+
+    const result = await handler('comfybuilder:installBuild')(
+      {},
+      { buildId: 'd1', releaseVersion: 7, artifactId: 'art-cpu' }
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    expect(mocks.resolveSelectedHostArtifact).toHaveBeenCalledWith(
+      expect.anything(),
+      { os: 'linux', gpu: 'nvidia' },
+      'd1',
+      7,
+      'art-cpu'
+    )
+    expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
+    expect(mocks.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: '7',
+        artifactId: 'art-cpu',
+        artifactGpu: 'cpu',
+        artifactAccelVariant: 'cpu'
+      })
+    )
+  })
+
+  it.each([
+    [{ buildId: 'd1', artifactId: 'art-cpu' }],
+    [{ buildId: 'd1', releaseVersion: 7 }],
+    [{ buildId: 'd1', artifactId: '', releaseVersion: 7 }],
+    [{ buildId: 'd1', artifactId: 'art-cpu', releaseVersion: 0 }]
+  ])('installBuild rejects an invalid release target request', async (request) => {
+    mocks.isSignedIn.mockReturnValue(true)
+
+    const result = await handler('comfybuilder:installBuild')({}, request)
+
+    expect(result).toEqual({ ok: false, message: 'Invalid Build release selection.' })
+    expect(mocks.listBuilds).not.toHaveBeenCalled()
+    expect(mocks.resolveSelectedHostArtifact).not.toHaveBeenCalled()
+  })
+
+  it('installBuild rejects a selected target that no longer belongs to the release', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.resolveSelectedHostArtifact.mockResolvedValue(null)
+
+    const result = await handler('comfybuilder:installBuild')(
+      {},
+      { buildId: 'd1', releaseVersion: 7, artifactId: 'forged' }
+    )
+
+    expect(result).toEqual({ ok: false, message: 'No installable build for this machine.' })
+    expect(mocks.add).not.toHaveBeenCalled()
   })
 
   it('installBuild rejects the legacy string request shape', async () => {

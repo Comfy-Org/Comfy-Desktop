@@ -2,12 +2,12 @@
  * Build display + install-state policy: the UI layer, NOT the library.
  *
  * Builder gives raw builds, versions, and artifacts plus a pure host-matcher
- * (`selectArtifactForHost`). This module applies the product
+ * (`compatibleArtifactsForHost`). This module applies the product
  * policy on top: for each Desktop build it resolves the latest COMPLETE version,
  * asks whether an artifact exists for THIS host, and flattens that into a single
  * renderer-safe catalog row (`installable` / `no-build` / `platform-mismatch`).
- * The workspace install wizard uses that row and asks main to install by id: the
- * chosen artifact (and its download ref) never leaves the main process.
+ * The workspace install wizard can select a renderer-safe artifact id while the
+ * download reference and integrity value remain in the main process.
  *
  * `update-available` also lives here: given the installed version (passed in by
  * the handler from the installations store), a row whose newer complete version
@@ -17,7 +17,7 @@
 // Import from the library's leaf modules (not its barrel): these are pure and
 // pull no Electron/filesystem side effects, so this policy module stays cheap to
 // load and to unit-test.
-import { hostOs, selectArtifactForHost } from '../comfybuilder/targets'
+import { compatibleArtifactsForHost, hostOs, selectArtifactForHost } from '../comfybuilder/targets'
 import type { Artifact, Build, Host } from '../comfybuilder/types'
 import type { ComfyBuilderClient } from '../comfybuilder/client'
 import { detectGPU } from '../lib/gpu'
@@ -58,6 +58,15 @@ export interface BuildRow {
   blockedReason?: string
   /** OSes targeted by ready artifacts in the latest complete release. */
   targetOs?: string[]
+  /** Runnable targets in the latest complete release, recommended first. */
+  releaseTargets?: Array<{
+    artifactId: string
+    releaseVersion: number
+    os: Artifact['os']
+    gpu: Artifact['gpu']
+    accelVariant: string
+    recommended: boolean
+  }>
 }
 
 /** What `installBuild` resolves before it hands off to the install chain. */
@@ -150,7 +159,8 @@ async function buildRow(
     )
   ].sort()
   if (targetOs.length) withVersion.targetOs = targetOs
-  const artifact = selectArtifactForHost(artifacts, host)
+  const compatibleArtifacts = compatibleArtifactsForHost(artifacts, host)
+  const artifact = compatibleArtifacts[0]
   if (!artifact) {
     return {
       ...withVersion,
@@ -158,6 +168,14 @@ async function buildRow(
       blockedReason: 'noArtifactForMachine'
     }
   }
+  withVersion.releaseTargets = compatibleArtifacts.map((target, index) => ({
+    artifactId: target.id,
+    releaseVersion: latest.version,
+    os: target.os,
+    gpu: target.gpu,
+    accelVariant: target.accelVariant,
+    recommended: index === 0
+  }))
   // Installed at an older version, and the newer one runs here: offer the update.
   if (installedVersion !== undefined && latest.version > installedVersion) {
     return { ...withVersion, state: 'update-available' }
@@ -218,6 +236,26 @@ export async function resolveHostArtifact(
   const { artifacts } = await client.getVersion(latest.id)
   const artifact = selectArtifactForHost(artifacts, host)
   return artifact ? { artifact, version: latest.version } : null
+}
+
+/** Resolve one renderer-selected target after revalidating its Build, release,
+ * readiness, and host compatibility against fresh Builder data. */
+export async function resolveSelectedHostArtifact(
+  client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
+  host: Host,
+  buildId: string,
+  releaseVersion: number,
+  artifactId: string
+): Promise<ResolvedHostArtifact | null> {
+  const release = (await client.listVersions(buildId)).find(
+    (version) => version.version === releaseVersion && version.status === 'complete'
+  )
+  if (!release) return null
+  const { artifacts } = await client.getVersion(release.id)
+  const artifact = compatibleArtifactsForHost(artifacts, host).find(
+    (candidate) => candidate.id === artifactId
+  )
+  return artifact ? { artifact, version: release.version } : null
 }
 
 /**
