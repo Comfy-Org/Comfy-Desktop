@@ -168,6 +168,35 @@ it('groups common desktop-card actions in the requested order', () => {
 describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
   // Update and migrate are mutually exclusive (a single `statusTag`), so each
   // is exercised against an install carrying the matching tag.
+  it.each(['failed', 'partial-delete'])(
+    'offers Uninstall for a managed Build in the %s state',
+    (status) => {
+      const inst = makeInstall({
+        sourceId: 'comfybuilder',
+        distributionId: 'build-1',
+        status
+      })
+      const { menu } = mountHarness(inst)
+
+      expect(findItem(menu.ctxMenuItems.value, 'delete')).toMatchObject({
+        label: 'Uninstall',
+        disabled: false
+      })
+    }
+  )
+
+  it('does not offer local Uninstall for a failed cloud record', () => {
+    const inst = makeInstall({
+      sourceId: 'comfybuilder',
+      sourceCategory: 'cloud',
+      distributionId: 'build-1',
+      status: 'failed'
+    })
+    const { menu } = mountHarness(inst)
+
+    expect(findItem(menu.ctxMenuItems.value, 'delete')).toBeUndefined()
+  })
+
   it('renders update / restore-snapshot / delete enabled when the install is idle', () => {
     const inst = makeInstall() // statusTag style 'update'
     const { menu } = mountHarness(inst)
@@ -220,7 +249,11 @@ describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
   })
 
   it('disables REQUIRES_STOPPED items when a long-running operation is in flight', () => {
-    const inst = makeInstall()
+    const inst = makeInstall({
+      sourceId: 'comfybuilder',
+      distributionId: 'build-1',
+      status: 'failed'
+    })
     const { menu } = mountHarness(inst, ({ progress }) => {
       progress.operations.set(inst.id, {
         title: 'Updating...',

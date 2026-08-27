@@ -204,7 +204,8 @@ export function useInstallContextMenu(
     if (isLocalLikeInstall(inst) && sessionStore.isRunning(inst.id)) {
       cluster.push({ id: 'stop', label: t('actions.stop', 'Stop'), style: 'danger' })
     }
-    if (isInstalled(inst) && isLocalLikeInstall(inst)) {
+    // Managed Build settings allow incomplete local records to be uninstalled.
+    if (isLocalLikeInstall(inst) && (isInstalled(inst) || isBuildInstall(inst))) {
       cluster.push({
         id: 'delete',
         label: t('chooser.menuDelete'),
