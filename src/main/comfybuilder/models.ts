@@ -79,7 +79,12 @@ export interface StageModelsOptions {
   installPath: string
   /** Install record id, so jobs are attributed to this install. */
   installationId?: string | null
-  governance?: GovernanceMarker | null
+  /** The install record's governance marker, AS STORED. Deliberately untyped:
+   *  it is validated here by {@link readGovernanceMarker}, and a caller that
+   *  narrowed it first would have to collapse "present but unparseable" into
+   *  "absent", which is precisely the distinction the integrity rule below
+   *  depends on. */
+  governance?: unknown
   jobs: ModelJobSurface
   onProgress?: (p: StageProgress) => void
   signal?: AbortSignal

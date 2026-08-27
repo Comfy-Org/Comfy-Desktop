@@ -24,6 +24,8 @@ import type { ExtractProgress } from '../lib/extract'
 import { sha256File } from '../lib/modelDownloadStaging'
 import { formatDownloadDetail } from '../lib/util'
 import type { ComfyBuilderClient } from './client'
+import { buildGovernanceMarker } from './governance'
+import type { GovernanceMarker } from './governance'
 import { isSecureDownloadUrl, normalizeSha256 } from './integrity'
 import type { Artifact, InstallProgress } from './types'
 
@@ -54,6 +56,15 @@ export interface InstallArtifactOptions {
   cacheDir: string
   onProgress?: (p: InstallProgress) => void
   signal?: AbortSignal
+}
+
+export interface InstallArtifactResult {
+  /**
+   * The durable governance marker for this archive, or null when the build is
+   * not governed. The caller persists it onto the installation record; launch
+   * reads governed status from THAT, never from the policy file's presence.
+   */
+  governance: GovernanceMarker | null
 }
 
 /** A real directory (not a symlink). Rejecting a symlinked layout dir guards
@@ -107,7 +118,9 @@ async function cleanupCreated(
  * {@link ComfyBuilderInstallError} on a bad artifact, a checksum mismatch, or a
  * bad extracted layout, or a missing integrity value.
  */
-export async function installArtifact(opts: InstallArtifactOptions): Promise<void> {
+export async function installArtifact(
+  opts: InstallArtifactOptions
+): Promise<InstallArtifactResult> {
   const { artifact, client, installPath, cacheDir, onProgress, signal } = opts
   if (!artifact?.id)
     throw new ComfyBuilderInstallError('invalid-artifact', 'No artifact id was provided.')
@@ -167,6 +180,14 @@ export async function installArtifact(opts: InstallArtifactOptions): Promise<voi
         signal ? { signal } : {}
       )
       assertLayout(installPath)
+      // Capture governance BEFORE the install is considered complete, so the
+      // marker's values come from a tree the verified `archiveSha256` above
+      // vouches for. Reading them later, from a tree the user can edit, would
+      // let a deleted policy file reclassify the install as ungoverned - the
+      // exact bypass the marker exists to close. A governed archive whose own
+      // policy fails to verify throws here and is cleaned up below: no
+      // half-written marker ever reaches the record.
+      return { governance: await buildGovernanceMarker(installPath) }
     } catch (err) {
       await cleanupCreated(installPath, preexisting)
       throw err
