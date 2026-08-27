@@ -354,13 +354,24 @@ describe('ComfyBuilderClient', () => {
     await expect(client.fetchModelManifest('ver-9')).rejects.toMatchObject({ kind: 'server' })
   })
 
-  it.each([
-    { sha256: undefined, received: 'the manifest did not provide sha256' },
-    { sha256: '', received: 'the manifest did not provide sha256' },
-    { sha256: 'not-a-sha256', received: 'received "not-a-sha256" (12 characters)' }
-  ])(
-    'identifies a model with an invalid SHA-256 before returning the manifest',
-    async ({ sha256, received }) => {
+  it.each([undefined, '', '   '])('allows a model without SHA-256 integrity', async (sha256) => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(200, {
+        models: [
+          { type: 'checkpoints', filename: 'sd.safetensors', sha256, downloadUrl: 'https://x/sd' }
+        ]
+      })
+    )
+    const client = new ComfyBuilderClient({ auth: auth('t') })
+    await expect(client.fetchModelManifest('ver-9')).resolves.toMatchObject({
+      models: [{ type: 'checkpoints', filename: 'sd.safetensors' }]
+    })
+  })
+
+  it.each(['not-a-sha256', 'sha256:'])(
+    'identifies a model with malformed SHA-256 before returning the manifest',
+    async (sha256) => {
       vi.stubGlobal(
         'fetch',
         mockFetch(200, {
@@ -372,7 +383,7 @@ describe('ComfyBuilderClient', () => {
       const client = new ComfyBuilderClient({ auth: auth('t') })
       await expect(client.fetchModelManifest('ver-9')).rejects.toMatchObject({
         kind: 'server',
-        message: `Manifest for version ver-9 has invalid model integrity for checkpoints/sd.safetensors: expected SHA-256 as 64 hexadecimal characters, optionally prefixed with "sha256:", but ${received}.`
+        message: `Manifest for version ver-9 has invalid model integrity for checkpoints/sd.safetensors: expected SHA-256 as 64 hexadecimal characters, optionally prefixed with "sha256:", but received ${JSON.stringify(sha256)} (${sha256.length} characters).`
       })
     }
   )

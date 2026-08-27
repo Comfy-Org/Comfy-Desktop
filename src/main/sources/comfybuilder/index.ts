@@ -420,7 +420,7 @@ async function installEnvironment(
   // Parked rows inside this root (hydrated from a previous interrupted run,
   // or left by a cancelled install) would block the lock forever, and their
   // presigned URLs are stale anyway. Retire the rows; their staged bytes stay
-  // on disk and the re-staged downloads below resume them by sha256.
+  // on disk and the re-staged downloads below resume them by source URL or sha256.
   downloadManager.releaseParkedModelJobsUnder(modelsRoot)
   const releaseModelRoot = downloadManager.acquireModelDownloadRootLock(modelsRoot)
   if (!releaseModelRoot) {
