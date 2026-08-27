@@ -19,12 +19,118 @@ export interface LoopbackListener {
   close: () => void
 }
 
-function html(message: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>ComfyUI</title></head><body><p>${message}</p></body></html>`
+function html(kind: 'success' | 'error' | 'invalid'): string {
+  const success = kind === 'success'
+  const title = success
+    ? 'Authorization complete'
+    : kind === 'invalid'
+      ? 'Invalid sign-in response'
+      : 'Sign-in unsuccessful'
+  const message = success
+    ? 'Return to ComfyUI Desktop to finish signing in. You can close this window.'
+    : kind === 'invalid'
+      ? 'This sign-in response was not recognized. Return to ComfyUI Desktop and try again.'
+      : 'Return to ComfyUI Desktop and try signing in again. You can close this window.'
+  const icon = success ? '<path d="M20 6 9 17l-5-5" />' : '<path d="M12 8v5m0 3h.01" />'
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>${title} | ComfyUI Desktop</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        color: #f5f3ff;
+        background:
+          radial-gradient(circle at 50% 0%, #332657 0, transparent 48%),
+          #101014;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      main {
+        width: min(100%, 440px);
+        padding: 40px;
+        text-align: center;
+        background: rgba(29, 28, 37, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        box-shadow: 0 24px 72px rgba(0, 0, 0, 0.38);
+      }
+      .brand {
+        margin: 0 0 24px;
+        color: #b8a7e8;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .icon {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 22px;
+        display: grid;
+        place-items: center;
+        color: ${success ? '#c4b5fd' : '#fca5a5'};
+        background: ${success ? 'rgba(124, 58, 237, 0.2)' : 'rgba(239, 68, 68, 0.16)'};
+        border: 1px solid ${success ? 'rgba(196, 181, 253, 0.34)' : 'rgba(252, 165, 165, 0.3)'};
+        border-radius: 16px;
+      }
+      .icon svg {
+        width: 28px;
+        height: 28px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      h1 {
+        margin: 0;
+        font-size: 26px;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      .message {
+        margin: 14px auto 0;
+        color: #c5c2d0;
+        font-size: 15px;
+        line-height: 1.6;
+      }
+      .local-note {
+        margin: 28px 0 0;
+        padding-top: 20px;
+        color: #817d8d;
+        font-size: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      @media (max-width: 480px) {
+        main { padding: 32px 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="brand">ComfyUI Desktop</p>
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">${icon}</svg>
+      </div>
+      <h1>${title}</h1>
+      <p class="message">${message}</p>
+      <p class="local-note">This page is served locally by ComfyUI Desktop.</p>
+    </main>
+  </body>
+</html>`
 }
 
 /**
- * Single-shot loopback HTTP listener for a PKCE redirect (RFC 8252 §7.3): binds
+ * Single-shot loopback HTTP listener for a PKCE redirect (RFC 8252 section 7.3): binds
  * `127.0.0.1` on an ephemeral port, waits for exactly one `GET /callback`,
  * validates `state`, and shuts down.
  */
@@ -67,7 +173,8 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
     const failRequest = (res: ServerResponse, status: number, err: Error): void => {
       res.statusCode = status
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
-      res.end(html('Sign-in failed. You can close this window.'))
+      res.setHeader('Cache-Control', 'no-store')
+      res.end(html('error'))
       fail(err)
     }
     const timeoutHandle = setTimeout(
@@ -101,7 +208,8 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       if (params.get('state') !== expectedState) {
         res.statusCode = 400
         res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.end(html('Invalid request.'))
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(html('invalid'))
         return
       }
       const idpError = params.get('error')
@@ -117,7 +225,7 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       res.statusCode = 200
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
       res.setHeader('Cache-Control', 'no-store')
-      res.end(html('You can close this window.'))
+      res.end(html('success'))
       succeed(code)
     }
 
