@@ -537,6 +537,11 @@ describe('InstallWizardModal hardware warning', () => {
     const warning = wrapper.find('[data-testid="wizard-hardware-warning"]')
     expect(warning.exists()).toBe(true)
     expect(warning.text()).toBe(KFD_WARNING)
+    const advanced = wrapper.get('.config-advanced').element
+    const gpuField = wrapper.get('[data-testid="detected-gpu-field"]').element
+    expect(advanced.compareDocumentPosition(gpuField) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+      0
+    )
   })
 
   it('renders no warning element when validateHardware reports none', async () => {

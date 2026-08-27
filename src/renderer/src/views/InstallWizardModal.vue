@@ -1261,35 +1261,6 @@ defineExpose({ open })
             </div>
           </div>
 
-          <!-- GPU + Install Location stay visible but are disabled in Remote Connection mode (no local hardware / path). -->
-          <TooltipWrap
-            class="config-field-wrap"
-            side="bottom"
-            :text="currentSource?.skipInstall ? $t('newInstall.notAvailableRemote') : ''"
-          >
-            <div
-              class="config-field"
-              :class="{ 'config-field--disabled': currentSource?.skipInstall }"
-            >
-              <label class="config-label">{{ $t('newInstall.detectedGpuLabel') }}</label>
-              <div
-                class="brand-input config-select config-select--readonly"
-                role="textbox"
-                aria-readonly="true"
-              >
-                <span class="config-select__value">{{ detectedGpu }}</span>
-              </div>
-              <div
-                v-if="hardwareWarning && !currentSource?.skipInstall"
-                class="config-gpu-warning"
-                role="alert"
-                data-testid="wizard-hardware-warning"
-              >
-                {{ hardwareWarning }}
-              </div>
-            </div>
-          </TooltipWrap>
-
           <TooltipWrap
             class="config-field-wrap"
             side="bottom"
@@ -1578,6 +1549,35 @@ defineExpose({ open })
               </div>
             </div>
           </div>
+
+          <TooltipWrap
+            class="config-field-wrap"
+            side="bottom"
+            :text="currentSource?.skipInstall ? $t('newInstall.notAvailableRemote') : ''"
+          >
+            <div
+              class="config-field"
+              :class="{ 'config-field--disabled': currentSource?.skipInstall }"
+              data-testid="detected-gpu-field"
+            >
+              <label class="config-label">{{ $t('newInstall.detectedGpuLabel') }}</label>
+              <div
+                class="brand-input config-select config-select--readonly"
+                role="textbox"
+                aria-readonly="true"
+              >
+                <span class="config-select__value">{{ detectedGpu }}</span>
+              </div>
+              <div
+                v-if="hardwareWarning && !currentSource?.skipInstall"
+                class="config-gpu-warning"
+                role="alert"
+                data-testid="wizard-hardware-warning"
+              >
+                {{ hardwareWarning }}
+              </div>
+            </div>
+          </TooltipWrap>
         </div>
 
         <div class="config-card__footer">
