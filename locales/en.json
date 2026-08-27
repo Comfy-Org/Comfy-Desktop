@@ -700,8 +700,9 @@
         "Run for free on Comfy Cloud or Comfy Desktop",
         "Works with your existing ComfyUI workflows"
       ],
-      "licenseNote": "Need a commercial license? Run H3 on Comfy Cloud or reach out %LINK% for a local license",
-      "licenseNoteLink": "here",
+      "personalFree": "Free for personal use",
+      "requestLicenseCta": "Request License",
+      "learnMoreCta": "Learn More",
       "imageAlt": "MiniMax H3 announcement",
       "unmute": "Unmute video",
       "mute": "Mute video"
