@@ -1258,10 +1258,7 @@
     },
     "account": {
       "signOut": "退出登录",
-      "signedInAs": "已登录为 {email}",
-      "signOutConfirmTitle": "退出 ComfyBuilder？",
-      "signOutConfirmBody": "已安装的构建会保留并仍可运行，只是在重新登录前不再接收更新。",
-      "signOutConfirmCta": "退出登录"
+      "signedInAs": "已登录为 {email}"
     },
     "workspace": {
       "personalLabel": "个人",

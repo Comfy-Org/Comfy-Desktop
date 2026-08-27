@@ -1,19 +1,15 @@
 <script setup lang="ts">
 /** Account identity and sign-out menu shown at the dashboard's top-right. */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { ChevronDown, LogOut } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { useAuthStore } from '../../stores/authStore'
-import { useDialogs } from '../../composables/useDialogs'
 
 const emit = defineEmits<{
   'signed-out': []
 }>()
 
-const { t } = useI18n()
 const store = useAuthStore()
-const dialogs = useDialogs()
 
 const menuOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
@@ -52,13 +48,6 @@ onBeforeUnmount(() => {
 
 async function onSignOut(): Promise<void> {
   closeMenu()
-  const result = await dialogs.confirm({
-    title: t('devPlatform.account.signOutConfirmTitle'),
-    message: t('devPlatform.account.signOutConfirmBody'),
-    confirmLabel: t('devPlatform.account.signOutConfirmCta'),
-    tone: 'primary'
-  })
-  if (result !== 'primary') return
   try {
     await store.signOut()
   } catch {

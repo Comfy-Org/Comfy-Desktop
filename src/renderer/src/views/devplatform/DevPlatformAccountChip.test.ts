@@ -6,13 +6,6 @@ import DevPlatformAccountChip from './DevPlatformAccountChip.vue'
 import { useAuthStore } from '../../stores/authStore'
 import type { AuthStatus } from '../../../../types/ipc'
 
-// The real `confirm` resolves only when the singleton DialogHost answers, and
-// no host is mounted here — stub it so the sign-out path is deterministic.
-const dialogs = { confirm: vi.fn().mockResolvedValue('primary') }
-vi.mock('../../composables/useDialogs', () => ({
-  useDialogs: () => dialogs
-}))
-
 interface MockApi {
   comfybuilder: Record<string, ReturnType<typeof vi.fn>>
 }
@@ -56,7 +49,6 @@ async function mountChip(status: AuthStatus = SIGNED_OUT) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  dialogs.confirm.mockResolvedValue('primary')
 })
 
 describe('DevPlatformAccountChip — signed out', () => {
@@ -104,17 +96,10 @@ describe('DevPlatformAccountChip — signed in', () => {
     expect(api.comfybuilder.listWorkspaces).not.toHaveBeenCalled()
   })
 
-  it('signs out only after the confirm is accepted', async () => {
+  it('signs out directly from the account menu', async () => {
     const { wrapper, store } = await mountChip(SIGNED_IN)
     store.signOut = vi.fn().mockResolvedValue({ signedIn: false })
-    dialogs.confirm.mockResolvedValue(false)
 
-    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
-    await wrapper.find('[data-testid="devplatform-account-signout"]').trigger('click')
-    await flushPromises()
-    expect(store.signOut).not.toHaveBeenCalled()
-
-    dialogs.confirm.mockResolvedValue('primary')
     await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
     await wrapper.find('[data-testid="devplatform-account-signout"]').trigger('click')
     await flushPromises()

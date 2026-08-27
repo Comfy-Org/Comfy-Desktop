@@ -1258,10 +1258,7 @@
     },
     "account": {
       "signOut": "Sign out",
-      "signedInAs": "Signed in as {email}",
-      "signOutConfirmTitle": "Sign out of ComfyBuilder?",
-      "signOutConfirmBody": "Your installed builds are kept and still run. They just stop receiving updates until you sign back in.",
-      "signOutConfirmCta": "Sign out"
+      "signedInAs": "Signed in as {email}"
     },
     "workspace": {
       "personalLabel": "Personal",
