@@ -29,14 +29,20 @@
  * be kept; a mismatch is a conflict, never silently overwritten.
  *
  * Whether a digest is REQUIRED depends on the install:
- *   - A declared-but-unusable value is always refused. A malformed hash is a
- *     broken or tampered manifest, never a licence to skip verification.
+ *   - A model with NO usable hash in either field is refused when the manifest
+ *     declared one anyway - a malformed hash is a broken or tampered manifest,
+ *     never a licence to skip verification.
  *   - A manifest that declares no hash at all is staged unverified on an
  *     ordinary install, because public model sources may legitimately omit it
  *     (the API accepts such manifests, so staging must too).
  *   - The same hashless model is REFUSED on a governed install. A managed
  *     installation exists to guarantee that what runs is what its organization
  *     signed off, which it cannot do for bytes it has no way to verify.
+ *
+ * The two fields are tried in order, so a malformed `blake3` alongside a valid
+ * `sha256` verifies under SHA-256 rather than failing: verification still
+ * happens byte-for-byte, and anyone able to corrupt one manifest field can
+ * corrupt the other, so refusing would cost availability and buy nothing.
  */
 import fs from 'fs'
 import path from 'path'
@@ -370,10 +376,16 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     }
     const ledgerDigest = digest?.algo === 'blake3' ? digestKey(digest) : undefined
     if (ledgerDigest && approvedModelDigests?.has(ledgerDigest)) {
-      ledgerEntries.push(await createModelLedgerEntry(dest, ledgerDigest))
+      // The job's own `savePath`, never a recomputed one: the download manager
+      // strips query params from the filename, so a recomputed path can name a
+      // file that was never written and fail the ledger's realpath outright.
+      ledgerEntries.push(await createModelLedgerEntry(outcome.savePath ?? dest, ledgerDigest))
     }
     onProgress?.({ index, total, filename: model.filename, percent: 100 })
   }
 
-  if (ledgerEntries.length > 0) await writeModelLedger(installPath, ledgerEntries)
+  // Written whenever the model form is active, INCLUDING with no entries: a
+  // run that approves nothing must supersede a ledger left by an earlier
+  // policy, not leave it standing as though it still described this install.
+  if (modelGovernanceActive) await writeModelLedger(installPath, ledgerEntries)
 }

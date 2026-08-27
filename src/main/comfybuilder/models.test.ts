@@ -614,6 +614,30 @@ describe('model governance ledger', () => {
     }
   })
 
+  it('records the managed job save path when its normalized filename differs', async () => {
+    const install = freshInstall()
+    const bytes = Buffer.from('approved-model')
+    const digest = `blake3:${blake(bytes)}`
+    const governance = configureGovernedInstall(install, [digest])
+    const actualPath = path.join(installModelsRoot(install), 'checkpoints', 'model.safetensors')
+    const jobs = fakeJobs((_opts, _dest) => {
+      fs.mkdirSync(path.dirname(actualPath), { recursive: true })
+      fs.writeFileSync(actualPath, bytes)
+      return { status: 'completed', savePath: actualPath }
+    })
+
+    await stageModels({
+      models: [model({ filename: 'model.safetensors?download=1', blake3: digest })],
+      installPath: install,
+      governance,
+      jobs
+    })
+
+    expect((await readModelLedger(install))?.entries[0]?.path).toBe(
+      fs.realpathSync(actualPath).replace(/\\/g, '/')
+    )
+  })
+
   it('writes no entry when downloaded bytes fail their declared digest', async () => {
     const install = freshInstall()
     const declaredBytes = Buffer.from('declared-model-bytes')
@@ -650,8 +674,35 @@ describe('model governance ledger', () => {
     expect(
       fs.readFileSync(path.join(installModelsRoot(install), 'checkpoints', 'm.safetensors'))
     ).toEqual(bytes)
-    expect(await readModelLedger(install)).toBeNull()
-    expect(fs.existsSync(modelLedgerPath(install))).toBe(false)
+    // An EMPTY ledger, not an absent one: the run must state that it vouches
+    // for nothing rather than stay silent (see the supersede case below).
+    expect(await readModelLedger(install)).toEqual({ ledgerVersion: 1, entries: [] })
+  })
+
+  it('supersedes a ledger from an earlier policy when the run approves nothing', async () => {
+    const install = freshInstall()
+    const bytes = Buffer.from('valid-but-unapproved-model')
+    const digest = `blake3:${blake(bytes)}`
+    const governance = configureGovernedInstall(install, [])
+
+    // A ledger left behind by a staging run under a previous, wider policy.
+    const stalePath = path.join(installModelsRoot(install), 'checkpoints', 'stale.safetensors')
+    fs.mkdirSync(path.dirname(stalePath), { recursive: true })
+    fs.writeFileSync(stalePath, Buffer.from('previously-approved'))
+    await writeModelLedger(install, [
+      await createModelLedgerEntry(stalePath, `blake3:${'7'.repeat(64)}`)
+    ])
+    expect((await readModelLedger(install))?.entries).toHaveLength(1)
+
+    await stageModels({
+      models: [model({ blake3: digest })],
+      installPath: install,
+      governance,
+      jobs: verifiedJobs({ 'm.safetensors': bytes })
+    })
+
+    // The superseded entry must not survive as evidence under the new policy.
+    expect(await readModelLedger(install)).toEqual({ ledgerVersion: 1, entries: [] })
   })
 
   it('does not consult policy or write a ledger when the model form is inactive', async () => {
