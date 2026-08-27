@@ -1382,31 +1382,16 @@ defineExpose({ open })
 
           <div
             v-if="managedBuildMode && selectedBuildTargetOptions.length > 0"
-            ref="advancedRef"
-            class="config-advanced"
-            :class="{ 'is-open': advancedOpen }"
-            data-testid="workspace-build-advanced"
+            class="config-field"
+            data-testid="workspace-build-targets"
           >
-            <button
-              type="button"
-              class="config-advanced__summary"
-              :aria-expanded="advancedOpen"
-              @click="advancedOpen = !advancedOpen"
-            >
-              <ChevronRight :size="14" class="config-advanced__chevron" aria-hidden="true" />
-              <span>{{ $t('common.advanced') }}</span>
-            </button>
-            <div class="config-advanced__wrap">
-              <div class="config-advanced__body">
-                <label class="config-label">{{ $t('newInstall.buildTarget') }}</label>
-                <BrandVariantList
-                  :options="selectedBuildTargetOptions"
-                  :selected-value="selectedBuildTargetId"
-                  :aria-label="$t('newInstall.buildTarget')"
-                  @select="selectedBuildTargetId = $event.value"
-                />
-              </div>
-            </div>
+            <label class="config-label">{{ $t('newInstall.buildTarget') }}</label>
+            <BrandVariantList
+              :options="selectedBuildTargetOptions"
+              :selected-value="selectedBuildTargetId"
+              :aria-label="$t('newInstall.buildTarget')"
+              @select="selectedBuildTargetId = $event.value"
+            />
           </div>
 
           <div

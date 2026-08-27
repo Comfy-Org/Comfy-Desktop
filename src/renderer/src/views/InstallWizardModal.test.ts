@@ -448,8 +448,8 @@ describe('InstallWizardModal workspace Builds', () => {
     })
     const wrapper = await openWorkspaceModal()
 
-    const advanced = wrapper.get('[data-testid="workspace-build-advanced"]')
-    expect(advanced.classes()).not.toContain('is-open')
+    expect(wrapper.find('.config-advanced').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workspace-build-targets"]').isVisible()).toBe(true)
     const targetPicker = wrapper.getComponent(BrandVariantList)
     expect(targetPicker.props('options')).toEqual([
       {
