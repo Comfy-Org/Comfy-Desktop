@@ -7,6 +7,7 @@ import { en } from '../lib/i18nMessages.ts'
 import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import BrandVariantList from '../components/BrandVariantList.vue'
+import PathDiskInfo from '../components/PathDiskInfo.vue'
 
 function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
@@ -220,6 +221,9 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
     const wrapper = await openWorkspaceModal()
 
+    expect(wrapper.get('[data-testid="workspace-install-source-managed"]').text()).toBe('Managed')
+    expect(wrapper.get('[data-testid="workspace-install-source-public"]').text()).toBe('Public')
+
     await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
     await flushPromises()
 
@@ -243,18 +247,32 @@ describe('InstallWizardModal workspace Builds', () => {
   it('switches back to cached Managed builds without another catalog request', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'standalone', label: 'Standalone', fields: [] }
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Variant', type: 'select' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        value: 'cuda',
+        label: 'CUDA',
+        data: { downloadFiles: [{ size: 1_000 }] }
+      }
     ])
     const wrapper = await openWorkspaceModal()
 
     await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
     await flushPromises()
+    expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(2_250)
+
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('.brand-lead').text()).toBe('Select a release to install.')
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
+    expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(0)
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
   })
 

@@ -204,6 +204,7 @@ const {
 let hardwareValidation: HardwareValidation | null = null
 
 const estimatedInstallSize = computed(() => {
+  if (!localInstallMode.value) return 0
   let downloadBytes = 0
   for (const selected of Object.values(selections.value)) {
     const files = selected?.data?.downloadFiles as Array<{ size: number }> | undefined
