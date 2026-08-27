@@ -694,16 +694,16 @@
   },
   "announcement": {
     "minimax": {
-      "title": "MiniMax is now on ComfyUI",
-      "lead": "Generate with MiniMax's latest models \u2014 with a clear path to a commercial license.",
+      "title": "MiniMax H3 is now on ComfyUI",
+      "lead": "Generate with MiniMax H3, with a clear path to a commercial license.",
       "highlights": [
-        "MiniMax's newest video and image models, ready to run",
+        "The newest MiniMax H3 video and image models, ready to run",
         "Request a commercial license in a few clicks",
         "Works with your existing ComfyUI workflows"
       ],
       "requestLicenseCta": "Request License",
       "learnMoreCta": "Learn More",
-      "imageAlt": "MiniMax announcement",
+      "imageAlt": "MiniMax H3 announcement",
       "unmute": "Unmute video",
       "mute": "Mute video"
     }
