@@ -11,7 +11,7 @@ import { emitTelemetryAction } from '../lib/telemetry'
  * DRAFT COPY: strings live in `announcement.minimax.*` (locales/en.json) for nav to finalize.
  */
 
-// Announcement id — carried in telemetry so this component can be reused for a
+// Announcement id, carried in telemetry so this component can be reused for a
 // future announcement by swapping the id + copy.
 const ANNOUNCEMENT_ID = 'minimax_license'
 
@@ -76,7 +76,7 @@ onMounted(() => {
   emitTelemetryAction('comfy.desktop.announcement.shown', { id: ANNOUNCEMENT_ID })
   document.addEventListener('keydown', onKeydown)
   returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  // Focus the dialog container, not a button — traps focus without a ring on open.
+  // Focus the dialog container, not a button. Traps focus without a ring on open.
   void nextTick(() => overlayRef.value?.focus())
 })
 onUnmounted(() => {
@@ -176,7 +176,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* Mirrors WhyTryCloudModal.vue — keep the two visually consistent. */
+/* Mirrors WhyTryCloudModal.vue, keep the two visually consistent. */
 .announce-overlay {
   position: fixed;
   inset: 0;
@@ -258,7 +258,7 @@ onUnmounted(() => {
   background: linear-gradient(135deg, var(--neutral-800) 0%, var(--neutral-900) 100%);
 }
 
-/* Sound toggle — mirrors .announce-close, pinned to the video's lower-left. */
+/* Sound toggle, mirrors .announce-close, pinned to the video's lower-left. */
 .announce-sound {
   position: absolute;
   bottom: 16px;

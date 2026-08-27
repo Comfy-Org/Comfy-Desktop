@@ -36,7 +36,7 @@ export type PanelKey =
   | 'mcp-setup'
   /** Mirror of main's `'announcement'` ComfyPanelKey. Overlay mode; the
    *  announcement modal renders via its own ref (like feedback), so there's
-   *  no body branch — accepting the key keeps `isValidPanel` from swallowing
+   *  no body branch. Accepting the key keeps `isValidPanel` from swallowing
    *  the panel-switch so the overlay transparency watcher still fires. */
   | 'announcement'
 

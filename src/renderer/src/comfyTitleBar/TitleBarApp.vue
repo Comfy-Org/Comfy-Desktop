@@ -294,7 +294,7 @@ function handleResetZoom(): void {
   bridge?.resetZoom()
 }
 
-// News bell — a subtle unread dot until the announcement is opened. Its state
+// News bell with a subtle unread dot until the announcement is opened. Its state
 // lives in the `minimaxAnnouncementSeen` setting (shared with the panel view);
 // opening the modal writes it, and the settings-changed broadcast clears the
 // dot here without a dedicated channel.
@@ -1072,7 +1072,7 @@ onUnmounted(() => {
   position: relative;
   color: var(--titlebar-icon);
 }
-/* Subtle unread marker on the bell — a small accent dot at the icon's upper
+/* Subtle unread marker on the bell, a small accent dot at the icon's upper
    right, cleared once the announcement is opened. */
 .title-announcement-dot {
   position: absolute;
