@@ -27,10 +27,10 @@ function html(kind: 'success' | 'error' | 'invalid'): string {
       ? 'Invalid sign-in response'
       : 'Sign-in unsuccessful'
   const message = success
-    ? 'Return to ComfyUI Desktop to finish signing in. You can close this window.'
+    ? 'Return to Comfy Desktop to finish signing in. You can close this window.'
     : kind === 'invalid'
-      ? 'This sign-in response was not recognized. Return to ComfyUI Desktop and try again.'
-      : 'Return to ComfyUI Desktop and try signing in again. You can close this window.'
+      ? 'This sign-in response was not recognized. Return to Comfy Desktop and try again.'
+      : 'Return to Comfy Desktop and try signing in again. You can close this window.'
   const icon = success ? '<path d="M20 6 9 17l-5-5" />' : '<path d="M12 8v5m0 3h.01" />'
 
   return `<!doctype html>
@@ -39,7 +39,7 @@ function html(kind: 'success' | 'error' | 'invalid'): string {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
-    <title>${title} | ComfyUI Desktop</title>
+    <title>${title} | Comfy Desktop</title>
     <style>
       * { box-sizing: border-box; }
       body {
@@ -117,13 +117,13 @@ function html(kind: 'success' | 'error' | 'invalid'): string {
   </head>
   <body>
     <main>
-      <p class="brand">ComfyUI Desktop</p>
+      <p class="brand">Comfy Desktop</p>
       <div class="icon" aria-hidden="true">
         <svg viewBox="0 0 24 24">${icon}</svg>
       </div>
       <h1>${title}</h1>
       <p class="message">${message}</p>
-      <p class="local-note">This page is served locally by ComfyUI Desktop.</p>
+      <p class="local-note">This page is served locally by Comfy Desktop.</p>
     </main>
   </body>
 </html>`
