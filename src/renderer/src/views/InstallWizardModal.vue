@@ -15,7 +15,6 @@ import type {
   ShowProgressOpts
 } from '../types/ipc'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
-import { formatBytes } from '../lib/formatting'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { emitTelemetryAction, toSizeBucket, toVariantBucket, toErrorBucket } from '../lib/telemetry'
 import {
@@ -179,34 +178,6 @@ function buildOptionDescription(build: Build): string | undefined {
   ].filter((detail): detail is string => Boolean(detail))
   return details.length ? details.join(' | ') : undefined
 }
-
-const selectedBuildMetadata = computed(() => {
-  const build = selectedBuild.value
-  if (!build) return []
-  const metadata: Array<{ label: string; value: string }> = []
-  if (build.version) {
-    metadata.push({ label: t('newInstall.buildRelease'), value: `v${build.version}` })
-  }
-  if (build.targetOs?.length) {
-    metadata.push({
-      label: t('newInstall.buildPlatforms'),
-      value: build.targetOs.map(platformName).join(', ')
-    })
-  }
-  if (build.creatorName) {
-    metadata.push({ label: t('newInstall.buildCreator'), value: build.creatorName })
-  }
-  const modelCount = build.numModels ?? build.numAllowedModels
-  if (typeof modelCount === 'number') {
-    metadata.push({ label: t('newInstall.buildModels'), value: String(modelCount) })
-  }
-  if (typeof build.numCustomNodes === 'number') {
-    metadata.push({ label: t('newInstall.buildCustomNodes'), value: String(build.numCustomNodes) })
-  }
-  const size = typeof build.sizeBytes === 'number' ? formatBytes(build.sizeBytes) : ''
-  if (size) metadata.push({ label: t('newInstall.buildSize'), value: size })
-  return metadata
-})
 
 watch(workspaceBuilds, (builds) => {
   if (!managedBuildMode.value) return
@@ -1344,21 +1315,6 @@ defineExpose({ open })
               :disabled="workspaceBuildOptions.length === 0"
               :aria-label="$t('newInstall.workspaceBuildLabel')"
             />
-            <div
-              v-if="selectedBuild"
-              class="workspace-build-details"
-              data-testid="workspace-build-details"
-            >
-              <p v-if="selectedBuild.description" class="workspace-build-description">
-                {{ selectedBuild.description }}
-              </p>
-              <dl class="workspace-build-metadata">
-                <div v-for="item in selectedBuildMetadata" :key="item.label">
-                  <dt>{{ item.label }}</dt>
-                  <dd>{{ item.value }}</dd>
-                </div>
-              </dl>
-            </div>
             <button
               v-if="authStore.buildsError"
               type="button"
@@ -1984,39 +1940,6 @@ defineExpose({ open })
   to {
     transform: rotate(360deg);
   }
-}
-.workspace-build-details {
-  padding: 10px 12px;
-  border: 1px solid var(--brand-surface-border);
-  border-radius: 8px;
-  background: var(--brand-surface-bg);
-}
-.workspace-build-description {
-  margin: 0 0 8px;
-  color: var(--neutral-100);
-  font-size: 13px;
-  line-height: 1.4;
-}
-.workspace-build-metadata {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 16px;
-  margin: 0;
-}
-.workspace-build-metadata > div {
-  min-width: 0;
-}
-.workspace-build-metadata dt {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-.workspace-build-metadata dd {
-  margin: 1px 0 0;
-  overflow: hidden;
-  color: var(--neutral-100);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Takes the row's flex 1 so the input and any sibling action button line up. */

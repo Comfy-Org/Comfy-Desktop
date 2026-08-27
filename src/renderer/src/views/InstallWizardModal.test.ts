@@ -154,7 +154,7 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(buildSelect.props('modelValue')).toBe('ready')
   })
 
-  it('shows Build description, release, platform, creator, and package metadata', async () => {
+  it('shows Build metadata in the dropdown without a separate details panel', async () => {
     signInToWorkspace([
       {
         id: 'ready',
@@ -162,10 +162,6 @@ describe('InstallWizardModal workspace Builds', () => {
         description: 'Stable team environment',
         creatorName: 'Alice Builder',
         version: '3',
-        targetOs: ['linux', 'windows'],
-        numModels: 4,
-        numCustomNodes: 7,
-        sizeBytes: 2 * 1024 * 1024 * 1024,
         state: 'installable'
       }
     ])
@@ -178,16 +174,7 @@ describe('InstallWizardModal workspace Builds', () => {
         description: 'Stable team environment | Release v3 | By Alice Builder'
       }
     ])
-    expect(wrapper.get('[data-testid="workspace-build-details"]').text()).toContain(
-      'Stable team environment'
-    )
-    const details = wrapper.get('[data-testid="workspace-build-details"]').text()
-    expect(details).toContain('Latest releasev3')
-    expect(details).toContain('PlatformsLinux, Windows')
-    expect(details).toContain('Created byAlice Builder')
-    expect(details).toContain('Models4')
-    expect(details).toContain('Custom nodes7')
-    expect(details).toContain('Size2.00 GB')
+    expect(wrapper.find('[data-testid="workspace-build-details"]').exists()).toBe(false)
   })
 
   it('reuses the loaded catalog on repeat opens and refreshes only on request', async () => {
