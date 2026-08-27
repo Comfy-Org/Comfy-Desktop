@@ -15,9 +15,12 @@ import { emitTelemetryAction } from '../lib/telemetry'
 // future announcement by swapping the id + copy.
 const ANNOUNCEMENT_ID = 'minimax_license'
 
-// CTA destinations (from #desktop thread). Confirm the final URLs before merge.
-const REQUEST_LICENSE_URL = 'https://comfy.org/minimax/license'
-const LEARN_MORE_URL = 'https://blog.comfy.org/p/2ec77c32-7dd6-4a99-b763-fffe1580b842'
+// "here" CTA destination for the local-license reach-out. The UTM tags the
+// traffic as Desktop-origin so it's attributable in analytics.
+// TODO(deep/tiger): swap for the dedicated local-license Google Form once it
+// exists; comfy.org/contact is the interim reach-out target.
+const LOCAL_LICENSE_URL =
+  'https://comfy.org/contact?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=minimax_h3_license'
 
 // Hero video (from nav's MiniMax license LP, ComfyUI_frontend#16118) hosted on
 // media.comfy.org. Poster paints immediately; the video muted-autoplays + loops.
@@ -25,11 +28,18 @@ const HERO_VIDEO_URL = 'https://media.comfy.org/website/minimax-license/hero.mp4
 const HERO_POSTER_URL = 'https://media.comfy.org/website/minimax-license/hero-poster.jpg'
 
 const emit = defineEmits<{ close: [] }>()
-const { tm } = useI18n()
+const { t, tm } = useI18n()
 
 const highlights = computed<string[]>(() => {
   const raw = tm('announcement.minimax.highlights')
   return Array.isArray(raw) ? (raw as unknown as string[]) : []
+})
+
+// The license note carries an inline "here" link. Split the sentence on the
+// %LINK% sentinel so the anchor sits mid-text in any locale's word order.
+const licenseNoteParts = computed(() => {
+  const [before = '', after = ''] = t('announcement.minimax.licenseNote').split('%LINK%')
+  return { before, after }
 })
 
 const overlayRef = ref<HTMLDivElement | null>(null)
@@ -56,9 +66,12 @@ function dismiss(): void {
   emitTelemetryAction('comfy.desktop.announcement.dismissed', { id: ANNOUNCEMENT_ID })
   emit('close')
 }
-function openCta(cta: string, url: string): void {
-  emitTelemetryAction('comfy.desktop.announcement.cta_clicked', { id: ANNOUNCEMENT_ID, cta })
-  window.api?.openExternal?.(url)
+function openLicenseForm(): void {
+  emitTelemetryAction('comfy.desktop.announcement.cta_clicked', {
+    id: ANNOUNCEMENT_ID,
+    cta: 'local_license'
+  })
+  window.api?.openExternal?.(LOCAL_LICENSE_URL)
 }
 
 function onOverlayMouseDown(e: MouseEvent) {
@@ -150,22 +163,17 @@ onUnmounted(() => {
                 </ul>
               </div>
               <footer class="announce-footer">
-                <button
-                  class="brand-ghost"
-                  type="button"
-                  data-testid="announcement-learn-more"
-                  @click="openCta('learn_more', LEARN_MORE_URL)"
-                >
-                  {{ $t('announcement.minimax.learnMoreCta') }}
-                </button>
-                <button
-                  class="brand-primary"
-                  type="button"
-                  data-testid="announcement-request-license"
-                  @click="openCta('request_license', REQUEST_LICENSE_URL)"
-                >
-                  {{ $t('announcement.minimax.requestLicenseCta') }}
-                </button>
+                <p class="announce-license">
+                  {{ licenseNoteParts.before
+                  }}<button
+                    type="button"
+                    class="announce-license-link"
+                    data-testid="announcement-license-link"
+                    @click="openLicenseForm"
+                  >
+                    {{ $t('announcement.minimax.licenseNoteLink') }}</button
+                  >{{ licenseNoteParts.after }}
+                </p>
               </footer>
             </div>
           </div>
@@ -357,10 +365,35 @@ onUnmounted(() => {
 
 .announce-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   gap: 16px;
   padding-top: clamp(1rem, 1.5vw, 1.5rem);
   border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
+}
+.announce-license {
+  margin: 0;
+  font-size: var(--takeover-fs-caption);
+  color: var(--neutral-300);
+  line-height: 1.5;
+  font-family: var(--font-sans);
+}
+.announce-license-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--comfy-yellow);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.announce-license-link:hover {
+  opacity: 0.85;
+}
+.announce-license-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 </style>

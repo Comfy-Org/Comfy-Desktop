@@ -695,14 +695,13 @@
   "announcement": {
     "minimax": {
       "title": "MiniMax H3 is now on ComfyUI",
-      "lead": "Generate with MiniMax H3, with a clear path to a commercial license.",
+      "lead": "MiniMax's latest open source, SOTA video model, available now",
       "highlights": [
-        "The newest MiniMax H3 video and image models, ready to run",
-        "Request a commercial license in a few clicks",
+        "Run for free on Comfy Cloud or Comfy Desktop",
         "Works with your existing ComfyUI workflows"
       ],
-      "requestLicenseCta": "Request License",
-      "learnMoreCta": "Learn More",
+      "licenseNote": "Need a commercial license? Run H3 on Comfy Cloud or reach out %LINK% for a local license",
+      "licenseNoteLink": "here",
       "imageAlt": "MiniMax H3 announcement",
       "unmute": "Unmute video",
       "mute": "Mute video"
