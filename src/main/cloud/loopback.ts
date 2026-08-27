@@ -27,7 +27,7 @@ function html(kind: 'success' | 'error' | 'invalid'): string {
       ? 'Invalid sign-in response'
       : 'Sign-in unsuccessful'
   const message = success
-    ? 'Return to Comfy Desktop to finish signing in. You can close this window.'
+    ? 'You can close this window and return to Comfy Desktop.'
     : kind === 'invalid'
       ? 'This sign-in response was not recognized. Return to Comfy Desktop and try again.'
       : 'Return to Comfy Desktop and try signing in again. You can close this window.'

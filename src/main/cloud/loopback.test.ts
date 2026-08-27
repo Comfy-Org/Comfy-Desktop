@@ -38,7 +38,7 @@ describe('loopback listener', () => {
     const response = await get(`${listener.redirectUri}?state=st&code=the-code`)
     expect(response).toMatchObject({ status: 200, contentType: 'text/html; charset=utf-8' })
     expect(response.body).toContain('Authorization complete')
-    expect(response.body).toContain('Return to Comfy Desktop')
+    expect(response.body).toContain('You can close this window and return to Comfy Desktop.')
     expect(response.body).toContain('This page is served locally by Comfy Desktop.')
     expect(response.body).toContain('<style>')
     expect(await codeP).toEqual({ code: 'the-code' })
