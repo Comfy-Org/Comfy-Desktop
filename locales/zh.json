@@ -72,6 +72,8 @@
     "menu": "菜单",
     "feedback": "反馈",
     "feedbackTooltip": "发送反馈",
+    "announcement": "最新动态",
+    "announcementTooltip": "最新动态",
     "downloads": "下载",
     "downloadsInProgress": "没有正在下载的任务 | {n} 个下载正在进行 | {n} 个下载正在进行",
     "downloadsCompleteUnseen": "没有最近完成的下载 | {n} 个下载已完成 — 点击查看 | {n} 个下载已完成 — 点击查看",
@@ -702,7 +704,8 @@
       "requestLicenseCta": "\u7533\u8bf7\u6388\u6743",
       "learnMoreCta": "\u4e86\u89e3\u66f4\u591a",
       "imageAlt": "MiniMax \u516c\u544a",
-      "mediaPlaceholder": "\u89c6\u89c9\u7d20\u6750\u5373\u5c06\u4e0a\u7ebf"
+      "unmute": "\u53d6\u6d88\u9759\u97f3",
+      "mute": "\u9759\u97f3"
     }
   },
   "tray": {

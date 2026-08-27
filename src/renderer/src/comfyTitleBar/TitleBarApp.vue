@@ -3,6 +3,7 @@ import { ref, computed, nextTick, onMounted, onUnmounted, useTemplateRef, watch 
 import { useI18n } from 'vue-i18n'
 import {
   ArrowDownToLine,
+  Bell,
   ChevronDown,
   CloudDownload,
   Loader2,
@@ -185,6 +186,10 @@ interface Bridge {
    *  which fires the `comfy.desktop.feedback.opened` telemetry action and
    *  opens the support URL via `openExternal`. */
   clickFeedback: () => void
+  /** Click handler for the title-bar news bell. Main forwards
+   *  `comfy-panel:open-announcement` to the panel renderer, which mounts
+   *  the announcement modal over the live canvas. */
+  clickAnnouncement: () => void
   /** Click handler for the cloud-instance refresh button. Re-navigates
    *  the host's comfyView via the same reload path as F5/Ctrl+R. */
   clickRefreshInstance: () => void
@@ -288,6 +293,37 @@ function handleRefreshInstance(): void {
 function handleResetZoom(): void {
   bridge?.resetZoom()
 }
+
+// News bell — a subtle unread dot until the announcement is opened. Its state
+// lives in the `minimaxAnnouncementSeen` setting (shared with the panel view);
+// opening the modal writes it, and the settings-changed broadcast clears the
+// dot here without a dedicated channel.
+const announcementUnread = ref(false)
+let unsubAnnouncementSettings: (() => void) | null = null
+
+function handleAnnouncement(): void {
+  bridge?.clickAnnouncement()
+}
+
+async function refreshAnnouncementUnread(): Promise<void> {
+  try {
+    announcementUnread.value = (await window.api?.getSetting?.('minimaxAnnouncementSeen')) !== true
+  } catch {
+    announcementUnread.value = false
+  }
+}
+
+onMounted(() => {
+  void refreshAnnouncementUnread()
+  unsubAnnouncementSettings =
+    window.api?.onSettingsChanged?.(({ key }) => {
+      if (key === 'minimaxAnnouncementSeen') void refreshAnnouncementUnread()
+    }) ?? null
+})
+
+onUnmounted(() => {
+  unsubAnnouncementSettings?.()
+})
 
 // Icon is ComfyUI-tab only; also visible while the drawer is open so
 const titleBarRef = useTemplateRef<HTMLElement>('titleBar')
@@ -824,6 +860,16 @@ onUnmounted(() => {
       <button
         v-if="!isFirstUseLockdown"
         type="button"
+        class="title-menu-button title-menu-button--icon title-announcement-button"
+        v-bind="tooltipAttrs(t('titleBar.announcementTooltip'), t('titleBar.announcement'))"
+        @click="handleAnnouncement"
+      >
+        <Bell :size="16" />
+        <span v-if="announcementUnread" class="title-announcement-dot" aria-hidden="true" />
+      </button>
+      <button
+        v-if="!isFirstUseLockdown"
+        type="button"
         class="title-menu-button title-menu-button--icon title-feedback-button"
         v-bind="tooltipAttrs(t('titleBar.feedbackTooltip'), t('titleBar.feedback'))"
         @click="handleFeedback"
@@ -1021,6 +1067,23 @@ onUnmounted(() => {
 }
 .title-feedback-button {
   color: var(--titlebar-icon);
+}
+.title-announcement-button {
+  position: relative;
+  color: var(--titlebar-icon);
+}
+/* Subtle unread marker on the bell — a small accent dot at the icon's upper
+   right, cleared once the announcement is opened. */
+.title-announcement-dot {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--comfy-yellow, #ffd23f);
+  box-shadow: 0 0 0 1.5px var(--titlebar-bg, rgba(0, 0, 0, 0.5));
+  pointer-events: none;
 }
 .title-install-pill {
   -webkit-app-region: no-drag;

@@ -1228,6 +1228,10 @@ export interface ElectronApi {
    *  `buildSupportUrl()` reads `navigator.userAgent` and the telemetry
    *  helpers live renderer-side. Returns an unsubscribe. */
   onOpenFeedback(callback: (data: { source: 'titlebar' | 'menu' }) => void): Unsubscribe
+  /** Main forwards the title-bar news-bell click here so the panel renderer
+   *  mounts the announcement modal over the live canvas. Returns an
+   *  unsubscribe. */
+  onOpenAnnouncement(callback: () => void): Unsubscribe
   /** Main consults the panel renderer before tearing down
    *  the host window. Returns an unsubscribe; the callback receives a
    *  `requestId` it must echo back via `respondCloseRequest` so main

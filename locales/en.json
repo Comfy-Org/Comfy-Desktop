@@ -72,6 +72,8 @@
     "menu": "Menu",
     "feedback": "Feedback",
     "feedbackTooltip": "Send Feedback",
+    "announcement": "What's new",
+    "announcementTooltip": "What's new",
     "downloads": "Downloads",
     "downloadsInProgress": "no downloads in progress | {n} download in progress | {n} downloads in progress",
     "downloadsCompleteUnseen": "no recent downloads | {n} download finished — click to review | {n} downloads finished — click to review",
@@ -702,7 +704,8 @@
       "requestLicenseCta": "Request License",
       "learnMoreCta": "Learn More",
       "imageAlt": "MiniMax announcement",
-      "mediaPlaceholder": "Visual coming soon"
+      "unmute": "Unmute video",
+      "mute": "Mute video"
     }
   },
   "tray": {

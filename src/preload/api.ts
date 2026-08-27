@@ -109,6 +109,11 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('comfy-panel:open-feedback', handler)
       return () => ipcRenderer.removeListener('comfy-panel:open-feedback', handler)
     },
+    onOpenAnnouncement: (callback) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('comfy-panel:open-announcement', handler)
+      return () => ipcRenderer.removeListener('comfy-panel:open-announcement', handler)
+    },
     onCloseRequest: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>
         callback(data as { requestId: string })

@@ -173,7 +173,7 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   }
   // Overlay panels reveal only after the renderer's `overlay-ready` ack (see
   // layoutViews); clear the flag for non-overlay targets so it can't strand.
-  const isOverlay = mode === 'feedback' || mode === 'mcp-setup'
+  const isOverlay = mode === 'feedback' || mode === 'mcp-setup' || mode === 'announcement'
   entry.pendingOverlayReveal = isOverlay
   // Drop any prior fallback timer so a stale one can't reveal this open early.
   if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)

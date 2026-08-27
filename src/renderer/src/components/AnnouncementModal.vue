@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, X } from 'lucide-vue-next'
+import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 /**
  * One-off announcement modal (MiniMax license launch). Deliberately mirrors
  * `WhyTryCloudModal.vue`'s layout and styling so it feels native.
  *
- * PLACEHOLDER: the left media panel is a stand-in — swap `.announce-media`
- * for nav's announcement image/video before this ships (see the PR).
  * DRAFT COPY: strings live in `announcement.minimax.*` (locales/en.json) for nav to finalize.
  */
 
@@ -21,6 +19,11 @@ const ANNOUNCEMENT_ID = 'minimax_license'
 const REQUEST_LICENSE_URL = 'https://comfy.org/minimax/license'
 const LEARN_MORE_URL = 'https://blog.comfy.org/p/2ec77c32-7dd6-4a99-b763-fffe1580b842'
 
+// Hero video (from nav's MiniMax license LP, ComfyUI_frontend#16118) hosted on
+// media.comfy.org. Poster paints immediately; the video muted-autoplays + loops.
+const HERO_VIDEO_URL = 'https://media.comfy.org/website/minimax-license/hero.mp4'
+const HERO_POSTER_URL = 'https://media.comfy.org/website/minimax-license/hero-poster.jpg'
+
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
 
@@ -31,6 +34,21 @@ const highlights = computed<string[]>(() => {
 
 const overlayRef = ref<HTMLDivElement | null>(null)
 const mouseDownOnOverlay = ref(false)
+
+// Video autoplays muted (browsers block audible autoplay); users opt into sound.
+const videoRef = ref<HTMLVideoElement | null>(null)
+const isMuted = ref(true)
+function toggleSound(): void {
+  const v = videoRef.value
+  if (!v) return
+  v.muted = !v.muted
+  isMuted.value = v.muted
+  if (!v.muted) void v.play().catch(() => {})
+  emitTelemetryAction('comfy.desktop.announcement.sound_toggled', {
+    id: ANNOUNCEMENT_ID,
+    muted: v.muted
+  })
+}
 // Element focused before open; restored on close to return focus to the trigger.
 let returnFocusTo: HTMLElement | null = null
 
@@ -91,15 +109,32 @@ onUnmounted(() => {
             <X :size="18" />
           </button>
           <div class="announce-grid">
-            <!-- VISUAL PLACEHOLDER — replace with nav's announcement image/video. -->
-            <div
-              class="announce-media"
-              role="img"
-              :aria-label="$t('announcement.minimax.imageAlt')"
-            >
-              <span class="announce-media-tag">{{
-                $t('announcement.minimax.mediaPlaceholder')
-              }}</span>
+            <div class="announce-media-wrap">
+              <video
+                ref="videoRef"
+                class="announce-media"
+                :poster="HERO_POSTER_URL"
+                autoplay
+                muted
+                loop
+                playsinline
+                :aria-label="$t('announcement.minimax.imageAlt')"
+              >
+                <source :src="HERO_VIDEO_URL" type="video/mp4" />
+              </video>
+              <button
+                class="announce-sound"
+                type="button"
+                :aria-label="
+                  isMuted ? $t('announcement.minimax.unmute') : $t('announcement.minimax.mute')
+                "
+                :aria-pressed="!isMuted"
+                data-testid="announcement-sound-toggle"
+                @click="toggleSound"
+              >
+                <VolumeX v-if="isMuted" :size="16" />
+                <Volume2 v-else :size="16" />
+              </button>
             </div>
             <div class="announce-body">
               <div class="announce-body-main">
@@ -210,24 +245,53 @@ onUnmounted(() => {
   height: 100%;
 }
 
-/* Placeholder media panel — swap for the real image/video. */
-.announce-media {
+.announce-media-wrap {
   position: relative;
   width: 100%;
   height: 100%;
-  display: grid;
-  place-items: center;
+}
+.announce-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
   background: linear-gradient(135deg, var(--neutral-800) 0%, var(--neutral-900) 100%);
 }
-.announce-media-tag {
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px dashed color-mix(in oklab, var(--neutral-100) 28%, transparent);
-  color: var(--neutral-300);
-  font-family: var(--font-sans);
-  font-size: var(--takeover-fs-caption);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+
+/* Sound toggle — mirrors .announce-close, pinned to the video's lower-left. */
+.announce-sound {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--neutral-900) 55%, transparent);
+  opacity: 0.85;
+  color: var(--neutral-100);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+.announce-sound:hover {
+  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
+  opacity: 1;
+}
+.announce-sound:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.announce-sound :deep(svg) {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  stroke: currentColor;
 }
 
 .announce-body {
