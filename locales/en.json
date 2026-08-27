@@ -690,6 +690,21 @@
     "localDescRecommended": "Fast install with **recommended settings** — skips optional setup steps.",
     "localDescRecommendedGpu": "Fast install tuned for **{gpu}** with recommended settings. Pick **Configure** if that's not your hardware."
   },
+  "announcement": {
+    "minimax": {
+      "title": "MiniMax is now on ComfyUI",
+      "lead": "Generate with MiniMax's latest models \u2014 with a clear path to a commercial license.",
+      "highlights": [
+        "MiniMax's newest video and image models, ready to run",
+        "Request a commercial license in a few clicks",
+        "Works with your existing ComfyUI workflows"
+      ],
+      "requestLicenseCta": "Request License",
+      "learnMoreCta": "Learn More",
+      "imageAlt": "MiniMax announcement",
+      "mediaPlaceholder": "Visual coming soon"
+    }
+  },
   "tray": {
     "showApp": "Show Comfy Desktop",
     "quit": "Quit"
