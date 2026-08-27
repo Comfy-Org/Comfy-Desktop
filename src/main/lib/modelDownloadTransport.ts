@@ -3,12 +3,16 @@ import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
 import { r2MirrorUrl } from './r2Mirror'
+import { digestKey, digestsEqual, type Digest } from '../comfybuilder/integrity'
 import {
+  digestFile,
   installStagedAtFinal,
   quarantineOrphanStagedBytes,
   readStagedMeta,
   removeStagedArtifacts,
-  sha256File,
+  stagedMetaDigest,
+  stagedMetaDigestFields,
+  stagedMetaDigestState,
   stagingMetaPathFor,
   stagingPathFor,
   writeStagedMeta,
@@ -69,10 +73,11 @@ export interface ModelTransferOptions {
   session?: Electron.Session
   /** Caller-known total size; conflicts with the server's length fail fast. */
   expectedSize?: number
-  /** Expected lowercase-hex sha256 of the complete file. When present, the
+  /** Expected ALGORITHM-TAGGED digest of the complete file. When present, the
    *  staged bytes are verified against it before finalization; a mismatch
-   *  discards the staged state and fails with code 'checksum-mismatch'. */
-  sha256?: string
+   *  discards the staged state and fails with code 'checksum-mismatch'. It is
+   *  also half of the resume identity - see `issueAttempt`. */
+  digest?: Digest
   /** Abort when no bytes arrive for this long (ms). */
   idleTimeoutMs?: number
   onProgress?: (p: ModelTransferProgress) => void
@@ -135,7 +140,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     installationId,
     session,
     expectedSize,
-    sha256,
+    digest,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
     onProgress
   } = opts
@@ -253,21 +258,50 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     let resumeFrom = 0
     let existingMeta: StagedDownloadMeta | null = readStagedMeta(metaPath)
     let resumeValidator: { kind: 'etag' | 'last-modified'; value: string } | null = null
-    if (existingMeta && sha256 && existingMeta.sha256 && existingMeta.sha256 !== sha256) {
+    // RESUME IDENTITY. Both halves below compare `digestKey(...)`, which is
+    // `<algo>:<hex>` - the ALGORITHM IS PART OF THE KEY. Comparing bare hex
+    // here would let a partial file staged under a BLAKE3 expectation be
+    // adopted by a job expecting the very same hex under SHA-256 (and vice
+    // versa): the etag/last-modified validators only prove the SOURCE has not
+    // changed, not that the two callers wanted the same content, so the
+    // splice would produce bytes neither expectation describes.
+    const stagedState = stagedMetaDigestState(existingMeta)
+    const stagedDigest = stagedState.kind === 'valid' ? stagedState.digest : null
+    if (stagedState.kind === 'invalid' && !digest) {
+      // The sidecar DECLARED an expectation that no longer parses, and this
+      // transfer carries none of its own - which is exactly the restart-
+      // hydrated case, where the original caller is gone and the sidecar is
+      // the only surviving expectation. Re-fetching would not help: the fresh
+      // bytes would be just as unverifiable, and would finalize under the
+      // final model name. Fail closed and let the caller re-issue the job
+      // with a real expectation.
+      removeStagedArtifacts(finalPath)
+      settle({
+        outcome: 'error',
+        error: 'Download failed: the staged download has an unreadable integrity record',
+        code: 'checksum-mismatch'
+      })
+      return
+    }
+    const stagedMismatch = Boolean(digest && stagedDigest && !digestsEqual(stagedDigest, digest))
+    if (existingMeta && (stagedMismatch || stagedState.kind === 'invalid')) {
       // The staged pair was written for DIFFERENT expected content (e.g. a
-      // superseded Build version re-using the destination). Splicing
-      // onto those bytes could only ever fail verification - restart clean.
+      // superseded Build version re-using the destination, or the same hex
+      // under another algorithm), or its recorded expectation no longer parses
+      // while this transfer carries one of its own. Splicing onto those bytes
+      // could only ever fail verification - restart clean.
       removeStagedArtifacts(finalPath)
       existingMeta = null
     }
     // Staged bytes are resumable when they are provably for the same content:
-    // the same source URL, or a matching persisted sha256 (presigned URLs
+    // the same source URL, or a matching persisted digest (presigned URLs
     // rotate between attempts while addressing the same object; the recorded
     // etag/last-modified validators still guard the actual splice, and the
-    // final hash verification catches anything they miss).
+    // final digest verification catches anything they miss).
     const stagedContentMatches =
       existingMeta !== null &&
-      (existingMeta.url === url || (sha256 !== undefined && existingMeta.sha256 === sha256))
+      (existingMeta.url === url ||
+        (digestKey(digest) !== undefined && digestsEqual(stagedDigest, digest)))
     if (existingMeta && stagedContentMatches && fs.existsSync(stagingPath)) {
       resumeValidator = resumeValidatorFor(existingMeta)
       if (resumeValidator) {
@@ -341,7 +375,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         directory,
         filename,
         installationId: installationId ?? undefined,
-        sha256: sha256 ?? undefined
+        ...stagedMetaDigestFields(digest)
       })
       if (!durable) {
         failRetaining('Download failed: cannot write staging metadata')
@@ -574,8 +608,8 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           filename,
           installationId: installationId ?? undefined,
           // Keep a persisted expectation alive across attempts even when a
-          // hydrated resume no longer knows the caller's hash.
-          sha256: sha256 ?? existingMeta?.sha256
+          // hydrated resume no longer knows the caller's digest.
+          ...stagedMetaDigestFields(digest ?? stagedMetaDigest(existingMeta))
         }
         if (!writeStagedMeta(metaPath, meta)) {
           // Accepting body bytes without a durable resume identity would
@@ -694,11 +728,26 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
       // whose caller is gone, from the persisted sidecar. A mismatch is not
       // resumable - the bytes are wrong, not short - so discard the staged
       // state; a retry re-fetches from scratch.
-      const expectedSha256 = sha256 ?? readStagedMeta(metaPath)?.sha256
-      if (expectedSha256) {
-        let actualSha256: string
+      const staged = stagedMetaDigestState(readStagedMeta(metaPath))
+      if (!digest && staged.kind === 'invalid') {
+        // The sidecar DECLARED an expectation that does not parse. There is
+        // nothing left to check these bytes against, and "unverifiable" must
+        // never degrade into "unverified" - discard rather than finalize.
+        removeStagedArtifacts(finalPath)
+        settle({
+          outcome: 'error',
+          error: 'Download corrupt: the staged download has an unreadable integrity record',
+          code: 'checksum-mismatch'
+        })
+        return
+      }
+      const expected = digest ?? (staged.kind === 'valid' ? staged.digest : null)
+      if (expected) {
+        // Hashed under the EXPECTATION's algorithm, so a blake3 manifest is
+        // verified with blake3 and a sha256-only one with sha256.
+        let actual: Digest
         try {
-          actualSha256 = await sha256File(stagingPath)
+          actual = await digestFile(stagingPath, expected.algo)
         } catch (err) {
           settle({
             outcome: 'error',
@@ -706,11 +755,11 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           })
           return
         }
-        if (actualSha256 !== expectedSha256) {
+        if (!digestsEqual(actual, expected)) {
           removeStagedArtifacts(finalPath)
           settle({
             outcome: 'error',
-            error: `Download corrupt: checksum mismatch: expected ${expectedSha256}, got ${actualSha256}`,
+            error: `Download corrupt: checksum mismatch: expected ${digestKey(expected)}, got ${digestKey(actual)}`,
             code: 'checksum-mismatch'
           })
           return

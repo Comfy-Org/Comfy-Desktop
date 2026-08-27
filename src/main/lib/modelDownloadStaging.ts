@@ -1,6 +1,14 @@
+import { blake3 } from '@noble/hashes/blake3.js'
 import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
+import {
+  coerceDigest,
+  digestsEqual,
+  makeDigest,
+  type Digest,
+  type DigestAlgorithm
+} from '../comfybuilder/integrity'
 import { ALLOWED_EXTENSIONS } from './downloadFilename'
 
 /**
@@ -49,10 +57,67 @@ export interface StagedDownloadMeta {
   filename: string
   /** Install that initiated the download, when known. */
   installationId?: string | null
-  /** Expected lowercase-hex sha256 of the complete file. When present, the
-   *  transport verifies the staged bytes against it before finalizing, and a
-   *  restart-hydrated job keeps verifying without the original caller. */
+  /** LEGACY expected lowercase-hex sha256, written by builds that predate
+   *  algorithm tagging. Still READ (a sidecar staged by an older build must
+   *  stay resumable) and still WRITTEN alongside `digest` whenever the
+   *  expectation is sha256, so downgrading to such a build keeps verifying. */
   sha256?: string
+  /** Expected ALGORITHM-TAGGED digest of the complete file. When present the
+   *  transport verifies the staged bytes against it before finalizing, and a
+   *  restart-hydrated job keeps verifying without the original caller. The
+   *  algorithm is persisted, not inferred: staged bytes expected to hash to a
+   *  given hex under BLAKE3 must never be resumed for a job expecting the
+   *  same hex under SHA-256. */
+  digest?: Digest
+}
+
+/**
+ * What a staged pair's sidecar says about the content it expects.
+ *
+ * `invalid` is deliberately NOT collapsed into `none`. A sidecar that carries
+ * an integrity field which does not parse describes bytes nothing can vouch
+ * for; reading that as "no expectation" would finalize an unverified file
+ * under its final model name. `none` - no integrity field at all - is the only
+ * state that legitimately finalizes without a hash.
+ */
+export type StagedMetaDigestState =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'valid'; readonly digest: Digest }
+  | { readonly kind: 'invalid' }
+
+export function stagedMetaDigestState(
+  meta: Pick<StagedDownloadMeta, 'digest' | 'sha256'> | null | undefined
+): StagedMetaDigestState {
+  if (!meta) return { kind: 'none' }
+  const digest = coerceDigest(meta.digest) ?? makeDigest(meta.sha256, 'sha256')
+  if (digest) return { kind: 'valid', digest }
+  const declared = meta.digest !== undefined || meta.sha256 !== undefined
+  return declared ? { kind: 'invalid' } : { kind: 'none' }
+}
+
+/** The digest a staged pair is verified against: the tagged field when the
+ *  sidecar has one, else the legacy bare `sha256` an older build persisted.
+ *  Returns null for BOTH "no expectation" and "unparseable expectation", so a
+ *  caller that must fail closed on the latter uses
+ *  {@link stagedMetaDigestState} instead. */
+export function stagedMetaDigest(
+  meta: Pick<StagedDownloadMeta, 'digest' | 'sha256'> | null | undefined
+): Digest | null {
+  const state = stagedMetaDigestState(meta)
+  return state.kind === 'valid' ? state.digest : null
+}
+
+/** The sidecar fields carrying `digest`. `sha256` is mirrored only for a
+ *  sha256 expectation, so an older build reading this sidecar still verifies
+ *  rather than finalizing unverified bytes; a blake3 expectation deliberately
+ *  leaves it unset, because an older build must not verify a BLAKE3 hex as
+ *  though it were sha256. */
+export function stagedMetaDigestFields(
+  digest: Digest | null | undefined
+): Pick<StagedDownloadMeta, 'digest' | 'sha256'> {
+  const tagged = coerceDigest(digest)
+  if (!tagged) return {}
+  return { digest: tagged, ...(tagged.algo === 'sha256' ? { sha256: tagged.value } : {}) }
 }
 
 export function stagingPathFor(finalPath: string): string {
@@ -257,29 +322,59 @@ export function quarantineOrphanStagedBytes(finalPath: string): boolean {
   )
 }
 
-/** Streaming lowercase-hex sha256 of a file. Resolves on 'close' (not 'end')
- *  so the fd is released before any following rm/rename, avoiding EBUSY on
- *  Windows - but only when 'end' fired first, so an early destroy can never
- *  yield a digest of a partial read. Shared by the model transport and
- *  ComfyBuilder archive install. */
-export function sha256File(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
+/** Incremental hasher shared by every supported algorithm. `sha256` uses
+ *  Node's OpenSSL binding; `blake3` uses `@noble/hashes`, a dependency-free
+ *  pure-TypeScript implementation, so no native addon has to be rebuilt for
+ *  Electron or unpacked from the asar on any shipped platform. */
+function createDigestHasher(algo: DigestAlgorithm): {
+  update: (chunk: Buffer) => void
+  hex: () => string
+} {
+  if (algo === 'sha256') {
     const hash = createHash('sha256')
+    return { update: (chunk) => void hash.update(chunk), hex: () => hash.digest('hex') }
+  }
+  const hash = blake3.create()
+  return {
+    update: (chunk) => void hash.update(chunk),
+    hex: () => Array.from(hash.digest(), (b) => b.toString(16).padStart(2, '0')).join('')
+  }
+}
+
+/** Streaming lowercase-hex digest of a file under `algo`. Resolves on 'close'
+ *  (not 'end') so the fd is released before any following rm/rename, avoiding
+ *  EBUSY on Windows - but only when 'end' fired first, so an early destroy can
+ *  never yield a digest of a partial read. */
+export function hashFile(filePath: string, algo: DigestAlgorithm): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createDigestHasher(algo)
     const stream = fs.createReadStream(filePath)
     let ended = false
     stream.on('error', reject)
     stream.on('end', () => {
       ended = true
     })
-    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('data', (chunk) => hash.update(chunk as Buffer))
     stream.on('close', () => {
       if (!ended) {
-        reject(new Error(`sha256 read stream closed before end of file: ${filePath}`))
+        reject(new Error(`${algo} read stream closed before end of file: ${filePath}`))
         return
       }
-      resolve(hash.digest('hex'))
+      resolve(hash.hex())
     })
   })
+}
+
+/** The file's actual content as an algorithm-tagged digest, ready to compare
+ *  by `digestKey` against an expectation. */
+export async function digestFile(filePath: string, algo: DigestAlgorithm): Promise<Digest> {
+  return { algo, value: await hashFile(filePath, algo) }
+}
+
+/** Streaming lowercase-hex sha256. Kept for the ComfyBuilder ARCHIVE install,
+ *  whose `archiveSha256` is not algorithm-tagged. */
+export function sha256File(filePath: string): Promise<string> {
+  return hashFile(filePath, 'sha256')
 }
 
 /** Byte-for-byte comparison in 1 MiB chunks, async so a multi-gigabyte model
@@ -368,7 +463,7 @@ export async function installStagedAtFinal(
  *  starts, so a quit/crash in that window cannot lose the job. An existing
  *  sidecar is a previous attempt's resume identity (validators, expected
  *  size) and keeps that identity - only its missing `.part` is restored and,
- *  when the new caller supplies a content hash, the persisted `sha256` is
+ *  when the new caller supplies a content digest, the persisted one is
  *  upgraded to it. The transport rewrites the sidecar only at response time,
  *  so without that upgrade a crash before the first response would hydrate
  *  the pair with the old (possibly absent) hash and let an unverified file
@@ -383,9 +478,14 @@ export function ensureStagedPlaceholder(finalPath: string, meta: StagedDownloadM
   const existing = readStagedMeta(metaPath)
   if (existing !== null) {
     // Persist the caller's content expectation before the job is admitted;
-    // a caller without one never weakens a persisted hash.
-    if (meta.sha256 && existing.sha256 !== meta.sha256) {
-      if (!writeStagedMeta(metaPath, { ...existing, sha256: meta.sha256 })) return false
+    // a caller without one never weakens a persisted digest. Compared by
+    // `digestKey`, so the same hex under a different algorithm still counts
+    // as a change and is written through.
+    const incoming = stagedMetaDigest(meta)
+    if (incoming && !digestsEqual(stagedMetaDigest(existing), incoming)) {
+      if (!writeStagedMeta(metaPath, { ...existing, ...stagedMetaDigestFields(incoming) })) {
+        return false
+      }
     }
     if (fs.existsSync(stagingPath)) return true
     // The pair is only hydratable when both files exist: restore a missing

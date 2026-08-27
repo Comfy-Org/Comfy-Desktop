@@ -593,7 +593,11 @@ describe('ensureStagedPlaceholder', () => {
 
     const sha256 = 'a'.repeat(64)
     expect(ensureStagedPlaceholder(finalPath, validMeta({ expectedSize: 0, sha256 }))).toBe(true)
-    expect(readStagedMeta(stagingMetaPathFor(finalPath))).toEqual({ ...existing, sha256 })
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))).toEqual({
+      ...existing,
+      sha256,
+      digest: { algo: 'sha256', value: sha256 }
+    })
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('staged-bytes')
   })
 
@@ -605,7 +609,11 @@ describe('ensureStagedPlaceholder', () => {
 
     const sha256 = 'a'.repeat(64)
     expect(ensureStagedPlaceholder(finalPath, validMeta({ sha256 }))).toBe(true)
-    expect(readStagedMeta(stagingMetaPathFor(finalPath))).toEqual({ ...existing, sha256 })
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))).toEqual({
+      ...existing,
+      sha256,
+      digest: { algo: 'sha256', value: sha256 }
+    })
   })
 
   it('keeps a persisted hash when the new caller has none', () => {
