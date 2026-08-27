@@ -11,8 +11,8 @@
  *
  * `update-available` also lives here: given the installed version (passed in by
  * the handler from the installations store), a row whose newer complete version
- * has a host-runnable artifact is marked updatable. Plain `installed` (up to date)
- * stays a renderer concern: it removes those Builds from the install picker.
+ * has a host-runnable artifact is marked updatable. An up-to-date Build remains
+ * installable so a workspace can contain multiple instances of the same release.
  */
 // Import from the library's leaf modules (not its barrel): these are pure and
 // pull no Electron/filesystem side effects, so this policy module stays cheap to

@@ -342,21 +342,6 @@ export function registerDevPlatformHandlers(): void {
       if (installing.has(installKey)) return { ok: false, message: 'Install already starting.' }
       installing.add(installKey)
       try {
-        // The in-flight set only covers one handler invocation: a repeat call
-        // after this one returns (but before the renderer's install starts)
-        // would otherwise create a second record for the same build.
-        // Failed records don't block: retrying those goes through their own
-        // install tile, and startup recovery demotes stale `installing` ones.
-        const existing = (await installations.list()).find(
-          (inst) =>
-            inst.sourceId === COMFYBUILDER_SOURCE_ID &&
-            inst.workspaceId === workspaceId &&
-            inst.distributionId === buildId &&
-            inst.status !== 'failed'
-        )
-        if (existing) {
-          return { ok: false, message: `"${existing.name}" already installs this build.` }
-        }
         const client = getBuilderClient()
         const builds = await client.listBuilds()
         const build = builds.find((candidate) => candidate.id === buildId)

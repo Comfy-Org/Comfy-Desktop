@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { ChevronRight, HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
-import { useInstallationStore } from '../stores/installationStore'
 
 import type {
   InstallBuildResult,
@@ -57,7 +56,6 @@ const props = withDefaults(
 const { t } = useI18n()
 const modal = useModal()
 const authStore = useAuthStore()
-const installationStore = useInstallationStore()
 
 const sources = ref<Source[]>([])
 const currentSource = ref<Source | null>(null)
@@ -89,27 +87,10 @@ const localInstallMode = computed(
   () => !workspaceMode.value || workspaceInstallMode.value === 'public'
 )
 
-function installationBacksBuild(build: Build): boolean {
-  return installationStore.installations.some((installation) => {
-    if (
-      installation.status === 'failed' ||
-      installation.sourceId !== 'comfybuilder' ||
-      installation.workspaceId !== workspaceId.value
-    ) {
-      return false
-    }
-    if (installation.distributionId) return installation.distributionId === build.id
-    return installation.name.trim().toLowerCase() === build.name.trim().toLowerCase()
-  })
-}
-
 const workspaceBuilds = computed(() => {
   if (!workspaceId.value || authStore.status.workspaceId !== workspaceId.value) return []
   return authStore.builds.filter(
-    (build) =>
-      build.state === 'installable' &&
-      build.installedVersion === undefined &&
-      !installationBacksBuild(build)
+    (build) => build.state === 'installable' || build.state === 'update-available'
   )
 })
 const workspaceBuildOptions = computed<BaseSelectOption[]>(() =>

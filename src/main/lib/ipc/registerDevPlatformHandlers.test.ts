@@ -751,9 +751,7 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.add).not.toHaveBeenCalled()
   })
 
-  // The in-flight set clears when the handler returns, so without the record
-  // check a repeat IPC call would create a second record for one build.
-  it('installBuild refuses a second record for an already-tracked build', async () => {
+  it('installBuild allows another instance of an already-installed Build release', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.list.mockResolvedValue([
       {
@@ -762,15 +760,40 @@ describe('registerDevPlatformHandlers', () => {
         workspaceId: 'w1',
         distributionId: 'd1',
         name: 'Image Baseline',
-        status: 'installing'
+        version: '7',
+        artifactId: 'art-cpu',
+        status: 'installed'
       }
     ])
-    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
-    expect(result).toEqual({
-      ok: false,
-      message: '"Image Baseline" already installs this build.'
+    mocks.resolveSelectedHostArtifact.mockResolvedValue({
+      version: 7,
+      artifact: {
+        id: 'art-cpu',
+        os: 'linux',
+        gpu: 'cpu',
+        accelVariant: 'cpu',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
     })
-    expect(mocks.add).not.toHaveBeenCalled()
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.uniqueName.mockResolvedValueOnce('Image Baseline (1)')
+    mocks.add.mockResolvedValue({ id: 'inst-2', name: 'Image Baseline (1)' })
+
+    const result = await handler('comfybuilder:installBuild')(
+      {},
+      { buildId: 'd1', releaseVersion: 7, artifactId: 'art-cpu' }
+    )
+
+    expect(result).toEqual({ ok: true, entry: { id: 'inst-2', name: 'Image Baseline (1)' } })
+    expect(mocks.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Image Baseline (1)',
+        distributionId: 'd1',
+        version: '7',
+        artifactId: 'art-cpu'
+      })
+    )
   })
 
   it('installBuild proceeds when the only prior record for the build failed', async () => {
@@ -788,7 +811,6 @@ describe('registerDevPlatformHandlers', () => {
     mocks.resolveHostArtifact.mockResolvedValue(null)
     mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
     const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
-    // Past the duplicate guard: it failed only because no artifact resolved.
     expect(mocks.resolveHostArtifact).toHaveBeenCalled()
     expect(result).toMatchObject({ ok: false, message: 'No installable build for this machine.' })
   })

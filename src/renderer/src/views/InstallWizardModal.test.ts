@@ -7,7 +7,6 @@ import { en } from '../lib/i18nMessages.ts'
 import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import BrandVariantList from '../components/BrandVariantList.vue'
-import { useInstallationStore } from '../stores/installationStore'
 
 function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
@@ -115,28 +114,17 @@ describe('InstallWizardModal workspace Builds', () => {
     return wrapper
   }
 
-  it('replaces Advanced with compatible, uninstalled Builds', async () => {
+  it('shows compatible Builds even when their releases are already installed', async () => {
     signInToWorkspace([
       { id: 'ready', name: 'Ready Build', state: 'installable' },
       { id: 'none', name: 'No Build Yet', state: 'no-build' },
       { id: 'linux', name: 'Linux Build', state: 'platform-mismatch' },
       { id: 'installed', name: 'Installed Build', state: 'installable', installedVersion: 2 },
-      { id: 'linked', name: 'Linked Build', state: 'installable' }
+      { id: 'linked', name: 'Linked Build', state: 'installable' },
+      { id: 'update', name: 'Updated Build', state: 'update-available', installedVersion: 1 }
     ])
     const wrapper = mountModal()
     await flushPromises()
-    useInstallationStore().installations = [
-      {
-        id: 'linked-install',
-        name: 'Linked Build',
-        sourceId: 'comfybuilder',
-        sourceLabel: 'ComfyBuilder',
-        sourceCategory: 'local',
-        workspaceId: 'w1',
-        distributionId: 'linked',
-        status: 'installed'
-      }
-    ]
     await (
       wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
     ).open({ workspaceId: 'w1' })
@@ -150,7 +138,12 @@ describe('InstallWizardModal workspace Builds', () => {
     ).toMatchObject({ 'aria-checked': 'false' })
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
     const buildSelect = wrapper.getComponent(BaseSelect)
-    expect(buildSelect.props('options')).toEqual([{ value: 'ready', label: 'Ready Build' }])
+    expect(buildSelect.props('options')).toEqual([
+      { value: 'ready', label: 'Ready Build' },
+      { value: 'installed', label: 'Installed Build' },
+      { value: 'linked', label: 'Linked Build' },
+      { value: 'update', label: 'Updated Build' }
+    ])
     expect(buildSelect.props('modelValue')).toBe('ready')
   })
 
