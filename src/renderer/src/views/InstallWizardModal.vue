@@ -76,6 +76,7 @@ const hardwareWarning = ref('')
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
 const initializing = ref(false)
+const authorizingWorkspace = ref(false)
 const sourceError = ref('')
 const workspaceId = ref<string | null>(null)
 const selectedBuildId = ref('')
@@ -626,6 +627,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   hardwareWarning.value = ''
   resetDiskSpace()
   sourceError.value = ''
+  authorizingWorkspace.value = false
   initializing.value = true
   step.value = 'configure'
   dontShowTemplatePicker.value = false
@@ -655,10 +657,15 @@ async function initializeManagedBuilds(gen: number): Promise<void> {
   const targetWorkspaceId = workspaceId.value
   if (!targetWorkspaceId) return
   try {
-    const status =
-      authStore.status.workspaceId === targetWorkspaceId
-        ? authStore.status
-        : await authStore.switchWorkspace(targetWorkspaceId)
+    let status = authStore.status
+    if (status.workspaceId !== targetWorkspaceId) {
+      authorizingWorkspace.value = true
+      try {
+        status = await authStore.switchWorkspace(targetWorkspaceId)
+      } finally {
+        if (gen === modeGeneration) authorizingWorkspace.value = false
+      }
+    }
     if (gen !== modeGeneration || !managedBuildMode.value) return
     if (!status.signedIn || status.workspaceId !== targetWorkspaceId) {
       emit('close')
@@ -716,6 +723,7 @@ async function initializeLocalInstall(gen: number): Promise<void> {
 
 async function selectWorkspaceInstallMode(mode: 'managed' | 'public'): Promise<void> {
   if (!workspaceMode.value || workspaceInstallMode.value === mode) return
+  authorizingWorkspace.value = false
   workspaceInstallMode.value = mode
   step.value = 'configure'
   suggestedName.value = ''
@@ -959,7 +967,8 @@ function handleOpenInstPath(): void {
 }
 
 function openBuildsPage(): void {
-  void window.api.comfybuilder.openBuildsPage()
+  if (!workspaceId.value) return
+  void window.api.comfybuilder.openBuildsPage(workspaceId.value).catch(() => {})
 }
 
 async function validateSelectedInstallRoot(): Promise<boolean> {
@@ -1190,6 +1199,14 @@ defineExpose({ open })
       </p>
       <div class="config-card">
         <div class="config-card__body">
+          <div
+            v-if="authorizingWorkspace"
+            class="workspace-authorization-status with-spinner"
+            role="status"
+            data-testid="workspace-authorization-status"
+          >
+            {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
+          </div>
           <div class="config-field">
             <label class="config-label" for="inst-name-standalone">{{ $t('common.name') }}</label>
             <div class="brand-input" :class="{ 'brand-input--invalid': nameError }">
@@ -1381,7 +1398,11 @@ defineExpose({ open })
               {{ $t('devPlatform.build.loadError') }}
             </button>
             <div
-              v-else-if="!authStore.loadingBuilds && workspaceBuildOptions.length === 0"
+              v-else-if="
+                !authorizingWorkspace &&
+                !authStore.loadingBuilds &&
+                workspaceBuildOptions.length === 0
+              "
               class="wizard-loading"
             >
               {{ $t('newInstall.noCompatibleBuilds') }}
@@ -1834,6 +1855,13 @@ defineExpose({ open })
 }
 .config-card__body::-webkit-scrollbar {
   display: none;
+}
+
+.workspace-authorization-status {
+  width: 100%;
+  color: var(--neutral-200);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .config-card__footer {

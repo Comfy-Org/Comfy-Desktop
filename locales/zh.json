@@ -379,6 +379,7 @@
     "refreshWorkspaceBuilds": "刷新构建",
     "refreshingWorkspaceBuilds": "正在刷新构建...",
     "viewBuildsOnline": "在线查看构建",
+    "waitingForWorkspaceAuthorization": "正在等待工作区授权...如果浏览器提示，请在浏览器中完成授权。",
     "buildReleaseValue": "版本 v{version}",
     "buildCreatorValue": "创建者 {creator}",
     "buildRelease": "最新版本",

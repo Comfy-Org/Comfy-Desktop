@@ -170,12 +170,17 @@ export function registerDevPlatformHandlers(): void {
     (): Promise<Workspace[]> => session.listWorkspaces()
   )
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.openBuildsPage, (): Promise<void> => {
-    const url = new URL('/profile/builds', PLATFORM_WEB_BASE_URL)
-    const workspaceId = session.status().workspaceId
-    if (workspaceId) url.searchParams.set('workspace', workspaceId)
-    return shell.openExternal(url.toString())
-  })
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.openBuildsPage,
+    async (_event, workspaceId: string): Promise<void> => {
+      if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
+        throw new Error('A workspace is required to open Builds.')
+      }
+      const url = new URL('/profile/builds', PLATFORM_WEB_BASE_URL)
+      url.searchParams.set('workspace', workspaceId)
+      await shell.openExternal(url.toString())
+    }
+  )
 
   // Cached workspace credentials activate silently. First access or expired,
   // unusable credentials may run browser auth because cloud tokens are scoped

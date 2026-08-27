@@ -199,12 +199,28 @@ describe('registerDevPlatformHandlers', () => {
     expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
   })
 
-  it('opens the active workspace Builds page', async () => {
-    await handler('comfybuilder:openBuildsPage')({})
+  it('opens the explicitly selected workspace Builds page', async () => {
+    await handler('comfybuilder:openBuildsPage')({}, 'w1')
 
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
       'https://platform.comfy.org/profile/builds?workspace=w1'
     )
+  })
+
+  it('does not let the active session redirect an explicitly selected workspace', async () => {
+    await handler('comfybuilder:openBuildsPage')({}, 'w2')
+
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
+      'https://platform.comfy.org/profile/builds?workspace=w2'
+    )
+  })
+
+  it('rejects a missing workspace instead of opening an unscoped Builds page', async () => {
+    await expect(handler('comfybuilder:openBuildsPage')({}, '')).rejects.toThrow(
+      'A workspace is required to open Builds.'
+    )
+
+    expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 
   it('broadcasts when the builder API invalidates the active token', () => {

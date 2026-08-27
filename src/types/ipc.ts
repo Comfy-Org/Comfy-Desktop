@@ -1443,7 +1443,7 @@ export interface ElectronApi {
     listWorkspaces(): Promise<Workspace[]>
     switchWorkspace(workspaceId: string): Promise<AuthStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
-    openBuildsPage(): Promise<void>
+    openBuildsPage(workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }

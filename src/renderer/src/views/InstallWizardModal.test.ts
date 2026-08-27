@@ -278,13 +278,14 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
   })
 
-  it('opens the current workspace Builds page online', async () => {
+  it('opens the selected workspace Builds page online', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     const wrapper = await openWorkspaceModal()
 
     await wrapper.get('.workspace-build-online').trigger('click')
 
-    expect(window.api.comfybuilder.openBuildsPage).toHaveBeenCalledOnce()
+    expect(window.api.comfybuilder.openBuildsPage).toHaveBeenCalledExactlyOnceWith('w1')
+    expect(wrapper.get('.workspace-build-online').text()).toBe('View builds online')
   })
 
   it('shows an empty state when no compatible Builds can be installed', async () => {
@@ -326,6 +327,36 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
       { value: 'ready', label: 'Workspace Two Build' }
     ])
+  })
+
+  it('explains that a workspace switch may be waiting on browser authorization', async () => {
+    signInToWorkspace([])
+    let finishAuthorization!: (status: {
+      signedIn: boolean
+      workspaceId: string
+      workspaceType: string
+    }) => void
+    ;(window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishAuthorization = resolve
+      })
+    )
+    const wrapper = mountModal()
+    await flushPromises()
+
+    const opening = (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w2' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="workspace-authorization-status"]').text()).toBe(
+      'Waiting for workspace authorization... Complete authorization in your browser if prompted.'
+    )
+
+    finishAuthorization({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+    await opening
+    await flushPromises()
+    expect(wrapper.find('[data-testid="workspace-authorization-status"]').exists()).toBe(false)
   })
 
   it('closes without loading Builds when workspace authorization is cancelled', async () => {
