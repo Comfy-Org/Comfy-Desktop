@@ -197,6 +197,14 @@ describe('registerDevPlatformHandlers', () => {
     expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
   })
 
+  it('opens the active workspace Builds page', async () => {
+    await handler('comfybuilder:openBuildsPage')({})
+
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
+      'https://platform.comfy.org/profile/builds?workspace=w1'
+    )
+  })
+
   it('broadcasts when the builder API invalidates the active token', () => {
     mocks.getAllWindows.mockReturnValue([])
     const panel = registerHostWithPanel(1)

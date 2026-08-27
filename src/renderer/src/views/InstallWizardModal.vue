@@ -80,6 +80,13 @@ const sourceError = ref('')
 const workspaceId = ref<string | null>(null)
 const selectedBuildId = ref('')
 const workspaceMode = computed(() => workspaceId.value !== null)
+const workspaceInstallMode = ref<'managed' | 'public'>('managed')
+const managedBuildMode = computed(
+  () => workspaceMode.value && workspaceInstallMode.value === 'managed'
+)
+const localInstallMode = computed(
+  () => !workspaceMode.value || workspaceInstallMode.value === 'public'
+)
 
 function installationBacksBuild(build: Build): boolean {
   return installationStore.installations.some((installation) => {
@@ -162,22 +169,26 @@ const selectedBuildMetadata = computed(() => {
 })
 
 watch(workspaceBuilds, (builds) => {
-  if (!workspaceMode.value) return
+  if (!managedBuildMode.value) return
   if (!builds.some((build) => build.id === selectedBuildId.value)) {
     selectedBuildId.value = builds[0]?.id ?? ''
   }
 })
 
-watch(selectedBuild, (build) => {
-  if (!workspaceMode.value || !build || instName.value.trim()) return
+function suggestManagedBuildName(build: Build | null): void {
+  if (!managedBuildMode.value || !build || instName.value.trim()) return
   const buildId = build.id
   void window.api
     .getUniqueName(build.name)
     .then((name) => {
-      if (selectedBuild.value?.id === buildId && !instName.value.trim()) suggestedName.value = name
+      if (managedBuildMode.value && selectedBuild.value?.id === buildId && !instName.value.trim()) {
+        suggestedName.value = name
+      }
     })
     .catch(() => {})
-})
+}
+
+watch(selectedBuild, suggestManagedBuildName)
 
 // Per-field state
 const fieldOptions = ref(new Map<string, FieldOption[]>())
@@ -224,7 +235,7 @@ function installHandoffProps(): Record<string, string | boolean | null> {
   const variantId = selections.value.variant?.data?.variantId as string | undefined
   return {
     entrypoint: entrypoint.value,
-    source_id: workspaceMode.value ? 'comfybuilder' : (currentSource.value?.id ?? null),
+    source_id: managedBuildMode.value ? 'comfybuilder' : (currentSource.value?.id ?? null),
     variant: variantId ? toVariantBucket(variantId) : null,
     express: false
   }
@@ -409,6 +420,8 @@ watch(instPath, (newPath) => {
 
 /** Bumped on each open/source change to discard stale responses. */
 let loadGeneration = 0
+/** Bumped on each open/workspace mode change to discard stale mode initialization. */
+let modeGeneration = 0
 
 // Reject whitespace-only names; a truly-blank field is allowed (falls back to the suggested default).
 const nameError = computed(() =>
@@ -441,7 +454,7 @@ const urlFieldError = computed(() => {
 
 // Continue gate. `skipInstall` sources (Remote Connection) have no install path, so the path-issue guard is skipped for them.
 const canContinue = computed(() => {
-  if (workspaceMode.value) {
+  if (managedBuildMode.value) {
     return Boolean(selectedBuild.value && !nameError.value && pathIssues.value.length === 0)
   }
   if (!currentSource.value) return false
@@ -539,22 +552,15 @@ const cameFromLocalBranch = ref(false)
 
 async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
-  const gen = loadGeneration
+  const gen = ++modeGeneration
   instName.value = ''
   workspaceId.value = opts.workspaceId?.trim() || null
+  workspaceInstallMode.value = 'managed'
   selectedBuildId.value = ''
   cameFromLocalBranch.value = opts.cameFromLocalBranch === true
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
   suggestedName.value = ''
-  if (!workspaceMode.value) {
-    void window.api
-      .getUniqueName(DEFAULT_INSTALL_NAME)
-      .then((name) => {
-        suggestedName.value = name
-      })
-      .catch(() => {})
-  }
   instPath.value = ''
   selections.value = {}
   currentSource.value = null
@@ -576,68 +582,97 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   pickerEnabled.value = true
   hasLocalInstall.value = false
 
-  if (!workspaceMode.value) {
-    // Resolve picker gating in the background - needed only by the time the user
-    // reaches the later template step, so it never blocks Configure's first paint.
-    void window.api
-      .getSetting('skipTemplatePickerStep')
-      .then((skip) => {
-        if (gen !== loadGeneration) return
-        pickerEnabled.value = skip !== true
-      })
-      .catch(() => {})
-    void window.api
-      .getInstallationsSummary()
-      .then((summary) => {
-        if (gen !== loadGeneration) return
-        hasLocalInstall.value = summary.localCount > 0
-      })
-      .catch(() => {})
-  }
-
   try {
-    const installDir = await installDirPromise
+    await initializeInstallMode(gen)
+  } finally {
+    if (gen === modeGeneration) initializing.value = false
+  }
+}
 
-    defaultInstPath.value = installDir ?? ''
-    instPath.value = defaultInstPath.value
+async function initializeInstallMode(gen: number): Promise<void> {
+  const installDir = await installDirPromise
+  if (gen !== modeGeneration) return
+  defaultInstPath.value = installDir ?? ''
+  instPath.value = defaultInstPath.value
 
-    if (workspaceMode.value) {
-      const targetWorkspaceId = workspaceId.value
-      if (!targetWorkspaceId) return
-      try {
-        const status =
-          authStore.status.workspaceId === targetWorkspaceId
-            ? authStore.status
-            : await authStore.switchWorkspace(targetWorkspaceId)
-        if (gen !== loadGeneration) return
-        if (!status.signedIn || status.workspaceId !== targetWorkspaceId) {
-          emit('close')
-          return
-        }
-        if (!authStore.buildsLoaded) await authStore.fetchBuilds()
-        if (gen === loadGeneration) selectedBuildId.value = workspaceBuilds.value[0]?.id ?? ''
-      } catch {
-        if (gen === loadGeneration) emit('close')
-      }
+  if (managedBuildMode.value) await initializeManagedBuilds(gen)
+  else await initializeLocalInstall(gen)
+}
+
+async function initializeManagedBuilds(gen: number): Promise<void> {
+  const targetWorkspaceId = workspaceId.value
+  if (!targetWorkspaceId) return
+  try {
+    const status =
+      authStore.status.workspaceId === targetWorkspaceId
+        ? authStore.status
+        : await authStore.switchWorkspace(targetWorkspaceId)
+    if (gen !== modeGeneration || !managedBuildMode.value) return
+    if (!status.signedIn || status.workspaceId !== targetWorkspaceId) {
+      emit('close')
       return
     }
+    if (!authStore.buildsLoaded) await authStore.fetchBuilds()
+    if (gen !== modeGeneration || !managedBuildMode.value) return
+    selectedBuildId.value = workspaceBuilds.value[0]?.id ?? ''
+    suggestManagedBuildName(selectedBuild.value)
+  } catch {
+    if (gen === modeGeneration && managedBuildMode.value) emit('close')
+  }
+}
 
-    await loadSources()
+async function initializeLocalInstall(gen: number): Promise<void> {
+  void window.api
+    .getUniqueName(DEFAULT_INSTALL_NAME)
+    .then((name) => {
+      if (gen === modeGeneration && localInstallMode.value) suggestedName.value = name
+    })
+    .catch(() => {})
 
-    // Pre-select Standalone (the recommended method); other sources are reachable via the Advanced method-picker chips.
-    hardwareValidation = await window.api.validateHardware()
-    // A newer open() may have started while awaiting; don't let a stale
-    // result overwrite its (cleared) warning state.
-    if (gen !== loadGeneration) return
-    hardwareWarning.value = hardwareValidation.warning ?? ''
-    const standalone = sources.value.find((s) => s.id === 'standalone')
-    if (standalone && hardwareValidation.supported) {
-      await selectSourceCard(standalone)
-    } else if (standalone) {
-      detectedGpu.value = hardwareValidation.error || t('newInstall.noGpuDetected')
-    }
+  // These are needed only if the user reaches the later template step, so they
+  // run in the background and never block the Configure screen's first paint.
+  void window.api
+    .getSetting('skipTemplatePickerStep')
+    .then((skip) => {
+      if (gen === modeGeneration && localInstallMode.value) pickerEnabled.value = skip !== true
+    })
+    .catch(() => {})
+  void window.api
+    .getInstallationsSummary()
+    .then((summary) => {
+      if (gen === modeGeneration && localInstallMode.value) {
+        hasLocalInstall.value = summary.localCount > 0
+      }
+    })
+    .catch(() => {})
+
+  await loadSources()
+  if (gen !== modeGeneration || !localInstallMode.value) return
+
+  // Pre-select Standalone (the recommended method); other sources remain
+  // reachable through the same Advanced controls used outside workspaces.
+  hardwareValidation = await window.api.validateHardware()
+  if (gen !== modeGeneration || !localInstallMode.value) return
+  hardwareWarning.value = hardwareValidation.warning ?? ''
+  const standalone = sources.value.find((source) => source.id === 'standalone')
+  if (standalone && hardwareValidation.supported) {
+    await selectSourceCard(standalone)
+  } else if (standalone) {
+    detectedGpu.value = hardwareValidation.error || t('newInstall.noGpuDetected')
+  }
+}
+
+async function selectWorkspaceInstallMode(mode: 'managed' | 'public'): Promise<void> {
+  if (!workspaceMode.value || workspaceInstallMode.value === mode) return
+  workspaceInstallMode.value = mode
+  step.value = 'configure'
+  suggestedName.value = ''
+  const gen = ++modeGeneration
+  initializing.value = true
+  try {
+    await initializeInstallMode(gen)
   } finally {
-    initializing.value = false
+    if (gen === modeGeneration) initializing.value = false
   }
 }
 
@@ -871,6 +906,10 @@ function handleOpenInstPath(): void {
   if (instPath.value) void window.api.openPath(instPath.value)
 }
 
+function openBuildsPage(): void {
+  void window.api.comfybuilder.openBuildsPage()
+}
+
 async function validateSelectedInstallRoot(): Promise<boolean> {
   if (!instPath.value) return true
   try {
@@ -937,7 +976,7 @@ async function handleWorkspaceBuildSave(): Promise<void> {
 }
 
 async function handleSave(): Promise<void> {
-  if (workspaceMode.value) {
+  if (managedBuildMode.value) {
     await handleWorkspaceBuildSave()
     return
   }
@@ -1089,7 +1128,7 @@ defineExpose({ open })
     <div v-if="step === 'configure'" ref="brandShellRef" class="config-shell">
       <h1 class="brand-title">{{ $t('newInstall.configureTitle') }}</h1>
       <p class="brand-lead">
-        {{ $t(workspaceMode ? 'newInstall.configureWorkspaceLead' : 'chooser.newInstallDesc') }}
+        {{ $t(managedBuildMode ? 'newInstall.configureWorkspaceLead' : 'chooser.newInstallDesc') }}
       </p>
       <div class="config-card">
         <div class="config-card__body">
@@ -1108,6 +1147,42 @@ defineExpose({ open })
             </div>
             <div v-if="nameError" id="inst-name-error" class="field-error" role="alert">
               {{ nameError }}
+            </div>
+          </div>
+
+          <div
+            v-if="workspaceMode"
+            class="config-field"
+            data-testid="workspace-install-source-field"
+          >
+            <span id="workspace-install-source-label" class="config-label">
+              {{ $t('newInstall.buildSourceLabel') }}
+            </span>
+            <div
+              class="workspace-install-source"
+              role="radiogroup"
+              aria-labelledby="workspace-install-source-label"
+            >
+              <button
+                type="button"
+                role="radio"
+                data-testid="workspace-install-source-managed"
+                :aria-checked="workspaceInstallMode === 'managed'"
+                :class="{ 'is-selected': workspaceInstallMode === 'managed' }"
+                @click="selectWorkspaceInstallMode('managed')"
+              >
+                {{ $t('newInstall.managedBuilds') }}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                data-testid="workspace-install-source-public"
+                :aria-checked="workspaceInstallMode === 'public'"
+                :class="{ 'is-selected': workspaceInstallMode === 'public' }"
+                @click="selectWorkspaceInstallMode('public')"
+              >
+                {{ $t('newInstall.publicBuilds') }}
+              </button>
             </div>
           </div>
 
@@ -1186,23 +1261,33 @@ defineExpose({ open })
             </div>
           </TooltipWrap>
 
-          <div v-if="workspaceMode" class="config-field" data-testid="workspace-build-field">
+          <div v-if="managedBuildMode" class="config-field" data-testid="workspace-build-field">
             <div class="workspace-build-label-row">
               <label class="config-label">{{ $t('newInstall.workspaceBuildLabel') }}</label>
-              <button
-                type="button"
-                class="workspace-build-refresh"
-                :title="$t('newInstall.refreshWorkspaceBuilds')"
-                :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
-                :disabled="authStore.loadingBuilds"
-                @click="authStore.fetchBuilds()"
-              >
-                <RefreshCw
-                  :size="14"
-                  :class="{ 'workspace-build-refresh__icon--spinning': authStore.loadingBuilds }"
-                  aria-hidden="true"
-                />
-              </button>
+              <div class="workspace-build-actions">
+                <button
+                  type="button"
+                  class="workspace-build-online"
+                  :disabled="initializing"
+                  @click="openBuildsPage"
+                >
+                  {{ $t('newInstall.viewBuildsOnline') }}
+                </button>
+                <button
+                  type="button"
+                  class="workspace-build-refresh"
+                  :title="$t('newInstall.refreshWorkspaceBuilds')"
+                  :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
+                  :disabled="authStore.loadingBuilds"
+                  @click="authStore.fetchBuilds()"
+                >
+                  <RefreshCw
+                    :size="14"
+                    :class="{ 'workspace-build-refresh__icon--spinning': authStore.loadingBuilds }"
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
             </div>
             <BaseSelect
               v-model="selectedBuildId"
@@ -1714,10 +1799,67 @@ defineExpose({ open })
   color: var(--neutral-200);
 }
 
+.workspace-install-source {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--brand-surface-border);
+  border-radius: 7px;
+  background: var(--brand-surface-bg);
+}
+.workspace-install-source button {
+  min-width: 0;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.workspace-install-source button:hover,
+.workspace-install-source button.is-selected {
+  background: var(--brand-surface-bg-hover);
+  color: var(--neutral-100);
+}
+.workspace-install-source button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .workspace-build-label-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.workspace-build-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workspace-build-online {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--neutral-300);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.workspace-build-online:hover:not(:disabled) {
+  color: var(--neutral-100);
+  text-decoration: underline;
+}
+.workspace-build-online:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.workspace-build-online:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 .workspace-build-refresh {
   display: inline-flex;

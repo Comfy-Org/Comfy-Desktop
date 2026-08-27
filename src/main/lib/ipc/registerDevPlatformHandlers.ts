@@ -52,6 +52,7 @@ export const DEVPLATFORM_CHANNELS = {
   listWorkspaces: 'comfybuilder:listWorkspaces',
   switchWorkspace: 'comfybuilder:switchWorkspace',
   listBuilds: 'comfybuilder:listBuilds',
+  openBuildsPage: 'comfybuilder:openBuildsPage',
   installBuild: 'comfybuilder:installBuild',
   promoteLocalInstance: 'comfybuilder:promoteLocalInstance'
 } as const
@@ -163,6 +164,13 @@ export function registerDevPlatformHandlers(): void {
     DEVPLATFORM_CHANNELS.listWorkspaces,
     (): Promise<Workspace[]> => session.listWorkspaces()
   )
+
+  ipcMain.handle(DEVPLATFORM_CHANNELS.openBuildsPage, (): Promise<void> => {
+    const url = new URL('/profile/builds', PLATFORM_WEB_BASE_URL)
+    const workspaceId = session.status().workspaceId
+    if (workspaceId) url.searchParams.set('workspace', workspaceId)
+    return shell.openExternal(url.toString())
+  })
 
   // Cached workspace credentials activate silently. First access or expired,
   // unusable credentials may run browser auth because cloud tokens are scoped

@@ -30,6 +30,7 @@ beforeEach(() => {
     detectGPU: vi.fn().mockResolvedValue(null),
     getDefaultInstallDir: vi.fn().mockResolvedValue('/home/user/ComfyUI'),
     getSources: vi.fn().mockResolvedValue([]),
+    getFieldOptions: vi.fn().mockResolvedValue([]),
     validateHardware: vi.fn().mockResolvedValue({ supported: true }),
     getSetting: vi.fn().mockResolvedValue(false),
     getInstallationsSummary: vi.fn().mockResolvedValue({ localCount: 0 }),
@@ -48,6 +49,7 @@ beforeEach(() => {
       listWorkspaces: vi.fn().mockResolvedValue([]),
       switchWorkspace: vi.fn(),
       listBuilds: vi.fn().mockResolvedValue([]),
+      openBuildsPage: vi.fn().mockResolvedValue(undefined),
       installBuild: vi.fn()
     }
   } as unknown as typeof window.api
@@ -139,6 +141,12 @@ describe('InstallWizardModal workspace Builds', () => {
     ).open({ workspaceId: 'w1' })
     await flushPromises()
 
+    expect(
+      wrapper.get('[data-testid="workspace-install-source-managed"]').attributes()
+    ).toMatchObject({ 'aria-checked': 'true' })
+    expect(
+      wrapper.get('[data-testid="workspace-install-source-public"]').attributes()
+    ).toMatchObject({ 'aria-checked': 'false' })
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
     const buildSelect = wrapper.getComponent(BaseSelect)
     expect(buildSelect.props('options')).toEqual([{ value: 'ready', label: 'Ready Build' }])
@@ -214,6 +222,68 @@ describe('InstallWizardModal workspace Builds', () => {
     await flushPromises()
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledTimes(2)
     expect(wrapper.getComponent(BaseSelect).get('.ui-select-label').text()).toBe('Ready Build')
+  })
+
+  it('uses the existing local installer and template picker for Public builds', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'bundledTemplate', label: 'Starter Template', type: 'select' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'none', label: 'None' },
+      { value: 'starter', label: 'Starter Workflow' }
+    ])
+    const wrapper = await openWorkspaceModal()
+
+    await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
+    expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
+    expect(wrapper.get('.config-advanced').exists()).toBe(true)
+    expect(window.api.getFieldOptions).toHaveBeenCalledWith(
+      'standalone',
+      'bundledTemplate',
+      {},
+      undefined
+    )
+
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.template-shell').exists()).toBe(true)
+    expect(window.api.comfybuilder.installBuild).not.toHaveBeenCalled()
+  })
+
+  it('switches back to cached Managed builds without another catalog request', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'standalone', label: 'Standalone', fields: [] }
+    ])
+    const wrapper = await openWorkspaceModal()
+
+    await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.brand-lead').text()).toBe('Select a release to install.')
+    expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
+    expect(wrapper.find('.config-advanced').exists()).toBe(false)
+    expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
+  })
+
+  it('opens the current workspace Builds page online', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    const wrapper = await openWorkspaceModal()
+
+    await wrapper.get('.workspace-build-online').trigger('click')
+
+    expect(window.api.comfybuilder.openBuildsPage).toHaveBeenCalledOnce()
   })
 
   it('shows an empty state when no compatible Builds can be installed', async () => {

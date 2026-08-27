@@ -216,6 +216,7 @@ export function buildElectronApi(): ElectronApi {
       switchWorkspace: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId),
       listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
+      openBuildsPage: () => ipcRenderer.invoke('comfybuilder:openBuildsPage'),
       installBuild: (request) => ipcRenderer.invoke('comfybuilder:installBuild', request),
       promoteLocalInstance: (installationId) =>
         ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)
