@@ -11,8 +11,21 @@ import path from 'path'
 
 import { extractPort, parseArgs } from '../lib/util'
 import type { LaunchSpec } from './types'
+import type { GovernanceMarkerState } from './governance'
 
 const DEFAULT_LAUNCH_ARGS = '--enable-manager'
+
+/**
+ * Every flag that turns the Manager on in core. `--enable-manager-legacy-ui`
+ * is NOT a separate feature: `comfy/cli_args.py` sets `enable_manager = True`
+ * whenever it is present.
+ *
+ * Filtering only the obvious one would let a user re-enable the Manager on an
+ * allowlist install by naming the other. Core then refuses to start at all,
+ * with the generic "could not apply your organization's policy" - the exact
+ * cryptic failure this module exists to replace with a stated refusal.
+ */
+const MANAGER_ENABLING_ARGS = new Set(['--enable-manager', '--enable-manager-legacy-ui'])
 
 /**
  * The archive's bundled interpreter.
@@ -35,6 +48,8 @@ export function venvPython(installPath: string): string {
 export interface LaunchOptions {
   /** Extra ComfyUI args, e.g. `--cpu --port 8188`. Defaults to `--enable-manager`. */
   launchArgs?: string
+  /** The durable governance marker from the installation record. */
+  governance?: GovernanceMarkerState
 }
 
 /**
@@ -48,7 +63,18 @@ export function buildLaunchSpec(installPath: string, opts: LaunchOptions = {}): 
   if (!fs.existsSync(mainPy)) return null
 
   const raw = (opts.launchArgs ?? DEFAULT_LAUNCH_ARGS).trim()
-  const parsed = raw.length > 0 ? parseArgs(raw) : []
+  let parsed = raw.length > 0 ? parseArgs(raw) : []
+
+  if (opts.governance?.kind === 'governed') {
+    const marker = opts.governance.marker
+    if (marker.customNodeMode === 'allowlist') {
+      parsed = parsed.filter((arg) => !MANAGER_ENABLING_ARGS.has(arg))
+    }
+    if (marker.activeForms.includes('model') && !parsed.includes('--enable-asset-hashing')) {
+      parsed.push('--enable-asset-hashing')
+    }
+  }
+
   return {
     cmd: python,
     args: ['-s', path.join('ComfyUI', 'main.py'), ...parsed],
