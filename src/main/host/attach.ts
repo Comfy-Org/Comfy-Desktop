@@ -26,6 +26,7 @@ import {
 } from '../installations'
 import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
 import { abortTemplateDownload } from '../sources/standalone/templateDownloadTask'
+import { abortModelStaging } from '../sources/comfybuilder/modelStagingTask'
 import {
   dropInstallationIndex,
   indexInstallationId,
@@ -672,6 +673,11 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       // Cancel deletes staged bytes. During app quit the release defers
       // entirely to the quit path, which parks every active transfer itself.
       abortTemplateDownload(id)
+      // Same teardown for a build install's background model staging. This is
+      // also the safety net ahead of a delete: deleting an install closes its
+      // window, and a task still writing into the tree must stop before the
+      // tree is removed.
+      abortModelStaging(id)
       // Detach the relaunch will-navigate blocker before clearing the
       // map slot — without `comfyContents.off(...)`, a re-attach would
       // inherit a still-active blocker that preventDefaults every

@@ -22,8 +22,6 @@ import {
   installArtifact,
   buildLaunchSpec,
   venvPython,
-  stageModels,
-  installModelsRoot,
   resolveModelManifest,
   normalizeSha256
 } from '../../comfybuilder'
@@ -32,8 +30,7 @@ import type {
   ArtifactGpu,
   ArtifactOs,
   InstallProgress,
-  ModelJobSurface,
-  StageProgress
+  ModelDescriptor
 } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
 import {
@@ -51,7 +48,6 @@ import { renameWithLockRetry } from '../../lib/fsRetry'
 import { defaultDownloadCacheDir } from '../../lib/paths'
 import { releaseInstallTerminalForFsOp } from '../../lib/popoutWindows'
 import { t } from '../../lib/i18n'
-import { formatTime } from '../../lib/util'
 import type { InstallationRecord } from '../../installations'
 import type {
   SourcePlugin,
@@ -65,6 +61,7 @@ import type {
 
 import { COMFYBUILDER_INSTALL_DEFAULTS, DEFAULT_LAUNCH_ARGS } from './constants'
 import { getDetailSections } from './detailSections'
+import { abortModelStaging, startModelStaging } from './modelStagingTask'
 
 const READY_MARKER = '.comfybuilder-environment-ready'
 const ENTRY_SWAP_MARKER = '.comfybuilder-entry-swap'
@@ -381,23 +378,17 @@ export function withAccelArgs(installation: InstallationRecord, launchArgs: stri
   return `${launchArgs} --cpu`.trim()
 }
 
-/** Models-step status line: `file (i/n)  ·  X / Y MB  ·  Z MB/s  ·  Ns remaining`,
- *  with the transfer facts appended only once the managed job reports them. */
-function stageStatusLine(p: StageProgress): string {
-  const mb = (n: number): string => (n / 1048576).toFixed(1)
-  const parts = [`${p.filename} (${p.index}/${p.total})`]
-  if (p.receivedBytes !== undefined && p.totalBytes !== undefined) {
-    parts.push(`${mb(p.receivedBytes)} / ${mb(p.totalBytes)} MB`)
-  }
-  if (p.speedBytesPerSec !== undefined) parts.push(`${mb(p.speedBytesPerSec)} MB/s`)
-  if (p.etaSecs !== undefined) parts.push(`${formatTime(p.etaSecs)} remaining`)
-  return parts.join('  ·  ')
-}
-
 /**
  * Lay down the environment for whatever artifact the record currently points
  * at. Shared by the first install and by an in-place version change, so the two
- * can't diverge on venv handling or model staging.
+ * can't diverge on venv handling.
+ *
+ * Returns the build's declared models. Downloading them is NOT part of the
+ * environment transaction: the caller hands them to `startModelStaging`, which
+ * runs in the background so the install is launchable as soon as the
+ * environment is on disk. Resolving the manifest still happens inside the
+ * transaction, so a build whose model list cannot be fetched fails (and rolls
+ * back) rather than landing without its models.
  *
  * Takes only what both callers have: progress + an abort signal.
  */
@@ -410,43 +401,8 @@ async function installEnvironment(
     signal?: AbortSignal
   },
   onTransactionStarted?: () => Promise<void>
-): Promise<void> {
+): Promise<readonly ModelDescriptor[]> {
   releaseInstallTerminalForFsOp(installation.id)
-
-  // Load this lazily: the download manager imports the source registry, which
-  // includes this plugin.
-  const downloadManager = await import('../../lib/comfyDownloadManager')
-  const modelsRoot = installModelsRoot(installation.installPath)
-  // Parked rows inside this root (hydrated from a previous interrupted run,
-  // or left by a cancelled install) would block the lock forever, and their
-  // presigned URLs are stale anyway. Retire the rows; their staged bytes stay
-  // on disk and the re-staged downloads below resume them by source URL or sha256.
-  downloadManager.releaseParkedModelJobsUnder(modelsRoot)
-  const releaseModelRoot = downloadManager.acquireModelDownloadRootLock(modelsRoot)
-  if (!releaseModelRoot) {
-    throw new Error(
-      'The model directory is busy. Finish or cancel its downloads before installing or updating.'
-    )
-  }
-  try {
-    await installEnvironmentLocked(installation, tools, onTransactionStarted, {
-      start: downloadManager.startManagedModelJob,
-      cancel: downloadManager.cancelModelDownload
-    })
-  } finally {
-    releaseModelRoot()
-  }
-}
-
-async function installEnvironmentLocked(
-  installation: InstallationRecord,
-  tools: {
-    sendProgress: (step: string, data: { percent: number; status: string }) => void
-    signal?: AbortSignal
-  },
-  onTransactionStarted: (() => Promise<void>) | undefined,
-  modelJobs: ModelJobSurface
-): Promise<void> {
   const artifact = artifactFromRecord(installation)
   const client = getBuilderClient()
   const paths = environmentPaths(installation.installPath)
@@ -501,26 +457,19 @@ async function installEnvironmentLocked(
       await onTransactionStarted?.()
     }
 
-    // Stage the build's declared models into the stable model tree before launch.
+    // Resolve the build's declared models while a failure can still roll the
+    // environment back cleanly; the actual downloads run in the background
+    // task the caller starts, so launch is not gated on model bytes.
     const manifest = await resolveModelManifest(
       client,
       installation.distributionId as string,
       installation.version as string
     )
-    await stageModels({
-      models: manifest.models,
-      installPath: installation.installPath,
-      installationId: installation.id,
-      jobs: modelJobs,
-      onProgress: (p: StageProgress) =>
-        tools.sendProgress('models', {
-          percent: p.percent,
-          status: stageStatusLine(p)
-        }),
-      ...(tools.signal ? { signal: tools.signal } : {})
-    })
-    tools.sendProgress('models', { percent: 100, status: '' })
     await fs.writeFile(paths.readyMarker, '')
+
+    await fs.rm(paths.previousVenv, { recursive: true, force: true }).catch(() => {})
+    await fs.rm(paths.previousComfy, { recursive: true, force: true }).catch(() => {})
+    return manifest.models
   } catch (err) {
     // Put the complete working environment back before surfacing the failure.
     if (hasExistingEnvironment) {
@@ -529,9 +478,6 @@ async function installEnvironmentLocked(
     await fs.rm(paths.readyMarker, { force: true }).catch(() => {})
     throw err
   }
-
-  await fs.rm(paths.previousVenv, { recursive: true, force: true }).catch(() => {})
-  await fs.rm(paths.previousComfy, { recursive: true, force: true }).catch(() => {})
 }
 
 export const comfybuilder: SourcePlugin = {
@@ -548,8 +494,7 @@ export const comfybuilder: SourcePlugin = {
   get installSteps() {
     return [
       { phase: 'download', label: t('common.download') },
-      { phase: 'extract', label: t('common.extract') },
-      { phase: 'models', label: t('comfybuilder.stageModels') }
+      { phase: 'extract', label: t('common.extract') }
     ]
   },
 
@@ -627,7 +572,11 @@ export const comfybuilder: SourcePlugin = {
   },
 
   async install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
-    await installEnvironment(installation, tools)
+    const models = await installEnvironment(installation, tools)
+    // Models download in the background; the install is launchable as soon as
+    // the environment is on disk. Completion is recorded as `modelsStaged`,
+    // and an unfinished staging re-runs at the next launch.
+    startModelStaging(installation, models)
   },
 
   // Launch / rename / open-folder / remove / delete never reach here — the
@@ -692,6 +641,11 @@ async function updateBuildVersion(
   const previousStatus = installation.status as string | undefined
   if (previousStatus !== 'installed') return { ok: false, message: t('errors.installNotReady') }
 
+  // A still-running background staging holds the model-root download lock and
+  // writes into the tree about to be swapped; stop it first. The re-stage
+  // below (or the next launch) picks up whatever it had not finished.
+  abortModelStaging(installation.id)
+
   const previous = {
     version: installation.version as string | undefined,
     artifactId: installation.artifactId as string | undefined,
@@ -726,13 +680,17 @@ async function updateBuildVersion(
       artifactSha256: artifact.archiveSha256
     }
 
-    await installEnvironment({ ...installation, ...next } as InstallationRecord, tools, () =>
+    const updated = { ...installation, ...next } as InstallationRecord
+    const models = await installEnvironment(updated, tools, () =>
       tools.update({ ...next, status: 'installing', [ROLLBACK_FIELD]: previous })
     )
     environmentReady = true
 
-    await tools.update({ status: 'installed', [ROLLBACK_FIELD]: undefined })
+    // The new version's models are not staged yet; clear the flag so a launch
+    // before the background task finishes knows to re-stage.
+    await tools.update({ status: 'installed', modelsStaged: false, [ROLLBACK_FIELD]: undefined })
     await finalizeEnvironmentTransaction(installation.installPath).catch(() => {})
+    startModelStaging(updated, models)
     return { ok: true, navigate: 'detail' }
   } catch (err) {
     // Put the record back where it was. Leaving it pointed at a version whose

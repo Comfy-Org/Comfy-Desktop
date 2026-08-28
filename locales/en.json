@@ -290,7 +290,6 @@
     "clear": "Clear"
   },
   "comfybuilder": {
-    "stageModels": "Download models",
     "build": "Build",
     "buildVersion": "Build Version",
     "comfyuiVersion": "ComfyUI Version",

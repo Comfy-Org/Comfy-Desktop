@@ -290,7 +290,6 @@
     "clear": "清除"
   },
   "comfybuilder": {
-    "stageModels": "下载模型",
     "build": "构建",
     "buildVersion": "构建版本",
     "comfyuiVersion": "ComfyUI 版本",

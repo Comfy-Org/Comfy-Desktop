@@ -8,6 +8,8 @@ const releaseParkedModelJobsUnder = vi.hoisted(() => vi.fn<(modelsRoot: string) 
 const startManagedModelJob = vi.hoisted(() => vi.fn())
 const cancelModelDownload = vi.hoisted(() => vi.fn(async () => {}))
 const releaseInstallTerminalForFsOp = vi.hoisted(() => vi.fn<(installationId: string) => void>())
+const startModelStaging = vi.hoisted(() => vi.fn())
+const abortModelStaging = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', isPackaged: false },
@@ -44,6 +46,11 @@ vi.mock('../../lib/comfyDownloadManager', () => ({
   cancelModelDownload
 }))
 vi.mock('../../lib/popoutWindows', () => ({ releaseInstallTerminalForFsOp }))
+vi.mock('./modelStagingTask', () => ({
+  startModelStaging,
+  abortModelStaging,
+  restageBuildModelsIfNeeded: vi.fn()
+}))
 vi.mock('../../devplatform/builds', () => ({
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
@@ -152,9 +159,6 @@ describe('comfybuilder.install wiring', () => {
   })
 
   it('installs a fresh environment without an unnecessary filesystem swap', async () => {
-    const releaseModelRoot = vi.fn()
-    acquireModelDownloadRootLock.mockReturnValueOnce(releaseModelRoot)
-
     await comfybuilder.install!(record(), fakeTools())
 
     expect(rename).not.toHaveBeenCalled()
@@ -162,9 +166,6 @@ describe('comfybuilder.install wiring', () => {
       expect.objectContaining({ installPath: '/installs/dist' })
     )
     expect(releaseInstallTerminalForFsOp).toHaveBeenCalledWith('i1')
-    expect(acquireModelDownloadRootLock).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
-    expect(releaseParkedModelJobsUnder).toHaveBeenCalledWith('/installs/dist/ComfyUI/models')
-    expect(releaseModelRoot).toHaveBeenCalledOnce()
   })
 
   it('updates code while models and user data remain at stable paths', async () => {
@@ -246,40 +247,40 @@ describe('comfybuilder.install wiring', () => {
     }
   })
 
-  it('refuses to mutate the environment while its model root is busy', async () => {
-    acquireModelDownloadRootLock.mockReturnValueOnce(null)
-
-    await expect(comfybuilder.install!(record(), fakeTools())).rejects.toThrow(
-      /model directory is busy/i
-    )
-    expect(installArtifact).not.toHaveBeenCalled()
-    expect(stageModels).not.toHaveBeenCalled()
-  })
-
-  it('installs the archive, then resolves the manifest, then stages models', async () => {
-    const tools = fakeTools()
-    await comfybuilder.install!(record(), tools)
+  it('installs the archive, resolves the manifest, then stages models in the background', async () => {
+    vi.mocked(resolveModelManifest).mockResolvedValueOnce({
+      models: [{ type: 'checkpoints', filename: 'm.safetensors', downloadUrl: 'https://x/m' }],
+      modelPolicy: null,
+      partnerNodePolicy: null
+    } as never)
+    const installation = record()
+    await comfybuilder.install!(installation, fakeTools())
 
     expect(installArtifact).toHaveBeenCalledTimes(1)
     expect(resolveModelManifest).toHaveBeenCalledTimes(1)
-    expect(stageModels).toHaveBeenCalledTimes(1)
-    // The archive must be in place before models are staged into its tree.
+    // The archive must be in place before the manifest gates the ready marker.
     const archiveOrder = (installArtifact as unknown as { mock: { invocationCallOrder: number[] } })
       .mock.invocationCallOrder[0]!
-    const stageOrder = (stageModels as unknown as { mock: { invocationCallOrder: number[] } }).mock
-      .invocationCallOrder[0]!
-    expect(archiveOrder).toBeLessThan(stageOrder)
+    const manifestOrder = (
+      resolveModelManifest as unknown as { mock: { invocationCallOrder: number[] } }
+    ).mock.invocationCallOrder[0]!
+    expect(archiveOrder).toBeLessThan(manifestOrder)
 
     // The manifest is keyed by the record's build id and version number.
     expect(resolveModelManifest).toHaveBeenCalledWith(expect.anything(), 'd1', '1')
-    // Staging runs on the managed download surface, not an ad-hoc downloader.
-    expect(stageModels).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jobs: { start: startManagedModelJob, cancel: cancelModelDownload }
-      })
-    )
-    // A terminal models progress event fires so the step completes.
-    expect(tools.sent.some((s) => s.phase === 'models')).toBe(true)
+    // The declared models are handed to the background staging task; install
+    // itself never blocks on model bytes.
+    expect(startModelStaging).toHaveBeenCalledWith(installation, [
+      { type: 'checkpoints', filename: 'm.safetensors', downloadUrl: 'https://x/m' }
+    ])
+    expect(stageModels).not.toHaveBeenCalled()
+  })
+
+  it('fails the install (with rollback intact) when the model manifest cannot be resolved', async () => {
+    vi.mocked(resolveModelManifest).mockRejectedValueOnce(new Error('manifest gone'))
+
+    await expect(comfybuilder.install!(record(), fakeTools())).rejects.toThrow('manifest gone')
+    expect(startModelStaging).not.toHaveBeenCalled()
   })
 
   it('folds the library resolve phase into the download step', async () => {
@@ -295,45 +296,11 @@ describe('comfybuilder.install wiring', () => {
     expect(tools.sent.some((s) => s.phase === 'resolve')).toBe(false)
   })
 
-  it('appends bytes, speed, and ETA to the models status once the job reports them', async () => {
-    const tools = fakeTools()
-    await comfybuilder.install!(record(), tools)
-    const onProgress = (
-      stageModels as unknown as {
-        mock: { calls: Array<[{ onProgress: (p: unknown) => void }]> }
-      }
-    ).mock.calls[0]![0].onProgress
-    // Before the transfer reports, the line is just the file position.
-    onProgress({ index: 1, total: 2, filename: 'm.safetensors', percent: 0 })
-    // Once telemetry arrives, the transfer facts join the line.
-    onProgress({
-      index: 1,
-      total: 2,
-      filename: 'm.safetensors',
-      percent: 30,
-      receivedBytes: 3_145_728,
-      totalBytes: 10_485_760,
-      speedBytesPerSec: 2_097_152,
-      etaSecs: 3.5
-    })
-    const statuses = tools.sent
-      .filter((s) => s.phase === 'models')
-      .map((s) => (s.detail as { status?: string }).status)
-    expect(statuses).toContain('m.safetensors (1/2)')
-    expect(statuses).toContain(
-      'm.safetensors (1/2)  ·  3.0 / 10.0 MB  ·  2.0 MB/s  ·  4s remaining'
-    )
-  })
-
-  it('threads the abort signal into both phases', async () => {
+  it('threads the abort signal into the archive install', async () => {
     const signal = new AbortController().signal
     await comfybuilder.install!(record(), fakeTools(signal))
     expect(
       (installArtifact as unknown as { mock: { calls: Array<[{ signal?: AbortSignal }]> } }).mock
-        .calls[0]![0].signal
-    ).toBe(signal)
-    expect(
-      (stageModels as unknown as { mock: { calls: Array<[{ signal?: AbortSignal }]> } }).mock
         .calls[0]![0].signal
     ).toBe(signal)
   })
@@ -780,7 +747,15 @@ describe('comfybuilder update-comfyui', () => {
       artifactId: 'art-9',
       status: 'installing'
     })
-    expect(tools.updates.at(-1)).toMatchObject({ status: 'installed' })
+    // The new version's models are unstaged until the background task finishes.
+    expect(tools.updates.at(-1)).toMatchObject({ status: 'installed', modelsStaged: false })
+    // A staging still running for the old version is stopped before the swap,
+    // and the new version's models stage in the background afterwards.
+    expect(abortModelStaging).toHaveBeenCalledWith('i1')
+    expect(startModelStaging).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'i1', version: '9' }),
+      []
+    )
     // The environment is laid down for the NEW artifact, not the old one.
     const passed = vi.mocked(installArtifact).mock.calls[0]![0] as { artifact: { id: string } }
     expect(passed.artifact.id).toBe('art-9')
@@ -855,7 +830,7 @@ describe('comfybuilder update-comfyui', () => {
       fs.writeFileSync(path.join(installPath, 'venv', 'new.txt'), 'new venv')
       fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), 'new code')
     })
-    vi.mocked(stageModels).mockRejectedValueOnce(new Error('disk full'))
+    vi.mocked(resolveModelManifest).mockRejectedValueOnce(new Error('disk full'))
     const previousVenv = path.join(root, 'venv.previous')
     const activeVenv = path.join(root, 'venv')
     rm.mockImplementation(async (target: fs.PathLike, options?: fs.RmOptions) => {

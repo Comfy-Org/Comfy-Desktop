@@ -48,6 +48,7 @@ import {
   abortTemplateDownload,
   requestSkipTemplateDownload
 } from '../../sources/standalone/templateDownloadTask'
+import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { isInstallationVisibleToRenderer } from './installationVisibility'
@@ -410,6 +411,8 @@ export function registerInstallationHandlers(): void {
         // resumable from Downloads), and a job shared with another caller
         // keeps transferring for its other holders.
         abortTemplateDownload(installationId)
+        // Same for a build install's background model staging.
+        abortModelStaging(installationId)
         if (abort.signal.aborted) {
           if (isComfyUpdate) {
             mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {
