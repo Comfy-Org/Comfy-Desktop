@@ -2242,7 +2242,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         app.removeListener('before-quit', onUpdateInstallQuit)
         clearQuitReason()
         if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
-        mainTelemetry.emit('comfy.desktop.app_update.startup_install_backstop_recovered', {})
+        updater.recordStartupInstallBackstopRecovered()
         void openStartupSurface()
         hostReentryGate.open()
       }, STARTUP_INSTALL_QUIT_BACKSTOP_MS)

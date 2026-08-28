@@ -17,7 +17,8 @@ vi.mock('electron', () => ({
       return ''
     },
     getVersion: () => mockAppVersion,
-    releaseSingleInstanceLock: vi.fn()
+    releaseSingleInstanceLock: vi.fn(),
+    once: vi.fn()
   },
   ipcMain: {
     handle: vi.fn()
@@ -375,6 +376,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     vi.doMock('./quit-state', () => ({
       clearQuitReason: vi.fn(),
       setQuitReason: vi.fn(),
+      getQuitReason: vi.fn(() => 'none'),
       isSessionEnding: vi.fn(() => sessionEnding)
     }))
     vi.doMock('../settings', () => ({
@@ -684,6 +686,83 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(installs[0]?.[1]).toMatchObject({
       version: '1.0.1',
       bakFallbacks: expect.any(Number)
+    })
+  })
+
+  it('correlates updater transitions with one privacy-safe attempt id and release context', async () => {
+    await bootUpdater()
+    for (const cb of listeners['update-available'] || []) cb({ version: '1.0.1' })
+    for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.1' })
+
+    const available = findEmitCalls('comfy.desktop.app_update.available')[0]?.[1] as Record<
+      string,
+      unknown
+    >
+    const complete = findEmitCalls('comfy.desktop.app_update.download_complete')[0]?.[1]
+    expect(available).toMatchObject({
+      running_version: '1.0.0',
+      target_version: '1.0.1',
+      app_channel: 'stable',
+      platform: 'win32',
+      updater_provider: 'todesktop',
+      updater_mode: 'packaged',
+      update_attempt_id: expect.any(String)
+    })
+    expect(complete).toMatchObject({ update_attempt_id: available.update_attempt_id })
+  })
+
+  it('emits the staged-update startup decision with marker and updater state', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    readyVersion = null
+    const updater = await bootUpdater()
+    vi.useFakeTimers()
+    try {
+      const pending = updater.applyPendingUpdateOnStartup()
+      await vi.advanceTimersByTimeAsync(5100)
+      await pending
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(findEmitCalls('comfy.desktop.app_update.startup_decision')[0]?.[1]).toMatchObject({
+      decision: 'install',
+      reason: 'ready_check',
+      pending_version: '1.0.1',
+      updater_state: 'unknown',
+      marker_state: 'absent',
+      update_attempt_id: expect.any(String)
+    })
+  })
+
+  it('reports a previous startup attempt terminal outcome once on the next launch', async () => {
+    settingsStore['lastStartupUpdateAttemptVersion'] = '1.0.1'
+    settingsStore['lastStartupUpdateAttemptId'] = 'attempt-1'
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    const updater = await bootUpdater()
+
+    await updater.applyPendingUpdateOnStartup()
+    await updater.applyPendingUpdateOnStartup()
+
+    const outcomes = findEmitCalls('comfy.desktop.app_update.previous_attempt_outcome')
+    expect(outcomes).toHaveLength(1)
+    expect(outcomes[0]?.[1]).toMatchObject({
+      update_attempt_id: 'attempt-1',
+      target_version: '1.0.1',
+      outcome: 'still_pending'
+    })
+  })
+
+  it('classifies an old-version relaunch with no staged target as rolled back', async () => {
+    settingsStore['lastStartupUpdateAttemptVersion'] = '1.0.1'
+    settingsStore['lastStartupUpdateAttemptId'] = 'attempt-rollback'
+    const updater = await bootUpdater()
+
+    await updater.applyPendingUpdateOnStartup()
+
+    expect(
+      findEmitCalls('comfy.desktop.app_update.previous_attempt_outcome')[0]?.[1]
+    ).toMatchObject({
+      update_attempt_id: 'attempt-rollback',
+      outcome: 'rolled_back'
     })
   })
 

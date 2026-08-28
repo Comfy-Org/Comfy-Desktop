@@ -79,6 +79,14 @@ export interface KnownSettings {
    *  the same version on the next boot — the user can still install it manually
    *  via the update pill. Cleared once that version is actually running. */
   lastStartupUpdateAttemptVersion?: string
+  /** Opaque, locally-generated correlation id for the staged updater attempt.
+   *  Contains no device or user material and may span process launches. */
+  pendingDesktopUpdateAttemptId?: string
+  pendingDesktopUpdateAttemptVersion?: string
+  /** Correlation id copied when a startup install is launched. */
+  lastStartupUpdateAttemptId?: string
+  /** Attempt whose next-launch terminal outcome was already emitted. */
+  lastReportedStartupUpdateAttemptId?: string
   /** Windows-only gate (default on) for applying a staged Desktop update on the
    *  next launch instead of letting electron-updater install it on quit. Ignored
    *  on macOS/Linux, whose updaters don't have the shutdown install-corruption
@@ -258,6 +266,10 @@ const SETTINGS_SCHEMA = {
   },
   pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
   lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  pendingDesktopUpdateAttemptId: { nullable: true, telemetry: { policy: 'omit' } },
+  pendingDesktopUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  lastStartupUpdateAttemptId: { nullable: true, telemetry: { policy: 'omit' } },
+  lastReportedStartupUpdateAttemptId: { nullable: true, telemetry: { policy: 'omit' } },
   installUpdatesOnStartup: {
     // Windows-only, default-on. Off-Windows the gate is inert, so report `null`
     // ("not applicable") to keep it distinct from an explicit opt-out. Exact
