@@ -311,9 +311,12 @@ const diskTooSmallForAnyTemplate = computed(() => {
 /** Show the picker step only for the standalone source when it's enabled,
  *  the template field produced options, and the volume can fit at least one
  *  template's models. Gated only by the `skipTemplatePickerStep` user opt-out
- *  (`pickerEnabled`) - shown to everyone on the standalone install path. */
+ *  (`pickerEnabled`) - shown to everyone on the standalone install path.
+ *  The `localInstallMode` guard keeps the picker out of managed installs,
+ *  which ignore templates entirely. */
 const shouldShowPickerStep = computed(
   () =>
+    localInstallMode.value &&
     currentSource.value?.id === 'standalone' &&
     pickerEnabled.value &&
     templateOptions.value.length > 0 &&
@@ -678,7 +681,11 @@ async function selectWorkspaceInstallMode(mode: 'managed' | 'public'): Promise<v
   if (!workspaceMode.value || workspaceInstallMode.value === mode) return
   authorizingWorkspace.value = false
   workspaceInstallMode.value = mode
-  step.value = 'configure'
+  // Clear source-scoped state from the previous mode so nothing carries over
+  // (e.g. a Public-tab visit leaving standalone template options loaded, which
+  // would surface the template picker on a managed install). Public mode
+  // re-selects Standalone in initializeInstallMode.
+  resetSourceState(null)
   suggestedName.value = ''
   const gen = ++modeGeneration
   initializing.value = true
@@ -719,7 +726,11 @@ async function selectSourceCard(source: Source): Promise<void> {
   })
 }
 
-async function selectSource(source: Source): Promise<void> {
+/** Drop all source-scoped wizard state (source, selections, loaded field
+ *  options) and invalidate in-flight option loads. Runs when a source is
+ *  picked and when the Managed/Public mode toggles, so no stale state (e.g.
+ *  standalone template options) leaks across sources or modes. */
+function resetSourceState(source: Source | null): void {
   loadGeneration++
   currentSource.value = source
   // A different source can't keep the (standalone-only) picker open.
@@ -731,6 +742,10 @@ async function selectSource(source: Source): Promise<void> {
   textFieldValues.value.clear()
   saveDisabled.value = true
   sourceError.value = ''
+}
+
+async function selectSource(source: Source): Promise<void> {
+  resetSourceState(source)
 
   for (const f of source.fields) {
     if (f.type === 'text') {

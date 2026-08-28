@@ -13,7 +13,7 @@ import {
   getDiskSpace,
   getDirectorySize,
   validateInstallPath,
-  detectGPU,
+  detectGPUCached,
   validateHardware,
   checkNvidiaDriver,
   checkAmdDriver,
@@ -29,7 +29,6 @@ import {
 } from './shared'
 import si from 'systeminformation'
 import type { FieldOption } from './shared'
-import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
@@ -84,12 +83,7 @@ export function registerAppHandlers(): void {
     ) => {
       const source = sourceMap[sourceId]
       if (!source) return []
-      let gpuPromise = getGpuPromise()
-      if (!gpuPromise) {
-        gpuPromise = detectGPU().catch(() => null)
-        setGpuPromise(gpuPromise)
-      }
-      const gpu = await gpuPromise
+      const gpu = await detectGPUCached()
       if (!source.getFieldOptions) return []
       const options = await source.getFieldOptions(
         fieldId,
@@ -100,14 +94,7 @@ export function registerAppHandlers(): void {
     }
   )
 
-  ipcMain.handle('detect-gpu', async () => {
-    let gpuPromise = getGpuPromise()
-    if (!gpuPromise) {
-      gpuPromise = detectGPU().catch(() => null)
-      setGpuPromise(gpuPromise)
-    }
-    return gpuPromise
-  })
+  ipcMain.handle('detect-gpu', async () => detectGPUCached())
 
   ipcMain.handle('validate-hardware', async () => {
     const result = await validateHardware()
@@ -195,12 +182,7 @@ export function registerAppHandlers(): void {
   })
 
   ipcMain.handle('get-system-info', async () => {
-    let gpuPromise = getGpuPromise()
-    if (!gpuPromise) {
-      gpuPromise = detectGPU().catch(() => null)
-      setGpuPromise(gpuPromise)
-    }
-    const gpu = await gpuPromise
+    const gpu = await detectGPUCached()
     const nvidiaCheck = gpu?.id === 'nvidia' ? await checkNvidiaDriver() : null
     const amdDriverVersion = gpu?.id === 'amd' ? await checkAmdDriver() : undefined
     const cpus = os.cpus()

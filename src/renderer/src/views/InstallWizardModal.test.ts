@@ -276,6 +276,38 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
   })
 
+  it('never shows the template picker for a Managed install after visiting the Public tab', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'bundledTemplate', label: 'Starter Template', type: 'select' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'none', label: 'None' },
+      { value: 'starter', label: 'Starter Workflow' }
+    ])
+    ;(window.api.comfybuilder.installBuild as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      entry: { id: 'managed-1', name: 'Ready Build' }
+    })
+    const wrapper = await openWorkspaceModal()
+
+    // Visit Public (loads standalone template options), then return to Managed.
+    await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.template-shell').exists()).toBe(false)
+    expect(window.api.comfybuilder.installBuild).toHaveBeenCalledOnce()
+  })
+
   it('opens the selected workspace Builds page online', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     const wrapper = await openWorkspaceModal()

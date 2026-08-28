@@ -20,7 +20,7 @@
 import { compatibleArtifactsForHost, hostOs, selectArtifactForHost } from '../comfybuilder/targets'
 import type { Artifact, Build, Host } from '../comfybuilder/types'
 import type { ComfyBuilderClient } from '../comfybuilder/client'
-import { detectGPU } from '../lib/gpu'
+import { detectGPUCached } from '../lib/gpu'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { setCachedVersions } from './versionCache'
 
@@ -77,7 +77,7 @@ export interface ResolvedHostArtifact {
 
 /** The signed-in host's build target: OS from the platform, GPU from detection. */
 export async function resolveHost(): Promise<Host> {
-  const gpu = await detectGPU().catch(() => null)
+  const gpu = await detectGPUCached()
   // The library targets nvidia/amd/cpu/mps; an Intel dGPU (or none) maps to the
   // universal CPU build, which `selectArtifactForHost` treats as the fallback.
   const mapped = gpu?.id === 'nvidia' || gpu?.id === 'amd' || gpu?.id === 'mps' ? gpu.id : 'cpu'

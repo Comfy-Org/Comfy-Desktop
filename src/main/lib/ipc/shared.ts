@@ -54,6 +54,7 @@ import {
 } from '../process'
 import {
   detectGPU,
+  detectGPUCached,
   validateHardware,
   checkNvidiaDriver,
   checkAmdDriver,
@@ -177,6 +178,7 @@ export {
   removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
   detectGPU,
+  detectGPUCached,
   validateHardware,
   checkNvidiaDriver,
   checkAmdDriver,
@@ -348,7 +350,6 @@ export let _onComfyRestarted: RestartCallback | null = null
 export let _onModelFolderRelaunch: ModelFolderRelaunchCallback | null = null
 export let _onLocaleChanged: LocaleCallback | null = null
 export let _onThemeChanged: ThemeChangedCallback | null = null
-let _gpuPromise: Promise<GpuInfo | null> | null = null
 
 export const _operationAborts = new Map<string, AbortController>()
 export const _runningSessions = new Map<string, SessionInfo>()
@@ -517,14 +518,6 @@ export function setCallbacks(callbacks: RegisterCallbacks): void {
   _onModelFolderRelaunch = callbacks.onModelFolderRelaunch ?? null
   _onLocaleChanged = callbacks.onLocaleChanged ?? null
   _onThemeChanged = callbacks.onThemeChanged ?? null
-}
-
-export function setGpuPromise(p: Promise<GpuInfo | null> | null): void {
-  _gpuPromise = p
-}
-
-export function getGpuPromise(): Promise<GpuInfo | null> | null {
-  return _gpuPromise
 }
 
 export async function syncOemSeedBestEffort(): Promise<void> {
