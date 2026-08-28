@@ -79,7 +79,10 @@ async function bootUpdater(): Promise<typeof UpdaterModule> {
   return mod
 }
 
-describe('isSystemPackageInstall (via get-update-capabilities)', () => {
+// Each test resets the module registry and re-imports the updater module
+// graph; the first import in a fresh CI worker can exceed the default 5s
+// test timeout under load.
+describe('isSystemPackageInstall (via get-update-capabilities)', { timeout: 30_000 }, () => {
   let registeredHandlers: Record<string, (...args: unknown[]) => unknown>
 
   beforeEach(async () => {
