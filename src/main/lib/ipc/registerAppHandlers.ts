@@ -181,12 +181,56 @@ export function registerAppHandlers(): void {
     activeSizeInstId = null
   })
 
+  // Hardware probing spawns nvidia-smi plus several WMI/PowerShell queries
+  // (systeminformation), and on Windows every process launch blocks the main
+  // thread in CreateProcess. The hardware cannot change mid-session, so the
+  // probe runs once and the promise is shared - the renderer bootstrap and
+  // the first-use surface both request system info at boot. A failed probe
+  // clears the cache so the next call retries.
+  let hardwareProbe: Promise<Record<string, unknown>> | null = null
+  const probeHardwareCached = (): Promise<Record<string, unknown>> => {
+    hardwareProbe ??= probeHardware().catch((err) => {
+      hardwareProbe = null
+      throw err
+    })
+    return hardwareProbe
+  }
+
   ipcMain.handle('get-system-info', async () => {
+    const hardware = await probeHardwareCached()
+    const cpus = os.cpus()
+    const allInstalls = await installations.list()
+    return {
+      ...hardware,
+      platform: process.platform,
+      arch: process.arch,
+      os_version: os.release(),
+      electron_version: process.versions.electron,
+      chrome_version: process.versions.chrome,
+      total_memory_gb: Math.round(os.totalmem() / 1073741824),
+      cpu_model: cpus[0]?.model ?? 'unknown',
+      cpu_cores: cpus.length,
+      app_version: getAppVersion(),
+      // Issue #488 - repurposed to reflect the new `autoInstallUpdates`
+      // toggle (silent install vs prompt). The auto-check loop is no
+      // longer user-disablable, so this property captures what the
+      // remaining toggle actually controls.
+      auto_update: settings.get('autoInstallUpdates') !== false,
+      locale: settings.get('language') || 'en',
+      installation_count: allInstalls.length,
+      installations: allInstalls.map((inst) => ({
+        source_id: (inst.sourceId as string) || '',
+        variant: (inst.variant as string) || '',
+        update_channel: (inst.updateChannel as string) || 'stable',
+        status: (inst.status as string) || 'ready'
+      }))
+    }
+  })
+
+  async function probeHardware(): Promise<Record<string, unknown>> {
     const gpu = await detectGPUCached()
     const nvidiaCheck = gpu?.id === 'nvidia' ? await checkNvidiaDriver() : null
     const amdDriverVersion = gpu?.id === 'amd' ? await checkAmdDriver() : undefined
-    const cpus = os.cpus()
-    const allInstalls = await installations.list()
 
     let osDistro: string | null = null
     let osRelease: string | null = null
@@ -274,36 +318,14 @@ export function registerAppHandlers(): void {
       nvidia_driver_supported: nvidiaCheck?.supported ?? null,
       amd_driver_version: amdDriver,
       intel_driver_version: intelDriver,
-      platform: process.platform,
-      arch: process.arch,
-      os_version: os.release(),
       os_distro: osDistro,
       os_release: osRelease,
       os_arch: osArch,
-      electron_version: process.versions.electron,
-      chrome_version: process.versions.chrome,
-      total_memory_gb: Math.round(os.totalmem() / 1073741824),
-      cpu_model: cpus[0]?.model ?? 'unknown',
-      cpu_cores: cpus.length,
       cpu_physical_cores: cpuPhysicalCores,
       cpu_speed_ghz: cpuSpeedGhz,
-      cpu_manufacturer: cpuManufacturer,
-      app_version: getAppVersion(),
-      // Issue #488 — repurposed to reflect the new `autoInstallUpdates`
-      // toggle (silent install vs prompt). The auto-check loop is no
-      // longer user-disablable, so this property captures what the
-      // remaining toggle actually controls.
-      auto_update: settings.get('autoInstallUpdates') !== false,
-      locale: settings.get('language') || 'en',
-      installation_count: allInstalls.length,
-      installations: allInstalls.map((inst) => ({
-        source_id: (inst.sourceId as string) || '',
-        variant: (inst.variant as string) || '',
-        update_channel: (inst.updateChannel as string) || 'stable',
-        status: (inst.status as string) || 'ready'
-      }))
+      cpu_manufacturer: cpuManufacturer
     }
-  })
+  }
 
   // Per-session boot census of every persisted installation, sorted
   // most-recently-launched first. Powers `comfy.desktop.session.installs_inventory`

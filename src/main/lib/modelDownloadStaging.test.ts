@@ -461,6 +461,47 @@ describe('scanForStagedDownloads', () => {
       renameSpy.mockRestore()
     }
   })
+
+  it('enumerates a root nested inside another root only once', async () => {
+    // The outer root's walk already covers the nested root's tree, so the
+    // nested root must be pruned instead of walked a second time (boot-time
+    // scans over large trees are expensive and run on the main process).
+    const sub = path.join(tmpDir, 'checkpoints')
+    fs.mkdirSync(sub, { recursive: true })
+    const finalPath = path.join(sub, 'model.safetensors')
+    fs.writeFileSync(stagingPathFor(finalPath), Buffer.alloc(7))
+    writeStagedMeta(stagingMetaPathFor(finalPath), validMeta())
+
+    const realReaddir = fs.promises.readdir.bind(fs.promises)
+    const readdirSpy = vi
+      .spyOn(fs.promises, 'readdir')
+      .mockImplementation(realReaddir as typeof fs.promises.readdir)
+    try {
+      const { downloads: found } = await scanForStagedDownloads([tmpDir, sub])
+      expect(found).toHaveLength(1)
+      expect(found[0]!.finalPath).toBe(finalPath)
+      const subReads = readdirSpy.mock.calls.filter(
+        ([dir]) => path.resolve(String(dir)).toLowerCase() === path.resolve(sub).toLowerCase()
+      )
+      expect(subReads).toHaveLength(1)
+    } finally {
+      readdirSpy.mockRestore()
+    }
+  })
+
+  it('still walks a nested root that sits under a skipped directory name', async () => {
+    // The outer root's walk skips node_modules, so a root inside it is NOT
+    // covered and must not be pruned.
+    const nestedRoot = path.join(tmpDir, 'node_modules', 'models')
+    fs.mkdirSync(nestedRoot, { recursive: true })
+    const finalPath = path.join(nestedRoot, 'model.safetensors')
+    fs.writeFileSync(stagingPathFor(finalPath), Buffer.alloc(3))
+    writeStagedMeta(stagingMetaPathFor(finalPath), validMeta())
+
+    const { downloads: found } = await scanForStagedDownloads([tmpDir, nestedRoot])
+    expect(found).toHaveLength(1)
+    expect(found[0]!.finalPath).toBe(finalPath)
+  })
 })
 
 describe('quarantineOrphanStagedBytes', () => {
