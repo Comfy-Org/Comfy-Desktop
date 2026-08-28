@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** Account identity and sign-out menu shown at the dashboard's top-right. */
+/** Account identity and authentication controls shown at the dashboard's top-right. */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ChevronDown, LogOut } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
@@ -12,6 +12,7 @@ const emit = defineEmits<{
 const store = useAuthStore()
 
 const menuOpen = ref(false)
+const signingIn = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const faceRef = ref<HTMLElement | null>(null)
 const email = computed(() => store.status.email ?? '')
@@ -45,6 +46,18 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onPointerDown)
 })
+
+async function onSignIn(): Promise<void> {
+  if (signingIn.value) return
+  signingIn.value = true
+  try {
+    await store.signIn()
+  } catch {
+    return
+  } finally {
+    signingIn.value = false
+  }
+}
 
 async function onSignOut(): Promise<void> {
   closeMenu()
@@ -96,6 +109,16 @@ async function onSignOut(): Promise<void> {
         </button>
       </div>
     </template>
+    <button
+      v-else
+      type="button"
+      class="account-chip__face account-chip__signin"
+      data-testid="devplatform-account-signin"
+      :disabled="signingIn"
+      @click="onSignIn"
+    >
+      {{ $t('devPlatform.signIn.cta') }}
+    </button>
   </div>
 </template>
 
@@ -131,6 +154,16 @@ async function onSignOut(): Promise<void> {
 .account-chip__face:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+.account-chip__face:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.account-chip__signin {
+  padding-inline: 16px;
+  font-size: var(--takeover-fs-caption);
+  font-weight: 600;
 }
 
 .account-chip__email {

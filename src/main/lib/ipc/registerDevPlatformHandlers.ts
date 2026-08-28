@@ -74,19 +74,8 @@ function isPromotableLocalInstallation(inst: InstallationRecord): boolean {
   return (
     inst.status === 'installed' &&
     Boolean(inst.installPath) &&
-    sourceMap[inst.sourceId]?.category === 'local' &&
-    inst.sourceId !== COMFYBUILDER_SOURCE_ID &&
-    !inst.workspaceId
+    sourceMap[inst.sourceId]?.category === 'local'
   )
-}
-
-function validatePlatformDraftUrl(value: string): string {
-  const platformOrigin = new URL(PLATFORM_WEB_BASE_URL).origin
-  const url = new URL(value, PLATFORM_WEB_BASE_URL)
-  if (url.protocol !== 'https:' || url.origin !== platformOrigin) {
-    throw new Error('Comfy Builder returned an invalid draft URL.')
-  }
-  return url.toString()
 }
 
 /**
@@ -201,15 +190,23 @@ export function registerDevPlatformHandlers(): void {
       }
       promoting.add(installationId)
       try {
-        const status = session.status()
-        if (!status.signedIn) return { ok: false, message: 'Not signed in.' }
-        const workspaceId = status.workspaceId
-        if (!workspaceId) return { ok: false, message: 'No active workspace.' }
-
         const inst = await installations.get(installationId)
         if (!inst) return { ok: false, message: 'Instance not found.' }
         if (!isPromotableLocalInstallation(inst)) {
           return { ok: false, message: 'This instance cannot be promoted to a workspace.' }
+        }
+        const status = session.status()
+        if (!status.signedIn) return { ok: false, message: 'Not signed in.' }
+        const workspaceId = inst.workspaceId || status.workspaceId
+        if (!workspaceId) return { ok: false, message: 'No active workspace.' }
+        if (status.workspaceId !== workspaceId) {
+          clearVersionCache()
+          const switched = await session.switchWorkspace(workspaceId)
+          clearVersionCache()
+          broadcastAuthChanged(switched)
+          if (!switched.signedIn || switched.workspaceId !== workspaceId) {
+            return { ok: false, message: 'Could not activate the instance workspace.' }
+          }
         }
 
         const filename = await saveSnapshot(inst.installPath, inst, 'manual')
@@ -218,7 +215,11 @@ export function registerDevPlatformHandlers(): void {
         await installations.update(inst.id, { lastSnapshot: filename, snapshotCount })
 
         const current = await installations.get(installationId)
-        if (!current || !isPromotableLocalInstallation(current)) {
+        if (
+          !current ||
+          !isPromotableLocalInstallation(current) ||
+          current.workspaceId !== inst.workspaceId
+        ) {
           return { ok: false, message: 'The instance changed. Try again.' }
         }
         if (session.status().workspaceId !== workspaceId) {
@@ -231,13 +232,25 @@ export function registerDevPlatformHandlers(): void {
           throw new Error('Comfy Builder created the draft in a different workspace.')
         }
         const latest = await installations.get(installationId)
-        if (!latest || !isPromotableLocalInstallation(latest)) {
+        if (
+          !latest ||
+          !isPromotableLocalInstallation(latest) ||
+          latest.workspaceId !== inst.workspaceId
+        ) {
           return { ok: false, message: 'The instance changed. Try again.' }
         }
         if (session.status().workspaceId !== workspaceId) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
-        await shell.openExternal(validatePlatformDraftUrl(draft.editUrl))
+        // The portal's detail route processes workspace deep links; the editor
+        // route does not. Open the newly created Build in its owning workspace,
+        // where the Edit action continues into the draft editor in that context.
+        const url = new URL(
+          `/profile/builds/${encodeURIComponent(draft.buildId)}`,
+          PLATFORM_WEB_BASE_URL
+        )
+        url.searchParams.set('workspace', workspaceId)
+        await shell.openExternal(url.toString())
         return { ok: true }
       } catch (err) {
         console.warn('[dev-platform] Failed to promote local instance:', err)

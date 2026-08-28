@@ -512,16 +512,13 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       // A channel switch reads as "Moving to <channel>"; the up/down direction
       // is incidental and frames it confusingly. Same-channel updates keep the
       // version-diff / rollback copy.
-      // Every in-place update path carries the breakage warning — custom
-      // nodes / saved workflows can pin to specific ComfyUI internals that
-      // shift across releases. Pair it with the snapshot-undo hint so the
-      // user knows the update is reversible. Both live in the confirm copy
-      // itself (not the collapsible details) so the user can't dismiss past
-      // them accidentally.
+      // Every in-place update path explains that custom-node breakage can be
+      // reversed from the auto-saved pre-update snapshot. Keep this in the
+      // confirm copy itself so the user cannot dismiss past it accidentally.
       const baseConfirmMessage = isSwitching
         ? t('channelCards.movingTo', { channel: `**${card.label}**` })
         : t(msgKey, { installed: boldInstalled, latest: boldLatest })
-      const confirmMessage = `${baseConfirmMessage}\n\n${t('standalone.updateBreakingWarning')}\n${t('standalone.updateSnapshotUndoHint')}`
+      const confirmMessage = `${baseConfirmMessage}\n\n${t('standalone.updateSnapshotUndoHint')}`
       actions.push({
         id: 'update-comfyui',
         label: t('standalone.updateNow'),

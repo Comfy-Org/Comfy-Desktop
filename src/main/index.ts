@@ -1730,6 +1730,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
           // Guard: another op already running for this install.
           if (_operationAborts.has(installationId)) {
+            // A duplicate picker request must not replace the original
+            // operation's live progress with a false failure state.
+            const activeOperation = _activeOperationStatus.get(installationId)
+            if (activeOperation && !activeOperation.done) return
+
             _activeOperationStatus.set(installationId, {
               status: '',
               percent: -1,

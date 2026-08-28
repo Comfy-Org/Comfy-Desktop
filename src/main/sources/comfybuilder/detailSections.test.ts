@@ -175,7 +175,11 @@ describe('comfybuilder.getDetailSections', () => {
     expect(update).toBeDefined()
     expect(update?.data).toEqual({ version: 9 })
     expect(update?.showProgress).toBe(true)
-    expect(update?.confirm).toBeDefined()
+    expect(update?.confirm).toEqual({
+      title: 'comfybuilder.updateConfirmTitle',
+      message: 'comfybuilder.updateConfirmMessage\n\ncomfybuilder.updateConfirmInfo',
+      confirmLabel: 'comfybuilder.updateNow'
+    })
 
     setCachedVersions('d1', [7, 3])
     expect(
