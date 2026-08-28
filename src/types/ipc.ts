@@ -1320,6 +1320,11 @@ export interface ElectronApi {
    *  mid-stop hydrate the "Stopping…" state instead of missing the one-shot
    *  `onInstanceStopping` broadcast. */
   getStoppingInstances(): Promise<string[]>
+  /** Snapshot of installs with an action currently in flight through the
+   *  run-action / picker background-op dispatch (id + action id). Lets a
+   *  window opened mid-operation hydrate the dashboard's busy state instead
+   *  of missing the one-shot `onOperationChanged` broadcast. */
+  getActiveOperations(): Promise<{ installationId: string; actionId: string }[]>
   /**
    * Read the retained crash detail for an installation, if any. Main holds
    * the last `comfy-exited` payload (with stderr tail) per installation
@@ -1510,6 +1515,12 @@ export interface ElectronApi {
   onInstanceStarted(callback: (data: RunningInstance) => void): Unsubscribe
   onInstanceStopping(callback: (data: { installationId: string }) => void): Unsubscribe
   onInstanceStopped(callback: (data: { installationId: string }) => void): Unsubscribe
+  /** An action started (`active: true`) or finished (`active: false`) for an
+   *  install, regardless of which window dispatched it. Drives ambient busy
+   *  UI (e.g. the dashboard tile's "Updating" pill) in every window. */
+  onOperationChanged(
+    callback: (data: { installationId: string; actionId: string; active: boolean }) => void
+  ): Unsubscribe
   onThemeChanged(callback: (theme: ResolvedTheme) => void): Unsubscribe
   onLocaleChanged(
     callback: (payload: { locale: string; messages: Record<string, unknown> }) => void

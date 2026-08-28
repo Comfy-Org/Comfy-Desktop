@@ -132,6 +132,7 @@ export function buildElectronApi(): ElectronApi {
     getRunningInstances: () => ipcRenderer.invoke('get-running-instances'),
     getLaunchingInstances: () => ipcRenderer.invoke('get-launching-instances'),
     getStoppingInstances: () => ipcRenderer.invoke('get-stopping-instances'),
+    getActiveOperations: () => ipcRenderer.invoke('get-active-operations'),
     getLastCrashError: (installationId: string) =>
       ipcRenderer.invoke('get-last-crash-error', installationId),
     getCrashInstances: () => ipcRenderer.invoke('get-crash-instances'),
@@ -325,6 +326,12 @@ export function buildElectronApi(): ElectronApi {
         callback(data as Parameters<typeof callback>[0])
       ipcRenderer.on('instance-stopped', handler)
       return () => ipcRenderer.removeListener('instance-stopped', handler)
+    },
+    onOperationChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as Parameters<typeof callback>[0])
+      ipcRenderer.on('operation-changed', handler)
+      return () => ipcRenderer.removeListener('operation-changed', handler)
     },
     onThemeChanged: (callback) => {
       const handler = (_event: IpcRendererEvent, theme: unknown) => callback(theme as ResolvedTheme)

@@ -10,6 +10,7 @@ import {
   MoreVertical
 } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
+import { progressOpKindForActionId } from '../../lib/progressOpKind'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
@@ -47,7 +48,15 @@ const inst = computed(() => props.installation)
 const isRunning = computed(() => sessionStore.isRunning(inst.value.id))
 const isLaunching = computed(() => sessionStore.isLaunching(inst.value.id))
 const isStopping = computed(() => sessionStore.isStopping(inst.value.id))
-const isUpdating = computed(() => inst.value.status === 'installing')
+/* A managed update flips the record to status 'installing'; a standalone
+ * update never touches the record and is only visible through main's
+ * operation broadcast. Key on both so the tile reports "Updating" the same
+ * way for either kind, regardless of which window started the update. */
+const isUpdating = computed(() => {
+  if (inst.value.status === 'installing') return true
+  const op = sessionStore.operationInstances.get(inst.value.id)
+  return op != null && progressOpKindForActionId(op.actionId) === 'update'
+})
 const hasError = computed(() => sessionStore.errorInstances.has(inst.value.id))
 
 /* Backend-flagged problem states (failed install, interrupted delete, missing

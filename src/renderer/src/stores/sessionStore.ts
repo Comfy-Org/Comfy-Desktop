@@ -45,6 +45,11 @@ export const useSessionStore = defineStore('session', () => {
   const activeSessions = reactive(new Map<string, ActiveSession>())
   const errorInstances = reactive(new Map<string, ErrorInstance>())
   const stoppingInstances = reactive(new Set<string>())
+  /** Installs with an action in flight on main (`operation-changed`), keyed by
+   *  install id. Unlike `activeSessions` (window-local, set by this window's
+   *  progressStore) this covers operations started from ANY window - e.g. an
+   *  update fired from the picker popup - so the dashboard can reflect them. */
+  const operationInstances = reactive(new Map<string, { actionId: string }>())
   const stoppingTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
   const sessions = reactive(new Map<string, SessionBuffer>())
 
@@ -184,6 +189,14 @@ export const useSessionStore = defineStore('session', () => {
     const stopping = (await window.api.getStoppingInstances?.()) ?? []
     for (const id of stopping) markStopping(id)
 
+    // Hydrate in-flight operations so a window opened mid-operation (e.g. an
+    // update running from the picker popup) shows the busy state instead of
+    // missing the one-shot `operation-changed` broadcast.
+    const activeOps = (await window.api.getActiveOperations?.()) ?? []
+    for (const op of activeOps) {
+      operationInstances.set(op.installationId, { actionId: op.actionId })
+    }
+
     // Hydrate retained crashes so a freshly-opened dashboard shows error tiles
     // for crashes that happened before it existed. Op-failure errors are
     // renderer-owned and not covered here (see issue #900). Skip running /
@@ -232,6 +245,16 @@ export const useSessionStore = defineStore('session', () => {
       window.api.onInstanceStopping((data: { installationId: string }) => {
         markStopping(data.installationId)
       }),
+      // Guarded - a slimmer api shim (picker popup) may not forward this.
+      window.api.onOperationChanged?.(
+        (data: { installationId: string; actionId: string; active: boolean }) => {
+          if (data.active) {
+            operationInstances.set(data.installationId, { actionId: data.actionId })
+          } else {
+            operationInstances.delete(data.installationId)
+          }
+        }
+      ) ?? ((): void => {}),
       window.api.onComfyOutput((data: ComfyOutputData) => {
         appendOutput(data.installationId, data.text)
       }),
@@ -280,6 +303,7 @@ export const useSessionStore = defineStore('session', () => {
     launchingInstances,
     activeSessions,
     errorInstances,
+    operationInstances,
     sessions,
     ready,
     runningTabCount,
