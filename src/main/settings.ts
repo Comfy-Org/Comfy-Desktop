@@ -54,6 +54,7 @@ export interface KnownSettings {
   /** `true` once the first-use takeover is finished. Mid-flow cancel does NOT
    *  flip this, so the takeover replays from step 1 next launch. */
   firstUseCompleted?: boolean
+  minimaxAnnouncementSeen?: boolean
   /** When true, hide the Cloud tile (and the Try-Cloud CTA) from the
    *  Dashboard / Instance Picker. Local-only users who never use Cloud
    *  can opt out of seeing it without us removing the feature. Default
@@ -243,6 +244,7 @@ const SETTINGS_SCHEMA = {
   // fresh `false` without violating the consent gate, so the value would go stale.
   telemetryEnabled: { nullable: false, telemetry: { policy: 'omit' } },
   firstUseCompleted: { nullable: false, telemetry: { policy: 'omit' } },
+  minimaxAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }

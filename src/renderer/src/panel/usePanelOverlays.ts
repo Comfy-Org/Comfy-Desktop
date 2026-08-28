@@ -34,6 +34,11 @@ export type PanelKey =
    *  swallowing the event. */
   | 'progress'
   | 'mcp-setup'
+  /** Mirror of main's `'announcement'` ComfyPanelKey. Overlay mode; the
+   *  announcement modal renders via its own ref (like feedback), so there's
+   *  no body branch. Accepting the key keeps `isValidPanel` from swallowing
+   *  the panel-switch so the overlay transparency watcher still fires. */
+  | 'announcement'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
@@ -45,7 +50,8 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'load-snapshot',
   'quick-install',
   'progress',
-  'mcp-setup'
+  'mcp-setup',
+  'announcement'
 ])
 
 /**

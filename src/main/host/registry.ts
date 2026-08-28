@@ -31,6 +31,9 @@ export type ComfyPanelKey =
   /** Overlay mode (like `'feedback'`): the MCP setup modal mounts over the live
    *  canvas, which stays visible underneath and dimmed. Set programmatically. */
   | 'mcp-setup'
+  /** Overlay mode (like `'feedback'`): the launch-announcement modal, opened
+   *  from the title-bar news bell. Set programmatically. */
+  | 'announcement'
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
@@ -40,7 +43,8 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'load-snapshot',
   'quick-install',
   'progress',
-  'mcp-setup'
+  'mcp-setup',
+  'announcement'
 ])
 
 /**
@@ -61,6 +65,7 @@ export type BodyMode =
   | 'load-snapshot'
   | 'quick-install'
   | 'mcp-setup'
+  | 'announcement'
 
 /**
  * Per-installation handle for a ComfyUI window. The window is a parent
@@ -82,6 +87,13 @@ export interface ComfyWindowEntry {
   /** Currently rendered panel — always a user-visible key, never the internal
    *  `'comfy-lifecycle'` / `'chooser'` body modes. */
   activePanel: ComfyPanelKey
+  /** While set (overlay switch → renderer `overlay-ready` ack), `layoutViews`
+   *  keeps the panel hidden so its pre-transparent frame can't flash. */
+  pendingOverlayReveal?: boolean
+  /** Fallback timer that reveals the overlay if the ack never lands; cleared on
+   *  the next switch or the ack so a stale one can't reveal a later open early. */
+  overlayRevealTimer?: ReturnType<typeof setTimeout>
+
   /** Last theme reported by the ComfyUI frontend, applied to the panel on load. */
   lastTheme: { bg: string; text: string }
   /** Updates view bounds for the current activePanel. */

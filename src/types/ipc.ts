@@ -1208,6 +1208,9 @@ export interface ElectronApi {
    *  the comfy/chooser root. Fire-and-forget; the panel will receive
    *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
+  /** Tell main an overlay panel (feedback / mcp-setup) has painted, so it can
+   *  reveal the until-now-hidden panel view without an opaque flash. */
+  signalOverlayReady(): void
   /** Boot-time restore reveal handshake. The restore window is opened
    *  hidden; the panel calls this once it knows whether its launch
    *  takeover came up (`'takeover-ready'` → reveal the launching surface)
@@ -1256,6 +1259,10 @@ export interface ElectronApi {
    *  `buildSupportUrl()` reads `navigator.userAgent` and the telemetry
    *  helpers live renderer-side. Returns an unsubscribe. */
   onOpenFeedback(callback: (data: { source: 'titlebar' | 'menu' }) => void): Unsubscribe
+  /** Main forwards the title-bar news-bell click here so the panel renderer
+   *  mounts the announcement modal over the live canvas. Returns an
+   *  unsubscribe. */
+  onOpenAnnouncement(callback: () => void): Unsubscribe
   /** Main consults the panel renderer before tearing down
    *  the host window. Returns an unsubscribe; the callback receives a
    *  `requestId` it must echo back via `respondCloseRequest` so main

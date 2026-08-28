@@ -72,6 +72,8 @@
     "menu": "Menu",
     "feedback": "Feedback",
     "feedbackTooltip": "Send Feedback",
+    "announcement": "What's new",
+    "announcementTooltip": "What's new",
     "downloads": "Downloads",
     "downloadsInProgress": "no downloads in progress | {n} download in progress | {n} downloads in progress",
     "downloadsCompleteUnseen": "no recent downloads | {n} download finished — click to review | {n} downloads finished — click to review",
@@ -709,6 +711,22 @@
     "localModeConfigureLabel": "Configure",
     "localDescRecommended": "Fast install with **recommended settings** — skips optional setup steps.",
     "localDescRecommendedGpu": "Fast install tuned for **{gpu}** with recommended settings. Pick **Configure** if that's not your hardware."
+  },
+  "announcement": {
+    "minimax": {
+      "title": "MiniMax H3 is now on ComfyUI",
+      "lead": "MiniMax's latest open source, SOTA video model, available now",
+      "highlights": [
+        "Run for free on Comfy Cloud or Comfy Desktop",
+        "Works with your existing ComfyUI workflows",
+        "Want to use it commercially? Reach out to get a license"
+      ],
+      "requestLicenseCta": "Request License",
+      "learnMoreCta": "Learn More",
+      "imageAlt": "MiniMax H3 announcement",
+      "unmute": "Unmute video",
+      "mute": "Mute video"
+    }
   },
   "tray": {
     "showApp": "Show Comfy Desktop",

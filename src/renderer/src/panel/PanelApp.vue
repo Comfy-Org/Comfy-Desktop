@@ -5,6 +5,7 @@ import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
+import AnnouncementModal from '../components/AnnouncementModal.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
@@ -23,6 +24,7 @@ import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboardConfirm'
 import { useSendFeedback } from '../composables/useSendFeedback'
+import { useAnnouncement } from '../composables/useAnnouncement'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
@@ -39,6 +41,8 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
+import { useMediaPrefetch } from '../composables/useMediaPrefetch'
+import { MCP_LAUNCH_VIDEO_SRC } from '../views/mcp/McpVideoSources'
 import type { Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -70,6 +74,7 @@ const modal = useModal()
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
+const { announcementOpen, closeAnnouncement } = useAnnouncement()
 
 // installationStore.fetchInstallations() is wired to onInstallationsChanged
 // inside the store itself, so the panel just needs to read from it.
@@ -164,6 +169,16 @@ const {
 const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
   isBusy: () => sessionStore.runningTabCount > 0
 })
+
+// Warm the ~5 MB MCP film into cache once so it isn't black on first open. No
+// `runningTabCount` gate: the modal is only reachable while an instance runs.
+const { prefetch: prefetchMedia } = useMediaPrefetch()
+let mcpVideoWarmed = false
+function warmMcpVideo(): void {
+  if (mcpVideoWarmed) return
+  mcpVideoWarmed = true
+  prefetchMedia([MCP_LAUNCH_VIDEO_SRC])
+}
 
 let warmTemplateThumbnailsOnce: Promise<void> | null = null
 function warmTemplateThumbnails(): Promise<void> {
@@ -357,15 +372,16 @@ function handleMcpOpenTerminal(): void {
   window.api.openInstancePicker({ installationId, initialTab: 'console' })
 }
 
-/** Composite the live ComfyUI canvas through while an overlay panel (feedback
- *  or MCP setup) is mounted. */
+/** Make the panel transparent for overlay modes, then tell main to reveal it. */
 watch(
   activePanel,
   (next) => {
-    document.body.classList.toggle(
-      'panel-overlay-mode',
-      next === 'feedback' || next === 'mcp-setup'
-    )
+    const isOverlay = next === 'feedback' || next === 'mcp-setup' || next === 'announcement'
+    document.body.classList.toggle('panel-overlay-mode', isOverlay)
+    if (!isOverlay) return
+    // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
+    // and Chromium pauses rAF for an occluded view, so it would never fire.
+    void nextTick(() => window.api.signalOverlayReady())
   },
   { immediate: true }
 )
@@ -542,6 +558,8 @@ onMounted(async () => {
     // after a partial-bootstrap failure.
     resolveBootstrap?.()
     resolveBootstrap = null
+    // After bootstrap so it never competes with init (idle-deferred internally).
+    warmMcpVideo()
   }
 })
 
@@ -655,6 +673,7 @@ onUnmounted(() => {
     />
 
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
+    <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 
     <ModalDialog />
     <DialogHost />
