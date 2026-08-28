@@ -70,9 +70,9 @@ const messages = {
     },
     devPlatform: {
       workspace: {
-        promoteToWorkspace: 'Promote to Workspace',
+        promoteToWorkspace: 'Create Build',
         promoting: 'Promoting...',
-        promoteFailedTitle: "Couldn't promote instance",
+        promoteFailedTitle: 'Could not create build',
         promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
       }
     },
@@ -531,7 +531,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
   it('shows the item only when the dashboard eligibility gate accepts the install', () => {
     const eligible = mountHarness(makeInstall(), undefined, () => true)
     expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')?.label).toBe(
-      'Promote to Workspace'
+      'Create Build'
     )
 
     const ineligible = mountHarness(makeInstall(), undefined, () => false)
@@ -585,7 +585,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
     await menu.triggerAction('promote-to-workspace', inst)
 
     expect(modalMock.alert).toHaveBeenCalledWith({
-      title: "Couldn't promote instance",
+      title: 'Could not create build',
       message: 'Snapshot upload failed.'
     })
   })

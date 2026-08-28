@@ -27,9 +27,9 @@ const messages = {
     track: {
       grandTitle: 'Add Existing Instance',
       grandSubtitle: 'Add an existing local ComfyUI checkout.',
-      installDir: 'Install Directory',
+      installDir: 'Install location',
       selectDir: 'Select a directory',
-      detectedType: 'Detected Type',
+      detectedType: 'Detected type',
       browseDirFirst: 'Browse to a directory first',
       detecting: 'Detecting',
       noDetected: 'No known install detected',
@@ -115,6 +115,11 @@ describe('TrackModal — browse-only install directory', () => {
     // Empty → muted placeholder, not a clickable open button.
     expect(wrapper.find('button.track-path-open').exists()).toBe(false)
     expect(wrapper.find('.track-path-placeholder').exists()).toBe(true)
+    expect(wrapper.findAll('.track-label').map((label) => label.text())).toEqual([
+      'Install location',
+      'Name',
+      'Detected type'
+    ])
   })
 
   it('opens the folder in the file manager when the populated path text is clicked', async () => {

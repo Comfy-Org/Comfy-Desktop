@@ -52,13 +52,20 @@ beforeEach(() => {
 })
 
 describe('DevPlatformAccountChip — signed out', () => {
-  // Logging in lives in the title-bar file menu and nowhere else, so the
-  // dashboard shows no account affordance until there is an account.
-  it('renders nothing at all', async () => {
+  it('renders a login button instead of the account chip', async () => {
     const { wrapper } = await mountChip(SIGNED_OUT)
-    expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="devplatform-account-signin"]').text()).toBe('Log in')
     expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(false)
-    expect(wrapper.text()).toBe('')
+  })
+
+  it('starts sign-in from the login button', async () => {
+    const { wrapper, store } = await mountChip(SIGNED_OUT)
+    store.signIn = vi.fn().mockResolvedValue(SIGNED_IN)
+
+    await wrapper.find('[data-testid="devplatform-account-signin"]').trigger('click')
+    await flushPromises()
+
+    expect(store.signIn).toHaveBeenCalledOnce()
   })
 
   it('appears as soon as an out-of-band sign-in lands', async () => {

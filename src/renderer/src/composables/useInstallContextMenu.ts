@@ -187,7 +187,7 @@ export function useInstallContextMenu(
         id: 'promote-to-workspace',
         label: promoting
           ? t('devPlatform.workspace.promoting', 'Promoting...')
-          : t('devPlatform.workspace.promoteToWorkspace', 'Promote to Workspace'),
+          : t('devPlatform.workspace.promoteToWorkspace', 'Create Build'),
         disabled: promoting
       })
     }
@@ -321,7 +321,7 @@ export function useInstallContextMenu(
       }
     } else if (id === 'promote-to-workspace') {
       if (isPromotingToWorkspace(inst)) return
-      const title = t('devPlatform.workspace.promoteFailedTitle', "Couldn't promote instance")
+      const title = t('devPlatform.workspace.promoteFailedTitle', 'Could not create build')
       let failureMessage: string | null = null
       setPromotingToWorkspace(inst.id, true)
       try {

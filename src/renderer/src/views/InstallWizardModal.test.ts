@@ -38,6 +38,8 @@ beforeEach(() => {
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
     getDiskSpace: vi.fn().mockResolvedValue(null),
     validateInstallPath: vi.fn().mockResolvedValue([]),
+    buildInstallation: vi.fn().mockResolvedValue({ sourceId: 'standalone' }),
+    addInstallation: vi.fn().mockResolvedValue({ ok: true }),
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
@@ -65,6 +67,30 @@ describe('InstallWizardModal heading', () => {
     expect(wrapper.get('.brand-title').text()).toBe('Create a New Instance')
     expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
   })
+
+  it('shows signed-out local fields directly like the Public workspace tab', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'comfyVersion', label: 'ComfyUI version', type: 'select' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'stable', label: 'Stable' }
+    ])
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    expect(wrapper.get('.config-advanced').classes()).toEqual(
+      expect.arrayContaining(['config-advanced--direct', 'is-open'])
+    )
+    expect(wrapper.find('.config-advanced__summary').exists()).toBe(false)
+    const fieldLabel = wrapper.get('#source-fields label')
+    expect(fieldLabel.classes()).toContain('config-label')
+    expect(fieldLabel.text()).toBe('ComfyUI version')
+  })
 })
 
 describe('InstallWizardModal install-location field', () => {
@@ -73,6 +99,9 @@ describe('InstallWizardModal install-location field', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
+    expect(wrapper.get('[data-testid="install-location-field"] .config-label').text()).toBe(
+      'Install location'
+    )
     const pathBtn = wrapper.find('button.config-path-open')
     expect(pathBtn.exists()).toBe(true)
     expect(pathBtn.text()).toBe('/home/user/ComfyUI')
@@ -171,8 +200,8 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(wrapper.find('[data-testid="workspace-build-details"]').exists()).toBe(false)
   })
 
-  it('reuses the loaded catalog on repeat opens and refreshes only on request', async () => {
-    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+  it('refreshes the Build catalog every time the page opens', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', version: '2', state: 'installable' }])
     const wrapper = mountModal()
     await flushPromises()
     const open = (opts: { workspaceId: string }): Promise<void> =>
@@ -182,28 +211,21 @@ describe('InstallWizardModal workspace Builds', () => {
 
     await open({ workspaceId: 'w1' })
     await flushPromises()
+    expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
+      { value: 'ready', label: 'Ready Build', description: 'Release v2' }
+    ])
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'ready', name: 'Ready Build', version: '3', state: 'installable' }
+    ])
     await open({ workspaceId: 'w1' })
     await flushPromises()
 
     expect(window.api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
-    expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
-    expect(wrapper.getComponent(BaseSelect).props('modelValue')).toBe('ready')
-
-    let finishRefresh!: (builds: Array<Record<string, unknown>>) => void
-    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockReturnValueOnce(
-      new Promise((resolve) => {
-        finishRefresh = resolve
-      })
-    )
-    await wrapper.get('.workspace-build-refresh').trigger('click')
-    expect(wrapper.getComponent(BaseSelect).get('.ui-select-label').text()).toBe(
-      'Refreshing builds...'
-    )
-    expect(wrapper.getComponent(BaseSelect).props('disabled')).toBe(false)
-    finishRefresh([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
-    await flushPromises()
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledTimes(2)
-    expect(wrapper.getComponent(BaseSelect).get('.ui-select-label').text()).toBe('Ready Build')
+    expect(wrapper.getComponent(BaseSelect).props('modelValue')).toBe('ready')
+    expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
+      { value: 'ready', label: 'Ready Build', description: 'Release v3' }
+    ])
   })
 
   it('uses the existing local installer and template picker for Public builds', async () => {
@@ -229,7 +251,11 @@ describe('InstallWizardModal workspace Builds', () => {
 
     expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
-    expect(wrapper.get('.config-advanced').exists()).toBe(true)
+    expect(wrapper.get('.config-advanced').classes()).toContain('config-advanced--direct')
+    expect(wrapper.get('.config-advanced').classes()).toContain('is-open')
+    expect(wrapper.find('.config-advanced__summary').exists()).toBe(false)
+    expect(wrapper.get('#source-fields').exists()).toBe(true)
+    expect(wrapper.get('#source-fields label').classes()).toContain('config-label')
     expect(window.api.getFieldOptions).toHaveBeenCalledWith(
       'standalone',
       'bundledTemplate',
@@ -242,6 +268,37 @@ describe('InstallWizardModal workspace Builds', () => {
 
     expect(wrapper.get('.template-shell').exists()).toBe(true)
     expect(window.api.comfybuilder.installBuild).not.toHaveBeenCalled()
+  })
+
+  it('assigns a Public install to the selected workspace', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU' }
+    ])
+    ;(window.api.addInstallation as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      entry: { id: 'public-1', name: 'ComfyUI' }
+    })
+    const wrapper = await openWorkspaceModal()
+
+    await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(window.api.addInstallation).toHaveBeenCalledExactlyOnceWith({
+      name: 'ComfyUI',
+      installPath: '/home/user/ComfyUI',
+      sourceId: 'standalone',
+      workspaceId: 'w1'
+    })
   })
 
   it('switches back to cached Managed builds without another catalog request', async () => {
@@ -556,6 +613,9 @@ describe('InstallWizardModal hardware warning', () => {
 
   it('renders the validateHardware warning under the detected GPU field', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([standaloneSource])
+    ;(window.api.detectGPU as ReturnType<typeof vi.fn>).mockResolvedValue({
+      label: 'Radeon RX 7900'
+    })
     ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
       supported: true,
       warning: KFD_WARNING
@@ -568,10 +628,18 @@ describe('InstallWizardModal hardware warning', () => {
     expect(warning.exists()).toBe(true)
     expect(warning.text()).toBe(KFD_WARNING)
     const advanced = wrapper.get('.config-advanced').element
+    const installLocation = wrapper.get('[data-testid="install-location-field"]').element
     const gpuField = wrapper.get('[data-testid="detected-gpu-field"]').element
-    expect(advanced.compareDocumentPosition(gpuField) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
-      0
-    )
+    expect(
+      advanced.compareDocumentPosition(installLocation) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0)
+    expect(
+      installLocation.compareDocumentPosition(gpuField) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0)
+    expect(gpuField.parentElement).toBe(wrapper.get('.config-install-meta').element)
+    expect(wrapper.get('.config-install-separator').text()).toBe('·')
+    expect(wrapper.get('.config-gpu-value').classes()).toContain('disk-space-info')
+    expect(wrapper.get('.config-gpu-value').text()).toBe('detected GPU: Radeon RX 7900')
   })
 
   it('renders no warning element when validateHardware reports none', async () => {

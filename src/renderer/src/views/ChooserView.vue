@@ -102,6 +102,13 @@ watch(
       dashboardScopeInitialized = false
       return
     }
+    // Build versions drive each managed instance's Update status tag. Main
+    // warms that synchronous cache during listBuilds and then broadcasts an
+    // installation refresh, so load the active workspace catalog as soon as
+    // the authenticated dashboard has one.
+    if (next.workspaceId && next.workspaceId !== previous?.workspaceId) {
+      void authStore.fetchBuilds()
+    }
     if (!dashboardScopeInitialized) {
       selectedWorkspaceId.value = next.workspaceId ?? null
       dashboardScopeInitialized = true
@@ -117,7 +124,7 @@ watch(
 )
 
 function installationIsInSelectedScope(inst: Installation): boolean {
-  if (!authStore.isSignedIn) return true
+  if (!authStore.isSignedIn) return inst.workspaceId === undefined
   return selectedWorkspaceId.value === null
     ? inst.workspaceId === undefined
     : inst.workspaceId === selectedWorkspaceId.value
@@ -135,11 +142,11 @@ const showNoMatches = computed(
     (searchQuery.value.trim().length > 0 || activeFilter.value !== 'all')
 )
 
-const refreshingWorkspace = computed(() => authStore.loadingWorkspaces)
+const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
 
 async function refreshWorkspace(): Promise<void> {
   emitTelemetryAction('comfy.desktop.workspace.refresh', {})
-  await authStore.fetchWorkspaces()
+  await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
 // --- Cluster top offset ---
@@ -183,9 +190,7 @@ function canPromoteToWorkspace(inst: Installation): boolean {
     Boolean(authStore.status.workspaceId) &&
     inst.status === 'installed' &&
     inst.sourceCategory === 'local' &&
-    Boolean(inst.installPath) &&
-    !inst.workspaceId &&
-    inst.sourceId !== 'comfybuilder'
+    Boolean(inst.installPath)
   )
 }
 
@@ -357,12 +362,8 @@ const gridHandlers = {
       </div>
 
       <div v-if="authStore.isSignedIn" class="chooser-workspace-bar">
-        <div class="chooser-workspace-heading">
-          <h2>{{ t('devPlatform.workspace.switchLabel') }}</h2>
-          <span>{{ scopedInstallCount }}</span>
-        </div>
-        <div class="chooser-workspace-divider" aria-hidden="true" />
         <div class="chooser-workspace-controls">
+          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
           <button
             type="button"
             class="chooser-workspace-refresh"
@@ -377,7 +378,11 @@ const gridHandlers = {
               :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
             />
           </button>
-          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
+        </div>
+        <div class="chooser-workspace-divider" aria-hidden="true" />
+        <div class="chooser-workspace-count">
+          <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
+          <strong>{{ scopedInstallCount }}</strong>
         </div>
       </div>
 
@@ -647,23 +652,6 @@ const gridHandlers = {
   width: 100%;
   max-width: 1168px;
 }
-.chooser-workspace-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-.chooser-workspace-heading h2 {
-  margin: 0;
-  color: var(--neutral-100);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
-}
-.chooser-workspace-heading span {
-  color: var(--text-muted);
-  font-size: 12px;
-}
 .chooser-workspace-divider {
   flex: 1 1 auto;
   min-width: 16px;
@@ -676,6 +664,19 @@ const gridHandlers = {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+.chooser-workspace-count {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.chooser-workspace-count strong {
+  color: var(--neutral-100);
+  font-weight: 600;
 }
 .chooser-workspace-controls :deep(.workspace-selector) {
   flex: 1 1 auto;
@@ -733,6 +734,11 @@ const gridHandlers = {
 
   .chooser-workspace-controls {
     flex-basis: 100%;
+  }
+
+  .chooser-workspace-count {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 </style>

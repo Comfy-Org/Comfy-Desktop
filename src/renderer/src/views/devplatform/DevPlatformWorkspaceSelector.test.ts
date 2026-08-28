@@ -61,7 +61,13 @@ describe('DevPlatformWorkspaceSelector', () => {
     api.listWorkspaces.mockResolvedValue([
       { id: 'w1', name: 'Team One', type: 'team', role: 'owner', subscriptionTier: 'PRO' },
       { id: 'w2', name: 'Team Two', type: 'team', role: 'admin' },
-      { id: 'personal', name: 'Personal', type: 'personal', role: 'owner' }
+      {
+        id: 'personal',
+        name: 'Personal',
+        type: 'personal',
+        role: 'owner',
+        subscriptionTier: 'ENTERPRISE'
+      }
     ])
     api.switchWorkspace.mockResolvedValue({
       signedIn: true,
@@ -85,7 +91,6 @@ describe('DevPlatformWorkspaceSelector', () => {
     )
     await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
     expect(wrapper.get('[data-testid="devplatform-workspace-w1"]').text()).toContain('team')
-    expect(wrapper.get('[data-testid="devplatform-workspace-w1"]').text()).not.toContain('PRO')
   })
 
   it('keeps the cached workspace identity while the startup refresh is pending', async () => {
@@ -113,7 +118,7 @@ describe('DevPlatformWorkspaceSelector', () => {
     expect(selector.text()).toContain('Team One')
   })
 
-  it('does not repeat the type under the Personal workspace', async () => {
+  it('shows the workspace type only for non-personal workspaces', async () => {
     const wrapper = mountSelector()
     await flushPromises()
     await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
@@ -121,6 +126,9 @@ describe('DevPlatformWorkspaceSelector', () => {
     const personal = wrapper.get('[data-testid="devplatform-workspace-personal"]')
     expect(personal.get('.workspace-selector__item-name').text()).toBe('Personal')
     expect(personal.find('.workspace-selector__item-sub').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-testid="devplatform-workspace-w2"] .workspace-selector__item-sub').text()
+    ).toBe('team')
   })
 
   it('uses an empty neutral avatar when No workspace is selected', async () => {

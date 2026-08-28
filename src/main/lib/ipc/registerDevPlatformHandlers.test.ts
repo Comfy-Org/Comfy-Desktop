@@ -380,7 +380,7 @@ describe('registerDevPlatformHandlers', () => {
       type: 'comfyui-desktop-2-snapshot'
     })
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/builds/new?workspace=w1&edit=build-1'
+      'https://platform.comfy.org/profile/builds/build-1?workspace=w1'
     )
   })
 
@@ -416,9 +416,6 @@ describe('registerDevPlatformHandlers', () => {
   })
 
   it.each([
-    ['a Builder install', { sourceId: 'comfybuilder' }],
-    ['an active-workspace install', { workspaceId: 'w1' }],
-    ['an install owned by another workspace', { workspaceId: 'w2' }],
     ['a cloud install', { sourceId: 'cloud' }],
     ['an incomplete install', { status: 'installing' }]
   ])('refuses to promote %s', async (_label, overrides) => {
@@ -439,6 +436,38 @@ describe('registerDevPlatformHandlers', () => {
     })
     expect(mocks.saveSnapshot).not.toHaveBeenCalled()
     expect(mocks.createBuildDraft).not.toHaveBeenCalled()
+  })
+
+  it('creates a Build in the workspace that owns the instance', async () => {
+    const inst = {
+      id: 'local-1',
+      name: 'Workspace Instance',
+      sourceId: 'comfybuilder',
+      workspaceId: 'w2',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    }
+    mocks.get.mockResolvedValue(inst)
+    mocks.switchWorkspace.mockImplementationOnce(async () => {
+      const status = { signedIn: true, workspaceId: 'w2', workspaceType: 'team' }
+      mocks.status.mockReturnValue(status)
+      return status
+    })
+    mocks.createBuildDraft.mockResolvedValue({
+      buildId: 'build-2',
+      workspaceId: 'w2',
+      editUrl: '/profile/builds/new?workspace=w2&edit=build-2'
+    })
+
+    await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+      ok: true
+    })
+
+    expect(mocks.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
+      'https://platform.comfy.org/profile/builds/build-2?workspace=w2'
+    )
   })
 
   it('does not upload if the active workspace changes during capture', async () => {
@@ -511,27 +540,6 @@ describe('registerDevPlatformHandlers', () => {
 
     expect(result).toEqual({ ok: false, message: 'The instance changed. Try again.' })
     expect(mocks.openExternal).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    'http://platform.comfy.org/profile/builds/new?workspace=w1&edit=build-1',
-    'https://attacker.example/profile/builds/new?workspace=w1&edit=build-1'
-  ])('refuses to open an unsafe draft URL: %s', async (draftUrl) => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    mocks.createBuildDraft.mockResolvedValue({
-      buildId: 'build-1',
-      workspaceId: 'w1',
-      editUrl: draftUrl
-    })
-
-    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
-
-    expect(result).toEqual({
-      ok: false,
-      message: 'Comfy Builder returned an invalid draft URL.'
-    })
-    expect(mocks.openExternal).not.toHaveBeenCalled()
-    warn.mockRestore()
   })
 
   it('refuses to open a draft created for another workspace', async () => {

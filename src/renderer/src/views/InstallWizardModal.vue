@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
+import { HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 
@@ -215,9 +215,6 @@ const estimatedInstallSize = computed(() => {
   return downloadBytes > 0 ? Math.ceil(downloadBytes * 2.25) : 0
 })
 
-const advancedOpen = ref(false)
-const advancedRef = ref<HTMLElement | null>(null)
-
 /** Entrypoint that opened this wizard, for the handoff funnel events (#1224). */
 const entrypoint = ref('unknown')
 /** Flipped true once this wizard session reaches a TERMINAL handoff outcome:
@@ -402,17 +399,6 @@ async function persistDontShowAgain(): Promise<void> {
   }
 }
 
-// Scroll Advanced into view on open. `block: 'nearest'` no-ops when already visible so the view doesn't yank on tall screens.
-watch(advancedOpen, async (open) => {
-  if (!open) return
-  await nextTick()
-  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  advancedRef.value?.scrollIntoView({
-    behavior: reduced ? 'auto' : 'smooth',
-    block: 'nearest'
-  })
-})
-
 watch(instPath, (newPath) => {
   diskSpace.value = null
   pathIssues.value = []
@@ -565,7 +551,6 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   workspaceInstallMode.value = 'managed'
   selectedBuildId.value = ''
   selectedBuildTargetId.value = ''
-  advancedOpen.value = false
   cameFromLocalBranch.value = opts.cameFromLocalBranch === true
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
@@ -593,23 +578,23 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   hasLocalInstall.value = false
 
   try {
-    await initializeInstallMode(gen)
+    await initializeInstallMode(gen, true)
   } finally {
     if (gen === modeGeneration) initializing.value = false
   }
 }
 
-async function initializeInstallMode(gen: number): Promise<void> {
+async function initializeInstallMode(gen: number, refreshManagedBuilds = false): Promise<void> {
   const installDir = await installDirPromise
   if (gen !== modeGeneration) return
   defaultInstPath.value = installDir ?? ''
   instPath.value = defaultInstPath.value
 
-  if (managedBuildMode.value) await initializeManagedBuilds(gen)
+  if (managedBuildMode.value) await initializeManagedBuilds(gen, refreshManagedBuilds)
   else await initializeLocalInstall(gen)
 }
 
-async function initializeManagedBuilds(gen: number): Promise<void> {
+async function initializeManagedBuilds(gen: number, refreshBuilds: boolean): Promise<void> {
   const targetWorkspaceId = workspaceId.value
   if (!targetWorkspaceId) return
   try {
@@ -627,7 +612,7 @@ async function initializeManagedBuilds(gen: number): Promise<void> {
       emit('close')
       return
     }
-    if (!authStore.buildsLoaded) await authStore.fetchBuilds()
+    if (refreshBuilds || !authStore.buildsLoaded) await authStore.fetchBuilds()
     if (gen !== modeGeneration || !managedBuildMode.value) return
     selectedBuildId.value = workspaceBuilds.value[0]?.id ?? ''
     suggestManagedBuildName(selectedBuild.value)
@@ -1050,7 +1035,8 @@ async function handleSave(): Promise<void> {
       name,
       installPath: '',
       status: 'installed',
-      ...instData
+      ...instData,
+      ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
     })
     if (!result.ok) {
       await modal.alert({
@@ -1110,7 +1096,8 @@ async function handleSave(): Promise<void> {
   const result = await window.api.addInstallation({
     name,
     installPath: instPath.value,
-    ...instData
+    ...instData,
+    ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
   })
   await handOffInstall(result, t('errors.cannotAdd'), templateHasModels.value)
 }
@@ -1229,52 +1216,6 @@ defineExpose({ open })
             </div>
           </div>
 
-          <TooltipWrap
-            class="config-field-wrap"
-            side="bottom"
-            :text="currentSource?.skipInstall ? $t('newInstall.notAvailableRemote') : ''"
-          >
-            <div
-              class="config-field"
-              :class="{ 'config-field--disabled': currentSource?.skipInstall }"
-            >
-              <label class="config-label">{{ $t('newInstall.installLocation') }}</label>
-              <div class="config-path-row">
-                <div class="brand-input config-path-input">
-                  <HardDrive :size="14" aria-hidden="true" />
-                  <button
-                    v-if="!currentSource?.skipInstall && instPath"
-                    type="button"
-                    class="open-folder-link config-path-open"
-                    :title="$t('actions.openDirectory', 'Open Directory')"
-                    :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
-                    @click="handleOpenInstPath"
-                  >
-                    {{ instPath }}
-                  </button>
-                  <span v-else class="open-folder-link config-path-open config-path-open--static">{{
-                    instPath
-                  }}</span>
-                </div>
-                <button
-                  class="brand-tertiary"
-                  type="button"
-                  :disabled="!!currentSource?.skipInstall"
-                  @click="handleBrowse"
-                >
-                  {{ $t('common.browse') }}
-                </button>
-              </div>
-              <PathDiskInfo
-                v-if="!currentSource?.skipInstall"
-                :path-issues="pathIssues"
-                :disk-space-loading="diskSpaceLoading"
-                :disk-space="diskSpace"
-                :estimated-size="estimatedInstallSize"
-              />
-            </div>
-          </TooltipWrap>
-
           <div v-if="managedBuildMode" class="config-field" data-testid="workspace-build-field">
             <div class="workspace-build-label-row">
               <label class="config-label">{{ $t('newInstall.workspaceBuildLabel') }}</label>
@@ -1347,21 +1288,7 @@ defineExpose({ open })
             />
           </div>
 
-          <div
-            v-if="!managedBuildMode"
-            ref="advancedRef"
-            class="config-advanced"
-            :class="{ 'is-open': advancedOpen }"
-          >
-            <button
-              type="button"
-              class="config-advanced__summary"
-              :aria-expanded="advancedOpen"
-              @click="advancedOpen = !advancedOpen"
-            >
-              <ChevronRight :size="14" class="config-advanced__chevron" aria-hidden="true" />
-              <span>{{ $t('common.advanced') }}</span>
-            </button>
+          <div v-if="!managedBuildMode" class="config-advanced config-advanced--direct is-open">
             <div class="config-advanced__wrap">
               <div class="config-advanced__body">
                 <div
@@ -1393,7 +1320,7 @@ defineExpose({ open })
                     :key="field.id"
                     class="field"
                   >
-                    <label :for="`sf-${field.id}`">{{ field.label }}</label>
+                    <label class="config-label" :for="`sf-${field.id}`">{{ field.label }}</label>
 
                     <template v-if="field.type === 'text'">
                       <div class="path-input">
@@ -1496,15 +1423,53 @@ defineExpose({ open })
             <div
               class="config-field"
               :class="{ 'config-field--disabled': currentSource?.skipInstall }"
-              data-testid="detected-gpu-field"
+              data-testid="install-location-field"
             >
-              <label class="config-label">{{ $t('newInstall.detectedGpuLabel') }}</label>
-              <div
-                class="brand-input config-select config-select--readonly"
-                role="textbox"
-                aria-readonly="true"
-              >
-                <span class="config-select__value">{{ detectedGpu }}</span>
+              <label class="config-label">{{ $t('newInstall.installLocation') }}</label>
+              <div class="config-path-row">
+                <div class="brand-input config-path-input">
+                  <HardDrive :size="14" aria-hidden="true" />
+                  <button
+                    v-if="!currentSource?.skipInstall && instPath"
+                    type="button"
+                    class="open-folder-link config-path-open"
+                    :title="$t('actions.openDirectory', 'Open Directory')"
+                    :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
+                    @click="handleOpenInstPath"
+                  >
+                    {{ instPath }}
+                  </button>
+                  <span v-else class="open-folder-link config-path-open config-path-open--static">{{
+                    instPath
+                  }}</span>
+                </div>
+                <button
+                  class="brand-tertiary"
+                  type="button"
+                  :disabled="!!currentSource?.skipInstall"
+                  @click="handleBrowse"
+                >
+                  {{ $t('common.browse') }}
+                </button>
+              </div>
+              <div class="config-install-meta">
+                <div v-if="!currentSource?.skipInstall" class="config-install-disk">
+                  <PathDiskInfo
+                    :path-issues="pathIssues"
+                    :disk-space-loading="diskSpaceLoading"
+                    :disk-space="diskSpace"
+                    :estimated-size="estimatedInstallSize"
+                  />
+                </div>
+                <span
+                  v-if="!currentSource?.skipInstall"
+                  class="disk-space-info config-install-separator"
+                  aria-hidden="true"
+                  >·</span
+                >
+                <div class="disk-space-info config-gpu-value" data-testid="detected-gpu-field">
+                  {{ detectedGpu }}
+                </div>
               </div>
               <div
                 v-if="hardwareWarning && !currentSource?.skipInstall"
@@ -1945,17 +1910,19 @@ defineExpose({ open })
   min-width: 0;
 }
 
-.config-select {
-  padding: 8px 12px;
-  cursor: default;
+.config-install-meta {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
 }
-/* Detected GPU is read-only; strip the hover affordance that would imply it's editable. */
-.config-select--readonly:hover {
-  border-color: var(--brand-surface-border);
-  background: var(--brand-surface-bg);
+.config-install-disk {
+  min-width: 0;
 }
-.config-select--readonly .config-select__value {
-  color: var(--text-muted);
+.config-install-separator {
+  flex: 0 0 auto;
+}
+.config-gpu-value {
+  flex: 0 0 auto;
 }
 
 .wizard-build-retry {
@@ -1969,16 +1936,6 @@ defineExpose({ open })
 .wizard-build-retry:hover:not(:disabled) {
   text-decoration: underline;
 }
-.config-select__value {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--neutral-100);
-  font-size: 14px;
-}
-
 .config-path-row {
   display: flex;
   gap: 8px;
@@ -2020,34 +1977,6 @@ defineExpose({ open })
   border-top: 1px solid var(--brand-surface-border);
   padding-top: var(--takeover-gap-md);
 }
-.config-advanced__summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  color: var(--neutral-200);
-  font: inherit;
-  font-size: var(--takeover-fs-body);
-}
-.config-advanced__summary:hover {
-  color: var(--text);
-  transition: color 120ms ease;
-}
-.config-advanced__summary:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-.config-advanced__chevron {
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.config-advanced.is-open .config-advanced__chevron {
-  transform: rotate(90deg);
-}
-
 .config-advanced__wrap {
   display: grid;
   grid-template-rows: 0fr;
@@ -2071,6 +2000,13 @@ defineExpose({ open })
   margin-top: var(--takeover-gap-md);
   opacity: 1;
   transform: translateY(0);
+}
+.config-advanced--direct {
+  border-top: 0;
+  padding-top: 0;
+}
+.config-advanced--direct.config-advanced.is-open .config-advanced__body {
+  margin-top: 0;
 }
 
 /* Install-method chips: pill picker inside Advanced for swapping source without

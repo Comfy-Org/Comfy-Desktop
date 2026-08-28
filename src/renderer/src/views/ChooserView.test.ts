@@ -73,11 +73,12 @@ const messages = {
         unmanagedLabel: 'No workspace',
         switchLabel: 'Workspace',
         currentFallback: 'Current workspace',
+        instanceCountLabel: 'INSTANCES',
         loadError: "Couldn't load workspaces. Retry",
         refresh: 'Refresh workspaces',
-        promoteToWorkspace: 'Promote to Workspace',
+        promoteToWorkspace: 'Create Build',
         promoting: 'Promoting...',
-        promoteFailedTitle: "Couldn't promote instance",
+        promoteFailedTitle: 'Could not create build',
         promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
       },
       build: { version: 'Build v{version}' }
@@ -628,20 +629,29 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('WrongPlatformThing')
   })
 
-  it('keeps a build-backed install in the local section when signed out', async () => {
+  it('shows only installs without a workspace when signed out', async () => {
     installMockApi([
       makeInstall({
         id: 'builder-1',
-        name: 'Flux Studio',
+        name: 'Unassigned Studio',
         sourceId: 'comfybuilder',
-        distributionId: 'd-flux',
+        distributionId: 'd-unassigned',
+        status: 'installed'
+      } as unknown as Partial<Installation>),
+      makeInstall({
+        id: 'builder-2',
+        name: 'Workspace Studio',
+        sourceId: 'comfybuilder',
+        distributionId: 'd-workspace',
+        workspaceId: 'workspace-a',
         status: 'installed'
       } as unknown as Partial<Installation>)
     ])
     const wrapper = mountChooser()
     await flushPromises()
     const names = wrapper.findAll('.chooser-tile-name').map((w) => w.text())
-    expect(names).toContain('Flux Studio')
+    expect(names).toContain('Unassigned Studio')
+    expect(names).not.toContain('Workspace Studio')
     expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').exists()).toBe(false)
   })
 
@@ -662,20 +672,29 @@ describe('ChooserView', () => {
     const toolbarChildren = wrapper.get('.chooser-toolbar').element.children
     expect(toolbarChildren).toHaveLength(1)
     expect(toolbarChildren[0]!.classList.contains('chooser-search')).toBe(true)
-    expect(wrapper.get('.chooser-workspace-bar').text()).toContain('Workspace')
-    expect(wrapper.get('.chooser-workspace-controls').element.parentElement).toBe(
-      wrapper.get('.chooser-workspace-bar').element
+    const workspaceBar = wrapper.get('.chooser-workspace-bar')
+    const controls = wrapper.get('.chooser-workspace-controls')
+    const selector = wrapper.get('[data-testid="devplatform-workspace-selector"]')
+    const refresh = wrapper.get('[data-testid="chooser-workspace-refresh"]')
+    expect(controls.element.parentElement).toBe(workspaceBar.element)
+    expect(selector.element.closest('.chooser-workspace-controls')).toBe(controls.element)
+    expect(
+      selector.element.compareDocumentPosition(refresh.element) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0)
+    expect(workspaceBar.get('.chooser-workspace-count').text()).toBe('INSTANCES0')
+    expect(workspaceBar.element.lastElementChild).toBe(
+      workspaceBar.get('.chooser-workspace-count').element
     )
-    expect(wrapper.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(true)
   })
 
-  it('offers workspace promotion only for an unowned local install', async () => {
+  it('offers Create Build for an instance owned by the selected workspace', async () => {
     installMockApiSignedIn(
       [
         makeInstall({
           id: 'local',
           name: 'LocalThing',
-          sourceId: 'standalone',
+          sourceId: 'comfybuilder',
+          workspaceId: 'w1',
           status: 'installed',
           installPath: '/installs/local'
         })
@@ -685,9 +704,6 @@ describe('ChooserView', () => {
     )
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-unmanaged"]').trigger('click')
-    await flushPromises()
 
     await wrapper.find(`[data-testid="${TID.dashboardTile('local')}"]`).trigger('contextmenu')
 
@@ -696,7 +712,7 @@ describe('ChooserView', () => {
       .find((candidate) => candidate.props('open') === true)!
     const items = menu.props('items') as { id: string; label: string; disabled?: boolean }[]
     expect(items.find(({ id }) => id === 'promote-to-workspace')).toMatchObject({
-      label: 'Promote to Workspace',
+      label: 'Create Build',
       disabled: false
     })
   })
@@ -755,7 +771,7 @@ describe('ChooserView', () => {
       false
     ]
   ])(
-    'does not offer workspace promotion for %s',
+    'offers Create Build for %s',
     async (_label, installOverrides, activeWorkspaceId, useUnmanaged) => {
       installMockApiSignedIn(
         [
@@ -786,11 +802,20 @@ describe('ChooserView', () => {
         .findAllComponents({ name: 'ContextMenu' })
         .find((candidate) => candidate.props('open') === true)!
       const items = menu.props('items') as { id: string }[]
-      expect(items.some((item) => item.id === 'promote-to-workspace')).toBe(false)
+      expect(items.some((item) => item.id === 'promote-to-workspace')).toBe(true)
     }
   )
 
-  it('refreshes workspace membership without loading Builds', async () => {
+  it('loads Builds when an authenticated workspace dashboard mounts', async () => {
+    const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
+
+    mountChooser()
+    await flushPromises()
+
+    expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
+  })
+
+  it('refreshes workspace membership and Builds', async () => {
     const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
     const wrapper = mountChooser()
     await flushPromises()
@@ -801,7 +826,7 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(api.comfybuilder.listWorkspaces).toHaveBeenCalledOnce()
-    expect(api.comfybuilder.listBuilds).not.toHaveBeenCalled()
+    expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
   })
 
   it('shows only installs owned by the selected workspace', async () => {
