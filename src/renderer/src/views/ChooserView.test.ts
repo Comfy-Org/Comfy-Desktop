@@ -242,7 +242,7 @@ describe('ChooserView', () => {
           sourceLabel: 'ComfyBuilder',
           sourceCategory: 'local',
           workspaceId: 'workspace-1',
-          status: 'installing',
+          status: 'updating',
           comfybuilderRollback: { version: '1' }
         })
       ],

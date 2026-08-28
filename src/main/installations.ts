@@ -25,6 +25,10 @@ export interface InstallationRecord {
   sourceId: string
   /** Workspace that owns this installation. Absent for local and legacy records. */
   workspaceId?: string
+  /** Lifecycle state. Known values: `'installing'` (fresh install in flight,
+   *  hidden from the renderer), `'updating'` (in-place update of an existing
+   *  install, stays visible), `'installed'`, `'failed'`. Absent on sources
+   *  that never track install progress. */
   status?: string
   seen?: boolean
   comfyVersion?: ComfyVersion
@@ -89,6 +93,12 @@ export interface InstallationRecord {
  *
  * The steps chain, so a `useSharedPaths`-era record lands directly on the
  * current per-folder schema.
+ *
+ * 3. A ComfyBuilder in-place update once reused status `'installing'`,
+ *    disambiguated from a fresh install by its rollback payload. Such a
+ *    record lands as `'updating'`, the status the update flow writes now,
+ *    so status alone distinguishes a hidden fresh install from a visible
+ *    in-place update.
  */
 function migrateRecord(record: InstallationRecord): InstallationRecord {
   let rec = record
@@ -112,6 +122,15 @@ function migrateRecord(record: InstallationRecord): InstallationRecord {
       useSharedInput: typeof rest.useSharedInput === 'boolean' ? rest.useSharedInput : value,
       useSharedOutput: typeof rest.useSharedOutput === 'boolean' ? rest.useSharedOutput : value
     } as InstallationRecord
+  }
+  if (
+    rec.status === 'installing' &&
+    rec.sourceId === 'comfybuilder' &&
+    rec.comfybuilderRollback !== null &&
+    typeof rec.comfybuilderRollback === 'object' &&
+    !Array.isArray(rec.comfybuilderRollback)
+  ) {
+    rec = { ...rec, status: 'updating' }
   }
   return rec
 }

@@ -467,6 +467,45 @@ describe('installations.load (legacy shared-storage flag migrations)', () => {
     expect(rec).not.toHaveProperty('useSharedInputOutput')
   })
 
+  it('rewrites a legacy mid-update ComfyBuilder record from installing to updating', async () => {
+    // Older versions reused status 'installing' for in-place updates,
+    // disambiguated by the rollback payload; that state now reads 'updating'.
+    // A fresh install (no rollback) and other sources keep 'installing'.
+    writeRawInstallations([
+      {
+        id: 'mid-update',
+        name: 'Mid Update',
+        installPath: path.join(tmpRoot, 'mid-update'),
+        sourceId: 'comfybuilder',
+        status: 'installing',
+        createdAt: new Date().toISOString(),
+        comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
+      },
+      {
+        id: 'fresh',
+        name: 'Fresh',
+        installPath: path.join(tmpRoot, 'fresh'),
+        sourceId: 'comfybuilder',
+        status: 'installing',
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'other-source',
+        name: 'Other',
+        installPath: path.join(tmpRoot, 'other'),
+        sourceId: 'standalone',
+        status: 'installing',
+        createdAt: new Date().toISOString(),
+        comfybuilderRollback: { version: '1' }
+      }
+    ])
+    const installations = await loadInstallations()
+    const list = await installations.list()
+    expect(list.find((r) => r.id === 'mid-update')!.status).toBe('updating')
+    expect(list.find((r) => r.id === 'fresh')!.status).toBe('installing')
+    expect(list.find((r) => r.id === 'other-source')!.status).toBe('installing')
+  })
+
   it('strips legacy useSharedPaths from disk on next write', async () => {
     const file = writeRawInstallations([
       {

@@ -48,12 +48,12 @@ const inst = computed(() => props.installation)
 const isRunning = computed(() => sessionStore.isRunning(inst.value.id))
 const isLaunching = computed(() => sessionStore.isLaunching(inst.value.id))
 const isStopping = computed(() => sessionStore.isStopping(inst.value.id))
-/* A managed update flips the record to status 'installing'; a standalone
+/* A managed update flips the record to status 'updating'; a standalone
  * update never touches the record and is only visible through main's
  * operation broadcast. Key on both so the tile reports "Updating" the same
  * way for either kind, regardless of which window started the update. */
 const isUpdating = computed(() => {
-  if (inst.value.status === 'installing') return true
+  if (inst.value.status === 'updating') return true
   const op = sessionStore.operationInstances.get(inst.value.id)
   return op != null && progressOpKindForActionId(op.actionId) === 'update'
 })

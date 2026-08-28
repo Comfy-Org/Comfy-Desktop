@@ -298,9 +298,12 @@ export async function recoverComfyBuilderInstallation(
   const ready = await pathExists(paths.readyMarker)
   const hasBackups = await hasEnvironmentBackups(installation.installPath)
   const rollback = installation[ROLLBACK_FIELD] as EnvironmentRollback | undefined
+  // Both statuses mark an unfinished environment transaction: 'installing'
+  // for a fresh install, 'updating' for an in-place update.
+  const midTransaction = installation.status === 'installing' || installation.status === 'updating'
 
   if (ready) {
-    if (installation.status === 'installing' || rollback) {
+    if (midTransaction || rollback) {
       return recoveryResult(installation, {
         status: 'installed',
         [ROLLBACK_FIELD]: undefined
@@ -320,7 +323,7 @@ export async function recoverComfyBuilderInstallation(
         [ROLLBACK_FIELD]: undefined
       })
     }
-    return installation.status === 'installing'
+    return midTransaction
       ? recoveryResult(installation, { status: 'failed' })
       : recoveryResult(installation)
   }
@@ -334,7 +337,7 @@ export async function recoverComfyBuilderInstallation(
     })
   }
 
-  return installation.status === 'installing'
+  return midTransaction
     ? recoveryResult(installation, { status: 'failed' })
     : recoveryResult(installation)
 }
@@ -682,7 +685,7 @@ async function updateBuildVersion(
 
     const updated = { ...installation, ...next } as InstallationRecord
     const models = await installEnvironment(updated, tools, () =>
-      tools.update({ ...next, status: 'installing', [ROLLBACK_FIELD]: previous })
+      tools.update({ ...next, status: 'updating', [ROLLBACK_FIELD]: previous })
     )
     environmentReady = true
 

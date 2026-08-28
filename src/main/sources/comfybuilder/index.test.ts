@@ -329,7 +329,7 @@ describe('comfybuilder interrupted-install recovery', () => {
           installPath: root,
           version: '9',
           artifactId: 'new',
-          status: 'installing',
+          status: 'updating',
           comfybuilderRollback: {
             version: '1',
             artifactId: 'old',
@@ -363,7 +363,7 @@ describe('comfybuilder interrupted-install recovery', () => {
           installPath: root,
           version: '9',
           artifactId: 'new',
-          status: 'installing',
+          status: 'updating',
           comfybuilderRollback: {
             version: '1',
             artifactId: 'old',
@@ -413,7 +413,7 @@ describe('comfybuilder interrupted-install recovery', () => {
           installPath: root,
           version: '9',
           artifactId: 'new',
-          status: 'installing',
+          status: 'updating',
           comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
         })
       )
@@ -455,7 +455,7 @@ describe('comfybuilder interrupted-install recovery', () => {
       await recoverComfyBuilderInstallation(
         record({
           installPath: root,
-          status: 'installing',
+          status: 'updating',
           comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
         })
       )
@@ -488,7 +488,7 @@ describe('comfybuilder interrupted-install recovery', () => {
       await recoverComfyBuilderInstallation(
         record({
           installPath: root,
-          status: 'installing',
+          status: 'updating',
           comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
         })
       )
@@ -516,7 +516,7 @@ describe('comfybuilder interrupted-install recovery', () => {
       await recoverComfyBuilderInstallation(
         record({
           installPath: root,
-          status: 'installing',
+          status: 'updating',
           comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
         })
       )
@@ -582,6 +582,20 @@ describe('comfybuilder interrupted-install recovery', () => {
       await fsp.rm(root, { recursive: true, force: true })
     }
   })
+
+  it('fails a stranded updating record that lost its rollback payload', async () => {
+    // 'updating' is always written together with the rollback payload, so a
+    // record with the status but no payload is corrupt; mark it failed rather
+    // than leave it perpetually busy.
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'comfybuilder-stranded-'))
+    try {
+      await expect(
+        recoverComfyBuilderInstallation(record({ installPath: root, status: 'updating' }))
+      ).resolves.toEqual({ action: 'update', data: { status: 'failed' } })
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('comfybuilder.getListActions', () => {
@@ -590,6 +604,7 @@ describe('comfybuilder.getListActions', () => {
   it.each([
     ['installed', 'installed', true],
     ['installing', 'installing', false],
+    ['updating', 'updating', false],
     ['failed', 'failed', false]
   ])('exposes a launch action for a %s install (enabled=%s)', (_name, status, enabled) => {
     const actions = comfybuilder.getListActions!(record({ status }))
@@ -741,11 +756,11 @@ describe('comfybuilder update-comfyui', () => {
 
     expect(result.ok).toBe(true)
     expect(installArtifact).toHaveBeenCalledTimes(1)
-    // Installing first, installed last — never left mid-flight.
+    // Updating first, installed last - never left mid-flight.
     expect(tools.updates[0]).toMatchObject({
       version: '9',
       artifactId: 'art-9',
-      status: 'installing'
+      status: 'updating'
     })
     // The new version's models are unstaged until the background task finishes.
     expect(tools.updates.at(-1)).toMatchObject({ status: 'installed', modelsStaged: false })

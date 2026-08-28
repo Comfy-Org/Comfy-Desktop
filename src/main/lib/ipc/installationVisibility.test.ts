@@ -23,26 +23,11 @@ describe('isInstallationVisibleToRenderer', () => {
     expect(isInstallationVisibleToRenderer(installation({ status: 'installing' }))).toBe(false)
   })
 
-  it('shows managed Builds during an in-place update transaction', () => {
-    expect(
-      isInstallationVisibleToRenderer(
-        installation({
-          status: 'installing',
-          comfybuilderRollback: { version: '1', artifactId: 'old-artifact' }
-        })
-      )
-    ).toBe(true)
+  it('shows installs during an in-place update transaction', () => {
+    expect(isInstallationVisibleToRenderer(installation({ status: 'updating' }))).toBe(true)
   })
 
-  it('does not treat rollback-shaped data from another source as a managed update', () => {
-    expect(
-      isInstallationVisibleToRenderer(
-        installation({
-          sourceId: 'standalone',
-          status: 'installing',
-          comfybuilderRollback: { version: '1' }
-        })
-      )
-    ).toBe(false)
+  it('shows failed installations so the user can act on them', () => {
+    expect(isInstallationVisibleToRenderer(installation({ status: 'failed' }))).toBe(true)
   })
 })
