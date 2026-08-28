@@ -152,7 +152,7 @@ onUnmounted(() => {
                 </ul>
               </div>
               <footer class="announce-footer">
-                <p class="announce-note">{{ $t('announcement.minimax.personalFree') }}</p>
+                <p class="announce-note">{{ $t('announcement.minimax.footerNote') }}</p>
                 <div class="announce-actions">
                   <button
                     class="brand-ghost"
