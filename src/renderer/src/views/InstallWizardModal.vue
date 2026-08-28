@@ -204,7 +204,12 @@ const {
 let hardwareValidation: HardwareValidation | null = null
 
 const estimatedInstallSize = computed(() => {
-  if (!localInstallMode.value) return 0
+  if (!localInstallMode.value) {
+    // Managed builds report the whole-archive size; apply the same
+    // download-to-installed factor as local variants.
+    const sizeBytes = selectedBuild.value?.sizeBytes ?? 0
+    return sizeBytes > 0 ? Math.ceil(sizeBytes * 2.25) : 0
+  }
   let downloadBytes = 0
   for (const selected of Object.values(selections.value)) {
     const files = selected?.data?.downloadFiles as Array<{ size: number }> | undefined
@@ -991,6 +996,26 @@ async function handOffInstall(
 async function handleWorkspaceBuildSave(): Promise<void> {
   const build = selectedBuild.value
   if (!build || !(await validateSelectedInstallRoot())) return
+
+  // Soft-warn when the volume looks too small for the estimated install size.
+  if (instPath.value && estimatedInstallSize.value > 0) {
+    try {
+      if (
+        !(await checkDiskSpaceOrWarn({
+          path: instPath.value,
+          estimatedRequired: estimatedInstallSize.value,
+          flow: 'wizard',
+          confirm: modal.confirm,
+          t
+        }))
+      ) {
+        return
+      }
+    } catch {
+      // If disk space check fails, proceed anyway
+    }
+  }
+
   const result = await window.api.comfybuilder
     .installBuild({
       buildId: build.id,

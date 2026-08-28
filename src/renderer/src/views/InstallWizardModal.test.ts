@@ -245,7 +245,9 @@ describe('InstallWizardModal workspace Builds', () => {
   })
 
   it('switches back to cached Managed builds without another catalog request', async () => {
-    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    signInToWorkspace([
+      { id: 'ready', name: 'Ready Build', state: 'installable', sizeBytes: 2_000 }
+    ])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 'standalone',
@@ -272,7 +274,7 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(wrapper.get('.brand-lead').text()).toBe('Select a release to install.')
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
-    expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(0)
+    expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(4_500)
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
   })
 

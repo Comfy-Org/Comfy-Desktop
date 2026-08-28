@@ -63,7 +63,7 @@ import type {
   TerminalEnv
 } from '../../types/sources'
 
-import { DEFAULT_LAUNCH_ARGS } from './constants'
+import { COMFYBUILDER_INSTALL_DEFAULTS, DEFAULT_LAUNCH_ARGS } from './constants'
 import { getDetailSections } from './detailSections'
 
 const READY_MARKER = '.comfybuilder-environment-ready'
@@ -554,13 +554,13 @@ export const comfybuilder: SourcePlugin = {
   },
 
   getDefaults() {
-    return { launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
+    return { ...COMFYBUILDER_INSTALL_DEFAULTS }
   },
 
   buildInstallation(): Record<string, unknown> {
     // Records are assembled by the build install handler (which already knows the
     // resolved artifact), not the generic build-installation chain.
-    return { launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'unique' }
+    return { ...COMFYBUILDER_INSTALL_DEFAULTS }
   },
 
   // The tile prefers this over the source label, and the install is named after

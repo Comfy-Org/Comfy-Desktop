@@ -11,8 +11,6 @@ import {
   scheduleResolveAndBroadcastVersions,
   findDuplicatePath,
   uniqueName,
-  sanitizeDirName,
-  allocateUniqueDir,
   syncOemSeedBestEffort,
   isEffectivelyEmptyInstallDir,
   getCachedInstallDirState,
@@ -34,6 +32,7 @@ import {
   snapshotRestoreFailureResult
 } from './shared'
 import type { ComfyVersion, ComfyArgDef, InstallationRecord } from './shared'
+import { allocateInstallIdentity } from './installIdentity'
 import * as releaseCache from '../release-cache'
 import { runStartupReleaseChecks } from '../release-cache-startup'
 import { _broadcastToRenderer } from './shared'
@@ -223,15 +222,13 @@ export function registerInstallationHandlers(): void {
   })
 
   ipcMain.handle('add-installation', async (_event, data: Record<string, unknown>) => {
-    data.name = await uniqueName((data.name as string) || DEFAULT_INSTALL_NAME)
-    if (data.installPath) {
-      const dirName = sanitizeDirName(data.name as string)
-      data.installPath = allocateUniqueDir(data.installPath as string, dirName)
-      const duplicate = await findDuplicatePath(data.installPath as string)
-      if (duplicate) {
-        return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
-      }
-    }
+    const identity = await allocateInstallIdentity(
+      (data.name as string) || DEFAULT_INSTALL_NAME,
+      (data.installPath as string | undefined) || undefined
+    )
+    if (!identity.ok) return identity
+    data.name = identity.name
+    if (identity.installPath) data.installPath = identity.installPath
     const entry = await installations.add({ ...data, seen: false })
     return { ok: true, entry }
   })

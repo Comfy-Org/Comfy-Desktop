@@ -33,10 +33,6 @@ import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/
 import type { AuthStatus, Workspace } from '../../cloud'
 import {
   installations,
-  uniqueName,
-  sanitizeDirName,
-  allocateUniqueDir,
-  findDuplicatePath,
   defaultInstallDir,
   sourceMap,
   saveSnapshot,
@@ -45,6 +41,8 @@ import {
   buildExportEnvelope,
   _broadcastToRenderer
 } from './shared'
+import { allocateInstallIdentity } from './installIdentity'
+import { COMFYBUILDER_INSTALL_DEFAULTS } from '../../sources/comfybuilder/constants'
 import type { InstallationRecord } from '../../installations'
 import type { InstallBuildRequest, InstallBuildResult } from '../../../types/ipc'
 
@@ -66,7 +64,6 @@ const SIGNED_OUT: AuthStatus = { signedIn: false }
 
 const COMFYBUILDER_SOURCE_ID = 'comfybuilder'
 const COMFYBUILDER_SOURCE_LABEL = 'ComfyBuilder'
-const COMFYBUILDER_LAUNCH_ARGS = '--enable-manager'
 
 export interface PromoteLocalInstanceResult {
   ok: boolean
@@ -357,23 +354,20 @@ export function registerDevPlatformHandlers(): void {
           return { ok: false, message: 'This build has no SHA-256 integrity value.' }
         }
 
-        const requestedName = request.name?.trim()
-        const displayName = await uniqueName(requestedName || build.name)
-
-        const installRoot = request.installRoot?.trim() || defaultInstallDir()
-        const installPath = allocateUniqueDir(installRoot, sanitizeDirName(displayName))
-        const duplicate = await findDuplicatePath(installPath)
-        if (duplicate)
-          return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
+        const identity = await allocateInstallIdentity(
+          request.name?.trim() || build.name,
+          request.installRoot?.trim() || defaultInstallDir()
+        )
+        if (!identity.ok) return identity
         if (session.status().workspaceId !== workspaceId) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
 
         const entry = await installations.add({
-          name: displayName,
+          name: identity.name,
           sourceId: COMFYBUILDER_SOURCE_ID,
           sourceLabel: COMFYBUILDER_SOURCE_LABEL,
-          installPath,
+          installPath: identity.installPath,
           workspaceId,
           distributionId: buildId,
           distributionName: build.name,
@@ -383,9 +377,7 @@ export function registerDevPlatformHandlers(): void {
           artifactGpu: artifact.gpu,
           artifactAccelVariant: artifact.accelVariant,
           artifactSha256: artifact.archiveSha256,
-          launchArgs: COMFYBUILDER_LAUNCH_ARGS,
-          launchMode: 'window',
-          browserPartition: 'unique',
+          ...COMFYBUILDER_INSTALL_DEFAULTS,
           useSharedModels: false,
           status: 'installing',
           seen: false
