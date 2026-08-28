@@ -698,9 +698,9 @@
       "lead": "MiniMax's latest open source, SOTA video model, available now",
       "highlights": [
         "Run for free on Comfy Cloud or Comfy Desktop",
-        "Works with your existing ComfyUI workflows"
+        "Works with your existing ComfyUI workflows",
+        "Want to use it commercially? Reach out to get a license"
       ],
-      "personalFree": "Free for personal use",
       "requestLicenseCta": "Request License",
       "learnMoreCta": "Learn More",
       "imageAlt": "MiniMax H3 announcement",

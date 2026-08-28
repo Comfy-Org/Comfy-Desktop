@@ -152,25 +152,22 @@ onUnmounted(() => {
                 </ul>
               </div>
               <footer class="announce-footer">
-                <p class="announce-note">{{ $t('announcement.minimax.personalFree') }}</p>
-                <div class="announce-actions">
-                  <button
-                    class="brand-ghost"
-                    type="button"
-                    data-testid="announcement-learn-more"
-                    @click="openCta('learn_more', LEARN_MORE_URL)"
-                  >
-                    {{ $t('announcement.minimax.learnMoreCta') }}
-                  </button>
-                  <button
-                    class="brand-primary"
-                    type="button"
-                    data-testid="announcement-request-license"
-                    @click="openCta('request_license', REQUEST_LICENSE_URL)"
-                  >
-                    {{ $t('announcement.minimax.requestLicenseCta') }}
-                  </button>
-                </div>
+                <button
+                  class="brand-ghost"
+                  type="button"
+                  data-testid="announcement-learn-more"
+                  @click="openCta('learn_more', LEARN_MORE_URL)"
+                >
+                  {{ $t('announcement.minimax.learnMoreCta') }}
+                </button>
+                <button
+                  class="brand-primary"
+                  type="button"
+                  data-testid="announcement-request-license"
+                  @click="openCta('request_license', REQUEST_LICENSE_URL)"
+                >
+                  {{ $t('announcement.minimax.requestLicenseCta') }}
+                </button>
               </footer>
             </div>
           </div>
@@ -362,24 +359,10 @@ onUnmounted(() => {
 
 .announce-footer {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
-  flex-wrap: wrap;
   gap: 16px;
   padding-top: clamp(1rem, 1.5vw, 1.5rem);
   border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-.announce-note {
-  margin: 0;
-  font-size: var(--takeover-fs-caption);
-  color: var(--neutral-300);
-  font-family: var(--font-sans);
-  line-height: 1.4;
-}
-.announce-actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-left: auto;
 }
 </style>
