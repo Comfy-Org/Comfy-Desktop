@@ -1498,7 +1498,9 @@ function joinActiveAssetDownload(
     (pending) =>
       pending.kind !== 'model' &&
       (!requireExactDestination ||
-        canonicalDestKey(pending.requestedSavePath ?? pending.savePath) === requestedDestKey)
+        (pending.kind === 'asset' &&
+          pending.preserveRequestedFilename === true &&
+          canonicalDestKey(pending.requestedSavePath ?? pending.savePath) === requestedDestKey))
   )
   if (!existing) return undefined
 
