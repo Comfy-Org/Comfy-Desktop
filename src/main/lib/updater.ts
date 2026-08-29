@@ -1014,7 +1014,7 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
         {
           update_attempt_id: previousAttemptId,
           outcome,
-          bak_fallbacks: getSafeFileDiagnostics().bakFallbacks
+          bakFallbacks: getSafeFileDiagnostics().bakFallbacks
         }
       )
       recordStartupAttemptOutcome(sidecar.marker, outcome)
@@ -1054,7 +1054,7 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
         updater_state: getCurrentUpdateState().kind ?? 'unknown',
         marker_state: sidecar.state,
         marker_source: !decision.attempt ? (decision.loopBreakerSource ?? null) : null,
-        bak_fallbacks: getSafeFileDiagnostics().bakFallbacks
+        bakFallbacks: getSafeFileDiagnostics().bakFallbacks
       },
       true
     )

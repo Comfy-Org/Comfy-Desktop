@@ -789,7 +789,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       pending_version: '1.0.1',
       updater_state: 'unknown',
       marker_state: 'absent',
-      update_attempt_id: expect.any(String)
+      update_attempt_id: expect.any(String),
+      bakFallbacks: expect.any(Number)
     })
   })
 
@@ -810,7 +811,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(outcomes[0]?.[1]).toMatchObject({
       update_attempt_id: 'attempt-1',
       target_version: '1.0.1',
-      outcome: 'still_pending'
+      outcome: 'still_pending',
+      bakFallbacks: expect.any(Number)
     })
     const correlatedEvents = [
       ...outcomes,
