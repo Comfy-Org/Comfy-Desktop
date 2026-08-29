@@ -812,6 +812,16 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       target_version: '1.0.1',
       outcome: 'still_pending'
     })
+    const correlatedEvents = [
+      ...outcomes,
+      ...findEmitCalls('comfy.desktop.app_update.startup_decision'),
+      ...findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
+    ]
+    expect(
+      new Set(
+        correlatedEvents.map((call) => (call[1] as Record<string, unknown>).update_attempt_id)
+      )
+    ).toEqual(new Set(['attempt-1']))
   })
 
   it('reports when an old-version relaunch lost its staged-update marker', async () => {

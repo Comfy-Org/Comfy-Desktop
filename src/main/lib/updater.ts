@@ -999,6 +999,7 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   if (sidecar.state === 'present' && sidecar.marker.attemptId) {
     const previousAttemptId = sidecar.marker.attemptId
     const previousAttemptVersion = sidecar.marker.version
+    _updateAttempt = { id: previousAttemptId, version: previousAttemptVersion }
     const outcome = !isStrictlyNewerVersion(previousAttemptVersion, running)
       ? 'installed'
       : pendingVersion === previousAttemptVersion
