@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /** Account identity and authentication controls shown at the dashboard's top-right. */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ChevronDown, LogOut } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
+import { usePopoverDismiss } from '../../composables/usePopoverDismiss'
 import { useAuthStore } from '../../stores/authStore'
 
 const emit = defineEmits<{
@@ -11,41 +12,12 @@ const emit = defineEmits<{
 
 const store = useAuthStore()
 
-const menuOpen = ref(false)
 const signingIn = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const faceRef = ref<HTMLElement | null>(null)
 const email = computed(() => store.status.email ?? '')
 
-function closeMenu(): void {
-  menuOpen.value = false
-}
-
-function toggleMenu(): void {
-  menuOpen.value = !menuOpen.value
-}
-
-function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape' && menuOpen.value) {
-    e.stopPropagation()
-    closeMenu()
-    faceRef.value?.focus()
-  }
-}
-
-function onPointerDown(e: MouseEvent): void {
-  if (!menuOpen.value) return
-  const target = e.target as Node | null
-  if (target && rootRef.value?.contains(target)) return
-  closeMenu()
-}
-
-onMounted(() => {
-  document.addEventListener('mousedown', onPointerDown)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onPointerDown)
-})
+const { menuOpen, closeMenu, toggleMenu, onKeydown } = usePopoverDismiss({ rootRef, faceRef })
 
 async function onSignIn(): Promise<void> {
   if (signingIn.value) return

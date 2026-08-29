@@ -116,6 +116,25 @@ describe('ComfyBuilderClient', () => {
     expect(getAccessToken).toHaveBeenCalledOnce()
   })
 
+  it('throws instead of paging forever when the Builder repeats a cursor', async () => {
+    const f = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ builds: [{ id: 'b1', name: 'Build One' }], nextCursor: 'same' }),
+          { status: 200 }
+        )
+    ) as unknown as typeof fetch
+    vi.stubGlobal('fetch', f)
+    const client = new ComfyBuilderClient({
+      baseUrl: 'https://api.test/builder',
+      auth: auth('tok-123')
+    })
+
+    await expect(client.listBuilds()).rejects.toThrow(/repeated build cursor/)
+    // First page without a cursor, one page for the cursor, then the repeat is refused.
+    expect(f).toHaveBeenCalledTimes(2)
+  })
+
   it('uses the deployed Build and release routes for the complete install flow', async () => {
     const resolution = snapshotResolution()
     const f = vi.fn(async (input: string | URL | Request) => {

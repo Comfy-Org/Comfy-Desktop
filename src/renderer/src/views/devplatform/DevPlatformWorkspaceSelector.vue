@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /** Local dashboard scope selector for unmanaged installs and authenticated workspaces. */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
+import { usePopoverDismiss } from '../../composables/usePopoverDismiss'
 import { useAuthStore } from '../../stores/authStore'
 
 const props = defineProps<{
@@ -17,10 +18,16 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const store = useAuthStore()
 
-const menuOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const faceRef = ref<HTMLElement | null>(null)
 const currentWorkspaceId = computed(() => props.modelValue)
+
+const {
+  menuOpen,
+  closeMenu,
+  toggleMenu: togglePopover,
+  onKeydown
+} = usePopoverDismiss({ rootRef, faceRef })
 
 function workspaceLabel(workspace: { name: string; type: string }): string {
   return workspace.type === 'team' ? workspace.name : t('devPlatform.workspace.personalLabel')
@@ -49,36 +56,10 @@ watch(
   { immediate: true }
 )
 
-function closeMenu(): void {
-  menuOpen.value = false
-}
-
 function toggleMenu(): void {
-  menuOpen.value = !menuOpen.value
+  togglePopover()
   if (menuOpen.value) fetchWorkspacesIfNeeded()
 }
-
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && menuOpen.value) {
-    event.stopPropagation()
-    closeMenu()
-    faceRef.value?.focus()
-  }
-}
-
-function onPointerDown(event: MouseEvent): void {
-  if (!menuOpen.value) return
-  const target = event.target as Node | null
-  if (target && rootRef.value?.contains(target)) return
-  closeMenu()
-}
-
-onMounted(() => {
-  document.addEventListener('mousedown', onPointerDown)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onPointerDown)
-})
 
 function onSelectWorkspace(workspaceId: string): void {
   if (workspaceId === currentWorkspaceId.value) {

@@ -116,10 +116,18 @@ export class ComfyBuilderClient {
   async listBuilds(): Promise<Build[]> {
     const token = await this.accessToken()
     const builds: Build[] = []
+    const seenCursors = new Set<string>()
     let cursor: string | undefined
     do {
       const query = new URLSearchParams({ limit: '100' })
-      if (cursor) query.set('cursor', cursor)
+      if (cursor) {
+        // A repeated cursor would page forever; fail instead of spinning.
+        if (seenCursors.has(cursor)) {
+          throw new ComfyBuilderApiError('server', 'Builder returned a repeated build cursor')
+        }
+        seenCursors.add(cursor)
+        query.set('cursor', cursor)
+      }
       const body = await this.get<BuildsResponse>(`/v1/builds?${query}`, token)
       builds.push(...(body.builds ?? []))
       cursor = body.nextCursor || undefined
@@ -236,11 +244,11 @@ export class ComfyBuilderClient {
   }
 
   private async get<T>(path: string, token?: string): Promise<T> {
-    return this.request<T>(path, undefined, token)
+    return this.request<T>('GET', path, undefined, token)
   }
 
   private async post<T>(path: string, payload: unknown, token?: string): Promise<T> {
-    return this.request<T>(path, payload, token)
+    return this.request<T>('POST', path, payload, token)
   }
 
   private async accessToken(): Promise<string> {
@@ -249,19 +257,24 @@ export class ComfyBuilderClient {
     return token
   }
 
-  private async request<T>(path: string, payload?: unknown, pinnedToken?: string): Promise<T> {
+  private async request<T>(
+    method: 'GET' | 'POST',
+    path: string,
+    payload: unknown,
+    pinnedToken?: string
+  ): Promise<T> {
     const token = pinnedToken ?? (await this.accessToken())
 
     let res: Response
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
-        method: payload === undefined ? 'GET' : 'POST',
+        method,
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`,
-          ...(payload === undefined ? {} : { 'Content-Type': 'application/json' })
+          ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {})
         },
-        ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+        ...(method === 'POST' ? { body: JSON.stringify(payload) } : {}),
         signal: AbortSignal.timeout(this.timeoutMs)
       })
     } catch (err) {
