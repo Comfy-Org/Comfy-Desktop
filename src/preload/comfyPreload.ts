@@ -102,7 +102,9 @@ startLocalFirebaseAuthMonitor(reportFirebaseAuthState)
 type TemplateInputProgressCallback = (data: ComfyTemplateInputDownloadProgress) => void
 
 const templateInputsByDownloadId = new Map<string, Map<string, ComfyTemplateInputReference>>()
+const terminalTemplateInputDownloadsById = new Map<string, ComfyTemplateInputAssetDownload>()
 const templateInputProgressCallbacks = new Set<TemplateInputProgressCallback>()
+const MAX_BUFFERED_TERMINAL_DOWNLOADS = 50
 let templateInputProgressHandler:
   | ((event: IpcRendererEvent, data: ComfyDownloadProgress) => void)
   | undefined
@@ -117,6 +119,33 @@ function emitTemplateInputProgress(
 ): void {
   const progress = { ...download, templateInputs }
   for (const callback of templateInputProgressCallbacks) callback(progress)
+}
+
+function toTemplateInputAssetDownload(
+  data: ComfyDownloadProgress
+): ComfyTemplateInputAssetDownload | undefined {
+  if (!data.id) return undefined
+  return {
+    downloadId: data.id,
+    filename: data.filename,
+    progress: data.progress,
+    ...(data.receivedBytes === undefined ? {} : { receivedBytes: data.receivedBytes }),
+    ...(data.totalBytes === undefined ? {} : { totalBytes: data.totalBytes }),
+    status: data.status,
+    ...(data.error === undefined ? {} : { error: data.error })
+  }
+}
+
+function isTerminalTemplateInputDownload(download: ComfyTemplateInputAssetDownload): boolean {
+  return ['completed', 'error', 'cancelled'].includes(download.status)
+}
+
+function rememberTerminalTemplateInputDownload(download: ComfyTemplateInputAssetDownload): void {
+  terminalTemplateInputDownloadsById.delete(download.downloadId)
+  terminalTemplateInputDownloadsById.set(download.downloadId, download)
+  if (terminalTemplateInputDownloadsById.size <= MAX_BUFFERED_TERMINAL_DOWNLOADS) return
+  const oldestDownloadId = terminalTemplateInputDownloadsById.keys().next().value
+  if (oldestDownloadId) terminalTemplateInputDownloadsById.delete(oldestDownloadId)
 }
 
 function removeTemplateInputProgressHandler(): void {
@@ -134,21 +163,13 @@ function maybeRemoveTemplateInputProgressHandler(): void {
 function ensureTemplateInputProgressHandler(): void {
   if (templateInputProgressHandler) return
   templateInputProgressHandler = (_event, data) => {
-    if (!data.id) return
-    const references = templateInputsByDownloadId.get(data.id)
+    const download = toTemplateInputAssetDownload(data)
+    if (!download) return
+    const isTerminal = isTerminalTemplateInputDownload(download)
+    if (isTerminal) rememberTerminalTemplateInputDownload(download)
+    const references = templateInputsByDownloadId.get(download.downloadId)
     if (!references) return
-    const download: ComfyTemplateInputAssetDownload = {
-      downloadId: data.id,
-      filename: data.filename,
-      progress: data.progress,
-      ...(data.receivedBytes === undefined ? {} : { receivedBytes: data.receivedBytes }),
-      ...(data.totalBytes === undefined ? {} : { totalBytes: data.totalBytes }),
-      status: data.status,
-      ...(data.error === undefined ? {} : { error: data.error })
-    }
-    if (['completed', 'error', 'cancelled'].includes(data.status)) {
-      templateInputsByDownloadId.delete(data.id)
-    }
+    if (isTerminal) templateInputsByDownloadId.delete(download.downloadId)
     emitTemplateInputProgress(download, [...references.values()])
     maybeRemoveTemplateInputProgressHandler()
   }
@@ -167,7 +188,14 @@ function trackTemplateInputDownload(
   }
   references.set(templateInputReferenceKey(reference), reference)
   ensureTemplateInputProgressHandler()
-  if (emitSnapshot) emitTemplateInputProgress(download, [...references.values()])
+  const terminalDownload = terminalTemplateInputDownloadsById.get(download.downloadId)
+  if (terminalDownload) {
+    templateInputsByDownloadId.delete(download.downloadId)
+    emitTemplateInputProgress(terminalDownload, [...references.values()])
+    maybeRemoveTemplateInputProgressHandler()
+  } else if (emitSnapshot) {
+    emitTemplateInputProgress(download, [...references.values()])
+  }
 }
 
 const getTemplateInputAssets: NonNullable<
@@ -190,14 +218,19 @@ const getTemplateInputAssets: NonNullable<
 const downloadTemplateInputAsset: NonNullable<
   ComfyDesktop2BridgeImplementation['downloadTemplateInputAsset']
 > = async (templateId, assetId): Promise<ComfyTemplateInputAssetDownloadResult> => {
-  const result = await ipcRenderer.invoke('desktop2-download-template-input-asset', {
-    templateId,
-    assetId
-  })
-  if (result.status === 'accepted' || result.status === 'joined') {
-    trackTemplateInputDownload({ templateId, assetId }, result.download, true)
+  ensureTemplateInputProgressHandler()
+  try {
+    const result = await ipcRenderer.invoke('desktop2-download-template-input-asset', {
+      templateId,
+      assetId
+    })
+    if (result.status === 'accepted' || result.status === 'joined') {
+      trackTemplateInputDownload({ templateId, assetId }, result.download, true)
+    }
+    return result
+  } finally {
+    maybeRemoveTemplateInputProgressHandler()
   }
-  return result
 }
 
 const onTemplateInputDownloadProgress: NonNullable<
@@ -214,6 +247,7 @@ const onTemplateInputDownloadProgress: NonNullable<
       // A future detail view reconstructs active ownership from its metadata
       // snapshot. Do not retain identities for a renderer with no consumers.
       templateInputsByDownloadId.clear()
+      terminalTemplateInputDownloadsById.clear()
     }
     maybeRemoveTemplateInputProgressHandler()
   }
