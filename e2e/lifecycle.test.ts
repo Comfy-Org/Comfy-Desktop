@@ -2874,11 +2874,23 @@ test('cleans up the untracked kebab-copy on disk before the final Delete test ru
   // runs so the harness home temp dir doesn't carry a stale copy.
   // Same `fs.rm` semantics the main-side delete handler uses; run from
   // the test process directly (the path lives on the harness home temp
-  // dir and is readable by both processes).
-  rmSync(_kebabCopyInstallPath, { recursive: true, force: true })
-
+  // dir and is readable by both processes). Windows can hold transient
+  // handles on the tree right after the Manage-drawer untrack (drawer
+  // probe processes draining), so retry the delete inside the poll
+  // instead of failing on the first EPERM; a handle held for the full
+  // 60s would still fail and surface a real leak.
   await expect
-    .poll(() => existsSync(_kebabCopyInstallPath), { timeout: 60_000, intervals: [500, 1_000] })
+    .poll(
+      () => {
+        try {
+          rmSync(_kebabCopyInstallPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+        } catch {
+          // transient EPERM/EBUSY while a handle drains; poll again
+        }
+        return existsSync(_kebabCopyInstallPath)
+      },
+      { timeout: 60_000, intervals: [500, 1_000] },
+    )
     .toBe(false)
 })
 
@@ -3241,10 +3253,21 @@ test('cleans up the remote connection: window closed, record untracked, local in
   await waitForWebContents(ctx.app, 'panel.html')
 
   // Remove only this run's unique output root from the shared directory.
+  // Retry inside the poll: the download machinery may still be draining
+  // a transient handle on the files it just wrote.
   if (_remoteOutputRoot) {
-    rmSync(_remoteOutputRoot, { recursive: true, force: true })
     await expect
-      .poll(() => existsSync(_remoteOutputRoot), { timeout: 15_000, intervals: [250, 500] })
+      .poll(
+        () => {
+          try {
+            rmSync(_remoteOutputRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+          } catch {
+            // transient EPERM/EBUSY while a handle drains; poll again
+          }
+          return existsSync(_remoteOutputRoot)
+        },
+        { timeout: 15_000, intervals: [250, 500] },
+      )
       .toBe(false)
     _remoteOutputRoot = ''
   }
