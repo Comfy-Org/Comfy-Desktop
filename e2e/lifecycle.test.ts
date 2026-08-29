@@ -473,11 +473,11 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // sorted newest-first with the newest marked recommended.
   // The select stays disabled until its stable-tag options resolve.
   await ctx.panel.waitForSelector(
-    '#source-fields button[role="combobox"][aria-label="ComfyUI Version"]:not([disabled])',
+    '#source-fields button[role="combobox"][aria-label="ComfyUI version"]:not([disabled])',
     { timeout: 60_000 },
   )
   expect(
-    await ctx.panel.click('#source-fields button[role="combobox"][aria-label="ComfyUI Version"]'),
+    await ctx.panel.click('#source-fields button[role="combobox"][aria-label="ComfyUI version"]'),
   ).toBe(true)
   await ctx.panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
   expect(
