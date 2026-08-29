@@ -155,6 +155,30 @@ describe('comfyPreload template input asset bridge', () => {
     unsubscribe()
   })
 
+  it('replays terminal progress that races ahead of the invoke response', async () => {
+    const bridge = hostedBridge()
+    const callback = vi.fn()
+    const unsubscribe = bridge.onTemplateInputDownloadProgress(callback)
+    mocks.invoke.mockImplementationOnce(async () => {
+      downloadProgressHandler()({}, downloadProgress('download-1', 'completed', 1))
+      return {
+        status: 'accepted',
+        download: downloadSnapshot('download-1')
+      }
+    })
+
+    await bridge.downloadTemplateInputAsset('template-a', 'asset-a')
+
+    expect(callback).toHaveBeenCalledExactlyOnceWith({
+      ...downloadSnapshot('download-1', 'completed', 1),
+      templateInputs: [{ templateId: 'template-a', assetId: 'asset-a' }]
+    })
+    const callsAfterCompletion = callback.mock.calls.length
+    downloadProgressHandler()({}, downloadProgress('download-1', 'downloading', 0.5))
+    expect(callback).toHaveBeenCalledTimes(callsAfterCompletion)
+    unsubscribe()
+  })
+
   it('keeps every template consumer on a shared download through completion, then cleans it up', async () => {
     const bridge = hostedBridge()
     const callback = vi.fn()
