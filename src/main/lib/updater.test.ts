@@ -60,6 +60,7 @@ let sidecarMarker: {
 } | null = null
 let sidecarPersists = true
 let sidecarReadable = true
+let sidecarClears = true
 
 vi.mock('./startup-attempt-marker', () => ({
   readStartupAttemptMarker: vi.fn(() => {
@@ -80,7 +81,7 @@ vi.mock('./startup-attempt-marker', () => ({
     }
   ),
   clearStartupAttemptMarker: vi.fn(() => {
-    sidecarMarker = null
+    if (sidecarClears) sidecarMarker = null
   })
 }))
 
@@ -361,6 +362,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     sidecarMarker = null
     sidecarPersists = true
     sidecarReadable = true
+    sidecarClears = true
     mockAppVersion = '1.0.0'
     delete process.env.E2E
     // Non-system, non-darwin platform so isSystemPackageInstall() is false and
@@ -855,6 +857,28 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(sidecarMarker).toBeNull()
   })
 
+  it('does not repeat installed when marker deletion fails', async () => {
+    sidecarMarker = {
+      version: '1.0.1',
+      attemptedAt: new Date().toISOString(),
+      attemptId: 'attempt-installed'
+    }
+    sidecarClears = false
+    mockAppVersion = '1.0.1'
+    const updater = await bootUpdater()
+
+    await updater.applyPendingUpdateOnStartup()
+    await updater.applyPendingUpdateOnStartup()
+
+    const outcomes = findEmitCalls('comfy.desktop.app_update.previous_attempt_outcome')
+    expect(outcomes).toHaveLength(1)
+    expect(outcomes[0]?.[1]).toMatchObject({
+      update_attempt_id: 'attempt-installed',
+      outcome: 'installed'
+    })
+    expect(sidecarMarker).toMatchObject({ reportedOutcome: 'installed' })
+  })
+
   it('applyPendingUpdateOnStartup() holds the install until the splash minimum elapses', async () => {
     vi.useFakeTimers()
     try {
@@ -1084,6 +1108,7 @@ describe('version guard: reject non-newer offers (issue #1161)', () => {
     sidecarMarker = null
     sidecarPersists = true
     sidecarReadable = true
+    sidecarClears = true
     mockAppVersion = '1.0.24'
     fakeUpdater = {
       on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {

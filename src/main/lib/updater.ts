@@ -1016,7 +1016,7 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
           bak_fallbacks: getSafeFileDiagnostics().bakFallbacks
         }
       )
-      if (outcome !== 'installed') recordStartupAttemptOutcome(sidecar.marker, outcome)
+      recordStartupAttemptOutcome(sidecar.marker, outcome)
     }
     if (outcome === 'installed') clearUpdateAttempt(previousAttemptId)
   }
