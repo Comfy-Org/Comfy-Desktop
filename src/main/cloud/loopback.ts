@@ -163,6 +163,10 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       settled = true
       close()
       rejectCode(err)
+      // If listen() never completed, the caller is still awaiting the outer
+      // promise; reject it too so the timeout bounds listener startup as well.
+      // A no-op once the listener has already resolved.
+      rejectListener(err)
     }
     const succeed = (code: string): void => {
       if (settled) return
