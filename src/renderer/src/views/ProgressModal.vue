@@ -14,11 +14,13 @@ import { useTerminalScroll } from '../composables/useTerminalScroll'
 import { useProgressStore } from '../stores/progressStore'
 import type { ActionResult, KillResult, ShowProgressOpts } from '../types/ipc'
 import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
-import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
+import BrandSceneAnimation from '../components/BrandSceneAnimation.vue'
 import BrandProgressGlyph from '../components/icons/BrandProgressGlyph.vue'
 import BaseAccordion from '../components/ui/BaseAccordion.vue'
 import BaseCopyButton from '../components/ui/BaseCopyButton.vue'
 import BrandProgressView from '../components/BrandProgressView.vue'
+import InstallShowcase from '../components/InstallShowcase.vue'
+import { useCloudGate } from '../composables/useCloudGate'
 import type { ProgressStepVM } from '../lib/progressViewModel'
 import { TID } from '../../../shared/testIds'
 
@@ -272,6 +274,34 @@ const progressSteps = computed<ProgressStepVM[]>(() => {
   return [...prior, ...current]
 })
 
+const cloudGate = useCloudGate()
+async function handleShowcaseCloud(): Promise<void> {
+  emitTelemetryAction('comfy.desktop.install.showcase.cloud_open', {
+    phase: currentOp.value?.activePhase ?? null
+  })
+  // A silent no-op reads as a dead button, so a failed launch says so.
+  if (await cloudGate.openCloud()) return
+  await modal.alert({
+    title: t('installShowcase.cloudFailedTitle'),
+    message: t('installShowcase.cloudFailedMessage')
+  })
+}
+
+/** Brand centrepiece for any still-working op, whatever its kind. */
+const showScene = computed<boolean>(() => {
+  const op = currentOp.value
+  if (!op) return false
+  return !op.finished || isChainHandoff.value
+})
+
+/** Cloud upsell, install-only: rides both legs of the install chain. */
+const showShowcase = computed<boolean>(() => {
+  const op = currentOp.value
+  if (!op) return false
+  const isInstallWait = op.opKind === 'install' || op.chainSpan === 'launch'
+  return isInstallWait && (!op.finished || isChainHandoff.value)
+})
+
 // Separate from the modal-branch `terminalExpanded` so the brand accordion's state doesn't leak into the modal reopen path.
 const brandLogsExpanded = ref(false)
 const brandTerminalRef = ref<HTMLDivElement | null>(null)
@@ -409,7 +439,7 @@ function handleDone(): void {
   }
 }
 
-// Return-to-Dashboard from any op state. In-flight prompts local installs (returning stops a running ComfyUI); idle states skip it. Flips an install-backed window back to chooser mode in place.
+// Return-to-Dashboard from any op state. In-flight always prompts (returning cancels the operation, even when the installing record is hidden from the list); idle states skip it. Flips an install-backed window back to chooser mode in place.
 async function returnToDashboard(reason: ReturnToDashboardReason): Promise<void> {
   const id = displayId.value
   const op = id ? progressStore.operations.get(id) : null
@@ -537,14 +567,24 @@ defineExpose({ startOperation, showOperation })
 
 <template>
   <BrandTakeoverLayout v-if="installationId && currentOp">
+    <template #logo-right>
+      <InstallShowcase
+        v-if="showShowcase"
+        :can-offer-cloud="cloudGate.canOffer.value"
+        @open-cloud="handleShowcaseCloud"
+      />
+    </template>
     <div class="brand-progress">
+      <div class="brand-progress__beam-anchor" aria-hidden="true" />
       <BrandProgressGlyph class="brand-progress__glyph" aria-hidden="true" />
       <div class="brand-progress__stack">
         <!-- Plate wraps logo + status and carries the radial scrim that knocks
              back the yellow glyph so stepper text stays legible. -->
         <div class="brand-progress__plate">
           <div class="brand-progress__core">
-            <ComfyWordmark class="brand-progress__wordmark" />
+            <div v-if="showScene" class="brand-progress__scene">
+              <BrandSceneAnimation />
+            </div>
 
             <template v-if="!currentOp.finished || isChainHandoff">
               <div class="brand-progress__bar-wrap">
@@ -817,6 +857,7 @@ defineExpose({ startOperation, showOperation })
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-bottom: clamp(88px, 12vh, 148px);
 }
 /* Soft circular ink pool, dead-center, behind the wordmark/bar/text so they
    stay legible over the glyph — without reading as a shape. Per Figma it's a
@@ -933,6 +974,22 @@ defineExpose({ startOperation, showOperation })
 .brand-progress__steps {
   width: 100%;
 }
+.brand-progress__scene {
+  position: relative;
+  width: min(52vw, 620px);
+  aspect-ratio: 1056 / 784;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.brand-progress__beam-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  anchor-name: --brand-beam-target;
+  pointer-events: none;
+}
 .brand-status-fade-enter-active,
 .brand-status-fade-leave-active {
   transition: opacity 180ms ease;
@@ -946,12 +1003,6 @@ defineExpose({ startOperation, showOperation })
   .brand-status-fade-leave-active {
     transition-duration: 0ms;
   }
-}
-.brand-progress__wordmark {
-  width: clamp(140px, 9.7vw, 240px);
-  height: auto;
-  color: var(--comfy-yellow);
-  anchor-name: --brand-beam-target;
 }
 .brand-progress__bar {
   width: 100%;

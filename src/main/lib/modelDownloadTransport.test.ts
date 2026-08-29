@@ -649,6 +649,108 @@ describe('resume', () => {
   })
 })
 
+describe('sha-256 integrity', () => {
+  const SHA_0123456789 = '84d89877f0d4041efb6bf91a16f0248f2fd573e6af05c19f96bedb9f882f7882'
+  const SHA_AAAAABBBBB = '59158e9f11434e40f5af83230f07877ecf9acd90b9fbeb6002a5e836b6edecee'
+
+  function preStage(bytes: string, meta: StagedDownloadMeta): void {
+    fs.mkdirSync(path.dirname(finalPath), { recursive: true })
+    fs.writeFileSync(stagingPathFor(finalPath), bytes)
+    writeStagedMeta(stagingMetaPathFor(finalPath), meta)
+  }
+
+  it('persists the expected hash in the sidecar and finalizes when the bytes match', async () => {
+    const handle = startModelTransfer(baseOpts({ sha256: SHA_0123456789 }))
+    const req = requests[0]!
+    const res = makeResponse(200, { 'content-length': '10' })
+    req.emit('response', res)
+    res.emit('data', Buffer.from('01234'))
+    await flush()
+    // The expectation survives a crash: a hydrated resume can still verify.
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.sha256).toBe(SHA_0123456789)
+
+    res.emit('data', Buffer.from('56789'))
+    res.emit('end')
+    const outcome = await handle.done
+    expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+  })
+
+  it('discards staged bytes and reports checksum-mismatch when the download is corrupt', async () => {
+    const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
+    const req = requests[0]!
+    const res = makeResponse(200, { 'content-length': '10' })
+    req.emit('response', res)
+    res.emit('data', Buffer.from('0123456789'))
+    res.emit('end')
+    const outcome = await handle.done
+    expect(outcome.outcome).toBe('error')
+    expect((outcome as { code?: string }).code).toBe('checksum-mismatch')
+    // Wrong bytes are not short bytes: nothing to resume, so nothing stays.
+    expect(fs.existsSync(finalPath)).toBe(false)
+    expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+    expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
+  })
+
+  it('resumes staged bytes across a rotated presigned URL when the persisted hash matches', async () => {
+    preStage(
+      'AAAAA',
+      stagedMeta({
+        url: 'https://example.com/models/model.safetensors?sig=expired',
+        sha256: SHA_AAAAABBBBB,
+        expectedSize: 10,
+        etag: '"v1"'
+      })
+    )
+    const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
+    const req = requests[0]!
+    const headers = headerCalls(req)
+    expect(headers['Range']).toBe('bytes=5-')
+    expect(headers['If-Range']).toBe('"v1"')
+
+    const res = makeResponse(206, { 'content-length': '5', 'content-range': 'bytes 5-9/10' })
+    req.emit('response', res)
+    res.emit('data', Buffer.from('BBBBB'))
+    res.emit('end')
+    const outcome = await handle.done
+    expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('AAAAABBBBB')
+  })
+
+  it('restarts clean when the staged pair was written for different expected content', async () => {
+    preStage('AAAAA', stagedMeta({ sha256: SHA_0123456789, expectedSize: 10, etag: '"v1"' }))
+    const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
+    const headers = headerCalls(requests[0]!)
+    // Splicing onto bytes for other content could only fail verification.
+    expect(headers['Range']).toBeUndefined()
+    expect(fs.statSync(stagingPathFor(finalPath)).size).toBe(0)
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.sha256).toBe(SHA_AAAAABBBBB)
+    handle.cancel()
+    await handle.done
+  })
+
+  it('verifies a complete staged file against the sidecar hash when the caller sends none', async () => {
+    preStage('0123456789', stagedMeta({ sha256: SHA_AAAAABBBBB, expectedSize: 10 }))
+    const handle = startModelTransfer(baseOpts())
+    const outcome = await handle.done
+    // Hydrated finalize without a network attempt still runs verification.
+    expect(requests).toHaveLength(0)
+    expect(outcome.outcome).toBe('error')
+    expect((outcome as { code?: string }).code).toBe('checksum-mismatch')
+    expect(fs.existsSync(finalPath)).toBe(false)
+    expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+  })
+
+  it('finalizes a complete staged file without network when the sidecar hash matches', async () => {
+    preStage('0123456789', stagedMeta({ sha256: SHA_0123456789, expectedSize: 10 }))
+    const handle = startModelTransfer(baseOpts())
+    const outcome = await handle.done
+    expect(requests).toHaveLength(0)
+    expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+  })
+})
+
 describe('redirects', () => {
   it('follows redirects while the sidecar keeps the ORIGINAL url as resume identity', async () => {
     const handle = startModelTransfer(baseOpts())
@@ -1000,14 +1102,14 @@ describe('final destination conflicts', () => {
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
   })
 
-  it('installs via the exclusive-claim fallback when hard links are unsupported', async () => {
-    // exFAT/FAT32/network shares reject linkSync with a non-EEXIST error; the
-    // install must fall back to claim-marker + rename and still finalize.
+  it('fails closed when hard links are unsupported', async () => {
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
       err.code = 'EPERM'
       throw err
     })
+    const openSpy = vi.spyOn(fs, 'openSync')
+    const renameSpy = vi.spyOn(fs, 'renameSync')
     try {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
@@ -1016,19 +1118,23 @@ describe('final destination conflicts', () => {
       res.emit('data', Buffer.from('0123456789'))
       res.emit('end')
       const outcome = await handle.done
-      expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
-      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
-      expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
-      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
+      expect(outcome.outcome).toBe('error')
+      expect((outcome as { error: string }).error).toMatch(/atomic no-replace/)
+      expect(fs.existsSync(finalPath)).toBe(false)
+      expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
+      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
+      expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
+      expect(renameSpy).not.toHaveBeenCalledWith(stagingPathFor(finalPath), finalPath)
     } finally {
+      renameSpy.mockRestore()
+      openSpy.mockRestore()
       linkSpy.mockRestore()
     }
   })
 
   it('fails closed on a real link error instead of degrading to claim+rename', async () => {
-    // Only capability-gap errno values (exFAT/FAT32-style) may use the
-    // claim-marker fallback; a genuine I/O failure must surface as the
-    // transfer error it is, keeping the staged bytes for retry.
+    // A genuine I/O failure must surface as the transfer error it is, keeping
+    // the staged bytes for retry.
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EIO: i/o error') as NodeJS.ErrnoException
       err.code = 'EIO'
@@ -1054,7 +1160,7 @@ describe('final destination conflicts', () => {
     }
   })
 
-  it('link-less fallback still refuses to clobber a file at the final name', async () => {
+  it('a link-less filesystem still refuses to clobber a file at the final name', async () => {
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
       err.code = 'EPERM'
@@ -1079,27 +1185,13 @@ describe('final destination conflicts', () => {
     }
   })
 
-  it('link-less fallback removes its empty claim marker when the rename fails', async () => {
-    // A rename failure after the claim was taken must not leave a zero-byte
-    // fake model at the final name; the staged bytes stay for retry.
+  it('a link-less filesystem never creates a final-name claim marker', async () => {
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
       err.code = 'EPERM'
       throw err
     })
-    const realRename = fs.renameSync.bind(fs)
-    const renameSpy = vi
-      .spyOn(fs, 'renameSync')
-      .mockImplementation((oldPath: fs.PathLike, newPath: fs.PathLike) => {
-        // Fail only the final install rename; sidecar atomic writes keep
-        // working so the transfer reaches the finalize step normally.
-        if (String(newPath) === finalPath) {
-          const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException
-          err.code = 'EACCES'
-          throw err
-        }
-        realRename(oldPath, newPath)
-      })
+    const openSpy = vi.spyOn(fs, 'openSync')
     try {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
@@ -1111,8 +1203,9 @@ describe('final destination conflicts', () => {
       expect(outcome.outcome).toBe('error')
       expect(fs.existsSync(finalPath)).toBe(false)
       expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
+      expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
     } finally {
-      renameSpy.mockRestore()
+      openSpy.mockRestore()
       linkSpy.mockRestore()
     }
   })

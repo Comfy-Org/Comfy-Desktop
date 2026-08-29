@@ -5,12 +5,81 @@ import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
 
+// Dev-platform (cloud auth + comfy-builder) renderer-safe types. Re-exported
+// from the cloud library so the renderer imports them from one place; tokens
+// are never part of these shapes.
+import type { AuthStatus, Workspace } from '../main/cloud/types'
+export type { AuthStatus, Workspace }
+
+/** Every state a distribution tile can be in. The first four are pre-install;
+ *  the last two are local (renderer-owned via de-dup against installs). */
+export type DevPlatformDistributionState =
+  | 'installable'
+  | 'no-build'
+  | 'platform-mismatch'
+  | 'needs-desktop-update'
+  | 'installed'
+  | 'update-available'
+
+/** One distribution as a renderer-safe display row. The install-decision fields
+ *  (artifact id / download ref) stay main-side; the renderer installs by id. */
+export interface DevPlatformDistribution {
+  id: string
+  name: string
+  description?: string
+  version?: string
+  /** The ComfyUI version this distribution bundles, for the card's facts line.
+   *  TODO(builder-backend): not yet populated by `listDistributionRows` — the
+   *  build metadata needs to carry it through. Absent renders as unknown. */
+  comfyuiVersion?: string
+  /** ISO 8601 finish stamp of the latest complete build. */
+  finishedAt?: string
+  sizeBytes?: number
+  numCustomNodes?: number
+  state: DevPlatformDistributionState
+  /** i18n suffix explaining a blocking state (see `devPlatform.distribution.blockedReason.*`). */
+  blockedReason?: string
+  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
+   *  / `linux`). The card names them instead of saying "not for this machine". */
+  targetOs?: string[]
+  minDesktopVersion?: string
+  /** Local-only: present for installed / update-available. A distribution
+   *  version is an integer, matching how the row builder sets it. */
+  installedVersion?: number
+}
+
+/** Kickoff result of `installDistribution`: mirrors `addInstallation` so the
+ *  renderer drives the same `installInstance` + progress flow. */
+export interface InstallDistributionResult {
+  ok: boolean
+  message?: string
+  entry?: { id: string; name: string }
+}
+
 // Unsubscribe function returned by event listeners
 export type Unsubscribe = () => void
 
 // Theme identifiers
 export type Theme = 'system' | 'dark' | 'light'
 export type ResolvedTheme = Exclude<Theme, 'system'>
+
+/** One row of a `version-stats` field's table. */
+export interface VersionStatRow {
+  id: string
+  label: string
+  value: string
+  title?: string
+  highlight?: boolean
+}
+
+/** Payload of a `version-stats` field: the Update tab's version summary. */
+export interface VersionStatsValue {
+  headline: string
+  headlineHighlight?: boolean
+  badge?: string | null
+  badgeTone?: 'current' | 'update'
+  rows: VersionStatRow[]
+}
 
 /** Signed-in user's Comfy Cloud subscription tier. `'unknown'` means signed
  *  out or no fetch has succeeded yet this lifetime. See `userTier.ts`. */
@@ -143,7 +212,7 @@ export interface ComfyArgDef {
 export interface DetailField {
   id: string
   label: string
-  value: string | boolean | number | string[] | Record<string, string> | null
+  value: string | boolean | number | string[] | Record<string, string> | VersionStatsValue | null
   editable?: boolean
   editType?:
     | 'select'
@@ -152,6 +221,9 @@ export interface DetailField {
     | 'number'
     | 'path'
     | 'channel-cards'
+    /** Read-only version summary: headline + badge over a table of facts. The
+     *  source supplies the wording; the renderer only lays it out. */
+    | 'version-stats'
     | 'args-builder'
     | 'env-vars'
     | 'model-dirs'
@@ -1105,6 +1177,9 @@ export interface ElectronApi {
    *  the comfy/chooser root. Fire-and-forget; the panel will receive
    *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
+  /** Tell main an overlay panel (feedback / mcp-setup) has painted, so it can
+   *  reveal the until-now-hidden panel view without an opaque flash. */
+  signalOverlayReady(): void
   /** Boot-time restore reveal handshake. The restore window is opened
    *  hidden; the panel calls this once it knows whether its launch
    *  takeover came up (`'takeover-ready'` → reveal the launching surface)
@@ -1153,6 +1228,10 @@ export interface ElectronApi {
    *  `buildSupportUrl()` reads `navigator.userAgent` and the telemetry
    *  helpers live renderer-side. Returns an unsubscribe. */
   onOpenFeedback(callback: (data: { source: 'titlebar' | 'menu' }) => void): Unsubscribe
+  /** Main forwards the title-bar news-bell click here so the panel renderer
+   *  mounts the announcement modal over the live canvas. Returns an
+   *  unsubscribe. */
+  onOpenAnnouncement(callback: () => void): Unsubscribe
   /** Main consults the panel renderer before tearing down
    *  the host window. Returns an unsubscribe; the callback receives a
    *  `requestId` it must echo back via `respondCloseRequest` so main
@@ -1328,6 +1407,20 @@ export interface ElectronApi {
    *  stay under PostHog's 1 MB per-event limit (shipped as `installs_json`). */
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
+
+  // Dev platform (cloud auth + comfy-builder): the only renderer<->main bridge
+  // for this flow. Access/refresh tokens never cross IPC: every method returns
+  // or observes a renderer-safe AuthStatus / Workspace / distribution row.
+  comfybuilder: {
+    signIn(): Promise<AuthStatus>
+    signOut(): Promise<AuthStatus>
+    getAuthStatus(): Promise<AuthStatus>
+    onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
+    listWorkspaces(): Promise<Workspace[]>
+    switchWorkspace(workspaceId: string): Promise<AuthStatus>
+    listDistributions(): Promise<DevPlatformDistribution[]>
+    installDistribution(distributionId: string): Promise<InstallDistributionResult>
+  }
 
   // Updates
   checkForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>

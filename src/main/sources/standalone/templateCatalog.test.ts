@@ -8,6 +8,11 @@ import { fetchJSON } from '../../lib/fetch'
 
 const mockedFetchJSON = vi.mocked(fetchJSON)
 
+/** Index fetches only — the catalog also reads the starter list from R2, and
+ *  these assertions are about how often the index is re-read. */
+const indexFetches = (): number =>
+  mockedFetchJSON.mock.calls.filter(([url]) => String(url).includes('index.json')).length
+
 /** A live index with one category whose templates override the given curated
  *  ids' metadata. */
 function indexFor(overrides: Record<string, Record<string, unknown>>, category = 'Image'): unknown {
@@ -121,7 +126,11 @@ describe('loadTemplateCatalog', () => {
   })
 
   it('flags API-node templates from the manifest, offline included', async () => {
-    mockedFetchJSON.mockImplementationOnce(() => Promise.reject(new Error('offline')))
+    mockedFetchJSON.mockImplementation((url: string) =>
+      String(url).includes('index.json')
+        ? Promise.reject(new Error('offline'))
+        : Promise.resolve(null)
+    )
     const catalog = await loadTemplateCatalog()
     for (const curated of CURATED_TEMPLATES) {
       expect(catalog.find((c) => c.id === curated.id)!.apiNode, curated.id).toBe(
@@ -157,7 +166,11 @@ describe('loadTemplateCatalog', () => {
   })
 
   it('returns a snapshot-only catalog when the fetch rejects (offline)', async () => {
-    mockedFetchJSON.mockImplementationOnce(() => Promise.reject(new Error('offline')))
+    mockedFetchJSON.mockImplementation((url: string) =>
+      String(url).includes('index.json')
+        ? Promise.reject(new Error('offline'))
+        : Promise.resolve(null)
+    )
     const catalog = await loadTemplateCatalog()
     expect(catalog.length).toBe(CURATED_TEMPLATES.length)
     const first = CURATED_TEMPLATES[0]!
@@ -173,7 +186,7 @@ describe('loadTemplateCatalog', () => {
   it('fetches the index exactly once regardless of curated count', async () => {
     mockedFetchJSON.mockResolvedValue([])
     await loadTemplateCatalog()
-    expect(mockedFetchJSON).toHaveBeenCalledTimes(1)
+    expect(indexFetches()).toBe(1)
   })
 
   // --- Resilience: a renamed/removed template upstream can only shrink the
@@ -287,7 +300,7 @@ describe('loadTemplateCatalog', () => {
   it('coalesces concurrent reads into a single index fetch', async () => {
     mockedFetchJSON.mockResolvedValue([])
     const [a, b] = await Promise.all([loadTemplateCatalog(), loadTemplateCatalog()])
-    expect(mockedFetchJSON).toHaveBeenCalledTimes(1)
+    expect(indexFetches()).toBe(1)
     expect(a).toBe(b)
   })
 
@@ -295,11 +308,11 @@ describe('loadTemplateCatalog', () => {
     mockedFetchJSON.mockResolvedValue([])
     await loadTemplateCatalog()
     await loadTemplateCatalog()
-    expect(mockedFetchJSON).toHaveBeenCalledTimes(1)
+    expect(indexFetches()).toBe(1)
 
     resetTemplateCatalogCache()
     await loadTemplateCatalog()
-    expect(mockedFetchJSON).toHaveBeenCalledTimes(2)
+    expect(indexFetches()).toBe(2)
   })
 
   it('refetches once the TTL lapses', async () => {
@@ -309,7 +322,7 @@ describe('loadTemplateCatalog', () => {
       await loadTemplateCatalog()
       vi.advanceTimersByTime(60_001)
       await loadTemplateCatalog()
-      expect(mockedFetchJSON).toHaveBeenCalledTimes(2)
+      expect(indexFetches()).toBe(2)
     } finally {
       vi.useRealTimers()
     }

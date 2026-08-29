@@ -1,5 +1,17 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const devPlatformMocks = vi.hoisted(() => ({
+  isSignedInToCloud: vi.fn(() => false),
+  signInToCloud: vi.fn(async () => ({ signedIn: true }))
+}))
+
+// The file menu decides on sign-in state and starts sign-ins from main. Stub
+// both so the menu tests drive that state directly instead of opening a browser.
+vi.mock('../lib/ipc/registerDevPlatformHandlers', () => ({
+  isSignedInToCloud: devPlatformMocks.isSignedInToCloud,
+  signInToCloud: devPlatformMocks.signInToCloud
+}))
+
 // shared.ts (via registry.ts) loads electron at import, so mock it first.
 vi.mock('electron', () => ({
   app: {
@@ -44,6 +56,13 @@ import {
 } from './titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
 import { applySettingSet } from '../lib/ipc/registerSettingsHandlers'
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  // Signed out is the default: every assertion that does not say otherwise
+  // describes a user who has not logged in yet.
+  devPlatformMocks.isSignedInToCloud.mockReturnValue(false)
+})
 
 afterEach(() => {
   comfyWindows.clear()
@@ -158,7 +177,47 @@ describe('buildTitlePopupMenuItems', () => {
     expect(quit?.label).toBe('Quit Desktop')
   })
 
-  it('chooser host matches the canonical order including Close Window', () => {
+  it('chooser host matches the canonical order, signed out', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
+    expect(ids).toEqual([
+      'new-window',
+      'new-install',
+      'track',
+      'load-snapshot',
+      'sign-in',
+      'settings',
+      'feedback',
+      'exit-window',
+      'close-all-windows'
+    ])
+    const signIn = items.find((i) => i.id === 'sign-in')
+    expect(signIn?.label).toBe('Log in')
+    expect(signIn?.labelKey).toBe('fileMenu.signIn')
+  })
+
+  it('install host matches the canonical order with Close Window between Send Feedback and Quit Desktop', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
+    const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
+    expect(ids).toEqual([
+      'new-window',
+      'new-install',
+      'track',
+      'load-snapshot',
+      'sign-in',
+      'settings',
+      'feedback',
+      'exit-window',
+      'close-all-windows'
+    ])
+    const closeWindow = items.find((i) => i.id === 'exit-window')
+    expect(closeWindow?.label).toBe('Close Window')
+    const quit = items.find((i) => i.id === 'close-all-windows')
+    expect(quit?.label).toBe('Quit Desktop')
+  })
+
+  it('chooser host matches the canonical order once signed in', () => {
+    devPlatformMocks.isSignedInToCloud.mockReturnValue(true)
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([
@@ -173,23 +232,34 @@ describe('buildTitlePopupMenuItems', () => {
     ])
   })
 
-  it('install host matches the canonical order with Close Window between Send Feedback and Quit Desktop', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
+  it('install host keeps Log in ahead of Reset Zoom when both are live', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([
       'new-window',
       'new-install',
       'track',
       'load-snapshot',
+      'sign-in',
       'settings',
       'feedback',
+      'reset-zoom',
       'exit-window',
       'close-all-windows'
     ])
-    const closeWindow = items.find((i) => i.id === 'exit-window')
-    expect(closeWindow?.label).toBe('Close Window')
-    const quit = items.find((i) => i.id === 'close-all-windows')
-    expect(quit?.label).toBe('Quit Desktop')
+  })
+
+  // Login is the precondition for the account-scoped Comfy Builder rollout, so
+  // it is never gated on that rollout — only on whether you are already in.
+  it('omits Log in once the user is signed in', () => {
+    devPlatformMocks.isSignedInToCloud.mockReturnValue(true)
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    expect(items.find((i) => i.id === 'sign-in')).toBeUndefined()
+  })
+
+  it('keeps the post-consent menu to Skip Onboarding, with no Log in item', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ firstUseMode: 'post-consent' }))
+    expect(items.map((i) => i.id ?? null)).toEqual(['skip-onboarding'])
   })
 
   it('install host omits Return to Dashboard — picker Home is the canonical dashboard escape', () => {
@@ -222,6 +292,21 @@ describe('buildTitlePopupMenuItems', () => {
     const ids = items.map((i) => i.id ?? null)
     expect(ids[0]).toBe('new-window')
     expect(ids[ids.length - 1]).toBe('close-all-windows')
+  })
+
+  it('separates Log in from Desktop Settings while signed out', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    const signInIdx = items.findIndex((i) => i.id === 'sign-in')
+    expect(items[signInIdx + 1]?.kind).toBe('separator')
+    expect(items[signInIdx + 2]?.id).toBe('settings')
+  })
+
+  it('does not leave a doubled separator above Desktop Settings once signed in', () => {
+    devPlatformMocks.isSignedInToCloud.mockReturnValue(true)
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    const settingsIdx = items.findIndex((i) => i.id === 'settings')
+    expect(items[settingsIdx - 1]?.kind).toBe('separator')
+    expect(items[settingsIdx - 2]?.kind).not.toBe('separator')
   })
 
   it('separators bracket the install-creation block on both hosts', () => {
@@ -277,6 +362,37 @@ describe('activateTitlePopupMenuItem', () => {
     activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'reset-zoom', bindings)
 
     expect(bindings.resetComfyZoom).not.toHaveBeenCalled()
+  })
+
+  // The shared primitive, not `session.login()` — it carries the sign-out race
+  // guard the `comfybuilder:signIn` IPC relies on.
+  it('routes Log in through the shared login primitive', () => {
+    const host = makeEntry({ installationId: null })
+    comfyWindows.set(host.windowKey, host)
+
+    activateTitlePopupMenuItem(
+      makePopupEntry(host.windowKey),
+      'sign-in',
+      {} as unknown as TitlePopupHostBindings
+    )
+
+    expect(devPlatformMocks.signInToCloud).toHaveBeenCalledOnce()
+  })
+
+  it('swallows a cancelled or failed sign-in handoff', async () => {
+    const host = makeEntry({ installationId: null })
+    comfyWindows.set(host.windowKey, host)
+    devPlatformMocks.signInToCloud.mockRejectedValueOnce(new Error('user closed the browser'))
+
+    expect(() =>
+      activateTitlePopupMenuItem(
+        makePopupEntry(host.windowKey),
+        'sign-in',
+        {} as unknown as TitlePopupHostBindings
+      )
+    ).not.toThrow()
+    // Let the rejected promise settle so an unhandled rejection would surface.
+    await Promise.resolve()
   })
 })
 

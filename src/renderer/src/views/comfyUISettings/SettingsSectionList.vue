@@ -1,19 +1,27 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, Loader2, ShieldAlert } from 'lucide-vue-next'
+import { ChevronRight, ShieldAlert } from 'lucide-vue-next'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
 import BooleanToggle from './BooleanToggle.vue'
 import PathField from './PathField.vue'
 import EnvVarsField from './EnvVarsField.vue'
 import ChannelPicker from './ChannelPicker.vue'
+import VersionStatPanel from './VersionStatPanel.vue'
+import SectionActionButton from './SectionActionButton.vue'
 import ArgsBuilderField from './ArgsBuilderField.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import TooltipWrap from '../../components/TooltipWrap.vue'
 import { isOpenablePathString } from '../../lib/openablePath'
-import type { ActionDef, DetailField, DetailSection } from '../../types/ipc'
+import type {
+  ActionDef,
+  DetailField,
+  DetailSection,
+  VersionStatRow,
+  VersionStatsValue
+} from '../../types/ipc'
 
 /**
  * Shared section + field renderer for both the Settings drawer and the instance-picker's Settings accordion.
@@ -73,6 +81,29 @@ function asString(v: DetailField['value']): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
 
+/** Unpack a `version-stats` field. The backend owns the wording - it knows what
+ *  the versions mean - so this only supplies defaults for a malformed payload. */
+function versionStats(field: DetailField): Required<VersionStatsValue> {
+  const v = (field.value ?? {}) as Partial<VersionStatsValue>
+  return {
+    headline: typeof v.headline === 'string' ? v.headline : '',
+    headlineHighlight: v.headlineHighlight === true,
+    badge: typeof v.badge === 'string' ? v.badge : null,
+    badgeTone: v.badgeTone === 'update' ? 'update' : 'current',
+    rows: Array.isArray(v.rows) ? v.rows.filter(isVersionStatRow) : []
+  }
+}
+
+/** Guards each row before VersionStatPanel dereferences `id`/`label`/`value`:
+ *  a malformed IPC payload (e.g. a null entry) must not break the render. */
+function isVersionStatRow(r: unknown): r is VersionStatRow {
+  if (r === null || typeof r !== 'object') return false
+  const row = r as Partial<VersionStatRow>
+  return (
+    typeof row.id === 'string' && typeof row.label === 'string' && typeof row.value === 'string'
+  )
+}
+
 // Per-title collapse state; only titled sections (with a `section.collapsed` seed) are collapsible.
 const collapsedTitles = ref(new Set<string>())
 
@@ -111,6 +142,14 @@ function isNestedField(field: DetailField): boolean {
   return field.nested === true
 }
 
+/** Field types that render the section's actions themselves, so the generic
+ *  full-width footer must stand down or the buttons appear twice. */
+const ACTION_OWNING_EDIT_TYPES = new Set(['channel-cards', 'version-stats'])
+
+function fieldOwnsSectionActions(section: DetailSection): boolean {
+  return (section.fields ?? []).some((f) => f.editType && ACTION_OWNING_EDIT_TYPES.has(f.editType))
+}
+
 /** Chunk a section's fields into rows: consecutive fields sharing a
  *  `rowGroup` render side-by-side; everything else gets its own row.
  *  Only adjacency groups, so unrelated fields never merge. */
@@ -131,24 +170,20 @@ function rowKey(row: DetailField[]): string {
   return row.map((f) => f.id).join('|')
 }
 
-function hasChannelPicker(section: DetailSection): boolean {
-  return (section.fields ?? []).some((f) => f.editType === 'channel-cards')
-}
-
 function isPathLikeValue(value: unknown): boolean {
   if (typeof value !== 'string') return false
   const v = value.trim()
-  if (!v || v === '—') return false
+  if (!v || v === '\u2014') return false
   return v.includes('/') || v.includes('\\') || v.startsWith('~')
 }
 
 /** Stricter than `isPathLikeValue`: only values safe to open in the OS file
  *  manager. `editType === 'path'` is openable when it holds a real value (not
- *  empty or the `—` placeholder); otherwise the value must look like a local
+ *  empty or the em dash placeholder); otherwise the value must look like a local
  *  path (not a URL, SSH remote, or date). */
 function canOpenFilesystemPath(field: DetailField): boolean {
   const v = asString(field.value).trim()
-  if (field.editType === 'path') return v.length > 0 && v !== '—'
+  if (field.editType === 'path') return v.length > 0 && v !== '\u2014'
   return isOpenablePathString(v)
 }
 
@@ -157,7 +192,13 @@ function readonlyDisplayValue(field: DetailField): string {
 }
 
 function fieldOwnsLabel(field: DetailField): boolean {
-  return field.editType === 'env-vars' || field.editType === 'channel-cards'
+  return (
+    field.editType === 'env-vars' ||
+    field.editType === 'channel-cards' ||
+    // The panel leads with its own headline; a label above it would echo the
+    // section title.
+    field.editType === 'version-stats'
+  )
 }
 </script>
 
@@ -350,6 +391,14 @@ function fieldOwnsLabel(field: DetailField): boolean {
               @action="(a) => emit('run-action', a)"
             />
 
+            <VersionStatPanel
+              v-else-if="field.editType === 'version-stats'"
+              v-bind="versionStats(field)"
+              :actions="section.actions ?? []"
+              :running-action-ids="runningIdsSet"
+              @action="(a) => emit('run-action', a)"
+            />
+
             <BaseInput
               v-else-if="field.editType === 'text'"
               :model-value="asString(field.value)"
@@ -379,43 +428,19 @@ function fieldOwnsLabel(field: DetailField): boolean {
       </div>
 
       <div
-        v-if="section.actions && section.actions.length && !hasChannelPicker(section)"
+        v-if="section.actions && section.actions.length && !fieldOwnsSectionActions(section)"
         class="settings-v2-actions"
       >
-        <TooltipWrap
+        <SectionActionButton
           v-for="action in section.actions"
           :key="action.id"
-          class="settings-v2-action-tooltip"
-          :text="
-            action.enabled === false && action.disabledMessage
-              ? action.disabledMessage
-              : action.tooltip
-          "
-        >
-          <button
-            type="button"
-            :class="[
-              'settings-v2-action',
-              {
-                primary: action.style === 'primary',
-                danger: action.style === 'danger',
-                'looks-disabled': action.enabled === false && action.disabledMessage,
-                'is-running': isActionRunning(action.id)
-              }
-            ]"
-            :disabled="
-              (action.enabled === false && !action.disabledMessage) || isActionRunning(action.id)
-            "
-            @click="emit('run-action', action)"
-          >
-            <Loader2
-              v-if="isActionRunning(action.id)"
-              :size="14"
-              class="settings-v2-action-spinner"
-            />
-            {{ action.label }}
-          </button>
-        </TooltipWrap>
+          :action="action"
+          :running="isActionRunning(action.id)"
+          button-class="settings-v2-action"
+          tooltip-class="settings-v2-action-tooltip"
+          spinner-class="settings-v2-action-spinner"
+          @action="emit('run-action', action)"
+        />
       </div>
     </article>
   </div>
@@ -730,7 +755,7 @@ function fieldOwnsLabel(field: DetailField): boolean {
   margin-top: 8px;
 }
 
-.settings-v2-action {
+:deep(.settings-v2-action) {
   border: none;
   width: 100%;
   display: inline-flex;
@@ -739,12 +764,12 @@ function fieldOwnsLabel(field: DetailField): boolean {
   gap: 6px;
 }
 
-.settings-v2-action.is-running {
+:deep(.settings-v2-action.is-running) {
   cursor: progress;
   opacity: 0.85;
 }
 
-.settings-v2-action-spinner {
+:deep(.settings-v2-action-spinner) {
   flex: 0 0 auto;
   animation: settings-v2-action-spin 0.9s linear infinite;
 }
@@ -755,11 +780,11 @@ function fieldOwnsLabel(field: DetailField): boolean {
   }
 }
 
-.settings-v2-action-tooltip {
+:deep(.settings-v2-action-tooltip) {
   width: 100%;
 }
 
-.settings-v2-actions:has(> .settings-v2-action:only-child) .settings-v2-action {
+.settings-v2-actions:has(> .settings-v2-action-tooltip:only-child) :deep(.settings-v2-action) {
   flex: 1;
 }
 

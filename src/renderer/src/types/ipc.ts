@@ -10,6 +10,8 @@ export type {
   DetailItem,
   DetailField,
   DetailFieldOption,
+  VersionStatRow,
+  VersionStatsValue,
   ActionDef,
   ConfirmDef,
   ConfirmOption,

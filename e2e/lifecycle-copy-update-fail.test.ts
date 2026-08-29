@@ -26,6 +26,7 @@ import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
 import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -172,7 +173,7 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   // update-failure marker AND the retry hint must be on disk. The
   // registry entry lands when the copy finishes — the update leg (and
   // its failure output) completes after that, so poll.
-  const logsDir = await ctx.app.evaluate(({ app }) => app.getPath('logs'))
+  const logsDir = await evalWithRetry(() => ctx.app.evaluate(({ app }) => app.getPath('logs')))
   const appLogPath = path.join(logsDir, 'app.log')
   await expect
     .poll(async () => {

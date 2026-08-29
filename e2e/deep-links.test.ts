@@ -74,6 +74,8 @@ test.beforeEach(async () => {
  *  panel webContents — the same IPC main fires when a `comfy://` URL
  *  is dispatched. */
 async function fireDeepLink(payload: Record<string, unknown>): Promise<void> {
+  // Deliberately not retried: a retry could send the trigger IPC twice and
+  // skew the per-channel invocation counts these tests assert on.
   await ctx.app.evaluate(({ webContents }, p) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
     if (!wc) throw new Error('panel webContents not found')

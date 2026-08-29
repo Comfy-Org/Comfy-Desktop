@@ -22,6 +22,7 @@ import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
+import { createStartupReentryGate } from './lib/startupReentryGate'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
 import {
@@ -154,6 +155,7 @@ import {
   destroyPanelView,
   ensurePanelView,
   focusActiveBody,
+  prewarmAttachedPanel,
   refreshComfyTabBody,
   registerPanelViewIpc,
   sendToPanelDeferred,
@@ -659,7 +661,7 @@ function onLaunch({
       destroyPanelView(claimed)
       const ok = attachInstall(claimed, { installation, comfyUrl, isLocal: !url })
       if (ok) {
-        claimed.layoutViews()
+        prewarmAttachedPanel(claimed)
         if (proc) {
           proc.on('exit', () => {
             // Session registry handles state cleanup
@@ -1077,6 +1079,25 @@ ipcMain.on('comfy-window:click-feedback', (event) => {
   triggerOpenFeedback(found.entry.windowKey, 'titlebar')
 })
 
+/** Flip into the 'announcement' overlay panel (mirrors triggerOpenFeedback):
+ * lazily ensure the panel view, make it visible over comfyView, and tell the
+ * panel renderer to mount the announcement modal. */
+function triggerOpenAnnouncement(entryId: number): void {
+  const parentEntry = comfyWindows.get(entryId)
+  if (!parentEntry || parentEntry.window.isDestroyed()) return
+  const panelView = parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, 'announcement')
+  setActivePanel(entryId, 'announcement')
+  sendToPanelDeferred(panelView, 'comfy-panel:open-announcement', {})
+}
+
+/** Title-bar news-bell click. Resolves the host entry from the title-bar
+ * sender, then routes through `triggerOpenAnnouncement`. */
+ipcMain.on('comfy-window:click-announcement', (event) => {
+  const found = findEntryByTitleBarSender(event.sender)
+  if (!found) return
+  triggerOpenAnnouncement(found.entry.windowKey)
+})
+
 /**
  * File menu → New Window. Always opens a fresh
  * install-less chooser host window — does NOT focus an existing one
@@ -1290,15 +1311,19 @@ function findInstallationIdForWindow(win: BrowserWindow): string | undefined {
   return undefined
 }
 
+// Startup gate for OS-driven window reentry (`second-instance`, `activate`);
+// see `createStartupReentryGate` for why reentry is held until recovery settles.
+const hostReentryGate = createStartupReentryGate()
+
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   if (app.isPackaged) {
     app.on('second-instance', () => {
-      // OS-level "open another instance" attempt — focus an existing
+      // OS-level "open another instance" attempt - focus an existing
       // host window (chooser or install-backed) instead of stacking
-      // a duplicate.
-      openOrFocusAnyHostWindow()
+      // a duplicate. Queued until startup recovery settles.
+      hostReentryGate.runOrQueue(() => openOrFocusAnyHostWindow())
     })
   }
 
@@ -1382,17 +1407,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
     migrateXdgPaths()
     persistWinDataRootChoice()
-
-    // Kick off the managed model-download startup pass (migrate legacy
-    // final-path partials, hydrate interrupted downloads as paused rows) as
-    // soon as settings/installation records are readable. Fire-and-forget so
-    // it never delays first paint; `handleLaunch` awaits the same memoized
-    // promise before any ComfyUI process can scan the model dirs (#1322).
-    // A failed pass is not memoized, so launch retries it; here it only
-    // needs logging (an unhandled rejection would surface as a crash).
-    initializeModelDownloads().catch((err) => {
-      console.warn('Model download startup pass failed at app startup:', err)
-    })
 
     // Strip Electron's default menu before any BrowserWindow opens so
     // OAuth / cloud-login popups (and every other window) can't reach
@@ -2172,6 +2186,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       // they don't need this hook.
       onThemeChanged: applyChooserHostThemeToAll
     })
+    // Recovery above can move ComfyBuilder model trees and migrate their
+    // storage mode. Scan only after it settles so the memoized startup pass
+    // sees the final roots and filesystem state.
+    initializeModelDownloads().catch((err) => {
+      console.warn('Model download startup pass failed at app startup:', err)
+    })
     updater.register()
     // Forward updater state transitions to every host window's
     // title-bar webContents. Subscribed once at startup; the helper
@@ -2224,6 +2244,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
         mainTelemetry.emit('comfy.desktop.app_update.startup_install_backstop_recovered', {})
         void openStartupSurface()
+        hostReentryGate.open()
       }, STARTUP_INSTALL_QUIT_BACKSTOP_MS)
     } else {
       app.removeListener('before-quit', onUpdateInstallQuit)
@@ -2235,6 +2256,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       // window (and the reopen setting is on), restore that instance
       // in-place on top of the freshly-opened chooser host.
       void openStartupSurface()
+      // Startup recovery (awaited inside `ipc.register()` above) has settled
+      // and we've committed to opening the normal UI, so OS-driven reentry
+      // (second-instance / dock activate) can open windows directly again.
+      hostReentryGate.open()
     }
 
     // Single subscription rebroadcasts every install-list mutation
@@ -2282,17 +2307,20 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.on('activate', () => {
-    // macOS dock click — raise ALL open host windows to the front
+    // macOS dock click - raise ALL open host windows to the front
     // (standard macOS behaviour: clicking the dock icon brings every
     // window of the app forward, not just one). The preferred host is
     // left frontmost. Falls back to spawning a fresh chooser host when
     // none are open. The single-window `openOrFocusAnyHostWindow` path
     // remains for non-darwin platforms / the `second-instance` hook.
-    if (process.platform === 'darwin') {
-      raiseAllHostWindows()
-    } else {
-      openOrFocusAnyHostWindow()
-    }
+    // Queued until startup recovery settles.
+    hostReentryGate.runOrQueue(() => {
+      if (process.platform === 'darwin') {
+        raiseAllHostWindows()
+      } else {
+        openOrFocusAnyHostWindow()
+      }
+    })
   })
 
   app.on('before-quit', (event) => {

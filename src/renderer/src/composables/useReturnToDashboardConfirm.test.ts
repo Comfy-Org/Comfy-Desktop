@@ -58,6 +58,34 @@ describe('useReturnToDashboardConfirm', () => {
     expect(result).toBe(false)
   })
 
+  it('prompts the cancel-operation confirm for in-flight ops', async () => {
+    mockConfirm.mockResolvedValue(true)
+    const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
+
+    const result = await confirmReturnToDashboard(makeInstallation(), 'in_flight')
+
+    expect(mockConfirm).toHaveBeenCalledWith({
+      title: 'overlay.cancelCurrentTitle',
+      message: 'overlay.cancelMessage',
+      confirmLabel: 'overlay.cancelConfirm',
+      confirmStyle: 'danger'
+    })
+    expect(result).toBe(true)
+  })
+
+  it('prompts for in-flight ops even when the installation record is unavailable or non-local', async () => {
+    mockConfirm.mockResolvedValue(false)
+    const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
+
+    // An install in progress has status 'installing' and is hidden from the
+    // renderer list, so the record lookup resolves to null.
+    expect(await confirmReturnToDashboard(null, 'in_flight')).toBe(false)
+    expect(
+      await confirmReturnToDashboard(makeInstallation({ sourceCategory: 'cloud' }), 'in_flight')
+    ).toBe(false)
+    expect(mockConfirm).toHaveBeenCalledTimes(2)
+  })
+
   it('skips confirmation for cloud installs', async () => {
     const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 

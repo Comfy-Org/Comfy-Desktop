@@ -17,6 +17,7 @@ export const TID = {
 
   dashboardTile: (installId: string) => `dashboard-tile-${installId}`,
   dashboardTileKebab: (installId: string) => `dashboard-tile-kebab-${installId}`,
+  dashboardTileWhyCloud: (installId: string) => `dashboard-tile-why-cloud-${installId}`,
 
   /** A single item in the shared `ContextMenu`. `id` matches `ContextMenuItem.id`. */
   contextMenuItem: (id: string) => `context-menu-item-${id}`,
@@ -77,7 +78,13 @@ export const TID = {
   /** Visible only when `portConflict.nextPort` is set. */
   progressPortConflictUsePort: 'progress-port-conflict-use-port',
   /** Visible only when `portConflict.isComfy` is true. */
-  progressPortConflictKill: 'progress-port-conflict-kill'
+  progressPortConflictKill: 'progress-port-conflict-kill',
+
+  /** Feature carousel in the install takeover, above the wordmark. Passive:
+   *  rotation has no dots, arrows or pause button - see InstallShowcase.vue. */
+  installShowcase: 'install-showcase',
+  installShowcaseTitle: 'install-showcase-title',
+  installShowcaseCloud: 'install-showcase-cloud'
 } as const
 
 export type TestIdKey = keyof typeof TID

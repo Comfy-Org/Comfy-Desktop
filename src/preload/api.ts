@@ -82,6 +82,9 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
+    /** Signal that an overlay panel (feedback / mcp-setup) has painted, so main
+     *  can reveal the until-now-hidden panel view without an opaque flash. */
+    signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab) =>
@@ -105,6 +108,11 @@ export function buildElectronApi(): ElectronApi {
       }
       ipcRenderer.on('comfy-panel:open-feedback', handler)
       return () => ipcRenderer.removeListener('comfy-panel:open-feedback', handler)
+    },
+    onOpenAnnouncement: (callback) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('comfy-panel:open-announcement', handler)
+      return () => ipcRenderer.removeListener('comfy-panel:open-announcement', handler)
     },
     onCloseRequest: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>
@@ -199,6 +207,26 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('get-installation-dd-context', installationId),
     getInstallsInventory: () => ipcRenderer.invoke('get-installs-inventory'),
     getDeviceId: () => ipcRenderer.invoke('get-device-id'),
+
+    // Dev platform (cloud auth + comfy-builder). Tokens never cross IPC; these
+    // only ever carry AuthStatus / Workspace / distribution display rows.
+    comfybuilder: {
+      signIn: () => ipcRenderer.invoke('comfybuilder:signIn'),
+      signOut: () => ipcRenderer.invoke('comfybuilder:signOut'),
+      getAuthStatus: () => ipcRenderer.invoke('comfybuilder:getAuthStatus'),
+      onAuthChanged: (callback) => {
+        const handler = (_event: IpcRendererEvent, status: unknown) =>
+          callback(status as Parameters<typeof callback>[0])
+        ipcRenderer.on('comfybuilder:authChanged', handler)
+        return () => ipcRenderer.removeListener('comfybuilder:authChanged', handler)
+      },
+      listWorkspaces: () => ipcRenderer.invoke('comfybuilder:listWorkspaces'),
+      switchWorkspace: (workspaceId) =>
+        ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId),
+      listDistributions: () => ipcRenderer.invoke('comfybuilder:listDistributions'),
+      installDistribution: (distributionId) =>
+        ipcRenderer.invoke('comfybuilder:installDistribution', distributionId)
+    },
 
     // Model downloads
     listModelDownloads: () => ipcRenderer.invoke('model-download-list'),

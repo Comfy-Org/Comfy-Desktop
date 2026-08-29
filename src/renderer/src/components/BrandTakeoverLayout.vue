@@ -60,6 +60,9 @@ onBeforeUnmount(() => {
         <div class="brand-logo-row">
           <ComfyCLogo class="brand-logo" />
         </div>
+        <div v-if="$slots['logo-right']" class="brand-logo-row brand-logo-row--right">
+          <slot name="logo-right" />
+        </div>
         <slot />
         <template #footer-left>
           <slot name="footer-left" />
@@ -104,6 +107,18 @@ onBeforeUnmount(() => {
   left: 0;
   z-index: 2;
   padding: 16px 15px;
+  display: flex;
+  align-items: center;
+}
+.brand-logo-row.brand-logo-row--right {
+  left: auto;
+  right: 0;
+  padding-right: clamp(16px, 2.5vw, 32px);
+  max-width: min(60vw, 680px);
+  justify-content: flex-end;
+}
+.brand-logo-row.brand-logo-row--right > * {
+  min-height: var(--takeover-logo-size);
   display: flex;
   align-items: center;
 }

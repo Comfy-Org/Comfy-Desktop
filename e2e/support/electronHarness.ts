@@ -4,6 +4,8 @@ import path from 'node:path'
 import process from 'node:process'
 import { _electron as electron, type ElectronApplication } from 'playwright'
 
+import { evalWithRetry } from './evalRetry'
+
 export interface LauncherAppHandle {
   application: ElectronApplication
   homeDir: string
@@ -267,20 +269,34 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   })
 
   // Under Playwright the ready-to-show event may fire but isVisible() can lag,
-  // so force-show once a BrowserWindow exists.
+  // so force-show once a BrowserWindow exists. Retried because the show is
+  // idempotent; side-effectful evaluate calls must NOT be blanket-retried
+  // (a retry can re-run a callback that already executed - see evalRetry.ts).
   const page = await application.firstWindow()
   await page.waitForLoadState('domcontentloaded')
-  await application.evaluate(({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win && !win.isVisible()) win.show()
-  })
+  await evalWithRetry(() =>
+    application.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win && !win.isVisible()) win.show()
+    })
+  )
 
   // Suppress the native uncaught-exception dialog and exit fast so tests don't
   // time out. `process` is rewritten by Playwright's transpiler, so use app.exit().
-  await application.evaluate(({ app: electronApp, dialog }) => {
-    dialog.showErrorBox = () => {}
-    electronApp.on('render-process-gone', () => electronApp.exit(1))
-  })
+  // Retried: re-assigning the stub is harmless, and the exit handler guards
+  // itself with a flag so a retry after a lost result can't register it twice.
+  await evalWithRetry(() =>
+    application.evaluate(({ app: electronApp, dialog }) => {
+      dialog.showErrorBox = () => {}
+      const marked = electronApp as typeof electronApp & {
+        __e2eRenderProcessGoneInstalled?: boolean
+      }
+      if (!marked.__e2eRenderProcessGoneInstalled) {
+        marked.__e2eRenderProcessGoneInstalled = true
+        electronApp.on('render-process-gone', () => electronApp.exit(1))
+      }
+    })
+  )
 
   const cleanup = async (): Promise<void> => {
     try {

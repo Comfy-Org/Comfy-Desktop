@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { openTitleMenu } from './support/chooserHelpers'
 import { titlePopupPage, type WebContentsPage } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 
 let ctx: AppContext
 let popup: WebContentsPage
@@ -60,12 +61,12 @@ test.beforeAll(async () => {
   // Linux, Electron userData elsewhere (which on macOS resolves outside the
   // harness's isolated home dir). Ask the app once rather than guessing the
   // layout; later evaluate calls can race popup navigations.
-  settingsDir = await ctx.app.evaluate(({ app }) => {
+  settingsDir = await evalWithRetry(() => ctx.app.evaluate(({ app }) => {
     if (process.platform !== 'linux') return app.getPath('userData')
     const base = process.env.XDG_CONFIG_HOME || `${app.getPath('home')}/.config`
     return `${base}/comfyui-desktop-2`
-  })
-  await ctx.app.evaluate(
+  }))
+  await evalWithRetry(() => ctx.app.evaluate(
     ({ dialog }, selectedPaths) => {
       const queue = [...selectedPaths]
       ;(dialog as unknown as { showOpenDialog: unknown }).showOpenDialog = async () => ({
@@ -74,7 +75,7 @@ test.beforeAll(async () => {
       })
     },
     [addedModelsDir, replacementOutputDir]
-  )
+  ))
 })
 
 test.afterAll(async () => {

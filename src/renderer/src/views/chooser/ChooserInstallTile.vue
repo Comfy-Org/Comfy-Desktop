@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle, ArrowDownToLine, ArrowRightLeft, MoreVertical } from 'lucide-vue-next'
+import { AlertCircle, ArrowDownToLine, ArrowRightLeft, Info, MoreVertical } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
+import { isDistributionInstall } from '../../devplatform/distributionState'
 import type { Installation } from '../../types/ipc'
 
 interface Props {
   installation: Installation
   showFreeRunsPill?: boolean
+  showWhyCloud?: boolean
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
-  /** Pre-formatted recency label — "Launched 3h ago" / "Not launched yet". */
-  lastLaunchedLabel: string
 }
 
 const props = defineProps<Props>()
@@ -27,6 +27,7 @@ const emit = defineEmits<{
   'trigger-action': [action: 'update' | 'migrate', installation: Installation]
   'view-error': [installation: Installation]
   'view-danger': [installation: Installation]
+  'why-cloud': []
 }>()
 
 const { t } = useI18n()
@@ -65,6 +66,10 @@ const statusPill = computed<{ label: string; dotClass: string } | null>(() => {
   return null
 })
 
+const showWhyCloudTrigger = computed(
+  () => props.showWhyCloud && !hasError.value && !statusPill.value && !dangerTag.value
+)
+
 const hasUpdate = computed(() => inst.value.statusTag?.style === 'update')
 // The backend tags every migratable install (Legacy Desktop, portable, git)
 // with a `migrate` status tag — mirror `hasUpdate` rather than special-casing
@@ -73,9 +78,19 @@ const hasMigratePrompt = computed(() => inst.value.statusTag?.style === 'migrate
 
 const typeMeta = computed(() => installTypeMetaForInstall(inst.value))
 
+/** Wears the distribution glyph rather than its install-type icon, so a
+ *  distribution keeps one identity whether it's installed or still a card. */
+const isFromDistribution = computed(() => isDistributionInstall(inst.value))
+
+const distributionVersion = computed(() =>
+  typeof inst.value.distributionVersion === 'string' ? inst.value.distributionVersion : ''
+)
+
 /** Desktop's listPreview is the bare installPath (useless as a label), so fall
  *  back to sourceLabel. Cloud/remote values are URLs — strip the protocol. */
 const sourceLabel = computed(() => {
+  // The path is noise on a tile whose identity is the distribution.
+  if (isFromDistribution.value) return ''
   const raw =
     inst.value.sourceId === 'desktop'
       ? inst.value.sourceLabel
@@ -83,7 +98,22 @@ const sourceLabel = computed(() => {
   return raw ? raw.replace(/^https?:\/\//, '') : raw
 })
 
-const metaLine = computed(() => [sourceLabel.value, inst.value.version].filter(Boolean).join(' · '))
+/** Labelled ("Build v7") so it can't be read as the ComfyUI version beside it. */
+const trailingFact = computed(() =>
+  isFromDistribution.value
+    ? distributionVersion.value
+      ? t('devPlatform.distribution.distVersion', { version: distributionVersion.value })
+      : ''
+    : inst.value.version || ''
+)
+
+/** Distribution installs read "<ComfyUI version> · Build v7"; everything else
+ *  keeps "<source> · <version>". */
+const leadingFact = computed(() =>
+  isFromDistribution.value ? inst.value.version || '' : sourceLabel.value
+)
+
+const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
 
 /** The single update/migrate affordance, or null when the install has neither.
  *  The Update tooltip surfaces the target version the bare pill hides. */
@@ -105,14 +135,6 @@ const actionPill = computed(() => {
       pillClass: 'chooser-tile-pill-migrate'
     }
   return null
-})
-
-/** Precise fallback for the relative recency label; empty when never booted. */
-const absoluteLaunchedTime = computed(() => {
-  const ts = inst.value.lastLaunchedAt
-  return typeof ts === 'number'
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(ts)
-    : ''
 })
 
 function handleClick(): void {
@@ -141,8 +163,11 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     @keydown.space.prevent="handleClick"
     @contextmenu.prevent="emit('open-card-menu', $event, inst)"
   >
-    <!-- Type icon only; source/channel lives in the meta line below. -->
+    <!-- Type icon only; source/channel lives in the meta line below. A
+         distribution install wears the distribution glyph instead. -->
     <span class="chooser-tile-icon" :title="t(typeMeta.labelKey)">
+      <!-- `typeMeta` resolves the distribution glyph itself, so the tile, the
+           picker row and the title bar can't drift apart. -->
       <component :is="typeMeta.icon" :size="22" />
     </span>
 
@@ -201,23 +226,32 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       </button>
     </div>
 
-    <!-- Stacked tiers (name → meta → recency); each truncates on its own row. -->
+    <!-- Two lines: name, then one row with the meta facts left and the
+         action pill (update / migrate) pinned right. -->
     <div class="chooser-tile-body">
-      <TruncatedText class="chooser-tile-name" :text="inst.name" />
-      <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
-        <span v-if="sourceLabel" class="chooser-tile-meta-source">{{ sourceLabel }}</span>
-        <span v-if="sourceLabel && inst.version" class="chooser-tile-meta-sep">·</span>
-        <span v-if="inst.version" class="chooser-tile-meta-version">{{ inst.version }}</span>
-      </TruncatedText>
-      <div class="chooser-tile-footer">
-        <Tooltip
-          class="chooser-tile-recency"
-          :text="absoluteLaunchedTime"
-          :disabled="!absoluteLaunchedTime"
-        >
-          <span class="chooser-tile-recency-text">{{ lastLaunchedLabel }}</span>
+      <div class="chooser-tile-name-row">
+        <TruncatedText class="chooser-tile-name" :text="inst.name" />
+        <Tooltip v-if="showWhyCloudTrigger" :text="t('firstUse.whyTryCloud')">
+          <button
+            type="button"
+            class="chooser-tile-why-cloud"
+            :aria-label="t('firstUse.whyTryCloud')"
+            :data-testid="TID.dashboardTileWhyCloud(inst.id)"
+            @click.stop="emit('why-cloud')"
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <Info :size="14" />
+          </button>
         </Tooltip>
-        <!-- Action pill (update / migrate); pinned right, never truncates. -->
+      </div>
+      <div v-if="metaLine || actionPill" class="chooser-tile-footer">
+        <TruncatedText v-if="metaLine" class="chooser-tile-meta-line" :text="metaLine">
+          <span v-if="leadingFact" class="chooser-tile-meta-source">{{ leadingFact }}</span>
+          <span v-if="leadingFact && trailingFact" class="chooser-tile-meta-sep">·</span>
+          <span v-if="trailingFact" class="chooser-tile-meta-version">{{ trailingFact }}</span>
+        </TruncatedText>
+        <!-- Action pill; pinned right by its own margin, never truncates. -->
         <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
           <span
             class="chooser-tile-pill"
@@ -240,6 +274,45 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
 <style scoped>
 @import './chooser-tiles.css';
+
+.chooser-tile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.chooser-tile-name-row .truncated-text {
+  min-width: 0;
+}
+.chooser-tile-name-row :deep(.tooltip-wrap) {
+  flex: 0 0 auto;
+}
+
+.chooser-tile-why-cloud {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.7;
+  cursor: pointer;
+  transition:
+    color 100ms ease,
+    opacity 100ms ease;
+}
+.chooser-tile-why-cloud:hover,
+.chooser-tile-why-cloud:focus-visible {
+  color: var(--comfy-yellow);
+  opacity: 1;
+}
+.chooser-tile-why-cloud:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
 
 .chooser-cloud-runs-pill {
   display: inline-flex;

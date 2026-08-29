@@ -1,6 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { PassThrough } from 'stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   LEGACY_META_SUFFIX,
@@ -13,6 +14,7 @@ import {
   readStagedMeta,
   removeStagedArtifacts,
   scanForStagedDownloads,
+  sha256File,
   stagingMetaPathFor,
   stagingPathFor,
   writeStagedMeta,
@@ -40,6 +42,31 @@ function validMeta(overrides: Partial<StagedDownloadMeta> = {}): StagedDownloadM
     ...overrides
   }
 }
+
+describe('sha256File', () => {
+  it('hashes a complete file', async () => {
+    const filePath = path.join(tmpDir, 'small.bin')
+    fs.writeFileSync(filePath, 'abc')
+    await expect(sha256File(filePath)).resolves.toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    )
+  })
+
+  it('rejects when the read stream closes before end', async () => {
+    const stream = new PassThrough()
+    const createReadStreamSpy = vi
+      .spyOn(fs, 'createReadStream')
+      .mockReturnValue(stream as unknown as ReturnType<typeof fs.createReadStream>)
+    try {
+      const result = sha256File(path.join(tmpDir, 'partial.bin'))
+      stream.write('partial')
+      stream.destroy()
+      await expect(result).rejects.toThrow('sha256 read stream closed before end of file')
+    } finally {
+      createReadStreamSpy.mockRestore()
+    }
+  })
+})
 
 describe('staging path scheme', () => {
   it('derives the .part and .part.dl-meta paths from the final path', () => {
@@ -512,6 +539,59 @@ describe('ensureStagedPlaceholder', () => {
     expect(ensureStagedPlaceholder(finalPath, validMeta({ expectedSize: 0 }))).toBe(true)
     expect(readStagedMeta(stagingMetaPathFor(finalPath))).toEqual(existing)
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('staged-bytes')
+  })
+
+  it('persists a new caller hash onto an existing hashless sidecar, keeping its resume identity', () => {
+    // A crash after preflight but before the transport's response-phase
+    // sidecar rewrite must still hydrate with the caller's hash - otherwise
+    // the restarted job would finalize without verification.
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    fs.writeFileSync(stagingPathFor(finalPath), 'staged-bytes')
+    const existing = validMeta({ expectedSize: 999, etag: '"keep-me"' })
+    writeStagedMeta(stagingMetaPathFor(finalPath), existing)
+
+    const sha256 = 'a'.repeat(64)
+    expect(ensureStagedPlaceholder(finalPath, validMeta({ expectedSize: 0, sha256 }))).toBe(true)
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))).toEqual({ ...existing, sha256 })
+    expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('staged-bytes')
+  })
+
+  it('replaces a stale persisted hash with the new caller hash', () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    fs.writeFileSync(stagingPathFor(finalPath), 'staged-bytes')
+    const existing = validMeta({ sha256: 'b'.repeat(64) })
+    writeStagedMeta(stagingMetaPathFor(finalPath), existing)
+
+    const sha256 = 'a'.repeat(64)
+    expect(ensureStagedPlaceholder(finalPath, validMeta({ sha256 }))).toBe(true)
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))).toEqual({ ...existing, sha256 })
+  })
+
+  it('keeps a persisted hash when the new caller has none', () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    fs.writeFileSync(stagingPathFor(finalPath), 'staged-bytes')
+    const existing = validMeta({ sha256: 'b'.repeat(64) })
+    writeStagedMeta(stagingMetaPathFor(finalPath), existing)
+
+    expect(ensureStagedPlaceholder(finalPath, validMeta())).toBe(true)
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))).toEqual(existing)
+  })
+
+  it('fails closed when the caller hash cannot be persisted onto the existing sidecar', () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    fs.writeFileSync(stagingPathFor(finalPath), 'staged-bytes')
+    writeStagedMeta(stagingMetaPathFor(finalPath), validMeta())
+
+    // Both the scratch write and its cleanup fail -> no durable copy of the
+    // upgraded sidecar can exist.
+    const writeSpy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('EACCES'), { code: 'EACCES' })
+    })
+    try {
+      expect(ensureStagedPlaceholder(finalPath, validMeta({ sha256: 'a'.repeat(64) }))).toBe(false)
+    } finally {
+      writeSpy.mockRestore()
+    }
   })
 
   it('parks orphan .part bytes (possibly quarantined data) instead of claiming them', () => {

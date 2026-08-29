@@ -20,7 +20,8 @@
     "cloud": "Cloud",
     "legacyDesktop": "Legacy Desktop",
     "remote": "Remote",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "distribution": "Build"
   },
   "chooser": {
     "title": "Choose an instance",
@@ -38,6 +39,7 @@
     "filterRemote": "Remote",
     "updatePill": "Update",
     "migratePill": "Migrate",
+    "workspaceShelf": "Workspace",
     "openInstall": "Open",
     "manageInstall": "Manage",
     "moreActions": "More actions",
@@ -70,6 +72,8 @@
     "menu": "Menu",
     "feedback": "Feedback",
     "feedbackTooltip": "Send Feedback",
+    "announcement": "What's new",
+    "announcementTooltip": "What's new",
     "downloads": "Downloads",
     "downloadsInProgress": "no downloads in progress | {n} download in progress | {n} downloads in progress",
     "downloadsCompleteUnseen": "no recent downloads | {n} download finished — click to review | {n} downloads finished — click to review",
@@ -286,6 +290,25 @@
     "managerNetworkMode_personal_cloud_desc": "Treats this machine as your own trusted remote box: lifts the --listen block on node pack installs (the chosen security level still applies). Only use on a personal machine you control - it relaxes protections meant for shared or public hosts.",
     "copyError": "Copy error details",
     "clear": "Clear"
+  },
+  "comfybuilder": {
+    "stageModels": "Download models",
+    "distribution": "Build",
+    "distributionVersion": "Build Version",
+    "comfyuiVersion": "ComfyUI Version",
+    "distributionVersionTitle": "Build Version",
+    "installedVersion": "Installed",
+    "latestVersion": "Latest Published",
+    "errorNoDistribution": "This install is not linked to a build.",
+    "updateAvailable": "Update available",
+    "upToDate": "Up to date",
+    "lastChecked": "Last Checked",
+    "updateToVersion": "Update to v{version}",
+    "updatingTo": "Updating to v{version}",
+    "updateConfirmTitle": "Update build",
+    "updateConfirmMessage": "Update this instance from {from} to {to}?\n\nThe environment is replaced in place. Your workflows and staged models are kept.",
+    "errorNoVersion": "No target version was given.",
+    "errorVersionUnavailable": "Version v{version} has no build for this machine."
   },
   "list": {
     "loadSnapshot": "Load Snapshot",
@@ -669,6 +692,22 @@
     "localDescRecommended": "Fast install with **recommended settings** — skips optional setup steps.",
     "localDescRecommendedGpu": "Fast install tuned for **{gpu}** with recommended settings. Pick **Configure** if that's not your hardware."
   },
+  "announcement": {
+    "minimax": {
+      "title": "MiniMax H3 is now on ComfyUI",
+      "lead": "MiniMax's latest open source, SOTA video model, available now",
+      "highlights": [
+        "Run for free on Comfy Cloud or Comfy Desktop",
+        "Works with your existing ComfyUI workflows",
+        "Want to use it commercially? Reach out to get a license"
+      ],
+      "requestLicenseCta": "Request License",
+      "learnMoreCta": "Learn More",
+      "imageAlt": "MiniMax H3 announcement",
+      "unmute": "Unmute video",
+      "mute": "Mute video"
+    }
+  },
   "tray": {
     "showApp": "Show Comfy Desktop",
     "quit": "Quit"
@@ -686,7 +725,7 @@
     "connect": "Connect",
     "connecting": "Connecting",
     "openDirectory": "Open Directory",
-    "checkForUpdate": "Check for Update",
+    "checkForUpdate": "Check for updates",
     "featureNotImplemented": "This feature is not yet implemented.",
     "updateAvailable": "Update Available",
     "copyInstallation": "Duplicate Instance",
@@ -1212,6 +1251,41 @@
     },
     "viewLogs": "View logs"
   },
+  "devPlatform": {
+    "signIn": {
+      "cta": "Log in"
+    },
+    "account": {
+      "signOut": "Sign out",
+      "signedInAs": "Signed in as {email}",
+      "signOutConfirmTitle": "Sign out of ComfyBuilder?",
+      "signOutConfirmBody": "Your installed builds are kept and still run. They just stop receiving updates until you sign back in.",
+      "signOutConfirmCta": "Sign out"
+    },
+    "workspace": {
+      "personalLabel": "Personal",
+      "switchLabel": "Workspace",
+      "loadError": "Couldn't load workspaces. Retry"
+    },
+    "distribution": {
+      "menuInstall": "Install",
+      "distVersion": "Build v{version}",
+      "notInstalled": "Not installed",
+      "emptyTitle": "No builds published to this workspace yet.",
+      "loadError": "Couldn't load builds. Retry",
+      "installFailed": "Could not start the install. Try again.",
+      "states": {
+        "noBuild": "No build",
+        "platformMismatch": "Not for this machine",
+        "updateAvailable": "Update"
+      },
+      "blockedReason": {
+        "buildFailed": "This build has no successful version yet.",
+        "buildInProgress": "The latest build is still in progress.",
+        "noArtifactForMachine": "The latest build has no artifact for this operating system and GPU."
+      }
+    }
+  },
   "errors": {
     "invalidUrl": "Enter a valid URL (e.g. http://localhost:8188).",
     "noLaunchSupport": "This source does not support launching yet.",
@@ -1336,6 +1410,7 @@
     "newInstall": "New Instance",
     "addExistingInstall": "Add Existing Instance",
     "loadSnapshot": "Load Snapshot",
+    "signIn": "Log in",
     "globalSettings": "Desktop Settings",
     "sendFeedback": "Send Feedback",
     "returnToDashboard": "Return to Dashboard",
@@ -1437,5 +1512,47 @@
     "progressWorking": "Working…",
     "progressError": "Something went wrong",
     "progressCancelled": "Cancelled"
+  },
+  "installShowcase": {
+    "cloud": {
+      "title": "Skip the setup entirely",
+      "body": "Cloud is ready now. No install, no drivers, no GPU."
+    },
+    "cloudCta": "Try Cloud free",
+    "gpu": {
+      "title": "RTX 6000 Pro, 96GB VRAM",
+      "body": "Faster than most workstations, from any device you own."
+    },
+    "models": {
+      "title": "900+ models ready",
+      "body": "Wan 2.2, Flux, Qwen, LTX. Nothing left to download."
+    },
+    "license": {
+      "title": "Cleared for commercial use",
+      "body": "Every model licensed for commercial work."
+    },
+    "partner": {
+      "title": "Models you can't run locally",
+      "body": "Nano Banana Pro, Seedance, Grok Video, GPT Image 2."
+    },
+    "nodes": {
+      "title": "The custom nodes you use",
+      "body": "Behind ~90% of local workflows, pre-installed and current."
+    },
+    "loras": {
+      "title": "Bring your own LoRAs",
+      "body": "Import from CivitAI or Hugging Face to keep your style."
+    },
+    "queue": {
+      "title": "Queue 100 at once",
+      "body": "Line up a batch and keep working."
+    },
+    "idle": {
+      "title": "Pay for runtime, not idle time",
+      "body": "Credits are spent only while the GPU runs."
+    },
+    "label": "While you wait",
+    "cloudFailedTitle": "Couldn't open Comfy Cloud",
+    "cloudFailedMessage": "Check your connection and try again from the dashboard."
   }
 }

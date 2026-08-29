@@ -4,19 +4,18 @@
  * The launcher's `system_info` event reports the GPU the OS sees, which on
  * Windows is frequently a virtual display adapter and never reflects which
  * device PyTorch actually selected for compute. ComfyUI's own startup logs
- * are the authoritative source: they print the selected accelerator and its
- * VRAM. We tail that output — already piped through `proc.stdout` /
- * `proc.stderr` in `sessionActions/launch.ts`, the same stream `executionTap`
- * consumes.
+ * are the authoritative source: they print the selected accelerator, its
+ * VRAM, and model load activity. We tail that output, already piped through
+ * `proc.stdout` / `proc.stderr` in `sessionActions/launch.ts`, the same stream
+ * `executionTap` consumes.
  *
- * One signal: `comfy.desktop.comfyui.accelerator_detected` — emitted ONCE per
- * boot, after the consecutive run of `Device:` lines ends (ComfyUI logs the
- * selected device first, then one line per other GPU). Top-level fields
- * describe the selected device (the authoritative compute GPU); every
- * detected GPU is reported via `device_count` plus the index-aligned
- * parallel arrays `device_types` / `device_indices` / `gpu_models` /
- * `device_backends`. Also carries VRAM/RAM and torch/xformers versions
- * accumulated from earlier lines.
+ * Two signals:
+ *   - `comfy.desktop.comfyui.accelerator_detected` is emitted once per boot
+ *     with the selected compute device and all detected GPUs.
+ *   - `comfy.desktop.comfyui.model_usage_summary` contains hourly deltas for
+ *     requested loads, dynamic-VRAM prepares, and multi-GPU deepclones. Its
+ *     aligned arrays preserve model class, trigger, target device, count, and
+ *     UTC observation date without emitting one event per tuple.
  *
  * Log strings parsed (current ComfyUI main branch):
  *   - "Device: cuda:0 NVIDIA GeForce RTX 4090 : native"   (model_management.py)
@@ -24,13 +23,18 @@
  *   - "pytorch version: 2.10.0+cu130" / "xformers version: 0.0.x"
  *   - "Set cuda device to: 0"                              (main.py)
  *   - "Using directml with device: AMD Radeon RX 6800"     (model_management.py)
- *   - "Device: cuda:0 …" / "xpu:0 …" / "npu:0 …" / "mlu:0 …" / "cpu" / "mps"
+ *   - "Device: cuda:0 ..." / "xpu:0 ..." / "npu:0 ..." / "mlu:0 ..." / "cpu" / "mps"
+ *   - "Requested to load Lumina2"                          (model_management.py)
+ *   - "Model Lumina2 prepared for dynamic VRAM loading. ..." (dynamic VRAM / aimdo)
+ *   - "Creating deepclone of Lumina2 for cuda:1."          (model_patcher.py)
+ *   - "Reusing loaded multigpu deepclone of Lumina2 for cuda:1" (multigpu.py)
  *
  * NOTE: ComfyUI Desktop's bundled build prefixes every log line with a level
  * tag (`[INFO] Device: ...`), unlike the bare `%(message)s` format. `handleLine`
  * strips a leading `[LEVEL] ` tag before matching so both formats parse.
  */
 import * as telemetry from './telemetry'
+import { createModelUsageSummary } from './modelUsageSummary'
 import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 export interface AcceleratorInfo {
@@ -46,9 +50,12 @@ const PYTORCH_LINE = /^pytorch version:\s*(.+)$/i
 const XFORMERS_LINE = /^xformers version:\s*(.+)$/i
 const CUDA_DEVICE_LINE = /^Set cuda device to:\s*(\d+)/i
 // DirectML (AMD/Intel on Windows without ROCm) logs the GPU name here, on a
-// separate line that precedes a nameless `Device: privateuseone` line — so it's
+// separate line that precedes a nameless `Device: privateuseone` line, so it's
 // the only way to recover the model for those vendors.
 const DIRECTML_LINE = /^Using directml with device:\s*(.+)$/i
+
+/** Emit one array-backed delta instead of an event for every model tuple. */
+const MODEL_USAGE_FLUSH_INTERVAL_MS = 60 * 60_000
 
 /**
  * Parse a ComfyUI `Device:` line into its components. Handles the cuda
@@ -61,7 +68,7 @@ export function parseDeviceLine(line: string): AcceleratorInfo | null {
   const m = line.match(DEVICE_LINE)
   if (!m || !m[1]) return null
   let rest = m[1].trim()
-  // Legacy fallback "CUDA cuda:0: <name>" — drop the leading "CUDA ".
+  // Legacy fallback "CUDA cuda:0: <name>": drop the leading "CUDA ".
   if (/^CUDA\s+/i.test(rest)) rest = rest.replace(/^CUDA\s+/i, '')
   const tok = rest.match(/^([A-Za-z][A-Za-z0-9]*)(?::(\d+))?/)
   if (!tok || !tok[1]) return null
@@ -112,10 +119,10 @@ export function createHardwareTap(opts: {
     release: opts.release ?? null
   }
 
-  // Accelerator accumulation — fields trickle in over several lines. ComfyUI
+  // Accelerator accumulation: fields trickle in over several lines. ComfyUI
   // logs the selected device first, then one `Device:` line per other GPU. We
   // collect the consecutive run and emit ONE event (per boot) when the run ends
-  // — i.e. on the first non-`Device:` line, or at session end — so the event
+  // (on the first non-`Device:` line or at session end) so the event
   // carries every GPU, not just the selected one.
   let acceleratorEmitted = false
   let vramMb: number | null = null
@@ -125,6 +132,24 @@ export function createHardwareTap(opts: {
   let cudaDeviceSet: number | null = null
   let directmlDeviceName: string | null = null
   const devices: AcceleratorInfo[] = []
+  const modelUsage = createModelUsageSummary()
+  let modelUsageFlushTimer: ReturnType<typeof setInterval> | null = null
+
+  function emitModelUsage(): void {
+    const properties = modelUsage.drainProperties()
+    if (!properties) return
+    telemetry.emit('comfy.desktop.comfyui.model_usage_summary', {
+      ...baseContext,
+      model_summary_interval_seconds: MODEL_USAGE_FLUSH_INTERVAL_MS / 1000,
+      ...properties
+    })
+  }
+
+  function ensureModelUsageFlushTimer(): void {
+    if (modelUsageFlushTimer) return
+    modelUsageFlushTimer = setInterval(emitModelUsage, MODEL_USAGE_FLUSH_INTERVAL_MS)
+    modelUsageFlushTimer.unref?.()
+  }
 
   /**
    * Emit the single per-boot `accelerator_detected` event for the collected run
@@ -169,7 +194,7 @@ export function createHardwareTap(opts: {
     // OS-enumerated GPU in `system_info` (which can be a virtual display).
     // Promote it under dedicated `comfyui_*` person props so cohort queries can
     // coalesce(comfyui_gpu_model, gpu_model) without losing either signal. Only
-    // for real accelerators — `cpu` is not a GPU.
+    // for real accelerators; `cpu` is not a GPU.
     if (primaryName && primary.deviceType !== 'cpu') {
       telemetry.registerPersonProperties({
         comfyui_gpu_model: primaryName,
@@ -184,42 +209,47 @@ export function createHardwareTap(opts: {
     // Strip a leading `[LEVEL] ` tag (ComfyUI Desktop's bundled build) so the
     // anchored parsers below match both the prefixed and bare log formats.
     const trimmed = stripLogLevelPrefix(stripAnsi(line).trim())
-    if (trimmed.length === 0 || acceleratorEmitted) return
+    if (trimmed.length === 0) return
 
-    const vram = parseVramLine(trimmed)
-    if (vram) {
-      vramMb = vram.vramMb
-      ramMb = vram.ramMb
-      return
+    if (!acceleratorEmitted) {
+      const vram = parseVramLine(trimmed)
+      if (vram) {
+        vramMb = vram.vramMb
+        ramMb = vram.ramMb
+        return
+      }
+      const pytorch = parseTail(trimmed, PYTORCH_LINE)
+      if (pytorch) {
+        pytorchVersion = pytorch
+        return
+      }
+      const xformers = parseTail(trimmed, XFORMERS_LINE)
+      if (xformers) {
+        xformersVersion = xformers
+        return
+      }
+      const cudaDevice = parseTail(trimmed, CUDA_DEVICE_LINE)
+      if (cudaDevice) {
+        cudaDeviceSet = Number(cudaDevice)
+        return
+      }
+      const directml = parseTail(trimmed, DIRECTML_LINE)
+      if (directml) {
+        directmlDeviceName = directml
+        return
+      }
+      const device = parseDeviceLine(trimmed)
+      if (device) {
+        // Collect the consecutive run; the event is emitted when the run ends.
+        if (devices.length < MAX_DEVICES) devices.push(device)
+        return
+      }
+      // A model line can be the first line after the device run, so continue
+      // processing it after closing the accelerator event.
+      if (devices.length > 0) emitAccelerator()
     }
-    const pytorch = parseTail(trimmed, PYTORCH_LINE)
-    if (pytorch) {
-      pytorchVersion = pytorch
-      return
-    }
-    const xformers = parseTail(trimmed, XFORMERS_LINE)
-    if (xformers) {
-      xformersVersion = xformers
-      return
-    }
-    const cudaDevice = parseTail(trimmed, CUDA_DEVICE_LINE)
-    if (cudaDevice) {
-      cudaDeviceSet = Number(cudaDevice)
-      return
-    }
-    const directml = parseTail(trimmed, DIRECTML_LINE)
-    if (directml) {
-      directmlDeviceName = directml
-      return
-    }
-    const device = parseDeviceLine(trimmed)
-    if (device) {
-      // Collect the consecutive run; the event is emitted when the run ends.
-      if (devices.length < MAX_DEVICES) devices.push(device)
-      return
-    }
-    // First non-`Device:` line after a run of them: the run is complete.
-    if (devices.length > 0) emitAccelerator()
+
+    if (modelUsage.recordLine(trimmed)) ensureModelUsageFlushTimer()
   }
 
   // Separate per-stream buffers: stdout and stderr arrive as independent
@@ -251,7 +281,7 @@ export function createHardwareTap(opts: {
       try {
         for (const line of appendChunk(source, chunk)) handleLine(line)
       } catch {
-        // ignore – telemetry side effect, not user-visible
+        // ignore - telemetry side effect, not user-visible
       }
     },
     /**
@@ -283,11 +313,18 @@ export function createHardwareTap(opts: {
           if (pending.trim()) handleLine(pending)
           pendingBySource[source] = ''
         }
+        // Processing a trailing model line can arm the timer, so clear it only
+        // after every pending line has passed through the parser.
+        if (modelUsageFlushTimer) {
+          clearInterval(modelUsageFlushTimer)
+          modelUsageFlushTimer = null
+        }
         // Emit the accelerator event if the process exited right after its
         // `Device:` lines with no following line to close the run.
         emitAccelerator()
+        emitModelUsage()
       } catch {
-        // ignore – telemetry side effect, not user-visible
+        // ignore - telemetry side effect, not user-visible
       }
     }
   }

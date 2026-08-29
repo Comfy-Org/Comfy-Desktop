@@ -661,14 +661,14 @@ async function runLaunch(
     if (sIdx !== -1 && sIdx + 1 < launchCmd.args.length) {
       const mainPyRel = launchCmd.args[sIdx + 1]!
       const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
-      const version = inst.version as string | undefined
+      const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
       try {
         const schema = await getComfyArgsSchema(
           launchCmd.cmd,
           mainPyAbs,
           launchCmd.cwd,
           installationId,
-          version
+          revision
         )
         const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
         const userArgs = launchCmd.args.slice(sIdx + 2)
@@ -682,7 +682,7 @@ async function runLaunch(
             mainPyAbs,
             launchCmd.cwd,
             installationId,
-            version
+            revision
           )
           const flagEntries = Object.entries(
             desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)

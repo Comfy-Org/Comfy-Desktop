@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Cloud, Computer, LaptopMinimal, Globe, Box } from 'lucide-vue-next'
+import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from 'lucide-vue-next'
 
 import { installTypeMetaFor, installTypeMetaForInstall } from './installTypeIcon'
 
@@ -51,6 +51,36 @@ describe('installTypeMetaForInstall', () => {
     expect(meta.key).toBe('legacyDesktop')
     expect(meta.icon).toBe(Computer)
     expect(meta.labelKey).toBe('installType.legacyDesktop')
+  })
+
+  it('gives a distribution install the distribution glyph, not the local one', () => {
+    // It reports `local` like any standalone install, but what it IS matters
+    // more than where it runs — and the tile, the picker row and the title bar
+    // all read this, so they can't drift apart.
+    const bySource = installTypeMetaForInstall({
+      sourceId: 'comfybuilder',
+      sourceCategory: 'local'
+    })
+    expect(bySource.key).toBe('distribution')
+    expect(bySource.icon).toBe(Package)
+    expect(bySource.labelKey).toBe('installType.distribution')
+
+    const byLink = installTypeMetaForInstall({
+      sourceId: 'standalone',
+      sourceCategory: 'local',
+      distributionId: 'd1'
+    })
+    expect(byLink.key).toBe('distribution')
+  })
+
+  it('does not treat an empty distributionId as a link', () => {
+    expect(
+      installTypeMetaForInstall({
+        sourceId: 'standalone',
+        sourceCategory: 'local',
+        distributionId: ''
+      }).key
+    ).toBe('standalone')
   })
 
   it('falls through to the category for non-desktop installs', () => {

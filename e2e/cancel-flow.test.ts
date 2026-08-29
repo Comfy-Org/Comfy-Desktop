@@ -159,8 +159,8 @@ test('useActionGuard returns false without cancelling when the user dismisses th
 })
 
 test('Return-to-Dashboard from in-flight op cancels and closes the takeover @windows @macos @linux', async () => {
-  // Seed a real running session so the local-install confirm prompt
-  // appears (cloud / remote skip the prompt).
+  // Seed a real running session so cancelling also drops the session
+  // (the in-flight confirm prompt itself appears for any install).
   await seedRunningSession(ctx.app, {
     installationId: INSTALL_ID,
     installationName: INSTALL_NAME,

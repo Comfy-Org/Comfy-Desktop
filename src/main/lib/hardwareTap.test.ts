@@ -92,6 +92,7 @@ describe('createHardwareTap', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -155,6 +156,100 @@ describe('createHardwareTap', () => {
       backend: 'cudaMallocAsync',
       vram_mb: 32607,
       pytorch_version: '2.10.0+cu130'
+    })
+  })
+
+  it('restores every model log signal in one array-backed delta', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-18T12:00:00Z'))
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stderr')
+    tap.ingest('\u001b[32m[INFO]\u001b[0m Requested to load MiniMaxH3\n', 'stderr')
+    tap.ingest('[INFO] Requested to load MiniMaxH3\n', 'stderr')
+    tap.ingest(
+      '[INFO] Model MiniMaxH3TEModel_ prepared for dynamic VRAM loading. 7671MB Staged.\n',
+      'stderr'
+    )
+    tap.ingest('[INFO] Creating deepclone of MiniMaxH3 for cuda:1.\n', 'stderr')
+    tap.flushSummary()
+
+    expect(
+      captured.filter((entry) => entry.event === 'comfy.desktop.comfyui.accelerator_detected')
+    ).toHaveLength(1)
+    expect(captured.map((entry) => entry.event)).not.toContain('comfy.desktop.comfyui.model_usage')
+    const summary = captured.find(
+      (entry) => entry.event === 'comfy.desktop.comfyui.model_usage_summary'
+    )
+    expect(summary?.ctx).toMatchObject({
+      installation_id: 'inst-1',
+      model_summary_interval_seconds: 3600,
+      model_usage_schema_version: 1,
+      model_observation_semantics: 'runtime_load_log_v1',
+      model_observation_dates: ['2026-08-18', '2026-08-18', '2026-08-18'],
+      model_classes: ['MiniMaxH3', 'MiniMaxH3', 'MiniMaxH3TEModel_'],
+      model_load_triggers: ['deepclone', 'requested', 'dynamic_prepare'],
+      model_target_devices: ['cuda:1', null, null],
+      model_load_counts: [1, 2, 1],
+      model_usage_truncated: false
+    })
+  })
+
+  it('flushes non-empty rolling hourly deltas with their UTC observation dates', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-18T23:30:00Z'))
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load MiniMaxH3\n', 'stderr')
+
+    vi.advanceTimersByTime(30 * 60_000)
+    tap.ingest('Requested to load MiniMaxH3\n', 'stderr')
+    vi.advanceTimersByTime(30 * 60_000)
+
+    let summaries = captured.filter(
+      (entry) => entry.event === 'comfy.desktop.comfyui.model_usage_summary'
+    )
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]?.ctx).toMatchObject({
+      model_observation_dates: ['2026-08-18', '2026-08-19'],
+      model_classes: ['MiniMaxH3', 'MiniMaxH3'],
+      model_load_counts: [1, 1]
+    })
+
+    vi.advanceTimersByTime(60 * 60_000)
+    summaries = captured.filter(
+      (entry) => entry.event === 'comfy.desktop.comfyui.model_usage_summary'
+    )
+    expect(summaries).toHaveLength(1)
+
+    tap.ingest('Requested to load Flux\n', 'stderr')
+    tap.flushSummary()
+    tap.flushSummary()
+    summaries = captured.filter(
+      (entry) => entry.event === 'comfy.desktop.comfyui.model_usage_summary'
+    )
+    expect(summaries).toHaveLength(2)
+    expect(summaries[1]?.ctx).toMatchObject({
+      model_observation_dates: ['2026-08-19'],
+      model_classes: ['Flux'],
+      model_load_counts: [1]
+    })
+  })
+
+  it('flushes a trailing model line without leaving its hourly timer armed', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-18T12:00:00Z'))
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load MiniMaxH3', 'stderr')
+    tap.flushSummary()
+
+    vi.advanceTimersByTime(60 * 60_000)
+    const summaries = captured.filter(
+      (entry) => entry.event === 'comfy.desktop.comfyui.model_usage_summary'
+    )
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]?.ctx).toMatchObject({
+      model_observation_dates: ['2026-08-18'],
+      model_classes: ['MiniMaxH3'],
+      model_load_counts: [1]
     })
   })
 

@@ -20,7 +20,8 @@
     "cloud": "云端",
     "legacyDesktop": "旧版桌面端",
     "remote": "远程",
-    "unknown": "未知"
+    "unknown": "未知",
+    "distribution": "构建版"
   },
   "chooser": {
     "title": "选择一个实例",
@@ -38,6 +39,7 @@
     "filterRemote": "远程",
     "updatePill": "更新",
     "migratePill": "迁移",
+    "workspaceShelf": "工作区",
     "openInstall": "打开",
     "manageInstall": "管理",
     "moreActions": "更多操作",
@@ -70,6 +72,8 @@
     "menu": "菜单",
     "feedback": "反馈",
     "feedbackTooltip": "发送反馈",
+    "announcement": "最新动态",
+    "announcementTooltip": "最新动态",
     "downloads": "下载",
     "downloadsInProgress": "没有正在下载的任务 | {n} 个下载正在进行 | {n} 个下载正在进行",
     "downloadsCompleteUnseen": "没有最近完成的下载 | {n} 个下载已完成 — 点击查看 | {n} 个下载已完成 — 点击查看",
@@ -286,6 +290,25 @@
     "managerNetworkMode_personal_cloud_desc": "将此机器视为你自己信任的远程主机：解除 --listen 对安装节点包的阻止（所选安全级别仍然生效）。仅在你控制的个人机器上使用 - 它会放宽为共享或公共主机设计的保护。",
     "copyError": "复制错误详情",
     "clear": "清除"
+  },
+  "comfybuilder": {
+    "stageModels": "下载模型",
+    "distribution": "构建版",
+    "distributionVersion": "构建版版本",
+    "comfyuiVersion": "ComfyUI 版本",
+    "distributionVersionTitle": "构建版版本",
+    "installedVersion": "已安装",
+    "latestVersion": "最新发布",
+    "errorNoDistribution": "此安装未关联到构建版。",
+    "updateAvailable": "有可用更新",
+    "upToDate": "已是最新",
+    "lastChecked": "上次检查",
+    "updateToVersion": "更新到 v{version}",
+    "updatingTo": "正在更新到 v{version}",
+    "updateConfirmTitle": "更新构建版",
+    "updateConfirmMessage": "将此实例从 {from} 更新到 {to}？\n\n环境将就地替换，工作流与已暂存的模型会保留。",
+    "errorNoVersion": "未指定目标版本。",
+    "errorVersionUnavailable": "版本 v{version} 没有适用于此设备的构建。"
   },
   "list": {
     "loadSnapshot": "加载快照",
@@ -668,6 +691,22 @@
     "localModeConfigureLabel": "配置",
     "localDescRecommended": "使用**推荐设置**快速安装——跳过可选设置步骤。",
     "localDescRecommendedGpu": "使用针对 **{gpu}** 调整的推荐设置快速安装。如果这不是你的硬件，请选择**配置**。"
+  },
+  "announcement": {
+    "minimax": {
+      "title": "MiniMax H3 \u73b0\u5df2\u767b\u9646 ComfyUI",
+      "lead": "MiniMax \u6700\u65b0\u7684\u5f00\u6e90 SOTA \u89c6\u9891\u6a21\u578b\uff0c\u73b0\u5df2\u4e0a\u7ebf",
+      "highlights": [
+        "\u5728 Comfy Cloud \u6216 Comfy Desktop \u4e0a\u514d\u8d39\u8fd0\u884c",
+        "\u517c\u5bb9\u4f60\u73b0\u6709\u7684 ComfyUI \u5de5\u4f5c\u6d41",
+        "\u60f3\u7528\u4e8e\u5546\u4e1a\u7528\u9014\uff1f\u8054\u7cfb\u6211\u4eec\u83b7\u53d6\u6388\u6743"
+      ],
+      "requestLicenseCta": "\u7533\u8bf7\u6388\u6743",
+      "learnMoreCta": "\u4e86\u89e3\u66f4\u591a",
+      "imageAlt": "MiniMax H3 \u516c\u544a",
+      "unmute": "\u53d6\u6d88\u9759\u97f3",
+      "mute": "\u9759\u97f3"
+    }
   },
   "tray": {
     "showApp": "显示 Comfy Desktop",
@@ -1212,6 +1251,41 @@
     },
     "viewLogs": "查看日志"
   },
+  "devPlatform": {
+    "signIn": {
+      "cta": "登录"
+    },
+    "account": {
+      "signOut": "退出登录",
+      "signedInAs": "已登录为 {email}",
+      "signOutConfirmTitle": "退出 ComfyBuilder？",
+      "signOutConfirmBody": "已安装的构建版本会保留并仍可运行，只是在重新登录前不再接收更新。",
+      "signOutConfirmCta": "退出登录"
+    },
+    "workspace": {
+      "personalLabel": "个人",
+      "switchLabel": "工作区",
+      "loadError": "无法加载工作区，请重试"
+    },
+    "distribution": {
+      "menuInstall": "安装",
+      "distVersion": "构建版 v{version}",
+      "notInstalled": "未安装",
+      "emptyTitle": "此工作区尚未发布任何构建版本。",
+      "loadError": "无法加载构建版本，请重试",
+      "installFailed": "无法开始安装，请重试。",
+      "states": {
+        "noBuild": "无构建",
+        "platformMismatch": "不适用于此设备",
+        "updateAvailable": "更新"
+      },
+      "blockedReason": {
+        "buildFailed": "此构建版本尚无成功的构建。",
+        "buildInProgress": "最新构建仍在进行中。",
+        "noArtifactForMachine": "最新构建没有适用于此操作系统和 GPU 的制品。"
+      }
+    }
+  },
   "errors": {
     "invalidUrl": "请输入有效 URL（例如 http://localhost:8188）。",
     "noLaunchSupport": "此来源尚不支持启动。",
@@ -1336,6 +1410,7 @@
     "newInstall": "新建实例",
     "addExistingInstall": "添加现有实例",
     "loadSnapshot": "加载快照",
+    "signIn": "登录",
     "globalSettings": "桌面端设置",
     "sendFeedback": "发送反馈",
     "returnToDashboard": "返回仪表板",
@@ -1437,5 +1512,47 @@
     "progressWorking": "正在处理…",
     "progressError": "出现了问题",
     "progressCancelled": "已取消"
+  },
+  "installShowcase": {
+    "cloud": {
+      "title": "完全跳过配置",
+      "body": "Cloud 已就绪。无需安装、驱动或 GPU。"
+    },
+    "cloudCta": "免费试用 Cloud",
+    "gpu": {
+      "title": "RTX 6000 Pro，96GB 显存",
+      "body": "比多数工作站更快，任何设备可用。"
+    },
+    "models": {
+      "title": "900+ 模型已预装",
+      "body": "Wan 2.2、Flux、Qwen、LTX，无需下载。"
+    },
+    "license": {
+      "title": "已获商用授权",
+      "body": "每个模型均可用于商业用途。"
+    },
+    "partner": {
+      "title": "本地无法运行的模型",
+      "body": "Nano Banana Pro、Seedance、Grok Video。"
+    },
+    "nodes": {
+      "title": "你常用的自定义节点",
+      "body": "约 90% 本地工作流所用，已预装并保持更新。"
+    },
+    "loras": {
+      "title": "导入你自己的 LoRA",
+      "body": "从 CivitAI 或 Hugging Face 导入，保持风格。"
+    },
+    "queue": {
+      "title": "一次排队 100 个",
+      "body": "排好任务，继续工作。"
+    },
+    "idle": {
+      "title": "只为运行付费，闲置不计费",
+      "body": "仅在 GPU 运行时消耗积分。"
+    },
+    "label": "等待期间",
+    "cloudFailedTitle": "无法打开 Comfy Cloud",
+    "cloudFailedMessage": "请检查网络连接，然后从主面板重试。"
   }
 }
