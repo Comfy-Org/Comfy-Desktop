@@ -750,6 +750,34 @@ describe('asset download retries', () => {
     }
   })
 
+  it('does not join an exact request to a deduplicating job at the same destination', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      const deduplicating = await mod.startManagedAssetDownload(h.win, url, 'sample.png', outputDir)
+      const exact = await startExactAssetDownload(h, url, outputDir)
+
+      expect(deduplicating).toMatchObject({ status: 'accepted' })
+      expect(exact).toMatchObject({ status: 'accepted' })
+      if (deduplicating.status !== 'accepted' || exact.status !== 'accepted') {
+        throw new Error('Expected two accepted asset downloads')
+      }
+      expect(exact.downloadId).not.toBe(deduplicating.downloadId)
+      expect(h.session.downloadURL).toHaveBeenCalledTimes(2)
+
+      const first = bindAssetItem(h, url)
+      const second = bindAssetItem(h, url)
+      await fs.promises.writeFile(first.tempPath, 'deduplicating')
+      await fs.promises.writeFile(second.tempPath, 'exact')
+      first.getDone()!({}, 'completed')
+      second.getDone()!({}, 'completed')
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
   it('snapshots only the active download for the exact destination', async () => {
     const firstDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-first-'))
     const secondDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-second-'))
