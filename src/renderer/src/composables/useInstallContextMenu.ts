@@ -185,7 +185,7 @@ export function useInstallContextMenu(
       snapshotCluster.push({
         id: 'promote-to-workspace',
         label: promoting
-          ? t('devPlatform.workspace.promoting', 'Promoting...')
+          ? t('devPlatform.workspace.promoting', 'Creating...')
           : t('devPlatform.workspace.promoteToWorkspace', 'Create Build'),
         disabled: promoting
       })

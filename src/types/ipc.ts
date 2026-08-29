@@ -562,6 +562,8 @@ export interface ProgressData {
   percent?: number
   steps?: ProgressStep[]
   error?: boolean
+  /** Main initiated cancellation outside the progress surface (for example, sign-out). */
+  cancelRequested?: boolean
 }
 
 export interface ProgressStep {

@@ -232,7 +232,11 @@ export function registerInstallationHandlers(): void {
         return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
       }
     }
-    const entry = await installations.add({ ...data, seen: false })
+    const entry = await installations.add({
+      ...data,
+      status: data.status ?? 'installing',
+      seen: false
+    })
     return { ok: true, entry }
   })
 

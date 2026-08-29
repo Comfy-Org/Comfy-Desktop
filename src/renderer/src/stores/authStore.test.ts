@@ -58,6 +58,17 @@ describe('useAuthStore', () => {
     expect(store.status).toMatchObject({ signedIn: true, workspaceId: 'w1' })
   })
 
+  it('stays signed in when main cancels sign-out', async () => {
+    api.getAuthStatus.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+    api.signOut.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+    const store = useAuthStore()
+    await flushPromises()
+
+    await store.signOut()
+
+    expect(store.isSignedIn).toBe(true)
+  })
+
   it('fetchBuilds pulls rows only when signed in', async () => {
     const store = useAuthStore()
     // Signed out: no call, empty list.

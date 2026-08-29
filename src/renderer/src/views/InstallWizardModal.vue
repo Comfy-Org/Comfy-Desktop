@@ -1097,6 +1097,7 @@ async function handleSave(): Promise<void> {
     name,
     installPath: instPath.value,
     ...instData,
+    status: 'installing',
     ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
   })
   await handOffInstall(result, t('errors.cannotAdd'), templateHasModels.value)

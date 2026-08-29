@@ -297,6 +297,7 @@ describe('InstallWizardModal workspace Builds', () => {
       name: 'ComfyUI',
       installPath: '/home/user/ComfyUI',
       sourceId: 'standalone',
+      status: 'installing',
       workspaceId: 'w1'
     })
   })

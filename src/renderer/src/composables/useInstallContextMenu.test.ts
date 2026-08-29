@@ -71,7 +71,7 @@ const messages = {
     devPlatform: {
       workspace: {
         promoteToWorkspace: 'Create Build',
-        promoting: 'Promoting...',
+        promoting: 'Creating...',
         promoteFailedTitle: 'Could not create build',
         promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
       }
@@ -562,7 +562,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
 
     expect(menu.isPromotingToWorkspace(inst)).toBe(true)
     expect(findItem(menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
-      label: 'Promoting...',
+      label: 'Creating...',
       disabled: true
     })
 

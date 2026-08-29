@@ -1258,7 +1258,10 @@
     },
     "account": {
       "signOut": "退出登录",
-      "signedInAs": "已登录为 {email}"
+      "signedInAs": "已登录为 {email}",
+      "installationInProgressTitle": "安装正在进行中",
+      "installationInProgressMessage": "退出登录将取消安装。是否取消安装并退出登录？",
+      "cancelInstallationAndSignOut": "取消安装并退出登录"
     },
     "workspace": {
       "personalLabel": "个人",
@@ -1269,7 +1272,7 @@
       "loadError": "无法加载工作区，请重试",
       "refresh": "刷新工作区",
       "promoteToWorkspace": "创建构建",
-      "promoting": "正在添加到工作区...",
+      "promoting": "正在创建...",
       "promoteFailedTitle": "无法创建构建",
       "promoteFailedMessage": "无法在 Comfy Builder 中创建草稿。"
     },

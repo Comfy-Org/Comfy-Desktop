@@ -1258,7 +1258,10 @@
     },
     "account": {
       "signOut": "Sign out",
-      "signedInAs": "Signed in as {email}"
+      "signedInAs": "Signed in as {email}",
+      "installationInProgressTitle": "Installation in progress",
+      "installationInProgressMessage": "Signing out will cancel the installation. Do you want to cancel the installation and sign out?",
+      "cancelInstallationAndSignOut": "Cancel Installation & Sign Out"
     },
     "workspace": {
       "personalLabel": "Personal",
@@ -1269,7 +1272,7 @@
       "loadError": "Couldn't load workspaces. Retry",
       "refresh": "Refresh workspaces",
       "promoteToWorkspace": "Create Build",
-      "promoting": "Promoting...",
+      "promoting": "Creating...",
       "promoteFailedTitle": "Could not create build",
       "promoteFailedMessage": "Could not create a draft in Comfy Builder."
     },

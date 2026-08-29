@@ -15,6 +15,7 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
 
 import { comfyWindows } from '../../host/registry'
+import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
 import {
@@ -43,7 +44,9 @@ import {
   loadSnapshot,
   getSnapshotCount,
   buildExportEnvelope,
-  _broadcastToRenderer
+  _broadcastToRenderer,
+  _operationAborts,
+  i18n
 } from './shared'
 import type { InstallationRecord } from '../../installations'
 import type { InstallBuildRequest, InstallBuildResult } from '../../../types/ipc'
@@ -145,7 +148,41 @@ export function registerDevPlatformHandlers(): void {
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signIn, (): Promise<AuthStatus> => signInToCloud())
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.signOut, (): AuthStatus => {
+  ipcMain.handle(DEVPLATFORM_CHANNELS.signOut, async (event): Promise<AuthStatus> => {
+    const installingOperations: Array<[string, AbortController]> = []
+    for (const [installationId, abort] of _operationAborts) {
+      const installation = await installations.get(installationId)
+      if (installation?.status === 'installing') {
+        installingOperations.push([installationId, abort])
+      }
+    }
+    if (installingOperations.length > 0) {
+      const host = [...comfyWindows.values()].find(
+        (entry) => entry.panelView?.webContents === event.sender
+      )
+      if (!host || host.window.isDestroyed()) return session.status()
+      const confirmed = await openSystemModalAsync({
+        parent: host.window,
+        spec: {
+          title: i18n.t('devPlatform.account.installationInProgressTitle'),
+          message: i18n.t('devPlatform.account.installationInProgressMessage'),
+          confirmLabel: i18n.t('devPlatform.account.cancelInstallationAndSignOut'),
+          cancelLabel: i18n.t('common.close'),
+          confirmStyle: 'danger',
+          theme: host.lastTheme
+        }
+      })
+      if (!confirmed) return session.status()
+      for (const [installationId, abort] of installingOperations) {
+        if (_operationAborts.get(installationId) !== abort) continue
+        abort.abort()
+        _broadcastToRenderer('install-progress', {
+          installationId,
+          phase: 'cancelling',
+          cancelRequested: true
+        })
+      }
+    }
     session.logout()
     clearVersionCache()
     broadcastAuthChanged(SIGNED_OUT)
