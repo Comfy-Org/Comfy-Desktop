@@ -2360,6 +2360,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         tray = null
       }
     }
+    updater.recordProcessExit()
     if (_stopPeriodicReleaseChecks) {
       _stopPeriodicReleaseChecks()
       _stopPeriodicReleaseChecks = null
