@@ -1,4 +1,6 @@
 import { app, ipcMain } from 'electron'
+import { randomUUID } from 'node:crypto'
+import { release as osRelease } from 'node:os'
 import semver from 'semver'
 import todesktop from '@todesktop/runtime'
 import { autoUpdater as electronAutoUpdater } from 'electron-updater'
@@ -8,11 +10,12 @@ import {
   clearStartupAttemptMarker,
   readStartupAttemptMarker,
   recordStartupAttempt,
+  recordStartupAttemptOutcome,
   type StartupAttemptMarkerRead
 } from './startup-attempt-marker'
-import { clearQuitReason, isSessionEnding, setQuitReason } from './quit-state'
+import { clearQuitReason, getQuitReason, isSessionEnding, setQuitReason } from './quit-state'
 import { _broadcastToRenderer } from './ipc/shared'
-import { emit as emitTelemetry } from './telemetry'
+import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
 
 /**
@@ -82,6 +85,61 @@ function _shouldEmitAppUpdateOnce(event: string, version: string | null): boolea
 let _userInitiatedDownload = false
 const _stateChangeCallbacks = new Set<(state: AppUpdateState) => void>()
 let _listenersBound = false
+
+interface UpdateAttempt {
+  id: string
+  version: string
+}
+
+let _updateAttempt: UpdateAttempt | null = null
+
+function updateAttemptId(targetVersion: string | null, create = false): string | null {
+  if (_updateAttempt?.version === targetVersion) return _updateAttempt.id
+  const existing = settings.get('pendingDesktopUpdateAttemptId')
+  const existingVersion = settings.get('pendingDesktopUpdateAttemptVersion')
+  if (typeof existing === 'string' && existing && existingVersion === targetVersion) {
+    _updateAttempt = { id: existing, version: targetVersion }
+    return existing
+  }
+  if (!create || !targetVersion) return null
+  const id = randomUUID()
+  _updateAttempt = { id, version: targetVersion }
+  try {
+    settings.set('pendingDesktopUpdateAttemptId', id)
+    settings.set('pendingDesktopUpdateAttemptVersion', targetVersion)
+  } catch {}
+  return id
+}
+
+function clearUpdateAttempt(attemptId: string): void {
+  if (_updateAttempt?.id === attemptId) _updateAttempt = null
+  if (settings.get('pendingDesktopUpdateAttemptId') !== attemptId) return
+  try {
+    settings.set('pendingDesktopUpdateAttemptId', undefined)
+    settings.set('pendingDesktopUpdateAttemptVersion', undefined)
+  } catch {}
+}
+
+/** Common privacy-safe context for the complete updater chain. */
+function emitUpdateTelemetry(
+  event: string,
+  targetVersion: string | null,
+  properties: Record<string, string | number | boolean | null | undefined> = {},
+  createAttempt = false
+): void {
+  emitTelemetry(event, {
+    running_version: app.getVersion(),
+    target_version: targetVersion,
+    update_attempt_id: updateAttemptId(targetVersion, createAttempt),
+    platform: process.platform,
+    os_version: osRelease(),
+    app_channel: deriveAppChannel(app.getVersion()),
+    is_packaged: app.isPackaged,
+    updater_provider: 'todesktop',
+    updater_mode: app.isPackaged ? 'packaged' : 'development',
+    ...properties
+  })
+}
 
 function _setUpdateState(next: AppUpdateState): void {
   _appUpdateState = next
@@ -274,7 +332,7 @@ function isStrictlyNewerVersion(offered: string | null | undefined, current: str
 function shouldIgnoreNonNewerVersion(version: string, stage: string): boolean {
   if (isStrictlyNewerVersion(version, app.getVersion())) return false
   if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.ignored_not_newer', version)) {
-    emitTelemetry('comfy.desktop.app_update.ignored_not_newer', {
+    emitUpdateTelemetry('comfy.desktop.app_update.ignored_not_newer', version, {
       version,
       current: app.getVersion(),
       stage
@@ -326,13 +384,10 @@ function emitDesktopUpdateError(
     : error instanceof Error
       ? error
       : null
-  emitTelemetry('comfy.desktop.app_update.error', {
+  emitUpdateTelemetry('comfy.desktop.app_update.error', targetVersion, {
     component: 'desktop_application',
     operation,
     stage: operation === 'apply_restart' ? 'install' : operation,
-    running_version: app.getVersion(),
-    target_version: targetVersion,
-    updater_provider: 'todesktop',
     error_source: options.source,
     setting_use_chinese_mirrors: settings.get('useChineseMirrors') === true,
     ...buildErrorFields(errorObject ?? message),
@@ -358,10 +413,15 @@ function bindUpdaterEvents(): void {
     if (shouldIgnoreNonNewerVersion(version, 'available')) return
     const autoInstall = isAutoInstallEnabled()
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.available', version)) {
-      emitTelemetry('comfy.desktop.app_update.available', {
+      emitUpdateTelemetry(
+        'comfy.desktop.app_update.available',
         version,
-        auto_update_setting: autoInstall ? 'on' : 'off'
-      })
+        {
+          version,
+          auto_update_setting: autoInstall ? 'on' : 'off'
+        },
+        true
+      )
     }
     if (autoInstall) {
       const active = currentUpdateOperation()
@@ -384,7 +444,12 @@ function bindUpdaterEvents(): void {
       if (_autoDownloadTriggeredFor !== version) {
         _autoDownloadTriggeredFor = version
         if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.download_started', version)) {
-          emitTelemetry('comfy.desktop.app_update.download_started', { version, initiator: 'auto' })
+          emitUpdateTelemetry(
+            'comfy.desktop.app_update.download_started',
+            version,
+            { version, initiator: 'auto' },
+            true
+          )
         }
       }
       return
@@ -400,7 +465,7 @@ function bindUpdaterEvents(): void {
     if (shouldIgnoreNonNewerVersion(version, 'downloaded')) return
     _autoDownloadTriggeredFor = null
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.download_complete', version)) {
-      emitTelemetry('comfy.desktop.app_update.download_complete', { version })
+      emitUpdateTelemetry('comfy.desktop.app_update.download_complete', version, { version }, true)
     }
     // Persist that an installer is staged on disk. electron-updater caches the
     // download across restarts; this marker lets the startup-install path apply
@@ -531,7 +596,7 @@ async function checkForUpdate(
     const updater = getAutoUpdater()
     if (!updater) {
       if (USER_INITIATED_CHECK_TRIGGERS.has(source)) {
-        emitTelemetry('comfy.desktop.app_update.checked', {
+        emitUpdateTelemetry('comfy.desktop.app_update.checked', null, {
           trigger: source,
           result: 'updater_unavailable'
         })
@@ -553,7 +618,15 @@ async function checkForUpdate(
       USER_INITIATED_CHECK_TRIGGERS.has(source) &&
       _shouldEmitAppUpdateOnce('comfy.desktop.app_update.checked', version)
     ) {
-      emitTelemetry('comfy.desktop.app_update.checked', { trigger: source, result: 'available' })
+      emitUpdateTelemetry(
+        'comfy.desktop.app_update.checked',
+        version,
+        {
+          trigger: source,
+          result: 'available'
+        },
+        true
+      )
     }
     return version ? { available: true, version } : { available: false }
   } catch (err) {
@@ -628,10 +701,15 @@ export function onUpdateStateChanged(cb: (state: AppUpdateState) => void): () =>
  */
 export async function downloadUpdate(): Promise<void> {
   _userInitiatedDownload = true
-  emitTelemetry('comfy.desktop.app_update.download_started', {
-    version: _appUpdateState.version,
-    initiator: 'user'
-  })
+  emitUpdateTelemetry(
+    'comfy.desktop.app_update.download_started',
+    _appUpdateState.version,
+    {
+      version: _appUpdateState.version,
+      initiator: 'user'
+    },
+    true
+  )
   try {
     const result = await runCheck('download-button')
     if (!result.available && _appUpdateState.kind !== 'ready') {
@@ -679,7 +757,7 @@ export function installUpdate(userInitiated = true): void {
     _broadcastToRenderer('app-update:user-action-failed', { message: UPDATER_UNAVAILABLE_MESSAGE })
     return
   }
-  emitTelemetry('comfy.desktop.app_update.install_triggered', {
+  emitUpdateTelemetry('comfy.desktop.app_update.install_triggered', _appUpdateState.version, {
     version: _appUpdateState.version,
     auto_update_setting: isAutoInstallEnabled() ? 'on' : 'off'
   })
@@ -731,6 +809,31 @@ export function installUpdate(userInitiated = true): void {
  */
 export function _test_setUpdateState(next: AppUpdateState): void {
   _setUpdateState(next)
+}
+
+/** Record recovery when the startup installer did not enter Electron's quit path. */
+export function recordStartupInstallBackstopRecovered(): void {
+  emitUpdateTelemetry(
+    'comfy.desktop.app_update.startup_install_backstop_recovered',
+    _appUpdateState.version ?? settings.get('pendingDownloadedUpdateVersion') ?? null
+  )
+}
+
+let _processExitRecorded = false
+
+/** Record the updater state after the app's quit checks have accepted the quit. */
+export function recordProcessExit(): void {
+  if (_processExitRecorded) return
+  const targetVersion = _appUpdateState.version ?? _autoDownloadTriggeredFor
+  if (!targetVersion && !_activeUpdateOperation) return
+  _processExitRecorded = true
+  emitUpdateTelemetry('comfy.desktop.app_update.process_exit', targetVersion, {
+    quit_reason: getQuitReason(),
+    download_in_progress:
+      _activeUpdateOperation?.operation === 'download' ||
+      _autoDownloadTriggeredFor !== null ||
+      _userInitiatedDownload
+  })
 }
 
 /** Upper bound on how long the startup-install check may delay boot. The
@@ -884,23 +987,78 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   // preserving genuinely-newer attempts so the loop-breaker below stays armed.
   const running = app.getVersion()
   const lastAttempt = settings.get('lastStartupUpdateAttemptVersion')
-  if (lastAttempt && !isStrictlyNewerVersion(lastAttempt, running)) {
-    settings.set('lastStartupUpdateAttemptVersion', undefined)
-  }
   const pendingVersion = settings.get('pendingDownloadedUpdateVersion')
-  if (pendingVersion && !isStrictlyNewerVersion(pendingVersion, running)) {
-    settings.set('pendingDownloadedUpdateVersion', undefined)
-  }
   // Read the sidecar once and pass it down: each read is synchronous and can
   // block up to the transient-lock retry budget when the file is locked, and
   // this codepath runs before the first window appears.
   let sidecar = readStartupAttemptMarker()
+
+  // The sidecar is the durable cross-launch identity source because late
+  // settings.json writes may be unavailable or restored from backup. A pending
+  // result stays open so a later successful explicit install remains visible.
+  if (sidecar.state === 'present' && sidecar.marker.attemptId) {
+    const previousAttemptId = sidecar.marker.attemptId
+    const previousAttemptVersion = sidecar.marker.version
+    _updateAttempt = { id: previousAttemptId, version: previousAttemptVersion }
+    const outcome = !isStrictlyNewerVersion(previousAttemptVersion, running)
+      ? 'installed'
+      : pendingVersion === previousAttemptVersion
+        ? 'still_pending'
+        : !pendingVersion
+          ? 'staged_marker_missing'
+          : 'unknown'
+    if (sidecar.marker.reportedOutcome !== outcome) {
+      emitUpdateTelemetry(
+        'comfy.desktop.app_update.previous_attempt_outcome',
+        previousAttemptVersion,
+        {
+          update_attempt_id: previousAttemptId,
+          outcome,
+          bakFallbacks: getSafeFileDiagnostics().bakFallbacks
+        }
+      )
+      recordStartupAttemptOutcome(sidecar.marker, outcome)
+    }
+    if (outcome === 'installed') clearUpdateAttempt(previousAttemptId)
+  }
+
+  if (lastAttempt && !isStrictlyNewerVersion(lastAttempt, running)) {
+    settings.set('lastStartupUpdateAttemptVersion', undefined)
+  }
+  if (pendingVersion && !isStrictlyNewerVersion(pendingVersion, running)) {
+    settings.set('pendingDownloadedUpdateVersion', undefined)
+  }
+  const pendingAttemptId = settings.get('pendingDesktopUpdateAttemptId')
+  const pendingAttemptVersion = settings.get('pendingDesktopUpdateAttemptVersion')
+  if (
+    typeof pendingAttemptId === 'string' &&
+    typeof pendingAttemptVersion === 'string' &&
+    !isStrictlyNewerVersion(pendingAttemptVersion, running)
+  ) {
+    clearUpdateAttempt(pendingAttemptId)
+  }
   if (sidecar.state === 'present' && !isStrictlyNewerVersion(sidecar.marker.version, running)) {
     clearStartupAttemptMarker()
     sidecar = { state: 'absent' }
   }
 
   const decision = evaluateStartupInstall(sidecar)
+  if (pendingVersion && isStrictlyNewerVersion(pendingVersion, running)) {
+    emitUpdateTelemetry(
+      'comfy.desktop.app_update.startup_decision',
+      pendingVersion,
+      {
+        decision: decision.attempt ? 'install' : 'skip',
+        reason: decision.attempt ? 'ready_check' : decision.reason,
+        pending_version: pendingVersion,
+        updater_state: getCurrentUpdateState().kind ?? 'unknown',
+        marker_state: sidecar.state,
+        marker_source: !decision.attempt ? (decision.loopBreakerSource ?? null) : null,
+        bakFallbacks: getSafeFileDiagnostics().bakFallbacks
+      },
+      true
+    )
+  }
   if (!decision.attempt) {
     // Only the skips that mean "a staged update exists but we declined it"
     // carry canary signal; normal boots (no pending / feature off) stay silent.
@@ -909,13 +1067,17 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
       decision.reason === 'session_ending' ||
       decision.reason === 'marker_unavailable'
     ) {
-      emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
-        reason: decision.reason,
-        version: settings.get('pendingDownloadedUpdateVersion') ?? null,
-        // Which marker home tripped a loop_breaker skip (see loopBreakerSource).
-        source: decision.loopBreakerSource ?? null,
-        bakFallbacks: getSafeFileDiagnostics().bakFallbacks
-      })
+      emitUpdateTelemetry(
+        'comfy.desktop.app_update.startup_install_skipped',
+        settings.get('pendingDownloadedUpdateVersion') ?? null,
+        {
+          reason: decision.reason,
+          version: settings.get('pendingDownloadedUpdateVersion') ?? null,
+          // Which marker home tripped a loop_breaker skip (see loopBreakerSource).
+          source: decision.loopBreakerSource ?? null,
+          bakFallbacks: getSafeFileDiagnostics().bakFallbacks
+        }
+      )
     }
     return false
   }
@@ -931,7 +1093,7 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   // install — a concurrent check could surface a different (or no) ready
   // version, which must not bypass the loop-breaker recorded for `decision.version`.
   if (state.kind !== 'ready' || state.version !== decision.version) {
-    emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
+    emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', decision.version, {
       reason: 'not_ready',
       version: decision.version
     })
@@ -950,7 +1112,7 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   // The session may have started ending while we awaited the check / held the
   // splash up.
   if (isSessionEnding()) {
-    emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
+    emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', state.version, {
       reason: 'session_ending',
       version: state.version
     })
@@ -963,8 +1125,9 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   // WITHOUT writing any marker - installing unguarded risks an unbounded
   // reinstall loop (issue #1367), and a lone settings marker would block every
   // future auto-install of this version instead of retrying next launch.
-  if (!recordStartupAttempt(state.version)) {
-    emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
+  const attemptId = updateAttemptId(state.version, true)
+  if (!attemptId || !recordStartupAttempt(state.version, attemptId)) {
+    emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', state.version, {
       reason: 'marker_not_durable',
       version: state.version,
       bakFallbacks: getSafeFileDiagnostics().bakFallbacks
@@ -972,12 +1135,12 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
     return false
   }
   try {
-    settings.set('lastStartupUpdateAttemptVersion', state.version)
+    settings.set('lastStartupUpdateAttemptVersion', decision.version)
   } catch {
     // The sidecar is already durable, so the loop-breaker holds without the
     // settings copy.
   }
-  emitTelemetry('comfy.desktop.app_update.startup_install', {
+  emitUpdateTelemetry('comfy.desktop.app_update.startup_install', state.version, {
     version: state.version,
     // Non-zero means reads were served from `.bak` this session (primary
     // missing, empty, or locked past retries - issue #1367's environment);
