@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   getAllWindows: vi.fn(() => [] as unknown[]),
   openExternal: vi.fn(async () => {}),
+  openSystemModalAsync: vi.fn(async () => false),
   // session
   login: vi.fn(),
   logout: vi.fn(),
@@ -41,13 +42,19 @@ const mocks = vi.hoisted(() => ({
   loadSnapshot: vi.fn(),
   getSnapshotCount: vi.fn(),
   buildExportEnvelope: vi.fn(),
-  broadcastToRenderer: vi.fn()
+  broadcastToRenderer: vi.fn(),
+  operationAborts: new Map<string, AbortController>(),
+  translate: vi.fn((key: string) => key)
 }))
 
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: mocks.getAllWindows },
   ipcMain: { handle: mocks.handle },
   shell: { openExternal: mocks.openExternal }
+}))
+
+vi.mock('../../popups/systemModal', () => ({
+  openSystemModalAsync: mocks.openSystemModalAsync
 }))
 
 vi.mock('../../devplatform/session', () => ({
@@ -99,7 +106,9 @@ vi.mock('./shared', () => ({
   loadSnapshot: mocks.loadSnapshot,
   getSnapshotCount: mocks.getSnapshotCount,
   buildExportEnvelope: mocks.buildExportEnvelope,
-  _broadcastToRenderer: mocks.broadcastToRenderer
+  _broadcastToRenderer: mocks.broadcastToRenderer,
+  _operationAborts: mocks.operationAborts,
+  i18n: { t: mocks.translate }
 }))
 
 import { registerDevPlatformHandlers, signInToCloud } from './registerDevPlatformHandlers'
@@ -128,6 +137,7 @@ describe('registerDevPlatformHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     comfyWindows.clear()
+    mocks.operationAborts.clear()
     mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w1', workspaceType: 'team' })
     mocks.get.mockResolvedValue({
       id: 'local-1',
@@ -194,7 +204,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.getAllWindows.mockReturnValue([])
     const panel = registerHostWithPanel(1)
 
-    handler('comfybuilder:signOut')({})
+    await handler('comfybuilder:signOut')({})
 
     expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
   })
@@ -250,12 +260,85 @@ describe('registerDevPlatformHandlers', () => {
     const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
     mocks.getAllWindows.mockReturnValue([win])
 
-    const status = handler('comfybuilder:signOut')({})
+    const status = await handler('comfybuilder:signOut')({})
     expect(status).toEqual({ signedIn: false })
     expect(mocks.logout).toHaveBeenCalledOnce()
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', {
       signedIn: false
     })
+  })
+
+  it('keeps the session and installation running when sign-out is cancelled', async () => {
+    const abort = new AbortController()
+    const sender = {}
+    const parent = { isDestroyed: () => false }
+    comfyWindows.set(1, {
+      panelView: { webContents: sender },
+      window: parent
+    } as unknown as ComfyWindowEntry)
+    mocks.operationAborts.set('install-1', abort)
+    mocks.get.mockResolvedValue({ id: 'install-1', status: 'installing' })
+    mocks.openSystemModalAsync.mockResolvedValue(false)
+
+    const status = await handler('comfybuilder:signOut')({ sender })
+
+    expect(status).toEqual({ signedIn: true, workspaceId: 'w1', workspaceType: 'team' })
+    expect(mocks.openSystemModalAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parent,
+        spec: expect.objectContaining({
+          cancelLabel: 'common.close',
+          confirmLabel: 'devPlatform.account.cancelInstallationAndSignOut',
+          confirmStyle: 'danger'
+        })
+      })
+    )
+    expect(abort.signal.aborted).toBe(false)
+    expect(mocks.logout).not.toHaveBeenCalled()
+  })
+
+  it('cancels active installations before signing out when confirmed', async () => {
+    const abort = new AbortController()
+    const sender = { isDestroyed: () => false, send: vi.fn() }
+    comfyWindows.set(1, {
+      panelView: { webContents: sender },
+      window: { isDestroyed: () => false },
+      lastTheme: { bg: '#171718', text: '#fff' }
+    } as unknown as ComfyWindowEntry)
+    mocks.operationAborts.set('install-1', abort)
+    mocks.get.mockResolvedValue({ id: 'install-1', status: 'installing' })
+    mocks.openSystemModalAsync.mockResolvedValue(true)
+
+    const status = await handler('comfybuilder:signOut')({ sender })
+
+    expect(status).toEqual({ signedIn: false })
+    expect(abort.signal.aborted).toBe(true)
+    expect(mocks.broadcastToRenderer).toHaveBeenCalledWith('install-progress', {
+      installationId: 'install-1',
+      phase: 'cancelling',
+      cancelRequested: true
+    })
+    expect(mocks.logout).toHaveBeenCalledOnce()
+  })
+
+  it('guards sign-out during an in-place update the same as during an install', async () => {
+    const abort = new AbortController()
+    const sender = { isDestroyed: () => false, send: vi.fn() }
+    comfyWindows.set(1, {
+      panelView: { webContents: sender },
+      window: { isDestroyed: () => false },
+      lastTheme: { bg: '#171718', text: '#fff' }
+    } as unknown as ComfyWindowEntry)
+    mocks.operationAborts.set('install-1', abort)
+    mocks.get.mockResolvedValue({ id: 'install-1', status: 'updating' })
+    mocks.openSystemModalAsync.mockResolvedValue(true)
+
+    const status = await handler('comfybuilder:signOut')({ sender })
+
+    expect(status).toEqual({ signedIn: false })
+    expect(mocks.openSystemModalAsync).toHaveBeenCalledOnce()
+    expect(abort.signal.aborted).toBe(true)
+    expect(mocks.logout).toHaveBeenCalledOnce()
   })
 
   it('listBuilds is empty (no network) when signed out', async () => {

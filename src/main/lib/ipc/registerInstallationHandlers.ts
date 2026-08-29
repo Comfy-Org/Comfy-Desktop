@@ -230,7 +230,11 @@ export function registerInstallationHandlers(): void {
     if (!identity.ok) return identity
     data.name = identity.name
     if (identity.installPath) data.installPath = identity.installPath
-    const entry = await installations.add({ ...data, seen: false })
+    const entry = await installations.add({
+      ...data,
+      status: data.status ?? 'installing',
+      seen: false
+    })
     return { ok: true, entry }
   })
 

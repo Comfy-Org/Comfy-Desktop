@@ -66,6 +66,7 @@ async function onSignOut(): Promise<void> {
   } catch {
     return
   }
+  if (store.isSignedIn) return
   emit('signed-out')
 }
 </script>

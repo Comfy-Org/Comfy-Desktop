@@ -77,7 +77,7 @@ const messages = {
         loadError: "Couldn't load workspaces. Retry",
         refresh: 'Refresh workspaces',
         promoteToWorkspace: 'Create Build',
-        promoting: 'Promoting...',
+        promoting: 'Creating...',
         promoteFailedTitle: 'Could not create build',
         promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
       },
@@ -752,7 +752,7 @@ describe('ChooserView', () => {
     menu.vm.$emit('select', 'promote-to-workspace')
     await wrapper.vm.$nextTick()
 
-    expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Promoting...')
+    expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating...')
     expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
     expect(api.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith('local')
 

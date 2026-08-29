@@ -30,7 +30,6 @@ export type InstallMenuActionId =
   | 'promote-to-workspace'
   | 'copy-install'
   | 'delete'
-  | 'dismiss-error'
 
 export interface ManageOpenOptions {
   initialTab?: string
@@ -186,7 +185,7 @@ export function useInstallContextMenu(
       snapshotCluster.push({
         id: 'promote-to-workspace',
         label: promoting
-          ? t('devPlatform.workspace.promoting', 'Promoting...')
+          ? t('devPlatform.workspace.promoting', 'Creating...')
           : t('devPlatform.workspace.promoteToWorkspace', 'Create Build'),
         disabled: promoting
       })
@@ -218,14 +217,6 @@ export function useInstallContextMenu(
     if (clusterHead) {
       clusterHead.separator = items.length > 0
       items.push(...cluster)
-    }
-
-    if (sessionStore.errorInstances.has(inst.id)) {
-      items.push({
-        id: 'dismiss-error',
-        label: t('chooser.menuDismissError'),
-        separator: items.length > 0
-      })
     }
 
     return items
@@ -379,8 +370,6 @@ export function useInstallContextMenu(
       } else {
         await runInstantActionWithAlert(inst, 'delete', t('chooser.menuDelete'))
       }
-    } else if (id === 'dismiss-error') {
-      sessionStore.clearErrorInstance(inst.id)
     }
   }
 

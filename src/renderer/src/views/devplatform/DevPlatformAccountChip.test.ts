@@ -105,13 +105,28 @@ describe('DevPlatformAccountChip — signed in', () => {
 
   it('signs out directly from the account menu', async () => {
     const { wrapper, store } = await mountChip(SIGNED_IN)
-    store.signOut = vi.fn().mockResolvedValue({ signedIn: false })
+    store.signOut = vi.fn().mockImplementation(async () => {
+      store.status = SIGNED_OUT
+      return SIGNED_OUT
+    })
 
     await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
     await wrapper.find('[data-testid="devplatform-account-signout"]').trigger('click')
     await flushPromises()
     expect(store.signOut).toHaveBeenCalledOnce()
     expect(wrapper.emitted('signed-out')).toHaveLength(1)
+  })
+
+  it('stays signed in when main cancels sign-out', async () => {
+    const { wrapper, store } = await mountChip(SIGNED_IN)
+    store.signOut = vi.fn().mockResolvedValue(SIGNED_IN)
+
+    await wrapper.find('[data-testid="devplatform-account-chip"]').trigger('click')
+    await wrapper.find('[data-testid="devplatform-account-signout"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('signed-out')).toBeUndefined()
+    expect(wrapper.find('[data-testid="devplatform-account-chip"]').exists()).toBe(true)
   })
 
   // Sign-out IPC failure must leave the chip visibly signed in rather than lie.
