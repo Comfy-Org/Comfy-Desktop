@@ -1,5 +1,15 @@
-import { app, Menu, ipcMain, net, dialog, crashReporter, nativeTheme, powerMonitor } from 'electron'
-import type { BrowserWindow, WebContentsView } from 'electron'
+import {
+  app,
+  Menu,
+  ipcMain,
+  net,
+  dialog,
+  crashReporter,
+  nativeTheme,
+  powerMonitor,
+  BrowserWindow
+} from 'electron'
+import type { WebContentsView } from 'electron'
 import type { Tray } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -2252,7 +2262,17 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       } catch (err) {
         console.error('openStartupSurface failed after update splash:', err)
       } finally {
-        if (updateSplash && !updateSplash.window.isDestroyed()) updateSplash.window.destroy()
+        // Destroying the splash while it is the only window fires
+        // `window-all-closed` and quits the app, so if the surface handoff
+        // failed and no other window exists, keep the splash up: a stalled
+        // splash beats a silent exit that would also kill any in-flight
+        // background re-download.
+        const otherWindowExists = BrowserWindow.getAllWindows().some(
+          (w) => w !== updateSplash?.window && !w.isDestroyed()
+        )
+        if (updateSplash && !updateSplash.window.isDestroyed() && otherWindowExists) {
+          updateSplash.window.destroy()
+        }
       }
     }
     if (installingUpdate) {
