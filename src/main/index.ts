@@ -2222,10 +2222,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // while the bounded check runs; if it commits to installing, the app quits
     // here and the installer relaunches it — so we skip opening the normal UI.
     const updateSplash = updater.hasPendingStartupUpdate() ? showUpdateInstallSplash() : undefined
-    // Timestamp the splash so the install can keep it up for a readable minimum
-    // (the bounded check usually resolves instantly, which would otherwise flash
-    // the splash by before the app quits to install).
-    const updateSplashShownAt = updateSplash ? Date.now() : undefined
     // Track whether the install actually started quitting the app. Quit intent
     // (`quitReason`) alone isn't proof — `restartAndInstall` can return without
     // quitting if the staged installer is gone — so key the backstop off a real
@@ -2235,7 +2231,30 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       updateInstallQuitStarted = true
     }
     app.once('before-quit', onUpdateInstallQuit)
-    const installingUpdate = await updater.applyPendingUpdateOnStartup(updateSplashShownAt)
+    // Guarded so an unexpected throw still lands in the normal-boot path below;
+    // the splash handoff there is what keeps the app alive.
+    let installingUpdate = false
+    try {
+      installingUpdate = await updater.applyPendingUpdateOnStartup(
+        updateSplash ? { onInstallCommitted: () => updateSplash.showInstallCountdown() } : undefined
+      )
+    } catch (err) {
+      console.error('applyPendingUpdateOnStartup failed:', err)
+    }
+    // Open the normal UI and only then take the splash down. The order matters:
+    // while the splash is the only window, destroying it before another window
+    // exists fires `window-all-closed`, which quits the app. That quit killed
+    // any in-flight background re-download of an invalid staged installer,
+    // leaving a partial file that re-triggered the same splash on every boot.
+    const openSurfaceAndDismissSplash = async (): Promise<void> => {
+      try {
+        await openStartupSurface()
+      } catch (err) {
+        console.error('openStartupSurface failed after update splash:', err)
+      } finally {
+        if (updateSplash && !updateSplash.window.isDestroyed()) updateSplash.window.destroy()
+      }
+    }
     if (installingUpdate) {
       // Safety net: a successful install quits the app within a tick (firing
       // before-quit). If that didn't happen the install didn't proceed — recover
@@ -2246,21 +2265,24 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         if (updateInstallQuitStarted) return
         app.removeListener('before-quit', onUpdateInstallQuit)
         clearQuitReason()
-        if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
         updater.recordStartupInstallBackstopRecovered()
-        void openStartupSurface()
-        hostReentryGate.open()
+        void openSurfaceAndDismissSplash().then(() => {
+          hostReentryGate.open()
+        })
       }, STARTUP_INSTALL_QUIT_BACKSTOP_MS)
     } else {
       app.removeListener('before-quit', onUpdateInstallQuit)
-      if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
       // The install-less chooser host is the primary surface. Each
       // install gets its own ComfyUI window via openComfyWindow()
       // when launched, and the chooser host is the entry-point for
       // picking / creating installs. When the user last left an instance
       // window (and the reopen setting is on), restore that instance
       // in-place on top of the freshly-opened chooser host.
-      void openStartupSurface()
+      if (updateSplash) {
+        await openSurfaceAndDismissSplash()
+      } else {
+        void openStartupSurface()
+      }
       // Startup recovery (awaited inside `ipc.register()` above) has settled
       // and we've committed to opening the normal UI, so OS-driven reentry
       // (second-instance / dock activate) can open windows directly again.

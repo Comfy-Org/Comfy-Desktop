@@ -84,6 +84,12 @@ function _shouldEmitAppUpdateOnce(event: string, version: string | null): boolea
  *  the prompt) and on `update-error`. */
 let _userInitiatedDownload = false
 const _stateChangeCallbacks = new Set<(state: AppUpdateState) => void>()
+/** Observers notified on every raw `download-progress` tick, regardless of who
+ *  initiated the download. The cached `AppUpdateState` only flips to
+ *  `'downloading'` for user-initiated downloads, so the startup-install wait
+ *  needs this raw signal to detect that electron-updater rejected the cached
+ *  installer and started re-downloading it. */
+const _downloadProgressObservers = new Set<() => void>()
 let _listenersBound = false
 
 interface UpdateAttempt {
@@ -539,6 +545,7 @@ function bindUpdaterEvents(): void {
   // until `update-downloaded` flips to `'ready'`, preserving the
   // existing zero-noise auto-install UX.
   updater.on('download-progress', (info: unknown) => {
+    for (const cb of _downloadProgressObservers) cb()
     const p = asRecord(info)
     if (!p) return
     const percent = typeof p.percent === 'number' ? p.percent : null
@@ -842,17 +849,22 @@ export function recordProcessExit(): void {
  *  cap keeps a slow / offline network from ever hanging the launch. */
 const STARTUP_UPDATE_CHECK_TIMEOUT_MS = 5000
 
-/** Minimum time the "Updating…" splash stays up before the install quits the
- *  app. The bounded check above usually resolves near-instantly (the installer
- *  was already downloaded and cached), which would otherwise flash the splash
- *  for a fraction of a second before the app quits — feeling like a glitch
- *  rather than an intentional update. This floor (measured from when the splash
- *  was shown, so the check's own elapsed time counts toward it) keeps the splash
- *  up long enough for the user to read it and watch the countdown finish. Keep
- *  in sync with `UPDATE_INSTALL_COUNTDOWN_SECONDS` (updateSplash.ts), the
- *  countdown the splash shows over this window. Only applies when a splash is
- *  actually up (startup-install path). */
+/** How long the splash stays up between committing to the install and quitting
+ *  the app to run it. Measured from the commit point (when the splash swaps to
+ *  its install-countdown copy), so the countdown the user is watching runs its
+ *  full length regardless of how long the readiness check took. Keep in sync
+ *  with `UPDATE_INSTALL_COUNTDOWN_SECONDS` (updateSplash.ts). Only applies when
+ *  a splash is actually up (startup-install path). */
 const STARTUP_INSTALL_MIN_SPLASH_MS = 5000
+
+/** Consecutive boots that may skip the same staged version as not-ready before
+ *  the staged marker is abandoned. Each such boot costs the user a splash plus
+ *  the bounded wait, so a staged installer that never becomes ready (corrupt or
+ *  partial on disk, with re-downloads that never complete before the app exits)
+ *  must not show that splash forever. Abandoning only clears the marker: if a
+ *  background re-download later completes, `update-downloaded` re-stages the
+ *  version and the next boot installs it normally. */
+const STARTUP_INSTALL_NOT_READY_LIMIT = 3
 
 /** Why a startup install was or wasn't attempted. The skip reasons that carry
  *  canary signal (`loop_breaker`, `session_ending`, `not_ready`) are reported via
@@ -937,33 +949,53 @@ export function hasPendingStartupUpdate(): boolean {
   return evaluateStartupInstall(readStartupAttemptMarker()).attempt
 }
 
+/** How the bounded startup update check settled. Only `'ready'` can lead to an
+ *  install; the others mean "bail into the normal UI now" and say why:
+ *  `'downloading'` = the cached installer was rejected and electron-updater
+ *  started re-downloading it (finishing takes minutes, not the seconds the boot
+ *  wait allows), `'check_failed'` = the feed check found no applicable update
+ *  (offline, feed error, or the update was pulled), `'timeout'` = the deadline
+ *  passed without any of the above. */
+type StartupUpdateWaitOutcome = 'ready' | 'downloading' | 'check_failed' | 'timeout'
+
 /**
- * Kick off a startup update check and resolve once the update reaches the
- * `'ready'` state or the deadline passes. Don't rely on `runCheck` resolving to
- * imply readiness — the `'ready'` transition happens in the `update-downloaded`
- * handler, which (depending on the updater) can fire slightly after the check
- * promise settles. Subscribing first closes that race.
+ * Kick off a startup update check and resolve with how it settled. Don't rely
+ * on `runCheck` resolving to imply readiness - the `'ready'` transition happens
+ * in the `update-downloaded` handler, which (depending on the updater) can fire
+ * slightly after the check promise settles. Subscribing first closes that race.
+ *
+ * Resolves as soon as the outcome is knowable instead of always burning the
+ * full deadline: a `download-progress` tick proves the staged installer was
+ * invalid and a full re-download is underway (which cannot finish within a
+ * boot-time budget), and a check that finds no applicable update means the
+ * ready state can never be reached this launch.
  */
-function waitForReadyState(timeoutMs: number): Promise<void> {
-  if (getCurrentUpdateState().kind === 'ready') return Promise.resolve()
-  return new Promise<void>((resolve) => {
+function waitForStartupUpdateOutcome(timeoutMs: number): Promise<StartupUpdateWaitOutcome> {
+  if (getCurrentUpdateState().kind === 'ready') return Promise.resolve('ready')
+  return new Promise<StartupUpdateWaitOutcome>((resolve) => {
     let done = false
-    const finish = (): void => {
+    const finish = (outcome: StartupUpdateWaitOutcome): void => {
       if (done) return
       done = true
       unsub()
+      _downloadProgressObservers.delete(onDownloadProgress)
       clearTimeout(timer)
-      resolve()
+      resolve(outcome)
     }
     const unsub = onUpdateStateChanged((s) => {
-      if (s.kind === 'ready') finish()
+      if (s.kind === 'ready') finish('ready')
     })
-    const timer = setTimeout(finish, timeoutMs)
+    const onDownloadProgress = (): void => finish('downloading')
+    _downloadProgressObservers.add(onDownloadProgress)
+    const timer = setTimeout(() => finish('timeout'), timeoutMs)
     runCheck('startup-install')
-      .then(() => {
-        if (getCurrentUpdateState().kind === 'ready') finish()
+      .then((result) => {
+        if (getCurrentUpdateState().kind === 'ready') finish('ready')
+        else if (!result.available) finish('check_failed')
+        // Otherwise an update exists upstream but isn't ready yet; keep
+        // waiting for a ready transition, a re-download tick, or the deadline.
       })
-      .catch(() => {})
+      .catch(() => finish('check_failed'))
   })
 }
 
@@ -977,12 +1009,16 @@ function waitForReadyState(timeoutMs: number): Promise<void> {
  * usual) when there's nothing to do, the check can't confirm a ready update, or
  * the loop-breaker is engaged.
  *
- * `splashShownAt` is the timestamp (from `Date.now()`) when the caller put up
- * the "Updating…" splash; when provided, the install is held until the splash
- * has been visible for at least `STARTUP_INSTALL_MIN_SPLASH_MS` so it doesn't
- * flash by before the app quits.
+ * `hooks.onInstallCommitted` is called once the staged update is confirmed
+ * ready and the install WILL proceed, before the pre-install splash hold
+ * starts. The caller uses it to swap the splash from its "checking" copy to the
+ * install countdown, so the countdown only ever shows for a real install.
  */
-export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promise<boolean> {
+export interface StartupInstallHooks {
+  onInstallCommitted?: () => void | Promise<void>
+}
+
+export async function applyPendingUpdateOnStartup(hooks?: StartupInstallHooks): Promise<boolean> {
   // Clear markers that no longer point at a strictly-newer target, while
   // preserving genuinely-newer attempts so the loop-breaker below stays armed.
   const running = app.getVersion()
@@ -1027,6 +1063,11 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   }
   if (pendingVersion && !isStrictlyNewerVersion(pendingVersion, running)) {
     settings.set('pendingDownloadedUpdateVersion', undefined)
+  }
+  const notReadyVersion = settings.get('startupInstallNotReadyVersion')
+  if (notReadyVersion && !isStrictlyNewerVersion(notReadyVersion, running)) {
+    settings.set('startupInstallNotReadyVersion', undefined)
+    settings.set('startupInstallNotReadyCount', undefined)
   }
   const pendingAttemptId = settings.get('pendingDesktopUpdateAttemptId')
   const pendingAttemptVersion = settings.get('pendingDesktopUpdateAttemptVersion')
@@ -1083,34 +1124,99 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   }
 
   // The installer is cached on disk from a previous session; this check
-  // re-validates it (no re-download) and populates the updater's ready state.
-  // Bounded so a slow/offline network can't hang boot — if it doesn't resolve
-  // to a ready update in time, we open the UI and try again next launch.
-  await waitForReadyState(STARTUP_UPDATE_CHECK_TIMEOUT_MS)
+  // usually just re-validates it (no re-download) and populates the updater's
+  // ready state. Bounded so a slow/offline network can't hang boot - if it
+  // doesn't resolve to a ready update in time, we open the UI and try again
+  // next launch. When the cached installer turns out invalid, electron-updater
+  // deletes it and starts a re-download; the wait detects that and bails
+  // immediately so the user gets into the app while the download continues in
+  // the background (a completed download re-stages the update for next boot).
+  const waitOutcome = await waitForStartupUpdateOutcome(STARTUP_UPDATE_CHECK_TIMEOUT_MS)
 
   const state = getCurrentUpdateState()
   // Require the ready version to be the exact staged version we decided to
-  // install — a concurrent check could surface a different (or no) ready
+  // install - a concurrent check could surface a different (or no) ready
   // version, which must not bypass the loop-breaker recorded for `decision.version`.
   if (state.kind !== 'ready' || state.version !== decision.version) {
+    // Bound how many consecutive boots may skip this same version as not-ready.
+    // Without a bound, a permanently-invalid staged installer (e.g. a corrupt
+    // or partial file whose re-download never completes before the app exits)
+    // would show the update splash on every boot forever. After the limit, the
+    // staged marker is abandoned; a later completed download re-stages it.
+    const seenVersion = settings.get('startupInstallNotReadyVersion')
+    const seenCount = settings.get('startupInstallNotReadyCount')
+    const consecutive =
+      (seenVersion === decision.version && typeof seenCount === 'number' ? seenCount : 0) + 1
+    // `update-downloaded` can restage the pending marker DURING the wait (e.g. a
+    // newer version finished downloading). Strikes only apply while the marker
+    // still belongs to the version this boot decided to install; a restaged
+    // marker must never be abandoned on the old version's strikes.
+    const pendingNow = settings.get('pendingDownloadedUpdateVersion')
+    const markerStillOurs = pendingNow === decision.version
+    const abandoned = markerStillOurs && consecutive >= STARTUP_INSTALL_NOT_READY_LIMIT
+    try {
+      if (abandoned) {
+        settings.set('pendingDownloadedUpdateVersion', undefined)
+        settings.set('startupInstallNotReadyVersion', undefined)
+        settings.set('startupInstallNotReadyCount', undefined)
+      } else if (markerStillOurs) {
+        settings.set('startupInstallNotReadyVersion', decision.version)
+        settings.set('startupInstallNotReadyCount', consecutive)
+      } else {
+        // A different version is staged now; the old version's strikes are
+        // obsolete and the new version starts with a clean count.
+        settings.set('startupInstallNotReadyVersion', undefined)
+        settings.set('startupInstallNotReadyCount', undefined)
+      }
+    } catch {
+      // Best-effort: if settings can't persist, next boot just repeats the
+      // bounded wait, which is the pre-counter behavior.
+    }
     emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', decision.version, {
       reason: 'not_ready',
-      version: decision.version
+      version: decision.version,
+      // Ready state with the wrong version means a concurrent check surfaced a
+      // different update than the one staged for install.
+      wait_outcome:
+        waitOutcome === 'ready' || state.kind === 'ready' ? 'version_mismatch' : waitOutcome,
+      consecutive_not_ready: consecutive,
+      abandoned
     })
     return false
   }
-  // Hold the "Updating…" splash on screen for a readable minimum before the
-  // install quits the app. The check above often resolves instantly (cached
-  // installer), so without this the splash would flash by in a fraction of a
-  // second. Measured from when the splash was shown, so the check's own elapsed
-  // time counts toward the floor.
-  if (splashShownAt !== undefined) {
-    const remaining = STARTUP_INSTALL_MIN_SPLASH_MS - (Date.now() - splashShownAt)
-    if (remaining > 0) await new Promise<void>((resolve) => setTimeout(resolve, remaining))
+  // The staged update is confirmed and the install will proceed; the not-ready
+  // strike counter no longer applies to this version.
+  try {
+    settings.set('startupInstallNotReadyVersion', undefined)
+    settings.set('startupInstallNotReadyCount', undefined)
+  } catch {
+    // Stale counter keys are also cleaned up by the marker hygiene above.
   }
 
-  // The session may have started ending while we awaited the check / held the
-  // splash up.
+  // The session may have started ending while we awaited the check. Skip
+  // before the commit hook so the user is never shown an install countdown
+  // for an install that must not happen.
+  if (isSessionEnding()) {
+    emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', state.version, {
+      reason: 'session_ending',
+      version: state.version
+    })
+    return false
+  }
+
+  // Commit point for the caller's splash: swap it from "checking" to the
+  // install countdown (awaited so the hold starts only once the countdown is
+  // actually on screen), then hold so the countdown plays out before the app
+  // quits. The hold is measured from here (not from when the splash appeared)
+  // so it matches the countdown the user just started watching. Keep
+  // `STARTUP_INSTALL_MIN_SPLASH_MS` in sync with
+  // `UPDATE_INSTALL_COUNTDOWN_SECONDS` (updateSplash.ts).
+  if (hooks) {
+    await hooks.onInstallCommitted?.()
+    await new Promise<void>((resolve) => setTimeout(resolve, STARTUP_INSTALL_MIN_SPLASH_MS))
+  }
+
+  // The session may have started ending while the splash countdown played.
   if (isSessionEnding()) {
     emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', state.version, {
       reason: 'session_ending',

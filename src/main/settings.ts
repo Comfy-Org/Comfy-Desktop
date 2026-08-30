@@ -79,6 +79,15 @@ export interface KnownSettings {
    *  the same version on the next boot — the user can still install it manually
    *  via the update pill. Cleared once that version is actually running. */
   lastStartupUpdateAttemptVersion?: string
+  /** Staged version whose startup install was skipped because the update never
+   *  reached the ready state (installer still re-downloading, corrupt, or the
+   *  check failed), plus how many consecutive boots did so. After a few strikes
+   *  the stale staged marker is cleared so boots stop showing the update splash
+   *  for an install that never becomes ready. Both cleared when the version
+   *  installs, when the counter's version is no longer newer than the running
+   *  build, or when a different version gets staged. */
+  startupInstallNotReadyVersion?: string
+  startupInstallNotReadyCount?: number
   /** Opaque, locally-generated correlation id for the staged updater attempt.
    *  Contains no device or user material and may span process launches. */
   pendingDesktopUpdateAttemptId?: string
@@ -262,6 +271,8 @@ const SETTINGS_SCHEMA = {
   },
   pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
   lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  startupInstallNotReadyVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  startupInstallNotReadyCount: { nullable: true, telemetry: { policy: 'omit' } },
   pendingDesktopUpdateAttemptId: { nullable: true, telemetry: { policy: 'omit' } },
   pendingDesktopUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
   installUpdatesOnStartup: {

@@ -894,7 +894,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(sidecarMarker).toMatchObject({ reportedOutcome: 'installed' })
   })
 
-  it('applyPendingUpdateOnStartup() holds the install until the splash minimum elapses', async () => {
+  it('applyPendingUpdateOnStartup() holds the install after committing so the countdown plays out', async () => {
     vi.useFakeTimers()
     try {
       settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
@@ -902,11 +902,14 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       const updater = await import('./updater')
       updater.register()
 
-      // Splash just went up, so the full minimum (5000ms) must elapse first.
-      const pending = updater.applyPendingUpdateOnStartup(Date.now())
+      // A splash is up: the commit hook fires once the install is confirmed,
+      // then the full post-commit hold (5000ms) must elapse before the install.
+      const onInstallCommitted = vi.fn()
+      const pending = updater.applyPendingUpdateOnStartup({ onInstallCommitted })
 
-      // Let the (instant) ready check settle, but stay short of the floor.
+      // Let the (instant) ready check settle, but stay short of the hold.
       await vi.advanceTimersByTimeAsync(4000)
+      expect(onInstallCommitted).toHaveBeenCalledTimes(1)
       expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
 
       // Cross the floor — the install now fires.
@@ -928,7 +931,9 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     vi.useFakeTimers()
     try {
       settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
-      readyVersion = null // e.g. cached installer invalid / offline
+      // The check finds the update upstream but it never reaches 'ready' and
+      // never starts re-downloading (e.g. the updater stalls silently).
+      fakeUpdater.checkForUpdates = vi.fn(async () => ({ updateInfo: { version: '1.0.1' } }))
       const updater = await import('./updater')
       updater.register()
       const pending = updater.applyPendingUpdateOnStartup()
@@ -938,6 +943,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       await vi.advanceTimersByTimeAsync(5100)
       expect(await pending).toBe(false)
       expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
+      expect(skipped[0]?.[1]).toMatchObject({ reason: 'not_ready', wait_outcome: 'timeout' })
     } finally {
       vi.useRealTimers()
     }
@@ -969,22 +976,165 @@ describe('startup update install + session-end guard (issue #1065)', () => {
   })
 
   it('emits startup_install_skipped with not_ready when the check cannot confirm a ready update', async () => {
-    vi.useFakeTimers()
-    try {
-      settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
-      readyVersion = null
-      const updater = await import('./updater')
-      updater.register()
-      const pending = updater.applyPendingUpdateOnStartup()
-      // Past the 5000ms bounded-check timeout (buffer avoids boundary races).
-      await vi.advanceTimersByTimeAsync(5100)
-      await pending
-      const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
-      expect(skipped).toHaveLength(1)
-      expect(skipped[0]?.[1]).toMatchObject({ reason: 'not_ready', version: '1.0.1' })
-    } finally {
-      vi.useRealTimers()
-    }
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    readyVersion = null // the mock check reports no update available
+    const updater = await bootUpdater()
+    // The wait settles as soon as the check reports nothing available, without
+    // burning the full bounded-wait deadline (no timer advancing needed).
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
+    expect(skipped).toHaveLength(1)
+    expect(skipped[0]?.[1]).toMatchObject({
+      reason: 'not_ready',
+      version: '1.0.1',
+      wait_outcome: 'check_failed',
+      consecutive_not_ready: 1,
+      abandoned: false
+    })
+    // The staged marker survives a first strike; only the counter advances.
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.1')
+    expect(settingsStore['startupInstallNotReadyVersion']).toBe('1.0.1')
+    expect(settingsStore['startupInstallNotReadyCount']).toBe(1)
+  })
+
+  it('bails out fast when the staged installer is invalid and a re-download starts', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    // The feed still offers the update, but the cached installer was rejected:
+    // the check resolves without an 'update-downloaded' (no ready state) and
+    // electron-updater starts re-downloading the installer.
+    fakeUpdater.checkForUpdates = vi.fn(async () => ({ updateInfo: { version: '1.0.1' } }))
+    const updater = await bootUpdater()
+    const pending = updater.applyPendingUpdateOnStartup()
+    // First raw download-progress tick: proof of the re-download. The wait must
+    // settle on it immediately so the user gets into the app while the download
+    // continues in the background.
+    for (const cb of listeners['download-progress'] || []) cb({ percent: 1 })
+    expect(await pending).toBe(false)
+    expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+    // No attempt marker: nothing was installed, so the loop-breaker stays
+    // unarmed and a completed download can install on a later boot.
+    expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.1')
+    const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
+    expect(skipped).toHaveLength(1)
+    expect(skipped[0]?.[1]).toMatchObject({
+      reason: 'not_ready',
+      version: '1.0.1',
+      wait_outcome: 'downloading',
+      consecutive_not_ready: 1,
+      abandoned: false
+    })
+  })
+
+  it('abandons the staged version after repeated not-ready boots', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    readyVersion = null // never becomes ready on any boot
+    const updater = await bootUpdater()
+
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    expect(settingsStore['startupInstallNotReadyCount']).toBe(1)
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.1')
+
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    expect(settingsStore['startupInstallNotReadyCount']).toBe(2)
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.1')
+
+    // Third consecutive strike: the staged marker is abandoned so later boots
+    // stop showing the update splash for an install that never becomes ready.
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+    expect(settingsStore['startupInstallNotReadyVersion']).toBeUndefined()
+    expect(settingsStore['startupInstallNotReadyCount']).toBeUndefined()
+
+    const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
+    expect(skipped).toHaveLength(3)
+    expect(skipped[2]?.[1]).toMatchObject({
+      reason: 'not_ready',
+      consecutive_not_ready: 3,
+      abandoned: true
+    })
+
+    // With the marker gone, the next boot is a normal one (no splash, no wait).
+    expect(updater.hasPendingStartupUpdate()).toBe(false)
+  })
+
+  it('does not abandon a version restaged during the wait', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    settingsStore['startupInstallNotReadyVersion'] = '1.0.1'
+    settingsStore['startupInstallNotReadyCount'] = 2
+    // On what would be 1.0.1's third strike, a newer installer finishes
+    // downloading during the check: update-downloaded restages the pending
+    // marker to 1.0.2 and flips the state to ready for 1.0.2.
+    fakeUpdater.checkForUpdates = vi.fn(async () => {
+      for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.2' })
+      return { updateInfo: { version: '1.0.2' } }
+    })
+    const updater = await bootUpdater()
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    // The restaged 1.0.2 marker must survive 1.0.1's strikes.
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.2')
+    expect(settingsStore['startupInstallNotReadyVersion']).toBeUndefined()
+    expect(settingsStore['startupInstallNotReadyCount']).toBeUndefined()
+    const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
+    expect(skipped[0]?.[1]).toMatchObject({
+      reason: 'not_ready',
+      version: '1.0.1',
+      wait_outcome: 'version_mismatch',
+      abandoned: false
+    })
+  })
+
+  it('skips without starting the countdown when the session begins ending during the check', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    // The OS session starts ending while the ready check is in flight.
+    fakeUpdater.checkForUpdates = vi.fn(async () => {
+      sessionEnding = true
+      for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.1' })
+      return { updateInfo: { version: '1.0.1' } }
+    })
+    const updater = await bootUpdater()
+    const onInstallCommitted = vi.fn()
+    expect(await updater.applyPendingUpdateOnStartup({ onInstallCommitted })).toBe(false)
+    // The user must never watch an install countdown for an aborted install.
+    expect(onInstallCommitted).not.toHaveBeenCalled()
+    expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+    // No attempt marker was written, so the install retries on the next boot.
+    expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
+    const skipped = findEmitCalls('comfy.desktop.app_update.startup_install_skipped')
+    expect(skipped[0]?.[1]).toMatchObject({ reason: 'session_ending', version: '1.0.1' })
+  })
+
+  it('a different staged version restarts the not-ready strike count', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.2'
+    settingsStore['startupInstallNotReadyVersion'] = '1.0.1'
+    settingsStore['startupInstallNotReadyCount'] = 2
+    readyVersion = null
+    const updater = await bootUpdater()
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    expect(settingsStore['startupInstallNotReadyVersion']).toBe('1.0.2')
+    expect(settingsStore['startupInstallNotReadyCount']).toBe(1)
+    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.0.2')
+  })
+
+  it('clears the not-ready strike counter when the staged update installs', async () => {
+    settingsStore['pendingDownloadedUpdateVersion'] = '1.0.1'
+    settingsStore['startupInstallNotReadyVersion'] = '1.0.1'
+    settingsStore['startupInstallNotReadyCount'] = 2
+    readyVersion = '1.0.1'
+    const updater = await bootUpdater()
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(true)
+    expect(settingsStore['startupInstallNotReadyVersion']).toBeUndefined()
+    expect(settingsStore['startupInstallNotReadyCount']).toBeUndefined()
+  })
+
+  it('clears a stale not-ready counter once its version is no longer newer', async () => {
+    settingsStore['startupInstallNotReadyVersion'] = '1.0.0'
+    settingsStore['startupInstallNotReadyCount'] = 2
+    mockAppVersion = '1.0.0' // that version is now running
+    const updater = await bootUpdater()
+    expect(await updater.applyPendingUpdateOnStartup()).toBe(false)
+    expect(settingsStore['startupInstallNotReadyVersion']).toBeUndefined()
+    expect(settingsStore['startupInstallNotReadyCount']).toBeUndefined()
   })
 
   it('clears stale markers once the staged version is actually running', async () => {
