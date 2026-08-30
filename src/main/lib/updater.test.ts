@@ -332,6 +332,112 @@ describe('app-update telemetry dedup (volume regression)', () => {
 })
 
 /**
+ * Download visibility: any in-flight download (auto-on background included)
+ * must surface as the `'downloading'` state so the title-bar pill and the
+ * Settings progress bar reflect it. Auto-on downloads used to keep the state
+ * `null`, leaving the UI claiming "up to date" for the whole download.
+ */
+describe('app-update state during downloads', () => {
+  let listeners: Record<string, Array<(...args: unknown[]) => void>>
+  let fakeUpdater: { on: typeof vi.fn; checkForUpdates: ReturnType<typeof vi.fn> }
+  let isAutoInstallOn: boolean
+
+  beforeEach(async () => {
+    vi.resetModules()
+    listeners = {}
+    isAutoInstallOn = true
+    fakeUpdater = {
+      on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+        listeners[event] = listeners[event] || []
+        listeners[event].push(cb)
+      }) as unknown as typeof vi.fn,
+      checkForUpdates: vi.fn(async () => ({ updateInfo: { version: 'unused' } }))
+    }
+    vi.doMock('@todesktop/runtime', () => ({ default: { autoUpdater: fakeUpdater } }))
+    vi.doMock('./telemetry', () => ({
+      emit: vi.fn(),
+      bucketError: (s: string) => s,
+      deriveAppChannel: () => 'stable'
+    }))
+    vi.doMock('../settings', () => ({
+      get: vi.fn((key: string) => (key === 'autoInstallUpdates' ? isAutoInstallOn : undefined)),
+      set: vi.fn()
+    }))
+  })
+
+  function fire(eventName: string, payload: unknown): void {
+    for (const cb of listeners[eventName] || []) cb(payload)
+  }
+
+  it('an auto-on background download surfaces as downloading with its version', async () => {
+    const updater = await bootUpdater()
+
+    // Auto-on: update-available stays silent (no 'available' pill)...
+    fire('update-available', { version: '9.9.9' })
+    expect(updater.getCurrentUpdateState().kind).toBeNull()
+
+    // ...but the first progress tick makes the download visible.
+    fire('download-progress', { percent: 3 })
+    expect(updater.getCurrentUpdateState()).toEqual({
+      kind: 'downloading',
+      version: '9.9.9',
+      autoUpdate: true
+    })
+
+    fire('update-downloaded', { version: '9.9.9' })
+    expect(updater.getCurrentUpdateState().kind).toBe('ready')
+  })
+
+  it('a failed auto-on download returns to the silent idle state', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-available', { version: '9.9.9' })
+    fire('download-progress', { percent: 3 })
+    expect(updater.getCurrentUpdateState().kind).toBe('downloading')
+
+    fire('error', new Error('network blip'))
+    expect(updater.getCurrentUpdateState()).toEqual({
+      kind: null,
+      version: null,
+      autoUpdate: true
+    })
+  })
+
+  it('a failed auto-off download rolls back to available so the user can retry', async () => {
+    isAutoInstallOn = false
+    const updater = await bootUpdater()
+
+    fire('update-available', { version: '9.9.9' })
+    expect(updater.getCurrentUpdateState().kind).toBe('available')
+
+    fire('download-progress', { percent: 3 })
+    expect(updater.getCurrentUpdateState()).toEqual({
+      kind: 'downloading',
+      version: '9.9.9',
+      autoUpdate: false
+    })
+
+    fire('error', new Error('network blip'))
+    expect(updater.getCurrentUpdateState()).toEqual({
+      kind: 'available',
+      version: '9.9.9',
+      autoUpdate: false
+    })
+  })
+
+  it('progress ticks never downgrade a ready state', async () => {
+    const updater = await bootUpdater()
+
+    fire('update-downloaded', { version: '9.9.9' })
+    expect(updater.getCurrentUpdateState().kind).toBe('ready')
+
+    // A trailing tick (or a re-validation pass) must not flip ready back.
+    fire('download-progress', { percent: 100 })
+    expect(updater.getCurrentUpdateState().kind).toBe('ready')
+  })
+})
+
+/**
  * Issue #1065 — install staged Desktop updates at startup instead of
  * silently on quit, and never spawn the installer while the OS session is
  * ending. Installing on quit is what a Windows shutdown interrupts mid-write,

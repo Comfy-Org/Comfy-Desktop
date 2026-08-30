@@ -511,14 +511,21 @@ function bindUpdaterEvents(): void {
     clearQuitReason()
     _autoDownloadTriggeredFor = null
     _userInitiatedDownload = false
-    // Roll a `'downloading'` state back to `'available'` so the
+    // A failed download can't stay in `'downloading'`. Auto-on downloads
+    // return to the silent idle state (the periodic auto-check retries on
+    // its own; surfacing an "available" pill for a background blip would be
+    // noise). User-initiated downloads roll back to `'available'` so the
     // pill/panel offer "Download" again and the user can retry.
     if (_appUpdateState.kind === 'downloading') {
-      _setUpdateState({
-        kind: 'available',
-        version: _appUpdateState.version,
-        autoUpdate: _appUpdateState.autoUpdate
-      })
+      if (_appUpdateState.autoUpdate) {
+        _setUpdateState({ kind: null, version: null, autoUpdate: true })
+      } else {
+        _setUpdateState({
+          kind: 'available',
+          version: _appUpdateState.version,
+          autoUpdate: _appUpdateState.autoUpdate
+        })
+      }
     }
     if (wasUserInitiated) {
       // Only surface failures the user is actively waiting on.
@@ -536,14 +543,14 @@ function bindUpdaterEvents(): void {
   // electron-updater's `ProgressInfo` — we narrow it to the fields
   // the UI actually uses.
   //
-  // The first tick of a user-initiated download also flips the cached
-  // app-update state from `'available'` → `'downloading'`, so the
-  // title-bar pill and the Settings panel both swap their CTAs and
-  // share a single source of truth (clicking the pill now routes to
-  // Settings instead of re-opening the Download confirm modal).
-  // Auto-on background downloads stay silent (state stays `null`)
-  // until `update-downloaded` flips to `'ready'`, preserving the
-  // existing zero-noise auto-install UX.
+  // The first tick of ANY download (user-initiated or auto-on background)
+  // flips the cached app-update state to `'downloading'`, so the title-bar
+  // pill shows "Downloading update" and the Settings panel shows the
+  // progress bar with percent / bytes / speed; clicking the pill routes to
+  // Settings. Auto-on downloads used to stay silent (state `null`) until
+  // `update-downloaded`, which left the UI claiming "up to date" while
+  // hundreds of megabytes were in flight - the same invisibility that hid
+  // the startup re-download behind the update loop.
   updater.on('download-progress', (info: unknown) => {
     for (const cb of _downloadProgressObservers) cb()
     const p = asRecord(info)
@@ -552,15 +559,13 @@ function bindUpdaterEvents(): void {
     const transferred = typeof p.transferred === 'number' ? p.transferred : null
     const total = typeof p.total === 'number' ? p.total : null
     const bytesPerSecond = typeof p.bytesPerSecond === 'number' ? p.bytesPerSecond : null
-    if (
-      _userInitiatedDownload &&
-      _appUpdateState.kind !== 'downloading' &&
-      _appUpdateState.kind !== 'ready'
-    ) {
+    if (_appUpdateState.kind !== 'downloading' && _appUpdateState.kind !== 'ready') {
       _setUpdateState({
         kind: 'downloading',
-        version: _appUpdateState.version,
-        autoUpdate: _appUpdateState.autoUpdate
+        // Auto-on downloads skip the `'available'` state, so the cached
+        // state carries no version; the auto-download trigger recorded it.
+        version: _appUpdateState.version ?? _autoDownloadTriggeredFor,
+        autoUpdate: isAutoInstallEnabled()
       })
     }
     _broadcastToRenderer('app-update:download-progress', {
