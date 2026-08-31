@@ -31,6 +31,10 @@ export function useCloudGate(options: { immediate?: boolean } = {}): CloudGate {
 
   const freeRunsEnabled = ref(false)
   const userTier = ref<CloudUserTier>('unknown')
+  // Distinguishes a resolved `'unknown'` (new/unsigned user — offer them) from a
+  // failed tier fetch (we don't know their tier — fail closed). Both would read
+  // `'unknown'` otherwise, and blindly advertising "free" on an error is wrong.
+  const tierResolved = ref(false)
   const cloudInstall = ref<Installation | null>(null)
 
   /** A miss re-reads through main, since the store is empty on a cold start. */
@@ -45,24 +49,40 @@ export function useCloudGate(options: { immediate?: boolean } = {}): CloudGate {
     return all.find(isCloud) ?? null
   }
 
+  async function resolveTier(): Promise<{ tier: CloudUserTier; resolved: boolean }> {
+    try {
+      return { tier: await window.api.getCloudUserTier(), resolved: true }
+    } catch {
+      // Fetch failed — leave `resolved` false so the offer fails closed rather
+      // than treating an error as a new-user `'unknown'`.
+      return { tier: 'unknown', resolved: false }
+    }
+  }
+
   async function resolve(): Promise<void> {
-    const [enabled, tier, install] = await Promise.all([
+    const [enabled, tierResult, install] = await Promise.all([
       settled(() => window.api.getCloudFreeRunsEnabled(), false),
-      settled(() => window.api.getCloudUserTier(), 'unknown' as CloudUserTier),
+      resolveTier(),
       findCloudInstall()
     ])
     freeRunsEnabled.value = enabled
-    userTier.value = tier
+    userTier.value = tierResult.tier
+    tierResolved.value = tierResult.resolved
     cloudInstall.value = install
   }
 
-  // Offer to everyone who isn't a confirmed paying customer — the "Try Cloud
+  // Offer to a non-paying user whose tier we actually resolved. The "Try Cloud
   // free" copy targets new/unsigned users, whose tier reads `'unknown'` until
-  // the cloud page signs in. Gating on `=== 'free'` hid it from exactly that
-  // audience on a fresh launch; `!== 'paid'` covers `'free'` and `'unknown'`
-  // while still suppressing it for paid users, where the "free" copy is wrong.
+  // the cloud page signs in — gating on `=== 'free'` hid it from exactly them on
+  // a fresh launch. `!== 'paid'` covers `'free'` and a resolved `'unknown'`,
+  // while `tierResolved` fails closed on a tier-fetch error (an unknown tier we
+  // couldn't confirm), and paid users stay excluded since the copy says "free".
   const canOffer = computed(
-    () => freeRunsEnabled.value && userTier.value !== 'paid' && cloudInstall.value !== null
+    () =>
+      freeRunsEnabled.value &&
+      tierResolved.value &&
+      userTier.value !== 'paid' &&
+      cloudInstall.value !== null
   )
 
   /** Opens Cloud in its own window, leaving this install untouched. Runs the
