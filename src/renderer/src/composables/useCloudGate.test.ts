@@ -107,18 +107,38 @@ describe('the gate fails closed', () => {
     expect(gate.canOffer.value).toBe(false)
   })
 
-  it('stays shut when a signal throws', async () => {
+  it('stays shut when the flag fetch throws', async () => {
     stubApi({ getCloudFreeRunsEnabled: vi.fn().mockRejectedValue(new Error('offline')) })
     const gate = setup()
     await gate.resolve()
     expect(gate.canOffer.value).toBe(false)
   })
+})
 
-  it('stays shut when the tier lookup throws', async () => {
+describe('the offer targets non-paying users', () => {
+  it('offers to a confirmed free user', async () => {
+    stubApi({ getCloudUserTier: vi.fn().mockResolvedValue('free') })
+    const gate = setup()
+    await gate.resolve()
+    expect(gate.canOffer.value).toBe(true)
+  })
+
+  // The "Try Cloud free" copy targets new/unsigned users, whose tier reads
+  // `'unknown'` until the cloud page signs in. They must see the offer.
+  it('offers when the tier is still unknown (fresh, unsigned launch)', async () => {
+    stubApi({ getCloudUserTier: vi.fn().mockResolvedValue('unknown') })
+    const gate = setup()
+    await gate.resolve()
+    expect(gate.canOffer.value).toBe(true)
+  })
+
+  // A tier lookup failure falls back to `'unknown'`, which is not `'paid'`, so
+  // the offer still shows — the flag + cloud-install checks are what fail closed.
+  it('offers when the tier lookup throws (falls back to unknown)', async () => {
     stubApi({ getCloudUserTier: vi.fn().mockRejectedValue(new Error('offline')) })
     const gate = setup()
     await gate.resolve()
-    expect(gate.canOffer.value).toBe(false)
+    expect(gate.canOffer.value).toBe(true)
   })
 })
 

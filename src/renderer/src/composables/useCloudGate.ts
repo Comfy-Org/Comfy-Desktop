@@ -9,8 +9,9 @@ import type { CloudUserTier, Installation } from '../types/ipc'
 export interface CloudGate {
   freeRunsEnabled: Ref<boolean>
   userTier: Ref<CloudUserTier>
-  /** True once the flag and tier both allow an offer AND a cloud installation
-   *  exists to launch. Never true before `resolve()` has run. */
+  /** True once the free-runs flag is on, the user isn't a confirmed paying
+   *  customer, AND a cloud installation exists to launch. Never true before
+   *  `resolve()` has run. */
   canOffer: ComputedRef<boolean>
   resolve: () => Promise<void>
   openCloud: () => Promise<boolean>
@@ -55,8 +56,13 @@ export function useCloudGate(options: { immediate?: boolean } = {}): CloudGate {
     cloudInstall.value = install
   }
 
+  // Offer to everyone who isn't a confirmed paying customer — the "Try Cloud
+  // free" copy targets new/unsigned users, whose tier reads `'unknown'` until
+  // the cloud page signs in. Gating on `=== 'free'` hid it from exactly that
+  // audience on a fresh launch; `!== 'paid'` covers `'free'` and `'unknown'`
+  // while still suppressing it for paid users, where the "free" copy is wrong.
   const canOffer = computed(
-    () => freeRunsEnabled.value && userTier.value === 'free' && cloudInstall.value !== null
+    () => freeRunsEnabled.value && userTier.value !== 'paid' && cloudInstall.value !== null
   )
 
   /** Opens Cloud in its own window, leaving this install untouched. Runs the
