@@ -105,80 +105,20 @@ jobs:
       # have write access without touching the file users read.
       # Diagnoses the token rather than just failing: which permissions it
       # carries, and whether the bucket is even in this account.
-      - name: dry run - what the R2 token can actually do
+      # Reports what each credential can and cannot do, so a failure names the
+      # permission to request rather than just saying it was refused.
+      - name: dry run - R2 credentials
         if: inputs.dry_run == true
-        continue-on-error: true
         env:
           CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CF_TOKEN: ${{ secrets.R2_STARTER_TEMPLATES_TOKEN }}
-        run: |
-          say() { say "$1"; echo "$1"; }
-          say "### R2"
+        run: bash .github/scripts/check-r2.sh
 
-          verify=$(curl -s https://api.cloudflare.com/client/v4/user/tokens/verify \
-            -H "Authorization: Bearer $CF_TOKEN")
-          if [ "$(echo "$verify" | jq -r .success)" != "true" ]; then
-            say "- Token is not valid: $(echo "$verify" | jq -c '.errors')"
-            exit 1
-          fi
-          say "- Token is valid and active"
-
-          # Does the token see the bucket at all? Distinguishes "wrong account
-          # or no R2 scope" from "read but not write".
-          buckets=$(curl -s -o /tmp/buckets.json -w '%{http_code}' \
-            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets" \
-            -H "Authorization: Bearer $CF_TOKEN")
-          if [ "$buckets" = "200" ]; then
-            if jq -e '.result.buckets[]? | select(.name=="desktop-assets")' /tmp/buckets.json >/dev/null; then
-              say "- Can list buckets, and desktop-assets is in this account"
-            else
-              say "- Can list buckets, but desktop-assets is NOT in this account"
-              say "  Visible: $(jq -r '[.result.buckets[]?.name] | join(", ")' /tmp/buckets.json)"
-            fi
-          else
-            say "- Cannot list buckets (HTTP $buckets) - token lacks an R2 read scope on this account"
-          fi
-
-          # Read the file we would overwrite, to separate read from write.
-          readc=$(curl -s -o /dev/null -w '%{http_code}' \
-            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/desktop-assets/objects/standalone-environments/starter-templates.json" \
-            -H "Authorization: Bearer $CF_TOKEN")
-          say "- Read the published file: HTTP $readc"
-
-          KEY="standalone-environments/.credential-check-${{ github.run_id }}.json"
-          echo '{"check":true}' > /tmp/check.json
-          writec=$(curl -s -o /tmp/write.json -w '%{http_code}' -X PUT \
-            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/desktop-assets/objects/$KEY" \
-            -H "Authorization: Bearer $CF_TOKEN" \
-            -H "Content-Type: application/json" --data-binary @/tmp/check.json)
-          say "- Write a throwaway object: HTTP $writec"
-          if [ "$writec" = "200" ]; then
-            curl -s -X DELETE \
-              "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/desktop-assets/objects/$KEY" \
-              -H "Authorization: Bearer $CF_TOKEN" >/dev/null
-            say "- Cleaned up. **R2 is ready.**"
-          else
-            say "- Refused: $(jq -c '.errors' /tmp/write.json)"
-            say "- **Needs an R2 token with Object Read & Write on desktop-assets.**"
-          fi
-
-      # Separate step, so an R2 failure never hides the mirror's status.
-      - name: dry run - what the GCS key can actually do
-        if: inputs.dry_run == true
-        continue-on-error: true
-        run: |
-          say() { say "$1"; echo "$1"; }
-          say "### GCS mirror"
-          say "- Authenticated as $(gcloud config get-value account 2>/dev/null)"
-          KEY=".credential-check-${{ github.run_id }}.json"
-          echo '{"check":true}' > /tmp/check.json
-          if gcloud storage cp /tmp/check.json "gs://comfy-desktop-public/standalone-environments/$KEY" 2>/tmp/gcs.err; then
-            gcloud storage rm "gs://comfy-desktop-public/standalone-environments/$KEY" >/dev/null 2>&1
-            say "- Wrote and deleted a throwaway object. **Mirror is ready.**"
-          else
-            say "- Refused: \`$(tail -2 /tmp/gcs.err | tr '\n' ' ')\`"
-            say "- **Needs Storage Object Admin on comfy-desktop-public.**"
-          fi
+      # `always()` so an R2 failure never hides the mirror's status; the job
+      # still fails overall if either is refused.
+      - name: dry run - GCS mirror credentials
+        if: always() && inputs.dry_run == true
+        run: bash .github/scripts/check-gcs.sh
 
       - name: confirm both hosts serve it
         if: inputs.dry_run != true
