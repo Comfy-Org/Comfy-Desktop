@@ -103,18 +103,80 @@ jobs:
 
       # A real write and delete under a throwaway key, so the token is proven to
       # have write access without touching the file users read.
-      - name: dry run - prove the R2 token can write
+      # Diagnoses the token rather than just failing: which permissions it
+      # carries, and whether the bucket is even in this account.
+      - name: dry run - what the R2 token can actually do
         if: inputs.dry_run == true
+        continue-on-error: true
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.R2_STARTER_TEMPLATES_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_TOKEN: ${{ secrets.R2_STARTER_TEMPLATES_TOKEN }}
         run: |
+          echo "### R2" >> "$GITHUB_STEP_SUMMARY"
+
+          verify=$(curl -s https://api.cloudflare.com/client/v4/user/tokens/verify \
+            -H "Authorization: Bearer $CF_TOKEN")
+          if [ "$(echo "$verify" | jq -r .success)" != "true" ]; then
+            echo "- Token is not valid: $(echo "$verify" | jq -c '.errors')" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "- Token is valid and active" >> "$GITHUB_STEP_SUMMARY"
+
+          # Does the token see the bucket at all? Distinguishes "wrong account
+          # or no R2 scope" from "read but not write".
+          buckets=$(curl -s -o /tmp/buckets.json -w '%{http_code}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets" \
+            -H "Authorization: Bearer $CF_TOKEN")
+          if [ "$buckets" = "200" ]; then
+            if jq -e '.result.buckets[]? | select(.name=="desktop-assets")' /tmp/buckets.json >/dev/null; then
+              echo "- Can list buckets, and desktop-assets is in this account" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- Can list buckets, but desktop-assets is NOT in this account" >> "$GITHUB_STEP_SUMMARY"
+              echo "  Visible: $(jq -r '[.result.buckets[]?.name] | join(", ")' /tmp/buckets.json)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "- Cannot list buckets (HTTP $buckets) - token lacks an R2 read scope on this account" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Read the file we would overwrite, to separate read from write.
+          readc=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/desktop-assets/objects/standalone-environments/starter-templates.json" \
+            -H "Authorization: Bearer $CF_TOKEN")
+          echo "- Read the published file: HTTP $readc" >> "$GITHUB_STEP_SUMMARY"
+
           KEY="standalone-environments/.credential-check-${{ github.run_id }}.json"
           echo '{"check":true}' > /tmp/check.json
-          npx --yes wrangler@3 r2 object put "desktop-assets/$KEY" \
-            --file /tmp/check.json --content-type application/json
-          npx --yes wrangler@3 r2 object delete "desktop-assets/$KEY"
-          echo "R2 token can write and delete."
+          writec=$(curl -s -o /tmp/write.json -w '%{http_code}' -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/desktop-assets/objects/$KEY" \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            -H "Content-Type: application/json" --data-binary @/tmp/check.json)
+          echo "- Write a throwaway object: HTTP $writec" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$writec" = "200" ]; then
+            curl -s -X DELETE \
+              "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/desktop-assets/objects/$KEY" \
+              -H "Authorization: Bearer $CF_TOKEN" >/dev/null
+            echo "- Cleaned up. **R2 is ready.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Refused: $(jq -c '.errors' /tmp/write.json)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Needs an R2 token with Object Read & Write on desktop-assets.**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Separate step, so an R2 failure never hides the mirror's status.
+      - name: dry run - what the GCS key can actually do
+        if: inputs.dry_run == true
+        continue-on-error: true
+        run: |
+          echo "### GCS mirror" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Authenticated as $(gcloud config get-value account 2>/dev/null)" >> "$GITHUB_STEP_SUMMARY"
+          KEY=".credential-check-${{ github.run_id }}.json"
+          echo '{"check":true}' > /tmp/check.json
+          if gcloud storage cp /tmp/check.json "gs://comfy-desktop-public/standalone-environments/$KEY" 2>/tmp/gcs.err; then
+            gcloud storage rm "gs://comfy-desktop-public/standalone-environments/$KEY" >/dev/null 2>&1
+            echo "- Wrote and deleted a throwaway object. **Mirror is ready.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Refused: \`$(tail -2 /tmp/gcs.err | tr '\n' ' ')\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Needs Storage Object Admin on comfy-desktop-public.**" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: confirm both hosts serve it
         if: inputs.dry_run != true
