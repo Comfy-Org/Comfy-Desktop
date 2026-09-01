@@ -86,8 +86,7 @@ jobs:
           npx --yes wrangler@3 r2 object put \
             desktop-assets/standalone-environments/starter-templates.json \
             --file assets/starter-templates.json \
-            --content-type application/json \
-            --remote
+            --content-type application/json
 
       # Runs on a dry run too: a bad service-account key fails here.
       - name: authenticate to GCS
@@ -113,8 +112,8 @@ jobs:
           KEY="standalone-environments/.credential-check-${{ github.run_id }}.json"
           echo '{"check":true}' > /tmp/check.json
           npx --yes wrangler@3 r2 object put "desktop-assets/$KEY" \
-            --file /tmp/check.json --content-type application/json --remote
-          npx --yes wrangler@3 r2 object delete "desktop-assets/$KEY" --remote
+            --file /tmp/check.json --content-type application/json
+          npx --yes wrangler@3 r2 object delete "desktop-assets/$KEY"
           echo "R2 token can write and delete."
 
       - name: confirm both hosts serve it
