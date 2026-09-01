@@ -15,6 +15,14 @@ on:
     paths:
       - 'assets/starter-templates.json'
       - '.github/workflows/starter-templates.yml'
+  # Lets us prove the credentials work before merging, rather than finding out
+  # on the merge that publishes to users.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Check credentials without touching the published file'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -56,7 +64,7 @@ jobs:
   # Merging to main publishes the list. Desktop reads it at boot, so users pick
   # the change up on their next launch with no app release.
   publish:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
     environment: starter-templates
@@ -70,6 +78,7 @@ jobs:
       # GCS mirror, and a list that exists on only one of them is invisible to
       # half the users it was written for.
       - name: publish to R2
+        if: inputs.dry_run != true
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.R2_STARTER_TEMPLATES_TOKEN }}
@@ -80,18 +89,36 @@ jobs:
             --content-type application/json \
             --remote
 
-      - name: publish to the GCS mirror
+      # Runs on a dry run too: a bad service-account key fails here.
+      - name: authenticate to GCS
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCS_MIRROR_SA_KEY }}
       - uses: google-github-actions/upload-cloud-storage@v2
+        if: inputs.dry_run != true
         with:
           path: assets/starter-templates.json
           destination: comfy-desktop-public/standalone-environments
           headers: |-
             content-type: application/json
 
+      # A real write and delete under a throwaway key, so the token is proven to
+      # have write access without touching the file users read.
+      - name: dry run - prove the R2 token can write
+        if: inputs.dry_run == true
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.R2_STARTER_TEMPLATES_TOKEN }}
+        run: |
+          KEY="standalone-environments/.credential-check-${{ github.run_id }}.json"
+          echo '{"check":true}' > /tmp/check.json
+          npx --yes wrangler@3 r2 object put "desktop-assets/$KEY" \
+            --file /tmp/check.json --content-type application/json --remote
+          npx --yes wrangler@3 r2 object delete "desktop-assets/$KEY" --remote
+          echo "R2 token can write and delete."
+
       - name: confirm both hosts serve it
+        if: inputs.dry_run != true
         run: |
           for url in \
             https://desktop-assets.comfy.org/standalone-environments/starter-templates.json \
