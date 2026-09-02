@@ -22,9 +22,9 @@ jobs:
     # SHA-pinned per zizmor `unpinned-uses: hash-pin`. Bump this SHA to pick up
     # upstream changes; keep `workflows_ref` matching so prompts/scripts load
     # from the same commit as the workflow definition.
-    uses: Comfy-Org/github-workflows/.github/workflows/cursor-review.yml@ece4c3eaa71812a5a665f48d5d1f4bb0ff5f655e # github-workflows main (ece4c3e)
+    uses: Comfy-Org/github-workflows/.github/workflows/cursor-review.yml@02010d0d873962bbdcf01644f3ff50e9c09f59e6 # github-workflows main (02010d0)
     with:
-      workflows_ref: ece4c3eaa71812a5a665f48d5d1f4bb0ff5f655e
+      workflows_ref: 02010d0d873962bbdcf01644f3ff50e9c09f59e6
       diff_excludes: >-
         :!**/pnpm-lock.yaml
         :!**/package-lock.json
