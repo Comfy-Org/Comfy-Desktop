@@ -136,6 +136,11 @@ function check(doc) {
     } else if (t.apiNode && s.sizeBytes !== 0) {
       errors.push(`"${t.id}" is paid, so it downloads nothing and must report 0 bytes`)
     }
+    for (const flag of ['recommended', 'apiNode']) {
+      if (t[flag] !== undefined && typeof t[flag] !== 'boolean') {
+        errors.push(`"${t.id}" has a non-boolean ${flag}; the app reads it as false`)
+      }
+    }
     if (t.apiNode && t.recommended) errors.push(`"${t.id}" cannot be both paid and recommended`)
   }
 
@@ -213,8 +218,20 @@ const commands = {
     const errors = check(doc)
     const index = await liveIndex()
     for (const t of doc.templates) {
-      if (!index.has(t.id)) {
+      const live = index.get(t.id)
+      if (!live) {
         errors.push(`"${t.id}" is no longer in the template index — it would render a dead card`)
+        continue
+      }
+      // Every display field is derived, so a difference means a hand-edit.
+      const expected = entryFor(t.id, t.modality, index, {
+        recommended: t.recommended === true,
+        paid: t.apiNode === true
+      })
+      for (const field of ['title', 'description', 'sizeBytes', 'mediaSubtype']) {
+        if (t.snapshot?.[field] !== expected.snapshot[field]) {
+          errors.push(`"${t.id}" has a hand-edited ${field}; run regenerate`)
+        }
       }
     }
     if (errors.length) {

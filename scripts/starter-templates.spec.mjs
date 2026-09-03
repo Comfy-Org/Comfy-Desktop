@@ -102,6 +102,18 @@ describe('per-entry validity', () => {
   }
 })
 
+describe('the validator matches what the app reads', () => {
+  it('rejects a non-boolean flag the app would read as false', () => {
+    mutate((_d, t) => (t('image').find((c) => c.recommended).recommended = 'true'))
+    assert.equal(run('validate').ok, false)
+  })
+
+  it('rejects a hand-edited display field', () => {
+    mutate((_d, t) => (t('image')[0].snapshot.title = 'Hand-edited'))
+    assert.equal(run('validate').ok, false)
+  })
+})
+
 describe('swapping a card keeps the tab whole', () => {
   it('moves the badge when the recommended pick changes', () => {
     assert.equal(
@@ -129,8 +141,10 @@ describe('swapping a card keeps the tab whole', () => {
   })
 
   it('treats an api_ id as paid without the flag', () => {
-    run('set', '--modality', 'image', '--id', 'api_google_nano_banana2_image_edit')
-    assert.equal(tab('image').filter((c) => c.apiNode).length, 1)
+    assert.equal(run('set', '--modality', 'image', '--id', 'api_google_nano_banana2_image_edit').ok, true)
+    const paid = tab('image').filter((c) => c.apiNode)
+    assert.equal(paid.length, 1)
+    assert.equal(paid[0].id, 'api_google_nano_banana2_image_edit')
   })
 
   it('refuses an id already in the list', () => {
@@ -268,14 +282,14 @@ describe('rebuilding the whole list', () => {
 
 describe('refreshing metadata from upstream', () => {
   it('is idempotent', () => {
-    run('regenerate')
+    assert.equal(run('regenerate').ok, true)
     const once = fs.readFileSync(FILE, 'utf-8')
-    run('regenerate')
+    assert.equal(run('regenerate').ok, true)
     assert.equal(fs.readFileSync(FILE, 'utf-8'), once)
   })
 
   it('keeps the recommended and paid picks', () => {
-    run('regenerate')
+    assert.equal(run('regenerate').ok, true)
     for (const modality of ['video', 'image', '3d', 'audio']) {
       assert.equal(tab(modality).filter((c) => c.recommended).length, 1, modality)
       assert.equal(tab(modality).filter((c) => c.apiNode).length, 1, modality)
@@ -284,7 +298,7 @@ describe('refreshing metadata from upstream', () => {
 
   it('restores a hand-edited field, which is what CI detects', () => {
     mutate((_d, t) => (t('video')[0].snapshot.title = 'Hand-edited'))
-    run('regenerate')
+    assert.equal(run('regenerate').ok, true)
     assert.notEqual(tab('video')[0].snapshot.title, 'Hand-edited')
   })
 })
