@@ -538,6 +538,7 @@
     "checkingForUpdates": "正在检查…",
     "telemetry": "遥测",
     "telemetryEnabled": "分享匿名使用遥测",
+    "betaFeaturesEnabled": "加入 Beta 功能测试",
     "models": "共享模型",
     "modelDirectories": "模型目录",
     "modelStorage": "模型",

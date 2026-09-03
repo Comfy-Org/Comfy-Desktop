@@ -538,6 +538,7 @@
     "checkingForUpdates": "Checking…",
     "telemetry": "Telemetry",
     "telemetryEnabled": "Share anonymous usage telemetry",
+    "betaFeaturesEnabled": "Opt in to beta features",
     "models": "Shared Models",
     "modelDirectories": "Model Directories",
     "modelStorage": "Models",

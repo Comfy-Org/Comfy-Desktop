@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // Configurable settings store returned by the mocked `./shared` module.
 const mockSettings: Record<string, unknown> = {}
 
+// Stubbed seeding resolver. Held in an object so the vi.mock factory (hoisted
+// above this file's statements) reads the value at call time, not at import.
+const mockBeta = { resolved: false }
+
 // Real English strings so label assertions catch missing locale keys (see
 // lookupEnMessage). Dynamic import: vi.mock factories are hoisted, so they
 // can't reference top-level static imports.
@@ -12,7 +16,10 @@ vi.mock('./shared', async () => {
     ipcMain: { handle: vi.fn(), on: vi.fn() },
     nativeTheme: {},
     sources: [],
-    settings: { getAll: () => mockSettings },
+    settings: {
+      getAll: () => mockSettings,
+      resolveBetaFeaturesEnabled: () => mockBeta.resolved
+    },
     i18n: {
       t: (key: string) => lookupEnMessage(key),
       getLocale: () => 'en',
@@ -41,6 +48,39 @@ import { buildSettingsSections } from './registerSettingsHandlers'
 describe('buildSettingsSections', () => {
   beforeEach(() => {
     for (const key of Object.keys(mockSettings)) delete mockSettings[key]
+    mockBeta.resolved = false
+  })
+
+  // Sourcing this from the raw setting would either re-seed on every read or
+  // coerce an undefined store to ON; the resolver owns the one-time seed, so
+  // the field must mirror the resolver even when the two disagree.
+  it('sources the beta-features field from the seeding resolver', () => {
+    mockSettings.betaFeaturesEnabled = false
+    mockBeta.resolved = true
+
+    const fields = buildSettingsSections().flatMap(
+      (s) => (s.fields as { id?: string; value?: unknown; type?: string }[] | undefined) ?? []
+    )
+
+    expect(fields).toContainEqual(
+      expect.objectContaining({
+        id: 'betaFeaturesEnabled',
+        label: 'Opt in to beta features',
+        type: 'boolean',
+        value: true
+      })
+    )
+  })
+
+  it('reports the beta-features field as off when the resolver says off', () => {
+    mockSettings.betaFeaturesEnabled = true
+    mockBeta.resolved = false
+
+    const fields = buildSettingsSections().flatMap(
+      (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []
+    )
+
+    expect(fields.find((f) => f.id === 'betaFeaturesEnabled')?.value).toBe(false)
   })
 
   it('does not offer the Manager security level globally (it is per-install)', () => {

@@ -43,6 +43,8 @@ interface Snapshot {
   installLocationFields: Record<string, unknown>[]
   modelsDirs: ModelsDir[]
   modelsSystemDefault: string
+  /** Explicit telemetry consent. Gates opting into beta features. */
+  telemetryGranted: boolean
   appUpdate: {
     state: Record<string, unknown>
     progress: Record<string, unknown> | null
