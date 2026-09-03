@@ -171,16 +171,47 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   if (mode !== 'comfy') {
     ensurePanelView(windowKey, entry, mode)
   }
+  // Overlay panels reveal only after the renderer's `overlay-ready` ack (see
+  // layoutViews); clear the flag for non-overlay targets so it can't strand.
+  const isOverlay = mode === 'feedback' || mode === 'mcp-setup' || mode === 'announcement'
+  entry.pendingOverlayReveal = isOverlay
+  // Drop any prior fallback timer so a stale one can't reveal this open early.
+  if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
+  entry.overlayRevealTimer = undefined
   forwardToPanelRenderer(entry, 'panel-switch', {
     panel: mode,
     installationId: entry.installationId ?? ''
   })
   entry.layoutViews()
+  // Reveal anyway if the ack never arrives (crash / lost IPC); a late ack no-ops.
+  if (isOverlay) {
+    entry.overlayRevealTimer = setTimeout(() => {
+      entry.overlayRevealTimer = undefined
+      if (!entry.pendingOverlayReveal || entry.window.isDestroyed()) return
+      entry.pendingOverlayReveal = false
+      entry.layoutViews()
+    }, 400)
+  }
   if (!entry.titleBarView.webContents.isDestroyed()) {
     // Pill stays on the user-visible key, not 'comfy-lifecycle'.
     entry.titleBarView.webContents.send('comfy-titlebar:panel-changed', panel)
   }
   focusActiveBody(entry)
+}
+
+/**
+ * Warm the install-backed panel in the background right after a chooser-pick
+ * in-place attach, so the first Settings/MCP click doesn't build it cold.
+ *
+ * The reset to `'comfy'` MUST precede `ensurePanelView`: the picker drove its
+ * launch through a `'progress'` overlay on this host, and without clearing it
+ * `computeBodyMode` stays `'progress'` — the rebuilt panel would then cover the
+ * just-attached canvas with a stranded progress surface.
+ */
+export function prewarmAttachedPanel(entry: ComfyWindowEntry): void {
+  setActivePanel(entry.windowKey, 'comfy')
+  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
+  entry.layoutViews()
 }
 
 /**
@@ -255,6 +286,21 @@ export function registerPanelViewIpc(): void {
     for (const [id, entry] of comfyWindows) {
       if (entry.panelView?.webContents === event.sender) {
         setActivePanel(id, 'comfy')
+        return
+      }
+    }
+  })
+
+  // The panel renderer painted an overlay modal; reveal the until-now-hidden
+  // panel view so it appears with content rather than as an opaque flash.
+  ipcMain.on('comfy-window:overlay-ready', (event) => {
+    for (const entry of comfyWindows.values()) {
+      if (entry.panelView?.webContents === event.sender) {
+        if (!entry.pendingOverlayReveal) return
+        entry.pendingOverlayReveal = false
+        if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
+        entry.overlayRevealTimer = undefined
+        if (!entry.window.isDestroyed()) entry.layoutViews()
         return
       }
     }

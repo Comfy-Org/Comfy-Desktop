@@ -5,7 +5,8 @@ import path from 'path'
 import {
   clearStartupAttemptMarker,
   readStartupAttemptMarker,
-  recordStartupAttempt
+  recordStartupAttempt,
+  recordStartupAttemptOutcome
 } from './startup-attempt-marker'
 
 /**
@@ -42,9 +43,12 @@ describe('startup attempt marker', () => {
   })
 
   it('records, reads back, and clears a marker', () => {
-    expect(recordStartupAttempt('1.0.35')).toBe(true)
+    expect(recordStartupAttempt('1.0.35', 'attempt-35')).toBe(true)
     const read = readStartupAttemptMarker()
-    expect(read).toMatchObject({ state: 'present', marker: { version: '1.0.35' } })
+    expect(read).toMatchObject({
+      state: 'present',
+      marker: { version: '1.0.35', attemptId: 'attempt-35' }
+    })
     expect(read.state === 'present' && read.marker.attemptedAt).toBeTruthy()
 
     clearStartupAttemptMarker()
@@ -53,10 +57,31 @@ describe('startup attempt marker', () => {
   })
 
   it('overwrites a previous marker with the new version', () => {
-    expect(recordStartupAttempt('1.0.34')).toBe(true)
-    expect(recordStartupAttempt('1.0.35')).toBe(true)
+    expect(recordStartupAttempt('1.0.34', 'attempt-34')).toBe(true)
+    expect(recordStartupAttempt('1.0.35', 'attempt-35')).toBe(true)
     const read = readStartupAttemptMarker()
-    expect(read).toMatchObject({ state: 'present', marker: { version: '1.0.35' } })
+    expect(read).toMatchObject({
+      state: 'present',
+      marker: { version: '1.0.35', attemptId: 'attempt-35' }
+    })
+  })
+
+  it('records an emitted outcome without removing the loop-breaker', () => {
+    expect(recordStartupAttempt('1.0.35', 'attempt-35')).toBe(true)
+    const read = readStartupAttemptMarker()
+    expect(read.state).toBe('present')
+    if (read.state !== 'present') return
+
+    recordStartupAttemptOutcome(read.marker, 'still_pending')
+
+    expect(readStartupAttemptMarker()).toMatchObject({
+      state: 'present',
+      marker: {
+        version: '1.0.35',
+        attemptId: 'attempt-35',
+        reportedOutcome: 'still_pending'
+      }
+    })
   })
 
   it('treats a corrupt marker file as absent instead of throwing', () => {
@@ -96,7 +121,7 @@ describe('startup attempt marker', () => {
     // not enough); the caller must treat this as "do not install".
     mockConfigDir = path.join(dir, 'blocker')
     fs.writeFileSync(mockConfigDir, 'not a directory')
-    expect(recordStartupAttempt('1.0.35')).toBe(false)
+    expect(recordStartupAttempt('1.0.35', 'attempt-35')).toBe(false)
   })
 
   it('returns false when the marker writes but cannot be read back (fail closed)', () => {
@@ -116,7 +141,7 @@ describe('startup attempt marker', () => {
       return realRead(p, opts as BufferEncoding)
     }) as typeof fs.readFileSync)
 
-    expect(recordStartupAttempt('1.0.35')).toBe(false)
+    expect(recordStartupAttempt('1.0.35', 'attempt-35')).toBe(false)
     vi.restoreAllMocks()
     // The write itself landed; only the read-back verification failed.
     expect(fs.existsSync(markerFile())).toBe(true)

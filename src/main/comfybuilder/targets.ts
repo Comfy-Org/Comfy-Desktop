@@ -1,10 +1,9 @@
 /**
  * Target resolution - pure host <-> artifact matching.
  *
- * A version fans out into per-target artifacts (os x gpu x accel). The UI picks
- * ONE distribution + version; this module picks the artifact for the host, so a
- * user never chooses `windows/cpu` vs `windows/nvidia` by hand. Pure functions,
- * no I/O; the caller supplies the host GPU (Desktop already detects it).
+ * A version fans out into per-target artifacts (os x gpu x accel). This module
+ * identifies and ranks every artifact the host can run. Pure functions, no I/O;
+ * the caller supplies the host GPU (Desktop already detects it).
  */
 import type { Artifact, ArtifactGpu, ArtifactOs, Host } from './types'
 
@@ -44,26 +43,29 @@ function score(a: Artifact, host: Host): number {
 }
 
 /**
+ * Every ready artifact this host can run, best match first. Exact GPU matches
+ * precede the CPU fallback, then accelerator preference and stable target IDs
+ * make the order deterministic.
+ */
+export function compatibleArtifactsForHost(artifacts: readonly Artifact[], host: Host): Artifact[] {
+  return artifacts
+    .filter((artifact) => artifact.status === 'ready' && artifact.os === host.os)
+    .filter((artifact) => score(artifact, host) > 0)
+    .sort((a, b) => {
+      const scoreDifference = score(b, host) - score(a, host)
+      if (scoreDifference !== 0) return scoreDifference
+      const variantDifference = b.accelVariant.localeCompare(a.accelVariant)
+      if (variantDifference !== 0) return variantDifference
+      return a.id.localeCompare(b.id)
+    })
+}
+
+/**
  * Pick the best `ready` artifact for the host: OS must match, then GPU fit
  * (exact, else CPU fallback), then a preferred `accelVariant`, then a
  * deterministic tie-break. Returns null when the version has no runnable
  * artifact for this machine (e.g. a windows-only build on mac).
  */
 export function selectArtifactForHost(artifacts: readonly Artifact[], host: Host): Artifact | null {
-  let best: Artifact | null = null
-  let bestScore = 0
-  for (const a of artifacts) {
-    if (a.status !== 'ready' || a.os !== host.os) continue
-    const s = score(a, host)
-    if (s <= 0) continue
-    // Strictly greater wins; on an exact tie, the lexicographically larger
-    // accelVariant wins (the newer accelerator build, e.g. cu128 over cu118)
-    // so selection is deterministic across input orderings and never
-    // regresses to an older build.
-    if (s > bestScore || (s === bestScore && best !== null && a.accelVariant > best.accelVariant)) {
-      best = a
-      bestScore = s
-    }
-  }
-  return best
+  return compatibleArtifactsForHost(artifacts, host)[0] ?? null
 }

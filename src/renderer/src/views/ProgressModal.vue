@@ -575,6 +575,7 @@ defineExpose({ startOperation, showOperation })
       />
     </template>
     <div class="brand-progress">
+      <div class="brand-progress__beam-anchor" aria-hidden="true" />
       <BrandProgressGlyph class="brand-progress__glyph" aria-hidden="true" />
       <div class="brand-progress__stack">
         <!-- Plate wraps logo + status and carries the radial scrim that knocks
@@ -764,10 +765,7 @@ defineExpose({ startOperation, showOperation })
             {{ displayedTerminalOutput }}
           </div>
         </BaseAccordion>
-        <div
-          class="brand-progress__footer-bar"
-          :class="{ 'is-centered': !currentOp.terminalOutput }"
-        >
+        <div class="brand-progress__footer-bar">
           <div class="brand-progress__footer-left">
             <template v-if="!currentOp.finished">
               <button
@@ -856,6 +854,7 @@ defineExpose({ startOperation, showOperation })
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-bottom: clamp(88px, 12vh, 148px);
 }
 /* Soft circular ink pool, dead-center, behind the wordmark/bar/text so they
    stay legible over the glyph — without reading as a shape. Per Figma it's a
@@ -978,7 +977,15 @@ defineExpose({ startOperation, showOperation })
   aspect-ratio: 1056 / 784;
   border-radius: 16px;
   overflow: hidden;
+}
+.brand-progress__beam-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
   anchor-name: --brand-beam-target;
+  pointer-events: none;
 }
 .brand-status-fade-enter-active,
 .brand-status-fade-leave-active {
@@ -1251,9 +1258,6 @@ defineExpose({ startOperation, showOperation })
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-}
-.brand-progress__footer-bar.is-centered {
-  justify-content: center;
 }
 .brand-progress__footer-left {
   display: inline-flex;

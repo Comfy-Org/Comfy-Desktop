@@ -82,6 +82,9 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
+    /** Signal that an overlay panel (feedback / mcp-setup) has painted, so main
+     *  can reveal the until-now-hidden panel view without an opaque flash. */
+    signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab) =>
@@ -105,6 +108,11 @@ export function buildElectronApi(): ElectronApi {
       }
       ipcRenderer.on('comfy-panel:open-feedback', handler)
       return () => ipcRenderer.removeListener('comfy-panel:open-feedback', handler)
+    },
+    onOpenAnnouncement: (callback) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('comfy-panel:open-announcement', handler)
+      return () => ipcRenderer.removeListener('comfy-panel:open-announcement', handler)
     },
     onCloseRequest: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>
@@ -132,6 +140,7 @@ export function buildElectronApi(): ElectronApi {
     getRunningInstances: () => ipcRenderer.invoke('get-running-instances'),
     getLaunchingInstances: () => ipcRenderer.invoke('get-launching-instances'),
     getStoppingInstances: () => ipcRenderer.invoke('get-stopping-instances'),
+    getActiveOperations: () => ipcRenderer.invoke('get-active-operations'),
     getLastCrashError: (installationId: string) =>
       ipcRenderer.invoke('get-last-crash-error', installationId),
     getCrashInstances: () => ipcRenderer.invoke('get-crash-instances'),
@@ -201,7 +210,7 @@ export function buildElectronApi(): ElectronApi {
     getDeviceId: () => ipcRenderer.invoke('get-device-id'),
 
     // Dev platform (cloud auth + comfy-builder). Tokens never cross IPC; these
-    // only ever carry AuthStatus / Workspace / distribution display rows.
+    // only ever carry AuthStatus / Workspace / build display rows.
     comfybuilder: {
       signIn: () => ipcRenderer.invoke('comfybuilder:signIn'),
       signOut: () => ipcRenderer.invoke('comfybuilder:signOut'),
@@ -215,9 +224,12 @@ export function buildElectronApi(): ElectronApi {
       listWorkspaces: () => ipcRenderer.invoke('comfybuilder:listWorkspaces'),
       switchWorkspace: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId),
-      listDistributions: () => ipcRenderer.invoke('comfybuilder:listDistributions'),
-      installDistribution: (distributionId) =>
-        ipcRenderer.invoke('comfybuilder:installDistribution', distributionId)
+      listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
+      openBuildsPage: (workspaceId) =>
+        ipcRenderer.invoke('comfybuilder:openBuildsPage', workspaceId),
+      installBuild: (request) => ipcRenderer.invoke('comfybuilder:installBuild', request),
+      promoteLocalInstance: (installationId) =>
+        ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)
     },
 
     // Model downloads
@@ -322,6 +334,12 @@ export function buildElectronApi(): ElectronApi {
         callback(data as Parameters<typeof callback>[0])
       ipcRenderer.on('instance-stopped', handler)
       return () => ipcRenderer.removeListener('instance-stopped', handler)
+    },
+    onOperationChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as Parameters<typeof callback>[0])
+      ipcRenderer.on('operation-changed', handler)
+      return () => ipcRenderer.removeListener('operation-changed', handler)
     },
     onThemeChanged: (callback) => {
       const handler = (_event: IpcRendererEvent, theme: unknown) => callback(theme as ResolvedTheme)

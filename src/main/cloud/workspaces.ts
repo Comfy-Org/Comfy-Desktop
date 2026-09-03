@@ -7,7 +7,7 @@
  * `CloudSession.switchWorkspace` drives that. This module is read-only listing.
  */
 import { CLOUD_CONFIG } from './config'
-import type { Workspace } from './types'
+import type { Workspace, WorkspaceMember } from './types'
 
 const DEFAULT_TIMEOUT_MS = 20_000
 
@@ -25,6 +25,20 @@ export interface ListWorkspacesOptions {
   /** Cloud API base. Defaults to the configured issuer's `/api`. */
   apiBase?: string
   timeoutMs?: number
+}
+
+interface WorkspaceMemberRow {
+  id: string
+  name?: string
+  email?: string
+  role?: string
+  joined_at?: string
+  is_original_owner?: boolean
+}
+
+interface WorkspaceMembersResponse {
+  members?: WorkspaceMemberRow[]
+  pagination?: { has_more?: boolean }
 }
 
 /**
@@ -59,4 +73,44 @@ export async function listWorkspaces(
     ...(w.created_at ? { createdAt: w.created_at } : {}),
     ...(w.joined_at ? { joinedAt: w.joined_at } : {})
   }))
+}
+
+/** List every member of the active workspace for creator-name resolution. */
+export async function listWorkspaceMembers(
+  accessToken: string,
+  options: ListWorkspacesOptions = {}
+): Promise<WorkspaceMember[]> {
+  const base = (options.apiBase ?? CLOUD_CONFIG.apiBase).replace(/\/+$/, '')
+  const members: WorkspaceMember[] = []
+  let offset = 0
+  let hasMore = true
+  while (hasMore) {
+    const query = new URLSearchParams({ offset: String(offset), limit: '100' })
+    const res = await fetch(`${base}/workspace/members?${query}`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+    })
+    if (res.status === 401 || res.status === 403) {
+      throw new Error('Not authorized to list workspace members')
+    }
+    if (!res.ok) throw new Error(`List workspace members failed: HTTP ${res.status}`)
+    const body: unknown = await res.json().catch(() => null)
+    const page = body && typeof body === 'object' ? (body as WorkspaceMembersResponse) : {}
+    const rows = Array.isArray(page.members) ? page.members : []
+    members.push(
+      ...rows.map((member) => ({
+        id: member.id,
+        ...(member.name ? { name: member.name } : {}),
+        ...(member.email ? { email: member.email } : {}),
+        ...(member.role ? { role: member.role } : {}),
+        ...(member.joined_at ? { joinedAt: member.joined_at } : {}),
+        ...(typeof member.is_original_owner === 'boolean'
+          ? { isOriginalOwner: member.is_original_owner }
+          : {})
+      }))
+    )
+    hasMore = page.pagination?.has_more === true && rows.length > 0
+    offset += rows.length
+  }
+  return members
 }
