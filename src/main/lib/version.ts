@@ -1,3 +1,6 @@
+import semver from 'semver'
+import type { InstallationRecord } from '../installations'
+
 /** Ground-truth version data for an installed ComfyUI, stored on the
  *  installation record as `comfyVersion`. */
 export interface ComfyVersion {
@@ -38,6 +41,24 @@ export function formatComfyVersion(v: ComfyVersion | undefined, style: 'short' |
   }
 
   return `${baseTag} + ${commitsAhead} commit${commitsAhead !== 1 ? 's' : ''} (${shortSha})`
+}
+
+/**
+ * The install's core release as a strict semver string, or `null` when it
+ * cannot be established — the input to version-gated feature decisions.
+ *
+ * Validation is deliberately whole-token (`semver.valid`, never
+ * `semver.coerce`) and fail-closed. Coercion would break the gate two ways:
+ * a git install stores only the first 8 commit chars in `version`
+ * (`src/main/sources/git.ts`), so a numeric-leading SHA like `61e5e3b5` would
+ * coerce to `61.0.0` and satisfy any minimum; and `0.3.80-rc.1` would coerce
+ * to stable `0.3.80`, enrolling prereleases that a `>=0.3.80` range must
+ * exclude. Keeping prereleases intact lets semver order them correctly.
+ */
+export function coreSemver(inst: InstallationRecord): string | null {
+  const raw = inst.comfyVersion?.baseTag ?? inst.version
+  if (typeof raw !== 'string') return null
+  return semver.valid(raw.replace(/^v/, ''))
 }
 
 /**
