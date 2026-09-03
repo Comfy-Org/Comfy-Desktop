@@ -5,57 +5,64 @@ argument-hint: '[what you want to change]'
 allowed-tools: Bash(node scripts/starter-templates.mjs *) Bash(git checkout *) Bash(git switch *) Bash(git add *) Bash(git commit *) Bash(git push *) Bash(gh pr create *) Read
 ---
 
-## Changing the starter templates
+Change the starter templates the desktop installer offers, then open a PR.
 
-First time here? See [setup.md](setup.md) — Node 22 and `gh auth login`, nothing else.
+The picker shows 4 templates in each of 4 tabs: `video`, `image`, `3d`, `audio`.
+The list is `assets/starter-templates.json`, which desktop reads from R2 at boot,
+so a merged change reaches users on their next launch with no app release.
 
-The picker shows 4 templates in each of 4 tabs (video, image, 3d, audio). The
-list lives in `assets/starter-templates.json`, which desktop reads from R2 at
-boot, so a merged change reaches users on their next launch with no app release.
+## Rules
 
-**Only ever supply template ids.** Titles, descriptions, download sizes and
-thumbnails are refreshed from the live template index whenever `set`, `replace`
-or `regenerate` runs, so they are never typed by hand. If upstream retitles a
-template already in the list, `regenerate` picks it up. Never hand-edit the JSON.
+**Never edit the JSON directly.** Every command below regenerates the display
+fields from the live template index. Hand-editing puts stale titles and sizes in
+front of users and fails CI.
 
-### 1. Find the template id
+**Only ever pass template ids.** Titles, descriptions, sizes and thumbnails are
+derived. If the user supplies them, ignore them and let the script fill them in.
+
+**Confirm the id before writing.** Run `list` first and show the user the
+matching titles. Ids differ by one character (`video_minimax_h3_t2v` vs
+`..._i2v`), so never infer one from a product name.
+
+**Never work around a rejection.** Read the message, fix the input, and tell the
+user what was wrong. Do not edit the JSON to get past it.
+
+## Steps
+
+### 1. Find the id
 
 ```bash
 node scripts/starter-templates.mjs list --modality video --free
 ```
 
-`--modality` is one of `video`, `image`, `3d`, `audio`. Add `--free` or `--paid`
-to narrow. Show the user a few relevant matches with their titles and sizes, and
-confirm which one they mean before changing anything.
+`--modality` is `video`, `image`, `3d` or `audio`. `--free` or `--paid` narrows
+it. Report the handful of relevant matches with titles and sizes, then confirm.
 
 ### 2. Make the change
 
-Swap the recommended (auto-selected) pick:
+Pick the command from what the user is changing.
+
+Swap the featured (auto-selected) pick:
 
 ```bash
-node scripts/starter-templates.mjs set --modality video --id <template_id> --recommended
+node scripts/starter-templates.mjs set --modality video --id <id> --recommended
 ```
 
 Swap the paid API-node pick:
 
 ```bash
-node scripts/starter-templates.mjs set --modality video --id <template_id> --paid
+node scripts/starter-templates.mjs set --modality video --id <id> --paid
 ```
 
-Swap a specific card:
+Swap one specific card, leaving the others alone:
 
 ```bash
 node scripts/starter-templates.mjs set --modality video --id <new_id> --replaces <old_id>
 ```
 
-Each tab keeps 4 slots, so a `set` replaces rather than appends. The script
-validates before writing and refuses anything that would break the picker.
-
-### Rebuild the whole list
-
-For a seasonal refresh rather than a one-slot swap. Four ids per tab, `*` marks
-the auto-pick, `$` marks the paid card. Use single quotes so the shell leaves
-`$` alone.
+Rebuild every tab at once, for a seasonal refresh. Four ids per tab, `*` marks
+the featured card, `$` marks the paid one. Single-quote each list so the shell
+leaves `$` alone:
 
 ```bash
 node scripts/starter-templates.mjs replace \
@@ -65,17 +72,16 @@ node scripts/starter-templates.mjs replace \
   --audio '*id_a,$api_id,id_c,id_d'
 ```
 
-### 3. Refresh stale metadata
-
-When upstream retitles or resizes a template already in the list:
+Refresh titles and sizes for the ids already in the list, changing nothing else:
 
 ```bash
 node scripts/starter-templates.mjs regenerate
 ```
 
-Same ids, refreshed display fields.
+Each tab holds 4 slots, so `set` replaces rather than appends. The script
+validates before writing, so a refusal leaves the file untouched.
 
-### 4. Open a PR
+### 3. Open a PR
 
 ```bash
 git switch -c templates/<short-description>
@@ -85,27 +91,38 @@ git push -u origin HEAD
 gh pr create --title "content(templates): <what changed>" --body "<what and why>"
 ```
 
-Say in the PR body which template was swapped for which, and why. CI re-runs
-validation, so a broken list cannot merge.
+Name the old and new template in the PR body, and why it changed. Commit only
+`assets/starter-templates.json`; nothing else should change.
 
-## Rules the script enforces
+### 4. Report back
 
-These are not style preferences. A violation is silent in the app: a short tab
-quietly backfills, and a paid auto-pick spends the user's credits on first run.
+Tell the user which template replaced which, and that it reaches users on their
+next app launch once the PR merges. Nothing ships before then.
+
+## What the script refuses
+
+These fail silently in the app, so they fail here instead.
 
 - Exactly 4 templates per tab.
-- Exactly 1 recommended per tab, and it must be free.
-- Exactly 1 paid (API-node) template per tab. One showcases the API nodes;
-  more than one breaks the open-source balance the desktop build ships under.
-  This is a distribution requirement, not a preference.
-- Every card needs a usable `mediaSubtype`, which the tooling fills in.
+- Exactly 1 featured per tab, and it must be free.
+- Exactly 1 paid (API-node) template per tab.
 - Every id must exist in the live template index.
-- No duplicate ids anywhere.
+- No duplicate ids anywhere, including across tabs.
+- Ids and text within the app's length caps.
 
-If the script rejects a change, read the message and fix the input. Never edit
-the JSON by hand to get around it.
+## If something fails
 
-## What to tell the user
+`is not in the template index` — the id is wrong or was renamed upstream. Run
+`list` for that modality and pick from the output.
 
-After opening the PR, tell them the change reaches users on their next app
-launch once it merges, and that nothing ships until then.
+`cannot be both --recommended and paid` — the featured card must be free. Ask
+which the user meant.
+
+`needs exactly 1 paid template` — a tab lost or gained its API-node card. Use
+`--replaces` to swap like for like.
+
+`could not read the template index` — the live index is unreachable. This is
+network, not input. Retry rather than changing the request.
+
+First run in a fresh clone: see [setup.md](setup.md). Needs Node 22 and
+`gh auth login`, no build step.
