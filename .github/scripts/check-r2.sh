@@ -17,13 +17,20 @@ say() {
 
 say "### R2"
 
-verify=$(curl -sS "$API/user/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
-if [ "$(jq -r '.success' <<<"$verify")" != "true" ]; then
-  say "- **Token is not valid.** \`$(jq -c '.errors' <<<"$verify")\`"
-  say "- Ask for: a new R2 API token."
+# Account-owned tokens are rejected by /user/tokens/verify with code 1000 even
+# when perfectly valid, so try the account endpoint too before calling it bad.
+verify=$(curl -sS "$API/accounts/$CF_ACCOUNT/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
+kind="account-owned"
+if ! grep -q '"success":true' <<<"$verify"; then
+  verify=$(curl -sS "$API/user/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
+  kind="user"
+fi
+if ! grep -q '"success":true' <<<"$verify"; then
+  say "- **Token is not valid on either the account or user endpoint.**"
+  say "  \`$(sed -n 's/.*"message":"\([^"]*\)".*/\1/p' <<<"$verify" | head -1)\`"
   exit 1
 fi
-say "- Token is valid and active"
+say "- Token is valid and active ($kind)"
 
 buckets_code=$(curl -sS -o /tmp/buckets.json -w '%{http_code}' \
   "$API/accounts/$CF_ACCOUNT/r2/buckets" -H "Authorization: Bearer $CF_TOKEN")

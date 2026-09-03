@@ -60,7 +60,7 @@
       "apiNode": true,
       "snapshot": {
         "title": "Seedream 5.0 Pro: Image Edit",
-        "description": "Edit images with precision using Seedream 5.0 Pro, targeting specific regions while preserving lighting, depth, and texture. The workflow takes 1 input image and produces 2 output images through an optional Painter node and preview. Ideal for product photography edits, portrait consistency adjustments, and creating structured layouts with multilingual text.",
+        "description": "Edit images with precision using Seedream 5.0 Pro, targeting specific regions while preserving lighting, depth, and texture. The workflow takes 1 input image and produces 1 output image. Ideal for product photography edits, portrait consistency adjustments, and creating structured layouts with multilingual text.",
         "sizeBytes": 0,
         "mediaSubtype": "webp"
       }
