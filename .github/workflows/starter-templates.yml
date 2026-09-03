@@ -14,6 +14,9 @@ on:
     branches: [main]
     paths:
       - 'assets/starter-templates.json'
+      # A change to the validator itself must re-check the committed list on
+      # main, not only on the PR that changed it.
+      - 'scripts/starter-templates.mjs'
       - '.github/workflows/starter-templates.yml'
   # Lets us prove the credentials work before merging, rather than finding out
   # on the merge that publishes to users.

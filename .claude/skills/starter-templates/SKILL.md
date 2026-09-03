@@ -95,8 +95,10 @@ quietly backfills, and a paid auto-pick spends the user's credits on first run.
 
 - Exactly 4 templates per tab.
 - Exactly 1 recommended per tab, and it must be free.
-- At most 1 paid (API-node) template per tab. This is an open-source
-  distribution requirement, not a preference.
+- Exactly 1 paid (API-node) template per tab. One showcases the API nodes;
+  more than one breaks the open-source balance the desktop build ships under.
+  This is a distribution requirement, not a preference.
+- Every card needs a usable `mediaSubtype`, which the tooling fills in.
 - Every id must exist in the live template index.
 - No duplicate ids anywhere.
 
