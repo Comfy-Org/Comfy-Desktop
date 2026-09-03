@@ -22,11 +22,28 @@ const ORIGINAL = fs.readFileSync(FILE, 'utf-8')
 
 const run = (...args) => {
   try {
-    execFileSync('node', [SCRIPT, ...args], { stdio: 'pipe', cwd: ROOT })
-    return { ok: true }
-  } catch {
-    return { ok: false }
+    // Merge stderr into stdout: warnings (upstream drift) go to stderr even on
+    // a successful run, and assertions need to see them.
+    const out = execFileSync('node', [SCRIPT, ...args], {
+      cwd: ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf-8'
+    })
+    return { ok: true, err: out ?? '' }
+  } catch (e) {
+    // Carries stderr so a rejection can be asserted on its reason. Without it
+    // every `ok === false` assertion passes on a crash or a network outage too.
+    return { ok: false, err: String(e.stderr ?? '') }
   }
+}
+
+/** Refused for the stated reason, not merely non-zero. */
+const refuses = (result, reason) => {
+  assert.equal(result.ok, false)
+  assert.ok(
+    result.err.includes(reason),
+    `expected a refusal mentioning ${JSON.stringify(reason)}, got: ${result.err.trim()}`
+  )
 }
 const read = () => JSON.parse(fs.readFileSync(FILE, 'utf-8'))
 const tab = (modality) => read().templates.filter((t) => t.modality === modality)
@@ -108,9 +125,12 @@ describe('the validator matches what the app reads', () => {
     assert.equal(run('validate').ok, false)
   })
 
-  it('rejects a hand-edited display field', () => {
+  it('warns about a field that drifted from upstream, without failing', () => {
+    // Upstream edits its own metadata, so this must not redden unrelated PRs.
     mutate((_d, t) => (t('image')[0].snapshot.title = 'Hand-edited'))
-    assert.equal(run('validate').ok, false)
+    // Exits clean: the workflow reports drift as a warning, and a hard failure
+    // here would redden every open PR the moment upstream edits a description.
+    assert.equal(run('validate').ok, true)
   })
 })
 
@@ -126,9 +146,9 @@ describe('swapping a card keeps the tab whole', () => {
   })
 
   it('refuses to auto-select a paid template', () => {
-    assert.equal(
-      run('set', '--modality', 'video', '--id', 'api_seedance2_5_r2v', '--recommended').ok,
-      false
+    refuses(
+      run('set', '--modality', 'video', '--id', 'api_seedance2_5_r2v', '--recommended'),
+      'cannot be both --recommended and paid'
     )
   })
 

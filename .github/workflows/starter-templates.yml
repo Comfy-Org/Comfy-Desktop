@@ -30,12 +30,6 @@ on:
 permissions:
   contents: read
 
-# Two merges in quick succession would race to overwrite the same objects and
-# the older list could win. Queue rather than cancel: every merge must publish.
-concurrency:
-  group: starter-templates-publish
-  cancel-in-progress: false
-
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -79,6 +73,11 @@ jobs:
   # Merging to main publishes the list. Desktop reads it at boot, so users pick
   # the change up on their next launch with no app release.
   publish:
+    # Only publishes share this group. At workflow level the PR runs would share
+    # it too, and a queued merge could be displaced by a later PR run.
+    concurrency:
+      group: starter-templates-publish
+      cancel-in-progress: false
     if: >-
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
@@ -118,6 +117,8 @@ jobs:
         with:
           path: assets/starter-templates.json
           destination: comfy-desktop-public/standalone-environments
+          # Without this the object lands under .../standalone-environments/assets/
+          parent: false
           headers: |-
             content-type: application/json
 
@@ -136,6 +137,12 @@ jobs:
 
       # `always()` so an R2 failure never hides the mirror's status; the job
       # still fails overall if either is refused.
+      # Preinstalled on ubuntu-latest today, but an undeclared dependency would
+      # surface as "the key is malformed" rather than "the package is missing".
+      - name: ensure the JWT signing dependency
+        if: ${{ !cancelled() && inputs.dry_run == true }}
+        run: python3 -c "import cryptography" || pip install --quiet cryptography
+
       - name: dry run - GCS mirror credentials
         if: ${{ !cancelled() && inputs.dry_run == true }}
         run: bash .github/scripts/check-gcs.sh
@@ -152,7 +159,9 @@ jobs:
             # still serve the previous object. Poll rather than fail on the race.
             ok=false
             for _ in $(seq 1 12); do
-              code=$(curl -s -H 'Cache-Control: no-cache' -o "$TMP/got.json" -w '%{http_code}' "$url")
+              code=$(curl -s --connect-timeout 10 --max-time 30 \
+                -H 'Cache-Control: no-cache' -o "$TMP/got.json" \
+                -w '%{http_code}' "$url" || echo "000")
               if [ "$code" = "200" ] && diff -q "$TMP/got.json" assets/starter-templates.json >/dev/null; then
                 ok=true; break
               fi

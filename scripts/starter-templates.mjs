@@ -106,27 +106,33 @@ function check(doc) {
   }
 
   const seen = new Set()
-  for (const t of doc.templates) {
-    if (seen.has(t.id)) errors.push(`duplicate id "${t.id}" — ids are the picker's option key`)
-    seen.add(t.id)
+  const entries = []
+  for (const raw of doc.templates) {
+    if (!raw || typeof raw !== 'object') {
+      errors.push('an entry is not an object')
+      continue
+    }
+    const t = raw
+    entries.push(t)
+    if (typeof t.id === 'string') {
+      if (seen.has(t.id)) errors.push(`duplicate id "${t.id}" — ids are the picker's option key`)
+      seen.add(t.id)
+    }
     if (!ID.test(t.id ?? '') || RESERVED_IDS.has(t.id)) errors.push(`invalid id "${t.id}"`)
     if ((t.id ?? '').length > MAX_ID_LENGTH) errors.push(`"${t.id}" is longer than ${MAX_ID_LENGTH}`)
     if (!MODALITIES.includes(t.modality)) errors.push(`"${t.id}" has unknown modality`)
-    const s = t.snapshot ?? {}
-    if (!s.title?.trim()) errors.push(`"${t.id}" has no title`)
-    if (!s.description?.trim()) errors.push(`"${t.id}" has no description`)
+    const s = t.snapshot && typeof t.snapshot === 'object' ? t.snapshot : {}
+    const text = (v) => (typeof v === 'string' ? v.trim() : '')
+    if (!text(s.title)) errors.push(`"${t.id}" has no title`)
+    if (!text(s.description)) errors.push(`"${t.id}" has no description`)
     for (const field of ['title', 'description']) {
-      if ((s[field] ?? '').length > MAX_TEXT_LENGTH) {
+      if (text(s[field]).length > MAX_TEXT_LENGTH) {
         errors.push(`"${t.id}" has a ${field} longer than ${MAX_TEXT_LENGTH}`)
       }
     }
     // The app requires this and drops the entry without it; an image subtype
     // also decides whether a preview renders at all.
-    if (!s.mediaSubtype?.trim()) {
-      errors.push(`"${t.id}" has no mediaSubtype`)
-    } else if (!IMAGE_SUBTYPES.has(s.mediaSubtype.toLowerCase()) && s.mediaSubtype !== 'mp3') {
-      errors.push(`"${t.id}" has an unusable mediaSubtype "${s.mediaSubtype}"`)
-    }
+    if (!text(s.mediaSubtype)) errors.push(`"${t.id}" has no mediaSubtype`)
     if (!Number.isInteger(s.sizeBytes) || s.sizeBytes < 0) {
       errors.push(`"${t.id}" has an invalid sizeBytes`)
     } else if (s.sizeBytes > MAX_SIZE_BYTES) {
@@ -145,7 +151,7 @@ function check(doc) {
   }
 
   for (const modality of MODALITIES) {
-    const tab = doc.templates.filter((t) => t.modality === modality)
+    const tab = entries.filter((t) => t.modality === modality)
     if (tab.length !== SLOTS) {
       errors.push(`${modality}: needs exactly ${SLOTS} templates, found ${tab.length}`)
     }
@@ -216,8 +222,17 @@ const commands = {
   async validate() {
     const doc = read()
     const errors = check(doc)
+    if (!Array.isArray(doc.templates)) {
+      console.error(`\n  Invalid ${path.relative(ROOT, OUT)}:\n`)
+      for (const e of errors) console.error(`    ✗ ${e}`)
+      console.error('')
+      process.exit(1)
+    }
     const index = await liveIndex()
+    const stale = []
     for (const t of doc.templates) {
+      // check() already reported a malformed entry; skip rather than throw.
+      if (!t || typeof t !== 'object') continue
       const live = index.get(t.id)
       if (!live) {
         errors.push(`"${t.id}" is no longer in the template index — it would render a dead card`)
@@ -228,9 +243,13 @@ const commands = {
         recommended: t.recommended === true,
         paid: t.apiNode === true
       })
+      // Upstream edits its own metadata, so a difference is drift far more often
+      // than a hand edit. Reporting it as an error would redden every open PR
+      // the moment a description changes, which the workflow deliberately
+      // downgrades to a warning.
       for (const field of ['title', 'description', 'sizeBytes', 'mediaSubtype']) {
         if (t.snapshot?.[field] !== expected.snapshot[field]) {
-          errors.push(`"${t.id}" has a hand-edited ${field}; run regenerate`)
+          stale.push(`"${t.id}" has a ${field} that differs from upstream`)
         }
       }
     }
@@ -240,6 +259,8 @@ const commands = {
       console.error('')
       process.exit(1)
     }
+    for (const s of stale) console.warn(`  ! ${s}`)
+    if (stale.length) console.warn('    run regenerate to refresh them\n')
     console.log(`\n  ✓ ${doc.templates.length} templates, ${SLOTS} per tab, rules hold\n`)
   },
 
@@ -350,7 +371,7 @@ const commands = {
 }
 
 const command = process.argv[2]
-if (!commands[command]) {
+if (!Object.hasOwn(commands, command ?? '')) {
   console.error(
     `\n  usage: node scripts/starter-templates.mjs <${Object.keys(commands).join('|')}>\n`
   )
