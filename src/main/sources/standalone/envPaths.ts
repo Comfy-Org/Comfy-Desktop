@@ -31,6 +31,40 @@ export function stripPlatform(variantId: string): string {
   return variantId.replace(/^(win|mac|linux)-/, '')
 }
 
+/** Vendor-id suffix naming a native Windows ARM64 bundle (`win-nvidia-arm64`).
+ *  Windows is the only platform with per-architecture bundles: macOS bundles
+ *  are ARM64 without a suffix (`mac-mps`) and everything else is x64. */
+export const ARM64_SUFFIX = '-arm64'
+
+/** True for a vendor id that names a native Windows ARM64 bundle. */
+export function isArm64Variant(variantId: string): boolean {
+  return variantId.endsWith(ARM64_SUFFIX)
+}
+
+/** The accelerator base a vendor id serves (`nvidia`, `cpu`, `mps`, …) with
+ *  both the platform prefix and any architecture suffix removed, so a
+ *  `win-nvidia-arm64` bundle is recognised as an NVIDIA variant. */
+export function variantAccel(variantId: string): string {
+  const stripped = stripPlatform(variantId)
+  return isArm64Variant(stripped) ? stripped.slice(0, -ARM64_SUFFIX.length) : stripped
+}
+
+/**
+ * True when a vendor id's architecture matches the running app. A native
+ * ARM64 app (NVIDIA RTX Spark) must only see `-arm64` bundles, whose Python
+ * and torch wheels are `win_arm64`; an x64 app must never see them - an
+ * ARM64 interpreter cannot run under x64, and an x64 app on an ARM64 machine
+ * runs under Prism emulation, where the x64 bundle is the one that works.
+ * `process.arch` reports the app binary's architecture, which is exactly the
+ * architecture the bundle has to match. Non-Windows platforms have no
+ * suffixed bundles, so every unsuffixed id matches there.
+ */
+export function variantMatchesHostArch(variantId: string): boolean {
+  const isArm64 = isArm64Variant(variantId)
+  if (process.platform !== 'win32') return !isArm64
+  return isArm64 === (process.arch === 'arm64')
+}
+
 export function getVariantLabel(variantId: string): string {
   const stripped = stripPlatform(variantId)
   if (VARIANT_LABELS[stripped]) return VARIANT_LABELS[stripped]!

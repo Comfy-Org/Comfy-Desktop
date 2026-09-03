@@ -49,6 +49,22 @@
     "icon": "./assets/Comfy_Logo_x512.png",
     "category": "AudioVideo;Graphics;3DGraphics;"
   },
+  "targetOverrides": {
+    "windows": {
+      "x64": {
+        "extraResources": [
+          { "from": "./lib", "to": "lib" },
+          { "from": "./bootstrap-python/win-x64", "to": "bootstrap-python" }
+        ]
+      },
+      "arm64": {
+        "extraResources": [
+          { "from": "./lib", "to": "lib" },
+          { "from": "./bootstrap-python/win-arm64", "to": "bootstrap-python" }
+        ]
+      }
+    }
+  },
   "platformOverrides": {
     "windows": {
       "extraResources": [
