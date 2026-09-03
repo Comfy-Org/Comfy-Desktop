@@ -5,6 +5,7 @@ import { emitTelemetryAction } from '../../lib/telemetry'
 import BaseModal from '../../components/ui/BaseModal.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import McpVideoPlayer from './McpVideoPlayer.vue'
+import { MCP_LAUNCH_VIDEO_SRC } from './McpVideoSources'
 
 const emit = defineEmits<{
   close: []
@@ -55,7 +56,7 @@ const AGENTS = [
 ]
 
 const DOCS_URL = 'https://docs.comfy.org/agent-tools/mcp#local-comfy-mcp-connection'
-const VIDEO_SRC = 'https://media.comfy.org/website/mcp/launch-film.mp4'
+const VIDEO_SRC = MCP_LAUNCH_VIDEO_SRC
 
 function selectPath(next: Path): void {
   if (path.value === next) return

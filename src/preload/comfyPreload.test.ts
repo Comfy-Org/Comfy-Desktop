@@ -21,35 +21,11 @@ vi.mock('electron', () => ({
 }))
 
 import './comfyPreload'
+import type { LegacyTerminalBridge } from './comfyPreload'
+import type { ComfyDesktop2BridgeImplementation } from '../types/comfyDesktopBridge'
 
-type ModelAccessBridge = {
-  openModelAccessPage: (url: string) => Promise<boolean>
-}
-
-type HostedFrontendBridge = ModelAccessBridge & {
-  openTerminal: () => Promise<boolean>
-  Terminal: {
-    subscribe: () => Promise<{
-      buffer: string[]
-      size: { cols: number; rows: number }
-      exited: boolean
-    }>
-    write: (data: string) => Promise<void>
-    resize: (cols: number, rows: number) => Promise<void>
-    restart: () => Promise<{
-      buffer: string[]
-      size: { cols: number; rows: number }
-      exited: boolean
-    }>
-    restore: () => Promise<{
-      buffer: string[]
-      size: { cols: number; rows: number }
-      exited: boolean
-    }>
-    openPopout: () => Promise<void>
-    onOutput: (callback: (data: string) => void) => () => void
-    onExited: (callback: () => void) => () => void
-  }
+type HostedFrontendBridge = ComfyDesktop2BridgeImplementation & {
+  Terminal: LegacyTerminalBridge
 }
 
 function hostedBridge(): HostedFrontendBridge {

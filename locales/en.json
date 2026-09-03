@@ -21,7 +21,7 @@
     "legacyDesktop": "Legacy Desktop",
     "remote": "Remote",
     "unknown": "Unknown",
-    "distribution": "Build"
+    "build": "Build"
   },
   "chooser": {
     "title": "Choose an instance",
@@ -39,24 +39,23 @@
     "filterRemote": "Remote",
     "updatePill": "Update",
     "migratePill": "Migrate",
-    "workspaceShelf": "Workspace",
     "openInstall": "Open",
     "manageInstall": "Manage",
     "moreActions": "More actions",
     "menuUpdate": "Update",
     "menuMigrate": "Migrate to Standalone",
     "menuRestoreSnapshot": "Restore Snapshot",
+    "menuExportSnapshot": "Export Snapshot",
     "menuRevealInFolder": "Open Folder",
     "menuDelete": "Uninstall",
     "stoppedActionGatedReason": "Stop the running instance first.",
-    "menuDismissError": "Dismiss Error",
     "statusRunning": "Running",
     "statusLaunching": "Starting…",
     "statusStopping": "Stopping…",
     "statusError": "Error",
     "viewErrorTooltip": "View error details",
     "errorTitle": "Error",
-    "searchPlaceholder": "Search for and open an instance",
+    "searchPlaceholder": "Search instances",
     "noMatches": "No instances match"
   },
   "titleBar": {
@@ -72,6 +71,8 @@
     "menu": "Menu",
     "feedback": "Feedback",
     "feedbackTooltip": "Send Feedback",
+    "announcement": "What's new",
+    "announcementTooltip": "What's new",
     "downloads": "Downloads",
     "downloadsInProgress": "no downloads in progress | {n} download in progress | {n} downloads in progress",
     "downloadsCompleteUnseen": "no recent downloads | {n} download finished — click to review | {n} downloads finished — click to review",
@@ -290,21 +291,22 @@
     "clear": "Clear"
   },
   "comfybuilder": {
-    "stageModels": "Download models",
-    "distribution": "Build",
-    "distributionVersion": "Build Version",
+    "build": "Build",
+    "buildVersion": "Build Version",
     "comfyuiVersion": "ComfyUI Version",
-    "distributionVersionTitle": "Build Version",
+    "buildVersionTitle": "Build Version",
     "installedVersion": "Installed",
     "latestVersion": "Latest Published",
-    "errorNoDistribution": "This install is not linked to a build.",
+    "errorNoBuild": "This install is not linked to a build.",
     "updateAvailable": "Update available",
     "upToDate": "Up to date",
     "lastChecked": "Last Checked",
     "updateToVersion": "Update to v{version}",
     "updatingTo": "Updating to v{version}",
-    "updateConfirmTitle": "Update build",
-    "updateConfirmMessage": "Update this instance from {from} to {to}?\n\nThe environment is replaced in place. Your workflows and staged models are kept.",
+    "updateConfirmTitle": "Update Build",
+    "updateConfirmMessage": "Update from {from} to {to}?",
+    "updateConfirmInfo": "ℹ️ This replaces the managed environment with the new Build version. Your workflows and staged models will be kept.",
+    "updateNow": "Update Now",
     "errorNoVersion": "No target version was given.",
     "errorVersionUnavailable": "Version v{version} has no build for this machine."
   },
@@ -342,11 +344,11 @@
     "grandTitle": "New Instance",
     "grandSubtitle": "Set up a fresh ComfyUI instance. Pick a source, name it, and configure it.",
     "installMethod": "Install Method",
-    "installLocation": "Install Location",
+    "installLocation": "Install location",
     "addInstallation": "Add Instance",
     "loading": "Loading…",
     "detectingGpu": "Detecting GPU…",
-    "detectedGpu": "Detected GPU: {label}",
+    "detectedGpu": "detected GPU: {label}",
     "noGpuDetected": "No supported GPU detected",
     "unsupportedHardwareTitle": "Unsupported Hardware",
     "nvidiaDriverWarningTitle": "Update NVIDIA Driver",
@@ -357,8 +359,8 @@
     "installing": "Installing",
     "chooseMethod": "Choose Install Method",
     "configuration": "Configuration",
-    "configureTitle": "Configure Comfy Desktop",
-    "configureLead": "How would you like this version installed?",
+    "configureTitle": "Create a New Instance",
+    "configureWorkspaceLead": "Select a release to install.",
     "detectedGpuLabel": "Detected GPU",
     "notAvailableRemote": "Not available in Remote Connection mode",
     "helpImproveTitle": "Help improve Comfy",
@@ -369,7 +371,26 @@
     "latest": "Latest",
     "changeInstallType": "Change Install Type",
     "nameWhitespace": "Enter a name, or leave blank to use the suggested one.",
-    "urlInvalid": "Enter a valid URL (e.g. http://localhost:8188)."
+    "urlInvalid": "Enter a valid URL (e.g. http://localhost:8188).",
+    "buildSourceLabel": "Select build",
+    "managedBuilds": "Managed",
+    "publicBuilds": "Public",
+    "workspaceBuildLabel": "Build",
+    "selectWorkspaceBuild": "Select a Build",
+    "noCompatibleBuilds": "No compatible Builds are available to install.",
+    "refreshWorkspaceBuilds": "Refresh Builds",
+    "refreshingWorkspaceBuilds": "Refreshing builds...",
+    "viewBuildsOnline": "View builds online",
+    "waitingForWorkspaceAuthorization": "Waiting for workspace authorization... Complete authorization in your browser if prompted.",
+    "buildReleaseValue": "Release v{version}",
+    "buildCreatorValue": "By {creator}",
+    "buildRelease": "Latest release",
+    "buildPlatforms": "Platforms",
+    "buildCreator": "Created by",
+    "buildModels": "Models",
+    "buildCustomNodes": "Custom nodes",
+    "buildSize": "Size",
+    "buildTarget": "Release target"
   },
   "templateQuit": {
     "title": "Template models are still downloading",
@@ -423,9 +444,9 @@
     "title": "Add Existing Instance",
     "grandTitle": "Add Existing Instance",
     "grandSubtitle": "Add an existing local ComfyUI checkout to Desktop without reinstalling it.",
-    "installDir": "Install Directory",
+    "installDir": "Install location",
     "selectDir": "Select a directory…",
-    "detectedType": "Detected Type",
+    "detectedType": "Detected type",
     "browseDirFirst": "Browse to a directory first",
     "detecting": "Detecting…",
     "noDetected": "No known install detected",
@@ -690,6 +711,22 @@
     "localDescRecommended": "Fast install with **recommended settings** — skips optional setup steps.",
     "localDescRecommendedGpu": "Fast install tuned for **{gpu}** with recommended settings. Pick **Configure** if that's not your hardware."
   },
+  "announcement": {
+    "minimax": {
+      "title": "MiniMax H3 is now on ComfyUI",
+      "lead": "MiniMax's latest open source, SOTA video model, available now",
+      "highlights": [
+        "Run for free on Comfy Cloud or Comfy Desktop",
+        "Works with your existing ComfyUI workflows",
+        "Want to use it commercially? Reach out to get a license"
+      ],
+      "requestLicenseCta": "Request License",
+      "learnMoreCta": "Learn More",
+      "imageAlt": "MiniMax H3 announcement",
+      "unmute": "Unmute video",
+      "mute": "Mute video"
+    }
+  },
   "tray": {
     "showApp": "Show Comfy Desktop",
     "quit": "Quit"
@@ -874,7 +911,7 @@
     "comfyui": "ComfyUI",
     "currentVersion": "Current Version",
     "variant": "Hardware",
-    "comfyVersion": "ComfyUI Version",
+    "comfyVersion": "ComfyUI version",
     "starterTemplate": "Starter template",
     "starterTemplateNone": "None",
     "starterTemplateNoneDesc": "Start with a blank canvas",
@@ -994,8 +1031,7 @@
     "updateConfirmMessage": "Update from {installed} to {latest}?",
     "updateConfirmMessageLatest": "Update {installed} to the latest master commit ({latest})?",
     "updateConfirmMessageDowngrade": "Roll back from {installed} to stable {latest}? Newer commits will be removed.",
-    "updateBreakingWarning": "⚠️ This may break your custom nodes and workflows.",
-    "updateSnapshotUndoHint": "💾 To undo, restore the snapshot saved before the update from the Snapshots tab.",
+    "updateSnapshotUndoHint": "ℹ️ If this update breaks your custom nodes, you can restore the previous version of the instance from the Snapshots tab.",
     "updateConfirmMessagePicked": "Update ComfyUI to **{tag}**?",
     "updatingTitle": "Updating to {version}",
     "downgradingTitle": "Downgrading to {version}",
@@ -1216,6 +1252,8 @@
     "instanceRunningReplace": "Close & Launch",
     "modelFolderRelaunchTitle": "Restarting ComfyUI",
     "modelFolderRelaunchDesc": "New model folders were detected from custom nodes. Restarting so ComfyUI can use them right away.",
+    "updateCheckTitle": "Checking for update",
+    "updateCheckDesc": "A downloaded update is being verified. This takes just a few seconds.",
     "updateInstallTitle": "Updating Comfy Desktop",
     "updateInstallDesc": "A new version was downloaded and is about to install. The app will close briefly and reopen automatically.",
     "updateInstallCountdown": "Restarting in {seconds}s…",
@@ -1240,32 +1278,26 @@
     "account": {
       "signOut": "Sign out",
       "signedInAs": "Signed in as {email}",
-      "signOutConfirmTitle": "Sign out of ComfyBuilder?",
-      "signOutConfirmBody": "Your installed builds are kept and still run. They just stop receiving updates until you sign back in.",
-      "signOutConfirmCta": "Sign out"
+      "installationInProgressTitle": "Installation in progress",
+      "installationInProgressMessage": "Signing out will cancel the installation. Do you want to cancel the installation and sign out?",
+      "cancelInstallationAndSignOut": "Cancel Installation & Sign Out"
     },
     "workspace": {
       "personalLabel": "Personal",
+      "unmanagedLabel": "No workspace",
       "switchLabel": "Workspace",
-      "loadError": "Couldn't load workspaces. Retry"
+      "currentFallback": "Current workspace",
+      "instanceCountLabel": "INSTANCES",
+      "loadError": "Couldn't load workspaces. Retry",
+      "refresh": "Refresh workspaces",
+      "promoteToWorkspace": "Create Build",
+      "promoting": "Creating...",
+      "promoteFailedTitle": "Could not create build",
+      "promoteFailedMessage": "Could not create a draft in Comfy Builder."
     },
-    "distribution": {
-      "menuInstall": "Install",
-      "distVersion": "Build v{version}",
-      "notInstalled": "Not installed",
-      "emptyTitle": "No builds published to this workspace yet.",
-      "loadError": "Couldn't load builds. Retry",
-      "installFailed": "Could not start the install. Try again.",
-      "states": {
-        "noBuild": "No build",
-        "platformMismatch": "Not for this machine",
-        "updateAvailable": "Update"
-      },
-      "blockedReason": {
-        "buildFailed": "This build has no successful version yet.",
-        "buildInProgress": "The latest build is still in progress.",
-        "noArtifactForMachine": "The latest build has no artifact for this operating system and GPU."
-      }
+    "build": {
+      "version": "Build v{version}",
+      "loadError": "Couldn't load builds. Retry"
     }
   },
   "errors": {

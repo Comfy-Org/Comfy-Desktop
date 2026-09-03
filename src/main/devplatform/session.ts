@@ -1,7 +1,7 @@
 /**
  * The single main-process CloudSession + the ComfyBuilderClient built from it.
  *
- * Both the IPC handlers (auth / workspaces / distributions / install) and the
+ * Both the IPC handlers (auth / workspaces / builds / install) and the
  * comfy-builder SourcePlugin's `install()` read the SAME session here, so a
  * sign-in, workspace switch, or sign-out is reflected everywhere without any of
  * them owning their own token state. The client pulls a bearer token from the

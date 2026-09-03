@@ -33,7 +33,7 @@
       "maskGroupOffset": [0, 0],
       "videos": [
         {
-          "src": "/install-showcase-scene/Assets/eye.webm",
+          "src": "./install-showcase-scene/Assets/eye.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 604,
@@ -44,7 +44,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/eye.webm",
+          "src": "./install-showcase-scene/Assets/eye.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 352,
@@ -55,7 +55,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/dusk_mountains.webm",
+          "src": "./install-showcase-scene/Assets/dusk_mountains.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 222,
@@ -71,7 +71,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/clouds.webm",
+          "src": "./install-showcase-scene/Assets/clouds.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 0,
@@ -119,7 +119,7 @@
       "maskGroupOffset": [-60.66, 0],
       "videos": [
         {
-          "src": "/install-showcase-scene/Assets/swings.webm",
+          "src": "./install-showcase-scene/Assets/swings.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 790,
@@ -130,7 +130,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/swings.webm",
+          "src": "./install-showcase-scene/Assets/swings.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 411,
@@ -141,7 +141,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/swings.webm",
+          "src": "./install-showcase-scene/Assets/swings.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 360,
@@ -152,7 +152,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/kyrie.webm",
+          "src": "./install-showcase-scene/Assets/kyrie.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 232,
@@ -163,7 +163,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/Eat%20It%20-%20Dance%20%5BWanAnimate%5D2.webm",
+          "src": "./install-showcase-scene/Assets/Eat%20It%20-%20Dance%20%5BWanAnimate%5D2.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 0,
@@ -206,7 +206,7 @@
       "maskGroupOffset": [59.867, -12.578],
       "videos": [
         {
-          "src": "/install-showcase-scene/Assets/clouds.webm",
+          "src": "./install-showcase-scene/Assets/clouds.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 810,
@@ -217,7 +217,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/clouds.webm",
+          "src": "./install-showcase-scene/Assets/clouds.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 371,
@@ -228,7 +228,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/swings.webm",
+          "src": "./install-showcase-scene/Assets/swings.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 243,
@@ -239,7 +239,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/flower.webm",
+          "src": "./install-showcase-scene/Assets/flower.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 0,
@@ -282,7 +282,7 @@
       "maskGroupOffset": [0, 0],
       "videos": [
         {
-          "src": "/install-showcase-scene/Assets/dusk_mountains.webm",
+          "src": "./install-showcase-scene/Assets/dusk_mountains.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 769,
@@ -293,7 +293,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/dusk_mountains.webm",
+          "src": "./install-showcase-scene/Assets/dusk_mountains.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 382,
@@ -304,7 +304,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/paul_trillo.webm",
+          "src": "./install-showcase-scene/Assets/paul_trillo.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 253,
@@ -318,7 +318,7 @@
           "anchor": [528, 392]
         },
         {
-          "src": "/install-showcase-scene/Assets/dududu.webm",
+          "src": "./install-showcase-scene/Assets/dududu.webm",
           "srcW": 1056,
           "srcH": 784,
           "ip": 0,

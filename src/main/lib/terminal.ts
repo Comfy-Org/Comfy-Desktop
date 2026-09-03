@@ -145,22 +145,21 @@ function initCommands(env: TerminalEnv): string[] {
     // Activate.ps1 does directly: set VIRTUAL_ENV, prepend the env's bin dir to
     // PATH, drop any PYTHONHOME, and add the `(name)` prompt prefix.
     const cmds: string[] = []
+    const pathPrepends = [
+      ...(env.pathPrepends ?? []),
+      ...(env.venvDir ? [path.join(env.venvDir, 'Scripts')] : [])
+    ]
     if (env.venvDir) {
-      cmds.push(
-        `$env:VIRTUAL_ENV = "${env.venvDir}"`,
-        `$env:VIRTUAL_ENV_PROMPT = "${promptName}"`,
-        `$env:PATH = "${env.venvDir}\\Scripts;$env:PATH"`,
-        'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }'
-      )
-    } else if (env.pathPrepends?.length) {
-      cmds.push(
-        `$env:VIRTUAL_ENV_PROMPT = "${promptName}"`,
-        `$env:PATH = "${env.pathPrepends.join(';')};$env:PATH"`,
-        'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }'
-      )
+      cmds.push(`$env:VIRTUAL_ENV = "${env.venvDir}"`, `$env:VIRTUAL_ENV_PROMPT = "${promptName}"`)
+    } else if (pathPrepends.length) {
+      cmds.push(`$env:VIRTUAL_ENV_PROMPT = "${promptName}"`)
+    }
+    if (pathPrepends.length) {
+      cmds.push(`$env:PATH = "${pathPrepends.join(';')};$env:PATH"`)
     }
     if (hasActivation) {
       cmds.push(
+        'if (Test-Path Env:PYTHONHOME) { Remove-Item Env:PYTHONHOME }',
         'function global:prompt { Write-Host -NoNewline -ForegroundColor Green "($env:VIRTUAL_ENV_PROMPT) "; "PS $($executionContext.SessionState.Path.CurrentLocation)$(\'>\' * ($nestedPromptLevel + 1)) " }'
       )
     }
@@ -176,6 +175,8 @@ function initCommands(env: TerminalEnv): string[] {
     cmds.push(`source "${env.venvDir}/bin/activate"`)
   } else if (env.pathPrepends?.length) {
     cmds.push(`export VIRTUAL_ENV_PROMPT="${promptName}"`)
+  }
+  if (env.pathPrepends?.length) {
     cmds.push(`export PATH="${env.pathPrepends.join(':')}:$PATH"`)
   }
   if (env.pip) {

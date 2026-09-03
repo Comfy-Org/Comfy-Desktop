@@ -654,11 +654,13 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     // `computeBodyMode` already returns `'chooser'` for install-less
     // hosts, so the install-backed visibility branch handles both.
     const mode = entry ? computeBodyMode(entry) : 'comfy'
-    const showPanel = mode !== 'comfy'
     /** Overlay mode mounts a modal over the live canvas, kept visible underneath at full
      *  bodyRect; the panel paints transparent (PanelApp's `panel-overlay-mode`) so it
      *  composites through on macOS CALayers. */
-    const isOverlayMode = mode === 'feedback' || mode === 'mcp-setup'
+    const isOverlayMode = mode === 'feedback' || mode === 'mcp-setup' || mode === 'announcement'
+    // Keep an overlay panel hidden until the renderer acks it painted, so its
+    // opaque pre-transparent frame can't flash over ComfyUI.
+    const showPanel = mode !== 'comfy' && !(isOverlayMode && entry?.pendingOverlayReveal)
     if (showPanel && entry?.panelView) {
       entry.panelView.setBounds(bodyRect)
       entry.panelView.setVisible(true)

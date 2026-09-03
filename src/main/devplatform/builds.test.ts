@@ -2,12 +2,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   listCompleteVersions,
-  listDistributionRows,
+  listBuildRows,
   resolveHostArtifact,
-  resolveHostArtifactForVersion
-} from './distributions'
+  resolveHostArtifactForVersion,
+  resolveSelectedHostArtifact
+} from './builds'
 import { clearVersionCache, getCachedVersions } from './versionCache'
-import type { Artifact, Distribution, DistributionVersion, Host } from '../comfybuilder'
+import type { Artifact, Build, BuildVersion, Host } from '../comfybuilder'
 
 const HOST: Host = { os: 'linux', gpu: 'nvidia' }
 
@@ -25,19 +26,19 @@ function artifact(overrides: Partial<Artifact> = {}): Artifact {
   }
 }
 
-function version(v: number, status: string): DistributionVersion {
+function version(v: number, status: string): BuildVersion {
   return { id: `v${v}`, version: v, status, createdAt: '2026-07-20T00:00:00Z' }
 }
 
-/** A stub client whose per-distribution / per-version data is table-driven. */
+/** A stub client whose wire catalog and per-version data are table-driven. */
 function stubClient(opts: {
-  distributions?: Distribution[]
-  versionsByDist?: Record<string, DistributionVersion[]>
+  builds?: Build[]
+  versionsByBuild?: Record<string, BuildVersion[]>
   artifactsByVersion?: Record<string, Artifact[]>
 }) {
   return {
-    listDistributions: vi.fn(async () => opts.distributions ?? []),
-    listVersions: vi.fn(async (id: string) => opts.versionsByDist?.[id] ?? []),
+    listBuilds: vi.fn(async () => opts.builds ?? []),
+    listVersions: vi.fn(async (id: string) => opts.versionsByBuild?.[id] ?? []),
     getVersion: vi.fn(async (id: string) => ({
       version: Number(id.replace('v', '')),
       artifacts: opts.artifactsByVersion?.[id] ?? []
@@ -45,21 +46,65 @@ function stubClient(opts: {
   }
 }
 
-describe('listDistributionRows', () => {
-  it('marks a distribution installable when the latest complete version has a host artifact', async () => {
+describe('listBuildRows', () => {
+  it('marks a build installable when the latest complete version has a host artifact', async () => {
     const client = stubClient({
-      distributions: [{ id: 'd1', name: 'Image', description: 'desc', numCustomNodes: 3 }],
-      versionsByDist: { d1: [version(1, 'complete'), version(2, 'complete')] },
-      artifactsByVersion: { v2: [artifact()] }
+      builds: [
+        {
+          id: 'd1',
+          name: 'Image',
+          description: 'desc',
+          createdBy: 'user-1',
+          numCustomNodes: 3,
+          numModels: 4,
+          numAllowedModels: 2,
+          sizeBytes: 1234,
+          updatedAt: '2026-07-21T00:00:00Z'
+        }
+      ],
+      versionsByBuild: { d1: [version(1, 'complete'), version(2, 'complete')] },
+      artifactsByVersion: {
+        v2: [
+          artifact({ id: 'cuda' }),
+          artifact({ id: 'cpu', gpu: 'cpu', accelVariant: 'cpu' }),
+          artifact({ id: 'windows', os: 'windows' }),
+          artifact({ id: 'amd', gpu: 'amd' }),
+          artifact({ id: 'pending', status: 'building' })
+        ]
+      }
     })
-    const rows = await listDistributionRows(client as never, HOST)
+    const rows = await listBuildRows(client as never, HOST)
     const row = rows[0]!
     expect(row).toMatchObject({
       id: 'd1',
       name: 'Image',
       description: 'desc',
+      createdBy: 'user-1',
       numCustomNodes: 3,
+      numModels: 4,
+      numAllowedModels: 2,
+      sizeBytes: 1234,
+      updatedAt: '2026-07-21T00:00:00Z',
       version: '2',
+      targetOs: ['linux', 'windows'],
+      releaseTargets: [
+        {
+          artifactId: 'cuda',
+          releaseVersion: 2,
+          os: 'linux',
+          gpu: 'nvidia',
+          accelVariant: 'cu128',
+          recommended: true
+        },
+        {
+          artifactId: 'cpu',
+          releaseVersion: 2,
+          os: 'linux',
+          gpu: 'cpu',
+          accelVariant: 'cpu',
+          recommended: false
+        }
+      ],
       state: 'installable'
     })
     // The latest complete version (2) is the one resolved, not version 1.
@@ -68,24 +113,24 @@ describe('listDistributionRows', () => {
 
   it('marks no-build when no version has a completed status', async () => {
     const client = stubClient({
-      distributions: [{ id: 'd1', name: 'Pending' }],
-      versionsByDist: { d1: [version(1, 'building'), version(2, 'queued')] }
+      builds: [{ id: 'd1', name: 'Pending' }],
+      versionsByBuild: { d1: [version(1, 'building'), version(2, 'queued')] }
     })
-    const rows = await listDistributionRows(client as never, HOST)
+    const rows = await listBuildRows(client as never, HOST)
     const row = rows[0]!
     expect(row).toMatchObject({ state: 'no-build', blockedReason: 'buildInProgress' })
     expect(row.version).toBeUndefined()
   })
 
   it('marks an empty version list as build failed', async () => {
-    const client = stubClient({ distributions: [{ id: 'd1', name: 'Empty' }] })
-    const rows = await listDistributionRows(client as never, HOST)
+    const client = stubClient({ builds: [{ id: 'd1', name: 'Empty' }] })
+    const rows = await listBuildRows(client as never, HOST)
     expect(rows[0]).toMatchObject({ state: 'no-build', blockedReason: 'buildFailed' })
   })
 
-  it('limits row resolution concurrency and preserves distribution order', async () => {
-    const distributions = Array.from({ length: 15 }, (_, i) => ({ id: `d${i}`, name: `Dist ${i}` }))
-    const client = stubClient({ distributions })
+  it('limits row resolution concurrency and preserves build order', async () => {
+    const builds = Array.from({ length: 15 }, (_, i) => ({ id: `d${i}`, name: `Build ${i}` }))
+    const client = stubClient({ builds })
     let current = 0
     let maximum = 0
     client.listVersions.mockImplementation(async () => {
@@ -96,18 +141,18 @@ describe('listDistributionRows', () => {
       return []
     })
 
-    const rows = await listDistributionRows(client as never, HOST)
+    const rows = await listBuildRows(client as never, HOST)
     expect(maximum).toBe(6)
-    expect(rows.map((row) => row.id)).toEqual(distributions.map((distribution) => distribution.id))
+    expect(rows.map((row) => row.id)).toEqual(builds.map((build) => build.id))
   })
 
   it('marks platform-mismatch when the latest complete version has no host artifact', async () => {
     const client = stubClient({
-      distributions: [{ id: 'd1', name: 'WinOnly' }],
-      versionsByDist: { d1: [version(3, 'complete')] },
+      builds: [{ id: 'd1', name: 'WinOnly' }],
+      versionsByBuild: { d1: [version(3, 'complete')] },
       artifactsByVersion: { v3: [artifact({ os: 'windows' })] }
     })
-    const rows = await listDistributionRows(client as never, HOST)
+    const rows = await listBuildRows(client as never, HOST)
     const row = rows[0]!
     expect(row).toMatchObject({
       version: '3',
@@ -119,8 +164,8 @@ describe('listDistributionRows', () => {
 
   it('reports every OS a mismatched build targets, deduped and sorted', async () => {
     const client = stubClient({
-      distributions: [{ id: 'd1', name: 'NotForLinux' }],
-      versionsByDist: { d1: [version(3, 'complete')] },
+      builds: [{ id: 'd1', name: 'NotForLinux' }],
+      versionsByBuild: { d1: [version(3, 'complete')] },
       artifactsByVersion: {
         v3: [
           artifact({ os: 'windows', gpu: 'nvidia' }),
@@ -132,67 +177,67 @@ describe('listDistributionRows', () => {
         ]
       }
     })
-    const rows = await listDistributionRows(client as never, HOST)
+    const rows = await listBuildRows(client as never, HOST)
     expect(rows[0]!.targetOs).toEqual(['mac', 'windows'])
   })
 
   it('marks update-available when installed older and the newer build runs here', async () => {
     const client = stubClient({
-      distributions: [{ id: 'd1', name: 'Image' }],
-      versionsByDist: { d1: [version(1, 'complete'), version(2, 'complete')] },
+      builds: [{ id: 'd1', name: 'Image' }],
+      versionsByBuild: { d1: [version(1, 'complete'), version(2, 'complete')] },
       artifactsByVersion: { v2: [artifact()] }
     })
-    const rows = await listDistributionRows(client as never, HOST, new Map([['d1', 1]]))
+    const rows = await listBuildRows(client as never, HOST, new Map([['d1', 1]]))
     expect(rows[0]).toMatchObject({ version: '2', installedVersion: 1, state: 'update-available' })
   })
 
   it('stays installable (not update-available) when installed at the latest version', async () => {
     const client = stubClient({
-      distributions: [{ id: 'd1', name: 'Image' }],
-      versionsByDist: { d1: [version(2, 'complete')] },
+      builds: [{ id: 'd1', name: 'Image' }],
+      versionsByBuild: { d1: [version(2, 'complete')] },
       artifactsByVersion: { v2: [artifact()] }
     })
-    const rows = await listDistributionRows(client as never, HOST, new Map([['d1', 2]]))
+    const rows = await listBuildRows(client as never, HOST, new Map([['d1', 2]]))
     expect(rows[0]).toMatchObject({ version: '2', installedVersion: 2, state: 'installable' })
   })
 
   it('does NOT offer an update when the newer version has no host artifact', async () => {
     const client = stubClient({
-      distributions: [{ id: 'd1', name: 'WinOnly' }],
-      versionsByDist: { d1: [version(2, 'complete')] },
+      builds: [{ id: 'd1', name: 'WinOnly' }],
+      versionsByBuild: { d1: [version(2, 'complete')] },
       artifactsByVersion: { v2: [artifact({ os: 'windows' })] } // no linux/nvidia build
     })
-    const rows = await listDistributionRows(client as never, HOST, new Map([['d1', 1]]))
+    const rows = await listBuildRows(client as never, HOST, new Map([['d1', 1]]))
     expect(rows[0]).toMatchObject({ state: 'platform-mismatch' })
     expect(rows[0]!.state).not.toBe('update-available')
   })
 
-  it('leaves installedVersion unset for a distribution that is not installed', async () => {
+  it('leaves installedVersion unset for a build that is not installed', async () => {
     const client = stubClient({
-      distributions: [{ id: 'd1', name: 'Image' }],
-      versionsByDist: { d1: [version(2, 'complete')] },
+      builds: [{ id: 'd1', name: 'Image' }],
+      versionsByBuild: { d1: [version(2, 'complete')] },
       artifactsByVersion: { v2: [artifact()] }
     })
-    const rows = await listDistributionRows(client as never, HOST, new Map())
+    const rows = await listBuildRows(client as never, HOST, new Map())
     expect(rows[0]!.installedVersion).toBeUndefined()
     expect(rows[0]!.state).toBe('installable')
   })
 
-  it('drops a distribution whose version lookup fails without failing the whole grid', async () => {
+  it('drops a build whose version lookup fails without failing the whole grid', async () => {
     const client = stubClient({
-      distributions: [
+      builds: [
         { id: 'first', name: 'First' },
         { id: 'bad', name: 'Bad' },
         { id: 'last', name: 'Last' }
       ],
-      versionsByDist: { ok: [version(1, 'complete')] },
+      versionsByBuild: { ok: [version(1, 'complete')] },
       artifactsByVersion: { v1: [artifact()] }
     })
     client.listVersions.mockImplementation(async (id: string) => {
       if (id === 'bad') throw new Error('boom')
       return [version(1, 'complete')]
     })
-    const rows = await listDistributionRows(client as never, HOST)
+    const rows = await listBuildRows(client as never, HOST)
     expect(rows.map((r) => r.id)).toEqual(['first', 'last'])
   })
 })
@@ -200,7 +245,7 @@ describe('listDistributionRows', () => {
 describe('listCompleteVersions', () => {
   it('returns complete versions newest first, dropping unbuilt ones', async () => {
     const client = stubClient({
-      versionsByDist: {
+      versionsByBuild: {
         d1: [
           version(2, 'complete'),
           version(5, 'complete'),
@@ -214,17 +259,17 @@ describe('listCompleteVersions', () => {
 })
 
 describe('version cache warming', () => {
-  it("caches a distribution's complete versions as a side effect of listing rows", async () => {
+  it("caches a build's complete versions as a side effect of listing rows", async () => {
     // The manage view builds its Update tab synchronously and cannot fetch, so
     // the catalog read the chooser already does is what fills it.
     const client = stubClient({
-      distributions: [{ id: 'd1', name: 'Image' }],
-      versionsByDist: {
+      builds: [{ id: 'd1', name: 'Image' }],
+      versionsByBuild: {
         d1: [version(1, 'complete'), version(3, 'complete'), version(4, 'building')]
       },
       artifactsByVersion: { v3: [artifact()] }
     })
-    await listDistributionRows(client as never, HOST)
+    await listBuildRows(client as never, HOST)
     expect(getCachedVersions('d1')?.versions).toEqual([3, 1])
   })
 })
@@ -232,7 +277,7 @@ describe('version cache warming', () => {
 describe('resolveHostArtifact', () => {
   it('returns the host artifact of the latest complete version', async () => {
     const client = stubClient({
-      versionsByDist: { d1: [version(5, 'complete'), version(4, 'complete')] },
+      versionsByBuild: { d1: [version(5, 'complete'), version(4, 'complete')] },
       artifactsByVersion: { v5: [artifact({ id: 'pick-me' })] }
     })
     const resolved = await resolveHostArtifact(client as never, HOST, 'd1')
@@ -240,23 +285,65 @@ describe('resolveHostArtifact', () => {
   })
 
   it('returns null when there is no complete version', async () => {
-    const client = stubClient({ versionsByDist: { d1: [version(1, 'building')] } })
+    const client = stubClient({ versionsByBuild: { d1: [version(1, 'building')] } })
     expect(await resolveHostArtifact(client as never, HOST, 'd1')).toBeNull()
   })
 
   it('returns null when the complete version has no host artifact', async () => {
     const client = stubClient({
-      versionsByDist: { d1: [version(1, 'complete')] },
+      versionsByBuild: { d1: [version(1, 'complete')] },
       artifactsByVersion: { v1: [artifact({ os: 'mac', gpu: 'mps' })] }
     })
     expect(await resolveHostArtifact(client as never, HOST, 'd1')).toBeNull()
   })
 })
 
+describe('resolveSelectedHostArtifact', () => {
+  it('returns an explicitly selected compatible target from the requested release', async () => {
+    const client = stubClient({
+      versionsByBuild: { d1: [version(6, 'complete'), version(5, 'complete')] },
+      artifactsByVersion: {
+        v5: [artifact({ id: 'cuda' }), artifact({ id: 'cpu', gpu: 'cpu' })],
+        v6: [artifact({ id: 'newer' })]
+      }
+    })
+
+    await expect(
+      resolveSelectedHostArtifact(client as never, HOST, 'd1', 5, 'cpu')
+    ).resolves.toMatchObject({ version: 5, artifact: { id: 'cpu' } })
+    expect(client.getVersion).toHaveBeenCalledWith('v5')
+  })
+
+  it.each([
+    ['unknown release', 4, 'ready'],
+    ['unfinished release', 7, 'ready'],
+    ['unknown artifact', 5, 'missing'],
+    ['wrong OS', 5, 'windows'],
+    ['wrong GPU', 5, 'amd'],
+    ['unfinished artifact', 5, 'pending']
+  ])('rejects %s', async (_name, releaseVersion, artifactId) => {
+    const client = stubClient({
+      versionsByBuild: { d1: [version(5, 'complete'), version(7, 'building')] },
+      artifactsByVersion: {
+        v5: [
+          artifact({ id: 'ready' }),
+          artifact({ id: 'windows', os: 'windows' }),
+          artifact({ id: 'amd', gpu: 'amd' }),
+          artifact({ id: 'pending', status: 'building' })
+        ]
+      }
+    })
+
+    await expect(
+      resolveSelectedHostArtifact(client as never, HOST, 'd1', releaseVersion, artifactId)
+    ).resolves.toBeNull()
+  })
+})
+
 describe('resolveHostArtifactForVersion', () => {
   it('resolves the named version, not just the latest', async () => {
     const client = stubClient({
-      versionsByDist: { d1: [version(9, 'complete'), version(5, 'complete')] },
+      versionsByBuild: { d1: [version(9, 'complete'), version(5, 'complete')] },
       artifactsByVersion: { v5: [artifact({ id: 'older-pick' })], v9: [artifact({ id: 'newer' })] }
     })
     const resolved = await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)
@@ -264,13 +351,13 @@ describe('resolveHostArtifactForVersion', () => {
   })
 
   it('returns null when the named version is not published', async () => {
-    const client = stubClient({ versionsByDist: { d1: [version(9, 'complete')] } })
+    const client = stubClient({ versionsByBuild: { d1: [version(9, 'complete')] } })
     expect(await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)).toBeNull()
   })
 
   it('returns null when the named version is not complete', async () => {
     const client = stubClient({
-      versionsByDist: { d1: [version(5, 'building')] },
+      versionsByBuild: { d1: [version(5, 'building')] },
       artifactsByVersion: { v5: [artifact()] }
     })
     expect(await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)).toBeNull()
@@ -278,7 +365,7 @@ describe('resolveHostArtifactForVersion', () => {
 
   it('returns null when the named version has no artifact for this host', async () => {
     const client = stubClient({
-      versionsByDist: { d1: [version(5, 'complete')] },
+      versionsByBuild: { d1: [version(5, 'complete')] },
       artifactsByVersion: { v5: [artifact({ os: 'mac', gpu: 'mps' })] }
     })
     expect(await resolveHostArtifactForVersion(client as never, HOST, 'd1', 5)).toBeNull()

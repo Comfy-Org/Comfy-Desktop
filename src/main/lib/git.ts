@@ -8,14 +8,14 @@ import { removeQuarantine, codesignBinaries } from '../sources/standalone/macRep
 import * as telemetry from './telemetry'
 import { buildErrorFields } from '../../shared/errorEvent'
 
-// ───────────────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
 // pygit2 fallback state + circuit breaker
 //
 // Background: on machines without a global `git` binary we fall back to a
 // bundled Python interpreter (shipped in `standalone-env/`) plus our
 // `git_operations.py` helper.  On macOS in particular the Python binary
 // can be in a broken state (quarantine flag still set, codesignature
-// invalidated by extraction/copy/migration) — in which case every spawn
+// invalidated by extraction/copy/migration) - in which case every spawn
 // either hangs on Gatekeeper or fails fast.  Because various boot-time
 // paths (update checks, version resolution, renderer polling) call into
 // git frequently, an unhealthy Python helper used to manifest as a flood
@@ -28,7 +28,7 @@ import { buildErrorFields } from '../../shared/errorEvent'
 //   3. Track consecutive launch/timeout failures and disable the
 //      fallback for the rest of the session once a threshold is hit.
 //   4. Always run long-lived pygit2 spawns under a hard timeout.
-// ───────────────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
 
 type Pygit2State =
   | { status: 'unconfigured' }
@@ -42,6 +42,9 @@ const PYGIT2_MAX_FAILURES = 3
 
 /** Hard timeout for long-running pygit2 spawn operations (clone / checkout). */
 const PYGIT2_LONG_TIMEOUT_MS = 20 * 60 * 1000 // 20 minutes
+
+/** Timeout for local, read-only repository queries. */
+const LOCAL_GIT_TIMEOUT_MS = 5_000
 
 /** Timeout for the boot-time `--healthcheck` probe. */
 const PYGIT2_PROBE_TIMEOUT_MS = 5_000
@@ -80,7 +83,7 @@ function disablePygit2(reason: string): void {
   console.warn('[git] disabling pygit2 fallback:', reason)
   // Fires exactly once per session when the circuit breaker trips after
   // PYGIT2_MAX_FAILURES consecutive launch failures. Mirrored to Datadog
-  // for alerting — a spike here means a release broke the bundled
+  // for alerting - a spike here means a release broke the bundled
   // Python env for a population of users (signing / quarantine /
   // bootstrap-python copy drift).
   const failures = _pygit2.status === 'healthy' ? _pygit2.failures : 0
@@ -162,7 +165,7 @@ export function probePygit2(
  * extracted from a zip) and standalone-env (copied/migrated installs).
  *
  * The walk in codesignBinaries() signs anything that looks like Mach-O, so
- * this single call covers every bundled binary in the env — currently the
+ * this single call covers every bundled binary in the env - currently the
  * Python interpreter + pygit2 .so files + the bundled `uv` binary at the
  * env root / under `bin/`.  Adding more bundled binaries to bootstrap-python
  * does not require changes here.
@@ -197,7 +200,7 @@ async function repairEnvForPygit2(envDir: string): Promise<void> {
 
 /**
  * Try to configure the pygit2 fallback using a standalone installation's
- * Python.  Verifies the binary actually works by running a healthcheck —
+ * Python.  Verifies the binary actually works by running a healthcheck -
  * and on macOS, transparently runs quarantine removal + adhoc codesigning
  * once if the first probe fails, so the bundled Python is in a usable
  * state before going live.
@@ -225,7 +228,7 @@ export async function tryConfigurePygit2Fallback(installPath: string): Promise<b
 
   if (!probe.ok) {
     console.warn(`[git] pygit2 fallback rejected for ${installPath}: ${probe.reason}`)
-    // Probe still failing AFTER any repair attempt — the user is in the
+    // Probe still failing AFTER any repair attempt - the user is in the
     // broken state we shipped #738 to detect. Datadog-mirrored so ops
     // can correlate with release / signing-cert changes.
     telemetry.emit('comfy.desktop.pygit2.probe_failed', {
@@ -246,7 +249,7 @@ export async function tryConfigurePygit2Fallback(installPath: string): Promise<b
  * git operations to work from app launch, before any standalone
  * environment is downloaded.
  *
- * Verifies the binary actually works by running a healthcheck — and on
+ * Verifies the binary actually works by running a healthcheck - and on
  * macOS, transparently runs quarantine removal + adhoc codesigning once
  * if the first probe fails.  Without this guard, a broken bundled Python
  * caused boot-time git callers to spawn an endless stream of Python
@@ -293,7 +296,7 @@ export async function tryConfigureBootstrapPygit2(): Promise<boolean> {
 
 function runPygit2(
   args: string[],
-  timeout: number = 5000
+  timeout: number = LOCAL_GIT_TIMEOUT_MS
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     if (_pygit2.status !== 'healthy') {
@@ -490,9 +493,9 @@ export function readGitHead(repoPath: string): string | null {
   const headPath = path.join(gitDir, 'HEAD')
   try {
     const content = fs.readFileSync(headPath, 'utf-8').trim()
-    // Detached HEAD — contains sha directly
+    // Detached HEAD - contains sha directly
     if (!content.startsWith('ref: ')) return content || null
-    // Symbolic ref — resolve it
+    // Symbolic ref - resolve it
     const refPath = path.resolve(gitDir, content.slice(5))
     if (!refPath.startsWith(gitDir + path.sep) && refPath !== gitDir) return null
     try {
@@ -540,7 +543,7 @@ function redactUrl(url: string): string {
     }
     return parsed.toString()
   } catch {
-    // Non-standard URL (e.g. git@github.com:...) — strip user:pass@ if present
+    // Non-standard URL (e.g. git@github.com:...) - strip user:pass@ if present
     return url.replace(/\/\/[^/@]+@/, '//')
   }
 }
@@ -570,7 +573,7 @@ export function countCommitsAhead(
         cwd: repoPath,
         encoding: 'utf-8',
         windowsHide: true,
-        timeout: 1000
+        timeout: LOCAL_GIT_TIMEOUT_MS
       },
       (error, stdout) => {
         if (error) {
@@ -608,7 +611,7 @@ export function findNearestTag(
         cwd: repoPath,
         encoding: 'utf-8',
         windowsHide: true,
-        timeout: 1000
+        timeout: LOCAL_GIT_TIMEOUT_MS
       },
       (error, stdout) => {
         if (error) {
@@ -625,7 +628,7 @@ export function findNearestTag(
 /**
  * Find the highest version tag in the repository.  Runs `git tag` with
  * version-sort, so it includes tags on release branches that are not
- * ancestors of HEAD.  This is a display heuristic — the result may refer
+ * ancestors of HEAD.  This is a display heuristic - the result may refer
  * to a tag whose commit is on a different branch.  Callers should verify
  * ancestry (via {@link isAncestorOf}) before using it as a base tag.
  * Returns undefined if git is unavailable, no `v*` tags exist, or any
@@ -678,8 +681,8 @@ export function lsRemoteLatestTag(url: string): Promise<string | undefined> {
 
 /**
  * List every stable version tag from a remote URL via the Git protocol.
- * Stable here means a strict `vMAJOR.MINOR.PATCH` shape — no rc / alpha /
- * beta / build suffixes — so a tag like `v1.19.5-rc1` is excluded. Tags are
+ * Stable here means a strict `vMAJOR.MINOR.PATCH` shape - no rc / alpha /
+ * beta / build suffixes - so a tag like `v1.19.5-rc1` is excluded. Tags are
  * returned sorted descending (newest first).
  *
  * The pygit2 fallback returns its own newest-first list (see `ls-remote-tags`
@@ -795,7 +798,7 @@ export function findLatestVersionTag(repoPath: string): Promise<string | undefin
         cwd: repoPath,
         encoding: 'utf-8',
         windowsHide: true,
-        timeout: 1000
+        timeout: LOCAL_GIT_TIMEOUT_MS
       },
       (error, stdout) => {
         if (error) {
@@ -825,13 +828,11 @@ export function countUniqueCommits(
   ref2: string
 ): Promise<number | undefined> {
   if (isPygit2Configured()) {
-    return runPygit2(['cherry-pick-count', repoPath, ref1, ref2], 5000).then(
-      ({ exitCode, stdout }) => {
-        if (exitCode !== 0) return undefined
-        const n = parseInt(stdout.trim(), 10)
-        return Number.isFinite(n) ? n : undefined
-      }
-    )
+    return runPygit2(['cherry-pick-count', repoPath, ref1, ref2]).then(({ exitCode, stdout }) => {
+      if (exitCode !== 0) return undefined
+      const n = parseInt(stdout.trim(), 10)
+      return Number.isFinite(n) ? n : undefined
+    })
   }
   return new Promise((resolve) => {
     execFile(
@@ -841,7 +842,7 @@ export function countUniqueCommits(
         cwd: repoPath,
         encoding: 'utf-8',
         windowsHide: true,
-        timeout: 5000
+        timeout: LOCAL_GIT_TIMEOUT_MS
       },
       (error, stdout) => {
         if (error) {
@@ -878,7 +879,7 @@ export function isAncestorOf(
       {
         cwd: repoPath,
         windowsHide: true,
-        timeout: 1000
+        timeout: LOCAL_GIT_TIMEOUT_MS
       },
       (error) => {
         resolve(!error)
@@ -912,7 +913,7 @@ export function findMergeBase(
         cwd: repoPath,
         encoding: 'utf-8',
         windowsHide: true,
-        timeout: 1000
+        timeout: LOCAL_GIT_TIMEOUT_MS
       },
       (error, stdout) => {
         if (error) {
@@ -947,7 +948,7 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
         cwd: repoPath,
         encoding: 'utf-8',
         windowsHide: true,
-        timeout: 1000
+        timeout: LOCAL_GIT_TIMEOUT_MS
       },
       (error, stdout) => {
         if (error) {
@@ -963,7 +964,7 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
 
 /**
  * Fetch all tags from the remote, unshallowing if needed so that
- * cherry-pick–aware version resolution has the full commit graph.
+ * cherry-pick-aware version resolution has the full commit graph.
  * Tries `git fetch --unshallow origin --tags` first; falls back to
  * `git fetch origin --tags` when the repo is already complete or
  * unshallowing fails (e.g. network issues).
@@ -990,7 +991,7 @@ export function fetchTags(repoPath: string): Promise<boolean> {
           return
         }
         // Unshallow fails when the repo is already complete or on network
-        // error — retry without --unshallow so tags still get fetched.
+        // error - retry without --unshallow so tags still get fetched.
         execFile(
           'git',
           ['fetch', 'origin', '--tags'],
@@ -1083,7 +1084,7 @@ export function isSystemGitAvailable(): Promise<boolean> {
 /**
  * Developers can set `COMFY_FORCE_PYGIT2=1` to keep every git operation on the
  * bundled pygit2 path even when a system git is present and even when pygit2
- * fails to authenticate — i.e. it disables the system-git fallback below. This
+ * fails to authenticate - i.e. it disables the system-git fallback below. This
  * keeps the pygit2 path exercised during the beta/development phase. The same
  * flag forces the pygit2 backend in ComfyUI-Manager (via `CM_USE_PYGIT2`).
  */
@@ -1093,7 +1094,7 @@ export function isForcePygit2(): boolean {
 
 /**
  * Heuristically classify a failed pygit2 result as an authentication-class
- * failure that a system git (which honors the user's full git config — proxy,
+ * failure that a system git (which honors the user's full git config - proxy,
  * `insteadOf`, ssh keys, credential helpers) could likely succeed at.
  *
  * The bundled pygit2 has HTTPS but no SSH transport, so a global `insteadOf`
@@ -1135,7 +1136,7 @@ async function withSystemGitFallback(
   })
   sendOutput(
     '\npygit2 could not authenticate (your git config likely rewrites GitHub ' +
-      'HTTPS to SSH, which the bundled pygit2 cannot use); retrying with system git…\n'
+      'HTTPS to SSH, which the bundled pygit2 cannot use); retrying with system git...\n'
   )
   return systemGitOp()
 }
@@ -1219,7 +1220,7 @@ export function gitCheckoutCommit(
  * the git move when a dependency sync or snapshot restore fails partway, so we
  * never leave new source + stale packages (the half-applied state that crashes
  * on import, e.g. `comfy_aimdo.vram_buffer`). Deliberately ignores any abort
- * signal — rollback must run even when the user cancelled. Returns true if HEAD
+ * signal - rollback must run even when the user cancelled. Returns true if HEAD
  * ends up at the target (or was already there).
  */
 export async function rollbackComfySource(
@@ -1228,7 +1229,7 @@ export async function rollbackComfySource(
   sendOutput?: (text: string) => void
 ): Promise<boolean> {
   if (readGitHead(comfyuiDir) === targetHead) return true
-  sendOutput?.(`\nRolling back ComfyUI source to ${targetHead.slice(0, 7)}…\n`)
+  sendOutput?.(`\nRolling back ComfyUI source to ${targetHead.slice(0, 7)}...\n`)
   const result = await gitCheckoutCommit(
     comfyuiDir,
     targetHead,
@@ -1240,7 +1241,7 @@ export async function rollbackComfySource(
   sendOutput?.(
     ok
       ? `Rolled back ComfyUI source to ${targetHead.slice(0, 7)}.\n`
-      : `⚠ Failed to roll back ComfyUI source to ${targetHead.slice(0, 7)}.\n`
+      : `WARNING: Failed to roll back ComfyUI source to ${targetHead.slice(0, 7)}.\n`
   )
   return ok
 }
