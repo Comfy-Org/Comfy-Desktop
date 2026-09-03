@@ -5,6 +5,8 @@ argument-hint: '[what you want to change]'
 allowed-tools: Bash(node scripts/starter-templates.mjs *) Bash(git checkout *) Bash(git switch *) Bash(git add *) Bash(git commit *) Bash(git push *) Bash(gh pr create *) Read
 ---
 
+# Starter templates
+
 Change the starter templates the desktop installer offers, then open a PR.
 
 The picker shows 4 templates in each of 4 tabs: `video`, `image`, `3d`, `audio`.
