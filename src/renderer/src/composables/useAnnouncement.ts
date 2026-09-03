@@ -10,7 +10,7 @@ interface UseAnnouncementApi {
 /**
  * Title-bar news bell → main forwards `onOpenAnnouncement` here, mirroring the
  * Send Feedback flow (`useSendFeedback`). Opening marks the announcement seen
- * (persisted via `minimaxAnnouncementSeen`); the settings-changed broadcast
+ * (persisted via `cloudNodesAnnouncementSeen`); the settings-changed broadcast
  * then clears the title-bar's unread dot. The modal owns its own telemetry.
  */
 export function useAnnouncement(): UseAnnouncementApi {
@@ -26,7 +26,7 @@ export function useAnnouncement(): UseAnnouncementApi {
 
   onMounted(() => {
     unsubOpen = window.api.onOpenAnnouncement(() => {
-      void window.api.setSetting('minimaxAnnouncementSeen', true)
+      void window.api.setSetting('cloudNodesAnnouncementSeen', true)
       announcementOpen.value = true
     })
   })

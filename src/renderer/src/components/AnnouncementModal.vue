@@ -5,32 +5,37 @@ import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 /**
- * One-off announcement modal (MiniMax license launch). Deliberately mirrors
- * `WhyTryCloudModal.vue`'s layout and styling so it feels native.
+ * One-off announcement modal (currently the Comfy Cloud nodes launch).
+ * Deliberately mirrors `WhyTryCloudModal.vue`'s layout and styling so it feels
+ * native. Swapping to the next announcement means changing ANNOUNCEMENT_ID, the
+ * URLs, the hero media and the i18n namespace below, plus a new seen-flag in
+ * settings so previously-dismissed users still get the bell.
  *
- * DRAFT COPY: strings live in `announcement.minimax.*` (locales/en.json) for nav to finalize.
+ * DRAFT COPY: strings live in `announcement.cloudNodes.*` (locales/en.json) for nav to finalize.
+ * PLACEHOLDER MEDIA: the hero video and poster do not exist yet.
  */
 
 // Announcement id, carried in telemetry so this component can be reused for a
 // future announcement by swapping the id + copy.
-const ANNOUNCEMENT_ID = 'minimax_license'
+const ANNOUNCEMENT_ID = 'comfy_cloud_nodes'
 
 // CTA destinations. The UTM tags clicks as Desktop-origin so they're
 // attributable in analytics.
-const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=minimax_h3_license'
-const REQUEST_LICENSE_URL = `https://comfy.org/minimax/license${UTM}`
-const LEARN_MORE_URL = `https://blog.comfy.org/p/2ec77c32-7dd6-4a99-b763-fffe1580b842${UTM}`
+const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_cloud_nodes'
+const PRIMARY_CTA_URL = `https://cloud.comfy.org${UTM}`
+const LEARN_MORE_URL = `https://comfy.org/cloud-nodes${UTM}`
 
-// Hero video (from nav's MiniMax license LP, ComfyUI_frontend#16118) hosted on
-// media.comfy.org. Poster paints immediately; the video muted-autoplays + loops.
-const HERO_VIDEO_URL = 'https://media.comfy.org/website/minimax-license/hero.mp4'
-const HERO_POSTER_URL = 'https://media.comfy.org/website/minimax-license/hero-poster.jpg'
+// Hero video hosted on media.comfy.org. Poster paints immediately; the video
+// muted-autoplays + loops. NOT YET UPLOADED — both paths 404 until someone
+// captures a Comfy Cloud node running on canvas.
+const HERO_VIDEO_URL = 'https://media.comfy.org/website/cloud-nodes/hero.mp4'
+const HERO_POSTER_URL = 'https://media.comfy.org/website/cloud-nodes/hero-poster.jpg'
 
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
 
 const highlights = computed<string[]>(() => {
-  const raw = tm('announcement.minimax.highlights')
+  const raw = tm('announcement.cloudNodes.highlights')
   return Array.isArray(raw) ? (raw as unknown as string[]) : []
 })
 
@@ -95,7 +100,7 @@ onUnmounted(() => {
         class="announce-overlay"
         role="dialog"
         aria-modal="true"
-        :aria-label="$t('announcement.minimax.title')"
+        :aria-label="$t('announcement.cloudNodes.title')"
         tabindex="-1"
         @mousedown="onOverlayMouseDown"
         @click="onOverlayClick"
@@ -120,7 +125,7 @@ onUnmounted(() => {
                 muted
                 loop
                 playsinline
-                :aria-label="$t('announcement.minimax.imageAlt')"
+                :aria-label="$t('announcement.cloudNodes.imageAlt')"
               >
                 <source :src="HERO_VIDEO_URL" type="video/mp4" />
               </video>
@@ -128,7 +133,9 @@ onUnmounted(() => {
                 class="announce-sound"
                 type="button"
                 :aria-label="
-                  isMuted ? $t('announcement.minimax.unmute') : $t('announcement.minimax.mute')
+                  isMuted
+                    ? $t('announcement.cloudNodes.unmute')
+                    : $t('announcement.cloudNodes.mute')
                 "
                 :aria-pressed="!isMuted"
                 data-testid="announcement-sound-toggle"
@@ -141,9 +148,9 @@ onUnmounted(() => {
             <div class="announce-body">
               <div class="announce-body-main">
                 <header class="announce-header">
-                  <h2 class="announce-title">{{ $t('announcement.minimax.title') }}</h2>
+                  <h2 class="announce-title">{{ $t('announcement.cloudNodes.title') }}</h2>
                 </header>
-                <p class="announce-lead">{{ $t('announcement.minimax.lead') }}</p>
+                <p class="announce-lead">{{ $t('announcement.cloudNodes.lead') }}</p>
                 <ul v-if="highlights.length" class="announce-list">
                   <li v-for="h in highlights" :key="h">
                     <Check :size="16" class="announce-check" />
@@ -158,15 +165,15 @@ onUnmounted(() => {
                   data-testid="announcement-learn-more"
                   @click="openCta('learn_more', LEARN_MORE_URL)"
                 >
-                  {{ $t('announcement.minimax.learnMoreCta') }}
+                  {{ $t('announcement.cloudNodes.learnMoreCta') }}
                 </button>
                 <button
                   class="brand-primary"
                   type="button"
                   data-testid="announcement-request-license"
-                  @click="openCta('request_license', REQUEST_LICENSE_URL)"
+                  @click="openCta('request_license', PRIMARY_CTA_URL)"
                 >
-                  {{ $t('announcement.minimax.requestLicenseCta') }}
+                  {{ $t('announcement.cloudNodes.primaryCta') }}
                 </button>
               </footer>
             </div>

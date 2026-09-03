@@ -725,6 +725,20 @@
       "imageAlt": "MiniMax H3 announcement",
       "unmute": "Unmute video",
       "mute": "Mute video"
+    },
+    "cloudNodes": {
+      "title": "Run open models on Comfy Cloud GPUs",
+      "lead": "New Comfy Cloud nodes run the latest open models on our hardware, from inside your own graph",
+      "highlights": [
+        "No subscription: an account and credits are enough",
+        "Nothing to download and no VRAM floor",
+        "Nine nodes at launch across image, video and audio"
+      ],
+      "primaryCta": "Get Started",
+      "learnMoreCta": "Learn More",
+      "imageAlt": "Comfy Cloud nodes announcement",
+      "unmute": "Unmute video",
+      "mute": "Mute video"
     }
   },
   "tray": {
