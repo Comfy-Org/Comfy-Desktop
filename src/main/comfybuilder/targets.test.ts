@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { hostOs, selectArtifactForHost } from './targets'
+import { compatibleArtifactsForHost, hostOs, selectArtifactForHost } from './targets'
 import type { Artifact, Host } from './types'
 
 function art(o: Artifact['os'], g: Artifact['gpu'], overrides: Partial<Artifact> = {}): Artifact {
@@ -71,5 +71,36 @@ describe('selectArtifactForHost', () => {
     const host = { os: 'linux', gpu: 'nvidia' } as const
     expect(selectArtifactForHost([a, b], host)?.id).toBe('cu128')
     expect(selectArtifactForHost([b, a], host)?.id).toBe('cu128')
+  })
+})
+
+describe('compatibleArtifactsForHost', () => {
+  it('returns exact GPU targets before CPU fallbacks', () => {
+    const targets = [
+      art('windows', 'cpu', { id: 'cpu' }),
+      art('windows', 'nvidia', { id: 'cuda-118', accelVariant: 'cu118' }),
+      art('windows', 'nvidia', { id: 'cuda-128', accelVariant: 'cu128' })
+    ]
+
+    expect(
+      compatibleArtifactsForHost(targets, { os: 'windows', gpu: 'nvidia' }).map(
+        (artifact) => artifact.id
+      )
+    ).toEqual(['cuda-128', 'cuda-118', 'cpu'])
+  })
+
+  it('excludes wrong-OS, incompatible-GPU, and unfinished targets', () => {
+    const targets = [
+      art('windows', 'nvidia', { id: 'ready' }),
+      art('linux', 'nvidia', { id: 'wrong-os' }),
+      art('windows', 'amd', { id: 'wrong-gpu' }),
+      art('windows', 'cpu', { id: 'building', status: 'building' })
+    ]
+
+    expect(
+      compatibleArtifactsForHost(targets, { os: 'windows', gpu: 'nvidia' }).map(
+        (artifact) => artifact.id
+      )
+    ).toEqual(['ready'])
   })
 })

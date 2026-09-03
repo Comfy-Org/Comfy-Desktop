@@ -23,6 +23,12 @@ export interface InstallationRecord {
   createdAt: string
   installPath: string
   sourceId: string
+  /** Workspace that owns this installation. Absent for local and legacy records. */
+  workspaceId?: string
+  /** Lifecycle state. Known values: `'installing'` (fresh install in flight,
+   *  hidden from the renderer), `'updating'` (in-place update of an existing
+   *  install, stays visible), `'installed'`, `'failed'`. Absent on sources
+   *  that never track install progress. */
   status?: string
   seen?: boolean
   comfyVersion?: ComfyVersion
@@ -87,6 +93,12 @@ export interface InstallationRecord {
  *
  * The steps chain, so a `useSharedPaths`-era record lands directly on the
  * current per-folder schema.
+ *
+ * 3. A ComfyBuilder in-place update once reused status `'installing'`,
+ *    disambiguated from a fresh install by its rollback payload. Such a
+ *    record lands as `'updating'`, the status the update flow writes now,
+ *    so status alone distinguishes a hidden fresh install from a visible
+ *    in-place update.
  */
 function migrateRecord(record: InstallationRecord): InstallationRecord {
   let rec = record
@@ -110,6 +122,15 @@ function migrateRecord(record: InstallationRecord): InstallationRecord {
       useSharedInput: typeof rest.useSharedInput === 'boolean' ? rest.useSharedInput : value,
       useSharedOutput: typeof rest.useSharedOutput === 'boolean' ? rest.useSharedOutput : value
     } as InstallationRecord
+  }
+  if (
+    rec.status === 'installing' &&
+    rec.sourceId === 'comfybuilder' &&
+    rec.comfybuilderRollback !== null &&
+    typeof rec.comfybuilderRollback === 'object' &&
+    !Array.isArray(rec.comfybuilderRollback)
+  ) {
+    rec = { ...rec, status: 'updating' }
   }
   return rec
 }
@@ -293,6 +314,48 @@ export async function update(
     installationEvents.emit('updated', updated)
     installationEvents.emit('changed')
   }
+  return updated
+}
+
+/**
+ * Associate unowned Builder build installs with a workspace using exact ids
+ * returned by that workspace. The check and write share the mutation queue, so
+ * an existing association can never be overwritten by a concurrent refresh.
+ */
+export async function associateUnownedBuildInstalls(
+  workspaceId: string,
+  visibleBuildIds: ReadonlySet<string>
+): Promise<InstallationRecord[]> {
+  if (!workspaceId || visibleBuildIds.size === 0) return []
+
+  const updated = await enqueue(async () => {
+    const list = await loadForWrite()
+    const matched: InstallationRecord[] = []
+
+    for (let index = 0; index < list.length; index++) {
+      const existing = list[index]!
+      const distributionId = existing.distributionId
+      if (
+        existing.sourceId !== 'comfybuilder' ||
+        existing.workspaceId !== undefined ||
+        typeof distributionId !== 'string' ||
+        distributionId.length === 0 ||
+        !visibleBuildIds.has(distributionId)
+      ) {
+        continue
+      }
+
+      const next = { ...existing, workspaceId }
+      list[index] = next
+      matched.push(next)
+    }
+
+    if (matched.length > 0) await save(list)
+    return matched
+  })
+
+  for (const record of updated) installationEvents.emit('updated', record)
+  if (updated.length > 0) installationEvents.emit('changed')
   return updated
 }
 

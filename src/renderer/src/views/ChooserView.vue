@@ -9,7 +9,7 @@ import { useInstallList } from '../composables/useInstallList'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { Search } from 'lucide-vue-next'
+import { RefreshCw, Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BrandBackground from '../components/BrandBackground.vue'
@@ -17,33 +17,20 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
-import { distEntry, installEntry, type ChooserGridEntry } from './chooser/chooserGridEntry'
-import { isDistributionInstall } from '../devplatform/distributionState'
+import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
-import type { ContextMenuItem } from '../types/context-menu'
-import type { Distribution } from '../devplatform/types'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 
 /**
- * Chooser view — recents grid.
+ * Chooser view - recents grid.
  *
  * A golden-ratio tile grid the user picks from. The install-less host
  * window hosts this as the Comfy tab body when no install backs the
  * entry.
  *
- * Layout:
- *   - Top-right: dev-platform account chip (log-in button when signed out;
- *     workspace switcher when signed in).
- *   - Top-left: "New Install" (always present).
- *   - Following: every install (local / cloud / remote) ordered by
- *     `lastLaunchedAt` desc, never-launched at the end.
- *   - Then, when signed in, one tile per distribution published to the
- *     workspace that isn't installed yet: installing a distribution is the
- *     SAME GESTURE as launching an existing install: one tile, one click.
- *   - Filter chips above the grid narrow by source category.
- *
- * Per-install tile rendering lives in `chooser/ChooserInstallTile.vue`;
- * per-distribution tiles in `devplatform/DevPlatformDistributionCard.vue`.
+ * Signed-in users choose either No workspace or one authenticated workspace.
+ * The grid contains only installed instances in that scope.
+ * Available Builds belong in the workspace New Instance flow, not this grid.
  */
 
 const props = withDefaults(
@@ -56,13 +43,12 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  /** User picked an install — caller decides whether to swap-in-place,
+  /** User picked an install - caller decides whether to swap-in-place,
    *  open a fresh window, or hand off to a launch flow. */
   pick: [installation: Installation]
-  /** User triggered the new-install flow (top-left card or empty Cloud
-   *  card). */
-  'show-new-install': []
-  /** A long-running action was kicked off from the inline Manage…
+  /** User triggered the new-install flow in the current dashboard scope. */
+  'show-new-install': [workspaceId?: string]
+  /** A long-running action was kicked off from the inline Manage...
    *  DetailModal. Forwarded to PanelApp so it can wire the operation
    *  through `progressStore`. */
   'show-progress': [opts: ShowProgressOpts]
@@ -80,20 +66,6 @@ onMounted(() => {
   }
 })
 
-// Sign-in / workspace-switch can happen ON this page (the chip), so the
-// distribution list follows the session rather than mount timing. Keying on the
-// workspace id (not just signed-in) is what re-fetches after a switch, where the
-// store clears the grid but signed-in stays true.
-watch(
-  () => [authStore.isSignedIn, authStore.status.workspaceId] as const,
-  () => {
-    if (authStore.isSignedIn && authStore.distributions.length === 0) {
-      void authStore.fetchDistributions().catch(() => {})
-    }
-  },
-  { immediate: true }
-)
-
 // Filter / search / recency logic is shared with the title-bar
 // instance picker popover via `useInstallList` so the two surfaces
 // cannot drift. The chip UI is currently hidden in the brand redesign
@@ -102,12 +74,12 @@ watch(
 // regressions guard.
 //
 // "Local" includes both standalone local installs and Legacy Desktop
-// installs (both report `sourceCategory === 'local'`) — they're
+// installs (both report `sourceCategory === 'local'`) - they're
 // conceptually the same family from the user's POV. Cloud installs
-// flow through `visibleInstalls` like every other source — there is no
+// flow through `visibleInstalls` like every other source - there is no
 // special cloud surface anymore.
 const installationsRef = toRef(installationStore, 'installations')
-const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, matchesQuery } = useInstallList({
+const { searchQuery, activeFilter, visibleInstalls } = useInstallList({
   installations: installationsRef
 })
 
@@ -117,216 +89,84 @@ const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, matchesQuery 
 // doesn't reference the ref directly (chips are TODO(brand-cleanup)).
 defineExpose({ activeFilter })
 
-// --- Comfy Builder distributions ---
-//
-// ORDERING: New install → existing installs → distributions. Existing installs
-// are what the user returns to and their position is muscle memory, so the
-// "things I could add" family goes last.
-//
-// DE-DUPLICATION: an already-installed distribution is an ordinary
-// installation and must not be listed twice. `installation.distributionId`
-// when the comfybuilder install carries it (the index signature passes it
-// through), else case-insensitive name equality: an install created from a
-// distribution inherits its name.
-function installationBacksDistribution(inst: Installation, dist: Distribution): boolean {
-  const linked = inst.distributionId
-  if (typeof linked === 'string' && linked.length > 0) return linked === dist.id
-  // Name-match is a fallback only for a comfybuilder install; never let an
-  // unrelated same-named local install hide a distribution tile.
-  if (inst.sourceId !== 'comfybuilder') return false
-  return inst.name.trim().toLowerCase() === dist.name.trim().toLowerCase()
-}
+// --- Dashboard scope ---
 
-/** Every distribution that earns a tile, before search. Blocked builds are kept
- *  and receded by the card, not filtered out — a hidden one is indistinguishable
- *  from one that was never published. */
-const chooserDistributions = computed<Distribution[]>(() => {
-  if (!authStore.isSignedIn) return []
-  return authStore.distributions.filter(
-    (dist) =>
-      dist.state !== 'update-available' &&
-      !installationStore.installations.some((inst) => installationBacksDistribution(inst, dist))
-  )
-})
+const selectedWorkspaceId = ref<string | null>(null)
+let dashboardScopeInitialized = false
 
-/** Search filters distributions through the SAME query as the install tiles. */
-const visibleDistributions = computed<Distribution[]>(() =>
-  chooserDistributions.value.filter((dist) => matchesQuery(dist.name))
-)
-
-/** A failed distribution fetch, distinct from an empty workspace: the watch
- *  keys on session identity so it won't re-fetch on its own, hence the retry. */
-const distributionLoadFailed = computed(
-  () => authStore.isSignedIn && authStore.distributionsError && authStore.distributions.length === 0
-)
-
-/** The no-matches hint may only fire when NOTHING in the grid matches. A failed
- *  fetch shows its own retry line instead, so the two never co-render. */
-const showNoMatches = computed(
-  () =>
-    showEmptyHint.value && visibleDistributions.value.length === 0 && !distributionLoadFailed.value
-)
-
-/** One quiet line under the grid when the signed-in workspace has nothing
- *  published (or the fetch failed). Never a panel: this page already has content. */
-const distributionNote = computed(() => {
-  if (!authStore.isSignedIn) return ''
-  if (searchQuery.value.trim()) return ''
-  if (authStore.loadingDistributions) return ''
-  if (distributionLoadFailed.value) return t('devPlatform.distribution.loadError')
-  if (authStore.distributions.length === 0) return t('devPlatform.distribution.emptyTitle')
-  return ''
-})
-
-// --- Shelves ---
-//
-// Your installs lead, unheaded; the workspace's own installs and available
-// distributions sit under one header beneath. With nothing to shelve the page
-// falls back to the shipped centered grid — a lone left-aligned cluster under
-// no header reads as broken.
-
-// `isDistributionInstall` judges the install's own identity, not the fetched
-// distribution list, so the split holds when a distribution is unpublished or
-// the list hasn't loaded.
-const allPlainInstalls = computed(() =>
-  installationStore.installations.filter((i) => !isDistributionInstall(i))
-)
-const allBuilderInstalls = computed(() =>
-  installationStore.installations.filter(isDistributionInstall)
-)
-
-const ownEntries = computed<ChooserGridEntry[]>(() =>
-  visibleInstalls.value.filter((i) => !isDistributionInstall(i)).map(installEntry)
-)
-const workspaceInstalledEntries = computed<ChooserGridEntry[]>(() =>
-  visibleInstalls.value.filter(isDistributionInstall).map(installEntry)
-)
-const workspaceAvailableEntries = computed<ChooserGridEntry[]>(() =>
-  visibleDistributions.value.map(distEntry)
-)
-
-/** Pre-search lists, so typing can't flip the page between arrangements.
- *  A distribution-backed install is a local install the user must always be
- *  able to launch, so it shows whether or not they are signed in; only the
- *  still-available distributions to add need a workspace session. */
-const showWorkspaceShelf = computed(
-  () =>
-    allBuilderInstalls.value.length > 0 ||
-    (authStore.isSignedIn && chooserDistributions.value.length > 0)
-)
-
-/**
- * Install a distribution: main resolves the host artifact + creates the record,
- * then we drive the SAME `installInstance` + progress UI every other install
- * uses (via the `show-progress` event PanelApp already handles). A blocked tile
- * never reaches here: the card suppresses its own activation.
- */
-/** Distribution id whose install-kickoff is in flight, so a fast second click
- *  (tile then kebab, or a double-click) can't start two installs before the
- *  progress modal takes over. Main also guards this, belt-and-suspenders. */
-const activatingDist = ref<string | null>(null)
-
-async function handleDistributionActivate(dist: Distribution): Promise<void> {
-  if (activatingDist.value) return
-  activatingDist.value = dist.id
-  try {
-    const result = await window.api.comfybuilder
-      .installDistribution(dist.id)
-      .catch((err: unknown) => ({
-        ok: false as const,
-        message: (err as Error)?.message || String(err)
-      }))
-    if (!result || !result.ok || !result.entry) {
-      await modal.alert({
-        title: t('errors.installFailed'),
-        message: result.message || t('devPlatform.distribution.installFailed')
-      })
+watch(
+  () => ({ signedIn: authStore.isSignedIn, workspaceId: authStore.status.workspaceId }),
+  (next, previous) => {
+    if (!next.signedIn) {
+      selectedWorkspaceId.value = null
+      dashboardScopeInitialized = false
       return
     }
-    emit('show-progress', {
-      installationId: result.entry.id,
-      title: `${t('newInstall.installing')}: ${result.entry.name}`,
-      apiCall: () => window.api.installInstance(result.entry!.id),
-      autoLaunchOnFinish: true,
-      opKind: 'install'
-    })
-  } finally {
-    activatingDist.value = null
-  }
-}
-
-// --- Distribution kebab menu ---
-//
-// Distribution cards carry the same top-right kebab as install tiles, so the
-// corner means one thing across the grid. Install is the only action a
-// distribution supports today; blocked states keep the item visible but
-// disabled rather than presenting an empty menu, which reads as a bug.
-const distMenu = ref<{ open: boolean; x: number; y: number; dist: Distribution | null }>({
-  open: false,
-  x: 0,
-  y: 0,
-  dist: null
-})
-
-const distMenuItems = computed<ContextMenuItem[]>(() => {
-  const dist = distMenu.value.dist
-  if (!dist) return []
-  return [
-    {
-      id: 'install',
-      label: t('devPlatform.distribution.menuInstall'),
-      // Only a never-installed distribution installs from here. An
-      // `update-available` row never renders in the chooser (updates live on
-      // the existing install), and installing one anew would duplicate it.
-      disabled: dist.state !== 'installable'
+    // Build versions drive each managed instance's Update status tag. Main
+    // warms that synchronous cache during listBuilds and then broadcasts an
+    // installation refresh, so load the active workspace catalog as soon as
+    // the authenticated dashboard has one.
+    if (next.workspaceId && next.workspaceId !== previous?.workspaceId) {
+      void authStore.fetchBuilds()
     }
-  ]
-})
+    if (!dashboardScopeInitialized) {
+      selectedWorkspaceId.value = next.workspaceId ?? null
+      dashboardScopeInitialized = true
+      return
+    }
+    // Follow an external authenticated workspace switch only while the user is
+    // viewing that workspace. An explicit No workspace selection remains local.
+    if (selectedWorkspaceId.value !== null && selectedWorkspaceId.value === previous?.workspaceId) {
+      selectedWorkspaceId.value = next.workspaceId ?? null
+    }
+  },
+  { immediate: true }
+)
 
-function openDistKebabMenu(event: MouseEvent, dist: Distribution): void {
-  const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect?.()
-  // Right-aligned drop, matching the install-tile kebab. ContextMenu clamps to
-  // the viewport, so a negative x is safe.
-  const x = rect ? rect.right - 180 : event.clientX
-  const y = (rect?.bottom ?? event.clientY) + 4
-  distMenu.value = { open: true, x, y, dist }
+function installationIsInSelectedScope(inst: Installation): boolean {
+  if (!authStore.isSignedIn) return inst.workspaceId === undefined
+  return selectedWorkspaceId.value === null
+    ? inst.workspaceId === undefined
+    : inst.workspaceId === selectedWorkspaceId.value
 }
 
-function closeDistMenu(): void {
-  distMenu.value = { open: false, x: 0, y: 0, dist: null }
-}
+const scopedVisibleInstalls = computed(() =>
+  visibleInstalls.value.filter(installationIsInSelectedScope)
+)
+const scopedInstallCount = computed(
+  () => installationStore.installations.filter(installationIsInSelectedScope).length
+)
+const showNoMatches = computed(
+  () =>
+    scopedVisibleInstalls.value.length === 0 &&
+    (searchQuery.value.trim().length > 0 || activeFilter.value !== 'all')
+)
 
-function handleDistMenuSelect(itemId: string): void {
-  const dist = distMenu.value.dist
-  closeDistMenu()
-  if (itemId === 'install' && dist) void handleDistributionActivate(dist)
+const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
+
+async function refreshWorkspace(): Promise<void> {
+  emitTelemetryAction('comfy.desktop.workspace.refresh', {})
+  await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
 // --- Cluster top offset ---
 
 const TILES_PER_ROW = 4
 
-/** Unfiltered row count across both shelves, reserving `min-height` so the
- *  cluster doesn't shift while typing in search. Raw lists, not `visible*`. */
-const clusterRows = computed(() => {
-  // +1: the New Install tile rides with the your-installs family.
-  const ownRows = Math.ceil((1 + allPlainInstalls.value.length) / TILES_PER_ROW)
-  if (!showWorkspaceShelf.value) return ownRows
-  const shelfTiles = allBuilderInstalls.value.length + chooserDistributions.value.length
-  return ownRows + Math.ceil(shelfTiles / TILES_PER_ROW)
-})
+/** Search-independent height reservation for New Instance plus scoped installs. */
+const clusterRows = computed(() => Math.ceil((1 + scopedInstallCount.value) / TILES_PER_ROW))
 
 // --- Manage / context menu ---
 // All Manage routes go through `window.api.openInstancePicker` (the
-// picker popup) — the legacy `useOverlay`-driven `ManageInstallModal`
+// picker popup) - the legacy `useOverlay`-driven `ManageInstallModal`
 // route is retired.
 
 function openManage(
   installation: Installation,
   opts: { initialTab?: string; autoAction?: string | null } = {}
 ): void {
-  // Every Manage entry — bare "Manage…" and the specialised kebab
-  // items (Update / Migrate / Restore Snapshot / Delete) — routes to
+  // Every Manage entry - bare "Manage..." and the specialised kebab
+  // items (Update / Migrate / Restore Snapshot / Delete) - routes to
   // the instance-picker popup. Bare goes to compact (default identity
   // card + CTAs); specialised paths open the picker directly in
   // expanded mode on the relevant tab with `autoAction` so the action
@@ -344,6 +184,16 @@ function openManage(
   })
 }
 
+function canPromoteToWorkspace(inst: Installation): boolean {
+  return (
+    authStore.isSignedIn &&
+    Boolean(authStore.status.workspaceId) &&
+    inst.status === 'installed' &&
+    inst.sourceCategory === 'local' &&
+    Boolean(inst.installPath)
+  )
+}
+
 const {
   ctxMenu,
   ctxMenuItems,
@@ -352,19 +202,21 @@ const {
   handleCtxMenuSelect,
   closeMenu,
   triggerAction,
-  isStoppedActionGated
+  isStoppedActionGated,
+  isPromotingToWorkspace
 } = useInstallContextMenu({
   onManage: (inst, opts) => openManage(inst, opts ?? {}),
   // Fast-path for Delete: forwards to PanelApp so the same ProgressModal
   // pipeline used by every other long op fires here too, without the
   // brief ManageInstallModal flash that the autoAction route produced.
-  onShowProgress: (showOpts) => emit('show-progress', showOpts)
+  onShowProgress: (showOpts) => emit('show-progress', showOpts),
+  canPromoteToWorkspace
 })
 
 async function pickInstall(inst: Installation): Promise<void> {
   // The instance window owns lifecycle. If a host window already exists for
-  // this install — running, launching, OR crashed (the window stays open on
-  // its lifecycle/error surface) — bring it forward instead of kicking off a
+  // this install - running, launching, OR crashed (the window stays open on
+  // its lifecycle/error surface) - bring it forward instead of kicking off a
   // second launch with a dashboard takeover. Restart, stop, and crash details
   // all live inside that window.
   if (
@@ -374,7 +226,7 @@ async function pickInstall(inst: Installation): Promise<void> {
   ) {
     const focused = await window.api.focusComfyWindow(inst.id)
     // `errorInstances` can be hydrated from the retained crash buffer after
-    // the window was closed, so a focus may find nothing — fall through and
+    // the window was closed, so a focus may find nothing - fall through and
     // launch normally in that case.
     if (focused) return
   }
@@ -464,11 +316,13 @@ onMounted(async () => {
   }
 })
 function handleNewInstallClick(): void {
-  emit('show-new-install')
+  if (authStore.isSignedIn && selectedWorkspaceId.value) {
+    emit('show-new-install', selectedWorkspaceId.value)
+  } else {
+    emit('show-new-install')
+  }
 }
 
-/** Shared by every `ChooserFamilyGrid`, so a tile behaves the same whichever
- *  shelf it landed in. */
 const gridHandlers = {
   'new-install': handleNewInstallClick,
   pick: pickInstall,
@@ -478,31 +332,58 @@ const gridHandlers = {
     triggerAction(action, inst),
   'view-error': viewError,
   'view-danger': viewDanger,
-  'dist-select': handleDistributionActivate,
-  'dist-kebab': openDistKebabMenu,
   'why-cloud': openWhyCloud
 }
 </script>
 
 <template>
   <BrandBackground v-show="props.visible" class="chooser-bg">
-    <div class="chooser-view" :style="{ '--rows': clusterRows }">
-      <!-- Identity, top-right: the account chip when signed in, a quiet log-in
-           button when not. Absolutely positioned so it never enters the
-           centered wordmark → search → grid column. -->
+    <div
+      class="chooser-view"
+      :class="{ 'chooser-view--workspace': authStore.isSignedIn }"
+      :style="{ '--rows': clusterRows }"
+    >
+      <!-- Signed-in account identity, pinned outside the centered content column. -->
       <div class="chooser-account">
         <DevPlatformAccountChip />
       </div>
 
       <ComfyWordmark class="chooser-wordmark" aria-hidden="true" />
-      <div class="chooser-search">
-        <BaseInput
-          v-model="searchQuery"
-          :placeholder="t('chooser.searchPlaceholder')"
-          :aria-label="t('chooser.searchPlaceholder')"
-        >
-          <template #leading><Search :size="16" /></template>
-        </BaseInput>
+      <div class="chooser-toolbar">
+        <div class="chooser-search">
+          <BaseInput
+            v-model="searchQuery"
+            :placeholder="t('chooser.searchPlaceholder')"
+            :aria-label="t('chooser.searchPlaceholder')"
+          >
+            <template #leading><Search :size="16" /></template>
+          </BaseInput>
+        </div>
+      </div>
+
+      <div v-if="authStore.isSignedIn" class="chooser-workspace-bar">
+        <div class="chooser-workspace-controls">
+          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
+          <button
+            type="button"
+            class="chooser-workspace-refresh"
+            :disabled="refreshingWorkspace"
+            :aria-label="t('devPlatform.workspace.refresh')"
+            :title="t('devPlatform.workspace.refresh')"
+            data-testid="chooser-workspace-refresh"
+            @click="refreshWorkspace"
+          >
+            <RefreshCw
+              :size="13"
+              :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
+            />
+          </button>
+        </div>
+        <div class="chooser-workspace-divider" aria-hidden="true" />
+        <div class="chooser-workspace-count">
+          <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
+          <strong>{{ scopedInstallCount }}</strong>
+        </div>
       </div>
 
       <div
@@ -517,61 +398,18 @@ const gridHandlers = {
       </div>
 
       <div v-else class="chooser-shelves">
-        <!-- Your installs: bare tiles, no header, centered until a shelf
-             appears beneath them. -->
         <section class="chooser-shelf">
           <ChooserFamilyGrid
             show-new
-            :centered="!showWorkspaceShelf"
-            :entries="ownEntries"
+            :installations="scopedVisibleInstalls"
             :show-free-runs-pill="showCloudFreeRunsPill"
             :show-why-cloud="showWhyCloud"
             :is-stopped-action-gated="isStoppedActionGated"
-            v-on="gridHandlers"
-          />
-        </section>
-
-        <!-- The workspace shelf: what it already put on this machine, then what
-             it still offers on a fresh row. -->
-        <!-- Gated on the same pre-search predicate as the grid's centering:
-             if the shelf ducked out when a query filtered its entries, the
-             own-installs grid above would sit left-aligned under no header.
-             With every entry filtered, the header stays with a 0 count. -->
-        <section v-if="showWorkspaceShelf" class="chooser-shelf">
-          <header class="chooser-shelf-head">
-            <span class="chooser-shelf-title">{{ t('chooser.workspaceShelf') }}</span>
-            <span class="chooser-shelf-count">{{
-              workspaceInstalledEntries.length + workspaceAvailableEntries.length
-            }}</span>
-          </header>
-          <ChooserFamilyGrid
-            v-if="workspaceInstalledEntries.length"
-            :entries="workspaceInstalledEntries"
-            :show-free-runs-pill="showCloudFreeRunsPill"
-            :show-why-cloud="showWhyCloud"
-            :is-stopped-action-gated="isStoppedActionGated"
-            v-on="gridHandlers"
-          />
-          <ChooserFamilyGrid
-            v-if="workspaceAvailableEntries.length"
-            :entries="workspaceAvailableEntries"
-            :show-free-runs-pill="showCloudFreeRunsPill"
-            :show-why-cloud="showWhyCloud"
-            :is-stopped-action-gated="isStoppedActionGated"
+            :is-promoting-to-workspace="isPromotingToWorkspace"
             v-on="gridHandlers"
           />
         </section>
       </div>
-
-      <button
-        v-if="distributionLoadFailed"
-        type="button"
-        class="chooser-dist-note chooser-dist-note--retry"
-        @click="authStore.fetchDistributions()"
-      >
-        {{ $t('devPlatform.distribution.loadError') }}
-      </button>
-      <p v-else-if="distributionNote" class="chooser-dist-note">{{ distributionNote }}</p>
 
       <ContextMenu
         :open="ctxMenu.open"
@@ -580,15 +418,6 @@ const gridHandlers = {
         :items="ctxMenuItems"
         @close="closeMenu"
         @select="handleCtxMenuSelect"
-      />
-
-      <ContextMenu
-        :open="distMenu.open"
-        :x="distMenu.x"
-        :y="distMenu.y"
-        :items="distMenuItems"
-        @close="closeDistMenu"
-        @select="handleDistMenuSelect"
       />
 
       <WhyTryCloudModal
@@ -627,15 +456,16 @@ const gridHandlers = {
 }
 
 .chooser-view {
-  /* Symmetric top + bottom spacers (both 1fr) center the wordmark→grid block
-   * as a group whenever it fits — looks deliberate at any viewport height.
+  /* Symmetric top + bottom spacers (both 1fr) center the wordmark-to-grid block
+   * as a group whenever it fits - looks deliberate at any viewport height.
    * When the (unfiltered) content is taller than the viewport, the
    * `minmax(0, 1fr)` spacers collapse to 0 and the grid scrolls internally.
-   * Rows: [top spacer] [wordmark] [search] [grid] [bottom spacer]
+   * Rows: [top spacer] [wordmark] [search] [workspace controls] [grid]
+   * [bottom spacer]. The workspace row is omitted while signed out.
    *
    * No-shift guarantee: the grid row reserves its height from the UNFILTERED
    * `--rows` (see `.chooser-grid` min-height), so typing in search empties
-   * tiles without shrinking the grid box — the centered cluster stays put. */
+   * tiles without shrinking the grid box - the centered cluster stays put. */
   --chooser-pad-y: clamp(12px, 2.5vh, 24px);
   --chooser-row-gap: clamp(16px, 3.5vh, 32px);
   flex: 1 1 auto;
@@ -655,6 +485,16 @@ const gridHandlers = {
   row-gap: var(--chooser-row-gap);
 }
 
+.chooser-view--workspace {
+  grid-template-rows:
+    minmax(0, 1fr)
+    auto
+    auto
+    auto
+    minmax(0, auto)
+    minmax(0, 1fr);
+}
+
 /* Account chip: pinned to the frame's top-right, out of the centered column
  * so it can never collide with the wordmark or the search field. */
 .chooser-account {
@@ -665,34 +505,6 @@ const gridHandlers = {
   display: flex;
   justify-content: flex-end;
   max-width: min(340px, 45%);
-}
-
-/* Quiet one-liner for the distribution family's empty story. Lives in the
- * bottom spacer row so it costs the centered cluster no layout; on a short
- * window the spacer collapses and this caption is the first thing to go. */
-.chooser-dist-note {
-  grid-row: 5;
-  align-self: start;
-  margin: 0;
-  padding-top: 4px;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-  text-align: center;
-}
-.chooser-dist-note--retry {
-  border: none;
-  background: none;
-  font: inherit;
-  cursor: pointer;
-}
-.chooser-dist-note--retry:hover {
-  color: var(--neutral-100);
-  text-decoration: underline;
-}
-.chooser-dist-note--retry:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: 4px;
 }
 
 .chooser-wordmark {
@@ -709,16 +521,25 @@ const gridHandlers = {
   anchor-name: --brand-beam-target;
 }
 
-.chooser-search {
+.chooser-toolbar {
   grid-row: 3;
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 10px;
   width: 100%;
+  max-width: 900px;
   flex-shrink: 0;
 }
 
+.chooser-search {
+  display: flex;
+  flex: 1 1 600px;
+  min-width: 180px;
+}
+
 .chooser-search :deep(.ui-input) {
-  max-width: 600px;
+  width: 100%;
   border-radius: 12px;
   border: 1px solid var(--chooser-surface-border);
   background: var(--chooser-surface-bg);
@@ -740,13 +561,19 @@ const gridHandlers = {
   padding: 24px;
 }
 
-/* The scroll viewport both shelves live in — column, scroll and fade only;
+.chooser-view--workspace .chooser-loading,
+.chooser-view--workspace .chooser-empty,
+.chooser-view--workspace .chooser-shelves {
+  grid-row: 5;
+}
+
+/* The scoped install grid's scroll viewport - column, scroll and fade only;
  * tile layout and the FLIP belong to `ChooserFamilyGrid`. */
 .chooser-shelves {
   grid-row: 4;
   width: 100%;
-  /* Content box must hold exactly 4 tracks (4 × 280 + 3 × 16 = 1168px), so the
-   * side padding sits OUTSIDE the cap — inside it, `auto-fit` drops to 3
+  /* Content box must hold exactly 4 tracks (4 x 280 + 3 x 16 = 1168px), so the
+   * side padding sits OUTSIDE the cap - inside it, `auto-fit` drops to 3
    * columns on a wide viewport. */
   --shelf-pad-x: 4px;
   max-width: calc(1168px + 2 * var(--shelf-pad-x));
@@ -817,27 +644,101 @@ const gridHandlers = {
   }
 }
 
-/* Caption weight: the shelf organises, it isn't a section you act on. */
-.chooser-shelf-head {
+.chooser-workspace-bar {
+  grid-row: 4;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  width: 100%;
+  max-width: 1168px;
 }
-.chooser-shelf-head::after {
-  content: '';
+.chooser-workspace-divider {
   flex: 1 1 auto;
+  min-width: 16px;
   height: 1px;
-  background: var(--chooser-surface-border-hover);
+  background: var(--chooser-surface-border);
 }
-.chooser-shelf-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.chooser-workspace-controls {
+  display: flex;
+  flex: 0 1 290px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.chooser-workspace-count {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: auto;
   color: var(--text-muted);
+  font-size: 12px;
 }
-.chooser-shelf-count {
-  font-size: 11px;
-  color: var(--text-faint);
+.chooser-workspace-count strong {
+  color: var(--neutral-100);
+  font-weight: 600;
+}
+.chooser-workspace-controls :deep(.workspace-selector) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.chooser-workspace-controls :deep(.workspace-selector__face) {
+  --dp-avatar-size: 20px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 180px;
+  padding: 4px 8px;
+}
+.chooser-workspace-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chooser-workspace-refresh:hover:not(:disabled) {
+  border-color: var(--chooser-surface-border-hover);
+  background: var(--chooser-surface-bg-hover);
+  color: var(--neutral-100);
+}
+.chooser-workspace-refresh:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.chooser-workspace-refresh:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.chooser-workspace-refresh__icon--busy {
+  animation: chooser-workspace-refresh-spin 900ms linear infinite;
+}
+@keyframes chooser-workspace-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 640px) {
+  .chooser-workspace-bar {
+    flex-wrap: wrap;
+  }
+
+  .chooser-workspace-divider {
+    display: none;
+  }
+
+  .chooser-workspace-controls {
+    flex-basis: 100%;
+  }
+
+  .chooser-workspace-count {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 </style>

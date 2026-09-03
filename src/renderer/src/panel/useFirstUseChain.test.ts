@@ -163,7 +163,8 @@ describe('useFirstUseChain — Express Install', () => {
       expect.objectContaining({
         name: 'ComfyUI',
         installPath: '/Users/test/ComfyUI',
-        sourceId: 'standalone'
+        sourceId: 'standalone',
+        status: 'installing'
       })
     )
     expect(chain.handleShowProgress).toHaveBeenCalledWith(

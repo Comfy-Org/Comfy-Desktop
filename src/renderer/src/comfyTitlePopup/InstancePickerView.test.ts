@@ -98,6 +98,7 @@ interface BridgeState {
   picks: string[]
   /** Captures opts so tests assert the renderer-confirmed flag reaches the bridge. */
   restarts: { id: string; opts?: { confirmed?: boolean } }[]
+  backgroundOps: { installationId: string; actionId: string }[]
   newInstallCount: number
   selectedInstallSets: (string | null)[]
   updateFieldCalls: { installationId: string; fieldId: string; value: unknown }[]
@@ -108,6 +109,7 @@ function installMockBridge(): BridgeState {
   const state: BridgeState = {
     picks: [],
     restarts: [],
+    backgroundOps: [],
     newInstallCount: 0,
     selectedInstallSets: [],
     updateFieldCalls: [],
@@ -137,6 +139,9 @@ function installMockBridge(): BridgeState {
         return { ok: true }
       }
     ),
+    pickerStartBackgroundOp: (opts: { installationId: string; actionId: string }) => {
+      state.backgroundOps.push(opts)
+    },
     pickerSettingsGetLocaleMessages: vi.fn(async () => ({})),
     pickerSettingsGetLocale: vi.fn(async () => 'en'),
     pickerSettingsOnLocaleChanged: vi.fn(() => () => {})
@@ -194,7 +199,9 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         activeInstallationId: null,
         runningInstallationIds: []
       })
-      expect(wrapper.find('.picker-search input').exists()).toBe(true)
+      const input = wrapper.get('.picker-search input')
+      expect(input.attributes('placeholder')).toBe('Search instances')
+      expect(input.attributes('aria-label')).toBe('Search instances')
       expect(wrapper.findAll('.picker-chip').length).toBeGreaterThan(0)
       expect(wrapper.find('.picker-list').exists()).toBe(true)
       expect(wrapper.find('.picker-detail-wrap.is-expanded').exists()).toBe(true)
@@ -443,6 +450,31 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       expect(wrapper.find('.settings-v2-content').exists()).toBe(true)
     })
+
+    it('dispatches an in-flight background operation only once', async () => {
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
+        activeInstallationId: 'a',
+        runningInstallationIds: []
+      })
+      const settings = wrapper.findComponent(ComfyUISettingsContent)
+      const operation = {
+        installationId: 'a',
+        title: 'Update ComfyUI',
+        apiCall: vi.fn(),
+        actionId: 'update'
+      }
+
+      settings.vm.$emit('show-progress', operation)
+      settings.vm.$emit('show-progress', operation)
+      await flushPromises()
+
+      expect(bridge.backgroundOps).toHaveLength(1)
+      expect(bridge.backgroundOps[0]).toMatchObject({ installationId: 'a', actionId: 'update' })
+    })
+
     // Locale loading moved to the popup root (TitlePopupApp) so every kind
     // tracks main's language live — see TitlePopupApp.test.ts.
   })

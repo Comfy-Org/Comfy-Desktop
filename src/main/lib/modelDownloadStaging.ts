@@ -448,7 +448,17 @@ const SCAN_MAX_DEPTH = 8
 /** Directory names that can never contain launcher-staged model files. */
 const SCAN_SKIP_DIRS = new Set(['node_modules', '.git', '__pycache__'])
 
-/** Recursive suffix scan. In `strict` mode only a missing directory
+/** Directory entries processed between event-loop yields. Startup scans run
+ *  on the main process; without yields a large tree's Dirent batches are
+ *  processed in long synchronous chunks that freeze every window. */
+const SCAN_YIELD_EVERY = 500
+
+/** Shared across an entire multi-root scan so yields stay evenly spaced. */
+interface WalkYieldState {
+  sinceYield: number
+}
+
+/** Recursive multi-suffix scan. In `strict` mode only a missing directory
  *  (ENOENT/ENOTDIR - normal for optional roots) is ignored; any other
  *  enumeration failure (EACCES/EIO/...) propagates, because a tree we could
  *  not list may hide artifacts the caller must act on. Strict mode also has
@@ -457,12 +467,13 @@ const SCAN_SKIP_DIRS = new Set(['node_modules', '.git', '__pycache__'])
  *  junctions report as non-directories and are never descended). Lenient
  *  mode swallows everything and is depth-capped - callers whose worst case
  *  is losing a Downloads row. */
-async function walkForSuffix(
+async function walkForSuffixes(
   dir: string,
-  suffix: string,
+  suffixes: readonly string[],
   depth: number,
   out: string[],
-  strict = false
+  strict = false,
+  yieldState: WalkYieldState = { sinceYield: 0 }
 ): Promise<void> {
   if (!strict && depth > SCAN_MAX_DEPTH) return
   let entries: fs.Dirent[]
@@ -474,14 +485,63 @@ async function walkForSuffix(
     throw err
   }
   for (const entry of entries) {
-    const full = path.join(dir, entry.name)
+    if (++yieldState.sinceYield >= SCAN_YIELD_EVERY) {
+      yieldState.sinceYield = 0
+      await new Promise((resolve) => setImmediate(resolve))
+    }
     if (entry.isDirectory()) {
       if (SCAN_SKIP_DIRS.has(entry.name)) continue
-      await walkForSuffix(full, suffix, depth + 1, out, strict)
-    } else if (entry.isFile() && entry.name.endsWith(suffix)) {
-      out.push(full)
+      await walkForSuffixes(
+        path.join(dir, entry.name),
+        suffixes,
+        depth + 1,
+        out,
+        strict,
+        yieldState
+      )
+    } else if (entry.isFile() && suffixes.some((suffix) => entry.name.endsWith(suffix))) {
+      out.push(path.join(dir, entry.name))
     }
   }
+}
+
+/**
+ * Drop roots whose tree is already fully covered by walking another root, so
+ * overlapping configs (a root nested inside another) are not walked twice.
+ * Coverage is physical: roots are compared by realpath, because the walk
+ * never descends symlinks or junctions - a nested root reachable from the
+ * outer root only through a link is NOT covered and is kept. A root nested
+ * under a SCAN_SKIP_DIRS component is also kept, since the covering walk
+ * skips that subtree. Physically identical roots collapse to the first.
+ */
+function pruneCoveredRoots(roots: readonly string[]): string[] {
+  const infos: { root: string; key: string }[] = []
+  const seen = new Set<string>()
+  for (const root of roots) {
+    let physical: string
+    try {
+      physical = fs.realpathSync(root)
+    } catch {
+      physical = path.resolve(root)
+    }
+    const key = physical.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    infos.push({ root, key })
+  }
+  const coveredBy = (child: string, parent: string): boolean => {
+    const prefix = parent.endsWith(path.sep) ? parent : parent + path.sep
+    if (!child.startsWith(prefix)) return false
+    return child
+      .slice(prefix.length)
+      .split(path.sep)
+      .every((component) => !SCAN_SKIP_DIRS.has(component))
+  }
+  // Coverage is transitive after the physical dedupe above, so a root covered
+  // by ANY other root is redundant even when that other root is itself pruned.
+  return infos
+    .filter((info) => !infos.some((other) => other !== info && coveredBy(info.key, other.key)))
+    .map((info) => info.root)
 }
 
 function dedupeResolved(paths: string[]): string[] {
@@ -521,11 +581,18 @@ export interface StagedDownloadScanResult {
 export async function scanForStagedDownloads(
   roots: readonly string[]
 ): Promise<StagedDownloadScanResult> {
+  // One walk per root finds both suffixes; a `.tmp` scratch name never ends
+  // with the main sidecar suffix, so the partition below is exact.
+  const tmpSuffix = STAGING_META_SUFFIX + STAGING_META_TMP_SUFFIX
+  const matched: string[] = []
+  const yieldState: WalkYieldState = { sinceYield: 0 }
+  for (const root of pruneCoveredRoots(roots)) {
+    await walkForSuffixes(root, [STAGING_META_SUFFIX, tmpSuffix], 0, matched, true, yieldState)
+  }
   const metaFiles: string[] = []
   const tmpFiles: string[] = []
-  for (const root of dedupeResolved([...roots])) {
-    await walkForSuffix(root, STAGING_META_SUFFIX, 0, metaFiles, true)
-    await walkForSuffix(root, STAGING_META_SUFFIX + STAGING_META_TMP_SUFFIX, 0, tmpFiles, true)
+  for (const filePath of matched) {
+    ;(filePath.endsWith(tmpSuffix) ? tmpFiles : metaFiles).push(filePath)
   }
   // Scratch files left behind by `writeStagedMeta`. A VALID scratch copy is
   // always the newest durably written sidecar content (see `readStagedMeta`),
@@ -687,13 +754,16 @@ export async function migrateLegacyModelDownloadArtifacts(
     unsafe: []
   }
   const metaFilesByRoot: Array<{ root: string; metaPath: string }> = []
+  const yieldState: WalkYieldState = { sinceYield: 0 }
   for (const root of dedupeResolved([...roots])) {
     const files: string[] = []
     // Strict walk: a root we cannot enumerate (EACCES/EIO/...) may hide
     // legacy truncated files under final model names. Swallowing the error
     // would certify a scan that never happened - propagate instead; the
     // caller treats a failed migration pass as unsafe and gates launch.
-    await walkForSuffix(root, LEGACY_META_SUFFIX, 0, files, true)
+    // Overlapping roots stay (no pruning): which root finds a pair first
+    // determines its recorded models subdirectory.
+    await walkForSuffixes(root, [LEGACY_META_SUFFIX], 0, files, true, yieldState)
     for (const metaPath of files) metaFilesByRoot.push({ root, metaPath })
   }
   const seenData = new Set<string>()

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import { mount } from '@vue/test-utils'
-import { lerpKf, makeBezier, useBrandScene } from './useBrandScene'
+import { lerpKf, makeBezier, markPaintedWhenReady, useBrandScene } from './useBrandScene'
 import type { BrandScene, Keyframe } from '../lib/brandScene/types'
 
 describe('makeBezier', () => {
@@ -143,5 +143,103 @@ describe('useBrandScene playback gating', () => {
     const cancelSpy = vi.spyOn(window, 'cancelAnimationFrame')
     wrapper.unmount()
     expect(cancelSpy).toHaveBeenCalled()
+  })
+})
+
+// A fake <video> exposing enough surface for markPaintedWhenReady: a class list,
+// an event registry, a settable readyState, and a manually-drained rVFC queue.
+interface FakeVideoEl {
+  classList: { add(c: string): void; remove(c: string): void; contains(c: string): boolean }
+  readyState: number
+  requestVideoFrameCallback?: (cb: () => void) => number
+  addEventListener(ev: string, cb: () => void): void
+  removeEventListener(ev: string, cb: () => void): void
+  emit(ev: string): void
+  isPainted(): boolean
+}
+
+function makeFakeVideo(opts: { rvfc?: boolean } = {}): {
+  el: FakeVideoEl
+  rvfcCallbacks: Array<() => void>
+  listenerCount: () => number
+} {
+  const classes = new Set<string>()
+  const listeners: Record<string, Set<() => void>> = {}
+  const rvfcCallbacks: Array<() => void> = []
+  const el: FakeVideoEl = {
+    classList: {
+      add: (c) => void classes.add(c),
+      remove: (c) => void classes.delete(c),
+      contains: (c) => classes.has(c)
+    },
+    readyState: 0,
+    requestVideoFrameCallback: opts.rvfc
+      ? (cb: () => void) => {
+          rvfcCallbacks.push(cb)
+          return rvfcCallbacks.length
+        }
+      : undefined,
+    addEventListener: (ev, cb) => void (listeners[ev] ??= new Set()).add(cb),
+    removeEventListener: (ev, cb) => void listeners[ev]?.delete(cb),
+    emit: (ev) => {
+      for (const cb of listeners[ev] ?? []) cb()
+    },
+    isPainted: () => classes.has('is-painted')
+  }
+  const listenerCount = (): number => Object.values(listeners).reduce((n, set) => n + set.size, 0)
+  return { el, rvfcCallbacks, listenerCount }
+}
+
+describe('markPaintedWhenReady', () => {
+  it('paints on the rVFC composited frame, not before', () => {
+    const { el, rvfcCallbacks } = makeFakeVideo({ rvfc: true })
+    markPaintedWhenReady(el as unknown as HTMLVideoElement)
+    expect(el.isPainted(), 'no paint until a real frame is composited').toBe(false)
+    rvfcCallbacks[0]!()
+    expect(el.isPainted(), 'the rVFC frame paints the clip').toBe(true)
+  })
+
+  it('re-arms the gate on a loop re-activation so the reveal waits for the new seek', () => {
+    const { el, rvfcCallbacks } = makeFakeVideo({ rvfc: true })
+    markPaintedWhenReady(el as unknown as HTMLVideoElement)
+    rvfcCallbacks[0]!()
+    expect(el.isPainted()).toBe(true)
+
+    // The scene loops: the clip is seeked back and re-activated.
+    markPaintedWhenReady(el as unknown as HTMLVideoElement)
+    expect(el.isPainted(), 'the gate must re-close for the fresh seek, not stay latched').toBe(
+      false
+    )
+    rvfcCallbacks[1]!()
+    expect(el.isPainted(), 'the second frame paints the re-activated clip').toBe(true)
+  })
+
+  it('ignores a stale callback that resolves after a later activation', () => {
+    const { el, rvfcCallbacks } = makeFakeVideo({ rvfc: true })
+    markPaintedWhenReady(el as unknown as HTMLVideoElement) // activation 1 → rvfcCallbacks[0]
+    markPaintedWhenReady(el as unknown as HTMLVideoElement) // activation 2 → rvfcCallbacks[1]
+
+    // The first activation's frame callback fires late, after the re-activation.
+    rvfcCallbacks[0]!()
+    expect(el.isPainted(), "a prior activation's frame must not paint the current seek").toBe(false)
+    rvfcCallbacks[1]!()
+    expect(el.isPainted(), 'the current activation still paints on its own frame').toBe(true)
+  })
+
+  it('fallback path: gates on readyState and does not stack listeners across activations', () => {
+    const { el, listenerCount } = makeFakeVideo({ rvfc: false })
+    markPaintedWhenReady(el as unknown as HTMLVideoElement)
+    el.emit('seeked') // readyState still 0 → not enough data, no paint
+    expect(el.isPainted()).toBe(false)
+
+    const afterFirst = listenerCount()
+    markPaintedWhenReady(el as unknown as HTMLVideoElement) // re-activate
+    expect(listenerCount(), 'the prior activation listeners are torn down, not stacked').toBe(
+      afterFirst
+    )
+
+    el.readyState = 2 /* HAVE_CURRENT_DATA */
+    el.emit('seeked')
+    expect(el.isPainted(), 'paints once the seeked frame has data').toBe(true)
   })
 })

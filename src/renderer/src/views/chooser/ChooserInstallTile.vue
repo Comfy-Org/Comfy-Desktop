@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle, ArrowDownToLine, ArrowRightLeft, Info, MoreVertical } from 'lucide-vue-next'
+import {
+  AlertCircle,
+  ArrowDownToLine,
+  ArrowRightLeft,
+  Info,
+  LoaderCircle,
+  MoreVertical
+} from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
+import { progressOpKindForActionId } from '../../lib/progressOpKind'
 import { installTypeMetaForInstall } from '../../lib/installTypeIcon'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
-import { isDistributionInstall } from '../../devplatform/distributionState'
+import { isBuildInstall } from '../../devplatform/buildState'
 import type { Installation } from '../../types/ipc'
 
 interface Props {
@@ -16,6 +24,8 @@ interface Props {
   showWhyCloud?: boolean
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
+  /** True while Desktop captures this instance and creates its workspace draft. */
+  isPromotingToWorkspace?: boolean
 }
 
 const props = defineProps<Props>()
@@ -38,6 +48,15 @@ const inst = computed(() => props.installation)
 const isRunning = computed(() => sessionStore.isRunning(inst.value.id))
 const isLaunching = computed(() => sessionStore.isLaunching(inst.value.id))
 const isStopping = computed(() => sessionStore.isStopping(inst.value.id))
+/* A managed update flips the record to status 'updating'; a standalone
+ * update never touches the record and is only visible through main's
+ * operation broadcast. Key on both so the tile reports "Updating" the same
+ * way for either kind, regardless of which window started the update. */
+const isUpdating = computed(() => {
+  if (inst.value.status === 'updating') return true
+  const op = sessionStore.operationInstances.get(inst.value.id)
+  return op != null && progressOpKindForActionId(op.actionId) === 'update'
+})
 const hasError = computed(() => sessionStore.errorInstances.has(inst.value.id))
 
 /* Backend-flagged problem states (failed install, interrupted delete, missing
@@ -50,13 +69,26 @@ const dangerTag = computed(() =>
 const statusClasses = computed<Record<string, boolean>>(() => ({
   'chooser-tile-running': isRunning.value && !isStopping.value,
   'chooser-tile-stopping': isStopping.value,
+  'chooser-tile-updating': isUpdating.value,
   'chooser-tile-errored': hasError.value || dangerTag.value != null
 }))
 
 /* Lifecycle → top-right status pill (dot + label). Stopping wins over
  * launching wins over running; an idle tile gets no pill. An errored
  * tile shows the clickable error badge instead (see template). */
-const statusPill = computed<{ label: string; dotClass: string } | null>(() => {
+const statusPill = computed<{ label: string; dotClass: string; spinning?: boolean } | null>(() => {
+  if (props.isPromotingToWorkspace)
+    return {
+      label: 'devPlatform.workspace.promoting',
+      dotClass: 'chooser-tile-status--promoting',
+      spinning: true
+    }
+  if (isUpdating.value)
+    return {
+      label: 'instancePicker.progressUpdating',
+      dotClass: 'chooser-tile-status--updating',
+      spinning: true
+    }
   if (isStopping.value)
     return { label: 'chooser.statusStopping', dotClass: 'chooser-tile-status--stopping' }
   if (isLaunching.value)
@@ -78,19 +110,19 @@ const hasMigratePrompt = computed(() => inst.value.statusTag?.style === 'migrate
 
 const typeMeta = computed(() => installTypeMetaForInstall(inst.value))
 
-/** Wears the distribution glyph rather than its install-type icon, so a
- *  distribution keeps one identity whether it's installed or still a card. */
-const isFromDistribution = computed(() => isDistributionInstall(inst.value))
+/** Wears the build glyph rather than its install-type icon, so a build keeps
+ *  one identity whether it's installed or still a card. */
+const isFromBuild = computed(() => isBuildInstall(inst.value))
 
-const distributionVersion = computed(() =>
+const buildVersion = computed(() =>
   typeof inst.value.distributionVersion === 'string' ? inst.value.distributionVersion : ''
 )
 
 /** Desktop's listPreview is the bare installPath (useless as a label), so fall
  *  back to sourceLabel. Cloud/remote values are URLs — strip the protocol. */
 const sourceLabel = computed(() => {
-  // The path is noise on a tile whose identity is the distribution.
-  if (isFromDistribution.value) return ''
+  // The path is noise on a tile whose identity is the build.
+  if (isFromBuild.value) return ''
   const raw =
     inst.value.sourceId === 'desktop'
       ? inst.value.sourceLabel
@@ -100,17 +132,17 @@ const sourceLabel = computed(() => {
 
 /** Labelled ("Build v7") so it can't be read as the ComfyUI version beside it. */
 const trailingFact = computed(() =>
-  isFromDistribution.value
-    ? distributionVersion.value
-      ? t('devPlatform.distribution.distVersion', { version: distributionVersion.value })
+  isFromBuild.value
+    ? buildVersion.value
+      ? t('devPlatform.build.version', { version: buildVersion.value })
       : ''
     : inst.value.version || ''
 )
 
-/** Distribution installs read "<ComfyUI version> · Build v7"; everything else
- *  keeps "<source> · <version>". */
+/** Build installs show the ComfyUI version followed by the Build version;
+ *  everything else shows the source followed by its version. */
 const leadingFact = computed(() =>
-  isFromDistribution.value ? inst.value.version || '' : sourceLabel.value
+  isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
 const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
@@ -118,6 +150,7 @@ const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(B
 /** The single update/migrate affordance, or null when the install has neither.
  *  The Update tooltip surfaces the target version the bare pill hides. */
 const actionPill = computed(() => {
+  if (isUpdating.value) return null
   if (hasUpdate.value)
     return {
       action: 'update' as const,
@@ -138,8 +171,13 @@ const actionPill = computed(() => {
 })
 
 function handleClick(): void {
-  if (isStopping.value) return
+  if (isStopping.value || isUpdating.value) return
   emit('pick', inst.value)
+}
+
+function handleContextMenu(event: MouseEvent): void {
+  if (isUpdating.value) return
+  emit('open-card-menu', event, inst.value)
 }
 
 /** Fire an action pill's emit, no-op while REQUIRES_STOPPED actions are gated.
@@ -153,7 +191,8 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 <template>
   <div
     role="button"
-    tabindex="0"
+    :tabindex="isUpdating ? -1 : 0"
+    :aria-disabled="isUpdating || undefined"
     class="chooser-tile chooser-tile--install"
     :class="statusClasses"
     :data-testid="TID.dashboardTile(inst.id)"
@@ -161,12 +200,12 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     @click="handleClick"
     @keydown.enter="handleClick"
     @keydown.space.prevent="handleClick"
-    @contextmenu.prevent="emit('open-card-menu', $event, inst)"
+    @contextmenu.prevent="handleContextMenu"
   >
     <!-- Type icon only; source/channel lives in the meta line below. A
-         distribution install wears the distribution glyph instead. -->
+         build install wears the build glyph instead. -->
     <span class="chooser-tile-icon" :title="t(typeMeta.labelKey)">
-      <!-- `typeMeta` resolves the distribution glyph itself, so the tile, the
+      <!-- `typeMeta` resolves the build glyph itself, so the tile, the
            picker row and the title bar can't drift apart. -->
       <component :is="typeMeta.icon" :size="22" />
     </span>
@@ -196,7 +235,13 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         class="chooser-tile-pill chooser-tile-status"
         :class="statusPill.dotClass"
       >
-        <span class="chooser-tile-status-dot" aria-hidden="true" />
+        <LoaderCircle
+          v-if="statusPill.spinning"
+          :size="12"
+          class="chooser-tile-status-spinner"
+          aria-hidden="true"
+        />
+        <span v-else class="chooser-tile-status-dot" aria-hidden="true" />
         {{ t(statusPill.label) }}
       </span>
       <button
@@ -212,6 +257,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         {{ dangerTag.label }}
       </button>
       <button
+        v-if="!isUpdating"
         type="button"
         class="chooser-tile-kebab"
         :title="t('chooser.moreActions')"

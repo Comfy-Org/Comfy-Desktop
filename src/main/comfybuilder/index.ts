@@ -2,15 +2,15 @@
  * ComfyBuilder functionality library - public surface.
  *
  * A standalone, UI-agnostic library for the Desktop <-> comfy-builder flow:
- * list distributions/versions/artifacts, pick the artifact for the host,
- * download + install it, and build its launch command. It has NO dependency on
- * Electron IPC, Vue, or the installations store; the UI plugs in by supplying a
- * {@link TokenProvider} and calling these functions.
+ * list builds/versions/artifacts, pick the artifact for the host,
+ * download + install it, build its launch command, and create Platform drafts
+ * from Desktop snapshots. It has NO dependency on Electron IPC, Vue, or the
+ * installations store; the UI plugs in by supplying a {@link TokenProvider}.
  *
  * Typical UI wiring:
  * ```ts
  * const client = new ComfyBuilderClient({ baseUrl, auth: tokenStoreAdapter })
- * const dists = await client.listDistributions()               // render tiles
+ * const builds = await client.listBuilds()                     // render tiles
  * const { artifacts } = await client.getVersion(versionId)
  * const artifact = selectArtifactForHost(artifacts, { os: hostOs(), gpu })
  * await installArtifact({ artifact, client, installPath, cacheDir, onProgress })
@@ -32,8 +32,9 @@ export type {
   Artifact,
   ArtifactGpu,
   ArtifactOs,
-  Distribution,
-  DistributionVersion,
+  Build,
+  BuildDraft,
+  BuildVersion,
   Host,
   InstallProgress,
   LaunchSpec,

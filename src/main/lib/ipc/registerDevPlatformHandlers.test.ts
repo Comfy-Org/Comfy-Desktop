@@ -3,36 +3,58 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   getAllWindows: vi.fn(() => [] as unknown[]),
+  openExternal: vi.fn(async () => {}),
+  openSystemModalAsync: vi.fn(async () => false),
   // session
   login: vi.fn(),
   logout: vi.fn(),
   status: vi.fn(),
   isSignedIn: vi.fn(),
   listWorkspaces: vi.fn(),
+  listWorkspaceMembers: vi.fn(),
   switchWorkspace: vi.fn(),
   setUnauthorizedHandler: vi.fn(),
   clearVersionCache: vi.fn(),
   getVersionCacheGeneration: vi.fn(() => 3),
   // client + policy
-  getBuilderClient: vi.fn(() => ({ listDistributions: mocks.listDistributions })),
-  listDistributions: vi.fn(),
+  getBuilderClient: vi.fn(() => ({
+    listBuilds: mocks.listBuilds,
+    createBuildDraft: mocks.createBuildDraft
+  })),
+  listBuilds: vi.fn(),
+  createBuildDraft: vi.fn(),
   resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
-  listDistributionRows: vi.fn(),
+  resolveBuildRows: vi.fn(),
   resolveHostArtifact: vi.fn(),
+  resolveSelectedHostArtifact: vi.fn(),
   // installations + shared helpers
   add: vi.fn(),
+  get: vi.fn(),
+  update: vi.fn(),
+  associateUnownedBuildInstalls: vi.fn(),
   list: vi.fn(async () => [] as Record<string, unknown>[]),
   uniqueName: vi.fn(async (n: string) => n),
   sanitizeDirName: vi.fn((n: string) => n),
   allocateUniqueDir: vi.fn((parent: string, dir: string) => `${parent}/${dir}`),
   findDuplicatePath: vi.fn(async () => null),
   defaultInstallDir: vi.fn(() => '/installs'),
-  broadcastToRenderer: vi.fn()
+  saveSnapshot: vi.fn(),
+  loadSnapshot: vi.fn(),
+  getSnapshotCount: vi.fn(),
+  buildExportEnvelope: vi.fn(),
+  broadcastToRenderer: vi.fn(),
+  operationAborts: new Map<string, AbortController>(),
+  translate: vi.fn((key: string) => key)
 }))
 
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: mocks.getAllWindows },
-  ipcMain: { handle: mocks.handle }
+  ipcMain: { handle: mocks.handle },
+  shell: { openExternal: mocks.openExternal }
+}))
+
+vi.mock('../../popups/systemModal', () => ({
+  openSystemModalAsync: mocks.openSystemModalAsync
 }))
 
 vi.mock('../../devplatform/session', () => ({
@@ -42,16 +64,18 @@ vi.mock('../../devplatform/session', () => ({
     status: mocks.status,
     isSignedIn: mocks.isSignedIn,
     listWorkspaces: mocks.listWorkspaces,
+    listWorkspaceMembers: mocks.listWorkspaceMembers,
     switchWorkspace: mocks.switchWorkspace
   }),
   getBuilderClient: mocks.getBuilderClient,
   setUnauthorizedHandler: mocks.setUnauthorizedHandler
 }))
 
-vi.mock('../../devplatform/distributions', () => ({
+vi.mock('../../devplatform/builds', () => ({
   resolveHost: mocks.resolveHost,
-  listDistributionRows: mocks.listDistributionRows,
-  resolveHostArtifact: mocks.resolveHostArtifact
+  resolveBuildRows: mocks.resolveBuildRows,
+  resolveHostArtifact: mocks.resolveHostArtifact,
+  resolveSelectedHostArtifact: mocks.resolveSelectedHostArtifact
 }))
 
 vi.mock('../../devplatform/versionCache', () => ({
@@ -60,13 +84,31 @@ vi.mock('../../devplatform/versionCache', () => ({
 }))
 
 vi.mock('./shared', () => ({
-  installations: { add: mocks.add, list: mocks.list },
+  installations: {
+    add: mocks.add,
+    get: mocks.get,
+    update: mocks.update,
+    associateUnownedBuildInstalls: mocks.associateUnownedBuildInstalls,
+    list: mocks.list
+  },
   uniqueName: mocks.uniqueName,
   sanitizeDirName: mocks.sanitizeDirName,
   allocateUniqueDir: mocks.allocateUniqueDir,
   findDuplicatePath: mocks.findDuplicatePath,
   defaultInstallDir: mocks.defaultInstallDir,
-  _broadcastToRenderer: mocks.broadcastToRenderer
+  sourceMap: {
+    standalone: { category: 'local' },
+    desktop: { category: 'local' },
+    comfybuilder: { category: 'local' },
+    cloud: { category: 'cloud' }
+  },
+  saveSnapshot: mocks.saveSnapshot,
+  loadSnapshot: mocks.loadSnapshot,
+  getSnapshotCount: mocks.getSnapshotCount,
+  buildExportEnvelope: mocks.buildExportEnvelope,
+  _broadcastToRenderer: mocks.broadcastToRenderer,
+  _operationAborts: mocks.operationAborts,
+  i18n: { t: mocks.translate }
 }))
 
 import { registerDevPlatformHandlers, signInToCloud } from './registerDevPlatformHandlers'
@@ -95,6 +137,26 @@ describe('registerDevPlatformHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     comfyWindows.clear()
+    mocks.operationAborts.clear()
+    mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w1', workspaceType: 'team' })
+    mocks.get.mockResolvedValue({
+      id: 'local-1',
+      name: 'Local One',
+      sourceId: 'standalone',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    })
+    mocks.saveSnapshot.mockResolvedValue('fresh.json')
+    mocks.loadSnapshot.mockResolvedValue({ version: 2, createdAt: '2026-08-21T00:00:00.000Z' })
+    mocks.getSnapshotCount.mockResolvedValue(3)
+    mocks.buildExportEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
+    mocks.listBuilds.mockResolvedValue([])
+    mocks.listWorkspaceMembers.mockResolvedValue([])
+    mocks.createBuildDraft.mockResolvedValue({
+      buildId: 'build-1',
+      workspaceId: 'w1',
+      editUrl: '/profile/builds/new?workspace=w1&edit=build-1'
+    })
     registerDevPlatformHandlers()
   })
 
@@ -142,9 +204,33 @@ describe('registerDevPlatformHandlers', () => {
     mocks.getAllWindows.mockReturnValue([])
     const panel = registerHostWithPanel(1)
 
-    handler('comfybuilder:signOut')({})
+    await handler('comfybuilder:signOut')({})
 
     expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
+  })
+
+  it('opens the explicitly selected workspace Builds page', async () => {
+    await handler('comfybuilder:openBuildsPage')({}, 'w1')
+
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
+      'https://platform.comfy.org/profile/builds?workspace=w1'
+    )
+  })
+
+  it('does not let the active session redirect an explicitly selected workspace', async () => {
+    await handler('comfybuilder:openBuildsPage')({}, 'w2')
+
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
+      'https://platform.comfy.org/profile/builds?workspace=w2'
+    )
+  })
+
+  it('rejects a missing workspace instead of opening an unscoped Builds page', async () => {
+    await expect(handler('comfybuilder:openBuildsPage')({}, '')).rejects.toThrow(
+      'A workspace is required to open Builds.'
+    )
+
+    expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 
   it('broadcasts when the builder API invalidates the active token', () => {
@@ -174,7 +260,7 @@ describe('registerDevPlatformHandlers', () => {
     const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
     mocks.getAllWindows.mockReturnValue([win])
 
-    const status = handler('comfybuilder:signOut')({})
+    const status = await handler('comfybuilder:signOut')({})
     expect(status).toEqual({ signedIn: false })
     expect(mocks.logout).toHaveBeenCalledOnce()
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', {
@@ -182,21 +268,160 @@ describe('registerDevPlatformHandlers', () => {
     })
   })
 
-  it('listDistributions is empty (no network) when signed out', async () => {
-    mocks.isSignedIn.mockReturnValue(false)
-    const rows = await handler('comfybuilder:listDistributions')({})
-    expect(rows).toEqual([])
-    expect(mocks.listDistributionRows).not.toHaveBeenCalled()
+  it('keeps the session and installation running when sign-out is cancelled', async () => {
+    const abort = new AbortController()
+    const sender = {}
+    const parent = { isDestroyed: () => false }
+    comfyWindows.set(1, {
+      panelView: { webContents: sender },
+      window: parent
+    } as unknown as ComfyWindowEntry)
+    mocks.operationAborts.set('install-1', abort)
+    mocks.get.mockResolvedValue({ id: 'install-1', status: 'installing' })
+    mocks.openSystemModalAsync.mockResolvedValue(false)
+
+    const status = await handler('comfybuilder:signOut')({ sender })
+
+    expect(status).toEqual({ signedIn: true, workspaceId: 'w1', workspaceType: 'team' })
+    expect(mocks.openSystemModalAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parent,
+        spec: expect.objectContaining({
+          cancelLabel: 'common.close',
+          confirmLabel: 'devPlatform.account.cancelInstallationAndSignOut',
+          confirmStyle: 'danger'
+        })
+      })
+    )
+    expect(abort.signal.aborted).toBe(false)
+    expect(mocks.logout).not.toHaveBeenCalled()
   })
 
-  it('listDistributions returns rows for the signed-in workspace', async () => {
+  it('cancels active installations before signing out when confirmed', async () => {
+    const abort = new AbortController()
+    const sender = { isDestroyed: () => false, send: vi.fn() }
+    comfyWindows.set(1, {
+      panelView: { webContents: sender },
+      window: { isDestroyed: () => false },
+      lastTheme: { bg: '#171718', text: '#fff' }
+    } as unknown as ComfyWindowEntry)
+    mocks.operationAborts.set('install-1', abort)
+    mocks.get.mockResolvedValue({ id: 'install-1', status: 'installing' })
+    mocks.openSystemModalAsync.mockResolvedValue(true)
+
+    const status = await handler('comfybuilder:signOut')({ sender })
+
+    expect(status).toEqual({ signedIn: false })
+    expect(abort.signal.aborted).toBe(true)
+    expect(mocks.broadcastToRenderer).toHaveBeenCalledWith('install-progress', {
+      installationId: 'install-1',
+      phase: 'cancelling',
+      cancelRequested: true
+    })
+    expect(mocks.logout).toHaveBeenCalledOnce()
+  })
+
+  it('guards sign-out during an in-place update the same as during an install', async () => {
+    const abort = new AbortController()
+    const sender = { isDestroyed: () => false, send: vi.fn() }
+    comfyWindows.set(1, {
+      panelView: { webContents: sender },
+      window: { isDestroyed: () => false },
+      lastTheme: { bg: '#171718', text: '#fff' }
+    } as unknown as ComfyWindowEntry)
+    mocks.operationAborts.set('install-1', abort)
+    mocks.get.mockResolvedValue({ id: 'install-1', status: 'updating' })
+    mocks.openSystemModalAsync.mockResolvedValue(true)
+
+    const status = await handler('comfybuilder:signOut')({ sender })
+
+    expect(status).toEqual({ signedIn: false })
+    expect(mocks.openSystemModalAsync).toHaveBeenCalledOnce()
+    expect(abort.signal.aborted).toBe(true)
+    expect(mocks.logout).toHaveBeenCalledOnce()
+  })
+
+  it('listBuilds is empty (no network) when signed out', async () => {
+    mocks.isSignedIn.mockReturnValue(false)
+    const rows = await handler('comfybuilder:listBuilds')({})
+    expect(rows).toEqual([])
+    expect(mocks.resolveBuildRows).not.toHaveBeenCalled()
+  })
+
+  it('listBuilds returns rows for the signed-in workspace', async () => {
     mocks.isSignedIn.mockReturnValue(true)
-    mocks.listDistributionRows.mockResolvedValue([
-      { id: 'd1', name: 'Image', state: 'installable' }
-    ])
-    const rows = await handler('comfybuilder:listDistributions')({})
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image' }])
+    mocks.resolveBuildRows.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
+    const rows = await handler('comfybuilder:listBuilds')({})
     expect(rows).toEqual([{ id: 'd1', name: 'Image', state: 'installable' }])
+    expect(mocks.associateUnownedBuildInstalls).toHaveBeenCalledOnce()
+    expect(mocks.associateUnownedBuildInstalls.mock.calls[0]![0]).toBe('w1')
+    expect(mocks.associateUnownedBuildInstalls.mock.calls[0]![1]).toEqual(new Set(['d1']))
+    expect(mocks.resolveBuildRows.mock.calls[0]![2]).toEqual([{ id: 'd1', name: 'Image' }])
     expect(mocks.broadcastToRenderer).toHaveBeenCalledWith('installations-changed', {})
+  })
+
+  it('resolves Build creator ids to workspace member names', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image', createdBy: 'user-1' }])
+    mocks.resolveBuildRows.mockResolvedValue([
+      { id: 'd1', name: 'Image', createdBy: 'user-1', state: 'installable' }
+    ])
+    mocks.listWorkspaceMembers.mockResolvedValue([
+      { id: 'user-1', name: 'Builder Person', email: 'person@example.com' }
+    ])
+
+    await expect(handler('comfybuilder:listBuilds')({})).resolves.toEqual([
+      {
+        id: 'd1',
+        name: 'Image',
+        createdBy: 'user-1',
+        creatorName: 'Builder Person',
+        state: 'installable'
+      }
+    ])
+  })
+
+  it('keeps Builds usable when workspace member lookup fails', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image', createdBy: 'user-1' }])
+    mocks.resolveBuildRows.mockResolvedValue([
+      { id: 'd1', name: 'Image', createdBy: 'user-1', state: 'installable' }
+    ])
+    mocks.listWorkspaceMembers.mockRejectedValue(new Error('members unavailable'))
+
+    await expect(handler('comfybuilder:listBuilds')({})).resolves.toEqual([
+      {
+        id: 'd1',
+        name: 'Image',
+        createdBy: 'user-1',
+        creatorName: 'user-1',
+        state: 'installable'
+      }
+    ])
+  })
+
+  it('does not backfill ownership when the build catalog fails to load', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockRejectedValue(new Error('catalog unavailable'))
+
+    await expect(handler('comfybuilder:listBuilds')({})).rejects.toThrow('catalog unavailable')
+
+    expect(mocks.associateUnownedBuildInstalls).not.toHaveBeenCalled()
+    expect(mocks.resolveBuildRows).not.toHaveBeenCalled()
+  })
+
+  it('does not backfill ownership if the active workspace changes during the catalog read', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockImplementationOnce(async () => {
+      mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+      return [{ id: 'd1', name: 'Image' }]
+    })
+    mocks.resolveBuildRows.mockResolvedValue([])
+
+    await handler('comfybuilder:listBuilds')({})
+
+    expect(mocks.associateUnownedBuildInstalls).not.toHaveBeenCalled()
   })
 
   it('switchWorkspace re-scopes and broadcasts the new status', async () => {
@@ -214,7 +439,226 @@ describe('registerDevPlatformHandlers', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
-  it('installDistribution creates an installing record carrying the resolved artifact', async () => {
+  it('captures fresh state, creates a draft, and opens the validated Platform URL', async () => {
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: true })
+    expect(mocks.saveSnapshot).toHaveBeenCalledExactlyOnceWith(
+      '/installs/local-1',
+      expect.objectContaining({ id: 'local-1', sourceId: 'standalone' }),
+      'manual'
+    )
+    expect(mocks.loadSnapshot).toHaveBeenCalledWith('/installs/local-1', 'fresh.json')
+    expect(mocks.update).toHaveBeenCalledExactlyOnceWith('local-1', {
+      lastSnapshot: 'fresh.json',
+      snapshotCount: 3
+    })
+    expect(mocks.buildExportEnvelope).toHaveBeenCalledWith('Local One', [
+      {
+        filename: 'fresh.json',
+        snapshot: { version: 2, createdAt: '2026-08-21T00:00:00.000Z' }
+      }
+    ])
+    expect(mocks.createBuildDraft).toHaveBeenCalledExactlyOnceWith({
+      type: 'comfyui-desktop-2-snapshot'
+    })
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
+      'https://platform.comfy.org/profile/builds/build-1?workspace=w1'
+    )
+  })
+
+  it('does not start two promotions for the same instance', async () => {
+    let finishCapture!: (filename: string) => void
+    mocks.saveSnapshot.mockReturnValue(
+      new Promise<string>((resolve) => {
+        finishCapture = resolve
+      })
+    )
+
+    const first = handler('comfybuilder:promoteLocalInstance')({}, 'local-1') as Promise<unknown>
+    await vi.waitFor(() => expect(mocks.saveSnapshot).toHaveBeenCalledOnce())
+    const second = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(second).toEqual({ ok: false, message: 'Promotion is already in progress.' })
+    finishCapture('fresh.json')
+    await expect(first).resolves.toEqual({ ok: true })
+    expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['signed out', { signedIn: false }, 'Not signed in.'],
+    ['missing an active workspace', { signedIn: true }, 'No active workspace.']
+  ])('refuses promotion when %s', async (_label, status, message) => {
+    mocks.status.mockReturnValue(status)
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: false, message })
+    expect(mocks.saveSnapshot).not.toHaveBeenCalled()
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a cloud install', { sourceId: 'cloud' }],
+    ['an incomplete install', { status: 'installing' }]
+  ])('refuses to promote %s', async (_label, overrides) => {
+    mocks.get.mockResolvedValue({
+      id: 'local-1',
+      name: 'Local One',
+      sourceId: 'standalone',
+      status: 'installed',
+      installPath: '/installs/local-1',
+      ...overrides
+    })
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'This instance cannot be promoted to a workspace.'
+    })
+    expect(mocks.saveSnapshot).not.toHaveBeenCalled()
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
+  })
+
+  it('creates a Build in the workspace that owns the instance', async () => {
+    const inst = {
+      id: 'local-1',
+      name: 'Workspace Instance',
+      sourceId: 'comfybuilder',
+      workspaceId: 'w2',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    }
+    mocks.get.mockResolvedValue(inst)
+    mocks.switchWorkspace.mockImplementationOnce(async () => {
+      const status = { signedIn: true, workspaceId: 'w2', workspaceType: 'team' }
+      mocks.status.mockReturnValue(status)
+      return status
+    })
+    mocks.createBuildDraft.mockResolvedValue({
+      buildId: 'build-2',
+      workspaceId: 'w2',
+      editUrl: '/profile/builds/new?workspace=w2&edit=build-2'
+    })
+
+    await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+      ok: true
+    })
+
+    expect(mocks.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
+      'https://platform.comfy.org/profile/builds/build-2?workspace=w2'
+    )
+  })
+
+  it('does not upload if the active workspace changes during capture', async () => {
+    const inst = {
+      id: 'local-1',
+      name: 'Local One',
+      sourceId: 'standalone',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    }
+    mocks.get.mockResolvedValueOnce(inst).mockImplementationOnce(async () => {
+      mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+      return inst
+    })
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('does not upload if the instance gains workspace ownership during capture', async () => {
+    const inst = {
+      id: 'local-1',
+      name: 'Local One',
+      sourceId: 'standalone',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    }
+    mocks.get.mockResolvedValueOnce(inst).mockResolvedValueOnce({ ...inst, workspaceId: 'w1' })
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: false, message: 'The instance changed. Try again.' })
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('does not open the draft if the active workspace changes during upload', async () => {
+    mocks.createBuildDraft.mockImplementationOnce(async () => {
+      mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+      return {
+        buildId: 'build-1',
+        workspaceId: 'w1',
+        editUrl: 'https://platform.comfy.org/profile/builds/new?workspace=w1&edit=build-1'
+      }
+    })
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('does not open the draft if the instance gains workspace ownership during upload', async () => {
+    const inst = {
+      id: 'local-1',
+      name: 'Local One',
+      sourceId: 'standalone',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    }
+    mocks.get
+      .mockResolvedValueOnce(inst)
+      .mockResolvedValueOnce(inst)
+      .mockResolvedValueOnce({ ...inst, workspaceId: 'w1' })
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: false, message: 'The instance changed. Try again.' })
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('refuses to open a draft created for another workspace', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mocks.createBuildDraft.mockResolvedValue({
+      buildId: 'build-1',
+      workspaceId: 'w2',
+      editUrl: 'https://platform.comfy.org/profile/builds/new?workspace=w2&edit=build-1'
+    })
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'Comfy Builder created the draft in a different workspace.'
+    })
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('returns a capture error without assigning workspace ownership', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mocks.saveSnapshot.mockRejectedValue(new Error('Could not inspect the Python environment.'))
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'Could not inspect the Python environment.'
+    })
+    expect(mocks.update).not.toHaveBeenCalled()
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('installBuild creates an installing record carrying the resolved artifact', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue({
       version: 7,
@@ -227,14 +671,26 @@ describe('registerDevPlatformHandlers', () => {
         archiveSha256: 'deadbeef'
       }
     })
-    mocks.listDistributions.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
     mocks.add.mockResolvedValue({ id: 'inst-1', name: 'Image Baseline' })
 
-    const result = await handler('comfybuilder:installDistribution')({}, 'd1')
+    const result = await handler('comfybuilder:installBuild')(
+      {},
+      {
+        buildId: 'd1',
+        name: 'Custom Image',
+        installRoot: '/custom-root'
+      }
+    )
     expect(result).toEqual({ ok: true, entry: { id: 'inst-1', name: 'Image Baseline' } })
+    expect(mocks.uniqueName).toHaveBeenCalledWith('Custom Image')
+    expect(mocks.allocateUniqueDir).toHaveBeenCalledWith('/custom-root', 'Custom Image')
     expect(mocks.add).toHaveBeenCalledWith(
       expect.objectContaining({
+        name: 'Custom Image',
+        installPath: '/custom-root/Custom Image',
         sourceId: 'comfybuilder',
+        workspaceId: 'w1',
         distributionId: 'd1',
         distributionName: 'Image Baseline',
         version: '7',
@@ -246,7 +702,120 @@ describe('registerDevPlatformHandlers', () => {
     )
   })
 
-  it('installDistribution refuses an artifact with no integrity value', async () => {
+  it('installBuild revalidates and persists an explicitly selected release target', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.resolveSelectedHostArtifact.mockResolvedValue({
+      version: 7,
+      artifact: {
+        id: 'art-cpu',
+        os: 'linux',
+        gpu: 'cpu',
+        accelVariant: 'cpu',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
+    })
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.add.mockResolvedValue({ id: 'inst-1', name: 'Image Baseline' })
+
+    const result = await handler('comfybuilder:installBuild')(
+      {},
+      { buildId: 'd1', releaseVersion: 7, artifactId: 'art-cpu' }
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    expect(mocks.resolveSelectedHostArtifact).toHaveBeenCalledWith(
+      expect.anything(),
+      { os: 'linux', gpu: 'nvidia' },
+      'd1',
+      7,
+      'art-cpu'
+    )
+    expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
+    expect(mocks.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: '7',
+        artifactId: 'art-cpu',
+        artifactGpu: 'cpu',
+        artifactAccelVariant: 'cpu'
+      })
+    )
+  })
+
+  it.each([
+    [{ buildId: 'd1', artifactId: 'art-cpu' }],
+    [{ buildId: 'd1', releaseVersion: 7 }],
+    [{ buildId: 'd1', artifactId: '', releaseVersion: 7 }],
+    [{ buildId: 'd1', artifactId: 'art-cpu', releaseVersion: 0 }]
+  ])('installBuild rejects an invalid release target request', async (request) => {
+    mocks.isSignedIn.mockReturnValue(true)
+
+    const result = await handler('comfybuilder:installBuild')({}, request)
+
+    expect(result).toEqual({ ok: false, message: 'Invalid Build release selection.' })
+    expect(mocks.listBuilds).not.toHaveBeenCalled()
+    expect(mocks.resolveSelectedHostArtifact).not.toHaveBeenCalled()
+  })
+
+  it('installBuild rejects a selected target that no longer belongs to the release', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.resolveSelectedHostArtifact.mockResolvedValue(null)
+
+    const result = await handler('comfybuilder:installBuild')(
+      {},
+      { buildId: 'd1', releaseVersion: 7, artifactId: 'forged' }
+    )
+
+    expect(result).toEqual({ ok: false, message: 'No installable build for this machine.' })
+    expect(mocks.add).not.toHaveBeenCalled()
+  })
+
+  it('installBuild rejects the legacy string request shape', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+
+    const result = await handler('comfybuilder:installBuild')({}, 'd1')
+
+    expect(result).toEqual({ ok: false, message: 'Invalid build install request.' })
+    expect(mocks.listBuilds).not.toHaveBeenCalled()
+  })
+
+  it('installBuild requires the Build to belong to the active workspace catalog', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.listBuilds.mockResolvedValue([{ id: 'other', name: 'Other Build' }])
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
+
+    expect(result).toEqual({ ok: false, message: 'Build not found in the active workspace.' })
+    expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
+  })
+
+  it('does not persist ownership if the active workspace changes during resolution', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.resolveHostArtifact.mockResolvedValue({
+      version: 7,
+      artifact: {
+        id: 'art-9',
+        os: 'linux',
+        gpu: 'nvidia',
+        accelVariant: 'cu128',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
+    })
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.findDuplicatePath.mockImplementationOnce(async () => {
+      mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+      return null
+    })
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
+
+    expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
+    expect(mocks.add).not.toHaveBeenCalled()
+  })
+
+  it('installBuild refuses an artifact with no integrity value', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue({
       version: 1,
@@ -258,70 +827,143 @@ describe('registerDevPlatformHandlers', () => {
         status: 'ready'
       }
     })
-    const result = await handler('comfybuilder:installDistribution')({}, 'd1')
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
     expect(result).toEqual({ ok: false, message: 'This build has no SHA-256 integrity value.' })
     expect(mocks.add).not.toHaveBeenCalled()
   })
 
-  it('installDistribution refuses when no host artifact resolves', async () => {
+  it('installBuild refuses when no host artifact resolves', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue(null)
-    const result = await handler('comfybuilder:installDistribution')({}, 'd1')
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
     expect(result).toMatchObject({ ok: false })
     expect(mocks.add).not.toHaveBeenCalled()
   })
 
-  // The in-flight set clears when the handler returns, so without the record
-  // check a repeat IPC call would create a second record for one distribution.
-  it('installDistribution refuses a second record for an already-tracked distribution', async () => {
+  it('installBuild allows another instance of an already-installed Build release', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.list.mockResolvedValue([
       {
         id: 'i1',
         sourceId: 'comfybuilder',
+        workspaceId: 'w1',
         distributionId: 'd1',
         name: 'Image Baseline',
-        status: 'installing'
+        version: '7',
+        artifactId: 'art-cpu',
+        status: 'installed'
       }
     ])
-    const result = await handler('comfybuilder:installDistribution')({}, 'd1')
-    expect(result).toEqual({
-      ok: false,
-      message: '"Image Baseline" already installs this build.'
+    mocks.resolveSelectedHostArtifact.mockResolvedValue({
+      version: 7,
+      artifact: {
+        id: 'art-cpu',
+        os: 'linux',
+        gpu: 'cpu',
+        accelVariant: 'cpu',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
     })
-    expect(mocks.add).not.toHaveBeenCalled()
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.uniqueName.mockResolvedValueOnce('Image Baseline (1)')
+    mocks.add.mockResolvedValue({ id: 'inst-2', name: 'Image Baseline (1)' })
+
+    const result = await handler('comfybuilder:installBuild')(
+      {},
+      { buildId: 'd1', releaseVersion: 7, artifactId: 'art-cpu' }
+    )
+
+    expect(result).toEqual({ ok: true, entry: { id: 'inst-2', name: 'Image Baseline (1)' } })
+    expect(mocks.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Image Baseline (1)',
+        distributionId: 'd1',
+        version: '7',
+        artifactId: 'art-cpu'
+      })
+    )
   })
 
-  it('installDistribution proceeds when the only prior record for the distribution failed', async () => {
+  it('installBuild proceeds when the only prior record for the build failed', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.list.mockResolvedValue([
-      { id: 'i1', sourceId: 'comfybuilder', distributionId: 'd1', name: 'Broken', status: 'failed' }
+      {
+        id: 'i1',
+        sourceId: 'comfybuilder',
+        workspaceId: 'w1',
+        distributionId: 'd1',
+        name: 'Broken',
+        status: 'failed'
+      }
     ])
     mocks.resolveHostArtifact.mockResolvedValue(null)
-    const result = await handler('comfybuilder:installDistribution')({}, 'd1')
-    // Past the duplicate guard: it failed only because no artifact resolved.
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
     expect(mocks.resolveHostArtifact).toHaveBeenCalled()
     expect(result).toMatchObject({ ok: false, message: 'No installable build for this machine.' })
   })
 
-  it('installDistribution refuses when signed out', async () => {
+  it('installBuild refuses when signed out', async () => {
     mocks.isSignedIn.mockReturnValue(false)
-    const result = await handler('comfybuilder:installDistribution')({}, 'd1')
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
     expect(result).toMatchObject({ ok: false })
     expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
   })
 
-  it('listDistributions passes the installed-version map built from comfybuilder installs', async () => {
+  it('installBuild refuses when the session has no active workspace', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.status.mockReturnValue({ signedIn: true })
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
+
+    expect(result).toEqual({ ok: false, message: 'No active workspace.' })
+    expect(mocks.resolveHostArtifact).not.toHaveBeenCalled()
+  })
+
+  it('does not let another workspace record block the active workspace install', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.list.mockResolvedValue([
-      { id: 'i1', sourceId: 'comfybuilder', distributionId: 'd1', version: '3' },
-      { id: 'i2', sourceId: 'standalone', distributionId: 'ignored', version: '9' } // non-builder: excluded
+      {
+        id: 'i1',
+        sourceId: 'comfybuilder',
+        workspaceId: 'w2',
+        distributionId: 'd1',
+        name: 'Other Workspace',
+        status: 'installed'
+      }
     ])
-    mocks.listDistributionRows.mockResolvedValue([])
-    await handler('comfybuilder:listDistributions')({})
-    const installed = mocks.listDistributionRows.mock.calls[0]![2] as Map<string, number>
+    mocks.resolveHostArtifact.mockResolvedValue(null)
+
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
+
+    expect(mocks.resolveHostArtifact).toHaveBeenCalled()
+  })
+
+  it('listBuilds passes the installed-version map built from comfybuilder installs', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.list.mockResolvedValue([
+      { id: 'i1', sourceId: 'comfybuilder', workspaceId: 'w1', distributionId: 'd1', version: '3' },
+      {
+        id: 'failed',
+        sourceId: 'comfybuilder',
+        workspaceId: 'w1',
+        distributionId: 'd1',
+        version: '8',
+        status: 'failed'
+      },
+      { id: 'i2', sourceId: 'comfybuilder', workspaceId: 'w2', distributionId: 'd2', version: '9' },
+      { id: 'i3', sourceId: 'standalone', distributionId: 'ignored', version: '9' }
+    ])
+    mocks.resolveBuildRows.mockResolvedValue([])
+    await handler('comfybuilder:listBuilds')({})
+    const installed = mocks.resolveBuildRows.mock.calls[0]![3] as Map<string, number>
     expect(installed.get('d1')).toBe(3)
+    expect(installed.has('d2')).toBe(false)
     expect(installed.has('ignored')).toBe(false)
-    expect(mocks.listDistributionRows.mock.calls[0]![3]).toBe(3)
+    expect(mocks.resolveBuildRows.mock.calls[0]![4]).toBe(3)
   })
 })

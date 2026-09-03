@@ -32,7 +32,13 @@ import { configDir } from './paths'
 import * as mainTelemetry from './telemetry'
 import type { FeatureFlagValue } from './telemetry'
 
-const DEFAULT_TIMEOUT_MS = 1500
+// The boot fetch is fire-and-forget (`void initExperiments`) and its only
+// awaiter is `getFlagAsync`, which wants the real value. A short timeout here
+// doesn't protect boot — it just discards a slow-but-successful fetch, leaving
+// the cache unseeded and every `getFlagAsync` reader stuck on `undefined`. So
+// the cap is a hang-guard, not a UI budget: long enough that a slow network
+// still resolves and seeds the cache.
+const DEFAULT_TIMEOUT_MS = 10_000
 
 export type ExperimentExposureSource = 'cache' | 'remote' | 'fallback'
 

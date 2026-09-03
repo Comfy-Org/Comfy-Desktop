@@ -89,6 +89,7 @@ describe('countCommitsAhead', () => {
       cb(null, '21\n', '')
     })
     expect(await countCommitsAhead('/repo', 'v0.14.2')).toBe(21)
+    expect(mockedExecFile.mock.calls[0]![2]).toMatchObject({ timeout: 5000 })
   })
 
   it('returns 0 when on the tag exactly', async () => {
@@ -1031,7 +1032,7 @@ describe('pygit2 circuit breaker', () => {
   })
 
   it('disables pygit2 after 3 consecutive launch failures', async () => {
-    // Each call simulates a timeout (killed=true ⇒ launch failure)
+    // Each call simulates a timeout (killed=true -> launch failure)
     const timeoutErr = new Error('timeout') as Error & { killed: boolean }
     timeoutErr.killed = true
     mockExecFile((_cmd, _args, _opts, cb) => {
@@ -1045,13 +1046,13 @@ describe('pygit2 circuit breaker', () => {
     expect(isPygit2Configured()).toBe(true)
 
     expect(await countCommitsAhead('/repo', 'v0.1.0')).toBeUndefined()
-    // 3rd consecutive launch failure ⇒ disabled
+    // 3rd consecutive launch failure -> disabled
     expect(isPygit2Configured()).toBe(false)
     expect(getPygit2Status().status).toBe('disabled')
   })
 
   it('does not count normal non-zero exits as launch failures', async () => {
-    // exit code 1 with no killed/signal ⇒ helper ran fine, just returned non-zero
+    // exit code 1 with no killed/signal -> helper ran fine, just returned non-zero
     const exitErr = new Error('exit 1') as Error & { code: number }
     exitErr.code = 1
     mockExecFile((_cmd, _args, _opts, cb) => {
@@ -1098,7 +1099,7 @@ describe('pygit2 circuit breaker', () => {
     for (let i = 0; i < 3; i++) await countCommitsAhead('/repo', 'v0.1.0')
     expect(isPygit2Configured()).toBe(false)
 
-    // After disable, calls take the system-git branch — the Python path
+    // After disable, calls take the system-git branch - the Python path
     // should no longer appear in execFile invocations.
     mockedExecFile.mockClear()
     mockExecFile((_cmd, _args, _opts, cb) => {
