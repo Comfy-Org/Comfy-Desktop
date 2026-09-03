@@ -17,35 +17,47 @@ say() {
 
 say "### R2"
 
+# Without this, `set -u` aborts with a bare "unbound variable" and the script
+# reports nothing, which is the opposite of its job.
+for v in CF_ACCOUNT CF_TOKEN; do
+  if [ -z "${!v:-}" ]; then
+    say "- **\`$v\` is not set on this run.** Add it to the starter-templates environment."
+    exit 1
+  fi
+done
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
 # Account-owned tokens are rejected by /user/tokens/verify with code 1000 even
 # when perfectly valid, so try the account endpoint too before calling it bad.
 verify=$(curl -sS "$API/accounts/$CF_ACCOUNT/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
 kind="account-owned"
-if ! grep -q '"success":true' <<<"$verify"; then
+if ! jq -e '.success == true' <<<"$verify" >/dev/null 2>&1; then
   verify=$(curl -sS "$API/user/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
   kind="user"
 fi
-if ! grep -q '"success":true' <<<"$verify"; then
+if ! jq -e '.success == true' <<<"$verify" >/dev/null 2>&1; then
   say "- **Token is not valid on either the account or user endpoint.**"
-  say "  \`$(sed -n 's/.*"message":"\([^"]*\)".*/\1/p' <<<"$verify" | head -1)\`"
+  say "  \`$(jq -r '.errors[0].message // "unknown"' <<<"$verify")\`"
   exit 1
 fi
 say "- Token is valid and active ($kind)"
 
-buckets_code=$(curl -sS -o /tmp/buckets.json -w '%{http_code}' \
+buckets_code=$(curl -sS -o "$TMP/buckets.json" -w '%{http_code}' \
   "$API/accounts/$CF_ACCOUNT/r2/buckets" -H "Authorization: Bearer $CF_TOKEN")
 if [ "$buckets_code" = "200" ]; then
-  if jq -e --arg b "$BUCKET" '.result.buckets[]? | select(.name==$b)' /tmp/buckets.json >/dev/null; then
+  if jq -e --arg b "$BUCKET" '.result.buckets[]? | select(.name==$b)' "$TMP/buckets.json" >/dev/null; then
     say "- Sees \`$BUCKET\` in this account"
   else
     say "- **\`$BUCKET\` is NOT in this Cloudflare account.**"
-    say "- Buckets it can see: \`$(jq -r '[.result.buckets[]?.name] | join(", ")' /tmp/buckets.json)\`"
+    say "- Buckets it can see: \`$(jq -r '[.result.buckets[]?.name] | join(", ")' "$TMP/buckets.json")\`"
     say "- Ask for: a token on the account that owns \`$BUCKET\`."
     exit 1
   fi
 else
   say "- Cannot list buckets (HTTP $buckets_code) - no R2 read scope on this account"
-  say "  \`$(jq -c '.errors' /tmp/buckets.json 2>/dev/null || cat /tmp/buckets.json)\`"
+  say "  \`$(jq -c '.errors' "$TMP/buckets.json" 2>/dev/null || cat "$TMP/buckets.json")\`"
 fi
 
 read_code=$(curl -sS -o /dev/null -w '%{http_code}' \
@@ -53,11 +65,11 @@ read_code=$(curl -sS -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer $CF_TOKEN")
 say "- Read the published file: HTTP $read_code"
 
-echo '{"check":true}' > /tmp/check.json
-write_code=$(curl -sS -o /tmp/write.json -w '%{http_code}' -X PUT \
+echo '{"check":true}' > "$TMP/check.json"
+write_code=$(curl -sS -o "$TMP/write.json" -w '%{http_code}' -X PUT \
   "$API/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/$KEY" \
   -H "Authorization: Bearer $CF_TOKEN" \
-  -H "Content-Type: application/json" --data-binary @/tmp/check.json)
+  -H "Content-Type: application/json" --data-binary @"$TMP/check.json")
 say "- Write a throwaway object: HTTP $write_code"
 
 if [ "$write_code" = "200" ]; then
@@ -67,7 +79,7 @@ if [ "$write_code" = "200" ]; then
   exit 0
 fi
 
-say "- Refused: \`$(jq -c '.errors' /tmp/write.json 2>/dev/null || cat /tmp/write.json)\`"
+say "- Refused: \`$(jq -r '.errors[0].message // "unknown"' "$TMP/write.json")\`"
 if [ "$read_code" = "200" ]; then
   say "- Reads work but writes do not, so the token is read-only."
 else

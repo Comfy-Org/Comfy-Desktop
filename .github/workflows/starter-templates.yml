@@ -64,7 +64,9 @@ jobs:
   # Merging to main publishes the list. Desktop reads it at boot, so users pick
   # the change up on their next launch with no app release.
   publish:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     needs: validate
     runs-on: ubuntu-latest
     environment: starter-templates
@@ -73,6 +75,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      # Authenticate first. It is the likeliest failure and writes nothing, so
+      # a bad key aborts before R2 is mutated and the hosts can diverge.
+      - name: authenticate to GCS
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_MIRROR_SA_KEY }}
 
       # Uploaded to both hosts: regions where R2's edge is throttled read the
       # GCS mirror, and a list that exists on only one of them is invisible to
@@ -88,11 +97,6 @@ jobs:
             --file assets/starter-templates.json \
             --content-type application/json
 
-      # Runs on a dry run too: a bad service-account key fails here.
-      - name: authenticate to GCS
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCS_MIRROR_SA_KEY }}
       - uses: google-github-actions/upload-cloud-storage@v2
         if: inputs.dry_run != true
         with:
@@ -117,23 +121,29 @@ jobs:
       # `always()` so an R2 failure never hides the mirror's status; the job
       # still fails overall if either is refused.
       - name: dry run - GCS mirror credentials
-        if: always() && inputs.dry_run == true
+        if: ${{ !cancelled() && inputs.dry_run == true }}
         run: bash .github/scripts/check-gcs.sh
 
       - name: confirm both hosts serve it
         if: inputs.dry_run != true
         run: |
+          TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
           for url in \
             https://desktop-assets.comfy.org/standalone-environments/starter-templates.json \
             https://storage.googleapis.com/comfy-desktop-public/standalone-environments/starter-templates.json
           do
-            code=$(curl -s -o /tmp/got.json -w '%{http_code}' "$url")
-            if [ "$code" != "200" ]; then
-              echo "::error::$url returned $code"
-              exit 1
-            fi
-            if ! diff -q /tmp/got.json assets/starter-templates.json >/dev/null; then
-              echo "::error::$url is serving different content than we just published"
+            # Both hosts sit behind a CDN, so a read straight after the write can
+            # still serve the previous object. Poll rather than fail on the race.
+            ok=false
+            for _ in $(seq 1 12); do
+              code=$(curl -s -H 'Cache-Control: no-cache' -o "$TMP/got.json" -w '%{http_code}' "$url")
+              if [ "$code" = "200" ] && diff -q "$TMP/got.json" assets/starter-templates.json >/dev/null; then
+                ok=true; break
+              fi
+              sleep 5
+            done
+            if [ "$ok" != "true" ]; then
+              echo "::error::$url did not serve the published list within 60s (last HTTP $code)"
               exit 1
             fi
           done

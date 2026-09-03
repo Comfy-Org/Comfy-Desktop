@@ -26,6 +26,13 @@ const SLOTS = 4
 const MODALITIES = ['video', 'image', '3d', 'audio']
 /** Mirrors the app's own id validator: this reaches a URL and a file path. */
 const ID = /^[a-zA-Z0-9_.-]+$/
+/** Clear the pattern but name a directory, so the app drops them. */
+const RESERVED_IDS = new Set(['.', '..'])
+/** The app drops anything past these, which shortens a tab with no error. */
+const MAX_ID_LENGTH = 128
+const MAX_TEXT_LENGTH = 4096
+const MAX_SIZE_BYTES = 2 * 1024 ** 4
+const MAX_ENTRIES = 256
 /** Subtypes whose `<id>-1.<sub>` preview is a real image; audio renders a glyph. */
 const IMAGE_SUBTYPES = new Set(['webp', 'png', 'jpg', 'jpeg', 'gif', 'avif'])
 
@@ -35,9 +42,16 @@ const die = (msg) => {
 }
 
 async function liveIndex() {
-  const res = await fetch(INDEX_URL)
-  if (!res.ok) die(`could not read the template index (HTTP ${res.status})`)
-  const categories = await res.json()
+  let categories
+  try {
+    const res = await fetch(INDEX_URL, { signal: AbortSignal.timeout(15_000) })
+    if (!res.ok) die(`could not read the template index (HTTP ${res.status})`)
+    categories = await res.json()
+  } catch (e) {
+    if (e?.code === 'ERR_DIE') throw e
+    die(`could not read the template index: ${e.message}`)
+  }
+  if (!Array.isArray(categories)) die('the template index is not the expected shape')
   const byId = new Map()
   for (const category of categories) {
     const modality = MODALITIES.includes(category.type) ? category.type : null
@@ -50,9 +64,9 @@ async function liveIndex() {
 
 /** An entry as the app expects it, with every display field taken from upstream. */
 function entryFor(id, modality, index, flags = {}) {
+  if (!ID.test(id) || RESERVED_IDS.has(id)) die(`"${id}" is not a valid template id`)
   const live = index.get(id)
   if (!live) die(`"${id}" is not in the template index — check the id at ${INDEX_URL}`)
-  if (!ID.test(id)) die(`"${id}" is not a valid template id`)
   // Otherwise an image template lands in the audio tab, carrying its own title
   // and description, and the picker groups it by the modality we stored.
   if (live.modality && live.modality !== modality) {
@@ -87,18 +101,36 @@ function check(doc) {
   const errors = []
   if (doc.schemaVersion !== SCHEMA_VERSION) errors.push(`schemaVersion must be ${SCHEMA_VERSION}`)
   if (!Array.isArray(doc.templates)) return ['templates must be an array']
+  if (doc.templates.length > MAX_ENTRIES) {
+    errors.push(`${doc.templates.length} entries; the app reads only the first ${MAX_ENTRIES}`)
+  }
 
   const seen = new Set()
   for (const t of doc.templates) {
     if (seen.has(t.id)) errors.push(`duplicate id "${t.id}" — ids are the picker's option key`)
     seen.add(t.id)
-    if (!ID.test(t.id ?? '')) errors.push(`invalid id "${t.id}"`)
+    if (!ID.test(t.id ?? '') || RESERVED_IDS.has(t.id)) errors.push(`invalid id "${t.id}"`)
+    if ((t.id ?? '').length > MAX_ID_LENGTH) errors.push(`"${t.id}" is longer than ${MAX_ID_LENGTH}`)
     if (!MODALITIES.includes(t.modality)) errors.push(`"${t.id}" has unknown modality`)
     const s = t.snapshot ?? {}
     if (!s.title?.trim()) errors.push(`"${t.id}" has no title`)
     if (!s.description?.trim()) errors.push(`"${t.id}" has no description`)
+    for (const field of ['title', 'description']) {
+      if ((s[field] ?? '').length > MAX_TEXT_LENGTH) {
+        errors.push(`"${t.id}" has a ${field} longer than ${MAX_TEXT_LENGTH}`)
+      }
+    }
+    // The app requires this and drops the entry without it; an image subtype
+    // also decides whether a preview renders at all.
+    if (!s.mediaSubtype?.trim()) {
+      errors.push(`"${t.id}" has no mediaSubtype`)
+    } else if (!IMAGE_SUBTYPES.has(s.mediaSubtype.toLowerCase()) && s.mediaSubtype !== 'mp3') {
+      errors.push(`"${t.id}" has an unusable mediaSubtype "${s.mediaSubtype}"`)
+    }
     if (!Number.isInteger(s.sizeBytes) || s.sizeBytes < 0) {
       errors.push(`"${t.id}" has an invalid sizeBytes`)
+    } else if (s.sizeBytes > MAX_SIZE_BYTES) {
+      errors.push(`"${t.id}" reports a size past the app's ${MAX_SIZE_BYTES} cap`)
     } else if (!t.apiNode && s.sizeBytes === 0) {
       errors.push(`"${t.id}" is free but reports no size — the disk-space check would under-count`)
     } else if (t.apiNode && s.sizeBytes !== 0) {
@@ -167,7 +199,11 @@ function summarise(doc) {
 
 const arg = (name) => {
   const i = process.argv.indexOf(`--${name}`)
-  return i === -1 ? undefined : process.argv[i + 1]
+  if (i === -1) return undefined
+  const value = process.argv[i + 1]
+  // Otherwise `--id --recommended` binds the flag itself as the value.
+  if (value === undefined || value.startsWith('--')) die(`--${name} needs a value`)
+  return value
 }
 const flag = (name) => process.argv.includes(`--${name}`)
 
@@ -215,6 +251,9 @@ const commands = {
     const tab = doc.templates.filter((t) => t.modality === modality)
     const recommended = flag('recommended')
     const paid = flag('paid') || id.startsWith('api_')
+    if (recommended && paid) {
+      die('a card cannot be both --recommended and paid: the auto-pick must not spend credits')
+    }
 
     // Replace like for like, so the tab keeps its shape without the editor
     // having to reason about counts.
