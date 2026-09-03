@@ -31,10 +31,10 @@ trap 'rm -rf "$TMP"' EXIT
 
 # Account-owned tokens are rejected by /user/tokens/verify with code 1000 even
 # when perfectly valid, so try the account endpoint too before calling it bad.
-verify=$(curl -sS "$API/accounts/$CF_ACCOUNT/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
+verify=$(curl -sS --connect-timeout 10 --max-time 30 "$API/accounts/$CF_ACCOUNT/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
 kind="account-owned"
 if ! jq -e '.success == true' <<<"$verify" >/dev/null 2>&1; then
-  verify=$(curl -sS "$API/user/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
+  verify=$(curl -sS --connect-timeout 10 --max-time 30 "$API/user/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
   kind="user"
 fi
 if ! jq -e '.success == true' <<<"$verify" >/dev/null 2>&1; then
@@ -44,7 +44,7 @@ if ! jq -e '.success == true' <<<"$verify" >/dev/null 2>&1; then
 fi
 say "- Token is valid and active ($kind)"
 
-buckets_code=$(curl -sS -o "$TMP/buckets.json" -w '%{http_code}' \
+buckets_code=$(curl -sS --connect-timeout 10 --max-time 30 -o "$TMP/buckets.json" -w '%{http_code}' \
   "$API/accounts/$CF_ACCOUNT/r2/buckets" -H "Authorization: Bearer $CF_TOKEN")
 if [ "$buckets_code" = "200" ]; then
   if jq -e --arg b "$BUCKET" '.result.buckets[]? | select(.name==$b)' "$TMP/buckets.json" >/dev/null; then
@@ -60,20 +60,20 @@ else
   say "  \`$(jq -c '.errors' "$TMP/buckets.json" 2>/dev/null || cat "$TMP/buckets.json")\`"
 fi
 
-read_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+read_code=$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w '%{http_code}' \
   "$API/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/$PUBLISHED" \
   -H "Authorization: Bearer $CF_TOKEN")
 say "- Read the published file: HTTP $read_code"
 
 echo '{"check":true}' > "$TMP/check.json"
-write_code=$(curl -sS -o "$TMP/write.json" -w '%{http_code}' -X PUT \
+write_code=$(curl -sS --connect-timeout 10 --max-time 30 -o "$TMP/write.json" -w '%{http_code}' -X PUT \
   "$API/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/$KEY" \
   -H "Authorization: Bearer $CF_TOKEN" \
   -H "Content-Type: application/json" --data-binary @"$TMP/check.json")
 say "- Write a throwaway object: HTTP $write_code"
 
 if [ "$write_code" = "200" ]; then
-  curl -sS -X DELETE "$API/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/$KEY" \
+  curl -sS --connect-timeout 10 --max-time 30 -X DELETE "$API/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/$KEY" \
     -H "Authorization: Bearer $CF_TOKEN" >/dev/null
   say "- Cleaned up. **R2 is ready to publish.**"
   exit 0

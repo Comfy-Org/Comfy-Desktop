@@ -52,7 +52,7 @@ body = urllib.parse.urlencode({
     "assertion": assertion,
 }).encode()
 try:
-    with urllib.request.urlopen(urllib.request.Request(key["token_uri"], data=body)) as r:
+    with urllib.request.urlopen(urllib.request.Request(key["token_uri"], data=body), timeout=30) as r:
         print(json.load(r)["access_token"])
 except Exception as e:
     print("", end="")
@@ -66,23 +66,41 @@ if [ -z "$TOKEN" ]; then
 fi
 say "- Minted an access token"
 
-read_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+read_code=$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w '%{http_code}' \
   "https://storage.googleapis.com/storage/v1/b/$BUCKET/o/$(printf %s "$PREFIX/starter-templates.json" | jq -sRr @uri)" \
   -H "Authorization: Bearer $TOKEN")
 say "- Read the published file: HTTP $read_code (404 just means it is not there yet)"
 
 echo '{"check":true}' > "$TMP/check.json"
-write_code=$(curl -sS -o "$TMP/gcs-write.json" -w '%{http_code}' -X POST \
+write_code=$(curl -sS --connect-timeout 10 --max-time 30 -o "$TMP/gcs-write.json" -w '%{http_code}' -X POST \
   "https://storage.googleapis.com/upload/storage/v1/b/$BUCKET/o?uploadType=media&name=$(printf %s "$KEY" | jq -sRr @uri)" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   --data-binary @"$TMP/check.json")
 say "- Write a throwaway object: HTTP $write_code"
 
 if [ "$write_code" = "200" ]; then
-  curl -sS -X DELETE \
+  # Publishing overwrites an existing object, which a create-only credential
+  # cannot do, so prove overwrite rather than just create.
+  again=$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w '%{http_code}' -X POST \
+    "https://storage.googleapis.com/upload/storage/v1/b/$BUCKET/o?uploadType=media&name=$(printf %s "$KEY" | jq -sRr @uri)" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    --data-binary @"$TMP/check.json")
+  say "- Overwrite the same object: HTTP $again"
+
+  del=$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w '%{http_code}' -X DELETE \
     "https://storage.googleapis.com/storage/v1/b/$BUCKET/o/$(printf %s "$KEY" | jq -sRr @uri)" \
-    -H "Authorization: Bearer $TOKEN" >/dev/null
-  say "- Cleaned up. **Mirror is ready to publish.**"
+    -H "Authorization: Bearer $TOKEN")
+  say "- Delete the throwaway object: HTTP $del"
+
+  if [ "$again" != "200" ]; then
+    say "- **Create works but overwrite does not, so publishing would fail.**"
+    say "- Ask for: Storage Object Admin on \`$BUCKET\`, not just object create."
+    exit 1
+  fi
+  if [ "$del" != "204" ] && [ "$del" != "200" ]; then
+    say "- Left \`$KEY\` behind; the credential cannot delete."
+  fi
+  say "- **Mirror is ready to publish.**"
   exit 0
 fi
 

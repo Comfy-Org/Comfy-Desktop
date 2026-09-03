@@ -73,7 +73,7 @@ function entryFor(id, modality, index, flags = {}) {
     die(`"${id}" is a ${live.modality} template upstream, not ${modality}`)
   }
 
-  const paid = flags.paid ?? id.startsWith('api_')
+  const paid = flags.paid || id.startsWith('api_')
   const size = typeof live.size === 'number' && live.size > 0 ? live.size : 0
   if (!paid && size === 0) {
     die(`"${id}" reports no download size upstream, so the disk-space check cannot size it`)

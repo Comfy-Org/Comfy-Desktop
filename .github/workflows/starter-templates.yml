@@ -30,9 +30,16 @@ on:
 permissions:
   contents: read
 
+# Two merges in quick succession would race to overwrite the same objects and
+# the older list could win. Queue rather than cancel: every merge must publish.
+concurrency:
+  group: starter-templates-publish
+  cancel-in-progress: false
+
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -55,7 +62,12 @@ jobs:
       # and send the author hunting a hand-edit that does not exist.
       - name: display fields match the live index
         run: |
-          node scripts/starter-templates.mjs regenerate >/dev/null
+          # `bash -e` would fail the step on a die(), which is the upstream
+          # drift this warning exists to tolerate.
+          node scripts/starter-templates.mjs regenerate >/dev/null || {
+            echo "::warning::Could not reach the template index to check for drift."
+            exit 0
+          }
           if ! git diff --quiet -- assets/starter-templates.json; then
             echo "::warning::Display fields differ from upstream. If this PR did not"
             echo "::warning::edit them, upstream changed: run"
@@ -72,6 +84,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: starter-templates
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +108,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.R2_STARTER_TEMPLATES_TOKEN }}
         run: |
-          npx --yes wrangler@3 r2 object put \
+          npx --yes wrangler@3.114.1 r2 object put \
             desktop-assets/standalone-environments/starter-templates.json \
             --file assets/starter-templates.json \
             --content-type application/json
