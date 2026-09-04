@@ -419,9 +419,10 @@ export const standalone: SourcePlugin = {
       // a stale persisted ETag can otherwise hide a freshly-shipped standalone
       // release and strand new installs on whatever the previous run cached.
       const latest = (await fetchJSON(`${R2_BASE_URL}/latest.json`, { refresh: true })) as R2Latest
-      // Platform prefix AND architecture: Windows publishes separate x64 and
-      // ARM64 bundles under one prefix, and only the host's own architecture
-      // can run (see `variantMatchesHost`).
+      // Platform prefix AND architecture: only the host's own architecture can
+      // run. Windows publishes x64 and ARM64 today; Linux ARM64 intentionally
+      // gets no options until an explicitly suffixed bundle is published (see
+      // `variantMatchesHost`).
       const vendorIds = Object.keys(latest).filter((id) => variantMatchesHost(id))
       if (vendorIds.length === 0) return []
 

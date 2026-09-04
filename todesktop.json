@@ -75,6 +75,24 @@
           }
         ]
       }
+    },
+    "linux": {
+      "x64": {
+        "extraResources": [
+          { "from": "./lib", "to": "lib" },
+          { "from": "resources/apparmor-profile", "to": "apparmor-profile" },
+          {
+            "from": "./todesktop-targets/linux-x64/bootstrap-python",
+            "to": "bootstrap-python"
+          }
+        ]
+      },
+      "arm64": {
+        "extraResources": [
+          { "from": "./lib", "to": "lib" },
+          { "from": "resources/apparmor-profile", "to": "apparmor-profile" }
+        ]
+      }
     }
   },
   "platformOverrides": {
@@ -91,13 +109,6 @@
       "extraResources": [
         { "from": "./lib", "to": "lib" },
         { "from": "./bootstrap-python/mac-arm64", "to": "bootstrap-python" }
-      ]
-    },
-    "linux": {
-      "extraResources": [
-        { "from": "./lib", "to": "lib" },
-        { "from": "resources/apparmor-profile", "to": "apparmor-profile" },
-        { "from": "./bootstrap-python/linux-x64", "to": "bootstrap-python" }
       ]
     }
   }
