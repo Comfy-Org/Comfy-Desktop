@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n'
 
 import { en } from '../../lib/i18nMessages.ts'
 import SettingsSectionList from './SettingsSectionList.vue'
+import BooleanToggle from './BooleanToggle.vue'
 import type { DetailField, DetailSection } from '../../types/ipc'
 
 function makeI18n() {
@@ -215,6 +216,59 @@ describe('SettingsSectionList', () => {
       const tooltip = wrapper.find('.version-stat-action-tooltip')
       expect(tooltip.attributes('tabindex')).toBe('0')
       expect(tooltip.attributes('title')).toBeUndefined()
+    })
+  })
+
+  describe('turn-on-only disabled boolean rows', () => {
+    function betaField(value: boolean, turnOnDisabled: boolean): DetailField {
+      return {
+        id: 'betaFeaturesEnabled',
+        label: 'Opt in to beta features',
+        value,
+        editable: true,
+        editType: 'boolean',
+        turnOnDisabled,
+        turnOnDisabledTooltipKey: 'tooltips.betaFeaturesNeedTelemetry'
+      }
+    }
+
+    it('forwards the directional-disable contract to the toggle', () => {
+      const wrapper = mountList([betaField(false, true)])
+      const toggle = wrapper.findComponent(BooleanToggle)
+      expect(toggle.props('turnOnDisabled')).toBe(true)
+      expect(toggle.props('turnOnDisabledTooltipKey')).toBe('tooltips.betaFeaturesNeedTelemetry')
+    })
+
+    it('disables an off row and resolves the tooltip key against the catalog', async () => {
+      const wrapper = mountList([betaField(false, true)])
+      const button = wrapper.find('button[role="switch"]')
+      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.attributes('title')).toBe(en.tooltips.betaFeaturesNeedTelemetry)
+      expect(button.attributes('title')).not.toBe('tooltips.betaFeaturesNeedTelemetry')
+
+      await button.trigger('click')
+      expect(wrapper.emitted('update-field')).toBeFalsy()
+      expect(button.attributes('aria-checked')).toBe('false')
+    })
+
+    it('leaves an on row fully operable so turning it off always works', async () => {
+      const wrapper = mountList([betaField(true, true)])
+      const button = wrapper.find('button[role="switch"]')
+      expect(button.attributes('disabled')).toBeUndefined()
+      expect(button.attributes('title')).toBeUndefined()
+
+      await button.trigger('click')
+      const emitted = wrapper.emitted('update-field')
+      expect(emitted).toBeTruthy()
+      expect(emitted![0]![1]).toBe(false)
+    })
+
+    it('leaves an off row operable when the directional disable is not set', async () => {
+      const wrapper = mountList([betaField(false, false)])
+      const button = wrapper.find('button[role="switch"]')
+      expect(button.attributes('disabled')).toBeUndefined()
+      await button.trigger('click')
+      expect(wrapper.emitted('update-field')![0]![1]).toBe(true)
     })
   })
 })

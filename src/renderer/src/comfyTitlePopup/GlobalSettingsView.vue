@@ -125,8 +125,23 @@ const languageSections = computed<DetailSection[]>(() => [
 const generalSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.generalFields as unknown as DetailField[] }
 ])
+/** Opting in is gated on telemetry consent (opting *out* never is), and consent
+ *  is live snapshot state rather than a property of the settings field — so the
+ *  gate is derived here instead of main-side, where `toDetailField` would have
+ *  to learn about it. */
+const BETA_FEATURES_FIELD_ID = 'betaFeaturesEnabled'
 const telemetrySections = computed<DetailSection[]>(() => [
-  { fields: props.snapshot.telemetryFields as unknown as DetailField[] }
+  {
+    fields: (props.snapshot.telemetryFields as unknown as DetailField[]).map((field) =>
+      field.id === BETA_FEATURES_FIELD_ID
+        ? {
+            ...field,
+            turnOnDisabled: !props.snapshot.telemetryGranted,
+            turnOnDisabledTooltipKey: 'tooltips.betaFeaturesNeedTelemetry'
+          }
+        : field
+    )
+  }
 ])
 const desktopUpdatePreferenceFields = computed<DetailField[]>(
   () => props.snapshot.desktopUpdateFields as unknown as DetailField[]
