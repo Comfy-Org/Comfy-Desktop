@@ -66,22 +66,22 @@
       }
     },
     {
-      "id": "sdxlturbo_example",
-      "modality": "image",
-      "snapshot": {
-        "title": "SDXL Turbo",
-        "description": "Generate images in a single step using SDXL Turbo.",
-        "sizeBytes": 6936372183,
-        "mediaSubtype": "webp"
-      }
-    },
-    {
       "id": "image_pixeldit_t2i",
       "modality": "image",
       "snapshot": {
         "title": "PixelDiT: Text to Image",
         "description": "Input a text prompt and optional negative prompt. Generate a 1024px image using PixelDiT's VAE-free pixel diffusion transformer.",
         "sizeBytes": 7838315315,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "sdxlturbo_example",
+      "modality": "image",
+      "snapshot": {
+        "title": "SDXL Turbo",
+        "description": "Generate images in a single step using SDXL Turbo.",
+        "sizeBytes": 6936372183,
         "mediaSubtype": "webp"
       }
     },
