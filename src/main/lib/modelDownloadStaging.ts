@@ -154,6 +154,7 @@ export function removeStagedArtifacts(finalPath: string): boolean {
  *  I/O or permission failure (which must fail the parking outright). */
 export const LINK_UNSUPPORTED_CODES: ReadonlySet<string> = new Set([
   'EPERM', // Windows exFAT/FAT32 and some network filesystems
+  'EISDIR', // Node/libuv reports hard-link attempts on Windows exFAT this way
   'ENOTSUP',
   'EOPNOTSUPP',
   'ENOSYS',
@@ -321,8 +322,8 @@ export async function filesHaveSameBytes(a: string, b: string): Promise<boolean>
  * Install verified staged bytes at the final name without overwriting a file
  * that appeared there independently. An identical final is accepted and the
  * staged copy is removed; a different final is preserved and reported as a
- * conflict. Filesystems without atomic hard-link support fail closed and keep
- * the staged bytes for retry.
+ * conflict. Filesystems without hard-link support use an exclusive claim before
+ * renaming the verified bytes, matching the recovery path in startup scanning.
  */
 export async function installStagedAtFinal(
   stagingPath: string,
@@ -352,11 +353,33 @@ export async function installStagedAtFinal(
       return
     }
     if (!LINK_UNSUPPORTED_CODES.has(code ?? '')) throw err
-    if (fs.existsSync(finalPath)) {
-      await conflictOrAccept()
-      return
+    // exFAT/FAT32 and some network filesystems cannot hard-link. Claim the
+    // final name atomically before renaming so an existing model is never
+    // silently replaced. Startup scanning already recognizes and parks this
+    // zero-byte marker if the app exits between these two operations.
+    try {
+      fs.closeSync(fs.openSync(finalPath, 'wx'))
+    } catch (claimErr) {
+      if ((claimErr as NodeJS.ErrnoException).code === 'EEXIST') {
+        await conflictOrAccept()
+        return
+      }
+      throw claimErr
     }
-    throw new Error('atomic no-replace install is not supported by this filesystem', { cause: err })
+    try {
+      fs.renameSync(stagingPath, finalPath)
+    } catch (renameErr) {
+      // Move the marker aside instead of deleting it: another process may
+      // have opened or written it after our exclusive create. Parking keeps
+      // any such bytes under an inert, non-model name for manual recovery.
+      parkFileNoClobber(finalPath, (n) =>
+        n === 0
+          ? finalPath + '.claimed' + STAGING_SUFFIX
+          : finalPath + `.claimed-${n}` + STAGING_SUFFIX
+      )
+      throw renameErr
+    }
+    return
   }
   try {
     fs.unlinkSync(stagingPath)

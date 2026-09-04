@@ -1102,14 +1102,12 @@ describe('final destination conflicts', () => {
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
   })
 
-  it('fails closed when hard links are unsupported', async () => {
+  it('installs via an exclusive claim when hard links are unsupported', async () => {
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
-      const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
-      err.code = 'EPERM'
+      const err = new Error('EISDIR: illegal operation on a directory') as NodeJS.ErrnoException
+      err.code = 'EISDIR'
       throw err
     })
-    const openSpy = vi.spyOn(fs, 'openSync')
-    const renameSpy = vi.spyOn(fs, 'renameSync')
     try {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
@@ -1118,16 +1116,11 @@ describe('final destination conflicts', () => {
       res.emit('data', Buffer.from('0123456789'))
       res.emit('end')
       const outcome = await handle.done
-      expect(outcome.outcome).toBe('error')
-      expect((outcome as { error: string }).error).toMatch(/atomic no-replace/)
-      expect(fs.existsSync(finalPath)).toBe(false)
-      expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
-      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
-      expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
-      expect(renameSpy).not.toHaveBeenCalledWith(stagingPathFor(finalPath), finalPath)
+      expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+      expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
     } finally {
-      renameSpy.mockRestore()
-      openSpy.mockRestore()
       linkSpy.mockRestore()
     }
   })
@@ -1185,13 +1178,27 @@ describe('final destination conflicts', () => {
     }
   })
 
-  it('a link-less filesystem never creates a final-name claim marker', async () => {
+  it('parks a link-less claim marker when the final rename fails', async () => {
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
-      const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
-      err.code = 'EPERM'
+      const err = new Error('EISDIR: illegal operation on a directory') as NodeJS.ErrnoException
+      err.code = 'EISDIR'
       throw err
     })
-    const openSpy = vi.spyOn(fs, 'openSync')
+    const realRename = fs.renameSync.bind(fs)
+    const renameSpy = vi
+      .spyOn(fs, 'renameSync')
+      .mockImplementation((oldPath: fs.PathLike, newPath: fs.PathLike) => {
+        if (String(oldPath) === stagingPathFor(finalPath) && String(newPath) === finalPath) {
+          // Simulate another process writing into the claim before a locked
+          // staging file makes the install rename fail. Those bytes must not
+          // be deleted by cleanup.
+          fs.writeFileSync(finalPath, 'external bytes')
+          const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException
+          err.code = 'EACCES'
+          throw err
+        }
+        realRename(oldPath, newPath)
+      })
     try {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
@@ -1203,9 +1210,10 @@ describe('final destination conflicts', () => {
       expect(outcome.outcome).toBe('error')
       expect(fs.existsSync(finalPath)).toBe(false)
       expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
-      expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
+      expect(fs.readFileSync(finalPath + '.claimed.part', 'utf-8')).toBe('external bytes')
+      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
     } finally {
-      openSpy.mockRestore()
+      renameSpy.mockRestore()
       linkSpy.mockRestore()
     }
   })
