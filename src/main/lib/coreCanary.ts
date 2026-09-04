@@ -91,7 +91,8 @@ const flag = makeOpsFlag<CoreCanaryFlag[]>({
   key: CORE_CANARY_FLAG_KEY,
   fallback: [],
   parse: parseCoreCanaryFlags,
-  logLabel: 'core-canary'
+  logLabel: 'core-canary',
+  persist: true
 })
 
 export const initCoreCanary = flag.init

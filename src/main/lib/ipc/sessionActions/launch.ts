@@ -94,6 +94,10 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
+import { getCoreCanaryFlagsAsync, selectCoreCanaryArgs } from '../../coreCanary'
+import type { CoreCanaryFlag } from '../../coreCanary'
+import { coreSemver } from '../../version'
+import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
 // --list-feature-flags registry so we never inject unrecognized keys.
@@ -113,6 +117,101 @@ export function desktopFeatureFlags(
     flags.enable_telemetry = 'true'
   }
   return flags
+}
+
+/** The single post-filter view of this launch's Core beta grants: what survived
+ *  BOTH the version/toggle selection and the running core's args schema, plus
+ *  what selection granted that the schema then refused. Every downstream signal
+ *  (final args, tap context, telemetry, log records) reads from this one value. */
+export interface CoreBetaLaunch {
+  readonly applied: readonly CoreCanaryFlag[]
+  readonly droppedUnsupported: readonly string[]
+  readonly logRecords: readonly string[]
+  readonly coreVersion: string | null
+}
+
+const NO_CORE_BETA: CoreBetaLaunch = {
+  applied: [],
+  droppedUnsupported: [],
+  logRecords: [],
+  coreVersion: null
+}
+
+/** Newline-terminated because `writeLog` and `sendOutput` forward text verbatim:
+ *  without it the first child-process line joins the record. */
+function coreBetaLogRecord(grant: CoreCanaryFlag, coreVersion: string): string {
+  return `[core-beta] ${grant.arg} (core ${coreVersion} >= ${grant.minCoreVersion}, opted in)\n`
+}
+
+/**
+ * Assemble the spawn args and resolve this launch's Core beta grants.
+ *
+ * Grants are selected against the UNFILTERED user args, then passed through the
+ * same schema filter as user args so a core that predates a flag never sees it.
+ * Ordering is fixed: prefix, desktop feature flags, beta grants, user args.
+ */
+export function buildLaunchArgs(input: {
+  prefixArgs: readonly string[]
+  userArgs: readonly string[]
+  desktopFlagArgs: readonly string[]
+  schema: ComfyArgsSchema
+  betaFlags: readonly CoreCanaryFlag[]
+  coreVersion: string | null
+  betaEnabled: boolean
+}): { args: string[]; beta: CoreBetaLaunch } {
+  const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
+  const filtered = filterUnsupportedArgs([...userArgs], schema)
+  const selected = selectCoreCanaryArgs(input.betaFlags, coreVersion, input.betaEnabled, userArgs)
+  const supported = new Set(
+    filterUnsupportedArgs(
+      selected.map((grant) => grant.arg),
+      schema
+    )
+  )
+  const applied = selected.filter((grant) => supported.has(grant.arg))
+  const betaArgs = applied.map((grant) => grant.arg)
+  return {
+    args: [...prefixArgs, ...desktopFlagArgs, ...betaArgs, ...filtered],
+    beta: {
+      applied,
+      droppedUnsupported: selected
+        .filter((grant) => !supported.has(grant.arg))
+        .map((grant) => grant.arg),
+      logRecords:
+        coreVersion === null ? [] : applied.map((grant) => coreBetaLogRecord(grant, coreVersion)),
+      coreVersion
+    }
+  }
+}
+
+/** Put each record in the on-disk log (bug reports) and the user-visible output. */
+export function emitCoreBetaRecords(
+  records: readonly string[],
+  sinks: { writeLog: (text: string) => void; sendOutput: (text: string) => void }
+): void {
+  for (const record of records) {
+    sinks.writeLog(record)
+    sinks.sendOutput(record)
+  }
+}
+
+/** `opt_state` reports every launch's toggle so opt-in/out is countable; `applied`
+ *  reports the grants that reached core and the ones its schema refused. Delivery
+ *  is the telemetry module's consent gate to decide, never a branch here. */
+export function emitCoreBetaTelemetry(input: {
+  appliedArgs: readonly string[]
+  droppedUnsupported: readonly string[]
+  coreVersion: string | null
+  optedIn: boolean
+}): void {
+  if (input.appliedArgs.length > 0 || input.droppedUnsupported.length > 0) {
+    telemetry.emit('comfy.desktop.core_beta.applied', {
+      args: [...input.appliedArgs],
+      core_version: input.coreVersion,
+      dropped_unsupported: [...input.droppedUnsupported]
+    })
+  }
+  telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
 }
 
 export interface StorageLaunchState {
@@ -302,7 +401,7 @@ async function openLogStream(installPath: string): Promise<WriteStream> {
   return fs.createWriteStream(path.join(logDir, 'comfyui.log'), { flags: 'w' })
 }
 
-function writeLog(stream: WriteStream, text: string): void {
+export function writeLog(stream: WriteStream, text: string): void {
   if (!stream.writableEnded) stream.write(stripAnsi(text))
 }
 
@@ -360,6 +459,9 @@ async function runLaunch(
   // Synthetic repair steps that ran during launch prep, prepended to the launch
   // progress in display order (e.g. a source rollback, then a PyTorch restore).
   const preLaunchPhases: PreLaunchPhase[] = []
+  // Resolved during arg assembly below, then read by the taps, the launch log
+  // records and the beta telemetry - all after assembly, never before.
+  let coreBeta: CoreBetaLaunch = NO_CORE_BETA
   // Claim the operation slot for the whole launch, prep included, so no other
   // operation can start against this install while the launch is preparing.
   _operationAborts.set(installationId, abort)
@@ -490,16 +592,19 @@ async function runLaunch(
     tracker: LaunchProgressTracker
   }> {
     const logStream = await openLogStream(inst.installPath)
+    const coreBetaFlags = coreBeta.applied.map((grant) => grant.arg)
     try {
       const execTap = createExecutionTap({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
       })
       const hwTap = createHardwareTap({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
       })
       const tracker = await armLaunchTracker()
       return { logStream, execTap, hwTap, tracker }
@@ -507,6 +612,22 @@ async function runLaunch(
       logStream.end()
       throw err
     }
+  }
+
+  // Called once per launch from each spawn path, as soon as that path has both
+  // destinations: the log records go to the on-disk log and the renderer, the
+  // events to telemetry.
+  function reportCoreBetaLaunch(logStream: WriteStream, sendOutput: (text: string) => void): void {
+    emitCoreBetaRecords(coreBeta.logRecords, {
+      writeLog: (text) => writeLog(logStream, text),
+      sendOutput
+    })
+    emitCoreBetaTelemetry({
+      appliedArgs: coreBeta.applied.map((grant) => grant.arg),
+      droppedUnsupported: coreBeta.droppedUnsupported,
+      coreVersion: coreBeta.coreVersion,
+      optedIn: settings.resolveBetaFeaturesEnabled()
+    })
   }
 
   // Migrate legacy envs/default/ → ComfyUI/.venv/ for standalone installs.
@@ -672,7 +793,6 @@ async function runLaunch(
         )
         const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
         const userArgs = launchCmd.args.slice(sIdx + 2)
-        const filtered = filterUnsupportedArgs(userArgs, schema)
 
         // Skip when the discovery flag is absent (avoids a pointless python spawn).
         const desktopFlagArgs: string[] = []
@@ -694,7 +814,17 @@ async function runLaunch(
           }
         }
 
-        launchCmd.args = [...prefixArgs, ...desktopFlagArgs, ...filtered]
+        const built = buildLaunchArgs({
+          prefixArgs,
+          userArgs,
+          desktopFlagArgs,
+          schema,
+          betaFlags: await getCoreCanaryFlagsAsync(),
+          coreVersion: coreSemver(inst),
+          betaEnabled: settings.resolveBetaFeaturesEnabled()
+        })
+        launchCmd.args = built.args
+        coreBeta = built.beta
       } catch {
         // Schema not available — pass args as-is.
       }
@@ -934,6 +1064,7 @@ async function runLaunch(
       _markLaunching(installationId, inst.name)
       return acquireLaunchResources()
     })
+    reportCoreBetaLaunch(logStream, sendOutput)
 
     // Last pre-spawn cancellation point on this path: a launch cancelled
     // during the awaits above must never spawn.
@@ -1165,6 +1296,7 @@ async function runLaunch(
     },
     { port: launchCmd.port! }
   )
+  reportCoreBetaLaunch(logStream, sendOutput)
 
   async function spawnComfy(): Promise<{ proc: ChildProcess; getStderr: () => string }> {
     // Reset per-boot accelerator state so each (re)spawn re-emits
