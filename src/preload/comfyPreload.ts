@@ -91,7 +91,12 @@ const reportFirebaseAuthState: NonNullable<
 const captureException: NonNullable<ComfyDesktop2TelemetryBridge['captureException']> = (
   error,
   properties
-): void => sendTelemetry('telemetry:captureException', { ...error, properties })
+): void =>
+  sendTelemetry('telemetry:captureException', {
+    message: error.message,
+    ...(error.stack ? { stack: error.stack } : {}),
+    properties
+  })
 
 const Telemetry: ComfyDesktop2TelemetryBridge = {
   capture: (event, properties): void => sendTelemetry('telemetry:capture', { event, properties }),
