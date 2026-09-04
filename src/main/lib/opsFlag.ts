@@ -2,7 +2,7 @@
  * Boot-time ops-flag reader.
  *
  * Ops flags are server config pushed TO the client (kill switches, rollout gates), not
- * analytics collected FROM the user, so they read through `getOpsFlag`, which deliberately
+ * analytics collected FROM the user, so they read through `getOpsFlagResult`, which deliberately
  * BYPASSES the consent gate — a user who declined telemetry still gets the kill switch, and
  * pre-consent surfaces can still resolve a value. The evaluation request supplies only the
  * installation-stable key and the flag key; implicit flag events are disabled.
@@ -14,7 +14,7 @@
  * Each flag supplies its own key, fail-direction (`fallback`), and `parse`. The shared part is
  * the plumbing every one of them needs: a single in-flight fetch, an accessor that awaits it
  * rather than racing it to the default, and a fallback that survives both a rejection and an
- * unrecognised payload. See `cloudFreeRuns.ts` for the current caller.
+ * unrecognised payload. See `cloudFreeRuns.ts` and `coreCanary.ts` for the current callers.
  */
 import * as mainTelemetry from './telemetry'
 import type { FeatureFlagValue } from './telemetry'
@@ -40,9 +40,8 @@ export function makeOpsFlag<T>(opts: {
   /** Value held before the fetch resolves, and kept when it fails or returns something
    *  `parse` doesn't recognise. This is the flag's fail direction. */
   fallback: T
-  /** Narrow the raw flag value. Return `undefined` to keep the fallback — that is how an
-   *  unrecognised payload is distinguished from a legitimate value. */
-  parse: (value: FeatureFlagValue | undefined) => T | undefined
+  /** Return `undefined` to retain the fallback. */
+  parse: (value: FeatureFlagValue | undefined, payload: unknown) => T | undefined
   /** Enables the `[label] init:` / `[label] init error:` boot logs. Omit for no logging. */
   logLabel?: string
 }): OpsFlag<T> {
@@ -54,12 +53,13 @@ export function makeOpsFlag<T>(opts: {
     init(initOpts) {
       if (initPromise) return initPromise
       initPromise = mainTelemetry
-        .getOpsFlag(key, initOpts.distinctId, initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
-        .then((value) => {
-          const parsed = parse(value)
+        .getOpsFlagResult(key, initOpts.distinctId, initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+        .then((result) => {
+          const parsed = parse(result?.value, result?.payload)
           if (parsed !== undefined) cached = parsed
 
-          if (logLabel) console.log(`[${logLabel}] init: fetched=`, value, '→ cached=', cached)
+          if (logLabel)
+            console.log(`[${logLabel}] init: fetched=`, result?.value, '→ cached=', cached)
         })
         .catch((err) => {
           if (logLabel) console.log(`[${logLabel}] init error:`, err)
