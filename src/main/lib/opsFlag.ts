@@ -16,10 +16,47 @@
  * rather than racing it to the default, and a fallback that survives both a rejection and an
  * unrecognised payload. See `cloudFreeRuns.ts` and `coreCanary.ts` for the current callers.
  */
+import path from 'path'
+import { configDir } from './paths'
+import { readFileSafe, writeFileSafe } from './safe-file'
 import * as mainTelemetry from './telemetry'
-import type { FeatureFlagValue } from './telemetry'
+import type { FeatureFlagValue, OpsFlagResult } from './telemetry'
 
 const DEFAULT_TIMEOUT_MS = 2000
+
+/** Every persisted flag's last fetched result, keyed by flag key. One file rather than one
+ *  per flag so the read-modify-write stays a single atomic replace. */
+function persistFilePath(): string {
+  return path.join(configDir(), 'ops-flags.json')
+}
+
+/** The whole file, or `{}` for missing / unreadable / non-object / unparseable content. The
+ *  file is user-writable JSON on disk, so every failure mode has to read as "no cache". */
+function readPersistedFile(): Record<string, unknown> {
+  const outcome = readFileSafe(persistFilePath())
+  if (outcome.kind !== 'data') return {}
+  try {
+    const parsed: unknown = JSON.parse(outcome.data)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function readPersistedResult(key: string): OpsFlagResult | undefined {
+  const entry = readPersistedFile()[key]
+  if (!entry || typeof entry !== 'object') return undefined
+  const { value, payload } = entry as { value?: unknown; payload?: unknown }
+  if (typeof value !== 'string' && typeof value !== 'boolean') return undefined
+  return { value, payload }
+}
+
+function writePersistedResult(key: string, result: OpsFlagResult): void {
+  const all = readPersistedFile()
+  all[key] = result
+  writeFileSafe(persistFilePath(), JSON.stringify(all))
+}
 
 export interface OpsFlag<T> {
   /** Boot-time fetch. The returned promise is cached so the IPC handler can await it: a
@@ -44,10 +81,28 @@ export function makeOpsFlag<T>(opts: {
   parse: (value: FeatureFlagValue | undefined, payload: unknown) => T | undefined
   /** Enables the `[label] init:` / `[label] init error:` boot logs. Omit for no logging. */
   logLabel?: string
+  /** Keep the last fetched result in `<configDir>/ops-flags.json` and read it back when a
+   *  fetch misses, so an offline launch holds the treatment it already had instead of
+   *  dropping to `fallback`. Only for flags whose fail direction is a downgrade a returning
+   *  user would notice; a fail-closed kill switch must NOT persist. */
+  persist?: true
 }): OpsFlag<T> {
-  const { key, fallback, parse, logLabel } = opts
+  const { key, fallback, parse, logLabel, persist } = opts
   let cached: T = fallback
   let initPromise: Promise<void> | null = null
+
+  /** The miss path — `getOpsFlagResult` catches timeout/network errors and RESOLVES
+   *  `undefined` rather than rejecting, so this covers both that and a defensive rejection.
+   *  Read-only: a miss must never overwrite what an online launch stored. */
+  function applyPersisted(): boolean {
+    if (!persist) return false
+    const stored = readPersistedResult(key)
+    if (!stored) return false
+    const parsed = parse(stored.value, stored.payload)
+    if (parsed === undefined) return false
+    cached = parsed
+    return true
+  }
 
   return {
     init(initOpts) {
@@ -55,15 +110,31 @@ export function makeOpsFlag<T>(opts: {
       initPromise = mainTelemetry
         .getOpsFlagResult(key, initOpts.distinctId, initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
         .then((result) => {
-          const parsed = parse(result?.value, result?.payload)
-          if (parsed !== undefined) cached = parsed
+          if (result === undefined) {
+            if (!applyPersisted()) {
+              const parsed = parse(undefined, undefined)
+              if (parsed !== undefined) cached = parsed
+            }
+          } else {
+            const parsed = parse(result.value, result.payload)
+            if (parsed !== undefined) cached = parsed
+            if (persist) {
+              try {
+                writePersistedResult(key, result)
+              } catch (err) {
+                // A failed write must not cost this launch the value it just fetched.
+                if (logLabel) console.log(`[${logLabel}] persist error:`, err)
+              }
+            }
+          }
 
           if (logLabel)
             console.log(`[${logLabel}] init: fetched=`, result?.value, '→ cached=', cached)
         })
         .catch((err) => {
           if (logLabel) console.log(`[${logLabel}] init error:`, err)
-          // fail to `fallback`: `cached` is only ever assigned on the resolved path.
+          // Otherwise fail to `fallback`: `cached` is only ever assigned on the resolved path.
+          applyPersisted()
         })
       return initPromise
     },

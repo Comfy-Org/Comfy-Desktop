@@ -538,6 +538,7 @@
     "checkingForUpdates": "Checking…",
     "telemetry": "Telemetry",
     "telemetryEnabled": "Share anonymous usage telemetry",
+    "betaFeaturesEnabled": "Opt in to beta features",
     "models": "Shared Models",
     "modelDirectories": "Model Directories",
     "modelStorage": "Models",
@@ -634,6 +635,7 @@
     "consentTosHintSuffix": ".",
     "consentTelemetryTitle": "Help improve Comfy",
     "consentTelemetryHint": "Help improve Comfy by sharing anonymous usage data.",
+    "consentBetaHint": "Opt in to beta features and help test what ships next",
     "consentGetStarted": "Get Started",
     "startContinue": "Continue",
     "startContinueBusy": "Preparing your install…",
@@ -1360,7 +1362,8 @@
     "copyAndChangePytorch": "Copy this instance and change the copy's PyTorch. The original is untouched.",
     "envVars": "Custom environment variables passed to ComfyUI when it starts. Warning: values are stored unencrypted in the configuration file — do not add API keys, tokens, or other sensitive information.",
     "managerSecurityLevel": "Controls which node packs ComfyUI-Manager allows installing for this install. Stricter levels block higher-risk installs, especially when ComfyUI is exposed to your network with --listen. Applies the next time you launch.",
-    "managerNetworkMode": "Controls how ComfyUI-Manager reaches the network for this install. Choose Personal cloud to allow node pack installs while ComfyUI is exposed with --listen (e.g. your own cloud GPU machine). Applies the next time you launch."
+    "managerNetworkMode": "Controls how ComfyUI-Manager reaches the network for this install. Choose Personal cloud to allow node pack installs while ComfyUI is exposed with --listen (e.g. your own cloud GPU machine). Applies the next time you launch.",
+    "betaFeaturesNeedTelemetry": "Beta features need feedback to be useful — share data with Comfy to test-drive them"
   },
   "envVars": {
     "name": "Name",

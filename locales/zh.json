@@ -538,6 +538,7 @@
     "checkingForUpdates": "正在检查…",
     "telemetry": "遥测",
     "telemetryEnabled": "分享匿名使用遥测",
+    "betaFeaturesEnabled": "加入 Beta 功能测试",
     "models": "共享模型",
     "modelDirectories": "模型目录",
     "modelStorage": "模型",
@@ -634,6 +635,7 @@
     "consentTosHintSuffix": "。",
     "consentTelemetryTitle": "帮助改进 Comfy",
     "consentTelemetryHint": "通过分享匿名使用数据帮助改进 Comfy。",
+    "consentBetaHint": "加入 Beta 功能测试，帮助我们打磨新功能",
     "consentGetStarted": "开始使用",
     "startContinue": "继续",
     "startContinueBusy": "正在准备安装…",
@@ -1360,7 +1362,8 @@
     "copyAndChangePytorch": "复制此实例并更换副本的 PyTorch。原实例不会被修改。",
     "envVars": "ComfyUI 启动时传入的自定义环境变量。警告：这些值会以未加密形式存储在配置文件中——不要添加 API 密钥、令牌或其他敏感信息。",
     "managerSecurityLevel": "控制 ComfyUI-Manager 允许安装哪些节点包。级别越严格，越会阻止高风险安装，尤其是在使用 --listen 将 ComfyUI 暴露到网络时。下次启动时生效。",
-    "managerNetworkMode": "控制此安装中 ComfyUI-Manager 的联网方式。选择“个人云”可在 ComfyUI 通过 --listen 暴露时（例如你自己的云 GPU 机器）允许安装节点包。下次启动时生效。"
+    "managerNetworkMode": "控制此安装中 ComfyUI-Manager 的联网方式。选择“个人云”可在 ComfyUI 通过 --listen 暴露时（例如你自己的云 GPU 机器）允许安装节点包。下次启动时生效。",
+    "betaFeaturesNeedTelemetry": "Beta 功能需要反馈才有意义——与 Comfy 分享数据即可试用"
   },
   "envVars": {
     "name": "名称",
