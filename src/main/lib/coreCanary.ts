@@ -1,21 +1,24 @@
 /**
- * PostHog-controlled Core beta flags for installations created by the wizard.
- * Flags are written to `launchArgs` once; existing installations are never
- * enrolled, and disabling the remote flag does not remove saved args.
+ * PostHog-controlled Core beta grants selected for each launch.
+ * Payload entries name allowlisted dashed args and strict Core version windows;
+ * launch code applies eligible grants only when beta features are enabled.
  */
+import semver from 'semver'
 import { makeOpsFlag } from './opsFlag'
 import type { FeatureFlagValue } from './telemetry'
 
 export const CORE_CANARY_FLAG_KEY = 'desktop_core_beta_features'
 
-/** Explicit because ComfyUI is not installed yet and not every bare
- * `enable-*` flag is safe (`--enable-cors-header` allows every origin). */
-export const CORE_CANARY_ALLOWED_FLAGS: readonly string[] = [
-  'enable-assets',
-  'enable-asset-hashing'
-]
+export const CORE_CANARY_ALLOWED_FLAGS = ['--enable-assets', '--enable-asset-hashing'] as const
+
+export type CoreCanaryFlag = {
+  readonly arg: string
+  readonly minCoreVersion: string
+  readonly maxCoreVersion?: string
+}
 
 const MAX_FLAGS = 32
+const CORE_CANARY_ARG_RE = /^--[a-z][a-z0-9-]+$/
 
 // Prevent a control payload copied between PostHog variants from enrolling users.
 const OFF_VARIANTS = new Set(['control', 'off', 'false', 'disabled'])
@@ -25,46 +28,66 @@ function isEnabled(value: FeatureFlagValue | undefined): boolean {
   return typeof value === 'string' && !OFF_VARIANTS.has(value.toLowerCase())
 }
 
+function parseCoreVersion(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  return semver.valid(value.replace(/^v/, ''))
+}
+
 export function parseCoreCanaryFlags(
   value: FeatureFlagValue | undefined,
   payload: unknown
-): string[] {
+): CoreCanaryFlag[] {
   if (!isEnabled(value) || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return []
   }
-  const requested = (payload as { flags?: unknown }).flags
+  const requested = 'flags' in payload ? payload.flags : undefined
   if (!Array.isArray(requested) || requested.length > MAX_FLAGS) return []
 
   const allowed = new Set(CORE_CANARY_ALLOWED_FLAGS)
-  const flags: string[] = []
+  const flags: CoreCanaryFlag[] = []
   for (const candidate of requested) {
-    if (typeof candidate !== 'string') continue
-    if (!allowed.has(candidate) || flags.includes(candidate)) continue
-    flags.push(candidate)
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    if (!('arg' in candidate) || typeof candidate.arg !== 'string') continue
+    if (!CORE_CANARY_ARG_RE.test(candidate.arg) || !allowed.has(candidate.arg)) continue
+
+    const minCoreVersion =
+      'min_core_version' in candidate ? parseCoreVersion(candidate.min_core_version) : null
+    if (minCoreVersion === null) continue
+
+    let maxCoreVersion: string | undefined
+    if ('max_core_version' in candidate) {
+      const parsedMaxCoreVersion = parseCoreVersion(candidate.max_core_version)
+      if (parsedMaxCoreVersion === null) continue
+      maxCoreVersion = parsedMaxCoreVersion
+    }
+
+    if (flags.some((flag) => flag.arg === candidate.arg)) continue
+    flags.push(
+      maxCoreVersion === undefined
+        ? { arg: candidate.arg, minCoreVersion }
+        : { arg: candidate.arg, minCoreVersion, maxCoreVersion }
+    )
   }
   return flags
 }
 
-// Source defaults, including explicit `--disable-*` flags, take precedence.
-export function appendCoreCanaryFlags(launchArgs: string, flags: string[]): string {
-  if (flags.length === 0) return launchArgs
-  const present = new Set(
-    launchArgs
-      .split(/\s+/)
-      .filter((token) => token.startsWith('--'))
-      .map((token) => token.slice(2).replace(/=.*$/, ''))
+export function selectCoreCanaryArgs(
+  flags: readonly CoreCanaryFlag[],
+  coreVersion: string | null,
+  betaEnabled: boolean,
+  userArgs: readonly string[]
+): CoreCanaryFlag[] {
+  if (coreVersion === null || betaEnabled !== true) return []
+  const presentArgs = new Set(userArgs)
+  return flags.filter(
+    ({ arg, minCoreVersion, maxCoreVersion }) =>
+      !presentArgs.has(arg) &&
+      semver.gte(coreVersion, minCoreVersion) &&
+      (maxCoreVersion === undefined || semver.lt(coreVersion, maxCoreVersion))
   )
-  const additions = flags
-    .filter((name) => {
-      if (present.has(name)) return false
-      const opposite = name.startsWith('enable-') ? `disable-${name.slice('enable-'.length)}` : null
-      return !(opposite && present.has(opposite))
-    })
-    .map((name) => `--${name}`)
-  return additions.length > 0 ? [launchArgs, ...additions].join(' ').trim() : launchArgs
 }
 
-const flag = makeOpsFlag<string[]>({
+const flag = makeOpsFlag<CoreCanaryFlag[]>({
   key: CORE_CANARY_FLAG_KEY,
   fallback: [],
   parse: parseCoreCanaryFlags,
@@ -76,13 +99,3 @@ export const initCoreCanary = flag.init
 export const getCoreCanaryFlagsAsync = flag.get
 
 export const _resetForTest = flag._resetForTest
-
-export async function withCoreCanaryLaunchArgs<T extends Record<string, unknown>>(
-  record: T
-): Promise<T> {
-  if (typeof record.launchArgs !== 'string') return record
-  const launchArgs = appendCoreCanaryFlags(record.launchArgs, await getCoreCanaryFlagsAsync())
-  if (launchArgs === record.launchArgs) return record
-  console.info('[core-canary] Pre-filled Core beta flags on a new installation:', launchArgs)
-  return { ...record, launchArgs }
-}
