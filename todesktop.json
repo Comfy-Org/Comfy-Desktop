@@ -3,7 +3,13 @@
   "schemaVersion": 1,
   "uploadSizeLimit": 750,
   "appPath": ".",
-  "appFiles": ["**", "!electron-builder.yml", "!out/**/*.map", "!bootstrap-python/**"],
+  "appFiles": [
+    "**",
+    "!electron-builder.yml",
+    "!out/**/*.map",
+    "!bootstrap-python/**",
+    "!todesktop-targets/**"
+  ],
   "appId": "com.todesktop.241012ess7yxs0e",
   "icon": "./assets/Comfy_Logo_x512.png",
   "packageManager": "pnpm",
@@ -54,13 +60,19 @@
       "x64": {
         "extraResources": [
           { "from": "./lib", "to": "lib" },
-          { "from": "./bootstrap-python/win-x64", "to": "bootstrap-python" }
+          {
+            "from": "./todesktop-targets/windows-x64/bootstrap-python",
+            "to": "bootstrap-python"
+          }
         ]
       },
       "arm64": {
         "extraResources": [
           { "from": "./lib", "to": "lib" },
-          { "from": "./bootstrap-python/win-arm64", "to": "bootstrap-python" }
+          {
+            "from": "./todesktop-targets/windows-arm64/bootstrap-python",
+            "to": "bootstrap-python"
+          }
         ]
       }
     }
@@ -69,7 +81,10 @@
     "windows": {
       "extraResources": [
         { "from": "./lib", "to": "lib" },
-        { "from": "./bootstrap-python/win-x64", "to": "bootstrap-python" }
+        {
+          "from": "./todesktop-targets/windows-x64/bootstrap-python",
+          "to": "bootstrap-python"
+        }
       ]
     },
     "mac": {
