@@ -27,8 +27,18 @@ export const PLATFORM_PREFIX: Record<string, string> = {
   linux: 'linux-'
 }
 
+/** Vendor-id prefix that hides a bundle from desktop builds older than this
+ *  one: their install wizards list only `win-`/`mac-`/`linux-` ids, so a
+ *  pre-release bundle such as `beta-win-nvidia-arm64` never reaches users
+ *  whose app cannot run it. The platform prefix follows it. */
+export const BETA_PREFIX = 'beta-'
+
+export function isBetaVariant(variantId: string): boolean {
+  return variantId.startsWith(BETA_PREFIX)
+}
+
 export function stripPlatform(variantId: string): string {
-  return variantId.replace(/^(win|mac|linux)-/, '')
+  return variantId.replace(/^(?:beta-)?(win|mac|linux)-/, '')
 }
 
 /** Vendor-id suffix naming a native Windows ARM64 bundle (`win-nvidia-arm64`).
@@ -65,8 +75,26 @@ export function variantMatchesHostArch(variantId: string): boolean {
   return isArm64 === (process.arch === 'arm64')
 }
 
+/** True when a vendor id targets the running platform, with or without the
+ *  `beta-` prefix (`win-nvidia` and `beta-win-nvidia-arm64` on Windows). */
+export function variantMatchesHostPlatform(variantId: string): boolean {
+  const prefix = PLATFORM_PREFIX[process.platform]
+  if (!prefix) return false
+  const id = isBetaVariant(variantId) ? variantId.slice(BETA_PREFIX.length) : variantId
+  return id.startsWith(prefix)
+}
+
+/** Platform and architecture both match: the only bundles this app can run. */
+export function variantMatchesHost(variantId: string): boolean {
+  return variantMatchesHostPlatform(variantId) && variantMatchesHostArch(variantId)
+}
+
 export function getVariantLabel(variantId: string): string {
-  const stripped = stripPlatform(variantId)
+  const label = baseVariantLabel(stripPlatform(variantId))
+  return isBetaVariant(variantId) ? `${label} Beta` : label
+}
+
+function baseVariantLabel(stripped: string): string {
   if (VARIANT_LABELS[stripped]) return VARIANT_LABELS[stripped]!
   for (const [key, label] of Object.entries(VARIANT_LABELS)) {
     if (stripped === key || stripped.startsWith(key + '-')) {

@@ -12,8 +12,11 @@ import {
   getTorchVersion,
   getVariantLabel,
   isArm64Variant,
+  isBetaVariant,
   recommendVariant,
+  stripPlatform,
   variantAccel,
+  variantMatchesHost,
   variantMatchesHostArch
 } from './envPaths'
 import type { InstallationRecord } from '../../installations'
@@ -153,6 +156,20 @@ describe('Windows ARM64 vendor ids', () => {
     expect(recommendVariant('win-nvidia-arm64', undefined)).toBe(false)
   })
 
+  it('a beta- id strips, resolves and recommends like its final id, labelled Beta', () => {
+    // beta- hides a pre-release bundle from desktops that filter on the bare
+    // platform prefix; this build reads through it.
+    expect(isBetaVariant('beta-win-nvidia-arm64')).toBe(true)
+    expect(isBetaVariant('win-nvidia-arm64')).toBe(false)
+    expect(stripPlatform('beta-win-nvidia-arm64')).toBe('nvidia-arm64')
+    expect(variantAccel('beta-win-nvidia-arm64')).toBe('nvidia')
+    expect(isArm64Variant('beta-win-nvidia-arm64')).toBe(true)
+    expect(getVariantLabel('beta-win-nvidia-arm64')).toBe('NVIDIA (ARM64) Beta')
+    expect(getVariantLabel('beta-win-cpu')).toBe('CPU Beta')
+    expect(recommendVariant('beta-win-nvidia-arm64', 'nvidia')).toBe(true)
+    expect(recommendVariant('beta-win-nvidia-arm64', 'amd')).toBe(false)
+  })
+
   describe('variantMatchesHostArch', () => {
     it('a native ARM64 Windows app sees only -arm64 bundles', () => {
       setHost('win32', 'arm64')
@@ -178,6 +195,30 @@ describe('Windows ARM64 vendor ids', () => {
       setHost('linux', 'x64')
       expect(variantMatchesHostArch('linux-nvidia')).toBe(true)
       expect(variantMatchesHostArch('linux-nvidia-arm64')).toBe(false)
+    })
+  })
+
+  describe('variantMatchesHost', () => {
+    it('accepts the beta- prefix only directly in front of the host platform', () => {
+      setHost('win32', 'arm64')
+      expect(variantMatchesHost('beta-win-nvidia-arm64')).toBe(true)
+      expect(variantMatchesHost('win-nvidia-arm64')).toBe(true)
+      expect(variantMatchesHost('beta-mac-mps')).toBe(false)
+      expect(variantMatchesHost('betawin-nvidia-arm64')).toBe(false)
+      expect(variantMatchesHost('beta-beta-win-nvidia-arm64')).toBe(false)
+    })
+
+    it('still applies the architecture rule to beta ids', () => {
+      setHost('win32', 'x64')
+      expect(variantMatchesHost('beta-win-nvidia-arm64')).toBe(false)
+      expect(variantMatchesHost('beta-win-nvidia')).toBe(true)
+      expect(variantMatchesHost('win-nvidia')).toBe(true)
+    })
+
+    it('rejects every id on an unsupported platform', () => {
+      setHost('freebsd', 'x64')
+      expect(variantMatchesHost('win-nvidia')).toBe(false)
+      expect(variantMatchesHost('beta-win-nvidia')).toBe(false)
     })
   })
 })

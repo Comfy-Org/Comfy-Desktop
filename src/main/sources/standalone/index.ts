@@ -15,7 +15,7 @@ import {
   getActivePythonPath,
   getVenvDir,
   recommendVariant,
-  variantMatchesHostArch,
+  variantMatchesHost,
   writeComfyEnvironment
 } from './envPaths'
 import { install, postInstall, probeInstallation } from './install'
@@ -421,10 +421,8 @@ export const standalone: SourcePlugin = {
       const latest = (await fetchJSON(`${R2_BASE_URL}/latest.json`, { refresh: true })) as R2Latest
       // Platform prefix AND architecture: Windows publishes separate x64 and
       // ARM64 bundles under one prefix, and only the host's own architecture
-      // can run (see `variantMatchesHostArch`).
-      const vendorIds = Object.keys(latest).filter(
-        (id) => id.startsWith(prefix) && variantMatchesHostArch(id)
-      )
+      // can run (see `variantMatchesHost`).
+      const vendorIds = Object.keys(latest).filter((id) => variantMatchesHost(id))
       if (vendorIds.length === 0) return []
 
       const vendorReleases = Object.fromEntries(
@@ -537,7 +535,7 @@ export const standalone: SourcePlugin = {
           : null
 
       return Object.entries(releaseData.vendorReleases)
-        .filter(([vendorId]) => vendorId.startsWith(prefix) && variantMatchesHostArch(vendorId))
+        .filter(([vendorId]) => variantMatchesHost(vendorId))
         .map(([vendorId, releases]): FieldOption | null => {
           const release = releases[0]
           if (!release) return null

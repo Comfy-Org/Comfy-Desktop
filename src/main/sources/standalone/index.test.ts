@@ -714,19 +714,38 @@ describe('standalone.getFieldOptions architecture filter', () => {
     'win-cpu',
     'win-amd',
     'mac-mps',
-    'linux-nvidia'
+    'linux-nvidia',
+    // Pre-release id: invisible to desktops that filter on the bare
+    // platform prefix, offered here only to a matching ARM64 host.
+    'beta-win-nvidia-arm64'
   ]
 
-  it('a native ARM64 Windows app is offered only the -arm64 bundles', async () => {
+  it('a native ARM64 Windows app is offered only the -arm64 bundles, beta included', async () => {
     setHost('win32', 'arm64')
     setupCatalog(CATALOG)
-    expect(await variantIds()).toEqual(['win-nvidia-arm64'])
+    expect(await variantIds()).toEqual(['win-nvidia-arm64', 'beta-win-nvidia-arm64'])
   })
 
-  it('an x64 Windows app never sees the -arm64 bundle', async () => {
+  it('an x64 Windows app never sees the -arm64 bundles, beta or not', async () => {
     setHost('win32', 'x64')
     setupCatalog(CATALOG)
     expect(await variantIds()).toEqual(['win-nvidia', 'win-cpu', 'win-amd'])
+  })
+
+  it('a beta- id is only accepted in front of the host platform prefix', async () => {
+    setHost('darwin', 'arm64')
+    setupCatalog(['mac-mps', 'beta-win-nvidia-arm64', 'beta-mac-mps'])
+    expect(await variantIds()).toEqual(['mac-mps', 'beta-mac-mps'])
+  })
+
+  it('labels a beta card as such and still recommends it on an NVIDIA host', async () => {
+    setHost('win32', 'arm64')
+    setupCatalog(CATALOG)
+    const release = (await stableRelease())!
+    const cards = await standalone.getFieldOptions!('variant', { release }, { gpu: 'nvidia' })
+    const beta = cards.find((c) => c.value === 'beta-win-nvidia-arm64')
+    expect(beta!.label).toBe('NVIDIA (ARM64) Beta')
+    expect(beta!.recommended).toBe(true)
   })
 
   it('an ARM64 Windows app gets no release options when R2 only has x64 bundles', async () => {
