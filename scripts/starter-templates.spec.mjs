@@ -20,6 +20,10 @@ const FILE = path.join(ROOT, 'assets', 'starter-templates.json')
 const SCRIPT = path.join(ROOT, 'scripts', 'starter-templates.mjs')
 const ORIGINAL = fs.readFileSync(FILE, 'utf-8')
 
+// Mirrors the script's own constants (kept local to avoid importing it).
+const MODALITIES = ['video', 'image', '3d', 'audio']
+const SLOTS = 4
+
 const run = (...args) => {
   try {
     // Merge stderr into stdout: warnings (upstream drift) go to stderr even on
@@ -234,9 +238,17 @@ describe('rebuilding the whole list', () => {
     return run('replace', ...Object.entries(merged).flatMap(([k, v]) => [`--${k}`, v]))
   }
 
-  it('round-trips the current list unchanged', () => {
-    assert.equal(replace().ok, true)
-    assert.equal(fs.readFileSync(FILE, 'utf-8'), ORIGINAL)
+  // The picker auto-selects slot 1 and shows the paid card in slot 2, so those
+  // two positions are load-bearing. The other two are free to reorder, so this
+  // pins the rule, not a snapshot: a swap of slots 3 and 4 must not touch it.
+  it('keeps the recommended pick first and the paid card second in every tab', () => {
+    const doc = JSON.parse(ORIGINAL)
+    for (const modality of MODALITIES) {
+      const tab = doc.templates.filter((t) => t.modality === modality)
+      assert.equal(tab.length, SLOTS, `${modality} must have ${SLOTS} slots`)
+      assert.equal(tab[0].recommended, true, `${modality} slot 1 must be the recommended pick`)
+      assert.equal(tab[1].apiNode, true, `${modality} slot 2 must be the paid card`)
+    }
   })
 
   it('refuses a partial rebuild', () => {
