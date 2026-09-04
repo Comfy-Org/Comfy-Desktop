@@ -162,11 +162,13 @@ describe('createHardwareTap', () => {
   it('forwards a typed asset scanner error without its raw path', () => {
     const tap = createHardwareTap({ installationId: 'inst-1', release: 'v0.4.0' })
     tap.ingest(
-      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied\n',
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied path=/private/user/models/locked.safetensors\n',
       'stderr'
     )
+    expect(captured).toHaveLength(0)
+
     tap.ingest(
-      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied path=/private/user/models/locked.safetensors\n',
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied\n',
       'stderr'
     )
     tap.ingest(
