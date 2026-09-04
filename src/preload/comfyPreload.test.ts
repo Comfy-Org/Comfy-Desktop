@@ -35,6 +35,25 @@ function hostedBridge(): HostedFrontendBridge {
 describe('comfyPreload model access bridge', () => {
   beforeEach(() => {
     mocks.invoke.mockReset()
+    mocks.send.mockReset()
+  })
+
+  it('forwards hosted frontend exceptions through the scrubbed Desktop telemetry channel', () => {
+    const bridge = hostedBridge()
+    const error = { message: 'boom', stack: 'Error: boom\n at app.ts:1:1' }
+
+    bridge.Telemetry.captureException!(error, {
+      error_type: 'workspace_auth_gate_initialization_failure',
+      level: 'error'
+    })
+
+    expect(mocks.send).toHaveBeenCalledWith('telemetry:captureException', {
+      ...error,
+      properties: {
+        error_type: 'workspace_auth_gate_initialization_failure',
+        level: 'error'
+      }
+    })
   })
 
   it('forwards the repository URL through the desktop2 IPC contract', async () => {

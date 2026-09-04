@@ -315,7 +315,15 @@ describe('registerTelemetryHandlers', () => {
 
     listener('telemetry:captureException')(
       { sender: { id: 8 } },
-      { message: 'boom', properties: { client: 'web', deployment: 'cloud' } }
+      {
+        message: 'boom',
+        stack: 'Error: boom\n at app.ts:1:1',
+        properties: {
+          client: 'web',
+          deployment: 'cloud',
+          error_type: 'workspace_auth_gate_initialization_failure'
+        }
+      }
     )
 
     const [err, sent] = mocks.captureExceptionAndForward.mock.calls[0]! as [
@@ -323,6 +331,8 @@ describe('registerTelemetryHandlers', () => {
       Record<string, unknown>
     ]
     expect(err.message).toBe('boom')
+    expect(err.stack).toBe('Error: boom\n at app.ts:1:1')
+    expect(sent.error_type).toBe('workspace_auth_gate_initialization_failure')
     expect(sent.deployment).toBe('local')
     expect(sent.client).toBeUndefined()
   })
