@@ -121,6 +121,13 @@ describe('indexStacksForVariant', () => {
     expect(indexStacksForVariant('mac')).toEqual([])
   })
 
+  it('serves nothing to a native Windows ARM64 bundle: no trusted index publishes win_arm64 wheels', () => {
+    setPlatform('win32')
+    _setComputeCapsForTest(null)
+    expect(indexStacksForVariant('win-nvidia').length).toBeGreaterThan(0)
+    expect(indexStacksForVariant('win-nvidia-arm64')).toEqual([])
+  })
+
   it('refreshComputeCaps turns probe results into warnings on later reads', async () => {
     setPlatform('win32')
     _setComputeCapsForTest(undefined)
@@ -181,6 +188,15 @@ describe('remote manifest', () => {
     vi.mocked(fetchJSON).mockResolvedValue(doc([cu130Entry]))
     await refreshRemoteIndexStacks()
     expect(nvidiaTags()).toEqual(['cu130'])
+  })
+
+  it('a remote manifest still surfaces nothing to a Windows ARM64 bundle', async () => {
+    // The manifest has no architecture dimension yet, so a win32 NVIDIA entry
+    // must not leak x64 wheels into the native ARM64 bundle's picker.
+    vi.mocked(fetchJSON).mockResolvedValue(doc([cu130Entry]))
+    await refreshRemoteIndexStacks()
+    expect(nvidiaTags()).toEqual(['cu130'])
+    expect(indexStacksForVariant('win-nvidia-arm64')).toEqual([])
   })
 
   it('an empty stacks list is a valid remote kill-switch', async () => {

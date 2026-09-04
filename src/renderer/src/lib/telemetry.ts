@@ -21,7 +21,7 @@ export function emitTelemetryAction(actionName: string, context: TelemetryContex
 
 export function toVariantBucket(variantId: string | undefined): string {
   if (!variantId) return 'unknown'
-  return variantId.replace(/^(win|mac|linux)-/, '')
+  return variantId.replace(/^(?:beta-)?(win|mac|linux)-/, '')
 }
 
 // Re-exported so renderer and main classify errors identically.

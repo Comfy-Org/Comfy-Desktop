@@ -1,9 +1,15 @@
 {
   "id": "241130tqe9q3y",
   "schemaVersion": 1,
-  "uploadSizeLimit": 60,
+  "uploadSizeLimit": 750,
   "appPath": ".",
-  "appFiles": ["**", "!electron-builder.yml", "!out/**/*.map", "!bootstrap-python/**"],
+  "appFiles": [
+    "**",
+    "!electron-builder.yml",
+    "!out/**/*.map",
+    "!bootstrap-python/**",
+    "!todesktop-targets/**"
+  ],
   "appId": "com.todesktop.241012ess7yxs0e",
   "icon": "./assets/Comfy_Logo_x512.png",
   "packageManager": "pnpm",
@@ -49,11 +55,36 @@
     "icon": "./assets/Comfy_Logo_x512.png",
     "category": "AudioVideo;Graphics;3DGraphics;"
   },
+  "targetOverrides": {
+    "windows": {
+      "x64": {
+        "extraResources": [
+          { "from": "./lib", "to": "lib" },
+          {
+            "from": "./todesktop-targets/windows-x64/bootstrap-python",
+            "to": "bootstrap-python"
+          }
+        ]
+      },
+      "arm64": {
+        "extraResources": [
+          { "from": "./lib", "to": "lib" },
+          {
+            "from": "./todesktop-targets/windows-arm64/bootstrap-python",
+            "to": "bootstrap-python"
+          }
+        ]
+      }
+    }
+  },
   "platformOverrides": {
     "windows": {
       "extraResources": [
         { "from": "./lib", "to": "lib" },
-        { "from": "./bootstrap-python/win-x64", "to": "bootstrap-python" }
+        {
+          "from": "./todesktop-targets/windows-x64/bootstrap-python",
+          "to": "bootstrap-python"
+        }
       ]
     },
     "mac": {

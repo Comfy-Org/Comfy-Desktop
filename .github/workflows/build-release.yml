@@ -111,7 +111,10 @@ jobs:
         run: pnpm run datadog:sourcemaps:upload
 
       - name: Install ToDesktop CLI
-        run: npm install --location=global @todesktop/cli@1.22.0
+        # 1.28.0 is the first release whose todesktop.json schema accepts
+        # `targetOverrides`, which selects the per-architecture Windows
+        # bootstrap-python (win-x64 vs win-arm64) in todesktop.json.
+        run: npm install --location=global @todesktop/cli@1.28.1
 
       - name: Pre-fetch bootstrap-python for all platforms
         # @todesktop/cli now eagerly validates the `extraResources` paths in
@@ -137,6 +140,7 @@ jobs:
           missing=0
           for f in \
             bootstrap-python/win-x64/python.exe \
+            bootstrap-python/win-arm64/python.exe \
             bootstrap-python/mac-arm64/bin/python3 \
             bootstrap-python/linux-x64/bin/python3
           do
@@ -151,6 +155,17 @@ jobs:
             echo "::error::$missing bootstrap-python binar(ies) missing — refusing to build a broken installer"
             exit 1
           fi
+
+      - name: Stage Windows bootstrap-python for ToDesktop target overrides
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in x64 arm64; do
+            source="bootstrap-python/win-${arch}"
+            target="todesktop-targets/windows-${arch}/bootstrap-python"
+            mkdir -p "$(dirname "$target")"
+            mv "$source" "$target"
+          done
 
       - name: Build with ToDesktop
         shell: bash

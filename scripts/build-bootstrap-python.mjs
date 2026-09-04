@@ -12,7 +12,7 @@
  * Usage:
  *   node build-bootstrap-python.mjs [--output DIR] [--platform PLATFORM]
  *
- * Platforms: win-x64, mac-arm64, linux-x64
+ * Platforms: win-x64, win-arm64, mac-arm64, linux-x64
  */
 import { spawnSync } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
@@ -43,6 +43,17 @@ const PLATFORM_MAP = {
     uvBinName: 'uv.exe',
     uvArchiveSubdir: null,
     uvDestRel: 'uv.exe', // next to python.exe at env root
+  },
+  // Native Windows on Arm (NVIDIA RTX Spark, Snapdragon X). Same layout as
+  // win-x64; python-build-standalone and uv both publish aarch64 MSVC
+  // builds, and pygit2 has win_arm64 wheels on PyPI.
+  'win-arm64': {
+    archive: `cpython-${PYTHON_VERSION}+${PBS_RELEASE}-aarch64-pc-windows-msvc-install_only_stripped.tar.gz`,
+    pythonBin: 'python.exe',
+    uvAsset: 'uv-aarch64-pc-windows-msvc.zip',
+    uvBinName: 'uv.exe',
+    uvArchiveSubdir: null,
+    uvDestRel: 'uv.exe',
   },
   'mac-arm64': {
     archive: `cpython-${PYTHON_VERSION}+${PBS_RELEASE}-aarch64-apple-darwin-install_only_stripped.tar.gz`,
@@ -90,10 +101,16 @@ const STRIP_FILES = new Set([
 
 function detectPlatform() {
   const sys = process.platform
-  if (sys === 'win32') return 'win-x64'
+  // Windows is the only platform with two bootstrap builds; the running
+  // Node's architecture is the one the resulting python.exe must match.
+  if (sys === 'win32') return process.arch === 'arm64' ? 'win-arm64' : 'win-x64'
   if (sys === 'darwin') return 'mac-arm64'
   if (sys === 'linux') return 'linux-x64'
   throw new Error(`Unsupported platform: ${sys} ${process.arch}`)
+}
+
+function isWindowsPlatform(plat) {
+  return plat.startsWith('win-')
 }
 
 function parseArgs(argv) {
@@ -150,7 +167,7 @@ async function installUv(plat, platInfo, envDir, tmpdir) {
   const destBin = path.join(envDir, platInfo.uvDestRel)
   await fs.mkdir(path.dirname(destBin), { recursive: true })
   await fs.copyFile(srcBin, destBin)
-  if (plat !== 'win-x64') {
+  if (!isWindowsPlatform(plat)) {
     await fs.chmod(destBin, 0o755)
   }
 
@@ -299,7 +316,7 @@ async function main() {
 
     const pythonPath = path.join(extracted, platInfo.pythonBin)
 
-    if (plat !== 'win-x64') {
+    if (!isWindowsPlatform(plat)) {
       await fs.chmod(pythonPath, 0o755)
     }
 
