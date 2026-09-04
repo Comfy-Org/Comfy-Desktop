@@ -83,6 +83,13 @@ node scripts/starter-templates.mjs regenerate
 Each tab holds 4 slots, so `set` replaces rather than appends. The script
 validates before writing, so a refusal leaves the file untouched.
 
+The spec pins the slot rule, not the exact order: every tab keeps its
+recommended pick in slot 1 and its paid card in slot 2, while slots 3 and 4
+may reorder freely. So a plain swap of the two free cards needs no spec
+change. The `TABS` fixture in `scripts/starter-templates.spec.mjs` only feeds
+the negative `replace` cases — its own order is never compared against the
+file — so leave it alone unless you add or drop an id there.
+
 ### 3. Open a PR
 
 ```bash
@@ -93,8 +100,12 @@ git push -u origin HEAD
 gh pr create --title "content(templates): <what changed>" --body "<what and why>"
 ```
 
-Name the old and new template in the PR body, and why it changed. Commit only
-`assets/starter-templates.json`; nothing else should change.
+Name the old and new template in the PR body, and why it changed. A swap,
+feature or paid change touches only `assets/starter-templates.json`. Add
+`scripts/starter-templates.spec.mjs` to the commit only if you introduced or
+removed an id that the `TABS` fixture references. Nothing else should change;
+if `git status` shows more, you edited the JSON by hand instead of running the
+script.
 
 ### 4. Report back
 
