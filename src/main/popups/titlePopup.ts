@@ -2249,6 +2249,16 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     return true
   })
 
+  ipcMain.handle('desktop2-open-mcp-setup', (event): boolean => {
+    const parentEntry = findEntryByComfySender(event.sender)
+    if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
+    // 'mcp-setup' overlays the live canvas like 'feedback' rather than hiding it.
+    const panelView = bindings.ensurePanelViewForEntry(parentEntry)
+    if (panelView.webContents.isDestroyed()) return false
+    bindings.setActivePanel(parentEntry.windowKey, 'mcp-setup')
+    return true
+  })
+
   ipcMain.on('comfy-titlepopup:ready', (event) => {
     const entry = titlePopupsByWebContents.get(event.sender.id)
     if (!entry) return

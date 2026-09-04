@@ -3,6 +3,8 @@ import { getAppVersion } from '../lib/ipc'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { getModelDownloadContentScript } from '../lib/comfyContentScript'
 import { getComfyTerminalContentScript } from '../lib/comfyTerminalContentScript'
+import { getMcpSidebarContentScript } from '../lib/mcpSidebarContentScript'
+import { getFlagAsync, recordExposure } from '../lib/experiments'
 import { closeInstallPopouts } from '../lib/popoutWindows'
 import { _operationAborts, sourceMap } from '../lib/ipc/shared'
 import { readableSymbolColor } from '../lib/theme'
@@ -24,6 +26,7 @@ import {
 } from '../installations'
 import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
 import { abortTemplateDownload } from '../sources/standalone/templateDownloadTask'
+import { abortModelStaging } from '../sources/comfybuilder/modelStagingTask'
 import {
   dropInstallationIndex,
   indexInstallationId,
@@ -39,6 +42,18 @@ const APP_VERSION = getAppVersion()
  *  default). These get the stopgap Terminal-tab injection; remote/cloud and
  *  external (legacy v1 desktop) installs do not. */
 const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
+
+/** PostHog flag gating the Local MCP sidebar icon. */
+const MCP_SIDEBAR_FLAG = 'mcp_sidebar_enabled'
+
+/** Allow MCP sidebar inject only if attach is active, flag is enabled, and view is not destroyed. */
+export function shouldInjectMcpSidebar(state: {
+  attachActive: boolean
+  enabled: boolean
+  destroyed: boolean
+}): boolean {
+  return state.attachActive && state.enabled && !state.destroyed
+}
 
 /** Entry point that triggered a zoom reset, tagged as `source` on the
  *  `comfy.desktop.zoom.reset` telemetry event. `titlebar` (the zoom pill)
@@ -175,6 +190,10 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   // install name changes. Closures over the install lifetime — reset
   // by `_installCleanup` below.
   let currentInstallName = installation.name
+
+  // Flags async tasks for this attach; cleared by `_installCleanup`.
+  // `isDestroyed()` isn’t enough—`comfyContents` may outlive detachment.
+  let attachActive = true
   let currentPageTitle = ''
   const refreshOsWindowTitle = (): void => {
     if (comfyWindow.isDestroyed()) return
@@ -420,6 +439,21 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     // `comfyTerminalContentScript.ts` for the dedupe guard.
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
+      // Local MCP sidebar icon, flag-gated. `getFlagAsync` awaits the in-flight
+      // boot fetch so a cold start (empty cache) still resolves the flag before
+      // the gate decides; a sync read here would see the not-yet-populated cache
+      // and never inject. Re-check the view is alive after the await.
+      void (async () => {
+        const enabled = (await getFlagAsync(MCP_SIDEBAR_FLAG)) === true
+        // The await can outlive the attach — see `shouldInjectMcpSidebar`.
+        if (
+          !shouldInjectMcpSidebar({ attachActive, enabled, destroyed: comfyContents.isDestroyed() })
+        ) {
+          return
+        }
+        recordExposure(MCP_SIDEBAR_FLAG, 'enabled', 'cache')
+        comfyContents.executeJavaScript(getMcpSidebarContentScript()).catch(() => {})
+      })()
     }
     // Cloud-only patches (popup-blocked toast suppression + post-signin
     // flicker hide). Skipped for local installs — they don't load cloud
@@ -626,6 +660,9 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return
     entry._installCleanup = null
+    // Retire async work still pending from this attach so a late resolution
+    // can't touch a detached or re-attached view.
+    attachActive = false
     deactivateFirebaseAuthReporter(comfyContents)
     installationEvents.off('updated', onInstallationUpdated)
     cancelFailRetry()
@@ -662,6 +699,11 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       // Cancel deletes staged bytes. During app quit the release defers
       // entirely to the quit path, which parks every active transfer itself.
       abortTemplateDownload(id)
+      // Same teardown for a build install's background model staging. This is
+      // also the safety net ahead of a delete: deleting an install closes its
+      // window, and a task still writing into the tree must stop before the
+      // tree is removed.
+      abortModelStaging(id)
       // Detach the relaunch will-navigate blocker before clearing the
       // map slot — without `comfyContents.off(...)`, a re-attach would
       // inherit a still-active blocker that preventDefaults every

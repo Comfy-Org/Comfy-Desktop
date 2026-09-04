@@ -30,7 +30,9 @@ win:
   target: nsis
   icon: assets/Comfy_Logo_x256.png
   extraResources:
-    - from: bootstrap-python/win-x64
+    # ${arch} expands per target (x64 / arm64), so a native Windows on Arm
+    # build ships the win-arm64 bootstrap instead of the x64 one.
+    - from: bootstrap-python/win-${arch}
       to: bootstrap-python
       filter:
         - '**/*'

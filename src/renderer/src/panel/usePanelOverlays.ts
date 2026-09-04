@@ -11,9 +11,11 @@ import { emitTelemetryAction } from '../lib/telemetry'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 
-// Body modes the panel WebContentsView can render. Mirrors `BodyMode`
-// in main; `'comfy'` is admitted so the renderer can reflect main's
-// activePanel after a drawer close.
+/**
+ * Panel body modes available in the WebContentsView.
+ * Mirrors main's `BodyMode`. Includes `'comfy'` so the renderer
+ * can reflect main's `activePanel` after closing a drawer.
+ */
 export type PanelKey =
   | 'comfy'
   | 'comfy-lifecycle'
@@ -31,6 +33,12 @@ export type PanelKey =
    *  separately — but accepting it keeps `isValidPanel` from
    *  swallowing the event. */
   | 'progress'
+  | 'mcp-setup'
+  /** Mirror of main's `'announcement'` ComfyPanelKey. Overlay mode; the
+   *  announcement modal renders via its own ref (like feedback), so there's
+   *  no body branch. Accepting the key keeps `isValidPanel` from swallowing
+   *  the panel-switch so the overlay transparency watcher still fires. */
+  | 'announcement'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
@@ -41,7 +49,9 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'track',
   'load-snapshot',
   'quick-install',
-  'progress'
+  'progress',
+  'mcp-setup',
+  'announcement'
 ])
 
 /**
@@ -128,10 +138,18 @@ export interface UsePanelOverlaysApi {
   // Helpers.
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
   handleProgressClose: () => void
-  openFlowTakeover: (component: FlowComponent, entrypoint: string) => Promise<void>
+  openFlowTakeover: (
+    component: FlowComponent,
+    entrypoint: string,
+    newInstallOpts?: { workspaceId?: string }
+  ) => Promise<void>
   openFirstUseTakeover: (opts?: { initialStep?: 'start' | 'localBranch' }) => Promise<void>
   dismissTakeoverDirect: () => void
-  switchPanel: (panel: PanelKey, entrypoint?: string) => Promise<void>
+  switchPanel: (
+    panel: PanelKey,
+    entrypoint?: string,
+    newInstallOpts?: { workspaceId?: string }
+  ) => Promise<void>
 }
 
 const isProgressTakeover = (o: Overlay | null | undefined): boolean =>
@@ -336,7 +354,11 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
    * The imperative `open()` reset on each *Modal ref runs after the
    * takeover mounts so form state always starts fresh.
    */
-  async function openFlowTakeover(component: FlowComponent, entrypoint: string): Promise<void> {
+  async function openFlowTakeover(
+    component: FlowComponent,
+    entrypoint: string,
+    newInstallOpts: { workspaceId?: string } = {}
+  ): Promise<void> {
     // Opt the install-flow wizards into the dedicated "Discard install
     // setup?" cancel-prompt copy. The wizards have no destructive op
     // in flight (the install kicks off after the wizard's final step,
@@ -361,6 +383,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
         : false
       await newInstallRef.value?.open({
         entrypoint,
+        ...newInstallOpts,
         ...(cameFromLocalBranch ? { cameFromLocalBranch } : {})
       })
     } else if (component === 'track') trackRef.value?.open()
@@ -451,10 +474,14 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
    * is no longer a panel key — it's reached via `openInstancePicker(mode:
    * 'expanded')`. Global Settings is reached via `openGlobalSettings()`.
    */
-  async function switchPanel(panel: PanelKey, entrypoint: string = 'titlebar'): Promise<void> {
+  async function switchPanel(
+    panel: PanelKey,
+    entrypoint: string = 'titlebar',
+    newInstallOpts?: { workspaceId?: string }
+  ): Promise<void> {
     const fromView = activePanel.value
     if (FLOW_PANELS.has(panel)) {
-      await openFlowTakeover(panel as FlowComponent, entrypoint)
+      await openFlowTakeover(panel as FlowComponent, entrypoint, newInstallOpts)
       return
     }
     // No-op guard so a redundant `panel-switch` IPC (e.g. main re-

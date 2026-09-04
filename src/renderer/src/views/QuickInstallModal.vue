@@ -247,7 +247,8 @@ async function handleInstall(): Promise<void> {
     const result = await window.api.addInstallation({
       name,
       installPath: instPath.value,
-      ...instData
+      ...instData,
+      status: 'installing'
     })
 
     if (!result.ok) {

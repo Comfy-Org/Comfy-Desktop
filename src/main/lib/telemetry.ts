@@ -292,7 +292,7 @@ export function asDeployment(value: unknown): Deployment | null {
  * `unknown` rather than silently being misclassified). Mirrors the
  * renderer's `deriveAppChannel` so both surfaces agree.
  */
-function deriveAppChannel(appVersion: string): string {
+export function deriveAppChannel(appVersion: string): string {
   if (!appVersion) return 'unknown'
   const v = appVersion.toLowerCase()
   if (v.includes('-beta')) return 'beta'

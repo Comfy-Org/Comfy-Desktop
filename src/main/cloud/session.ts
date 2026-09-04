@@ -9,17 +9,25 @@
 import type { TokenProvider } from '../comfybuilder'
 import { workspaceIdOf } from './claims'
 import { refresh, signIn } from './oauth'
-import { clearTokens, getAuthStatus, loadTokens, saveTokens } from './tokenStore'
-import type { AuthStatus, Workspace } from './types'
-import { listWorkspaces } from './workspaces'
+import {
+  activateWorkspace,
+  clearTokens,
+  getAuthStatus,
+  loadTokens,
+  loadWorkspaceTokens,
+  replaceWorkspaceTokens,
+  saveTokens,
+  saveWorkspaceNames
+} from './tokenStore'
+import type { AuthStatus, AuthTokens, Workspace, WorkspaceMember } from './types'
+import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
 /** Refresh an access token this many ms before it actually expires. */
 const REFRESH_SKEW_MS = 60_000
 
 export class CloudSession {
-  /** Deduped in-flight refresh: parallel callers share one rotation so they
-   *  never race the refresh token (a race can revoke the whole token family). */
-  private refreshing: Promise<string | null> | null = null
+  /** Refresh rotations are single-flight per workspace token family. */
+  private readonly refreshing = new Map<string, Promise<AuthTokens | null>>()
   private loginInFlight: Promise<AuthStatus> | null = null
 
   /** Latest browser-auth intent. Older flows may finish, but cannot replace
@@ -66,35 +74,42 @@ export class CloudSession {
     if (!tokens) return null
     if (tokens.expiresAt - REFRESH_SKEW_MS > Date.now() || !tokens.refreshToken)
       return tokens.accessToken
-    // Single-flight: the first caller runs the refresh, the rest await it.
-    if (!this.refreshing) {
-      this.refreshing = this.doRefresh(tokens.accessToken, tokens.refreshToken).finally(() => {
-        this.refreshing = null
-      })
-    }
-    return this.refreshing
+    const workspaceId = workspaceIdOf(tokens.accessToken)
+    await this.refreshWorkspaceTokens(workspaceId, tokens)
+    const active = loadTokens()
+    return active && workspaceIdOf(active.accessToken) === workspaceId ? active.accessToken : null
   }
 
-  private async doRefresh(accessToken: string, refreshToken: string): Promise<string | null> {
+  private refreshKey(workspaceId: string | null, refreshToken: string): string {
+    return `${workspaceId === null ? 'default' : `workspace:${workspaceId}`}\0${refreshToken}`
+  }
+
+  private refreshWorkspaceTokens(
+    workspaceId: string | null,
+    tokens: AuthTokens
+  ): Promise<AuthTokens | null> {
+    const key = this.refreshKey(workspaceId, tokens.refreshToken ?? '')
+    const inFlight = this.refreshing.get(key)
+    if (inFlight) return inFlight
+    const refreshing = this.doRefresh(workspaceId, tokens).finally(() => {
+      if (this.refreshing.get(key) === refreshing) this.refreshing.delete(key)
+    })
+    this.refreshing.set(key, refreshing)
+    return refreshing
+  }
+
+  private async doRefresh(
+    workspaceId: string | null,
+    tokens: AuthTokens
+  ): Promise<AuthTokens | null> {
+    const refreshToken = tokens.refreshToken
+    if (!refreshToken) return tokens
     try {
       const rotated = await refresh(refreshToken)
-      // Refresh is a compare-and-swap against the token pair that started it.
-      // Logout or a newer browser auth may complete while the request is in
-      // flight; that newer intent must never be overwritten by this response.
-      const current = loadTokens()
-      if (
-        !current ||
-        current.accessToken !== accessToken ||
-        current.refreshToken !== refreshToken
-      ) {
-        return current?.accessToken ?? null
-      }
-      saveTokens(rotated)
-      return rotated.accessToken
+      const saved = replaceWorkspaceTokens(workspaceId, tokens.accessToken, refreshToken, rotated)
+      return saved ? rotated : loadWorkspaceTokens(workspaceId)
     } catch {
-      // Refresh failed: fall back to the current token and let the caller's 401
-      // handling take over. Re-read in case another flow updated it meanwhile.
-      return loadTokens()?.accessToken ?? null
+      return loadWorkspaceTokens(workspaceId)
     }
   }
 
@@ -102,22 +117,50 @@ export class CloudSession {
   async listWorkspaces(): Promise<Workspace[]> {
     const token = await this.getAccessToken()
     if (!token) return []
-    return listWorkspaces(token)
+    const workspaces = await listWorkspaces(token)
+    saveWorkspaceNames(token, workspaces)
+    return workspaces
   }
 
-  /**
-   * Switch the active workspace. A PKCE cloud token is scoped at consent time, so
-   * this re-runs sign-in pre-selecting the workspace (no silent re-scope exists).
-   */
+  /** Members of the active workspace, used to resolve Builder creator ids. */
+  async listWorkspaceMembers(): Promise<WorkspaceMember[]> {
+    const token = await this.getAccessToken()
+    if (!token) return []
+    return listWorkspaceMembers(token)
+  }
+
+  /** Activate cached workspace credentials, using browser auth only when needed. */
   async switchWorkspace(workspaceId: string): Promise<AuthStatus> {
     this.loginInFlight = null
-    return this.authenticate(workspaceId)
+    const generation = ++this.authGeneration
+    const current = loadTokens()
+    let cached =
+      current && workspaceIdOf(current.accessToken) === workspaceId
+        ? current
+        : loadWorkspaceTokens(workspaceId)
+    if (cached?.refreshToken && cached.expiresAt - REFRESH_SKEW_MS <= Date.now()) {
+      cached = await this.refreshWorkspaceTokens(workspaceId, cached)
+    }
+    if (generation !== this.authGeneration) return this.status()
+    if (cached && cached.expiresAt > Date.now()) {
+      if (cached !== current) activateWorkspace(workspaceId)
+      return this.status()
+    }
+    return this.authenticateAtGeneration(generation, workspaceId)
   }
 
   private async authenticate(workspaceId?: string): Promise<AuthStatus> {
     const generation = ++this.authGeneration
+    return this.authenticateAtGeneration(generation, workspaceId)
+  }
+
+  private async authenticateAtGeneration(
+    generation: number,
+    workspaceId?: string
+  ): Promise<AuthStatus> {
     const { tokens, status } = workspaceId ? await signIn({ workspaceId }) : await signIn()
     if (generation !== this.authGeneration) return this.status()
+    if (workspaceId && status.workspaceId !== workspaceId) return this.status()
     saveTokens(tokens)
     return status
   }

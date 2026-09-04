@@ -27,8 +27,11 @@ import type { InstallationRecord } from '../../installations'
 const mockedFetchJSON = vi.mocked(fetchJSON)
 const mockedGetLatestStableTag = vi.mocked(getLatestStableTag)
 
-// Use the running platform's vendor prefix so tests work on win32/darwin/linux CI runners.
-const VENDOR_ID = `${PLATFORM_PREFIX[process.platform] || 'win-'}nvidia`
+// Use the running platform's vendor prefix (and, on Windows, the running
+// architecture's suffix) so tests work on win32/darwin/linux CI runners and on
+// native ARM64 Windows dev machines alike — the wizard filters by both.
+const ARCH_SUFFIX = process.platform === 'win32' && process.arch === 'arm64' ? '-arm64' : ''
+const VENDOR_ID = `${PLATFORM_PREFIX[process.platform] || 'win-'}nvidia${ARCH_SUFFIX}`
 
 // --- Helpers ---
 
@@ -662,5 +665,112 @@ describe('standalone.getFieldOptions variant version display', () => {
     const card = variants.find((o) => o.value === vendorId)!
     expect(card.description).toContain('ComfyUI 0.20.1')
     expect(card.description).not.toContain('nightly')
+  })
+})
+
+// --- Architecture filter: Windows publishes x64 and ARM64 bundles under one prefix ---
+
+describe('standalone.getFieldOptions architecture filter', () => {
+  const realPlatform = process.platform
+  const realArch = process.arch
+  function setHost(platform: NodeJS.Platform, arch: NodeJS.Architecture): void {
+    Object.defineProperty(process, 'platform', { value: platform })
+    Object.defineProperty(process, 'arch', { value: arch })
+  }
+  afterEach(() => setHost(realPlatform, realArch))
+
+  /** latest.json + per-vendor releases.json with one bundle per vendor id. */
+  function setupCatalog(vendorIds: string[]) {
+    const latest: Record<string, R2Release> = {}
+    const vendorReleases: Record<string, { releases: R2Release[] }> = {}
+    for (const vendorId of vendorIds) {
+      const catalog = makeR2Releases(['v0.34.0-env1'], { vendorId })
+      latest[vendorId] = catalog.latest[vendorId]!
+      vendorReleases[vendorId] = catalog.vendorReleases[vendorId]!
+    }
+    mockedGetLatestStableTag.mockResolvedValue('v0.34.0')
+    mockedFetchJSON.mockImplementation((url: string) => {
+      if (url.includes('latest.json')) return Promise.resolve(latest)
+      const vendorId = /\/([^/]+)\/releases\.json$/.exec(url)?.[1] ?? ''
+      return Promise.resolve(vendorReleases[vendorId] ?? { releases: [] })
+    })
+  }
+
+  async function stableRelease(): Promise<FieldOption | undefined> {
+    const releases = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
+    return releases.find((o) => o.value === 'stable')
+  }
+
+  async function variantIds(): Promise<string[]> {
+    const release = await stableRelease()
+    if (!release) return []
+    const variants = await standalone.getFieldOptions!('variant', { release }, {})
+    return variants.map((o) => o.value)
+  }
+
+  const CATALOG = [
+    'win-nvidia',
+    'win-nvidia-arm64',
+    'win-cpu',
+    'win-amd',
+    'mac-mps',
+    'linux-nvidia',
+    // Pre-release id: invisible to desktops that filter on the bare
+    // platform prefix, offered here only to a matching ARM64 host.
+    'beta-win-nvidia-arm64'
+  ]
+
+  it('a native ARM64 Windows app is offered only the -arm64 bundles, beta included', async () => {
+    setHost('win32', 'arm64')
+    setupCatalog(CATALOG)
+    expect(await variantIds()).toEqual(['win-nvidia-arm64', 'beta-win-nvidia-arm64'])
+  })
+
+  it('an x64 Windows app never sees the -arm64 bundles, beta or not', async () => {
+    setHost('win32', 'x64')
+    setupCatalog(CATALOG)
+    expect(await variantIds()).toEqual(['win-nvidia', 'win-cpu', 'win-amd'])
+  })
+
+  it('a beta- id is only accepted in front of the host platform prefix', async () => {
+    setHost('darwin', 'arm64')
+    setupCatalog(['mac-mps', 'beta-win-nvidia-arm64', 'beta-mac-mps'])
+    expect(await variantIds()).toEqual(['mac-mps', 'beta-mac-mps'])
+  })
+
+  it('labels a beta card as such and still recommends it on an NVIDIA host', async () => {
+    setHost('win32', 'arm64')
+    setupCatalog(CATALOG)
+    const release = (await stableRelease())!
+    const cards = await standalone.getFieldOptions!('variant', { release }, { gpu: 'nvidia' })
+    const beta = cards.find((c) => c.value === 'beta-win-nvidia-arm64')
+    expect(beta!.label).toBe('NVIDIA (ARM64) Beta')
+    expect(beta!.recommended).toBe(true)
+  })
+
+  it('an ARM64 Windows app gets no release options when R2 only has x64 bundles', async () => {
+    // Nothing runnable exists: the wizard must not fall back to an x64 bundle
+    // under emulation, whose CUDA torch cannot drive the GPU.
+    setHost('win32', 'arm64')
+    setupCatalog(['win-nvidia', 'win-cpu'])
+    const releases = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
+    expect(releases).toEqual([])
+  })
+
+  it('macOS keeps its unsuffixed ARM64 bundle', async () => {
+    setHost('darwin', 'arm64')
+    setupCatalog(CATALOG)
+    expect(await variantIds()).toEqual(['mac-mps'])
+  })
+
+  it('labels the ARM64 NVIDIA card and recommends it on an NVIDIA host', async () => {
+    setHost('win32', 'arm64')
+    setupCatalog(CATALOG)
+    const release = (await stableRelease())!
+    const [card] = await standalone.getFieldOptions!('variant', { release }, { gpu: 'nvidia' })
+    expect(card!.value).toBe('win-nvidia-arm64')
+    expect(card!.label).toBe('NVIDIA (ARM64)')
+    expect(card!.recommended).toBe(true)
+    expect(card!.description).toContain('ComfyUI 0.34.0')
   })
 })

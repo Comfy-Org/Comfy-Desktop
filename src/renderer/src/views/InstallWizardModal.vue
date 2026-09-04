@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, HardDrive, CircleAlert } from 'lucide-vue-next'
+import { HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
+import { useAuthStore } from '../stores/authStore'
 
 import type {
+  InstallBuildResult,
   Source,
   SourceField,
   FieldOption,
@@ -33,6 +35,7 @@ import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import TooltipWrap from '../components/TooltipWrap.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
+import type { Build, BuildTarget } from '../devplatform/types'
 
 const emit = defineEmits<{
   close: []
@@ -52,12 +55,13 @@ const props = withDefaults(
 
 const { t } = useI18n()
 const modal = useModal()
+const authStore = useAuthStore()
 
 const sources = ref<Source[]>([])
 const currentSource = ref<Source | null>(null)
 const selections = ref<Record<string, FieldOption>>({})
 const instName = ref('')
-/** Placeholder's suggested default (`ComfyUI` → `ComfyUI (2)` if taken). `handleSave`'s blank-field fallback produces the same value, so it's truthful. */
+/** Placeholder's suggested default (`ComfyUI` -> `ComfyUI (2)` if taken). `handleSave`'s blank-field fallback produces the same value, so it's truthful. */
 const suggestedName = ref('')
 const instPath = ref('')
 const defaultInstPath = ref('')
@@ -69,7 +73,119 @@ const hardwareWarning = ref('')
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
 const initializing = ref(false)
+const authorizingWorkspace = ref(false)
 const sourceError = ref('')
+const workspaceId = ref<string | null>(null)
+const selectedBuildId = ref('')
+const selectedBuildTargetId = ref('')
+const workspaceMode = computed(() => workspaceId.value !== null)
+const workspaceInstallMode = ref<'managed' | 'public'>('managed')
+const managedBuildMode = computed(
+  () => workspaceMode.value && workspaceInstallMode.value === 'managed'
+)
+const localInstallMode = computed(
+  () => !workspaceMode.value || workspaceInstallMode.value === 'public'
+)
+
+const workspaceBuilds = computed(() => {
+  if (!workspaceId.value || authStore.status.workspaceId !== workspaceId.value) return []
+  return authStore.builds.filter(
+    (build) => build.state === 'installable' || build.state === 'update-available'
+  )
+})
+const workspaceBuildOptions = computed<BaseSelectOption[]>(() =>
+  workspaceBuilds.value.map((build) => ({
+    value: build.id,
+    label: build.name,
+    description: buildOptionDescription(build)
+  }))
+)
+const selectedBuild = computed(
+  () => workspaceBuilds.value.find((build) => build.id === selectedBuildId.value) ?? null
+)
+const selectedBuildTarget = computed(
+  () =>
+    selectedBuild.value?.releaseTargets?.find(
+      (target) => target.artifactId === selectedBuildTargetId.value
+    ) ?? null
+)
+
+function platformName(os: string): string {
+  if (os === 'windows') return 'Windows'
+  if (os === 'mac') return 'macOS'
+  if (os === 'linux') return 'Linux'
+  return os
+}
+
+function targetAccelerationName(target: BuildTarget): string {
+  if (target.gpu === 'cpu') return 'CPU'
+  if (target.gpu === 'mps') return 'Apple Silicon'
+  if (target.gpu === 'nvidia') {
+    const digits = /^cu(\d+)$/.exec(target.accelVariant)?.[1]
+    if (!digits) return 'NVIDIA'
+    const cudaVersion = digits.length > 1 ? `${digits.slice(0, -1)}.${digits.slice(-1)}` : digits
+    return `NVIDIA (CUDA ${cudaVersion})`
+  }
+  if (target.gpu === 'amd') {
+    return target.accelVariant && target.accelVariant !== 'amd'
+      ? `AMD (${target.accelVariant.toUpperCase()})`
+      : 'AMD'
+  }
+  return target.gpu
+}
+
+function targetVariantId(target: BuildTarget): string {
+  const os = target.os === 'windows' ? 'win' : target.os
+  return `${os}-${target.gpu}-${target.accelVariant}`
+}
+
+const selectedBuildTargetOptions = computed<FieldOption[]>(() =>
+  (selectedBuild.value?.releaseTargets ?? []).map((target) => ({
+    value: target.artifactId,
+    label: `${platformName(target.os)} - ${targetAccelerationName(target)}`,
+    description: t('newInstall.buildReleaseValue', { version: target.releaseVersion }),
+    recommended: target.recommended,
+    data: { variantId: targetVariantId(target) }
+  }))
+)
+
+function buildOptionDescription(build: Build): string | undefined {
+  const details = [
+    build.description?.trim(),
+    build.version ? t('newInstall.buildReleaseValue', { version: build.version }) : undefined,
+    build.creatorName
+      ? t('newInstall.buildCreatorValue', { creator: build.creatorName })
+      : undefined
+  ].filter((detail): detail is string => Boolean(detail))
+  return details.length ? details.join(' | ') : undefined
+}
+
+watch(workspaceBuilds, (builds) => {
+  if (!managedBuildMode.value) return
+  if (!builds.some((build) => build.id === selectedBuildId.value)) {
+    selectedBuildId.value = builds[0]?.id ?? ''
+  }
+})
+
+function suggestManagedBuildName(build: Build | null): void {
+  if (!managedBuildMode.value || !build || instName.value.trim()) return
+  const buildId = build.id
+  void window.api
+    .getUniqueName(build.name)
+    .then((name) => {
+      if (managedBuildMode.value && selectedBuild.value?.id === buildId && !instName.value.trim()) {
+        suggestedName.value = name
+      }
+    })
+    .catch(() => {})
+}
+
+watch(selectedBuild, (build) => {
+  const targets = build?.releaseTargets ?? []
+  selectedBuildTargetId.value =
+    targets.find((target) => target.recommended)?.artifactId ?? targets[0]?.artifactId ?? ''
+  suggestManagedBuildName(build)
+})
 
 // Per-field state
 const fieldOptions = ref(new Map<string, FieldOption[]>())
@@ -88,6 +204,12 @@ const {
 let hardwareValidation: HardwareValidation | null = null
 
 const estimatedInstallSize = computed(() => {
+  if (!localInstallMode.value) {
+    // Managed builds report the whole-archive size; apply the same
+    // download-to-installed factor as local variants.
+    const sizeBytes = selectedBuild.value?.sizeBytes ?? 0
+    return sizeBytes > 0 ? Math.ceil(sizeBytes * 2.25) : 0
+  }
   let downloadBytes = 0
   for (const selected of Object.values(selections.value)) {
     const files = selected?.data?.downloadFiles as Array<{ size: number }> | undefined
@@ -98,17 +220,14 @@ const estimatedInstallSize = computed(() => {
   return downloadBytes > 0 ? Math.ceil(downloadBytes * 2.25) : 0
 })
 
-const advancedOpen = ref(false)
-const advancedRef = ref<HTMLElement | null>(null)
-
 /** Entrypoint that opened this wizard, for the handoff funnel events (#1224). */
 const entrypoint = ref('unknown')
 /** Flipped true once this wizard session reaches a TERMINAL handoff outcome:
  *  install.dispatched, dispatch_no_entry, or back_to_local_branch. Guards the
  *  onBeforeUnmount `wizard_cancelled` emit so exactly one *terminal* event
- *  fires per open. `add_installation_failed` is an attempt-level failure — it
- *  intentionally leaves this false so a later retry (→ dispatched) or give-up
- *  (→ wizard_cancelled) is still recorded as the true terminal outcome. */
+ *  fires per open. `add_installation_failed` is an attempt-level failure - it
+ *  intentionally leaves this false so a later retry (-> dispatched) or give-up
+ *  (-> wizard_cancelled) is still recorded as the true terminal outcome. */
 const resolved = ref(false)
 
 /** Shared context for the install-handoff funnel events (#1224). */
@@ -116,7 +235,7 @@ function installHandoffProps(): Record<string, string | boolean | null> {
   const variantId = selections.value.variant?.data?.variantId as string | undefined
   return {
     entrypoint: entrypoint.value,
-    source_id: currentSource.value?.id ?? null,
+    source_id: managedBuildMode.value ? 'comfybuilder' : (currentSource.value?.id ?? null),
     variant: variantId ? toVariantBucket(variantId) : null,
     express: false
   }
@@ -138,7 +257,7 @@ const templateHasModels = computed(() => {
 
 const templateIsApiNode = computed(() => isApiNodeTemplate(selectedTemplate.value))
 
-/** Proactive disk guard — shares `isTemplateDiskBlocked` with TemplatePickerStep
+/** Proactive disk guard - shares `isTemplateDiskBlocked` with TemplatePickerStep
  *  so the alert, the disabled Install button, and the save-time hard block can't
  *  drift. */
 const templateInstallBlocked = computed(() => {
@@ -183,7 +302,7 @@ const templateOptions = computed<FieldOption[]>(
 /** Volume can't fit even the smallest model-bearing template (incl. headroom).
  *  When known and true, there's nothing the picker could install, so we skip the
  *  step outright rather than show it with every option blocked. Stays `false`
- *  while disk space is unknown/loading — we only skip on a confirmed shortfall. */
+ *  while disk space is unknown/loading - we only skip on a confirmed shortfall. */
 const diskTooSmallForAnyTemplate = computed(() => {
   if (diskSpaceLoading.value || !diskSpace.value) return false
   if (templateOptions.value.some(isApiNodeTemplate)) return false
@@ -194,9 +313,12 @@ const diskTooSmallForAnyTemplate = computed(() => {
 /** Show the picker step only for the standalone source when it's enabled,
  *  the template field produced options, and the volume can fit at least one
  *  template's models. Gated only by the `skipTemplatePickerStep` user opt-out
- *  (`pickerEnabled`) — shown to everyone on the standalone install path. */
+ *  (`pickerEnabled`) - shown to everyone on the standalone install path.
+ *  The `localInstallMode` guard keeps the picker out of managed installs,
+ *  which ignore templates entirely. */
 const shouldShowPickerStep = computed(
   () =>
+    localInstallMode.value &&
     currentSource.value?.id === 'standalone' &&
     pickerEnabled.value &&
     templateOptions.value.length > 0 &&
@@ -223,14 +345,9 @@ function selectTemplate(option: FieldOption): void {
  *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
   if (shouldShowPickerStep.value) {
-    // Lead with a real template rather than the "None" sentinel — prefer the
-    // recommended pick (the lightest "wow"), falling back to the first real one.
-    if (selections.value.bundledTemplate?.value === NO_TEMPLATE_VALUE) {
-      const lead =
-        templateOptions.value.find((o) => o.value !== NO_TEMPLATE_VALUE && o.recommended) ??
-        templateOptions.value.find((o) => o.value !== NO_TEMPLATE_VALUE)
-      if (lead) selections.value.bundledTemplate = lead
-    }
+    // No template is pre-selected - the "None" sentinel stays put until the
+    // user actively picks a card, so nobody installs a starter workflow (and
+    // its models) they never chose.
     if (instPath.value) fetchDiskSpace(instPath.value)
     step.value = 'template'
     emitTelemetryAction('comfy.desktop.template.picker_shown', {
@@ -282,21 +399,10 @@ async function persistDontShowAgain(): Promise<void> {
     try {
       await window.api.setSetting('skipTemplatePickerStep', true)
     } catch {
-      // Non-fatal — the step just shows again next time.
+      // Non-fatal - the step just shows again next time.
     }
   }
 }
-
-// Scroll Advanced into view on open. `block: 'nearest'` no-ops when already visible so the view doesn't yank on tall screens.
-watch(advancedOpen, async (open) => {
-  if (!open) return
-  await nextTick()
-  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  advancedRef.value?.scrollIntoView({
-    behavior: reduced ? 'auto' : 'smooth',
-    block: 'nearest'
-  })
-})
 
 watch(instPath, (newPath) => {
   diskSpace.value = null
@@ -306,6 +412,8 @@ watch(instPath, (newPath) => {
 
 /** Bumped on each open/source change to discard stale responses. */
 let loadGeneration = 0
+/** Bumped on each open/workspace mode change to discard stale mode initialization. */
+let modeGeneration = 0
 
 // Reject whitespace-only names; a truly-blank field is allowed (falls back to the suggested default).
 const nameError = computed(() =>
@@ -338,6 +446,15 @@ const urlFieldError = computed(() => {
 
 // Continue gate. `skipInstall` sources (Remote Connection) have no install path, so the path-issue guard is skipped for them.
 const canContinue = computed(() => {
+  if (managedBuildMode.value) {
+    const targets = selectedBuild.value?.releaseTargets ?? []
+    return Boolean(
+      selectedBuild.value &&
+      (targets.length === 0 || selectedBuildTarget.value) &&
+      !nameError.value &&
+      pathIssues.value.length === 0
+    )
+  }
   if (!currentSource.value) return false
   if (nameError.value || urlFieldError.value) return false
   if (currentSource.value.skipInstall) return !saveDisabled.value
@@ -389,7 +506,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  // Onboarding→install drop-off (#1224): the wizard is unmounting without a
+  // Onboarding->install drop-off (#1224): the wizard is unmounting without a
   // resolved handoff outcome, so the user left the install path without
   // dispatching. `skipInstall` sources (Remote Connection) never install, so
   // they're not part of this funnel. The happy-path dispatch, the defensive
@@ -421,28 +538,28 @@ function handleBackToLocalBranch(): void {
 }
 
 interface OpenOpts {
-  /** Set when opened via the first-use localBranch → Start Fresh path; surfaces a Back link that returns to localBranch instead of closing. */
+  /** Set when opened via the first-use localBranch -> Start Fresh path; surfaces a Back link that returns to localBranch instead of closing. */
   cameFromLocalBranch?: boolean
   /** Where this wizard was opened from (`first_use`, `chooser`, `titlebar`, `url`); carried onto the install.dispatched / install.not_started funnel events. */
   entrypoint?: string
+  /** Active workspace whose compatible Builds replace the generic source controls. */
+  workspaceId?: string
 }
 
 const cameFromLocalBranch = ref(false)
 
 async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
-  const gen = loadGeneration
+  const gen = ++modeGeneration
   instName.value = ''
+  workspaceId.value = opts.workspaceId?.trim() || null
+  workspaceInstallMode.value = 'managed'
+  selectedBuildId.value = ''
+  selectedBuildTargetId.value = ''
   cameFromLocalBranch.value = opts.cameFromLocalBranch === true
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
   suggestedName.value = ''
-  void window.api
-    .getUniqueName(DEFAULT_INSTALL_NAME)
-    .then((name) => {
-      suggestedName.value = name
-    })
-    .catch(() => {})
   instPath.value = ''
   selections.value = {}
   currentSource.value = null
@@ -456,6 +573,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   hardwareWarning.value = ''
   resetDiskSpace()
   sourceError.value = ''
+  authorizingWorkspace.value = false
   initializing.value = true
   step.value = 'configure'
   dontShowTemplatePicker.value = false
@@ -464,44 +582,107 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   pickerEnabled.value = true
   hasLocalInstall.value = false
 
-  // Resolve picker gating in the background — needed only by the time the user
-  // reaches the (later) template step, so they never block the Configure
-  // screen's first paint. Generation-guarded so a reopen discards stale results.
+  try {
+    await initializeInstallMode(gen, true)
+  } finally {
+    if (gen === modeGeneration) initializing.value = false
+  }
+}
+
+async function initializeInstallMode(gen: number, refreshManagedBuilds = false): Promise<void> {
+  const installDir = await installDirPromise
+  if (gen !== modeGeneration) return
+  defaultInstPath.value = installDir ?? ''
+  instPath.value = defaultInstPath.value
+
+  if (managedBuildMode.value) await initializeManagedBuilds(gen, refreshManagedBuilds)
+  else await initializeLocalInstall(gen)
+}
+
+async function initializeManagedBuilds(gen: number, refreshBuilds: boolean): Promise<void> {
+  const targetWorkspaceId = workspaceId.value
+  if (!targetWorkspaceId) return
+  try {
+    let status = authStore.status
+    if (status.workspaceId !== targetWorkspaceId) {
+      authorizingWorkspace.value = true
+      try {
+        status = await authStore.switchWorkspace(targetWorkspaceId)
+      } finally {
+        if (gen === modeGeneration) authorizingWorkspace.value = false
+      }
+    }
+    if (gen !== modeGeneration || !managedBuildMode.value) return
+    if (!status.signedIn || status.workspaceId !== targetWorkspaceId) {
+      emit('close')
+      return
+    }
+    if (refreshBuilds || !authStore.buildsLoaded) await authStore.fetchBuilds()
+    if (gen !== modeGeneration || !managedBuildMode.value) return
+    selectedBuildId.value = workspaceBuilds.value[0]?.id ?? ''
+    suggestManagedBuildName(selectedBuild.value)
+  } catch {
+    if (gen === modeGeneration && managedBuildMode.value) emit('close')
+  }
+}
+
+async function initializeLocalInstall(gen: number): Promise<void> {
+  void window.api
+    .getUniqueName(DEFAULT_INSTALL_NAME)
+    .then((name) => {
+      if (gen === modeGeneration && localInstallMode.value) suggestedName.value = name
+    })
+    .catch(() => {})
+
+  // These are needed only if the user reaches the later template step, so they
+  // run in the background and never block the Configure screen's first paint.
   void window.api
     .getSetting('skipTemplatePickerStep')
     .then((skip) => {
-      if (gen !== loadGeneration) return
-      pickerEnabled.value = skip !== true
+      if (gen === modeGeneration && localInstallMode.value) pickerEnabled.value = skip !== true
     })
     .catch(() => {})
   void window.api
     .getInstallationsSummary()
     .then((summary) => {
-      if (gen !== loadGeneration) return
-      hasLocalInstall.value = summary.localCount > 0
+      if (gen === modeGeneration && localInstallMode.value) {
+        hasLocalInstall.value = summary.localCount > 0
+      }
     })
     .catch(() => {})
 
+  await loadSources()
+  if (gen !== modeGeneration || !localInstallMode.value) return
+
+  // Pre-select Standalone (the recommended method); other sources remain
+  // reachable through the same Advanced controls used outside workspaces.
+  hardwareValidation = await window.api.validateHardware()
+  if (gen !== modeGeneration || !localInstallMode.value) return
+  hardwareWarning.value = hardwareValidation.warning ?? ''
+  const standalone = sources.value.find((source) => source.id === 'standalone')
+  if (standalone && hardwareValidation.supported) {
+    await selectSourceCard(standalone)
+  } else if (standalone) {
+    detectedGpu.value = hardwareValidation.error || t('newInstall.noGpuDetected')
+  }
+}
+
+async function selectWorkspaceInstallMode(mode: 'managed' | 'public'): Promise<void> {
+  if (!workspaceMode.value || workspaceInstallMode.value === mode) return
+  authorizingWorkspace.value = false
+  workspaceInstallMode.value = mode
+  // Clear source-scoped state from the previous mode so nothing carries over
+  // (e.g. a Public-tab visit leaving standalone template options loaded, which
+  // would surface the template picker on a managed install). Public mode
+  // re-selects Standalone in initializeInstallMode.
+  resetSourceState(null)
+  suggestedName.value = ''
+  const gen = ++modeGeneration
+  initializing.value = true
   try {
-    const [, installDir] = await Promise.all([loadSources(), installDirPromise])
-
-    defaultInstPath.value = installDir ?? ''
-    instPath.value = defaultInstPath.value
-
-    // Pre-select Standalone (the recommended method); other sources are reachable via the Advanced method-picker chips.
-    hardwareValidation = await window.api.validateHardware()
-    // A newer open() may have started while awaiting; don't let a stale
-    // result overwrite its (cleared) warning state.
-    if (gen !== loadGeneration) return
-    hardwareWarning.value = hardwareValidation.warning ?? ''
-    const standalone = sources.value.find((s) => s.id === 'standalone')
-    if (standalone && hardwareValidation.supported) {
-      await selectSourceCard(standalone)
-    } else if (standalone) {
-      detectedGpu.value = hardwareValidation.error || t('newInstall.noGpuDetected')
-    }
+    await initializeInstallMode(gen)
   } finally {
-    initializing.value = false
+    if (gen === modeGeneration) initializing.value = false
   }
 }
 
@@ -535,7 +716,11 @@ async function selectSourceCard(source: Source): Promise<void> {
   })
 }
 
-async function selectSource(source: Source): Promise<void> {
+/** Drop all source-scoped wizard state (source, selections, loaded field
+ *  options) and invalidate in-flight option loads. Runs when a source is
+ *  picked and when the Managed/Public mode toggles, so no stale state (e.g.
+ *  standalone template options) leaks across sources or modes. */
+function resetSourceState(source: Source | null): void {
   loadGeneration++
   currentSource.value = source
   // A different source can't keep the (standalone-only) picker open.
@@ -547,6 +732,10 @@ async function selectSource(source: Source): Promise<void> {
   textFieldValues.value.clear()
   saveDisabled.value = true
   sourceError.value = ''
+}
+
+async function selectSource(source: Source): Promise<void> {
+  resetSourceState(source)
 
   for (const f of source.fields) {
     if (f.type === 'text') {
@@ -620,7 +809,13 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     fieldOptions.value.set(field.id, options)
 
     if (options.length > 0) {
-      let defaultIndex = options.findIndex((opt) => opt.recommended)
+      // The starter-template field must never default to a `recommended` pick
+      // (e.g. MiniMax) — that pre-selects a workflow, and the models it pulls
+      // in, before the user has chosen anything. It always defaults to the
+      // "None" sentinel (index 0; see `standalone/index.ts`), same as every
+      // other field falls back to index 0 when nothing is `recommended`.
+      let defaultIndex =
+        field.id === 'bundledTemplate' ? 0 : options.findIndex((opt) => opt.recommended)
       if (defaultIndex < 0) defaultIndex = 0
       const defaultOption = options[defaultIndex]
       if (defaultOption) selections.value[field.id] = defaultOption
@@ -729,7 +924,107 @@ function handleOpenInstPath(): void {
   if (instPath.value) void window.api.openPath(instPath.value)
 }
 
+function openBuildsPage(): void {
+  if (!workspaceId.value) return
+  void window.api.comfybuilder.openBuildsPage(workspaceId.value).catch(() => {})
+}
+
+async function validateSelectedInstallRoot(): Promise<boolean> {
+  if (!instPath.value) return true
+  try {
+    const issues = await window.api.validateInstallPath(instPath.value)
+    return showPathIssueAlerts(issues, 'wizard', 'save', modal.alert, t)
+  } catch {
+    return true
+  }
+}
+
+async function handOffInstall(
+  result: InstallBuildResult,
+  failureTitle: string,
+  templateSelected: boolean
+): Promise<void> {
+  if (!result.ok) {
+    emitTelemetryAction('comfy.desktop.install.not_started', {
+      ...installHandoffProps(),
+      reason: 'add_installation_failed',
+      error_bucket: toErrorBucket(result.message || '')
+    })
+    await modal.alert({ title: failureTitle, message: result.message || '' })
+    return
+  }
+  if (result.entry) {
+    resolved.value = true
+    emitTelemetryAction('comfy.desktop.install.dispatched', {
+      ...installHandoffProps(),
+      installation_id: result.entry.id,
+      template_selected: templateSelected
+    })
+    emit('show-progress', {
+      installationId: result.entry.id,
+      title: `${t('newInstall.installing')} - ${result.entry.name}`,
+      apiCall: () => window.api.installInstance(result.entry!.id),
+      autoLaunchOnFinish: true,
+      opKind: 'install'
+    })
+    return
+  }
+  resolved.value = true
+  emitTelemetryAction('comfy.desktop.install.not_started', {
+    ...installHandoffProps(),
+    reason: 'dispatch_no_entry',
+    installation_id: null
+  })
+  emit('close')
+}
+
+async function handleWorkspaceBuildSave(): Promise<void> {
+  const build = selectedBuild.value
+  if (!build || !(await validateSelectedInstallRoot())) return
+
+  // Soft-warn when the volume looks too small for the estimated install size.
+  if (instPath.value && estimatedInstallSize.value > 0) {
+    try {
+      if (
+        !(await checkDiskSpaceOrWarn({
+          path: instPath.value,
+          estimatedRequired: estimatedInstallSize.value,
+          flow: 'wizard',
+          confirm: modal.confirm,
+          t
+        }))
+      ) {
+        return
+      }
+    } catch {
+      // If disk space check fails, proceed anyway
+    }
+  }
+
+  const result = await window.api.comfybuilder
+    .installBuild({
+      buildId: build.id,
+      ...(selectedBuildTarget.value
+        ? {
+            artifactId: selectedBuildTarget.value.artifactId,
+            releaseVersion: selectedBuildTarget.value.releaseVersion
+          }
+        : {}),
+      ...(instName.value.trim() ? { name: instName.value.trim() } : {}),
+      ...(instPath.value.trim() ? { installRoot: instPath.value.trim() } : {})
+    })
+    .catch((error: unknown) => ({
+      ok: false,
+      message: error instanceof Error ? error.message : String(error)
+    }))
+  await handOffInstall(result, t('errors.installFailed'), false)
+}
+
 async function handleSave(): Promise<void> {
+  if (managedBuildMode.value) {
+    await handleWorkspaceBuildSave()
+    return
+  }
   const source = currentSource.value
   if (!source) return
 
@@ -752,7 +1047,7 @@ async function handleSave(): Promise<void> {
   }
 
   // Note: the starter-template model download is gated entirely by the chosen
-  // `bundledTemplate` — `buildInstallation` sets `downloadTemplateModels` from
+  // `bundledTemplate` - `buildInstallation` sets `downloadTemplateModels` from
   // the template id, so "Skip & Install" (template = None) means no download.
   // The renderer doesn't sync a separate consent field.
 
@@ -765,7 +1060,8 @@ async function handleSave(): Promise<void> {
       name,
       installPath: '',
       status: 'installed',
-      ...instData
+      ...instData,
+      ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
     })
     if (!result.ok) {
       await modal.alert({
@@ -779,17 +1075,7 @@ async function handleSave(): Promise<void> {
     return
   }
 
-  // Validate install path against restricted locations
-  if (instPath.value) {
-    try {
-      const issues = await window.api.validateInstallPath(instPath.value)
-      if (!(await showPathIssueAlerts(issues, 'wizard', 'save', modal.alert, t))) {
-        return
-      }
-    } catch {
-      // If validation fails, proceed anyway
-    }
-  }
+  if (!(await validateSelectedInstallRoot())) return
 
   // Check disk space before proceeding
   if (instPath.value) {
@@ -835,51 +1121,11 @@ async function handleSave(): Promise<void> {
   const result = await window.api.addInstallation({
     name,
     installPath: instPath.value,
-    ...instData
+    ...instData,
+    status: 'installing',
+    ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
   })
-  if (!result.ok) {
-    // Onboarding→install drop-off (#1224): the user reached save but no install
-    // record could be created. Leave `resolved` false — the wizard stays open
-    // and a later retry / cancel is still the truthful terminal outcome.
-    emitTelemetryAction('comfy.desktop.install.not_started', {
-      ...installHandoffProps(),
-      reason: 'add_installation_failed',
-      error_bucket: toErrorBucket(result.message || '')
-    })
-    await modal.alert({
-      title: t('errors.cannotAdd'),
-      message: result.message || ''
-    })
-    return
-  }
-  if (result.entry) {
-    // Reliable "install actually began" gate that pairs 1:1 with
-    // first_use.completed (#1224).
-    resolved.value = true
-    emitTelemetryAction('comfy.desktop.install.dispatched', {
-      ...installHandoffProps(),
-      installation_id: result.entry.id,
-      template_selected: templateHasModels.value
-    })
-    // Hand off WITHOUT emitting `close` first: the host swaps the overlay in place; closing first would flash the dashboard underneath.
-    emit('show-progress', {
-      installationId: result.entry.id,
-      title: `${t('newInstall.installing')} — ${result.entry.name}`,
-      apiCall: () => window.api.installInstance(result.entry!.id),
-      autoLaunchOnFinish: true,
-      opKind: 'install'
-    })
-    return
-  }
-  // Defensive: addInstallation reported ok but produced no entry.
-  // Dismiss the wizard so the user isn't stuck on it.
-  resolved.value = true
-  emitTelemetryAction('comfy.desktop.install.not_started', {
-    ...installHandoffProps(),
-    reason: 'dispatch_no_entry',
-    installation_id: null
-  })
-  emit('close')
+  await handOffInstall(result, t('errors.cannotAdd'), templateHasModels.value)
 }
 
 function getSelectOptions(field: SourceField): BaseSelectOption[] {
@@ -897,7 +1143,7 @@ function getSelectPlaceholder(field: SourceField): string {
   const err = fieldErrors.value.get(field.id)
   if (err) return `Error: ${err}`
   if (fieldOptions.value.has(field.id)) return t('newInstall.noOptions')
-  return '—'
+  return '--'
 }
 
 function onSelectFieldChange(field: SourceField, fieldIndex: number, value: string): void {
@@ -913,7 +1159,7 @@ function onSelectFieldChange(field: SourceField, fieldIndex: number, value: stri
  *  outright so the wizard doesn't render a "No options" dropdown. */
 function isHiddenWhenEmpty(field: SourceField): boolean {
   // The starter-template field gets its own dedicated step when the picker is
-  // enabled — hide its Advanced-section card so it isn't shown twice. (When the
+  // enabled - hide its Advanced-section card so it isn't shown twice. (When the
   // picker is gated off, the Advanced card stays as the fallback.)
   if (field.id === 'bundledTemplate' && shouldShowPickerStep.value) return true
   if (field.type === 'text' || field.renderAs === 'cards') return false
@@ -929,9 +1175,19 @@ defineExpose({ open })
   <BrandTakeoverLayout>
     <div v-if="step === 'configure'" ref="brandShellRef" class="config-shell">
       <h1 class="brand-title">{{ $t('newInstall.configureTitle') }}</h1>
-      <p class="brand-lead">{{ $t('newInstall.configureLead') }}</p>
+      <p class="brand-lead">
+        {{ $t(managedBuildMode ? 'newInstall.configureWorkspaceLead' : 'chooser.newInstallDesc') }}
+      </p>
       <div class="config-card">
         <div class="config-card__body">
+          <div
+            v-if="authorizingWorkspace"
+            class="workspace-authorization-status with-spinner"
+            role="status"
+            data-testid="workspace-authorization-status"
+          >
+            {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
+          </div>
           <div class="config-field">
             <label class="config-label" for="inst-name-standalone">{{ $t('common.name') }}</label>
             <div class="brand-input" :class="{ 'brand-input--invalid': nameError }">
@@ -950,91 +1206,115 @@ defineExpose({ open })
             </div>
           </div>
 
-          <!-- GPU + Install Location stay visible but are disabled in Remote Connection mode (no local hardware / path). -->
-          <TooltipWrap
-            class="config-field-wrap"
-            side="bottom"
-            :text="currentSource?.skipInstall ? $t('newInstall.notAvailableRemote') : ''"
+          <div
+            v-if="workspaceMode"
+            class="config-field"
+            data-testid="workspace-install-source-field"
           >
+            <span id="workspace-install-source-label" class="config-label">
+              {{ $t('newInstall.buildSourceLabel') }}
+            </span>
             <div
-              class="config-field"
-              :class="{ 'config-field--disabled': currentSource?.skipInstall }"
+              class="workspace-install-source"
+              role="radiogroup"
+              aria-labelledby="workspace-install-source-label"
             >
-              <label class="config-label">{{ $t('newInstall.detectedGpuLabel') }}</label>
-              <div
-                class="brand-input config-select config-select--readonly"
-                role="textbox"
-                aria-readonly="true"
+              <button
+                type="button"
+                role="radio"
+                data-testid="workspace-install-source-managed"
+                :aria-checked="workspaceInstallMode === 'managed'"
+                :class="{ 'is-selected': workspaceInstallMode === 'managed' }"
+                @click="selectWorkspaceInstallMode('managed')"
               >
-                <span class="config-select__value">{{ detectedGpu }}</span>
-              </div>
-              <div
-                v-if="hardwareWarning && !currentSource?.skipInstall"
-                class="config-gpu-warning"
-                role="alert"
-                data-testid="wizard-hardware-warning"
+                {{ $t('newInstall.managedBuilds') }}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                data-testid="workspace-install-source-public"
+                :aria-checked="workspaceInstallMode === 'public'"
+                :class="{ 'is-selected': workspaceInstallMode === 'public' }"
+                @click="selectWorkspaceInstallMode('public')"
               >
-                {{ hardwareWarning }}
-              </div>
+                {{ $t('newInstall.publicBuilds') }}
+              </button>
             </div>
-          </TooltipWrap>
+          </div>
 
-          <TooltipWrap
-            class="config-field-wrap"
-            side="bottom"
-            :text="currentSource?.skipInstall ? $t('newInstall.notAvailableRemote') : ''"
-          >
-            <div
-              class="config-field"
-              :class="{ 'config-field--disabled': currentSource?.skipInstall }"
-            >
-              <label class="config-label">{{ $t('newInstall.installLocation') }}</label>
-              <div class="config-path-row">
-                <div class="brand-input config-path-input">
-                  <HardDrive :size="14" aria-hidden="true" />
-                  <button
-                    v-if="!currentSource?.skipInstall && instPath"
-                    type="button"
-                    class="open-folder-link config-path-open"
-                    :title="$t('actions.openDirectory', 'Open Directory')"
-                    :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
-                    @click="handleOpenInstPath"
-                  >
-                    {{ instPath }}
-                  </button>
-                  <span v-else class="open-folder-link config-path-open config-path-open--static">{{
-                    instPath
-                  }}</span>
-                </div>
+          <div v-if="managedBuildMode" class="config-field" data-testid="workspace-build-field">
+            <div class="workspace-build-label-row">
+              <label class="config-label">{{ $t('newInstall.workspaceBuildLabel') }}</label>
+              <div class="workspace-build-actions">
                 <button
-                  class="brand-tertiary"
                   type="button"
-                  :disabled="!!currentSource?.skipInstall"
-                  @click="handleBrowse"
+                  class="workspace-build-online"
+                  :disabled="initializing"
+                  @click="openBuildsPage"
                 >
-                  {{ $t('common.browse') }}
+                  {{ $t('newInstall.viewBuildsOnline') }}
+                </button>
+                <button
+                  type="button"
+                  class="workspace-build-refresh"
+                  :title="$t('newInstall.refreshWorkspaceBuilds')"
+                  :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
+                  :disabled="authStore.loadingBuilds"
+                  @click="authStore.fetchBuilds()"
+                >
+                  <RefreshCw
+                    :size="14"
+                    :class="{ 'workspace-build-refresh__icon--spinning': authStore.loadingBuilds }"
+                    aria-hidden="true"
+                  />
                 </button>
               </div>
-              <PathDiskInfo
-                v-if="!currentSource?.skipInstall"
-                :path-issues="pathIssues"
-                :disk-space-loading="diskSpaceLoading"
-                :disk-space="diskSpace"
-                :estimated-size="estimatedInstallSize"
-              />
             </div>
-          </TooltipWrap>
-
-          <div ref="advancedRef" class="config-advanced" :class="{ 'is-open': advancedOpen }">
+            <BaseSelect
+              v-model="selectedBuildId"
+              :options="workspaceBuildOptions"
+              :placeholder="$t('newInstall.selectWorkspaceBuild')"
+              :loading="authStore.loadingBuilds"
+              :loading-label="$t('newInstall.refreshingWorkspaceBuilds')"
+              :disabled="workspaceBuildOptions.length === 0"
+              :aria-label="$t('newInstall.workspaceBuildLabel')"
+            />
             <button
+              v-if="authStore.buildsError"
               type="button"
-              class="config-advanced__summary"
-              :aria-expanded="advancedOpen"
-              @click="advancedOpen = !advancedOpen"
+              class="wizard-error wizard-build-retry"
+              :disabled="authStore.loadingBuilds"
+              @click="authStore.fetchBuilds()"
             >
-              <ChevronRight :size="14" class="config-advanced__chevron" aria-hidden="true" />
-              <span>{{ $t('common.advanced') }}</span>
+              {{ $t('devPlatform.build.loadError') }}
             </button>
+            <div
+              v-else-if="
+                !authorizingWorkspace &&
+                !authStore.loadingBuilds &&
+                workspaceBuildOptions.length === 0
+              "
+              class="wizard-loading"
+            >
+              {{ $t('newInstall.noCompatibleBuilds') }}
+            </div>
+          </div>
+
+          <div
+            v-if="managedBuildMode && selectedBuildTargetOptions.length > 0"
+            class="config-field"
+            data-testid="workspace-build-targets"
+          >
+            <label class="config-label">{{ $t('newInstall.buildTarget') }}</label>
+            <BrandVariantList
+              :options="selectedBuildTargetOptions"
+              :selected-value="selectedBuildTargetId"
+              :aria-label="$t('newInstall.buildTarget')"
+              @select="selectedBuildTargetId = $event.value"
+            />
+          </div>
+
+          <div v-if="!managedBuildMode" class="config-advanced config-advanced--direct is-open">
             <div class="config-advanced__wrap">
               <div class="config-advanced__body">
                 <div
@@ -1066,7 +1346,7 @@ defineExpose({ open })
                     :key="field.id"
                     class="field"
                   >
-                    <label :for="`sf-${field.id}`">{{ field.label }}</label>
+                    <label class="config-label" :for="`sf-${field.id}`">{{ field.label }}</label>
 
                     <template v-if="field.type === 'text'">
                       <div class="path-input">
@@ -1160,6 +1440,73 @@ defineExpose({ open })
               </div>
             </div>
           </div>
+
+          <TooltipWrap
+            class="config-field-wrap"
+            side="bottom"
+            :text="currentSource?.skipInstall ? $t('newInstall.notAvailableRemote') : ''"
+          >
+            <div
+              class="config-field"
+              :class="{ 'config-field--disabled': currentSource?.skipInstall }"
+              data-testid="install-location-field"
+            >
+              <label class="config-label">{{ $t('newInstall.installLocation') }}</label>
+              <div class="config-path-row">
+                <div class="brand-input config-path-input">
+                  <HardDrive :size="14" aria-hidden="true" />
+                  <button
+                    v-if="!currentSource?.skipInstall && instPath"
+                    type="button"
+                    class="open-folder-link config-path-open"
+                    :title="$t('actions.openDirectory', 'Open Directory')"
+                    :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${instPath}`"
+                    @click="handleOpenInstPath"
+                  >
+                    {{ instPath }}
+                  </button>
+                  <span v-else class="open-folder-link config-path-open config-path-open--static">{{
+                    instPath
+                  }}</span>
+                </div>
+                <button
+                  class="brand-tertiary"
+                  type="button"
+                  :disabled="!!currentSource?.skipInstall"
+                  @click="handleBrowse"
+                >
+                  {{ $t('common.browse') }}
+                </button>
+              </div>
+              <div class="config-install-meta">
+                <div v-if="!currentSource?.skipInstall" class="config-install-disk">
+                  <PathDiskInfo
+                    :path-issues="pathIssues"
+                    :disk-space-loading="diskSpaceLoading"
+                    :disk-space="diskSpace"
+                    :estimated-size="estimatedInstallSize"
+                  />
+                </div>
+                <span
+                  v-if="!currentSource?.skipInstall"
+                  class="disk-space-info config-install-separator"
+                  aria-hidden="true"
+                  >·</span
+                >
+                <div class="disk-space-info config-gpu-value" data-testid="detected-gpu-field">
+                  {{ detectedGpu }}
+                </div>
+              </div>
+              <div
+                v-if="hardwareWarning && !currentSource?.skipInstall"
+                class="config-gpu-warning"
+                role="alert"
+                data-testid="wizard-hardware-warning"
+              >
+                {{ hardwareWarning }}
+              </div>
+            </div>
+          </TooltipWrap>
         </div>
 
         <div class="config-card__footer">
@@ -1271,6 +1618,9 @@ defineExpose({ open })
   text-align: center;
   padding-block: clamp(1.5rem, 4vh, 3rem);
   min-height: 0;
+}
+.config-shell > .brand-lead {
+  margin: var(--takeover-gap-sm) 0 var(--takeover-gap-md);
 }
 
 .template-shell {
@@ -1384,7 +1734,6 @@ defineExpose({ open })
   font-size: var(--takeover-fs-caption);
 }
 .template-skip {
-  margin-right: auto;
   border: 1px solid var(--brand-surface-border);
   color: var(--neutral-200);
 }
@@ -1437,6 +1786,13 @@ defineExpose({ open })
   display: none;
 }
 
+.workspace-authorization-status {
+  width: 100%;
+  color: var(--neutral-200);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .config-card__footer {
   flex: 0 0 auto;
   padding: 14px 20px;
@@ -1487,34 +1843,125 @@ defineExpose({ open })
   color: var(--neutral-200);
 }
 
+.workspace-install-source {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--brand-surface-border);
+  border-radius: 7px;
+  background: var(--brand-surface-bg);
+}
+.workspace-install-source button {
+  min-width: 0;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.workspace-install-source button:hover,
+.workspace-install-source button.is-selected {
+  background: var(--brand-surface-bg-hover);
+  color: var(--neutral-100);
+}
+.workspace-install-source button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.workspace-build-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.workspace-build-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workspace-build-online {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--neutral-300);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.workspace-build-online:hover:not(:disabled) {
+  color: var(--neutral-100);
+  text-decoration: underline;
+}
+.workspace-build-online:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.workspace-build-online:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.workspace-build-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.workspace-build-refresh:hover:not(:disabled) {
+  color: var(--text);
+}
+.workspace-build-refresh:disabled {
+  cursor: wait;
+}
+.workspace-build-refresh__icon--spinning {
+  animation: workspace-build-spin 800ms linear infinite;
+}
+@keyframes workspace-build-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Takes the row's flex 1 so the input and any sibling action button line up. */
 .config-source-text {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.config-select {
-  padding: 8px 12px;
-  cursor: default;
+.config-install-meta {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
 }
-/* Detected GPU is read-only; strip the hover affordance that would imply it's editable. */
-.config-select--readonly:hover {
-  border-color: var(--brand-surface-border);
-  background: var(--brand-surface-bg);
-}
-.config-select--readonly .config-select__value {
-  color: var(--text-muted);
-}
-.config-select__value {
-  flex: 1 1 auto;
+.config-install-disk {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--neutral-100);
-  font-size: 14px;
+}
+.config-install-separator {
+  flex: 0 0 auto;
+}
+.config-gpu-value {
+  flex: 0 0 auto;
 }
 
+.wizard-build-retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.wizard-build-retry:hover:not(:disabled) {
+  text-decoration: underline;
+}
 .config-path-row {
   display: flex;
   gap: 8px;
@@ -1556,34 +2003,6 @@ defineExpose({ open })
   border-top: 1px solid var(--brand-surface-border);
   padding-top: var(--takeover-gap-md);
 }
-.config-advanced__summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  color: var(--neutral-200);
-  font: inherit;
-  font-size: var(--takeover-fs-body);
-}
-.config-advanced__summary:hover {
-  color: var(--text);
-  transition: color 120ms ease;
-}
-.config-advanced__summary:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-.config-advanced__chevron {
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.config-advanced.is-open .config-advanced__chevron {
-  transform: rotate(90deg);
-}
-
 .config-advanced__wrap {
   display: grid;
   grid-template-rows: 0fr;
@@ -1607,6 +2026,13 @@ defineExpose({ open })
   margin-top: var(--takeover-gap-md);
   opacity: 1;
   transform: translateY(0);
+}
+.config-advanced--direct {
+  border-top: 0;
+  padding-top: 0;
+}
+.config-advanced--direct.config-advanced.is-open .config-advanced__body {
+  margin-top: 0;
 }
 
 /* Install-method chips: pill picker inside Advanced for swapping source without

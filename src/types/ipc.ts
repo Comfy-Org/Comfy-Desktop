@@ -11,9 +11,8 @@ export type { FirstUseMode }
 import type { AuthStatus, Workspace } from '../main/cloud/types'
 export type { AuthStatus, Workspace }
 
-/** Every state a distribution tile can be in. The first four are pre-install;
- *  the last two are local (renderer-owned via de-dup against installs). */
-export type DevPlatformDistributionState =
+/** Every renderer-safe Build catalog state. */
+export type DevPlatformBuildState =
   | 'installable'
   | 'no-build'
   | 'platform-mismatch'
@@ -21,39 +20,69 @@ export type DevPlatformDistributionState =
   | 'installed'
   | 'update-available'
 
-/** One distribution as a renderer-safe display row. The install-decision fields
- *  (artifact id / download ref) stay main-side; the renderer installs by id. */
-export interface DevPlatformDistribution {
+/** One installable target from a published Build release. Storage references,
+ *  integrity values, and other trusted artifact data stay in main. */
+export interface DevPlatformBuildTarget {
+  artifactId: string
+  releaseVersion: number
+  os: 'linux' | 'windows' | 'mac'
+  gpu: 'nvidia' | 'amd' | 'cpu' | 'mps'
+  accelVariant: string
+  recommended: boolean
+}
+
+/** One build as a renderer-safe display row. */
+export interface DevPlatformBuild {
   id: string
   name: string
   description?: string
+  /** Builder identity-provider subject and its best-effort workspace display name. */
+  createdBy?: string
+  creatorName?: string
   version?: string
-  /** The ComfyUI version this distribution bundles, for the card's facts line.
-   *  TODO(builder-backend): not yet populated by `listDistributionRows` — the
+  /** The ComfyUI version this build bundles.
+   *  TODO(builder-backend): not yet populated by `listBuildRows` - the
    *  build metadata needs to carry it through. Absent renders as unknown. */
   comfyuiVersion?: string
   /** ISO 8601 finish stamp of the latest complete build. */
   finishedAt?: string
   sizeBytes?: number
+  numModels?: number
+  numAllowedModels?: number
   numCustomNodes?: number
-  state: DevPlatformDistributionState
-  /** i18n suffix explaining a blocking state (see `devPlatform.distribution.blockedReason.*`). */
+  updatedAt?: string
+  state: DevPlatformBuildState
+  /** Machine-readable reason for a blocking state. */
   blockedReason?: string
-  /** On `platform-mismatch`, the OSes this build DOES target (`windows` / `mac`
-   *  / `linux`). The card names them instead of saying "not for this machine". */
+  /** OSes targeted by ready artifacts in the latest complete release. */
   targetOs?: string[]
+  /** Runnable targets in the latest complete release, recommended first. */
+  releaseTargets?: DevPlatformBuildTarget[]
   minDesktopVersion?: string
-  /** Local-only: present for installed / update-available. A distribution
+  /** Local-only: present for installed / update-available. A build
    *  version is an integer, matching how the row builder sets it. */
   installedVersion?: number
 }
 
-/** Kickoff result of `installDistribution`: mirrors `addInstallation` so the
+/** Kickoff result of `installBuild`: mirrors `addInstallation` so the
  *  renderer drives the same `installInstance` + progress flow. */
-export interface InstallDistributionResult {
+export interface InstallBuildResult {
   ok: boolean
   message?: string
   entry?: { id: string; name: string }
+}
+
+export interface InstallBuildRequest {
+  buildId: string
+  artifactId?: string
+  releaseVersion?: number
+  name?: string
+  installRoot?: string
+}
+
+export interface PromoteLocalInstanceResult {
+  ok: boolean
+  message?: string
 }
 
 // Unsubscribe function returned by event listeners
@@ -91,6 +120,8 @@ export interface Installation {
   name: string
   sourceLabel: string
   sourceCategory: string
+  /** Workspace that owns this installation. Absent for local and legacy records. */
+  workspaceId?: string
   version?: string
   statusTag?: { style: string; label: string; version?: string; detail?: string }
   seen?: boolean
@@ -531,6 +562,8 @@ export interface ProgressData {
   percent?: number
   steps?: ProgressStep[]
   error?: boolean
+  /** Main initiated cancellation outside the progress surface (for example, sign-out). */
+  cancelRequested?: boolean
 }
 
 export interface ProgressStep {
@@ -1177,6 +1210,9 @@ export interface ElectronApi {
    *  the comfy/chooser root. Fire-and-forget; the panel will receive
    *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
+  /** Tell main an overlay panel (feedback / mcp-setup) has painted, so it can
+   *  reveal the until-now-hidden panel view without an opaque flash. */
+  signalOverlayReady(): void
   /** Boot-time restore reveal handshake. The restore window is opened
    *  hidden; the panel calls this once it knows whether its launch
    *  takeover came up (`'takeover-ready'` → reveal the launching surface)
@@ -1225,6 +1261,10 @@ export interface ElectronApi {
    *  `buildSupportUrl()` reads `navigator.userAgent` and the telemetry
    *  helpers live renderer-side. Returns an unsubscribe. */
   onOpenFeedback(callback: (data: { source: 'titlebar' | 'menu' }) => void): Unsubscribe
+  /** Main forwards the title-bar news-bell click here so the panel renderer
+   *  mounts the announcement modal over the live canvas. Returns an
+   *  unsubscribe. */
+  onOpenAnnouncement(callback: () => void): Unsubscribe
   /** Main consults the panel renderer before tearing down
    *  the host window. Returns an unsubscribe; the callback receives a
    *  `requestId` it must echo back via `respondCloseRequest` so main
@@ -1289,6 +1329,11 @@ export interface ElectronApi {
    *  mid-stop hydrate the "Stopping…" state instead of missing the one-shot
    *  `onInstanceStopping` broadcast. */
   getStoppingInstances(): Promise<string[]>
+  /** Snapshot of installs with an action currently in flight through the
+   *  run-action / picker background-op dispatch (id + action id). Lets a
+   *  window opened mid-operation hydrate the dashboard's busy state instead
+   *  of missing the one-shot `onOperationChanged` broadcast. */
+  getActiveOperations(): Promise<{ installationId: string; actionId: string }[]>
   /**
    * Read the retained crash detail for an installation, if any. Main holds
    * the last `comfy-exited` payload (with stderr tail) per installation
@@ -1403,7 +1448,7 @@ export interface ElectronApi {
 
   // Dev platform (cloud auth + comfy-builder): the only renderer<->main bridge
   // for this flow. Access/refresh tokens never cross IPC: every method returns
-  // or observes a renderer-safe AuthStatus / Workspace / distribution row.
+  // or observes a renderer-safe AuthStatus / Workspace / build row.
   comfybuilder: {
     signIn(): Promise<AuthStatus>
     signOut(): Promise<AuthStatus>
@@ -1411,8 +1456,10 @@ export interface ElectronApi {
     onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
     listWorkspaces(): Promise<Workspace[]>
     switchWorkspace(workspaceId: string): Promise<AuthStatus>
-    listDistributions(): Promise<DevPlatformDistribution[]>
-    installDistribution(distributionId: string): Promise<InstallDistributionResult>
+    listBuilds(): Promise<DevPlatformBuild[]>
+    openBuildsPage(workspaceId: string): Promise<void>
+    installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
+    promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }
 
   // Updates
@@ -1477,6 +1524,12 @@ export interface ElectronApi {
   onInstanceStarted(callback: (data: RunningInstance) => void): Unsubscribe
   onInstanceStopping(callback: (data: { installationId: string }) => void): Unsubscribe
   onInstanceStopped(callback: (data: { installationId: string }) => void): Unsubscribe
+  /** An action started (`active: true`) or finished (`active: false`) for an
+   *  install, regardless of which window dispatched it. Drives ambient busy
+   *  UI (e.g. the dashboard tile's "Updating" pill) in every window. */
+  onOperationChanged(
+    callback: (data: { installationId: string; actionId: string; active: boolean }) => void
+  ): Unsubscribe
   onThemeChanged(callback: (theme: ResolvedTheme) => void): Unsubscribe
   onLocaleChanged(
     callback: (payload: { locale: string; messages: Record<string, unknown> }) => void

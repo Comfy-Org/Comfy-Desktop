@@ -84,6 +84,59 @@ const prefersReducedMotion = (): boolean =>
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+/** Per-clip activation state, stashed on the element so re-activations across a
+ *  loop share it without composable-level bookkeeping. */
+type WatchedVideo = HTMLVideoElement & {
+  __sceneToken?: number
+  __sceneCleanup?: () => void
+}
+type RvfcVideo = HTMLVideoElement & {
+  requestVideoFrameCallback?: (cb: () => void) => number
+}
+
+/** Fade a just-activated clip in only once its seeked frame has decoded — a clip
+ *  pinned off frame 0 seeks away from the preloaded frame, so revealing sooner
+ *  shows the mask ground. rVFC is authoritative (fires on a composited frame);
+ *  the fallback gates on `readyState >= HAVE_CURRENT_DATA`, never a bare timer.
+ *  Re-armed per activation: the gate is cleared and a fresh token minted, so a
+ *  loop re-seek waits for its own frame and a late callback from the prior
+ *  activation is ignored. */
+export function markPaintedWhenReady(ve: HTMLVideoElement): void {
+  const v = ve as WatchedVideo
+  v.__sceneCleanup?.()
+  ve.classList.remove('is-painted')
+  const token = (v.__sceneToken ?? 0) + 1
+  v.__sceneToken = token
+
+  const cleanup: Array<() => void> = []
+  const teardown = (): void => {
+    for (const c of cleanup) c()
+    if (v.__sceneCleanup === teardown) v.__sceneCleanup = undefined
+  }
+  v.__sceneCleanup = teardown
+
+  const paint = (): void => {
+    if (v.__sceneToken !== token) return
+    ve.classList.add('is-painted')
+    teardown()
+  }
+
+  const rvfc = (ve as RvfcVideo).requestVideoFrameCallback
+  if (typeof rvfc === 'function') {
+    rvfc.call(ve, paint)
+    return
+  }
+
+  const tryPaint = (): void => {
+    if (ve.readyState >= 2 /* HAVE_CURRENT_DATA */) paint()
+  }
+  for (const ev of ['seeked', 'loadeddata', 'canplay', 'timeupdate']) {
+    ve.addEventListener(ev, tryPaint)
+    cleanup.push(() => ve.removeEventListener(ev, tryPaint))
+  }
+  tryPaint()
+}
+
 interface BrandSceneOptions {
   fit?: 'contain' | 'cover'
   /** Timeline rate; below 1 slows the loop. */
@@ -180,6 +233,7 @@ export function useBrandScene(
             /* seek before metadata; corrected on the next active switch */
           }
           ve.classList.add('is-active')
+          markPaintedWhenReady(ve)
           if (playing) void ve.play().catch(() => {})
         }
         s.activeIdx = activeIdx

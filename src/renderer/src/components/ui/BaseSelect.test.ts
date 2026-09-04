@@ -19,12 +19,13 @@ function rect(top: number, bottom: number): DOMRect {
   }
 }
 
-function mountSelect(options = ['One', 'Two', 'Three']): VueWrapper {
+function mountSelect(options = ['One', 'Two', 'Three'], compact = false): VueWrapper {
   const wrapper = mount(BaseSelect, {
     props: {
       modelValue: 'One',
       options: options.map((label) => ({ value: label, label })),
-      ariaLabel: 'Test select'
+      ariaLabel: 'Test select',
+      compact
     },
     attachTo: document.body
   })
@@ -37,6 +38,32 @@ afterEach(() => {
   document.querySelectorAll('.ui-select-listbox').forEach((element) => element.remove())
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight })
   vi.restoreAllMocks()
+})
+
+it('applies compact text sizing to both the trigger and teleported listbox', async () => {
+  const wrapper = mountSelect(['One', 'All'], true)
+  expect(wrapper.get('.ui-select-trigger').classes()).toContain('ui-select-trigger--compact')
+
+  await wrapper.get('.ui-select-trigger').trigger('click')
+  await flushPromises()
+
+  expect(document.querySelector('.ui-select-listbox')?.classList).toContain(
+    'ui-select-listbox--compact'
+  )
+})
+
+it('shows a loading label without replacing the selectable options', async () => {
+  const wrapper = mountSelect(['One', 'Two'])
+  await wrapper.setProps({ loading: true, loadingLabel: 'Refreshing builds...' })
+
+  expect(wrapper.get('.ui-select-label').text()).toBe('Refreshing builds...')
+  expect(wrapper.get('.ui-select-trigger').attributes('aria-busy')).toBe('true')
+
+  await wrapper.get('.ui-select-trigger').trigger('click')
+  await flushPromises()
+  expect(
+    Array.from(document.querySelectorAll('.ui-select-option-label')).map((el) => el.textContent)
+  ).toEqual(['One', 'Two'])
 })
 
 describe('BaseSelect positioning', () => {
