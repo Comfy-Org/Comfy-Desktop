@@ -32,14 +32,21 @@ vi.mock('../../comfyDownloadManager', async (importOriginal) => {
 })
 
 import {
+  attachLaunchStreams,
+  createAssetsTapSafe,
   desktopFeatureFlags,
   handleLaunch,
   isCrashedExit,
   onProcessTerminated,
   _cleanupFailedLaunchSetup
 } from './launch'
+import * as assetsTapModule from '../../assetsTap'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
+import type { WriteStream } from 'fs'
+import type { createExecutionTap } from '../../executionTap'
+import type { createHardwareTap } from '../../hardwareTap'
+import type { LaunchProgressTracker } from '../../launchProgress'
 import {
   _getLaunchingInstallationIds,
   _markLaunching,
@@ -254,5 +261,131 @@ describe('handleLaunch model-download startup await (#1322)', () => {
     modelStartup.impl = async () => ({ safe: false, unsafePaths: [] })
     await handleLaunch(ctxFor('gate-slot-release'))
     expect(_operationAborts.has('gate-slot-release')).toBe(false)
+  })
+})
+
+describe('createAssetsTapSafe', () => {
+  const BASE = { installationId: 'assets-tap-base', variant: 'nvidia', release: '0.3.68' }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('forwards the launch base context with an empty core-beta flag list', () => {
+    const create = vi.spyOn(assetsTapModule, 'createAssetsTap')
+    createAssetsTapSafe(BASE)
+    expect(create).toHaveBeenCalledWith({
+      installationId: 'assets-tap-base',
+      variant: 'nvidia',
+      release: '0.3.68',
+      coreBetaFlags: []
+    })
+  })
+
+  it('hands back the constructed tap when construction succeeds', () => {
+    const real = { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
+    vi.spyOn(assetsTapModule, 'createAssetsTap').mockReturnValue(real)
+    expect(createAssetsTapSafe(BASE)).toBe(real)
+  })
+
+  it('substitutes an inert tap when construction throws, letting no exception escape', () => {
+    vi.spyOn(assetsTapModule, 'createAssetsTap').mockImplementation(() => {
+      throw new Error('assets tap construction exploded')
+    })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    let tap: ReturnType<typeof createAssetsTapSafe> | null = null
+    expect(() => {
+      tap = createAssetsTapSafe(BASE)
+    }).not.toThrow()
+    expect(consoleError).toHaveBeenCalled()
+
+    // Every lifecycle call the launch path makes must be a safe no-op on the
+    // substitute, or containment at construction buys nothing.
+    const inert = tap as unknown as ReturnType<typeof createAssetsTapSafe>
+    expect(() => {
+      inert.beginBoot()
+      inert.ingest('[assets-event] assets.enabled {"enabled": true}\n', 'stdout')
+      inert.ingest('[assets-event] api.request_failed {"error_type": "timeout"}\n', 'stderr')
+      inert.flushSummary()
+    }).not.toThrow()
+  })
+})
+
+describe('attachLaunchStreams assets tap wiring', () => {
+  function fakeTap() {
+    return { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
+  }
+
+  function harness(assetsTap = fakeTap()) {
+    const stdout = new EventEmitter()
+    const stderr = new EventEmitter()
+    const proc = { stdout, stderr } as unknown as ChildProcess
+    const logStream = { writableEnded: false, write: vi.fn() } as unknown as WriteStream
+    const execTap = fakeTap()
+    const hwTap = fakeTap()
+    const tracker = { ingest: vi.fn() } as unknown as LaunchProgressTracker
+    const sendOutput = vi.fn()
+
+    const { getStderr } = attachLaunchStreams(
+      proc,
+      logStream,
+      sendOutput,
+      execTap as unknown as ReturnType<typeof createExecutionTap>,
+      hwTap as unknown as ReturnType<typeof createHardwareTap>,
+      assetsTap,
+      tracker
+    )
+    return { stdout, stderr, execTap, hwTap, assetsTap, getStderr }
+  }
+
+  it('feeds stdout chunks to the assets tap tagged as stdout', () => {
+    const h = harness()
+    h.stdout.emit('data', Buffer.from('[assets-event] assets.enabled {"enabled": true}\n'))
+    expect(h.assetsTap.ingest).toHaveBeenCalledWith(
+      '[assets-event] assets.enabled {"enabled": true}\n',
+      'stdout'
+    )
+  })
+
+  it('feeds stderr chunks to the assets tap tagged as stderr', () => {
+    const h = harness()
+    h.stderr.emit('data', Buffer.from('[assets-event] api.request_failed {"status": 500}\n'))
+    expect(h.assetsTap.ingest).toHaveBeenCalledWith(
+      '[assets-event] api.request_failed {"status": 500}\n',
+      'stderr'
+    )
+  })
+
+  it('leaves the hardware and execution taps receiving both streams unchanged', () => {
+    const h = harness()
+    h.stdout.emit('data', Buffer.from('out\n'))
+    h.stderr.emit('data', Buffer.from('err\n'))
+    for (const tap of [h.execTap, h.hwTap]) {
+      expect(tap.ingest).toHaveBeenCalledWith('out\n', 'stdout')
+      expect(tap.ingest).toHaveBeenCalledWith('err\n', 'stderr')
+    }
+    expect(h.getStderr()).toBe('err\n')
+  })
+
+  it('keeps piping both streams when the inert substitute tap is attached', () => {
+    vi.spyOn(assetsTapModule, 'createAssetsTap').mockImplementation(() => {
+      throw new Error('assets tap construction exploded')
+    })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const inert = createAssetsTapSafe({ installationId: 'inert', variant: null, release: null })
+      const h = harness(inert as unknown as ReturnType<typeof fakeTap>)
+      expect(() => {
+        h.stdout.emit('data', Buffer.from('out\n'))
+        h.stderr.emit('data', Buffer.from('err\n'))
+      }).not.toThrow()
+      expect(h.execTap.ingest).toHaveBeenCalledWith('out\n', 'stdout')
+      expect(h.hwTap.ingest).toHaveBeenCalledWith('err\n', 'stderr')
+      expect(h.getStderr()).toBe('err\n')
+    } finally {
+      consoleError.mockRestore()
+      vi.restoreAllMocks()
+    }
   })
 })
