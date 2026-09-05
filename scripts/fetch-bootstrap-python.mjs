@@ -3,7 +3,7 @@
  *
  * Called before `todesktop build` (or local electron-builder) to ensure
  * the platform-specific bootstrap-python directories exist under
- * bootstrap-python/{win-x64,mac-arm64,linux-x64}/.
+ * bootstrap-python/{win-x64,win-arm64,mac-arm64,linux-x64}/.
  *
  * Usage:
  *   node scripts/fetch-bootstrap-python.mjs [--tag bootstrap-v1] [--platform win-x64]
@@ -42,17 +42,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
 const outputBase = path.join(projectRoot, 'bootstrap-python')
 
-const PLATFORMS = ['win-x64', 'mac-arm64', 'linux-x64']
-// bootstrap-v2 added a bundled `uv` binary alongside python+pygit2. Bump
-// this together with the tag published from build-bootstrap-python.mjs so
-// fresh fetches pull the archives that contain uv.
-const DEFAULT_TAG = 'bootstrap-v2'
+const PLATFORMS = ['win-x64', 'win-arm64', 'mac-arm64', 'linux-x64']
+// bootstrap-v2 added a bundled `uv` binary alongside python+pygit2;
+// bootstrap-v3 added the native win-arm64 build (Windows on Arm / NVIDIA
+// RTX Spark). Bump this together with the tag published from
+// build-bootstrap-python.mjs so fresh fetches pull archives for every
+// platform listed above.
+const DEFAULT_TAG = 'bootstrap-v3'
 const REPO = 'Comfy-Org/Comfy-Desktop'
 
 // Each platform's expected Python binary inside its bootstrap-python dir.
 // Used by verifyPlatform() so a partial / corrupt extract doesn't pass.
 const PYTHON_BINARY = {
   'win-x64': 'python.exe',
+  'win-arm64': 'python.exe',
   'mac-arm64': path.join('bin', 'python3'),
   'linux-x64': path.join('bin', 'python3'),
 }
@@ -61,6 +64,7 @@ const PYTHON_BINARY = {
 // Must match `uvDestRel` in build-bootstrap-python.mjs.
 const UV_BINARY = {
   'win-x64': 'uv.exe',
+  'win-arm64': 'uv.exe',
   'mac-arm64': path.join('bin', 'uv'),
   'linux-x64': path.join('bin', 'uv'),
 }
