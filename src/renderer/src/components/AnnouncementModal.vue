@@ -11,8 +11,7 @@ import { emitTelemetryAction } from '../lib/telemetry'
  * URLs, the hero media and the i18n namespace below, plus a new seen-flag in
  * settings so previously-dismissed users still get the bell.
  *
- * DRAFT COPY: strings live in `announcement.cloudNodes.*` (locales/en.json) for nav to finalize.
- * PLACEHOLDER MEDIA: the hero video and poster do not exist yet.
+ * Strings live in `announcement.cloudNodes.*` (locales/en.json).
  */
 
 // Announcement id, carried in telemetry so this component can be reused for a
@@ -25,11 +24,11 @@ const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comf
 const PRIMARY_CTA_URL = `https://cloud.comfy.org${UTM}`
 const LEARN_MORE_URL = `https://comfy.org/cloud-nodes${UTM}`
 
-// Hero video hosted on media.comfy.org. Poster paints immediately; the video
-// muted-autoplays + loops. NOT YET UPLOADED — both paths 404 until someone
-// captures a Comfy Cloud node running on canvas.
-const HERO_VIDEO_URL = 'https://media.comfy.org/website/cloud-nodes/hero.mp4'
-const HERO_POSTER_URL = 'https://media.comfy.org/website/cloud-nodes/hero-poster.jpg'
+// Same 15s launch film the /cloud-nodes landing page leads with. Poster paints
+// immediately; the video muted-autoplays + loops. media.comfy.org objects are
+// cached for an hour, so bump the `_v1` suffix rather than re-uploading a key.
+const HERO_VIDEO_URL = 'https://media.comfy.org/website/cloud-nodes/hero_v1.mp4'
+const HERO_POSTER_URL = 'https://media.comfy.org/website/cloud-nodes/hero-poster_v1.webp'
 
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
