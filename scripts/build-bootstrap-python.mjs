@@ -101,11 +101,12 @@ const STRIP_FILES = new Set([
 
 function detectPlatform() {
   const sys = process.platform
-  // Windows is the only platform with two bootstrap builds; the running
-  // Node's architecture is the one the resulting python.exe must match.
+  // The running Node's architecture is the one the resulting Python must
+  // match. Do not silently substitute linux-x64 on ARM64: that produces a
+  // bootstrap which exists but cannot execute on the target machine.
   if (sys === 'win32') return process.arch === 'arm64' ? 'win-arm64' : 'win-x64'
   if (sys === 'darwin') return 'mac-arm64'
-  if (sys === 'linux') return 'linux-x64'
+  if (sys === 'linux' && process.arch === 'x64') return 'linux-x64'
   throw new Error(`Unsupported platform: ${sys} ${process.arch}`)
 }
 

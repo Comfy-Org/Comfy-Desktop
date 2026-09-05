@@ -156,7 +156,7 @@ jobs:
             exit 1
           fi
 
-      - name: Stage Windows bootstrap-python for ToDesktop target overrides
+      - name: Stage bootstrap-python for ToDesktop target overrides
         shell: bash
         run: |
           set -euo pipefail
@@ -166,6 +166,8 @@ jobs:
             mkdir -p "$(dirname "$target")"
             mv "$source" "$target"
           done
+          mkdir -p todesktop-targets/linux-x64
+          mv bootstrap-python/linux-x64 todesktop-targets/linux-x64/bootstrap-python
 
       - name: Build with ToDesktop
         shell: bash

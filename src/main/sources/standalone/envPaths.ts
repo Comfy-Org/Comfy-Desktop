@@ -41,12 +41,12 @@ export function stripPlatform(variantId: string): string {
   return variantId.replace(/^(?:beta-)?(win|mac|linux)-/, '')
 }
 
-/** Vendor-id suffix naming a native Windows ARM64 bundle (`win-nvidia-arm64`).
- *  Windows is the only platform with per-architecture bundles: macOS bundles
- *  are ARM64 without a suffix (`mac-mps`) and everything else is x64. */
+/** Vendor-id suffix naming an architecture-specific ARM64 bundle
+ *  (`win-nvidia-arm64`, or a future `linux-nvidia-arm64`). macOS bundles are
+ *  ARM64 without a suffix (`mac-mps`). */
 export const ARM64_SUFFIX = '-arm64'
 
-/** True for a vendor id that names a native Windows ARM64 bundle. */
+/** True for a vendor id that names a native ARM64 bundle. */
 export function isArm64Variant(variantId: string): boolean {
   return variantId.endsWith(ARM64_SUFFIX)
 }
@@ -66,13 +66,17 @@ export function variantAccel(variantId: string): string {
  * ARM64 interpreter cannot run under x64, and an x64 app on an ARM64 machine
  * runs under Prism emulation, where the x64 bundle is the one that works.
  * `process.arch` reports the app binary's architecture, which is exactly the
- * architecture the bundle has to match. Non-Windows platforms have no
- * suffixed bundles, so every unsuffixed id matches there.
+ * architecture the bundle has to match. macOS is the exception: its only
+ * supported architecture is ARM64 and its bundle remains unsuffixed. Linux
+ * currently publishes only unsuffixed x64 bundles, so an ARM64 Linux app must
+ * reject them until `-arm64` bundles are available.
  */
 export function variantMatchesHostArch(variantId: string): boolean {
   const isArm64 = isArm64Variant(variantId)
-  if (process.platform !== 'win32') return !isArm64
-  return isArm64 === (process.arch === 'arm64')
+  if (process.platform === 'darwin') return !isArm64
+  if (process.arch === 'arm64') return isArm64
+  if (process.arch === 'x64') return !isArm64
+  return false
 }
 
 /** True when a vendor id targets the running platform, with or without the
