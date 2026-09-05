@@ -57,6 +57,8 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // boot_phase timings so a monitor can alert on boot-failure rate per
   // release / variant and the phase breakdown explains where it stalled.
   'comfy.desktop.comfyui.boot_failed',
+  // Asset scanner failures parsed from ComfyUI's typed, path-free log marker.
+  'comfy.desktop.comfyui.asset_scan_error',
   // Migration pipeline failures (Desktop-1 -> standalone).
   'comfy.desktop.migrate.flow.error',
   'comfy.desktop.migrate.user_files.error',
