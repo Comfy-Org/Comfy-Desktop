@@ -728,7 +728,7 @@
     },
     "cloudNodes": {
       "title": "Run open models on Comfy Cloud GPUs",
-      "lead": "New Comfy Cloud nodes run the latest open models on our hardware, from inside your own graph",
+      "lead": "New Comfy Cloud nodes run the latest open models on our hardware, from inside your own graph. In beta: the node set is still changing",
       "highlights": [
         "No subscription: an account and credits are enough",
         "Nothing to download and no VRAM floor",
