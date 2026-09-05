@@ -32,6 +32,11 @@ let settings: {
   get: (key: string) => unknown
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
+  getMirrorConfig: () => {
+    pypiMirror?: string
+    hfMirror?: string
+    useChineseMirrors?: boolean
+  }
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
   ) => Record<string, boolean | number | string | null>
@@ -266,6 +271,70 @@ describe('settings unset/default semantics', () => {
     settings.set('pypiMirror', '   ')
     expect(settings.get('pypiMirror')).toBeUndefined()
     expect(readPersistedSettings()).not.toHaveProperty('pypiMirror')
+  })
+
+  it('treats empty and whitespace-only strings as unset for hfMirror', () => {
+    settings.set('hfMirror', 'https://hf-mirror.com')
+    expect(settings.get('hfMirror')).toBe('https://hf-mirror.com')
+
+    settings.set('hfMirror', '')
+    expect(settings.get('hfMirror')).toBeUndefined()
+    expect(readPersistedSettings()).not.toHaveProperty('hfMirror')
+
+    settings.set('hfMirror', 'https://other.example/')
+    settings.set('hfMirror', '   ')
+    expect(settings.get('hfMirror')).toBeUndefined()
+    expect(readPersistedSettings()).not.toHaveProperty('hfMirror')
+  })
+})
+
+describe('getMirrorConfig', () => {
+  it('exposes hfMirror alongside pypiMirror', () => {
+    settings.set('hfMirror', 'https://hf-mirror.com')
+    settings.set('pypiMirror', 'https://mirrors.aliyun.com/pypi/simple/')
+    expect(settings.getMirrorConfig()).toEqual({
+      hfMirror: 'https://hf-mirror.com',
+      pypiMirror: 'https://mirrors.aliyun.com/pypi/simple/',
+      useChineseMirrors: false
+    })
+  })
+
+  it('omits hfMirror when unset', () => {
+    expect(settings.getMirrorConfig()).toEqual({
+      hfMirror: undefined,
+      pypiMirror: undefined,
+      useChineseMirrors: false
+    })
+  })
+
+  it('normalizes a hand-edited whitespace hfMirror to undefined', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ hfMirror: '   ' }, null, 2),
+      'utf-8'
+    )
+    expect(settings.getMirrorConfig().hfMirror).toBeUndefined()
+  })
+
+  it('trims a hand-edited hfMirror with surrounding whitespace', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ hfMirror: '  https://hf-mirror.com/  ' }, null, 2),
+      'utf-8'
+    )
+    expect(settings.getMirrorConfig().hfMirror).toBe('https://hf-mirror.com/')
+  })
+
+  it('drops a non-string hfMirror loaded from settings.json', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ hfMirror: 12345 }, null, 2),
+      'utf-8'
+    )
+    expect(settings.getMirrorConfig().hfMirror).toBeUndefined()
   })
 })
 

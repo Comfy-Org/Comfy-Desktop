@@ -105,4 +105,35 @@ describe('buildSettingsSections', () => {
       ?.fields as { id?: string; value?: unknown }[]
     expect(updatedFields.find((field) => field.id === 'hardwareAcceleration')?.value).toBe(false)
   })
+
+  it('offers an hfMirror text field in Advanced beside pypiMirror', () => {
+    const advancedFields =
+      (buildSettingsSections().find((section) => section.title === 'Advanced')
+        ?.fields as
+        | { id?: string; value?: unknown; description?: string }[]
+        | undefined) ?? []
+
+    expect(advancedFields).toContainEqual(
+      expect.objectContaining({
+        id: 'hfMirror',
+        label: 'HuggingFace Mirror URL',
+        type: 'text',
+        value: '',
+        description:
+          'Optional mirror for HuggingFace downloads. When set, the spawned ComfyUI process is launched with HF_ENDPOINT pointing at this URL.'
+      })
+    )
+
+    const pypiIndex = advancedFields.findIndex((f) => f.id === 'pypiMirror')
+    const hfIndex = advancedFields.findIndex((f) => f.id === 'hfMirror')
+    expect(pypiIndex).toBeGreaterThanOrEqual(0)
+    expect(hfIndex).toBe(pypiIndex + 1)
+
+    mockSettings.hfMirror = 'https://hf-mirror.com'
+    const updatedFields = buildSettingsSections().find((section) => section.title === 'Advanced')
+      ?.fields as { id?: string; value?: unknown }[]
+    expect(updatedFields.find((field) => field.id === 'hfMirror')?.value).toBe(
+      'https://hf-mirror.com'
+    )
+  })
 })
