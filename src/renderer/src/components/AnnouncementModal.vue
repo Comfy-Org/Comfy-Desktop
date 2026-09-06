@@ -157,6 +157,7 @@ onUnmounted(() => {
                   </li>
                 </ul>
               </div>
+              <p class="announce-fine">{{ $t('announcement.cloudNodes.beta') }}</p>
               <footer class="announce-footer">
                 <button
                   class="brand-ghost"
@@ -175,7 +176,6 @@ onUnmounted(() => {
                   {{ $t('announcement.cloudNodes.primaryCta') }}
                 </button>
               </footer>
-              <p class="announce-fine">{{ $t('announcement.cloudNodes.beta') }}</p>
             </div>
           </div>
         </div>
@@ -374,7 +374,7 @@ onUnmounted(() => {
   border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
 }
 .announce-fine {
-  margin: 12px 0 0;
+  margin: 12px 0 4px;
   font-size: 12px;
   line-height: 1.4;
   color: color-mix(in oklab, var(--neutral-300) 65%, transparent);
