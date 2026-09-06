@@ -55,6 +55,10 @@ export interface KnownSettings {
    *  flip this, so the takeover replays from step 1 next launch. */
   firstUseCompleted?: boolean
   minimaxAnnouncementSeen?: boolean
+  /** Seen-flag for the Comfy Cloud nodes announcement. Deliberately a NEW key
+   *  rather than a reset of minimaxAnnouncementSeen: everyone who dismissed the
+   *  previous announcement must still get the bell for this one. */
+  cloudNodesAnnouncementSeen?: boolean
   /** When true, hide the Cloud tile (and the Try-Cloud CTA) from the
    *  Dashboard / Instance Picker. Local-only users who never use Cloud
    *  can opt out of seeing it without us removing the feature. Default
@@ -258,6 +262,7 @@ const SETTINGS_SCHEMA = {
   telemetryEnabled: { nullable: false, telemetry: { policy: 'omit' } },
   firstUseCompleted: { nullable: false, telemetry: { policy: 'omit' } },
   minimaxAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }

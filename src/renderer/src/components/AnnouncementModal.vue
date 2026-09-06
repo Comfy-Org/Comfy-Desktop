@@ -5,32 +5,36 @@ import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 /**
- * One-off announcement modal (MiniMax license launch). Deliberately mirrors
- * `WhyTryCloudModal.vue`'s layout and styling so it feels native.
+ * One-off announcement modal (currently the Comfy Cloud nodes launch).
+ * Deliberately mirrors `WhyTryCloudModal.vue`'s layout and styling so it feels
+ * native. Swapping to the next announcement means changing ANNOUNCEMENT_ID, the
+ * URLs, the hero media and the i18n namespace below, plus a new seen-flag in
+ * settings so previously-dismissed users still get the bell.
  *
- * DRAFT COPY: strings live in `announcement.minimax.*` (locales/en.json) for nav to finalize.
+ * Strings live in `announcement.cloudNodes.*` (locales/en.json).
  */
 
 // Announcement id, carried in telemetry so this component can be reused for a
 // future announcement by swapping the id + copy.
-const ANNOUNCEMENT_ID = 'minimax_license'
+const ANNOUNCEMENT_ID = 'comfy_cloud_nodes'
 
 // CTA destinations. The UTM tags clicks as Desktop-origin so they're
 // attributable in analytics.
-const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=minimax_h3_license'
-const REQUEST_LICENSE_URL = `https://comfy.org/minimax/license${UTM}`
-const LEARN_MORE_URL = `https://blog.comfy.org/p/2ec77c32-7dd6-4a99-b763-fffe1580b842${UTM}`
+const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_cloud_nodes'
+const PRIMARY_CTA_URL = `https://comfy.org/cloud-nodes${UTM}`
+const DOCS_CTA_URL = `https://docs.comfy.org/cloud-nodes/overview${UTM}`
 
-// Hero video (from nav's MiniMax license LP, ComfyUI_frontend#16118) hosted on
-// media.comfy.org. Poster paints immediately; the video muted-autoplays + loops.
-const HERO_VIDEO_URL = 'https://media.comfy.org/website/minimax-license/hero.mp4'
-const HERO_POSTER_URL = 'https://media.comfy.org/website/minimax-license/hero-poster.jpg'
+// Same 15s launch film the /cloud-nodes landing page leads with. Poster paints
+// immediately; the video muted-autoplays + loops. media.comfy.org objects are
+// cached for an hour, so bump the `_v1` suffix rather than re-uploading a key.
+const HERO_VIDEO_URL = 'https://media.comfy.org/website/cloud-nodes/hero_v1.mp4'
+const HERO_POSTER_URL = 'https://media.comfy.org/website/cloud-nodes/hero-poster_v1.webp'
 
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
 
 const highlights = computed<string[]>(() => {
-  const raw = tm('announcement.minimax.highlights')
+  const raw = tm('announcement.cloudNodes.highlights')
   return Array.isArray(raw) ? (raw as unknown as string[]) : []
 })
 
@@ -95,7 +99,7 @@ onUnmounted(() => {
         class="announce-overlay"
         role="dialog"
         aria-modal="true"
-        :aria-label="$t('announcement.minimax.title')"
+        :aria-label="$t('announcement.cloudNodes.title')"
         tabindex="-1"
         @mousedown="onOverlayMouseDown"
         @click="onOverlayClick"
@@ -120,7 +124,7 @@ onUnmounted(() => {
                 muted
                 loop
                 playsinline
-                :aria-label="$t('announcement.minimax.imageAlt')"
+                :aria-label="$t('announcement.cloudNodes.imageAlt')"
               >
                 <source :src="HERO_VIDEO_URL" type="video/mp4" />
               </video>
@@ -128,7 +132,9 @@ onUnmounted(() => {
                 class="announce-sound"
                 type="button"
                 :aria-label="
-                  isMuted ? $t('announcement.minimax.unmute') : $t('announcement.minimax.mute')
+                  isMuted
+                    ? $t('announcement.cloudNodes.unmute')
+                    : $t('announcement.cloudNodes.mute')
                 "
                 :aria-pressed="!isMuted"
                 data-testid="announcement-sound-toggle"
@@ -141,9 +147,9 @@ onUnmounted(() => {
             <div class="announce-body">
               <div class="announce-body-main">
                 <header class="announce-header">
-                  <h2 class="announce-title">{{ $t('announcement.minimax.title') }}</h2>
+                  <h2 class="announce-title">{{ $t('announcement.cloudNodes.title') }}</h2>
                 </header>
-                <p class="announce-lead">{{ $t('announcement.minimax.lead') }}</p>
+                <p class="announce-lead">{{ $t('announcement.cloudNodes.lead') }}</p>
                 <ul v-if="highlights.length" class="announce-list">
                   <li v-for="h in highlights" :key="h">
                     <Check :size="16" class="announce-check" />
@@ -151,22 +157,23 @@ onUnmounted(() => {
                   </li>
                 </ul>
               </div>
+              <p class="announce-fine">{{ $t('announcement.cloudNodes.beta') }}</p>
               <footer class="announce-footer">
                 <button
                   class="brand-ghost"
                   type="button"
-                  data-testid="announcement-learn-more"
-                  @click="openCta('learn_more', LEARN_MORE_URL)"
+                  data-testid="announcement-docs"
+                  @click="openCta('docs', DOCS_CTA_URL)"
                 >
-                  {{ $t('announcement.minimax.learnMoreCta') }}
+                  {{ $t('announcement.cloudNodes.docsCta') }}
                 </button>
                 <button
                   class="brand-primary"
                   type="button"
-                  data-testid="announcement-request-license"
-                  @click="openCta('request_license', REQUEST_LICENSE_URL)"
+                  data-testid="announcement-primary-cta"
+                  @click="openCta('get_started', PRIMARY_CTA_URL)"
                 >
-                  {{ $t('announcement.minimax.requestLicenseCta') }}
+                  {{ $t('announcement.cloudNodes.primaryCta') }}
                 </button>
               </footer>
             </div>
@@ -250,7 +257,8 @@ onUnmounted(() => {
 .announce-media-wrap {
   position: relative;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 16 / 9;
+  align-self: center;
 }
 .announce-media {
   width: 100%;
@@ -364,5 +372,12 @@ onUnmounted(() => {
   gap: 16px;
   padding-top: clamp(1rem, 1.5vw, 1.5rem);
   border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
+}
+.announce-fine {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: color-mix(in oklab, var(--neutral-300) 65%, transparent);
+  font-family: var(--font-sans);
 }
 </style>
