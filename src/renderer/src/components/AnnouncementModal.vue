@@ -161,7 +161,7 @@ onUnmounted(() => {
                 <button
                   class="brand-ghost"
                   type="button"
-                  data-testid="announcement-learn-more"
+                  data-testid="announcement-docs"
                   @click="openCta('docs', DOCS_CTA_URL)"
                 >
                   {{ $t('announcement.cloudNodes.docsCta') }}
@@ -169,12 +169,13 @@ onUnmounted(() => {
                 <button
                   class="brand-primary"
                   type="button"
-                  data-testid="announcement-request-license"
+                  data-testid="announcement-primary-cta"
                   @click="openCta('get_started', PRIMARY_CTA_URL)"
                 >
                   {{ $t('announcement.cloudNodes.primaryCta') }}
                 </button>
               </footer>
+              <p class="announce-fine">{{ $t('announcement.cloudNodes.beta') }}</p>
             </div>
           </div>
         </div>
@@ -256,7 +257,8 @@ onUnmounted(() => {
 .announce-media-wrap {
   position: relative;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 16 / 9;
+  align-self: center;
 }
 .announce-media {
   width: 100%;
@@ -370,5 +372,12 @@ onUnmounted(() => {
   gap: 16px;
   padding-top: clamp(1rem, 1.5vw, 1.5rem);
   border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
+}
+.announce-fine {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: color-mix(in oklab, var(--neutral-300) 65%, transparent);
+  font-family: var(--font-sans);
 }
 </style>
