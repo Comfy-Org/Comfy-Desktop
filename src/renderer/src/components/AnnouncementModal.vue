@@ -21,8 +21,8 @@ const ANNOUNCEMENT_ID = 'comfy_cloud_nodes'
 // CTA destinations. The UTM tags clicks as Desktop-origin so they're
 // attributable in analytics.
 const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_cloud_nodes'
-const PRIMARY_CTA_URL = `https://cloud.comfy.org${UTM}`
-const LEARN_MORE_URL = `https://comfy.org/cloud-nodes${UTM}`
+const PRIMARY_CTA_URL = `https://comfy.org/cloud-nodes${UTM}`
+const DOCS_CTA_URL = `https://docs.comfy.org/cloud-nodes/overview${UTM}`
 
 // Same 15s launch film the /cloud-nodes landing page leads with. Poster paints
 // immediately; the video muted-autoplays + loops. media.comfy.org objects are
@@ -162,15 +162,15 @@ onUnmounted(() => {
                   class="brand-ghost"
                   type="button"
                   data-testid="announcement-learn-more"
-                  @click="openCta('learn_more', LEARN_MORE_URL)"
+                  @click="openCta('docs', DOCS_CTA_URL)"
                 >
-                  {{ $t('announcement.cloudNodes.learnMoreCta') }}
+                  {{ $t('announcement.cloudNodes.docsCta') }}
                 </button>
                 <button
                   class="brand-primary"
                   type="button"
                   data-testid="announcement-request-license"
-                  @click="openCta('request_license', PRIMARY_CTA_URL)"
+                  @click="openCta('get_started', PRIMARY_CTA_URL)"
                 >
                   {{ $t('announcement.cloudNodes.primaryCta') }}
                 </button>
