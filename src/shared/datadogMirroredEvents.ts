@@ -90,7 +90,25 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // bootstrap-python copy drift). probe_failed = single-user state;
   // circuit_broken = stop-the-bleeding guard tripped.
   'comfy.desktop.pygit2.probe_failed',
-  'comfy.desktop.pygit2.circuit_broken'
+  'comfy.desktop.pygit2.circuit_broken',
+  // Assets subsystem failure-path events — the eleven `_failed`-suffixed
+  // names in assetsTap's ALLOWED_EVENTS (scan/enrich/hash/seed/ingest/API
+  // failures). Mirrored for failure-rate monitors; supersedes the mirroring
+  // capability of Comfy-Desktop#1490. The paired success/informational
+  // events (assets.enabled, seeder.scan_started/scan_completed/
+  // scan_cancelled/marked_missing, scanner.hash_discarded_modified) stay
+  // PostHog-only — same success/failure split as every other group above.
+  'comfy.desktop.comfyui.assets.scanner.hash_failed',
+  'comfy.desktop.comfyui.assets.scanner.enrich_failed',
+  'comfy.desktop.comfyui.assets.scanner.fast_scan_failed',
+  'comfy.desktop.comfyui.assets.scanner.temp_sync_failed',
+  'comfy.desktop.comfyui.assets.scanner.mark_missing_failed',
+  'comfy.desktop.comfyui.assets.scanner.stat_failed',
+  'comfy.desktop.comfyui.assets.seeder.batch_insert_failed',
+  'comfy.desktop.comfyui.assets.seeder.scan_failed',
+  'comfy.desktop.comfyui.assets.ingest.register_output_failed',
+  'comfy.desktop.comfyui.assets.ingest.discard_orphan_failed',
+  'comfy.desktop.comfyui.assets.api.request_failed'
 ])
 
 export function isDatadogMirroredEvent(eventName: string): boolean {
