@@ -44,6 +44,9 @@ const launchHarness = vi.hoisted(() => ({
   schemaNames: ['enable-assets', 'listen', 'feature-flag'] as string[],
   schemaThrows: false,
   betaEnabled: true,
+  /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
+   *  read, so a read-only or full disk surfaces here. */
+  betaEnabledThrows: false,
   grants: [] as { arg: string; minCoreVersion: string }[],
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
@@ -69,7 +72,12 @@ vi.mock('../shared', async (importOriginal) => {
     },
     settings: new Proxy(actual.settings, {
       get(target, key) {
-        if (key === 'resolveBetaFeaturesEnabled') return () => launchHarness.betaEnabled
+        if (key === 'resolveBetaFeaturesEnabled') {
+          return () => {
+            if (launchHarness.betaEnabledThrows) throw new Error('settings write failed: EROFS')
+            return launchHarness.betaEnabled
+          }
+        }
         const value = Reflect.get(target, key) as unknown
         return typeof value === 'function' ? value.bind(target) : value
       }
@@ -611,6 +619,7 @@ describe('core beta report placement', () => {
   let installDir = ''
   let sent: string[] = []
   let events: { event: string; properties?: Record<string, unknown> }[] = []
+  let spawnArgs: string[] = []
 
   const harnessInstall = (): InstallationRecord =>
     ({
@@ -647,9 +656,15 @@ describe('core beta report placement', () => {
     events = []
     launchHarness.schemaThrows = false
     launchHarness.betaEnabled = true
+    launchHarness.betaEnabledThrows = false
+    launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
+    spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
     launchHarness.duringResourceAcquire = null
-    launchHarness.spawn = () => fakeChild()
+    launchHarness.spawn = (_cmd: unknown, args: unknown) => {
+      spawnArgs = args as string[]
+      return fakeChild()
+    }
     // `process.execPath` is a real executable, so the pre-launch existsSync passes without
     // mocking fs. `-s <main.py>` is the shape the arg splitter keys on.
     launchHarness.launchCommand = {
@@ -766,6 +781,33 @@ describe('core beta report placement', () => {
     expect(children).toHaveLength(2)
     expect(events.filter((e) => e.event === 'comfy.desktop.core_beta.opt_state')).toHaveLength(1)
     expect(sent.join('').match(/\[core-beta\]/g) ?? []).toHaveLength(1)
+  })
+
+  it('still filters user args, injecting nothing, when the beta setting cannot be resolved', async () => {
+    // Resolving the toggle writes the default back on first read, so a read-only profile makes
+    // it throw. That must cost the launch its beta grants — never its arg filtering, and never
+    // the launch itself.
+    launchHarness.betaEnabledThrows = true
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: [
+        '-s',
+        path.join(installDir, 'ComfyUI', 'main.py'),
+        '--listen',
+        '--not-a-real-comfy-flag'
+      ],
+      cwd: installDir,
+      skipPortWait: true
+    }
+
+    const res = await handleLaunch(ctxFor('harness-beta-setting-throws'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--listen')
+    // Filtering still ran: an arg the pinned core does not know never reaches it.
+    expect(spawnArgs).not.toContain('--not-a-real-comfy-flag')
+    // Fail closed: the grant is schema-supported and would have been injected at `true`.
+    expect(spawnArgs).not.toContain('--enable-assets')
   })
 
   it('reports opt_state true when schema discovery is unavailable', async () => {

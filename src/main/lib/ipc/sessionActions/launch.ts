@@ -477,7 +477,18 @@ async function runLaunch(
   const preLaunchPhases: PreLaunchPhase[] = []
   // Resolved ONCE here, independent of the schema block below: arg assembly can be skipped
   // entirely (schema discovery unavailable) and `opt_state` must still report the real toggle.
-  const betaEnabled = settings.resolveBetaFeaturesEnabled()
+  //
+  // Isolated in its own try because resolving WRITES the default back on first read, so a
+  // read-only or full profile throws on what looks like a pure read. Failing to resolve costs
+  // this launch its beta grants (fail closed) and nothing else: the launch continues into arg
+  // assembly, so user args are still filtered against the running core's schema — which is what
+  // keeps flags an older core cannot parse from reaching it.
+  let betaEnabled = false
+  try {
+    betaEnabled = settings.resolveBetaFeaturesEnabled()
+  } catch (err) {
+    console.warn('[core-beta] beta setting resolution failed:', err)
+  }
   // Resolved during arg assembly below, then read by the taps, the launch log
   // records and the beta telemetry - all after assembly, never before.
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
