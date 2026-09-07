@@ -87,6 +87,10 @@ export function selectCoreCanaryArgs(
   )
 }
 
+// Grants persist across launches, so revoking one is an ops SEQUENCE, not a deletion: serving
+// `false` on this key is what takes a grant back. Deleting or archiving the key instead reads as
+// `unreachable` — indistinguishable from an offline launch — and HOLDS every grant already on
+// disk. Disable first, let clients pick it up, delete only afterwards.
 const flag = makeOpsFlag<CoreCanaryFlag[]>({
   key: CORE_CANARY_FLAG_KEY,
   fallback: [],

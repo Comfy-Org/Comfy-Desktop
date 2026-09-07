@@ -1,15 +1,15 @@
 /**
  * Boot-time ops-flag reader.
  *
- * Ops flags are server config pushed TO the client (kill switches, rollout gates), not
+ * Ops flags are server config pushed TO the client (availability guards, rollout gates), not
  * analytics collected FROM the user, so they read through `getOpsFlagResult`, which deliberately
- * BYPASSES the consent gate — a user who declined telemetry still gets the kill switch, and
+ * BYPASSES the consent gate — a user who declined telemetry still gets the override, and
  * pre-consent surfaces can still resolve a value. The evaluation request supplies only the
  * installation-stable key and the flag key; implicit flag events are disabled.
  *
- * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so a kill
- * switch isn't accidentally consent-gated. Fetched once at boot; running apps pick up new
- * values on restart.
+ * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so an
+ * operational override isn't accidentally consent-gated. Fetched once at boot; running apps
+ * pick up new values on restart.
  *
  * Each flag supplies its own key, fail-direction (`fallback`), and `parse`. The shared part is
  * the plumbing every one of them needs: a single in-flight fetch, an accessor that awaits it
@@ -20,7 +20,7 @@ import path from 'path'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
 import * as mainTelemetry from './telemetry'
-import type { FeatureFlagValue, OpsFlagResult } from './telemetry'
+import type { FeatureFlagValue } from './telemetry'
 
 const DEFAULT_TIMEOUT_MS = 2000
 
@@ -44,7 +44,12 @@ function readPersistedFile(): Record<string, unknown> {
   }
 }
 
-function readPersistedResult(key: string): OpsFlagResult | undefined {
+interface PersistedOpsFlagEntry {
+  value: FeatureFlagValue
+  payload: unknown
+}
+
+function readPersistedResult(key: string): PersistedOpsFlagEntry | undefined {
   const entry = readPersistedFile()[key]
   if (!entry || typeof entry !== 'object') return undefined
   const { value, payload } = entry as { value?: unknown; payload?: unknown }
@@ -52,10 +57,23 @@ function readPersistedResult(key: string): OpsFlagResult | undefined {
   return { value, payload }
 }
 
-function writePersistedResult(key: string, result: OpsFlagResult): void {
+/** Writes the backup FIRST, then the primary, both as plain atomic writes.
+ *
+ *  `readFileSafe` serves `<file>.bak` whenever the primary is missing or unreadable, so a
+ *  backup still holding a superseded treatment can resurrect a grant that was already revoked.
+ *  This ordering bounds that: a failed backup write leaves the primary untouched (the caller
+ *  aborts and both files still agree), and a failed primary write leaves the backup holding the
+ *  NEW value, so the stale primary can only lose a treatment, never bring one back.
+ *
+ *  `writeFileSafe`'s own backup option must NOT be enabled on either call: it copies the OLD
+ *  primary over `.bak` at write time, which is the resurrection this ordering prevents. */
+function writePersistedResult(key: string, entry: PersistedOpsFlagEntry): void {
   const all = readPersistedFile()
-  all[key] = result
-  writeFileSafe(persistFilePath(), JSON.stringify(all))
+  all[key] = entry
+  const contents = JSON.stringify(all)
+  const filePath = persistFilePath()
+  writeFileSafe(filePath + '.bak', contents)
+  writeFileSafe(filePath, contents)
 }
 
 export interface OpsFlag<T> {
@@ -81,19 +99,27 @@ export function makeOpsFlag<T>(opts: {
   parse: (value: FeatureFlagValue | undefined, payload: unknown) => T | undefined
   /** Enables the `[label] init:` / `[label] init error:` boot logs. Omit for no logging. */
   logLabel?: string
-  /** Keep the last fetched result in `<configDir>/ops-flags.json` and read it back when a
-   *  fetch misses, so an offline launch holds the treatment it already had instead of
-   *  dropping to `fallback`. Only for flags whose fail direction is a downgrade a returning
-   *  user would notice; a fail-closed kill switch must NOT persist. */
+  /** Carry the last SUCCESSFULLY FETCHED treatment across launches in
+   *  `<configDir>/ops-flags.json`, so an unreachable server holds it instead of dropping to
+   *  `fallback`. Any successful fetch is authoritative and overwrites what is stored —
+   *  including an explicit `false`, which is how a treatment already granted is taken back.
+   *
+   *  REVOKING: deleting or archiving the flag does NOT revoke it. A missing key reads as
+   *  `unreachable`, indistinguishable from an offline launch, so deletion HOLDS the very grant
+   *  it was meant to remove. Disable the flag first (serve `false`) and let clients pick that
+   *  up; delete it only afterwards.
+   *
+   *  Only for flags whose fail direction is a downgrade a returning user would notice; a
+   *  fail-closed guard must NOT persist. */
   persist?: true
 }): OpsFlag<T> {
   const { key, fallback, parse, logLabel, persist } = opts
   let cached: T = fallback
   let initPromise: Promise<void> | null = null
 
-  /** The miss path — `getOpsFlagResult` catches timeout/network errors and RESOLVES
-   *  `undefined` rather than rejecting, so this covers both that and a defensive rejection.
-   *  Read-only: a miss must never overwrite what an online launch stored. */
+  /** The `unreachable` path — `getOpsFlagResult` classifies timeout/network errors rather
+   *  than rejecting, so this covers both that and a defensive rejection. Read-only: an
+   *  unreachable server must never overwrite what a successful fetch stored. */
   function applyPersisted(): boolean {
     if (!persist) return false
     const stored = readPersistedResult(key)
@@ -110,7 +136,7 @@ export function makeOpsFlag<T>(opts: {
       initPromise = mainTelemetry
         .getOpsFlagResult(key, initOpts.distinctId, initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
         .then((result) => {
-          if (result === undefined) {
+          if (result.kind === 'unreachable') {
             if (!applyPersisted()) {
               const parsed = parse(undefined, undefined)
               if (parsed !== undefined) cached = parsed
@@ -120,7 +146,7 @@ export function makeOpsFlag<T>(opts: {
             if (parsed !== undefined) cached = parsed
             if (persist) {
               try {
-                writePersistedResult(key, result)
+                writePersistedResult(key, { value: result.value, payload: result.payload })
               } catch (err) {
                 // A failed write must not cost this launch the value it just fetched.
                 if (logLabel) console.log(`[${logLabel}] persist error:`, err)
@@ -129,7 +155,12 @@ export function makeOpsFlag<T>(opts: {
           }
 
           if (logLabel)
-            console.log(`[${logLabel}] init: fetched=`, result?.value, '→ cached=', cached)
+            console.log(
+              `[${logLabel}] init: fetched=`,
+              result.kind === 'value' ? result.value : result.kind,
+              '→ cached=',
+              cached
+            )
         })
         .catch((err) => {
           if (logLabel) console.log(`[${logLabel}] init error:`, err)

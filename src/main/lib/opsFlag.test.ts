@@ -22,7 +22,11 @@ vi.mock('./paths', () => ({
 import { makeOpsFlag } from './opsFlag'
 
 function flagResult(value: unknown, payload?: unknown): unknown {
-  return value === undefined ? undefined : { value, payload }
+  return { kind: 'value', value, payload }
+}
+
+function unreachable(): unknown {
+  return { kind: 'unreachable' }
 }
 
 /** A three-value flag, so "unrecognised payload" is distinguishable from "valid value". */
@@ -172,8 +176,8 @@ describe('makeOpsFlag persistence', () => {
     // Given a treatment persisted by an earlier online launch
     writeFlagsFile(JSON.stringify({ 'test-flag': { value: 'disabled', payload: null } }))
     const flag = makePersistedFlag()
-    // When the boot fetch times out — `getOpsFlagResult` catches and RESOLVES undefined
-    getOpsFlagResult.mockResolvedValue(undefined)
+    // When the boot fetch times out — `getOpsFlagResult` classifies that as `unreachable`
+    getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
     // Then the offline launch keeps the treatment instead of dropping to the fail direction
     expect(await flag.get()).toBe('disabled')
@@ -185,7 +189,7 @@ describe('makeOpsFlag persistence', () => {
     const stored = JSON.stringify({ 'test-flag': { value: 'disabled', payload: null } }, null, 2)
     writeFlagsFile(stored)
     const flag = makePersistedFlag()
-    getOpsFlagResult.mockResolvedValue(undefined)
+    getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
     expect(readFlagsFile()).toBe(stored)
   })
@@ -224,7 +228,7 @@ describe('makeOpsFlag persistence', () => {
           : undefined,
       persist: true
     })
-    getOpsFlagResult.mockResolvedValue(undefined)
+    getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toEqual(['a', 'b'])
   })
@@ -244,7 +248,7 @@ describe('makeOpsFlag persistence', () => {
 
   it('falls back to the static fallback when the persisted file is missing', async () => {
     const flag = makePersistedFlag()
-    getOpsFlagResult.mockResolvedValue(undefined)
+    getOpsFlagResult.mockResolvedValue(unreachable())
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
     expect(await flag.get()).toBe('normal')
   })
@@ -252,7 +256,7 @@ describe('makeOpsFlag persistence', () => {
   it('falls back to the static fallback when the persisted file is corrupt', async () => {
     writeFlagsFile('{ not json at all')
     const flag = makePersistedFlag()
-    getOpsFlagResult.mockResolvedValue(undefined)
+    getOpsFlagResult.mockResolvedValue(unreachable())
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
     expect(await flag.get()).toBe('normal')
   })
@@ -260,7 +264,7 @@ describe('makeOpsFlag persistence', () => {
   it('falls back to the static fallback when the persisted entry is unrecognised', async () => {
     writeFlagsFile(JSON.stringify({ 'test-flag': { value: 'garbage', payload: null } }))
     const flag = makePersistedFlag()
-    getOpsFlagResult.mockResolvedValue(undefined)
+    getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('normal')
   })
@@ -276,7 +280,7 @@ describe('makeOpsFlag persistence', () => {
   it('does not read the file for a non-persisted flag', async () => {
     writeFlagsFile(JSON.stringify({ 'test-flag': { value: 'disabled', payload: null } }))
     const flag = makeTestFlag()
-    getOpsFlagResult.mockResolvedValue(undefined)
+    getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('normal')
   })
@@ -284,7 +288,7 @@ describe('makeOpsFlag persistence', () => {
   it('ignores a persisted entry for a different key', async () => {
     writeFlagsFile(JSON.stringify({ 'other-flag': { value: 'disabled', payload: null } }))
     const flag = makePersistedFlag()
-    getOpsFlagResult.mockResolvedValue(undefined)
+    getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('normal')
   })
@@ -300,5 +304,129 @@ describe('makeOpsFlag persistence', () => {
     getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
     expect(await flag.get()).toBe('degraded')
+  })
+})
+
+// Revocation is DISABLE, not deletion: a missing key reads as `unreachable` and HOLDS the
+// persisted treatment, so serving an explicit `false` is the only operation that takes a grant
+// back. That only works if the revocation reaches the backup too — `readFileSafe` will serve
+// `.bak` when the primary is gone or unreadable, so a backup still carrying the old grant
+// resurrects it on the next offline launch.
+describe('makeOpsFlag revocation coherence', () => {
+  function flagsFilePath(): string {
+    return path.join(testConfigDir, 'ops-flags.json')
+  }
+
+  function bakFilePath(): string {
+    return flagsFilePath() + '.bak'
+  }
+
+  /** Tri-state on purpose: `revoked` is distinguishable from the `unknown` fail direction, so
+   *  reading a revocation back proves the persisted file answered rather than that the flag
+   *  merely fell back. */
+  function makeGrantFlag() {
+    return makeOpsFlag<'granted' | 'revoked' | 'unknown'>({
+      key: 'grant-flag',
+      fallback: 'unknown',
+      parse: (value) => (value === true ? 'granted' : value === false ? 'revoked' : undefined),
+      persist: true
+    })
+  }
+
+  function grantEntry(granted: boolean): string {
+    return JSON.stringify({ 'grant-flag': { value: granted, payload: null } })
+  }
+
+  function parsedGrant(granted: boolean): unknown {
+    return { 'grant-flag': { value: granted, payload: null } }
+  }
+
+  function seedGrantedFiles(): void {
+    fs.writeFileSync(flagsFilePath(), grantEntry(true), 'utf-8')
+    fs.writeFileSync(bakFilePath(), grantEntry(true), 'utf-8')
+  }
+
+  async function disableGrant(): Promise<void> {
+    const flag = makeGrantFlag()
+    getOpsFlagResult.mockResolvedValue(flagResult(false, null))
+    await flag.init({ distinctId: 'anon' })
+  }
+
+  async function launchOffline(): Promise<'granted' | 'revoked' | 'unknown'> {
+    const flag = makeGrantFlag()
+    getOpsFlagResult.mockResolvedValue(unreachable())
+    await flag.init({ distinctId: 'anon' })
+    return flag.get()
+  }
+
+  it('writes the revocation to the backup as well as the primary', async () => {
+    // Given a grant carried by both files from an earlier online launch
+    seedGrantedFiles()
+
+    // When ops disables the flag — an explicit `false`, the supported revocation
+    await disableGrant()
+
+    // Then neither file still carries the grant. A `backup: true` write would have copied the
+    // pre-rename (still granted) primary over the backup instead.
+    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(false))
+    expect(JSON.parse(fs.readFileSync(bakFilePath(), 'utf-8'))).toEqual(parsedGrant(false))
+  })
+
+  it('does not resurrect a revoked grant when the primary is missing on an offline launch', async () => {
+    // Given a grant that ops has since revoked
+    seedGrantedFiles()
+    await disableGrant()
+
+    // When the primary is lost and the next launch cannot reach PostHog
+    fs.rmSync(flagsFilePath())
+
+    // Then the backup restores the revocation, not the grant it replaced
+    expect(await launchOffline()).toBe('revoked')
+  })
+
+  it('does not resurrect a revoked grant from a backup-only read', async () => {
+    // Given a grant that ops has since revoked
+    seedGrantedFiles()
+    await disableGrant()
+
+    // When the primary exists but cannot be read (a directory reads EISDIR, the same
+    // `unreadable` outcome as a lock outlasting the retry budget), so only the backup answers
+    fs.rmSync(flagsFilePath())
+    fs.mkdirSync(flagsFilePath())
+
+    expect(await launchOffline()).toBe('revoked')
+  })
+
+  it('aborts the persist when the backup write fails, leaving the primary untouched', async () => {
+    // Given the backup's staging path blocked, so the FIRST write of the sequence throws EISDIR
+    seedGrantedFiles()
+    fs.mkdirSync(bakFilePath() + '.tmp')
+
+    const flag = makeGrantFlag()
+    getOpsFlagResult.mockResolvedValue(flagResult(false, null))
+    await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+
+    // Then this launch still uses what it fetched, and the primary was never reached — proving
+    // the backup is written first, so the two files can never disagree in the resurrecting
+    // direction (primary revoked, backup still granted).
+    expect(await flag.get()).toBe('revoked')
+    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
+  })
+
+  it('keeps the revocation in the backup when the primary write fails', async () => {
+    // Given the primary's staging path blocked, so the SECOND write of the sequence throws
+    seedGrantedFiles()
+    fs.mkdirSync(flagsFilePath() + '.tmp')
+
+    const flag = makeGrantFlag()
+    getOpsFlagResult.mockResolvedValue(flagResult(false, null))
+    await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+
+    // Then the backup already holds the revocation, so a later backup-served read cannot
+    // resurrect the grant. The stale primary is the accepted residual: two files cannot be
+    // written atomically, and the next successful fetch rewrites both.
+    expect(await flag.get()).toBe('revoked')
+    expect(JSON.parse(fs.readFileSync(bakFilePath(), 'utf-8'))).toEqual(parsedGrant(false))
+    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
   })
 })
