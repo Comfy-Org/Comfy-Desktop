@@ -24,7 +24,7 @@
  */
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
-import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 /**
  * The line grammar. This is a CROSS-REPO CONTRACT: ComfyUI holds the
@@ -171,9 +171,6 @@ function parseFields(
 const PER_EVENT_HOURLY_CAP = 60
 const RATE_WINDOW_MS = 60 * 60_000
 
-/** Cap on the unterminated tail carried between chunks, per stream. */
-const MAX_PENDING_CHARS = 16_384
-
 export function createAssetsTap(opts: {
   installationId: string
   variant?: string | null
@@ -228,19 +225,7 @@ export function createAssetsTap(opts: {
     }
   }
 
-  // Separate per-stream buffers: stdout and stderr arrive as independent chunk
-  // streams, so a shared buffer could splice unrelated partial lines together.
-  const pendingBySource: Record<'stdout' | 'stderr', string> = { stdout: '', stderr: '' }
-
-  function appendChunk(source: 'stdout' | 'stderr', chunk: string): string[] {
-    // Split first so a large chunk's complete lines are never lost; cap only
-    // the unterminated tail, which is the sole unbounded-growth risk.
-    const lines = (pendingBySource[source] + chunk).split(/\r?\n/)
-    const tail = lines.pop() ?? ''
-    pendingBySource[source] =
-      tail.length > MAX_PENDING_CHARS ? tail.slice(-MAX_PENDING_CHARS) : tail
-    return lines
-  }
+  const lineBuffer = createStreamLineBuffer()
 
   return {
     ingest(chunk: string, source: 'stdout' | 'stderr'): void {
@@ -248,7 +233,7 @@ export function createAssetsTap(opts: {
       // no enclosing catch. A throw here would break log streaming and boot
       // detection. Telemetry must never break the app.
       try {
-        for (const line of appendChunk(source, chunk)) {
+        for (const line of lineBuffer.append(source, chunk)) {
           // Per-line isolation: one line that throws must not discard the
           // rest of a chunk that has already been split off the buffer.
           try {
@@ -267,16 +252,14 @@ export function createAssetsTap(opts: {
      * The rate buckets deliberately survive.
      */
     beginBoot(): void {
-      pendingBySource.stdout = ''
-      pendingBySource.stderr = ''
+      lineBuffer.reset()
     },
     flushSummary(): void {
       try {
         // Process complete-but-unterminated final lines so a trailing record
         // isn't dropped when the process exits without a newline.
         for (const source of ['stdout', 'stderr'] as const) {
-          const pending = pendingBySource[source]
-          pendingBySource[source] = ''
+          const pending = lineBuffer.takePending(source)
           // Per-source isolation: a throwing stdout tail must not skip stderr's.
           try {
             if (pending.trim()) handleLine(pending)
