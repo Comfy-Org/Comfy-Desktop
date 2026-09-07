@@ -128,13 +128,22 @@ export interface CoreBetaLaunch {
   readonly droppedUnsupported: readonly string[]
   readonly logRecords: readonly string[]
   readonly coreVersion: string | null
+  /** The beta toggle as resolved for THIS launch. Carried on the DTO rather than re-read at
+   *  the report site so `opt_state` still tells the truth on the paths that never reach arg
+   *  assembly — schema discovery failing must not make an opted-in user report as opted out. */
+  readonly optedIn: boolean
 }
 
-const NO_CORE_BETA: CoreBetaLaunch = {
-  applied: [],
-  droppedUnsupported: [],
-  logRecords: [],
-  coreVersion: null
+/** No grants resolved: either the install opted out, or the launch never reached arg assembly
+ *  (schema discovery unavailable). `optedIn` is still the real toggle in both cases. */
+function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
+  return {
+    applied: [],
+    droppedUnsupported: [],
+    logRecords: [],
+    coreVersion: null,
+    optedIn
+  }
 }
 
 /** Newline-terminated because `writeLog` and `sendOutput` forward text verbatim:
@@ -185,7 +194,8 @@ export function buildLaunchArgs(input: {
         .map((grant) => grant.arg),
       logRecords:
         coreVersion === null ? [] : applied.map((grant) => coreBetaLogRecord(grant, coreVersion)),
-      coreVersion
+      coreVersion,
+      optedIn: input.betaEnabled
     }
   }
 }
@@ -465,9 +475,16 @@ async function runLaunch(
   // Synthetic repair steps that ran during launch prep, prepended to the launch
   // progress in display order (e.g. a source rollback, then a PyTorch restore).
   const preLaunchPhases: PreLaunchPhase[] = []
+  // Resolved ONCE here, independent of the schema block below: arg assembly can be skipped
+  // entirely (schema discovery unavailable) and `opt_state` must still report the real toggle.
+  const betaEnabled = settings.resolveBetaFeaturesEnabled()
   // Resolved during arg assembly below, then read by the taps, the launch log
   // records and the beta telemetry - all after assembly, never before.
-  let coreBeta: CoreBetaLaunch = NO_CORE_BETA
+  let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
+  // LAUNCH-SCOPED on purpose. `tryLaunch` recurses on reboot and port retries, re-entering
+  // past the report site, so an unlatched report fires once per attempt; a module-global
+  // latch would instead silence every launch after the first in the process lifetime.
+  let coreBetaReported = false
   // Claim the operation slot for the whole launch, prep included, so no other
   // operation can start against this install while the launch is preparing.
   _operationAborts.set(installationId, abort)
@@ -624,6 +641,8 @@ async function runLaunch(
   // destinations: the log records go to the on-disk log and the renderer, the
   // events to telemetry.
   function reportCoreBetaLaunch(logStream: WriteStream, sendOutput: (text: string) => void): void {
+    if (coreBetaReported) return
+    coreBetaReported = true
     emitCoreBetaRecords(coreBeta.logRecords, {
       writeLog: (text) => writeLog(logStream, text),
       sendOutput
@@ -632,7 +651,7 @@ async function runLaunch(
       appliedArgs: coreBeta.applied.map((grant) => grant.arg),
       droppedUnsupported: coreBeta.droppedUnsupported,
       coreVersion: coreBeta.coreVersion,
-      optedIn: settings.resolveBetaFeaturesEnabled()
+      optedIn: coreBeta.optedIn
     })
   }
 
@@ -828,7 +847,7 @@ async function runLaunch(
           betaFlags: await getCoreCanaryFlagsAsync(),
           coreVersion: coreSemver(inst),
           coreVersionExact: coreSemverExact(inst),
-          betaEnabled: settings.resolveBetaFeaturesEnabled()
+          betaEnabled
         })
         launchCmd.args = built.args
         coreBeta = built.beta
@@ -1071,8 +1090,6 @@ async function runLaunch(
       _markLaunching(installationId, inst.name)
       return acquireLaunchResources()
     })
-    reportCoreBetaLaunch(logStream, sendOutput)
-
     // Last pre-spawn cancellation point on this path: a launch cancelled
     // during the awaits above must never spawn.
     if (abort.signal.aborted) {
@@ -1080,6 +1097,9 @@ async function runLaunch(
       _clearLaunchingFailed(installationId)
       return { ok: false, cancelled: true }
     }
+    // Past the final gate: this launch is going to spawn, so the grants it applied are now
+    // real. Reporting before the gate attributes grants to launches that never started.
+    reportCoreBetaLaunch(logStream, sendOutput)
 
     const { proc, getStderr } = await guardLaunchSetup(
       async () => {
@@ -1303,7 +1323,6 @@ async function runLaunch(
     },
     { port: launchCmd.port! }
   )
-  reportCoreBetaLaunch(logStream, sendOutput)
 
   async function spawnComfy(): Promise<{ proc: ChildProcess; getStderr: () => string }> {
     // Reset per-boot accelerator state so each (re)spawn re-emits
@@ -1352,6 +1371,9 @@ async function runLaunch(
     if (abort.signal.aborted) {
       return { ok: false, message: 'Launch cancelled', cancelled: true }
     }
+    // Past the final gate, so this attempt will spawn. Latched: retries re-enter here, and the
+    // grants belong to the launch, not to each attempt at it.
+    reportCoreBetaLaunch(logStream, sendOutput)
     const cmdLine = [launchCmd.cmd!, ...launchCmd.args!]
       .map((a, ci, ca) => {
         if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'

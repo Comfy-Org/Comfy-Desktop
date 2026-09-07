@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -35,6 +36,82 @@ vi.mock('../../comfyDownloadManager', async (importOriginal) => {
   }
 })
 
+/** Drives a real `handleLaunch` far enough to reach the pre-spawn gates. Everything the launch
+ *  touches on the way (source, args schema, grants, taps, spawn) is answered from here, so a
+ *  test can park the launch at an exact point and observe what was reported by then. */
+const launchHarness = vi.hoisted(() => ({
+  launchCommand: null as null | Record<string, unknown>,
+  schemaNames: ['enable-assets', 'listen', 'feature-flag'] as string[],
+  schemaThrows: false,
+  betaEnabled: true,
+  grants: [] as { arg: string; minCoreVersion: string }[],
+  /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
+   *  before either path's pre-spawn abort gate, which is exactly the window under test. */
+  duringResourceAcquire: null as null | (() => void),
+  spawn: null as null | ((...args: unknown[]) => unknown),
+  /** Called in place of the real boot probe, once per spawn attempt. Resolving means "this
+   *  attempt booted"; a never-settling promise lets the early-exit rejection win instead. */
+  waitForPort: null as null | (() => Promise<void>),
+  nextPort: 48999
+}))
+
+vi.mock('../shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof SharedModule>()
+  return {
+    ...actual,
+    sourceMap: {
+      ...actual.sourceMap,
+      'harness-source': {
+        skipInstall: true,
+        getDefaults: () => ({}),
+        getLaunchCommand: () => launchHarness.launchCommand
+      }
+    },
+    settings: new Proxy(actual.settings, {
+      get(target, key) {
+        if (key === 'resolveBetaFeaturesEnabled') return () => launchHarness.betaEnabled
+        const value = Reflect.get(target, key) as unknown
+        return typeof value === 'function' ? value.bind(target) : value
+      }
+    }),
+    spawnProcess: (...args: unknown[]) => launchHarness.spawn?.(...args),
+    waitForPort: (...args: Parameters<typeof actual.waitForPort>) =>
+      launchHarness.waitForPort ? launchHarness.waitForPort() : actual.waitForPort(...args),
+    findAvailablePort: async () => launchHarness.nextPort,
+    // Never let a test reach the real one: the fake child's pid is invented, and killing it
+    // would signal whatever real process happens to hold that pid.
+    killProcessTree: async () => {}
+  }
+})
+
+vi.mock('../../comfy-args', async (importOriginal) => {
+  const actual = await importOriginal<typeof ComfyArgsModule>()
+  return {
+    ...actual,
+    getComfyArgsSchema: async () => {
+      if (launchHarness.schemaThrows) throw new Error('schema discovery unavailable')
+      return schemaOf(...launchHarness.schemaNames)
+    },
+    getComfyFeatureFlagRegistry: async () => ({})
+  }
+})
+
+vi.mock('../../coreCanary', async (importOriginal) => {
+  const actual = await importOriginal<typeof CoreCanaryModule>()
+  return { ...actual, getCoreCanaryFlagsAsync: async () => launchHarness.grants }
+})
+
+vi.mock('../../hardwareTap', async (importOriginal) => {
+  const actual = await importOriginal<typeof HardwareTapModule>()
+  return {
+    ...actual,
+    createHardwareTap: (...args: Parameters<typeof actual.createHardwareTap>) => {
+      launchHarness.duringResourceAcquire?.()
+      return actual.createHardwareTap(...args)
+    }
+  }
+})
+
 import {
   buildLaunchArgs,
   desktopFeatureFlags,
@@ -60,8 +137,20 @@ import {
   _reservePort
 } from '../shared'
 import type { ChildProcess, InstallationRecord } from '../shared'
+import type * as SharedModule from '../shared'
+import type * as ComfyArgsModule from '../../comfy-args'
+import type * as CoreCanaryModule from '../../coreCanary'
+import type * as HardwareTapModule from '../../hardwareTap'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
+
+type FakeChild = EventEmitter & {
+  stdout: EventEmitter
+  stderr: EventEmitter
+  pid: number
+  kill: () => boolean
+  killed: boolean
+}
 
 describe('desktopFeatureFlags', () => {
   it('always injects the unconditional desktop flags', () => {
@@ -428,6 +517,15 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.beta.droppedUnsupported).toEqual([])
   })
 
+  it.each([
+    ['opted in', true],
+    ['opted out', false]
+  ])('carries the resolved beta toggle on the DTO when %s', (_label, betaEnabled) => {
+    // The DTO is the only carrier of `opt_state`: the report site no longer re-reads settings,
+    // so a launch that never reaches arg assembly still reports the real toggle.
+    expect(build({ schema: schemaOf('enable-assets'), betaEnabled }).beta.optedIn).toBe(betaEnabled)
+  })
+
   it('keeps injecting for a user who declined telemetry but opted into beta features', () => {
     // Consent is not an input here at all — the gate is the beta toggle alone.
     telemetry.setConsentState('denied')
@@ -442,9 +540,12 @@ const RECORD = '[core-beta] --enable-assets (core 0.3.81 >= 0.3.80, opted in)\n'
 const CHILD_LINE = 'Total VRAM 24576 MB, total RAM 64000 MB\n'
 
 // Both launch paths build the same sink pair — the log stream from
-// `acquireLaunchResources` and `makeSendOutput` for the renderer — so the
-// wiring is pinned once per path label rather than per call site.
-describe.each(['skip-port', 'normal'])('emitCoreBetaRecords (%s launch path)', () => {
+// `acquireLaunchResources` and `makeSendOutput` for the renderer — so the wiring is pinned
+// once. This was a `describe.each(['skip-port','normal'])` whose callback took no parameter:
+// the label alternated while the body stayed byte-identical, running the same assertions
+// twice and proving nothing about either path. Path-specific behaviour is covered by the
+// report-placement tests below instead.
+describe('emitCoreBetaRecords', () => {
   const sinksWithBuffers = (): {
     sinks: { writeLog: (text: string) => void; sendOutput: (text: string) => void }
     logged: string[]
@@ -502,6 +603,183 @@ describe.each(['skip-port', 'normal'])('emitCoreBetaRecords (%s launch path)', (
 
     expect(logged).toEqual([])
     expect(sent).toEqual([])
+  })
+})
+
+describe('core beta report placement', () => {
+  const HARNESS_GRANT = { arg: '--enable-assets', minCoreVersion: '0.3.80' }
+  let installDir = ''
+  let sent: string[] = []
+  let events: { event: string; properties?: Record<string, unknown> }[] = []
+
+  const harnessInstall = (): InstallationRecord =>
+    ({
+      id: 'harness-inst',
+      name: 'Harness',
+      sourceId: 'harness-source',
+      installPath: installDir,
+      version: '0.3.81',
+      comfyVersion: {
+        commit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+        baseTag: 'v0.3.81',
+        commitsAhead: 0
+      }
+    }) as unknown as InstallationRecord
+
+  const ctxFor = (installationId: string): ActionContext => ({
+    event: {
+      sender: {
+        isDestroyed: () => false,
+        send: (_channel: string, payload: { text?: string }) => {
+          if (typeof payload?.text === 'string') sent.push(payload.text)
+        }
+      }
+    } as unknown as Electron.IpcMainInvokeEvent,
+    installationId,
+    inst: harnessInstall(),
+    actionData: {}
+  })
+
+  beforeEach(() => {
+    installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-launch-'))
+    fs.mkdirSync(path.join(installDir, 'ComfyUI'), { recursive: true })
+    sent = []
+    events = []
+    launchHarness.schemaThrows = false
+    launchHarness.betaEnabled = true
+    launchHarness.grants = [HARNESS_GRANT]
+    launchHarness.duringResourceAcquire = null
+    launchHarness.spawn = () => fakeChild()
+    // `process.execPath` is a real executable, so the pre-launch existsSync passes without
+    // mocking fs. `-s <main.py>` is the shape the arg splitter keys on.
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: true
+    }
+    vi.spyOn(telemetry, 'emit').mockImplementation(((
+      event: string,
+      properties?: Record<string, unknown>
+    ) => {
+      events.push({ event, properties })
+    }) as unknown as typeof telemetry.emit)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    fs.rmSync(installDir, { recursive: true, force: true })
+  })
+
+  const reportedEvents = (): string[] => events.map((e) => e.event)
+
+  /** Minimal live child: streams to attach to, a pid to kill, and no exit unless a test
+   *  emits one, so a launch that reaches spawn settles instead of hanging. */
+  function fakeChild(): FakeChild {
+    const proc = new EventEmitter() as FakeChild
+    proc.stdout = new EventEmitter()
+    proc.stderr = new EventEmitter()
+    proc.pid = 4242
+    proc.killed = false
+    proc.kill = () => true
+    return proc
+  }
+
+  it('reports on a launch that reaches the skip-port spawn', async () => {
+    const res = await handleLaunch(ctxFor('harness-skip-port-spawns'))
+
+    expect(res.ok).toBe(true)
+    expect(sent.join('')).toContain('[core-beta] --enable-assets')
+    expect(reportedEvents()).toContain('comfy.desktop.core_beta.applied')
+    expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
+  })
+
+  it('does not report when cancelled at the skip-port pre-spawn gate', async () => {
+    // Cancel lands while resources are being acquired — after the launching marker, before
+    // the gate. The launch must return cancelled having attributed nothing.
+    launchHarness.duringResourceAcquire = () => {
+      _operationAborts.get('harness-skip-port-cancelled')?.abort()
+    }
+
+    const res = await handleLaunch(ctxFor('harness-skip-port-cancelled'))
+
+    expect(res).toMatchObject({ ok: false, cancelled: true })
+    expect(sent.join('')).not.toContain('[core-beta]')
+    expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.applied')
+    expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.opt_state')
+  })
+
+  it('does not report when cancelled at the normal-path pre-spawn gate', async () => {
+    // The normal path's last gate sits INSIDE the recursing `tryLaunch`, past port reservation
+    // and resource acquisition — a different call site from the skip-port one above.
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48231
+    }
+    launchHarness.duringResourceAcquire = () => {
+      _operationAborts.get('harness-normal-cancelled')?.abort()
+    }
+
+    const res = await handleLaunch(ctxFor('harness-normal-cancelled'))
+
+    expect(res).toMatchObject({ ok: false, cancelled: true })
+    expect(sent.join('')).not.toContain('[core-beta]')
+    expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.applied')
+    expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.opt_state')
+  })
+
+  it('reports exactly once when a port conflict retries the spawn', async () => {
+    // The only test that proves the latch: the report site lives INSIDE the recursing
+    // `tryLaunch`, so an unlatched report fires once per attempt.
+    const children: FakeChild[] = []
+    let attempt = 0
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48232
+    }
+    launchHarness.spawn = () => {
+      const child = fakeChild()
+      children.push(child)
+      return child
+    }
+    launchHarness.waitForPort = async () => {
+      attempt++
+      if (attempt > 1) return
+      // Everything is wired by the time the boot probe runs, so failing the first attempt
+      // from here is deterministic — no racing the stream/exit handler registration.
+      const first = children[0]!
+      first.stderr.emit('data', Buffer.from('OSError: [Errno 98] Address already in use\n'))
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+
+    const res = await handleLaunch(ctxFor('harness-retry-reports-once'))
+
+    expect(res.ok).toBe(true)
+    expect(attempt).toBe(2)
+    expect(children).toHaveLength(2)
+    expect(events.filter((e) => e.event === 'comfy.desktop.core_beta.opt_state')).toHaveLength(1)
+    expect(sent.join('').match(/\[core-beta\]/g) ?? []).toHaveLength(1)
+  })
+
+  it('reports opt_state true when schema discovery is unavailable', async () => {
+    // Arg assembly never runs, so there are no grants — but the user IS opted in, and the
+    // report site no longer re-reads settings to find that out.
+    launchHarness.schemaThrows = true
+    launchHarness.betaEnabled = true
+
+    const res = await handleLaunch(ctxFor('harness-schema-unavailable'))
+
+    expect(res.ok).toBe(true)
+    const optState = events.find((e) => e.event === 'comfy.desktop.core_beta.opt_state')
+    expect(optState?.properties).toMatchObject({ opted_in: true })
+    expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.applied')
   })
 })
 
