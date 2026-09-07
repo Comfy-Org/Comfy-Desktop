@@ -413,6 +413,46 @@ describe('makeOpsFlag revocation coherence', () => {
     expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
   })
 
+  it('refuses the persisted write when the primary exists but is unreadable', async () => {
+    // Given a primary that EXISTS but cannot be read (mode 000 → EACCES outlasting the retry
+    // budget), with a readable backup standing in for it. `readFileSafe` serves the backup
+    // tagged `primaryUnreadable`, so the file's REAL content is unknown — a read-modify-write
+    // would replace an intact primary with state reconstructed from the backup.
+    seedGrantedFiles()
+    fs.chmodSync(flagsFilePath(), 0o000)
+
+    const flag = makeGrantFlag()
+    getOpsFlagResult.mockResolvedValue(flagResult(false, null))
+    await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+
+    // Then the launch still uses what it just fetched — refusing to persist is not refusing
+    // to apply.
+    expect(await flag.get()).toBe('revoked')
+
+    // And neither file was rewritten: the refusal happens before the backup write too, so it
+    // cannot leave the pair half-updated.
+    fs.chmodSync(flagsFilePath(), 0o644)
+    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
+    expect(JSON.parse(fs.readFileSync(bakFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
+  })
+
+  it('refuses the persisted write when the primary is unreadable and no backup stands in', async () => {
+    // Given an unreadable primary with NO backup, `readFileSafe` reports `unreadable` rather
+    // than serving data. Still a refusal: an unrecoverable file is not an empty one, and
+    // writing would replace real entries with a single reconstructed key.
+    fs.writeFileSync(flagsFilePath(), grantEntry(true), 'utf-8')
+    fs.chmodSync(flagsFilePath(), 0o000)
+
+    const flag = makeGrantFlag()
+    getOpsFlagResult.mockResolvedValue(flagResult(false, null))
+    await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+
+    expect(await flag.get()).toBe('revoked')
+    fs.chmodSync(flagsFilePath(), 0o644)
+    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
+    expect(fs.existsSync(bakFilePath())).toBe(false)
+  })
+
   it('keeps the revocation in the backup when the primary write fails', async () => {
     // Given the primary's staging path blocked, so the SECOND write of the sequence throws
     seedGrantedFiles()

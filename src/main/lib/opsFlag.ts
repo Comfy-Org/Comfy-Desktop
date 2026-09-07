@@ -30,18 +30,47 @@ function persistFilePath(): string {
   return path.join(configDir(), 'ops-flags.json')
 }
 
-/** The whole file, or `{}` for missing / unreadable / non-object / unparseable content. The
- *  file is user-writable JSON on disk, so every failure mode has to read as "no cache". */
-function readPersistedFile(): Record<string, unknown> {
+interface PersistedFileRead {
+  /** `{}` for missing / unreadable / non-object / unparseable content: the file is
+   *  user-writable JSON on disk, so every failure mode has to read as "no cache". */
+  entries: Record<string, unknown>
+  /** The primary EXISTS but its content could not be recovered — either `.bak` stood in for
+   *  it, or nothing could be read at all. Its real content is therefore UNKNOWN, which is
+   *  different from knowing it is empty. */
+  primaryUnreadable: boolean
+}
+
+function readPersistedFile(): PersistedFileRead {
   const outcome = readFileSafe(persistFilePath())
-  if (outcome.kind !== 'data') return {}
+  if (outcome.kind === 'unreadable') return { entries: {}, primaryUnreadable: true }
+  if (outcome.kind !== 'data') return { entries: {}, primaryUnreadable: false }
+
+  const primaryUnreadable = outcome.primaryUnreadable === true
   try {
     const parsed: unknown = JSON.parse(outcome.data)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return parsed as Record<string, unknown>
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { entries: {}, primaryUnreadable }
+    }
+    return { entries: parsed as Record<string, unknown>, primaryUnreadable }
   } catch {
-    return {}
+    return { entries: {}, primaryUnreadable }
   }
+}
+
+/** Load for a read-modify-write. Throws when the primary exists but its entries cannot be
+ *  recovered right now (a lock or permission failure outlasting the retry budget, or `.bak`
+ *  standing in): the follow-up write would replace an intact file with state reconstructed
+ *  from the backup, resurrecting entries the primary had already superseded. Read-only callers
+ *  use `readPersistedFile`, which degrades to "no cache". Mirrors `installations.ts`'
+ *  `loadForWrite` (issue #1367). */
+function readPersistedFileForWrite(): Record<string, unknown> {
+  const { entries, primaryUnreadable } = readPersistedFile()
+  if (primaryUnreadable) {
+    throw new Error(
+      'ops-flags.json exists but its entries cannot be recovered right now; refusing to modify it'
+    )
+  }
+  return entries
 }
 
 interface PersistedOpsFlagEntry {
@@ -50,14 +79,16 @@ interface PersistedOpsFlagEntry {
 }
 
 function readPersistedResult(key: string): PersistedOpsFlagEntry | undefined {
-  const entry = readPersistedFile()[key]
+  const entry = readPersistedFile().entries[key]
   if (!entry || typeof entry !== 'object') return undefined
   const { value, payload } = entry as { value?: unknown; payload?: unknown }
   if (typeof value !== 'string' && typeof value !== 'boolean') return undefined
   return { value, payload }
 }
 
-/** Writes the backup FIRST, then the primary, both as plain atomic writes.
+/** Writes the backup FIRST, then the primary, both as plain atomic writes. Refuses outright
+ *  (via `readPersistedFileForWrite`) when the primary cannot be read, so neither file is
+ *  touched and the pair can never be left half-updated from reconstructed state.
  *
  *  `readFileSafe` serves `<file>.bak` whenever the primary is missing or unreadable, so a
  *  backup still holding a superseded treatment can resurrect a grant that was already revoked.
@@ -68,7 +99,7 @@ function readPersistedResult(key: string): PersistedOpsFlagEntry | undefined {
  *  `writeFileSafe`'s own backup option must NOT be enabled on either call: it copies the OLD
  *  primary over `.bak` at write time, which is the resurrection this ordering prevents. */
 function writePersistedResult(key: string, entry: PersistedOpsFlagEntry): void {
-  const all = readPersistedFile()
+  const all = readPersistedFileForWrite()
   all[key] = entry
   const contents = JSON.stringify(all)
   const filePath = persistFilePath()
