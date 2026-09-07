@@ -480,25 +480,63 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(build({ schema: schemaOf('enable-assets') }).beta.coreVersion).toBe('0.3.81')
   })
 
-  it('skips a grant the user already typed, leaving their token in place', () => {
+  it('lands a baked canary token exactly once, sourced from the grant and not the user', () => {
+    // The token an install-time path baked into launchArgs is stripped, then re-supplied by the
+    // grant — so the arg survives, but only because the canary system decided it should.
     const built = build({
       userArgs: ['--enable-assets'],
       schema: schemaOf('enable-assets')
     })
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets'])
+    expect(built.args.filter((arg) => arg === '--enable-assets')).toHaveLength(1)
+    expect(built.beta.applied).toEqual([ASSETS_GRANT])
+  })
+
+  it('strips a baked canary token the beta toggle has turned off', () => {
+    // The revocation case that motivated the strip: an opted-out dogfood install whose stored
+    // launchArgs still carry the flag must not keep running with it.
+    const built = build({
+      userArgs: ['--enable-assets', '--listen'],
+      schema: schemaOf('enable-assets', 'listen'),
+      betaEnabled: false
+    })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
+    expect(built.beta.applied).toEqual([])
+    expect(built.beta.droppedUnsupported).toEqual([])
+  })
+
+  it('strips a baked canary token whose grant has been revoked from the payload', () => {
+    const built = build({
+      userArgs: ['--enable-assets', '--listen'],
+      schema: schemaOf('enable-assets', 'listen'),
+      betaFlags: []
+    })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
     expect(built.beta.applied).toEqual([])
   })
 
-  it('reads the args the user actually typed, not the schema-filtered set', () => {
-    // Their own --enable-assets is unsupported by this core and gets filtered
-    // out, but it still means "already asked for": selecting against the
-    // filtered set would re-grant it and report a phantom drop.
+  it('strips a baked canary token when the install sits outside the version window', () => {
+    const built = build({
+      userArgs: ['--enable-assets'],
+      schema: schemaOf('enable-assets'),
+      coreVersion: '0.3.79'
+    })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
+    expect(built.beta.applied).toEqual([])
+  })
+
+  it('keeps a baked token out even when the grant it re-supplies is schema-dropped', () => {
+    // Stripping runs ahead of filtering, so a core that cannot parse the flag sees it from
+    // neither side: the user's copy is gone and the grant is reported as dropped.
     const built = build({ userArgs: ['--enable-assets'], schema: schemaOf('listen') })
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
     expect(built.beta.applied).toEqual([])
-    expect(built.beta.droppedUnsupported).toEqual([])
+    expect(built.beta.droppedUnsupported).toEqual(['--enable-assets'])
   })
 
   it('still applies the grant when the user typed the opposite token the core cannot parse', () => {

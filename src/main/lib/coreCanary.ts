@@ -17,6 +17,35 @@ export type CoreCanaryFlag = {
   readonly maxCoreVersion?: string
 }
 
+/**
+ * Drop canary-managed tokens from a launch's user args, in memory, before anything else reads
+ * them.
+ *
+ * Passing these experimental flags by hand is unsupported by design: this system is their sole
+ * authority, so `selectCoreCanaryArgs` is the only thing that may put one on a command line.
+ * Without this, a dogfood install whose stored `launchArgs` had a flag baked in at install time
+ * would keep launching with it after the opt-out, the revocation or the version window said
+ * otherwise — the grant is checked every launch, a baked token never is.
+ *
+ * The persisted installation record is deliberately left as the user wrote it; this is assembly
+ * time only.
+ */
+export function stripCanaryArgs(userArgs: readonly string[]): string[] {
+  const managed = new Set<string>(CORE_CANARY_ALLOWED_FLAGS)
+  const reported = new Set<string>()
+  const kept: string[] = []
+  for (const arg of userArgs) {
+    if (!managed.has(arg)) {
+      kept.push(arg)
+      continue
+    }
+    if (reported.has(arg)) continue
+    reported.add(arg)
+    console.log(`[core-canary] removed baked flag ${arg} from user args`)
+  }
+  return kept
+}
+
 const MAX_FLAGS = 32
 const CORE_CANARY_ARG_RE = /^--[a-z][a-z0-9-]+$/
 

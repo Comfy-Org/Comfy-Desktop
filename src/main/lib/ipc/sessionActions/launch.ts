@@ -94,7 +94,7 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
-import { getCoreCanaryFlagsAsync, selectCoreCanaryArgs } from '../../coreCanary'
+import { getCoreCanaryFlagsAsync, selectCoreCanaryArgs, stripCanaryArgs } from '../../coreCanary'
 import type { CoreCanaryFlag } from '../../coreCanary'
 import { coreSemver, coreSemverExact } from '../../version'
 import type { ComfyArgsSchema } from '../../comfy-args'
@@ -155,8 +155,9 @@ function coreBetaLogRecord(grant: CoreCanaryFlag, coreVersion: string): string {
 /**
  * Assemble the spawn args and resolve this launch's Core beta grants.
  *
- * Grants are selected against the UNFILTERED user args, then passed through the
- * same schema filter as user args so a core that predates a flag never sees it.
+ * Canary-managed tokens are stripped from the user args first, so a grant is the only way one
+ * reaches core. Grants are selected against those stripped-but-UNFILTERED args, then passed
+ * through the same schema filter as user args so a core that predates a flag never sees it.
  * Ordering is fixed: prefix, desktop feature flags, beta grants, user args.
  */
 export function buildLaunchArgs(input: {
@@ -169,7 +170,8 @@ export function buildLaunchArgs(input: {
   coreVersionExact: boolean
   betaEnabled: boolean
 }): { args: string[]; beta: CoreBetaLaunch } {
-  const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
+  const { prefixArgs, desktopFlagArgs, schema, coreVersion } = input
+  const userArgs = stripCanaryArgs(input.userArgs)
   const filtered = filterUnsupportedArgs([...userArgs], schema)
   const selected = selectCoreCanaryArgs(
     input.betaFlags,
