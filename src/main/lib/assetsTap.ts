@@ -63,7 +63,7 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'api.request_failed'
 ])
 
-type Validator = (value: unknown) => boolean
+type Validator = (value: TelemetryValue) => boolean
 
 const MAX_STRING_LENGTH = 64
 const FORBIDDEN_STRING_CHARS = ['/', '\\', ':']
@@ -91,33 +91,43 @@ const isFlag: Validator = (value) => typeof value === 'boolean'
  * Mirror of `ALLOWED_FIELDS` in ComfyUI `app/assets/event_log.py`. Adding a
  * field is a reviewed change on BOTH sides; the vocabulary deliberately holds
  * no file names, paths, asset ids or content hashes.
+ *
+ * A Map, NOT an object literal: lookup keys here come straight from untrusted
+ * JSON, and `{}['constructor']` / `{}['__proto__']` resolve up the prototype
+ * chain to truthy values that pass an allowlist gate — the first as a callable
+ * that returns truthy (the field ships), the second as a non-callable that
+ * throws when invoked as a validator. A Map's keys are never confused with its
+ * prototype's properties, so `.get()` is closed by construction.
  */
-export const ALLOWED_FIELDS: Readonly<Record<string, Validator>> = {
-  root: oneOf('models', 'input', 'output', 'user', 'temp'),
-  phase: oneOf('fast', 'enrich', 'full'),
-  stage: oneOf('mark_missing', 'pruning', 'fast_scan', 'enrich', 'finalize'),
-  route: oneOf(
-    'get_asset_route',
-    'upload_asset',
-    'update_asset_route',
-    'delete_asset_route',
-    'add_asset_tags',
-    'delete_asset_tags',
-    'parse_multipart_upload'
-  ),
-  size_bucket: oneOf('lt_1m', 'lt_100m', 'lt_1g', 'ge_1g'),
-  elapsed_ms: isCount,
-  created: isCount,
-  enriched: isCount,
-  skipped: isCount,
-  marked_missing: isCount,
-  hash_failed: isCount,
-  enrich_failed: isCount,
-  permission_denied: isCount,
-  count: isCount,
-  error_type: isSafeString,
-  hashing_enabled: isFlag
-}
+export const ALLOWED_FIELDS: ReadonlyMap<string, Validator> = new Map<string, Validator>([
+  ['root', oneOf('models', 'input', 'output', 'user', 'temp')],
+  ['phase', oneOf('fast', 'enrich', 'full')],
+  ['stage', oneOf('mark_missing', 'pruning', 'fast_scan', 'enrich', 'finalize')],
+  [
+    'route',
+    oneOf(
+      'get_asset_route',
+      'upload_asset',
+      'update_asset_route',
+      'delete_asset_route',
+      'add_asset_tags',
+      'delete_asset_tags',
+      'parse_multipart_upload'
+    )
+  ],
+  ['size_bucket', oneOf('lt_1m', 'lt_100m', 'lt_1g', 'ge_1g')],
+  ['elapsed_ms', isCount],
+  ['created', isCount],
+  ['enriched', isCount],
+  ['skipped', isCount],
+  ['marked_missing', isCount],
+  ['hash_failed', isCount],
+  ['enrich_failed', isCount],
+  ['permission_denied', isCount],
+  ['count', isCount],
+  ['error_type', isSafeString],
+  ['hashing_enabled', isFlag]
+])
 
 /** The shape any value must have before its field validator even runs. */
 function isTransportableValue(value: unknown): value is TelemetryValue {
@@ -149,8 +159,8 @@ function parseFields(
     // A field named like a base-context property would be a context-spoofing
     // attempt, even though the merge order already makes it ineffective.
     if (baseKeys.has(key)) return null
-    const validate = ALLOWED_FIELDS[key]
-    if (!validate) return null
+    const validate = ALLOWED_FIELDS.get(key)
+    if (validate === undefined) return null
     if (!isTransportableValue(value) || !validate(value)) return null
     fields[key] = value
   }
@@ -238,7 +248,15 @@ export function createAssetsTap(opts: {
       // no enclosing catch. A throw here would break log streaming and boot
       // detection. Telemetry must never break the app.
       try {
-        for (const line of appendChunk(source, chunk)) handleLine(line)
+        for (const line of appendChunk(source, chunk)) {
+          // Per-line isolation: one line that throws must not discard the
+          // rest of a chunk that has already been split off the buffer.
+          try {
+            handleLine(line)
+          } catch {
+            // ignore - telemetry side effect, not user-visible
+          }
+        }
       } catch {
         // ignore - telemetry side effect, not user-visible
       }
@@ -259,7 +277,12 @@ export function createAssetsTap(opts: {
         for (const source of ['stdout', 'stderr'] as const) {
           const pending = pendingBySource[source]
           pendingBySource[source] = ''
-          if (pending.trim()) handleLine(pending)
+          // Per-source isolation: a throwing stdout tail must not skip stderr's.
+          try {
+            if (pending.trim()) handleLine(pending)
+          } catch {
+            // ignore - telemetry side effect, not user-visible
+          }
         }
       } catch {
         // ignore - telemetry side effect, not user-visible

@@ -125,6 +125,20 @@ function taggedLine(event: string, fields: Record<string, unknown>): string {
   return `[assets-event] ${event} ${JSON.stringify(fields)}\n`
 }
 
+/**
+ * Routes the vocabulary through a local copy whose `phase` validator throws.
+ * The Map lookup is what stops a real `__proto__` line from throwing at all,
+ * so the per-line fault isolation needs its own throw to be provable.
+ * Undone by the `vi.restoreAllMocks()` in `afterEach`.
+ */
+function withExplodingPhaseValidator(): void {
+  const exploding = new Map(ALLOWED_FIELDS)
+  exploding.set('phase', () => {
+    throw new Error('validator exploded')
+  })
+  vi.spyOn(ALLOWED_FIELDS, 'get').mockImplementation((key) => exploding.get(key))
+}
+
 describe('assetsTap', () => {
   let captured: Array<{ event: string; ctx: Record<string, unknown> }>
 
@@ -153,7 +167,7 @@ describe('assetsTap', () => {
     })
 
     it('exposes a field allowlist that is exactly PR C ALLOWED_FIELDS', () => {
-      expect(Object.keys(ALLOWED_FIELDS).sort()).toEqual(
+      expect([...ALLOWED_FIELDS.keys()].sort()).toEqual(
         [
           'root',
           'phase',
@@ -284,6 +298,16 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
     })
 
+    it('rejects a field name inherited from the allowlist\u2019s prototype', () => {
+      // `constructor` is the one prototype key that clears the lowercase-only
+      // FIELD_NAME filter and, against an object literal, resolves up the
+      // prototype chain to a truthy *callable* returning a truthy value — so
+      // the field sails through the allowlist gate and ships to PostHog.
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_started {"constructor":"x"}\n', 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
     it('rejects a key colliding with an emitted base-context property', () => {
       const tap = createAssetsTap(baseOpts)
       for (const key of BASE_CONTEXT_KEYS) {
@@ -303,7 +327,7 @@ describe('assetsTap', () => {
     })
 
     it('keeps the field vocabulary disjoint from the base context', () => {
-      expect(Object.keys(ALLOWED_FIELDS).filter((key) => BASE_CONTEXT_KEYS.includes(key))).toEqual(
+      expect([...ALLOWED_FIELDS.keys()].filter((key) => BASE_CONTEXT_KEYS.includes(key))).toEqual(
         []
       )
     })
@@ -312,14 +336,17 @@ describe('assetsTap', () => {
       // The two vocabularies are disjoint today, so the collision guard is only
       // reachable once they overlap. Simulate that future to prove the guard —
       // not the field allowlist — is what rejects a context-spoofing line.
-      const vocabulary = ALLOWED_FIELDS as Record<string, (value: unknown) => boolean>
-      vocabulary['installation_id'] = () => true
+      // Routed through a local copy rather than written into the exported
+      // vocabulary, which every other test in this file shares.
+      const widened = new Map(ALLOWED_FIELDS)
+      widened.set('installation_id', () => true)
+      const lookup = vi.spyOn(ALLOWED_FIELDS, 'get').mockImplementation((key) => widened.get(key))
       try {
         const tap = createAssetsTap(baseOpts)
         tap.ingest(taggedLine('seeder.scan_started', { installation_id: 'spoofed' }), 'stdout')
         expect(captured).toHaveLength(0)
       } finally {
-        delete vocabulary['installation_id']
+        lookup.mockRestore()
       }
     })
 
@@ -535,6 +562,45 @@ describe('assetsTap', () => {
       tap.ingest(chunk, 'stdout')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toMatchObject({ phase: 'enrich' })
+    })
+
+    it('keeps processing later lines after a field name that throws in the allowlist', () => {
+      // `__proto__` resolves to `Object.prototype` against an object literal:
+      // truthy enough to pass the gate, not callable, so invoking it as a
+      // validator throws — and an unisolated per-chunk catch would silently
+      // discard every remaining line.
+      const tap = createAssetsTap(baseOpts)
+      const chunk = [
+        '[assets-event] seeder.scan_started {"__proto__":1}',
+        '[assets-event] seeder.scan_started {"phase":"enrich"}',
+        ''
+      ].join('\n')
+      expect(() => tap.ingest(chunk, 'stdout')).not.toThrow()
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ phase: 'enrich' })
+    })
+
+    it('keeps processing later lines when a field validator throws', () => {
+      withExplodingPhaseValidator()
+      const tap = createAssetsTap(baseOpts)
+      const chunk = [
+        '[assets-event] seeder.scan_started {"phase":"fast"}',
+        '[assets-event] seeder.scan_completed {"count":3}',
+        ''
+      ].join('\n')
+      expect(() => tap.ingest(chunk, 'stdout')).not.toThrow()
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ count: 3 })
+    })
+
+    it('flushes the stderr tail even when the stdout tail throws', () => {
+      withExplodingPhaseValidator()
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_started {"phase":"fast"}', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_completed {"count":3}', 'stderr')
+      expect(() => tap.flushSummary()).not.toThrow()
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ count: 3 })
     })
   })
 })
