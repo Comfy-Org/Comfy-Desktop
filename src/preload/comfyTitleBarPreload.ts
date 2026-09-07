@@ -3,7 +3,13 @@ import type { IpcRendererEvent } from 'electron'
 import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
 
-export type ComfyPanelKey = 'comfy' | 'new-install' | 'track' | 'load-snapshot' | 'quick-install'
+export type ComfyPanelKey =
+  | 'comfy'
+  | 'performance-benchmarks'
+  | 'new-install'
+  | 'track'
+  | 'load-snapshot'
+  | 'quick-install'
 
 /** Anchor coordinates for a native title-bar menu — title-bar-local
  *  pixels (x = button left, y = button bottom). The titleBarView sits

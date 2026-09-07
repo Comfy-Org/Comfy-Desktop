@@ -142,6 +142,54 @@ const messages = {
     },
     common: {
       loading: 'Loading…'
+    },
+    settings: {
+      logs: 'Logs'
+    },
+    performanceBenchmarks: {
+      description: 'Run performance measurements against your ComfyUI instances.',
+      selectInstance: '1. Select an instance',
+      selectInstancePlaceholder: 'Select an instance',
+      dropWorkflow: '2. Drop a workflow in API format',
+      dropWorkflowHint: 'Drop a workflow .json file here, or click to browse',
+      importingWorkflow: 'Importing workflow...',
+      importFailed: 'Could not import the workflow.',
+      deleteWorkflow: 'Delete workflow',
+      deleteFailed: 'Could not delete the workflow.',
+      run: 'Run',
+      stop: 'Stop',
+      stopping: 'Stopping...',
+      stopFailed: 'Could not stop the instance.',
+      measurementSettings: '3. Set measurements settings',
+      measuredRuns: 'Measured runs',
+      logsPlaceholder: 'Instance logs will appear here.',
+      results: 'Results',
+      resultsPlaceholder: 'Benchmark results will appear here.',
+      fastestJob: 'Fastest job',
+      slowestJob: 'Slowest job',
+      averageDuration: 'Average job duration',
+      medianDuration: 'Median job duration',
+      hardware: 'Hardware',
+      device: 'Compute device',
+      vram: 'VRAM',
+      ram: 'RAM',
+      pytorch: 'PyTorch',
+      xformers: 'xFormers',
+      systemInformation: 'System information',
+      operatingSystem: 'Operating system',
+      architecture: 'Architecture',
+      cpu: 'CPU',
+      logicalCpuCores: 'Logical CPU cores',
+      physicalCpuCores: 'Physical CPU cores',
+      systemMemory: 'System memory',
+      systemGpu: 'System GPU',
+      gpuDriver: 'GPU driver',
+      starting: 'Starting...',
+      launchFailed: 'Failed to start the instance.',
+      submittingRuns: 'Submitting {preparationCount} preparation runs and {count} measured runs...',
+      completedRuns:
+        'Finished {count} measured runs ({unsuccessful} unsuccessful). Final response saved to {path}',
+      submitFailed: 'Failed to submit the benchmark workflow.'
     }
   }
 }
@@ -155,6 +203,11 @@ interface InstallationLike {
   name: string
   sourceLabel: string
   sourceCategory: string
+  sourceId?: string
+  workspaceId?: string
+  status?: string
+  version?: string
+  statusTag?: { style: string; label: string; detail?: string }
 }
 
 type PanelTriggerPayload = {
@@ -224,6 +277,20 @@ function installMockApi(initial?: {
     getLocaleMessages: vi.fn().mockResolvedValue(messages.en),
     getLocale: vi.fn().mockResolvedValue('en'),
     onLocaleChanged: vi.fn(() => () => {}),
+    comfybuilder: {
+      getAuthStatus: vi.fn(async () => ({
+        signedIn: true,
+        workspaceId: 'workspace-1',
+        workspaceName: 'Workspace One',
+        workspaceType: 'team'
+      })),
+      signIn: vi.fn(async () => ({ signedIn: true })),
+      signOut: vi.fn(async () => ({ signedIn: false })),
+      listWorkspaces: vi.fn(async () => []),
+      listBuilds: vi.fn(async () => []),
+      switchWorkspace: vi.fn(async () => ({ signedIn: true })),
+      onAuthChanged: vi.fn(() => () => {})
+    },
     onPanelSwitch: vi.fn((cb: (d: { panel: string; installationId?: string }) => void) => {
       state.panelSwitchCallbacks.push(cb)
       return () => {}
@@ -286,6 +353,8 @@ function installMockApi(initial?: {
     onInstanceStarted: vi.fn(() => () => {}),
     onInstanceStopped: vi.fn(() => () => {}),
     onInstanceStopping: vi.fn(() => () => {}),
+    stopComfyUI: vi.fn(async () => {}),
+    cancelOperation: vi.fn(async () => {}),
     onComfyOutput: vi.fn(() => () => {}),
     onComfyExited: vi.fn(() => () => {}),
     onInstanceCrashed: vi.fn(() => () => {}),
@@ -320,6 +389,74 @@ function installMockApi(initial?: {
     // Picker thumbnail warm-up fetches the bundled-template options on the
     // first-use cold-start path; returning users must never trigger it.
     getFieldOptions: vi.fn(async () => []),
+    getPathForFile: vi.fn((file: File) => `C:\\incoming\\${file.name}`),
+    importBenchmarkWorkflow: vi.fn(async () => ({
+      ok: true,
+      filePath: 'C:\\ComfyUI\\benchmarks\\20260907225500\\cat-workflow.json'
+    })),
+    deleteBenchmarkWorkflow: vi.fn(async () => ({ ok: true })),
+    runBenchmarkWorkflow: vi.fn(
+      async (_sessionId: string, _filePath: string, measuredRuns: number) => ({
+        ok: true,
+        submitted: measuredRuns,
+        preparationRuns: 2,
+        totalSubmitted: measuredRuns + 2,
+        promptIds: Array.from({ length: measuredRuns + 2 }, (_, index) => `prompt-${index + 1}`),
+        resultPath: 'C:\\ComfyUI\\benchmarks\\20260907225600\\results.json',
+        unsuccessfulJobs: 0,
+        statistics: {
+          fastest: { jobId: 'prompt-3', durationSeconds: 1.25 },
+          slowest: { jobId: 'prompt-7', durationSeconds: 2.75 },
+          averageDurationSeconds: 2,
+          medianDurationSeconds: 1.875,
+          measuredJobCount: measuredRuns
+        },
+        hardware: {
+          deviceType: 'cuda',
+          deviceIndex: 0,
+          deviceName: 'NVIDIA GeForce RTX 4090',
+          backend: 'native',
+          devices: [],
+          vramMb: 24576,
+          ramMb: 65461,
+          pytorchVersion: '2.10.0+cu130',
+          xformersVersion: '0.0.31',
+          cudaDeviceSet: 0
+        },
+        systemInfo: {
+          gpu_vendor: 'nvidia',
+          gpu_label: 'NVIDIA',
+          gpu_model: 'NVIDIA GeForce RTX 4090',
+          gpu_vram_mb: 24576,
+          gpu_vram_gb: 24,
+          gpu_tier: 'high',
+          gpus: [],
+          nvidia_driver_version: '580.88',
+          nvidia_driver_supported: true,
+          amd_driver_version: null,
+          intel_driver_version: null,
+          platform: 'win32',
+          arch: 'x64',
+          os_version: '10.0.26200',
+          os_distro: 'Microsoft Windows 11 Pro',
+          os_release: '10.0.26200',
+          os_arch: '64-bit',
+          electron_version: '37.2.3',
+          chrome_version: '138.0.7204.100',
+          total_memory_gb: 64,
+          cpu_model: 'AMD Ryzen 9 7950X',
+          cpu_cores: 32,
+          cpu_physical_cores: 16,
+          cpu_speed_ghz: 4.5,
+          cpu_manufacturer: 'AMD',
+          app_version: '1.0.47',
+          auto_update: true,
+          locale: 'en',
+          installation_count: 1,
+          installations: []
+        }
+      })
+    ),
     openGlobalSettings: vi.fn(),
     openInstancePicker: vi.fn()
   }
@@ -410,6 +547,288 @@ describe('PanelApp', () => {
     expect(lifecycle.attributes('data-installation-id')).toBe('test-id')
   })
 
+  it('renders the performance benchmarks body with scoped instance rows', async () => {
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        version: '0.3.50',
+        statusTag: { style: 'update', label: 'Update to 0.3.51' },
+        workspaceId: 'workspace-1'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'migrate-install',
+        name: 'Legacy Install',
+        sourceId: 'legacy-desktop',
+        sourceCategory: 'local',
+        status: 'installed',
+        statusTag: { style: 'migrate', label: 'Migrate' },
+        workspaceId: 'workspace-1'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'danger-install',
+        name: 'Missing Install',
+        sourceId: 'standalone',
+        sourceCategory: 'local',
+        status: 'installed',
+        statusTag: {
+          style: 'danger',
+          label: 'Folder Not Found',
+          detail: 'The instance folder could not be found.'
+        },
+        workspaceId: 'workspace-1'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'other-workspace-install',
+        name: 'Other Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-2'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'unmanaged-install',
+        name: 'Unmanaged Install',
+        sourceId: 'standalone',
+        status: 'installed'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'cloud-install',
+        name: 'Comfy Cloud Instance',
+        sourceId: 'cloud',
+        sourceLabel: 'Comfy Cloud',
+        sourceCategory: 'cloud',
+        status: 'installed'
+      }
+    ]
+    window.history.replaceState({}, '', '/?panel=performance-benchmarks&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="performance-benchmarks"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="performance-benchmarks-logo"]').exists()).toBe(true)
+    expect(wrapper.find('.performance-benchmarks__account').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="workspace-selector-refresh"]').exists()).toBe(true)
+    expect(wrapper.find('.workspace-selector-bar__divider').exists()).toBe(true)
+    expect(wrapper.find('.performance-benchmarks__columns').exists()).toBe(true)
+    expect(wrapper.findAll('.performance-benchmarks__column')).toHaveLength(3)
+    expect(
+      wrapper.findAll('.performance-benchmarks__column h2').map((heading) => heading.text())
+    ).toEqual([
+      '1. Select an instance',
+      '2. Drop a workflow in API format',
+      '3. Set measurements settings'
+    ])
+    expect(wrapper.get('.performance-benchmarks__setting').text()).toContain('Measured runs')
+    const measuredRunsInput = wrapper.get('.performance-benchmarks__setting input')
+    expect(measuredRunsInput.element).toHaveProperty('value', '5')
+    expect(measuredRunsInput.attributes()).toMatchObject({
+      min: '1',
+      max: '100',
+      step: '1'
+    })
+    await measuredRunsInput.setValue('101')
+    expect(measuredRunsInput.element).toHaveProperty('value', '100')
+    await measuredRunsInput.setValue('0')
+    expect(measuredRunsInput.element).toHaveProperty('value', '1')
+    await measuredRunsInput.setValue('4.6')
+    expect(measuredRunsInput.element).toHaveProperty('value', '5')
+    await measuredRunsInput.setValue('')
+    expect(measuredRunsInput.element).toHaveProperty('value', '5')
+    const logsToggle = wrapper.get('.performance-benchmarks__logs-toggle')
+    expect(logsToggle.text()).toBe('Logs')
+    expect(logsToggle.attributes('aria-expanded')).toBe('true')
+    const resultsToggle = wrapper.get('.performance-benchmarks__results-section button')
+    expect(resultsToggle.text()).toBe('Results')
+    expect(resultsToggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.performance-benchmarks__results').text()).toContain(
+      'Benchmark results will appear here.'
+    )
+    await resultsToggle.trigger('click')
+    expect(resultsToggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.performance-benchmarks__results').attributes('style')).toContain(
+      'display: none'
+    )
+    await resultsToggle.trigger('click')
+    expect(
+      wrapper
+        .get('.performance-benchmarks__column:nth-child(3) .performance-benchmarks__run')
+        .exists()
+    ).toBe(true)
+    expect(wrapper.find('.performance-benchmarks__drop-zone').text()).toBe(
+      'Drop a workflow .json file here, or click to browse'
+    )
+    expect(wrapper.find('.performance-benchmarks__run').text()).toBe('Run')
+    expect(wrapper.find('.performance-benchmarks__logs').text()).toBe(
+      'Instance logs will appear here.'
+    )
+    await logsToggle.trigger('click')
+    expect(logsToggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.performance-benchmarks__logs').attributes('style')).toContain(
+      'display: none'
+    )
+    await logsToggle.trigger('click')
+    const instanceSelect = wrapper.get('.performance-benchmarks__instance-select button')
+    expect(instanceSelect.attributes()).toMatchObject({
+      role: 'combobox',
+      'aria-label': 'Select an instance',
+      'aria-expanded': 'false'
+    })
+    expect(instanceSelect.text()).toBe('Select an instance')
+    await instanceSelect.trigger('click')
+    await flushPromises()
+    expect(
+      Array.from(document.querySelectorAll('.ui-select-option-label')).map(
+        (option) => option.textContent
+      )
+    ).toEqual(['Workspace Install', 'Legacy Install', 'Missing Install'])
+    expect(
+      Array.from(document.querySelectorAll('.ui-select-option-desc')).map(
+        (option) => option.textContent
+      )
+    ).toEqual(['Standalone · 0.3.50', 'Standalone', 'Standalone'])
+    expect(wrapper.text()).not.toContain('Other Workspace Install')
+    expect(wrapper.find('.performance-benchmarks__description').text()).toBe(
+      'Run performance measurements against your ComfyUI instances.'
+    )
+    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
+    ;(document.querySelectorAll('.ui-select-option')[0] as HTMLElement).click()
+    await flushPromises()
+    expect(instanceSelect.text()).toBe('Workspace Install')
+
+    const api = (
+      window as unknown as {
+        api: {
+          openInstancePicker: ReturnType<typeof vi.fn>
+          importBenchmarkWorkflow: ReturnType<typeof vi.fn>
+          deleteBenchmarkWorkflow: ReturnType<typeof vi.fn>
+          runBenchmarkWorkflow: ReturnType<typeof vi.fn>
+          getPathForFile: ReturnType<typeof vi.fn>
+          runAction: ReturnType<typeof vi.fn>
+          stopComfyUI: ReturnType<typeof vi.fn>
+          cancelOperation: ReturnType<typeof vi.fn>
+          onInstanceStarted: ReturnType<typeof vi.fn>
+          onInstanceStopped: ReturnType<typeof vi.fn>
+          onComfyOutput: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    await wrapper.get('.performance-benchmarks__drop-content').trigger('click')
+    await flushPromises()
+    expect(api.importBenchmarkWorkflow).toHaveBeenCalledWith(undefined)
+    expect(wrapper.get('.performance-benchmarks__workflow-file').text()).toContain(
+      'cat-workflow.json'
+    )
+    expect(wrapper.get('.performance-benchmarks__workflow-file').text()).toContain(
+      'C:\\ComfyUI\\benchmarks\\20260907225500\\cat-workflow.json'
+    )
+    expect(wrapper.get('.performance-benchmarks__drop-zone').text()).not.toContain(
+      'Drop a workflow .json file here, or click to browse'
+    )
+
+    api.importBenchmarkWorkflow.mockResolvedValueOnce({
+      ok: true,
+      filePath: 'C:\\ComfyUI\\benchmarks\\20260907225600\\cat-workflow.json'
+    })
+    const droppedFile = new File(['{}'], 'dropped.json', { type: 'application/json' })
+    await wrapper.get('.performance-benchmarks__drop-zone').trigger('drop', {
+      dataTransfer: { files: [droppedFile] }
+    })
+    await flushPromises()
+    expect(api.getPathForFile).toHaveBeenCalledWith(droppedFile)
+    expect(api.importBenchmarkWorkflow).toHaveBeenLastCalledWith('C:\\incoming\\dropped.json')
+    expect(wrapper.get('.performance-benchmarks__workflow-file').text()).toContain(
+      'C:\\ComfyUI\\benchmarks\\20260907225600\\cat-workflow.json'
+    )
+
+    await wrapper.get('.performance-benchmarks__run').trigger('click')
+    await flushPromises()
+    expect(api.runAction).toHaveBeenCalledWith('workspace-install', 'launch', {
+      launchModeOverride: 'console',
+      autoPortOnConflict: true,
+      sessionIdOverride: 'benchmark:workspace-install'
+    })
+    expect(api.runBenchmarkWorkflow).toHaveBeenCalledWith(
+      'benchmark:workspace-install',
+      'C:\\ComfyUI\\benchmarks\\20260907225600\\cat-workflow.json',
+      5
+    )
+    expect(wrapper.get('.performance-benchmarks__logs').text()).toContain(
+      'Finished 5 measured runs (0 unsuccessful). Final response saved to '
+    )
+    expect(wrapper.get('.performance-benchmarks__logs').text()).toContain(
+      'C:\\ComfyUI\\benchmarks\\20260907225600\\results.json'
+    )
+    const results = wrapper.get('.performance-benchmarks__results').text()
+    expect(results).toContain('Fastest job')
+    expect(results).toContain('1.250 s')
+    expect(results).toContain('Slowest job')
+    expect(results).toContain('2.750 s')
+    expect(results).not.toContain('prompt-3')
+    expect(results).not.toContain('prompt-7')
+    expect(results).toContain('Average job duration')
+    expect(results).toContain('2.000 s')
+    expect(results).toContain('Median job duration')
+    expect(results).toContain('1.875 s')
+    expect(results).toContain('Hardware')
+    expect(results).toContain('Compute device')
+    expect(results).toContain('NVIDIA GeForce RTX 4090')
+    expect(results).toContain('VRAM')
+    expect(results).toContain('24576 MB')
+    expect(results).toContain('System information')
+    expect(results).toContain('Microsoft Windows 11 Pro 10.0.26200')
+    expect(results).toContain('AMD Ryzen 9 7950X')
+    expect(results).toContain('Logical CPU cores')
+    expect(results).toContain('32')
+    expect(results).toContain('System memory')
+    expect(results).toContain('64 GB')
+    expect(results).toContain('GPU driver')
+    expect(results).toContain('580.88')
+    const outputCallback = api.onComfyOutput.mock.calls[0]![0] as (data: {
+      installationId: string
+      text: string
+    }) => void
+    outputCallback({ installationId: 'benchmark:workspace-install', text: 'ComfyUI is ready\n' })
+    await flushPromises()
+    expect(wrapper.get('.performance-benchmarks__logs').text()).toContain('ComfyUI is ready')
+    expect(wrapper.get('.performance-benchmarks__stop').attributes('disabled')).toBe('')
+    expect(api.stopComfyUI).toHaveBeenCalledWith('benchmark:workspace-install')
+    expect(api.cancelOperation).not.toHaveBeenCalled()
+
+    await wrapper.get('.performance-benchmarks__delete-workflow').trigger('click')
+    await flushPromises()
+    expect(api.deleteBenchmarkWorkflow).toHaveBeenCalledWith(
+      'C:\\ComfyUI\\benchmarks\\20260907225600\\cat-workflow.json'
+    )
+    expect(wrapper.find('.performance-benchmarks__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-benchmarks__drop-zone').text()).toContain(
+      'Drop a workflow .json file here, or click to browse'
+    )
+
+    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    await wrapper.get('[data-testid="devplatform-workspace-unmanaged"]').trigger('click')
+    await flushPromises()
+
+    expect(instanceSelect.text()).toBe('Select an instance')
+    await instanceSelect.trigger('click')
+    await flushPromises()
+    expect(
+      Array.from(document.querySelectorAll('.ui-select-option-label')).map(
+        (option) => option.textContent
+      )
+    ).toEqual(['Unmanaged Install'])
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+  })
+
   it('opens the new-install takeover above the chooser body when show-new-install fires', async () => {
     // Flow modals are Tier 3 takeover overlays. The chooser stays
     // mounted underneath the takeover, so dismissing the takeover
@@ -428,6 +847,114 @@ describe('PanelApp', () => {
       entrypoint: 'chooser',
       workspaceId: 'workspace-1'
     })
+  })
+
+  it('allows benchmarking an instance started outside benchmarks', async () => {
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ]
+    const api = (
+      window as unknown as {
+        api: { getRunningInstances: ReturnType<typeof vi.fn> }
+      }
+    ).api
+    api.getRunningInstances.mockResolvedValueOnce([
+      {
+        installationId: 'workspace-install',
+        installationName: 'Workspace Install',
+        mode: 'window'
+      }
+    ])
+    window.history.replaceState({}, '', '/?panel=performance-benchmarks&firstUseCompleted=true')
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('.performance-benchmarks__drop-content').trigger('click')
+    await wrapper.get('.performance-benchmarks__instance-select button').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+    expect(wrapper.get('.performance-benchmarks__run').attributes('disabled')).toBeUndefined()
+  })
+
+  it('allows a crashed benchmark session to be stopped and cleared manually', async () => {
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ]
+    const api = (
+      window as unknown as {
+        api: {
+          runBenchmarkWorkflow: ReturnType<typeof vi.fn>
+          stopComfyUI: ReturnType<typeof vi.fn>
+          onComfyExited: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    let resolveBenchmark!: (result: {
+      ok: boolean
+      submitted: number
+      preparationRuns: number
+      totalSubmitted: number
+      message: string
+    }) => void
+    api.runBenchmarkWorkflow.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveBenchmark = resolve))
+    )
+    window.history.replaceState({}, '', '/?panel=performance-benchmarks&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('.performance-benchmarks__drop-content').trigger('click')
+    await wrapper.get('.performance-benchmarks__instance-select button').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+    await wrapper.get('.performance-benchmarks__run').trigger('click')
+    await flushPromises()
+
+    const exitedCallback = api.onComfyExited.mock.calls[0]![0] as (data: {
+      installationId: string
+      installationName: string
+      crashed: boolean
+      exitCode: number
+    }) => void
+    exitedCallback({
+      installationId: 'benchmark:workspace-install',
+      installationName: 'Workspace Install',
+      crashed: true,
+      exitCode: 1
+    })
+    await flushPromises()
+
+    const stopButton = wrapper.get('.performance-benchmarks__stop')
+    expect(stopButton.attributes('disabled')).toBeUndefined()
+    await stopButton.trigger('click')
+    await flushPromises()
+    expect(api.stopComfyUI).toHaveBeenCalledWith('benchmark:workspace-install')
+    expect(stopButton.attributes('disabled')).toBe('')
+    resolveBenchmark({
+      ok: false,
+      submitted: 0,
+      preparationRuns: 0,
+      totalSubmitted: 0,
+      message: 'The benchmark instance exited.'
+    })
+    await flushPromises()
   })
 
   it('returns to the underlying body when a takeover emits close', async () => {

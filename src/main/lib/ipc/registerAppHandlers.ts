@@ -3,6 +3,7 @@ import {
   dialog,
   shell,
   BrowserWindow,
+  app,
   fs,
   path,
   os,
@@ -25,7 +26,8 @@ import {
   openPath,
   listSnapshots,
   diffSnapshots,
-  buildInstallationDdContext
+  buildInstallationDdContext,
+  _runningSessions
 } from './shared'
 import si from 'systeminformation'
 import type { FieldOption } from './shared'
@@ -35,6 +37,16 @@ import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
+import {
+  BENCHMARK_PREPARATION_RUNS,
+  calculateBenchmarkStatistics,
+  deleteBenchmarkWorkflow,
+  saveBenchmarkAggregates,
+  saveBenchmarkJobsResponse,
+  storeBenchmarkWorkflow,
+  submitBenchmarkWorkflow,
+  waitForBenchmarkJobs
+} from '../benchmarkWorkflows'
 
 export function registerAppHandlers(): void {
   // App version
@@ -137,6 +149,94 @@ export function registerAppHandlers(): void {
     return filePaths[0]
   })
 
+  ipcMain.handle('import-benchmark-workflow', async (_event, droppedFilePath?: string) => {
+    let sourcePath = typeof droppedFilePath === 'string' ? droppedFilePath : ''
+    if (!sourcePath) {
+      const win = BrowserWindow.fromWebContents(_event.sender)
+      if (!win) return { ok: false, message: 'No window.' }
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+        properties: ['openFile']
+      })
+      if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
+      sourcePath = filePaths[0]!
+    }
+    try {
+      const filePath = await storeBenchmarkWorkflow(sourcePath, app.getPath('userData'))
+      return { ok: true, filePath }
+    } catch (error) {
+      return { ok: false, message: (error as Error)?.message || String(error) }
+    }
+  })
+
+  ipcMain.handle('delete-benchmark-workflow', async (_event, filePath: string) => {
+    try {
+      await deleteBenchmarkWorkflow(filePath, app.getPath('userData'))
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, message: (error as Error)?.message || String(error) }
+    }
+  })
+
+  ipcMain.handle(
+    'run-benchmark-workflow',
+    async (_event, sessionId: string, filePath: string, measuredRuns: number) => {
+      try {
+        if (typeof sessionId !== 'string' || !sessionId.startsWith('benchmark:')) {
+          throw new Error('Invalid benchmark session.')
+        }
+        const session = _runningSessions.get(sessionId)
+        if (!session) throw new Error('The benchmark instance is not running.')
+        const sessionUrl = session.url || `http://127.0.0.1:${session.port}`
+        const promptIds = await submitBenchmarkWorkflow(
+          filePath,
+          app.getPath('userData'),
+          sessionUrl,
+          measuredRuns
+        )
+        const measuredPromptIds = promptIds.slice(BENCHMARK_PREPARATION_RUNS)
+        const jobsResponse = await waitForBenchmarkJobs(sessionUrl, measuredPromptIds)
+        const statistics = calculateBenchmarkStatistics(jobsResponse, measuredPromptIds)
+        const resultPath = await saveBenchmarkJobsResponse(
+          jobsResponse,
+          filePath,
+          app.getPath('userData')
+        )
+        const aggregatesPath = await saveBenchmarkAggregates(
+          statistics,
+          filePath,
+          app.getPath('userData')
+        )
+        const systemInfo = await getSystemInfo()
+        const submittedPromptIds = new Set(measuredPromptIds)
+        const unsuccessfulJobs = jobsResponse.jobs.filter(
+          (job) => submittedPromptIds.has(job.id) && job.status !== 'completed'
+        )
+        return {
+          ok: true,
+          submitted: measuredRuns,
+          preparationRuns: BENCHMARK_PREPARATION_RUNS,
+          totalSubmitted: measuredRuns + BENCHMARK_PREPARATION_RUNS,
+          promptIds,
+          resultPath,
+          aggregatesPath,
+          statistics,
+          hardware: session.getAcceleratorInfo?.() ?? null,
+          systemInfo,
+          unsuccessfulJobs: unsuccessfulJobs.length
+        }
+      } catch (error) {
+        return {
+          ok: false,
+          submitted: 0,
+          preparationRuns: 0,
+          totalSubmitted: 0,
+          message: (error as Error)?.message || String(error)
+        }
+      }
+    }
+  )
+
   ipcMain.handle('open-path', (_event, targetPath: string) => {
     if (typeof targetPath !== 'string' || !targetPath) return ''
     if (/^https?:\/\//i.test(targetPath)) return shell.openExternal(targetPath)
@@ -196,7 +296,7 @@ export function registerAppHandlers(): void {
     return hardwareProbe
   }
 
-  ipcMain.handle('get-system-info', async () => {
+  async function getSystemInfo() {
     const hardware = await probeHardwareCached()
     const cpus = os.cpus()
     const allInstalls = await installations.list()
@@ -225,7 +325,9 @@ export function registerAppHandlers(): void {
         status: (inst.status as string) || 'ready'
       }))
     }
-  })
+  }
+
+  ipcMain.handle('get-system-info', getSystemInfo)
 
   async function probeHardware(): Promise<Record<string, unknown>> {
     const gpu = await detectGPUCached()

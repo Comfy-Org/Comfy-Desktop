@@ -44,6 +44,15 @@ export interface AcceleratorInfo {
   backend: string | null
 }
 
+export interface AcceleratorSnapshot extends AcceleratorInfo {
+  devices: AcceleratorInfo[]
+  vramMb: number | null
+  ramMb: number | null
+  pytorchVersion: string | null
+  xformersVersion: string | null
+  cudaDeviceSet: number | null
+}
+
 const DEVICE_LINE = /^Device:\s*(.+)$/
 const VRAM_LINE = /^Total VRAM\s+(\d+)\s*MB,\s*total RAM\s+(\d+)\s*MB/i
 const PYTORCH_LINE = /^pytorch version:\s*(.+)$/i
@@ -111,6 +120,7 @@ export function createHardwareTap(opts: {
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
+  getAcceleratorInfo: () => AcceleratorSnapshot | null
   flushSummary: () => void
 } {
   const baseContext = {
@@ -202,6 +212,27 @@ export function createHardwareTap(opts: {
         comfyui_device_type: primary.deviceType,
         comfyui_gpu_count: devices.length
       })
+    }
+  }
+
+  function getAcceleratorInfo(): AcceleratorSnapshot | null {
+    if (devices.length === 0) return null
+    const primary = devices[0]!
+    const primaryName =
+      primary.deviceName ??
+      (primary.deviceType !== 'cpu' && primary.deviceType !== 'mps' ? directmlDeviceName : null)
+    return {
+      ...primary,
+      deviceName: primaryName,
+      devices: devices.map((device, index) => ({
+        ...device,
+        deviceName: index === 0 ? primaryName : device.deviceName
+      })),
+      vramMb,
+      ramMb,
+      pytorchVersion,
+      xformersVersion,
+      cudaDeviceSet
     }
   }
 
@@ -304,6 +335,7 @@ export function createHardwareTap(opts: {
       pendingBySource.stdout = ''
       pendingBySource.stderr = ''
     },
+    getAcceleratorInfo,
     flushSummary(): void {
       try {
         // Process complete-but-unterminated final lines so a trailing `Device:`

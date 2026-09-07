@@ -28,6 +28,12 @@ export function buildElectronApi(): ElectronApi {
 
     // File/URL
     browseFolder: (defaultPath?) => ipcRenderer.invoke('browse-folder', defaultPath),
+    importBenchmarkWorkflow: (filePath?) =>
+      ipcRenderer.invoke('import-benchmark-workflow', filePath),
+    deleteBenchmarkWorkflow: (filePath) =>
+      ipcRenderer.invoke('delete-benchmark-workflow', filePath),
+    runBenchmarkWorkflow: (sessionId, filePath, measuredRuns) =>
+      ipcRenderer.invoke('run-benchmark-workflow', sessionId, filePath, measuredRuns),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),

@@ -33,7 +33,12 @@ function opaquePanelBg(): string {
  *  an opaque surface instead of black. Overlay modes (downloads / feedback)
  *  deliberately stay transparent. */
 function isOpaqueBodyMode(mode: BodyMode): boolean {
-  return mode === 'chooser' || mode === 'new-install' || mode === 'comfy-lifecycle'
+  return (
+    mode === 'chooser' ||
+    mode === 'performance-benchmarks' ||
+    mode === 'new-install' ||
+    mode === 'comfy-lifecycle'
+  )
 }
 
 /**

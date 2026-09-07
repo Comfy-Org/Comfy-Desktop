@@ -8,6 +8,7 @@ import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
+import PerformanceBenchmarksView from '../views/PerformanceBenchmarksView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
 import TrackModal from '../views/TrackModal.vue'
 import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
@@ -603,6 +604,13 @@ onUnmounted(() => {
             @show-progress="handleShowProgress"
           />
         </div>
+
+        <div
+          v-else-if="activePanel === 'performance-benchmarks'"
+          class="panel-performance-benchmarks"
+        >
+          <PerformanceBenchmarksView />
+        </div>
       </div>
     </main>
 
@@ -721,7 +729,8 @@ body.panel-overlay-mode .panel-shell {
  * so its grid can scroll vertically) — negate the panel-content
  * gutter for those branches. */
 .panel-content:has(.panel-comfy-lifecycle),
-.panel-content:has(.panel-chooser) {
+.panel-content:has(.panel-chooser),
+.panel-content:has(.panel-performance-benchmarks) {
   padding: 0;
 }
 
@@ -737,7 +746,8 @@ body.panel-overlay-mode .panel-shell {
 }
 
 .panel-comfy-lifecycle,
-.panel-chooser {
+.panel-chooser,
+.panel-performance-benchmarks {
   flex: 1;
   min-height: 0;
   display: flex;
