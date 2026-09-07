@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { DetailField } from '../../types/ipc'
 
@@ -38,6 +38,9 @@ const blocked = computed(() => props.turnOnDisabled === true && !visualOn.value)
 const blockedReason = computed(() =>
   blocked.value && props.turnOnDisabledTooltipKey ? t(props.turnOnDisabledTooltipKey) : undefined
 )
+// Per instance: a literal id would make every blocked toggle on a settings page describe the
+// same element, so each one would announce the first one's reason.
+const descriptionId = useId()
 
 function handleClick(): void {
   if (blocked.value) return
@@ -55,12 +58,18 @@ function handleClick(): void {
     :data-state="visualOn ? 'checked' : 'unchecked'"
     :aria-checked="visualOn"
     :aria-label="field.label"
-    :disabled="blocked"
+    :aria-disabled="blocked"
+    :aria-describedby="blocked && blockedReason ? descriptionId : undefined"
     :title="blockedReason"
     @click="handleClick"
   >
     <span class="bt-track" :aria-hidden="true">
       <span class="bt-thumb"></span>
+    </span>
+    <!-- `title` is mouse-only, so the reason is repeated here for the accessibility tree.
+         `aria-label` above owns the accessible NAME, so this text cannot leak into it. -->
+    <span v-if="blocked && blockedReason" :id="descriptionId" class="bt-blocked-reason">
+      {{ blockedReason }}
     </span>
   </button>
 </template>
@@ -76,9 +85,25 @@ function handleClick(): void {
   cursor: pointer;
 }
 
-.bt-switch:disabled {
+/* Keys on aria-disabled, not :disabled — the control stays focusable, so the native
+   pseudo-class no longer matches and the blocked state would otherwise look enabled. */
+.bt-switch[aria-disabled='true'] {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+/* Reachable by screen readers via aria-describedby, without adding visible copy to a row
+   whose blocked state is already conveyed by the dimming and the tooltip. */
+.bt-blocked-reason {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .bt-track {

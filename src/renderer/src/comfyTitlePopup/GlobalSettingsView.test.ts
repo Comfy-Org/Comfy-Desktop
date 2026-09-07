@@ -673,7 +673,7 @@ describe('GlobalSettingsView', () => {
       const bridge = installMockBridge()
       const wrapper = mountView(snapshotWith(false, false))
       const toggle = toggleFor(wrapper, BETA_LABEL)
-      expect(toggle.attributes('disabled')).toBeDefined()
+      expect(toggle.attributes('aria-disabled')).toBe('true')
       expect(toggle.attributes('title')).toBe(en.tooltips.betaFeaturesNeedTelemetry)
 
       await toggle.trigger('click')
@@ -701,7 +701,7 @@ describe('GlobalSettingsView', () => {
 
       await wrapper.setProps({ snapshot: snapshotWith(false, false) as never })
       const after = toggleFor(wrapper, BETA_LABEL)
-      expect(after.attributes('disabled')).toBeDefined()
+      expect(after.attributes('aria-disabled')).toBe('true')
       await after.trigger('click')
       await flushPromises()
       expect(bridge.updateFieldCalls).toHaveLength(1)

@@ -239,10 +239,10 @@ describe('SettingsSectionList', () => {
       expect(toggle.props('turnOnDisabledTooltipKey')).toBe('tooltips.betaFeaturesNeedTelemetry')
     })
 
-    it('disables an off row and resolves the tooltip key against the catalog', async () => {
+    it('blocks an off row and resolves the tooltip key against the catalog', async () => {
       const wrapper = mountList([betaField(false, true)])
       const button = wrapper.find('button[role="switch"]')
-      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.attributes('aria-disabled')).toBe('true')
       expect(button.attributes('title')).toBe(en.tooltips.betaFeaturesNeedTelemetry)
       expect(button.attributes('title')).not.toBe('tooltips.betaFeaturesNeedTelemetry')
 
@@ -251,10 +251,64 @@ describe('SettingsSectionList', () => {
       expect(button.attributes('aria-checked')).toBe('false')
     })
 
+    // A blocked switch must stay REACHABLE. `disabled` removes it from the tab order, so a
+    // keyboard or screen-reader user cannot land on it to discover why it is blocked — the
+    // explanation only exists as a mouse-only `title`. `aria-disabled` announces the state
+    // while keeping the control focusable; `handleClick` remains the functional block.
+    it('keeps a blocked switch in the tab order', () => {
+      const wrapper = mountList([betaField(false, true)])
+      const button = wrapper.find('button[role="switch"]')
+      expect(button.attributes('disabled')).toBeUndefined()
+      expect(button.attributes('tabindex')).not.toBe('-1')
+    })
+
+    it('marks a blocked switch aria-disabled rather than disabled', async () => {
+      const wrapper = mountList([betaField(false, true)])
+      const button = wrapper.find('button[role="switch"]')
+      expect(button.attributes('aria-disabled')).toBe('true')
+
+      // Still inert: reachable is not the same as operable.
+      await button.trigger('click')
+      expect(wrapper.emitted('update-field')).toBeFalsy()
+      expect(button.attributes('aria-checked')).toBe('false')
+    })
+
+    it('points aria-describedby at the blocked explanation text', () => {
+      const wrapper = mountList([betaField(false, true)])
+      const button = wrapper.find('button[role="switch"]')
+      const describedBy = button.attributes('aria-describedby')
+      expect(describedBy).toBeTruthy()
+
+      const description = wrapper.find(`#${describedBy}`)
+      expect(description.exists()).toBe(true)
+      expect(description.text()).toBe(en.tooltips.betaFeaturesNeedTelemetry)
+    })
+
+    it('keeps the blocked styling hook after dropping the disabled attribute', () => {
+      // `.bt-switch:disabled` stops matching once the attribute is gone, so the dim/cursor
+      // styling has to key on the new state or the block becomes visually invisible.
+      const wrapper = mountList([betaField(false, true)])
+      expect(wrapper.find('button[role="switch"][aria-disabled="true"]').exists()).toBe(true)
+    })
+
+    it('gives each blocked switch its own description id', () => {
+      const wrapper = mountList([betaField(false, true), betaField(false, true)])
+      const ids = wrapper
+        .findAll('button[role="switch"]')
+        .map((button) => button.attributes('aria-describedby'))
+
+      expect(ids).toHaveLength(2)
+      expect(ids[0]).toBeTruthy()
+      // A fixed literal id would make both toggles describe the same element, so the second
+      // switch would announce the first one's reason.
+      expect(ids[0]).not.toBe(ids[1])
+    })
+
     it('leaves an on row fully operable so turning it off always works', async () => {
       const wrapper = mountList([betaField(true, true)])
       const button = wrapper.find('button[role="switch"]')
       expect(button.attributes('disabled')).toBeUndefined()
+      expect(button.attributes('aria-disabled')).toBe('false')
       expect(button.attributes('title')).toBeUndefined()
 
       await button.trigger('click')

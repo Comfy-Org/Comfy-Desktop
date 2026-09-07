@@ -469,9 +469,11 @@ const isBrandStep = computed(() => step.value === 'start' || step.value === 'loc
  *  China-mirror sub-step still runs first when the locale calls for
  *  it; the post-mirror branch reuses the same routing logic. */
 /** Entry rule: joining the beta programme requires telemetry, so a telemetry
- *  choice of off forces the beta choice off too — but only the choice, never
- *  `betaTouched`. Turning telemetry back on therefore re-mirrors for a user who
- *  never touched the toggle, and leaves an explicit choice alone. */
+ *  choice of off forces the beta choice off too — including an explicit ON, which
+ *  is overwritten. `betaTouched` is never cleared, so turning telemetry back on
+ *  re-mirrors ONLY for a user who never touched the toggle; a user who had
+ *  explicitly chosen ON is left off. An explicit ON therefore does not survive an
+ *  off→on flick of telemetry, and has to be chosen again. */
 function applyBetaEntryRule(): void {
   if (!telemetryEnabled.value) {
     betaFeaturesEnabled.value = false
