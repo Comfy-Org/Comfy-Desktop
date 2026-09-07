@@ -35,6 +35,7 @@ const CORE_EVENTS = [
   'scanner.fast_scan_failed',
   'scanner.temp_sync_failed',
   'scanner.mark_missing_failed',
+  'scanner.stat_failed',
   'ingest.register_output_failed',
   'ingest.discard_orphan_failed',
   'api.request_failed'
@@ -45,7 +46,6 @@ const COUNTER_FIELDS = [
   'created',
   'enriched',
   'skipped',
-  'marked_missing',
   'hash_failed',
   'enrich_failed',
   'permission_denied',
@@ -87,9 +87,9 @@ const FIELD_MATRIX: Array<{ field: string; valid: unknown[]; invalid: unknown[] 
     invalid: ['get_asset', 'GET_ASSET_ROUTE', '/api/assets/upload', 7, null]
   },
   {
-    field: 'size_bucket',
-    valid: ['lt_1m', 'lt_100m', 'lt_1g', 'ge_1g'],
-    invalid: ['lt_10m', 'huge', 'LT_1M', 1024, null]
+    field: 'site',
+    valid: ['discovery', 'enrich'],
+    invalid: ['Discovery', 'ENRICH', 'scan', '', 1, true, null]
   },
   ...COUNTER_FIELDS.map((field) => ({
     field,
@@ -173,7 +173,7 @@ describe('assetsTap', () => {
           'phase',
           'stage',
           'route',
-          'size_bucket',
+          'site',
           ...COUNTER_FIELDS,
           'error_type',
           'hashing_enabled'
@@ -192,8 +192,8 @@ describe('assetsTap', () => {
     const raw = fs.readFileSync(FIXTURE_PATH, 'utf8')
     const lines = raw.split('\n').filter((line) => line.length > 0)
 
-    it('holds three newline-terminated lines with no CRLF', () => {
-      expect(lines).toHaveLength(3)
+    it('holds four newline-terminated lines with no CRLF', () => {
+      expect(lines).toHaveLength(4)
       expect(raw.endsWith('\n')).toBe(true)
       expect(raw).not.toContain('\r')
     })
@@ -253,6 +253,17 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(2)
       expect(captured[0]!.ctx).toMatchObject({ phase: 'fast' })
       expect(captured[1]!.ctx).toMatchObject({ phase: 'enrich' })
+    })
+
+    it('accepts scanner.stat_failed carrying error_type and site', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('scanner.stat_failed', { error_type: 'PermissionError', site: 'discovery' }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe('comfy.desktop.comfyui.assets.scanner.stat_failed')
+      expect(captured[0]!.ctx).toMatchObject({ error_type: 'PermissionError', site: 'discovery' })
     })
 
     it('accepts an event carrying no fields at all', () => {

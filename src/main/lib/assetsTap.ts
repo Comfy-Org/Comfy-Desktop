@@ -58,6 +58,7 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'scanner.fast_scan_failed',
   'scanner.temp_sync_failed',
   'scanner.mark_missing_failed',
+  'scanner.stat_failed',
   'ingest.register_output_failed',
   'ingest.discard_orphan_failed',
   'api.request_failed'
@@ -115,12 +116,11 @@ export const ALLOWED_FIELDS: ReadonlyMap<string, Validator> = new Map<string, Va
       'parse_multipart_upload'
     )
   ],
-  ['size_bucket', oneOf('lt_1m', 'lt_100m', 'lt_1g', 'ge_1g')],
+  ['site', oneOf('discovery', 'enrich')],
   ['elapsed_ms', isCount],
   ['created', isCount],
   ['enriched', isCount],
   ['skipped', isCount],
-  ['marked_missing', isCount],
   ['hash_failed', isCount],
   ['enrich_failed', isCount],
   ['permission_denied', isCount],
