@@ -14,6 +14,9 @@ import {
   parseCoreCanaryFlags,
   selectCoreCanaryArgs
 } from './coreCanary'
+import type { CoreVersionState } from './coreCanary'
+import { coreSemverExact } from './version'
+import type { InstallationRecord } from '../installations'
 
 beforeEach(() => {
   _resetForTest()
@@ -138,12 +141,18 @@ describe('selectCoreCanaryArgs', () => {
     maxCoreVersion: '0.4.0'
   }
 
+  /** Defaults to exact: an install sitting on its release tag is the ordinary case, so the
+   *  cases below vary only what they are actually about. */
+  function at(semver: string | null, exact = true): CoreVersionState {
+    return { semver, exact }
+  }
+
   it.each([
     ['below', '0.3.79', []],
     ['equal to', '0.3.80', [unboundedGrant]],
     ['above', '0.3.81', [unboundedGrant]]
   ])('selects by a core version %s the inclusive minimum', (_label, coreVersion, expected) => {
-    expect(selectCoreCanaryArgs([unboundedGrant], coreVersion, true, [])).toEqual(expected)
+    expect(selectCoreCanaryArgs([unboundedGrant], at(coreVersion), true, [])).toEqual(expected)
   })
 
   it.each([
@@ -151,19 +160,19 @@ describe('selectCoreCanaryArgs', () => {
     ['at', '0.4.0', []],
     ['above', '0.4.1', []]
   ])('selects by a core version %s the exclusive maximum', (_label, coreVersion, expected) => {
-    expect(selectCoreCanaryArgs([boundedGrant], coreVersion, true, [])).toEqual(expected)
+    expect(selectCoreCanaryArgs([boundedGrant], at(coreVersion), true, [])).toEqual(expected)
   })
 
   it.each([
     ['enabled', true, [unboundedGrant]],
     ['disabled', false, []]
   ])('returns the grant when beta features are %s', (_label, betaEnabled, expected) => {
-    expect(selectCoreCanaryArgs([unboundedGrant], '0.3.81', betaEnabled, [])).toEqual(expected)
+    expect(selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), betaEnabled, [])).toEqual(expected)
   })
 
   it('skips a grant when the exact dashed arg is already present', () => {
     expect(
-      selectCoreCanaryArgs([unboundedGrant], '0.3.81', true, [
+      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, [
         '--cpu',
         '--enable-assets',
         'unfiltered-user-value'
@@ -172,19 +181,62 @@ describe('selectCoreCanaryArgs', () => {
   })
 
   it('does not suppress a grant when the conflicting opposite is present', () => {
-    expect(selectCoreCanaryArgs([unboundedGrant], '0.3.81', true, ['--disable-assets'])).toEqual([
-      unboundedGrant
-    ])
+    expect(
+      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, ['--disable-assets'])
+    ).toEqual([unboundedGrant])
   })
 
   it('does not treat a value-taking near miss as the exact arg token', () => {
     expect(
-      selectCoreCanaryArgs([unboundedGrant], '0.3.81', true, ['--enable-assets=true'])
+      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, ['--enable-assets=true'])
     ).toEqual([unboundedGrant])
   })
 
   it('returns no grants when the core version is unknown', () => {
-    expect(selectCoreCanaryArgs([unboundedGrant], null, true, [])).toEqual([])
+    expect(selectCoreCanaryArgs([unboundedGrant], at(null), true, [])).toEqual([])
+  })
+
+  /** Derives exactness the way production does, so these cases pin the real `commitsAhead`
+   *  semantics rather than a hand-set boolean that could drift from `coreSemverExact`. */
+  function exactnessOf(commitsAhead: number | undefined): boolean {
+    const inst: InstallationRecord = {
+      id: 'inst-1',
+      name: 'ComfyUI',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      installPath: '/tmp/comfy',
+      sourceId: 'git',
+      comfyVersion: {
+        commit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+        baseTag: 'v0.3.99',
+        commitsAhead
+      }
+    }
+    return coreSemverExact(inst)
+  }
+
+  it('applies a max-bounded grant when the install sits exactly on its tag', () => {
+    expect(selectCoreCanaryArgs([boundedGrant], at('0.3.99', exactnessOf(0)), true, [])).toEqual([
+      boundedGrant
+    ])
+  })
+
+  it.each([
+    ['the commit comparison failed', undefined],
+    ['the install is 40 commits past the tag', 40]
+  ] as const)('withholds a max-bounded grant when %s', (_label, commitsAhead) => {
+    // `coreSemver` resolves from `baseTag`, so a latest-channel install still MEASURES as
+    // 0.3.99 and would otherwise slip under the `<0.4.0` ceiling it is actually well past.
+    expect(
+      selectCoreCanaryArgs([boundedGrant], at('0.3.99', exactnessOf(commitsAhead)), true, [])
+    ).toEqual([])
+  })
+
+  it('still applies a min-only grant when the install is not exactly on its tag', () => {
+    // The lower bound stays conservative under baseTag lag: the running code can only be NEWER
+    // than its tag, so `>=min` can under-report but never over-report.
+    expect(
+      selectCoreCanaryArgs([unboundedGrant], at('0.3.81', exactnessOf(undefined)), true, [])
+    ).toEqual([unboundedGrant])
   })
 })
 

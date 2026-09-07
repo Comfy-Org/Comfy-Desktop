@@ -96,7 +96,7 @@ import type { PersistedTorchStack } from '../../../sources/standalone/torchStack
 import type { WriteStream } from 'fs'
 import { getCoreCanaryFlagsAsync, selectCoreCanaryArgs } from '../../coreCanary'
 import type { CoreCanaryFlag } from '../../coreCanary'
-import { coreSemver } from '../../version'
+import { coreSemver, coreSemverExact } from '../../version'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -157,11 +157,17 @@ export function buildLaunchArgs(input: {
   schema: ComfyArgsSchema
   betaFlags: readonly CoreCanaryFlag[]
   coreVersion: string | null
+  coreVersionExact: boolean
   betaEnabled: boolean
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
-  const selected = selectCoreCanaryArgs(input.betaFlags, coreVersion, input.betaEnabled, userArgs)
+  const selected = selectCoreCanaryArgs(
+    input.betaFlags,
+    { semver: coreVersion, exact: input.coreVersionExact },
+    input.betaEnabled,
+    userArgs
+  )
   const supported = new Set(
     filterUnsupportedArgs(
       selected.map((grant) => grant.arg),
@@ -821,6 +827,7 @@ async function runLaunch(
           schema,
           betaFlags: await getCoreCanaryFlagsAsync(),
           coreVersion: coreSemver(inst),
+          coreVersionExact: coreSemverExact(inst),
           betaEnabled: settings.resolveBetaFeaturesEnabled()
         })
         launchCmd.args = built.args

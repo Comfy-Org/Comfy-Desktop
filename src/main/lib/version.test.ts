@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import semver from 'semver'
-import { coreSemver, formatComfyVersion } from './version'
+import { coreSemver, coreSemverExact, formatComfyVersion } from './version'
 import type { ComfyVersion } from './version'
 import type { InstallationRecord } from '../installations'
 
@@ -75,6 +75,32 @@ function record(fields: Partial<InstallationRecord>): InstallationRecord {
     ...fields
   }
 }
+
+describe('coreSemverExact', () => {
+  const commit = '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'
+
+  it('is exact when the install sits on the tag', () => {
+    expect(
+      coreSemverExact(record({ comfyVersion: { commit, baseTag: 'v0.3.80', commitsAhead: 0 } }))
+    ).toBe(true)
+  })
+
+  it('is not exact when the install is ahead of the tag', () => {
+    expect(
+      coreSemverExact(record({ comfyVersion: { commit, baseTag: 'v0.3.80', commitsAhead: 40 } }))
+    ).toBe(false)
+  })
+
+  it('is not exact when the commit comparison failed', () => {
+    // undefined = the GitHub comparison API failed, so how far past the tag we are is UNKNOWN.
+    // `formatComfyVersion` already refuses to imply exactness here; the version gate must too.
+    expect(coreSemverExact(record({ comfyVersion: { commit, baseTag: 'v0.3.80' } }))).toBe(false)
+  })
+
+  it('is not exact for a legacy install carrying no comfyVersion', () => {
+    expect(coreSemverExact(record({ version: 'v0.3.80' }))).toBe(false)
+  })
+})
 
 describe('coreSemver', () => {
   it('strips a single leading v from a release tag', () => {

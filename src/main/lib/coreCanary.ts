@@ -71,20 +71,49 @@ export function parseCoreCanaryFlags(
   return flags
 }
 
+/** The install's core release as the version gate sees it. Grouped rather than passed as two
+ *  more positional arguments, so `exact` can never be transposed with `betaEnabled`. */
+export interface CoreVersionState {
+  /** Strict semver of the release, or `null` when it cannot be established. */
+  semver: string | null
+  /** Whether the install sits exactly on that release tag (`coreSemverExact`). */
+  exact: boolean
+}
+
+// The version window is min-INCLUSIVE and max-EXCLUSIVE (`>=min <max`). The payload field names
+// `min_core_version`/`max_core_version` don't say which way either bound closes, so the boundary
+// is settled here and echoed in the selection log rather than by renaming the wire format.
 export function selectCoreCanaryArgs(
   flags: readonly CoreCanaryFlag[],
-  coreVersion: string | null,
+  core: CoreVersionState,
   betaEnabled: boolean,
   userArgs: readonly string[]
 ): CoreCanaryFlag[] {
-  if (coreVersion === null || betaEnabled !== true) return []
+  const version = core.semver
+  if (version === null || betaEnabled !== true) return []
   const presentArgs = new Set(userArgs)
-  return flags.filter(
-    ({ arg, minCoreVersion, maxCoreVersion }) =>
-      !presentArgs.has(arg) &&
-      semver.gte(coreVersion, minCoreVersion) &&
-      (maxCoreVersion === undefined || semver.lt(coreVersion, maxCoreVersion))
-  )
+  const selected: CoreCanaryFlag[] = []
+  for (const flag of flags) {
+    const { arg, minCoreVersion, maxCoreVersion } = flag
+    const window =
+      maxCoreVersion === undefined
+        ? `>=${minCoreVersion}`
+        : `>=${minCoreVersion} <${maxCoreVersion}`
+    console.log(`[core-canary] window ${arg}: ${window} version=${version} exact=${core.exact}`)
+
+    if (presentArgs.has(arg)) continue
+    if (!semver.gte(version, minCoreVersion)) continue
+    if (maxCoreVersion !== undefined) {
+      // An upper bound only means anything on an exact tag match. `coreSemver` resolves from
+      // `baseTag`, so a latest-channel install 40 commits past v0.3.99 still measures as 0.3.99
+      // and would slip under a `<0.4.0` ceiling it is well past. The lower bound needs no such
+      // guard: baseTag lag can only under-report the running code, never over-report it.
+      if (!core.exact) continue
+      if (!semver.lt(version, maxCoreVersion)) continue
+    }
+    selected.push(flag)
+  }
+  return selected
 }
 
 // Grants persist across launches, so revoking one is an ops SEQUENCE, not a deletion: serving

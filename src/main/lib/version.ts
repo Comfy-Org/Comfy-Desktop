@@ -62,6 +62,21 @@ export function coreSemver(inst: InstallationRecord): string | null {
 }
 
 /**
+ * Whether the install sits EXACTLY on its release tag, so {@link coreSemver}
+ * names the code that is actually running rather than a floor.
+ *
+ * `commitsAhead` is `undefined` when the GitHub comparison failed: the distance
+ * past the tag is unknown, not zero, so that reads as inexact — the same
+ * refusal {@link formatComfyVersion} makes when it declines to print a bare
+ * tag. An upper version bound is only meaningful against an exact match: on a
+ * latest-channel install `baseTag` lags the real code, so code far past the
+ * bound still measures as inside it.
+ */
+export function coreSemverExact(inst: InstallationRecord): boolean {
+  return inst.comfyVersion?.commitsAhead === 0
+}
+
+/**
  * Compare two tag-ish strings tolerant of a leading `v`. The comfyui_version.py
  * `__version__` string is bare ("0.24.0") while GitHub tag names are
  * "v"-prefixed ("v0.24.0"); legacy code paths persist either form. Without

@@ -291,6 +291,7 @@ const build = (over: {
   schema: ComfyArgsSchema
   betaFlags?: CoreCanaryFlag[]
   coreVersion?: string | null
+  coreVersionExact?: boolean
   betaEnabled?: boolean
 }): ReturnType<typeof buildLaunchArgs> =>
   buildLaunchArgs({
@@ -300,6 +301,7 @@ const build = (over: {
     schema: over.schema,
     betaFlags: over.betaFlags ?? [ASSETS_GRANT],
     coreVersion: over.coreVersion === undefined ? '0.3.81' : over.coreVersion,
+    coreVersionExact: over.coreVersionExact ?? true,
     betaEnabled: over.betaEnabled ?? true
   })
 
