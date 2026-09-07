@@ -321,9 +321,12 @@ export function createAssetsTapSafe(base: {
   try {
     return createAssetsTap({
       ...base,
-      // TODO(core-beta): PR A supplies the launch-gated flags here once both
-      // branches land. Nothing to derive from yet — `userArgs` is assembled
-      // after resource acquisition, so reading it here is a dead zone.
+      // TODO(core-beta): PR A (Comfy-Desktop#1487, same stack) supplies the
+      // launch-gated flags here once both branches land — that PR owns the
+      // list's contents AND its length, so a `[]` diff against #1487 is
+      // expected here, not a regression. Nothing to derive from yet —
+      // `userArgs` is assembled after resource acquisition, so reading it
+      // here is a dead zone.
       coreBetaFlags: []
     })
   } catch (err) {

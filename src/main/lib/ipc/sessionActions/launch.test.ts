@@ -305,7 +305,7 @@ describe('createAssetsTapSafe', () => {
     const inert = tap as unknown as ReturnType<typeof createAssetsTapSafe>
     expect(() => {
       inert.beginBoot()
-      inert.ingest('[assets-event] assets.enabled {"enabled": true}\n', 'stdout')
+      inert.ingest('[assets-event] assets.enabled {"hashing_enabled": true}\n', 'stdout')
       inert.ingest('[assets-event] api.request_failed {"error_type": "timeout"}\n', 'stderr')
       inert.flushSummary()
     }).not.toThrow()
@@ -341,18 +341,21 @@ describe('attachLaunchStreams assets tap wiring', () => {
 
   it('feeds stdout chunks to the assets tap tagged as stdout', () => {
     const h = harness()
-    h.stdout.emit('data', Buffer.from('[assets-event] assets.enabled {"enabled": true}\n'))
+    h.stdout.emit('data', Buffer.from('[assets-event] assets.enabled {"hashing_enabled": true}\n'))
     expect(h.assetsTap.ingest).toHaveBeenCalledWith(
-      '[assets-event] assets.enabled {"enabled": true}\n',
+      '[assets-event] assets.enabled {"hashing_enabled": true}\n',
       'stdout'
     )
   })
 
   it('feeds stderr chunks to the assets tap tagged as stderr', () => {
     const h = harness()
-    h.stderr.emit('data', Buffer.from('[assets-event] api.request_failed {"status": 500}\n'))
+    h.stderr.emit(
+      'data',
+      Buffer.from('[assets-event] api.request_failed {"error_type": "OSError"}\n')
+    )
     expect(h.assetsTap.ingest).toHaveBeenCalledWith(
-      '[assets-event] api.request_failed {"status": 500}\n',
+      '[assets-event] api.request_failed {"error_type": "OSError"}\n',
       'stderr'
     )
   })
