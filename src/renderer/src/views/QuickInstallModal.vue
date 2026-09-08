@@ -240,14 +240,19 @@ async function handleInstall(): Promise<void> {
       }
     }
 
-    const instData = await window.api.buildInstallation('standalone', rawSelections())
+    const buildResult = await window.api.buildInstallation('standalone', rawSelections())
+    if (!buildResult.ok) {
+      await modal.alert({ title: t('errors.cannotAdd'), message: buildResult.message })
+      installing.value = false
+      return
+    }
     const baseName = instName.value.trim() || DEFAULT_INSTALL_NAME
     const name = await window.api.getUniqueName(baseName)
 
     const result = await window.api.addInstallation({
       name,
       installPath: instPath.value,
-      ...instData,
+      ...buildResult.data,
       status: 'installing'
     })
 

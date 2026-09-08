@@ -39,7 +39,7 @@ beforeEach(() => {
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
     getDiskSpace: vi.fn().mockResolvedValue(null),
     validateInstallPath: vi.fn().mockResolvedValue([]),
-    buildInstallation: vi.fn().mockResolvedValue({ sourceId: 'standalone' }),
+    buildInstallation: vi.fn().mockResolvedValue({ ok: true, data: { sourceId: 'standalone' } }),
     addInstallation: vi.fn().mockResolvedValue({ ok: true }),
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
@@ -167,7 +167,7 @@ describe('InstallWizardModal standalone runtime availability', () => {
         fields: [{ id: 'url', label: 'URL', type: 'text', defaultValue: 'http://localhost:8188' }]
       }
     ])
-    vi.mocked(window.api.buildInstallation).mockResolvedValue({ sourceId: id })
+    vi.mocked(window.api.buildInstallation).mockResolvedValue({ ok: true, data: { sourceId: id } })
     await openWithOptions({})
     await wrapper
       .findAll('button[role="radio"]')
@@ -185,9 +185,10 @@ describe('InstallWizardModal standalone runtime availability', () => {
   })
 
   it('shows main-process validation errors without adding an installation', async () => {
-    vi.mocked(window.api.buildInstallation).mockRejectedValue(
-      new Error(en.standalone.invalidRuntime)
-    )
+    vi.mocked(window.api.buildInstallation).mockResolvedValue({
+      ok: false,
+      message: en.standalone.invalidRuntime
+    })
     await openWithOptions({ release: [release], variant: [variant] })
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
