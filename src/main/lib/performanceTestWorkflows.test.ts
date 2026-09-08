@@ -213,7 +213,7 @@ describe('deletePerformanceTestWorkflow', () => {
 })
 
 describe('submitPerformanceTestWorkflow', () => {
-  it('posts model-load and warm-up requests before the measured runs with incremented seeds', async () => {
+  it('posts warm-up requests before the measured runs with incremented seeds', async () => {
     const root = await makeTempDir()
     const userDataPath = path.join(root, 'user-data')
     const sourcePath = path.join(root, 'performanceTest.json')
@@ -235,15 +235,8 @@ describe('submitPerformanceTestWorkflow', () => {
       fetchMock
     )
 
-    expect(promptIds).toEqual([
-      'prompt-1',
-      'prompt-2',
-      'prompt-3',
-      'prompt-4',
-      'prompt-5',
-      'prompt-6'
-    ])
-    expect(fetchMock).toHaveBeenCalledTimes(6)
+    expect(promptIds).toEqual(['prompt-1', 'prompt-2', 'prompt-3', 'prompt-4', 'prompt-5'])
+    expect(fetchMock).toHaveBeenCalledTimes(5)
     for (const [index, [requestUrl, requestInit]] of fetchMock.mock.calls.entries()) {
       expect(String(requestUrl)).toBe('http://127.0.0.1:8189/prompt')
       expect(requestInit).toMatchObject({
@@ -324,12 +317,16 @@ describe('waitForPerformanceTestJobs', () => {
         { id: 'measured-1', status: 'completed' },
         { id: 'measured-2', status: 'failed', execution_error: { message: 'failed' } }
       ],
-      pagination: { total: 3, has_more: false }
+      pagination: { total: 4, has_more: false }
+    }
+    const terminalApiResponse = {
+      ...terminalResponse,
+      jobs: [...terminalResponse.jobs, { id: 'unrelated', status: 'completed' }]
     }
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify(pendingResponse)))
-      .mockResolvedValueOnce(new Response(JSON.stringify(terminalResponse)))
+      .mockResolvedValueOnce(new Response(JSON.stringify(terminalApiResponse)))
 
     await expect(
       waitForPerformanceTestJobs(

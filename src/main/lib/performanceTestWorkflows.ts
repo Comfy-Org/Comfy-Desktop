@@ -4,7 +4,6 @@ import type { AcceleratorSnapshot } from './hardwareTap'
 
 const PERFORMANCE_TESTS_DIR = 'performance-tests'
 const PERFORMANCE_TEST_POLL_INTERVAL_MS = 1000
-export const PERFORMANCE_TEST_MODEL_LOAD_RUNS = 1
 
 const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled'])
 
@@ -246,7 +245,7 @@ export async function deletePerformanceTestWorkflow(
   })
 }
 
-/** Queue model-load and warm-up requests, followed by each measured run. */
+/** Queue warm-up requests followed by each measured run. */
 export async function submitPerformanceTestWorkflow(
   filePath: string,
   userDataPath: string,
@@ -265,7 +264,7 @@ export async function submitPerformanceTestWorkflow(
   let workflow = await readPerformanceTestWorkflow(filePath, userDataPath)
   const endpoint = new URL('/prompt', sessionUrl)
   const promptIds: string[] = []
-  const totalRuns = measuredRuns + warmupRuns + PERFORMANCE_TEST_MODEL_LOAD_RUNS
+  const totalRuns = measuredRuns + warmupRuns
 
   for (let run = 1; run <= totalRuns; run++) {
     workflow = incrementWorkflowSeeds(workflow)
@@ -318,22 +317,20 @@ export async function waitForPerformanceTestJobs(
       throw new Error('The ComfyUI jobs response did not contain a jobs array.')
     }
 
-    const statuses = new Map(
-      result.jobs
-        .filter(
-          (job): job is PerformanceTestJob =>
-            job !== null &&
-            typeof job === 'object' &&
-            typeof job.id === 'string' &&
-            typeof job.status === 'string'
-        )
-        .map((job) => [job.id, job.status])
+    const jobs = result.jobs.filter(
+      (job): job is PerformanceTestJob =>
+        job !== null &&
+        typeof job === 'object' &&
+        typeof job.id === 'string' &&
+        typeof job.status === 'string' &&
+        expectedPromptIds.has(job.id)
     )
+    const statuses = new Map(jobs.map((job) => [job.id, job.status]))
     const allTerminal = [...expectedPromptIds].every((id) => {
       const status = statuses.get(id)
       return status !== undefined && TERMINAL_JOB_STATUSES.has(status)
     })
-    if (allTerminal) return result as PerformanceTestJobsResponse
+    if (allTerminal) return { ...result, jobs } as PerformanceTestJobsResponse
 
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
   }

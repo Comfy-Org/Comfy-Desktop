@@ -1149,6 +1149,10 @@ export interface ElectronApi {
     systemInfo?: SystemInfo
     message?: string
   }>
+  exportPerformanceTestResultsImage(
+    svg: string,
+    defaultPath?: string
+  ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>

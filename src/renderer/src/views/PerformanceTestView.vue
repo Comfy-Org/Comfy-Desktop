@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, Trash2 } from 'lucide-vue-next'
+import { ChevronRight, FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
 import BrandBackground from '../components/BrandBackground.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
@@ -10,6 +10,10 @@ import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { ActionResult } from '../types/ipc'
+import {
+  createPerformanceTestResultsSvg,
+  type PerformanceTestImageMetric
+} from '../lib/performanceTestResultsSvg'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 
 const { t } = useI18n()
@@ -63,6 +67,8 @@ const isWorkflowImporting = ref(false)
 const isWorkflowDeleting = ref(false)
 const isLaunching = ref(false)
 const isStopping = ref(false)
+const isExportingResults = ref(false)
+const exportResultsError = ref<string | null>(null)
 const logsExpanded = ref(true)
 const resultsExpanded = ref(true)
 const warmupRuns = ref('1')
@@ -76,6 +82,18 @@ const performanceTestLogs = computed(() => {
   if (!logInstallationId.value) return ''
   return sessionStore.getSession(logInstallationId.value)?.output ?? ''
 })
+const resultsFolderPath = computed(() => {
+  const resultPath =
+    performanceTestResult.value?.resultsSummaryPath ?? performanceTestResult.value?.resultPath
+  if (!resultPath) return null
+  const separatorIndex = Math.max(resultPath.lastIndexOf('/'), resultPath.lastIndexOf('\\'))
+  return separatorIndex > 0 ? resultPath.slice(0, separatorIndex) : null
+})
+const computeDeviceNames = computed(() =>
+  (performanceTestResult.value?.hardware?.devices ?? [])
+    .flatMap((device) => (device.deviceName ? [device.deviceName] : []))
+    .join(', ')
+)
 const aggregateChart = computed(() => {
   const statistics = performanceTestResult.value?.statistics
   if (!statistics) return []
@@ -223,26 +241,25 @@ async function runPerformanceTest(): Promise<void> {
   const sessionId = performanceTestSessionId(installationId)
   isLaunching.value = true
   performanceTestResult.value = null
-  logInstallationId.value = sessionId
-  performanceTestInstallationId.value = installationId
-  sessionStore.startSession(sessionId)
   try {
-    if (!sessionStore.isRunning(sessionId)) {
-      const launchPromise = window.api.runAction(installationId, 'launch', {
-        launchModeOverride: 'console',
-        autoPortOnConflict: true,
-        sessionIdOverride: sessionId
-      })
-      activeLaunchPromise = launchPromise
-      const result = await launchPromise
-      activeLaunchPromise = null
-      if (!result.ok && !result.cancelled) {
-        sessionStore.appendOutput(sessionId, result.message || t('performanceTest.launchFailed'))
-      }
-      if (!result.ok) {
-        performanceTestInstallationId.value = null
-        return
-      }
+    if (sessionStore.isRunning(sessionId)) await window.api.stopComfyUI(sessionId)
+    logInstallationId.value = sessionId
+    performanceTestInstallationId.value = installationId
+    sessionStore.startSession(sessionId)
+    const launchPromise = window.api.runAction(installationId, 'launch', {
+      launchModeOverride: 'console',
+      autoPortOnConflict: true,
+      sessionIdOverride: sessionId
+    })
+    activeLaunchPromise = launchPromise
+    const result = await launchPromise
+    activeLaunchPromise = null
+    if (!result.ok && !result.cancelled) {
+      sessionStore.appendOutput(sessionId, result.message || t('performanceTest.launchFailed'))
+    }
+    if (!result.ok) {
+      performanceTestInstallationId.value = null
+      return
     }
 
     sessionStore.appendOutput(
@@ -293,6 +310,10 @@ function formatDuration(seconds: number): string {
   return `${seconds.toFixed(3)} s`
 }
 
+function formatMemory(megabytes: number): string {
+  return `${(megabytes / 1024).toFixed(1)} GB`
+}
+
 function formatOperatingSystem(info: NonNullable<PerformanceTestRunResult['systemInfo']>): string {
   return (
     [info.os_distro, info.os_release].filter(Boolean).join(' ') ||
@@ -300,8 +321,92 @@ function formatOperatingSystem(info: NonNullable<PerformanceTestRunResult['syste
   )
 }
 
-function getGpuDriver(info: NonNullable<PerformanceTestRunResult['systemInfo']>): string | null {
-  return info.nvidia_driver_version ?? info.amd_driver_version ?? info.intel_driver_version
+function openResultsFolder(): void {
+  if (resultsFolderPath.value) void window.api.openPath(resultsFolderPath.value)
+}
+
+async function exportResultsImage(): Promise<void> {
+  const result = performanceTestResult.value
+  const statistics = result?.statistics
+  const hardware = result?.hardware
+  const systemInfo = result?.systemInfo
+  if (!statistics || !hardware || !systemInfo || !resultsFolderPath.value) return
+
+  const hardwareRows: PerformanceTestImageMetric[] = [
+    { label: t('performanceTest.device'), value: computeDeviceNames.value }
+  ]
+  if (hardware.vramMb != null)
+    hardwareRows.push({ label: t('performanceTest.vram'), value: formatMemory(hardware.vramMb) })
+  if (hardware.ramMb != null)
+    hardwareRows.push({ label: t('performanceTest.ram'), value: formatMemory(hardware.ramMb) })
+  if (hardware.pytorchVersion)
+    hardwareRows.push({
+      label: t('performanceTest.pytorchVersion'),
+      value: hardware.pytorchVersion
+    })
+  if (hardware.xformersVersion)
+    hardwareRows.push({
+      label: t('performanceTest.xformersVersion'),
+      value: hardware.xformersVersion
+    })
+
+  const svg = createPerformanceTestResultsSvg({
+    title: t('performanceTest.imageTitle'),
+    aggregateTitle: t('performanceTest.runDurationChart'),
+    systemInformationTitle: t('performanceTest.systemInformation'),
+    metrics: [
+      {
+        label: t('performanceTest.measuredRunCount'),
+        value: String(statistics.measuredJobCount)
+      },
+      {
+        label: t('performanceTest.fastestRun'),
+        value: formatDuration(statistics.fastest.durationSeconds),
+        durationSeconds: statistics.fastest.durationSeconds
+      },
+      {
+        label: t('performanceTest.slowestRun'),
+        value: formatDuration(statistics.slowest.durationSeconds),
+        durationSeconds: statistics.slowest.durationSeconds
+      },
+      {
+        label: t('performanceTest.averageRunDuration'),
+        value: formatDuration(statistics.averageDurationSeconds),
+        durationSeconds: statistics.averageDurationSeconds
+      },
+      {
+        label: t('performanceTest.medianRunDuration'),
+        value: formatDuration(statistics.medianDurationSeconds),
+        durationSeconds: statistics.medianDurationSeconds
+      }
+    ],
+    hardware: hardwareRows,
+    system: [
+      { label: t('performanceTest.cpu'), value: systemInfo.cpu_model },
+      { label: t('performanceTest.cpuCores'), value: String(systemInfo.cpu_cores) },
+      { label: t('performanceTest.architecture'), value: systemInfo.arch },
+      {
+        label: t('performanceTest.operatingSystem'),
+        value: formatOperatingSystem(systemInfo)
+      }
+    ]
+  })
+
+  isExportingResults.value = true
+  exportResultsError.value = null
+  try {
+    const exported = await window.api.exportPerformanceTestResultsImage(
+      svg,
+      resultsFolderPath.value
+    )
+    if (!exported.ok && !exported.canceled) {
+      exportResultsError.value = exported.message || t('performanceTest.exportImageFailed')
+    }
+  } catch (error) {
+    exportResultsError.value = (error as Error)?.message || t('performanceTest.exportImageFailed')
+  } finally {
+    isExportingResults.value = false
+  }
 }
 
 async function stopPerformanceTest(): Promise<void> {
@@ -577,135 +682,91 @@ watch(performanceTestLogs, async () => {
                 {{ t('performanceTest.resultsPlaceholder') }}
               </p>
 
-              <template v-if="performanceTestResult?.hardware || performanceTestResult?.systemInfo">
+              <template v-if="performanceTestResult?.hardware">
                 <h3>{{ t('performanceTest.systemInformation') }}</h3>
                 <div class="performance-test__system-groups">
-                  <section
-                    v-if="
-                      performanceTestResult?.hardware ||
-                      performanceTestResult?.systemInfo?.gpu_model ||
-                      performanceTestResult?.systemInfo?.gpu_vram_mb != null
-                    "
-                    class="performance-test__system-group"
-                  >
-                    <h4>{{ t('performanceTest.gpuGroup') }}</h4>
+                  <section class="performance-test__system-group">
                     <dl
                       class="performance-test__result-list performance-test__result-list--compact"
                     >
-                      <div v-if="performanceTestResult?.hardware">
+                      <div>
                         <dt>{{ t('performanceTest.device') }}</dt>
-                        <dd>
-                          {{
-                            performanceTestResult.hardware.deviceName ||
-                            performanceTestResult.hardware.deviceType
-                          }}
-                        </dd>
+                        <dd>{{ computeDeviceNames }}</dd>
                       </div>
-                      <div v-if="performanceTestResult?.hardware?.vramMb != null">
+                      <div v-if="performanceTestResult.hardware.vramMb != null">
                         <dt>{{ t('performanceTest.vram') }}</dt>
-                        <dd>{{ performanceTestResult.hardware.vramMb }} MB</dd>
+                        <dd>{{ formatMemory(performanceTestResult.hardware.vramMb) }}</dd>
                       </div>
-                      <div v-if="performanceTestResult?.systemInfo?.gpu_model">
-                        <dt>{{ t('performanceTest.systemGpu') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.gpu_model }}</dd>
-                      </div>
-                      <div
-                        v-if="
-                          performanceTestResult?.hardware?.vramMb == null &&
-                          performanceTestResult?.systemInfo?.gpu_vram_mb != null
-                        "
-                      >
-                        <dt>{{ t('performanceTest.vram') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.gpu_vram_mb }} MB</dd>
-                      </div>
-                      <div
-                        v-if="
-                          performanceTestResult?.systemInfo &&
-                          getGpuDriver(performanceTestResult.systemInfo)
-                        "
-                      >
-                        <dt>{{ t('performanceTest.gpuDriver') }}</dt>
-                        <dd>{{ getGpuDriver(performanceTestResult.systemInfo) }}</dd>
-                      </div>
-                    </dl>
-                  </section>
-
-                  <section
-                    v-if="
-                      performanceTestResult?.systemInfo ||
-                      performanceTestResult?.hardware?.ramMb != null
-                    "
-                    class="performance-test__system-group"
-                  >
-                    <h4>{{ t('performanceTest.cpuMemoryGroup') }}</h4>
-                    <dl
-                      class="performance-test__result-list performance-test__result-list--compact"
-                    >
-                      <div v-if="performanceTestResult?.systemInfo">
-                        <dt>{{ t('performanceTest.cpu') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.cpu_model }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult?.systemInfo">
-                        <dt>{{ t('performanceTest.logicalCpuCores') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.cpu_cores }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult?.systemInfo?.cpu_physical_cores != null">
-                        <dt>{{ t('performanceTest.physicalCpuCores') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.cpu_physical_cores }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult?.systemInfo">
-                        <dt>{{ t('performanceTest.systemMemory') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.total_memory_gb }} GB</dd>
-                      </div>
-                      <div v-if="performanceTestResult?.hardware?.ramMb != null">
+                      <div v-if="performanceTestResult.hardware.ramMb != null">
                         <dt>{{ t('performanceTest.ram') }}</dt>
-                        <dd>{{ performanceTestResult.hardware.ramMb }} MB</dd>
+                        <dd>{{ formatMemory(performanceTestResult.hardware.ramMb) }}</dd>
                       </div>
-                    </dl>
-                  </section>
-
-                  <section
-                    v-if="
-                      performanceTestResult?.hardware?.pytorchVersion ||
-                      performanceTestResult?.hardware?.xformersVersion
-                    "
-                    class="performance-test__system-group"
-                  >
-                    <h4>{{ t('performanceTest.pythonGroup') }}</h4>
-                    <dl
-                      class="performance-test__result-list performance-test__result-list--compact"
-                    >
-                      <div v-if="performanceTestResult?.hardware?.pytorchVersion">
-                        <dt>{{ t('performanceTest.pytorch') }}</dt>
+                      <div v-if="performanceTestResult.hardware.pytorchVersion">
+                        <dt>{{ t('performanceTest.pytorchVersion') }}</dt>
                         <dd>{{ performanceTestResult.hardware.pytorchVersion }}</dd>
                       </div>
-                      <div v-if="performanceTestResult?.hardware?.xformersVersion">
-                        <dt>{{ t('performanceTest.xformers') }}</dt>
+                      <div v-if="performanceTestResult.hardware.xformersVersion">
+                        <dt>{{ t('performanceTest.xformersVersion') }}</dt>
                         <dd>{{ performanceTestResult.hardware.xformersVersion }}</dd>
                       </div>
                     </dl>
                   </section>
 
                   <section
-                    v-if="performanceTestResult?.systemInfo"
+                    v-if="performanceTestResult.systemInfo"
                     class="performance-test__system-group"
                   >
-                    <h4>{{ t('performanceTest.osOtherGroup') }}</h4>
                     <dl
                       class="performance-test__result-list performance-test__result-list--compact"
                     >
-                      <div v-if="performanceTestResult?.systemInfo">
-                        <dt>{{ t('performanceTest.operatingSystem') }}</dt>
-                        <dd>{{ formatOperatingSystem(performanceTestResult.systemInfo) }}</dd>
+                      <div>
+                        <dt>{{ t('performanceTest.cpu') }}</dt>
+                        <dd>{{ performanceTestResult.systemInfo.cpu_model }}</dd>
                       </div>
-                      <div v-if="performanceTestResult?.systemInfo">
+                      <div>
+                        <dt>{{ t('performanceTest.cpuCores') }}</dt>
+                        <dd>{{ performanceTestResult.systemInfo.cpu_cores }}</dd>
+                      </div>
+                      <div>
                         <dt>{{ t('performanceTest.architecture') }}</dt>
                         <dd>{{ performanceTestResult.systemInfo.arch }}</dd>
+                      </div>
+                      <div>
+                        <dt>{{ t('performanceTest.operatingSystem') }}</dt>
+                        <dd>{{ formatOperatingSystem(performanceTestResult.systemInfo) }}</dd>
                       </div>
                     </dl>
                   </section>
                 </div>
               </template>
+
+              <div v-if="resultsFolderPath" class="performance-test__results-actions">
+                <span v-if="exportResultsError" class="performance-test__export-error">
+                  {{ exportResultsError }}
+                </span>
+                <button
+                  class="secondary performance-test__open-results"
+                  type="button"
+                  @click="openResultsFolder"
+                >
+                  <FolderOpen :size="16" aria-hidden="true" />
+                  {{ t('performanceTest.openResultsFolder') }}
+                </button>
+                <button
+                  v-if="performanceTestResult?.statistics && performanceTestResult.systemInfo"
+                  class="secondary performance-test__export-results"
+                  type="button"
+                  :disabled="isExportingResults"
+                  @click="exportResultsImage"
+                >
+                  <ImageDown :size="16" aria-hidden="true" />
+                  {{
+                    isExportingResults
+                      ? t('performanceTest.exportingImage')
+                      : t('performanceTest.exportResultsImage')
+                  }}
+                </button>
+              </div>
             </div>
           </section>
           <section
@@ -1025,6 +1086,27 @@ watch(performanceTestLogs, async () => {
   font-size: 13px;
 }
 
+.performance-test__results-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.performance-test__open-results,
+.performance-test__export-results {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.performance-test__export-error {
+  margin-right: auto;
+  color: var(--danger);
+  font-size: 12px;
+}
+
 .performance-test__result-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1061,6 +1143,11 @@ watch(performanceTestLogs, async () => {
 
 .performance-test__summary-column > .performance-test__result-list {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.performance-test__summary .performance-test__result-list dt,
+.performance-test__summary .performance-test__result-list dd {
+  text-align: right;
 }
 
 .performance-test__aggregate-chart {
@@ -1100,15 +1187,16 @@ watch(performanceTestLogs, async () => {
 
 .performance-test__system-groups {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.performance-test__system-group h4 {
-  margin: 0 0 10px;
-  color: var(--neutral-200);
-  font-size: 12px;
-  font-weight: 400;
+.performance-test__system-group {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--chooser-surface-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chooser-surface-bg-hover) 45%, transparent);
 }
 
 .performance-test__result-list--compact div {

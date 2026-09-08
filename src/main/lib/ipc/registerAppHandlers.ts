@@ -41,7 +41,6 @@ import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
 import {
-  PERFORMANCE_TEST_MODEL_LOAD_RUNS,
   calculatePerformanceTestStatistics,
   deletePerformanceTestWorkflow,
   savePerformanceTestJobsResponse,
@@ -182,6 +181,33 @@ export function registerAppHandlers(): void {
   })
 
   ipcMain.handle(
+    'export-performance-test-results-image',
+    async (_event, svg: string, defaultPath?: string) => {
+      if (typeof svg !== 'string' || !svg.includes('<svg') || Buffer.byteLength(svg) > 1_000_000) {
+        return { ok: false, message: 'Invalid performance test results image.' }
+      }
+      const win = BrowserWindow.fromWebContents(_event.sender)
+      if (!win) return { ok: false, message: 'No window.' }
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        title: 'Export performance test results',
+        buttonLabel: 'Export here',
+        defaultPath,
+        properties: ['openDirectory', 'createDirectory']
+      })
+      if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
+
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23)
+        const filePath = path.join(filePaths[0]!, `performance-test-results-${timestamp}.svg`)
+        await fs.promises.writeFile(filePath, svg, 'utf8')
+        return { ok: true, filePath }
+      } catch (error) {
+        return { ok: false, message: (error as Error)?.message || String(error) }
+      }
+    }
+  )
+
+  ipcMain.handle(
     'run-performance-test-workflow',
     async (
       _event,
@@ -220,10 +246,9 @@ export function registerAppHandlers(): void {
           measuredRuns,
           warmupRuns
         )
-        const preparationRuns = warmupRuns + PERFORMANCE_TEST_MODEL_LOAD_RUNS
-        const capturedPromptIds = promptIds.slice(PERFORMANCE_TEST_MODEL_LOAD_RUNS)
-        const measuredPromptIds = promptIds.slice(preparationRuns)
-        const jobsResponse = await waitForPerformanceTestJobs(sessionUrl, capturedPromptIds)
+        const preparationRuns = warmupRuns
+        const measuredPromptIds = promptIds.slice(warmupRuns)
+        const jobsResponse = await waitForPerformanceTestJobs(sessionUrl, promptIds)
         const statistics = calculatePerformanceTestStatistics(jobsResponse, measuredPromptIds)
         const resultPath = await savePerformanceTestJobsResponse(
           jobsResponse,

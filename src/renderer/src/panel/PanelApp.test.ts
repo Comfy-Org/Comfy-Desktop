@@ -177,25 +177,21 @@ const messages = {
       device: 'Compute device',
       vram: 'VRAM',
       ram: 'RAM',
-      pytorch: 'PyTorch',
-      xformers: 'xFormers',
+      pytorchVersion: 'PyTorch version',
+      xformersVersion: 'xFormers version',
       systemInformation: 'System information',
-      gpuGroup: 'GPU',
-      cpuMemoryGroup: 'CPU & memory',
-      pythonGroup: 'Python',
-      osOtherGroup: 'OS & other',
+      cpu: 'CPU',
+      cpuCores: 'CPU cores',
       operatingSystem: 'Operating system',
       architecture: 'Architecture',
-      cpu: 'CPU',
-      logicalCpuCores: 'Logical CPU cores',
-      physicalCpuCores: 'Physical CPU cores',
-      systemMemory: 'System memory',
-      systemGpu: 'System GPU',
-      gpuDriver: 'GPU driver',
+      openResultsFolder: 'Open folder',
+      imageTitle: 'Performance test results',
+      exportResultsImage: 'Export results',
+      exportingImage: 'Exporting image...',
+      exportImageFailed: 'Could not export the results image.',
       running: 'Running...',
       launchFailed: 'Failed to start the instance.',
-      submittingRuns:
-        'Submitting 1 model-loading run, {warmupCount} warm-up runs, and {count} measured runs...',
+      submittingRuns: 'Submitting {warmupCount} warm-up runs and {count} measured runs...',
       completedRuns:
         'Finished {count} measured runs ({unsuccessful} unsuccessful). Final response saved to {path}',
       submitFailed: 'Failed to submit the performance test workflow.'
@@ -411,10 +407,10 @@ function installMockApi(initial?: {
       async (_sessionId: string, _filePath: string, measuredRuns: number, warmupRuns: number) => ({
         ok: true,
         submitted: measuredRuns,
-        preparationRuns: warmupRuns + 1,
-        totalSubmitted: measuredRuns + warmupRuns + 1,
+        preparationRuns: warmupRuns,
+        totalSubmitted: measuredRuns + warmupRuns,
         promptIds: Array.from(
-          { length: measuredRuns + warmupRuns + 1 },
+          { length: measuredRuns + warmupRuns },
           (_, index) => `prompt-${index + 1}`
         ),
         resultPath: 'C:\\ComfyUI\\performance-tests\\20260907225600\\results.json',
@@ -429,9 +425,16 @@ function installMockApi(initial?: {
         hardware: {
           deviceType: 'cuda',
           deviceIndex: 0,
-          deviceName: 'NVIDIA GeForce RTX 4090',
+          deviceName: 'Top-level fallback should not be displayed',
           backend: 'native',
-          devices: [],
+          devices: [
+            {
+              deviceType: 'cuda',
+              deviceIndex: 0,
+              deviceName: 'NVIDIA GeForce RTX 4090',
+              backend: 'native'
+            }
+          ],
           vramMb: 24576,
           ramMb: 65461,
           pytorchVersion: '2.10.0+cu130',
@@ -472,6 +475,11 @@ function installMockApi(initial?: {
         }
       })
     ),
+    openPath: vi.fn(async () => {}),
+    exportPerformanceTestResultsImage: vi.fn(async () => ({
+      ok: true,
+      filePath: 'C:\\Exports\\performance-test-results.svg'
+    })),
     openGlobalSettings: vi.fn(),
     openInstancePicker: vi.fn()
   }
@@ -805,7 +813,7 @@ describe('PanelApp', () => {
       3
     )
     expect(wrapper.get('.performance-test__logs').text()).toContain(
-      'Submitting 1 model-loading run, 3 warm-up runs, and 5 measured runs...'
+      'Submitting 3 warm-up runs and 5 measured runs...'
     )
     expect(wrapper.get('.performance-test__logs').text()).toContain(
       'Finished 5 measured runs (0 unsuccessful). Final response saved to '
@@ -831,34 +839,48 @@ describe('PanelApp', () => {
       'Run duration aggregates'
     )
     expect(wrapper.findAll('.performance-test__aggregate-bar')).toHaveLength(4)
-    expect(results).not.toContain('Hardware')
     expect(wrapper.findAll('.performance-test__results h3')).toHaveLength(1)
-    expect(results).toContain('Compute device')
-    expect(results).toContain('NVIDIA GeForce RTX 4090')
-    expect(results).toContain('VRAM')
-    expect(results).toContain('24576 MB')
     expect(results).toContain('System information')
+    expect(results).toContain('NVIDIA GeForce RTX 4090')
+    expect(results).not.toContain('Top-level fallback should not be displayed')
     expect(wrapper.find('.performance-test__result-list--compact').exists()).toBe(true)
-    expect(
-      wrapper.findAll('.performance-test__system-group h4').map((heading) => heading.text())
-    ).toEqual(['GPU', 'CPU & memory', 'Python', 'OS & other'])
+    expect(wrapper.findAll('.performance-test__system-group h4')).toHaveLength(0)
     const systemGroups = wrapper.findAll('.performance-test__system-group')
     expect(systemGroups[0]!.text()).toContain('NVIDIA GeForce RTX 4090')
-    expect(systemGroups[0]!.text()).toContain('GPU driver')
-    expect(systemGroups[1]!.text()).toContain('AMD Ryzen 9 7950X')
-    expect(systemGroups[1]!.text()).toContain('System memory')
-    expect(systemGroups[2]!.text()).toContain('PyTorch')
-    expect(systemGroups[2]!.text()).toContain('xFormers')
-    expect(systemGroups[3]!.text()).toContain('Operating system')
-    expect(systemGroups[3]!.text()).toContain('Architecture')
-    expect(results).toContain('Microsoft Windows 11 Pro 10.0.26200')
-    expect(results).toContain('AMD Ryzen 9 7950X')
-    expect(results).toContain('Logical CPU cores')
-    expect(results).toContain('32')
-    expect(results).toContain('System memory')
-    expect(results).toContain('64 GB')
-    expect(results).toContain('GPU driver')
-    expect(results).toContain('580.88')
+    expect(systemGroups[0]!.text()).toContain('VRAM24.0 GB')
+    expect(systemGroups[0]!.text()).toContain('RAM63.9 GB')
+    expect(systemGroups[0]!.text()).toContain('PyTorch version2.10.0+cu130')
+    expect(systemGroups[0]!.text()).toContain('xFormers version0.0.31')
+    expect(systemGroups[1]!.text()).toContain('CPUAMD Ryzen 9 7950X')
+    expect(systemGroups[1]!.text()).toContain('CPU cores32')
+    expect(systemGroups[1]!.text()).toContain('Architecturex64')
+    expect(systemGroups[1]!.text()).toContain('Operating systemMicrosoft Windows 11 Pro 10.0.26200')
+    expect(results).not.toContain('GPU driver')
+    expect(results).not.toContain('Device index')
+    expect(results).not.toContain('Backend')
+    expect(results).not.toContain('24576 MB')
+    expect(results).not.toContain('65461 MB')
+    expect(
+      wrapper
+        .get('.performance-test__results')
+        .element.lastElementChild?.classList.contains('performance-test__results-actions')
+    ).toBe(true)
+    const openResultsFolder = wrapper.get('.performance-test__open-results')
+    expect(openResultsFolder.text()).toBe('Open folder')
+    await openResultsFolder.trigger('click')
+    expect(api.openPath).toHaveBeenCalledWith('C:\\ComfyUI\\performance-tests\\20260907225600')
+    const exportResultsImage = wrapper.get('.performance-test__export-results')
+    expect(exportResultsImage.text()).toBe('Export results')
+    await exportResultsImage.trigger('click')
+    await flushPromises()
+    expect(api.exportPerformanceTestResultsImage).toHaveBeenCalledTimes(1)
+    const [svg, defaultPath] = api.exportPerformanceTestResultsImage.mock.calls[0]!
+    expect(defaultPath).toBe('C:\\ComfyUI\\performance-tests\\20260907225600')
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('Measured runs')
+    expect(svg).toContain('NVIDIA GeForce RTX 4090')
+    expect(svg).toContain('AMD Ryzen 9 7950X')
+    expect(svg).toContain('Microsoft Windows 11 Pro 10.0.26200')
     const outputCallback = api.onComfyOutput.mock.calls[0]![0] as (data: {
       installationId: string
       text: string
@@ -920,7 +942,7 @@ describe('PanelApp', () => {
     })
   })
 
-  it('allows running a performance test on an instance started outside Performance Test', async () => {
+  it('starts a separate performance test process when the normal instance is running', async () => {
     mockState.installations = [
       {
         ...SAMPLE_INSTALL,
@@ -933,7 +955,11 @@ describe('PanelApp', () => {
     ]
     const api = (
       window as unknown as {
-        api: { getRunningInstances: ReturnType<typeof vi.fn> }
+        api: {
+          getRunningInstances: ReturnType<typeof vi.fn>
+          stopComfyUI: ReturnType<typeof vi.fn>
+          runAction: ReturnType<typeof vi.fn>
+        }
       }
     ).api
     api.getRunningInstances.mockResolvedValueOnce([
@@ -953,10 +979,21 @@ describe('PanelApp', () => {
     await flushPromises()
     ;(document.querySelector('.ui-select-option') as HTMLElement).click()
     await flushPromises()
-    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+    const runButton = wrapper.get('.performance-test__run')
+    expect(runButton.attributes('disabled')).toBeUndefined()
+
+    await runButton.trigger('click')
+    await flushPromises()
+
+    expect(api.stopComfyUI).not.toHaveBeenCalledWith('workspace-install')
+    expect(api.runAction).toHaveBeenCalledWith('workspace-install', 'launch', {
+      launchModeOverride: 'console',
+      autoPortOnConflict: true,
+      sessionIdOverride: 'performance-test:workspace-install'
+    })
   })
 
-  it('reuses an already-running performance test session', async () => {
+  it('restarts an already-running performance test session before running', async () => {
     mockState.installations = [
       {
         ...SAMPLE_INSTALL,
@@ -971,6 +1008,7 @@ describe('PanelApp', () => {
       window as unknown as {
         api: {
           getRunningInstances: ReturnType<typeof vi.fn>
+          stopComfyUI: ReturnType<typeof vi.fn>
           runAction: ReturnType<typeof vi.fn>
           runPerformanceTestWorkflow: ReturnType<typeof vi.fn>
         }
@@ -999,7 +1037,15 @@ describe('PanelApp', () => {
     await runButton.trigger('click')
     await flushPromises()
 
-    expect(api.runAction).not.toHaveBeenCalled()
+    expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
+    expect(api.stopComfyUI.mock.invocationCallOrder[0]).toBeLessThan(
+      api.runAction.mock.invocationCallOrder[0]!
+    )
+    expect(api.runAction).toHaveBeenCalledWith('workspace-install', 'launch', {
+      launchModeOverride: 'console',
+      autoPortOnConflict: true,
+      sessionIdOverride: 'performance-test:workspace-install'
+    })
     expect(api.runPerformanceTestWorkflow).toHaveBeenCalledWith(
       'performance-test:workspace-install',
       'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json',

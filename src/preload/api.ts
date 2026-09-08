@@ -40,6 +40,8 @@ export function buildElectronApi(): ElectronApi {
         measuredRuns,
         warmupRuns
       ),
+    exportPerformanceTestResultsImage: (svg, defaultPath?) =>
+      ipcRenderer.invoke('export-performance-test-results-image', svg, defaultPath),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
