@@ -29,8 +29,8 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.not.a.real.event')).toBe(false)
   })
 
-  // The 11 failure-path assets events from assetsTap's ALLOWED_EVENTS
-  // (prefix + bare event name, verified against assetsTap.ts's own
+  // The eight scan-pipeline failures from assetsTap's ALLOWED_EVENTS (prefix
+  // plus bare event name, verified against assetsTap.ts's own
   // `${EVENT_PREFIX}${event}` construction).
   const ASSETS_ERROR_EVENTS = [
     'comfy.desktop.comfyui.assets.scanner.hash_failed',
@@ -40,11 +40,12 @@ describe('isDatadogMirroredEvent', () => {
     'comfy.desktop.comfyui.assets.scanner.mark_missing_failed',
     'comfy.desktop.comfyui.assets.scanner.stat_failed',
     'comfy.desktop.comfyui.assets.seeder.batch_insert_failed',
-    'comfy.desktop.comfyui.assets.seeder.scan_failed',
-    'comfy.desktop.comfyui.assets.ingest.register_output_failed',
-    'comfy.desktop.comfyui.assets.ingest.discard_orphan_failed',
-    'comfy.desktop.comfyui.assets.api.request_failed'
+    'comfy.desktop.comfyui.assets.seeder.scan_failed'
   ]
+
+  it('defines exactly eight assets error events', () => {
+    expect(ASSETS_ERROR_EVENTS).toHaveLength(8)
+  })
 
   it.each(ASSETS_ERROR_EVENTS)('mirrors the assets error event %s', (name) => {
     expect(isDatadogMirroredEvent(name)).toBe(true)

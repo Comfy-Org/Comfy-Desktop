@@ -12,10 +12,11 @@
  * Unlike the hardware tap, which matches known prose, this one parses a single
  * grammar. That makes core's stdout UNTRUSTED INPUT: anything writing to the
  * process's stdout can emit a tagged line, so the tap carries its own closed
- * contract — an event allowlist, a field allowlist with a validator per field,
- * and a rejection of any key colliding with the trusted base context. A line
- * that fails any check is dropped whole and silently: reporting the rejection
- * would put the untrusted content back into a signal we forward.
+ * contract — an event allowlist, a field-name allowlist, global structural
+ * value checks, and a rejection of any key colliding with the trusted base
+ * context. A line that fails any check is dropped whole and silently:
+ * reporting the rejection would put the untrusted content back into a signal
+ * we forward.
  *
  * THREAT MODEL: this validation catches ACCIDENTAL leakage (a path riding
  * along in a field). It is not a boundary against deliberately encoded
@@ -58,13 +59,8 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'scanner.fast_scan_failed',
   'scanner.temp_sync_failed',
   'scanner.mark_missing_failed',
-  'scanner.stat_failed',
-  'ingest.register_output_failed',
-  'ingest.discard_orphan_failed',
-  'api.request_failed'
+  'scanner.stat_failed'
 ])
-
-type Validator = (value: TelemetryValue) => boolean
 
 const MAX_STRING_LENGTH = 64
 const FORBIDDEN_STRING_CHARS = ['/', '\\', ':']
@@ -80,59 +76,40 @@ function isSafeString(value: unknown): value is string {
   )
 }
 
-function oneOf(...allowed: string[]): Validator {
-  const members = new Set(allowed)
-  return (value) => isSafeString(value) && members.has(value)
-}
-
-const isCount: Validator = (value) => typeof value === 'number' && Number.isInteger(value)
-const isFlag: Validator = (value) => typeof value === 'boolean'
-
 /**
- * Mirror of `ALLOWED_FIELDS` in ComfyUI `app/assets/event_log.py`. Adding a
- * field is a reviewed change on BOTH sides; the vocabulary deliberately holds
- * no file names, paths, asset ids or content hashes.
+ * Mirror of the field names in ComfyUI `app/assets/event_log.py`. Adding a field
+ * is a reviewed change on BOTH sides; the vocabulary deliberately holds no
+ * file names, paths, asset ids or content hashes.
  *
- * A Map, NOT an object literal: lookup keys here come straight from untrusted
+ * A Set, NOT an object literal: lookup keys here come straight from untrusted
  * JSON, and `{}['constructor']` / `{}['__proto__']` resolve up the prototype
- * chain to truthy values that pass an allowlist gate — the first as a callable
- * that returns truthy (the field ships), the second as a non-callable that
- * throws when invoked as a validator. A Map's keys are never confused with its
- * prototype's properties, so `.get()` is closed by construction.
+ * chain. A Set's keys are never confused with its prototype's properties, so
+ * `.has()` is closed by construction.
  */
-export const ALLOWED_FIELDS: ReadonlyMap<string, Validator> = new Map<string, Validator>([
-  ['root', oneOf('models', 'input', 'output', 'user', 'temp')],
-  ['phase', oneOf('fast', 'enrich', 'full')],
-  ['stage', oneOf('mark_missing', 'pruning', 'fast_scan', 'enrich', 'finalize')],
-  [
-    'route',
-    oneOf(
-      'get_asset_route',
-      'upload_asset',
-      'update_asset_route',
-      'delete_asset_route',
-      'add_asset_tags',
-      'delete_asset_tags',
-      'parse_multipart_upload'
-    )
-  ],
-  ['site', oneOf('discovery', 'enrich')],
-  ['elapsed_ms', isCount],
-  ['created', isCount],
-  ['enriched', isCount],
-  ['skipped', isCount],
-  ['hash_failed', isCount],
-  ['enrich_failed', isCount],
-  ['permission_denied', isCount],
-  ['count', isCount],
-  ['error_type', isSafeString],
-  ['hashing_enabled', isFlag]
+export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
+  'root',
+  'phase',
+  'stage',
+  'site',
+  'elapsed_ms',
+  'created',
+  'enriched',
+  'skipped',
+  'hash_failed',
+  'enrich_failed',
+  'permission_denied',
+  'count',
+  'error_type',
+  'hashing_enabled'
 ])
 
-/** The shape any value must have before its field validator even runs. */
+/** Global value shape accepted after the field-name and collision checks. */
 function isTransportableValue(value: unknown): value is TelemetryValue {
   return (
-    typeof value === 'number' || typeof value === 'boolean' || value === null || isSafeString(value)
+    (typeof value === 'number' && Number.isFinite(value)) ||
+    typeof value === 'boolean' ||
+    value === null ||
+    isSafeString(value)
   )
 }
 
@@ -159,9 +136,8 @@ function parseFields(
     // A field named like a base-context property would be a context-spoofing
     // attempt, even though the merge order already makes it ineffective.
     if (baseKeys.has(key)) return null
-    const validate = ALLOWED_FIELDS.get(key)
-    if (validate === undefined) return null
-    if (!isTransportableValue(value) || !validate(value)) return null
+    if (!ALLOWED_FIELD_NAMES.has(key)) return null
+    if (!isTransportableValue(value)) return null
     fields[key] = value
   }
   return fields

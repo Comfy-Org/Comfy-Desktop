@@ -306,7 +306,10 @@ describe('createAssetsTapSafe', () => {
     expect(() => {
       inert.beginBoot()
       inert.ingest('[assets-event] assets.enabled {"hashing_enabled": true}\n', 'stdout')
-      inert.ingest('[assets-event] api.request_failed {"error_type": "timeout"}\n', 'stderr')
+      inert.ingest(
+        '[assets-event] scanner.stat_failed {"error_type": "OSError", "site": "discovery"}\n',
+        'stderr'
+      )
       inert.flushSummary()
     }).not.toThrow()
   })
@@ -352,10 +355,12 @@ describe('attachLaunchStreams assets tap wiring', () => {
     const h = harness()
     h.stderr.emit(
       'data',
-      Buffer.from('[assets-event] api.request_failed {"error_type": "OSError"}\n')
+      Buffer.from(
+        '[assets-event] scanner.stat_failed {"error_type": "OSError", "site": "discovery"}\n'
+      )
     )
     expect(h.assetsTap.ingest).toHaveBeenCalledWith(
-      '[assets-event] api.request_failed {"error_type": "OSError"}\n',
+      '[assets-event] scanner.stat_failed {"error_type": "OSError", "site": "discovery"}\n',
       'stderr'
     )
   })

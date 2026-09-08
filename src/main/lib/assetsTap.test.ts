@@ -12,7 +12,7 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] }
 }))
 
-const { createAssetsTap, ASSETS_EVENT_LINE, ALLOWED_EVENTS, ALLOWED_FIELDS } =
+const { createAssetsTap, ASSETS_EVENT_LINE, ALLOWED_EVENTS, ALLOWED_FIELD_NAMES } =
   await import('./assetsTap')
 const telemetry = await import('./telemetry')
 
@@ -35,10 +35,7 @@ const CORE_EVENTS = [
   'scanner.fast_scan_failed',
   'scanner.temp_sync_failed',
   'scanner.mark_missing_failed',
-  'scanner.stat_failed',
-  'ingest.register_output_failed',
-  'ingest.discard_orphan_failed',
-  'api.request_failed'
+  'scanner.stat_failed'
 ]
 
 const COUNTER_FIELDS = [
@@ -52,71 +49,17 @@ const COUNTER_FIELDS = [
   'count'
 ]
 
-/**
- * VALIDATOR PARITY MATRIX. Mirrors `VALID_VALUES` / the rejection cases in
- * ComfyUI `tests-unit/assets_test/test_event_log.py`; the two sides must agree
- * field for field or a core event silently stops reaching PostHog.
- */
-const FIELD_MATRIX: Array<{ field: string; valid: unknown[]; invalid: unknown[] }> = [
-  {
-    field: 'root',
-    valid: ['models', 'input', 'output', 'user', 'temp'],
-    invalid: ['Models', 'checkpoints', 'models/sub', '', 1, true, null]
-  },
-  {
-    field: 'phase',
-    valid: ['fast', 'enrich', 'full'],
-    invalid: ['Fast', 'partial', 'slow', 0, false, null]
-  },
-  {
-    field: 'stage',
-    valid: ['mark_missing', 'pruning', 'fast_scan', 'enrich', 'finalize'],
-    invalid: ['MARK_MISSING', 'start', 'scan', 3, null]
-  },
-  {
-    field: 'route',
-    valid: [
-      'get_asset_route',
-      'upload_asset',
-      'update_asset_route',
-      'delete_asset_route',
-      'add_asset_tags',
-      'delete_asset_tags',
-      'parse_multipart_upload'
-    ],
-    invalid: ['get_asset', 'GET_ASSET_ROUTE', '/api/assets/upload', 7, null]
-  },
-  {
-    field: 'site',
-    valid: ['discovery', 'enrich'],
-    invalid: ['Discovery', 'ENRICH', 'scan', '', 1, true, null]
-  },
+const FIELD_VALUES: Array<{ field: string; value: unknown }> = [
+  { field: 'root', value: 'models' },
+  { field: 'phase', value: 'none' },
+  { field: 'stage', value: 'finalize' },
+  { field: 'site', value: 'discovery' },
   ...COUNTER_FIELDS.map((field) => ({
     field,
-    valid: [0, 12, 8123, -1],
-    invalid: [1.5, '12', true, false, null, 'many']
+    value: 1.5
   })),
-  {
-    field: 'error_type',
-    valid: ['ValueError', 'FileNotFoundError', 'OSError'],
-    invalid: [
-      'FileNotFoundError: /home/x/model.safetensors',
-      'a/b',
-      'a\\b',
-      'a:b',
-      'E'.repeat(65),
-      12,
-      true,
-      null
-    ]
-  },
-  {
-    // `hashing_enabled` must reject the number 1: core checks bool BEFORE int
-    // because bool subclasses int in Python, and the mirror has to be as tight.
-    field: 'hashing_enabled',
-    valid: [true, false],
-    invalid: [1, 0, 'true', 'false', null]
-  }
+  { field: 'error_type', value: 'ValueError' },
+  { field: 'hashing_enabled', value: true }
 ]
 
 const BASE_CONTEXT_KEYS = ['installation_id', 'variant', 'release', 'core_beta_flags']
@@ -126,17 +69,16 @@ function taggedLine(event: string, fields: Record<string, unknown>): string {
 }
 
 /**
- * Routes the vocabulary through a local copy whose `phase` validator throws.
- * The Map lookup is what stops a real `__proto__` line from throwing at all,
- * so the per-line fault isolation needs its own throw to be provable.
+ * Makes the `phase` membership lookup throw. Set membership keeps prototype
+ * keys safe, so the per-line fault isolation needs its own throw to be proven.
  * Undone by the `vi.restoreAllMocks()` in `afterEach`.
  */
-function withExplodingPhaseValidator(): void {
-  const exploding = new Map(ALLOWED_FIELDS)
-  exploding.set('phase', () => {
-    throw new Error('validator exploded')
+function withExplodingPhaseLookup(): void {
+  const fieldNames = new Set(ALLOWED_FIELD_NAMES)
+  vi.spyOn(ALLOWED_FIELD_NAMES, 'has').mockImplementation((key) => {
+    if (key === 'phase') throw new Error('field lookup exploded')
+    return fieldNames.has(key)
   })
-  vi.spyOn(ALLOWED_FIELDS, 'get').mockImplementation((key) => exploding.get(key))
 }
 
 describe('assetsTap', () => {
@@ -166,13 +108,12 @@ describe('assetsTap', () => {
       expect([...ALLOWED_EVENTS].sort()).toEqual([...CORE_EVENTS].sort())
     })
 
-    it('exposes a field allowlist that is exactly PR C ALLOWED_FIELDS', () => {
-      expect([...ALLOWED_FIELDS.keys()].sort()).toEqual(
+    it('exposes a field-name allowlist that is exactly PR C ALLOWED_FIELDS', () => {
+      expect([...ALLOWED_FIELD_NAMES].sort()).toEqual(
         [
           'root',
           'phase',
           'stage',
-          'route',
           'site',
           ...COUNTER_FIELDS,
           'error_type',
@@ -192,8 +133,8 @@ describe('assetsTap', () => {
     const raw = fs.readFileSync(FIXTURE_PATH, 'utf8')
     const lines = raw.split('\n').filter((line) => line.length > 0)
 
-    it('holds four newline-terminated lines with no CRLF', () => {
-      expect(lines).toHaveLength(4)
+    it('holds three newline-terminated lines with no CRLF', () => {
+      expect(lines).toHaveLength(3)
       expect(raw.endsWith('\n')).toBe(true)
       expect(raw).not.toContain('\r')
     })
@@ -338,9 +279,7 @@ describe('assetsTap', () => {
     })
 
     it('keeps the field vocabulary disjoint from the base context', () => {
-      expect([...ALLOWED_FIELDS.keys()].filter((key) => BASE_CONTEXT_KEYS.includes(key))).toEqual(
-        []
-      )
+      expect([...ALLOWED_FIELD_NAMES].filter((key) => BASE_CONTEXT_KEYS.includes(key))).toEqual([])
     })
 
     it('rejects a base-context collision the field allowlist would otherwise admit', () => {
@@ -349,9 +288,11 @@ describe('assetsTap', () => {
       // not the field allowlist — is what rejects a context-spoofing line.
       // Routed through a local copy rather than written into the exported
       // vocabulary, which every other test in this file shares.
-      const widened = new Map(ALLOWED_FIELDS)
-      widened.set('installation_id', () => true)
-      const lookup = vi.spyOn(ALLOWED_FIELDS, 'get').mockImplementation((key) => widened.get(key))
+      const widened = new Set(ALLOWED_FIELD_NAMES)
+      widened.add('installation_id')
+      const lookup = vi
+        .spyOn(ALLOWED_FIELD_NAMES, 'has')
+        .mockImplementation((key) => widened.has(key))
       try {
         const tap = createAssetsTap(baseOpts)
         tap.ingest(taggedLine('seeder.scan_started', { installation_id: 'spoofed' }), 'stdout')
@@ -377,17 +318,30 @@ describe('assetsTap', () => {
         'C:\\models',
         'a\\b'
       ]) {
-        tap.ingest(taggedLine('api.request_failed', { error_type: value }), 'stdout')
+        tap.ingest(taggedLine('seeder.scan_failed', { error_type: value }), 'stdout')
       }
       expect(captured).toHaveLength(0)
     })
 
     it('rejects an oversized string value', () => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest(taggedLine('api.request_failed', { error_type: 'E'.repeat(65) }), 'stdout')
+      tap.ingest(taggedLine('seeder.scan_failed', { error_type: 'E'.repeat(65) }), 'stdout')
       expect(captured).toHaveLength(0)
-      tap.ingest(taggedLine('api.request_failed', { error_type: 'E'.repeat(64) }), 'stdout')
+      tap.ingest(taggedLine('seeder.scan_failed', { error_type: 'E'.repeat(64) }), 'stdout')
       expect(captured).toHaveLength(1)
+    })
+
+    it('rejects oversized or path-bearing phase values through structural checks', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_started', { phase: 'P'.repeat(65) }), 'stdout')
+      tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast/path' }), 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
+    it('rejects a counter whose JSON number overflows to Infinity', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed {"count":1e400}\n', 'stdout')
+      expect(captured).toHaveLength(0)
     })
 
     it('rejects a non-object JSON payload and a nested object value', () => {
@@ -400,29 +354,23 @@ describe('assetsTap', () => {
     it('rejects the whole line when only one of several fields is bad', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(
-        taggedLine('seeder.scan_completed', { phase: 'fast', root: 'models', created: 'twelve' }),
+        taggedLine('seeder.scan_completed', {
+          phase: 'fast',
+          root: 'models',
+          created: 'twelve/path'
+        }),
         'stdout'
       )
       expect(captured).toHaveLength(0)
     })
   })
 
-  describe('validator parity matrix', () => {
-    it.each(FIELD_MATRIX)('accepts every valid $field value', ({ field, valid }) => {
+  describe('field-name and structural validation', () => {
+    it.each(FIELD_VALUES)('accepts a structurally safe $field value', ({ field, value }) => {
       const tap = createAssetsTap(baseOpts)
-      for (const value of valid) {
-        tap.ingest(taggedLine('seeder.scan_completed', { [field]: value }), 'stdout')
-      }
-      expect(captured).toHaveLength(valid.length)
-      expect(captured.map((entry) => entry.ctx[field])).toEqual(valid)
-    })
-
-    it.each(FIELD_MATRIX)('rejects every invalid $field value', ({ field, invalid }) => {
-      const tap = createAssetsTap(baseOpts)
-      for (const value of invalid) {
-        tap.ingest(taggedLine('seeder.scan_completed', { [field]: value }), 'stdout')
-      }
-      expect(captured).toHaveLength(0)
+      tap.ingest(taggedLine('seeder.scan_completed', { [field]: value }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx[field]).toEqual(value)
     })
   })
 
@@ -450,9 +398,9 @@ describe('assetsTap', () => {
       for (let i = 0; i < 70; i++) {
         tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
       }
-      tap.ingest(taggedLine('api.request_failed', { error_type: 'ValueError' }), 'stdout')
+      tap.ingest(taggedLine('seeder.scan_failed', { error_type: 'ValueError' }), 'stdout')
       expect(captured.filter((c) => c.event.endsWith('seeder.scan_started'))).toHaveLength(60)
-      expect(captured.filter((c) => c.event.endsWith('api.request_failed'))).toHaveLength(1)
+      expect(captured.filter((c) => c.event.endsWith('seeder.scan_failed'))).toHaveLength(1)
     })
   })
 
@@ -575,11 +523,9 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ phase: 'enrich' })
     })
 
-    it('keeps processing later lines after a field name that throws in the allowlist', () => {
-      // `__proto__` resolves to `Object.prototype` against an object literal:
-      // truthy enough to pass the gate, not callable, so invoking it as a
-      // validator throws — and an unisolated per-chunk catch would silently
-      // discard every remaining line.
+    it('keeps processing later lines after a prototype-key field', () => {
+      // Set membership rejects `__proto__` without consulting the prototype;
+      // the later line must still be processed from the same chunk.
       const tap = createAssetsTap(baseOpts)
       const chunk = [
         '[assets-event] seeder.scan_started {"__proto__":1}',
@@ -591,8 +537,8 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ phase: 'enrich' })
     })
 
-    it('keeps processing later lines when a field validator throws', () => {
-      withExplodingPhaseValidator()
+    it('keeps processing later lines when field-name lookup throws', () => {
+      withExplodingPhaseLookup()
       const tap = createAssetsTap(baseOpts)
       const chunk = [
         '[assets-event] seeder.scan_started {"phase":"fast"}',
@@ -605,7 +551,7 @@ describe('assetsTap', () => {
     })
 
     it('flushes the stderr tail even when the stdout tail throws', () => {
-      withExplodingPhaseValidator()
+      withExplodingPhaseLookup()
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_started {"phase":"fast"}', 'stdout')
       tap.ingest('[assets-event] seeder.scan_completed {"count":3}', 'stderr')
