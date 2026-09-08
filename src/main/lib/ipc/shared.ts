@@ -1055,7 +1055,15 @@ export {
 
 export function _addSession(
   installationId: string,
-  { proc, port, url, mode, installationName, flushTelemetry }: Omit<SessionInfo, 'startedAt'>,
+  {
+    proc,
+    port,
+    url,
+    mode,
+    installationName,
+    flushTelemetry,
+    getAcceleratorInfo
+  }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
    *  renderer's `instance_started` telemetry can carry them without a
@@ -1073,6 +1081,7 @@ export function _addSession(
     installationName,
     sourceInstallationId,
     flushTelemetry,
+    getAcceleratorInfo,
     startedAt: Date.now()
   })
   // Clear the launching marker first so subscribers never double-count this id across the

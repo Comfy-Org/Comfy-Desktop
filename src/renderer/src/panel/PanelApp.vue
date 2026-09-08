@@ -8,7 +8,8 @@ import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
-import PerformanceBenchmarksView from '../views/PerformanceBenchmarksView.vue'
+import PerformanceTestView from '../views/PerformanceTestView.vue'
+import BenchmarksView from '../views/BenchmarksView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
 import TrackModal from '../views/TrackModal.vue'
 import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
@@ -605,11 +606,12 @@ onUnmounted(() => {
           />
         </div>
 
-        <div
-          v-else-if="activePanel === 'performance-benchmarks'"
-          class="panel-performance-benchmarks"
-        >
-          <PerformanceBenchmarksView />
+        <div v-else-if="activePanel === 'performance-test'" class="panel-performance-test">
+          <PerformanceTestView />
+        </div>
+
+        <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
+          <BenchmarksView />
         </div>
       </div>
     </main>
@@ -730,7 +732,8 @@ body.panel-overlay-mode .panel-shell {
  * gutter for those branches. */
 .panel-content:has(.panel-comfy-lifecycle),
 .panel-content:has(.panel-chooser),
-.panel-content:has(.panel-performance-benchmarks) {
+.panel-content:has(.panel-performance-test),
+.panel-content:has(.panel-benchmarks) {
   padding: 0;
 }
 
@@ -747,7 +750,8 @@ body.panel-overlay-mode .panel-shell {
 
 .panel-comfy-lifecycle,
 .panel-chooser,
-.panel-performance-benchmarks {
+.panel-performance-test,
+.panel-benchmarks {
   flex: 1;
   min-height: 0;
   display: flex;

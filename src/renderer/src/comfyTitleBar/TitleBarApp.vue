@@ -31,7 +31,8 @@ const { syncLocale } = useAppLocale(windowApiLocaleSource())
 // the ComfyPanelKey export in src/main/index.ts.
 type ComfyPanelKey =
   | 'comfy'
-  | 'performance-benchmarks'
+  | 'performance-test'
+  | 'benchmarks'
   | 'new-install'
   | 'track'
   | 'load-snapshot'

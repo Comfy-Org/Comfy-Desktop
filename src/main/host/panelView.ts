@@ -35,7 +35,8 @@ function opaquePanelBg(): string {
 function isOpaqueBodyMode(mode: BodyMode): boolean {
   return (
     mode === 'chooser' ||
-    mode === 'performance-benchmarks' ||
+    mode === 'performance-test' ||
+    mode === 'benchmarks' ||
     mode === 'new-install' ||
     mode === 'comfy-lifecycle'
   )
@@ -167,7 +168,12 @@ export function focusActiveBody(entry: ComfyWindowEntry): void {
 export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   const entry = comfyWindows.get(windowKey)
   if (!entry || entry.window.isDestroyed()) return
-  if (entry.activePanel === panel) return
+  // Full-page tool selections must reassert their renderer state. A dashboard
+  // renderer can still be showing after main has recorded one of these keys;
+  // treating the menu click as a no-op then strands the user on the dashboard
+  // until they select a different page first.
+  const reassertFullPageTool = panel === 'performance-test' || panel === 'benchmarks'
+  if (entry.activePanel === panel && !reassertFullPageTool) return
 
   entry.activePanel = panel
   const mode = computeBodyMode(entry)

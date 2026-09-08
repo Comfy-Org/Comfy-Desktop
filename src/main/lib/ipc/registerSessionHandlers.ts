@@ -86,7 +86,7 @@ export function registerSessionHandlers(): void {
 
       const requestedSessionId = actionData?.sessionIdOverride
       const sessionId =
-        actionId === 'launch' && requestedSessionId === `benchmark:${installationId}`
+        actionId === 'launch' && requestedSessionId === `performance-test:${installationId}`
           ? requestedSessionId
           : undefined
       return dispatchSessionAction(

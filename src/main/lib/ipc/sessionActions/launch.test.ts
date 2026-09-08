@@ -267,9 +267,9 @@ describe('handleLaunch model-download startup await (#1322)', () => {
     modelStartup.impl = null
   })
 
-  it('allows an isolated benchmark session while the installation is already running', async () => {
+  it('allows an isolated performance test session while the installation is already running', async () => {
     const installationId = 'running-install'
-    const sessionId = `benchmark:${installationId}`
+    const sessionId = `performance-test:${installationId}`
     _runningSessions.set(installationId, {
       proc: null,
       port: 8188,

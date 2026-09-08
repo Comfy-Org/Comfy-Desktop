@@ -5,7 +5,8 @@ import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode
 
 export type ComfyPanelKey =
   | 'comfy'
-  | 'performance-benchmarks'
+  | 'performance-test'
+  | 'benchmarks'
   | 'new-install'
   | 'track'
   | 'load-snapshot'

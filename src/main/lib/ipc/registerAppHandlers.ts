@@ -30,23 +30,26 @@ import {
   _runningSessions
 } from './shared'
 import si from 'systeminformation'
+import type { SystemInfo } from '../../../types/ipc'
 import type { FieldOption } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
+import { getCachedWorkspaceName } from '../../cloud/tokenStore'
+import { getCloudSession } from '../../devplatform/session'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
 import {
-  BENCHMARK_PREPARATION_RUNS,
-  calculateBenchmarkStatistics,
-  deleteBenchmarkWorkflow,
-  saveBenchmarkAggregates,
-  saveBenchmarkJobsResponse,
-  storeBenchmarkWorkflow,
-  submitBenchmarkWorkflow,
-  waitForBenchmarkJobs
-} from '../benchmarkWorkflows'
+  PERFORMANCE_TEST_MODEL_LOAD_RUNS,
+  calculatePerformanceTestStatistics,
+  deletePerformanceTestWorkflow,
+  savePerformanceTestJobsResponse,
+  savePerformanceTestResultsSummary,
+  storePerformanceTestWorkflow,
+  submitPerformanceTestWorkflow,
+  waitForPerformanceTestJobs
+} from '../performanceTestWorkflows'
 
 export function registerAppHandlers(): void {
   // App version
@@ -149,7 +152,7 @@ export function registerAppHandlers(): void {
     return filePaths[0]
   })
 
-  ipcMain.handle('import-benchmark-workflow', async (_event, droppedFilePath?: string) => {
+  ipcMain.handle('import-performance-test-workflow', async (_event, droppedFilePath?: string) => {
     let sourcePath = typeof droppedFilePath === 'string' ? droppedFilePath : ''
     if (!sourcePath) {
       const win = BrowserWindow.fromWebContents(_event.sender)
@@ -162,16 +165,16 @@ export function registerAppHandlers(): void {
       sourcePath = filePaths[0]!
     }
     try {
-      const filePath = await storeBenchmarkWorkflow(sourcePath, app.getPath('userData'))
+      const filePath = await storePerformanceTestWorkflow(sourcePath, app.getPath('userData'))
       return { ok: true, filePath }
     } catch (error) {
       return { ok: false, message: (error as Error)?.message || String(error) }
     }
   })
 
-  ipcMain.handle('delete-benchmark-workflow', async (_event, filePath: string) => {
+  ipcMain.handle('delete-performance-test-workflow', async (_event, filePath: string) => {
     try {
-      await deleteBenchmarkWorkflow(filePath, app.getPath('userData'))
+      await deletePerformanceTestWorkflow(filePath, app.getPath('userData'))
       return { ok: true }
     } catch (error) {
       return { ok: false, message: (error as Error)?.message || String(error) }
@@ -179,35 +182,67 @@ export function registerAppHandlers(): void {
   })
 
   ipcMain.handle(
-    'run-benchmark-workflow',
-    async (_event, sessionId: string, filePath: string, measuredRuns: number) => {
+    'run-performance-test-workflow',
+    async (
+      _event,
+      sessionId: string,
+      filePath: string,
+      measuredRuns: number,
+      warmupRuns: number
+    ) => {
       try {
-        if (typeof sessionId !== 'string' || !sessionId.startsWith('benchmark:')) {
-          throw new Error('Invalid benchmark session.')
+        if (typeof sessionId !== 'string' || !sessionId.startsWith('performance-test:')) {
+          throw new Error('Invalid performance test session.')
         }
         const session = _runningSessions.get(sessionId)
-        if (!session) throw new Error('The benchmark instance is not running.')
+        if (!session) throw new Error('The performance test instance is not running.')
+        const sourceInstallationId =
+          session.sourceInstallationId ?? sessionId.slice('performance-test:'.length)
+        const sourceInstallation = await installations.get(sourceInstallationId)
+        const workspaceId = sourceInstallation?.workspaceId ?? null
+        let workspaceName = workspaceId ? getCachedWorkspaceName(workspaceId) : null
+        if (workspaceId) {
+          try {
+            const owningWorkspace = (await getCloudSession().listWorkspaces()).find(
+              (workspace) => workspace.id === workspaceId
+            )
+            workspaceName = owningWorkspace?.name ?? workspaceName
+          } catch {
+            // The id-keyed cache remains accurate when workspace refresh is unavailable.
+          }
+        }
+        const workspace = { id: workspaceId, name: workspaceName }
         const sessionUrl = session.url || `http://127.0.0.1:${session.port}`
-        const promptIds = await submitBenchmarkWorkflow(
+        const promptIds = await submitPerformanceTestWorkflow(
           filePath,
           app.getPath('userData'),
           sessionUrl,
-          measuredRuns
+          measuredRuns,
+          warmupRuns
         )
-        const measuredPromptIds = promptIds.slice(BENCHMARK_PREPARATION_RUNS)
-        const jobsResponse = await waitForBenchmarkJobs(sessionUrl, measuredPromptIds)
-        const statistics = calculateBenchmarkStatistics(jobsResponse, measuredPromptIds)
-        const resultPath = await saveBenchmarkJobsResponse(
+        const preparationRuns = warmupRuns + PERFORMANCE_TEST_MODEL_LOAD_RUNS
+        const capturedPromptIds = promptIds.slice(PERFORMANCE_TEST_MODEL_LOAD_RUNS)
+        const measuredPromptIds = promptIds.slice(preparationRuns)
+        const jobsResponse = await waitForPerformanceTestJobs(sessionUrl, capturedPromptIds)
+        const statistics = calculatePerformanceTestStatistics(jobsResponse, measuredPromptIds)
+        const resultPath = await savePerformanceTestJobsResponse(
           jobsResponse,
           filePath,
           app.getPath('userData')
         )
-        const aggregatesPath = await saveBenchmarkAggregates(
+        const hardware = session.getAcceleratorInfo?.() ?? null
+        const systemInfo = await getSystemInfo()
+        const resultsSummaryPath = await savePerformanceTestResultsSummary(
           statistics,
+          {
+            id: sourceInstallationId,
+            name: session.installationName
+          },
+          workspace,
+          hardware,
           filePath,
           app.getPath('userData')
         )
-        const systemInfo = await getSystemInfo()
         const submittedPromptIds = new Set(measuredPromptIds)
         const unsuccessfulJobs = jobsResponse.jobs.filter(
           (job) => submittedPromptIds.has(job.id) && job.status !== 'completed'
@@ -215,13 +250,13 @@ export function registerAppHandlers(): void {
         return {
           ok: true,
           submitted: measuredRuns,
-          preparationRuns: BENCHMARK_PREPARATION_RUNS,
-          totalSubmitted: measuredRuns + BENCHMARK_PREPARATION_RUNS,
+          preparationRuns,
+          totalSubmitted: measuredRuns + preparationRuns,
           promptIds,
           resultPath,
-          aggregatesPath,
+          resultsSummaryPath,
           statistics,
-          hardware: session.getAcceleratorInfo?.() ?? null,
+          hardware,
           systemInfo,
           unsuccessfulJobs: unsuccessfulJobs.length
         }
@@ -296,7 +331,7 @@ export function registerAppHandlers(): void {
     return hardwareProbe
   }
 
-  async function getSystemInfo() {
+  async function getSystemInfo(): Promise<SystemInfo> {
     const hardware = await probeHardwareCached()
     const cpus = os.cpus()
     const allInstalls = await installations.list()
@@ -324,7 +359,7 @@ export function registerAppHandlers(): void {
         update_channel: (inst.updateChannel as string) || 'stable',
         status: (inst.status as string) || 'ready'
       }))
-    }
+    } as SystemInfo
   }
 
   ipcMain.handle('get-system-info', getSystemInfo)

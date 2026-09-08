@@ -750,6 +750,8 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //   ── separator ──
   //   (Log in — while signed out, followed by its own separator)
   //   Performance Test
+  //   Benchmarks
+  //   ── separator ──
   //   Desktop Settings
   //   Send Beta Feedback
   //   (Reset Zoom — on install-backed hosts when zoom level != 0)
@@ -799,10 +801,12 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   }
   items.push(
     {
-      id: 'performance-benchmarks',
-      label: 'Performance Test',
-      labelKey: 'fileMenu.performanceBenchmarks'
+      id: 'performance-test',
+      label: 'Performance Tests',
+      labelKey: 'fileMenu.performanceTest'
     },
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' },
+    { kind: 'separator' },
     {
       id: 'settings',
       label: 'Desktop Settings',
@@ -1963,9 +1967,8 @@ export function activateTitlePopupMenuItem(
   if (id === 'new-window') {
     bindings.openChooserHostWindow()
     releaseFocusToParent = false
-  } else if (id === 'performance-benchmarks') {
-    bindings.openChooserHostWindow('performance-benchmarks')
-    releaseFocusToParent = false
+  } else if (id === 'performance-test' || id === 'benchmarks') {
+    if (parentEntry) bindings.setActivePanel(entry.parentEntryId, id)
   } else if (id === 'return-to-dashboard') {
     // Flip the install-backed host in place to chooser-host mode.
     // The same BrowserWindow stays alive; the file-menu popup is

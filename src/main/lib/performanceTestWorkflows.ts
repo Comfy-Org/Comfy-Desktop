@@ -1,50 +1,61 @@
 import fs from 'fs'
 import path from 'path'
+import type { AcceleratorSnapshot } from './hardwareTap'
 
-const BENCHMARKS_DIR = 'benchmarks'
-const BENCHMARK_POLL_INTERVAL_MS = 1000
-export const BENCHMARK_PREPARATION_RUNS = 2
+const PERFORMANCE_TESTS_DIR = 'performance-tests'
+const PERFORMANCE_TEST_POLL_INTERVAL_MS = 1000
+export const PERFORMANCE_TEST_MODEL_LOAD_RUNS = 1
 
 const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled'])
 
-export interface BenchmarkJob {
+export interface PerformanceTestJob {
   id: string
   status: string
   [key: string]: unknown
 }
 
-export interface BenchmarkJobsResponse {
-  jobs: BenchmarkJob[]
+export interface PerformanceTestJobsResponse {
+  jobs: PerformanceTestJob[]
   pagination?: unknown
   [key: string]: unknown
 }
 
-export interface BenchmarkDurationResult {
+export interface PerformanceTestDurationResult {
   jobId: string
   durationSeconds: number
 }
 
-export interface BenchmarkStatistics {
-  fastest: BenchmarkDurationResult
-  slowest: BenchmarkDurationResult
+export interface PerformanceTestStatistics {
+  fastest: PerformanceTestDurationResult
+  slowest: PerformanceTestDurationResult
   averageDurationSeconds: number
   medianDurationSeconds: number
   measuredJobCount: number
 }
 
-export interface BenchmarkAggregates {
+export interface PerformanceTestResultsSummary {
+  instance: {
+    id: string
+    name: string
+  }
+  workspace: {
+    id: string | null
+    name: string | null
+  }
+  workflowName: string
   fastestJobDurationSeconds: number | null
   slowestJobDurationSeconds: number | null
   averageJobDurationSeconds: number | null
   medianJobDurationSeconds: number | null
   measuredJobCount: number
+  hardware: AcceleratorSnapshot | null
 }
 
 /** Calculate duration statistics for measured jobs with valid start and end timestamps. */
-export function calculateBenchmarkStatistics(
-  response: BenchmarkJobsResponse,
+export function calculatePerformanceTestStatistics(
+  response: PerformanceTestJobsResponse,
   measuredPromptIds: string[]
-): BenchmarkStatistics | null {
+): PerformanceTestStatistics | null {
   const measuredIds = new Set(measuredPromptIds)
   const durations = response.jobs.flatMap((job) => {
     if (!measuredIds.has(job.id)) return []
@@ -117,7 +128,7 @@ export function incrementWorkflowSeeds(workflow: object): object {
   return nextWorkflow
 }
 
-function formatBenchmarkSessionId(date: Date): string {
+function formatPerformanceTestSessionId(date: Date): string {
   return [
     date.getFullYear(),
     date.getMonth() + 1,
@@ -134,9 +145,9 @@ function resolveManagedWorkflowPath(
   filePath: string,
   userDataPath: string
 ): { filePath: string; sessionDir: string } {
-  const benchmarksDir = path.resolve(userDataPath, BENCHMARKS_DIR)
+  const performanceTestsDir = path.resolve(userDataPath, PERFORMANCE_TESTS_DIR)
   const resolvedPath = path.resolve(filePath)
-  const relativePath = path.relative(benchmarksDir, resolvedPath)
+  const relativePath = path.relative(performanceTestsDir, resolvedPath)
   const parts = relativePath.split(path.sep)
   if (
     parts.length !== 2 ||
@@ -144,28 +155,31 @@ function resolveManagedWorkflowPath(
     path.isAbsolute(relativePath) ||
     parts.includes('..')
   ) {
-    throw new Error('The workflow is outside a managed benchmark session directory.')
+    throw new Error('The workflow is outside a managed performance test session directory.')
   }
   return { filePath: resolvedPath, sessionDir: path.dirname(resolvedPath) }
 }
 
-async function readBenchmarkWorkflow(filePath: string, userDataPath: string): Promise<object> {
+async function readPerformanceTestWorkflow(
+  filePath: string,
+  userDataPath: string
+): Promise<object> {
   const managedPath = resolveManagedWorkflowPath(filePath, userDataPath).filePath
   const contents = await fs.promises.readFile(managedPath, 'utf8')
   let parsed: unknown
   try {
     parsed = JSON.parse(contents)
   } catch {
-    throw new Error('The benchmark workflow is not valid JSON.')
+    throw new Error('The performance test workflow is not valid JSON.')
   }
   if (!isApiWorkflow(parsed)) {
-    throw new Error('The benchmark workflow is not a ComfyUI API-format workflow.')
+    throw new Error('The performance test workflow is not a ComfyUI API-format workflow.')
   }
   return parsed
 }
 
 /** Validate and persist a user-selected API workflow outside any installation. */
-export async function storeBenchmarkWorkflow(
+export async function storePerformanceTestWorkflow(
   sourcePath: string,
   userDataPath: string
 ): Promise<string> {
@@ -173,8 +187,10 @@ export async function storeBenchmarkWorkflow(
     throw new Error('Select a .json workflow file.')
   }
   const sourceFileName = path.basename(sourcePath)
-  if (['results.json', 'aggregates.json'].includes(sourceFileName.toLowerCase())) {
-    throw new Error(`The workflow filename ${sourceFileName} is reserved for benchmark output.`)
+  if (['results.json', 'results_summary.json'].includes(sourceFileName.toLowerCase())) {
+    throw new Error(
+      `The workflow filename ${sourceFileName} is reserved for performance test output.`
+    )
   }
 
   const contents = await fs.promises.readFile(sourcePath)
@@ -188,12 +204,12 @@ export async function storeBenchmarkWorkflow(
     throw new Error('The selected file is not a ComfyUI API-format workflow.')
   }
 
-  const benchmarksDir = path.join(userDataPath, BENCHMARKS_DIR)
-  await fs.promises.mkdir(benchmarksDir, { recursive: true })
+  const performanceTestsDir = path.join(userDataPath, PERFORMANCE_TESTS_DIR)
+  await fs.promises.mkdir(performanceTestsDir, { recursive: true })
 
   for (let offsetSeconds = 0; ; offsetSeconds++) {
-    const sessionId = formatBenchmarkSessionId(new Date(Date.now() + offsetSeconds * 1000))
-    const sessionDir = path.join(benchmarksDir, sessionId)
+    const sessionId = formatPerformanceTestSessionId(new Date(Date.now() + offsetSeconds * 1000))
+    const sessionDir = path.join(performanceTestsDir, sessionId)
     try {
       await fs.promises.mkdir(sessionDir)
     } catch (error) {
@@ -212,8 +228,8 @@ export async function storeBenchmarkWorkflow(
   }
 }
 
-/** Delete a workflow copy managed by the benchmark page. */
-export async function deleteBenchmarkWorkflow(
+/** Delete a workflow copy managed by the performance test page. */
+export async function deletePerformanceTestWorkflow(
   filePath: string,
   userDataPath: string
 ): Promise<void> {
@@ -231,21 +247,25 @@ export async function deleteBenchmarkWorkflow(
 }
 
 /** Queue model-load and warm-up requests, followed by each measured run. */
-export async function submitBenchmarkWorkflow(
+export async function submitPerformanceTestWorkflow(
   filePath: string,
   userDataPath: string,
   sessionUrl: string,
   measuredRuns: number,
+  warmupRuns: number,
   fetchImpl: typeof fetch = fetch
 ): Promise<string[]> {
   if (!Number.isInteger(measuredRuns) || measuredRuns < 1 || measuredRuns > 100) {
     throw new Error('Measured runs must be an integer between 1 and 100.')
   }
+  if (!Number.isInteger(warmupRuns) || warmupRuns < 1 || warmupRuns > 5) {
+    throw new Error('Warm-up runs must be an integer between 1 and 5.')
+  }
 
-  let workflow = await readBenchmarkWorkflow(filePath, userDataPath)
+  let workflow = await readPerformanceTestWorkflow(filePath, userDataPath)
   const endpoint = new URL('/prompt', sessionUrl)
   const promptIds: string[] = []
-  const totalRuns = measuredRuns + BENCHMARK_PREPARATION_RUNS
+  const totalRuns = measuredRuns + warmupRuns + PERFORMANCE_TEST_MODEL_LOAD_RUNS
 
   for (let run = 1; run <= totalRuns; run++) {
     workflow = incrementWorkflowSeeds(workflow)
@@ -257,15 +277,15 @@ export async function submitBenchmarkWorkflow(
     if (!response.ok) {
       const detail = (await response.text()).trim()
       throw new Error(
-        `Benchmark request ${run} failed: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`
+        `Performance Test request ${run} failed: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`
       )
     }
     const result = (await response.json()) as { prompt_id?: unknown; error?: unknown }
     if (result.error) {
-      throw new Error(`Benchmark request ${run} failed: ${String(result.error)}`)
+      throw new Error(`Performance Test request ${run} failed: ${String(result.error)}`)
     }
     if (typeof result.prompt_id !== 'string') {
-      throw new Error(`Benchmark request ${run} did not return a prompt ID.`)
+      throw new Error(`Performance Test request ${run} did not return a prompt ID.`)
     }
     promptIds.push(result.prompt_id)
   }
@@ -274,12 +294,12 @@ export async function submitBenchmarkWorkflow(
 }
 
 /** Poll the jobs collection until every submitted prompt reaches a terminal state. */
-export async function waitForBenchmarkJobs(
+export async function waitForPerformanceTestJobs(
   sessionUrl: string,
   promptIds: string[],
   fetchImpl: typeof fetch = fetch,
-  pollIntervalMs = BENCHMARK_POLL_INTERVAL_MS
-): Promise<BenchmarkJobsResponse> {
+  pollIntervalMs = PERFORMANCE_TEST_POLL_INTERVAL_MS
+): Promise<PerformanceTestJobsResponse> {
   const endpoint = new URL('/api/jobs', sessionUrl)
   endpoint.searchParams.set('limit', String(promptIds.length))
   const expectedPromptIds = new Set(promptIds)
@@ -289,11 +309,11 @@ export async function waitForBenchmarkJobs(
     if (!response.ok) {
       const detail = (await response.text()).trim()
       throw new Error(
-        `Could not check benchmark jobs: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`
+        `Could not check performance test jobs: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`
       )
     }
 
-    const result = (await response.json()) as Partial<BenchmarkJobsResponse>
+    const result = (await response.json()) as Partial<PerformanceTestJobsResponse>
     if (!Array.isArray(result.jobs)) {
       throw new Error('The ComfyUI jobs response did not contain a jobs array.')
     }
@@ -301,7 +321,7 @@ export async function waitForBenchmarkJobs(
     const statuses = new Map(
       result.jobs
         .filter(
-          (job): job is BenchmarkJob =>
+          (job): job is PerformanceTestJob =>
             job !== null &&
             typeof job === 'object' &&
             typeof job.id === 'string' &&
@@ -313,15 +333,15 @@ export async function waitForBenchmarkJobs(
       const status = statuses.get(id)
       return status !== undefined && TERMINAL_JOB_STATUSES.has(status)
     })
-    if (allTerminal) return result as BenchmarkJobsResponse
+    if (allTerminal) return result as PerformanceTestJobsResponse
 
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
   }
 }
 
 /** Persist the final jobs API response and return its absolute path. */
-export async function saveBenchmarkJobsResponse(
-  response: BenchmarkJobsResponse,
+export async function savePerformanceTestJobsResponse(
+  response: PerformanceTestJobsResponse,
   workflowFilePath: string,
   userDataPath: string
 ): Promise<string> {
@@ -331,21 +351,28 @@ export async function saveBenchmarkJobsResponse(
   return resultPath
 }
 
-/** Persist measured duration aggregates beside the workflow and raw jobs response. */
-export async function saveBenchmarkAggregates(
-  statistics: BenchmarkStatistics | null,
+/** Persist the displayed performance test summary beside the workflow and raw jobs response. */
+export async function savePerformanceTestResultsSummary(
+  statistics: PerformanceTestStatistics | null,
+  instance: PerformanceTestResultsSummary['instance'],
+  workspace: PerformanceTestResultsSummary['workspace'],
+  hardware: AcceleratorSnapshot | null,
   workflowFilePath: string,
   userDataPath: string
 ): Promise<string> {
   const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
-  const aggregates: BenchmarkAggregates = {
+  const summary: PerformanceTestResultsSummary = {
+    instance,
+    workspace,
+    workflowName: path.basename(workflowFilePath),
     fastestJobDurationSeconds: statistics?.fastest.durationSeconds ?? null,
     slowestJobDurationSeconds: statistics?.slowest.durationSeconds ?? null,
     averageJobDurationSeconds: statistics?.averageDurationSeconds ?? null,
     medianJobDurationSeconds: statistics?.medianDurationSeconds ?? null,
-    measuredJobCount: statistics?.measuredJobCount ?? 0
+    measuredJobCount: statistics?.measuredJobCount ?? 0,
+    hardware
   }
-  const aggregatesPath = path.join(sessionDir, 'aggregates.json')
-  await fs.promises.writeFile(aggregatesPath, `${JSON.stringify(aggregates, null, 2)}\n`, 'utf8')
-  return aggregatesPath
+  const summaryPath = path.join(sessionDir, 'results_summary.json')
+  await fs.promises.writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8')
+  return summaryPath
 }

@@ -1101,17 +1101,18 @@ export interface ElectronApi {
 
   // File/URL
   browseFolder(defaultPath?: string): Promise<string | null>
-  importBenchmarkWorkflow(filePath?: string): Promise<{
+  importPerformanceTestWorkflow(filePath?: string): Promise<{
     ok: boolean
     filePath?: string
     message?: string
     canceled?: boolean
   }>
-  deleteBenchmarkWorkflow(filePath: string): Promise<{ ok: boolean; message?: string }>
-  runBenchmarkWorkflow(
+  deletePerformanceTestWorkflow(filePath: string): Promise<{ ok: boolean; message?: string }>
+  runPerformanceTestWorkflow(
     sessionId: string,
     filePath: string,
-    measuredRuns: number
+    measuredRuns: number,
+    warmupRuns: number
   ): Promise<{
     ok: boolean
     submitted: number
@@ -1119,7 +1120,7 @@ export interface ElectronApi {
     totalSubmitted: number
     promptIds?: string[]
     resultPath?: string
-    aggregatesPath?: string
+    resultsSummaryPath?: string
     unsuccessfulJobs?: number
     statistics?: {
       fastest: { jobId: string; durationSeconds: number }

@@ -19,7 +19,8 @@ export const hostInstallEvents = new EventEmitter()
  */
 export type ComfyPanelKey =
   | 'comfy'
-  | 'performance-benchmarks'
+  | 'performance-test'
+  | 'benchmarks'
   | 'feedback'
   | 'new-install'
   | 'track'
@@ -38,7 +39,8 @@ export type ComfyPanelKey =
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
-  'performance-benchmarks',
+  'performance-test',
+  'benchmarks',
   'feedback',
   'new-install',
   'track',
@@ -59,7 +61,8 @@ export type BodyMode =
   | 'comfy-lifecycle'
   | 'feedback'
   | 'chooser'
-  | 'performance-benchmarks'
+  | 'performance-test'
+  | 'benchmarks'
   /** Mirror of the `'progress'` ComfyPanelKey; forces the panel to fully cover
    *  the canvas while a picker-driven ProgressModal is mounted. */
   | 'progress'
