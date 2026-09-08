@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
@@ -8,6 +8,7 @@ import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import BrandVariantList from '../components/BrandVariantList.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
+import type { Source, FieldOption } from '../types/ipc'
 
 function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
@@ -56,6 +57,144 @@ beforeEach(() => {
       installBuild: vi.fn()
     }
   } as unknown as typeof window.api
+})
+
+describe('InstallWizardModal standalone runtime availability', () => {
+  const standalone: Source = {
+    id: 'standalone',
+    label: 'Standalone',
+    category: 'local',
+    fields: [
+      { id: 'release', label: 'Release', type: 'select' },
+      { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
+      { id: 'variant', label: 'Variant', type: 'select', renderAs: 'cards' },
+      { id: 'bundledTemplate', label: 'Template', type: 'select', renderAs: 'cards' }
+    ]
+  }
+  const release = { value: 'latest', label: 'Latest on GitHub' }
+  const variant = { value: 'cpu', label: 'CPU', data: { variantId: 'cpu' } }
+  let wrapper: ReturnType<typeof mountModal>
+
+  beforeEach(() => {
+    vi.mocked(window.api.getSources).mockResolvedValue([standalone])
+    vi.mocked(window.api.getSetting).mockResolvedValue(true)
+  })
+  afterEach(() => wrapper?.unmount())
+
+  async function openWithOptions(options: Record<string, FieldOption[]>): Promise<void> {
+    vi.mocked(window.api.getFieldOptions).mockImplementation(
+      async (_source, field) => options[field] ?? []
+    )
+    wrapper = mountModal()
+    await (wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+  }
+
+  it.each(['release', 'variant'])('blocks an empty required %s catalog', async (field) => {
+    await openWithOptions({
+      release: field === 'release' ? [] : [release],
+      bundledTemplate: [{ value: 'none', label: 'None' }]
+    })
+
+    expect(wrapper.get('.wizard-error').text()).toBe(en.standalone.runtimeUnavailable)
+    const button = wrapper.get<HTMLButtonElement>('button.config-continue')
+    expect(button.element.disabled).toBe(true)
+    await button.trigger('click')
+    await flushPromises()
+    expect(window.api.buildInstallation).not.toHaveBeenCalled()
+    expect(window.api.addInstallation).not.toHaveBeenCalled()
+    expect(window.api.getFieldOptions).not.toHaveBeenCalledWith(
+      'standalone',
+      'bundledTemplate',
+      expect.anything(),
+      undefined
+    )
+  })
+
+  it.each([{ templates: [] }, { templates: [{ value: 'none', label: 'None' }] }])(
+    'allows latest with an empty ComfyUI version and optional templates $templates',
+    async ({ templates }) => {
+      await openWithOptions({ release: [release], variant: [variant], bundledTemplate: templates })
+
+      expect(wrapper.find('.wizard-error').exists()).toBe(false)
+      const button = wrapper.get<HTMLButtonElement>('button.config-continue')
+      expect(button.element.disabled).toBe(false)
+      await button.trigger('click')
+      await flushPromises()
+      expect(window.api.buildInstallation).toHaveBeenCalledExactlyOnceWith('standalone', {
+        release,
+        variant,
+        ...(templates.length ? { bundledTemplate: templates[0] } : {})
+      })
+      expect(window.api.addInstallation).toHaveBeenCalledOnce()
+    }
+  )
+
+  it('clears the previous runtime when a channel has no variants and recovers on a valid channel', async () => {
+    const stable = { value: 'stable', label: 'Stable' }
+    await openWithOptions({ release: [stable, release], variant: [variant] })
+    vi.mocked(window.api.getFieldOptions).mockImplementation(async (_source, field, selections) =>
+      field === 'variant' && selections.release?.value === 'stable' ? [variant] : []
+    )
+    const releaseSelect = wrapper.findAllComponents(BaseSelect)[0]!
+    releaseSelect.vm.$emit('update:modelValue', 'latest')
+    await flushPromises()
+
+    expect(wrapper.get('.wizard-error').text()).toBe(en.standalone.runtimeUnavailable)
+    expect(wrapper.get<HTMLButtonElement>('.config-continue').element.disabled).toBe(true)
+    expect(wrapper.findComponent(BrandVariantList).exists()).toBe(false)
+
+    releaseSelect.vm.$emit('update:modelValue', 'stable')
+    await flushPromises()
+    expect(wrapper.find('.wizard-error').exists()).toBe(false)
+    expect(wrapper.get<HTMLButtonElement>('.config-continue').element.disabled).toBe(false)
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+    expect(window.api.buildInstallation).toHaveBeenCalledExactlyOnceWith('standalone', {
+      release: stable,
+      variant
+    })
+  })
+
+  it.each(['remote', 'cloud'])('allows switching from unavailable standalone to %s', async (id) => {
+    vi.mocked(window.api.getSources).mockResolvedValue([
+      standalone,
+      {
+        id,
+        label: id,
+        category: 'remote',
+        skipInstall: true,
+        fields: [{ id: 'url', label: 'URL', type: 'text', defaultValue: 'http://localhost:8188' }]
+      }
+    ])
+    vi.mocked(window.api.buildInstallation).mockResolvedValue({ sourceId: id })
+    await openWithOptions({})
+    await wrapper
+      .findAll('button[role="radio"]')
+      .find((button) => button.text() === id)!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.wizard-error').exists()).toBe(false)
+    expect(wrapper.get<HTMLButtonElement>('.config-continue').element.disabled).toBe(false)
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+    expect(window.api.addInstallation).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceId: id, status: 'installed' })
+    )
+  })
+
+  it('shows main-process validation errors without adding an installation', async () => {
+    vi.mocked(window.api.buildInstallation).mockRejectedValue(
+      new Error(en.standalone.invalidRuntime)
+    )
+    await openWithOptions({ release: [release], variant: [variant] })
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.wizard-error').text()).toBe(en.standalone.invalidRuntime)
+    expect(window.api.addInstallation).not.toHaveBeenCalled()
+  })
 })
 
 describe('InstallWizardModal heading', () => {

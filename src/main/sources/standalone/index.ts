@@ -22,6 +22,7 @@ import { install, postInstall, probeInstallation } from './install'
 import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
 import { loadTemplateCatalog } from './templateCatalog'
 import { resolveTemplateModels } from './templateModels'
+import { getStandaloneRuntimeError } from './runtimeValidation'
 import * as installations from '../../installations'
 
 import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
@@ -169,6 +170,13 @@ export const standalone: SourcePlugin = {
   getDetailSections,
 
   buildInstallation(selections: Record<string, FieldOption | undefined>): Record<string, unknown> {
+    if (
+      ![selections.release, selections.variant].every(
+        (option) => typeof option?.value === 'string' && option.value.trim().length > 0
+      )
+    ) {
+      throw new Error(t('standalone.invalidRuntime'))
+    }
     const vd = selections.variant?.data as (VariantData & { r2Release?: R2Variant }) | undefined
     const manifest = vd?.manifest
     const r2Release = vd?.r2Release
@@ -210,7 +218,7 @@ export const standalone: SourcePlugin = {
       typeof selections.bundledTemplate?.data?.sizeBytes === 'number'
         ? (selections.bundledTemplate.data.sizeBytes as number)
         : 0
-    return {
+    const installation = {
       version: r2Release?.comfyui_version || manifest?.comfyui_ref || releaseTag,
       releaseTag,
       variant: variantId,
@@ -244,6 +252,9 @@ export const standalone: SourcePlugin = {
           }
         : {})
     }
+    const runtimeError = getStandaloneRuntimeError(installation)
+    if (runtimeError) throw new Error(runtimeError)
+    return installation
   },
 
   getLaunchCommand(installation: InstallationRecord): LaunchCommand | null {

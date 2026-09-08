@@ -919,6 +919,8 @@
     "adoptStepRegister": "Register installation"
   },
   "standalone": {
+    "runtimeUnavailable": "No compatible standalone runtime is available. Try again later or use a remote connection.",
+    "invalidRuntime": "Select a release and a compatible runtime before creating an installation.",
     "_note": "standalone.label and portable.label are product names — keep in English across all translations.",
     "label": "Standalone",
     "desc": "Pre-built environment with managed Python and dependencies.",
