@@ -65,6 +65,7 @@ import {
   loadPerformanceTestExampleArtifacts,
   startExampleModelDownload
 } from '../performanceTestExampleWorkflows'
+import { tryBuildInstallation } from '../buildInstallation'
 
 export function registerAppHandlers(): void {
   const benchmarksDir = defaultBenchmarksDir()
@@ -144,15 +145,11 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(
     'build-installation',
-    (_event, sourceId: string, selections: Record<string, unknown>) => {
-      const source = sourceMap[sourceId]
-      if (!source) return null
-      return {
-        sourceId: source.id,
-        sourceLabel: source.label,
-        ...source.buildInstallation(selections as Record<string, FieldOption | undefined>)
-      }
-    }
+    (_event, sourceId: string, selections: Record<string, unknown>) =>
+      tryBuildInstallation(
+        sourceMap[sourceId],
+        selections as Record<string, FieldOption | undefined>
+      )
   )
 
   // Paths
