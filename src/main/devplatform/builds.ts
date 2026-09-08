@@ -75,13 +75,13 @@ export interface ResolvedHostArtifact {
   version: number
 }
 
-/** The signed-in host's build target: OS from the platform, GPU from detection. */
+/** The signed-in host's build target: OS/architecture from Node, GPU from detection. */
 export async function resolveHost(): Promise<Host> {
   const gpu = await detectGPUCached()
   // The library targets nvidia/amd/cpu/mps; an Intel dGPU (or none) maps to the
-  // universal CPU build, which `selectArtifactForHost` treats as the fallback.
+  // CPU build, which `selectArtifactForHost` treats as the fallback on the same architecture.
   const mapped = gpu?.id === 'nvidia' || gpu?.id === 'amd' || gpu?.id === 'mps' ? gpu.id : 'cpu'
-  return { os: hostOs(), gpu: mapped }
+  return { os: hostOs(), arch: process.arch, gpu: mapped }
 }
 
 /** Latest complete version, or null. `complete` is the only terminal status in

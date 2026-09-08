@@ -57,6 +57,7 @@ export interface Artifact {
 /** The machine an install targets: which artifact to pick. */
 export interface Host {
   os: ArtifactOs
+  arch: NodeJS.Architecture
   gpu: ArtifactGpu
   /** Preferred accelerator build (e.g. `cu128`) when a gpu ships several. Optional. */
   accelVariant?: string

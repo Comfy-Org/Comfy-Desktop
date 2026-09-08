@@ -33,6 +33,7 @@ import type {
   ModelDescriptor
 } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
+import { selectArtifactForHost } from '../../comfybuilder/targets'
 import {
   listCompleteVersions,
   resolveHost,
@@ -405,8 +406,13 @@ async function installEnvironment(
   },
   onTransactionStarted?: () => Promise<void>
 ): Promise<readonly ModelDescriptor[]> {
-  releaseInstallTerminalForFsOp(installation.id)
   const artifact = artifactFromRecord(installation)
+  // Retried installs carry a persisted selection and bypass catalog resolution.
+  // Revalidate before releasing terminals or touching the existing environment.
+  if (!selectArtifactForHost([artifact], await resolveHost())) {
+    throw new Error('This build is not compatible with this machine.')
+  }
+  releaseInstallTerminalForFsOp(installation.id)
   const client = getBuilderClient()
   const paths = environmentPaths(installation.installPath)
   const interrupted = await hasEnvironmentBackups(installation.installPath)

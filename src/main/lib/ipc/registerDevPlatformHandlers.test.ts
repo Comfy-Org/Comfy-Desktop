@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   })),
   listBuilds: vi.fn(),
   createBuildDraft: vi.fn(),
-  resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
+  resolveHost: vi.fn(async () => ({ os: 'linux', arch: 'x64', gpu: 'nvidia' })),
   resolveBuildRows: vi.fn(),
   resolveHostArtifact: vi.fn(),
   resolveSelectedHostArtifact: vi.fn(),
@@ -726,7 +726,7 @@ describe('registerDevPlatformHandlers', () => {
     expect(result).toMatchObject({ ok: true })
     expect(mocks.resolveSelectedHostArtifact).toHaveBeenCalledWith(
       expect.anything(),
-      { os: 'linux', gpu: 'nvidia' },
+      { os: 'linux', arch: 'x64', gpu: 'nvidia' },
       'd1',
       7,
       'art-cpu'

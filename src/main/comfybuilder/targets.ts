@@ -3,9 +3,22 @@
  *
  * A version fans out into per-target artifacts (os x gpu x accel). This module
  * identifies and ranks every artifact the host can run. Pure functions, no I/O;
- * the caller supplies the host GPU (Desktop already detects it).
+ * the caller supplies the host architecture and GPU (Desktop already detects them).
  */
 import type { Artifact, ArtifactGpu, ArtifactOs, Host } from './types'
+
+/**
+ * Builder's Artifact API has no CPU architecture field. Its curated base images
+ * currently ship x64 Python for Windows and Linux; macOS is not buildable.
+ * Keep unknown targets blocked until Builder exposes their architecture.
+ * Source: Comfy-Org/cloud services/comfy-builder/sandbox-images/catalog/base_images.yaml
+ * and apiserver/menus/build_targets_helpers.go.
+ */
+const BUILDER_ARCHITECTURES: Record<ArtifactOs, NodeJS.Architecture | null> = {
+  linux: 'x64',
+  windows: 'x64',
+  mac: null
+}
 
 /** The host OS as a build-target token, from Node's `process.platform`. */
 export function hostOs(): ArtifactOs {
@@ -21,7 +34,7 @@ export function hostOs(): ArtifactOs {
 
 /**
  * Rank an artifact's GPU against the host's, higher is better. An exact match
- * wins; a CPU artifact is the universal fallback (every host can run it); an
+ * wins; a CPU artifact is the fallback within a matching OS and architecture; an
  * NVIDIA host tolerates a CPU build but never the reverse.
  */
 function gpuScore(artifactGpu: ArtifactGpu, hostGpu: ArtifactGpu): number {
@@ -50,6 +63,7 @@ function score(a: Artifact, host: Host): number {
 export function compatibleArtifactsForHost(artifacts: readonly Artifact[], host: Host): Artifact[] {
   return artifacts
     .filter((artifact) => artifact.status === 'ready' && artifact.os === host.os)
+    .filter((artifact) => BUILDER_ARCHITECTURES[artifact.os] === host.arch)
     .filter((artifact) => score(artifact, host) > 0)
     .sort((a, b) => {
       const scoreDifference = score(b, host) - score(a, host)
@@ -61,7 +75,7 @@ export function compatibleArtifactsForHost(artifacts: readonly Artifact[], host:
 }
 
 /**
- * Pick the best `ready` artifact for the host: OS must match, then GPU fit
+ * Pick the best `ready` artifact for the host: OS and architecture must match, then GPU fit
  * (exact, else CPU fallback), then a preferred `accelVariant`, then a
  * deterministic tie-break. Returns null when the version has no runnable
  * artifact for this machine (e.g. a windows-only build on mac).
