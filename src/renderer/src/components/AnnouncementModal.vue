@@ -252,6 +252,10 @@ onUnmounted(() => {
   grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   width: 100%;
   height: 100%;
+  /* The 916/445 card ratio assumes two columns. Whenever the grid stacks, the
+     16:9 media is taller than the whole card on its own, so scroll here rather
+     than let .announce-content clip the copy and the CTAs. */
+  overflow-y: auto;
 }
 
 .announce-media-wrap {
@@ -379,5 +383,26 @@ onUnmounted(() => {
   line-height: 1.4;
   color: color-mix(in oklab, var(--neutral-300) 65%, transparent);
   font-family: var(--font-sans);
+}
+
+/* One column, which the grid drops to below 720px of card width. Drop the
+   two-column card ratio, and let the media take what the copy and CTAs leave
+   rather than 16:9, which on its own is taller than the whole card. */
+@media (width < 800px) {
+  .announce-content {
+    height: 100%;
+    aspect-ratio: auto;
+  }
+  .announce-grid {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .announce-media-wrap {
+    aspect-ratio: auto;
+    align-self: stretch;
+    min-height: 0;
+  }
+  .announce-body {
+    overflow: visible;
+  }
 }
 </style>
