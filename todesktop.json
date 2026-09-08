@@ -90,7 +90,11 @@
       "arm64": {
         "extraResources": [
           { "from": "./lib", "to": "lib" },
-          { "from": "resources/apparmor-profile", "to": "apparmor-profile" }
+          { "from": "resources/apparmor-profile", "to": "apparmor-profile" },
+          {
+            "from": "./todesktop-targets/linux-arm64/bootstrap-python",
+            "to": "bootstrap-python"
+          }
         ]
       }
     }

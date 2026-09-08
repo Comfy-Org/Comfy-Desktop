@@ -168,6 +168,10 @@ jobs:
           done
           mkdir -p todesktop-targets/linux-x64
           mv bootstrap-python/linux-x64 todesktop-targets/linux-x64/bootstrap-python
+          # ToDesktop requires matching resource paths across architectures.
+          # Keep the ARM64 directory nonempty for upload, without a Python binary.
+          mkdir -p todesktop-targets/linux-arm64/bootstrap-python
+          printf '%s\n' 'Bootstrap Python is not available for Linux ARM64.' > todesktop-targets/linux-arm64/bootstrap-python/README.txt
 
       - name: Build with ToDesktop
         shell: bash

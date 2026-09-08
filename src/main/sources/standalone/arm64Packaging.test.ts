@@ -15,7 +15,7 @@ interface ToDesktopConfig {
 }
 
 describe('Linux ARM64 packaging', () => {
-  it('keeps the x64 bootstrap out of the ToDesktop ARM64 target', () => {
+  it('uses matching ToDesktop resource paths with a separate ARM64 placeholder', () => {
     const config = JSON.parse(
       fs.readFileSync(path.join(process.cwd(), 'todesktop.json'), 'utf-8')
     ) as ToDesktopConfig
@@ -23,13 +23,23 @@ describe('Linux ARM64 packaging', () => {
     const x64Resources = linuxTargets?.x64?.extraResources ?? []
     const arm64Resources = linuxTargets?.arm64?.extraResources ?? []
     const x64Bootstrap = x64Resources.find((resource) => resource.to === 'bootstrap-python')
+    const arm64Bootstrap = arm64Resources.find((resource) => resource.to === 'bootstrap-python')
+
+    // ToDesktop permits architecture-specific sources, but every target must
+    // have the same destinations and source basenames, in the same order.
+    const resourcePaths = (resources: ExtraResource[]): string[] =>
+      resources.map((resource) => path.posix.join(resource.to, path.posix.basename(resource.from)))
+    expect(resourcePaths(arm64Resources)).toEqual(resourcePaths(x64Resources))
 
     expect(x64Bootstrap).toEqual({
       from: './todesktop-targets/linux-x64/bootstrap-python',
       to: 'bootstrap-python'
     })
     expect(path.posix.basename(x64Bootstrap!.from)).toBe(x64Bootstrap!.to)
-    expect(arm64Resources.some((resource) => resource.to === 'bootstrap-python')).toBe(false)
+    expect(arm64Bootstrap).toEqual({
+      from: './todesktop-targets/linux-arm64/bootstrap-python',
+      to: 'bootstrap-python'
+    })
   })
 
   it('stages the Linux x64 bootstrap at the target-specific ToDesktop path', () => {
