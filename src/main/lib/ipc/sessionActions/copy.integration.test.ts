@@ -140,7 +140,7 @@ describe('handleCopy (ComfyBuilder install)', () => {
       id: 'builder-source',
       name: 'Studio Build',
       createdAt: new Date(0).toISOString(),
-      sourceId: 'comfybuilder',
+      sourceId: 'platform',
       installPath: srcRoot,
       workspaceId: 'workspace-1',
       distributionId: 'build-1',
@@ -176,7 +176,7 @@ describe('handleCopy (ComfyBuilder install)', () => {
     const copy = installationsStore.get(result.newInstallationId!)
     expect(copy).toMatchObject({
       name: 'Studio Build Copy',
-      sourceId: 'comfybuilder',
+      sourceId: 'platform',
       workspaceId: 'workspace-1',
       distributionId: 'build-1',
       distributionName: 'Studio Build',

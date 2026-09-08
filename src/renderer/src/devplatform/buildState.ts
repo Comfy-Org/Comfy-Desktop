@@ -6,7 +6,7 @@ import type { Installation } from '../types/ipc'
  *  `distributionId` is the legacy installation schema field, hence the
  *  emptiness check rather than a `typeof`. */
 export function isBuildSource(sourceId: unknown, distributionId: unknown): boolean {
-  return sourceId === 'comfybuilder' || Boolean(distributionId)
+  return sourceId === 'platform' || Boolean(distributionId)
 }
 
 /** An install that came from a Build. */

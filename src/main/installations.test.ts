@@ -194,14 +194,14 @@ describe('installations.associateUnownedBuildInstalls', () => {
     const matching = await installations.add({
       name: 'Exact Match',
       installPath: path.join(tmpRoot, 'matching'),
-      sourceId: 'comfybuilder',
+      sourceId: 'platform',
       distributionId: 'dist-visible',
       status: 'installed'
     })
     const sameName = await installations.add({
       name: 'Visible Build',
       installPath: path.join(tmpRoot, 'same-name'),
-      sourceId: 'comfybuilder',
+      sourceId: 'platform',
       distributionId: 'dist-not-visible',
       status: 'installed'
     })
@@ -215,7 +215,7 @@ describe('installations.associateUnownedBuildInstalls', () => {
     const alreadyOwned = await installations.add({
       name: 'Already Owned',
       installPath: path.join(tmpRoot, 'already-owned'),
-      sourceId: 'comfybuilder',
+      sourceId: 'platform',
       workspaceId: 'workspace-old',
       distributionId: 'dist-visible',
       status: 'installed'
@@ -485,7 +485,7 @@ describe('installations.load (legacy shared-storage flag migrations)', () => {
         id: 'fresh',
         name: 'Fresh',
         installPath: path.join(tmpRoot, 'fresh'),
-        sourceId: 'comfybuilder',
+        sourceId: 'platform',
         status: 'installing',
         createdAt: new Date().toISOString()
       },
@@ -502,7 +502,9 @@ describe('installations.load (legacy shared-storage flag migrations)', () => {
     const installations = await loadInstallations()
     const list = await installations.list()
     expect(list.find((r) => r.id === 'mid-update')!.status).toBe('updating')
+    expect(list.find((r) => r.id === 'mid-update')!.sourceId).toBe('platform')
     expect(list.find((r) => r.id === 'fresh')!.status).toBe('installing')
+    expect(list.find((r) => r.id === 'fresh')!.sourceId).toBe('platform')
     expect(list.find((r) => r.id === 'other-source')!.status).toBe('installing')
   })
 

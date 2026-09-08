@@ -58,7 +58,7 @@ describe('installTypeMetaForInstall', () => {
     // more than where it runs — and the tile, the picker row and the title bar
     // all read this, so they can't drift apart.
     const bySource = installTypeMetaForInstall({
-      sourceId: 'comfybuilder',
+      sourceId: 'platform',
       sourceCategory: 'local'
     })
     expect(bySource.key).toBe('build')

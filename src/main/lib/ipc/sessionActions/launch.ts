@@ -424,11 +424,7 @@ async function runLaunch(
   // abort, staging failure, or a record written before `modelsStaged` existed)
   // resumes its downloads now. Fire-and-forget: launch is not gated on models;
   // already-staged files are skipped by hash.
-  if (
-    inst.sourceId === 'comfybuilder' &&
-    inst.status === 'installed' &&
-    inst.modelsStaged !== true
-  ) {
+  if (inst.sourceId === 'platform' && inst.status === 'installed' && inst.modelsStaged !== true) {
     restageBuildModelsIfNeeded(inst)
   }
 

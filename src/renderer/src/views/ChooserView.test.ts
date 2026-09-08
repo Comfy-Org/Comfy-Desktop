@@ -238,7 +238,7 @@ describe('ChooserView', () => {
         makeInstall({
           id: 'managed-update',
           name: 'Managed Build',
-          sourceId: 'comfybuilder',
+          sourceId: 'platform',
           sourceLabel: 'ComfyBuilder',
           sourceCategory: 'local',
           workspaceId: 'workspace-1',
@@ -594,7 +594,7 @@ describe('ChooserView', () => {
         makeInstall({
           id: 'built',
           name: 'BuiltThing',
-          sourceId: 'comfybuilder',
+          sourceId: 'platform',
           version: 'v0.28.2',
           distributionVersion: '7'
         })
@@ -634,14 +634,14 @@ describe('ChooserView', () => {
       makeInstall({
         id: 'builder-1',
         name: 'Unassigned Studio',
-        sourceId: 'comfybuilder',
+        sourceId: 'platform',
         distributionId: 'd-unassigned',
         status: 'installed'
       } as unknown as Partial<Installation>),
       makeInstall({
         id: 'builder-2',
         name: 'Workspace Studio',
-        sourceId: 'comfybuilder',
+        sourceId: 'platform',
         distributionId: 'd-workspace',
         workspaceId: 'workspace-a',
         status: 'installed'
@@ -693,7 +693,7 @@ describe('ChooserView', () => {
         makeInstall({
           id: 'local',
           name: 'LocalThing',
-          sourceId: 'comfybuilder',
+          sourceId: 'platform',
           workspaceId: 'w1',
           status: 'installed',
           installPath: '/installs/local'
@@ -762,7 +762,7 @@ describe('ChooserView', () => {
   })
 
   it.each([
-    ['a Builder install', { sourceId: 'comfybuilder' }, 'w1', true],
+    ['a Builder install', { sourceId: 'platform' }, 'w1', true],
     ['an active-workspace install', { sourceId: 'standalone', workspaceId: 'w1' }, 'w1', false],
     [
       'an install owned by another workspace',
@@ -836,13 +836,13 @@ describe('ChooserView', () => {
         makeInstall({
           id: 'built-a',
           name: 'Workspace A Build',
-          sourceId: 'comfybuilder',
+          sourceId: 'platform',
           workspaceId: 'w1'
         }),
         makeInstall({
           id: 'built-b',
           name: 'Workspace B Build',
-          sourceId: 'comfybuilder',
+          sourceId: 'platform',
           workspaceId: 'w2'
         })
       ],
@@ -865,14 +865,14 @@ describe('ChooserView', () => {
         makeInstall({
           id: 'built-a',
           name: 'Workspace A Build',
-          sourceId: 'comfybuilder',
+          sourceId: 'platform',
           workspaceId: 'workspace-a',
           distributionId: 'build-a'
         }),
         makeInstall({
           id: 'built-b',
           name: 'Workspace B Build',
-          sourceId: 'comfybuilder',
+          sourceId: 'platform',
           workspaceId: 'workspace-b',
           distributionId: 'build-b'
         })

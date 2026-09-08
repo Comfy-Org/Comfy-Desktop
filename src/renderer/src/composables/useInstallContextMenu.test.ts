@@ -172,7 +172,7 @@ describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
     'offers Uninstall for a managed Build in the %s state',
     (status) => {
       const inst = makeInstall({
-        sourceId: 'comfybuilder',
+        sourceId: 'platform',
         distributionId: 'build-1',
         status
       })
@@ -187,7 +187,7 @@ describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
 
   it('does not offer local Uninstall for a failed cloud record', () => {
     const inst = makeInstall({
-      sourceId: 'comfybuilder',
+      sourceId: 'platform',
       sourceCategory: 'cloud',
       distributionId: 'build-1',
       status: 'failed'
@@ -250,7 +250,7 @@ describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
 
   it('disables REQUIRES_STOPPED items when a long-running operation is in flight', () => {
     const inst = makeInstall({
-      sourceId: 'comfybuilder',
+      sourceId: 'platform',
       distributionId: 'build-1',
       status: 'failed'
     })
@@ -386,7 +386,7 @@ describe('useInstallContextMenu - copy-install routing', () => {
     ).toBeTruthy()
     expect(
       findItem(
-        mountHarness(makeInstall({ sourceId: 'comfybuilder', distributionId: 'build-1' })).menu
+        mountHarness(makeInstall({ sourceId: 'platform', distributionId: 'build-1' })).menu
           .ctxMenuItems.value,
         'copy-install'
       )
@@ -401,7 +401,7 @@ describe('useInstallContextMenu - copy-install routing', () => {
 
   it('copy-install routes through onManage with autoAction "copy" and does not call runAction directly', async () => {
     const onManage = vi.fn<(inst: Installation, options?: { autoAction?: string | null }) => void>()
-    const inst = makeInstall({ sourceId: 'comfybuilder', distributionId: 'build-1' })
+    const inst = makeInstall({ sourceId: 'platform', distributionId: 'build-1' })
     const { menu } = mountHarnessWithManage(onManage)
 
     await menu.triggerAction('copy-install', inst)
@@ -473,7 +473,7 @@ describe('useInstallContextMenu - export latest snapshot', () => {
   })
 
   it('hides snapshot actions for workspace-managed installs', () => {
-    const { menu } = mountHarness(makeInstall({ sourceId: 'comfybuilder' }))
+    const { menu } = mountHarness(makeInstall({ sourceId: 'platform' }))
     expect(findItem(menu.ctxMenuItems.value, 'share')).toBeUndefined()
     expect(findItem(menu.ctxMenuItems.value, 'restore-snapshot')).toBeUndefined()
   })

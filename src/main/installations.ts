@@ -16,6 +16,8 @@ export const installationEvents = new EventEmitter()
 export const CLOUD_SOURCE_ID = 'cloud'
 /** Canonical, non-user-editable name of the Comfy Cloud entry (issue #922). */
 export const CLOUD_INSTALL_NAME = 'Comfy Cloud'
+/** Source id for installations created by the developer platform. */
+export const PLATFORM_SOURCE_ID = 'platform'
 
 export interface InstallationRecord {
   id: string
@@ -94,7 +96,8 @@ export interface InstallationRecord {
  * The steps chain, so a `useSharedPaths`-era record lands directly on the
  * current per-folder schema.
  *
- * 3. A ComfyBuilder in-place update once reused status `'installing'`,
+ * 3. Legacy ComfyBuilder source ids are renamed to `platform`.
+ * 4. A ComfyBuilder in-place update once reused status `'installing'`,
  *    disambiguated from a fresh install by its rollback payload. Such a
  *    record lands as `'updating'`, the status the update flow writes now,
  *    so status alone distinguishes a hidden fresh install from a visible
@@ -102,6 +105,9 @@ export interface InstallationRecord {
  */
 function migrateRecord(record: InstallationRecord): InstallationRecord {
   let rec = record
+  if (rec.sourceId === 'comfybuilder') {
+    rec = { ...rec, sourceId: PLATFORM_SOURCE_ID }
+  }
   if ('useSharedPaths' in rec) {
     const legacy = rec.useSharedPaths as boolean | undefined
     const { useSharedPaths: _drop, ...rest } = rec
@@ -125,7 +131,7 @@ function migrateRecord(record: InstallationRecord): InstallationRecord {
   }
   if (
     rec.status === 'installing' &&
-    rec.sourceId === 'comfybuilder' &&
+    rec.sourceId === PLATFORM_SOURCE_ID &&
     rec.comfybuilderRollback !== null &&
     typeof rec.comfybuilderRollback === 'object' &&
     !Array.isArray(rec.comfybuilderRollback)
@@ -336,7 +342,7 @@ export async function associateUnownedBuildInstalls(
       const existing = list[index]!
       const distributionId = existing.distributionId
       if (
-        existing.sourceId !== 'comfybuilder' ||
+        existing.sourceId !== PLATFORM_SOURCE_ID ||
         existing.workspaceId !== undefined ||
         typeof distributionId !== 'string' ||
         distributionId.length === 0 ||

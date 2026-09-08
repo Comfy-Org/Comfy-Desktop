@@ -99,7 +99,7 @@ vi.mock('./shared', () => ({
   sourceMap: {
     standalone: { category: 'local' },
     desktop: { category: 'local' },
-    comfybuilder: { category: 'local' },
+    platform: { category: 'local' },
     cloud: { category: 'cloud' }
   },
   saveSnapshot: mocks.saveSnapshot,
@@ -525,7 +525,7 @@ describe('registerDevPlatformHandlers', () => {
     const inst = {
       id: 'local-1',
       name: 'Workspace Instance',
-      sourceId: 'comfybuilder',
+      sourceId: 'platform',
       workspaceId: 'w2',
       status: 'installed',
       installPath: '/installs/local-1'
@@ -689,7 +689,7 @@ describe('registerDevPlatformHandlers', () => {
       expect.objectContaining({
         name: 'Custom Image',
         installPath: '/custom-root/Custom Image',
-        sourceId: 'comfybuilder',
+        sourceId: 'platform',
         workspaceId: 'w1',
         distributionId: 'd1',
         distributionName: 'Image Baseline',
@@ -847,7 +847,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.list.mockResolvedValue([
       {
         id: 'i1',
-        sourceId: 'comfybuilder',
+        sourceId: 'platform',
         workspaceId: 'w1',
         distributionId: 'd1',
         name: 'Image Baseline',
@@ -892,7 +892,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.list.mockResolvedValue([
       {
         id: 'i1',
-        sourceId: 'comfybuilder',
+        sourceId: 'platform',
         workspaceId: 'w1',
         distributionId: 'd1',
         name: 'Broken',
@@ -928,7 +928,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.list.mockResolvedValue([
       {
         id: 'i1',
-        sourceId: 'comfybuilder',
+        sourceId: 'platform',
         workspaceId: 'w2',
         distributionId: 'd1',
         name: 'Other Workspace',
@@ -946,16 +946,16 @@ describe('registerDevPlatformHandlers', () => {
   it('listBuilds passes the installed-version map built from comfybuilder installs', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.list.mockResolvedValue([
-      { id: 'i1', sourceId: 'comfybuilder', workspaceId: 'w1', distributionId: 'd1', version: '3' },
+      { id: 'i1', sourceId: 'platform', workspaceId: 'w1', distributionId: 'd1', version: '3' },
       {
         id: 'failed',
-        sourceId: 'comfybuilder',
+        sourceId: 'platform',
         workspaceId: 'w1',
         distributionId: 'd1',
         version: '8',
         status: 'failed'
       },
-      { id: 'i2', sourceId: 'comfybuilder', workspaceId: 'w2', distributionId: 'd2', version: '9' },
+      { id: 'i2', sourceId: 'platform', workspaceId: 'w2', distributionId: 'd2', version: '9' },
       { id: 'i3', sourceId: 'standalone', distributionId: 'ignored', version: '9' }
     ])
     mocks.resolveBuildRows.mockResolvedValue([])

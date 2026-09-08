@@ -129,7 +129,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
       let all = await installations.list()
       let recovered = false
       const recoveredInstallationIds = new Set<string>()
-      for (const inst of all.filter((item) => item.sourceId === 'comfybuilder')) {
+      for (const inst of all.filter((item) => item.sourceId === 'platform')) {
         try {
           const result = await recoverComfyBuilderInstallation(inst)
           if (result.action === 'update') {

@@ -39,7 +39,7 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
   ({
     id: 'i1',
     name: 'build',
-    sourceId: 'comfybuilder',
+    sourceId: 'platform',
     installPath: '/installs/dist',
     status: 'installed',
     distributionId: 'd1',

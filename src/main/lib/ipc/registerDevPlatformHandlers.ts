@@ -65,7 +65,7 @@ export const DEVPLATFORM_CHANNELS = {
 
 const SIGNED_OUT: AuthStatus = { signedIn: false }
 
-const COMFYBUILDER_SOURCE_ID = 'comfybuilder'
+const PLATFORM_SOURCE_ID = 'platform'
 const COMFYBUILDER_SOURCE_LABEL = 'ComfyBuilder'
 
 export interface PromoteLocalInstanceResult {
@@ -417,7 +417,7 @@ export function registerDevPlatformHandlers(): void {
 
         const entry = await installations.add({
           name: identity.name,
-          sourceId: COMFYBUILDER_SOURCE_ID,
+          sourceId: PLATFORM_SOURCE_ID,
           sourceLabel: COMFYBUILDER_SOURCE_LABEL,
           installPath: identity.installPath,
           workspaceId,
@@ -453,7 +453,7 @@ async function installedBuildVersions(
   if (!workspaceId) return map
   for (const inst of await installations.list()) {
     if (
-      inst.sourceId !== COMFYBUILDER_SOURCE_ID ||
+      inst.sourceId !== PLATFORM_SOURCE_ID ||
       inst.workspaceId !== workspaceId ||
       inst.status === 'failed'
     ) {

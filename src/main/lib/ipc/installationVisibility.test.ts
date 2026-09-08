@@ -7,7 +7,7 @@ function installation(overrides: Partial<InstallationRecord>): InstallationRecor
   return {
     id: 'inst-1',
     name: 'Test',
-    sourceId: 'comfybuilder',
+    sourceId: 'platform',
     installPath: '/installs/test',
     status: 'installed',
     ...overrides

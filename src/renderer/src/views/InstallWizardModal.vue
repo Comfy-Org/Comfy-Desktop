@@ -235,7 +235,7 @@ function installHandoffProps(): Record<string, string | boolean | null> {
   const variantId = selections.value.variant?.data?.variantId as string | undefined
   return {
     entrypoint: entrypoint.value,
-    source_id: managedBuildMode.value ? 'comfybuilder' : (currentSource.value?.id ?? null),
+    source_id: managedBuildMode.value ? 'platform' : (currentSource.value?.id ?? null),
     variant: variantId ? toVariantBucket(variantId) : null,
     express: false
   }

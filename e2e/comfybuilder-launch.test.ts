@@ -72,7 +72,7 @@ function buildRecord(build: BuildCase): SeedInstallation {
   return {
     id: build.id,
     name: build.name,
-    sourceId: 'comfybuilder',
+    sourceId: 'platform',
     sourceLabel: 'ComfyBuilder',
     installPath: build.installPath,
     distributionId: `d-${build.id}`,

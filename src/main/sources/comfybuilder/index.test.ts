@@ -89,7 +89,7 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
   ({
     id: 'i1',
     name: 'desktop-4target-stg-v0190',
-    sourceId: 'comfybuilder',
+    sourceId: 'platform',
     installPath: '/installs/dist',
     status: 'installed',
     useSharedModels: false,

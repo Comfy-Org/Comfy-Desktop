@@ -484,7 +484,7 @@ async function installEnvironment(
 }
 
 export const comfybuilder: SourcePlugin = {
-  id: 'comfybuilder',
+  id: 'platform',
   label: 'ComfyBuilder',
   description: 'Install a ComfyUI build created with ComfyBuilder.',
   category: 'local',

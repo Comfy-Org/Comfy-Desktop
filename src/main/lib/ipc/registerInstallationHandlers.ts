@@ -145,7 +145,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
     // A comfybuilder install's raw `version` is its build version, not a
     // ComfyUI one (see `installedBuildVersions`), so it gets its own
     // field — otherwise a bare "7" lands where every other tile shows "v0.28.2".
-    const isFromBuild = inst.sourceId === 'comfybuilder'
+    const isFromBuild = inst.sourceId === 'platform'
     const buildVersion = isFromBuild ? (inst.version as string | undefined) : undefined
     const cv = inst.comfyVersion as ComfyVersion | undefined
     const rawVersion = cv
