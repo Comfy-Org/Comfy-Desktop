@@ -230,7 +230,11 @@ chooserHandoff = useChooserHandoff({
   showProgress: handleShowProgress,
   switchPanel
 })
-const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
+const { handleChooserShowNewInstall } = chooserHandoff
+
+function handleDashboardPick(inst: Installation): void {
+  void window.api.openInstallNewWindow(inst.id)
+}
 
 // Boot-time restore: the host window is hidden until we tell main the outcome.
 // Use `performChooserLaunch` (NOT `handleChooserPick`) so a missing launch
@@ -298,10 +302,9 @@ useDeepLinkRouter({
   showAppUpdateRestartPrompt,
   showAppUpdateDownloadPrompt,
   pickInstallFromPicker: async (inst, pickOpts) => {
-    // Chooser-host pick (no installationId backing this host) → swap
-    // in-place via the same path the dashboard chooser uses, so the
-    // dashboard window becomes the picked install. Install-backed
-    // pick → spawn a new Comfy window for the picked install
+    // Main routes chooser-host picker selections through a pre-created target
+    // window. This callback claims that target in place. Install-backed picks
+    // spawn a new Comfy window for the picked install
     // (focus-or-launch contract — main already short-circuits to
     // focus-existing when the install is already running in another
     // window before this IPC fires, so we only ever see launches
@@ -334,7 +337,7 @@ useDeepLinkRouter({
 function handleProgressSuccessChoice(actionId: string, targetInstallationId: string): void {
   if (actionId === SUCCESS_ACTION_OPEN_INSTANCE) {
     // Cold-spawn chooser host (cross-instance Update that opened a
-    // fresh window for the target): `handleChooserPick` attaches the
+    // fresh window for the target): `performChooserLaunch` attaches the
     // install in-place, so this same window becomes the target's
     // window — no extra chooser hop, no orphan chooser left behind.
     // Install-backed host: fall back to `openInstallWindow`, which
@@ -342,7 +345,7 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
     if (!installationId) {
       const inst = installationStore.getById(targetInstallationId)
       if (inst) {
-        void handleChooserPick(inst)
+        void chooserHandoff.performChooserLaunch(inst)
         return
       }
     }
@@ -598,7 +601,7 @@ onUnmounted(() => {
 
         <div v-else-if="activePanel === 'chooser'" class="panel-chooser">
           <ChooserView
-            @pick="handleChooserPick"
+            @pick="handleDashboardPick"
             @show-new-install="handleChooserShowNewInstall"
             @show-progress="handleShowProgress"
           />

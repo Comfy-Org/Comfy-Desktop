@@ -1,11 +1,11 @@
 /**
  * E2E: instance/window navigation matrix — Dashboard → X (issue #926).
  *
- * Drives the real picker bridge (`window.__comfyTitlePopup`) from a dashboard
- * (chooser) host and asserts the navigation outcome via recorded IPC
- * invocations + BrowserWindow counts. Mirrors `picker-cluster.test.ts`.
+ * Drives dashboard tiles and the picker bridge from a dashboard (chooser)
+ * host, then asserts navigation via recorded IPC invocations + BrowserWindow
+ * counts. Mirrors `picker-cluster.test.ts`.
  *
- * Covers: stopped instance → same-window launch; running instance → focus;
+ * Covers: stopped instance → new window; running instance → focus;
  * cloud → new-window via the caret. The decision itself is exhaustively unit
  * tested (`navDecision.test.ts`); this pins the bridge → main → window wiring.
  */
@@ -15,9 +15,9 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
+import { byTestId, TID } from './support/testIds'
 import {
   closeTitlePopupIfOpen,
-  isPopupVisible,
   titlePopupPage,
 } from './support/cdpPages'
 import {
@@ -78,28 +78,20 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
 })
 
-test('Dashboard → stopped instance: same-window launch, no new window @windows @macos @linux', async () => {
+test('Dashboard → stopped instance: opens a new window and preserves the dashboard @windows @macos @linux', async () => {
   const before = await liveWindowCount(ctx.app)
-  await openPicker(ctx.app, ctx.panel, 'pickInstall')
+  expect(await ctx.panel.click(byTestId(TID.dashboardTile(INSTALL_A_ID)))).toBe(true)
 
-  const popup = titlePopupPage(ctx.app)
-  await popup.evaluate<void>(`window.__comfyTitlePopup.pickInstall(${JSON.stringify(INSTALL_A_ID)})`)
-
-  await expect.poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-    timeout: 5_000, intervals: [100, 200],
-  }).toBe(false)
-
-  // Stopped pick from the chooser host runs `runAction('launch')` in place.
+  // The dashboard tile routes through main's new-window helper, which creates
+  // the target host before dispatching its launch.
   await expect.poll(async () => {
-    const calls = (await getIpcInvocations(ctx.app, 'run-action')) as { installationId?: string; actionId?: string }[]
-    return calls.some((c) => c.installationId === INSTALL_A_ID && c.actionId === 'launch')
-  }, { timeout: 10_000, intervals: [200, 500] }).toBe(true)
+    const calls = (await getIpcInvocations(ctx.app, 'open-install-new-window')) as { installationId?: string; focusedExisting?: boolean }[]
+    return calls.some((c) => c.installationId === INSTALL_A_ID && c.focusedExisting === false)
+  }, { timeout: 5_000, intervals: [100, 250] }).toBe(true)
 
-  // Same window — no new host spawned, no focus-existing. Sample the full window
-  // so a late `focus-comfy-window` IPC can't slip in (a poll would pass at t=0).
-  expect(await liveWindowCount(ctx.app)).toBe(before)
+  await expect.poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] }).toBe(before + 1)
   await expectNoIpcInvocation(ctx.app, 'focus-comfy-window', () => true, {
-    message: 'unexpected focus-comfy-window on a same-window launch',
+    message: 'unexpected focus-comfy-window on a stopped dashboard launch',
   })
 })
 
