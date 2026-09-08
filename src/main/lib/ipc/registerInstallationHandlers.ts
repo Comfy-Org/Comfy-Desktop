@@ -52,6 +52,7 @@ import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { isInstallationVisibleToRenderer } from './installationVisibility'
+import { getStandaloneRuntimeError } from '../../sources/standalone/runtimeValidation'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -223,6 +224,10 @@ export function registerInstallationHandlers(): void {
   })
 
   ipcMain.handle('add-installation', async (_event, data: Record<string, unknown>) => {
+    if (data.sourceId === 'standalone') {
+      const runtimeError = getStandaloneRuntimeError(data)
+      if (runtimeError) return { ok: false, message: runtimeError }
+    }
     const identity = await allocateInstallIdentity(
       (data.name as string) || DEFAULT_INSTALL_NAME,
       (data.installPath as string | undefined) || undefined

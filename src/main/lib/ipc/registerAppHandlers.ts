@@ -35,6 +35,7 @@ import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
+import { tryBuildInstallation } from '../buildInstallation'
 
 export function registerAppHandlers(): void {
   // App version
@@ -112,15 +113,11 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(
     'build-installation',
-    (_event, sourceId: string, selections: Record<string, unknown>) => {
-      const source = sourceMap[sourceId]
-      if (!source) return null
-      return {
-        sourceId: source.id,
-        sourceLabel: source.label,
-        ...source.buildInstallation(selections as Record<string, FieldOption | undefined>)
-      }
-    }
+    (_event, sourceId: string, selections: Record<string, unknown>) =>
+      tryBuildInstallation(
+        sourceMap[sourceId],
+        selections as Record<string, FieldOption | undefined>
+      )
   )
 
   // Paths

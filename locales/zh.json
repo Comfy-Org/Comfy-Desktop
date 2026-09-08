@@ -919,6 +919,8 @@
     "adoptStepRegister": "注册安装"
   },
   "standalone": {
+    "runtimeUnavailable": "没有可用的兼容独立版运行环境。请稍后重试，或使用远程连接。",
+    "invalidRuntime": "创建实例前，请选择发布版本和兼容的运行环境。",
     "_note": "standalone.label 和 portable.label 是产品名称——所有翻译中请保持英文。",
     "label": "独立版",
     "desc": "预构建环境，包含托管 Python 和依赖。",

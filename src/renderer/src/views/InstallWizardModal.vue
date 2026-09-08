@@ -344,6 +344,7 @@ function selectTemplate(option: FieldOption): void {
  *  when the picker is gated off (non-standalone source, no template options,
  *  disk too small, or the `skipTemplatePickerStep` opt-out). */
 async function handleConfigureContinue(): Promise<void> {
+  if (!canContinue.value) return
   if (shouldShowPickerStep.value) {
     // No template is pre-selected - the "None" sentinel stays put until the
     // user actively picks a card, so nobody installs a starter workflow (and
@@ -444,6 +445,21 @@ const urlFieldError = computed(() => {
   return isValidConnectionUrl(value) ? '' : t('newInstall.urlInvalid')
 })
 
+function isRequiredRuntimeField(field: SourceField): boolean {
+  return (
+    currentSource.value?.id === 'standalone' && (field.id === 'release' || field.id === 'variant')
+  )
+}
+
+const runtimeUnavailable = computed(() =>
+  currentSource.value?.fields.some(
+    (field) =>
+      isRequiredRuntimeField(field) &&
+      !fieldLoading.value.get(field.id) &&
+      fieldOptions.value.get(field.id)?.length === 0
+  )
+)
+
 // Continue gate. `skipInstall` sources (Remote Connection) have no install path, so the path-issue guard is skipped for them.
 const canContinue = computed(() => {
   if (managedBuildMode.value) {
@@ -456,6 +472,13 @@ const canContinue = computed(() => {
     )
   }
   if (!currentSource.value) return false
+  if (
+    currentSource.value.fields.some(
+      (field) => isRequiredRuntimeField(field) && !selections.value[field.id]?.value
+    )
+  ) {
+    return false
+  }
   if (nameError.value || urlFieldError.value) return false
   if (currentSource.value.skipInstall) return !saveDisabled.value
   return !saveDisabled.value && pathIssues.value.length === 0
@@ -824,10 +847,10 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
       // [] when not applicable. Drop any stale selection so a value from a
       // prior channel toggle doesn't leak into `buildInstallation`.
       delete selections.value[field.id]
+      if (isRequiredRuntimeField(field)) return
     }
 
-    // Load next select field. An empty-options field still hands off downstream
-    // so a conditional field can't strand the chain (would leave Continue disabled).
+    // Empty optional fields still hand off downstream (e.g. comfyVersion on latest).
     const nextSelect = source.fields.findIndex((f, i) => i > fieldIndex && f.type !== 'text')
     if (nextSelect >= 0) {
       await loadFieldOptions(nextSelect)
@@ -1021,6 +1044,7 @@ async function handleWorkspaceBuildSave(): Promise<void> {
 }
 
 async function handleSave(): Promise<void> {
+  if (!canContinue.value) return
   if (managedBuildMode.value) {
     await handleWorkspaceBuildSave()
     return
@@ -1051,7 +1075,20 @@ async function handleSave(): Promise<void> {
   // the template id, so "Skip & Install" (template = None) means no download.
   // The renderer doesn't sync a separate consent field.
 
-  const instData = await window.api.buildInstallation(source.id, rawSelections())
+  let instData: Record<string, unknown>
+  try {
+    const buildResult = await window.api.buildInstallation(source.id, rawSelections())
+    if (!buildResult.ok) {
+      sourceError.value = buildResult.message
+      step.value = 'configure'
+      return
+    }
+    instData = buildResult.data
+  } catch (error) {
+    sourceError.value = error instanceof Error ? error.message : String(error)
+    step.value = 'configure'
+    return
+  }
   const baseName = instName.value.trim() || DEFAULT_INSTALL_NAME
   const name = await window.api.getUniqueName(baseName)
 
@@ -1338,7 +1375,9 @@ defineExpose({ open })
                     </span>
                   </button>
                 </div>
-                <div v-if="sourceError" class="wizard-error">{{ sourceError }}</div>
+                <div v-if="sourceError || runtimeUnavailable" class="wizard-error" role="alert">
+                  {{ sourceError || $t('standalone.runtimeUnavailable') }}
+                </div>
                 <div v-if="currentSource" id="source-fields">
                   <div
                     v-for="(field, fieldIndex) in currentSource.fields"

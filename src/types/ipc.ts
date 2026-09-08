@@ -158,6 +158,10 @@ export interface RunningInstance {
 }
 
 // --- Source / New Install types ---
+export type BuildInstallationResult =
+  | { ok: true; data: Record<string, unknown> }
+  | { ok: false; message: string }
+
 export interface Source {
   id: string
   label: string
@@ -1093,7 +1097,7 @@ export interface ElectronApi {
   buildInstallation(
     sourceId: string,
     selections: Record<string, FieldOption>
-  ): Promise<Record<string, unknown>>
+  ): Promise<BuildInstallationResult>
   getDefaultInstallDir(): Promise<string>
   detectGPU(): Promise<GPUInfo | null>
   validateHardware(): Promise<HardwareValidation>
