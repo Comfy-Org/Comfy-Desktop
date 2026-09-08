@@ -49,14 +49,16 @@ const COUNTER_FIELDS = [
   'count'
 ]
 
-const FIELD_VALUES: Array<{ field: string; value: unknown }> = [
+type LogfmtValue = boolean | number | string
+
+const FIELD_VALUES: Array<{ field: string; value: LogfmtValue }> = [
   { field: 'root', value: 'models' },
   { field: 'phase', value: 'none' },
   { field: 'stage', value: 'finalize' },
   { field: 'site', value: 'discovery' },
   ...COUNTER_FIELDS.map((field) => ({
     field,
-    value: 1.5
+    value: 7
   })),
   { field: 'error_type', value: 'ValueError' },
   { field: 'hashing_enabled', value: true }
@@ -64,8 +66,12 @@ const FIELD_VALUES: Array<{ field: string; value: unknown }> = [
 
 const BASE_CONTEXT_KEYS = ['installation_id', 'variant', 'release', 'core_beta_flags']
 
-function taggedLine(event: string, fields: Record<string, unknown>): string {
-  return `[assets-event] ${event} ${JSON.stringify(fields)}\n`
+function taggedLine(event: string, fields: Readonly<Record<string, LogfmtValue>>): string {
+  const tail = Object.entries(fields)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${typeof value === 'boolean' ? String(value) : value}`)
+    .join(' ')
+  return `[assets-event] ${event}${tail ? ` ${tail}` : ''}\n`
 }
 
 /**
@@ -122,16 +128,43 @@ describe('assetsTap', () => {
       )
     })
 
-    it('matches the tag, event and JSON object as three parts', () => {
-      const m = '[assets-event] seeder.scan_started {"phase":"fast"}'.match(ASSETS_EVENT_LINE)
+    it('matches the event and logfmt tail as separate parts', () => {
+      const m = '[assets-event] seeder.scan_started phase=fast'.match(ASSETS_EVENT_LINE)
       expect(m?.[1]).toBe('seeder.scan_started')
-      expect(m?.[2]).toBe('{"phase":"fast"}')
+      expect(m?.[2]).toBe(' phase=fast')
     })
   })
 
   describe('the shared fixture file', () => {
     const raw = fs.readFileSync(FIXTURE_PATH, 'utf8')
     const lines = raw.split('\n').filter((line) => line.length > 0)
+    const fixtureCases = [
+      {
+        line: lines[0]!,
+        event: 'seeder.scan_completed',
+        fields: {
+          created: 12,
+          elapsed_ms: 8123,
+          enrich_failed: 0,
+          enriched: 4,
+          hash_failed: 2,
+          permission_denied: 0,
+          phase: 'fast',
+          root: 'models',
+          skipped: 3
+        }
+      },
+      {
+        line: lines[1]!,
+        event: 'seeder.scan_started',
+        fields: { phase: 'enrich' }
+      },
+      {
+        line: lines[2]!,
+        event: 'scanner.stat_failed',
+        fields: { error_type: 'PermissionError', site: 'discovery' }
+      }
+    ]
 
     it('holds three newline-terminated lines with no CRLF', () => {
       expect(lines).toHaveLength(3)
@@ -139,17 +172,16 @@ describe('assetsTap', () => {
       expect(raw).not.toContain('\r')
     })
 
-    it.each(lines)('parses and emits %s', (line) => {
+    it.each(fixtureCases)('parses and emits $line', ({ line, event, fields }) => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(`${line}\n`, 'stdout')
       expect(captured).toHaveLength(1)
-      const event = line.match(ASSETS_EVENT_LINE)![1]!
       expect(captured[0]!.event).toBe(`comfy.desktop.comfyui.assets.${event}`)
-      expect(captured[0]!.ctx).toMatchObject(JSON.parse(line.match(ASSETS_EVENT_LINE)![2]!))
+      expect(captured[0]!.ctx).toMatchObject(fields)
     })
 
     it('rejects a fixture line mutated to carry a path-ish root', () => {
-      const mutated = lines[0]!.replace('"root":"models"', '"root":"models/checkpoints"')
+      const mutated = lines[0]!.replace('root=models', 'root=models/checkpoints')
       const tap = createAssetsTap(baseOpts)
       tap.ingest(`${mutated}\n`, 'stdout')
       expect(captured).toHaveLength(0)
@@ -157,6 +189,27 @@ describe('assetsTap', () => {
   })
 
   describe('accepted lines', () => {
+    it('coerces an integer field to a number', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed created=12\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.created).toBe(12)
+    })
+
+    it('coerces a boolean field to a boolean', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] assets.enabled hashing_enabled=false\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.hashing_enabled).toBe(false)
+    })
+
+    it('keeps a string field as a string', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_started phase=fast\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.phase).toBe('fast')
+    })
+
     it('emits one namespaced event merging the trusted base context', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { root: 'models', created: 12 }), 'stdout')
@@ -209,7 +262,7 @@ describe('assetsTap', () => {
 
     it('accepts an event carrying no fields at all', () => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest(taggedLine('scanner.hash_discarded_modified', {}), 'stdout')
+      tap.ingest('[assets-event] scanner.hash_discarded_modified\n', 'stdout')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toEqual({
         installation_id: 'inst-1',
@@ -221,6 +274,12 @@ describe('assetsTap', () => {
   })
 
   describe('rejected lines', () => {
+    it('rejects duplicate fields', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_started phase=fast phase=enrich\n', 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
     it('ignores untagged lines and scanner warnings that carry paths', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
@@ -228,9 +287,9 @@ describe('assetsTap', () => {
         '[WARNING] Failed to hash /home/simon/models/sd_xl_base_1.0.safetensors: [Errno 13] Permission denied\n',
         'stderr'
       )
-      tap.ingest('[assets-event]seeder.scan_started {"phase":"fast"}\n', 'stdout')
-      tap.ingest('prefix [assets-event] seeder.scan_started {"phase":"fast"}\n', 'stdout')
-      tap.ingest('[assets-event] seeder.scan_started {"phase":"fast"} trailing\n', 'stdout')
+      tap.ingest('[assets-event]seeder.scan_started phase=fast\n', 'stdout')
+      tap.ingest('prefix [assets-event] seeder.scan_started phase=fast\n', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started phase=fast trailing\n', 'stdout')
       expect(captured).toHaveLength(0)
     })
 
@@ -256,7 +315,7 @@ describe('assetsTap', () => {
       // prototype chain to a truthy *callable* returning a truthy value — so
       // the field sails through the allowlist gate and ships to PostHog.
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started {"constructor":"x"}\n', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started constructor=x\n', 'stdout')
       expect(captured).toHaveLength(0)
     })
 
@@ -304,19 +363,22 @@ describe('assetsTap', () => {
 
     it('rejects keys with uppercase, digits or dashes before the allowlist is consulted', () => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started {"Phase":"fast"}\n', 'stdout')
-      tap.ingest('[assets-event] seeder.scan_started {"phase2":"fast"}\n', 'stdout')
-      tap.ingest('[assets-event] seeder.scan_started {"phase-x":"fast"}\n', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started Phase=fast\n', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started phase2=fast\n', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started phase-x=fast\n', 'stdout')
       expect(captured).toHaveLength(0)
     })
 
-    it('rejects a value containing a path separator or a colon', () => {
+    it('rejects a value containing a forbidden string character', () => {
       const tap = createAssetsTap(baseOpts)
       for (const value of [
         'FileNotFoundError: /home/x/model.safetensors',
         '/home/x',
         'C:\\models',
-        'a\\b'
+        'a\\b',
+        'two words',
+        'phase=fast',
+        'Type"Error'
       ]) {
         tap.ingest(taggedLine('seeder.scan_failed', { error_type: value }), 'stdout')
       }
@@ -338,17 +400,11 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
     })
 
-    it('rejects a counter whose JSON number overflows to Infinity', () => {
+    it('keeps a non-integer numeric-looking value as a string', () => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_completed {"count":1e400}\n', 'stdout')
-      expect(captured).toHaveLength(0)
-    })
-
-    it('rejects a non-object JSON payload and a nested object value', () => {
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started {"phase":{"nested":"fast"}}\n', 'stdout')
-      tap.ingest('[assets-event] seeder.scan_started {"count":[1,2]}\n', 'stdout')
-      expect(captured).toHaveLength(0)
+      tap.ingest('[assets-event] seeder.scan_completed count=1e400\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.count).toBe('1e400')
     })
 
     it('rejects the whole line when only one of several fields is bad', () => {
@@ -408,8 +464,8 @@ describe('assetsTap', () => {
     it('handles a line split across chunk boundaries', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_com', 'stdout')
-      tap.ingest('pleted {"created":12,', 'stdout')
-      tap.ingest('"phase":"fast"}\n', 'stdout')
+      tap.ingest('pleted created=12 ', 'stdout')
+      tap.ingest('phase=fast\n', 'stdout')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toMatchObject({ created: 12, phase: 'fast' })
     })
@@ -418,14 +474,14 @@ describe('assetsTap', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_started ', 'stdout')
       tap.ingest('unrelated stderr noise\n', 'stderr')
-      tap.ingest('{"phase":"fast"}\n', 'stdout')
+      tap.ingest('phase=fast\n', 'stdout')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toMatchObject({ phase: 'fast' })
     })
 
     it('flushes a trailing unterminated line on flushSummary', () => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started {"phase":"full"}', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started phase=full', 'stdout')
       expect(captured).toHaveLength(0)
       tap.flushSummary()
       expect(captured).toHaveLength(1)
@@ -434,7 +490,7 @@ describe('assetsTap', () => {
 
     it('drops an oversized unterminated line and keeps the stream working', () => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started {"phase":"fast"} ', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started phase=fast ', 'stdout')
       tap.ingest('A'.repeat(20_000), 'stdout')
       tap.ingest('B'.repeat(20_000), 'stdout')
       tap.ingest('\n', 'stdout')
@@ -456,7 +512,7 @@ describe('assetsTap', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_started ', 'stdout')
       tap.beginBoot()
-      tap.ingest('{"phase":"fast"}\n', 'stdout')
+      tap.ingest('phase=fast\n', 'stdout')
       expect(captured).toHaveLength(0)
     })
 
@@ -472,18 +528,16 @@ describe('assetsTap', () => {
   })
 
   describe('no-throw contract', () => {
-    it('contains a malformed newline-terminated JSON line', () => {
+    it('contains a malformed newline-terminated logfmt line', () => {
       const tap = createAssetsTap(baseOpts)
-      expect(() =>
-        tap.ingest('[assets-event] seeder.scan_started {"phase":"fast"\n', 'stdout')
-      ).not.toThrow()
+      expect(() => tap.ingest('[assets-event] seeder.scan_started phase\n', 'stdout')).not.toThrow()
       tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
       expect(captured).toHaveLength(1)
     })
 
-    it('contains malformed buffered JSON hit by flushSummary', () => {
+    it('contains malformed buffered logfmt hit by flushSummary', () => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started {"phase":', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started phase=', 'stdout')
       expect(() => tap.flushSummary()).not.toThrow()
       expect(captured).toHaveLength(0)
       tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
@@ -502,7 +556,7 @@ describe('assetsTap', () => {
         tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
       ).not.toThrow()
 
-      tap.ingest('[assets-event] seeder.scan_started {"phase":"enrich"}', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started phase=enrich', 'stdout')
       expect(() => tap.flushSummary()).not.toThrow()
 
       expect(captured).toHaveLength(0)
@@ -514,8 +568,8 @@ describe('assetsTap', () => {
     it('keeps processing later lines in the same chunk after a bad one', () => {
       const tap = createAssetsTap(baseOpts)
       const chunk = [
-        '[assets-event] seeder.scan_started {"phase":"fast"',
-        '[assets-event] seeder.scan_started {"phase":"enrich"}',
+        '[assets-event] seeder.scan_started phase',
+        '[assets-event] seeder.scan_started phase=enrich',
         ''
       ].join('\n')
       tap.ingest(chunk, 'stdout')
@@ -528,8 +582,8 @@ describe('assetsTap', () => {
       // the later line must still be processed from the same chunk.
       const tap = createAssetsTap(baseOpts)
       const chunk = [
-        '[assets-event] seeder.scan_started {"__proto__":1}',
-        '[assets-event] seeder.scan_started {"phase":"enrich"}',
+        '[assets-event] seeder.scan_started __proto__=1',
+        '[assets-event] seeder.scan_started phase=enrich',
         ''
       ].join('\n')
       expect(() => tap.ingest(chunk, 'stdout')).not.toThrow()
@@ -541,8 +595,8 @@ describe('assetsTap', () => {
       withExplodingPhaseLookup()
       const tap = createAssetsTap(baseOpts)
       const chunk = [
-        '[assets-event] seeder.scan_started {"phase":"fast"}',
-        '[assets-event] seeder.scan_completed {"count":3}',
+        '[assets-event] seeder.scan_started phase=fast',
+        '[assets-event] seeder.scan_completed count=3',
         ''
       ].join('\n')
       expect(() => tap.ingest(chunk, 'stdout')).not.toThrow()
@@ -553,8 +607,8 @@ describe('assetsTap', () => {
     it('flushes the stderr tail even when the stdout tail throws', () => {
       withExplodingPhaseLookup()
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started {"phase":"fast"}', 'stdout')
-      tap.ingest('[assets-event] seeder.scan_completed {"count":3}', 'stderr')
+      tap.ingest('[assets-event] seeder.scan_started phase=fast', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_completed count=3', 'stderr')
       expect(() => tap.flushSummary()).not.toThrow()
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toMatchObject({ count: 3 })

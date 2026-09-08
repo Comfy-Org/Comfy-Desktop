@@ -305,9 +305,9 @@ describe('createAssetsTapSafe', () => {
     const inert = tap as unknown as ReturnType<typeof createAssetsTapSafe>
     expect(() => {
       inert.beginBoot()
-      inert.ingest('[assets-event] assets.enabled {"hashing_enabled": true}\n', 'stdout')
+      inert.ingest('[assets-event] assets.enabled hashing_enabled=true\n', 'stdout')
       inert.ingest(
-        '[assets-event] scanner.stat_failed {"error_type": "OSError", "site": "discovery"}\n',
+        '[assets-event] scanner.stat_failed error_type=OSError site=discovery\n',
         'stderr'
       )
       inert.flushSummary()
@@ -344,9 +344,9 @@ describe('attachLaunchStreams assets tap wiring', () => {
 
   it('feeds stdout chunks to the assets tap tagged as stdout', () => {
     const h = harness()
-    h.stdout.emit('data', Buffer.from('[assets-event] assets.enabled {"hashing_enabled": true}\n'))
+    h.stdout.emit('data', Buffer.from('[assets-event] assets.enabled hashing_enabled=true\n'))
     expect(h.assetsTap.ingest).toHaveBeenCalledWith(
-      '[assets-event] assets.enabled {"hashing_enabled": true}\n',
+      '[assets-event] assets.enabled hashing_enabled=true\n',
       'stdout'
     )
   })
@@ -355,12 +355,10 @@ describe('attachLaunchStreams assets tap wiring', () => {
     const h = harness()
     h.stderr.emit(
       'data',
-      Buffer.from(
-        '[assets-event] scanner.stat_failed {"error_type": "OSError", "site": "discovery"}\n'
-      )
+      Buffer.from('[assets-event] scanner.stat_failed error_type=OSError site=discovery\n')
     )
     expect(h.assetsTap.ingest).toHaveBeenCalledWith(
-      '[assets-event] scanner.stat_failed {"error_type": "OSError", "site": "discovery"}\n',
+      '[assets-event] scanner.stat_failed error_type=OSError site=discovery\n',
       'stderr'
     )
   })

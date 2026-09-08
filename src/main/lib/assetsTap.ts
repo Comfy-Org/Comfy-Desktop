@@ -2,7 +2,7 @@
  * Assets event-log tap.
  *
  * ComfyUI's assets system logs structured, privacy-safe records next to its
- * human-readable lines: `[assets-event] <event> <compact-json>` on the INFO
+ * human-readable lines: `[assets-event] <event> key=value ...` on the INFO
  * channel (`app/assets/event_log.py`). We tail that output, already piped
  * through `proc.stdout` / `proc.stderr` in `sessionActions/launch.ts` — the
  * same stream `hardwareTap` and `executionTap` consume — and forward each
@@ -28,14 +28,14 @@ import type { TelemetryValue } from './telemetry'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 /**
- * The line grammar. This is a CROSS-REPO CONTRACT: ComfyUI holds the
- * equivalent regex as `EVENT_LINE_PATTERN` in `app/assets/event_log.py`'s test
- * module, and `__fixtures__/assets-event-lines.txt` is a byte-identical copy of
- * that repo's `tests-unit/assets_test/fixtures/assets_event_lines.txt`. Neither
- * side may change without the other.
+ * The logfmt line grammar. This is a CROSS-REPO CONTRACT: ComfyUI holds the
+ * equivalent regex as `EVENT_LINE_PATTERN` in its assets event-log tests, and
+ * `__fixtures__/assets-event-lines.txt` is a byte-identical copy of that repo's
+ * `tests-unit/assets_test/fixtures/assets_event_lines.txt`. Neither side may
+ * change without the other.
  */
 export const ASSETS_EVENT_LINE =
-  /^\[assets-event\] ([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*) (\{.*\})$/
+  /^\[assets-event\] ([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)((?: [a-z_]+=[^ =]+)*)$/
 
 /** Namespace for the forwarded events. */
 const EVENT_PREFIX = 'comfy.desktop.comfyui.assets.'
@@ -63,7 +63,7 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
 ])
 
 const MAX_STRING_LENGTH = 64
-const FORBIDDEN_STRING_CHARS = ['/', '\\', ':']
+const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"']
 
 /** Cheap first-pass filter: core's field names are lowercase words only. */
 const FIELD_NAME = /^[a-z_]+$/
@@ -82,7 +82,7 @@ function isSafeString(value: unknown): value is string {
  * file names, paths, asset ids or content hashes.
  *
  * A Set, NOT an object literal: lookup keys here come straight from untrusted
- * JSON, and `{}['constructor']` / `{}['__proto__']` resolve up the prototype
+ * logfmt, and `{}['constructor']` / `{}['__proto__']` resolve up the prototype
  * chain. A Set's keys are never confused with its prototype's properties, so
  * `.has()` is closed by construction.
  */
@@ -108,35 +108,38 @@ function isTransportableValue(value: unknown): value is TelemetryValue {
   return (
     (typeof value === 'number' && Number.isFinite(value)) ||
     typeof value === 'boolean' ||
-    value === null ||
     isSafeString(value)
   )
 }
 
 /**
- * Parse the JSON payload into forwardable fields, or null if ANY part of it
- * fails the closed contract. Rejection is whole-line: a record with one bad
- * field is not worth partially trusting.
+ * Parse the logfmt tail into forwardable fields, or null if ANY pair fails the
+ * closed contract. Rejection is whole-line: a record with one bad field is not
+ * worth partially trusting.
  */
 function parseFields(
-  json: string,
+  tail: string,
   baseKeys: ReadonlySet<string>
 ): Record<string, TelemetryValue> | null {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(json)
-  } catch {
-    return null
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
-
   const fields: Record<string, TelemetryValue> = {}
-  for (const [key, value] of Object.entries(parsed)) {
+  const pairs = tail ? tail.slice(1).split(' ') : []
+  for (const pair of pairs) {
+    const separatorIndex = pair.indexOf('=')
+    const key = pair.slice(0, separatorIndex)
+    const rawValue = pair.slice(separatorIndex + 1)
     if (!FIELD_NAME.test(key)) return null
     // A field named like a base-context property would be a context-spoofing
     // attempt, even though the merge order already makes it ineffective.
     if (baseKeys.has(key)) return null
     if (!ALLOWED_FIELD_NAMES.has(key)) return null
+    if (Object.hasOwn(fields, key)) return null
+    const value: TelemetryValue = /^-?\d+$/.test(rawValue)
+      ? Number(rawValue)
+      : rawValue === 'true'
+        ? true
+        : rawValue === 'false'
+          ? false
+          : rawValue
     if (!isTransportableValue(value)) return null
     fields[key] = value
   }
@@ -188,13 +191,13 @@ export function createAssetsTap(opts: {
     // anchored grammar matches both the prefixed and bare log formats.
     const match = stripLogLevelPrefix(stripAnsi(line).trim()).match(ASSETS_EVENT_LINE)
     if (!match) return
-    const [, event, json] = match
-    if (!event || !json || !ALLOWED_EVENTS.has(event)) return
-    const fields = parseFields(json, baseKeys)
+    const [, event, tail] = match
+    if (!event || tail === undefined || !ALLOWED_EVENTS.has(event)) return
+    const fields = parseFields(tail, baseKeys)
     if (!fields) return
     if (!withinRateCap(event)) return
     try {
-      // Base context merged LAST so parsed JSON can never override it.
+      // Base context merged LAST so parsed fields can never override it.
       telemetry.emit(`${EVENT_PREFIX}${event}`, { ...fields, ...baseContext })
     } catch {
       // ignore - telemetry side effect, and the next line must still parse
