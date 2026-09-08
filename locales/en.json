@@ -725,6 +725,20 @@
       "imageAlt": "MiniMax H3 announcement",
       "unmute": "Unmute video",
       "mute": "Mute video"
+    },
+    "cloudNodes": {
+      "title": "Run open weight models on Comfy Cloud GPUs",
+      "lead": "New Comfy Cloud nodes run the latest open weight models on our hardware, from inside your own graph",
+      "highlights": [
+        "No subscription: an account and credits are enough",
+        "Nothing to download and no VRAM floor"
+      ],
+      "primaryCta": "Read More",
+      "beta": "In beta: the node set is still changing, so options may be added or removed and a workflow may be retired.",
+      "docsCta": "Read the Docs",
+      "imageAlt": "Comfy Cloud nodes announcement",
+      "unmute": "Unmute video",
+      "mute": "Mute video"
     }
   },
   "tray": {
