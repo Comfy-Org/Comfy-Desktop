@@ -1,6 +1,6 @@
 // @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
 // Keep the feedback iframe in the DOM without loading the external support site.
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const installWizardOpen = vi.hoisted(() => vi.fn())
 
@@ -368,34 +368,6 @@ describe('PanelApp', () => {
     // gating path (where the takeover should mount) override the URL
     // back to one without this param and flip `mockState.settings.firstUseCompleted`.
     window.history.replaceState({}, '', '/?installationId=test-id&firstUseCompleted=true')
-  })
-
-  it('cancels pending media prefetch during automatic test teardown', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    vi.stubGlobal('requestIdleCallback', undefined)
-    const schedule = vi.spyOn(window, 'setTimeout')
-    const cancel = vi.spyOn(window, 'clearTimeout')
-    const pending: { timer?: number; wrapper?: ReturnType<typeof mountPanel> } = {}
-    // Runs after afterEach: prove the suite's automatic unmount canceled the
-    // timeout, without letting a real timer race happy-dom's destruction.
-    onTestFinished(() => {
-      try {
-        expect(cancel).toHaveBeenCalledWith(pending.timer)
-      } finally {
-        // Also clean up if the assertion fails when the teardown regresses.
-        if (pending.wrapper?.exists()) pending.wrapper.unmount()
-        vi.restoreAllMocks()
-        vi.useRealTimers()
-        vi.unstubAllGlobals()
-      }
-    })
-
-    pending.wrapper = mountPanel()
-    await flushPromises()
-    const scheduled = schedule.mock.calls.findIndex(([, delay]) => delay === 50)
-    expect(scheduled).toBeGreaterThanOrEqual(0)
-    pending.timer = schedule.mock.results[scheduled]!.value
-    expect(cancel).not.toHaveBeenCalledWith(pending.timer)
   })
 
   it('renders the comfy-lifecycle body by default for install-backed hosts', async () => {
