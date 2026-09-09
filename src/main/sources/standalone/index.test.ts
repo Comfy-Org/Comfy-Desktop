@@ -668,7 +668,7 @@ describe('standalone.getFieldOptions variant version display', () => {
   })
 })
 
-// --- Architecture filter: Windows publishes x64 and ARM64 bundles under one prefix ---
+// --- Architecture filter: suffixed ARM64 bundles must match the running app ---
 
 describe('standalone.getFieldOptions architecture filter', () => {
   const realPlatform = process.platform
@@ -755,6 +755,19 @@ describe('standalone.getFieldOptions architecture filter', () => {
     setupCatalog(['win-nvidia', 'win-cpu'])
     const releases = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
     expect(releases).toEqual([])
+  })
+
+  it('an ARM64 Linux app gets no release options when R2 only has x64 bundles', async () => {
+    setHost('linux', 'arm64')
+    setupCatalog(['linux-nvidia', 'linux-amd'])
+    const releases = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
+    expect(releases).toEqual([])
+  })
+
+  it('an ARM64 Linux app accepts only explicitly suffixed ARM64 bundles', async () => {
+    setHost('linux', 'arm64')
+    setupCatalog(['linux-nvidia', 'linux-nvidia-arm64'])
+    expect(await variantIds()).toEqual(['linux-nvidia-arm64'])
   })
 
   it('macOS keeps its unsuffixed ARM64 bundle', async () => {

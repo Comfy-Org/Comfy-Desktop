@@ -122,9 +122,9 @@ describe('getTorchVersion', () => {
   })
 })
 
-// --- Windows ARM64 vendor ids (win-nvidia-arm64: NVIDIA RTX Spark) ---
+// --- Architecture-specific vendor ids (for example win-nvidia-arm64) ---
 
-describe('Windows ARM64 vendor ids', () => {
+describe('architecture-specific vendor ids', () => {
   const realPlatform = process.platform
   const realArch = process.arch
   function setHost(platform: NodeJS.Platform, arch: NodeJS.Architecture): void {
@@ -191,9 +191,21 @@ describe('Windows ARM64 vendor ids', () => {
       expect(variantMatchesHostArch('mac-mps-arm64')).toBe(false)
     })
 
-    it('linux has no per-architecture bundles', () => {
+    it('an x64 Linux app sees only the current unsuffixed x64 bundles', () => {
       setHost('linux', 'x64')
       expect(variantMatchesHostArch('linux-nvidia')).toBe(true)
+      expect(variantMatchesHostArch('linux-nvidia-arm64')).toBe(false)
+    })
+
+    it('an ARM64 Linux app rejects x64 bundles and accepts only explicit ARM64 bundles', () => {
+      setHost('linux', 'arm64')
+      expect(variantMatchesHostArch('linux-nvidia')).toBe(false)
+      expect(variantMatchesHostArch('linux-nvidia-arm64')).toBe(true)
+    })
+
+    it('rejects bundles on unsupported CPU architectures', () => {
+      setHost('linux', 'arm')
+      expect(variantMatchesHostArch('linux-nvidia')).toBe(false)
       expect(variantMatchesHostArch('linux-nvidia-arm64')).toBe(false)
     })
   })
