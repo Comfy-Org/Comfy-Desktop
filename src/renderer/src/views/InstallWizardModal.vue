@@ -604,6 +604,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   textFieldValues.value.clear()
 
   detectedGpu.value = t('newInstall.detectingGpu')
+  hardwareValidation = null
   hardwareWarning.value = ''
   resetDiskSpace()
   sourceError.value = ''
@@ -636,7 +637,11 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   }
 }
 
-async function initializeInstallMode(gen: number, refreshManagedBuilds = false): Promise<void> {
+async function initializeInstallMode(
+  gen: number,
+  refreshManagedBuilds = false,
+  source?: Source
+): Promise<void> {
   const installDir = await installDirPromise
   if (gen !== modeGeneration) return
   defaultInstPath.value = installDir ?? ''
@@ -645,7 +650,7 @@ async function initializeInstallMode(gen: number, refreshManagedBuilds = false):
   if (managedBuildMode.value) {
     await Promise.all([initializeManagedBuilds(gen, refreshManagedBuilds), loadSources()])
   } else {
-    await initializeLocalInstall(gen)
+    await initializeLocalInstall(gen, source)
   }
 }
 
@@ -676,7 +681,7 @@ async function initializeManagedBuilds(gen: number, refreshBuilds: boolean): Pro
   }
 }
 
-async function initializeLocalInstall(gen: number): Promise<void> {
+async function initializeLocalInstall(gen: number, requestedSource?: Source): Promise<void> {
   void window.api
     .getUniqueName(DEFAULT_INSTALL_NAME)
     .then((name) => {
@@ -704,14 +709,20 @@ async function initializeLocalInstall(gen: number): Promise<void> {
   await loadSources()
   if (gen !== modeGeneration || !localInstallMode.value) return
 
-  // Public Builds is the default local source.
+  const source = requestedSource ?? sources.value.find((source) => source.id === 'standalone')
+  if (!source) return
+
+  if (source.id !== 'standalone') {
+    await selectSourceCard(source)
+    return
+  }
+
   hardwareValidation = await window.api.validateHardware()
   if (gen !== modeGeneration || !localInstallMode.value) return
   hardwareWarning.value = hardwareValidation.warning ?? ''
-  const standalone = sources.value.find((source) => source.id === 'standalone')
-  if (standalone && hardwareValidation.supported) {
-    await selectSourceCard(standalone)
-  } else if (standalone) {
+  if (hardwareValidation.supported) {
+    await selectSourceCard(source)
+  } else {
     detectedGpu.value = hardwareValidation.error || t('newInstall.noGpuDetected')
   }
 }
@@ -764,10 +775,7 @@ async function selectSourceCard(source: Source): Promise<void> {
     const gen = ++modeGeneration
     initializing.value = true
     try {
-      await initializeInstallMode(gen)
-      if (gen === modeGeneration && currentSource.value?.id !== source.id) {
-        await selectSourceCard(source)
-      }
+      await initializeInstallMode(gen, false, source)
     } finally {
       if (gen === modeGeneration) initializing.value = false
     }
@@ -775,6 +783,10 @@ async function selectSourceCard(source: Source): Promise<void> {
   }
   if (currentSource.value?.id === source.id) return
 
+  if (source.id === 'standalone' && !hardwareValidation) {
+    hardwareValidation = await window.api.validateHardware()
+    hardwareWarning.value = hardwareValidation.warning ?? ''
+  }
   if (source.id === 'standalone' && hardwareValidation && !hardwareValidation.supported) {
     trackGuardrailBlocked('unsupported_hw', 'wizard', 'source_select')
     await modal.alert({
@@ -1248,12 +1260,10 @@ defineExpose({ open })
 </script>
 
 <template>
-  <BrandTakeoverLayout>
+  <BrandTakeoverLayout :scroll-content="step === 'configure'">
     <div v-if="step === 'configure'" ref="brandShellRef" class="config-shell">
       <h1 class="brand-title">{{ $t('newInstall.configureTitle') }}</h1>
-      <p class="brand-lead">
-        {{ $t(managedBuildMode ? 'newInstall.configureWorkspaceLead' : 'chooser.newInstallDesc') }}
-      </p>
+      <p class="brand-lead">{{ $t('chooser.newInstallDesc') }}</p>
       <div class="config-card">
         <div class="config-card__body">
           <div
@@ -1570,22 +1580,14 @@ defineExpose({ open })
           </TooltipWrap>
         </div>
 
-        <div class="config-card__footer">
+        <div v-if="cameFromLocalBranch" class="config-card__footer">
           <button
-            v-if="cameFromLocalBranch"
             type="button"
             class="brand-ghost config-back"
             data-testid="config-back-to-local-branch"
             @click="handleBackToLocalBranch"
           >
             {{ $t('common.back') }}
-          </button>
-          <button
-            class="brand-primary config-continue"
-            :disabled="!canContinue"
-            @click="handleConfigureContinue"
-          >
-            {{ $t('common.continue') }}
           </button>
         </div>
       </div>
@@ -1661,24 +1663,28 @@ defineExpose({ open })
         @back="emit('close')"
       />
     </template>
+    <template #footer>
+      <button
+        v-if="step === 'configure'"
+        class="brand-primary config-continue"
+        :disabled="!canContinue"
+        @click="handleConfigureContinue"
+      >
+        {{ $t('common.continue') }}
+      </button>
+    </template>
   </BrandTakeoverLayout>
 </template>
 
 <style scoped>
 .config-shell {
   align-self: stretch;
-  height: 100%;
-  max-height: 100%;
   width: 100%;
   max-width: 640px;
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   text-align: center;
-  padding-block: clamp(1.5rem, 4vh, 3rem);
-  min-height: 0;
+  padding-top: clamp(1.5rem, 4vh, 3rem);
+  padding-bottom: max(5rem, 8vh);
 }
 .config-shell > .brand-lead {
   margin: var(--takeover-gap-sm) 0 var(--takeover-gap-md);
@@ -1819,10 +1825,6 @@ defineExpose({ open })
 
 .config-card {
   width: 100%;
-  /* Capped at shell height so the card doesn't overflow the viewport when Advanced expands; body scrolls instead. */
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
   border: 1px solid var(--brand-surface-border);
   border-radius: 8px;
   background: var(--brand-surface-bg);
@@ -1832,19 +1834,10 @@ defineExpose({ open })
 }
 
 .config-card__body {
-  /* `flex: 1 1 auto` lets this body absorb leftover space and scroll internally once the card hits the shell cap, keeping the title centered. */
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  /* Hide scrollbar to prevent layout shift when content overflows. */
-  scrollbar-width: none;
-}
-.config-card__body::-webkit-scrollbar {
-  display: none;
 }
 
 .workspace-authorization-status {
@@ -1875,7 +1868,8 @@ defineExpose({ open })
   z-index: 2;
 }
 
-.config-field {
+.config-field,
+#source-fields > .field {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2062,6 +2056,9 @@ defineExpose({ open })
   border-top: 0;
   padding-top: 0;
 }
+.config-advanced--direct .config-advanced__wrap {
+  display: block;
+}
 .config-advanced--direct.config-advanced.is-open .config-advanced__body {
   margin-top: 0;
 }
@@ -2083,6 +2080,10 @@ defineExpose({ open })
 }
 
 .config-continue {
+  position: absolute;
+  right: clamp(1.25rem, 2vw, 2rem);
+  bottom: clamp(1.25rem, 2vw, 2rem);
+  z-index: 2;
   min-width: 120px;
 }
 </style>

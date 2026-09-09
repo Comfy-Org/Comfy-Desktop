@@ -19,7 +19,11 @@ function mountModal() {
   return mount(InstallWizardModal, {
     global: {
       plugins: [makeI18n(), pinia],
-      stubs: { BrandTakeoverLayout: { template: '<div><slot /></div>' } }
+      stubs: {
+        BrandTakeoverLayout: {
+          template: '<div><slot /><slot name="footer-left" /><slot name="footer" /></div>'
+        }
+      }
     }
   })
 }
@@ -233,7 +237,11 @@ describe('InstallWizardModal workspace Builds', () => {
 
   it('switches directly from Managed to a peer source tab', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'standalone', label: 'Standalone', fields: [] },
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'version', label: 'Version', type: 'select' }]
+      },
       {
         id: 'remote',
         label: 'Remote Connection',
@@ -255,6 +263,14 @@ describe('InstallWizardModal workspace Builds', () => {
     )
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
     expect(wrapper.get('#source-fields').text()).toContain('Server URL')
+    expect(window.api.getFieldOptions).not.toHaveBeenCalled()
+    expect(window.api.validateHardware).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
+    await flushPromises()
+
+    expect(window.api.validateHardware).toHaveBeenCalledOnce()
+    expect(window.api.getFieldOptions).toHaveBeenCalledOnce()
   })
 
   it('shows Build metadata in the dropdown without a separate details panel', async () => {
@@ -459,7 +475,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.brand-lead').text()).toBe('Select a release to install.')
+    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
     expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(4_500)
@@ -512,7 +528,7 @@ describe('InstallWizardModal workspace Builds', () => {
     signInToWorkspace([{ id: 'none', name: 'No Build Yet', state: 'no-build' }])
     const wrapper = await openWorkspaceModal()
 
-    expect(wrapper.get('.brand-lead').text()).toBe('Select a release to install.')
+    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
     expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain(
       'No compatible Builds are available to install.'
     )
