@@ -18,7 +18,8 @@ const nodesOpen = ref(false)
 const pipsOpen = ref(false)
 
 const nodeChangeCount = computed(
-  () => props.diff.nodesAdded.length + props.diff.nodesRemoved.length + props.diff.nodesChanged.length
+  () =>
+    props.diff.nodesAdded.length + props.diff.nodesRemoved.length + props.diff.nodesChanged.length
 )
 const pipChangeCount = computed(
   () => props.diff.pipsAdded.length + props.diff.pipsRemoved.length + props.diff.pipsChanged.length

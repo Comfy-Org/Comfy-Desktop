@@ -15,7 +15,7 @@ function retryFsOp(
   op: (cb: (err: NodeJS.ErrnoException | null) => void) => void,
   cb: (err: NodeJS.ErrnoException | null) => void,
   signal?: AbortSignal,
-  attempt = 0,
+  attempt = 0
 ): void {
   op((err) => {
     if (!err || attempt >= DELETE_RETRY_DELAYS_MS.length || !isTransientDeleteError(err)) {
@@ -105,7 +105,8 @@ export async function deleteDir(
   const total = await countEntries(
     dir,
     (counted) => {
-      if (onProgress) onProgress({ deleted: 0, total: counted, percent: 0, elapsedSecs: 0, etaSecs: -1 })
+      if (onProgress)
+        onProgress({ deleted: 0, total: counted, percent: 0, elapsedSecs: 0, etaSecs: -1 })
     },
     signal
   )
@@ -130,7 +131,7 @@ export async function deleteDir(
       total,
       percent: total > 0 ? Math.round((deleted / total) * 100) : 100,
       elapsedSecs,
-      etaSecs,
+      etaSecs
     })
   }
 
@@ -149,7 +150,27 @@ export async function deleteDir(
           if (entry.isDirectory()) {
             walkAsync(fullPath, (err) => {
               if (err) return done(err)
-              retryFsOp((cb) => fs.rmdir(fullPath, cb), (e) => {
+              retryFsOp(
+                (cb) => fs.rmdir(fullPath, cb),
+                (e) => {
+                  if (e) return done(e)
+                  deleted++
+                  report()
+                  sinceYield++
+                  if (sinceYield >= batchSize) {
+                    sinceYield = 0
+                    setImmediate(next)
+                  } else {
+                    next()
+                  }
+                },
+                signal
+              )
+            })
+          } else {
+            retryFsOp(
+              (cb) => fs.unlink(fullPath, cb),
+              (e) => {
                 if (e) return done(e)
                 deleted++
                 report()
@@ -160,21 +181,9 @@ export async function deleteDir(
                 } else {
                   next()
                 }
-              }, signal)
-            })
-          } else {
-            retryFsOp((cb) => fs.unlink(fullPath, cb), (e) => {
-              if (e) return done(e)
-              deleted++
-              report()
-              sinceYield++
-              if (sinceYield >= batchSize) {
-                sinceYield = 0
-                setImmediate(next)
-              } else {
-                next()
-              }
-            }, signal)
+              },
+              signal
+            )
           }
         }
         next()
@@ -183,10 +192,14 @@ export async function deleteDir(
 
     walkAsync(dir, (err) => {
       if (err) return reject(err)
-      retryFsOp((cb) => fs.rmdir(dir, cb), (e) => {
-        if (e) return reject(e)
-        resolve()
-      }, signal)
+      retryFsOp(
+        (cb) => fs.rmdir(dir, cb),
+        (e) => {
+          if (e) return reject(e)
+          resolve()
+        },
+        signal
+      )
     })
   })
 }

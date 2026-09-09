@@ -22,13 +22,13 @@ beforeEach(() => {
   vi.restoreAllMocks()
   vi.doMock('electron', () => ({
     app: {
-      getPath: () => userDataPath,
-    },
+      getPath: () => userDataPath
+    }
   }))
   // Force win32 so the XDG branches in paths.ts don't kick in on a Linux runner.
   vi.stubGlobal('process', {
     ...process,
-    platform: 'win32',
+    platform: 'win32'
   })
 })
 
@@ -53,7 +53,7 @@ describe('installations.markLaunched', () => {
       name: 'Local A',
       installPath: path.join(tmpRoot, 'a'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
 
     const updated = await installations.markLaunched(entry.id, resolveCategory)
@@ -75,14 +75,14 @@ describe('installations.markLaunched', () => {
       installPath: path.join(tmpRoot, 'multi-a'),
       sourceId: 'standalone',
       status: 'installed',
-      lastLaunchedAtByCategory: { cloud: 100, desktop: 200 },
+      lastLaunchedAtByCategory: { cloud: 100, desktop: 200 }
     })
 
     const updated = await installations.markLaunched(entry.id, resolveCategory)
     expect(updated!.lastLaunchedAtByCategory).toMatchObject({
       cloud: 100,
       desktop: 200,
-      local: updated!.lastLaunchedAt,
+      local: updated!.lastLaunchedAt
     })
   })
 
@@ -94,7 +94,7 @@ describe('installations.markLaunched', () => {
       // Unrecognised source → resolver returns undefined → only the global
       // timestamp is stamped.
       sourceId: 'mystery',
-      status: 'installed',
+      status: 'installed'
     })
 
     const updated = await installations.markLaunched(entry.id, resolveCategory)
@@ -108,7 +108,7 @@ describe('installations.markLaunched', () => {
       name: 'No Resolver',
       installPath: path.join(tmpRoot, 'no-res'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
 
     const updated = await installations.markLaunched(entry.id)
@@ -122,7 +122,7 @@ describe('installations.markLaunched', () => {
       name: 'Resolver Probe',
       installPath: path.join(tmpRoot, 'probe'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
 
     let received: InstallationRecord | null = null
@@ -141,7 +141,7 @@ describe('installations.markLaunched', () => {
       name: 'Event A',
       installPath: path.join(tmpRoot, 'event-a'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
 
     const seen: InstallationRecord[] = []
@@ -179,12 +179,67 @@ describe('installations.add (id uniqueness)', () => {
           name: `Same-ms ${i}`,
           installPath: path.join(tmpRoot, `same-ms-${i}`),
           sourceId: 'standalone',
-          status: 'installed',
-        }),
+          status: 'installed'
+        })
       )
     }
     const ids = records.map((r) => r.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('installations.associateUnownedBuildInstalls', () => {
+  it('associates exact legacy matches once without overwriting existing ownership', async () => {
+    const installations = await loadInstallations()
+    const matching = await installations.add({
+      name: 'Exact Match',
+      installPath: path.join(tmpRoot, 'matching'),
+      sourceId: 'comfybuilder',
+      distributionId: 'dist-visible',
+      status: 'installed'
+    })
+    const sameName = await installations.add({
+      name: 'Visible Build',
+      installPath: path.join(tmpRoot, 'same-name'),
+      sourceId: 'comfybuilder',
+      distributionId: 'dist-not-visible',
+      status: 'installed'
+    })
+    const localWithMatchingId = await installations.add({
+      name: 'Local Record',
+      installPath: path.join(tmpRoot, 'local-record'),
+      sourceId: 'standalone',
+      distributionId: 'dist-visible',
+      status: 'installed'
+    })
+    const alreadyOwned = await installations.add({
+      name: 'Already Owned',
+      installPath: path.join(tmpRoot, 'already-owned'),
+      sourceId: 'comfybuilder',
+      workspaceId: 'workspace-old',
+      distributionId: 'dist-visible',
+      status: 'installed'
+    })
+    const changed = vi.fn()
+    installations.installationEvents.on('changed', changed)
+
+    const updated = await installations.associateUnownedBuildInstalls(
+      'workspace-current',
+      new Set(['dist-visible'])
+    )
+
+    expect(updated.map((record) => record.id)).toEqual([matching.id])
+    expect((await installations.get(matching.id))!.workspaceId).toBe('workspace-current')
+    expect((await installations.get(sameName.id))!.workspaceId).toBeUndefined()
+    expect((await installations.get(localWithMatchingId.id))!.workspaceId).toBeUndefined()
+    expect((await installations.get(alreadyOwned.id))!.workspaceId).toBe('workspace-old')
+    expect(changed).toHaveBeenCalledOnce()
+
+    await installations.associateUnownedBuildInstalls(
+      'workspace-current',
+      new Set(['dist-visible'])
+    )
+    expect(changed).toHaveBeenCalledOnce()
   })
 })
 
@@ -197,7 +252,7 @@ describe('installations.getRecent', () => {
       name: 'Never Launched',
       installPath: path.join(tmpRoot, 'never'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
     expect(await installations.getRecent()).toBeNull()
   })
@@ -209,21 +264,21 @@ describe('installations.getRecent', () => {
       installPath: path.join(tmpRoot, 'a'),
       sourceId: 'standalone',
       status: 'installed',
-      lastLaunchedAt: 100,
+      lastLaunchedAt: 100
     })
     const b = await installations.add({
       name: 'B',
       installPath: path.join(tmpRoot, 'b'),
       sourceId: 'standalone',
       status: 'installed',
-      lastLaunchedAt: 500,
+      lastLaunchedAt: 500
     })
     await installations.add({
       name: 'C',
       installPath: path.join(tmpRoot, 'c'),
       sourceId: 'standalone',
       status: 'installed',
-      lastLaunchedAt: 300,
+      lastLaunchedAt: 300
     })
 
     const recent = await installations.getRecent()
@@ -250,14 +305,14 @@ describe('installations.resolveAutoLaunchInstall', () => {
       installPath: path.join(tmpRoot, 'older'),
       sourceId: 'standalone',
       status: 'installed',
-      lastLaunchedAt: 100,
+      lastLaunchedAt: 100
     })
     const newer = await installations.add({
       name: 'newer',
       installPath: path.join(tmpRoot, 'newer'),
       sourceId: 'standalone',
       status: 'installed',
-      lastLaunchedAt: 500,
+      lastLaunchedAt: 500
     })
     const recent = await installations.resolveAutoLaunchInstall('last')
     expect(recent!.id).toBe(newer.id)
@@ -269,7 +324,7 @@ describe('installations.resolveAutoLaunchInstall', () => {
       name: 'a',
       installPath: path.join(tmpRoot, 'a'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
     const found = await installations.resolveAutoLaunchInstall(a.id)
     expect(found!.id).toBe(a.id)
@@ -277,7 +332,7 @@ describe('installations.resolveAutoLaunchInstall', () => {
   })
 })
 
-describe('installations.load (useSharedPaths → useSharedModels/useSharedInputOutput migration)', () => {
+describe('installations.load (legacy shared-storage flag migrations)', () => {
   function writeRawInstallations(records: Record<string, unknown>[]): string {
     // On win32 `dataDir()` is the Electron userData path directly (no `data/`).
     fs.mkdirSync(userDataPath, { recursive: true })
@@ -286,7 +341,7 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     return file
   }
 
-  it('translates legacy useSharedPaths: true → both new flags true', async () => {
+  it('translates legacy useSharedPaths: true -> all new flags true', async () => {
     writeRawInstallations([
       {
         id: 'legacy-on',
@@ -295,18 +350,20 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
         sourceId: 'standalone',
         status: 'installed',
         createdAt: new Date().toISOString(),
-        useSharedPaths: true,
-      },
+        useSharedPaths: true
+      }
     ])
     const installations = await loadInstallations()
     const list = await installations.list()
     const rec = list.find((r) => r.id === 'legacy-on')!
     expect(rec.useSharedModels).toBe(true)
-    expect(rec.useSharedInputOutput).toBe(true)
+    expect(rec.useSharedInput).toBe(true)
+    expect(rec.useSharedOutput).toBe(true)
     expect(rec).not.toHaveProperty('useSharedPaths')
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
   })
 
-  it('translates legacy useSharedPaths: false → useSharedModels: true, useSharedInputOutput: false', async () => {
+  it('translates legacy useSharedPaths: false -> useSharedModels: true, per-folder flags false', async () => {
     // The migration forces `useSharedModels: true` regardless of the legacy
     // value (isolating paths meant input/output, not the model library).
     writeRawInstallations([
@@ -317,15 +374,73 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
         sourceId: 'standalone',
         status: 'installed',
         createdAt: new Date().toISOString(),
-        useSharedPaths: false,
-      },
+        useSharedPaths: false
+      }
     ])
     const installations = await loadInstallations()
     const list = await installations.list()
     const rec = list.find((r) => r.id === 'legacy-off')!
     expect(rec.useSharedModels).toBe(true)
-    expect(rec.useSharedInputOutput).toBe(false)
+    expect(rec.useSharedInput).toBe(false)
+    expect(rec.useSharedOutput).toBe(false)
     expect(rec).not.toHaveProperty('useSharedPaths')
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
+  })
+
+  it('splits legacy useSharedInputOutput into useSharedInput + useSharedOutput', async () => {
+    writeRawInstallations([
+      {
+        id: 'split-off',
+        name: 'Split Off',
+        installPath: path.join(tmpRoot, 'split-off'),
+        sourceId: 'standalone',
+        status: 'installed',
+        createdAt: new Date().toISOString(),
+        useSharedInputOutput: false
+      },
+      {
+        id: 'split-on',
+        name: 'Split On',
+        installPath: path.join(tmpRoot, 'split-on'),
+        sourceId: 'standalone',
+        status: 'installed',
+        createdAt: new Date().toISOString(),
+        useSharedInputOutput: true
+      }
+    ])
+    const installations = await loadInstallations()
+    const list = await installations.list()
+    const off = list.find((r) => r.id === 'split-off')!
+    expect(off.useSharedInput).toBe(false)
+    expect(off.useSharedOutput).toBe(false)
+    expect(off).not.toHaveProperty('useSharedInputOutput')
+    const on = list.find((r) => r.id === 'split-on')!
+    expect(on.useSharedInput).toBe(true)
+    expect(on.useSharedOutput).toBe(true)
+    expect(on).not.toHaveProperty('useSharedInputOutput')
+  })
+
+  it('keeps newer per-folder flags when a mixed-schema record also has the legacy flag', async () => {
+    // A downgrade/upgrade cycle can leave both the legacy flag and the new
+    // per-folder flags on one record; the per-folder values are newer and win.
+    writeRawInstallations([
+      {
+        id: 'mixed',
+        name: 'Mixed',
+        installPath: path.join(tmpRoot, 'mixed'),
+        sourceId: 'standalone',
+        status: 'installed',
+        createdAt: new Date().toISOString(),
+        useSharedInputOutput: false,
+        useSharedInput: true,
+        useSharedOutput: false
+      }
+    ])
+    const installations = await loadInstallations()
+    const rec = (await installations.list()).find((r) => r.id === 'mixed')!
+    expect(rec.useSharedInput).toBe(true)
+    expect(rec.useSharedOutput).toBe(false)
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
   })
 
   it('leaves records without useSharedPaths untouched (no implicit migration)', async () => {
@@ -339,15 +454,56 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
         sourceId: 'standalone',
         status: 'installed',
         createdAt: new Date().toISOString(),
-        useSharedModels: false,
-      },
+        useSharedModels: false
+      }
     ])
     const installations = await loadInstallations()
     const list = await installations.list()
     const rec = list.find((r) => r.id === 'modern')!
     expect(rec.useSharedModels).toBe(false)
-    expect(rec.useSharedInputOutput).toBeUndefined()
+    expect(rec.useSharedInput).toBeUndefined()
+    expect(rec.useSharedOutput).toBeUndefined()
     expect(rec).not.toHaveProperty('useSharedPaths')
+    expect(rec).not.toHaveProperty('useSharedInputOutput')
+  })
+
+  it('rewrites a legacy mid-update ComfyBuilder record from installing to updating', async () => {
+    // Older versions reused status 'installing' for in-place updates,
+    // disambiguated by the rollback payload; that state now reads 'updating'.
+    // A fresh install (no rollback) and other sources keep 'installing'.
+    writeRawInstallations([
+      {
+        id: 'mid-update',
+        name: 'Mid Update',
+        installPath: path.join(tmpRoot, 'mid-update'),
+        sourceId: 'comfybuilder',
+        status: 'installing',
+        createdAt: new Date().toISOString(),
+        comfybuilderRollback: { version: '1', artifactId: 'old', status: 'installed' }
+      },
+      {
+        id: 'fresh',
+        name: 'Fresh',
+        installPath: path.join(tmpRoot, 'fresh'),
+        sourceId: 'comfybuilder',
+        status: 'installing',
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'other-source',
+        name: 'Other',
+        installPath: path.join(tmpRoot, 'other'),
+        sourceId: 'standalone',
+        status: 'installing',
+        createdAt: new Date().toISOString(),
+        comfybuilderRollback: { version: '1' }
+      }
+    ])
+    const installations = await loadInstallations()
+    const list = await installations.list()
+    expect(list.find((r) => r.id === 'mid-update')!.status).toBe('updating')
+    expect(list.find((r) => r.id === 'fresh')!.status).toBe('installing')
+    expect(list.find((r) => r.id === 'other-source')!.status).toBe('installing')
   })
 
   it('strips legacy useSharedPaths from disk on next write', async () => {
@@ -359,8 +515,8 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
         sourceId: 'standalone',
         status: 'installed',
         createdAt: new Date().toISOString(),
-        useSharedPaths: true,
-      },
+        useSharedPaths: true
+      }
     ])
     const installations = await loadInstallations()
     // Update triggers a save, which re-serializes the migrated record.
@@ -368,8 +524,10 @@ describe('installations.load (useSharedPaths → useSharedModels/useSharedInputO
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8')) as Record<string, unknown>[]
     const persisted = raw.find((r) => r['id'] === 'legacy-strip')!
     expect(persisted).not.toHaveProperty('useSharedPaths')
+    expect(persisted).not.toHaveProperty('useSharedInputOutput')
     expect(persisted['useSharedModels']).toBe(true)
-    expect(persisted['useSharedInputOutput']).toBe(true)
+    expect(persisted['useSharedInput']).toBe(true)
+    expect(persisted['useSharedOutput']).toBe(true)
   })
 })
 
@@ -385,14 +543,14 @@ describe('installations.getRecentByCategory', () => {
       name: 'Never Local',
       installPath: path.join(tmpRoot, 'nl'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
     await installations.add({
       name: 'Cloud With Stamp',
       installPath: path.join(tmpRoot, 'cs'),
       sourceId: 'cloud',
       status: 'installed',
-      lastLaunchedAt: 9999,
+      lastLaunchedAt: 9999
     })
 
     expect(await installations.getRecentByCategory('local', resolveCategory)).toBeNull()
@@ -406,7 +564,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'standalone',
       status: 'installed',
       lastLaunchedAt: 200,
-      lastLaunchedAtByCategory: { local: 200 },
+      lastLaunchedAtByCategory: { local: 200 }
     })
     const winner = await installations.add({
       name: 'Local New',
@@ -414,7 +572,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'portable',
       status: 'installed',
       lastLaunchedAt: 400,
-      lastLaunchedAtByCategory: { local: 400 },
+      lastLaunchedAtByCategory: { local: 400 }
     })
     // Cloud install with a much higher timestamp must NOT win the local query.
     await installations.add({
@@ -423,7 +581,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'cloud',
       status: 'installed',
       lastLaunchedAt: 9999,
-      lastLaunchedAtByCategory: { cloud: 9999 },
+      lastLaunchedAtByCategory: { cloud: 9999 }
     })
 
     const recent = await installations.getRecentByCategory('local', resolveCategory)
@@ -438,7 +596,7 @@ describe('installations.getRecentByCategory', () => {
       installPath: path.join(tmpRoot, 'leg'),
       sourceId: 'standalone',
       status: 'installed',
-      lastLaunchedAt: 500,
+      lastLaunchedAt: 500
     })
     // Newer install with a per-category entry, but lower timestamp.
     await installations.add({
@@ -447,7 +605,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'portable',
       status: 'installed',
       lastLaunchedAt: 100,
-      lastLaunchedAtByCategory: { local: 100 },
+      lastLaunchedAtByCategory: { local: 100 }
     })
 
     const recent = await installations.getRecentByCategory('local', resolveCategory)
@@ -463,7 +621,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'standalone',
       status: 'installed',
       lastLaunchedAt: 100,
-      lastLaunchedAtByCategory: { local: 1000 },
+      lastLaunchedAtByCategory: { local: 1000 }
     })
     await installations.add({
       name: 'B',
@@ -471,7 +629,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'standalone',
       status: 'installed',
       lastLaunchedAt: 500,
-      lastLaunchedAtByCategory: { local: 500 },
+      lastLaunchedAtByCategory: { local: 500 }
     })
 
     const recent = await installations.getRecentByCategory('local', resolveCategory)
@@ -488,7 +646,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'cloud',
       status: 'installed',
       lastLaunchedAt: 9999,
-      lastLaunchedAtByCategory: { local: 9999, cloud: 9999 },
+      lastLaunchedAtByCategory: { local: 9999, cloud: 9999 }
     })
     const winner = await installations.add({
       name: 'Real Local',
@@ -496,7 +654,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'standalone',
       status: 'installed',
       lastLaunchedAt: 1,
-      lastLaunchedAtByCategory: { local: 1 },
+      lastLaunchedAtByCategory: { local: 1 }
     })
 
     const recent = await installations.getRecentByCategory('local', resolveCategory)
@@ -511,7 +669,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'standalone',
       status: 'installed',
       lastLaunchedAt: 100,
-      lastLaunchedAtByCategory: { local: 100 },
+      lastLaunchedAtByCategory: { local: 100 }
     })
     const b = await installations.add({
       name: 'B',
@@ -519,7 +677,7 @@ describe('installations.getRecentByCategory', () => {
       sourceId: 'standalone',
       status: 'installed',
       lastLaunchedAt: 200,
-      lastLaunchedAtByCategory: { local: 200 },
+      lastLaunchedAtByCategory: { local: 200 }
     })
 
     expect((await installations.getRecentByCategory('local', resolveCategory))!.id).toBe(b.id)
@@ -537,7 +695,7 @@ describe('installations.hasNameConflict', () => {
       name: 'Alpha',
       installPath: path.join(tmpRoot, 'a'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
     expect(await installations.hasNameConflict(a.id, 'Beta')).toBe(false)
   })
@@ -548,13 +706,13 @@ describe('installations.hasNameConflict', () => {
       name: 'Taken',
       installPath: path.join(tmpRoot, 'a'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
     const b = await installations.add({
       name: 'Free',
       installPath: path.join(tmpRoot, 'b'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
     expect(await installations.hasNameConflict(b.id, 'Taken')).toBe(true)
   })
@@ -565,7 +723,7 @@ describe('installations.hasNameConflict', () => {
       name: 'Self',
       installPath: path.join(tmpRoot, 'a'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
     expect(await installations.hasNameConflict(a.id, 'Self')).toBe(false)
   })
@@ -578,7 +736,7 @@ describe('installations.enforceCloudName', () => {
       name: 'My Renamed Cloud',
       installPath: path.join(tmpRoot, 'cloud'),
       sourceId: installations.CLOUD_SOURCE_ID,
-      status: 'installed',
+      status: 'installed'
     })
     await installations.enforceCloudName()
     const rec = (await installations.list()).find((r) => r.id === cloud.id)!
@@ -591,7 +749,7 @@ describe('installations.enforceCloudName', () => {
       name: installations.CLOUD_INSTALL_NAME,
       installPath: path.join(tmpRoot, 'cloud'),
       sourceId: installations.CLOUD_SOURCE_ID,
-      status: 'installed',
+      status: 'installed'
     })
     await installations.enforceCloudName()
     const rec = (await installations.list()).find((r) => r.id === cloud.id)!
@@ -604,7 +762,7 @@ describe('installations.enforceCloudName', () => {
       name: 'My Local',
       installPath: path.join(tmpRoot, 'local'),
       sourceId: 'standalone',
-      status: 'installed',
+      status: 'installed'
     })
     await installations.enforceCloudName()
     const rec = (await installations.list()).find((r) => r.id === local.id)!
@@ -614,5 +772,150 @@ describe('installations.enforceCloudName', () => {
   it('is a no-op when there is no Cloud entry', async () => {
     const installations = await loadInstallations()
     await expect(installations.enforceCloudName()).resolves.toBeUndefined()
+  })
+})
+
+describe('installations.clearPendingTemplateOpen', () => {
+  it('clears the one-shot flag once, then is a no-op on the cleared record', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'With Template',
+      installPath: path.join(tmpRoot, 't'),
+      sourceId: 'standalone',
+      status: 'installed',
+      bundledTemplateId: 'flux_schnell',
+      pendingTemplateOpen: 'flux_schnell',
+      downloadTemplateModels: true
+    })
+
+    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(true)
+    expect((await installations.get(entry.id))!.pendingTemplateOpen).toBeNull()
+    // Already clear → no second mutation.
+    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(false)
+  })
+
+  it('is a no-op for a legacy record with no template fields (migration-safe)', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Legacy',
+      installPath: path.join(tmpRoot, 'legacy'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    expect(entry.pendingTemplateOpen).toBeUndefined()
+    expect(entry.bundledTemplateId).toBeUndefined()
+    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(false)
+  })
+
+  it('returns false when the install is gone', async () => {
+    const installations = await loadInstallations()
+    expect(await installations.clearPendingTemplateOpen('does-not-exist')).toBe(false)
+  })
+})
+
+describe('installations.uniqueName', () => {
+  const recs = (...names: string[]): InstallationRecord[] =>
+    names.map((name, i) => ({ id: `id-${i}`, name }) as InstallationRecord)
+
+  it('returns the base name unchanged when it is free', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI', recs('Other'))).toBe('ComfyUI')
+  })
+
+  it('appends " (1)" when the base name is taken', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI', recs('ComfyUI'))).toBe('ComfyUI (1)')
+  })
+
+  it('finds the next free suffix when lower ones are taken', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI', recs('ComfyUI', 'ComfyUI (1)', 'ComfyUI (2)'))).toBe('ComfyUI (3)')
+  })
+
+  it('renumbers an already-suffixed name instead of compounding it', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI (1)', recs('ComfyUI', 'ComfyUI (1)'))).toBe('ComfyUI (2)')
+  })
+
+  it('does not compound even after repeated chaining of the deduped name', async () => {
+    const { uniqueName } = await loadInstallations()
+    const first = uniqueName('ComfyUI', recs('ComfyUI')) // "ComfyUI (1)"
+    // Feeding the deduped name back in while it is now taken must not nest.
+    expect(uniqueName(first, recs('ComfyUI', 'ComfyUI (1)'))).toBe('ComfyUI (2)')
+  })
+
+  it('preserves an intentional " (N)" name when it is actually free', async () => {
+    const { uniqueName } = await loadInstallations()
+    expect(uniqueName('ComfyUI (1)', recs('ComfyUI'))).toBe('ComfyUI (1)')
+  })
+
+  it('excludes the renamed install from the conflict set', async () => {
+    const { uniqueName } = await loadInstallations()
+    const existing = recs('ComfyUI') // id-0
+    expect(uniqueName('ComfyUI', existing, 'id-0')).toBe('ComfyUI')
+  })
+})
+
+describe('mutations fail closed when installations.json cannot be recovered (issue #1367)', () => {
+  it('serves stale .bak records for reads but rejects mutations', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const dataPath = path.join(userDataPath, 'installations.json')
+    // A stale backup that predates a later rename of the install.
+    fs.copyFileSync(dataPath, dataPath + '.bak')
+
+    const realRead = fs.promises.readFile.bind(fs.promises) as typeof fs.promises.readFile
+    vi.spyOn(fs.promises, 'readFile').mockImplementation(((
+      p: Parameters<typeof fs.promises.readFile>[0],
+      opts?: unknown
+    ) => {
+      if (p === dataPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM' // lock never clears
+        return Promise.reject(err)
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.promises.readFile)
+
+    // Reads degrade to the backup records...
+    expect(await installations.list()).toHaveLength(1)
+    // ...but a read-modify-write must fail closed: saving a list built from
+    // the stale backup would overwrite the newer primary once the lock clears.
+    await expect(installations.update(entry.id, { name: 'Renamed' })).rejects.toThrow(
+      /cannot be recovered/
+    )
+
+    vi.restoreAllMocks()
+    const persisted = await installations.get(entry.id)
+    expect(persisted!.name).toBe('Local A')
+  })
+
+  it('rejects mutations when installations.json is readable but corrupt', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const dataPath = path.join(userDataPath, 'installations.json')
+    // Truncated write / interrupted power cycle: readable, but not JSON.
+    const corrupt = fs.readFileSync(dataPath, 'utf-8').slice(0, 20)
+    fs.writeFileSync(dataPath, corrupt)
+    fs.rmSync(dataPath + '.bak', { force: true })
+
+    // Reads degrade to an empty list...
+    expect(await installations.list()).toEqual([])
+    // ...but a mutation must not replace the corrupt file with a list built
+    // from nothing, losing every prior record.
+    await expect(installations.update(entry.id, { name: 'Renamed' })).rejects.toThrow(
+      /cannot be recovered/
+    )
+    expect(fs.readFileSync(dataPath, 'utf-8')).toBe(corrupt)
   })
 })

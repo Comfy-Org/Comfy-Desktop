@@ -11,21 +11,24 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
  */
 type Opacity = 'dim' | 'heavy-dim' | 'opaque'
 
-const props = withDefaults(defineProps<{
-  binding?: boolean
-  opacity?: Opacity
-  width?: 'regular' | 'wide'
-  /** Extra class(es) appended to the content box. */
-  contentClass?: string
-  /** Render content frame only (no overlay/backdrop/dismiss). */
-  inline?: boolean
-}>(), {
-  binding: false,
-  opacity: undefined,
-  width: 'wide',
-  contentClass: '',
-  inline: false,
-})
+const props = withDefaults(
+  defineProps<{
+    binding?: boolean
+    opacity?: Opacity
+    width?: 'regular' | 'wide'
+    /** Extra class(es) appended to the content box. */
+    contentClass?: string
+    /** Render content frame only (no overlay/backdrop/dismiss). */
+    inline?: boolean
+  }>(),
+  {
+    binding: false,
+    opacity: undefined,
+    width: 'wide',
+    contentClass: '',
+    inline: false
+  }
+)
 
 const resolvedOpacity = computed<Opacity>(() => props.opacity ?? (props.binding ? 'opaque' : 'dim'))
 
@@ -65,11 +68,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    v-if="inline"
-    class="view-modal-content view-modal-inline"
-    :class="contentClass"
-  >
+  <div v-if="inline" class="view-modal-content view-modal-inline" :class="contentClass">
     <slot />
   </div>
   <Teleport v-else to="body">
@@ -78,17 +77,14 @@ onUnmounted(() => {
       class="view-modal active"
       :class="{
         'view-modal--heavy-dim': resolvedOpacity === 'heavy-dim',
-        'view-modal--opaque': resolvedOpacity === 'opaque',
+        'view-modal--opaque': resolvedOpacity === 'opaque'
       }"
       @mousedown="handleOverlayMouseDown"
       @click="handleOverlayClick"
     >
       <div
         class="view-modal-content"
-        :class="[
-          { 'view-modal-content--regular': width === 'regular' },
-          contentClass,
-        ]"
+        :class="[{ 'view-modal-content--regular': width === 'regular' }, contentClass]"
       >
         <slot />
       </div>

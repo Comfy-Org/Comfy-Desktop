@@ -24,7 +24,7 @@ export function runLoggedProcess(
       cwd: options.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      env: options.env,
+      env: options.env
     })
     proc.stdout.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8')
@@ -46,20 +46,35 @@ export function runLoggedProcess(
   })
 }
 
+/** Last `lines` non-empty-trailing lines of captured output, trimmed. */
+export function tailOutput(output: string, lines = 20): string {
+  return output.trim().split('\n').slice(-lines).join('\n')
+}
+
+/** Append a bounded output tail to a failure prefix, or return the prefix alone when there's no output. */
+export function withOutputTail(prefix: string, output: string, lines = 20): string {
+  const detail = tailOutput(output, lines)
+  return detail ? `${prefix}\n\n${detail}` : prefix
+}
+
 /** Format a process failure into a user-facing error message (last 20 lines of stderr/stdout). */
 export function formatProcessError(
   prefix: string,
   result: LoggedProcessResult,
   context?: { cmd?: string; script?: string }
 ): string {
-  const detail = (result.stderr || result.stdout).trim().split('\n').slice(-20).join('\n')
+  const detail = tailOutput(result.stderr || result.stdout)
   if (detail) {
     return `${prefix}\n\n${detail}`
   }
   if (result.signal) {
-    const extra = context ? `\n${context.cmd ? `python: ${context.cmd}` : ''}${context.script ? `\nscript: ${context.script}` : ''}` : ''
+    const extra = context
+      ? `\n${context.cmd ? `python: ${context.cmd}` : ''}${context.script ? `\nscript: ${context.script}` : ''}`
+      : ''
     return `${prefix}\n\nProcess was killed by signal ${result.signal}.${extra}`
   }
-  const extra = context ? `\n${context.cmd ? `python: ${context.cmd}` : ''}${context.script ? `\nscript: ${context.script}` : ''}` : ''
+  const extra = context
+    ? `\n${context.cmd ? `python: ${context.cmd}` : ''}${context.script ? `\nscript: ${context.script}` : ''}`
+    : ''
   return `${prefix}\n\nProcess produced no output.${extra}`
 }

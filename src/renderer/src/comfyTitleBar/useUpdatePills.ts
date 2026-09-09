@@ -63,9 +63,7 @@ export function useUpdatePills(opts: UseUpdatePillsOpts): UpdatePillsApi {
     const label = appUpdatePillLabel.value
     if (!label) return ''
     const v = appUpdateState.value.version
-    return v
-      ? t('titleBar.desktopUpdateWithVersion', { label, version: v })
-      : label
+    return v ? t('titleBar.desktopUpdateWithVersion', { label, version: v }) : label
   })
 
   /** "Update {version}" when a target version is known, else generic "Update available". */
@@ -78,7 +76,7 @@ export function useUpdatePills(opts: UseUpdatePillsOpts): UpdatePillsApi {
 
   const showAppUpdatePill = computed(() => appUpdateState.value.kind !== null)
   const showInstallUpdatePill = computed(
-    () => !opts.isInstallLess.value && installUpdateState.value.available,
+    () => !opts.isInstallLess.value && installUpdateState.value.available
   )
 
   function handleAppUpdatePill(): void {
@@ -112,6 +110,6 @@ export function useUpdatePills(opts: UseUpdatePillsOpts): UpdatePillsApi {
     showAppUpdatePill,
     showInstallUpdatePill,
     handleAppUpdatePill,
-    handleInstallUpdatePill,
+    handleInstallUpdatePill
   }
 }

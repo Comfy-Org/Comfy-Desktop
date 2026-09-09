@@ -5,7 +5,7 @@ export { IN_PLACE_RELAUNCH } from '../../../types/ipc'
  *  stops a running session. */
 export function augmentMessageWithStopWarning(
   existing: string | undefined,
-  willStopRunning: string,
+  willStopRunning: string
 ): string {
   if (!existing) return willStopRunning
   return `${willStopRunning}\n\n${existing}`
@@ -20,15 +20,18 @@ interface ActionLike {
 /** Apply the willStopRunning warning to an action's confirm + prompt copy.
  *  Synthesizes a bare confirm when the action has neither so the warning
  *  is never silent. Preserves the caller's full ActionDef shape. */
-export function augmentActionWithStopWarning<T extends ActionLike>(action: T, willStopRunning: string): T {
+export function augmentActionWithStopWarning<T extends ActionLike>(
+  action: T,
+  willStopRunning: string
+): T {
   let mut: T = action
   if (mut.confirm) {
     mut = {
       ...mut,
       confirm: {
         ...mut.confirm,
-        message: augmentMessageWithStopWarning(mut.confirm.message, willStopRunning),
-      },
+        message: augmentMessageWithStopWarning(mut.confirm.message, willStopRunning)
+      }
     }
   }
   if (mut.prompt) {
@@ -36,14 +39,14 @@ export function augmentActionWithStopWarning<T extends ActionLike>(action: T, wi
       ...mut,
       prompt: {
         ...mut.prompt,
-        message: augmentMessageWithStopWarning(mut.prompt.message, willStopRunning),
-      },
+        message: augmentMessageWithStopWarning(mut.prompt.message, willStopRunning)
+      }
     }
   }
   if (!mut.confirm && !mut.prompt) {
     mut = {
       ...mut,
-      confirm: { title: mut.label, message: willStopRunning },
+      confirm: { title: mut.label, message: willStopRunning }
     }
   }
   return mut
@@ -53,7 +56,7 @@ export function augmentActionWithStopWarning<T extends ActionLike>(action: T, wi
  *  stopped, with a 10s deadline. */
 export async function stopAndWaitForExit(
   installationId: string,
-  isRunning: () => boolean,
+  isRunning: () => boolean
 ): Promise<void> {
   await window.api.stopComfyUI(installationId)
   const deadline = Date.now() + 10_000

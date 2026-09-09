@@ -13,23 +13,28 @@ import {
   getDiskSpace,
   getDirectorySize,
   validateInstallPath,
-  detectGPU,
+  detectGPUCached,
   validateHardware,
   checkNvidiaDriver,
+  checkAmdDriver,
+  selectPrimaryGpu,
+  vendorMatches,
+  getWindowsGpuDriverVersions,
   sourceMap,
   getAppVersion,
   openPath,
   listSnapshots,
-  diffSnapshots
+  diffSnapshots,
+  buildInstallationDdContext
 } from './shared'
 import si from 'systeminformation'
 import type { FieldOption } from './shared'
-import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
-import { getCloudCapacityStatusAsync } from '../cloudCapacity'
+import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
+import { deriveGpuTier } from '../../../shared/gpuTier'
 
 export function registerAppHandlers(): void {
   // App version
@@ -40,17 +45,16 @@ export function registerAppHandlers(): void {
   // Returns `[]` (never throws) when the remote is unreachable.
   ipcMain.handle('get-stable-tags', () => getStableTags())
 
-  // Capacity-protection switch for Cloud entry points. Resolved from the
-  // `desktop-cloud-capacity` PostHog flag via the experiments cache; safe
-  // default is `'normal'` (no UI change). See `cloudCapacity.ts` for the
-  // boot-time / consent caveats.
-  ipcMain.handle('get-cloud-capacity', () => getCloudCapacityStatusAsync())
-
   // Signed-in user's Comfy Cloud subscription tier ('free' | 'paid' |
-  // 'unknown'). Used by the capacity gate to let paying users through
-  // `disabled`. Hydrated from a persisted file at boot and refreshed on
-  // every cloud webContents `dom-ready`. See `userTier.ts`.
+  // 'unknown'). Hydrated from a persisted file at boot and refreshed on
+  // every cloud webContents `dom-ready`; consumed by billing telemetry and
+  // free-tier offer UI. See `userTier.ts`.
   ipcMain.handle('get-cloud-user-tier', () => getUserTierAsync())
+
+  // Whether the free tier is live, for the first-use trial pill. Bypasses
+  // the consent gate so it resolves pre-consent, the only state that
+  // surface renders in; fails CLOSED. See `cloudFreeRuns.ts`.
+  ipcMain.handle('get-cloud-free-runs-enabled', () => getCloudFreeRunsEnabledAsync())
 
   // Sources
   ipcMain.handle('get-sources', () =>
@@ -79,12 +83,7 @@ export function registerAppHandlers(): void {
     ) => {
       const source = sourceMap[sourceId]
       if (!source) return []
-      let gpuPromise = getGpuPromise()
-      if (!gpuPromise) {
-        gpuPromise = detectGPU().catch(() => null)
-        setGpuPromise(gpuPromise)
-      }
-      const gpu = await gpuPromise
+      const gpu = await detectGPUCached()
       if (!source.getFieldOptions) return []
       const options = await source.getFieldOptions(
         fieldId,
@@ -95,14 +94,7 @@ export function registerAppHandlers(): void {
     }
   )
 
-  ipcMain.handle('detect-gpu', async () => {
-    let gpuPromise = getGpuPromise()
-    if (!gpuPromise) {
-      gpuPromise = detectGPU().catch(() => null)
-      setGpuPromise(gpuPromise)
-    }
-    return gpuPromise
-  })
+  ipcMain.handle('detect-gpu', async () => detectGPUCached())
 
   ipcMain.handle('validate-hardware', async () => {
     const result = await validateHardware()
@@ -189,16 +181,56 @@ export function registerAppHandlers(): void {
     activeSizeInstId = null
   })
 
+  // Hardware probing spawns nvidia-smi plus several WMI/PowerShell queries
+  // (systeminformation), and on Windows every process launch blocks the main
+  // thread in CreateProcess. The hardware cannot change mid-session, so the
+  // probe runs once and the promise is shared - the renderer bootstrap and
+  // the first-use surface both request system info at boot. A failed probe
+  // clears the cache so the next call retries.
+  let hardwareProbe: Promise<Record<string, unknown>> | null = null
+  const probeHardwareCached = (): Promise<Record<string, unknown>> => {
+    hardwareProbe ??= probeHardware().catch((err) => {
+      hardwareProbe = null
+      throw err
+    })
+    return hardwareProbe
+  }
+
   ipcMain.handle('get-system-info', async () => {
-    let gpuPromise = getGpuPromise()
-    if (!gpuPromise) {
-      gpuPromise = detectGPU().catch(() => null)
-      setGpuPromise(gpuPromise)
-    }
-    const gpu = await gpuPromise
-    const nvidiaCheck = gpu?.id === 'nvidia' ? await checkNvidiaDriver() : null
+    const hardware = await probeHardwareCached()
     const cpus = os.cpus()
     const allInstalls = await installations.list()
+    return {
+      ...hardware,
+      platform: process.platform,
+      arch: process.arch,
+      os_version: os.release(),
+      electron_version: process.versions.electron,
+      chrome_version: process.versions.chrome,
+      total_memory_gb: Math.round(os.totalmem() / 1073741824),
+      cpu_model: cpus[0]?.model ?? 'unknown',
+      cpu_cores: cpus.length,
+      app_version: getAppVersion(),
+      // Issue #488 - repurposed to reflect the new `autoInstallUpdates`
+      // toggle (silent install vs prompt). The auto-check loop is no
+      // longer user-disablable, so this property captures what the
+      // remaining toggle actually controls.
+      auto_update: settings.get('autoInstallUpdates') !== false,
+      locale: settings.get('language') || 'en',
+      installation_count: allInstalls.length,
+      installations: allInstalls.map((inst) => ({
+        source_id: (inst.sourceId as string) || '',
+        variant: (inst.variant as string) || '',
+        update_channel: (inst.updateChannel as string) || 'stable',
+        status: (inst.status as string) || 'ready'
+      }))
+    }
+  })
+
+  async function probeHardware(): Promise<Record<string, unknown>> {
+    const gpu = await detectGPUCached()
+    const nvidiaCheck = gpu?.id === 'nvidia' ? await checkNvidiaDriver() : null
+    const amdDriverVersion = gpu?.id === 'amd' ? await checkAmdDriver() : undefined
 
     let osDistro: string | null = null
     let osRelease: string | null = null
@@ -234,63 +266,78 @@ export function registerAppHandlers(): void {
         vram_mb: ctrl.vram ?? null,
         driver_version: ctrl.driverVersion?.trim() || null
       }))
+      // systeminformation only fills `driverVersion` for NVIDIA on Windows
+      // (via nvidia-smi), leaving AMD/Intel blank even though WMI carries it.
+      // Backfill the missing versions from Win32_VideoController by name.
+      const wmiDrivers = await getWindowsGpuDriverVersions()
+      if (wmiDrivers.size > 0) {
+        allGpus = allGpus.map((g) =>
+          g.driver_version
+            ? g
+            : { ...g, driver_version: wmiDrivers.get(g.model.toLowerCase()) ?? null }
+        )
+      }
     }
 
     // `detectGPU()` only resolves the vendor (NVIDIA / AMD / Intel /
-    // Apple Silicon) — its `model` field is hardcoded null. The
-    // systeminformation `controllers[]` data already collected for
-    // `allGpus` carries the actual chipset name, so fall back to it.
-    // Empty strings from the lib normalise to null so cohort filters on
-    // "is set" work consistently.
-    const primaryGpuModel = (allGpus[0]?.model || null) ?? gpu?.model ?? null
+    // Apple Silicon) — its `model` field is hardcoded null. Pick the real
+    // compute GPU from the systeminformation `controllers[]` instead of
+    // blindly trusting `controllers[0]`: virtual display adapters are not
+    // promoted. The full `allGpus` array is still returned unfiltered for
+    // retroactive analysis. Empty strings from the lib normalise to null so
+    // cohort filters on "is set" work consistently.
+    const primaryGpu = selectPrimaryGpu(allGpus, gpu?.id ?? null)
+    const primaryGpuModel = (primaryGpu?.model || null) ?? gpu?.model ?? null
+    const primaryGpuVramMb = primaryGpu?.vram_mb ?? null
+    const primaryGpuVramGb = primaryGpuVramMb != null ? Math.round(primaryGpuVramMb / 1024) : null
+    const gpuTier = deriveGpuTier({ vendor: gpu?.id, vramGb: primaryGpuVramGb })
+    // Only trust the primary controller's driver string when it actually
+    // matches the detected compute vendor; selectPrimaryGpu may fall back to a
+    // non-matching controller, which would otherwise mislabel the driver.
+    const primaryGpuMatchesAmd = vendorMatches('amd', primaryGpu?.vendor, primaryGpu?.model)
+    const primaryGpuMatchesIntel = vendorMatches('intel', primaryGpu?.vendor, primaryGpu?.model)
+    // AMD: prefer the ROCm-reported version (compute-relevant); on Windows
+    // there is no rocm-smi, so fall back to the controller's WMI driver.
+    const amdDriver =
+      gpu?.id === 'amd'
+        ? (amdDriverVersion ?? (primaryGpuMatchesAmd ? primaryGpu?.driver_version : null) ?? null)
+        : null
+    // Intel has no dedicated CLI; the controller driver (WMI on Windows,
+    // si on Linux) is the best available signal.
+    const intelDriver =
+      gpu?.id === 'intel' && primaryGpuMatchesIntel ? (primaryGpu?.driver_version ?? null) : null
     return {
       gpu_vendor: gpu?.id ?? null,
       gpu_label: gpu?.label ?? null,
       gpu_model: primaryGpuModel,
+      gpu_vram_mb: primaryGpuVramMb,
+      gpu_vram_gb: primaryGpuVramGb,
+      gpu_tier: gpuTier,
       gpus: allGpus,
       nvidia_driver_version: nvidiaCheck?.driverVersion ?? null,
       nvidia_driver_supported: nvidiaCheck?.supported ?? null,
-      platform: process.platform,
-      arch: process.arch,
-      os_version: os.release(),
+      amd_driver_version: amdDriver,
+      intel_driver_version: intelDriver,
       os_distro: osDistro,
       os_release: osRelease,
       os_arch: osArch,
-      electron_version: process.versions.electron,
-      chrome_version: process.versions.chrome,
-      total_memory_gb: Math.round(os.totalmem() / 1073741824),
-      cpu_model: cpus[0]?.model ?? 'unknown',
-      cpu_cores: cpus.length,
       cpu_physical_cores: cpuPhysicalCores,
       cpu_speed_ghz: cpuSpeedGhz,
-      cpu_manufacturer: cpuManufacturer,
-      app_version: getAppVersion(),
-      // Issue #488 — repurposed to reflect the new `autoInstallUpdates`
-      // toggle (silent install vs prompt). The auto-check loop is no
-      // longer user-disablable, so this property captures what the
-      // remaining toggle actually controls.
-      auto_update: settings.get('autoInstallUpdates') !== false,
-      locale: settings.get('language') || 'en',
-      installation_count: allInstalls.length,
-      installations: allInstalls.map((inst) => ({
-        source_id: (inst.sourceId as string) || '',
-        variant: (inst.variant as string) || '',
-        update_channel: (inst.updateChannel as string) || 'stable',
-        status: (inst.status as string) || 'ready'
-      }))
+      cpu_manufacturer: cpuManufacturer
     }
-  })
+  }
 
   // Per-session boot census of every persisted installation, sorted
   // most-recently-launched first. Powers `comfy.desktop.session.installs_inventory`
   // so dashboards can see the user's full install footprint without
-  // having to wait for them to launch each one. Capped to 200 KB total
-  // (Datadog RUM hard-caps action context at ~256 KB; 200 KB matches the
-  // existing single-install `get-installation-dd-context` budget so the
-  // event reliably ships).
+  // having to wait for them to launch each one. The inventory ships to PostHog
+  // (only) as a serialized `installs_json` string; capped to 384 KB total to
+  // leave conservative headroom under PostHog's 1 MB per-event hard limit after
+  // re-escaping inside the outer event JSON, super-properties, and any non-ASCII
+  // expansion (the cap counts UTF-16 code units, the limit is UTF-8 bytes).
   ipcMain.handle('get-installs-inventory', async () => {
-    const MAX_TOTAL_BYTES = 200 * 1024
-    const MAX_PER_INSTALL_BYTES = 50 * 1024
+    const MAX_TOTAL_BYTES = 384 * 1024
+    const MAX_PER_INSTALL_BYTES = 64 * 1024
     const all = await installations.list()
     // `installing` entries are mid-install transient — exclude them
     // (they'll show up on the next boot once they settle).
@@ -328,11 +375,8 @@ export function registerAppHandlers(): void {
               createdAt: latest.createdAt,
               trigger: latest.trigger,
               // User-typed snapshot labels can carry PII / paths /
-              // model names — the inventory event bypasses the
-              // renderer-side `scrubAll` pass (it goes via `addAction`
-              // directly to RUM with arrays of objects), so we
-              // collapse the label to a presence boolean instead of
-              // shipping the raw string.
+              // model names, so we collapse the label to a presence
+              // boolean instead of shipping the raw string.
               has_label: !!latest.label,
               comfyui: {
                 ref: latest.comfyui.ref,
@@ -387,112 +431,9 @@ export function registerAppHandlers(): void {
     return result
   })
 
-  ipcMain.handle('get-installation-dd-context', async (_event, installationId: string) => {
-    const MAX_CONTEXT_BYTES = 200 * 1024
-    const inst = await installations.get(installationId)
-    if (!inst || !inst.installPath) return null
-
-    const entries = await listSnapshots(inst.installPath)
-    const latest = entries.length > 0 ? entries[0]!.snapshot : null
-
-    const copiedFrom = inst.copiedFrom as string | undefined
-    const copyReason = inst.copyReason as string | undefined
-
-    let diskFreeGb: number | null = null
-    let diskTotalGb: number | null = null
-    try {
-      const disk = await getDiskSpace(inst.installPath)
-      diskFreeGb = Math.round(disk.free / 1073741824)
-      diskTotalGb = Math.round(disk.total / 1073741824)
-    } catch {}
-
-    const result = {
-      installation_id: inst.id,
-      variant: (inst.variant as string) || '',
-      source_id: (inst.sourceId as string) || '',
-      update_channel: (inst.updateChannel as string) || 'stable',
-      comfyui_version: (inst.comfyuiVersion as string) || '',
-      ...(copiedFrom ? { copied_from: copiedFrom } : {}),
-      ...(copyReason ? { copy_reason: copyReason } : {}),
-      snapshot_count: entries.length,
-      disk_free_gb: diskFreeGb,
-      disk_total_gb: diskTotalGb,
-      latest_snapshot: latest
-        ? {
-            createdAt: latest.createdAt,
-            trigger: latest.trigger,
-            label: latest.label,
-            comfyui: {
-              ref: latest.comfyui.ref,
-              commit: latest.comfyui.commit,
-              releaseTag: latest.comfyui.releaseTag,
-              variant: latest.comfyui.variant
-            },
-            customNodes: latest.customNodes.map((n) => ({
-              id: n.id,
-              type: n.type,
-              dirName: n.dirName,
-              enabled: n.enabled,
-              version: n.version,
-              commit: n.commit
-            })),
-            pipPackages: latest.pipPackages,
-            pythonVersion: latest.pythonVersion,
-            updateChannel: latest.updateChannel
-          }
-        : null,
-      snapshot_diffs: [] as Array<Record<string, unknown>>
-    }
-
-    let runningSize = JSON.stringify(result).length
-    for (let i = 0; i < entries.length - 1; i++) {
-      const newer = entries[i]!.snapshot
-      const older = entries[i + 1]!.snapshot
-      const diff = diffSnapshots(older, newer)
-      const entry: Record<string, unknown> = {
-        createdAt: newer.createdAt,
-        trigger: newer.trigger,
-        label: newer.label,
-        nodesAdded: diff.nodesAdded.map((n) => ({
-          id: n.id,
-          type: n.type,
-          dirName: n.dirName,
-          enabled: n.enabled,
-          version: n.version,
-          commit: n.commit
-        })),
-        nodesRemoved: diff.nodesRemoved.map((n) => ({
-          id: n.id,
-          type: n.type,
-          dirName: n.dirName,
-          enabled: n.enabled,
-          version: n.version,
-          commit: n.commit
-        })),
-        nodesChanged: diff.nodesChanged.map((n) => ({ id: n.id, from: n.from, to: n.to })),
-        pipsAdded: diff.pipsAdded,
-        pipsRemoved: diff.pipsRemoved,
-        pipsChanged: diff.pipsChanged,
-        comfyuiChanged: diff.comfyuiChanged,
-        updateChannelChanged: diff.updateChannelChanged
-      }
-      if (diff.comfyui) {
-        entry.comfyui = {
-          from: { ref: diff.comfyui.from.ref, commit: diff.comfyui.from.commit },
-          to: { ref: diff.comfyui.to.ref, commit: diff.comfyui.to.commit }
-        }
-      }
-      if (diff.updateChannel) {
-        entry.updateChannel = diff.updateChannel
-      }
-      const entrySize = JSON.stringify(entry).length + 1
-      if (runningSize + entrySize > MAX_CONTEXT_BYTES) break
-      result.snapshot_diffs.push(entry)
-      runningSize += entrySize
-    }
-
-    return result
-  })
+  ipcMain.handle('get-installation-dd-context', (_event, installationId: string) =>
+    buildInstallationDdContext(installationId)
+  )
 
   ipcMain.handle('get-device-id', () => getDeviceId())
 }

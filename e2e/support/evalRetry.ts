@@ -3,6 +3,11 @@
  * evaluation channel intermittently throws "Execution context was destroyed"
  * on loaded CI runners when child WebContentsViews churn; a retry on the next
  * tick lands on a fresh, working evaluation context.
+ *
+ * Only wrap read-only or idempotent evaluations. The error surfaces AFTER the
+ * callback may already have executed in the app, so a retried side-effectful
+ * callback (emitting an app event, sending IPC, registering a listener) can
+ * run twice and turn an exactly-once product action into at-least-once.
  */
 
 const RETRY_PATTERN = /Execution context was destroyed/i

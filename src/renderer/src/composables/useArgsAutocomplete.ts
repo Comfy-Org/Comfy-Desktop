@@ -77,7 +77,9 @@ export function useArgsAutocomplete(opts: UseArgsAutocompleteOptions) {
       .slice(0, MAX_MATCHES)
   })
 
-  const visible = computed<boolean>(() => matches.value.length > 0 && !acDismissed.value && focused.value)
+  const visible = computed<boolean>(
+    () => matches.value.length > 0 && !acDismissed.value && focused.value
+  )
 
   // Reset highlight + dismissal on every matches change.
   watch(matches, () => {
@@ -122,6 +124,6 @@ export function useArgsAutocomplete(opts: UseArgsAutocompleteOptions) {
     visible,
     acIndex,
     completeArg,
-    handleKeydown,
+    handleKeydown
   }
 }

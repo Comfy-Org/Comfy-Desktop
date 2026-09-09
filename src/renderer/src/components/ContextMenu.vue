@@ -19,19 +19,22 @@ const menuRef = ref<HTMLDivElement | null>(null)
 const adjustedX = ref(0)
 const adjustedY = ref(0)
 
-watch(() => props.open, async (isOpen) => {
-  if (isOpen) {
-    adjustedX.value = props.x
-    adjustedY.value = props.y
-    await nextTick()
-    clampToViewport()
-    document.addEventListener('mousedown', onOutsideClick, true)
-    document.addEventListener('keydown', onEscape, true)
-  } else {
-    document.removeEventListener('mousedown', onOutsideClick, true)
-    document.removeEventListener('keydown', onEscape, true)
+watch(
+  () => props.open,
+  async (isOpen) => {
+    if (isOpen) {
+      adjustedX.value = props.x
+      adjustedY.value = props.y
+      await nextTick()
+      clampToViewport()
+      document.addEventListener('mousedown', onOutsideClick, true)
+      document.addEventListener('keydown', onEscape, true)
+    } else {
+      document.removeEventListener('mousedown', onOutsideClick, true)
+      document.removeEventListener('keydown', onEscape, true)
+    }
   }
-})
+)
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onOutsideClick, true)

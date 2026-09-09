@@ -50,8 +50,12 @@ function cancelEntry(entry: SystemModalEntry): void {
   entry.currentSpec = null
   entry.currentCallback = null
   entry.pendingSpec = null
-  try { current?.('cancel') } catch {}
-  try { pending?.('cancel') } catch {}
+  try {
+    current?.('cancel')
+  } catch {}
+  try {
+    pending?.('cancel')
+  } catch {}
 }
 
 export function ensureSystemModal(parent: BrowserWindow): SystemModalEntry {
@@ -87,13 +91,13 @@ export function ensureSystemModal(parent: BrowserWindow): SystemModalEntry {
         systemModalsByParent.delete(parent.id)
       }
       systemModalsByWebContents.delete(view.popupWebContentsId)
-    },
+    }
   })
   const entry: SystemModalEntry = {
     view,
     currentSpec: null,
     currentCallback: null,
-    pendingSpec: null,
+    pendingSpec: null
   }
   systemModalsByParent.set(view.parentWindowId, entry)
   systemModalsByWebContents.set(view.popupWebContentsId, entry)
@@ -157,21 +161,41 @@ export function openSystemModal(opts: OpenSystemModalOpts): string {
   return id
 }
 
-/** Promise wrapper around `openSystemModal`. Resolves `true` on confirm,
- *  `false` on cancel / superseded / parent destroyed. */
-export function openSystemModalAsync(opts: OpenSystemModalOpts): Promise<boolean> {
+/** Open the modal and resolve once it settles, mapping the raw action to the
+ *  caller's shape. Runs the caller's own `callback` (guarded) before resolving. */
+function openSystemModalResolving<T>(
+  opts: OpenSystemModalOpts,
+  map: (action: SystemModalAction) => T
+): Promise<T> {
   return new Promise((resolve) => {
     openSystemModal({
       parent: opts.parent,
       spec: opts.spec,
       callback: (action) => {
         if (opts.callback) {
-          try { opts.callback(action) } catch {}
+          try {
+            opts.callback(action)
+          } catch {}
         }
-        resolve(action === 'confirm')
-      },
+        resolve(map(action))
+      }
     })
   })
+}
+
+/** Promise wrapper around `openSystemModal`. Resolves `true` on confirm,
+ *  `false` on cancel / superseded / parent destroyed. */
+export function openSystemModalAsync(opts: OpenSystemModalOpts): Promise<boolean> {
+  return openSystemModalResolving(opts, (action) => action === 'confirm')
+}
+
+/** Three-way variant of `openSystemModalAsync`. Resolves the raw action so a
+ *  caller offering a middle option (`secondaryLabel`) can branch on it. Cancel
+ *  / superseded / parent-destroyed all resolve `'cancel'`. */
+export function openSystemModalChoiceAsync(
+  opts: OpenSystemModalOpts
+): Promise<'confirm' | 'cancel' | 'secondary'> {
+  return openSystemModalResolving(opts, (action) => action)
 }
 
 /** Wire the IPC handlers that drive the system-modal popup. Called once at app ready. */
@@ -213,7 +237,9 @@ export function registerSystemModalIpc(): void {
       entry.currentSpec = null
       entry.currentCallback = null
       entry.view.hide({ focusParent: true })
-      try { cb(action) } catch {}
-    },
+      try {
+        cb(action)
+      } catch {}
+    }
   )
 }

@@ -1,25 +1,20 @@
 /**
- * Lifecycle E2E: chooser kebab Untrack vs Delete divergence (UI-driven).
+ * Lifecycle E2E: Untrack vs Delete divergence (UI-driven).
  *
- * Drives the same kebab → menu-item → confirm flow a user performs
- * manually:
+ * Drives the two real removal surfaces a user reaches manually:
  *
- *   - **Untrack** routes through `onManage({ autoAction: 'remove' })`,
- *     which opens the instance-picker popup in expanded mode with the
- *     autoAction seed. The popup's `ComfyUISettingsContent` then loads
- *     section data, locates the `'remove'` source-action def, and fires
- *     its `confirm` payload as a BaseAlert inside the popup webContents.
- *     Confirming drops the installation from the registry but leaves the
- *     install directory on disk.
- *   - **Delete** routes through the kebab fast-path (`onShowProgress`
- *     builds the confirm renderer-side, no popup mount). The BaseAlert
- *     appears in the panel webContents. Confirming drops both the
- *     registry record and the directory.
+ *   - **Untrack** lives in the Manage drawer's Settings footer More menu
+ *     (the dashboard kebab no longer carries it). It confirms in-drawer,
+ *     then removes the installation from the registry while leaving its
+ *     directory on disk.
+ *   - **Delete** stays on the dashboard kebab: it confirms through the
+ *     panel modal, then routes through the kebab fast-path and removes
+ *     both the registry record and directory.
  *
  * The Delete fast-path is also covered by `dashboard-delete-flow.test.ts`
  * from a perf angle (no `get-detail-sections` roundtrip). This file
  * exists to pin the divergent disk outcome between the two destructive
- * surfaces on the same chooser tile.
+ * surfaces on the same install records.
  */
 
 import os from 'node:os'
@@ -28,8 +23,8 @@ import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
+import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { byTestId, TID } from './support/testIds'
-import { titlePopupPage, waitForWebContents } from './support/cdpPages'
 
 let ctx: AppContext
 let untrackPath: string
@@ -54,9 +49,7 @@ async function tileExists(installationId: string): Promise<boolean> {
 }
 
 /** Drive the chooser kebab: open the menu on `installationId`, wait
- *  for the named menu item, click it. The caller is responsible for
- *  waiting on whichever surface (panel or picker popup) the action's
- *  confirm modal mounts in. */
+ *  for the named menu item, and click it. */
 async function openKebabAndClick(installationId: string, menuItemId: string): Promise<void> {
   const kebabClicked = await ctx.panel.click(byTestId(TID.dashboardTileKebab(installationId)))
   expect(kebabClicked, `kebab click on ${installationId}`).toBe(true)
@@ -110,33 +103,38 @@ test('chooser lists both seeded installs @lifecycle', async () => {
   await ctx.panel.waitForSelector(byTestId(TID.dashboardTile(DELETE_ID)), { timeout: 10_000 })
 })
 
-test('kebab Untrack drops the record but preserves the install directory @lifecycle', async () => {
-  await openKebabAndClick(UNTRACK_ID, 'untrack')
-
-  // useInstallContextMenu's 'untrack' branch calls
-  // `onManage({ autoAction: 'remove' })`, which in ChooserView opens
-  // the picker popup in expanded mode with autoAction seeded. The
-  // popup's ComfyUISettingsContent loads sections, finds the 'remove'
-  // source-action def, and fires its `confirm` payload as a BaseAlert
-  // in the popup webContents.
+test('Manage drawer Untrack drops the record but preserves the install directory @lifecycle', async () => {
+  // Untrack's UI home is the Manage drawer's pin-bottom More menu.
+  await ctx.panel.evaluate<boolean>(
+    `(() => {
+      window.api.openInstancePicker({
+        installationId: ${JSON.stringify(UNTRACK_ID)},
+        initialTab: 'settings',
+      })
+      return true
+    })()`,
+  )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
+  await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 30_000 })
+  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('remove')), { timeout: 30_000 })
+  expect(await popup.click(byTestId(TID.pinBottomAction('remove')))).toBe(true)
   await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
-  const confirmed = await popup.click(byTestId(TID.baseAlertAction))
-  expect(confirmed, 'untrack confirm click dispatched').toBe(true)
+  expect(await popup.click(byTestId(TID.baseAlertAction)), 'untrack confirm click dispatched').toBe(true)
 
   await ctx.panel.waitFor(
     async () => !(await tileExists(UNTRACK_ID)),
     { timeout: 15_000, message: 'untracked tile never disappeared from chooser' },
   )
+  // Removing the install closes its drawer; ensure the popup is gone
+  // before the Delete test drives the dashboard kebab.
+  await closeTitlePopupIfOpen(ctx.app)
   expect(await pathExists(untrackPath), 'untrack must leave the install directory on disk').toBe(true)
 })
 
 test('kebab Delete drops the record AND removes the install directory @lifecycle', async () => {
   await openKebabAndClick(DELETE_ID, 'delete')
 
-  // Delete uses the kebab fast-path BaseAlert that useInstallContextMenu
-  // builds renderer-side in the panel webContents (no picker popup mount).
   await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
   const confirmed = await ctx.panel.click(byTestId(TID.baseAlertAction))
   expect(confirmed, 'delete confirm click dispatched').toBe(true)

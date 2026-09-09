@@ -16,8 +16,5 @@
     "noUncheckedIndexedAccess": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": [
-    "vitest.integration.config.ts",
-    "src/**/*.integration.test.ts"
-  ]
+  "include": ["vitest.integration.config.ts", "src/**/*.integration.test.ts"]
 }

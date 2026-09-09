@@ -99,7 +99,9 @@ const { t } = useI18n()
             : t('comfyUISettings.dirMissingTitle', { dir: section.basePath })
         "
         @click="emit('open-path', section.basePath)"
-      >{{ section.basePath }}</button>
+      >
+        {{ section.basePath }}
+      </button>
 
       <ul class="empm-dirs">
         <li v-for="(d, i) in section.dirs" :key="`${d.rawType}-${i}`" class="empm-dir">
@@ -114,7 +116,9 @@ const { t } = useI18n()
                 : t('comfyUISettings.dirMissingTitle', { dir: d.dir })
             "
             @click="emit('open-path', d.dir)"
-          >{{ d.dir }}</button>
+          >
+            {{ d.dir }}
+          </button>
         </li>
       </ul>
     </section>

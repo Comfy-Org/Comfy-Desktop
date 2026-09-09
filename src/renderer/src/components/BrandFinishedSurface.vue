@@ -30,7 +30,7 @@ const props = withDefaults(defineProps<Props>(), {
   logs: undefined,
   logsLabel: undefined,
   ariaLabel: undefined,
-  tone: 'error',
+  tone: 'error'
 })
 
 const { t } = useI18n()
@@ -154,6 +154,8 @@ function getLogText(): string {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* This standalone finished surface can use a roomier gap than ProgressModal's
+     stack, which also hosts the in-flight stepper and is deliberately tighter. */
   gap: clamp(1rem, 3vh, 2rem);
   text-align: center;
   overflow: hidden;

@@ -3,14 +3,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('./terminal', () => ({ disposeTerminal: vi.fn() }))
 vi.mock('./logsPopoutWindow', () => ({
   closeLogsPopout: vi.fn(),
-  closeAllLogsPopouts: vi.fn(),
+  closeAllLogsPopouts: vi.fn()
 }))
 vi.mock('./terminalPopoutWindow', () => ({
   closeTerminalPopout: vi.fn(),
-  closeAllTerminalPopouts: vi.fn(),
+  closeAllTerminalPopouts: vi.fn()
 }))
 
-import { closeInstallPopouts, closeAllPopouts, releaseInstallTerminalForFsOp } from './popoutWindows'
+import {
+  closeInstallPopouts,
+  closeAllPopouts,
+  releaseInstallTerminalForFsOp
+} from './popoutWindows'
 import { disposeTerminal } from './terminal'
 import { closeLogsPopout, closeAllLogsPopouts } from './logsPopoutWindow'
 import { closeTerminalPopout, closeAllTerminalPopouts } from './terminalPopoutWindow'

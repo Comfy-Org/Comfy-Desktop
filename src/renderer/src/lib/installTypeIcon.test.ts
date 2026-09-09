@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Cloud, Computer, LaptopMinimal, Globe, Box } from 'lucide-vue-next'
+import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from 'lucide-vue-next'
 
 import { installTypeMetaFor, installTypeMetaForInstall } from './installTypeIcon'
 
@@ -53,15 +53,45 @@ describe('installTypeMetaForInstall', () => {
     expect(meta.labelKey).toBe('installType.legacyDesktop')
   })
 
+  it('gives a build install the build glyph, not the local one', () => {
+    // It reports `local` like any standalone install, but what it IS matters
+    // more than where it runs — and the tile, the picker row and the title bar
+    // all read this, so they can't drift apart.
+    const bySource = installTypeMetaForInstall({
+      sourceId: 'comfybuilder',
+      sourceCategory: 'local'
+    })
+    expect(bySource.key).toBe('build')
+    expect(bySource.icon).toBe(Package)
+    expect(bySource.labelKey).toBe('installType.build')
+
+    const byLink = installTypeMetaForInstall({
+      sourceId: 'standalone',
+      sourceCategory: 'local',
+      distributionId: 'd1'
+    })
+    expect(byLink.key).toBe('build')
+  })
+
+  it('does not treat an empty distributionId as a link', () => {
+    expect(
+      installTypeMetaForInstall({
+        sourceId: 'standalone',
+        sourceCategory: 'local',
+        distributionId: ''
+      }).key
+    ).toBe('standalone')
+  })
+
   it('falls through to the category for non-desktop installs', () => {
     expect(installTypeMetaForInstall({ sourceId: 'standalone', sourceCategory: 'local' }).key).toBe(
-      'standalone',
+      'standalone'
     )
     expect(installTypeMetaForInstall({ sourceId: 'cloud', sourceCategory: 'cloud' }).key).toBe(
-      'cloud',
+      'cloud'
     )
     expect(installTypeMetaForInstall({ sourceId: 'remote', sourceCategory: 'remote' }).key).toBe(
-      'remote',
+      'remote'
     )
   })
 })

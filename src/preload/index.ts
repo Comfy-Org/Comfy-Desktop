@@ -6,5 +6,5 @@ const api = buildElectronApi()
 if (process.contextIsolated) {
   contextBridge.exposeInMainWorld('api', api)
 } else {
-  (globalThis as Record<string, unknown>).api = api
+  ;(globalThis as Record<string, unknown>).api = api
 }

@@ -24,6 +24,8 @@ const { t } = useI18n()
  */
 
 interface DownloadEntry {
+  /** Stable per-job identifier; preferred over `url` for actions. */
+  id?: string
   url: string
   filename: string
   directory?: string
@@ -45,12 +47,12 @@ interface DownloadsState {
 }
 
 type DownloadAction =
-  | { action: 'pause'; url: string }
-  | { action: 'resume'; url: string }
-  | { action: 'cancel'; url: string }
-  | { action: 'show-in-folder'; url: string; savePath: string }
-  | { action: 'dismiss'; url: string }
-  | { action: 'retry'; url: string }
+  | { action: 'pause'; ref?: string; url: string }
+  | { action: 'resume'; ref?: string; url: string }
+  | { action: 'cancel'; ref?: string; url: string }
+  | { action: 'show-in-folder'; ref?: string; url: string; savePath: string }
+  | { action: 'dismiss'; ref?: string; url: string }
+  | { action: 'retry'; ref?: string; url: string }
   | { action: 'clear-finished' }
 
 type PopupSettingsTab = 'comfy' | 'directories' | 'downloads' | 'global'
@@ -91,24 +93,26 @@ const orderedEntries = computed<DownloadEntry[]>(() =>
   )
 )
 
-function cancel(url: string): void {
-  bridge?.downloadsAction({ action: 'cancel', url })
+// Actions address a row by stable job id (`ref`); the URL rides along as a
+// compatibility fallback.
+function cancel(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'cancel', ref: d.id, url: d.url })
 }
 // TODO(brand-cleanup): redesign skips pause/resume — keep handlers wired for an easy restore.
-// function pause(url: string): void {
-//   bridge?.downloadsAction({ action: 'pause', url })
+// function pause(d: DownloadEntry): void {
+//   bridge?.downloadsAction({ action: 'pause', ref: d.id, url: d.url })
 // }
-// function resume(url: string): void {
-//   bridge?.downloadsAction({ action: 'resume', url })
+// function resume(d: DownloadEntry): void {
+//   bridge?.downloadsAction({ action: 'resume', ref: d.id, url: d.url })
 // }
-function showInFolder(url: string, savePath: string): void {
-  bridge?.downloadsAction({ action: 'show-in-folder', url, savePath })
+function showInFolder(d: DownloadEntry, savePath: string): void {
+  bridge?.downloadsAction({ action: 'show-in-folder', ref: d.id, url: d.url, savePath })
 }
-function dismiss(url: string): void {
-  bridge?.downloadsAction({ action: 'dismiss', url })
+function dismiss(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'dismiss', ref: d.id, url: d.url })
 }
-function retry(url: string): void {
-  bridge?.downloadsAction({ action: 'retry', url })
+function retry(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'retry', ref: d.id, url: d.url })
 }
 function viewAllDownloads(): void {
   bridge?.openDownloadsModal()
@@ -116,8 +120,8 @@ function viewAllDownloads(): void {
 
 /** Right-edge X cancels an in-flight entry or removes a terminal row. */
 function handleClose(d: DownloadEntry): void {
-  if (isTerminal(d)) dismiss(d.url)
-  else cancel(d.url)
+  if (isTerminal(d)) dismiss(d)
+  else cancel(d)
 }
 
 function closeLabel(d: DownloadEntry): string {
@@ -144,7 +148,7 @@ function subtitle(d: DownloadEntry): string {
 /** Whole-row click opens the file location for completed entries with a save path. */
 function handleRowClick(d: DownloadEntry, event: MouseEvent): void {
   if ((event.target as HTMLElement).closest('.downloads-item-close, .downloads-item-retry')) return
-  if (d.status === 'completed' && d.savePath) showInFolder(d.url, d.savePath)
+  if (d.status === 'completed' && d.savePath) showInFolder(d, d.savePath)
 }
 
 function isRowClickable(d: DownloadEntry): boolean {
@@ -180,7 +184,7 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
     <ul v-else class="downloads-list">
       <li
         v-for="d in orderedEntries"
-        :key="d.url"
+        :key="d.id ?? d.url"
         class="downloads-item"
         :class="[
           statusKindClass(d),
@@ -215,13 +219,13 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
           v-if="d.status === 'downloading'"
           type="button"
           :aria-label="t('downloadsPopup.pause')"
-          @click.stop="pause(d.url)"
+          @click.stop="pause(d)"
         ><PauseCircle :size="14" /></button>
         <button
           v-if="d.status === 'paused'"
           type="button"
           :aria-label="t('downloadsPopup.resume')"
-          @click.stop="resume(d.url)"
+          @click.stop="resume(d)"
         ><PlayCircle :size="14" /></button>
         -->
         <button
@@ -230,7 +234,7 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
           class="downloads-item-retry"
           :title="t('downloadsPopup.retry')"
           :aria-label="t('downloadsPopup.retry')"
-          @click.stop="retry(d.url)"
+          @click.stop="retry(d)"
         >
           <RotateCcw :size="16" />
         </button>

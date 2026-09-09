@@ -6,9 +6,17 @@ import {
   installInputDir,
   installOutputDir,
   resolveComfyDir,
-  resolveExtraModelPaths,
+  resolveExtraModelPaths
 } from '../../lib/models'
 import type { InstallationRecord } from '../../installations'
+import {
+  DEFAULT_MANAGER_SECURITY_LEVEL,
+  MANAGER_SECURITY_LEVELS,
+  isManagerSecurityLevel,
+  DEFAULT_MANAGER_NETWORK_MODE,
+  MANAGER_NETWORK_MODES,
+  isManagerNetworkMode
+} from '../../lib/managerConfig'
 
 /** One resolved per-type dir in an `extra_model_paths.yaml` section.
  *  `dirExists` lets the UI flag missing folders. */
@@ -61,7 +69,7 @@ export function buildExtraModelPathsView(installation: InstallationRecord): Extr
         basePath: r.basePath,
         basePathExists: r.basePath != null && fs.existsSync(r.basePath),
         isDefault: r.isDefault,
-        dirs: [],
+        dirs: []
       }
       byName.set(r.section, section)
       sections.push(section)
@@ -70,7 +78,7 @@ export function buildExtraModelPathsView(installation: InstallationRecord): Extr
       type: r.type,
       rawType: r.rawType,
       dir: r.dir,
-      dirExists: fs.existsSync(r.dir),
+      dirExists: fs.existsSync(r.dir)
     })
   }
 
@@ -87,13 +95,16 @@ export interface LaunchSettingsOptions {
 
 /**
  * Per-install storage toggles + input/output path fields for the picker's Storage tab.
- * `useSharedModels` gates `--extra-model-paths-config`; `useSharedInputOutput` gates
- * `--input-directory` / `--output-directory`, falling back to the per-install fields
- * below (then `<installPath>/{input,output}`) when off. Shared-storage sources only.
+ * `useSharedModels` gates whether the global shared dirs are included in the
+ * generated `--extra-model-paths-config` (per-install `modelDirs` always apply);
+ * `useSharedInput` / `useSharedOutput` independently gate `--input-directory` /
+ * `--output-directory`, falling back to the per-install fields below (then
+ * `<installPath>/{input,output}`) when off. Shared-storage sources only.
  */
 export function buildStorageFields(installation: InstallationRecord): Record<string, unknown>[] {
   const useSharedModels = (installation.useSharedModels as boolean | undefined) !== false
-  const useSharedInputOutput = (installation.useSharedInputOutput as boolean | undefined) !== false
+  const useSharedInput = (installation.useSharedInput as boolean | undefined) !== false
+  const useSharedOutput = (installation.useSharedOutput as boolean | undefined) !== false
   // The install's own default dirs are computed (never persisted) so a clone
   // derives its own paths instead of pointing back at the original install.
   const installPath = installation.installPath as string | undefined
@@ -102,74 +113,110 @@ export function buildStorageFields(installation: InstallationRecord): Record<str
   const ownOutputDir = installPath ? installOutputDir(installPath) : ''
   return [
     {
-      id: 'useSharedModels', label: t('common.useSharedModels'),
+      id: 'useSharedModels',
+      label: t('common.useSharedModels'),
       value: useSharedModels,
-      editable: true, editType: 'boolean', tooltip: t('tooltips.useSharedModels'),
-      requiresRestart: true,
+      editable: true,
+      editType: 'boolean',
+      tooltip: t('tooltips.useSharedModels'),
+      requiresRestart: true
     },
     {
-      id: 'useSharedInputOutput', label: t('common.useSharedInputOutput'),
-      value: useSharedInputOutput,
-      editable: true, editType: 'boolean', tooltip: t('tooltips.useSharedInputOutput'),
-      requiresRestart: true,
+      id: 'useSharedInput',
+      label: t('common.useSharedInput'),
+      value: useSharedInput,
+      editable: true,
+      editType: 'boolean',
+      tooltip: t('tooltips.useSharedInput'),
+      requiresRestart: true
     },
-    // Per-install model directories, only meaningful when `useSharedModels === false`.
-    // StoragePane.vue renders this through its own ModelsDirList (not the generic
-    // SettingsSectionList) and hides it while shared models is on.
     {
-      id: 'modelDirs', label: t('common.perInstallModelDirs'),
+      id: 'useSharedOutput',
+      label: t('common.useSharedOutput'),
+      value: useSharedOutput,
+      editable: true,
+      editType: 'boolean',
+      tooltip: t('tooltips.useSharedOutput'),
+      requiresRestart: true
+    },
+    // Per-install model directories, always applied in addition to the shared
+    // dirs (when those are enabled). StoragePane.vue renders this through its
+    // own ModelsDirList (not the generic SettingsSectionList).
+    {
+      id: 'modelDirs',
+      label: t('common.perInstallModelDirs'),
       value: (installation.modelDirs as string[] | undefined) ?? [],
-      editable: true, editType: 'model-dirs',
+      editable: true,
+      editType: 'model-dirs',
       tooltip: t('tooltips.perInstallModelDirs'),
-      requiresRestart: true,
+      requiresRestart: true
     },
     // External model dir promoted to primary (`is_default`). Null/absent means
     // the install's own models dir is primary. Persisted but rendered manually.
     {
-      id: 'modelDirsPrimary', label: 'modelDirsPrimary',
+      id: 'modelDirsPrimary',
+      label: 'modelDirsPrimary',
       value: (installation.modelDirsPrimary as string | undefined) ?? null,
-      editable: true, editType: 'hidden',
-      requiresRestart: true,
+      editable: true,
+      editType: 'hidden',
+      requiresRestart: true
     },
     // The install's own models dir — shown as a locked, undeletable row in the
     // per-instance list; not persisted (computed from installPath).
     {
-      id: 'installModelsDir', label: t('common.perInstallModelDirs'),
+      id: 'installModelsDir',
+      label: t('common.perInstallModelDirs'),
       value: ownModelsDir,
-      editable: false, editType: 'hidden',
+      editable: false,
+      editType: 'hidden'
     },
-    // Per-install paths, only meaningful when `useSharedInputOutput === false`;
-    // StoragePane.vue hides them while the toggle is on. Empty value falls back
-    // to the computed install default below (never persisted).
+    // Per-install paths, only meaningful when the matching `useSharedInput` /
+    // `useSharedOutput` flag is false; StoragePane.vue hides each while its
+    // toggle is on. Empty value falls back to the computed install default
+    // below (never persisted).
     {
-      id: 'inputDir', label: t('common.perInstallInputDir'),
+      id: 'inputDir',
+      label: t('common.perInstallInputDir'),
       value: (installation.inputDir as string | undefined) ?? '',
-      editable: true, editType: 'path', browseOnly: true,
+      editable: true,
+      editType: 'path',
+      browseOnly: true,
       tooltip: t('tooltips.perInstallInputDir'),
-      requiresRestart: true,
+      requiresRestart: true
     },
     {
-      id: 'outputDir', label: t('common.perInstallOutputDir'),
+      id: 'outputDir',
+      label: t('common.perInstallOutputDir'),
       value: (installation.outputDir as string | undefined) ?? '',
-      editable: true, editType: 'path', browseOnly: true,
+      editable: true,
+      editType: 'path',
+      browseOnly: true,
       tooltip: t('tooltips.perInstallOutputDir'),
-      requiresRestart: true,
+      requiresRestart: true
     },
     {
-      id: 'inputDirDefault', label: t('common.perInstallInputDir'),
-      value: ownInputDir, editable: false, editType: 'hidden',
+      id: 'inputDirDefault',
+      label: t('common.perInstallInputDir'),
+      value: ownInputDir,
+      editable: false,
+      editType: 'hidden'
     },
     {
-      id: 'outputDirDefault', label: t('common.perInstallOutputDir'),
-      value: ownOutputDir, editable: false, editType: 'hidden',
+      id: 'outputDirDefault',
+      label: t('common.perInstallOutputDir'),
+      value: ownOutputDir,
+      editable: false,
+      editType: 'hidden'
     },
     // Read-only view of the install's extra_model_paths.yaml, rendered manually
     // by StoragePane.vue (the generic renderer ignores `hidden` fields).
     {
-      id: 'extraModelPaths', label: 'extraModelPaths',
+      id: 'extraModelPaths',
+      label: 'extraModelPaths',
       value: buildExtraModelPathsView(installation),
-      editable: false, editType: 'hidden',
-    },
+      editable: false,
+      editType: 'hidden'
+    }
   ]
 }
 
@@ -182,39 +229,111 @@ export function buildLaunchSettingsFields(
     defaultLaunchMode = 'window',
     defaultBrowserPartition = 'shared',
     defaultPortConflict = 'ask',
-    extraFields = [],
+    extraFields = []
   } = options
 
   const fields: Record<string, unknown>[] = []
 
   fields.push(
     ...extraFields,
-    { id: 'launchArgs', label: t('common.startupArgs'),
+    {
+      id: 'launchArgs',
+      label: t('common.startupArgs'),
       value: (installation.launchArgs as string | undefined) ?? defaultLaunchArgs,
-      editable: true, editType: 'args-builder', tooltip: t('tooltips.startupArgs'),
-      requiresRestart: true },
-    { id: 'launchMode', label: t('common.launchMode'),
+      editable: true,
+      editType: 'args-builder',
+      tooltip: t('tooltips.startupArgs'),
+      requiresRestart: true
+    },
+    // Not CLI arguments: Manager reads `security_level` / `network_mode` from
+    // its config.ini, which launch reconciles from these per-install values
+    // before every local start (see reconcileManagerConfigForLaunch). The
+    // shared rowGroup renders them side-by-side in one row.
+    {
+      id: 'managerSecurityLevel',
+      label: t('common.managerSecurityLevel'),
+      value: isManagerSecurityLevel(installation.managerSecurityLevel)
+        ? installation.managerSecurityLevel
+        : DEFAULT_MANAGER_SECURITY_LEVEL,
+      editable: true,
+      editType: 'select',
+      options: MANAGER_SECURITY_LEVELS.map((level) => ({
+        value: level,
+        label: t(`common.managerSecurityLevel_${level}`),
+        description: t(`common.managerSecurityLevel_${level}_desc`)
+      })),
+      tooltip: t('tooltips.managerSecurityLevel'),
+      requiresRestart: true,
+      rowGroup: 'manager'
+    },
+    {
+      id: 'managerNetworkMode',
+      label: t('common.managerNetworkMode'),
+      value: isManagerNetworkMode(installation.managerNetworkMode)
+        ? installation.managerNetworkMode
+        : DEFAULT_MANAGER_NETWORK_MODE,
+      editable: true,
+      editType: 'select',
+      options: MANAGER_NETWORK_MODES.map((mode) => ({
+        value: mode,
+        label: t(`common.managerNetworkMode_${mode}`),
+        description: t(`common.managerNetworkMode_${mode}_desc`)
+      })),
+      tooltip: t('tooltips.managerNetworkMode'),
+      requiresRestart: true,
+      rowGroup: 'manager'
+    },
+    // Paired on one row (like the Manager fields above) to keep the tab
+    // compact and leave more room for the env-var rows below.
+    {
+      id: 'launchMode',
+      label: t('common.launchMode'),
       value: (installation.launchMode as string | undefined) || defaultLaunchMode,
-      editable: true, editType: 'select', options: [
+      editable: true,
+      editType: 'select',
+      options: [
         { value: 'window', label: t('common.launchModeWindow') },
-        { value: 'console', label: t('common.launchModeConsole') },
-      ], tooltip: t('tooltips.launchMode'), requiresRestart: true },
-    { id: 'browserPartition', label: t('common.browserPartition'),
+        { value: 'console', label: t('common.launchModeConsole') }
+      ],
+      tooltip: t('tooltips.launchMode'),
+      requiresRestart: true,
+      rowGroup: 'launch-window'
+    },
+    {
+      id: 'browserPartition',
+      label: t('common.browserPartition'),
       value: (installation.browserPartition as string | undefined) || defaultBrowserPartition,
-      editable: true, editType: 'select', options: [
+      editable: true,
+      editType: 'select',
+      options: [
         { value: 'shared', label: t('common.partitionShared') },
-        { value: 'unique', label: t('common.partitionUnique') },
-      ], tooltip: t('tooltips.browserPartition'), requiresRestart: true },
-    { id: 'portConflict', label: t('common.portConflict'),
+        { value: 'unique', label: t('common.partitionUnique') }
+      ],
+      tooltip: t('tooltips.browserPartition'),
+      requiresRestart: true,
+      rowGroup: 'launch-window'
+    },
+    {
+      id: 'portConflict',
+      label: t('common.portConflict'),
       value: (installation.portConflict as string | undefined) || defaultPortConflict,
-      editable: true, editType: 'select', options: [
+      editable: true,
+      editType: 'select',
+      options: [
         { value: 'ask', label: t('common.portConflictAsk') },
-        { value: 'auto', label: t('common.portConflictAuto') },
-      ], requiresRestart: true },
-    { id: 'envVars', label: t('common.envVars'),
+        { value: 'auto', label: t('common.portConflictAuto') }
+      ],
+      requiresRestart: true
+    },
+    {
+      id: 'envVars',
+      label: t('common.envVars'),
       value: (installation.envVars as Record<string, string> | undefined) ?? {},
-      editable: true, editType: 'env-vars', tooltip: t('tooltips.envVars'),
-      requiresRestart: true },
+      editable: true,
+      editType: 'env-vars',
+      tooltip: t('tooltips.envVars'),
+      requiresRestart: true
+    }
   )
 
   return fields

@@ -26,7 +26,9 @@ const dialogRef = ref<HTMLElement | null>(null)
 /** Focus owner before open, restored on commit regardless of close path. */
 let returnFocusTo: HTMLElement | null = null
 
-let resolver: ((value: { confirmed: boolean; checkboxValues: Record<string, boolean> }) => void) | null = null
+let resolver:
+  | ((value: { confirmed: boolean; checkboxValues: Record<string, boolean> }) => void)
+  | null = null
 
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape' && isOpen.value) commit(false)
@@ -48,7 +50,10 @@ watch(isOpen, async (open) => {
   }
 })
 
-async function open(initialTitle: string, initialConfirmLabel: string): Promise<{
+async function open(
+  initialTitle: string,
+  initialConfirmLabel: string
+): Promise<{
   confirmed: boolean
   checkboxValues: Record<string, boolean>
 }> {
@@ -68,7 +73,8 @@ function update(opts: Partial<OpenOpts> & { loading?: boolean }): void {
   if (opts.title !== undefined) title.value = opts.title
   if (opts.confirmLabel !== undefined) confirmLabel.value = opts.confirmLabel
   if (opts.preview !== undefined) preview.value = opts.preview
-  if (opts.details !== undefined) details.value = opts.details.map((g) => ({ ...g, items: [...g.items] }))
+  if (opts.details !== undefined)
+    details.value = opts.details.map((g) => ({ ...g, items: [...g.items] }))
   if (opts.checkboxes !== undefined) checkboxes.value = opts.checkboxes.map((c) => ({ ...c }))
   if (opts.loading !== undefined) loading.value = opts.loading
 }

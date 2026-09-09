@@ -14,6 +14,11 @@ defineProps<{
     <h3 class="gs-micro-title">
       <span>{{ title }}</span>
       <InfoTooltip v-if="tooltip" :text="tooltip" />
+      <!-- Optional right-aligned header controls (e.g. a shared-source toggle),
+           inlined with the title to save a row. -->
+      <div v-if="$slots.actions" class="gs-micro-actions">
+        <slot name="actions" />
+      </div>
     </h3>
     <div class="gs-micro-body">
       <slot />
@@ -29,7 +34,7 @@ defineProps<{
 }
 
 .gs-micro-title {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   margin: 0;
   padding: 0 0 4px;
@@ -37,6 +42,20 @@ defineProps<{
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* Header controls: right-aligned, plain body typography (the uppercase
+ * heading style would otherwise leak into slotted labels). */
+.gs-micro-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--text-muted);
 }
 

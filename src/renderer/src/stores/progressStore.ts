@@ -47,6 +47,9 @@ export interface Operation {
   activePhase: string | null
   activePercent: number
   lastStatus: Record<string, string>
+  /** Phases the producer flagged as non-fatally failed — drives the active
+   *  row's error styling without failing the op. Keyed by phase id. */
+  phaseErrors: Record<string, boolean>
   flatStatus: string
   flatPercent: number
   terminalOutput: string
@@ -157,8 +160,7 @@ export const useProgressStore = defineStore('progress', () => {
       // ambient surfaces never surface dev-y slugs like "source".
       const raw = op.lastStatus[op.activePhase]
       const stepLabel = op.steps.find((s) => s.phase === op.activePhase)?.label
-      const status =
-        (raw && raw !== op.activePhase ? raw : null) || stepLabel || op.activePhase
+      const status = (raw && raw !== op.activePhase ? raw : null) || stepLabel || op.activePhase
       return { status, percent: op.activePercent }
     }
     return { status: op.flatStatus || op.title, percent: op.flatPercent }
@@ -215,6 +217,7 @@ export const useProgressStore = defineStore('progress', () => {
       activePhase: null,
       activePercent: -1,
       lastStatus: {},
+      phaseErrors: {},
       flatStatus: t('progress.starting'),
       flatPercent: -1,
       terminalOutput: '',
@@ -234,8 +237,31 @@ export const useProgressStore = defineStore('progress', () => {
     operations.set(installationId, op)
     const rop = operations.get(installationId)!
 
+    // Log continuity across a chain: the launch leg's `terminalOutput` starts
+    // empty, but a background template-model download may have logged lines
+    // during the install leg. Seed from the durable ring buffer so "View logs"
+    // shows the full history. Async + guarded against a newer op replacing this
+    // one mid-fetch. Prepended so any lines that streamed in before the snapshot
+    // resolved aren't clobbered.
+    if (chainSpan === 'launch' && typeof window.api.logsSnapshot === 'function') {
+      void window.api
+        .logsSnapshot(installationId)
+        .then((snapshot) => {
+          if (!snapshot) return
+          if (operations.get(installationId) !== rop) return
+          rop.terminalOutput = snapshot + rop.terminalOutput
+        })
+        .catch(() => {})
+    }
+
     rop.unsubProgress = window.api.onInstallProgress((data: ProgressData) => {
       if (data.installationId !== installationId) return
+
+      if (data.cancelRequested) {
+        rop.cancelRequested = true
+        rop.flatStatus = t('progress.cancelling')
+        return
+      }
 
       if (data.phase === 'steps' && data.steps) {
         rop.steps = data.steps
@@ -254,6 +280,7 @@ export const useProgressStore = defineStore('progress', () => {
         if (stepIndex === -1) return
         rop.activePhase = data.phase
         rop.lastStatus[data.phase] = data.status || data.phase
+        rop.phaseErrors[data.phase] = data.error === true
         rop.activePercent = data.percent ?? -1
         return
       }

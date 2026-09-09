@@ -4,18 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn() }
 }))
 
 vi.mock('../../lib/fetch', () => ({
-  fetchJSON: vi.fn(),
+  fetchJSON: vi.fn()
 }))
 
 vi.mock('../../lib/comfyui-releases', () => ({
-  getLatestStableTag: vi.fn(),
+  getLatestStableTag: vi.fn()
 }))
 
 import { standalone, buildPinnedVariant } from './index'
+import { resetTemplateCatalogCache } from './templateCatalog'
+import { CURATED_TEMPLATES, NO_TEMPLATE_VALUE, INDEX_URL } from './curatedTemplates'
 import { fetchJSON } from '../../lib/fetch'
 import { getLatestStableTag } from '../../lib/comfyui-releases'
 import { PLATFORM_PREFIX } from './envPaths'
@@ -25,12 +27,25 @@ import type { InstallationRecord } from '../../installations'
 const mockedFetchJSON = vi.mocked(fetchJSON)
 const mockedGetLatestStableTag = vi.mocked(getLatestStableTag)
 
-// Use the running platform's vendor prefix so tests work on win32/darwin/linux CI runners.
-const VENDOR_ID = `${PLATFORM_PREFIX[process.platform] || 'win-'}nvidia`
+// Use the running platform's vendor prefix (and, on Windows, the running
+// architecture's suffix) so tests work on win32/darwin/linux CI runners and on
+// native ARM64 Windows dev machines alike — the wizard filters by both.
+const ARCH_SUFFIX = process.platform === 'win32' && process.arch === 'arm64' ? '-arm64' : ''
+const VENDOR_ID = `${PLATFORM_PREFIX[process.platform] || 'win-'}nvidia${ARCH_SUFFIX}`
 
 // --- Helpers ---
 
-type R2Release = { tag: string; comfyui_version: string; comfyui_commit: string; build: number; date: string; file: string; size: number; python_version: string; torch_version: string }
+type R2Release = {
+  tag: string
+  comfyui_version: string
+  comfyui_commit: string
+  build: number
+  date: string
+  file: string
+  size: number
+  python_version: string
+  torch_version: string
+}
 
 function makeR2Releases(tags: string[], options?: { vendorId?: string; comfyuiVersion?: string }) {
   const vendorId = options?.vendorId ?? VENDOR_ID
@@ -44,7 +59,7 @@ function makeR2Releases(tags: string[], options?: { vendorId?: string; comfyuiVe
     file: `${vendorId}-${tag}.tar.gz`,
     size: 1048576,
     python_version: '3.13.12',
-    torch_version: '2.7.0',
+    torch_version: '2.7.0'
   }))
   // latest.json: vendor_id → newest release
   const latest: Record<string, R2Release> = { [vendorId]: releases[0]! }
@@ -59,7 +74,7 @@ describe('standalone.buildInstallation', () => {
   const makeRelease = (value: string, tag?: string): FieldOption => ({
     value,
     label: value,
-    data: { tag: tag || value, vendorReleases: {} } as unknown as Record<string, unknown>,
+    data: { tag: tag || value, vendorReleases: {} } as unknown as Record<string, unknown>
   })
 
   const makeVariant = (variantId: string): FieldOption => ({
@@ -69,15 +84,27 @@ describe('standalone.buildInstallation', () => {
       variantId,
       manifest: { id: variantId, comfyui_ref: '0.18.3', python_version: '3.13.12' },
       downloadUrl: 'https://example.com/download.tar.gz',
-      downloadFiles: [{ url: 'https://example.com/download.tar.gz', filename: 'download.tar.gz', size: 1000 }],
-      r2Release: { tag: 'v0.18.2-env1', comfyui_version: '0.18.2', comfyui_commit: 'abc123', build: 1, date: '2026-03-15T00:00:00Z', file: 'download.tar.gz', size: 1000, python_version: '3.13.12', torch_version: '2.7.0' },
-    } as unknown as Record<string, unknown>,
+      downloadFiles: [
+        { url: 'https://example.com/download.tar.gz', filename: 'download.tar.gz', size: 1000 }
+      ],
+      r2Release: {
+        tag: 'v0.18.2-env1',
+        comfyui_version: '0.18.2',
+        comfyui_commit: 'abc123',
+        build: 1,
+        date: '2026-03-15T00:00:00Z',
+        file: 'download.tar.gz',
+        size: 1000,
+        python_version: '3.13.12',
+        torch_version: '2.7.0'
+      }
+    } as unknown as Record<string, unknown>
   })
 
   it('Stable: sets autoUpdateComfyUI + updateChannel="stable" so post-install checks out the latest stable tag', () => {
     const result = standalone.buildInstallation({
       release: makeRelease('stable', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     expect(result.autoUpdateComfyUI).toBe(true)
     expect(result.updateChannel).toBe('stable')
@@ -86,7 +113,7 @@ describe('standalone.buildInstallation', () => {
   it('Latest on GitHub: sets autoUpdateComfyUI + updateChannel="latest" so post-install fast-forwards to master HEAD', () => {
     const result = standalone.buildInstallation({
       release: makeRelease('latest', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     // Both channels run the post-install update step — the bundle's
     // checked-in commit is necessarily behind both stable AND master,
@@ -99,11 +126,11 @@ describe('standalone.buildInstallation', () => {
   it('uses r2Release tag as releaseTag for both channels', () => {
     const stable = standalone.buildInstallation({
       release: makeRelease('stable', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     const latest = standalone.buildInstallation({
       release: makeRelease('latest', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     expect(stable.releaseTag).toBe('v0.18.2-env1')
     expect(latest.releaseTag).toBe('v0.18.2-env1')
@@ -112,10 +139,180 @@ describe('standalone.buildInstallation', () => {
   it('freezes originalBuild and originalTorchVersion from r2Release on the installation', () => {
     const result = standalone.buildInstallation({
       release: makeRelease('stable', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID),
+      variant: makeVariant(VENDOR_ID)
     })
     expect(result.originalBuild).toBe(1)
     expect(result.originalTorchVersion).toBe('2.7.0')
+  })
+
+  // --- Starter-template gating (the "Skip & Install" vs "Install" contract) ---
+  describe('starter template', () => {
+    const base = {
+      release: makeRelease('stable', 'v0.18.2-env1'),
+      variant: makeVariant(VENDOR_ID)
+    }
+    const template = (value: string, sizeBytes?: number): FieldOption => ({
+      value,
+      label: value,
+      ...(sizeBytes !== undefined ? { data: { sizeBytes } } : {})
+    })
+
+    it('records an API-node pick for auto-open even though it downloads nothing', () => {
+      const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode)!
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(apiTemplate.id, 0)
+      })
+      expect(result.bundledTemplateId).toBe(apiTemplate.id)
+      expect(result.pendingTemplateOpen).toBe(apiTemplate.id)
+      // Zero bytes is what keeps the launch stepper from showing a model phase.
+      expect(result.bundledTemplateSizeBytes).toBe(0)
+    })
+
+    it('"Skip & Install" (template = none) builds NO model download', () => {
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(NO_TEMPLATE_VALUE)
+      })
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.pendingTemplateOpen).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+      expect(result.bundledTemplateSizeBytes).toBeUndefined()
+    })
+
+    it('"Skip & Install" with no bundledTemplate selection at all builds no download', () => {
+      const result = standalone.buildInstallation(base)
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+    })
+
+    it('picking a real template records the id, one-shot open flag, and download opt-in', () => {
+      const realId = CURATED_TEMPLATES[0]!.id
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
+      expect(result.bundledTemplateId).toBe(realId)
+      expect(result.pendingTemplateOpen).toBe(realId)
+      expect(result.downloadTemplateModels).toBe(true)
+    })
+
+    it('freezes the hydrated size on the record so the download estimate matches consent', () => {
+      const realId = CURATED_TEMPLATES[0]!.id
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(realId, 1234)
+      })
+      expect(result.bundledTemplateSizeBytes).toBe(1234)
+    })
+
+    it('defaults size to 0 when the selection carries no hydrated size', () => {
+      const realId = CURATED_TEMPLATES[0]!.id
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
+      expect(result.bundledTemplateSizeBytes).toBe(0)
+    })
+
+    it('persists a live-index substitute id not in the curated set (substitution survives the gate)', () => {
+      // When a curated id vanishes upstream the picker offers a same-modality
+      // substitute whose id isn't in CURATED_TEMPLATES; picking it must still install.
+      const substituteId = 'some_live_image_model'
+      expect(CURATED_TEMPLATES.some((t) => t.id === substituteId)).toBe(false)
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template(substituteId, 5)
+      })
+      expect(result.bundledTemplateId).toBe(substituteId)
+      expect(result.pendingTemplateOpen).toBe(substituteId)
+      expect(result.downloadTemplateModels).toBe(true)
+    })
+
+    it('rejects a forged id that could escape a path/URL', () => {
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: template('../../etc/passwd')
+      })
+      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
+    })
+  })
+})
+
+// --- getFieldOptions('bundledTemplate') — curated + hydrated picker options ---
+
+describe('standalone.getFieldOptions bundledTemplate', () => {
+  beforeEach(() => {
+    mockedFetchJSON.mockReset()
+    resetTemplateCatalogCache()
+  })
+
+  it('leads with the skip sentinel, then one option per curated template', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    expect(options[0]!.value).toBe(NO_TEMPLATE_VALUE)
+    expect(options.length).toBe(CURATED_TEMPLATES.length + 1)
+  })
+
+  it('marks the per-modality recommended picks (not the skip option)', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    const skip = options.find((o) => o.value === NO_TEMPLATE_VALUE)!
+    expect(skip.recommended).toBeFalsy()
+    // Options come back in tab order, which the manifest does not follow.
+    const recommendedIds = options.filter((o) => o.recommended).map((o) => o.value)
+    expect(recommendedIds.sort()).toEqual(
+      CURATED_TEMPLATES.filter((t) => t.recommended)
+        .map((t) => t.id)
+        .sort()
+    )
+  })
+
+  it('falls back to snapshot metadata when the index fetch fails (offline)', async () => {
+    mockedFetchJSON.mockImplementation((url: string) =>
+      String(url).includes('index.json')
+        ? Promise.reject(new Error('offline'))
+        : Promise.resolve(null)
+    )
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    const first = CURATED_TEMPLATES[0]!
+    const card = options.find((o) => o.value === first.id)!
+    expect(card.label).toBe(first.snapshot.title)
+    expect(card.data!.sizeBytes).toBe(first.snapshot.sizeBytes)
+  })
+
+  it('hydrates title/size from the live index, overriding the snapshot', async () => {
+    const first = CURATED_TEMPLATES[0]!
+    mockedFetchJSON.mockImplementation((url: string) => {
+      if (url === INDEX_URL) {
+        return Promise.resolve([
+          {
+            title: 'Image',
+            templates: [
+              {
+                name: first.id,
+                title: 'Live Title',
+                description: 'Live desc',
+                size: 999,
+                mediaSubtype: 'webp'
+              }
+            ]
+          }
+        ])
+      }
+      return Promise.resolve(undefined)
+    })
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    const card = options.find((o) => o.value === first.id)!
+    expect(card.label).toBe('Live Title')
+    expect(card.description).toBe('Live desc')
+    expect(card.data!.sizeBytes).toBe(999)
+    expect(card.data!.category).toBe('Image')
+  })
+
+  it('carries the API-node flag to the card, and never on the skip option', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
+    expect(options.find((o) => o.value === NO_TEMPLATE_VALUE)!.data?.apiNode).toBeUndefined()
+    for (const curated of CURATED_TEMPLATES) {
+      const card = options.find((o) => o.value === curated.id)!
+      expect(card.data!.apiNode, curated.id).toBe(curated.apiNode === true)
+    }
   })
 })
 
@@ -125,18 +322,45 @@ describe('buildPinnedVariant', () => {
   // Two bundles for one vendor: a newer one (releases[0]) and the older one a
   // snapshot might have been captured on (releases[1]).
   const releases: R2Release[] = [
-    { tag: 'v0.20.0-env1', comfyui_version: '0.20.0', comfyui_commit: 'cNew', build: 2, date: '2026-05-01T00:00:00Z', file: 'new.tar.gz', size: 2000, python_version: '3.13.0', torch_version: '2.8.0' },
-    { tag: 'v0.18.2-env1', comfyui_version: '0.18.2', comfyui_commit: 'cOld', build: 1, date: '2026-03-15T00:00:00Z', file: 'old.tar.gz', size: 1000, python_version: '3.12.0', torch_version: '2.7.0' },
+    {
+      tag: 'v0.20.0-env1',
+      comfyui_version: '0.20.0',
+      comfyui_commit: 'cNew',
+      build: 2,
+      date: '2026-05-01T00:00:00Z',
+      file: 'new.tar.gz',
+      size: 2000,
+      python_version: '3.13.0',
+      torch_version: '2.8.0'
+    },
+    {
+      tag: 'v0.18.2-env1',
+      comfyui_version: '0.18.2',
+      comfyui_commit: 'cOld',
+      build: 1,
+      date: '2026-03-15T00:00:00Z',
+      file: 'old.tar.gz',
+      size: 1000,
+      python_version: '3.12.0',
+      torch_version: '2.7.0'
+    }
   ]
 
   const makeReleaseOption = (vendorId: string, history: R2Release[]): FieldOption => ({
     value: 'stable',
     label: 'stable',
-    data: { tag: history[0]?.tag, vendorReleases: { [vendorId]: history } } as unknown as Record<string, unknown>,
+    data: { tag: history[0]?.tag, vendorReleases: { [vendorId]: history } } as unknown as Record<
+      string,
+      unknown
+    >
   })
 
   it('pins to the exact historical bundle tag when it still exists in R2', () => {
-    const option = buildPinnedVariant(makeReleaseOption(VENDOR_ID, releases), VENDOR_ID, 'v0.18.2-env1')
+    const option = buildPinnedVariant(
+      makeReleaseOption(VENDOR_ID, releases),
+      VENDOR_ID,
+      'v0.18.2-env1'
+    )
     expect(option).not.toBeNull()
     const data = option!.data as { variantId: string; r2Release: R2Release; downloadUrl: string }
     expect(data.variantId).toBe(VENDOR_ID)
@@ -157,12 +381,20 @@ describe('buildPinnedVariant', () => {
   })
 
   it('returns null when the tag has been pruned, so the caller can fall back to newest', () => {
-    const option = buildPinnedVariant(makeReleaseOption(VENDOR_ID, releases), VENDOR_ID, 'v0.99.99-env1')
+    const option = buildPinnedVariant(
+      makeReleaseOption(VENDOR_ID, releases),
+      VENDOR_ID,
+      'v0.99.99-env1'
+    )
     expect(option).toBeNull()
   })
 
   it('returns null when the vendor has no history for the variant', () => {
-    const option = buildPinnedVariant(makeReleaseOption(VENDOR_ID, releases), 'win-unknown-vendor', 'v0.18.2-env1')
+    const option = buildPinnedVariant(
+      makeReleaseOption(VENDOR_ID, releases),
+      'win-unknown-vendor',
+      'v0.18.2-env1'
+    )
     expect(option).toBeNull()
   })
 })
@@ -254,11 +486,12 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
       // off — the workspace is pinned to legacy basePath via the
       // per-install inputDir/outputDir fields, which launch.ts handles.
       useSharedModels: true,
-      useSharedInputOutput: false,
+      useSharedInput: false,
+      useSharedOutput: false,
       inputDir: path.join(adoptedBaseDir, 'input'),
       outputDir: path.join(adoptedBaseDir, 'output'),
       launchArgs: '--listen 127.0.0.1 --port 8188',
-      ...overrides,
+      ...overrides
     } as InstallationRecord
   }
 
@@ -297,9 +530,7 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
     const args = cmd.args!
     const idx = args.indexOf('--database-url')
     expect(idx).toBeGreaterThanOrEqual(0)
-    expect(args[idx + 1]).toBe(
-      `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`
-    )
+    expect(args[idx + 1]).toBe(`sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`)
   })
 
   it('does not override a user-supplied --database-url', () => {
@@ -328,13 +559,15 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
   })
 
   it('places adopt CLI args before user launchArgs so user values win on conflict', () => {
-    const cmd = standalone.getLaunchCommand!(makeAdoptedRecord({
-      launchArgs: '--listen 0.0.0.0 --port 9000 --base-directory /custom/override',
-    }))!
+    const cmd = standalone.getLaunchCommand!(
+      makeAdoptedRecord({
+        launchArgs: '--listen 0.0.0.0 --port 9000 --base-directory /custom/override'
+      })
+    )!
     const args = cmd.args!
     // Two --base-directory occurrences; user override comes after the adopt-injected one
     const positions = args
-      .map((value, index) => value === '--base-directory' ? index : -1)
+      .map((value, index) => (value === '--base-directory' ? index : -1))
       .filter((index) => index >= 0)
     expect(positions.length).toBe(2)
     expect(positions[0]!).toBeLessThan(positions[1]!)
@@ -368,10 +601,9 @@ describe('standalone.getFieldOptions variant version display', () => {
   // The newest R2 standalone bundle ships an OLDER ComfyUI (0.20.1) than the
   // upstream stable tag the wizard auto-updates to (v0.22.3). Set up that gap.
   function setupVersionGap() {
-    const { latest, vendorReleases, vendorId } = makeR2Releases(
-      ['v0.20.1-env1'],
-      { comfyuiVersion: '0.20.1' },
-    )
+    const { latest, vendorReleases, vendorId } = makeR2Releases(['v0.20.1-env1'], {
+      comfyuiVersion: '0.20.1'
+    })
     mockedFetchJSON.mockImplementation((url: string) => {
       if (url.includes('latest.json')) return Promise.resolve(latest)
       return Promise.resolve(vendorReleases[vendorId]!)
@@ -383,7 +615,7 @@ describe('standalone.getFieldOptions variant version display', () => {
     const releaseOptions = await standalone.getFieldOptions!(
       'release',
       {},
-      { includeLatestStable: true },
+      { includeLatestStable: true }
     )
     return releaseOptions.find((o) => o.value === value)!
   }
@@ -410,16 +642,148 @@ describe('standalone.getFieldOptions variant version display', () => {
     expect(card.description).toContain('ComfyUI 0.20.1')
   })
 
-  it('variant card shows the bundled version when "Latest on GitHub" is selected', async () => {
+  it('variant card shows the upstream version as a nightly (not the bundled one) when "Latest on GitHub" is selected', async () => {
     const { vendorId } = setupVersionGap()
     mockedGetLatestStableTag.mockResolvedValue('v0.22.3')
     const release = await getReleaseOption('latest')
 
     const variants = await standalone.getFieldOptions!('variant', { release }, {})
     const card = variants.find((o) => o.value === vendorId)!
-    // Latest-on-GitHub leaves the install on whatever the bundle
-    // shipped with (master-ish HEAD); the card advertises that, not
-    // the stable tag the OTHER channel would land on.
+    // Picking 'latest' fast-forwards the install to master HEAD (a few commits
+    // past the latest stable tag), so the card advertises that as a nightly â€”
+    // not the much older ComfyUI baked into the bundle (issue #1068).
+    expect(card.description).toContain('ComfyUI 0.22.3 (nightly)')
+    expect(card.description).not.toContain('ComfyUI 0.20.1')
+  })
+
+  it('variant card falls back to the bundled version on "Latest on GitHub" when the upstream tag is unresolved', async () => {
+    const { vendorId } = setupVersionGap()
+    mockedGetLatestStableTag.mockResolvedValue(null)
+    const release = await getReleaseOption('latest')
+
+    const variants = await standalone.getFieldOptions!('variant', { release }, {})
+    const card = variants.find((o) => o.value === vendorId)!
     expect(card.description).toContain('ComfyUI 0.20.1')
+    expect(card.description).not.toContain('nightly')
+  })
+})
+
+// --- Architecture filter: suffixed ARM64 bundles must match the running app ---
+
+describe('standalone.getFieldOptions architecture filter', () => {
+  const realPlatform = process.platform
+  const realArch = process.arch
+  function setHost(platform: NodeJS.Platform, arch: NodeJS.Architecture): void {
+    Object.defineProperty(process, 'platform', { value: platform })
+    Object.defineProperty(process, 'arch', { value: arch })
+  }
+  afterEach(() => setHost(realPlatform, realArch))
+
+  /** latest.json + per-vendor releases.json with one bundle per vendor id. */
+  function setupCatalog(vendorIds: string[]) {
+    const latest: Record<string, R2Release> = {}
+    const vendorReleases: Record<string, { releases: R2Release[] }> = {}
+    for (const vendorId of vendorIds) {
+      const catalog = makeR2Releases(['v0.34.0-env1'], { vendorId })
+      latest[vendorId] = catalog.latest[vendorId]!
+      vendorReleases[vendorId] = catalog.vendorReleases[vendorId]!
+    }
+    mockedGetLatestStableTag.mockResolvedValue('v0.34.0')
+    mockedFetchJSON.mockImplementation((url: string) => {
+      if (url.includes('latest.json')) return Promise.resolve(latest)
+      const vendorId = /\/([^/]+)\/releases\.json$/.exec(url)?.[1] ?? ''
+      return Promise.resolve(vendorReleases[vendorId] ?? { releases: [] })
+    })
+  }
+
+  async function stableRelease(): Promise<FieldOption | undefined> {
+    const releases = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
+    return releases.find((o) => o.value === 'stable')
+  }
+
+  async function variantIds(): Promise<string[]> {
+    const release = await stableRelease()
+    if (!release) return []
+    const variants = await standalone.getFieldOptions!('variant', { release }, {})
+    return variants.map((o) => o.value)
+  }
+
+  const CATALOG = [
+    'win-nvidia',
+    'win-nvidia-arm64',
+    'win-cpu',
+    'win-amd',
+    'mac-mps',
+    'linux-nvidia',
+    // Pre-release id: invisible to desktops that filter on the bare
+    // platform prefix, offered here only to a matching ARM64 host.
+    'beta-win-nvidia-arm64'
+  ]
+
+  it('a native ARM64 Windows app is offered only the -arm64 bundles, beta included', async () => {
+    setHost('win32', 'arm64')
+    setupCatalog(CATALOG)
+    expect(await variantIds()).toEqual(['win-nvidia-arm64', 'beta-win-nvidia-arm64'])
+  })
+
+  it('an x64 Windows app never sees the -arm64 bundles, beta or not', async () => {
+    setHost('win32', 'x64')
+    setupCatalog(CATALOG)
+    expect(await variantIds()).toEqual(['win-nvidia', 'win-cpu', 'win-amd'])
+  })
+
+  it('a beta- id is only accepted in front of the host platform prefix', async () => {
+    setHost('darwin', 'arm64')
+    setupCatalog(['mac-mps', 'beta-win-nvidia-arm64', 'beta-mac-mps'])
+    expect(await variantIds()).toEqual(['mac-mps', 'beta-mac-mps'])
+  })
+
+  it('labels a beta card as such and still recommends it on an NVIDIA host', async () => {
+    setHost('win32', 'arm64')
+    setupCatalog(CATALOG)
+    const release = (await stableRelease())!
+    const cards = await standalone.getFieldOptions!('variant', { release }, { gpu: 'nvidia' })
+    const beta = cards.find((c) => c.value === 'beta-win-nvidia-arm64')
+    expect(beta!.label).toBe('NVIDIA (ARM64) Beta')
+    expect(beta!.recommended).toBe(true)
+  })
+
+  it('an ARM64 Windows app gets no release options when R2 only has x64 bundles', async () => {
+    // Nothing runnable exists: the wizard must not fall back to an x64 bundle
+    // under emulation, whose CUDA torch cannot drive the GPU.
+    setHost('win32', 'arm64')
+    setupCatalog(['win-nvidia', 'win-cpu'])
+    const releases = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
+    expect(releases).toEqual([])
+  })
+
+  it('an ARM64 Linux app gets no release options when R2 only has x64 bundles', async () => {
+    setHost('linux', 'arm64')
+    setupCatalog(['linux-nvidia', 'linux-amd'])
+    const releases = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
+    expect(releases).toEqual([])
+  })
+
+  it('an ARM64 Linux app accepts only explicitly suffixed ARM64 bundles', async () => {
+    setHost('linux', 'arm64')
+    setupCatalog(['linux-nvidia', 'linux-nvidia-arm64'])
+    expect(await variantIds()).toEqual(['linux-nvidia-arm64'])
+  })
+
+  it('macOS keeps its unsuffixed ARM64 bundle', async () => {
+    setHost('darwin', 'arm64')
+    setupCatalog(CATALOG)
+    expect(await variantIds()).toEqual(['mac-mps'])
+  })
+
+  it('labels the ARM64 NVIDIA card and recommends it on an NVIDIA host', async () => {
+    setHost('win32', 'arm64')
+    setupCatalog(CATALOG)
+    const release = (await stableRelease())!
+    const [card] = await standalone.getFieldOptions!('variant', { release }, { gpu: 'nvidia' })
+    expect(card!.value).toBe('win-nvidia-arm64')
+    expect(card!.label).toBe('NVIDIA (ARM64)')
+    expect(card!.recommended).toBe(true)
+    expect(card!.description).toContain('ComfyUI 0.34.0')
   })
 })

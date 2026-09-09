@@ -11,10 +11,10 @@ const messages = {
   en: {
     common: {
       copy: 'Copy',
-      back: 'Back',
+      back: 'Back'
     },
     launch: {
-      viewLogs: 'View logs',
+      viewLogs: 'View logs'
     },
     comfyLifecycle: {
       preparingTitle: 'Preparing…',
@@ -28,22 +28,28 @@ const messages = {
         'The ComfyUI process was terminated by {signal}. You can restart it below.',
       crashedDescWithCodeAndSignal:
         'The ComfyUI process was terminated by {signal} (exit code {code}). You can restart it below.',
+      crashedDescWithCodeHex:
+        'The ComfyUI process exited (exit code {code} / {hex}). You can restart it below.',
+      crashedDescAccessViolation:
+        'ComfyUI crashed with a memory access violation (exit code {code} / {hex}). This is usually a faulty or missing native library — not a ComfyUI bug — often surfacing while a Python package loads on startup. You can restart it below.',
+      crashedDescVcRuntimeHint:
+        'Some Microsoft Visual C++ Redistributable runtime files appear to be missing; repairing or installing the latest redistributable may fix this.',
       crashedDescLogsHint: 'See the logs for details.',
       restart: 'Restart ComfyUI',
       stoppedTitle: 'ComfyUI is stopped',
       stoppedDesc:
         "The ComfyUI server is stopped. This window stayed open — relaunch it below whenever you're ready.",
       relaunch: 'Relaunch ComfyUI',
-      launchProgressTitle: 'Starting ComfyUI',
+      launchProgressTitle: 'Starting ComfyUI'
     },
     dashboard: {
       confirmStopLocal: {
         title: 'Return to Dashboard?',
         message: 'This will stop the current ComfyUI.',
-        confirmLabel: 'Return to Dashboard',
-      },
-    },
-  },
+        confirmLabel: 'Return to Dashboard'
+      }
+    }
+  }
 }
 
 function createTestI18n() {
@@ -56,7 +62,7 @@ const SAMPLE_INSTALL: Installation = {
   sourceId: 'standalone',
   sourceLabel: 'Standalone',
   sourceCategory: 'local',
-  status: 'installed',
+  status: 'installed'
 } as unknown as Installation
 
 interface MockApi {
@@ -88,7 +94,7 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
     onComfyOutput: vi.fn(() => () => {}),
     onComfyExited: vi.fn(() => () => {}),
     onInstanceCrashed: vi.fn(() => () => {}),
-    ...overrides,
+    ...overrides
   }
   ;(window as unknown as { api: MockApi }).api = api
   return api
@@ -97,7 +103,7 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
 // Stub BrandTakeoverLayout to skip its Teleport-to-body so assertions render inline.
 const brandTakeoverStub = {
   name: 'BrandTakeoverLayout',
-  template: '<div class="brand-takeover-stub"><slot /><slot name="footer" /></div>',
+  template: '<div class="brand-takeover-stub"><slot /><slot name="footer" /></div>'
 }
 
 function mountView(installationId = 'inst-1', installation: Installation | null = SAMPLE_INSTALL) {
@@ -106,8 +112,8 @@ function mountView(installationId = 'inst-1', installation: Installation | null 
     // No createPinia() here — beforeEach's setActivePinia must own the instance so its mutations land.
     global: {
       plugins: [createTestI18n()],
-      stubs: { BrandTakeoverLayout: brandTakeoverStub },
-    },
+      stubs: { BrandTakeoverLayout: brandTakeoverStub }
+    }
   })
 }
 
@@ -181,7 +187,7 @@ describe('ComfyLifecycleView', () => {
     const sessionStore = useSessionStore()
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
-      exitCode: 137,
+      exitCode: 137
     })
     await flushPromises()
     expect(wrapper.text()).toContain('ComfyUI exited unexpectedly')
@@ -192,12 +198,43 @@ describe('ComfyLifecycleView', () => {
     expect(button.text()).toContain('Restart ComfyUI')
   })
 
+  it('decodes an access-violation crash into human-readable copy with hex', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 3221225477,
+      exitCodeHex: '0xC0000005',
+      crashKind: 'access-violation'
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('memory access violation')
+    expect(wrapper.text()).toContain('0xC0000005')
+    // No VC++ hint unless DLLs were actually found missing.
+    expect(wrapper.text()).not.toContain('Visual C++ Redistributable')
+  })
+
+  it('appends the VC++ repair hint when runtime DLLs are missing', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 3221225477,
+      exitCodeHex: '0xC0000005',
+      crashKind: 'access-violation',
+      vcRuntimeMissing: ['vcruntime140_1.dll']
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('memory access violation')
+    expect(wrapper.text()).toContain('Visual C++ Redistributable')
+  })
+
   it('renders the POSIX signal in the crashed message when signal alone is present', async () => {
     const wrapper = mountView()
     const sessionStore = useSessionStore()
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
-      signal: 'SIGKILL',
+      signal: 'SIGKILL'
     })
     await flushPromises()
     expect(wrapper.text()).toContain('terminated by SIGKILL')
@@ -208,7 +245,7 @@ describe('ComfyLifecycleView', () => {
     const wrapper = mountView()
     const sessionStore = useSessionStore()
     sessionStore.errorInstances.set('inst-1', {
-      installationName: 'My Local Install',
+      installationName: 'My Local Install'
     })
     await flushPromises()
     expect(wrapper.text()).toContain('The ComfyUI process exited.')
@@ -222,7 +259,7 @@ describe('ComfyLifecycleView', () => {
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
       exitCode: 137,
-      signal: 'SIGKILL',
+      signal: 'SIGKILL'
     })
     await flushPromises()
     expect(wrapper.text()).toContain('terminated by SIGKILL')
@@ -235,7 +272,7 @@ describe('ComfyLifecycleView', () => {
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
       exitCode: 1,
-      lastStderr: "ImportError: No module named 'torch'\n  at /path/to/main.py:42",
+      lastStderr: "ImportError: No module named 'torch'\n  at /path/to/main.py:42"
     })
     await flushPromises()
     const logs = wrapper.find('.brand-progress__logs')
@@ -256,7 +293,7 @@ describe('ComfyLifecycleView', () => {
         '  File "C:\\Users\\alice\\ComfyUI\\main.py", line 1, in <module>\n' +
         '  File "/Users/bob/ComfyUI/main.py", line 1, in <module>\n' +
         '  File "/home/carol/ComfyUI/main.py", line 1, in <module>\n' +
-        "ImportError: No module named 'torch'",
+        "ImportError: No module named 'torch'"
     })
     await flushPromises()
     const logs = wrapper.find('.brand-progress__logs')
@@ -275,7 +312,7 @@ describe('ComfyLifecycleView', () => {
     const sessionStore = useSessionStore()
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
-      exitCode: 1,
+      exitCode: 1
     })
     await flushPromises()
     expect(wrapper.find('.brand-progress__logs').exists()).toBe(false)
@@ -289,7 +326,7 @@ describe('ComfyLifecycleView', () => {
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
       exitCode: 1,
-      lastStderr: "ImportError: No module named 'torch'",
+      lastStderr: "ImportError: No module named 'torch'"
     })
     await flushPromises()
     expect(wrapper.text()).toContain('exit code 1')
@@ -303,8 +340,8 @@ describe('ComfyLifecycleView', () => {
         installationName: 'My Local Install',
         crashed: true,
         exitCode: 9,
-        lastStderr: 'Killed by signal 9',
-      }),
+        lastStderr: 'Killed by signal 9'
+      })
     })
     const wrapper = mountView()
     await flushPromises()
@@ -320,6 +357,28 @@ describe('ComfyLifecycleView', () => {
     expect(stored?.exitCode).toBe(9)
   })
 
+  it('preserves the decoded access-violation detail when hydrating from getLastCrashError', async () => {
+    const api = installMockApi({
+      getLastCrashError: vi.fn().mockResolvedValue({
+        installationId: 'inst-1',
+        installationName: 'My Local Install',
+        crashed: true,
+        exitCode: 3221225477,
+        exitCodeHex: '0xC0000005',
+        crashKind: 'access-violation',
+        vcRuntimeMissing: ['vcruntime140_1.dll']
+      })
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    // A panel recreated after the live event must still get the rich copy + hint
+    // rather than regressing to the bare decimal code.
+    expect(wrapper.text()).toContain('memory access violation')
+    expect(wrapper.text()).toContain('0xC0000005')
+    expect(wrapper.text()).toContain('Visual C++ Redistributable')
+  })
+
   it('does not overwrite an existing live error when getLastCrashError later resolves', async () => {
     let resolveCrash: ((data: unknown) => void) | undefined
     const api = installMockApi({
@@ -327,8 +386,8 @@ describe('ComfyLifecycleView', () => {
         () =>
           new Promise((resolve) => {
             resolveCrash = resolve as (data: unknown) => void
-          }),
-      ),
+          })
+      )
     })
 
     const wrapper = mountView()
@@ -337,7 +396,7 @@ describe('ComfyLifecycleView', () => {
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
       exitCode: 137,
-      lastStderr: 'live event stderr',
+      lastStderr: 'live event stderr'
     })
 
     resolveCrash?.({
@@ -345,7 +404,7 @@ describe('ComfyLifecycleView', () => {
       installationName: 'My Local Install',
       crashed: true,
       exitCode: 1,
-      lastStderr: 'stale buffer stderr',
+      lastStderr: 'stale buffer stderr'
     })
     await flushPromises()
 
@@ -365,14 +424,14 @@ describe('ComfyLifecycleView', () => {
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
       exitCode: 1,
-      lastStderr: 'preexisting',
+      lastStderr: 'preexisting'
     })
     mount(ComfyLifecycleView, {
       props: { installationId: 'inst-1', installation: SAMPLE_INSTALL },
       global: {
         plugins: [createTestI18n(), pinia],
-        stubs: { BrandTakeoverLayout: brandTakeoverStub },
-      },
+        stubs: { BrandTakeoverLayout: brandTakeoverStub }
+      }
     })
     await flushPromises()
     expect(api.getLastCrashError).not.toHaveBeenCalled()
@@ -383,7 +442,7 @@ describe('ComfyLifecycleView', () => {
     const sessionStore = useSessionStore()
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
-      exitCode: 1,
+      exitCode: 1
     })
     await flushPromises()
     await wrapper.find('button.brand-primary').trigger('click')
@@ -411,7 +470,7 @@ describe('ComfyLifecycleView', () => {
     const sessionStore = useSessionStore()
     sessionStore.errorInstances.set('inst-1', {
       installationName: 'My Local Install',
-      exitCode: 1,
+      exitCode: 1
     })
     await flushPromises()
     const errorActions = wrapper.find('.brand-progress__error-actions')

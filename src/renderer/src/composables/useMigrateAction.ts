@@ -37,7 +37,10 @@ interface MigrateConfirmOptions {
  *  PanelApp sets this once on mount; `useMigrateAction` calls into it
  *  when invoked with `surface: 'takeover'`. */
 export interface MigrateTakeoverSurface {
-  open: (title: string, confirmLabel: string) => Promise<{
+  open: (
+    title: string,
+    confirmLabel: string
+  ) => Promise<{
     confirmed: boolean
     checkboxValues: Record<string, boolean>
   }>
@@ -86,7 +89,7 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
    */
   async function confirmMigration(
     installation: Installation,
-    confirm?: MigrateConfirmOptions,
+    confirm?: MigrateConfirmOptions
   ): Promise<MigrateActionResult | null> {
     // Desktop adoption is a different operation entirely — in-place reuse
     // of the legacy data folder, Python env, and models; no snapshot to
@@ -99,7 +102,7 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
     }
 
     // Pre-flight busy check.
-    if (!await actionGuard.checkBeforeAction(installation.id, t('migrate.migrateToStandalone'))) {
+    if (!(await actionGuard.checkBeforeAction(installation.id, t('migrate.migrateToStandalone')))) {
       return null
     }
 
@@ -117,14 +120,17 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
     const dialogTitle = confirm?.title || t('migrate.migrateToStandaloneConfirmTitle')
     const dialogConfirmLabel = confirm?.confirmLabel || t('migrate.migrateToStandaloneConfirm')
     const dialogMessage = wasRunning
-      ? augmentMessageWithStopWarning(confirm?.message, t('errors.willStopRunning', { name: installation.name || 'ComfyUI' }))
+      ? augmentMessageWithStopWarning(
+          confirm?.message,
+          t('errors.willStopRunning', { name: installation.name || 'ComfyUI' })
+        )
       : confirm?.message || ''
 
     const migrateItems = [
       t('migrate.mergeUserData'),
       t('migrate.mergeInput'),
       t('migrate.mergeOutput'),
-      t('migrate.addModels'),
+      t('migrate.addModels')
     ]
 
     // Show the surface (Modal OR brand takeover) with a loading state.
@@ -144,11 +150,11 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
         message: dialogMessage,
         loading: true,
         confirmLabel: dialogConfirmLabel,
-        confirmStyle: 'primary',
+        confirmStyle: 'primary'
       })
       surfacePromise = modalConfirmPromise.then((confirmed) => ({
         confirmed,
-        checkboxValues: modal.getLastCheckboxValues(),
+        checkboxValues: modal.getLastCheckboxValues()
       }))
     }
 
@@ -165,7 +171,7 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
       else if (!isExpress) modal.close(false)
       await modal.alert({
         title: t('migrate.migrateToStandalone'),
-        message: (err as Error)?.message ?? String(err),
+        message: (err as Error)?.message ?? String(err)
       })
       return null
     }
@@ -173,24 +179,35 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
       if (takeover) takeover.update({ loading: false })
       else if (!isExpress) modal.close(false)
       if (previewResult.message) {
-        await modal.alert({ title: t('migrate.migrateToStandalone'), message: previewResult.message })
+        await modal.alert({
+          title: t('migrate.migrateToStandalone'),
+          message: previewResult.message
+        })
       }
       return null
     }
 
     const detailsPayload = wasRunning
       ? [
-        { label: t('migrate.migrationWill'), items: [t('errors.willStopRunning', { name: installation.name || 'ComfyUI' }), ...migrateItems] },
-      ]
+          {
+            label: t('migrate.migrationWill'),
+            items: [
+              t('errors.willStopRunning', { name: installation.name || 'ComfyUI' }),
+              ...migrateItems
+            ]
+          }
+        ]
       : [{ label: t('migrate.migrationWill'), items: migrateItems }]
-    const checkboxesPayload = [{ id: 'enablePipSync', label: t('migrate.enablePipSync'), checked: false }]
+    const checkboxesPayload = [
+      { id: 'enablePipSync', label: t('migrate.enablePipSync'), checked: false }
+    ]
 
     if (takeover) {
       takeover.update({
         loading: false,
         preview: previewResult.preview?.newestSnapshot,
         details: detailsPayload,
-        checkboxes: checkboxesPayload,
+        checkboxes: checkboxesPayload
       })
     } else if (!isExpress) {
       // Update the modal with the loaded preview data. The device-picker
@@ -201,7 +218,7 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
         loading: false,
         snapshotPreview: previewResult.preview?.newestSnapshot,
         messageDetails: detailsPayload,
-        checkboxes: checkboxesPayload,
+        checkboxes: checkboxesPayload
       })
     }
 
@@ -216,10 +233,17 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
       // gate the install wizard passes (`standalone/index.ts:328`). Without it
       // releaseOptions is empty, `migrateRelease` ends up null, and the
       // migrate flow silently gives up without picking a variant.
-      const releaseOptions = await window.api.getFieldOptions('standalone', 'release', {}, { includeLatestStable: true })
+      const releaseOptions = await window.api.getFieldOptions(
+        'standalone',
+        'release',
+        {},
+        { includeLatestStable: true }
+      )
       migrateRelease = releaseOptions[0] || null
       if (migrateRelease) {
-        const variantOptions = await window.api.getFieldOptions('standalone', 'variant', { release: toRaw(migrateRelease) })
+        const variantOptions = await window.api.getFieldOptions('standalone', 'variant', {
+          release: toRaw(migrateRelease)
+        })
         const snapshotVariantId = previewResult.preview?.newestSnapshot.comfyui.variant || ''
         autoPickedVariant = findBestVariant(variantOptions, snapshotVariantId)
       }
@@ -232,13 +256,13 @@ export function useMigrateAction(opts?: { surface?: 'modal' | 'takeover' }) {
 
     const result: MigrateActionResult = {
       snapshotPath: previewResult.snapshotPath,
-      enablePipSync: !!checkboxValues.enablePipSync,
+      enablePipSync: !!checkboxValues.enablePipSync
     }
     if (autoPickedVariant && migrateRelease) {
       result.target = {
         mode: 'selected',
         release: toRaw(migrateRelease),
-        variant: toRaw(autoPickedVariant),
+        variant: toRaw(autoPickedVariant)
       }
     }
 

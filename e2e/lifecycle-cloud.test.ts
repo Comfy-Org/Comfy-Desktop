@@ -19,6 +19,7 @@
  */
 
 import { test, expect } from '@playwright/test'
+import { evalWithRetry } from './support/evalRetry'
 import { launchApp, type AppContext } from './launchApp'
 
 let ctx: AppContext
@@ -81,13 +82,15 @@ test('accept ToS + pick cloud auto-launches the seeded Cloud install @lifecycle'
   // A comfy WebContentsView eventually points at the remote cloud URL.
   // The pill flips on identity-attach (synchronous over IPC) — the
   // view navigation lags slightly behind, so poll rather than asserting
-  // once.
+  // once. The evaluate needs the retry wrapper: the very navigation this
+  // poll waits for can destroy the evaluation context mid-call, and
+  // expect.poll fails fast on a thrown error instead of re-polling.
   await expect.poll(
-    () => ctx.app.evaluate(({ webContents }) =>
+    () => evalWithRetry(() => ctx.app.evaluate(({ webContents }) =>
       webContents.getAllWebContents().some((wc) =>
         /^https:\/\/(cloud\.)?comfy\.org\//.test(wc.getURL()),
       ),
-    ),
+    )),
     { timeout: 15_000, intervals: [200, 500, 1000] },
   ).toBe(true)
 })

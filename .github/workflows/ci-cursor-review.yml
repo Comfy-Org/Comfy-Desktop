@@ -1,0 +1,42 @@
+name: CI - Cursor Review
+
+# Thin caller for the shared reusable cursor-review workflow in
+# Comfy-Org/github-workflows. The review logic (panel matrix, judge
+# consolidation, prompts, extract/post/notify scripts) lives there as the
+# single source of truth, so this repo only carries the repo-specific diff
+# excludes.
+
+on:
+  pull_request:
+    types: [labeled, unlabeled]
+
+concurrency:
+  group: cursor-review-pr-${{ github.event.pull_request.number }}-${{ github.event.label.name }}
+  cancel-in-progress: true
+
+jobs:
+  cursor-review:
+    permissions:
+      contents: read
+      pull-requests: write
+    # SHA-pinned per zizmor `unpinned-uses: hash-pin`. Bump this SHA to pick up
+    # upstream changes; keep `workflows_ref` matching so prompts/scripts load
+    # from the same commit as the workflow definition.
+    uses: Comfy-Org/github-workflows/.github/workflows/cursor-review.yml@ece4c3eaa71812a5a665f48d5d1f4bb0ff5f655e # github-workflows main (ece4c3e)
+    with:
+      workflows_ref: ece4c3eaa71812a5a665f48d5d1f4bb0ff5f655e
+      diff_excludes: >-
+        :!**/pnpm-lock.yaml
+        :!**/package-lock.json
+        :!**/yarn.lock
+        :!**/node_modules/**
+        :!**/.claude/**
+        :!**/dist/**
+        :!**/vendor/**
+        :!**/*.generated.*
+        :!**/*.min.js
+        :!**/*.min.css
+        :!**/*-snapshots/**
+    secrets:
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

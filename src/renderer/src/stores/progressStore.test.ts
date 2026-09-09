@@ -32,6 +32,7 @@ vi.stubGlobal('window', {
     onInstallationsVersionsUpdated: vi.fn(),
     onInstallProgress: vi.fn(() => vi.fn()),
     onComfyOutput: vi.fn(() => vi.fn()),
+    logsSnapshot: vi.fn().mockResolvedValue(''),
     cancelOperation: vi.fn(),
     stopComfyUI: vi.fn(),
     getRunningInstances: vi.fn().mockResolvedValue([]),
@@ -452,6 +453,31 @@ describe('useProgressStore', () => {
       })
       // null (not undefined) so the Operation literal stays well-typed.
       expect(store.operations.get('inst-3')?.chainSpan).toBeNull()
+    })
+
+    it('seeds the launch leg terminalOutput from logsSnapshot (log continuity)', async () => {
+      vi.mocked(window.api.logsSnapshot).mockResolvedValueOnce('install-leg lines\n')
+      store.startOperation({
+        installationId: 'inst-snap',
+        title: 'Launching',
+        apiCall: () => new Promise<ActionResult>(() => {}),
+        chainSpan: 'launch'
+      })
+      expect(window.api.logsSnapshot).toHaveBeenCalledWith('inst-snap')
+      await Promise.resolve() // let the snapshot promise + its .then settle
+      await Promise.resolve()
+      expect(store.operations.get('inst-snap')?.terminalOutput).toBe('install-leg lines\n')
+    })
+
+    it('does not seed from logsSnapshot for a non-launch op', () => {
+      vi.mocked(window.api.logsSnapshot).mockClear()
+      store.startOperation({
+        installationId: 'inst-nosnap',
+        title: 'Install',
+        apiCall: () => new Promise<ActionResult>(() => {}),
+        chainSpan: 'install'
+      })
+      expect(window.api.logsSnapshot).not.toHaveBeenCalled()
     })
 
     it('caps the install leg of a chain at 0–70% of the continuous bar', () => {

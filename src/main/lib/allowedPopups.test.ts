@@ -4,7 +4,7 @@ import {
   isCheckoutUrl,
   isLikelyDownloadUrl,
   POPUP_ALLOWED_PREFIXES,
-  shouldOpenInPopup,
+  shouldOpenInPopup
 } from './allowedPopups'
 
 describe('POPUP_ALLOWED_PREFIXES', () => {
@@ -90,9 +90,7 @@ describe('isCheckoutReturnUrl', () => {
 
 describe('isLikelyDownloadUrl (regression for #582 cloud zip handoff)', () => {
   it('returns true for a cloud zip export URL', () => {
-    expect(
-      isLikelyDownloadUrl('https://app.comfy.org/api/exports/abc123/workflow.zip'),
-    ).toBe(true)
+    expect(isLikelyDownloadUrl('https://app.comfy.org/api/exports/abc123/workflow.zip')).toBe(true)
   })
 
   it('returns true for common archive extensions', () => {
@@ -104,19 +102,15 @@ describe('isLikelyDownloadUrl (regression for #582 cloud zip handoff)', () => {
       'https://example.com/build/installer.exe',
       'https://example.com/installer.msi',
       'https://example.com/model.safetensors',
-      'https://example.com/model.gguf',
+      'https://example.com/model.gguf'
     ]) {
       expect(isLikelyDownloadUrl(url)).toBe(true)
     }
   })
 
   it('ignores query strings and fragments when matching the extension', () => {
-    expect(
-      isLikelyDownloadUrl('https://example.com/file.zip?token=abc'),
-    ).toBe(true)
-    expect(
-      isLikelyDownloadUrl('https://example.com/file.zip#section'),
-    ).toBe(true)
+    expect(isLikelyDownloadUrl('https://example.com/file.zip?token=abc')).toBe(true)
+    expect(isLikelyDownloadUrl('https://example.com/file.zip#section')).toBe(true)
   })
 
   it('returns false for plain web pages and docs URLs', () => {
@@ -125,7 +119,7 @@ describe('isLikelyDownloadUrl (regression for #582 cloud zip handoff)', () => {
       'https://example.com/some/page',
       'https://docs.example.com/getting-started.html',
       'https://example.com/file.json',
-      'https://example.com/image.png',
+      'https://example.com/image.png'
     ]) {
       expect(isLikelyDownloadUrl(url)).toBe(false)
     }

@@ -10,7 +10,7 @@ const props = withDefaults(
     open?: boolean
     doc?: LegalDocId
   }>(),
-  { open: true, doc: 'privacy' },
+  { open: true, doc: 'privacy' }
 )
 
 const emit = defineEmits<{
@@ -47,12 +47,10 @@ const titleKey = computed(() => {
       <h2 class="terms-title">{{ t(titleKey) }}</h2>
       <div class="terms-meta">
         <span
-          ><strong>{{ t('firstUse.legalDocEffective') }}:</strong>
-          {{ policy.effectiveDate }}</span
+          ><strong>{{ t('firstUse.legalDocEffective') }}:</strong> {{ policy.effectiveDate }}</span
         >
         <span
-          ><strong>{{ t('firstUse.legalDocAppliesTo') }}:</strong>
-          {{ policy.appliesTo }}</span
+          ><strong>{{ t('firstUse.legalDocAppliesTo') }}:</strong> {{ policy.appliesTo }}</span
         >
       </div>
     </template>

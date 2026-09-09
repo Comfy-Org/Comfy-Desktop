@@ -20,7 +20,10 @@ function makeI18n() {
 
 /** A status section carrying the `active-port` field main appends for a running install. */
 function portSection(port: number): DetailSection {
-  return { tab: 'status', fields: [{ key: 'active-port', label: 'Port', value: String(port) }] } as unknown as DetailSection
+  return {
+    tab: 'status',
+    fields: [{ key: 'active-port', label: 'Port', value: String(port) }]
+  } as unknown as DetailSection
 }
 
 /** Mark inst-1 running in the session store (mirrors what the dashboard / popup hydrate). */
@@ -29,7 +32,7 @@ function markRunning(): void {
     installationId: 'inst-1',
     installationName: 'Maanil',
     port: 8188,
-    mode: 'window',
+    mode: 'window'
   })
 }
 
@@ -40,7 +43,7 @@ function makeInstall(name: string): Installation {
     sourceLabel: 'Standalone',
     sourceCategory: 'local',
     status: 'installed',
-    installPath: '/tmp/inst-1',
+    installPath: '/tmp/inst-1'
   } as Installation
 }
 
@@ -50,7 +53,7 @@ function makeCloudInstall(name: string): Installation {
     name,
     sourceLabel: 'Cloud',
     sourceCategory: 'cloud',
-    status: 'installed',
+    status: 'installed'
   } as Installation
 }
 
@@ -61,14 +64,14 @@ function mountPanel(props: {
 }) {
   return mount(StatusFactPanel, {
     props: { sections: [], diskUsage: null, ...props },
-    global: { plugins: [makeI18n()] },
+    global: { plugins: [makeI18n()] }
   })
 }
 
 describe('StatusFactPanel — hero name', () => {
   // Guards that the imperatively-painted hero shows the name on mount (the watcher must key on the element ref, not just the name).
   it('shows the install name on initial mount, before any edit', async () => {
-    const wrapper = mountPanel({ installation: makeInstall('Maanil\'s Comfy') })
+    const wrapper = mountPanel({ installation: makeInstall("Maanil's Comfy") })
     await nextTick()
     const name = wrapper.find('.status-fact-hero-name')
     expect(name.exists()).toBe(true)
@@ -144,7 +147,10 @@ describe('StatusFactPanel — hero name', () => {
 describe('StatusFactPanel — running details', () => {
   it('shows the running port under a Running details group when running', async () => {
     markRunning()
-    const wrapper = mountPanel({ installation: makeInstall('Maanil'), sections: [portSection(8188)] })
+    const wrapper = mountPanel({
+      installation: makeInstall('Maanil'),
+      sections: [portSection(8188)]
+    })
     await nextTick()
 
     const titles = wrapper.findAll('.status-fact-group-title').map((n) => n.text())
@@ -154,7 +160,10 @@ describe('StatusFactPanel — running details', () => {
 
   it('hides Running details when the instance is not running, even if a port field is present', async () => {
     // No markRunning() — sessionStore reports the install as stopped.
-    const wrapper = mountPanel({ installation: makeInstall('Maanil'), sections: [portSection(8188)] })
+    const wrapper = mountPanel({
+      installation: makeInstall('Maanil'),
+      sections: [portSection(8188)]
+    })
     await nextTick()
 
     const titles = wrapper.findAll('.status-fact-group-title').map((n) => n.text())
@@ -163,12 +172,15 @@ describe('StatusFactPanel — running details', () => {
 
   it('keeps the port out of the Instance details group', async () => {
     markRunning()
-    const wrapper = mountPanel({ installation: makeInstall('Maanil'), sections: [portSection(8188)] })
+    const wrapper = mountPanel({
+      installation: makeInstall('Maanil'),
+      sections: [portSection(8188)]
+    })
     await nextTick()
 
-    const installGroup = wrapper.findAll('.status-fact-group').find(
-      (g) => g.find('.status-fact-group-title').text() === 'Instance details',
-    )
+    const installGroup = wrapper
+      .findAll('.status-fact-group')
+      .find((g) => g.find('.status-fact-group-title').text() === 'Instance details')
     // The only field is the port, which belongs to Running details, so there is no Instance details group.
     expect(installGroup).toBeUndefined()
   })
@@ -187,18 +199,18 @@ describe('StatusFactPanel — location', () => {
   function locationSection(path: string): DetailSection {
     return {
       tab: 'status',
-      fields: [{ id: 'location', label: 'Location', value: path }],
+      fields: [{ id: 'location', label: 'Location', value: path }]
     } as unknown as DetailSection
   }
 
   it('opens the location folder via the popup bridge when clicked', async () => {
     const opened: string[] = []
     ;(window as unknown as { __comfyTitlePopup: unknown }).__comfyTitlePopup = {
-      globalSettingsOpenPath: (p: string) => opened.push(p),
+      globalSettingsOpenPath: (p: string) => opened.push(p)
     }
     const wrapper = mountPanel({
       installation: makeInstall('Maanil'),
-      sections: [locationSection('/tmp/inst-1')],
+      sections: [locationSection('/tmp/inst-1')]
     })
     await nextTick()
 

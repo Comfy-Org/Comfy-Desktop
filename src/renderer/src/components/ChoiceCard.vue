@@ -9,17 +9,24 @@ withDefaults(
     tagline?: string
     disabled?: boolean
     glow?: boolean
-    /** Renders as a radio option (left indicator, no arrow); click selects
-     *  rather than commits, leaving the commit to a parent Continue button. */
+    /** Renders as a radio option (no arrow); click selects rather than
+     *  commits, leaving the commit to a parent Continue button. Selection
+     *  reads from the card border/background — there is no radio glyph. */
     selectable?: boolean
     selected?: boolean
+    /** Hold the group's tab stop while unselected. A radiogroup with
+     *  nothing checked still needs one Tab-reachable radio (WAI-ARIA APG
+     *  §3.15) or it drops out of the tab order entirely; the parent picks
+     *  which card — see `keyboardEntryChoice` in FirstUseTakeover. */
+    tabStop?: boolean
   }>(),
   {
     tagline: '',
     disabled: false,
     glow: false,
     selectable: false,
-    selected: false
+    selected: false,
+    tabStop: false
   }
 )
 
@@ -35,15 +42,12 @@ defineEmits<{ click: [] }>()
     ]"
     :role="selectable ? 'radio' : undefined"
     :aria-checked="selectable ? selected : undefined"
-    :tabindex="selectable ? (selected ? 0 : -1) : undefined"
+    :tabindex="selectable ? (selected || tabStop ? 0 : -1) : undefined"
     :disabled="disabled"
     @click="$emit('click')"
   >
     <div v-if="tagline" class="choice-card__tagline">{{ tagline }}</div>
     <div class="choice-card__body">
-      <span v-if="selectable" class="choice-card__radio" aria-hidden="true">
-        <span v-if="selected" class="choice-card__radio-dot" />
-      </span>
       <div class="choice-card__text">
         <div class="choice-card__label">
           <span class="choice-card__label-text">{{ label }}</span>
@@ -105,40 +109,16 @@ defineEmits<{ click: [] }>()
   opacity: 0.5;
   cursor: not-allowed;
 }
-/* Selected uses brand blue, not yellow, so the radio doesn't compete with
- * the yellow Continue CTA for attention. */
+/* Selected uses neutral-100, not blue or yellow — border-only selection
+ * language, no accent color competing with the yellow Continue CTA. */
 .choice-card--selected {
-  border-color: color-mix(in oklab, var(--accent-primary) 60%, transparent);
-  background: color-mix(in oklab, var(--accent-primary) 6%, var(--brand-surface-bg-hover));
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent-primary) 40%, transparent) inset;
+  border-color: color-mix(in oklab, var(--neutral-100) 60%, transparent);
+  background: color-mix(in oklab, var(--neutral-100) 6%, var(--brand-surface-bg-hover));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--neutral-100) 40%, transparent) inset;
 }
 .choice-card--selected:hover:not(:disabled) {
-  border-color: color-mix(in oklab, var(--accent-primary) 75%, transparent);
-  background: color-mix(in oklab, var(--accent-primary) 9%, rgba(137, 137, 137, 0.13));
-}
-.choice-card__radio {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  border: 1.5px solid var(--brand-surface-border-hover);
-  background: rgba(0, 0, 0, 0.1);
-  transition:
-    border-color 120ms ease,
-    background 120ms ease;
-}
-.choice-card--selected .choice-card__radio {
-  border-color: var(--accent-primary);
-  background: transparent;
-}
-.choice-card__radio-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--accent-primary);
+  border-color: color-mix(in oklab, var(--neutral-100) 75%, transparent);
+  background: color-mix(in oklab, var(--neutral-100) 9%, rgba(137, 137, 137, 0.13));
 }
 
 .choice-card__tagline {
@@ -175,7 +155,8 @@ defineEmits<{ click: [] }>()
   align-items: center;
   justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 8px;
+  /* Tight: the first trailing item is an (i) that belongs to the title. */
+  gap: 4px;
   width: 100%;
   font-family: var(--font-sans);
   font-size: var(--takeover-fs-lead);
@@ -187,13 +168,16 @@ defineEmits<{ click: [] }>()
 .choice-card__label-text {
   flex: 0 0 auto;
 }
+/* Trailing items separate more from each other than from the label — an
+ * (i) and a badge are peers, not one run of text. */
 .choice-card__label-trailing {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
 }
 .choice-card__desc-trailing {
-  margin-top: 6px;
+  margin-top: 14px;
 }
 .choice-card__desc {
   font-family: var(--font-sans);

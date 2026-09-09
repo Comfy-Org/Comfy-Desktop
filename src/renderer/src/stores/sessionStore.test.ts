@@ -167,6 +167,7 @@ describe('useSessionStore', () => {
         getRunningInstances: vi.fn().mockResolvedValue([]),
         getLaunchingInstances: vi.fn().mockResolvedValue([]),
         getStoppingInstances: vi.fn().mockResolvedValue([]),
+        getActiveOperations: vi.fn().mockResolvedValue([]),
         getCrashInstances: vi.fn().mockResolvedValue([]),
         onInstanceLaunching: vi.fn((cb: (data: unknown) => void) => {
           handlers['instance-launching'] = cb
@@ -188,12 +189,16 @@ describe('useSessionStore', () => {
           handlers['instance-stopping'] = cb
           return () => {}
         }),
+        onOperationChanged: vi.fn((cb: (data: unknown) => void) => {
+          handlers['operation-changed'] = cb
+          return () => {}
+        }),
         onComfyOutput: vi.fn(() => () => {}),
         onComfyExited: vi.fn(() => () => {}),
         onInstanceCrashed: vi.fn((cb: (data: unknown) => void) => {
           handlers['instance-crashed'] = cb
           return () => {}
-        }),
+        })
       }
       await store.init()
     })
@@ -218,7 +223,7 @@ describe('useSessionStore', () => {
         installationId: 'inst-1',
         installationName: 'My Install',
         port: 8188,
-        mode: 'window',
+        mode: 'window'
       })
 
       expect(store.isLaunching('inst-1')).toBe(false)
@@ -233,7 +238,7 @@ describe('useSessionStore', () => {
         exitCode: 1,
         signal: undefined,
         lastStderr: 'boom',
-        crashedAtMs: 123,
+        crashedAtMs: 123
       })
 
       expect(store.errorInstances.has('inst-1')).toBe(true)
@@ -257,30 +262,56 @@ describe('useSessionStore', () => {
         installationId: 'inst-1',
         installationName: 'My Install',
         port: 8188,
-        mode: 'window',
+        mode: 'window'
       })
 
       expect(store.errorInstances.has('inst-1')).toBe(false)
+    })
+
+    it('tracks an in-flight operation via the operation-changed event', () => {
+      handlers['operation-changed']!({
+        installationId: 'inst-1',
+        actionId: 'update-comfyui',
+        active: true
+      })
+
+      expect(store.operationInstances.get('inst-1')?.actionId).toBe('update-comfyui')
+
+      handlers['operation-changed']!({
+        installationId: 'inst-1',
+        actionId: 'update-comfyui',
+        active: false
+      })
+
+      expect(store.operationInstances.has('inst-1')).toBe(false)
     })
   })
 
   describe('init hydration', () => {
     function installApi(
-      snapshots: { running?: unknown[]; launching?: unknown[]; stopping?: unknown[]; crashes?: unknown[] } = {},
+      snapshots: {
+        running?: unknown[]
+        launching?: unknown[]
+        stopping?: unknown[]
+        operations?: unknown[]
+        crashes?: unknown[]
+      } = {}
     ): void {
       ;(window as Record<string, unknown>).api = {
         getRunningInstances: vi.fn().mockResolvedValue(snapshots.running ?? []),
         getLaunchingInstances: vi.fn().mockResolvedValue(snapshots.launching ?? []),
         getStoppingInstances: vi.fn().mockResolvedValue(snapshots.stopping ?? []),
+        getActiveOperations: vi.fn().mockResolvedValue(snapshots.operations ?? []),
         getCrashInstances: vi.fn().mockResolvedValue(snapshots.crashes ?? []),
         onInstanceLaunching: vi.fn(() => () => {}),
         onInstanceLaunchFailed: vi.fn(() => () => {}),
         onInstanceStarted: vi.fn(() => () => {}),
         onInstanceStopped: vi.fn(() => () => {}),
         onInstanceStopping: vi.fn(() => () => {}),
+        onOperationChanged: vi.fn(() => () => {}),
         onComfyOutput: vi.fn(() => () => {}),
         onComfyExited: vi.fn(() => () => {}),
-        onInstanceCrashed: vi.fn(() => () => {}),
+        onInstanceCrashed: vi.fn(() => () => {})
       }
     }
 
@@ -295,8 +326,10 @@ describe('useSessionStore', () => {
 
     it('does not re-mark an install as launching when it already hydrated as running', async () => {
       installApi({
-        running: [{ installationId: 'inst-1', installationName: 'My Install', port: 8188, mode: 'window' }],
-        launching: [{ installationId: 'inst-1', installationName: 'My Install' }],
+        running: [
+          { installationId: 'inst-1', installationName: 'My Install', port: 8188, mode: 'window' }
+        ],
+        launching: [{ installationId: 'inst-1', installationName: 'My Install' }]
       })
 
       await store.init()
@@ -313,6 +346,14 @@ describe('useSessionStore', () => {
       expect(store.isStopping('inst-1')).toBe(true)
     })
 
+    it('hydrates in-flight operations so a window opened mid-operation shows the busy state', async () => {
+      installApi({ operations: [{ installationId: 'inst-1', actionId: 'update-comfyui' }] })
+
+      await store.init()
+
+      expect(store.operationInstances.get('inst-1')?.actionId).toBe('update-comfyui')
+    })
+
     it('hydrates retained crashes so a freshly-opened window shows the error state', async () => {
       installApi({
         crashes: [
@@ -322,9 +363,9 @@ describe('useSessionStore', () => {
             crashed: true,
             exitCode: 1,
             lastStderr: 'boom',
-            crashedAtMs: 123,
-          },
-        ],
+            crashedAtMs: 123
+          }
+        ]
       })
 
       await store.init()
@@ -339,7 +380,9 @@ describe('useSessionStore', () => {
     it('does not hydrate a crash for an install that is mid-launch', async () => {
       installApi({
         launching: [{ installationId: 'inst-1', installationName: 'My Install' }],
-        crashes: [{ installationId: 'inst-1', installationName: 'My Install', crashed: true, exitCode: 1 }],
+        crashes: [
+          { installationId: 'inst-1', installationName: 'My Install', crashed: true, exitCode: 1 }
+        ]
       })
 
       await store.init()
@@ -350,8 +393,12 @@ describe('useSessionStore', () => {
 
     it('does not hydrate a crash for an install that is already running', async () => {
       installApi({
-        running: [{ installationId: 'inst-1', installationName: 'My Install', port: 8188, mode: 'window' }],
-        crashes: [{ installationId: 'inst-1', installationName: 'My Install', crashed: true, exitCode: 1 }],
+        running: [
+          { installationId: 'inst-1', installationName: 'My Install', port: 8188, mode: 'window' }
+        ],
+        crashes: [
+          { installationId: 'inst-1', installationName: 'My Install', crashed: true, exitCode: 1 }
+        ]
       })
 
       await store.init()
@@ -370,7 +417,7 @@ describe('useSessionStore', () => {
         onInstanceStopping: vi.fn(() => () => {}),
         onComfyOutput: vi.fn(() => () => {}),
         onComfyExited: vi.fn(() => () => {}),
-        onInstanceCrashed: vi.fn(() => () => {}),
+        onInstanceCrashed: vi.fn(() => () => {})
       }
 
       await expect(store.init()).resolves.toBeUndefined()

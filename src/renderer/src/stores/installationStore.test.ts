@@ -25,7 +25,7 @@ vi.stubGlobal('window', {
   api: {
     getInstallations: vi.fn(),
     onInstallationsChanged: vi.fn(),
-    onInstallationsVersionsUpdated: vi.fn(),
+    onInstallationsVersionsUpdated: vi.fn()
   }
 })
 
@@ -45,9 +45,7 @@ describe('useInstallationStore', () => {
 
   describe('fetchInstallations', () => {
     it('should populate installations and manage loading state', async () => {
-      vi.mocked(window.api.getInstallations).mockResolvedValue(
-        mockInstallations
-      )
+      vi.mocked(window.api.getInstallations).mockResolvedValue(mockInstallations)
 
       const promise = store.fetchInstallations()
       expect(store.loading).toBe(true)
@@ -59,9 +57,7 @@ describe('useInstallationStore', () => {
     })
 
     it('should clear loading even on error', async () => {
-      vi.mocked(window.api.getInstallations).mockRejectedValue(
-        new Error('Network error')
-      )
+      vi.mocked(window.api.getInstallations).mockRejectedValue(new Error('Network error'))
 
       await expect(store.fetchInstallations()).rejects.toThrow('Network error')
       expect(store.loading).toBe(false)
@@ -70,9 +66,7 @@ describe('useInstallationStore', () => {
 
   describe('getById', () => {
     beforeEach(async () => {
-      vi.mocked(window.api.getInstallations).mockResolvedValue(
-        mockInstallations
-      )
+      vi.mocked(window.api.getInstallations).mockResolvedValue(mockInstallations)
       await store.fetchInstallations()
     })
 

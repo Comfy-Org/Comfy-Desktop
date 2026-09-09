@@ -30,7 +30,7 @@ function installMockBridge(platform: string = 'darwin'): MockBridgeState {
   const state: MockBridgeState = {
     downloadsActions: [],
     openSettingsTabCalls: [],
-    openDownloadsModalCalls: 0,
+    openDownloadsModalCalls: 0
   }
   const bridge = {
     platform,
@@ -42,7 +42,7 @@ function installMockBridge(platform: string = 'darwin'): MockBridgeState {
     },
     openDownloadsModal: () => {
       state.openDownloadsModalCalls += 1
-    },
+    }
   }
   ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return state
@@ -87,18 +87,16 @@ describe('comfyTitlePopup/DownloadsView', () => {
           totalBytes: 10_000_000,
           speedBytesPerSec: 1_048_576,
           etaSeconds: 30,
-          status: 'downloading',
-        },
+          status: 'downloading'
+        }
       ],
-      recent: [],
+      recent: []
     }
     const wrapper = mount(DownloadsView, { props: { state } })
     await flushPromises()
     const item = wrapper.find('.downloads-item.is-active')
     expect(item.exists()).toBe(true)
-    expect(item.find('.downloads-item-name').text()).toBe(
-      'models/checkpoints / a.bin',
-    )
+    expect(item.find('.downloads-item-name').text()).toBe('models/checkpoints / a.bin')
     // All four facets (size / percent / speed / ETA) show without leaving the tray.
     const sub = item.find('.downloads-item-sub').text()
     expect(sub).toContain('4.0 MB / 9.5 MB')
@@ -119,10 +117,10 @@ describe('comfyTitlePopup/DownloadsView', () => {
           url: 'https://example.com/p.bin',
           filename: 'p.bin',
           progress: 0.1,
-          status: 'paused',
-        },
+          status: 'paused'
+        }
       ],
-      recent: [],
+      recent: []
     }
     const wrapper = mount(DownloadsView, { props: { state } })
     await flushPromises()
@@ -143,9 +141,9 @@ describe('comfyTitlePopup/DownloadsView', () => {
           filename: 'done.bin',
           progress: 1,
           status: 'completed',
-          savePath: '/tmp/done.bin',
-        },
-      ],
+          savePath: '/tmp/done.bin'
+        }
+      ]
     }
     const wrapper = mount(DownloadsView, { props: { state } })
     await flushPromises()
@@ -169,9 +167,9 @@ describe('comfyTitlePopup/DownloadsView', () => {
           filename: 'x.bin',
           progress: 0,
           status: 'error',
-          error: 'oops',
-        },
-      ],
+          error: 'oops'
+        }
+      ]
     }
     const wrapper = mount(DownloadsView, { props: { state } })
     await flushPromises()
@@ -190,8 +188,8 @@ describe('comfyTitlePopup/DownloadsView', () => {
           url: 'https://example.com/dl.bin',
           filename: 'dl.bin',
           progress: 0.5,
-          status: 'downloading',
-        },
+          status: 'downloading'
+        }
       ],
       recent: [
         {
@@ -199,9 +197,9 @@ describe('comfyTitlePopup/DownloadsView', () => {
           filename: 'done.bin',
           progress: 1,
           status: 'completed',
-          savePath: '/tmp/done.bin',
-        },
-      ],
+          savePath: '/tmp/done.bin'
+        }
+      ]
     }
     const wrapper = mount(DownloadsView, { props: { state } })
     await flushPromises()
@@ -210,7 +208,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
     await items[1]!.find('.downloads-item-close').trigger('click')
     expect(bridgeState.downloadsActions).toEqual([
       { action: 'cancel', url: 'https://example.com/dl.bin' },
-      { action: 'dismiss', url: 'https://example.com/done.bin' },
+      { action: 'dismiss', url: 'https://example.com/done.bin' }
     ])
   })
 
@@ -224,9 +222,9 @@ describe('comfyTitlePopup/DownloadsView', () => {
           filename: 'ok.bin',
           progress: 1,
           status: 'completed',
-          savePath: '/tmp/ok.bin',
-        },
-      ],
+          savePath: '/tmp/ok.bin'
+        }
+      ]
     }
     const wrapper = mount(DownloadsView, { props: { state } })
     await flushPromises()
@@ -235,8 +233,8 @@ describe('comfyTitlePopup/DownloadsView', () => {
       {
         action: 'show-in-folder',
         url: 'https://example.com/ok.bin',
-        savePath: '/tmp/ok.bin',
-      },
+        savePath: '/tmp/ok.bin'
+      }
     ])
   })
 
@@ -250,26 +248,26 @@ describe('comfyTitlePopup/DownloadsView', () => {
           filename: 'ok.bin',
           progress: 1,
           status: 'completed',
-          savePath: '/tmp/ok.bin',
-        },
-      ],
+          savePath: '/tmp/ok.bin'
+        }
+      ]
     }
     const wrapper = mount(DownloadsView, { props: { state } })
     await flushPromises()
     await wrapper.find('.downloads-item-close').trigger('click')
     expect(bridgeState.downloadsActions).toEqual([
-      { action: 'dismiss', url: 'https://example.com/ok.bin' },
+      { action: 'dismiss', url: 'https://example.com/ok.bin' }
     ])
   })
 
-  it('routes the footer link to the standalone DownloadsModal (not the Settings tab)', async () => {
+  it('routes the footer link to the full downloads popup (not the Settings tab)', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const wrapper = mount(DownloadsView, { props: { state: EMPTY_STATE } })
     await flushPromises()
     expect(wrapper.find('.downloads-link').text()).toBe('View All Downloads')
     await wrapper.find('.downloads-link').trigger('click')
     expect(bridgeState.openDownloadsModalCalls).toBe(1)
-    // The modal, not `openSettingsTab('downloads')`, is now the destination.
+    // The full popup, not `openSettingsTab('downloads')`, is now the destination.
     expect(bridgeState.openSettingsTabCalls).toEqual([])
   })
 })

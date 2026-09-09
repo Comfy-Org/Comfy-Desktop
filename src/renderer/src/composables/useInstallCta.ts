@@ -24,7 +24,7 @@ export interface InstallCta {
 
 export function useInstallCta(
   installation: Ref<Installation | null | undefined>,
-  opts: { activeInstallationId: Ref<string | null | undefined> },
+  opts: { activeInstallationId: Ref<string | null | undefined> }
 ): InstallCta {
   const { t } = useI18n()
   const sessionStore = useSessionStore()
@@ -45,9 +45,7 @@ export function useInstallCta(
     return active != null && inst.id === active
   })
 
-  const runningElsewhere = computed(
-    () => runningAnywhere.value && !runningInThisWindow.value,
-  )
+  const runningElsewhere = computed(() => runningAnywhere.value && !runningInThisWindow.value)
 
   const label = computed(() => {
     if (runningInThisWindow.value) return t('instancePicker.restart', 'Restart')
@@ -60,6 +58,6 @@ export function useInstallCta(
     runningElsewhere,
     runningAnywhere,
     label,
-    restartInPlace: runningInThisWindow,
+    restartInPlace: runningInThisWindow
   }
 }

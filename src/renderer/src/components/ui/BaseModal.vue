@@ -173,6 +173,9 @@ const sizeClass = computed(() => `is-size-${props.size}`)
   padding: clamp(32px, 6vh, 72px) clamp(16px, 4vw, 48px);
   background: color-mix(in oklab, var(--neutral-800) 70%, transparent);
 }
+.base-modal-overlay:focus {
+  outline: none;
+}
 .base-modal-overlay--blur {
   backdrop-filter: blur(8px) saturate(115%);
   -webkit-backdrop-filter: blur(8px) saturate(115%);

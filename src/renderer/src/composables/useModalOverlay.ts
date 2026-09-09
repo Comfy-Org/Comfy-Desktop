@@ -6,10 +6,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
  * @param shouldClose - Returns true when the modal is open and should respond to escape/overlay clicks.
  * @param close - Called when the modal should close.
  */
-export function useModalOverlay(
-  shouldClose: () => boolean,
-  close: () => void,
-) {
+export function useModalOverlay(shouldClose: () => boolean, close: () => void) {
   const mouseDownOnOverlay = ref(false)
 
   function handleOverlayMouseDown(event: MouseEvent): void {
@@ -41,6 +38,6 @@ export function useModalOverlay(
   return {
     mouseDownOnOverlay,
     handleOverlayMouseDown,
-    handleOverlayClick,
+    handleOverlayClick
   }
 }

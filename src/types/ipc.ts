@@ -2,7 +2,88 @@
 // This file is the single source of truth — do not duplicate these types elsewhere.
 
 import type { FirstUseMode } from '../shared/firstUseMode'
+import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
+
+// Dev-platform (cloud auth + comfy-builder) renderer-safe types. Re-exported
+// from the cloud library so the renderer imports them from one place; tokens
+// are never part of these shapes.
+import type { AuthStatus, Workspace } from '../main/cloud/types'
+export type { AuthStatus, Workspace }
+
+/** Every renderer-safe Build catalog state. */
+export type DevPlatformBuildState =
+  | 'installable'
+  | 'no-build'
+  | 'platform-mismatch'
+  | 'needs-desktop-update'
+  | 'installed'
+  | 'update-available'
+
+/** One installable target from a published Build release. Storage references,
+ *  integrity values, and other trusted artifact data stay in main. */
+export interface DevPlatformBuildTarget {
+  artifactId: string
+  releaseVersion: number
+  os: 'linux' | 'windows' | 'mac'
+  gpu: 'nvidia' | 'amd' | 'cpu' | 'mps'
+  accelVariant: string
+  recommended: boolean
+}
+
+/** One build as a renderer-safe display row. */
+export interface DevPlatformBuild {
+  id: string
+  name: string
+  description?: string
+  /** Builder identity-provider subject and its best-effort workspace display name. */
+  createdBy?: string
+  creatorName?: string
+  version?: string
+  /** The ComfyUI version this build bundles.
+   *  TODO(builder-backend): not yet populated by `listBuildRows` - the
+   *  build metadata needs to carry it through. Absent renders as unknown. */
+  comfyuiVersion?: string
+  /** ISO 8601 finish stamp of the latest complete build. */
+  finishedAt?: string
+  sizeBytes?: number
+  numModels?: number
+  numAllowedModels?: number
+  numCustomNodes?: number
+  updatedAt?: string
+  state: DevPlatformBuildState
+  /** Machine-readable reason for a blocking state. */
+  blockedReason?: string
+  /** OSes targeted by ready artifacts in the latest complete release. */
+  targetOs?: string[]
+  /** Runnable targets in the latest complete release, recommended first. */
+  releaseTargets?: DevPlatformBuildTarget[]
+  minDesktopVersion?: string
+  /** Local-only: present for installed / update-available. A build
+   *  version is an integer, matching how the row builder sets it. */
+  installedVersion?: number
+}
+
+/** Kickoff result of `installBuild`: mirrors `addInstallation` so the
+ *  renderer drives the same `installInstance` + progress flow. */
+export interface InstallBuildResult {
+  ok: boolean
+  message?: string
+  entry?: { id: string; name: string }
+}
+
+export interface InstallBuildRequest {
+  buildId: string
+  artifactId?: string
+  releaseVersion?: number
+  name?: string
+  installRoot?: string
+}
+
+export interface PromoteLocalInstanceResult {
+  ok: boolean
+  message?: string
+}
 
 // Unsubscribe function returned by event listeners
 export type Unsubscribe = () => void
@@ -11,15 +92,26 @@ export type Unsubscribe = () => void
 export type Theme = 'system' | 'dark' | 'light'
 export type ResolvedTheme = Exclude<Theme, 'system'>
 
-/** Capacity-protection status for Cloud entry points (see
- *  `getCloudCapacity` and `useCloudCapacity`). `normal` = no UI changes;
- *  `degraded` = show heavy-usage warning; `disabled` = block entry. */
-export type CloudCapacityStatus = 'normal' | 'degraded' | 'disabled'
+/** One row of a `version-stats` field's table. */
+export interface VersionStatRow {
+  id: string
+  label: string
+  value: string
+  title?: string
+  highlight?: boolean
+}
 
-/** Signed-in user's Comfy Cloud subscription tier, normalized to the
- *  two values the capacity gate cares about. `'unknown'` = signed out
- *  or no fetch has succeeded yet this lifetime; treated as `'free'`
- *  downstream (fail-closed). See `userTier.ts`. */
+/** Payload of a `version-stats` field: the Update tab's version summary. */
+export interface VersionStatsValue {
+  headline: string
+  headlineHighlight?: boolean
+  badge?: string | null
+  badgeTone?: 'current' | 'update'
+  rows: VersionStatRow[]
+}
+
+/** Signed-in user's Comfy Cloud subscription tier. `'unknown'` means signed
+ *  out or no fetch has succeeded yet this lifetime. See `userTier.ts`. */
 export type CloudUserTier = 'free' | 'paid' | 'unknown'
 
 // --- Installation types ---
@@ -28,8 +120,10 @@ export interface Installation {
   name: string
   sourceLabel: string
   sourceCategory: string
+  /** Workspace that owns this installation. Absent for local and legacy records. */
+  workspaceId?: string
   version?: string
-  statusTag?: { style: string; label: string }
+  statusTag?: { style: string; label: string; version?: string; detail?: string }
   seen?: boolean
   listPreview?: string
   launchMode?: string
@@ -53,6 +147,14 @@ export interface RunningInstance {
   url?: string
   mode: string
   startedAt?: number
+  /** Boot duration (ms from launch start to server-ready). Present on the
+   *  `instance-started` broadcast; absent from `getRunningInstances()`. */
+  bootTimeMs?: number
+  /** Spawn-retry counts for this boot, folded onto `instance-started` so the
+   *  renderer's telemetry carries them without a separate `server_ready`
+   *  event. 0 on the remote / skip-port paths. */
+  portRetries?: number
+  rebootRetries?: number
 }
 
 // --- Source / New Install types ---
@@ -103,11 +205,25 @@ export interface DetailItem {
   actions?: ActionDef[]
 }
 
+/** One level of a cascading picker path (id is stable, label is display). */
+export interface DetailOptionGroup {
+  id: string
+  label: string
+  /** Shown under the label in the group dropdown (e.g. what a CUDA series
+   *  is for, or a too-old-driver warning). */
+  description?: string
+}
+
 export interface DetailFieldOption {
   value: string
   label: string
   description?: string
   recommended?: boolean
+  /** Cascading picker path for `channel-cards`: options sharing a path
+   *  prefix sit behind one dropdown per level (e.g. PyTorch backend series
+   *  -> version). The field builder emits it only when it distinguishes
+   *  (two or more groups); absent = today's flat single dropdown. */
+  groupPath?: DetailOptionGroup[]
   data?: Record<string, unknown>
 }
 
@@ -127,20 +243,26 @@ export interface ComfyArgDef {
 export interface DetailField {
   id: string
   label: string
-  value: string | boolean | number | string[] | Record<string, string> | null
+  value: string | boolean | number | string[] | Record<string, string> | VersionStatsValue | null
   editable?: boolean
   editType?:
-  | 'select'
-  | 'boolean'
-  | 'text'
-  | 'number'
-  | 'path'
-  | 'channel-cards'
-  | 'args-builder'
-  | 'env-vars'
-  | 'model-dirs'
-  | 'hidden'
+    | 'select'
+    | 'boolean'
+    | 'text'
+    | 'number'
+    | 'path'
+    | 'channel-cards'
+    /** Read-only version summary: headline + badge over a table of facts. The
+     *  source supplies the wording; the renderer only lays it out. */
+    | 'version-stats'
+    | 'args-builder'
+    | 'env-vars'
+    | 'model-dirs'
+    | 'hidden'
   options?: DetailFieldOption[]
+  /** Display names for each `groupPath` level of a cascading `channel-cards`
+   *  picker (e.g. ["Backend"]); indexes match `groupPath` depth. */
+  groupLabels?: string[]
   refreshSection?: boolean
   /** Action id to fire automatically when this field's value changes
    *  (e.g. switching update channel triggers `check-update`). */
@@ -153,6 +275,11 @@ export interface DetailField {
    *  nesting from the field id, since ids like `outputDir` are reused
    *  for equal-weight rows in the Shared Directories section. */
   nested?: boolean
+  /** Consecutive fields sharing the same rowGroup render side-by-side in one
+   *  row (equal widths, stacking again on narrow layouts) instead of each
+   *  taking the full width. Set by the field builder; the renderer only
+   *  groups adjacent fields so unrelated fields never merge. */
+  rowGroup?: string
   tooltip?: string
   /** Marks fields that only take effect on next process start.
    *  Renderer shows a per-field tag + promotes the footer Restart
@@ -236,6 +363,11 @@ export interface PromptDef {
   field: string
   required?: boolean | string
   messageDetails?: ModalDetailGroup[]
+  /** When true, the shown `defaultValue` is first run through
+   *  `getUniqueName()` so the pre-filled name matches what will actually be
+   *  assigned on save. Set on flows that create a NEW install (copy /
+   *  copy-update); never on rename, where keeping the current name is valid. */
+  uniquifyDefault?: boolean
 }
 
 export interface ModalDetailGroup {
@@ -415,6 +547,10 @@ export interface ProbeResult {
   version?: string
   repo?: string
   branch?: string
+  /** Resolved install root. Set when the probe corrected the user-picked path
+   *  (e.g. they pointed at the nested `ComfyUI/` folder of a standalone or
+   *  portable install). When present, it should be recorded as the installPath. */
+  installPath?: string
   [key: string]: unknown
 }
 
@@ -425,6 +561,9 @@ export interface ProgressData {
   status?: string
   percent?: number
   steps?: ProgressStep[]
+  error?: boolean
+  /** Main initiated cancellation outside the progress surface (for example, sign-out). */
+  cancelRequested?: boolean
 }
 
 export interface ProgressStep {
@@ -434,6 +573,35 @@ export interface ProgressStep {
    *  renderer paces the bar from these (the producer is the single source of
    *  truth); when absent it falls back to a curated weight table. */
   weight?: number
+}
+
+/**
+ * A mid-operation prompt the main process needs the user to answer (e.g.
+ * during Legacy Desktop adoption). Surfaced as an in-app dialog above the
+ * ProgressModal — never a native OS message box. Labels arrive pre-translated
+ * from main; the renderer must not re-translate them. The renderer ACKs
+ * delivery, then replies with the chosen `buttonIndex`.
+ */
+export interface AdoptPromptRequest {
+  promptId: string
+  type: 'info' | 'warning' | 'error' | 'question'
+  title: string
+  message: string
+  detail?: string
+  /** Pre-translated heading for the `detail` block. */
+  detailLabel?: string
+  buttons: string[]
+  defaultId: number
+  cancelId: number
+}
+
+export interface AdoptPromptAck {
+  promptId: string
+}
+
+export interface AdoptPromptResponse {
+  promptId: string
+  buttonIndex: number
 }
 
 // --- Event data types ---
@@ -450,6 +618,17 @@ export interface TerminalRestore {
   exited: boolean
 }
 
+/** Recognised native-crash flavour decoded from a Windows NTSTATUS exit code.
+ *  `unknown` covers a decoded fault code we have no specific guidance for.
+ *  Shared across the IPC boundary so producer (main decode) and consumer
+ *  (renderer crash copy) can't drift on the string values. */
+export type CrashKind =
+  | 'access-violation'
+  | 'illegal-instruction'
+  | 'stack-buffer-overrun'
+  | 'heap-corruption'
+  | 'unknown'
+
 export interface ComfyExitedData {
   installationId: string
   installationName: string
@@ -462,6 +641,19 @@ export interface ComfyExitedData {
    *  signal" from "crashed with non-zero exit". */
   signal?: string
   lastStderr?: string
+  /** Hex form of `exitCode` when it decodes to a Windows native-crash
+   *  (NTSTATUS) code, e.g. `'0xC0000005'`. Absent for plain application
+   *  exits. Lets the UI show the meaningful hex alongside the raw decimal. */
+  exitCodeHex?: string
+  /** Recognised native-crash flavour for `exitCode` (e.g. `'access-violation'`),
+   *  used to pick human-readable, actionable crash copy. Absent when the exit
+   *  code isn't a decodable native fault. */
+  crashKind?: CrashKind
+  /** On a Windows access-violation crash, the Visual C++ runtime DLLs found
+   *  missing from `System32` (e.g. `['vcruntime140_1.dll']`). Non-empty means
+   *  the crash is very likely a broken/outdated VC++ runtime, so the UI can
+   *  surface a "repair the redistributable" hint. Absent/empty otherwise. */
+  vcRuntimeMissing?: string[]
   /**
    * Wall-clock timestamp (epoch ms) when the crash was recorded main-side.
    * Set by `recordCrash()` so a renderer that hydrates the crash *after*
@@ -488,6 +680,11 @@ export interface GPUInfo {
 export interface HardwareValidation {
   supported: boolean
   error?: string
+  /** Non-blocking, user-actionable problem on otherwise supported hardware
+   *  (e.g. a Linux AMD GPU whose /dev/kfd compute node the user cannot
+   *  access). Install may proceed, but GPU acceleration will not work until
+   *  the user resolves it. */
+  warning?: string
 }
 
 export interface NvidiaDriverCheck {
@@ -513,6 +710,9 @@ export type ModelDownloadStatus =
   | 'cancelled'
 
 export interface ModelDownloadProgress {
+  /** Stable per-job identifier assigned by main. Control APIs accept it in
+   *  place of the URL; optional only for snapshots predating the field. */
+  id?: string
   url: string
   filename: string
   directory?: string
@@ -552,9 +752,16 @@ export interface SystemInfo {
   gpu_vendor: string | null
   gpu_label: string | null
   gpu_model: string | null
+  /** VRAM of the selected primary (real compute) GPU, not `gpus[0]`. */
+  gpu_vram_mb: number | null
+  /** Rounded VRAM of the selected primary GPU, in GiB. */
+  gpu_vram_gb: number | null
+  gpu_tier: GpuTier
   gpus: SystemGpuInfo[]
   nvidia_driver_version: string | null
   nvidia_driver_supported: boolean | null
+  amd_driver_version: string | null
+  intel_driver_version: string | null
   platform: string
   arch: string
   os_version: string
@@ -657,7 +864,7 @@ export interface InstallationDdContext {
 /** Compact per-install summary for the per-session boot census
  *  emitted as `comfy.desktop.session.installs_inventory`. Strictly metadata
  *  + counts + diff summaries (no per-node / per-package contents) so
- *  the inventory can pack many installs into the same RUM payload. */
+ *  the inventory can pack many installs into a single PostHog event. */
 export interface InstallInventoryEntry {
   installation_id: string
   source_id: string
@@ -729,7 +936,7 @@ export interface CopyEvent {
   installationId: string
   installationName: string
   copiedAt: string
-  copyReason: 'copy' | 'copy-update' | 'release-update'
+  copyReason: 'copy' | 'copy-update' | 'copy-pytorch' | 'release-update'
   exists: boolean
   /** `out` = another install was copied FROM the install whose rail this is
    *  shown on (installationName is the destination's name).
@@ -897,6 +1104,8 @@ export interface ElectronApi {
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
+  /** Read-only snapshot of an install's durable log buffer (joined string). */
+  logsSnapshot(installationId: string): Promise<string>
   validateInstallPath(targetPath: string): Promise<PathIssue[]>
   getInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   cancelInstallationSize(): Promise<void>
@@ -938,7 +1147,13 @@ export interface ElectronApi {
   reorderInstallations(orderedIds: string[]): Promise<void>
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
-  installInstance(installationId: string): Promise<void>
+  /** `express` flags the one-click express-install path (vs the manual
+   *  Configure wizard). Used only to label the `install.completed`
+   *  telemetry event's `method`; defaults to false. */
+  installInstance(installationId: string, express?: boolean): Promise<void>
+  /** Skip waiting on the starter-template model download — hands the still-
+   *  running task off to the title-bar downloads tray (no restart). */
+  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
@@ -995,6 +1210,9 @@ export interface ElectronApi {
    *  the comfy/chooser root. Fire-and-forget; the panel will receive
    *  the resulting `panel-switch` like any other navigation. */
   closeCurrentPanel(): void
+  /** Tell main an overlay panel (feedback / mcp-setup) has painted, so it can
+   *  reveal the until-now-hidden panel view without an opaque flash. */
+  signalOverlayReady(): void
   /** Boot-time restore reveal handshake. The restore window is opened
    *  hidden; the panel calls this once it knows whether its launch
    *  takeover came up (`'takeover-ready'` → reveal the launching surface)
@@ -1004,8 +1222,9 @@ export interface ElectronApi {
   /** Open the Global Settings popup for the panel's host window. Used
    *  by the panel-side file-menu "Settings" item and the
    *  `comfy://open-settings?tab=global` deep link. Main reuses the
-   *  same helper the hamburger Settings entry calls. */
-  openGlobalSettings(): void
+   *  same helper the hamburger Settings entry calls. `tab` lands the
+   *  popup on that tab instead of its remembered one. */
+  openGlobalSettings(tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs'): void
   /** Open the instance-picker popup for the panel's host window with
    *  `installationId` seeded as the picker's right-pane selection.
    *  Used by chooser-card "Manage…" (and future per-install entry
@@ -1042,6 +1261,10 @@ export interface ElectronApi {
    *  `buildSupportUrl()` reads `navigator.userAgent` and the telemetry
    *  helpers live renderer-side. Returns an unsubscribe. */
   onOpenFeedback(callback: (data: { source: 'titlebar' | 'menu' }) => void): Unsubscribe
+  /** Main forwards the title-bar news-bell click here so the panel renderer
+   *  mounts the announcement modal over the live canvas. Returns an
+   *  unsubscribe. */
+  onOpenAnnouncement(callback: () => void): Unsubscribe
   /** Main consults the panel renderer before tearing down
    *  the host window. Returns an unsubscribe; the callback receives a
    *  `requestId` it must echo back via `respondCloseRequest` so main
@@ -1106,6 +1329,11 @@ export interface ElectronApi {
    *  mid-stop hydrate the "Stopping…" state instead of missing the one-shot
    *  `onInstanceStopping` broadcast. */
   getStoppingInstances(): Promise<string[]>
+  /** Snapshot of installs with an action currently in flight through the
+   *  run-action / picker background-op dispatch (id + action id). Lets a
+   *  window opened mid-operation hydrate the dashboard's busy state instead
+   *  of missing the one-shot `onOperationChanged` broadcast. */
+  getActiveOperations(): Promise<{ installationId: string; actionId: string }[]>
   /**
    * Read the retained crash detail for an installation, if any. Main holds
    * the last `comfy-exited` payload (with stderr tail) per installation
@@ -1154,16 +1382,16 @@ export interface ElectronApi {
   importSnapshotsDiff(
     installationId: string
   ): Promise<{ ok: boolean; diff?: SnapshotDiffData; message?: string }>
-  importSnapshotsConfirm(
-    installationId: string
-  ): Promise<{ ok: boolean; imported?: number; restoreFile?: string; message?: string }>
-  previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
-  previewDesktopMigration(): Promise<{
+  importSnapshotsConfirm(installationId: string): Promise<{
     ok: boolean
+    imported?: number
+    restoreToken?: string
+    /** Kept-local disclosure: set when the snapshot's managed PyTorch stack
+     *  cannot be applied here, so the restore will keep the local stack. */
+    torchStackNotice?: string | null
     message?: string
-    preview?: SnapshotFilePreview
-    snapshotPath?: string
   }>
+  previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
   previewLocalMigration(installationId: string): Promise<{
     ok: boolean
     message?: string
@@ -1198,12 +1426,13 @@ export interface ElectronApi {
    *  remote is unreachable. Used by the install-wizard version dropdown and
    *  the per-install ChannelPicker. */
   getStableTags(): Promise<string[]>
-  /** Capacity-protection switch for Cloud entry points. Resolved at boot
-   *  from the `desktop-cloud-capacity` PostHog flag (variants `normal` |
-   *  `degraded` | `disabled`); defaults to `'normal'` when the flag is
-   *  unavailable. Renderers consume this via `useCloudCapacity`. */
-  getCloudCapacity(): Promise<CloudCapacityStatus>
   getCloudUserTier(): Promise<CloudUserTier>
+  /** Whether the free tier is live, for the "5 free runs" trial pill.
+   *  Reads cloud's own `free_tier_workflow_submission_enabled` so the pill
+   *  tracks the real rollout. False for everyone today; flips on its own
+   *  when the ramp lands. Fails CLOSED — the pill asserts a live
+   *  entitlement, so an unresolvable flag means we don't claim it. */
+  getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>
@@ -1212,10 +1441,26 @@ export interface ElectronApi {
   /** Per-session boot census of every persisted install (metadata +
    *  snapshot diff counts). Powers the `comfy.desktop.session.installs_inventory`
    *  telemetry event so dashboards see the user's full install footprint
-   *  without waiting for them to launch each one. Capped to ~200 KB
-   *  total to stay under Datadog RUM's per-action context limit. */
+   *  without waiting for them to launch each one. Byte-capped main-side to
+   *  stay under PostHog's 1 MB per-event limit (shipped as `installs_json`). */
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
+
+  // Dev platform (cloud auth + comfy-builder): the only renderer<->main bridge
+  // for this flow. Access/refresh tokens never cross IPC: every method returns
+  // or observes a renderer-safe AuthStatus / Workspace / build row.
+  comfybuilder: {
+    signIn(): Promise<AuthStatus>
+    signOut(): Promise<AuthStatus>
+    getAuthStatus(): Promise<AuthStatus>
+    onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
+    listWorkspaces(): Promise<Workspace[]>
+    switchWorkspace(workspaceId: string): Promise<AuthStatus>
+    listBuilds(): Promise<DevPlatformBuild[]>
+    openBuildsPage(workspaceId: string): Promise<void>
+    installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
+    promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
+  }
 
   // Updates
   checkForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>
@@ -1231,27 +1476,35 @@ export interface ElectronApi {
    */
   getAppUpdateState(): Promise<AppUpdateState>
 
-  // Model downloads
+  // Model downloads. Every control accepts a download ref: the row's stable
+  // job `id` or its source URL (kept for compatibility).
   listModelDownloads(): Promise<ModelDownloadProgress[]>
-  pauseModelDownload(url: string): Promise<boolean>
-  resumeModelDownload(url: string): Promise<boolean>
-  cancelModelDownload(url: string): Promise<boolean>
+  pauseModelDownload(ref: string): Promise<boolean>
+  resumeModelDownload(ref: string): Promise<boolean>
+  cancelModelDownload(ref: string): Promise<boolean>
   /** Drop a single terminal (completed / error / cancelled) entry
    *  from main's recent-downloads buffer; broadcasts a
    *  `model-download-removed` event so every renderer surface drops
    *  the entry from its store in lockstep. */
-  dismissModelDownload(url: string): Promise<boolean>
+  dismissModelDownload(ref: string): Promise<boolean>
   /** Bulk-dismiss every terminal entry from main's recent buffer.
    *  Returns the number of entries removed. */
   clearFinishedModelDownloads(): Promise<number>
   /** Re-dispatch a terminal (error) download from main's captured
    *  original params. Returns false if it's still in flight or the
    *  params were evicted from the recent buffer. */
-  retryModelDownload(url: string): Promise<boolean>
+  retryModelDownload(ref: string): Promise<boolean>
   showDownloadInFolder(savePath: string): Promise<void>
   /** Downscaled `data:` URL preview of a completed image download, or null for
    *  non-images / unreadable files. */
   getDownloadThumbnail(savePath: string): Promise<string | null>
+
+  // Adopt prompts: in-app replacement for native message boxes shown
+  // mid-operation (e.g. Legacy Desktop adoption). The renderer subscribes,
+  // ACKs delivery, and replies with the chosen button index.
+  onAdoptPrompt(callback: (request: AdoptPromptRequest) => void): Unsubscribe
+  ackAdoptPrompt(payload: AdoptPromptAck): void
+  respondAdoptPrompt(payload: AdoptPromptResponse): void
 
   // Event listeners (return unsubscribe functions)
   onInstallProgress(callback: (data: ProgressData) => void): Unsubscribe
@@ -1261,9 +1514,7 @@ export interface ElectronApi {
    *  reaches the launching window). Lets any open dashboard show the red
    *  error tile live. */
   onInstanceCrashed(callback: (data: ComfyExitedData) => void): Unsubscribe
-  onTerminalOutput(
-    callback: (data: { installationId: string; data: string }) => void
-  ): Unsubscribe
+  onTerminalOutput(callback: (data: { installationId: string; data: string }) => void): Unsubscribe
   onTerminalExited(callback: (data: { installationId: string }) => void): Unsubscribe
   onComfyBootLog(callback: (data: ComfyBootLogData) => void): Unsubscribe
   onInstanceLaunching(
@@ -1273,6 +1524,12 @@ export interface ElectronApi {
   onInstanceStarted(callback: (data: RunningInstance) => void): Unsubscribe
   onInstanceStopping(callback: (data: { installationId: string }) => void): Unsubscribe
   onInstanceStopped(callback: (data: { installationId: string }) => void): Unsubscribe
+  /** An action started (`active: true`) or finished (`active: false`) for an
+   *  install, regardless of which window dispatched it. Drives ambient busy
+   *  UI (e.g. the dashboard tile's "Updating" pill) in every window. */
+  onOperationChanged(
+    callback: (data: { installationId: string; actionId: string; active: boolean }) => void
+  ): Unsubscribe
   onThemeChanged(callback: (theme: ResolvedTheme) => void): Unsubscribe
   onLocaleChanged(
     callback: (payload: { locale: string; messages: Record<string, unknown> }) => void
@@ -1323,11 +1580,13 @@ export interface ElectronApi {
   onModelDownloadProgress(callback: (progress: ModelDownloadProgress) => void): Unsubscribe
   /** Fires when main drops a single terminal entry from its recent
    *  buffer (via `dismissModelDownload`). */
-  onModelDownloadRemoved(callback: (data: { url: string }) => void): Unsubscribe
+  onModelDownloadRemoved(callback: (data: { url: string; id?: string }) => void): Unsubscribe
   /** Fires when main bulk-dismisses every terminal entry. The payload
-   *  carries the URLs that were removed so listeners can drop them in
-   *  one pass instead of re-listing. */
-  onModelDownloadsClearedFinished(callback: (data: { urls: string[] }) => void): Unsubscribe
+   *  carries the removed rows' URLs plus `refs` (stable job id when the row
+   *  had one, else its URL) so listeners can drop them in one pass. */
+  onModelDownloadsClearedFinished(
+    callback: (data: { urls: string[]; refs?: string[] }) => void
+  ): Unsubscribe
   /**
    * Forward a renderer-originated telemetry event to main, which captures it
    * via PostHog Node under the current distinct_id and consent state.
@@ -1349,23 +1608,9 @@ export interface ElectronApi {
   }): void
   /**
    * Update person-level cohort properties on the current PostHog person.
-   * Replaces the renderer's previous `registerPostHog(properties)` calls.
-   * Main routes this to `posthog.identify({ distinctId, properties: { $set: ... } })`.
+   * Main holds pre-auth properties until a verified Firebase user is bound.
    */
   registerTelemetryProperties(properties: Record<string, unknown>): void
-  /**
-   * Bind a user_id on the current PostHog identity after a successful login.
-   * Main aliases the anonymous installation_id into user_id (PostHog merges
-   * histories), sets `is_authenticated: true`, and fires `app:user_logged_in`.
-   * The renderer remains responsible for Datadog `setUser` on its own SDK.
-   */
-  telemetryBindUserId(payload: { userId: string; properties?: Record<string, unknown> }): void
-  /**
-   * Unbind user_id on logout. Switches distinct_id back to the anonymous
-   * installation_id (NOT posthog.reset, which would clobber installation_id
-   * and download_token). Renderer also clears Datadog setUser.
-   */
-  telemetryUnbindUserId(): void
   /**
    * Look up an A/B experiment / feature-flag variant for this user.
    * Returns the cached value (string for multivariate, boolean for a
@@ -1433,18 +1678,18 @@ export interface ElectronApi {
   onPanelTriggerOverlay(
     callback: (data: {
       kind:
-      | 'install-update'
-      | 'app-update-restart-prompt'
-      | 'app-update-download-prompt'
-      | 'open-settings'
-      | 'picker-pick-install'
-      | 'picker-install-action'
-      | 'picker-show-progress'
+        | 'install-update'
+        | 'app-update-restart-prompt'
+        | 'app-update-download-prompt'
+        | 'open-settings'
+        | 'picker-pick-install'
+        | 'picker-install-action'
+        | 'picker-show-progress'
       installationId?: string
       actionId?: string
       actionData?: Record<string, unknown>
       version?: string | null
-      settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global'
+      settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
       title?: string
       cancellable?: boolean
       /** Picker-only (`picker-pick-install`): set on boot-time restore. The
@@ -1466,7 +1711,7 @@ export interface ElectronApi {
 
 /** Action IDs that auto-relaunch ComfyUI after completing (stop→op→launch).
  *  Shared between main and renderer so both sides agree on the relaunch contract. */
-export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore'])
+export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 
 /** Action IDs that require the installation to be stopped before running.
  *  Shared between main and renderer processes. */
@@ -1474,12 +1719,32 @@ export const REQUIRES_STOPPED = new Set([
   'delete',
   'copy',
   'copy-update',
+  'copy-pytorch',
   'release-update',
   'migrate-to-standalone',
   'snapshot-restore',
   'update-comfyui',
-  'migrate-from'
+  'migrate-from',
+  'change-pytorch'
 ])
+
+/** Title-popup kind tags — the discriminant for popup config/opts across main,
+ *  preload, and the popup renderer. Single source so the tag can't desync. */
+export const POPUP_KIND = {
+  menu: 'menu',
+  downloads: 'downloads',
+  downloadsFull: 'downloads-full',
+  instancePicker: 'instance-picker',
+  globalSettings: 'global-settings'
+} as const
+
+export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
+
+/** Resolved popup theme passed in every popup config. */
+export interface PopupTheme {
+  bg: string
+  text: string
+}
 
 /** Picker popup's settings-passthrough IPC channels — main registers them,
  *  preload invokes them. Single source so a typo can't desync the two sides. */
@@ -1504,10 +1769,10 @@ export const PICKER_SETTINGS_CHANNELS = {
   previewSnapshotFile: 'comfy-titlepopup:picker-settings-preview-snapshot-file',
   getComfyArgs: 'comfy-titlepopup:picker-settings-get-comfy-args',
   browseFolder: 'comfy-titlepopup:picker-settings-browse-folder',
-  previewDesktopMigration: 'comfy-titlepopup:picker-settings-preview-desktop-migration',
   previewLocalMigration: 'comfy-titlepopup:picker-settings-preview-local-migration',
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',
   getLocale: 'comfy-titlepopup:picker-settings-get-locale',
-  getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags'
+  getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags',
+  getUniqueName: 'comfy-titlepopup:picker-settings-get-unique-name'
 } as const

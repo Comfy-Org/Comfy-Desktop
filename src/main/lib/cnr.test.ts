@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
-  net: { fetch: vi.fn() },
+  net: { fetch: vi.fn() }
 }))
 
 import { isSafePathComponent } from './cnr'

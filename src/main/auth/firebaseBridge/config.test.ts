@@ -4,15 +4,11 @@ import { detectFirebaseEnv, getFirebaseConfig } from './config'
 
 describe('detectFirebaseEnv', () => {
   it('returns dev for the dev Firebase host', () => {
-    expect(
-      detectFirebaseEnv('https://dreamboothy-dev.firebaseapp.com/__/auth/handler'),
-    ).toBe('dev')
+    expect(detectFirebaseEnv('https://dreamboothy-dev.firebaseapp.com/__/auth/handler')).toBe('dev')
   })
 
   it('returns prod for the prod Firebase host', () => {
-    expect(detectFirebaseEnv('https://dreamboothy.firebaseapp.com/__/auth/handler')).toBe(
-      'prod',
-    )
+    expect(detectFirebaseEnv('https://dreamboothy.firebaseapp.com/__/auth/handler')).toBe('prod')
   })
 
   it('defaults to prod for unparseable URLs', () => {

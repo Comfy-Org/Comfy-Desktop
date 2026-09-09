@@ -39,7 +39,7 @@ export function formatEta(seconds: number): string {
 /** Single-line status summary; pass `completedShowsSize` to append total size to the completed line. */
 export function statusLine(
   d: DownloadFormatInput,
-  opts: { completedShowsSize?: boolean } = {},
+  opts: { completedShowsSize?: boolean } = {}
 ): string {
   const pct = Math.round(d.progress * 100)
   switch (d.status) {

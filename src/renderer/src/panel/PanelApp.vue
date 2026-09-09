@@ -4,8 +4,8 @@ import { useI18n } from 'vue-i18n'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
-import DownloadsModal from '../components/DownloadsModal.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
+import AnnouncementModal from '../components/AnnouncementModal.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
@@ -14,14 +14,17 @@ import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
 import QuickInstallModal from '../views/QuickInstallModal.vue'
 import FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import MigrateConfirmTakeover from '../views/MigrateConfirmTakeover.vue'
+import McpSetupModal from '../views/mcp/McpSetupModal.vue'
 import { useTheme } from '../composables/useTheme'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useModal } from '../composables/useModal'
+import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboardConfirm'
 import { useSendFeedback } from '../composables/useSendFeedback'
+import { useAnnouncement } from '../composables/useAnnouncement'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
@@ -37,6 +40,9 @@ import {
   SUCCESS_ACTION_GO_DASHBOARD,
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
+import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
+import { useMediaPrefetch } from '../composables/useMediaPrefetch'
+import { MCP_LAUNCH_VIDEO_SRC } from '../views/mcp/McpVideoSources'
 import type { Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -63,8 +69,12 @@ void launcherPrefs.loadPrefs()
 const { loaded: launcherPrefsLoaded, firstUseCompleted } = launcherPrefs
 
 const modal = useModal()
+// Surface main-process mid-operation prompts (e.g. Legacy Desktop adoption)
+// as in-app dialogs above the ProgressModal instead of native OS message boxes.
+useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
+const { announcementOpen, closeAnnouncement } = useAnnouncement()
 
 // installationStore.fetchInstallations() is wired to onInstallationsChanged
 // inside the store itself, so the panel just needs to read from it.
@@ -118,7 +128,7 @@ const firstUseChain = useFirstUseChain({
   handleShowProgress: (showOpts) => overlays.handleShowProgress(showOpts),
   performChooserLaunch: (inst, onMissing) => chooserHandoff.performChooserLaunch(inst, onMissing),
   openFirstUseTakeover: (firstUseOpts) => overlays.openFirstUseTakeover(firstUseOpts),
-  resetFirstUseSpinner: () => firstUseRef.value?.resetContinue(),
+  resetFirstUseSpinner: () => firstUseRef.value?.resetContinue()
 })
 const {
   chainingFirstUseToNewInstall,
@@ -153,6 +163,42 @@ const {
   dismissTakeoverDirect,
   switchPanel
 } = overlays
+
+// Defers only for a running instance, not an open overlay — the picker lives
+// inside the new-install takeover, which is exactly when we want it warm.
+const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
+  isBusy: () => sessionStore.runningTabCount > 0
+})
+
+// Warm the ~5 MB MCP film into cache once so it isn't black on first open. No
+// `runningTabCount` gate: the modal is only reachable while an instance runs.
+const { prefetch: prefetchMedia } = useMediaPrefetch()
+let mcpVideoWarmed = false
+function warmMcpVideo(): void {
+  if (mcpVideoWarmed) return
+  mcpVideoWarmed = true
+  prefetchMedia([MCP_LAUNCH_VIDEO_SRC])
+}
+
+let warmTemplateThumbnailsOnce: Promise<void> | null = null
+function warmTemplateThumbnails(): Promise<void> {
+  if (firstUseCompleted.value) return Promise.resolve()
+  // Both first-use branches can reach this on one cold start; warm just once.
+  warmTemplateThumbnailsOnce ??= (async () => {
+    try {
+      const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
+      prefetchThumbnails(
+        options.map((o) => {
+          const url = o.data?.thumbnailUrl
+          return typeof url === 'string' ? url : null
+        })
+      )
+    } catch {
+      // Best-effort warm-up; the picker still loads thumbnails on demand.
+    }
+  })()
+  return warmTemplateThumbnailsOnce
+}
 
 // E2E surface: tests drive UI-level flows (e.g. inject a finished
 // failed op to render ProgressModal's error state) by calling into
@@ -264,10 +310,12 @@ useDeepLinkRouter({
       if (pickOpts?.startupRestore) {
         await handleStartupRestorePick(inst)
       } else {
-        await chooserHandoff.handleChooserPick(inst)
+        await chooserHandoff.handleChooserPick(inst, {
+          isRestart: pickOpts?.isRestart === true
+        })
       }
     } else {
-      await chooserHandoff.performPickerLaunch(inst)
+      await chooserHandoff.performPickerLaunch(inst, { isRestart: pickOpts?.isRestart === true })
     }
   },
   runInstallActionFromPicker: async (inst, actionId) => {
@@ -307,23 +355,33 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
   }
 }
 
-// `'downloads-v2'` brings the panel forward in an overlay mode; the renderer
-// mounts `DownloadsModal` and dismiss routes back through `closeCurrentPanel`
-// so the body returns to comfy/lifecycle without leaving stale state.
-function closeDownloadsV2(): void {
+/**
+ * Dismisses the MCP overlay and restores the main canvas.
+ * The 'mcp-setup' overlay leaves the underlying view active.
+ */
+function handleMcpClose(): void {
   window.api.closeCurrentPanel()
 }
 
-// Toggles transparency rules in the non-scoped <style> block so the
-// live ComfyUI canvas composites through while an overlay panel
-// (downloads-v2 / feedback) is mounted.
+/**
+ * Handles the "Open terminal" CTA.
+ * Switches to the console tab, and restores the canvas when closed.
+ */
+function handleMcpOpenTerminal(): void {
+  if (!installationId) return
+  window.api.openInstancePicker({ installationId, initialTab: 'console' })
+}
+
+/** Make the panel transparent for overlay modes, then tell main to reveal it. */
 watch(
   activePanel,
   (next) => {
-    document.body.classList.toggle(
-      'panel-overlay-mode',
-      next === 'downloads-v2' || next === 'feedback'
-    )
+    const isOverlay = next === 'feedback' || next === 'mcp-setup' || next === 'announcement'
+    document.body.classList.toggle('panel-overlay-mode', isOverlay)
+    if (!isOverlay) return
+    // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
+    // and Chromium pauses rAF for an occluded view, so it would never fire.
+    void nextTick(() => window.api.signalOverlayReady())
   },
   { immediate: true }
 )
@@ -458,6 +516,8 @@ onMounted(async () => {
       (!urlFirstUseCompleted && (!launcherPrefsLoaded.value || !firstUseCompleted.value))
 
     if (shouldOpenFirstUse && !isFlowPanel(initialPanel)) {
+      // Warm before opening so the prefetch queue is pumping as the picker mounts.
+      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
 
@@ -485,6 +545,8 @@ onMounted(async () => {
     // `firstUseCompleted` stays false until the explicit completion
     // path runs.
     if (!firstUseCompleted.value && !isFlowPanel(initialPanel)) {
+      // Warm before opening so the prefetch queue is pumping as the picker mounts.
+      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
   } catch (err) {
@@ -496,6 +558,8 @@ onMounted(async () => {
     // after a partial-bootstrap failure.
     resolveBootstrap?.()
     resolveBootstrap = null
+    // After bootstrap so it never competes with init (idle-deferred internally).
+    warmMcpVideo()
   }
 })
 
@@ -602,15 +666,14 @@ onUnmounted(() => {
       />
     </template>
 
-    <!-- Brand-redesigned "View All Downloads" surface. Mounts only
-         when main flips us into `'downloads-v2'` mode (from the title-
-         bar downloads popup's footer link). `v-if` mirrors the rest of
-         this file's overlay convention — keeps the store init + body
-         scroll lock out of every PanelApp mount that doesn't open the
-         modal. Dismiss routes back through `closeCurrentPanel()`. -->
-    <DownloadsModal v-if="activePanel === 'downloads-v2'" open @close="closeDownloadsV2" />
+    <McpSetupModal
+      v-if="activePanel === 'mcp-setup'"
+      @close="handleMcpClose"
+      @open-terminal="handleMcpOpenTerminal"
+    />
 
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
+    <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 
     <ModalDialog />
     <DialogHost />

@@ -13,7 +13,7 @@ describe('InfoTooltip', () => {
   it('does not show bubble initially', () => {
     const wrapper = mount(InfoTooltip, {
       props: { text: 'Hello tooltip' },
-      attachTo: document.body,
+      attachTo: document.body
     })
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
     wrapper.unmount()
@@ -22,7 +22,7 @@ describe('InfoTooltip', () => {
   it('shows bubble with correct text on mouseenter', async () => {
     const wrapper = mount(InfoTooltip, {
       props: { text: 'Hello tooltip', delayMs: 0 } as Record<string, unknown>,
-      attachTo: document.body,
+      attachTo: document.body
     })
     await wrapper.find('.tooltip-wrap').trigger('mouseenter')
     await flushPromises()
@@ -35,7 +35,7 @@ describe('InfoTooltip', () => {
   it('hides bubble on mouseleave', async () => {
     const wrapper = mount(InfoTooltip, {
       props: { text: 'tip', delayMs: 0 } as Record<string, unknown>,
-      attachTo: document.body,
+      attachTo: document.body
     })
     await wrapper.find('.tooltip-wrap').trigger('mouseenter')
     await flushPromises()
@@ -49,7 +49,7 @@ describe('InfoTooltip', () => {
   it('renders the bubble with a resolved `data-side` attribute', async () => {
     const wrapper = mount(InfoTooltip, {
       props: { text: 'tip', side: 'bottom', delayMs: 0 } as Record<string, unknown>,
-      attachTo: document.body,
+      attachTo: document.body
     })
     await wrapper.find('.tooltip-wrap').trigger('mouseenter')
     await flushPromises()

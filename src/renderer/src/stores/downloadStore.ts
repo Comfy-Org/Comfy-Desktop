@@ -10,13 +10,32 @@ import {
 } from '../lib/telemetry'
 
 export const useDownloadStore = defineStore('downloads', () => {
+  // Rows keyed by the download's stable job id, falling back to its URL for
+  // rows from mains that predate ids.
   const downloads = reactive(new Map<string, ModelDownloadProgress>())
   // Active main-process subscriptions; also gates the idempotent `init()`.
   const unsubs: Unsubscribe[] = []
 
+  function rowKey(progress: ModelDownloadProgress): string {
+    return progress.id ?? progress.url
+  }
+
+  /** Drop the row addressed by `ref` (job id or URL). Falls back to scanning
+   *  for a URL match so removal broadcasts that only carry a URL still drop
+   *  id-keyed rows. */
+  function removeByRef(ref: string): void {
+    if (downloads.delete(ref)) return
+    for (const [key, d] of downloads) {
+      if (d.url === ref || d.id === ref) {
+        downloads.delete(key)
+        return
+      }
+    }
+  }
+
   function upsert(progress: ModelDownloadProgress, opts: { isSeed?: boolean } = {}): void {
-    const previous = downloads.get(progress.url)
-    downloads.set(progress.url, { ...progress })
+    const previous = downloads.get(rowKey(progress))
+    downloads.set(rowKey(progress), { ...progress })
 
     // `isSeed` suppresses telemetry on the initial replay so already-fired events aren't double-counted.
     if (opts.isSeed) return
@@ -54,18 +73,18 @@ export const useDownloadStore = defineStore('downloads', () => {
     // Source of truth lives in main so dismissals propagate across every surface (popup ↔ Settings tab).
     unsubs.push(
       window.api.onModelDownloadProgress((p) => upsert(p)),
-      window.api.onModelDownloadRemoved(({ url }) => {
-        downloads.delete(url)
+      window.api.onModelDownloadRemoved(({ url, id }) => {
+        removeByRef(id ?? url)
       }),
-      window.api.onModelDownloadsClearedFinished(({ urls }) => {
-        for (const url of urls) downloads.delete(url)
+      window.api.onModelDownloadsClearedFinished(({ urls, refs }) => {
+        for (const ref of refs ?? urls) removeByRef(ref)
       })
     )
   }
 
   // Routes through main; local state updates via the `model-download-removed` listener, not here, so surfaces stay in lockstep.
-  function dismiss(url: string): void {
-    void window.api.dismissModelDownload(url)
+  function dismiss(ref: string): void {
+    void window.api.dismissModelDownload(ref)
   }
 
   function clearFinished(): void {

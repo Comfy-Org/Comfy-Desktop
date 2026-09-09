@@ -7,5 +7,5 @@ export const remote = createUrlSource({
   category: 'remote',
   defaultUrl: 'http://localhost:8188',
   editableUrl: true,
-  includeUntrack: true,
+  includeUntrack: true
 })

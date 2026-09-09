@@ -1,7 +1,14 @@
 import path from 'path'
 import fs from 'fs'
 import { app } from 'electron'
-import { configDir, cacheDir, homeDir, setInstallDirResolver } from './lib/paths'
+import {
+  configDir,
+  homeDir,
+  defaultDataRoot,
+  defaultDownloadCacheDir,
+  builtinDefaultInstallDir,
+  setInstallDirResolver
+} from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
 import { readFileSafe, writeFileSafe } from './lib/safe-file'
 
@@ -34,6 +41,12 @@ export interface KnownSettings {
    *  (guards against accidentally killing a ComfyUI that took minutes to boot).
    *  Default false — windows close without a prompt. */
   confirmBeforeClosingWindow?: boolean
+  /** When true (default), launching another local instance while one is running
+   *  or starting asks the user whether to close the existing instances first. */
+  warnBeforeRunningMultipleInstances?: boolean
+  /** Uses GPU rendering for Desktop windows. Disabling this takes effect on
+   *  the next app launch because Electron must configure it before readiness. */
+  hardwareAcceleration?: boolean
   pypiMirror?: string
   useChineseMirrors?: boolean
   chineseMirrorsPrompted?: boolean
@@ -41,6 +54,11 @@ export interface KnownSettings {
   /** `true` once the first-use takeover is finished. Mid-flow cancel does NOT
    *  flip this, so the takeover replays from step 1 next launch. */
   firstUseCompleted?: boolean
+  minimaxAnnouncementSeen?: boolean
+  /** Seen-flag for the Comfy Cloud nodes announcement. Deliberately a NEW key
+   *  rather than a reset of minimaxAnnouncementSeen: everyone who dismissed the
+   *  previous announcement must still get the bell for this one. */
+  cloudNodesAnnouncementSeen?: boolean
   /** When true, hide the Cloud tile (and the Try-Cloud CTA) from the
    *  Dashboard / Instance Picker. Local-only users who never use Cloud
    *  can opt out of seeing it without us removing the feature. Default
@@ -51,6 +69,10 @@ export interface KnownSettings {
   /** Directory the user last chose in the general "Save image/file" dialog.
    *  Used to seed the dialog's defaultPath so it matches browser behavior. */
   lastSaveDialogDir?: string
+  /** When true, the dedicated starter-template picker step is skipped during
+   *  install (the user ticked "Don't show this again"). Only ever set once the
+   *  user already has ≥1 local install. Default false — show the step. */
+  skipTemplatePickerStep?: boolean
   /** Version of a Desktop update whose installer finished downloading in a
    *  previous session and is staged on disk. Gates the bounded startup
    *  install check so boots without a staged update aren't delayed. Cleared
@@ -61,23 +83,33 @@ export interface KnownSettings {
    *  the same version on the next boot — the user can still install it manually
    *  via the update pill. Cleared once that version is actually running. */
   lastStartupUpdateAttemptVersion?: string
-  /** Hidden, local-only gate (default false / off) for applying a staged Desktop
-   *  update on the next launch instead of letting electron-updater install it on
-   *  quit. Windows-only — ignored on macOS/Linux, whose updaters don't have the
-   *  shutdown install-corruption this addresses. Off: install-on-quit stays armed
-   *  and is only suppressed while the OS is shutting down. On: install-on-quit is
-   *  disabled and the update applies at startup. Not remote yet — flipped by hand
-   *  in settings.json to canary the startup-install path. */
+  /** Staged version whose startup install was skipped because the update never
+   *  reached the ready state (installer still re-downloading, corrupt, or the
+   *  check failed), plus how many consecutive boots did so. After a few strikes
+   *  the stale staged marker is cleared so boots stop showing the update splash
+   *  for an install that never becomes ready. Both cleared when the version
+   *  installs, when the counter's version is no longer newer than the running
+   *  build, or when a different version gets staged. */
+  startupInstallNotReadyVersion?: string
+  startupInstallNotReadyCount?: number
+  /** Opaque, locally-generated correlation id for the staged updater attempt.
+   *  Contains no device or user material and may span process launches. */
+  pendingDesktopUpdateAttemptId?: string
+  pendingDesktopUpdateAttemptVersion?: string
+  /** Windows-only gate (default on) for applying a staged Desktop update on the
+   *  next launch instead of letting electron-updater install it on quit. Ignored
+   *  on macOS/Linux, whose updaters don't have the shutdown install-corruption
+   *  this addresses. On (default): install-on-quit is disabled and the update
+   *  applies at startup. Set to `false` to opt back out — install-on-quit stays
+   *  armed and is only suppressed while the OS is shutting down. */
   installUpdatesOnStartup?: boolean
-  /** Hidden, local-only gate (default false / off) for showing the NSIS
-   *  installer's own progress window while an update installs, instead of
-   *  installing fully silently. Windows-only — `isSilent` is an NSIS concept and
-   *  is ignored on macOS/Linux. On update the assisted installer skips the
-   *  welcome/license/directory pages and our `customFinishPage` auto-launches +
-   *  skips the finish page, so the user only sees a progress window (no clicks).
-   *  Gives continuous visual feedback during the real file copy, which our
-   *  Electron "Updating…" splash can't cover (the copy happens after we quit).
-   *  Not remote yet — flipped by hand in settings.json to canary it. */
+  /** Windows-only gate (default on) for showing the NSIS installer's own
+   *  progress window while an update installs, instead of installing fully
+   *  silently. Ignored on macOS/Linux — `isSilent` is an NSIS concept. On update
+   *  the assisted installer skips the welcome/license/directory pages and our
+   *  `customFinishPage` auto-launches + skips the finish page, so the user only
+   *  sees a progress window (no clicks). Set to `false` for a fully silent
+   *  install. */
   showInstallerUI?: boolean
 }
 
@@ -93,38 +125,181 @@ type DefaultedSettingKey =
   | 'installDir'
 type SettingsDefaults = Pick<KnownSettings, DefaultedSettingKey>
 
-const dataPath = path.join(configDir(), "settings.json")
+const dataPath = path.join(configDir(), 'settings.json')
 
-const SHARED_ROOT = path.join(homeDir(), "ComfyUI-Shared")
+const SHARED_ROOT = path.join(defaultDataRoot(), 'ComfyUI-Shared')
+
+/** Scalar shapes allowed as a telemetry property value. Arrays/objects are
+ *  never emitted (they'd leak paths/PII and blow up cardinality). */
+export type SettingTelemetryValue = boolean | number | string | null
+
+/** Runtime context passed to per-setting telemetry transforms so they can be
+ *  platform-aware (e.g. Windows-only gates report `null` off-Windows). */
+type SettingTelemetryCtx = { platform: NodeJS.Platform }
+
+/** A `value` telemetry transform. Returning `null` means "not applicable /
+ *  default"; NEVER return an array/object. Settings whose default is applied at
+ *  runtime (not via the `defaults` object) MUST coalesce `undefined` to their
+ *  effective default here, so emitted values stay self-describing if a default
+ *  changes over time. */
+type SettingTelemetryTransform<K extends keyof KnownSettings> = (
+  raw: KnownSettings[K] | undefined,
+  ctx: SettingTelemetryCtx
+) => SettingTelemetryValue
+
+/** A single emitted property. `value` emits the (optionally transformed) value;
+ *  `presence` emits `settings.has(key)` — used both for PII-safe path settings
+ *  and as an "explicitly set?" companion to a `value` emitter. */
+type SettingEmitter<K extends keyof KnownSettings> =
+  | { kind: 'value'; prop: string; toTelemetry?: SettingTelemetryTransform<K> }
+  | { kind: 'presence'; prop: string }
+
+/**
+ * Per-setting tracking policy (issue #1223). Every `SETTINGS_SCHEMA` entry MUST
+ * declare one, so a new setting can't silently ship untracked:
+ *  - `'value'`   — emit the setting's value. Use `toTelemetry` to coalesce
+ *                  default-on/off booleans and platform-gate Windows-only keys;
+ *                  without it the raw scalar (or `null`) is emitted.
+ *  - `'presence'`— emit only a boolean (`settings.has(key)` = user-set / differs
+ *                  from default). For path / URL / PII-bearing settings whose raw
+ *                  value must never leave the machine.
+ *  - `'multi'`   — emit several props for one setting (e.g. a raw "selected"
+ *                  value plus a resolved "effective" value, or a `value` plus an
+ *                  "explicitly set?" `presence` companion). Each emitter names its
+ *                  own `prop`.
+ *  - `'omit'`    — internal bookkeeping / dead settings; never emitted.
+ * For `value`/`presence`, `prop` overrides the default `setting_<snake_case_key>`.
+ */
+type SettingTelemetryPolicy<K extends keyof KnownSettings> =
+  | { policy: 'omit' }
+  | { policy: 'presence'; prop?: string }
+  | {
+      policy: 'value'
+      prop?: string
+      toTelemetry?: SettingTelemetryTransform<K>
+    }
+  | { policy: 'multi'; emitters: SettingEmitter<K>[] }
+
+type SettingSchemaEntry<K extends keyof KnownSettings> = {
+  nullable: boolean
+  telemetry: SettingTelemetryPolicy<K>
+}
 
 const SETTINGS_SCHEMA = {
-  cacheDir: { nullable: false },
-  maxCachedDownloads: { nullable: false },
-  onAppClose: { nullable: false },
-  modelsDirs: { nullable: false },
-  inputDir: { nullable: false },
-  outputDir: { nullable: false },
-  installDir: { nullable: false },
-  language: { nullable: false },
-  theme: { nullable: false },
-  autoUpdate: { nullable: false },
-  autoInstallUpdates: { nullable: false },
-  autoLaunchOnStartup: { nullable: false },
-  confirmBeforeClosingWindow: { nullable: false },
-  pypiMirror: { nullable: false },
-  useChineseMirrors: { nullable: false },
-  chineseMirrorsPrompted: { nullable: false },
-  telemetryEnabled: { nullable: false },
-  firstUseCompleted: { nullable: false },
-  hideCloudFromPicker: { nullable: false },
-  oemManagedModelDirs: { nullable: false },
-  oemWorkflowImportVersion: { nullable: false },
-  lastSaveDialogDir: { nullable: true },
-  pendingDownloadedUpdateVersion: { nullable: true },
-  lastStartupUpdateAttemptVersion: { nullable: true },
-  installUpdatesOnStartup: { nullable: false },
-  showInstallerUI: { nullable: false },
-} as const satisfies Record<keyof KnownSettings, { nullable: boolean }>
+  cacheDir: { nullable: false, telemetry: { policy: 'presence' } },
+  // Validate the scalar type so a hand-edited settings.json can't leak a
+  // free-form string; fall back to null ("not a real value") otherwise.
+  maxCachedDownloads: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => (typeof raw === 'number' ? raw : null) }
+  },
+  onAppClose: {
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      toTelemetry: (raw) => (raw === 'quit' || raw === 'tray' ? raw : null)
+    }
+  },
+  modelsDirs: { nullable: false, telemetry: { policy: 'presence' } },
+  inputDir: { nullable: false, telemetry: { policy: 'presence' } },
+  outputDir: { nullable: false, telemetry: { policy: 'presence' } },
+  installDir: { nullable: false, telemetry: { policy: 'presence' } },
+  // What the user actually selected (null = following the OS default). The
+  // *effective* locale the app resolves to is emitted on the
+  // `app.language_resolved` event instead, where it's known post-i18n-init.
+  language: {
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      prop: 'setting_language_selected',
+      toTelemetry: (raw) => (typeof raw === 'string' && raw ? raw : null)
+    }
+  },
+  // App is dark-only; the theme setting is inert (see resolveTheme), so tracking
+  // it carries no signal.
+  theme: { nullable: false, telemetry: { policy: 'omit' } },
+  // Legacy toggle no longer gated on a setting (see KnownSettings), so its value
+  // has no effective meaning — don't emit it as if it did.
+  autoUpdate: { nullable: false, telemetry: { policy: 'omit' } },
+  autoInstallUpdates: {
+    // Default-on: any non-`false` value (incl. missing) is enabled. Mirrors
+    // `isAutoInstallEnabled()` in updater.ts. Exact prop name required by #1220.
+    // `auto_install_updates_explicit` separates users who explicitly chose a value
+    // from the default-on majority (the opt-in/out cohort from #1220).
+    nullable: false,
+    telemetry: {
+      policy: 'multi',
+      emitters: [
+        { kind: 'value', prop: 'auto_install_updates', toTelemetry: (raw) => raw !== false },
+        { kind: 'presence', prop: 'auto_install_updates_explicit' }
+      ]
+    }
+  },
+  // Emit "auto-launch configured?" as a boolean; the raw value can be an
+  // installation id (potentially identifying).
+  autoLaunchOnStartup: { nullable: false, telemetry: { policy: 'presence' } },
+  confirmBeforeClosingWindow: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
+  },
+  warnBeforeRunningMultipleInstances: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw !== false }
+  },
+  hardwareAcceleration: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw !== false }
+  },
+  // Mirror URL can be a private/identifying endpoint — presence only.
+  pypiMirror: { nullable: false, telemetry: { policy: 'presence' } },
+  useChineseMirrors: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
+  },
+  chineseMirrorsPrompted: { nullable: false, telemetry: { policy: 'omit' } },
+  // Consent gate, not a durable trackable setting: once disabled we can't emit a
+  // fresh `false` without violating the consent gate, so the value would go stale.
+  telemetryEnabled: { nullable: false, telemetry: { policy: 'omit' } },
+  firstUseCompleted: { nullable: false, telemetry: { policy: 'omit' } },
+  minimaxAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  hideCloudFromPicker: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
+  },
+  oemManagedModelDirs: { nullable: false, telemetry: { policy: 'presence' } },
+  oemWorkflowImportVersion: { nullable: false, telemetry: { policy: 'omit' } },
+  lastSaveDialogDir: { nullable: true, telemetry: { policy: 'presence' } },
+  skipTemplatePickerStep: {
+    nullable: false,
+    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
+  },
+  pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  startupInstallNotReadyVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  startupInstallNotReadyCount: { nullable: true, telemetry: { policy: 'omit' } },
+  pendingDesktopUpdateAttemptId: { nullable: true, telemetry: { policy: 'omit' } },
+  pendingDesktopUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  installUpdatesOnStartup: {
+    // Windows-only, default-on. Off-Windows the gate is inert, so report `null`
+    // ("not applicable") to keep it distinct from an explicit opt-out. Exact
+    // prop name required by #1220.
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      prop: 'install_updates_on_startup',
+      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null)
+    }
+  },
+  showInstallerUI: {
+    // Windows-only, default-on — same `null`-off-Windows convention.
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      toTelemetry: (raw, ctx) => (ctx.platform === 'win32' ? raw !== false : null)
+    }
+  }
+} as const satisfies { [K in keyof KnownSettings]: SettingSchemaEntry<K> }
 
 export type KnownSettingKey = keyof typeof SETTINGS_SCHEMA
 export type NullableKnownSettingKey = {
@@ -142,14 +317,14 @@ function isNullableKnownSettingKey(key: KnownSettingKey): key is NullableKnownSe
 }
 
 export const defaults: SettingsDefaults = {
-  cacheDir: path.join(cacheDir(), "download-cache"),
+  cacheDir: defaultDownloadCacheDir(),
   maxCachedDownloads: 1,
   // Docking-to-tray is disabled (createTray() is currently a no-op).
-  onAppClose: "quit",
-  modelsDirs: [path.join(SHARED_ROOT, "models")],
-  inputDir: path.join(SHARED_ROOT, "input"),
-  outputDir: path.join(SHARED_ROOT, "output"),
-  installDir: path.join(homeDir(), "ComfyUI-Installs"),
+  onAppClose: 'quit',
+  modelsDirs: [path.join(SHARED_ROOT, 'models')],
+  inputDir: path.join(SHARED_ROOT, 'input'),
+  outputDir: path.join(SHARED_ROOT, 'output'),
+  installDir: builtinDefaultInstallDir()
 }
 
 const systemDefault = defaults.modelsDirs[0]!
@@ -157,6 +332,25 @@ const shouldSanitizeCopiedUserDefaults = process.platform === 'win32'
 
 function resolveIfNonEmpty(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? path.resolve(value) : null
+}
+
+/** Whether a configured path lives on a currently-accessible volume. We check
+ *  the path *root* (e.g. `D:\`), not the leaf, so a custom location that simply
+ *  hasn't been created yet stays configured — installs/cache are created on
+ *  demand. Returns false only when the drive/volume itself is gone (reinstall on
+ *  a different drive, a removed disk), so callers can fall back to a usable
+ *  default instead of pointing at a dead path. On POSIX the root is always `/`,
+ *  so this is effectively a no-op there. */
+function isOnAccessibleVolume(value: unknown): boolean {
+  const resolved = resolveIfNonEmpty(value)
+  if (!resolved) return false
+  const root = path.parse(resolved).root
+  if (!root) return false
+  try {
+    return fs.existsSync(root)
+  } catch {
+    return false
+  }
 }
 
 function getRelativeDefaultFromHome(currentDefault: string): string | null {
@@ -233,20 +427,37 @@ function maybeSeedFromEnv(): void {
   try {
     JSON.parse(seed) // validate before writing
     fs.mkdirSync(path.dirname(dataPath), { recursive: true })
-    writeFileSafe(dataPath, seed, true)
+    writeFileSafe(dataPath, seed, { backup: true })
   } catch (err) {
     console.warn('Settings: failed to apply E2E_SETTINGS_SEED:', (err as Error).message)
   }
 }
 
 function load(): Settings {
+  return loadOutcome().settings
+}
+
+/** Load settings plus whether settings.json must NOT be rewritten right now:
+ *  it exists but could not be read (e.g. an AV lock outlasting the retry
+ *  budget), so this call is serving bare defaults or stale `.bak` content in
+ *  its place. `set()` refuses to persist while that holds - the file's real
+ *  content is unknown, so saving anything derived from the stand-in would
+ *  overwrite the user's intact, newer settings (the failure environment of
+ *  issue #1367). */
+function loadOutcome(): { settings: Settings; unreadable: boolean } {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
-  const raw = readFileSafe(dataPath)
-  if (raw) {
+  let unreadable = false
+  const read = readFileSafe(dataPath)
+  if (read.kind === 'unreadable') {
+    return { settings: { ...defaults }, unreadable: true }
+  }
+  if (read.kind === 'data') {
+    unreadable = read.primaryUnreadable === true
     try {
-      const obj: unknown = JSON.parse(raw)
-      if (obj && typeof obj === 'object' && !Array.isArray(obj)) parsed = obj as Record<string, unknown>
+      const obj: unknown = JSON.parse(read.data)
+      if (obj && typeof obj === 'object' && !Array.isArray(obj))
+        parsed = obj as Record<string, unknown>
     } catch (err) {
       console.warn('Settings: failed to parse settings JSON:', (err as Error).message)
     }
@@ -270,7 +481,7 @@ function load(): Settings {
     'primaryInstallId',
     'pinnedInstallIds',
     'maxCachedFiles',
-    'closeDirectlyOnLastWindow',
+    'closeDirectlyOnLastWindow'
   ]) {
     if (Object.prototype.hasOwnProperty.call(result, key)) {
       delete result[key]
@@ -295,9 +506,9 @@ function load(): Settings {
 
     const nextModelsDirs = sanitizeModelsDirs(result.modelsDirs, systemDefault)
     if (
-      !Array.isArray(result.modelsDirs)
-      || nextModelsDirs.length !== result.modelsDirs.length
-      || nextModelsDirs.some((dir, index) => dir !== result.modelsDirs[index])
+      !Array.isArray(result.modelsDirs) ||
+      nextModelsDirs.length !== result.modelsDirs.length ||
+      nextModelsDirs.some((dir, index) => dir !== result.modelsDirs[index])
     ) {
       result.modelsDirs = nextModelsDirs
       changed = true
@@ -325,7 +536,9 @@ function load(): Settings {
   // Keep modelsDirs a valid array of non-empty strings; inject system default as fallback.
   if (Array.isArray(result.modelsDirs)) {
     const before = result.modelsDirs.length
-    result.modelsDirs = result.modelsDirs.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+    result.modelsDirs = result.modelsDirs.filter(
+      (d): d is string => typeof d === 'string' && d.trim() !== ''
+    )
     if (result.modelsDirs.length !== before) changed = true
   }
   if (!Array.isArray(result.modelsDirs) || result.modelsDirs.length === 0) {
@@ -344,8 +557,8 @@ function load(): Settings {
     const others = result.modelsDirs.filter((d) => path.resolve(d) !== path.resolve(systemDefault))
     const restored = [systemDefault, ...others]
     if (
-      restored.length !== result.modelsDirs.length
-      || restored.some((d, i) => d !== result.modelsDirs[i])
+      restored.length !== result.modelsDirs.length ||
+      restored.some((d, i) => d !== result.modelsDirs[i])
     ) {
       result.modelsDirs = restored
       changed = true
@@ -372,12 +585,12 @@ function load(): Settings {
   // designated folder is gone, fall back to the safe shared default
   // (which is always OK to recreate) and surface that in the setting —
   // we don't resurrect a vanished custom path.
-  for (const key of ["inputDir", "outputDir"] as const) {
+  for (const key of ['inputDir', 'outputDir'] as const) {
     const designated = result[key] as string | undefined
     const exists =
-      typeof designated === 'string'
-      && designated.trim() !== ''
-      && fs.existsSync(path.resolve(designated))
+      typeof designated === 'string' &&
+      designated.trim() !== '' &&
+      fs.existsSync(path.resolve(designated))
     if (exists) continue
     if (result[key] !== defaults[key]) {
       result[key] = defaults[key]
@@ -387,12 +600,24 @@ function load(): Settings {
       fs.mkdirSync(defaults[key], { recursive: true })
     } catch {}
   }
-  if (changed) save(result)
-  return result
+
+  // installDir/cacheDir are created on demand, so (unlike input/output) a custom
+  // location may legitimately not exist yet — only fall back when the whole
+  // volume is gone (e.g. reinstall on a different drive, a removed disk) so the
+  // app never strands installs/cache on a dead path.
+  for (const key of ['installDir', 'cacheDir'] as const) {
+    if (isOnAccessibleVolume(result[key])) continue
+    if (result[key] !== defaults[key]) {
+      result[key] = defaults[key]
+      changed = true
+    }
+  }
+  if (changed && !unreadable) save(result)
+  return { settings: result, unreadable }
 }
 
 function save(settings: Settings): void {
-  writeFileSafe(dataPath, JSON.stringify(settings, null, 2), true)
+  writeFileSafe(dataPath, JSON.stringify(settings, null, 2), { backup: true })
 }
 
 /** Sentinel values for `autoLaunchOnStartup`. Any string OTHER than these
@@ -418,21 +643,29 @@ const EMPTY_STRING_MEANS_UNSET: ReadonlySet<string> = new Set<KnownSettingKey>([
 /** Keys whose default value should be persisted as absence — `set(k, default)`
  *  drops the key so the file doesn't accumulate no-op writes. */
 const DEFAULT_VALUE_MEANS_UNSET: ReadonlyMap<string, unknown> = new Map<KnownSettingKey, unknown>([
-  ['autoLaunchOnStartup', AUTO_LAUNCH_NONE],
+  ['autoLaunchOnStartup', AUTO_LAUNCH_NONE]
 ])
 
 export function set<K extends string>(
   key: K,
   value: K extends KnownSettingKey ? KnownSettings[K] | undefined : unknown
 ): void {
-  const settings = load()
+  const { settings, unreadable } = loadOutcome()
+  if (unreadable) {
+    // Fail closed (issue #1367): settings.json exists but can't be read right
+    // now, so `settings` holds bare defaults or stale .bak content. Persisting
+    // would replace the user's intact, newer file; dropping this write is the
+    // lesser harm.
+    console.warn(`Settings: not persisting '${key}' - settings.json is currently unreadable`)
+    return
+  }
   // `undefined` = unset/default; for non-nullable known keys treat `null` the
   // same, and for EMPTY_STRING_MEANS_UNSET keys treat '' / whitespace as unset.
   if (
-    value === undefined
-    || (value === null && isKnownSettingKey(key) && !isNullableKnownSettingKey(key))
-    || (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key))
-    || (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key))
+    value === undefined ||
+    (value === null && isKnownSettingKey(key) && !isNullableKnownSettingKey(key)) ||
+    (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key)) ||
+    (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key))
   ) {
     delete settings[key]
     save(settings)
@@ -446,31 +679,97 @@ export function getAll(): Settings {
   return load()
 }
 
+function camelToSnake(s: string): string {
+  // Handle acronym runs so `showInstallerUI` -> `show_installer_ui`, not
+  // `show_installer_u_i`.
+  return s
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase()
+}
+
+function toScalarOrNull(v: unknown): SettingTelemetryValue {
+  return typeof v === 'boolean' || typeof v === 'number' || typeof v === 'string' ? v : null
+}
+
+/**
+ * Build the durable telemetry snapshot of the tracked global settings, driven by
+ * each `SETTINGS_SCHEMA` entry's `telemetry` policy (issue #1223). Returned as a
+ * flat `prop -> scalar` map suitable for PostHog person properties or as event
+ * properties. `'omit'` keys are dropped, `'presence'` keys emit a boolean,
+ * `'value'` keys emit their (optionally transformed) scalar, and `'multi'` keys
+ * emit one entry per declared emitter. Pass `keys` to snapshot a subset (e.g. a
+ * single changed key).
+ */
+export function getTrackedSettingsTelemetryProperties(
+  keys: readonly string[] = KNOWN_SETTING_KEYS
+): Record<string, SettingTelemetryValue> {
+  const ctx: SettingTelemetryCtx = { platform: process.platform }
+  const out: Record<string, SettingTelemetryValue> = {}
+  const emitValue = (
+    raw: unknown,
+    transform?: SettingTelemetryTransform<KnownSettingKey>
+  ): SettingTelemetryValue => (transform ? transform(raw as never, ctx) : toScalarOrNull(raw))
+  for (const key of keys) {
+    if (!isKnownSettingKey(key)) continue
+    const tel = (SETTINGS_SCHEMA[key] as SettingSchemaEntry<KnownSettingKey>).telemetry
+    if (tel.policy === 'omit') continue
+    if (tel.policy === 'presence') {
+      out[tel.prop ?? `setting_${camelToSnake(key)}`] = has(key)
+      continue
+    }
+    if (tel.policy === 'multi') {
+      for (const em of tel.emitters) {
+        out[em.prop] = em.kind === 'presence' ? has(key) : emitValue(get(key), em.toTelemetry)
+      }
+      continue
+    }
+    out[tel.prop ?? `setting_${camelToSnake(key)}`] = emitValue(get(key), tel.toTelemetry)
+  }
+  return out
+}
+
 /**
  * `true` iff `key` looks user-chosen: persisted in settings.json as non-null
  * AND, for defaulted keys, differing from the built-in default. The
  * default-comparison guards against `load()`'s merged write persisting defaults
  * as a side effect, which would otherwise fool the legacy-adopt carry. A user
  * who explicitly picks the default value is misclassified as "not set"
- * (accepted). Returns `false` on parse errors or a missing file.
+ * (accepted). Sentinel values `set()` treats as unset (`autoLaunchOnStartup:
+ * 'none'`, whitespace-only `pypiMirror`) are also treated as absent, so a
+ * stale/hand-edited file can't masquerade as a user choice. Returns `false` on
+ * parse errors or a missing/unreadable file.
  */
 export function has(key: string): boolean {
-  const raw = readFileSafe(dataPath)
-  if (!raw) return false
+  const read = readFileSafe(dataPath)
+  if (read.kind !== 'data') return false
   try {
-    const parsed: unknown = JSON.parse(raw)
+    const parsed: unknown = JSON.parse(read.data)
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
     const value = (parsed as Record<string, unknown>)[key]
     if (value === undefined || value === null) return false
+    // Honor the same "means unset" sentinels `set()` drops, so a stale/manually
+    // edited settings.json can't report a sentinel (e.g. `autoLaunchOnStartup:
+    // 'none'`, a whitespace-only `pypiMirror`) as a user choice.
+    if (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key)) {
+      return false
+    }
+    if (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key)) {
+      return false
+    }
     if (key in defaults) {
       const def = (defaults as Record<string, unknown>)[key]
       if (typeof def === 'string' && typeof value === 'string') {
         if (path.resolve(def) === path.resolve(value)) return false
       } else if (Array.isArray(def) && Array.isArray(value)) {
-        if (def.length === value.length
-          && def.every((d, i) => typeof d === 'string' && typeof value[i] === 'string'
-            ? path.resolve(d as string) === path.resolve(value[i] as string)
-            : d === value[i])) {
+        if (
+          def.length === value.length &&
+          def.every((d, i) =>
+            typeof d === 'string' && typeof value[i] === 'string'
+              ? path.resolve(d as string) === path.resolve(value[i] as string)
+              : d === value[i]
+          )
+        ) {
           return false
         }
       } else if (def === value) {

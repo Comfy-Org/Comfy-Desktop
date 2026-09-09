@@ -32,6 +32,6 @@ export function useElectronApi() {
   return {
     api: window.api,
     listen,
-    cleanup,
+    cleanup
   }
 }

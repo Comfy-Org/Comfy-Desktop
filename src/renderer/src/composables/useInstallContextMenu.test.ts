@@ -11,10 +11,10 @@ const modalMock = {
   alert: vi.fn(),
   prompt: vi.fn(),
   select: vi.fn(),
-  confirmWithOptions: vi.fn(),
+  confirmWithOptions: vi.fn()
 }
 vi.mock('./useModal', () => ({
-  useModal: () => modalMock,
+  useModal: () => modalMock
 }))
 
 import { useInstallContextMenu } from './useInstallContextMenu'
@@ -33,10 +33,13 @@ const apiMock = {
   getSnapshots: vi.fn().mockResolvedValue({ snapshots: [] }),
   exportSnapshot: vi.fn().mockResolvedValue({ ok: true }),
   stopComfyUI: vi.fn().mockResolvedValue(undefined),
+  comfybuilder: {
+    promoteLocalInstance: vi.fn().mockResolvedValue({ ok: true })
+  }
 }
 vi.stubGlobal('window', {
   ...window,
-  api: apiMock,
+  api: apiMock
 })
 
 const messages = {
@@ -46,44 +49,49 @@ const messages = {
       menuUpdate: 'Update',
       menuMigrate: 'Migrate to Standalone',
       menuRestoreSnapshot: 'Restore Snapshot',
+      menuExportSnapshot: 'Export Snapshot',
       menuRevealInFolder: 'Open Folder',
-      menuDelete: 'Uninstall',
+      menuDelete: 'Uninstall'
     },
     actions: {
       copyInstallation: 'Duplicate Instance',
-      untrack: 'Forget',
-      untrackConfirmTitle: 'Forget Instance',
-      untrackConfirmMessage:
-        'This will remove the instance from the app. The files will not be deleted.',
       delete: 'Delete',
       deleteConfirmTitle: 'Delete Install',
       deleteConfirmMessage:
         'This permanently removes this ComfyUI installation and all its files. Other installations and ComfyUI itself are unaffected. This cannot be undone.',
-      share: 'Share',
       stop: 'Stop',
       stopConfirmTitle: 'Stop ComfyUI',
       stopConfirmMessage:
-        'This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.',
+        'This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.'
     },
     snapshots: {
       noSnapshotsToShare: 'There are no snapshots to share yet.',
-      shareFailed: 'Could not share the snapshot.',
+      shareFailed: 'Could not share the snapshot.'
     },
-    progress: { working: 'Working…' },
-    running: { dismiss: 'Dismiss' },
-  },
+    devPlatform: {
+      workspace: {
+        promoteToWorkspace: 'Create Build',
+        promoting: 'Creating...',
+        promoteFailedTitle: 'Could not create build',
+        promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
+      }
+    },
+    progress: { working: 'Working...' },
+    running: { dismiss: 'Dismiss' }
+  }
 }
 
 function makeInstall(overrides: Partial<Installation> = {}): Installation {
   return {
     id: 'inst-1',
     name: 'Inst 1',
+    sourceId: 'standalone',
     sourceLabel: 'Standalone',
     sourceCategory: 'local',
     status: 'installed',
     installPath: '/tmp/inst-1',
     statusTag: { style: 'update', label: 'Update available' },
-    ...overrides,
+    ...overrides
   } as unknown as Installation
 }
 
@@ -100,24 +108,25 @@ const HarnessComponent = defineComponent({
   setup() {
     _harnessSetup?.()
     return () => h('div')
-  },
+  }
 })
 
-function mountHarness(inst: Installation, mutate?: (h: HarnessHandles) => void) {
+function mountHarness(
+  inst: Installation,
+  mutate?: (h: HarnessHandles) => void,
+  canPromoteToWorkspace?: (inst: Installation) => boolean
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const i18n = createI18n({ legacy: false, locale: 'en', messages })
   let handles!: HarnessHandles
   _harnessSetup = () => {
-    const menu = useInstallContextMenu({ onManage: () => {} })
+    const menu = useInstallContextMenu({ onManage: () => {}, canPromoteToWorkspace })
     const session = useSessionStore()
     const progress = useProgressStore()
     handles = { menu, session, progress }
     mutate?.(handles)
-    menu.openCardMenu(
-      new MouseEvent('contextmenu', { clientX: 0, clientY: 0 }),
-      inst,
-    )
+    menu.openCardMenu(new MouseEvent('contextmenu', { clientX: 0, clientY: 0 }), inst)
   }
   const wrapper = mount(HarnessComponent, { global: { plugins: [pinia, i18n] } })
   _harnessSetup = null
@@ -135,9 +144,59 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
+it('groups common desktop-card actions in the requested order', () => {
+  const inst = makeInstall()
+  const { menu } = mountHarness(inst, undefined, () => true)
+  const items = menu.ctxMenuItems.value
+
+  expect(items.map(({ id }) => id)).toEqual([
+    'manage',
+    'update',
+    'copy-install',
+    'reveal-in-folder',
+    'share',
+    'restore-snapshot',
+    'promote-to-workspace',
+    'delete'
+  ])
+  expect(items.filter(({ separator }) => separator).map(({ id }) => id)).toEqual([
+    'share',
+    'delete'
+  ])
+})
+
+describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
   // Update and migrate are mutually exclusive (a single `statusTag`), so each
   // is exercised against an install carrying the matching tag.
+  it.each(['failed', 'partial-delete'])(
+    'offers Uninstall for a managed Build in the %s state',
+    (status) => {
+      const inst = makeInstall({
+        sourceId: 'comfybuilder',
+        distributionId: 'build-1',
+        status
+      })
+      const { menu } = mountHarness(inst)
+
+      expect(findItem(menu.ctxMenuItems.value, 'delete')).toMatchObject({
+        label: 'Uninstall',
+        disabled: false
+      })
+    }
+  )
+
+  it('does not offer local Uninstall for a failed cloud record', () => {
+    const inst = makeInstall({
+      sourceId: 'comfybuilder',
+      sourceCategory: 'cloud',
+      distributionId: 'build-1',
+      status: 'failed'
+    })
+    const { menu } = mountHarness(inst)
+
+    expect(findItem(menu.ctxMenuItems.value, 'delete')).toBeUndefined()
+  })
+
   it('renders update / restore-snapshot / delete enabled when the install is idle', () => {
     const inst = makeInstall() // statusTag style 'update'
     const { menu } = mountHarness(inst)
@@ -165,7 +224,7 @@ describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
     const { menu } = mountHarness(inst, ({ session }) => {
       session.runningInstances.set(inst.id, {
         installationId: inst.id,
-        installationName: inst.name,
+        installationName: inst.name
       } as never)
     })
     const items = menu.ctxMenuItems.value
@@ -190,15 +249,19 @@ describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
   })
 
   it('disables REQUIRES_STOPPED items when a long-running operation is in flight', () => {
-    const inst = makeInstall()
+    const inst = makeInstall({
+      sourceId: 'comfybuilder',
+      distributionId: 'build-1',
+      status: 'failed'
+    })
     const { menu } = mountHarness(inst, ({ progress }) => {
       progress.operations.set(inst.id, {
-        title: 'Updating…',
+        title: 'Updating...',
         steps: null,
         activePhase: null,
         activePercent: 0,
         lastStatus: {},
-        flatStatus: 'Working…',
+        flatStatus: 'Working...',
         flatPercent: 0.5,
         terminalOutput: '',
         done: false,
@@ -208,7 +271,7 @@ describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
         result: null,
         unsubProgress: null,
         unsubOutput: null,
-        apiCall: null,
+        apiCall: null
       } as never)
     })
     expect(menu.isStoppedActionGated(inst)).toBe(true)
@@ -218,7 +281,7 @@ describe('useInstallContextMenu — gated REQUIRES_STOPPED items', () => {
 
 function mountHarnessWithProgress(
   _inst: Installation,
-  onShowProgress: (opts: ShowProgressOpts) => void,
+  onShowProgress: (opts: ShowProgressOpts) => void
 ): { menu: ReturnType<typeof useInstallContextMenu> } {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -227,7 +290,7 @@ function mountHarnessWithProgress(
   _harnessSetup = () => {
     menu = useInstallContextMenu({
       onManage: () => {},
-      onShowProgress,
+      onShowProgress
     })
   }
   mount(HarnessComponent, { global: { plugins: [pinia, i18n] } })
@@ -235,7 +298,7 @@ function mountHarnessWithProgress(
   return { menu }
 }
 
-describe('useInstallContextMenu — delete fast path (regression for #582)', () => {
+describe('useInstallContextMenu - delete fast path (regression for #582)', () => {
   beforeEach(() => {
     apiMock.getDetailSections.mockClear()
     apiMock.runAction.mockClear()
@@ -271,7 +334,7 @@ describe('useInstallContextMenu — delete fast path (regression for #582)', () 
     expect(onShowProgress).toHaveBeenCalledTimes(1)
     const opts = onShowProgress.mock.calls[0][0]
     expect(opts.installationId).toBe(inst.id)
-    expect(opts.title).toBe('Delete — My Install')
+    expect(opts.title).toBe('Delete - My Install')
     expect(opts.cancellable).toBe(true)
     expect(opts.returnTo).toBe('list')
     expect(opts.destroysInstance).toBe(true)
@@ -295,7 +358,10 @@ describe('useInstallContextMenu — delete fast path (regression for #582)', () 
 })
 
 function mountHarnessWithManage(
-  onManage: (inst: Installation, options?: { initialTab?: string; autoAction?: string | null }) => void,
+  onManage: (
+    inst: Installation,
+    options?: { initialTab?: string; autoAction?: string | null }
+  ) => void
 ): { menu: ReturnType<typeof useInstallContextMenu> } {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -309,14 +375,33 @@ function mountHarnessWithManage(
   return { menu }
 }
 
-describe('useInstallContextMenu — copy-install routing', () => {
+describe('useInstallContextMenu - copy-install routing', () => {
   beforeEach(() => {
     apiMock.runAction.mockClear()
   })
 
+  it('offers Duplicate Instance for standalone and managed Build installs only', () => {
+    expect(
+      findItem(mountHarness(makeInstall()).menu.ctxMenuItems.value, 'copy-install')
+    ).toBeTruthy()
+    expect(
+      findItem(
+        mountHarness(makeInstall({ sourceId: 'comfybuilder', distributionId: 'build-1' })).menu
+          .ctxMenuItems.value,
+        'copy-install'
+      )
+    ).toBeTruthy()
+    expect(
+      findItem(
+        mountHarness(makeInstall({ sourceId: 'portable' })).menu.ctxMenuItems.value,
+        'copy-install'
+      )
+    ).toBeUndefined()
+  })
+
   it('copy-install routes through onManage with autoAction "copy" and does not call runAction directly', async () => {
     const onManage = vi.fn<(inst: Installation, options?: { autoAction?: string | null }) => void>()
-    const inst = makeInstall()
+    const inst = makeInstall({ sourceId: 'comfybuilder', distributionId: 'build-1' })
     const { menu } = mountHarnessWithManage(onManage)
 
     await menu.triggerAction('copy-install', inst)
@@ -328,94 +413,36 @@ describe('useInstallContextMenu — copy-install routing', () => {
   })
 
   it('update opens the Update tab AND auto-fires the update (matches the title-bar pill)', async () => {
-    const onManage = vi.fn<(inst: Installation, options?: { initialTab?: string; autoAction?: string | null }) => void>()
+    const onManage =
+      vi.fn<
+        (inst: Installation, options?: { initialTab?: string; autoAction?: string | null }) => void
+      >()
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(onManage)
 
     await menu.triggerAction('update', inst)
 
     expect(onManage).toHaveBeenCalledTimes(1)
-    expect(onManage.mock.calls[0][1]).toEqual({ initialTab: 'update', autoAction: 'update-comfyui' })
+    expect(onManage.mock.calls[0][1]).toEqual({
+      initialTab: 'update',
+      autoAction: 'update-comfyui'
+    })
   })
 })
 
-describe('useInstallContextMenu — untrack confirm-then-remove', () => {
-  beforeEach(() => {
-    apiMock.runAction.mockClear()
-    modalMock.confirm.mockReset()
-  })
-
-  it('shows a danger confirm and never opens the picker', async () => {
-    modalMock.confirm.mockResolvedValue(true)
-    const onManage = vi.fn()
-    const inst = makeInstall()
-    const { menu } = mountHarnessWithManage(onManage)
-
-    await menu.triggerAction('untrack', inst)
-
-    expect(modalMock.confirm).toHaveBeenCalledTimes(1)
-    const args = modalMock.confirm.mock.calls[0]![0]
-    expect(args.title).toBe('Forget Instance')
-    expect(args.confirmLabel).toBe('Forget')
-    expect(args.confirmStyle).toBe('danger')
-    expect(onManage).not.toHaveBeenCalled()
-  })
-
-  it('on confirm true, dispatches the `remove` action once', async () => {
-    modalMock.confirm.mockResolvedValue(true)
-    const inst = makeInstall()
-    const { menu } = mountHarnessWithManage(() => {})
-
-    await menu.triggerAction('untrack', inst)
-
-    expect(apiMock.runAction).toHaveBeenCalledTimes(1)
-    expect(apiMock.runAction).toHaveBeenCalledWith(inst.id, 'remove')
-  })
-
-  it('on confirm cancel, does not dispatch the action', async () => {
-    modalMock.confirm.mockResolvedValue(false)
-    const inst = makeInstall()
-    const { menu } = mountHarnessWithManage(() => {})
-
-    await menu.triggerAction('untrack', inst)
-
-    expect(apiMock.runAction).not.toHaveBeenCalled()
-  })
-
-  // Adopted (legacy-desktop) installs hide the Forget item: the
-  // `.comfyui-desktop-2` marker on disk also makes the legacy
-  // auto-tracker stop surfacing the install, so forgetting strands
-  // the user with no path back. Delete still appears (real disposal).
-  it('hides the Forget item for adopted installs but keeps Delete', () => {
-    const inst = makeInstall({ adopted: true } as Partial<Installation>)
-    const { menu } = mountHarness(inst)
-    const items = menu.ctxMenuItems.value
-    expect(findItem(items, 'untrack')).toBeUndefined()
-    expect(findItem(items, 'delete')).toBeTruthy()
-  })
-
-  it('shows the Forget item for non-adopted installs', () => {
-    const inst = makeInstall()
-    const { menu } = mountHarness(inst)
-    const items = menu.ctxMenuItems.value
-    expect(findItem(items, 'untrack')).toBeTruthy()
-    expect(findItem(items, 'delete')).toBeTruthy()
-  })
-})
-
-describe('useInstallContextMenu — migrate item keys off the migrate status tag', () => {
+describe('useInstallContextMenu - migrate item keys off the migrate status tag', () => {
   // Portable, git, and Legacy Desktop installs all report a `migrate`
   // status tag (and `sourceCategory === 'local'`), so the Migrate item must
   // follow the tag, not a single source.
   it.each([
     ['portable', 'standalone'],
     ['git', 'standalone'],
-    ['desktop', 'desktop'],
+    ['desktop', 'desktop']
   ])('shows the Migrate item for a %s install carrying a migrate tag', (_label, sourceId) => {
     const inst = makeInstall({
       sourceId,
       sourceCategory: 'local',
-      statusTag: { style: 'migrate', label: 'Migrate to Standalone' },
+      statusTag: { style: 'migrate', label: 'Migrate to Standalone' }
     } as Partial<Installation>)
     const { menu } = mountHarness(inst)
     expect(findItem(menu.ctxMenuItems.value, 'migrate')).toBeTruthy()
@@ -428,26 +455,32 @@ describe('useInstallContextMenu — migrate item keys off the migrate status tag
   })
 })
 
-describe('useInstallContextMenu — share (export latest snapshot)', () => {
+describe('useInstallContextMenu - export latest snapshot', () => {
   beforeEach(() => {
     apiMock.getSnapshots.mockReset()
     apiMock.exportSnapshot.mockReset()
     modalMock.alert.mockReset()
   })
 
-  it('shows the Share item for an installed local install', () => {
+  it('shows Export Snapshot for an installed local install', () => {
     const { menu } = mountHarness(makeInstall({ sourceCategory: 'local' }))
-    expect(findItem(menu.ctxMenuItems.value, 'share')).toBeTruthy()
+    expect(findItem(menu.ctxMenuItems.value, 'share')?.label).toBe('Export Snapshot')
   })
 
-  it('hides the Share item for cloud installs (snapshots are local-only)', () => {
+  it('hides Export Snapshot for cloud installs (snapshots are local-only)', () => {
     const { menu } = mountHarness(makeInstall({ sourceCategory: 'cloud' }))
     expect(findItem(menu.ctxMenuItems.value, 'share')).toBeUndefined()
   })
 
+  it('hides snapshot actions for workspace-managed installs', () => {
+    const { menu } = mountHarness(makeInstall({ sourceId: 'comfybuilder' }))
+    expect(findItem(menu.ctxMenuItems.value, 'share')).toBeUndefined()
+    expect(findItem(menu.ctxMenuItems.value, 'restore-snapshot')).toBeUndefined()
+  })
+
   it('exports the newest snapshot and shows no alert on success', async () => {
     apiMock.getSnapshots.mockResolvedValue({
-      snapshots: [{ filename: 'snap-newest.json' }, { filename: 'snap-older.json' }],
+      snapshots: [{ filename: 'snap-newest.json' }, { filename: 'snap-older.json' }]
     })
     apiMock.exportSnapshot.mockResolvedValue({ ok: true })
     const inst = makeInstall()
@@ -476,12 +509,12 @@ describe('useInstallContextMenu — share (export latest snapshot)', () => {
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(() => {})
 
-    // Cancel — export IPC returns { ok: false } with no message.
+    // Cancel - export IPC returns { ok: false } with no message.
     apiMock.exportSnapshot.mockResolvedValueOnce({ ok: false })
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).not.toHaveBeenCalled()
 
-    // Real failure — a message is present, so it surfaces.
+    // Real failure - a message is present, so it surfaces.
     apiMock.exportSnapshot.mockResolvedValueOnce({ ok: false, message: 'Disk full' })
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).toHaveBeenCalledTimes(1)
@@ -489,7 +522,76 @@ describe('useInstallContextMenu — share (export latest snapshot)', () => {
   })
 })
 
-describe('useInstallContextMenu — stop (shut down backend, keep window)', () => {
+describe('useInstallContextMenu - promote to workspace', () => {
+  beforeEach(() => {
+    apiMock.comfybuilder.promoteLocalInstance.mockReset().mockResolvedValue({ ok: true })
+    modalMock.alert.mockReset()
+  })
+
+  it('shows the item only when the dashboard eligibility gate accepts the install', () => {
+    const eligible = mountHarness(makeInstall(), undefined, () => true)
+    expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')?.label).toBe(
+      'Create Build'
+    )
+
+    const ineligible = mountHarness(makeInstall(), undefined, () => false)
+    expect(findItem(ineligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toBeUndefined()
+  })
+
+  it('asks main to create the draft and stays silent on success', async () => {
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, undefined, () => true)
+
+    await menu.triggerAction('promote-to-workspace', inst)
+
+    expect(apiMock.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith(inst.id)
+    expect(modalMock.alert).not.toHaveBeenCalled()
+  })
+
+  it('shows promotion progress and prevents duplicate requests', async () => {
+    let finishPromotion!: (result: { ok: true }) => void
+    apiMock.comfybuilder.promoteLocalInstance.mockReturnValue(
+      new Promise((resolve) => {
+        finishPromotion = resolve
+      })
+    )
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, undefined, () => true)
+
+    const promotion = menu.triggerAction('promote-to-workspace', inst)
+
+    expect(menu.isPromotingToWorkspace(inst)).toBe(true)
+    expect(findItem(menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
+      label: 'Creating...',
+      disabled: true
+    })
+
+    await menu.triggerAction('promote-to-workspace', inst)
+    expect(apiMock.comfybuilder.promoteLocalInstance).toHaveBeenCalledOnce()
+
+    finishPromotion({ ok: true })
+    await promotion
+    expect(menu.isPromotingToWorkspace(inst)).toBe(false)
+  })
+
+  it('surfaces a draft creation failure', async () => {
+    apiMock.comfybuilder.promoteLocalInstance.mockResolvedValue({
+      ok: false,
+      message: 'Snapshot upload failed.'
+    })
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, undefined, () => true)
+
+    await menu.triggerAction('promote-to-workspace', inst)
+
+    expect(modalMock.alert).toHaveBeenCalledWith({
+      title: 'Could not create build',
+      message: 'Snapshot upload failed.'
+    })
+  })
+})
+
+describe('useInstallContextMenu - stop (shut down backend, keep window)', () => {
   beforeEach(() => {
     apiMock.stopComfyUI.mockClear()
     modalMock.confirm.mockReset()
@@ -504,7 +606,7 @@ describe('useInstallContextMenu — stop (shut down backend, keep window)', () =
     const { menu: running } = mountHarness(inst, ({ session }) => {
       session.runningInstances.set(inst.id, {
         installationId: inst.id,
-        installationName: inst.name,
+        installationName: inst.name
       } as never)
     })
     expect(findItem(running.ctxMenuItems.value, 'stop')).toBeTruthy()
@@ -515,7 +617,7 @@ describe('useInstallContextMenu — stop (shut down backend, keep window)', () =
     const { menu } = mountHarness(inst, ({ session }) => {
       session.runningInstances.set(inst.id, {
         installationId: inst.id,
-        installationName: inst.name,
+        installationName: inst.name
       } as never)
     })
     expect(findItem(menu.ctxMenuItems.value, 'stop')).toBeUndefined()

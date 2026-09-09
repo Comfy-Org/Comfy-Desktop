@@ -14,7 +14,7 @@ import {
   applyChooserHostTheme,
   CHOOSER_HOST_TITLE_TEXT,
   CHOOSER_HOST_WINDOW_TITLE,
-  installCloseNeedsConfirm,
+  installCloseNeedsConfirm
 } from './createHostWindow'
 import type { CloseWindowChoice } from './createHostWindow'
 
@@ -42,10 +42,8 @@ type PanelConsultResult = 'cleared' | 'aborted' | 'defer'
  */
 async function consultPanelRenderer(
   panelView: WebContentsView | null | undefined,
-  requestPrefix:
-    | 'comfy-window:request-close'
-    | 'comfy-window:request-return-to-dashboard',
-  fallback: PanelConsultResult,
+  requestPrefix: 'comfy-window:request-close' | 'comfy-window:request-return-to-dashboard',
+  fallback: PanelConsultResult
 ): Promise<PanelConsultResult> {
   if (!panelView || panelView.webContents.isDestroyed()) return fallback
   return new Promise<PanelConsultResult>((resolve) => {
@@ -65,7 +63,7 @@ async function consultPanelRenderer(
     }
     const onAck = (
       event: Electron.IpcMainEvent,
-      payload: { requestId?: string } | undefined,
+      payload: { requestId?: string } | undefined
     ): void => {
       if (event.sender !== panelView.webContents) return
       if (payload?.requestId !== requestId) return
@@ -73,7 +71,7 @@ async function consultPanelRenderer(
     }
     const onResponse = (
       event: Electron.IpcMainEvent,
-      payload: { requestId?: string; cleared?: boolean; defer?: boolean } | undefined,
+      payload: { requestId?: string; cleared?: boolean; defer?: boolean } | undefined
     ): void => {
       if (event.sender !== panelView.webContents) return
       if (payload?.requestId !== requestId) return
@@ -115,7 +113,7 @@ async function consultPanelRenderer(
  * so the confirm still fires from main.
  */
 export async function consultPanelRendererClose(
-  panelView: WebContentsView | null | undefined,
+  panelView: WebContentsView | null | undefined
 ): Promise<PanelConsultResult> {
   return consultPanelRenderer(panelView, 'comfy-window:request-close', 'defer')
 }
@@ -125,13 +123,16 @@ export async function consultPanelRendererClose(
  * dashboard. Cloud / remote installs and chooser hosts clear immediately.
  */
 export async function consultPanelRendererReturnToDashboard(
-  panelView: WebContentsView | null | undefined,
+  panelView: WebContentsView | null | undefined
 ): Promise<boolean> {
   // No `defer` path here (the renderer owns its prompt, a missing renderer clears); map
   // the tri-state onto this caller's boolean contract.
   return (
-    (await consultPanelRenderer(panelView, 'comfy-window:request-return-to-dashboard', 'cleared')) ===
-    'cleared'
+    (await consultPanelRenderer(
+      panelView,
+      'comfy-window:request-return-to-dashboard',
+      'cleared'
+    )) === 'cleared'
   )
 }
 
@@ -170,9 +171,7 @@ export async function returnToDashboard(parentEntryId: number): Promise<void> {
  * destroyed. Mirrors `useReturnToDashboardConfirm`: skips the prompt for non-local installs
  * and already-stopped sessions.
  */
-async function confirmReturnToDashboardViaSystemModal(
-  entry: ComfyWindowEntry,
-): Promise<boolean> {
+async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): Promise<boolean> {
   if (entry.sourceCategory !== 'local') return true
   if (entry.installationId === null) return true
   if (!_runningSessions.has(entry.installationId)) return true
@@ -185,8 +184,8 @@ async function confirmReturnToDashboardViaSystemModal(
       confirmLabel: 'Return to Dashboard',
       cancelLabel: 'Cancel',
       confirmStyle: 'danger',
-      theme: entry.lastTheme,
-    },
+      theme: entry.lastTheme
+    }
   })
 }
 
@@ -197,7 +196,7 @@ async function confirmReturnToDashboardViaSystemModal(
  */
 export async function confirmAndCloseAllHostWindows(
   parentWindow: BrowserWindow | null,
-  performQuit: () => void,
+  performQuit: () => void
 ): Promise<void> {
   const entries = Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed())
   // "Instances" = windows that would lose a local ComfyUI process on quit. Chooser hosts
@@ -209,9 +208,7 @@ export async function confirmAndCloseAllHostWindows(
   }
   // Use the title-bar pill name, not the verbose OS window title.
   const titles = instanceWindows.map((e) => e.titleBarText || 'Untitled instance')
-  const details: SystemModalDetailGroup[] = [
-    { label: 'Open instances', items: titles },
-  ]
+  const details: SystemModalDetailGroup[] = [{ label: 'Open instances', items: titles }]
   // Surface the EXTRA things a quit tears down. Running sessions are deliberately NOT
   // re-listed: they already appear under "Open instances".
   if (ipc.hasActiveOperations()) {
@@ -219,7 +216,8 @@ export async function confirmAndCloseAllHostWindows(
       const items = await ipc.getActiveDetails()
       const operations = items.filter((i) => i.type === 'operation').map((i) => i.name)
       const downloads = items.filter((i) => i.type === 'download').map((i) => i.name)
-      if (operations.length > 0) details.push({ label: 'In-progress operations', items: operations })
+      if (operations.length > 0)
+        details.push({ label: 'In-progress operations', items: operations })
       if (downloads.length > 0) details.push({ label: 'Active downloads', items: downloads })
     } catch {
       // Fall back to just the instance list if active-detail collection throws.
@@ -227,9 +225,10 @@ export async function confirmAndCloseAllHostWindows(
   }
   // Prefer the caller's hint, falling back to any live host so the confirm isn't dropped
   // when the popup's parent goes away mid-flight.
-  const overlayParentEntry = parentWindow && !parentWindow.isDestroyed()
-    ? entries.find((e) => e.window === parentWindow)
-    : entries[0]
+  const overlayParentEntry =
+    parentWindow && !parentWindow.isDestroyed()
+      ? entries.find((e) => e.window === parentWindow)
+      : entries[0]
   if (!overlayParentEntry) {
     performQuit()
     return
@@ -239,15 +238,16 @@ export async function confirmAndCloseAllHostWindows(
     parent: overlayParentEntry.window,
     spec: {
       title: 'Quit Desktop',
-      message: count === 1
-        ? 'Quit Desktop? This will close the running ComfyUI instance.'
-        : `Quit Desktop? This will close ${count} running ComfyUI instances.`,
+      message:
+        count === 1
+          ? 'Quit Desktop? This will close the running ComfyUI instance.'
+          : `Quit Desktop? This will close ${count} running ComfyUI instances.`,
       details,
       confirmLabel: 'Quit',
       cancelLabel: 'Cancel',
       confirmStyle: 'danger',
-      theme: overlayParentEntry.lastTheme,
-    },
+      theme: overlayParentEntry.lastTheme
+    }
   })
   if (confirmed) performQuit()
 }
@@ -267,7 +267,7 @@ export async function confirmCloseInstanceWindow(
   window: BrowserWindow,
   isLastWindow: boolean,
   stopsLocalComfy: boolean,
-  theme: { bg: string; text: string },
+  theme: { bg: string; text: string }
 ): Promise<CloseWindowChoice> {
   const message = isLastWindow
     ? stopsLocalComfy
@@ -284,8 +284,8 @@ export async function confirmCloseInstanceWindow(
       confirmLabel: 'Close Window',
       cancelLabel: 'Cancel',
       confirmStyle: 'danger',
-      theme,
-    },
+      theme
+    }
   })
   return confirmed ? 'close' : 'cancel'
 }
@@ -304,7 +304,7 @@ export async function confirmAndCloseHostWindow(parentWindow: BrowserWindow): Pr
     return
   }
   const liveWindowCount = Array.from(comfyWindows.values()).filter(
-    (e) => !e.window.isDestroyed(),
+    (e) => !e.window.isDestroyed()
   ).length
   const isLastWindow = liveWindowCount <= 1
   // Same rule as the OS ✕ path: confirm only when the user opted in and the
@@ -314,14 +314,14 @@ export async function confirmAndCloseHostWindow(parentWindow: BrowserWindow): Pr
     installCloseNeedsConfirm(
       settings.get('confirmBeforeClosingWindow') === true,
       shouldConfirmKillForEntry(entry),
-      isLastWindow && isInstallHost(entry),
+      isLastWindow && isInstallHost(entry)
     )
   ) {
     const choice = await confirmCloseInstanceWindow(
       entry.window,
       isLastWindow,
       shouldConfirmKillForEntry(entry),
-      entry.lastTheme,
+      entry.lastTheme
     )
     if (choice === 'cancel') return
   }
@@ -368,7 +368,7 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
     entry.titleBarView.webContents.send('comfy-titlebar:title-changed', entry.titleBarText)
     entry.titleBarView.webContents.send(
       'comfy-titlebar:source-category-changed',
-      entry.sourceCategory,
+      entry.sourceCategory
     )
     entry.titleBarView.webContents.send('comfy-titlebar:installation-id-changed', null)
     entry.titleBarView.webContents.send('comfy-titlebar:preview-mode-changed', false)
@@ -376,7 +376,7 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
     // of inheriting the prior install's pending-update flag.
     entry.titleBarView.webContents.send('comfy-titlebar:install-update-changed', {
       available: false,
-      version: null,
+      version: null
     })
   }
   applyChooserHostTheme(entry)

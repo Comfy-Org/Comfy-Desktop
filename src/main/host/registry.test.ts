@@ -6,13 +6,13 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 import { _runningSessions, _stoppingInstallationIds } from '../lib/ipc/shared'
@@ -21,6 +21,7 @@ import {
   claimAttachHost,
   comfyWindows,
   computeBodyMode,
+  computeViewKind,
   consumeAttachClaim,
   dropAttachClaimsForWindow,
   dropInstallationIndex,
@@ -37,7 +38,7 @@ import {
   setLastFocusedInstallationId,
   shouldConfirmKillForEntry,
   unregisterHostEntry,
-  type ComfyWindowEntry,
+  type ComfyWindowEntry
 } from './registry'
 
 interface FakeWindow {
@@ -66,7 +67,7 @@ function makeWindow(opts: { destroyed?: boolean; minimized?: boolean } = {}): Fa
       win.minimized = false
       win.raised.push('restore')
     },
-    setAlwaysOnTop: () => {},
+    setAlwaysOnTop: () => {}
   }
   return win
 }
@@ -85,7 +86,7 @@ function makeEntry(opts: {
     window: window as unknown as ComfyWindowEntry['window'],
     comfyView: {} as ComfyWindowEntry['comfyView'],
     titleBarView: {
-      webContents: opts.titleBarWebContents ?? {},
+      webContents: opts.titleBarWebContents ?? {}
     } as unknown as ComfyWindowEntry['titleBarView'],
     panelView: null,
     activePanel: opts.activePanel ?? 'comfy',
@@ -100,7 +101,7 @@ function makeEntry(opts: {
     previewInstallationId: null,
     coldStartPendingReveal: false,
     _installCleanup: null,
-    detachInstall: () => {},
+    detachInstall: () => {}
   }
 }
 
@@ -146,8 +147,8 @@ describe('computeBodyMode', () => {
   })
 
   it('passes non-comfy panels through for install-less hosts', () => {
-    const entry = makeEntry({ installationId: null, activePanel: 'downloads-v2' })
-    expect(computeBodyMode(entry)).toBe('downloads-v2')
+    const entry = makeEntry({ installationId: null, activePanel: 'feedback' })
+    expect(computeBodyMode(entry)).toBe('feedback')
   })
 
   it('routes the comfy pill to comfy when the install session is running', () => {
@@ -189,6 +190,43 @@ describe('computeBodyMode', () => {
   })
 })
 
+describe('computeViewKind', () => {
+  // Rule: install-less host → dashboard; local install → instance; cloud OR
+  // remote install → cloud (the two share navigation behavior).
+  it('returns dashboard for an install-less (chooser) host', () => {
+    expect(computeViewKind(makeEntry({ installationId: null }))).toBe('dashboard')
+  })
+
+  it('returns instance for a local install-backed host', () => {
+    expect(computeViewKind(makeEntry({ installationId: 'inst-A', sourceCategory: 'local' }))).toBe(
+      'instance'
+    )
+  })
+
+  it('folds cloud and remote into the cloud view', () => {
+    expect(
+      computeViewKind(makeEntry({ installationId: 'inst-cloud', sourceCategory: 'cloud' }))
+    ).toBe('cloud')
+    expect(
+      computeViewKind(makeEntry({ installationId: 'inst-remote', sourceCategory: 'remote' }))
+    ).toBe('cloud')
+  })
+
+  // A preview/launching host can be install-backed before its category is
+  // pushed; treat an unknown category as non-local (cloud) rather than instance.
+  it('treats an install-backed host with no category as cloud', () => {
+    expect(computeViewKind(makeEntry({ installationId: 'inst-A', sourceCategory: null }))).toBe(
+      'cloud'
+    )
+  })
+
+  it('treats an unrecognised category string as cloud (does not throw)', () => {
+    expect(
+      computeViewKind(makeEntry({ installationId: 'inst-A', sourceCategory: 'future-value' }))
+    ).toBe('cloud')
+  })
+})
+
 describe('shouldConfirmKillForEntry', () => {
   // Rule: "would tearing this down kill a local ComfyUI process?" — yes for install-backed
   // local hosts, no for everything else.
@@ -200,13 +238,13 @@ describe('shouldConfirmKillForEntry', () => {
   it('returns false for a cloud/remote-backed host (no local process at risk)', () => {
     expect(
       shouldConfirmKillForEntry(
-        makeEntry({ installationId: 'inst-cloud', sourceCategory: 'cloud' }),
-      ),
+        makeEntry({ installationId: 'inst-cloud', sourceCategory: 'cloud' })
+      )
     ).toBe(false)
     expect(
       shouldConfirmKillForEntry(
-        makeEntry({ installationId: 'inst-remote', sourceCategory: 'remote' }),
-      ),
+        makeEntry({ installationId: 'inst-remote', sourceCategory: 'remote' })
+      )
     ).toBe(false)
   })
 
@@ -218,9 +256,7 @@ describe('shouldConfirmKillForEntry', () => {
     // attachHostPreview can flash `sourceCategory` onto an install-less host while hovering;
     // no attached install or session means no kill-confirm.
     expect(
-      shouldConfirmKillForEntry(
-        makeEntry({ installationId: null, sourceCategory: 'local' }),
-      ),
+      shouldConfirmKillForEntry(makeEntry({ installationId: null, sourceCategory: 'local' }))
     ).toBe(false)
   })
 
@@ -243,13 +279,15 @@ describe('hasRunningSessionForEntry', () => {
   it('returns true for a running cloud/remote-backed host', () => {
     _runningSessions.set('inst-cloud', {} as never)
     expect(
-      hasRunningSessionForEntry(makeEntry({ installationId: 'inst-cloud', sourceCategory: 'cloud' })),
+      hasRunningSessionForEntry(
+        makeEntry({ installationId: 'inst-cloud', sourceCategory: 'cloud' })
+      )
     ).toBe(true)
   })
 
   it('returns false for an install-backed host with no running session (stopped/crashed)', () => {
     expect(
-      hasRunningSessionForEntry(makeEntry({ installationId: 'inst-A', sourceCategory: 'local' })),
+      hasRunningSessionForEntry(makeEntry({ installationId: 'inst-A', sourceCategory: 'local' }))
     ).toBe(false)
   })
 

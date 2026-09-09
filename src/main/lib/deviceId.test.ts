@@ -56,6 +56,14 @@ describe('deviceId', () => {
   })
 
   describe('initDeviceId — fresh install (no existing file)', () => {
+    it('detects existing app state before initialization creates the device file', () => {
+      expect(mod.hasPersistedDeviceId()).toBe(false)
+
+      fs.writeFileSync(path.join(testUserData, 'device-id.txt'), 'legacy-install-state')
+
+      expect(mod.hasPersistedDeviceId()).toBe(true)
+    })
+
     it('derives installation_id from machine_id and writes device-id.txt', async () => {
       const { legacyId } = await mod.initDeviceId()
       expect(legacyId).toBeNull()
@@ -98,7 +106,7 @@ describe('deviceId', () => {
     it('does NOT re-fire the migration if the guard file is present', async () => {
       const legacyUuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
       fs.writeFileSync(path.join(testUserData, 'device-id.txt'), legacyUuid)
-      // Prior boot already issued the alias.
+      // Prior boot already completed the local identity-file migration.
       fs.writeFileSync(
         path.join(testUserData, 'identity-migration-completed'),
         new Date().toISOString()
@@ -107,7 +115,7 @@ describe('deviceId', () => {
       const { legacyId } = await mod.initDeviceId()
       expect(legacyId).toBeNull()
 
-      // The id still gets corrected (guard only suppresses the alias).
+      // The id still gets corrected (the guard only suppresses re-reporting).
       const expected = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
 
       expect(mod.getDeviceId()).toBe(expected)

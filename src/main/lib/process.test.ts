@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { findAvailablePort, isPortListening } from './process'
+import { findAvailablePort, isPortListening, waitForPort, waitForUrl } from './process'
 import net from 'net'
 
 function listenOn(host: string, port: number = 0): Promise<{ server: net.Server; port: number }> {
@@ -52,9 +52,9 @@ describe('findAvailablePort', () => {
     const base = 49400
     const excluded = new Set([base, base + 1, base + 2])
 
-    await expect(
-      findAvailablePort('127.0.0.1', base, base + 2, excluded)
-    ).rejects.toThrow('No available ports found')
+    await expect(findAvailablePort('127.0.0.1', base, base + 2, excluded)).rejects.toThrow(
+      'No available ports found'
+    )
   })
 
   it('skips a port that is actually in use', async () => {
@@ -132,5 +132,91 @@ describe('isPortListening', () => {
     const { server, port } = await listenOn('127.0.0.1')
     await closeServer(server)
     expect(await isPortListening(port, '127.0.0.1')).toBe(false)
+  })
+})
+
+// A server that accepts TCP connections but never sends an HTTP response,
+// so the poller's request stays in flight until aborted or timed out.
+// Tracks its sockets so close() can settle without waiting on them.
+function listenHanging(): Promise<{ close: () => Promise<void>; port: number }> {
+  return new Promise((resolve, reject) => {
+    const sockets = new Set<net.Socket>()
+    const server = net.createServer((socket) => {
+      sockets.add(socket)
+      socket.on('close', () => sockets.delete(socket))
+    })
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address()
+      if (addr && typeof addr === 'object') {
+        resolve({
+          port: addr.port,
+          close: () => {
+            for (const socket of sockets) socket.destroy()
+            return closeServer(server)
+          }
+        })
+      } else {
+        reject(new Error('listen returned no address'))
+      }
+    })
+  })
+}
+
+describe('waitForPort abort settlement', () => {
+  it('rejects promptly when aborted while a request is in flight', async () => {
+    const { close, port } = await listenHanging()
+    const controller = new AbortController()
+    try {
+      const wait = waitForPort(port, '127.0.0.1', {
+        timeoutMs: 30000,
+        intervalMs: 100,
+        signal: controller.signal
+      })
+      setTimeout(() => controller.abort(), 50)
+      const start = Date.now()
+      await expect(wait).rejects.toThrow('Launch cancelled.')
+      // Settled by the abort listener, not by the 2s request timeout or a
+      // later poll pass.
+      expect(Date.now() - start).toBeLessThan(1500)
+    } finally {
+      await close()
+    }
+  })
+
+  it('rejects immediately when the signal is already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(
+      waitForPort(1, '127.0.0.1', { timeoutMs: 30000, signal: controller.signal })
+    ).rejects.toThrow('Launch cancelled.')
+  })
+})
+
+describe('waitForUrl abort settlement', () => {
+  it('rejects promptly when aborted while a request is in flight', async () => {
+    const { close, port } = await listenHanging()
+    const controller = new AbortController()
+    try {
+      const wait = waitForUrl(`http://127.0.0.1:${port}/`, {
+        timeoutMs: 30000,
+        intervalMs: 100,
+        signal: controller.signal
+      })
+      setTimeout(() => controller.abort(), 50)
+      const start = Date.now()
+      await expect(wait).rejects.toThrow('Launch cancelled.')
+      expect(Date.now() - start).toBeLessThan(1500)
+    } finally {
+      await close()
+    }
+  })
+
+  it('rejects immediately when the signal is already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(
+      waitForUrl('http://127.0.0.1:1/', { timeoutMs: 30000, signal: controller.signal })
+    ).rejects.toThrow('Launch cancelled.')
   })
 })

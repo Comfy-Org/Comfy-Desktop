@@ -4,7 +4,7 @@ export const MIN_BUSY_FEEDBACK_MS = 700
 /** Run `task`, ensuring at least `minDurationMs` elapses before resolving. Result/rejection propagate unchanged. */
 export async function withMinDuration<T>(
   task: () => Promise<T>,
-  minDurationMs: number = MIN_BUSY_FEEDBACK_MS,
+  minDurationMs: number = MIN_BUSY_FEEDBACK_MS
 ): Promise<T> {
   const startedAt = Date.now()
   try {
@@ -17,7 +17,7 @@ export async function withMinDuration<T>(
 /** Sleep until `minDurationMs` has passed since `startedAt`, or return immediately if already past. */
 export async function sleepRemainder(
   startedAt: number,
-  minDurationMs: number = MIN_BUSY_FEEDBACK_MS,
+  minDurationMs: number = MIN_BUSY_FEEDBACK_MS
 ): Promise<void> {
   const remaining = minDurationMs - (Date.now() - startedAt)
   if (remaining > 0) {

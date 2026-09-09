@@ -4,10 +4,18 @@ import { useProgressStore } from '../stores/progressStore'
 import { useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useMigrateAction } from '../composables/useMigrateAction'
 import { useOverlay } from '../composables/useOverlay'
-import { emitTelemetryAction } from '../lib/telemetry'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
+import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
 import type { FieldOption, Installation, ShowProgressOpts, Source } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
 import type { FirstUseChainHooks, PanelKey } from './usePanelOverlays'
+
+/** Mirrors `InstallWizardModal.vue`'s `NO_TEMPLATE_VALUE` — the "None"
+ *  sentinel value for the `bundledTemplate` field's options. Kept as a
+ *  local copy (not imported) because the canonical constant lives in the
+ *  main-process `standalone/curatedTemplates.ts` module, which the
+ *  renderer doesn't reach into. */
+const NO_TEMPLATE_VALUE = 'none'
 
 export interface FirstUseChainOpts {
   /** Routes the migrate-to-standalone op through the shared overlay
@@ -285,6 +293,13 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     pendingFirstUseAutoLaunchId.value = null
     pendingCameFromLocalBranch.value = payload?.cameFromLocalBranch === true
 
+    // Lock the file menu to Skip Onboarding for the whole handoff —
+    // before the express install / wizard open, which can spend seconds
+    // on network fetches. FirstUseTakeover's unmount and the overlay
+    // watcher in usePanelOverlays both skip their `'none'` push for
+    // chain handoffs, so this assert can't be clobbered mid-swap.
+    window.api.setFirstUseMode('post-consent')
+
     if (payload?.express === true) {
       const expressOk = await runExpressInstall()
       if (expressOk) return
@@ -295,11 +310,6 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     }
 
     await opts.switchPanel('new-install', 'first_use')
-    // FirstUseTakeover.onUnmounted just pushed `'none'` as the chain
-    // swap unmounted it. Re-assert `'post-consent'` so the file-menu
-    // builder keeps the chain locked down to Skip Onboarding while
-    // the new-install / install-progress takeover is up.
-    window.api.setFirstUseMode('post-consent')
   }
 
   /** Express install — the "skip Configure" path. Runs the Standalone
@@ -362,7 +372,15 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
           })
           return false
         }
-        const pick = options.find((o) => o.recommended) ?? options[0]
+        // The starter-template field must never default to a `recommended`
+        // pick (e.g. MiniMax) — that silently pre-selects a workflow, and
+        // the ~57GB of models it pulls in, before the user has chosen
+        // anything. It always defaults to the "None" sentinel, matching
+        // the Configure picker's same carve-out (see `InstallWizardModal.vue`).
+        const pick =
+          field.id === 'bundledTemplate'
+            ? (options.find((o) => o.value === NO_TEMPLATE_VALUE) ?? options[0])
+            : (options.find((o) => o.recommended) ?? options[0])
         if (!pick) {
           emitTelemetryAction('comfy.desktop.install.express.fallback', {
             reason: 'precondition_failed'
@@ -373,13 +391,14 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       }
 
       const instData = await window.api.buildInstallation(standalone.id, selections)
-      const name = await window.api.getUniqueName('ComfyUI')
+      const name = await window.api.getUniqueName(DEFAULT_INSTALL_NAME)
       const installPath = installDir ?? ''
 
       const result = await window.api.addInstallation({
         name,
         installPath,
-        ...instData
+        ...instData,
+        status: 'installing'
       })
       if (!result.ok || !result.entry) {
         console.warn('[firstUseChain] express: addInstallation failed', result)
@@ -389,14 +408,27 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         return false
       }
 
+      // Reliable "install actually began" gate that pairs 1:1 with
+      // first_use.completed (#1224). The express path skips the wizard, so it
+      // emits the dispatch marker itself rather than relying on the wizard.
+      const variantId = selections.variant?.data?.variantId as string | undefined
+      emitTelemetryAction('comfy.desktop.install.dispatched', {
+        installation_id: result.entry.id,
+        source_id: standalone.id,
+        variant: variantId ? toVariantBucket(variantId) : null,
+        express: true,
+        entrypoint: 'first_use',
+        template_selected: false
+      })
+
       // `onShowProgress` captures `pendingFirstUseAutoLaunchId` from this
       // call because `chainingFirstUseToNewInstall` is already true — the
       // auto-launch watcher takes the install through to a running ComfyUI
       // window the same way the Configure handoff does.
       await opts.handleShowProgress({
         installationId: result.entry.id,
-        title: `Installing — ${name}`,
-        apiCall: () => window.api.installInstance(result.entry!.id),
+        title: `Installing — ${result.entry.name}`,
+        apiCall: () => window.api.installInstance(result.entry!.id, true),
         autoLaunchOnFinish: true,
         opKind: 'install'
       })
@@ -476,17 +508,17 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     // Dismiss the takeover before kicking off the migration so the
     // Tier 2 progress modal isn't blocked by the takeover overlay.
     opts.dismissTakeoverDirect()
+    // dismissTakeoverDirect pushed `'none'` as it cleared the first-use
+    // overlay; re-assert `'post-consent'` immediately (not after the
+    // migration op resolves) so the file menu stays locked down until
+    // the progress takeover's own `'loading-lockdown'` push takes over.
+    window.api.setFirstUseMode('post-consent')
     await opts.handleShowProgress({
       installationId: legacy.id,
       title: `Migrating — ${legacy.name}`,
       apiCall: () => window.api.runAction(legacy!.id, 'migrate-to-standalone', result),
       cancellable: true
     })
-    // dismissTakeoverDirect pushed `'none'` as it cleared the first-use
-    // overlay; re-assert `'post-consent'` so the file-menu builder
-    // keeps the chain locked down to Skip Onboarding for the duration
-    // of the migration progress + auto-launch.
-    window.api.setFirstUseMode('post-consent')
   }
 
   /** Wrapper around `closeOverlay` for the new-install takeover branch

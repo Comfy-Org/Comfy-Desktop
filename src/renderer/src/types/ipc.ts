@@ -10,6 +10,8 @@ export type {
   DetailItem,
   DetailField,
   DetailFieldOption,
+  VersionStatRow,
+  VersionStatsValue,
   ActionDef,
   ConfirmDef,
   ConfirmOption,
@@ -34,8 +36,12 @@ export type {
   ProbeResult,
   ProgressData,
   ProgressStep,
+  AdoptPromptRequest,
+  AdoptPromptAck,
+  AdoptPromptResponse,
   ComfyOutputData,
   ComfyExitedData,
+  CrashKind,
   GPUInfo,
   HardwareValidation,
   NvidiaDriverCheck,
@@ -57,8 +63,8 @@ export type {
   ErrorDetailData,
   AppUpdateState,
   AppUpdateDownloadProgress,
-  CloudCapacityStatus,
   CloudUserTier,
-  ElectronApi,
+  InstallBuildResult,
+  ElectronApi
 } from '../../../types/ipc'
 export { REQUIRES_STOPPED } from '../../../types/ipc'

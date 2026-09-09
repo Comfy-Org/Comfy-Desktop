@@ -20,6 +20,9 @@ export interface TitleMenuAnchor {
  *  a status-icon + filename + progress percent — it doesn't need
  *  byte counters or speed/ETA, so this interface stays minimal. */
 export interface DownloadsTrayEntry {
+  /** Stable per-job identifier (present on managed jobs; absent on rows from
+   *  older mains). Prefer it over `url` when addressing an entry. */
+  id?: string
   url: string
   filename: string
   directory?: string
@@ -173,6 +176,11 @@ export interface ComfyTitleBarBridge {
    *  the `comfy.desktop.feedback.opened` telemetry action and opens the
    *  support URL via `openExternal`. */
   clickFeedback(): void
+  /** Click handler for the title-bar news bell. Main resolves the host
+   *  entry from the sender and forwards `comfy-panel:open-announcement` to
+   *  the panel renderer, which mounts the announcement modal over the
+   *  live canvas. */
+  clickAnnouncement(): void
   /** Click handler for the title-bar cloud-instance refresh button.
    *  Main resolves the host entry from the sender and re-navigates its
    *  comfyView via the same reload path as F5/Ctrl+R. */
@@ -392,6 +400,9 @@ const bridge: ComfyTitleBarBridge = {
   },
   clickFeedback: () => {
     ipcRenderer.send('comfy-window:click-feedback')
+  },
+  clickAnnouncement: () => {
+    ipcRenderer.send('comfy-window:click-announcement')
   },
   clickRefreshInstance: () => {
     ipcRenderer.send('comfy-window:click-refresh-instance')

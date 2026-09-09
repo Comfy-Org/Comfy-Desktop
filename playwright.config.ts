@@ -10,12 +10,12 @@ export default defineConfig({
   use: {
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
-    screenshot: 'only-on-failure',
+    screenshot: 'only-on-failure'
   },
   projects: [
     { name: 'macos', grep: /@macos/ },
     { name: 'windows', grep: /@windows/ },
     { name: 'linux', grep: /@linux/ },
-    { name: 'lifecycle', grep: /@lifecycle/, timeout: 180_000 },
-  ],
+    { name: 'lifecycle', grep: /@lifecycle/, timeout: 180_000 }
+  ]
 })

@@ -41,6 +41,8 @@ export interface AlertOpts {
 export interface ConfirmOpts {
   title: string
   message?: string
+  /** Low-emphasis guidance rendered below the message and details. */
+  hint?: string
   confirmLabel?: string
   cancelLabel?: string
   tone?: 'primary' | 'danger'
@@ -92,6 +94,7 @@ export interface AlertState {
 export interface ConfirmState {
   title: string
   message: string
+  hint: string
   confirmLabel?: string
   cancelLabel?: string
   tone: 'primary' | 'danger'
@@ -145,6 +148,7 @@ const state = reactive<DialogState>({
   confirm: {
     title: '',
     message: '',
+    hint: '',
     confirmLabel: undefined,
     cancelLabel: undefined,
     tone: 'primary',
@@ -247,6 +251,7 @@ export function useDialogs() {
       state.confirm = {
         title: opts.title,
         message: opts.message ?? '',
+        hint: opts.hint ?? '',
         confirmLabel: opts.confirmLabel,
         cancelLabel: opts.cancelLabel,
         tone: opts.tone ?? 'primary',

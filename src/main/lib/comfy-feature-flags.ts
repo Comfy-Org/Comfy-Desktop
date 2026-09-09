@@ -42,7 +42,7 @@ export async function getComfyFeatureFlagRegistry(
   mainPyPath: string,
   cwd: string,
   installationId: string,
-  version?: string,
+  version?: string
 ): Promise<FeatureFlagRegistry> {
   const cached = registryCache.get(installationId)
   if (cached && version && cached.version === version) {
@@ -69,7 +69,7 @@ export async function getComfyFeatureFlagRegistry(
  */
 export function getCachedFeatureFlagRegistry(
   installationId: string,
-  version?: string,
+  version?: string
 ): FeatureFlagRegistry | null {
   const cached = registryCache.get(installationId)
   if (!cached) return null
@@ -84,7 +84,7 @@ export function getCachedFeatureFlagRegistry(
 export function isCachedFeatureFlagAvailable(
   installationId: string,
   key: string,
-  version?: string,
+  version?: string
 ): boolean {
   return key in (getCachedFeatureFlagRegistry(installationId, version) ?? {})
 }
@@ -107,7 +107,7 @@ function runListFeatureFlags(pythonPath: string, mainPyPath: string, cwd: string
           return
         }
         resolve(stdout)
-      },
+      }
     )
   })
 }

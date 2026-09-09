@@ -6,19 +6,19 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 import {
   _broadcastToRenderer,
   _registerExtraBroadcastTarget,
-  _unregisterExtraBroadcastTarget,
+  _unregisterExtraBroadcastTarget
 } from './shared'
 
 interface FakeWebContents {
@@ -34,7 +34,7 @@ function makeFakeWc(opts: { destroyed?: boolean } = {}): FakeWebContents {
     send: vi.fn(),
     once: (event, cb) => {
       if (event === 'destroyed') wc.__destroy = cb
-    },
+    }
   }
   return wc
 }

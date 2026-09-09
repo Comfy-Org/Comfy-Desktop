@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import type * as ModelsModule from '../../lib/models'
 import type { ResolvedExtraPath } from '../../lib/models'
+import { lookupEnMessage } from '../../lib/localeTestHelper'
 
 // `buildExtraModelPathsView` groups the flat per-type dirs from
 // `resolveExtraModelPaths` (tested in models.test.ts) by section, and stamps
@@ -14,19 +15,28 @@ const holder = vi.hoisted(() => ({ comfyDir: '', resolved: [] as ResolvedExtraPa
 // models.ts reads `dataDir()` at module load (for YAML_PATH); the real one calls
 // electron `app.getPath`, which crashes outside Electron. Stub it to a temp dir.
 vi.mock('../../lib/paths', () => ({
-  dataDir: () => os.tmpdir(),
+  dataDir: () => os.tmpdir()
 }))
+
+// Real English strings so label/tooltip assertions catch missing locale keys
+// (see lookupEnMessage). Dynamic import: vi.mock factories are hoisted, so
+// they can't reference top-level static imports.
+vi.mock('../../lib/i18n', async () => {
+  const { lookupEnMessage } = await import('../../lib/localeTestHelper')
+  return { t: (key: string) => lookupEnMessage(key) }
+})
 
 vi.mock('../../lib/models', async (importOriginal) => {
   const actual = await importOriginal<typeof ModelsModule>()
   return {
     ...actual,
     resolveComfyDir: () => holder.comfyDir,
-    resolveExtraModelPaths: () => holder.resolved,
+    resolveExtraModelPaths: () => holder.resolved
   }
 })
 
-const { buildExtraModelPathsView } = await import('./launchSettingsFields')
+const { buildExtraModelPathsView, buildLaunchSettingsFields } =
+  await import('./launchSettingsFields')
 
 let tmp: string
 
@@ -45,7 +55,7 @@ describe('buildExtraModelPathsView — grouping', () => {
     expect(buildExtraModelPathsView({} as never)).toEqual({
       yamlPath: '',
       exists: false,
-      sections: [],
+      sections: []
     })
   })
 
@@ -57,8 +67,22 @@ describe('buildExtraModelPathsView — grouping', () => {
     const missing = path.join(base, 't2i_adapter') // not created
 
     holder.resolved = [
-      { section: 'ext', basePath: base, type: 'checkpoints', rawType: 'checkpoints', dir: ckpt, isDefault: false },
-      { section: 'ext', basePath: base, type: 'controlnet', rawType: 'controlnet', dir: missing, isDefault: false },
+      {
+        section: 'ext',
+        basePath: base,
+        type: 'checkpoints',
+        rawType: 'checkpoints',
+        dir: ckpt,
+        isDefault: false
+      },
+      {
+        section: 'ext',
+        basePath: base,
+        type: 'controlnet',
+        rawType: 'controlnet',
+        dir: missing,
+        isDefault: false
+      }
     ]
 
     const view = buildExtraModelPathsView({ installPath: tmp } as never)
@@ -71,16 +95,37 @@ describe('buildExtraModelPathsView — grouping', () => {
     expect(s.basePathExists).toBe(true)
     expect(s.dirs).toEqual([
       { type: 'checkpoints', rawType: 'checkpoints', dir: ckpt, dirExists: true },
-      { type: 'controlnet', rawType: 'controlnet', dir: missing, dirExists: false },
+      { type: 'controlnet', rawType: 'controlnet', dir: missing, dirExists: false }
     ])
   })
 
   it('keeps sections separate and preserves declaration order', () => {
     fs.writeFileSync(path.join(tmp, 'extra_model_paths.yaml'), 'x')
     holder.resolved = [
-      { section: 'first', basePath: null, type: 'loras', rawType: 'loras', dir: path.join(tmp, 'a'), isDefault: true },
-      { section: 'second', basePath: path.join(tmp, 'b'), type: 'vae', rawType: 'vae', dir: path.join(tmp, 'b', 'vae'), isDefault: false },
-      { section: 'first', basePath: null, type: 'vae', rawType: 'vae', dir: path.join(tmp, 'c'), isDefault: true },
+      {
+        section: 'first',
+        basePath: null,
+        type: 'loras',
+        rawType: 'loras',
+        dir: path.join(tmp, 'a'),
+        isDefault: true
+      },
+      {
+        section: 'second',
+        basePath: path.join(tmp, 'b'),
+        type: 'vae',
+        rawType: 'vae',
+        dir: path.join(tmp, 'b', 'vae'),
+        isDefault: false
+      },
+      {
+        section: 'first',
+        basePath: null,
+        type: 'vae',
+        rawType: 'vae',
+        dir: path.join(tmp, 'c'),
+        isDefault: true
+      }
     ]
 
     const view = buildExtraModelPathsView({ installPath: tmp } as never)
@@ -91,5 +136,157 @@ describe('buildExtraModelPathsView — grouping', () => {
     expect(view.sections[0]!.basePathExists).toBe(false)
     expect(view.sections[0]!.dirs).toHaveLength(2) // both 'first' entries grouped
     expect(view.sections[1]!.dirs).toHaveLength(1)
+  })
+})
+
+describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () => {
+  const OPTS = { defaultLaunchArgs: '' }
+
+  function managerField(installation: Record<string, unknown>) {
+    const field = buildLaunchSettingsFields(installation as never, OPTS).find(
+      (f) => f.id === 'managerSecurityLevel'
+    )
+    expect(field, 'managerSecurityLevel field missing from launch settings').toBeTruthy()
+    return field as Record<string, unknown> & {
+      options?: { value: string; label: string; description?: string }[]
+    }
+  }
+
+  it('is an editable select defaulting to normal when the install never chose', () => {
+    const field = managerField({})
+    expect(field.editable).toBe(true)
+    expect(field.editType).toBe('select')
+    expect(field.value).toBe('normal')
+    expect(field.requiresRestart).toBe(true)
+  })
+
+  it('offers exactly the four Manager levels in order with real locale labels', () => {
+    const field = managerField({})
+    expect(field.options?.map((o) => o.value)).toEqual(['strong', 'normal', 'normal-', 'weak'])
+    expect(field.options?.map((o) => o.label)).toEqual([
+      'Strict',
+      'Standard (recommended)',
+      'Relaxed',
+      'Permissive'
+    ])
+    expect(field.label).toBe('Manager Security Level')
+    // Guard against a raw key leaking into the UI if the locale entry is removed.
+    expect(field.tooltip).toBe(lookupEnMessage('tooltips.managerSecurityLevel'))
+    expect(String(field.tooltip)).not.toContain('tooltips.')
+  })
+
+  it('gives every option a real description explaining its --listen behavior', () => {
+    const field = managerField({})
+    for (const opt of field.options ?? []) {
+      expect(opt.description, `option ${opt.value} has no description`).toBeTruthy()
+      expect(opt.description).toBe(lookupEnMessage(`common.managerSecurityLevel_${opt.value}_desc`))
+      // Guard against a raw key leaking into the UI if the locale entry is removed.
+      expect(opt.description).not.toContain('common.')
+      expect(opt.description).toContain('--listen')
+    }
+  })
+
+  it("reads each install's own persisted level (per-install isolation)", () => {
+    expect(managerField({ managerSecurityLevel: 'weak' }).value).toBe('weak')
+    expect(managerField({ managerSecurityLevel: 'strong' }).value).toBe('strong')
+  })
+
+  it('degrades a hand-edited bogus record value to the default', () => {
+    expect(managerField({ managerSecurityLevel: 'bogus' }).value).toBe('normal')
+  })
+
+  it('sits directly below Startup Arguments', () => {
+    const ids = buildLaunchSettingsFields({} as never, OPTS).map((f) => f.id)
+    expect(ids.indexOf('managerSecurityLevel')).toBe(ids.indexOf('launchArgs') + 1)
+  })
+})
+
+describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
+  const OPTS = { defaultLaunchArgs: '' }
+
+  function networkField(installation: Record<string, unknown>) {
+    const field = buildLaunchSettingsFields(installation as never, OPTS).find(
+      (f) => f.id === 'managerNetworkMode'
+    )
+    expect(field, 'managerNetworkMode field missing from launch settings').toBeTruthy()
+    return field as Record<string, unknown> & {
+      options?: { value: string; label: string; description?: string }[]
+    }
+  }
+
+  it('is an editable select defaulting to public when the install never chose', () => {
+    const field = networkField({})
+    expect(field.editable).toBe(true)
+    expect(field.editType).toBe('select')
+    expect(field.value).toBe('public')
+    expect(field.requiresRestart).toBe(true)
+  })
+
+  it('offers exactly the four Manager modes in order with real locale labels', () => {
+    const field = networkField({})
+    expect(field.options?.map((o) => o.value)).toEqual([
+      'public',
+      'private',
+      'offline',
+      'personal_cloud'
+    ])
+    expect(field.options?.map((o) => o.label)).toEqual([
+      'Public (default)',
+      'Private',
+      'Offline',
+      'Personal cloud'
+    ])
+    expect(field.label).toBe('Manager Network Mode')
+    // Guard against a raw key leaking into the UI if the locale entry is removed.
+    expect(field.tooltip).toBe(lookupEnMessage('tooltips.managerNetworkMode'))
+    expect(String(field.tooltip)).not.toContain('tooltips.')
+  })
+
+  it('gives every option a real description', () => {
+    const field = networkField({})
+    for (const opt of field.options ?? []) {
+      expect(opt.description, `option ${opt.value} has no description`).toBeTruthy()
+      expect(opt.description).toBe(lookupEnMessage(`common.managerNetworkMode_${opt.value}_desc`))
+      // Guard against a raw key leaking into the UI if the locale entry is removed.
+      expect(opt.description).not.toContain('common.')
+    }
+  })
+
+  it('explains that personal_cloud unblocks installs under --listen', () => {
+    const desc = networkField({}).options?.find((o) => o.value === 'personal_cloud')?.description
+    expect(desc).toContain('--listen')
+  })
+
+  it("reads each install's own persisted mode (per-install isolation)", () => {
+    expect(networkField({ managerNetworkMode: 'personal_cloud' }).value).toBe('personal_cloud')
+    expect(networkField({ managerNetworkMode: 'offline' }).value).toBe('offline')
+  })
+
+  it('degrades a hand-edited bogus record value to the default', () => {
+    expect(networkField({ managerNetworkMode: 'bogus' }).value).toBe('public')
+  })
+
+  it('sits directly after Manager Security Level, sharing its rowGroup for the paired row', () => {
+    const fields = buildLaunchSettingsFields({} as never, OPTS)
+    const ids = fields.map((f) => f.id)
+    expect(ids.indexOf('managerNetworkMode')).toBe(ids.indexOf('managerSecurityLevel') + 1)
+    const security = fields.find((f) => f.id === 'managerSecurityLevel')
+    const network = fields.find((f) => f.id === 'managerNetworkMode')
+    expect(security?.rowGroup).toBeTruthy()
+    expect(network?.rowGroup).toBe(security?.rowGroup)
+  })
+
+  it('pairs Launch Mode with Browser Cache on one row, distinct from the Manager row', () => {
+    const fields = buildLaunchSettingsFields({} as never, OPTS)
+    const ids = fields.map((f) => f.id)
+    expect(ids.indexOf('browserPartition')).toBe(ids.indexOf('launchMode') + 1)
+    const launchMode = fields.find((f) => f.id === 'launchMode')
+    const partition = fields.find((f) => f.id === 'browserPartition')
+    expect(launchMode?.rowGroup).toBeTruthy()
+    expect(partition?.rowGroup).toBe(launchMode?.rowGroup)
+    // A shared name across both pairs would merge them into one 4-wide row
+    // if they ever became adjacent.
+    const security = fields.find((f) => f.id === 'managerSecurityLevel')
+    expect(launchMode?.rowGroup).not.toBe(security?.rowGroup)
   })
 })

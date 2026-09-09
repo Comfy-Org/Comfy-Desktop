@@ -37,13 +37,7 @@ function handleClick(item: MenuItem): void {
   <ul class="menu">
     <template v-for="(item, idx) in items" :key="idx">
       <li v-if="item.kind === 'separator'" class="separator" role="separator" />
-      <li
-        v-else
-        class="item"
-        role="menuitem"
-        tabindex="-1"
-        @click="handleClick(item)"
-      >
+      <li v-else class="item" role="menuitem" tabindex="-1" @click="handleClick(item)">
         <span class="check">
           <Check v-if="item.checked" :size="14" />
         </span>

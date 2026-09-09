@@ -7,7 +7,11 @@ import { useI18n } from 'vue-i18n'
  * systems (`useDialogs` tone vs `useModal` confirmStyle).
  */
 export interface StopActionDialogs {
-  confirm: (opts: { title: string; message: string; confirmLabel: string }) => Promise<boolean | string>
+  confirm: (opts: {
+    title: string
+    message: string
+    confirmLabel: string
+  }) => Promise<boolean | string>
   alert: (opts: { title: string; message: string }) => Promise<unknown>
 }
 
@@ -22,9 +26,9 @@ export function useStopAction(dialogs: StopActionDialogs) {
       title: t('actions.stopConfirmTitle', 'Stop ComfyUI'),
       message: t(
         'actions.stopConfirmMessage',
-        'This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.',
+        'This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.'
       ),
-      confirmLabel: stopLabel,
+      confirmLabel: stopLabel
     })
     if (!confirmed) return false
     try {

@@ -31,6 +31,7 @@ const emit = defineEmits<{
   'update-now': []
   'check-for-update': []
   'update-field': [field: DetailField, value: unknown]
+  'open-path': [path: string]
 }>()
 
 const { t, d } = useI18n()
@@ -234,6 +235,7 @@ const progressDetail = computed<string | null>(() => {
       v-if="preferenceSections.length > 0"
       :sections="preferenceSections"
       @update-field="(field, value) => emit('update-field', field, value)"
+      @open-path="(path) => emit('open-path', path)"
     />
   </div>
 </template>

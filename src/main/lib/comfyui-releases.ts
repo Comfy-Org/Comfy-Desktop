@@ -105,7 +105,7 @@ export async function getStableTags(opts?: { refresh?: boolean }): Promise<strin
 
 export async function fetchLatestRelease(
   channel: string,
-  opts?: { refresh?: boolean },
+  opts?: { refresh?: boolean }
 ): Promise<Record<string, unknown> | null> {
   const mirrorEnabled = settings.get('useChineseMirrors') === true
   const remoteUrl = getComfyUIRemoteUrl(mirrorEnabled)
@@ -113,7 +113,7 @@ export async function fetchLatestRelease(
   if (channel === 'latest') {
     const [headSha, latestTag] = await Promise.all([
       lsRemoteRef(remoteUrl, 'refs/heads/master'),
-      getLatestStableTag(opts),
+      getLatestStableTag(opts)
     ])
     if (!headSha) return null
     return {
@@ -123,7 +123,7 @@ export async function fetchLatestRelease(
       // commitsAhead is resolved locally after git fetch
       body: '',
       html_url: `https://github.com/${REPO}/commit/${headSha}`,
-      _commit: true,
+      _commit: true
     }
   }
 
@@ -136,7 +136,7 @@ export async function fetchLatestRelease(
     body: '',
     html_url: `https://github.com/${REPO}/releases/tag/${latestTag}`,
     baseTag: latestTag,
-    commitsAhead: 0,
+    commitsAhead: 0
   }
 }
 

@@ -154,7 +154,7 @@ function discoverExtraFoldersFromSharedDirs(modelsDirs: string[]): string[] {
  * `t2i_adapter` is NOT a legacy alias — see `SECONDARY_TYPE_DIRS`. */
 const LEGACY_FOLDER_ALIASES: ReadonlyArray<{ key: string; dir: string }> = [
   { key: 'clip', dir: 'clip' },
-  { key: 'unet', dir: 'unet' },
+  { key: 'unet', dir: 'unet' }
 ]
 
 /** Dirs ComfyUI's defaults search under a canonical type without a `map_legacy`
@@ -192,6 +192,25 @@ export function installInputDir(installPath: string): string {
 }
 export function installOutputDir(installPath: string): string {
   return path.join(resolveComfyDir(installPath), 'output')
+}
+
+/** Re-home a copied install's promoted download target. A `modelDirsPrimary`
+ *  that points at the *source* install's own models dir is an absolute path
+ *  inside the source, so the copy must point at its own models dir instead.
+ *  Any other target is preserved as-is - deliberately including a per-install
+ *  extra dir that happens to live inside the source tree: such a dir stays
+ *  listed in the copy's inherited `modelDirs` (both installs share it), so
+ *  the primary must keep matching that entry. Re-rooting only the primary
+ *  would orphan it and trigger the stale-primary fallback to the first
+ *  shared dir. */
+export function rehomeOwnModelsPrimary(
+  primary: string,
+  sourceInstallPath: string,
+  destInstallPath: string
+): string {
+  return isSamePath(primary, installModelsDir(sourceInstallPath))
+    ? installModelsDir(destInstallPath)
+    : primary
 }
 
 /**
@@ -332,7 +351,7 @@ export function syncCustomModelFolders(
  *  Normalising both sides matches a download hint against a YAML override. */
 const LEGACY_FOLDER_TYPE_MAP: Readonly<Record<string, string>> = {
   unet: 'diffusion_models',
-  clip: 'text_encoders',
+  clip: 'text_encoders'
 }
 
 export function mapLegacyFolderType(type: string): string {
@@ -346,7 +365,7 @@ const NON_MODEL_SECTION_KEYS: ReadonlySet<string> = new Set([
   'base_path',
   'is_default',
   'custom_nodes',
-  'download_model_base',
+  'download_model_base'
 ])
 
 /** One config group from an `extra_model_paths.yaml`. */
@@ -492,11 +511,70 @@ export function resolveExtraModelPaths(yamlPath: string): ResolvedExtraPath[] {
         type: mapLegacyFolderType(type),
         rawType: type,
         dir: normpath(full),
-        isDefault: !!section.isDefault,
+        isDefault: !!section.isDefault
       })
     }
   }
   return out
+}
+
+/** Launcher-managed model dirs an install sees at launch, plus the dir that
+ *  should carry `is_default: true` in the generated YAML (`null` keeps
+ *  ComfyUI's built-in `<comfyDir>/models` as the default). */
+export interface LauncherModelDirs {
+  /** Resolved, deduped dirs: global shared dirs (when included) first, then
+   *  the install's own `modelDirs` extras. */
+  dirs: string[]
+  /** Effective download target among `dirs`, or `null` for the install-own
+   *  models dir. */
+  primaryDir: string | null
+}
+
+/**
+ * Resolve the launcher-managed model directories for an install. Shared and
+ * per-install dirs are additive: the global shared dirs are included unless
+ * `useSharedModels === false`, and the install's own `modelDirs` always apply.
+ * The promoted `modelDirsPrimary` may point at any effective dir (shared or
+ * per-install), or at the install's own models dir to explicitly keep the
+ * built-in folder as the download target even while shared dirs are included.
+ * When absent/stale the first shared dir is primary, and with no shared dirs
+ * the install's own models dir stays the default (`null`).
+ * `sharedModelsDirs` is passed in to avoid a settings import cycle.
+ */
+export function resolveLauncherModelDirs(
+  inst: InstallationRecord,
+  sharedModelsDirs: string[]
+): LauncherModelDirs {
+  const useShared = (inst.useSharedModels as boolean | undefined) !== false
+  // The install's own models dir is ComfyUI's built-in root, not a launcher
+  // dir: exclude it so it can't end up in the generated YAML (double-included)
+  // even when a stale record or a shared-dir entry names it.
+  const ownDir = inst.installPath ? path.resolve(installModelsDir(inst.installPath)) : null
+  const notOwn = (d: string): boolean => ownDir === null || !samePath(ownDir, d)
+  const shared = useShared ? sharedModelsDirs.map((d) => path.resolve(d)).filter(notOwn) : []
+  const instance = ((inst.modelDirs as string[] | undefined) ?? [])
+    .map((d) => path.resolve(d))
+    .filter(notOwn)
+  const dirs: string[] = []
+  for (const dir of [...shared, ...instance]) {
+    if (!dirs.some((d) => samePath(d, dir))) dirs.push(dir)
+  }
+  const primaryRaw = inst.modelDirsPrimary as string | undefined | null
+  let primaryDir: string | null = null
+  if (
+    typeof primaryRaw === 'string' &&
+    inst.installPath &&
+    isSamePath(installModelsDir(inst.installPath), primaryRaw)
+  ) {
+    // Explicitly promoted install-own models dir: `null` (= built-in default)
+    // without falling through to the first shared dir.
+    primaryDir = null
+  } else if (typeof primaryRaw === 'string' && dirs.some((d) => isSamePath(d, primaryRaw))) {
+    primaryDir = path.resolve(primaryRaw)
+  } else if (shared.length > 0) {
+    primaryDir = shared[0]!
+  }
+  return { dirs, primaryDir }
 }
 
 /** The complete set of model locations a single install's ComfyUI will search,
@@ -514,8 +592,9 @@ export interface InstallModelSearch {
 
 /**
  * Resolve every model search location an install's ComfyUI sees: built-in
- * `<comfyDir>/models`, launcher dirs (shared `modelsDirs` when shared models on,
- * else per-install `modelDirs`), and `<comfyDir>/extra_model_paths.yaml`.
+ * `<comfyDir>/models`, launcher dirs (shared `modelsDirs` plus per-install
+ * `modelDirs`, via `resolveLauncherModelDirs`), and
+ * `<comfyDir>/extra_model_paths.yaml`.
  * `sharedModelsDirs` is passed in to avoid a settings import cycle.
  */
 export function resolveInstallModelSearchPaths(
@@ -526,21 +605,8 @@ export function resolveInstallModelSearchPaths(
   const comfyDir = resolveComfyDir(installPath)
   const builtinRoot = path.resolve(installModelsDir(installPath))
 
-  const useShared = (inst.useSharedModels as boolean | undefined) !== false
-  let launcherRoots: string[]
-  let primary: string
-  if (useShared) {
-    launcherRoots = sharedModelsDirs.map((d) => path.resolve(d))
-    primary = launcherRoots[0] ?? builtinRoot
-  } else {
-    const instanceDirs = ((inst.modelDirs as string[] | undefined) ?? []).map((d) => path.resolve(d))
-    launcherRoots = instanceDirs
-    const primaryRaw = inst.modelDirsPrimary as string | undefined
-    primary =
-      typeof primaryRaw === 'string' && instanceDirs.some((d) => isSamePath(d, primaryRaw))
-        ? path.resolve(primaryRaw)
-        : builtinRoot
-  }
+  const { dirs: launcherRoots, primaryDir } = resolveLauncherModelDirs(inst, sharedModelsDirs)
+  const primary = primaryDir ?? builtinRoot
 
   const modelRoots: string[] = []
   const seen = new Set<string>()

@@ -94,7 +94,7 @@ export function useTitleBarTooltip(opts: UseTitleBarTooltipOpts): TitleBarToolti
       text,
       leftX: Math.round(rect.left),
       rightX: Math.round(rect.right),
-      bottomY: Math.round(rect.bottom),
+      bottomY: Math.round(rect.bottom)
     })
     isTooltipVisible = true
   }
@@ -112,8 +112,7 @@ export function useTitleBarTooltip(opts: UseTitleBarTooltipOpts): TitleBarToolti
     }
     // New target: hide any in-flight tooltip and queue the new one, skipping the
     // show delay on a hover-handoff.
-    const handoff =
-      isTooltipVisible || performance.now() - lastHiddenAt < TOOLTIP_HANDOFF_WINDOW_MS
+    const handoff = isTooltipVisible || performance.now() - lastHiddenAt < TOOLTIP_HANDOFF_WINDOW_MS
     hideTip()
     const captured = found
     activeTooltipText = captured.text

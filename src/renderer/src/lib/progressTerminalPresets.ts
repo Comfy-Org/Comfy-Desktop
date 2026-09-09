@@ -25,7 +25,7 @@ export function successTerminalGoDashboardOrOpen(opts: {
     ...(opts.title === undefined ? {} : { title: opts.title }),
     actions: [
       { id: SUCCESS_ACTION_GO_DASHBOARD, label: opts.dashboardLabel, variant: 'ghost' },
-      { id: SUCCESS_ACTION_OPEN_INSTANCE, label: opts.openLabel, variant: 'primary' },
-    ],
+      { id: SUCCESS_ACTION_OPEN_INSTANCE, label: opts.openLabel, variant: 'primary' }
+    ]
   }
 }

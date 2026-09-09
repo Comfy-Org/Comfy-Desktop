@@ -85,7 +85,11 @@ watch(
         <button
           v-for="(item, idx) in items"
           :key="item.value"
-          :ref="(el) => { if (idx === 0) firstItemRef = el as HTMLButtonElement }"
+          :ref="
+            (el) => {
+              if (idx === 0) firstItemRef = el as HTMLButtonElement
+            }
+          "
           type="button"
           class="base-action-sheet-item"
           :class="{ 'base-action-sheet-item--danger': item.tone === 'danger' }"
@@ -155,7 +159,9 @@ watch(
   text-align: left;
   font-size: 14px;
   color: var(--neutral-100);
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 
 .base-action-sheet-item:hover,

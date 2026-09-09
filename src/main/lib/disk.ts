@@ -18,7 +18,7 @@ export async function getDiskSpace(targetPath: string): Promise<DiskSpaceInfo> {
   const stats = await fs.promises.statfs(dir)
   return {
     free: stats.bavail * stats.bsize,
-    total: stats.blocks * stats.bsize,
+    total: stats.blocks * stats.bsize
   }
 }
 

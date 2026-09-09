@@ -1,25 +1,23 @@
 /**
- * Cloud user-tier cache. Holds the signed-in customer's subscription tier so the cloud
- * capacity kill-switch sheds new free traffic without denying paying users.
+ * Cloud user-tier cache. Holds the signed-in customer's subscription tier for billing
+ * telemetry and free-tier offer UI.
  *
  * Sourced from comfy-api `GET /customers/me` (via the cloud webContents' Firebase token) and
  * persisted to `userData/cloud-user-tier.json` so the next launch's first render sees it.
- * Anomalies leave the cache alone rather than clobber a known-paid tier. Capacity gating treats
- * `unknown === free` (fails closed) — acceptable for launch week.
+ * Anomalies leave the cache alone rather than clobber a known-paid tier.
  */
 import { app, type WebContents } from 'electron'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as telemetry from './telemetry'
-
-export type CloudUserTier = 'free' | 'paid' | 'unknown'
+import type { CloudUserTier } from '../../types/ipc'
 
 /** Subscription tier names that map to `paid`; anything else (FREE, missing, malformed) maps to `free`. */
 const PAID_TIER_NAMES: ReadonlySet<string> = new Set([
   'STANDARD',
   'CREATOR',
   'PRO',
-  'FOUNDERS_EDITION',
+  'FOUNDERS_EDITION'
 ])
 
 const PERSIST_FILENAME = 'cloud-user-tier.json'
@@ -53,7 +51,7 @@ export function initUserTier(): Promise<void> {
     } catch {
       // first launch, missing file, or corrupt — stay 'unknown'
     }
-     
+
     console.log('[user-tier] init: persisted=', cached)
   })()
   return initPromise
@@ -90,17 +88,12 @@ async function setTier(rawTierName: string | null | undefined): Promise<void> {
   if (previous === 'free' || previous === 'paid') {
     telemetry.capture('comfy.desktop.billing.tier_changed', {
       from_tier: previous,
-      to_tier: next,
+      to_tier: next
     })
   }
   try {
-    await fs.writeFile(
-      getPersistPath(),
-      JSON.stringify({ tier: next, ts: Date.now() }),
-      'utf-8',
-    )
+    await fs.writeFile(getPersistPath(), JSON.stringify({ tier: next, ts: Date.now() }), 'utf-8')
   } catch (err) {
-     
     console.log('[user-tier] persist failed:', err)
   }
 }
@@ -159,15 +152,13 @@ export async function refreshCloudUserTier(webContents: WebContents): Promise<vo
       return
     }
     if (result.error) {
-       
       console.log('[user-tier] refresh skipped:', result.error)
       return
     }
     await setTier(result.tier ?? null)
-     
+
     console.log('[user-tier] refresh: raw=', result.tier, '→ cached=', cached)
   } catch (err) {
-     
     console.log('[user-tier] executeJavaScript failed:', err)
   }
 }

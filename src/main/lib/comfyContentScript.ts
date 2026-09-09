@@ -32,6 +32,7 @@ export function getModelDownloadContentScript(): string {
   'use strict';
   if (window.__comfyDesktop2Injected || typeof window.__comfyDesktop2 === 'undefined') return;
   window.__comfyDesktop2Injected = true;
+  var isRemote = window.__comfyDesktop2.isRemote();
 
   var modelCache = {};
   var modelNameCache = {};
@@ -250,7 +251,7 @@ export function getModelDownloadContentScript(): string {
   }
 
   // Only observe missing models UI and intercept downloads for local sessions
-  if (!window.__comfyDesktop2Remote) {
+  if (!isRemote) {
     if (document.body) {
       startObserver();
     } else {
@@ -261,7 +262,7 @@ export function getModelDownloadContentScript(): string {
   // ---- Override document.createElement to intercept <a>.click() ----
   // For remote/cloud sessions model downloads should not be captured (no local models dir).
   var origCreate = document.createElement.bind(document);
-  if (!window.__comfyDesktop2Remote) {
+  if (!isRemote) {
     document.createElement = function(tag, options) {
       var el = origCreate(tag, options);
       if (typeof tag === 'string' && tag.toLowerCase() === 'a' &&
@@ -291,7 +292,15 @@ export function getModelDownloadContentScript(): string {
   // Intercept WebSocket messages to detect completed workflow outputs.
   // The auth token (if any) is passed to the main process which resolves
   // authenticated redirects server-side, avoiding renderer memory issues.
-  if (window.__comfyDesktop2Remote && window.__comfyDesktop2 && window.__comfyDesktop2.downloadAsset) {
+  if (isRemote && window.__comfyDesktop2 && window.__comfyDesktop2.downloadAsset) {
+
+    // Cloud/remote sessions can deliver the same 'executed' output more than
+    // once: a message replayed across reconnects, or one event observed by
+    // two sockets. Remember which outputs were already dispatched so each
+    // output of each prompt downloads exactly once per page session. Keys
+    // include the prompt id, so re-running a workflow (new prompt id)
+    // downloads its outputs again.
+    var _handledOutputs = Object.create(null);
 
     function _buildViewUrl(baseUrl, item) {
       var params = 'filename=' + encodeURIComponent(item.filename);
@@ -307,10 +316,13 @@ export function getModelDownloadContentScript(): string {
       return subfolder + '/' + name;
     }
 
-    function _downloadItem(baseUrl, authToken, item) {
+    function _downloadItem(baseUrl, authToken, eventKey, item) {
       if (!item || !item.filename) return;
       // Skip temporary preview outputs (PreviewImage, etc.)
       if (item.type === 'temp') return;
+      var dedupeKey = eventKey + '|' + (item.subfolder || '') + '|' + item.filename + '|' + (item.type || '');
+      if (_handledOutputs[dedupeKey]) return;
+      _handledOutputs[dedupeKey] = true;
       var preferredName = item.display_name || null;
       var saveName = _withSubfolder(item.subfolder, preferredName || item.filename);
       var viewUrl = _buildViewUrl(baseUrl, item);
@@ -335,13 +347,14 @@ export function getModelDownloadContentScript(): string {
           var msg = JSON.parse(event.data);
           if (msg.type !== 'executed' || !msg.data || !msg.data.output) return;
           var output = msg.data.output;
+          var eventKey = (msg.data.prompt_id || '') + '|' + (msg.data.node || '');
           // Process all known output arrays: images, gifs, audio, video, 3d (SaveGLB)
           var keys = ['images', 'gifs', 'audio', 'video', '3d'];
           for (var k = 0; k < keys.length; k++) {
             var items = output[keys[k]];
             if (!items || !items.length) continue;
             for (var i = 0; i < items.length; i++) {
-              _downloadItem(httpBase, _authToken, items[i]);
+              _downloadItem(httpBase, _authToken, eventKey, items[i]);
             }
           }
         } catch(e) {}

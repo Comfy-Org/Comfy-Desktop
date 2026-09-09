@@ -9,15 +9,17 @@ import { useOverlay, type FlowComponent, type Overlay } from '../composables/use
 import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
+import type { FirstUseMode } from '../../../shared/firstUseMode'
 
-// Body modes the panel WebContentsView can render. Mirrors `BodyMode`
-// in main; `'comfy'` is admitted so the renderer can reflect main's
-// activePanel after a drawer close.
+/**
+ * Panel body modes available in the WebContentsView.
+ * Mirrors main's `BodyMode`. Includes `'comfy'` so the renderer
+ * can reflect main's `activePanel` after closing a drawer.
+ */
 export type PanelKey =
   | 'comfy'
   | 'comfy-lifecycle'
   | 'chooser'
-  | 'downloads-v2'
   | 'feedback'
   | 'new-install'
   | 'track'
@@ -31,18 +33,25 @@ export type PanelKey =
    *  separately — but accepting it keeps `isValidPanel` from
    *  swallowing the event. */
   | 'progress'
+  | 'mcp-setup'
+  /** Mirror of main's `'announcement'` ComfyPanelKey. Overlay mode; the
+   *  announcement modal renders via its own ref (like feedback), so there's
+   *  no body branch. Accepting the key keeps `isValidPanel` from swallowing
+   *  the panel-switch so the overlay transparency watcher still fires. */
+  | 'announcement'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
   'comfy-lifecycle',
   'chooser',
-  'downloads-v2',
   'feedback',
   'new-install',
   'track',
   'load-snapshot',
   'quick-install',
-  'progress'
+  'progress',
+  'mcp-setup',
+  'announcement'
 ])
 
 /**
@@ -129,10 +138,50 @@ export interface UsePanelOverlaysApi {
   // Helpers.
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
   handleProgressClose: () => void
-  openFlowTakeover: (component: FlowComponent, entrypoint: string) => Promise<void>
+  openFlowTakeover: (
+    component: FlowComponent,
+    entrypoint: string,
+    newInstallOpts?: { workspaceId?: string }
+  ) => Promise<void>
   openFirstUseTakeover: (opts?: { initialStep?: 'start' | 'localBranch' }) => Promise<void>
   dismissTakeoverDirect: () => void
-  switchPanel: (panel: PanelKey, entrypoint?: string) => Promise<void>
+  switchPanel: (
+    panel: PanelKey,
+    entrypoint?: string,
+    newInstallOpts?: { workspaceId?: string }
+  ) => Promise<void>
+}
+
+const isProgressTakeover = (o: Overlay | null | undefined): boolean =>
+  o?.kind === 'takeover' && o.component === 'update'
+const isFirstUseTakeover = (o: Overlay | null | undefined): boolean =>
+  o?.kind === 'takeover' && o.component === 'first-use'
+
+/**
+ * First-use / lockdown mode to push for an overlay transition, or null
+ * to leave the current mode untouched.
+ *
+ * - ProgressModal takeover mounting → `'loading-lockdown'`.
+ * - First-use chain handoff (first-use takeover silently swapped for
+ *   another takeover while the chain is active): the chain handler
+ *   asserted `'post-consent'` so the file menu stays locked to Skip
+ *   Onboarding while the wizard loads — don't clobber it. Scoped to
+ *   the takeover → takeover swap so a stale chain flag can't suppress
+ *   the `'none'` push on ordinary overlay closes.
+ * - Any other transition away from progress/first-use → `'none'`.
+ */
+export function firstUseModeForOverlaySwap(
+  next: Overlay | null | undefined,
+  prev: Overlay | null | undefined,
+  chainActive: boolean
+): FirstUseMode | null {
+  const nextIsProgress = isProgressTakeover(next)
+  if (nextIsProgress && !isProgressTakeover(prev)) {
+    return 'loading-lockdown'
+  }
+  if (nextIsProgress || isFirstUseTakeover(next)) return null
+  const isChainHandoff = isFirstUseTakeover(prev) && next?.kind === 'takeover' && chainActive
+  return isChainHandoff ? null : 'none'
 }
 
 /**
@@ -172,19 +221,15 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
    * — unless a first-use takeover is up, in which case
    * FirstUseTakeover.vue's own step watcher is the source of truth.
    */
-  const isProgressTakeover = (o: Overlay | null | undefined): boolean =>
-    o?.kind === 'takeover' && o.component === 'update'
-  const isFirstUseTakeover = (o: Overlay | null | undefined): boolean =>
-    o?.kind === 'takeover' && o.component === 'first-use'
-
   watch(
     currentOverlay,
     (next, prev) => {
-      if (isProgressTakeover(next) && !isProgressTakeover(prev)) {
-        window.api.setFirstUseMode('loading-lockdown')
-      } else if (!isProgressTakeover(next) && !isFirstUseTakeover(next)) {
-        window.api.setFirstUseMode('none')
-      }
+      const mode = firstUseModeForOverlaySwap(
+        next,
+        prev,
+        opts.firstUseChain?.shouldForceTakeover() === true
+      )
+      if (mode) window.api.setFirstUseMode(mode)
     },
     { immediate: true }
   )
@@ -309,7 +354,11 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
    * The imperative `open()` reset on each *Modal ref runs after the
    * takeover mounts so form state always starts fresh.
    */
-  async function openFlowTakeover(component: FlowComponent, entrypoint: string): Promise<void> {
+  async function openFlowTakeover(
+    component: FlowComponent,
+    entrypoint: string,
+    newInstallOpts: { workspaceId?: string } = {}
+  ): Promise<void> {
     // Opt the install-flow wizards into the dedicated "Discard install
     // setup?" cancel-prompt copy. The wizards have no destructive op
     // in flight (the install kicks off after the wizard's final step,
@@ -332,7 +381,11 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       const cameFromLocalBranch = opts.firstUseChain
         ? opts.firstUseChain.consumeCameFromLocalBranch() === true
         : false
-      await newInstallRef.value?.open(cameFromLocalBranch ? { cameFromLocalBranch } : undefined)
+      await newInstallRef.value?.open({
+        entrypoint,
+        ...newInstallOpts,
+        ...(cameFromLocalBranch ? { cameFromLocalBranch } : {})
+      })
     } else if (component === 'track') trackRef.value?.open()
     else if (component === 'load-snapshot') loadSnapshotRef.value?.open()
     else if (component === 'quick-install') await quickInstallRef.value?.open()
@@ -421,10 +474,14 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
    * is no longer a panel key — it's reached via `openInstancePicker(mode:
    * 'expanded')`. Global Settings is reached via `openGlobalSettings()`.
    */
-  async function switchPanel(panel: PanelKey, entrypoint: string = 'titlebar'): Promise<void> {
+  async function switchPanel(
+    panel: PanelKey,
+    entrypoint: string = 'titlebar',
+    newInstallOpts?: { workspaceId?: string }
+  ): Promise<void> {
     const fromView = activePanel.value
     if (FLOW_PANELS.has(panel)) {
-      await openFlowTakeover(panel as FlowComponent, entrypoint)
+      await openFlowTakeover(panel as FlowComponent, entrypoint, newInstallOpts)
       return
     }
     // No-op guard so a redundant `panel-switch` IPC (e.g. main re-

@@ -12,6 +12,6 @@ export function createAppI18n() {
     fallbackLocale: 'en',
     messages: { en },
     missingWarn: false,
-    fallbackWarn: false,
+    fallbackWarn: false
   })
 }

@@ -1,0 +1,147 @@
+name: Publish Bridge Types
+
+# One workflow owns every publish because npm trusted publishing authorizes an
+# exact workflow filename. Automatic and manual runs both publish only the
+# checked-out main commit; there is intentionally no free-form ref input.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/comfyui-desktop-bridge-types/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Expected version. Blank reads it from main.'
+        required: false
+        type: string
+      dist_tag:
+        description: 'npm dist-tag to use. Blank picks next for prereleases, latest otherwise.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# npm package versions are immutable, so publishing this package must always
+# serialize, regardless of the event or requested dist-tag.
+concurrency:
+  group: publish-comfyui-desktop-bridge-types
+  cancel-in-progress: false
+
+jobs:
+  publish_bridge_types:
+    name: Publish @comfyorg/comfyui-desktop-bridge-types
+    # Defense in depth around the environment's main-only deployment policy.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout main commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Resolve version and dist-tag
+        id: resolve
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DIST_TAG: ${{ inputs.dist_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_JSON=packages/comfyui-desktop-bridge-types/package.json
+          EXPECTED_NAME=@comfyorg/comfyui-desktop-bridge-types
+          NAME=$(node -p "require('./${PACKAGE_JSON}').name")
+          VERSION=$(node -p "require('./${PACKAGE_JSON}').version")
+          if [ "$NAME" != "$EXPECTED_NAME" ]; then
+            echo "::error title=Package name mismatch::Expected $EXPECTED_NAME, found $NAME" >&2
+            exit 1
+          fi
+          # A dispatcher who names a version is asserting what they expect main
+          # to hold; the checked-out main commit remains the source of truth.
+          if [ -n "$INPUT_VERSION" ] && [ "$INPUT_VERSION" != "$VERSION" ]; then
+            echo "::error title=Version mismatch::${PACKAGE_JSON} version $VERSION does not match input $INPUT_VERSION" >&2
+            exit 1
+          fi
+          SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+          if [[ ! "$VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error title=Invalid version::Version '$VERSION' must follow semantic versioning (x.y.z[-suffix][+build])" >&2
+            exit 1
+          fi
+          DIST_TAG="$INPUT_DIST_TAG"
+          if [ -z "$DIST_TAG" ]; then
+            if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+              DIST_TAG=next
+            else
+              DIST_TAG=latest
+            fi
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing $NAME@$VERSION under dist-tag $DIST_TAG."
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          # npm trusted publishing requires Node >=22.14 and npm >=11.5.1.
+          # Node 24 supplies a compatible npm CLI.
+          node-version: 24
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Verify the package matches its source
+        run: pnpm run bridge-types:check
+
+      - name: Check if version already exists on npm
+        id: check_npm
+        env:
+          NAME: ${{ steps.resolve.outputs.name }}
+          VER: ${{ steps.resolve.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS=0
+          OUTPUT=$(npm view "${NAME}@${VER}" --json 2>&1) || STATUS=$?
+          if [ "$STATUS" -ne 0 ]; then
+            if echo "$OUTPUT" | grep -q "E404"; then
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error title=Registry lookup failed::$OUTPUT" >&2
+            exit "$STATUS"
+          fi
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+
+          # A rerun is harmless only when npm already serves the exact package.
+          # Compare packed artifacts so package.json entrypoints and the files
+          # allowlist are covered. README-only edits may ride with the next bump.
+          WORK=$(mktemp -d "$RUNNER_TEMP/bridge-types.XXXXXX")
+          mkdir -p "$WORK/published-tar" "$WORK/published" "$WORK/local-tar" "$WORK/local"
+          npm pack --ignore-scripts "${NAME}@${VER}" --pack-destination "$WORK/published-tar" >/dev/null
+          npm pack --ignore-scripts ./packages/comfyui-desktop-bridge-types \
+            --pack-destination "$WORK/local-tar" >/dev/null
+          tar -xzf "$WORK"/published-tar/*.tgz -C "$WORK/published"
+          tar -xzf "$WORK"/local-tar/*.tgz -C "$WORK/local"
+          if diff -r -q --exclude=README.md "$WORK/published/package" "$WORK/local/package"; then
+            echo "::warning title=Already published::${NAME}@${VER} is already on npm with this exact package. Nothing to publish."
+            exit 0
+          fi
+          echo "::error title=Version already published::${NAME}@${VER} is already on npm with different package contents. Bump the version and merge again." >&2
+          exit 1
+
+      - name: Publish package with npm trusted publishing
+        if: steps.check_npm.outputs.exists == 'false'
+        env:
+          DIST_TAG: ${{ steps.resolve.outputs.dist_tag }}
+        run: npm publish --access public --tag "$DIST_TAG" --ignore-scripts --registry=https://registry.npmjs.org
+        working-directory: packages/comfyui-desktop-bridge-types

@@ -1,8 +1,4 @@
-import {
-  fs,
-  installations, i18n,
-  openPath,
-} from '../shared'
+import { fs, installations, i18n, openPath } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 
 export async function handleRemove({ installationId }: ActionContext): Promise<ActionResult> {
@@ -10,7 +6,11 @@ export async function handleRemove({ installationId }: ActionContext): Promise<A
   return { ok: true, navigate: 'list' }
 }
 
-export async function handleRename({ installationId, inst, actionData }: ActionContext): Promise<ActionResult> {
+export async function handleRename({
+  installationId,
+  inst,
+  actionData
+}: ActionContext): Promise<ActionResult> {
   const name = String(actionData?.name ?? '').trim()
   if (!name) return { ok: false, message: i18n.t('errors.nameRequired') }
   if (name !== inst.name) {

@@ -4,6 +4,31 @@ import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { en } from '../lib/i18nMessages.ts'
+import { NAV_LABEL, type NavDecision } from '../../../shared/navigation/navDecision'
+
+// NavDecision fixtures the settings footer would emit; the picker routes their
+// `verb` through the instance-action dispatcher.
+const SWITCH_DECISION: NavDecision = {
+  window: 'same',
+  verb: 'switch',
+  primaryLabel: NAV_LABEL.start,
+  secondary: [],
+  telemetry: 'instance.switched'
+}
+const RESTART_DECISION: NavDecision = {
+  window: 'same',
+  verb: 'restart',
+  primaryLabel: NAV_LABEL.restart,
+  secondary: [],
+  telemetry: null
+}
+const FOCUS_DECISION: NavDecision = {
+  window: 'same',
+  verb: 'focus',
+  primaryLabel: NAV_LABEL.switch,
+  secondary: [],
+  telemetry: null
+}
 import type { SnapshotListData } from '../types/ipc'
 
 // The interactive console pane drives a real xterm terminal (needs a canvas);
@@ -12,8 +37,8 @@ vi.mock('../views/comfyUISettings/ConsoleTerminalPane.vue', () => ({
   default: {
     name: 'ConsoleTerminalPane',
     props: ['installationId'],
-    template: '<div data-testid="console-terminal-pane-stub" />',
-  },
+    template: '<div data-testid="console-terminal-pane-stub" />'
+  }
 }))
 
 const emptySnapshotListPayload: SnapshotListData = {
@@ -24,20 +49,20 @@ const emptySnapshotListPayload: SnapshotListData = {
     updateChannel: 'stable',
     pythonVersion: '3.12',
     variant: 'cpu',
-    variantLabel: 'CPU',
-  },
+    variantLabel: 'CPU'
+  }
 }
 
-  ; (window as unknown as { api: Record<string, unknown> }).api = {
-    onErrorDetail: vi.fn(() => () => { }),
-    onInstanceStarted: vi.fn(() => () => { }),
-    onInstanceStopped: vi.fn(() => () => { }),
-    onInstanceProgress: vi.fn(() => () => { }),
-    onSessionStateChanged: vi.fn(() => () => { }),
-    getDetailSections: vi.fn().mockResolvedValue([]),
-    getDiskSpace: vi.fn().mockResolvedValue(null),
-    getInstallationSize: vi.fn().mockResolvedValue({ sizeBytes: 0 }),
-  }
+;(window as unknown as { api: Record<string, unknown> }).api = {
+  onErrorDetail: vi.fn(() => () => {}),
+  onInstanceStarted: vi.fn(() => () => {}),
+  onInstanceStopped: vi.fn(() => () => {}),
+  onInstanceProgress: vi.fn(() => () => {}),
+  onSessionStateChanged: vi.fn(() => () => {}),
+  getDetailSections: vi.fn().mockResolvedValue([]),
+  getDiskSpace: vi.fn().mockResolvedValue(null),
+  getInstallationSize: vi.fn().mockResolvedValue({ sizeBytes: 0 })
+}
 
 /**
  * Component tests for the instance-picker popover view. Always renders
@@ -73,6 +98,7 @@ interface BridgeState {
   picks: string[]
   /** Captures opts so tests assert the renderer-confirmed flag reaches the bridge. */
   restarts: { id: string; opts?: { confirmed?: boolean } }[]
+  backgroundOps: { installationId: string; actionId: string }[]
   newInstallCount: number
   selectedInstallSets: (string | null)[]
   updateFieldCalls: { installationId: string; fieldId: string; value: unknown }[]
@@ -83,10 +109,11 @@ function installMockBridge(): BridgeState {
   const state: BridgeState = {
     picks: [],
     restarts: [],
+    backgroundOps: [],
     newInstallCount: 0,
     selectedInstallSets: [],
     updateFieldCalls: [],
-    runActionCalls: [],
+    runActionCalls: []
   }
   const bridge = {
     pickInstall: (id: string) => {
@@ -102,23 +129,24 @@ function installMockBridge(): BridgeState {
     setPickerSelectedInstall: (id: string | null) => {
       state.selectedInstallSets.push(id)
     },
-    pickerUpdateField: vi.fn(
-      async (installationId: string, fieldId: string, value: unknown) => {
-        state.updateFieldCalls.push({ installationId, fieldId, value })
-        return { ok: true }
-      },
-    ),
+    pickerUpdateField: vi.fn(async (installationId: string, fieldId: string, value: unknown) => {
+      state.updateFieldCalls.push({ installationId, fieldId, value })
+      return { ok: true }
+    }),
     pickerRunAction: vi.fn(
       async (installationId: string, actionId: string, actionData?: unknown) => {
         state.runActionCalls.push({ installationId, actionId, actionData })
         return { ok: true }
-      },
+      }
     ),
+    pickerStartBackgroundOp: (opts: { installationId: string; actionId: string }) => {
+      state.backgroundOps.push(opts)
+    },
     pickerSettingsGetLocaleMessages: vi.fn(async () => ({})),
     pickerSettingsGetLocale: vi.fn(async () => 'en'),
-    pickerSettingsOnLocaleChanged: vi.fn(() => () => {}),
+    pickerSettingsOnLocaleChanged: vi.fn(() => () => {})
   }
-    ; (window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
+  ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return state
 }
 
@@ -128,7 +156,7 @@ function makeInstall(overrides: Partial<MockInstall>): MockInstall {
     name: 'X',
     sourceLabel: 'Standalone',
     sourceCategory: 'local',
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -141,7 +169,7 @@ async function mountPicker(snapshot: MockSnapshot) {
     selectedSettings: null,
     selectedSnapshots: emptySnapshotListPayload,
     launchingInstallationIds: [] as string[],
-    ...snapshot,
+    ...snapshot
   }
   return mount(InstancePickerView, {
     props: {
@@ -149,10 +177,10 @@ async function mountPicker(snapshot: MockSnapshot) {
       globalSettingsSnapshot: {
         sharedDirectoriesFields: [],
         modelsDirs: [],
-        modelsSystemDefault: '',
-      },
+        modelsSystemDefault: ''
+      }
     },
-    global: { plugins: [i18n, pinia] },
+    global: { plugins: [i18n, pinia] }
   })
 }
 
@@ -169,9 +197,11 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [],
         activeInstallationId: null,
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
-      expect(wrapper.find('.picker-search input').exists()).toBe(true)
+      const input = wrapper.get('.picker-search input')
+      expect(input.attributes('placeholder')).toBe('Search instances')
+      expect(input.attributes('aria-label')).toBe('Search instances')
       expect(wrapper.findAll('.picker-chip').length).toBeGreaterThan(0)
       expect(wrapper.find('.picker-list').exists()).toBe(true)
       expect(wrapper.find('.picker-detail-wrap.is-expanded').exists()).toBe(true)
@@ -181,7 +211,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: null,
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       const newInstall = wrapper.find('.picker-new-install')
       expect(newInstall.exists()).toBe(true)
@@ -194,14 +224,12 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         installs: [
           makeInstall({ id: 'old', name: 'Old', lastLaunchedAt: 100 }),
           makeInstall({ id: 'new', name: 'New', lastLaunchedAt: 500 }),
-          makeInstall({ id: 'never', name: 'Never' }),
+          makeInstall({ id: 'never', name: 'Never' })
         ],
         activeInstallationId: null,
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
-      const namesInOrder = wrapper
-        .findAll('.picker-row-name')
-        .map((n) => n.text())
+      const namesInOrder = wrapper.findAll('.picker-row-name').map((n) => n.text())
       expect(namesInOrder).toEqual(['New', 'Old', 'Never'])
     })
 
@@ -215,21 +243,19 @@ describe('comfyTitlePopup/InstancePickerView', () => {
             name: 'OldCloud',
             sourceCategory: 'cloud',
             sourceLabel: 'Cloud',
-            lastLaunchedAt: 100,
+            lastLaunchedAt: 100
           }),
           makeInstall({
             id: 'recent-local',
             name: 'RecentLocal',
             sourceCategory: 'local',
-            lastLaunchedAt: 1_000,
-          }),
+            lastLaunchedAt: 1_000
+          })
         ],
         activeInstallationId: null,
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
-      const namesInOrder = wrapper
-        .findAll('.picker-row-name')
-        .map((n) => n.text())
+      const namesInOrder = wrapper.findAll('.picker-row-name').map((n) => n.text())
       expect(namesInOrder).toEqual(['RecentLocal', 'OldCloud'])
     })
 
@@ -237,10 +263,10 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [
           makeInstall({ id: 'a', name: 'Alpha' }),
-          makeInstall({ id: 'b', name: 'Bravo' }),
+          makeInstall({ id: 'b', name: 'Bravo' })
         ],
         activeInstallationId: null,
-        runningInstallationIds: ['a'],
+        runningInstallationIds: ['a']
       })
       const rows = wrapper.findAll('.picker-row')
       const alphaRow = rows.find((c) => c.text().includes('Alpha'))
@@ -251,10 +277,10 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [
           makeInstall({ id: 'a', name: 'Alpha' }),
-          makeInstall({ id: 'b', name: 'Bravo' }),
+          makeInstall({ id: 'b', name: 'Bravo' })
         ],
         activeInstallationId: 'a',
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       const bravoRow = wrapper.findAll('.picker-row').find((c) => c.text().includes('Bravo'))
       await bravoRow!.trigger('click')
@@ -268,10 +294,10 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [
           makeInstall({ id: 'a', name: 'Alpha', lastLaunchedAt: Date.now() - 60_000 }),
-          makeInstall({ id: 'b', name: 'Bravo', lastLaunchedAt: Date.now() - 3_600_000 }),
+          makeInstall({ id: 'b', name: 'Bravo', lastLaunchedAt: Date.now() - 3_600_000 })
         ],
         activeInstallationId: 'a',
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       const rows = wrapper.findAll('.picker-row')
       const alphaRow = rows.find((c) => c.text().includes('Alpha'))!
@@ -289,12 +315,12 @@ describe('comfyTitlePopup/InstancePickerView', () => {
           makeInstall({
             id: 'a',
             name: 'Alpha',
-            statusTag: { style: 'update', label: 'Update' },
+            statusTag: { style: 'update', label: 'Update' }
           }),
-          makeInstall({ id: 'b', name: 'Bravo' }),
+          makeInstall({ id: 'b', name: 'Bravo' })
         ],
         activeInstallationId: null,
-        runningInstallationIds: ['a'],
+        runningInstallationIds: ['a']
       })
       const rows = wrapper.findAll('.picker-row')
       const alphaRow = rows.find((c) => c.text().includes('Alpha'))!
@@ -313,14 +339,14 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const installHost = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: 'a',
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       expect(installHost.find('.picker-home').exists()).toBe(true)
 
       const chooserHost = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: null,
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       expect(chooserHost.find('.picker-home').exists()).toBe(false)
     })
@@ -331,12 +357,12 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         .__comfyTitlePopup
       ;(window as unknown as { __comfyTitlePopup: Record<string, unknown> }).__comfyTitlePopup = {
         ...existing,
-        activate,
+        activate
       }
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: 'a',
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       await wrapper.find('.picker-home').trigger('click')
       expect(activate).toHaveBeenCalledWith('new-window')
@@ -348,7 +374,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [],
         activeInstallationId: null,
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       const newInstallRow = wrapper.find('.picker-new-install')
       await newInstallRow.trigger('click')
@@ -359,10 +385,10 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [
           makeInstall({ id: 'a', name: 'Alpha' }),
-          makeInstall({ id: 'b', name: 'Bravo' }),
+          makeInstall({ id: 'b', name: 'Bravo' })
         ],
         activeInstallationId: null,
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       const input = wrapper.find('.picker-search input')
       await input.setValue('alph')
@@ -376,10 +402,10 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [
           makeInstall({ id: 'l', name: 'LocalThing', sourceCategory: 'local' }),
-          makeInstall({ id: 'r', name: 'RemoteThing', sourceCategory: 'remote' }),
+          makeInstall({ id: 'r', name: 'RemoteThing', sourceCategory: 'remote' })
         ],
         activeInstallationId: null,
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       const chips = wrapper.findAll('.picker-chip')
       const remoteChip = chips.find((c) => c.text() === 'Remote')
@@ -394,7 +420,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: null,
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       const input = wrapper.find('.picker-search input')
       await input.setValue('zzzz-no-match')
@@ -406,13 +432,10 @@ describe('comfyTitlePopup/InstancePickerView', () => {
   describe('settings pane', () => {
     it('auto-selects the first install on an install-less host', async () => {
       const wrapper = await mountPicker({
-        installs: [
-          makeInstall({ id: 'a', name: 'Alpha' }),
-          makeInstall({ id: 'b', name: 'Beta' }),
-        ],
+        installs: [makeInstall({ id: 'a', name: 'Alpha' }), makeInstall({ id: 'b', name: 'Beta' })],
         activeInstallationId: null,
         runningInstallationIds: [],
-        selectedInstallationId: null,
+        selectedInstallationId: null
       })
       await flushPromises()
       expect(wrapper.find('.settings-v2-content').exists()).toBe(true)
@@ -423,45 +446,68 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: 'a',
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       expect(wrapper.find('.settings-v2-content').exists()).toBe(true)
     })
+
+    it('dispatches an in-flight background operation only once', async () => {
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
+        activeInstallationId: 'a',
+        runningInstallationIds: []
+      })
+      const settings = wrapper.findComponent(ComfyUISettingsContent)
+      const operation = {
+        installationId: 'a',
+        title: 'Update ComfyUI',
+        apiCall: vi.fn(),
+        actionId: 'update'
+      }
+
+      settings.vm.$emit('show-progress', operation)
+      settings.vm.$emit('show-progress', operation)
+      await flushPromises()
+
+      expect(bridge.backgroundOps).toHaveLength(1)
+      expect(bridge.backgroundOps[0]).toMatchObject({ installationId: 'a', actionId: 'update' })
+    })
+
     // Locale loading moved to the popup root (TitlePopupApp) so every kind
     // tracks main's language live — see TitlePopupApp.test.ts.
   })
 
   describe('primary action dispatch', () => {
     it('dispatches pickInstall when the selected install is not running', async () => {
-      const { default: ComfyUISettingsContent } = await import(
-        '../components/settings/ComfyUISettingsContent.vue'
-      )
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: 'a',
-        runningInstallationIds: [],
+        runningInstallationIds: []
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
       expect(settings.exists()).toBe(true)
-      settings.vm.$emit('primary-action', false)
+      settings.vm.$emit('primary-action', SWITCH_DECISION)
       await flushPromises()
       expect(bridge.picks).toEqual(['a'])
       expect(bridge.restarts).toEqual([])
     })
 
     it('shows the in-drawer confirm and dispatches restartInstall(confirmed) on accept', async () => {
-      const { default: ComfyUISettingsContent } = await import(
-        '../components/settings/ComfyUISettingsContent.vue'
-      )
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
       const { useDialogs } = await import('../composables/useDialogs')
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha', sourceCategory: 'local' })],
         activeInstallationId: 'a',
-        runningInstallationIds: ['a'],
+        runningInstallationIds: ['a']
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
       expect(settings.exists()).toBe(true)
-      settings.vm.$emit('primary-action', true)
+      settings.vm.$emit('primary-action', RESTART_DECISION)
       await flushPromises()
       // Renderer parks on the confirm; bridge hasn't fired yet.
       const dialogs = useDialogs()
@@ -477,17 +523,16 @@ describe('comfyTitlePopup/InstancePickerView', () => {
     })
 
     it('does not dispatch restartInstall when the in-drawer confirm is cancelled', async () => {
-      const { default: ComfyUISettingsContent } = await import(
-        '../components/settings/ComfyUISettingsContent.vue'
-      )
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
       const { useDialogs } = await import('../composables/useDialogs')
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha', sourceCategory: 'local' })],
         activeInstallationId: 'a',
-        runningInstallationIds: ['a'],
+        runningInstallationIds: ['a']
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
-      settings.vm.$emit('primary-action', true)
+      settings.vm.$emit('primary-action', RESTART_DECISION)
       await flushPromises()
       const dialogs = useDialogs()
       expect(dialogs.state.open).toBe(true)
@@ -497,17 +542,16 @@ describe('comfyTitlePopup/InstancePickerView', () => {
     })
 
     it('skips the in-drawer confirm for non-local installs (no local process to kill)', async () => {
-      const { default: ComfyUISettingsContent } = await import(
-        '../components/settings/ComfyUISettingsContent.vue'
-      )
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
       const { useDialogs } = await import('../composables/useDialogs')
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'r', name: 'Remote', sourceCategory: 'remote' })],
         activeInstallationId: 'r',
-        runningInstallationIds: ['r'],
+        runningInstallationIds: ['r']
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
-      settings.vm.$emit('primary-action', true)
+      settings.vm.$emit('primary-action', RESTART_DECISION)
       await flushPromises()
       // No confirm parked — restart fires straight through with `confirmed: true`.
       const dialogs = useDialogs()
@@ -518,22 +562,21 @@ describe('comfyTitlePopup/InstancePickerView', () => {
     // An install running in ANOTHER window must route through pickInstall (which
     // focuses that window), not restartInstall.
     it('dispatches pickInstall (not restart) for an install running in another window', async () => {
-      const { default: ComfyUISettingsContent } = await import(
-        '../components/settings/ComfyUISettingsContent.vue'
-      )
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
       const wrapper = await mountPicker({
         installs: [
           makeInstall({ id: 'a', name: 'Alpha' }),
-          makeInstall({ id: 'b', name: 'Bravo' }),
+          makeInstall({ id: 'b', name: 'Bravo' })
         ],
         // Host is attached to 'a'; selected 'b' runs in its own window.
         activeInstallationId: 'a',
         selectedInstallationId: 'b',
-        runningInstallationIds: ['b'],
+        runningInstallationIds: ['b']
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
       expect(settings.exists()).toBe(true)
-      settings.vm.$emit('primary-action', false)
+      settings.vm.$emit('primary-action', FOCUS_DECISION)
       await flushPromises()
       expect(bridge.picks).toEqual(['b'])
       expect(bridge.restarts).toEqual([])
@@ -550,7 +593,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: null,
         runningInstallationIds: [],
-        launchingInstallationIds: [],
+        launchingInstallationIds: []
       })
       const sessionStore = useSessionStore()
       expect(sessionStore.isLaunching('a')).toBe(false)
@@ -563,8 +606,8 @@ describe('comfyTitlePopup/InstancePickerView', () => {
           launchingInstallationIds: ['a'],
           selectedInstallationId: null,
           selectedSettings: null,
-          selectedSnapshots: emptySnapshotListPayload,
-        },
+          selectedSnapshots: emptySnapshotListPayload
+        }
       })
       await flushPromises()
       expect(sessionStore.isLaunching('a')).toBe(true)
@@ -578,12 +621,12 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         const wrapper = await mountPicker({
           installs: [
             makeInstall({ id: 'a', name: 'Alpha' }),
-            makeInstall({ id: 'b', name: 'Bravo' }),
+            makeInstall({ id: 'b', name: 'Bravo' })
           ],
           activeInstallationId: 'a',
           runningInstallationIds: [],
           // First (open) snapshot at epoch 1: main seeded selection = 'a'.
-          pickerSelectionEpoch: 1,
+          pickerSelectionEpoch: 1
         })
 
         // User clicks Bravo locally.
@@ -599,7 +642,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
           snapshot: {
             installs: [
               makeInstall({ id: 'a', name: 'Alpha' }),
-              makeInstall({ id: 'b', name: 'Bravo' }),
+              makeInstall({ id: 'b', name: 'Bravo' })
             ],
             activeInstallationId: 'a',
             runningInstallationIds: [],
@@ -607,8 +650,8 @@ describe('comfyTitlePopup/InstancePickerView', () => {
             selectedInstallationId: 'a',
             pickerSelectionEpoch: 1,
             selectedSettings: null,
-            selectedSnapshots: emptySnapshotListPayload,
-          },
+            selectedSnapshots: emptySnapshotListPayload
+          }
         })
         await flushPromises()
 
@@ -623,11 +666,11 @@ describe('comfyTitlePopup/InstancePickerView', () => {
           installs: [
             makeInstall({ id: 'a', name: 'Alpha' }),
             makeInstall({ id: 'b', name: 'Bravo' }),
-            makeInstall({ id: 'c', name: 'Charlie' }),
+            makeInstall({ id: 'c', name: 'Charlie' })
           ],
           activeInstallationId: 'a',
           runningInstallationIds: [],
-          pickerSelectionEpoch: 1,
+          pickerSelectionEpoch: 1
         })
 
         // User clicks Bravo locally.
@@ -642,7 +685,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
             installs: [
               makeInstall({ id: 'a', name: 'Alpha' }),
               makeInstall({ id: 'b', name: 'Bravo' }),
-              makeInstall({ id: 'c', name: 'Charlie' }),
+              makeInstall({ id: 'c', name: 'Charlie' })
             ],
             activeInstallationId: 'a',
             runningInstallationIds: [],
@@ -650,8 +693,8 @@ describe('comfyTitlePopup/InstancePickerView', () => {
             selectedInstallationId: 'c',
             pickerSelectionEpoch: 2,
             selectedSettings: null,
-            selectedSnapshots: emptySnapshotListPayload,
-          },
+            selectedSnapshots: emptySnapshotListPayload
+          }
         })
         await flushPromises()
 
@@ -666,7 +709,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: 'a',
         runningInstallationIds: [],
-        launchingInstallationIds: ['a'],
+        launchingInstallationIds: ['a']
       })
       const sessionStore = useSessionStore()
       expect(sessionStore.isLaunching('a')).toBe(true)
@@ -679,8 +722,8 @@ describe('comfyTitlePopup/InstancePickerView', () => {
           launchingInstallationIds: [],
           selectedInstallationId: null,
           selectedSettings: null,
-          selectedSnapshots: emptySnapshotListPayload,
-        },
+          selectedSnapshots: emptySnapshotListPayload
+        }
       })
       await flushPromises()
       expect(sessionStore.isLaunching('a')).toBe(false)

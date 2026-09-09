@@ -23,7 +23,7 @@ describe('findBestVariant', () => {
   it('falls back to snapshot match when no recommended', () => {
     const noRec = [
       opt('nvidia', { data: { variantId: 'win-nvidia-cu128' } }),
-      opt('cpu', { data: { variantId: 'win-cpu' } }),
+      opt('cpu', { data: { variantId: 'win-cpu' } })
     ]
     expect(findBestVariant(noRec, 'linux-nvidia-cu128')).toBe(noRec[0])
   })
@@ -31,7 +31,7 @@ describe('findBestVariant', () => {
   it('snapshot match ignores platform prefix', () => {
     const noRec = [
       opt('nvidia', { data: { variantId: 'win-nvidia-cu128' } }),
-      opt('cpu', { data: { variantId: 'win-cpu' } }),
+      opt('cpu', { data: { variantId: 'win-cpu' } })
     ]
     expect(findBestVariant(noRec, 'mac-nvidia-cu128')).toBe(noRec[0])
   })
@@ -69,14 +69,17 @@ describe('sortedCardOptions', () => {
     const opts = [
       opt('cpu', { data: { variantId: 'win-cpu' } }),
       opt('nvidia', { data: { variantId: 'win-nvidia-cu128' } }),
-      opt('amd', { data: { variantId: 'win-amd' } }),
+      opt('amd', { data: { variantId: 'win-amd' } })
     ]
     const sorted = sortedCardOptions(opts)
     expect(sorted.map((o) => o.value)).toEqual(['amd', 'nvidia', 'cpu'])
   })
 
   it('does not mutate the original array', () => {
-    const opts = [opt('b', { data: { variantId: 'win-cpu' } }), opt('a', { data: { variantId: 'win-amd' } })]
+    const opts = [
+      opt('b', { data: { variantId: 'win-cpu' } }),
+      opt('a', { data: { variantId: 'win-amd' } })
+    ]
     const original = [...opts]
     sortedCardOptions(opts)
     expect(opts).toEqual(original)

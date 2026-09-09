@@ -76,7 +76,7 @@ async function measureAndAck(): Promise<void> {
   bridge?.notifyRendered({
     width: Math.ceil(rect.width),
     height: Math.ceil(rect.height),
-    configToken: token,
+    configToken: token
   })
 }
 
@@ -106,7 +106,9 @@ onMounted(() => {
 
 // Defensive re-measure if rendered text changes outside the config push (HMR,
 // future mutations that bypass `onConfig`).
-watch([text, cmTitle, cmBody], () => { void measureAndAck() })
+watch([text, cmTitle, cmBody], () => {
+  void measureAndAck()
+})
 
 function onDismiss(): void {
   bridge?.dismissCoachmark?.()
@@ -128,14 +130,19 @@ onUnmounted(() => {
     :style="{
       background: themeBg,
       color: themeText,
-      borderColor: coachmarkBorder,
+      borderColor: coachmarkBorder
     }"
   >
     <span class="coachmark-beak" :style="{ background: themeBg, borderColor: coachmarkBorder }" />
     <div class="coachmark-body">
       <div class="coachmark-title" :style="{ color: themeAccent }">{{ cmTitle }}</div>
       <p class="coachmark-text">{{ cmBody }}</p>
-      <button type="button" class="coachmark-dismiss" :style="{ color: themeAccent }" @click="onDismiss">
+      <button
+        type="button"
+        class="coachmark-dismiss"
+        :style="{ color: themeAccent }"
+        @click="onDismiss"
+      >
         {{ cmDismissLabel }}
       </button>
     </div>
@@ -147,9 +154,10 @@ onUnmounted(() => {
     :style="{
       background: themeBg,
       color: themeText,
-      borderColor: themeBorder,
+      borderColor: themeBorder
     }"
-  >{{ text }}</span>
+    >{{ text }}</span
+  >
 </template>
 
 <style scoped>

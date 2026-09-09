@@ -6,7 +6,7 @@ import type * as FsModule from 'fs'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
-  net: { fetch: vi.fn() },
+  net: { fetch: vi.fn() }
 }))
 
 // Stub the git helpers so tests don't spawn real `git`; each test sets its own behaviour.
@@ -14,14 +14,14 @@ vi.mock('./git', () => ({
   fetchTags: vi.fn(async () => true),
   fetchCommitSha: vi.fn(async () => true),
   countCommitsAhead: vi.fn(async () => 0),
-  findNearestTag: vi.fn(async () => undefined),
+  findNearestTag: vi.fn(async () => undefined)
 }))
 
 // Stub `comfyui-releases` so the baseTag-recovery path doesn't do real network work.
 vi.mock('./comfyui-releases', () => ({
   fetchLatestRelease: vi.fn(),
   getLatestStableTag: vi.fn(async () => null),
-  truncateNotes: vi.fn((text: string) => text),
+  truncateNotes: vi.fn((text: string) => text)
 }))
 
 // Stub existsSync so tests can simulate a `.git` checkout without touching the filesystem.
@@ -40,7 +40,7 @@ describe('isUpdateAvailable', () => {
     const installation = {
       version: 'v1.0.0',
       lastRollback: { channel: 'stable', postUpdateHead: 'abc1234' },
-      updateInfoByChannel: { stable: { installedTag: 'v1.0.0' } },
+      updateInfoByChannel: { stable: { installedTag: 'v1.0.0' } }
     }
     const info: ReleaseCacheEntry = { latestTag: 'v1.0.0', installedTag: 'v1.0.0' }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(false)
@@ -50,9 +50,13 @@ describe('isUpdateAvailable', () => {
     const installation = {
       version: 'v1.0.0',
       lastRollback: { channel: 'latest', postUpdateHead: 'abc1234' },
-      updateInfoByChannel: { stable: { installedTag: 'v1.0.0' } },
+      updateInfoByChannel: { stable: { installedTag: 'v1.0.0' } }
     }
-    const info: ReleaseCacheEntry = { latestTag: 'v1.1.0', releaseName: 'v1.1.0', installedTag: 'v1.0.0' }
+    const info: ReleaseCacheEntry = {
+      latestTag: 'v1.1.0',
+      releaseName: 'v1.1.0',
+      installedTag: 'v1.0.0'
+    }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(true)
   })
 
@@ -60,9 +64,13 @@ describe('isUpdateAvailable', () => {
     const installation = {
       version: 'v1.0.0',
       lastRollback: { channel: 'stable', postUpdateHead: 'def5678' },
-      updateInfoByChannel: { stable: { installedTag: 'v1.0.0' } },
+      updateInfoByChannel: { stable: { installedTag: 'v1.0.0' } }
     }
-    const info: ReleaseCacheEntry = { latestTag: 'v1.0.0', releaseName: 'v1.0.0', installedTag: 'v1.0.0' }
+    const info: ReleaseCacheEntry = {
+      latestTag: 'v1.0.0',
+      releaseName: 'v1.0.0',
+      installedTag: 'v1.0.0'
+    }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(false)
   })
 
@@ -74,7 +82,7 @@ describe('isUpdateAvailable', () => {
   it('detects update available when installedTag differs from latestTag', () => {
     const installation = {
       version: 'v1.0.0',
-      updateInfoByChannel: { stable: { installedTag: 'v1.0.0' } },
+      updateInfoByChannel: { stable: { installedTag: 'v1.0.0' } }
     }
     const info: ReleaseCacheEntry = { latestTag: 'v1.1.0', installedTag: 'v1.0.0' }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(true)
@@ -83,7 +91,7 @@ describe('isUpdateAvailable', () => {
   it('detects stable update via comfyVersion.commitsAhead > 0', () => {
     const installation = {
       comfyVersion: { commit: 'abc1234def5678', baseTag: 'v0.14.2', commitsAhead: 21 },
-      updateInfoByChannel: { stable: { installedTag: 'abc1234' } },
+      updateInfoByChannel: { stable: { installedTag: 'abc1234' } }
     }
     const info: ReleaseCacheEntry = { latestTag: 'v0.14.2', installedTag: 'abc1234' }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(true)
@@ -92,7 +100,7 @@ describe('isUpdateAvailable', () => {
   it('returns false for stable when comfyVersion.commitsAhead is 0', () => {
     const installation = {
       comfyVersion: { commit: 'abc1234def5678', baseTag: 'v0.14.2', commitsAhead: 0 },
-      updateInfoByChannel: { stable: { installedTag: 'v0.14.2' } },
+      updateInfoByChannel: { stable: { installedTag: 'v0.14.2' } }
     }
     const info: ReleaseCacheEntry = { latestTag: 'v0.14.2', installedTag: 'v0.14.2' }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(false)
@@ -100,17 +108,27 @@ describe('isUpdateAvailable', () => {
 
   it('returns false cross-channel when commit SHA matches', () => {
     const installation = {
-      comfyVersion: { commit: 'abc1234def5678abc1234def5678abc1234def567', baseTag: 'v0.14.2', commitsAhead: 5 },
-      lastRollback: { channel: 'stable', postUpdateHead: 'abc1234def5678abc1234def5678abc1234def567' },
+      comfyVersion: {
+        commit: 'abc1234def5678abc1234def5678abc1234def567',
+        baseTag: 'v0.14.2',
+        commitsAhead: 5
+      },
+      lastRollback: {
+        channel: 'stable',
+        postUpdateHead: 'abc1234def5678abc1234def5678abc1234def567'
+      }
     }
-    const info: ReleaseCacheEntry = { latestTag: 'abc1234', commitSha: 'abc1234def5678abc1234def5678abc1234def567' }
+    const info: ReleaseCacheEntry = {
+      latestTag: 'abc1234',
+      commitSha: 'abc1234def5678abc1234def5678abc1234def567'
+    }
     expect(isUpdateAvailable(installation, 'latest', info)).toBe(false)
   })
 
   it('returns true for stable when commitsAhead is undefined (API failure) and baseTag present', () => {
     const installation = {
       comfyVersion: { commit: 'abc1234def5678', baseTag: 'v0.14.2' },
-      updateInfoByChannel: { stable: { installedTag: 'v0.14.2 (abc1234)' } },
+      updateInfoByChannel: { stable: { installedTag: 'v0.14.2 (abc1234)' } }
     }
     const info: ReleaseCacheEntry = { latestTag: 'v0.14.2', installedTag: 'v0.14.2 (abc1234)' }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(true)
@@ -118,7 +136,7 @@ describe('isUpdateAvailable', () => {
 
   it('detects update via installedTag mismatch when no comfyVersion', () => {
     const installation = {
-      updateInfoByChannel: { stable: { installedTag: 'abc1234' } },
+      updateInfoByChannel: { stable: { installedTag: 'abc1234' } }
     }
     const info: ReleaseCacheEntry = { latestTag: 'v0.14.2', installedTag: 'abc1234' }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(true)
@@ -132,7 +150,7 @@ describe('isUpdateAvailable', () => {
 
   it('returns false via installedTag match when no comfyVersion', () => {
     const installation = {
-      updateInfoByChannel: { stable: { installedTag: 'v0.14.2' } },
+      updateInfoByChannel: { stable: { installedTag: 'v0.14.2' } }
     }
     const info: ReleaseCacheEntry = { latestTag: 'v0.14.2', installedTag: 'v0.14.2' }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(false)
@@ -163,9 +181,13 @@ describe('isUpdateAvailable', () => {
   it('returns false cross-channel when displayVersion is bare and latestTag is "v"-prefixed', () => {
     const installation = {
       comfyVersion: { commit: 'abc1234def5678', baseTag: '0.14.2', commitsAhead: 0 },
-      lastRollback: { channel: 'latest', postUpdateHead: 'abc1234' },
+      lastRollback: { channel: 'latest', postUpdateHead: 'abc1234' }
     }
-    const info: ReleaseCacheEntry = { latestTag: 'v0.14.2', releaseName: 'v0.14.2', installedTag: '0.14.2' }
+    const info: ReleaseCacheEntry = {
+      latestTag: 'v0.14.2',
+      releaseName: 'v0.14.2',
+      installedTag: '0.14.2'
+    }
     expect(isUpdateAvailable(installation, 'stable', info)).toBe(false)
   })
 
@@ -174,29 +196,33 @@ describe('isUpdateAvailable', () => {
     const installation = {
       comfyVersion: { commit: fullSha, baseTag: 'v0.18.3', commitsAhead: 5 },
       lastRollback: { channel: 'latest' },
-      updateInfoByChannel: { latest: { installedTag: 'v0.18.3+5' } },
+      updateInfoByChannel: { latest: { installedTag: 'v0.18.3+5' } }
     }
     // latestTag is a short SHA; releaseName may differ from installedTag pre-enrichment.
     const info: ReleaseCacheEntry = {
       latestTag: 'abc123d',
       commitSha: fullSha,
       releaseName: 'v0.18.3 (abc123d)',
-      installedTag: 'v0.18.3+5',
+      installedTag: 'v0.18.3+5'
     }
     expect(isUpdateAvailable(installation, 'latest', info)).toBe(false)
   })
 
   it('returns true for latest channel when commit SHA differs', () => {
     const installation = {
-      comfyVersion: { commit: 'old123old456old123old456old123old456old123', baseTag: 'v0.18.3', commitsAhead: 3 },
+      comfyVersion: {
+        commit: 'old123old456old123old456old123old456old123',
+        baseTag: 'v0.18.3',
+        commitsAhead: 3
+      },
       lastRollback: { channel: 'latest' },
-      updateInfoByChannel: { latest: { installedTag: 'v0.18.3+3' } },
+      updateInfoByChannel: { latest: { installedTag: 'v0.18.3+3' } }
     }
     const info: ReleaseCacheEntry = {
       latestTag: 'abc123d',
       commitSha: 'abc123def456abc123def456abc123def456abc123',
       releaseName: 'v0.18.3+5',
-      installedTag: 'v0.18.3+3',
+      installedTag: 'v0.18.3+3'
     }
     expect(isUpdateAvailable(installation, 'latest', info)).toBe(true)
   })
@@ -222,7 +248,7 @@ describe('enrichCommitsAhead', () => {
     const repo = newRepo()
     set(repo, 'latest', {
       commitSha: 'deadbeef00000000',
-      baseTag: 'v1.0.0',
+      baseTag: 'v1.0.0'
     })
     vi.mocked(gitMock.countCommitsAhead).mockResolvedValue(7)
 
@@ -244,7 +270,7 @@ describe('enrichCommitsAhead', () => {
     set(repo, 'latest', {
       commitSha: 'deadbeef00000000',
       baseTag: 'v1.0.0',
-      commitsAhead: 3,
+      commitsAhead: 3
     })
 
     const listener = vi.fn()
@@ -264,12 +290,14 @@ describe('enrichCommitsAhead', () => {
     const repo = newRepo()
     set(repo, 'latest', {
       commitSha: 'deadbeef00000000',
-      baseTag: 'v1.0.0',
+      baseTag: 'v1.0.0'
     })
     // Stall the local count so both invocations pile up while it's pending — the window
     // where the dedupe Map must suppress the second.
     let releaseStall!: () => void
-    const stall = new Promise<void>((resolve) => { releaseStall = resolve })
+    const stall = new Promise<void>((resolve) => {
+      releaseStall = resolve
+    })
     vi.mocked(gitMock.countCommitsAhead).mockImplementation(async () => {
       await stall
       return 2
@@ -302,9 +330,7 @@ describe('enrichCommitsAhead', () => {
     const repo = newRepo()
     set(repo, 'latest', { commitSha: 'deadbeef00000000', baseTag: 'v1.0.0' })
     // First local count fails (objects absent), then succeeds after the fetch.
-    vi.mocked(gitMock.countCommitsAhead)
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(9)
+    vi.mocked(gitMock.countCommitsAhead).mockResolvedValueOnce(undefined).mockResolvedValueOnce(9)
 
     await enrichCommitsAhead(repo, '/tmp/fake-repo')
 
@@ -317,7 +343,7 @@ describe('enrichCommitsAhead', () => {
     const repo = newRepo()
     set(repo, 'latest', {
       commitSha: 'deadbeef00000000',
-      baseTag: 'v1.0.0',
+      baseTag: 'v1.0.0'
     })
     vi.mocked(gitMock.countCommitsAhead).mockResolvedValue(4)
 
@@ -335,7 +361,7 @@ describe('enrichCommitsAhead', () => {
     const repo = newRepo()
     set(repo, 'latest', {
       commitSha: 'deadbeef00000000',
-      baseTag: 'v1.0.0',
+      baseTag: 'v1.0.0'
     })
     vi.mocked(gitMock.countCommitsAhead).mockResolvedValue(undefined)
 
@@ -418,7 +444,7 @@ describe('enrichCommitsAhead', () => {
     set(repo, 'latest', {
       commitSha: 'deadbeef00000000',
       baseTag: 'v1.0.0',
-      lastEnrichAttemptAt: Date.now() - 5_000,
+      lastEnrichAttemptAt: Date.now() - 5_000
     })
 
     await enrichCommitsAhead(repo, '/tmp/fake-repo')
@@ -436,7 +462,7 @@ describe('enrichCommitsAhead', () => {
     set(repo, 'latest', {
       commitSha: 'deadbeef00000000',
       baseTag: 'v1.0.0',
-      lastEnrichAttemptAt: Date.now() - 60_000,
+      lastEnrichAttemptAt: Date.now() - 60_000
     })
     vi.mocked(gitMock.countCommitsAhead).mockResolvedValue(11)
 
@@ -453,7 +479,7 @@ describe('enrichCommitsAhead', () => {
     const repo = newRepo()
     set(repo, 'latest', {
       commitSha: 'deadbeef00000000',
-      baseTag: 'v1.0.0',
+      baseTag: 'v1.0.0'
     })
     vi.mocked(gitMock.countCommitsAhead).mockResolvedValue(1)
 
@@ -461,7 +487,9 @@ describe('enrichCommitsAhead', () => {
     // listeners; the source reads console.warn at call time.
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const bad = vi.fn(() => { throw new Error('subscriber blew up') })
+    const bad = vi.fn(() => {
+      throw new Error('subscriber blew up')
+    })
     const good = vi.fn()
     const offBad = onEnriched(bad)
     const offGood = onEnriched(good)
