@@ -190,6 +190,7 @@ interface MockApiState {
   getInstallations: ReturnType<typeof vi.fn>
   openExternal: ReturnType<typeof vi.fn>
   getAppVersion: ReturnType<typeof vi.fn>
+  getSetting: ReturnType<typeof vi.fn>
   /** Per-key getSetting values. Tests that need first-use takeover to
    *  auto-mount can flip `firstUseCompleted` to false here. Default is
    *  `true` so existing tests don't trip the takeover. */
@@ -216,6 +217,7 @@ function installMockApi(initial?: {
     getInstallations: vi.fn(async () => state.installations),
     openExternal: vi.fn(async () => {}),
     getAppVersion: vi.fn(async () => '0.5.0'),
+    getSetting: vi.fn(async (key: string) => state.settings[key]),
     settings: { firstUseCompleted: true, ...initial?.settings },
     installUpdate: vi.fn(async () => {}),
     downloadUpdate: vi.fn(async () => {})
@@ -293,7 +295,7 @@ function installMockApi(initial?: {
     ackAdoptPrompt: vi.fn(),
     respondAdoptPrompt: vi.fn(),
     onErrorDetail: vi.fn(() => () => {}),
-    getSetting: vi.fn(async (key: string) => state.settings[key]),
+    getSetting: state.getSetting,
     setSetting: vi.fn(async (key: string, value: unknown) => {
       state.settings[key] = value
     }),
@@ -428,6 +430,7 @@ describe('PanelApp', () => {
       entrypoint: 'chooser',
       workspaceId: 'workspace-1'
     })
+    expect(mockState.getSetting).not.toHaveBeenCalledWith('dashboardWorkspaceId')
   })
 
   it('opens menu-driven New Instance in the persisted dashboard workspace', async () => {
@@ -442,6 +445,24 @@ describe('PanelApp', () => {
     expect(installWizardOpen).toHaveBeenCalledWith({
       entrypoint: 'titlebar',
       workspaceId: 'workspace-saved'
+    })
+  })
+
+  it('opens menu-driven New Instance in Personal when the dashboard workspace read fails', async () => {
+    mockState.getSetting.mockImplementation(async (key: string) => {
+      if (key === 'dashboardWorkspaceId') throw new Error('settings unavailable')
+      return mockState.settings[key]
+    })
+    mountPanel()
+    await flushPromises()
+    installWizardOpen.mockClear()
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+    await flushPromises()
+
+    expect(installWizardOpen).toHaveBeenCalledWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'personal'
     })
   })
 

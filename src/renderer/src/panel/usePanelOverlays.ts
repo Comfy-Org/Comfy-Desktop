@@ -382,12 +382,16 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       const cameFromLocalBranch = opts.firstUseChain
         ? opts.firstUseChain.consumeCameFromLocalBranch() === true
         : false
-      const persistedWorkspaceId = await window.api.getSetting(DASHBOARD_WORKSPACE_SETTING)
-      const workspaceId =
-        newInstallOpts.workspaceId ??
-        (typeof persistedWorkspaceId === 'string' && persistedWorkspaceId.trim()
-          ? persistedWorkspaceId
-          : PERSONAL_WORKSPACE_ID)
+      let workspaceId = newInstallOpts.workspaceId
+      if (!workspaceId) {
+        const persistedWorkspaceId = await window.api
+          .getSetting(DASHBOARD_WORKSPACE_SETTING)
+          .catch(() => undefined)
+        workspaceId =
+          typeof persistedWorkspaceId === 'string' && persistedWorkspaceId.trim()
+            ? persistedWorkspaceId
+            : PERSONAL_WORKSPACE_ID
+      }
       await newInstallRef.value?.open({
         entrypoint,
         workspaceId,

@@ -743,7 +743,13 @@ async function selectManagedInstallMode(): Promise<void> {
       authorizingWorkspace.value = false
     }
   }
-  if (!managedWorkspaceId.value) return
+  if (!managedWorkspaceId.value) {
+    await modal.alert({
+      title: t('chooser.errorTitle'),
+      message: t('devPlatform.workspace.loadError')
+    })
+    return
+  }
   workspaceInstallMode.value = 'managed'
   // Managed installs must not inherit source or template selections.
   resetSourceState(null)

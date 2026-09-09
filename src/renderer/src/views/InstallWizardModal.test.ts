@@ -8,6 +8,7 @@ import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import BrandVariantList from '../components/BrandVariantList.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
+import { useModal } from '../composables/useModal'
 
 function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
@@ -29,6 +30,7 @@ function mountModal() {
 }
 
 beforeEach(() => {
+  useModal().dismiss()
   window.api = {
     openPath: vi.fn().mockResolvedValue(undefined),
     browseFolder: vi.fn().mockResolvedValue('/home/user/Picked'),
@@ -134,6 +136,36 @@ describe('InstallWizardModal heading', () => {
       wrapper.get('[data-testid="workspace-install-source-managed"]').attributes('aria-checked')
     ).toBe('true')
     expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain('Ready Build')
+  })
+
+  it('reports a workspace load failure when Managed Builds cannot resolve Personal', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'standalone', label: 'Standalone', fields: [] }
+    ])
+    ;(window.api.comfybuilder.signIn as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'team-workspace',
+      workspaceType: 'team'
+    })
+    ;(window.api.comfybuilder.listWorkspaces as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('offline')
+    )
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
+    await flushPromises()
+
+    const modal = useModal()
+    expect(modal.state).toMatchObject({
+      visible: true,
+      type: 'alert',
+      title: 'Error',
+      message: "Couldn't load workspaces. Retry"
+    })
+    expect(window.api.comfybuilder.listBuilds).not.toHaveBeenCalled()
+    modal.dismiss()
   })
 })
 
