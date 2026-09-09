@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+// @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
+// Keep the feedback iframe in the DOM without loading the external support site.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const installWizardOpen = vi.hoisted(() => vi.fn())
 
@@ -123,13 +125,16 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-import { mount, flushPromises } from '@vue/test-utils'
+import { enableAutoUnmount, mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useOverlay } from '../composables/useOverlay'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
+
+// Dispose panel scopes before happy-dom tears down document, including queued media prefetches.
+enableAutoUnmount(afterEach)
 
 const messages = {
   en: {
