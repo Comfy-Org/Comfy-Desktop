@@ -372,10 +372,9 @@
     "changeInstallType": "Change Install Type",
     "nameWhitespace": "Enter a name, or leave blank to use the suggested one.",
     "urlInvalid": "Enter a valid URL (e.g. http://localhost:8188).",
-    "buildSourceLabel": "Select build",
-    "managedBuilds": "Managed",
-    "publicBuilds": "Public",
-    "workspaceBuildLabel": "Build",
+    "managedBuilds": "Managed Builds",
+    "publicBuilds": "Public Builds",
+    "workspaceBuildLabel": "Release",
     "selectWorkspaceBuild": "Select a Build",
     "noCompatibleBuilds": "No compatible Builds are available to install.",
     "refreshWorkspaceBuilds": "Refresh Builds",
@@ -390,7 +389,7 @@
     "buildModels": "Models",
     "buildCustomNodes": "Custom nodes",
     "buildSize": "Size",
-    "buildTarget": "Release target"
+    "buildTarget": "Hardware"
   },
   "templateQuit": {
     "title": "Template models are still downloading",
@@ -1298,7 +1297,6 @@
     },
     "workspace": {
       "personalLabel": "Personal",
-      "unmanagedLabel": "No workspace",
       "switchLabel": "Workspace",
       "currentFallback": "Current workspace",
       "instanceCountLabel": "INSTANCES",

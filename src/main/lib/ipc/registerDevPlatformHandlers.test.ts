@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   add: vi.fn(),
   get: vi.fn(),
   update: vi.fn(),
+  reassignWorkspace: vi.fn(),
   associateUnownedBuildInstalls: vi.fn(),
   list: vi.fn(async () => [] as Record<string, unknown>[]),
   uniqueName: vi.fn(async (n: string) => n),
@@ -88,6 +89,7 @@ vi.mock('./shared', () => ({
     add: mocks.add,
     get: mocks.get,
     update: mocks.update,
+    reassignWorkspace: mocks.reassignWorkspace,
     associateUnownedBuildInstalls: mocks.associateUnownedBuildInstalls,
     list: mocks.list
   },
@@ -151,6 +153,9 @@ describe('registerDevPlatformHandlers', () => {
     mocks.getSnapshotCount.mockResolvedValue(3)
     mocks.buildExportEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
     mocks.listBuilds.mockResolvedValue([])
+    mocks.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Personal', type: 'personal', role: 'owner' }
+    ])
     mocks.listWorkspaceMembers.mockResolvedValue([])
     mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-1',
@@ -207,6 +212,25 @@ describe('registerDevPlatformHandlers', () => {
     await handler('comfybuilder:signOut')({})
 
     expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
+  })
+
+  it('merges the server Personal workspace into the stable local identity', async () => {
+    const workspaces = [
+      {
+        id: 'server-personal-id',
+        name: 'Personal workspace',
+        type: 'team',
+        role: 'owner'
+      },
+      { id: 'team-id', name: 'Team', type: 'team', role: 'member' }
+    ]
+    mocks.listWorkspaces.mockResolvedValue(workspaces)
+
+    await expect(handler('comfybuilder:listWorkspaces')({})).resolves.toEqual(workspaces)
+    expect(mocks.reassignWorkspace).toHaveBeenCalledExactlyOnceWith(
+      'server-personal-id',
+      'personal'
+    )
   })
 
   it('opens the explicitly selected workspace Builds page', async () => {
@@ -490,6 +514,7 @@ describe('registerDevPlatformHandlers', () => {
     ['missing an active workspace', { signedIn: true }, 'No active workspace.']
   ])('refuses promotion when %s', async (_label, status, message) => {
     mocks.status.mockReturnValue(status)
+    if (status.signedIn && !('workspaceId' in status)) mocks.listWorkspaces.mockResolvedValue([])
 
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
 

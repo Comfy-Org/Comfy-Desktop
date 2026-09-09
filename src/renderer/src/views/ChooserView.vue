@@ -20,6 +20,11 @@ import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
+import {
+  DASHBOARD_WORKSPACE_SETTING,
+  PERSONAL_WORKSPACE_ID,
+  workspaceContextId
+} from '../../../shared/workspaces'
 
 /**
  * Chooser view - recents grid.
@@ -28,8 +33,9 @@ import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc
  * window hosts this as the Comfy tab body when no install backs the
  * entry.
  *
- * Signed-in users choose either No workspace or one authenticated workspace.
- * The grid contains only installed instances in that scope.
+ * Every user has a local Personal workspace. Signed-in users additionally see
+ * authenticated team workspaces; the server Personal workspace merges into
+ * the local Personal scope.
  * Available Builds belong in the workspace New Instance flow, not this grid.
  */
 
@@ -47,7 +53,7 @@ const emit = defineEmits<{
    *  open a fresh window, or hand off to a launch flow. */
   pick: [installation: Installation]
   /** User triggered the new-install flow in the current dashboard scope. */
-  'show-new-install': [workspaceId?: string]
+  'show-new-install': [workspaceId: string]
   /** A long-running action was kicked off from the inline Manage...
    *  DetailModal. Forwarded to PanelApp so it can wire the operation
    *  through `progressStore`. */
@@ -91,14 +97,28 @@ defineExpose({ activeFilter })
 
 // --- Dashboard scope ---
 
-const selectedWorkspaceId = ref<string | null>(null)
+const selectedWorkspaceId = ref(PERSONAL_WORKSPACE_ID)
 let dashboardScopeInitialized = false
 
+function setSelectedWorkspace(workspaceId: string): void {
+  selectedWorkspaceId.value = workspaceId
+  void window.api.setSetting(DASHBOARD_WORKSPACE_SETTING, workspaceId)
+}
+
+const selectedWorkspaceModel = computed({
+  get: () => selectedWorkspaceId.value,
+  set: setSelectedWorkspace
+})
+
 watch(
-  () => ({ signedIn: authStore.isSignedIn, workspaceId: authStore.status.workspaceId }),
+  () => ({
+    signedIn: authStore.isSignedIn,
+    workspaceId: authStore.status.workspaceId,
+    workspaceType: authStore.status.workspaceType
+  }),
   (next, previous) => {
     if (!next.signedIn) {
-      selectedWorkspaceId.value = null
+      setSelectedWorkspace(PERSONAL_WORKSPACE_ID)
       dashboardScopeInitialized = false
       return
     }
@@ -110,23 +130,26 @@ watch(
       void authStore.fetchBuilds()
     }
     if (!dashboardScopeInitialized) {
-      selectedWorkspaceId.value = next.workspaceId ?? null
+      setSelectedWorkspace(workspaceContextId(authStore.status))
       dashboardScopeInitialized = true
       return
     }
     // Follow an external authenticated workspace switch only while the user is
-    // viewing that workspace. An explicit No workspace selection remains local.
-    if (selectedWorkspaceId.value !== null && selectedWorkspaceId.value === previous?.workspaceId) {
-      selectedWorkspaceId.value = next.workspaceId ?? null
+    // viewing that workspace. An explicit Personal/team selection remains local.
+    if (
+      previous &&
+      selectedWorkspaceId.value === workspaceContextId(previous) &&
+      workspaceContextId(authStore.status) !== selectedWorkspaceId.value
+    ) {
+      setSelectedWorkspace(workspaceContextId(authStore.status))
     }
   },
   { immediate: true }
 )
 
 function installationIsInSelectedScope(inst: Installation): boolean {
-  if (!authStore.isSignedIn) return inst.workspaceId === undefined
-  return selectedWorkspaceId.value === null
-    ? inst.workspaceId === undefined
+  return selectedWorkspaceId.value === PERSONAL_WORKSPACE_ID
+    ? inst.workspaceId === undefined || inst.workspaceId === PERSONAL_WORKSPACE_ID
     : inst.workspaceId === selectedWorkspaceId.value
 }
 
@@ -316,11 +339,7 @@ onMounted(async () => {
   }
 })
 function handleNewInstallClick(): void {
-  if (authStore.isSignedIn && selectedWorkspaceId.value) {
-    emit('show-new-install', selectedWorkspaceId.value)
-  } else {
-    emit('show-new-install')
-  }
+  emit('show-new-install', selectedWorkspaceId.value)
 }
 
 const gridHandlers = {
@@ -338,11 +357,7 @@ const gridHandlers = {
 
 <template>
   <BrandBackground v-show="props.visible" class="chooser-bg">
-    <div
-      class="chooser-view"
-      :class="{ 'chooser-view--workspace': authStore.isSignedIn }"
-      :style="{ '--rows': clusterRows }"
-    >
+    <div class="chooser-view chooser-view--workspace" :style="{ '--rows': clusterRows }">
       <!-- Signed-in account identity, pinned outside the centered content column. -->
       <div class="chooser-account">
         <DevPlatformAccountChip />
@@ -361,10 +376,11 @@ const gridHandlers = {
         </div>
       </div>
 
-      <div v-if="authStore.isSignedIn" class="chooser-workspace-bar">
+      <div class="chooser-workspace-bar">
         <div class="chooser-workspace-controls">
-          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
+          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceModel" />
           <button
+            v-if="authStore.isSignedIn"
             type="button"
             class="chooser-workspace-refresh"
             :disabled="refreshingWorkspace"
@@ -659,7 +675,8 @@ const gridHandlers = {
   background: var(--chooser-surface-border);
 }
 .chooser-workspace-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
   flex: 0 1 290px;
   align-items: center;
   gap: 8px;
@@ -679,7 +696,7 @@ const gridHandlers = {
   font-weight: 600;
 }
 .chooser-workspace-controls :deep(.workspace-selector) {
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
 }
 .chooser-workspace-controls :deep(.workspace-selector__face) {
@@ -688,6 +705,12 @@ const gridHandlers = {
   width: 100%;
   min-width: 180px;
   padding: 4px 8px;
+}
+.chooser-workspace-controls :deep(.workspace-selector__menu) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
 }
 .chooser-workspace-refresh {
   display: inline-flex;

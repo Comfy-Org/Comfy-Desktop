@@ -430,6 +430,21 @@ describe('PanelApp', () => {
     })
   })
 
+  it('opens menu-driven New Instance in the persisted dashboard workspace', async () => {
+    mockState.settings.dashboardWorkspaceId = 'workspace-saved'
+    mountPanel()
+    await flushPromises()
+    installWizardOpen.mockClear()
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+    await flushPromises()
+
+    expect(installWizardOpen).toHaveBeenCalledWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'workspace-saved'
+    })
+  })
+
   it('returns to the underlying body when a takeover emits close', async () => {
     window.history.replaceState({}, '', '/?panel=new-install&firstUseCompleted=true')
     const wrapper = mountPanel()

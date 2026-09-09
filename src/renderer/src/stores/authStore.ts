@@ -2,6 +2,7 @@ import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import type { AuthStatus, ElectronApi, Workspace } from '../../../types/ipc'
+import { isPersonalWorkspace } from '../../../shared/workspaces'
 import type { Build } from '../devplatform/types'
 
 /**
@@ -145,6 +146,7 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   const isSignedIn = computed(() => status.value.signedIn)
+  const personalWorkspace = computed(() => workspaces.value.find(isPersonalWorkspace) ?? null)
 
   /** The builds published to the signed-in workspace, as display rows. */
   async function fetchBuilds(): Promise<Build[]> {
@@ -181,6 +183,7 @@ export const useAuthStore = defineStore('auth', () => {
     workspacesError,
     buildsError,
     isSignedIn,
+    personalWorkspace,
     fetchStatus,
     signIn,
     signOut,

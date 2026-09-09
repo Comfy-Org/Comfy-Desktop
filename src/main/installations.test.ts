@@ -243,6 +243,39 @@ describe('installations.associateUnownedBuildInstalls', () => {
   })
 })
 
+describe('installations.reassignWorkspace', () => {
+  it('re-keys exact workspace matches and preserves Personal and team records', async () => {
+    const installations = await loadInstallations()
+    const remotePersonal = await installations.add({
+      name: 'Remote Personal',
+      installPath: path.join(tmpRoot, 'remote-personal'),
+      sourceId: 'comfybuilder',
+      workspaceId: 'server-personal-id',
+      status: 'installed'
+    })
+    const localPersonal = await installations.add({
+      name: 'Local Personal',
+      installPath: path.join(tmpRoot, 'local-personal'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const team = await installations.add({
+      name: 'Team',
+      installPath: path.join(tmpRoot, 'team'),
+      sourceId: 'comfybuilder',
+      workspaceId: 'team-id',
+      status: 'installed'
+    })
+
+    const updated = await installations.reassignWorkspace('server-personal-id', 'personal')
+
+    expect(updated.map((record) => record.id)).toEqual([remotePersonal.id])
+    expect((await installations.get(remotePersonal.id))!.workspaceId).toBe('personal')
+    expect((await installations.get(localPersonal.id))!.workspaceId).toBeUndefined()
+    expect((await installations.get(team.id))!.workspaceId).toBe('team-id')
+  })
+})
+
 describe('installations.getRecent', () => {
   it('returns null when no installs have been launched', async () => {
     const installations = await loadInstallations()

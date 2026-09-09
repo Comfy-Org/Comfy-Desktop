@@ -1,18 +1,18 @@
 <script setup lang="ts">
-/** Local dashboard scope selector for unmanaged installs and authenticated workspaces. */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown } from 'lucide-vue-next'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { usePopoverDismiss } from '../../composables/usePopoverDismiss'
 import { useAuthStore } from '../../stores/authStore'
+import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../../shared/workspaces'
 
 const props = defineProps<{
-  modelValue: string | null
+  modelValue: string
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [workspaceId: string | null]
+  'update:modelValue': [workspaceId: string]
 }>()
 
 const { t } = useI18n()
@@ -30,13 +30,29 @@ const {
 } = usePopoverDismiss({ rootRef, faceRef })
 
 function workspaceLabel(workspace: { name: string; type: string }): string {
-  return workspace.type === 'team' ? workspace.name : t('devPlatform.workspace.personalLabel')
+  return isPersonalWorkspace(workspace) || workspace.type !== 'team'
+    ? t('devPlatform.workspace.personalLabel')
+    : workspace.name
 }
 
+const teamWorkspaces = computed(() =>
+  store.isSignedIn ? store.workspaces.filter((workspace) => !isPersonalWorkspace(workspace)) : []
+)
+
 const currentWorkspaceName = computed(() => {
-  if (currentWorkspaceId.value === null) return t('devPlatform.workspace.unmanagedLabel')
+  if (currentWorkspaceId.value === PERSONAL_WORKSPACE_ID) {
+    return t('devPlatform.workspace.personalLabel')
+  }
   const current = store.workspaces.find((workspace) => workspace.id === currentWorkspaceId.value)
   if (current) return workspaceLabel(current)
+  if (
+    isPersonalWorkspace({
+      name: store.status.workspaceName,
+      type: store.status.workspaceType
+    })
+  ) {
+    return t('devPlatform.workspace.personalLabel')
+  }
   if (store.status.workspaceType !== 'team') return t('devPlatform.workspace.personalLabel')
   if (store.status.workspaceName) return store.status.workspaceName
   return t('devPlatform.workspace.currentFallback')
@@ -69,11 +85,6 @@ function onSelectWorkspace(workspaceId: string): void {
   emit('update:modelValue', workspaceId)
   closeMenu()
 }
-
-function onSelectUnmanaged(): void {
-  emit('update:modelValue', null)
-  closeMenu()
-}
 </script>
 
 <template>
@@ -88,7 +99,7 @@ function onSelectUnmanaged(): void {
       :aria-label="$t('devPlatform.workspace.switchLabel')"
       @click="toggleMenu"
     >
-      <DevPlatformAvatar :name="currentWorkspaceName" :neutral="currentWorkspaceId === null" />
+      <DevPlatformAvatar :name="currentWorkspaceName" />
       <span class="workspace-selector__name">{{ currentWorkspaceName }}</span>
       <ChevronDown
         :size="14"
@@ -124,18 +135,18 @@ function onSelectUnmanaged(): void {
       <button
         type="button"
         class="workspace-selector__item"
-        :aria-pressed="currentWorkspaceId === null"
-        data-testid="devplatform-workspace-unmanaged"
-        @click="onSelectUnmanaged"
+        :aria-pressed="currentWorkspaceId === PERSONAL_WORKSPACE_ID"
+        data-testid="devplatform-workspace-personal"
+        @click="onSelectWorkspace(PERSONAL_WORKSPACE_ID)"
       >
-        <DevPlatformAvatar :name="$t('devPlatform.workspace.unmanagedLabel')" neutral />
+        <DevPlatformAvatar :name="$t('devPlatform.workspace.personalLabel')" />
         <span class="workspace-selector__identity">
           <span class="workspace-selector__item-name">{{
-            $t('devPlatform.workspace.unmanagedLabel')
+            $t('devPlatform.workspace.personalLabel')
           }}</span>
         </span>
         <Check
-          v-if="currentWorkspaceId === null"
+          v-if="currentWorkspaceId === PERSONAL_WORKSPACE_ID"
           :size="15"
           class="workspace-selector__check"
           aria-hidden="true"
@@ -143,7 +154,7 @@ function onSelectUnmanaged(): void {
       </button>
 
       <button
-        v-for="workspace in store.workspaces"
+        v-for="workspace in teamWorkspaces"
         :key="workspace.id"
         type="button"
         class="workspace-selector__item"
