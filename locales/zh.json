@@ -360,7 +360,6 @@
     "chooseMethod": "选择安装方式",
     "configuration": "配置",
     "configureTitle": "新建实例",
-    "configureWorkspaceLead": "选择要安装的发布版本。",
     "detectedGpuLabel": "检测到的 GPU",
     "notAvailableRemote": "远程连接模式下不可用",
     "helpImproveTitle": "帮助改进 Comfy",
@@ -372,7 +371,6 @@
     "changeInstallType": "更改安装类型",
     "nameWhitespace": "输入名称，或留空使用建议名称。",
     "urlInvalid": "请输入有效 URL（例如 http://localhost:8188）。",
-    "buildSourceLabel": "选择构建",
     "managedBuilds": "托管",
     "publicBuilds": "公共",
     "workspaceBuildLabel": "构建",
@@ -1298,7 +1296,6 @@
     },
     "workspace": {
       "personalLabel": "个人",
-      "unmanagedLabel": "无工作区",
       "switchLabel": "工作区",
       "currentFallback": "当前工作区",
       "instanceCountLabel": "实例",

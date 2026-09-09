@@ -73,6 +73,9 @@ export interface KnownSettings {
    *  install (the user ticked "Don't show this again"). Only ever set once the
    *  user already has ≥1 local install. Default false — show the step. */
   skipTemplatePickerStep?: boolean
+  /** Stable dashboard workspace scope. Used by New Instance entry points that
+   *  originate outside the dashboard renderer, such as the title menu. */
+  dashboardWorkspaceId?: string
   /** Version of a Desktop update whose installer finished downloading in a
    *  previous session and is staged on disk. Gates the bounded startup
    *  install check so boots without a staged update aren't delayed. Cleared
@@ -274,6 +277,7 @@ const SETTINGS_SCHEMA = {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
+  dashboardWorkspaceId: { nullable: false, telemetry: { policy: 'omit' } },
   pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
   lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
   startupInstallNotReadyVersion: { nullable: true, telemetry: { policy: 'omit' } },

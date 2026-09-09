@@ -12,7 +12,7 @@ export interface ChooserHandoffOpts {
   switchPanel: (
     panel: PanelKey,
     entrypoint?: string,
-    newInstallOpts?: { workspaceId?: string }
+    newInstallOpts?: { workspaceId: string }
   ) => Promise<void>
 }
 
@@ -38,7 +38,7 @@ export interface ChooserHandoffApi {
   /** Bound to ChooserView's `pick` emit. */
   handleChooserPick: (installation: Installation, opts?: { isRestart?: boolean }) => Promise<void>
   /** Bound to ChooserView's `show-new-install` empty-state CTA. */
-  handleChooserShowNewInstall: (workspaceId?: string) => void
+  handleChooserShowNewInstall: (workspaceId: string) => void
   /** Picker variant of `performChooserLaunch` without
    *  `prepareChooserHostHandoff`, so the install-backed host isn't
    *  swapped out; launch lands in a fresh window. */
@@ -154,7 +154,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     return 'launched'
   }
 
-  function handleChooserShowNewInstall(workspaceId?: string): void {
+  function handleChooserShowNewInstall(workspaceId: string): void {
     // Empty-state CTA opens new-install as a takeover above the chooser
     // body, so dismissing it returns the user to the chooser.
     void opts.switchPanel('new-install', 'chooser', { workspaceId })
