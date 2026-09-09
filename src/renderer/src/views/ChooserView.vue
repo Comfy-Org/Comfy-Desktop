@@ -377,7 +377,10 @@ const gridHandlers = {
       </div>
 
       <div class="chooser-workspace-bar">
-        <div class="chooser-workspace-controls">
+        <div
+          class="chooser-workspace-controls"
+          :class="{ 'chooser-workspace-controls--no-refresh': !authStore.isSignedIn }"
+        >
           <DevPlatformWorkspaceSelector v-model="selectedWorkspaceModel" />
           <button
             v-if="authStore.isSignedIn"
@@ -675,12 +678,22 @@ const gridHandlers = {
   background: var(--chooser-surface-border);
 }
 .chooser-workspace-controls {
+  --chooser-workspace-refresh-size: 30px;
+  --chooser-workspace-refresh-gap: 8px;
+
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-columns: minmax(0, 1fr) var(--chooser-workspace-refresh-size);
   flex: 0 1 290px;
   align-items: center;
-  gap: 8px;
+  gap: var(--chooser-workspace-refresh-gap);
   min-width: 0;
+}
+.chooser-workspace-controls--no-refresh {
+  grid-template-columns: minmax(0, 1fr);
+  flex-basis: calc(
+    290px - var(--chooser-workspace-refresh-size) - var(--chooser-workspace-refresh-gap)
+  );
+  gap: 0;
 }
 .chooser-workspace-count {
   display: flex;
@@ -716,8 +729,8 @@ const gridHandlers = {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: var(--chooser-workspace-refresh-size);
+  height: var(--chooser-workspace-refresh-size);
   padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -757,6 +770,12 @@ const gridHandlers = {
 
   .chooser-workspace-controls {
     flex-basis: 100%;
+  }
+
+  .chooser-workspace-controls--no-refresh {
+    flex-basis: calc(
+      100% - var(--chooser-workspace-refresh-size) - var(--chooser-workspace-refresh-gap)
+    );
   }
 
   .chooser-workspace-count {

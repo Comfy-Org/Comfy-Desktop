@@ -662,6 +662,10 @@ describe('ChooserView', () => {
     expect(wrapper.get('[data-testid="devplatform-workspace-selector"]').text()).toContain(
       'Personal'
     )
+    expect(wrapper.get('.chooser-workspace-controls').classes()).toContain(
+      'chooser-workspace-controls--no-refresh'
+    )
+    expect(wrapper.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(false)
   })
 
   it('renders the dashboard as one left-aligned instance grid', async () => {
@@ -685,6 +689,7 @@ describe('ChooserView', () => {
     const controls = wrapper.get('.chooser-workspace-controls')
     const selector = wrapper.get('[data-testid="devplatform-workspace-selector"]')
     const refresh = wrapper.get('[data-testid="chooser-workspace-refresh"]')
+    expect(controls.classes()).not.toContain('chooser-workspace-controls--no-refresh')
     expect(controls.element.parentElement).toBe(workspaceBar.element)
     expect(selector.element.closest('.chooser-workspace-controls')).toBe(controls.element)
     expect(
