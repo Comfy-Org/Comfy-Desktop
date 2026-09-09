@@ -307,6 +307,32 @@ function writeLog(stream: WriteStream, text: string): void {
   if (!stream.writableEnded) stream.write(stripAnsi(text))
 }
 
+export function _resolveLaunchMode(
+  inst: InstallationRecord,
+  actionData?: Record<string, unknown>
+): string {
+  if (actionData?.launchModeOverride === 'console') return 'console'
+  return (inst.launchMode as string | undefined) || 'window'
+}
+
+export function _resolvePortConflictPolicy(
+  inst: InstallationRecord,
+  defaults: Record<string, unknown>,
+  actionData?: Record<string, unknown>
+): { mode: string; portIsExplicit: boolean } {
+  const autoPortOnConflict = actionData?.autoPortOnConflict === true
+  return {
+    mode: autoPortOnConflict
+      ? 'auto'
+      : (inst.portConflict as string | undefined) ||
+        (defaults.portConflict as string | undefined) ||
+        'auto',
+    portIsExplicit:
+      actionData?.portOverride != null ||
+      (!autoPortOnConflict && /(?:^|\s)--port(?:\s|=|$)/.test(String(inst.launchArgs ?? '')))
+  }
+}
+
 /** Failure cleanup for a throw after launch resources were acquired (launching
  *  marker set, port possibly reserved) but before the normal failure handling
  *  is reachable: close the log stream, release the port, free the operation
@@ -328,7 +354,8 @@ export function _cleanupFailedLaunchSetup(
 
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   const { installationId } = ctx
-  if (_runningSessions.has(installationId)) {
+  const sessionId = ctx.sessionId ?? installationId
+  if (_runningSessions.has(sessionId)) {
     return { ok: false, message: i18n.t('errors.alreadyRunning') }
   }
   // No `_hasActiveLaunch` here: this guard, `_beginLaunch`, and runLaunch's
@@ -336,36 +363,36 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   // launch can never slip between them. Checking it would instead reject a
   // legitimate restart relaunch during the post-registration window (session
   // up, handler still draining post-launch work like the template gate).
-  if (_operationAborts.has(installationId)) {
+  if (_operationAborts.has(sessionId)) {
     return { ok: false, message: 'Another operation is already running for this installation.' }
   }
   // Track the launch for its ENTIRE handler lifetime so `cancelLaunching` can
   // abort it at any point - including the pre-spawn prep that runs before the
   // launching marker exists. The finally is the single teardown-complete
   // signal: `cancelLaunching` awaits it before letting a restart relaunch.
-  const launch = _beginLaunch(installationId)
+  const launch = _beginLaunch(sessionId)
   try {
     return await runLaunch(ctx, launch.abort)
   } finally {
-    if (_operationAborts.get(installationId) === launch.abort)
-      _operationAborts.delete(installationId)
-    _endLaunch(installationId, launch)
+    if (_operationAborts.get(sessionId) === launch.abort) _operationAborts.delete(sessionId)
+    _endLaunch(sessionId, launch)
   }
 }
 
 async function runLaunch(
-  { event, installationId, inst: instArg, actionData }: ActionContext,
+  { event, installationId, sessionId: runtimeSessionId, inst: instArg, actionData }: ActionContext,
   abort: AbortController
 ): Promise<ActionResult> {
   let inst = instArg
+  const sessionId = runtimeSessionId ?? installationId
   // Synthetic repair steps that ran during launch prep, prepended to the launch
   // progress in display order (e.g. a source rollback, then a PyTorch restore).
   const preLaunchPhases: PreLaunchPhase[] = []
   // Claim the operation slot for the whole launch, prep included, so no other
   // operation can start against this install while the launch is preparing.
-  _operationAborts.set(installationId, abort)
+  _operationAborts.set(sessionId, abort)
   // Drop retained crash detail so the lifecycle view doesn't resurface it.
-  clearCrash(installationId)
+  clearCrash(sessionId)
   // The startup model-download pass (migrate legacy final-path partials,
   // hydrate staged `.part` downloads) runs to completion before ComfyUI can
   // scan the model dirs, so a truncated file cannot masquerade as a loadable
@@ -418,7 +445,7 @@ async function runLaunch(
   }
 
   const sender = event.sender
-  const sendProgress = makeSendProgress(sender, installationId)
+  const sendProgress = makeSendProgress(sender, sessionId)
 
   // A build install whose background model staging never finished (crash,
   // abort, staging failure, or a record written before `modelsStaged` existed)
@@ -471,7 +498,7 @@ async function runLaunch(
       // with `boot_failed`); a healthy boot discards them — `boot_started`
       // is already ~258k/14d and per-phase emits on every boot would be pure
       // volume. See `bootPhaseBuffer`.
-      onPhaseEnter: (phase) => recordBootPhase(installationId, phase)
+      onPhaseEnter: (phase) => recordBootPhase(sessionId, phase)
     })
     launchTracker.start()
     return launchTracker
@@ -487,7 +514,7 @@ async function runLaunch(
     try {
       return await step()
     } catch (err) {
-      _cleanupFailedLaunchSetup(installationId, abort, opts)
+      _cleanupFailedLaunchSetup(sessionId, abort, opts)
       throw err
     }
   }
@@ -641,7 +668,7 @@ async function runLaunch(
           inst,
           {
             sendProgress,
-            sendOutput: makeSendOutput(event.sender, installationId),
+            sendOutput: makeSendOutput(event.sender, sessionId),
             update: updateFn,
             signal: abort.signal
           },
@@ -905,17 +932,19 @@ async function runLaunch(
         }
       })
     } catch (_err) {
-      if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       if (abort.signal.aborted) return { ok: false, cancelled: true }
       return { ok: false, message: i18n.t('errors.cannotConnect', { url: displayUrl }) }
     }
 
-    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
-    const mode = (inst.launchMode as string | undefined) || 'window'
+    if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+    const mode = _resolveLaunchMode(inst, actionData)
     _addSession(
-      installationId,
+      sessionId,
       { proc: null, port: launchCmd.port!, url: launchCmd.url, mode, installationName: inst.name },
-      Date.now() - launchStartedAt
+      Date.now() - launchStartedAt,
+      undefined,
+      installationId
     )
     if (_onLaunch) {
       _onLaunch({
@@ -931,20 +960,20 @@ async function runLaunch(
 
   // Local process launch
   if (!fs.existsSync(launchCmd.cmd!)) {
-    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+    if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
   // Skip port logic entirely
   if (launchCmd.skipPortWait) {
-    const sendOutput = makeSendOutput(sender, installationId)
+    const sendOutput = makeSendOutput(sender, sessionId)
     const launchEnv = buildLaunchEnv(inst)
 
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
     // the handler settles.
     const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(() => {
-      _markLaunching(installationId, inst.name)
+      _markLaunching(sessionId, inst.name)
       return acquireLaunchResources()
     })
 
@@ -952,7 +981,7 @@ async function runLaunch(
     // during the awaits above must never spawn.
     if (abort.signal.aborted) {
       logStream.end()
-      _clearLaunchingFailed(installationId)
+      _clearLaunchingFailed(sessionId)
       return { ok: false, cancelled: true }
     }
 
@@ -977,26 +1006,29 @@ async function runLaunch(
       { logStream }
     )
 
-    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
-    const mode = (inst.launchMode as string | undefined) || 'window'
+    if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+    const mode = _resolveLaunchMode(inst, actionData)
     _addSession(
-      installationId,
+      sessionId,
       {
         proc,
         port: 0,
         mode,
         installationName: inst.name,
+        getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
           hwTap.flushSummary()
         }
       },
-      Date.now() - launchStartedAt
+      Date.now() - launchStartedAt,
+      undefined,
+      installationId
     )
 
     onProcessTerminated(proc, async (code, signal) => {
       logStream.end()
-      const crashed = _runningSessions.has(installationId) && isCrashedExit(code, signal)
+      const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
       // lifecycle UI. PII scrubbing happens on the telemetry path
       // (`scrubTelemetryContext` in renderer bootstrap), not here.
@@ -1007,9 +1039,9 @@ async function runLaunch(
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
-      _removeSession(installationId)
+      _removeSession(sessionId)
       const exitedPayload = {
-        installationId,
+        installationId: sessionId,
         crashed,
         exitCode: code ?? undefined,
         signal: signal ?? undefined,
@@ -1034,7 +1066,7 @@ async function runLaunch(
       if (!sender.isDestroyed()) {
         sender.send('comfy-exited', exitedPayload)
       }
-      if (_onComfyExited) _onComfyExited({ installationId, crashed })
+      if (_onComfyExited) _onComfyExited({ installationId: sessionId, crashed })
     })
 
     if (_onLaunch) {
@@ -1048,13 +1080,11 @@ async function runLaunch(
   }
 
   const defaults = source.getDefaults ? source.getDefaults() : {}
-  const portConflictMode =
-    (inst.portConflict as string | undefined) ||
-    (defaults.portConflict as string | undefined) ||
-    'auto'
-  const userArgs = ((inst.launchArgs as string | undefined) || '').trim()
-  const portIsExplicit =
-    actionData?.portOverride != null || /(?:^|\s)--port(?:\s|=|$)/.test(userArgs)
+  const { mode: portConflictMode, portIsExplicit } = _resolvePortConflictPolicy(
+    inst,
+    defaults,
+    actionData
+  )
 
   // isPortListening (bind test) is the primary check; findPidsByPort's lsof
   // only sees same-user processes on Linux.
@@ -1114,7 +1144,7 @@ async function runLaunch(
           })
         }
       }
-      if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return {
         ok: false,
         message,
@@ -1144,7 +1174,7 @@ async function runLaunch(
       })
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {
-      if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return {
         ok: false,
         message: i18n.t('errors.portConflictLauncher', {
@@ -1164,7 +1194,7 @@ async function runLaunch(
   // throw here has nothing to clean up yet.
   const sessionPath = createSessionPath()
   const launchEnv = buildLaunchEnv(inst, sessionPath)
-  const sendOutput = makeSendOutput(sender, installationId)
+  const sendOutput = makeSendOutput(sender, sessionId)
 
   // Port reservation and launching marker sit INSIDE the guard: even the
   // marker's renderer broadcast can throw, and every throw after either
@@ -1173,7 +1203,7 @@ async function runLaunch(
   const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(
     () => {
       _reservePort(launchCmd.port!, inst.name)
-      _markLaunching(installationId, inst.name)
+      _markLaunching(sessionId, inst.name)
       return acquireLaunchResources()
     },
     { port: launchCmd.port! }
@@ -1234,9 +1264,9 @@ async function runLaunch(
       .join(' ')
     sendProgress('launch', { percent: -1, status: i18n.t('launch.starting') })
     if (!sender.isDestroyed()) {
-      sender.send('comfy-output', { installationId, text: `> ${cmdLine}\n\n` })
+      sender.send('comfy-output', { installationId: sessionId, text: `> ${cmdLine}\n\n` })
     }
-    appendLog(installationId, `> ${cmdLine}\n\n`)
+    appendLog(sessionId, `> ${cmdLine}\n\n`)
     // Explicit boot-attempt event. `installation_started` already fires
     // on successful boot with `boot_time_ms`, and `comfyui.exited` carries
     // `crashed=true` on failure — but boot success rate needed inferred
@@ -1254,7 +1284,7 @@ async function runLaunch(
     // reboot retry this resets so the buffer reflects the attempt that
     // actually fails (or succeeds). The tracker's `onPhaseEnter` feeds it;
     // it is flushed only on the terminal failure path below.
-    startBootPhases(installationId, (inst.variant as string | undefined) ?? null)
+    startBootPhases(sessionId, (inst.variant as string | undefined) ?? null)
     // Re-arm per-attempt phase observation: the UI tracker's index is
     // monotonic across retries, so without this the respawned boot's re-hit
     // milestones would never reach the fresh buffer above.
@@ -1391,9 +1421,9 @@ async function runLaunch(
     logStream.end()
     _releasePort(launchCmd.port!)
     // Ownership-guarded: never evict a slot a newer operation already claimed.
-    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+    if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     abort.abort() // stop the template-models reader timer on launch failure
-    _clearLaunchingFailed(installationId)
+    _clearLaunchingFailed(sessionId)
     // Flush the hardware tap on terminal failure/cancel too: the exit handler
     // covers a process that exits, but a waitForPort timeout can return here
     // with the proc still alive, leaving a pending accelerator event unemitted.
@@ -1402,7 +1432,7 @@ async function runLaunch(
     if (launchResult.cancelled) {
       // User-initiated cancel is not a boot failure — discard the buffer so a
       // later relaunch starts clean and we don't emit phantom boot_phase rows.
-      clearBootPhases(installationId)
+      clearBootPhases(sessionId)
       return { ok: false, cancelled: true }
     }
     execTap.flushSummary()
@@ -1412,7 +1442,7 @@ async function runLaunch(
     // emit the paired boot_failed. `failed_phase` is the last phase the boot
     // reached (null if it never entered one). The error is bucketed; the
     // retry counters surface how many times we re-spawned before giving up.
-    const failedPhase = flushBootPhasesOnFailure(installationId)
+    const failedPhase = flushBootPhasesOnFailure(sessionId)
     // Standard error schema derived from the failure message + the stderr
     // tail (a Python traceback in the tail yields a real `error_class` /
     // `error_message`; otherwise the launch message drives it). `error_tail`
@@ -1440,27 +1470,29 @@ async function runLaunch(
   }
   // Healthy boot — discard buffered phase timings (no boot_phase on success;
   // healthy timing is covered by instance_started.boot_time_ms).
-  clearBootPhases(installationId)
+  clearBootPhases(sessionId)
   let { proc } = launchResult
 
   _pendingPorts.delete(launchCmd.port!)
-  if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
-  const mode = (inst.launchMode as string | undefined) || 'window'
+  if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+  const mode = _resolveLaunchMode(inst, actionData)
   const bootTimeMs = Date.now() - launchStartedAt
   _addSession(
-    installationId,
+    sessionId,
     {
       proc,
       port: launchCmd.port!,
       mode,
       installationName: inst.name,
+      getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()
         hwTap.flushSummary()
       }
     },
     bootTimeMs,
-    { portRetries, rebootRetries }
+    { portRetries, rebootRetries },
+    installationId
   )
   // Paired success terminal for boot_started: server up + session registered.
   // Same boot_id as this launch's boot_started(s), so the boot-success rate is
@@ -1478,7 +1510,7 @@ async function runLaunch(
   if (!sender.isDestroyed()) {
     // Raw bootStderr — telemetry forwarders scrub it before it leaves the box.
     const bootStderr = lastNLines(launchResult.getStderr(), 50)
-    sender.send('comfy-boot-log', { installationId, bootStderr })
+    sender.send('comfy-boot-log', { installationId: sessionId, bootStderr })
   }
 
   // Capture snapshot in background after successful launch
@@ -1505,12 +1537,12 @@ async function runLaunch(
     if (newFolders.length > 0) {
       sendOutput(`\n--- Restarting: new model folders detected (${newFolders.join(', ')}) ---\n\n`)
       if (_onModelFolderRelaunch) {
-        await Promise.resolve(_onModelFolderRelaunch({ installationId })).catch(() => {})
+        await Promise.resolve(_onModelFolderRelaunch({ installationId: sessionId })).catch(() => {})
       }
       await killProcessTree(proc)
       const respawned = await spawnComfy()
       proc = respawned.proc
-      const session = _runningSessions.get(installationId)
+      const session = _runningSessions.get(sessionId)
       if (session) session.proc = proc
       writePortLock(launchCmd.port!, { pid: proc.pid!, installationName: inst.name })
       const relaunchEarlyExit = new Promise<void>((_resolve, reject) => {
@@ -1538,8 +1570,8 @@ async function runLaunch(
         // flushSummary is idempotent.
         execTap.flushSummary()
         hwTap.flushSummary()
-        _removeSession(installationId)
-        _clearLaunchingFailed(installationId)
+        _removeSession(sessionId)
+        _clearLaunchingFailed(sessionId)
         if (abort.signal.aborted) return { ok: false, cancelled: true }
         return { ok: false, message: (err as Error).message }
       }
@@ -1589,11 +1621,11 @@ async function runLaunch(
         const spawned = await spawnComfy()
         proc = spawned.proc
         currentGetStderr = spawned.getStderr
-        const session = _runningSessions.get(installationId)
+        const session = _runningSessions.get(sessionId)
         if (session) session.proc = proc
         writePortLock(launchCmd.port!, { pid: proc.pid!, installationName: inst.name })
         attachExitHandler(proc)
-        if (_onComfyRestarted) _onComfyRestarted({ installationId, process: proc })
+        if (_onComfyRestarted) _onComfyRestarted({ installationId: sessionId, process: proc })
         if (manageModelFolders) {
           rebootModelCheckAbort = new AbortController()
           const checkSignal = rebootModelCheckAbort.signal
@@ -1603,7 +1635,7 @@ async function runLaunch(
           })
             .then(async () => {
               if (checkSignal.aborted) return
-              const currentSession = _runningSessions.get(installationId)
+              const currentSession = _runningSessions.get(sessionId)
               if (!currentSession || currentSession.proc !== proc) return
               const currentExtras = discoverExtraModelFolders(inst.installPath)
               const newFolders = currentExtras.filter((f) => !knownExtras.has(f))
@@ -1623,7 +1655,9 @@ async function runLaunch(
                 )
                 pendingModelFolderRelaunch = true
                 if (_onModelFolderRelaunch) {
-                  await Promise.resolve(_onModelFolderRelaunch({ installationId })).catch(() => {})
+                  await Promise.resolve(
+                    _onModelFolderRelaunch({ installationId: sessionId })
+                  ).catch(() => {})
                 }
                 killProcessTree(proc)
               }
@@ -1647,7 +1681,7 @@ async function runLaunch(
         return
       }
       logStream.end()
-      const crashed = _runningSessions.has(installationId) && isCrashedExit(code, signal)
+      const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
       execTap.flushSummary()
@@ -1656,9 +1690,9 @@ async function runLaunch(
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
-      _removeSession(installationId)
+      _removeSession(sessionId)
       const exitedPayload = {
-        installationId,
+        installationId: sessionId,
         crashed,
         exitCode: code ?? undefined,
         signal: signal ?? undefined,
@@ -1683,7 +1717,7 @@ async function runLaunch(
       if (!sender.isDestroyed()) {
         sender.send('comfy-exited', exitedPayload)
       }
-      if (_onComfyExited) _onComfyExited({ installationId, crashed })
+      if (_onComfyExited) _onComfyExited({ installationId: sessionId, crashed })
     })
   }
   attachExitHandler(proc)

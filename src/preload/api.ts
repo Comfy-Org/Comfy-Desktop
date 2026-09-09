@@ -28,6 +28,20 @@ export function buildElectronApi(): ElectronApi {
 
     // File/URL
     browseFolder: (defaultPath?) => ipcRenderer.invoke('browse-folder', defaultPath),
+    importPerformanceTestWorkflow: (filePath?) =>
+      ipcRenderer.invoke('import-performance-test-workflow', filePath),
+    deletePerformanceTestWorkflow: (filePath) =>
+      ipcRenderer.invoke('delete-performance-test-workflow', filePath),
+    runPerformanceTestWorkflow: (sessionId, filePath, measuredRuns, warmupRuns) =>
+      ipcRenderer.invoke(
+        'run-performance-test-workflow',
+        sessionId,
+        filePath,
+        measuredRuns,
+        warmupRuns
+      ),
+    exportPerformanceTestResultsImage: (svg, defaultPath?) =>
+      ipcRenderer.invoke('export-performance-test-results-image', svg, defaultPath),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),

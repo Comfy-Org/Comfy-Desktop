@@ -285,6 +285,33 @@ describe('createHardwareTap', () => {
     })
   })
 
+  it('exposes the same accelerator details parsed for telemetry', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
+    tap.ingest('pytorch version: 2.10.0+cu130\n', 'stdout')
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+
+    expect(tap.getAcceleratorInfo()).toEqual({
+      deviceType: 'cuda',
+      deviceIndex: 0,
+      deviceName: 'NVIDIA GeForce RTX 4090',
+      backend: 'native',
+      devices: [
+        {
+          deviceType: 'cuda',
+          deviceIndex: 0,
+          deviceName: 'NVIDIA GeForce RTX 4090',
+          backend: 'native'
+        }
+      ],
+      vramMb: 24576,
+      ramMb: 65461,
+      pytorchVersion: '2.10.0+cu130',
+      xformersVersion: null,
+      cudaDeviceSet: null
+    })
+  })
+
   it('does not promote a cpu device to gpu person properties', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Device: cpu\n', 'stdout')

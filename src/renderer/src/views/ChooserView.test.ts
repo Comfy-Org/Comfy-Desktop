@@ -673,17 +673,17 @@ describe('ChooserView', () => {
     expect(toolbarChildren).toHaveLength(1)
     expect(toolbarChildren[0]!.classList.contains('chooser-search')).toBe(true)
     const workspaceBar = wrapper.get('.chooser-workspace-bar')
-    const controls = wrapper.get('.chooser-workspace-controls')
+    const controls = wrapper.get('.workspace-selector-bar__controls')
     const selector = wrapper.get('[data-testid="devplatform-workspace-selector"]')
-    const refresh = wrapper.get('[data-testid="chooser-workspace-refresh"]')
+    const refresh = wrapper.get('[data-testid="workspace-selector-refresh"]')
     expect(controls.element.parentElement).toBe(workspaceBar.element)
-    expect(selector.element.closest('.chooser-workspace-controls')).toBe(controls.element)
+    expect(selector.element.closest('.workspace-selector-bar__controls')).toBe(controls.element)
     expect(
       selector.element.compareDocumentPosition(refresh.element) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
-    expect(workspaceBar.get('.chooser-workspace-count').text()).toBe('INSTANCES0')
+    expect(workspaceBar.get('.workspace-selector-bar__trailing').text()).toBe('INSTANCES0')
     expect(workspaceBar.element.lastElementChild).toBe(
-      workspaceBar.get('.chooser-workspace-count').element
+      workspaceBar.get('.workspace-selector-bar__trailing').element
     )
   })
 
@@ -822,7 +822,7 @@ describe('ChooserView', () => {
     api.comfybuilder.listWorkspaces.mockClear()
     api.comfybuilder.listBuilds.mockClear()
 
-    await wrapper.find('[data-testid="chooser-workspace-refresh"]').trigger('click')
+    await wrapper.find('[data-testid="workspace-selector-refresh"]').trigger('click')
     await flushPromises()
 
     expect(api.comfybuilder.listWorkspaces).toHaveBeenCalledOnce()

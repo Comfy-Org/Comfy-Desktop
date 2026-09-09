@@ -749,6 +749,9 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //   Load Snapshot
   //   ── separator ──
   //   (Log in — while signed out, followed by its own separator)
+  //   Performance Test
+  //   Benchmarks
+  //   ── separator ──
   //   Desktop Settings
   //   Send Beta Feedback
   //   (Reset Zoom — on install-backed hosts when zoom level != 0)
@@ -797,6 +800,13 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     )
   }
   items.push(
+    {
+      id: 'performance-test',
+      label: 'Performance Tests',
+      labelKey: 'fileMenu.performanceTest'
+    },
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' },
+    { kind: 'separator' },
     {
       id: 'settings',
       label: 'Desktop Settings',
@@ -1957,6 +1967,8 @@ export function activateTitlePopupMenuItem(
   if (id === 'new-window') {
     bindings.openChooserHostWindow()
     releaseFocusToParent = false
+  } else if (id === 'performance-test' || id === 'benchmarks') {
+    if (parentEntry) bindings.setActivePanel(entry.parentEntryId, id)
   } else if (id === 'return-to-dashboard') {
     // Flip the install-backed host in place to chooser-host mode.
     // The same BrowserWindow stays alive; the file-menu popup is
@@ -2263,8 +2275,16 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     const entry = titlePopupsByWebContents.get(event.sender.id)
     if (!entry) return
     entry.view.rendererReady = true
-    if (entry.pendingConfig && !entry.view.popup.webContents.isDestroyed()) {
-      const flushed = entry.pendingConfig
+    // A ready signal means this is a freshly-mounted renderer. In development,
+    // Vite can reload the cached popup WebContentsView while main still holds
+    // the prior sync marker; replay that config so the default empty menu state
+    // cannot be mistaken for an already-synchronised renderer on the next open.
+    entry.lastSyncedConfigJson = null
+    const queuedConfig =
+      entry.pendingConfig ??
+      (entry.lastConfigJson ? (JSON.parse(entry.lastConfigJson) as TitlePopupConfig) : null)
+    if (queuedConfig && !entry.view.popup.webContents.isDestroyed()) {
+      const flushed = queuedConfig
       entry.lastConfigJson = JSON.stringify(flushed)
       entry.view.popup.webContents.send('comfy-titlepopup:set-config', flushed)
       entry.pendingConfig = null

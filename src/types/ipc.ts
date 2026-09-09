@@ -1101,6 +1101,58 @@ export interface ElectronApi {
 
   // File/URL
   browseFolder(defaultPath?: string): Promise<string | null>
+  importPerformanceTestWorkflow(filePath?: string): Promise<{
+    ok: boolean
+    filePath?: string
+    message?: string
+    canceled?: boolean
+  }>
+  deletePerformanceTestWorkflow(filePath: string): Promise<{ ok: boolean; message?: string }>
+  runPerformanceTestWorkflow(
+    sessionId: string,
+    filePath: string,
+    measuredRuns: number,
+    warmupRuns: number
+  ): Promise<{
+    ok: boolean
+    submitted: number
+    preparationRuns: number
+    totalSubmitted: number
+    promptIds?: string[]
+    resultPath?: string
+    resultsSummaryPath?: string
+    unsuccessfulJobs?: number
+    statistics?: {
+      fastest: { jobId: string; durationSeconds: number }
+      slowest: { jobId: string; durationSeconds: number }
+      averageDurationSeconds: number
+      medianDurationSeconds: number
+      measuredJobCount: number
+    } | null
+    hardware?: {
+      deviceType: string
+      deviceIndex: number | null
+      deviceName: string | null
+      backend: string | null
+      devices: Array<{
+        deviceType: string
+        deviceIndex: number | null
+        deviceName: string | null
+        backend: string | null
+      }>
+      vramMb: number | null
+      ramMb: number | null
+      pytorchVersion: string | null
+      xformersVersion: string | null
+      cudaDeviceSet: number | null
+    } | null
+    systemInfo?: SystemInfo
+    message?: string
+  }>
+  exportPerformanceTestResultsImage(
+    svg: string,
+    defaultPath?: string
+  ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>

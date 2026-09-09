@@ -3,6 +3,7 @@ import {
   dialog,
   shell,
   BrowserWindow,
+  app,
   fs,
   path,
   os,
@@ -25,16 +26,29 @@ import {
   openPath,
   listSnapshots,
   diffSnapshots,
-  buildInstallationDdContext
+  buildInstallationDdContext,
+  _runningSessions
 } from './shared'
 import si from 'systeminformation'
+import type { SystemInfo } from '../../../types/ipc'
 import type { FieldOption } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
+import { getCachedWorkspaceName } from '../../cloud/tokenStore'
+import { getCloudSession } from '../../devplatform/session'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
+import {
+  calculatePerformanceTestStatistics,
+  deletePerformanceTestWorkflow,
+  savePerformanceTestJobsResponse,
+  savePerformanceTestResultsSummary,
+  storePerformanceTestWorkflow,
+  submitPerformanceTestWorkflow,
+  waitForPerformanceTestJobs
+} from '../performanceTestWorkflows'
 
 export function registerAppHandlers(): void {
   // App version
@@ -137,6 +151,152 @@ export function registerAppHandlers(): void {
     return filePaths[0]
   })
 
+  ipcMain.handle('import-performance-test-workflow', async (_event, droppedFilePath?: string) => {
+    let sourcePath = typeof droppedFilePath === 'string' ? droppedFilePath : ''
+    if (!sourcePath) {
+      const win = BrowserWindow.fromWebContents(_event.sender)
+      if (!win) return { ok: false, message: 'No window.' }
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+        properties: ['openFile']
+      })
+      if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
+      sourcePath = filePaths[0]!
+    }
+    try {
+      const filePath = await storePerformanceTestWorkflow(sourcePath, app.getPath('userData'))
+      return { ok: true, filePath }
+    } catch (error) {
+      return { ok: false, message: (error as Error)?.message || String(error) }
+    }
+  })
+
+  ipcMain.handle('delete-performance-test-workflow', async (_event, filePath: string) => {
+    try {
+      await deletePerformanceTestWorkflow(filePath, app.getPath('userData'))
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, message: (error as Error)?.message || String(error) }
+    }
+  })
+
+  ipcMain.handle(
+    'export-performance-test-results-image',
+    async (_event, svg: string, defaultPath?: string) => {
+      if (typeof svg !== 'string' || !svg.includes('<svg') || Buffer.byteLength(svg) > 1_000_000) {
+        return { ok: false, message: 'Invalid performance test results image.' }
+      }
+      const win = BrowserWindow.fromWebContents(_event.sender)
+      if (!win) return { ok: false, message: 'No window.' }
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        title: 'Export performance test results',
+        buttonLabel: 'Export here',
+        defaultPath,
+        properties: ['openDirectory', 'createDirectory']
+      })
+      if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
+
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23)
+        const filePath = path.join(filePaths[0]!, `performance-test-results-${timestamp}.svg`)
+        await fs.promises.writeFile(filePath, svg, 'utf8')
+        return { ok: true, filePath }
+      } catch (error) {
+        return { ok: false, message: (error as Error)?.message || String(error) }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'run-performance-test-workflow',
+    async (
+      _event,
+      sessionId: string,
+      filePath: string,
+      measuredRuns: number,
+      warmupRuns: number
+    ) => {
+      try {
+        if (typeof sessionId !== 'string' || !sessionId.startsWith('performance-test:')) {
+          throw new Error('Invalid performance test session.')
+        }
+        const session = _runningSessions.get(sessionId)
+        if (!session) throw new Error('The performance test instance is not running.')
+        const sourceInstallationId =
+          session.sourceInstallationId ?? sessionId.slice('performance-test:'.length)
+        const sourceInstallation = await installations.get(sourceInstallationId)
+        const workspaceId = sourceInstallation?.workspaceId ?? null
+        let workspaceName = workspaceId ? getCachedWorkspaceName(workspaceId) : null
+        if (workspaceId) {
+          try {
+            const owningWorkspace = (await getCloudSession().listWorkspaces()).find(
+              (workspace) => workspace.id === workspaceId
+            )
+            workspaceName = owningWorkspace?.name ?? workspaceName
+          } catch {
+            // The id-keyed cache remains accurate when workspace refresh is unavailable.
+          }
+        }
+        const workspace = { id: workspaceId, name: workspaceName }
+        const sessionUrl = session.url || `http://127.0.0.1:${session.port}`
+        const promptIds = await submitPerformanceTestWorkflow(
+          filePath,
+          app.getPath('userData'),
+          sessionUrl,
+          measuredRuns,
+          warmupRuns
+        )
+        const preparationRuns = warmupRuns
+        const measuredPromptIds = promptIds.slice(warmupRuns)
+        const jobsResponse = await waitForPerformanceTestJobs(sessionUrl, promptIds)
+        const statistics = calculatePerformanceTestStatistics(jobsResponse, measuredPromptIds)
+        const resultPath = await savePerformanceTestJobsResponse(
+          jobsResponse,
+          filePath,
+          app.getPath('userData')
+        )
+        const hardware = session.getAcceleratorInfo?.() ?? null
+        const systemInfo = await getSystemInfo()
+        const resultsSummaryPath = await savePerformanceTestResultsSummary(
+          statistics,
+          {
+            id: sourceInstallationId,
+            name: session.installationName
+          },
+          workspace,
+          hardware,
+          filePath,
+          app.getPath('userData')
+        )
+        const submittedPromptIds = new Set(measuredPromptIds)
+        const unsuccessfulJobs = jobsResponse.jobs.filter(
+          (job) => submittedPromptIds.has(job.id) && job.status !== 'completed'
+        )
+        return {
+          ok: true,
+          submitted: measuredRuns,
+          preparationRuns,
+          totalSubmitted: measuredRuns + preparationRuns,
+          promptIds,
+          resultPath,
+          resultsSummaryPath,
+          statistics,
+          hardware,
+          systemInfo,
+          unsuccessfulJobs: unsuccessfulJobs.length
+        }
+      } catch (error) {
+        return {
+          ok: false,
+          submitted: 0,
+          preparationRuns: 0,
+          totalSubmitted: 0,
+          message: (error as Error)?.message || String(error)
+        }
+      }
+    }
+  )
+
   ipcMain.handle('open-path', (_event, targetPath: string) => {
     if (typeof targetPath !== 'string' || !targetPath) return ''
     if (/^https?:\/\//i.test(targetPath)) return shell.openExternal(targetPath)
@@ -196,7 +356,7 @@ export function registerAppHandlers(): void {
     return hardwareProbe
   }
 
-  ipcMain.handle('get-system-info', async () => {
+  async function getSystemInfo(): Promise<SystemInfo> {
     const hardware = await probeHardwareCached()
     const cpus = os.cpus()
     const allInstalls = await installations.list()
@@ -224,8 +384,10 @@ export function registerAppHandlers(): void {
         update_channel: (inst.updateChannel as string) || 'stable',
         status: (inst.status as string) || 'ready'
       }))
-    }
-  })
+    } as SystemInfo
+  }
+
+  ipcMain.handle('get-system-info', getSystemInfo)
 
   async function probeHardware(): Promise<Record<string, unknown>> {
     const gpu = await detectGPUCached()

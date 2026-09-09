@@ -36,7 +36,9 @@ import {
   handleLaunch,
   isCrashedExit,
   onProcessTerminated,
-  _cleanupFailedLaunchSetup
+  _cleanupFailedLaunchSetup,
+  _resolveLaunchMode,
+  _resolvePortConflictPolicy
 } from './launch'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
@@ -45,6 +47,7 @@ import {
   _markLaunching,
   _operationAborts,
   _pendingPorts,
+  _runningSessions,
   _reservePort
 } from '../shared'
 import type { ChildProcess, InstallationRecord } from '../shared'
@@ -71,6 +74,58 @@ describe('desktopFeatureFlags', () => {
   it('omits enable_telemetry for non-standalone installs even when opted in', () => {
     expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty('enable_telemetry')
     expect(desktopFeatureFlags(installOf('git'), true)).not.toHaveProperty('enable_telemetry')
+  })
+})
+
+describe('_resolveLaunchMode', () => {
+  it('allows a launch-scoped console override without changing the installation', () => {
+    const installation = { ...installOf('standalone'), launchMode: 'window' }
+
+    expect(_resolveLaunchMode(installation, { launchModeOverride: 'console' })).toBe('console')
+    expect(installation.launchMode).toBe('window')
+  })
+
+  it('uses the persisted mode for unsupported overrides', () => {
+    const installation = { ...installOf('standalone'), launchMode: 'window' }
+
+    expect(_resolveLaunchMode(installation, { launchModeOverride: 'external' })).toBe('window')
+  })
+})
+
+describe('_resolvePortConflictPolicy', () => {
+  it('allows a launch-scoped automatic port without changing the installation', () => {
+    const installation = {
+      ...installOf('standalone'),
+      launchArgs: '--enable-manager --port 8188',
+      portConflict: 'prompt'
+    }
+
+    expect(
+      _resolvePortConflictPolicy(
+        installation,
+        { portConflict: 'prompt' },
+        {
+          autoPortOnConflict: true
+        }
+      )
+    ).toEqual({ mode: 'auto', portIsExplicit: false })
+    expect(installation).toMatchObject({
+      launchArgs: '--enable-manager --port 8188',
+      portConflict: 'prompt'
+    })
+  })
+
+  it('preserves the configured policy and explicit port for normal launches', () => {
+    const installation = {
+      ...installOf('standalone'),
+      launchArgs: '--port=8188',
+      portConflict: 'prompt'
+    }
+
+    expect(_resolvePortConflictPolicy(installation, { portConflict: 'auto' })).toEqual({
+      mode: 'prompt',
+      portIsExplicit: true
+    })
   })
 })
 
@@ -210,6 +265,27 @@ describe('handleLaunch model-download startup await (#1322)', () => {
 
   afterEach(() => {
     modelStartup.impl = null
+  })
+
+  it('allows an isolated performance test session while the installation is already running', async () => {
+    const installationId = 'running-install'
+    const sessionId = `performance-test:${installationId}`
+    _runningSessions.set(installationId, {
+      proc: null,
+      port: 8188,
+      mode: 'window',
+      installationName: 'Running Install',
+      startedAt: Date.now()
+    })
+
+    try {
+      const result = await handleLaunch({ ...ctxFor(installationId), sessionId })
+      expect(result.message).toMatch(/unknownSource|unrecognized source/)
+      expect(result.message).not.toMatch(/alreadyRunning/i)
+    } finally {
+      _runningSessions.delete(installationId)
+      _operationAborts.delete(sessionId)
+    }
   })
 
   it('never blocks the launch while incomplete files are visible under final model names', async () => {
