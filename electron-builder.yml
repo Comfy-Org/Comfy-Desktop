@@ -85,7 +85,9 @@ linux:
   extraResources:
     - from: resources/apparmor-profile
       to: apparmor-profile
-    - from: bootstrap-python/linux-x64
+    # Resolve against the target architecture. No linux-arm64 bootstrap exists
+    # yet, so ARM64 packages omit it instead of shipping an unusable x64 binary.
+    - from: bootstrap-python/linux-${arch}
       to: bootstrap-python
       filter:
         - '**/*'
