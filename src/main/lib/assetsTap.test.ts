@@ -514,6 +514,21 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ created: 12, phase: 'fast' })
     })
 
+    it('parses CRLF-terminated lines, as a Windows core would emit', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed created=12 phase=fast\r\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ created: 12, phase: 'fast' })
+    })
+
+    it('parses a CRLF line whose split lands between the CR and the LF', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_started phase=fast\r', 'stdout')
+      tap.ingest('\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ phase: 'fast' })
+    })
+
     it('keeps stdout and stderr partial lines from splicing together', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_started ', 'stdout')
