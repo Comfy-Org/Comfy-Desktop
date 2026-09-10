@@ -62,6 +62,12 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'scanner.stat_failed'
 ])
 
+/**
+ * Emitted by the tap itself, never parsed from a line. Deliberately absent from
+ * `ALLOWED_EVENTS` so a crafted log line cannot forge it.
+ */
+const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
+
 const MAX_STRING_LENGTH = 64
 const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"']
 
@@ -131,7 +137,14 @@ function parseFields(
     // A field named like a base-context property would be a context-spoofing
     // attempt, even though the merge order already makes it ineffective.
     if (baseKeys.has(key)) return null
-    if (!ALLOWED_FIELD_NAMES.has(key)) return null
+    if (!ALLOWED_FIELD_NAMES.has(key)) {
+      // Prototype keys clear the lowercase FIELD_NAME filter but are never a
+      // plausible core field, so they stay whole-line rejects.
+      if (Object.hasOwn(Object.prototype, key)) return null
+      // Anything else is a newer core emitting a field this build predates;
+      // rejecting the line would delete an existing metric instead.
+      continue
+    }
     if (Object.hasOwn(fields, key)) return null
     const value: TelemetryValue = /^-?\d+$/.test(rawValue)
       ? Number(rawValue)
@@ -174,6 +187,8 @@ export function createAssetsTap(opts: {
   // keep.
   const rateBuckets = new Map<string, { windowStart: number; count: number }>()
 
+  let unknownEventsDropped = 0
+
   function withinRateCap(event: string): boolean {
     const now = Date.now()
     const bucket = rateBuckets.get(event)
@@ -192,7 +207,14 @@ export function createAssetsTap(opts: {
     const match = stripLogLevelPrefix(stripAnsi(line).trim()).match(ASSETS_EVENT_LINE)
     if (!match) return
     const [, event, tail] = match
-    if (!event || tail === undefined || !ALLOWED_EVENTS.has(event)) return
+    if (!event || tail === undefined) return
+    if (!ALLOWED_EVENTS.has(event)) {
+      // Counted, never named: the name is untrusted input, so carrying it in a
+      // payload would reintroduce the cardinality blow-up the allow-list exists
+      // to prevent. A bare count still answers "is this build behind core?".
+      unknownEventsDropped++
+      return
+    }
     const fields = parseFields(tail, baseKeys)
     if (!fields) return
     if (!withinRateCap(event)) return
@@ -245,6 +267,14 @@ export function createAssetsTap(opts: {
           } catch {
             // ignore - telemetry side effect, not user-visible
           }
+        }
+        if (unknownEventsDropped > 0 && withinRateCap(UNKNOWN_EVENTS_DROPPED)) {
+          const count = unknownEventsDropped
+          unknownEventsDropped = 0
+          telemetry.emit(`${EVENT_PREFIX}${UNKNOWN_EVENTS_DROPPED}`, {
+            count,
+            ...baseContext
+          })
         }
       } catch {
         // ignore - telemetry side effect, not user-visible

@@ -300,13 +300,57 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
     })
 
-    it('rejects a syntactically valid but unknown field', () => {
+    it('reports dropped unknown events as a bare count, never their names', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_exploded', { phase: 'fast' }), 'stdout')
+      tap.ingest(taggedLine('evil.exfiltrate', { count: 1 }), 'stdout')
+      expect(captured).toHaveLength(0)
+
+      tap.flushSummary()
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe('comfy.desktop.comfyui.assets.unknown_events_dropped')
+      expect(captured[0]!.ctx).toMatchObject({ count: 2 })
+      expect(JSON.stringify(captured[0]!.ctx)).not.toContain('exfiltrate')
+      expect(JSON.stringify(captured[0]!.ctx)).not.toContain('scan_exploded')
+    })
+
+    it('cannot have its dropped-event counter forged by a crafted line', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('unknown_events_dropped', { count: 999 }), 'stdout')
+      expect(captured).toHaveLength(0)
+
+      tap.flushSummary()
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ count: 1 })
+    })
+
+    it('stays silent on flush when no unknown event was seen', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
+      captured.length = 0
+      tap.flushSummary()
+      expect(captured).toHaveLength(0)
+    })
+
+    it('does not re-report the same dropped events on a second flush', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_exploded', {}), 'stdout')
+      tap.flushSummary()
+      expect(captured).toHaveLength(1)
+      captured.length = 0
+      tap.flushSummary()
+      expect(captured).toHaveLength(0)
+    })
+
+    it('drops an unknown field but keeps the event and its known fields', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(
         taggedLine('seeder.scan_completed', { phase: 'fast', file_path: 'model' }),
         'stdout'
       )
-      expect(captured).toHaveLength(0)
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ phase: 'fast' })
+      expect(captured[0]!.ctx).not.toHaveProperty('file_path')
     })
 
     it('rejects a field name inherited from the allowlist\u2019s prototype', () => {
