@@ -321,7 +321,12 @@ function fieldOwnsLabel(field: DetailField): boolean {
                 {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
               </span>
             </label>
-            <BooleanToggle :field="field" @update="(v) => emit('update-field', field, v)" />
+            <BooleanToggle
+              :field="field"
+              :turn-on-disabled="field.turnOnDisabled"
+              :turn-on-disabled-tooltip-key="field.turnOnDisabledTooltipKey"
+              @update="(v) => emit('update-field', field, v)"
+            />
           </div>
 
           <template v-else>

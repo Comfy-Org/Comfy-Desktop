@@ -51,6 +51,13 @@ export interface KnownSettings {
   useChineseMirrors?: boolean
   chineseMirrorsPrompted?: boolean
   telemetryEnabled?: boolean
+  /** Opt-in to desktop-managed beta features (currently: core beta launch
+   *  args). Deliberately separate from `telemetryEnabled` — gating beta on
+   *  consent would let a user escape a buggy beta by turning telemetry off,
+   *  destroying the diagnostics at the moment they matter most. Seeded ONCE
+   *  from the telemetry choice by `resolveBetaFeaturesEnabled` when absent,
+   *  and independent of it from then on. */
+  betaFeaturesEnabled?: boolean
   /** `true` once the first-use takeover is finished. Mid-flow cancel does NOT
    *  flip this, so the takeover replays from step 1 next launch. */
   firstUseCompleted?: boolean
@@ -242,6 +249,7 @@ const SETTINGS_SCHEMA = {
   // Consent gate, not a durable trackable setting: once disabled we can't emit a
   // fresh `false` without violating the consent gate, so the value would go stale.
   telemetryEnabled: { nullable: false, telemetry: { policy: 'omit' } },
+  betaFeaturesEnabled: { nullable: false, telemetry: { policy: 'omit' } },
   firstUseCompleted: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
@@ -653,6 +661,23 @@ export function set<K extends string>(
 
 export function getAll(): Settings {
   return load()
+}
+
+/**
+ * The beta-features opt-in, seeding itself on first read.
+ *
+ * Absence means "never asked": installs predating the toggle inherit their
+ * telemetry choice once, and that seed is written back immediately so the two
+ * settings are independent from the very next read. Consent is deliberately
+ * NOT a live fallback — a user hitting beta bugs would otherwise leave the
+ * beta by revoking consent, taking the diagnostics with them.
+ */
+export function resolveBetaFeaturesEnabled(): boolean {
+  const stored = get('betaFeaturesEnabled')
+  if (typeof stored === 'boolean') return stored
+  const seeded = get('telemetryEnabled') === true
+  set('betaFeaturesEnabled', seeded)
+  return seeded
 }
 
 function camelToSnake(s: string): string {

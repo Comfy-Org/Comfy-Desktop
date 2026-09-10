@@ -111,10 +111,10 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 // re-exported by `posthog-node`. Inlining the shape we actually use.
 export type FeatureFlagValue = string | boolean
 
-export interface OpsFlagResult {
-  value: FeatureFlagValue
-  payload: unknown
-}
+/** Every outcome of an ops-flag fetch, classified. See `getOpsFlagResult`. */
+export type OpsFlagFetchResult =
+  | { kind: 'value'; value: FeatureFlagValue; payload: unknown }
+  | { kind: 'unreachable' }
 import {
   DEFAULT_POSTHOG_API_KEY,
   DEFAULT_POSTHOG_HOST,
@@ -1476,20 +1476,23 @@ export async function loadFeatureFlagsImmediate(
  * so an evaluation-only key never creates a PostHog person behind the capture
  * policy.
  *
- * Returns `undefined` when:
- *   - the PostHog client is not yet initialised
- *   - the network call times out or errors
- *   - the flag is missing on the server
- * Callers must choose a safe fallback so a fetch miss never accidentally
- * degrades the product. `makeOpsFlag` (opsFlag.ts) is that wrapper for every
- * current caller.
+ * Classifies every outcome as exactly one `OpsFlagFetchResult`:
+ *   - `value` — the server answered. A disabled flag is a value of `false`,
+ *     NOT a miss, which is what makes disabling the supported way to revoke a
+ *     treatment a client has already persisted.
+ *   - `unreachable` — the client is not initialised, the call timed out or
+ *     threw, or the server returned no result for the key. The treatment is
+ *     unknown rather than withdrawn, so callers hold what they had instead of
+ *     degrading the product on a bad network. A DELETED flag key lands here
+ *     too, which is why deleting a flag does not revoke it — see the `persist`
+ *     option on `makeOpsFlag` (opsFlag.ts), the wrapper every caller uses.
  */
 export async function getOpsFlagResult(
   key: string,
   distinctId: string,
   timeoutMs: number
-): Promise<OpsFlagResult | undefined> {
-  if (!client) return undefined
+): Promise<OpsFlagFetchResult> {
+  if (!client) return { kind: 'unreachable' }
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     const flagPromise = client.getFeatureFlagResult(key, distinctId, {
@@ -1499,13 +1502,14 @@ export async function getOpsFlagResult(
       timer = setTimeout(() => resolve(undefined), timeoutMs)
     })
     const result = await Promise.race([flagPromise, timeoutPromise])
-    if (!result) return undefined
+    if (!result) return { kind: 'unreachable' }
     return {
+      kind: 'value',
       value: result.enabled ? (result.variant ?? true) : false,
       payload: result.payload
     }
   } catch {
-    return undefined
+    return { kind: 'unreachable' }
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }

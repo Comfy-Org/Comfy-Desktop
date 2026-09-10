@@ -33,7 +33,6 @@ import { getGpuPromise, setGpuPromise } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
-import { withCoreCanaryLaunchArgs } from '../coreCanary'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
@@ -124,17 +123,16 @@ export function registerAppHandlers(): void {
   })
   ipcMain.handle('check-nvidia-driver', () => checkNvidiaDriver())
 
-  // Other record-building paths bypass this handler, so existing installs are not enrolled.
   ipcMain.handle(
     'build-installation',
-    async (_event, sourceId: string, selections: Record<string, unknown>) => {
+    (_event, sourceId: string, selections: Record<string, unknown>) => {
       const source = sourceMap[sourceId]
       if (!source) return null
-      return withCoreCanaryLaunchArgs({
+      return {
         sourceId: source.id,
         sourceLabel: source.label,
         ...source.buildInstallation(selections as Record<string, FieldOption | undefined>)
-      })
+      }
     }
   )
 

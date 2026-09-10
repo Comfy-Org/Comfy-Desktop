@@ -221,6 +221,10 @@ export interface GlobalSettingsSnapshot {
   installLocationFields: Record<string, unknown>[]
   modelsDirs: GlobalSettingsModelsDir[]
   modelsSystemDefault: string
+  /** Whether telemetry consent was explicitly granted. Top-level rather than
+   *  a `DetailField` because it gates OTHER fields (opting into beta features
+   *  requires consent) instead of being edited itself. */
+  telemetryGranted: boolean
   appUpdate: {
     state: Record<string, unknown>
     progress: Record<string, unknown> | null
@@ -2168,6 +2172,10 @@ function buildGlobalSettingsSnapshot(
       isPrimary: i === 0
     })),
     modelsSystemDefault: modelsDefault,
+    // Strict `=== true`: an absent consent key means the user was never asked,
+    // which must not read as a grant. (The telemetry FIELD above deliberately
+    // coerces the same absence the other way, to default-on collection.)
+    telemetryGranted: settings.get('telemetryEnabled') === true,
     appUpdate: {
       state: appUpdateState,
       progress: lastAppUpdateProgress,
@@ -3223,6 +3231,12 @@ export function _test_setTitlePopupEntry(webContentsId: number, entry: TitlePopu
 
 export function _test_deleteTitlePopupEntry(webContentsId: number): void {
   titlePopupsByWebContents.delete(webContentsId)
+}
+
+/** Test seam: the snapshot builder, whose top-level properties have no other
+ *  reachable assertion point (the push path needs a live popup). */
+export function _test_buildGlobalSettingsSnapshot(): GlobalSettingsSnapshot {
+  return buildGlobalSettingsSnapshot()
 }
 
 /**

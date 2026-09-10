@@ -128,6 +128,15 @@ export function buildSettingsSections(
           label: i18n.t('settings.telemetryEnabled'),
           type: 'boolean',
           value: s.telemetryEnabled !== false
+        },
+        // Read through the resolver, never off `s`: absence means "not yet
+        // seeded", which the resolver settles (once) from the telemetry
+        // choice. Reading the raw value would coerce that to a default here.
+        {
+          id: 'betaFeaturesEnabled',
+          label: i18n.t('settings.betaFeaturesEnabled'),
+          type: 'boolean',
+          value: settings.resolveBetaFeaturesEnabled()
         }
       ]
     },

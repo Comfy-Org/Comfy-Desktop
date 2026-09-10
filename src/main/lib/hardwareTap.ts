@@ -108,6 +108,9 @@ export function createHardwareTap(opts: {
   installationId: string
   variant?: string | null
   release?: string | null
+  /** Core beta args Desktop injected for this launch (exact dashed tokens), so
+   *  every event can be split by beta cohort. */
+  coreBetaFlags?: readonly string[]
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
@@ -116,7 +119,8 @@ export function createHardwareTap(opts: {
   const baseContext = {
     installation_id: opts.installationId,
     variant: opts.variant ?? null,
-    release: opts.release ?? null
+    release: opts.release ?? null,
+    core_beta_flags: [...(opts.coreBetaFlags ?? [])]
   }
 
   // Accelerator accumulation: fields trickle in over several lines. ComfyUI
