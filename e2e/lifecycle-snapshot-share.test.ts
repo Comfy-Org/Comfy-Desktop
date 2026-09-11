@@ -33,6 +33,7 @@ import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
 import { titlePopupPage, waitForWebContents } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -102,7 +103,7 @@ test.beforeAll(async () => {
   // Monkey-patch `dialog.showSaveDialog` in main so the native save dialog
   // never opens. Patching the shared `dialog` module covers both the panel
   // `export-snapshot` handler and the picker popup's delegating handler.
-  await ctx.app.evaluate(({ dialog }, dir) => {
+  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dir) => {
     ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
       _win: unknown,
       opts: { defaultPath?: string },
@@ -113,7 +114,7 @@ test.beforeAll(async () => {
       const sep = dir.includes('\\') ? '\\' : '/'
       return { canceled: false, filePath: `${dir}${sep}${base}` }
     }
-  }, exportDir)
+  }, exportDir))
 
   await expectChooserVisible(ctx.panel)
 })
@@ -188,9 +189,10 @@ test('picker footer More → Share exports the latest snapshot @lifecycle', asyn
   const popup = titlePopupPage(ctx.app)
 
   // Open the footer "More" overflow menu, then click the Share action.
-  await popup.waitForVisible('[data-more-trigger]', { timeout: 15_000 })
-  expect(await popup.click('[data-more-trigger]')).toBe(true)
-  await popup.waitForVisible(byTestId(TID.pinBottomAction('share')), { timeout: 10_000 })
+  // (`[data-more-trigger]` also matches the window-options caret, so
+  // target the explicit footer test id.)
+  await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
+  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('share')), { timeout: 30_000 })
   expect(await popup.click(byTestId(TID.pinBottomAction('share')))).toBe(true)
 
   expectLatestEnvelope(await readSharedEnvelope())

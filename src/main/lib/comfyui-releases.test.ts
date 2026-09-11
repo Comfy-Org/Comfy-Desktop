@@ -5,17 +5,19 @@ vi.mock('./git', () => ({
   lsRemoteLatestTag: vi.fn(),
   lsRemoteRef: vi.fn(),
   lsRemoteStableTags: vi.fn(),
-  isPygit2Configured: vi.fn(() => false),
+  isPygit2Configured: vi.fn(() => false)
 }))
 
 vi.mock('./github-mirror', () => ({
   getComfyUIRemoteUrl: vi.fn((enabled: boolean) =>
-    enabled ? 'https://gitcode.com/gh_mirrors/co/ComfyUI.git' : 'https://github.com/Comfy-Org/ComfyUI.git'
-  ),
+    enabled
+      ? 'https://gitcode.com/gh_mirrors/co/ComfyUI.git'
+      : 'https://github.com/Comfy-Org/ComfyUI.git'
+  )
 }))
 
 vi.mock('../settings', () => ({
-  get: vi.fn(() => undefined),
+  get: vi.fn(() => undefined)
 }))
 
 import { lsRemoteLatestTag, lsRemoteRef, lsRemoteStableTags } from './git'
@@ -23,7 +25,7 @@ import {
   fetchLatestRelease,
   getLatestStableTag,
   getStableTags,
-  _clearLatestStableTagCache,
+  _clearLatestStableTagCache
 } from './comfyui-releases'
 import * as settings from '../settings'
 
@@ -142,7 +144,9 @@ describe('fetchLatestRelease', () => {
     })
 
     it('keys cache by remote URL — flipping the mirror setting refetches', async () => {
-      mockedLsRemoteLatestTag.mockResolvedValueOnce('v1.19.5').mockResolvedValueOnce('v1.19.5-mirror')
+      mockedLsRemoteLatestTag
+        .mockResolvedValueOnce('v1.19.5')
+        .mockResolvedValueOnce('v1.19.5-mirror')
       mockedSettingsGet.mockReturnValue(undefined as never)
       const a = await getLatestStableTag()
       mockedSettingsGet.mockReturnValue(true as never)
@@ -154,7 +158,11 @@ describe('fetchLatestRelease', () => {
 
     it('coalesces concurrent in-flight requests', async () => {
       let resolve: (v: string) => void = () => {}
-      mockedLsRemoteLatestTag.mockReturnValue(new Promise((r) => { resolve = r as (v: string) => void }))
+      mockedLsRemoteLatestTag.mockReturnValue(
+        new Promise((r) => {
+          resolve = r as (v: string) => void
+        })
+      )
       const p1 = getLatestStableTag()
       const p2 = getLatestStableTag()
       resolve('v1.19.5')
@@ -227,10 +235,18 @@ describe('fetchLatestRelease', () => {
 
 describe('getStableTags', () => {
   it('returns the full list from lsRemoteStableTags (newest first)', async () => {
-    mockedLsRemoteStableTags.mockResolvedValue(['v0.25.1', 'v0.25.0', 'v0.24.1', 'v0.24.0', 'v0.23.5'])
+    mockedLsRemoteStableTags.mockResolvedValue([
+      'v0.25.1',
+      'v0.25.0',
+      'v0.24.1',
+      'v0.24.0',
+      'v0.23.5'
+    ])
     const tags = await getStableTags()
     expect(tags).toEqual(['v0.25.1', 'v0.25.0', 'v0.24.1', 'v0.24.0', 'v0.23.5'])
-    expect(mockedLsRemoteStableTags).toHaveBeenCalledWith('https://github.com/Comfy-Org/ComfyUI.git')
+    expect(mockedLsRemoteStableTags).toHaveBeenCalledWith(
+      'https://github.com/Comfy-Org/ComfyUI.git'
+    )
   })
 
   it('returns [] (does not throw) when lsRemoteStableTags rejects', async () => {
@@ -280,6 +296,8 @@ describe('getStableTags', () => {
     )
     mockedLsRemoteStableTags.mockResolvedValue(['v0.25.1'])
     await getStableTags()
-    expect(mockedLsRemoteStableTags).toHaveBeenCalledWith('https://gitcode.com/gh_mirrors/co/ComfyUI.git')
+    expect(mockedLsRemoteStableTags).toHaveBeenCalledWith(
+      'https://gitcode.com/gh_mirrors/co/ComfyUI.git'
+    )
   })
 })

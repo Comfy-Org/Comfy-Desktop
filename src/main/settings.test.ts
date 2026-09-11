@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comfyui-desktop-2-settings-'))
 const homePath = path.join(tmpRoot, 'home')
@@ -17,6 +17,10 @@ const originalXdgCacheHome = process.env.XDG_CACHE_HOME
 process.env.XDG_CONFIG_HOME = xdgConfigHome
 process.env.XDG_CACHE_HOME = xdgCacheHome
 fs.mkdirSync(homePath, { recursive: true })
+// A home-root footprint marks this as an existing install, so on Windows the
+// large-data defaults resolve to the home layout these tests assert (a clean
+// machine would instead default to %LOCALAPPDATA%\Comfy-Desktop).
+fs.mkdirSync(path.join(homePath, 'ComfyUI-Installs'), { recursive: true })
 fs.mkdirSync(userDataPath, { recursive: true })
 fs.mkdirSync(adminHomePath, { recursive: true })
 fs.mkdirSync(adminUserDataPath, { recursive: true })
@@ -28,17 +32,23 @@ let settings: {
   get: (key: string) => unknown
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
+  getTrackedSettingsTelemetryProperties: (
+    keys?: readonly string[]
+  ) => Record<string, boolean | number | string | null>
 }
 
-const settingsPath = process.platform === 'linux'
-  ? path.join(xdgConfigHome, 'comfyui-desktop-2', 'settings.json')
-  : path.join(userDataPath, 'settings.json')
-const expectedCacheDir = process.platform === 'linux'
-  ? path.join(xdgCacheHome, 'comfyui-desktop-2', 'download-cache')
-  : path.join(userDataPath, 'download-cache')
-const copiedAdminCacheDir = process.platform === 'linux'
-  ? path.join(adminXdgCacheHome, 'comfyui-desktop-2', 'download-cache')
-  : path.join(adminUserDataPath, 'download-cache')
+const settingsPath =
+  process.platform === 'linux'
+    ? path.join(xdgConfigHome, 'comfyui-desktop-2', 'settings.json')
+    : path.join(userDataPath, 'settings.json')
+const expectedCacheDir =
+  process.platform === 'linux'
+    ? path.join(xdgCacheHome, 'comfyui-desktop-2', 'download-cache')
+    : path.join(userDataPath, 'download-cache')
+const copiedAdminCacheDir =
+  process.platform === 'linux'
+    ? path.join(adminXdgCacheHome, 'comfyui-desktop-2', 'download-cache')
+    : path.join(adminUserDataPath, 'download-cache')
 const shouldRewriteCopiedDefaults = process.platform === 'win32'
 
 function readPersistedSettings(): Record<string, unknown> {
@@ -54,8 +64,8 @@ beforeEach(async () => {
       getPath: (name: string) => {
         if (name === 'home') return homePath
         return userDataPath
-      },
-    },
+      }
+    }
   }))
   settings = await import('./settings')
 })
@@ -93,11 +103,7 @@ describe('settings unset/default semantics', () => {
 
   it('normalizes legacy null values to unset on write', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ autoUpdate: null }, null, 2),
-      'utf-8'
-    )
+    fs.writeFileSync(settingsPath, JSON.stringify({ autoUpdate: null }, null, 2), 'utf-8')
 
     expect(settings.get('autoUpdate')).toBeUndefined()
 
@@ -116,7 +122,7 @@ describe('settings unset/default semantics', () => {
         {
           primaryInstallId: 'inst-1',
           pinnedInstallIds: ['inst-2', 'inst-3'],
-          theme: 'dark',
+          theme: 'dark'
         },
         null,
         2
@@ -153,11 +159,7 @@ describe('settings unset/default semantics', () => {
 
   it('preserves a manual maxCachedDownloads edit', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ maxCachedDownloads: 9 }, null, 2),
-      'utf-8'
-    )
+    fs.writeFileSync(settingsPath, JSON.stringify({ maxCachedDownloads: 9 }, null, 2), 'utf-8')
 
     expect(settings.get('maxCachedDownloads')).toBe(9)
     expect(readPersistedSettings()['maxCachedDownloads']).toBe(9)
@@ -183,6 +185,47 @@ describe('settings unset/default semantics', () => {
     expect(readPersistedSettings()).not.toHaveProperty('installDir')
   })
 
+  // The volume check keys off the path root, which is always `/` on POSIX, so
+  // this dead-drive fallback only meaningfully applies on Windows.
+  it.runIf(process.platform === 'win32')(
+    'falls back installDir/cacheDir to defaults when their volume is gone',
+    () => {
+      const builtinDefault = path.join(homePath, 'ComfyUI-Installs')
+      const deadInstall = 'Z:\\Comfy-Desktop\\ComfyUI-Installs'
+      const deadCache = 'Z:\\Comfy-Desktop\\ComfyUI-Cache\\download-cache'
+      settings.set('installDir', deadInstall)
+      settings.set('cacheDir', deadCache)
+
+      const realExistsSync = fs.existsSync.bind(fs)
+      const spy = vi
+        .spyOn(fs, 'existsSync')
+        .mockImplementation((p: fs.PathLike) =>
+          p.toString().toUpperCase().startsWith('Z:\\') ? false : realExistsSync(p)
+        )
+      try {
+        // Drive Z: is gone, so both fall back to the (home-layout) defaults...
+        expect(settings.get('installDir')).toBe(builtinDefault)
+        expect(settings.get('cacheDir')).toBe(expectedCacheDir)
+        // ...and the fallback is persisted so it's deterministic next launch.
+        const persisted = readPersistedSettings()
+        expect(persisted['installDir']).toBe(builtinDefault)
+        expect(persisted['cacheDir']).toBe(expectedCacheDir)
+      } finally {
+        spy.mockRestore()
+      }
+    }
+  )
+
+  it('keeps a custom installDir on a live volume even if it does not exist yet', () => {
+    // Created-on-demand parent dirs must not be reset just because the leaf is
+    // absent — only a missing volume triggers fallback.
+    const custom = path.join(homePath, 'Not', 'Yet', 'Created', 'Installs')
+    expect(fs.existsSync(custom)).toBe(false)
+    settings.set('installDir', custom)
+    expect(settings.get('installDir')).toBe(custom)
+    expect(readPersistedSettings()['installDir']).toBe(custom)
+  })
+
   it('autoLaunchOnStartup defaults to "none" when absent and persists explicit choices', () => {
     expect(settings.get('autoLaunchOnStartup')).toBe('none')
 
@@ -197,6 +240,18 @@ describe('settings unset/default semantics', () => {
     settings.set('autoLaunchOnStartup', 'none')
     expect(settings.get('autoLaunchOnStartup')).toBe('none')
     expect(readPersistedSettings()).not.toHaveProperty('autoLaunchOnStartup')
+  })
+
+  it('persists the hardware acceleration opt-out', () => {
+    expect(settings.get('hardwareAcceleration')).toBeUndefined()
+
+    settings.set('hardwareAcceleration', false)
+    expect(settings.get('hardwareAcceleration')).toBe(false)
+    expect(readPersistedSettings()['hardwareAcceleration']).toBe(false)
+
+    settings.set('hardwareAcceleration', true)
+    expect(settings.get('hardwareAcceleration')).toBe(true)
+    expect(readPersistedSettings()['hardwareAcceleration']).toBe(true)
   })
 
   it('treats empty and whitespace-only strings as unset for pypiMirror', () => {
@@ -233,10 +288,7 @@ describe('settings path sanitization', () => {
     // sanitization doesn't run.
     const expectedModelsDirs = shouldRewriteCopiedDefaults
       ? [customModelsDir]
-      : [
-          path.join(adminHomePath, 'ComfyUI-Shared', 'models'),
-          customModelsDir,
-        ]
+      : [path.join(adminHomePath, 'ComfyUI-Shared', 'models'), customModelsDir]
     const expectedInputDir = shouldRewriteCopiedDefaults
       ? path.join(homePath, 'ComfyUI-Shared', 'input')
       : path.join(adminHomePath, 'ComfyUI-Shared', 'input')
@@ -248,15 +300,16 @@ describe('settings path sanitization', () => {
       : copiedAdminCacheDir
     fs.writeFileSync(
       settingsPath,
-      JSON.stringify({
-        cacheDir: copiedAdminCacheDir,
-        modelsDirs: [
-          path.join(adminHomePath, 'ComfyUI-Shared', 'models'),
-          customModelsDir,
-        ],
-        inputDir: path.join(adminHomePath, 'ComfyUI-Shared', 'input'),
-        outputDir: path.join(adminHomePath, 'ComfyUI-Shared', 'output'),
-      }, null, 2),
+      JSON.stringify(
+        {
+          cacheDir: copiedAdminCacheDir,
+          modelsDirs: [path.join(adminHomePath, 'ComfyUI-Shared', 'models'), customModelsDir],
+          inputDir: path.join(adminHomePath, 'ComfyUI-Shared', 'input'),
+          outputDir: path.join(adminHomePath, 'ComfyUI-Shared', 'output')
+        },
+        null,
+        2
+      ),
       'utf-8'
     )
 
@@ -307,6 +360,20 @@ describe('settings.has (persisted-only check)', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({ theme: null }), 'utf-8')
     expect(settings.has('theme')).toBe(false)
   })
+
+  it('treats a stale sentinel value as unset (autoLaunchOnStartup: none)', () => {
+    // A manually edited / migrated file may still carry the 'none' sentinel that
+    // set() would have dropped; has() must not report it as a user choice.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ autoLaunchOnStartup: 'none' }), 'utf-8')
+    expect(settings.has('autoLaunchOnStartup')).toBe(false)
+  })
+
+  it('treats a whitespace-only pypiMirror as unset', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ pypiMirror: '   ' }), 'utf-8')
+    expect(settings.has('pypiMirror')).toBe(false)
+  })
 })
 
 describe('modelsDirs user ordering', () => {
@@ -344,7 +411,11 @@ describe('modelsDirs user ordering', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(
       settingsPath,
-      JSON.stringify({ modelsDirs: [userModels], inputDir: userInput, outputDir: userOutput }, null, 2),
+      JSON.stringify(
+        { modelsDirs: [userModels], inputDir: userInput, outputDir: userOutput },
+        null,
+        2
+      ),
       'utf-8'
     )
 
@@ -366,11 +437,7 @@ describe('modelsDirs user ordering', () => {
     const missing = path.join(tmpRoot, 'gone-models') // deliberately not created
 
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ modelsDirs: [missing] }, null, 2),
-      'utf-8'
-    )
+    fs.writeFileSync(settingsPath, JSON.stringify({ modelsDirs: [missing] }, null, 2), 'utf-8')
 
     const dirs = settings.get('modelsDirs') as string[]
     expect(dirs[0]).toBe(systemDefault) // restored as primary (non-deletable)
@@ -416,14 +483,220 @@ describe('modelsDirs user ordering', () => {
 
   it('injects system default when modelsDirs is empty', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ modelsDirs: [] }, null, 2),
-      'utf-8'
-    )
+    fs.writeFileSync(settingsPath, JSON.stringify({ modelsDirs: [] }, null, 2), 'utf-8')
 
     const dirs = settings.get('modelsDirs') as string[]
     expect(dirs.length).toBe(1)
     expect(path.resolve(dirs[0]!)).toBe(path.join(homePath, 'ComfyUI-Shared', 'models'))
+  })
+})
+
+describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
+  const realPlatform = process.platform
+
+  function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+    try {
+      return fn()
+    } finally {
+      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+    }
+  }
+
+  it('autoInstallUpdates: effective value plus an explicit-set companion', () => {
+    // Unset => default-on and not explicit.
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
+      auto_install_updates: true,
+      auto_install_updates_explicit: false
+    })
+    // Explicit false => off and explicit.
+    settings.set('autoInstallUpdates', false)
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
+      auto_install_updates: false,
+      auto_install_updates_explicit: true
+    })
+    // Explicit true => on and explicit (distinct from the default-on majority).
+    settings.set('autoInstallUpdates', true)
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
+      auto_install_updates: true,
+      auto_install_updates_explicit: true
+    })
+  })
+
+  it('language: emits only the selected value (null when following the OS default)', () => {
+    // Effective locale lives on the app.language_resolved event, not here.
+    expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
+      setting_language_selected: null
+    })
+    settings.set('language', 'zh')
+    expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
+      setting_language_selected: 'zh'
+    })
+  })
+
+  it('omits the legacy autoUpdate setting entirely', () => {
+    settings.set('autoUpdate', false)
+    expect(settings.getTrackedSettingsTelemetryProperties()).not.toHaveProperty(
+      'setting_auto_update'
+    )
+  })
+
+  it('scalar value settings emit their typed value, never a hand-edited string', () => {
+    // onAppClose enum + maxCachedDownloads number pass through when valid
+    // (onAppClose resolves to its 'quit' default while tray docking is disabled).
+    settings.set('maxCachedDownloads', 5)
+    expect(
+      settings.getTrackedSettingsTelemetryProperties(['onAppClose', 'maxCachedDownloads'])
+    ).toEqual({
+      setting_on_app_close: 'quit',
+      setting_max_cached_downloads: 5
+    })
+    // A corrupt/hand-edited settings.json can't leak a free-form string.
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ onAppClose: '/Users/me/secret', maxCachedDownloads: 'lots' }),
+      'utf-8'
+    )
+    expect(
+      settings.getTrackedSettingsTelemetryProperties(['onAppClose', 'maxCachedDownloads'])
+    ).toEqual({
+      setting_on_app_close: null,
+      setting_max_cached_downloads: null
+    })
+  })
+
+  it('omits the dark-only theme setting entirely', () => {
+    settings.set('theme', 'light')
+    const props = settings.getTrackedSettingsTelemetryProperties()
+    expect(props).not.toHaveProperty('setting_theme')
+    expect(props).not.toHaveProperty('setting_theme_selected')
+  })
+
+  it('default-off useChineseMirrors: unset reports false, explicit true reports true', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['useChineseMirrors'])).toEqual({
+      setting_use_chinese_mirrors: false
+    })
+    settings.set('useChineseMirrors', true)
+    expect(settings.getTrackedSettingsTelemetryProperties(['useChineseMirrors'])).toEqual({
+      setting_use_chinese_mirrors: true
+    })
+  })
+
+  it('hardwareAcceleration: unset reports enabled and explicit false reports disabled', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['hardwareAcceleration'])).toEqual({
+      setting_hardware_acceleration: true
+    })
+    settings.set('hardwareAcceleration', false)
+    expect(settings.getTrackedSettingsTelemetryProperties(['hardwareAcceleration'])).toEqual({
+      setting_hardware_acceleration: false
+    })
+  })
+
+  it('Windows-only installUpdatesOnStartup: default-on true on win32, false when opted out', () => {
+    withPlatform('win32', () => {
+      expect(settings.getTrackedSettingsTelemetryProperties(['installUpdatesOnStartup'])).toEqual({
+        install_updates_on_startup: true
+      })
+    })
+    settings.set('installUpdatesOnStartup', false)
+    withPlatform('win32', () => {
+      expect(settings.getTrackedSettingsTelemetryProperties(['installUpdatesOnStartup'])).toEqual({
+        install_updates_on_startup: false
+      })
+    })
+  })
+
+  it('Windows-only gates report null off-Windows (not applicable, not opted out)', () => {
+    withPlatform('darwin', () => {
+      expect(
+        settings.getTrackedSettingsTelemetryProperties([
+          'installUpdatesOnStartup',
+          'showInstallerUI'
+        ])
+      ).toEqual({
+        install_updates_on_startup: null,
+        setting_show_installer_ui: null
+      })
+    })
+  })
+
+  it('path settings emit presence booleans, never the raw path', () => {
+    const before = settings.getTrackedSettingsTelemetryProperties([
+      'installDir',
+      'modelsDirs',
+      'cacheDir'
+    ])
+    expect(before).toEqual({
+      setting_install_dir: false,
+      setting_models_dirs: false,
+      setting_cache_dir: false
+    })
+    settings.set('installDir', path.join(homePath, 'Custom', 'Installs'))
+    const after = settings.getTrackedSettingsTelemetryProperties(['installDir'])
+    expect(after.setting_install_dir).toBe(true)
+    expect(Object.values(after).every((v) => typeof v !== 'string')).toBe(true)
+  })
+
+  it('autoLaunchOnStartup emits presence (bool-ified), never the install id', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoLaunchOnStartup'])).toEqual({
+      setting_auto_launch_on_startup: false
+    })
+    settings.set('autoLaunchOnStartup', 'some-install-id')
+    expect(settings.getTrackedSettingsTelemetryProperties(['autoLaunchOnStartup'])).toEqual({
+      setting_auto_launch_on_startup: true
+    })
+  })
+
+  it('omits internal bookkeeping and consent keys', () => {
+    settings.set('firstUseCompleted', true)
+    settings.set('telemetryEnabled', true)
+    settings.set('chineseMirrorsPrompted', true)
+    const props = settings.getTrackedSettingsTelemetryProperties()
+    expect(props).not.toHaveProperty('setting_first_use_completed')
+    expect(props).not.toHaveProperty('setting_telemetry_enabled')
+    expect(props).not.toHaveProperty('setting_chinese_mirrors_prompted')
+  })
+
+  it('full snapshot includes both #1220 exact names and never emits arrays/objects', () => {
+    const props = withPlatform('win32', () => settings.getTrackedSettingsTelemetryProperties())
+    expect(props).toHaveProperty('auto_install_updates')
+    expect(props).toHaveProperty('install_updates_on_startup')
+    for (const value of Object.values(props)) {
+      expect(['boolean', 'number', 'string']).toContain(value === null ? 'boolean' : typeof value)
+    }
+  })
+})
+
+describe('locked settings.json served from .bak (issue #1367)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('serves the stale .bak for reads but refuses to persist over the locked primary', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ pypiMirror: 'https://newer.example' }))
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ pypiMirror: 'https://stale.example' }))
+
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (p === settingsPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM' // lock never clears
+        throw err
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+
+    // Reads degrade to the backup content...
+    expect(settings.get('pypiMirror')).toBe('https://stale.example')
+    // ...but a write is dropped: persisting state derived from the stale
+    // backup would overwrite the newer primary once the lock clears.
+    settings.set('confirmBeforeClosingWindow', true)
+
+    vi.restoreAllMocks()
+    expect(readPersistedSettings()).toEqual({ pypiMirror: 'https://newer.example' })
   })
 })

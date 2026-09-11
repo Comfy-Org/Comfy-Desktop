@@ -37,8 +37,14 @@ describe('useElectronApi', () => {
     const unsub1 = vi.fn()
     const unsub2 = vi.fn()
 
-    listen(vi.fn(() => unsub1), vi.fn())
-    listen(vi.fn(() => unsub2), vi.fn())
+    listen(
+      vi.fn(() => unsub1),
+      vi.fn()
+    )
+    listen(
+      vi.fn(() => unsub2),
+      vi.fn()
+    )
 
     cleanup()
 
@@ -50,7 +56,10 @@ describe('useElectronApi', () => {
     const { listen, cleanup } = useElectronApi()
     const unsub = vi.fn()
 
-    listen(vi.fn(() => unsub), vi.fn())
+    listen(
+      vi.fn(() => unsub),
+      vi.fn()
+    )
 
     cleanup()
     cleanup()
@@ -63,7 +72,10 @@ describe('useElectronApi', () => {
     const unsubs = [vi.fn(), vi.fn(), vi.fn()]
 
     unsubs.forEach((unsub) => {
-      listen(vi.fn(() => unsub), vi.fn())
+      listen(
+        vi.fn(() => unsub),
+        vi.fn()
+      )
     })
 
     cleanup()

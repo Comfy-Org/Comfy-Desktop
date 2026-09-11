@@ -49,20 +49,18 @@ const { spawned, spawn } = vi.hoisted(() => {
   }
 
   const spawnedList: FakePty[] = []
-  const spawnFn = vi.fn(
-    (_file: string, _args: string[], opts: { cols: number; rows: number }) => {
-      const p = new FakePty(opts.cols, opts.rows)
-      spawnedList.push(p)
-      return p
-    },
-  )
+  const spawnFn = vi.fn((_file: string, _args: string[], opts: { cols: number; rows: number }) => {
+    const p = new FakePty(opts.cols, opts.rows)
+    spawnedList.push(p)
+    return p
+  })
   return { spawned: spawnedList, spawn: spawnFn }
 })
 
 vi.mock('node-pty', () => ({ default: { spawn } }))
 
 vi.mock('../installations', () => ({
-  get: vi.fn(async (id: string) => ({ id, name: id, installPath: `/installs/${id}` })),
+  get: vi.fn(async (id: string) => ({ id, name: id, installPath: `/installs/${id}` }))
 }))
 
 import {
@@ -72,7 +70,8 @@ import {
   getTerminalRestore,
   disposeTerminal,
   disposeAllTerminals,
-  _resetTerminalsForTest,
+  setTerminalEnvResolver,
+  _resetTerminalsForTest
 } from './terminal'
 
 interface FakeWebContents {
@@ -92,7 +91,7 @@ function makeWebContents(): FakeWebContents {
     once(event, cb) {
       if (event === 'destroyed') this.destroyedCb = cb
     },
-    isDestroyed: () => false,
+    isDestroyed: () => false
   }
   return wc
 }
@@ -114,6 +113,8 @@ describe('terminal manager', () => {
     _resetTerminalsForTest()
     spawned.length = 0
     spawn.mockClear()
+    // Default: no source-specific env, so #spawn uses the standalone fallback.
+    setTerminalEnvResolver(() => null)
   })
 
   it('spawns a shell on first subscribe and reports it alive', async () => {
@@ -126,6 +127,74 @@ describe('terminal manager', () => {
     expect(ptyAt(0).written.length).toBeGreaterThanOrEqual(2)
   })
 
+  it('falls back to the standalone env (ComfyUI/.venv + bundled uv) when no source env', async () => {
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const init = ptyAt(0).written.join('\n')
+    // installPath is /installs/inst-a (see the installations mock above).
+    expect(init).toContain('ComfyUI')
+    expect(init).toContain('.venv')
+    expect(init).toContain('standalone-env')
+  })
+
+  it("activates a git install's own venv without referencing standalone-env", async () => {
+    setTerminalEnvResolver(() => ({ venvDir: '/repo/.venv', promptName: '.venv' }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const init = ptyAt(0).written.join('\n')
+    expect(init).toContain('/repo/.venv')
+    // The reported bug: a git env must not point pip at a nonexistent uv.exe.
+    expect(init).not.toContain('standalone-env')
+    expect(init).not.toMatch(/\bpip\b/)
+  })
+
+  it('supports a managed archive whose interpreter is outside the venv scripts dir', async () => {
+    setTerminalEnvResolver(() => ({
+      venvDir: '/archive/venv',
+      pathPrepends: ['/archive/venv/base'],
+      promptName: 'venv',
+      pip: { exe: '/archive/venv/base/python.exe', args: ['-s', '-m', 'pip'] }
+    }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const init = ptyAt(0).written.join('\n')
+    expect(init).toContain('/archive/venv/base')
+    expect(init).toContain('/archive/venv')
+    expect(init).toContain('python.exe')
+    expect(init).toContain('-s -m pip')
+    expect(init).not.toContain('standalone-env')
+  })
+
+  it("puts a portable install's embedded python on PATH and routes pip through it", async () => {
+    setTerminalEnvResolver(() => ({
+      pathPrepends: ['/p/python_embeded', '/p/python_embeded/Scripts'],
+      promptName: 'python_embeded',
+      pip: { exe: '/p/python_embeded/python.exe', args: ['-s', '-m', 'pip'] }
+    }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const init = ptyAt(0).written.join('\n')
+    expect(init).toContain('python_embeded')
+    expect(init).toContain('pip')
+    expect(init).not.toContain('standalone-env')
+    // No venv to activate for a portable build.
+    expect(init).not.toContain('activate')
+    expect(init).not.toContain('VIRTUAL_ENV =')
+  })
+
+  it('opens the shell in the resolved ComfyUI code folder when it exists', async () => {
+    // process.cwd() is a real, existing dir, so it survives the existence guard.
+    const codeDir = process.cwd()
+    setTerminalEnvResolver(() => ({ cwd: codeDir }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const opts = spawn.mock.calls[0]?.[2] as { cwd: string } | undefined
+    expect(opts?.cwd).toBe(codeDir)
+  })
+
+  it('falls back to the install path when the resolved cwd is missing', async () => {
+    setTerminalEnvResolver(() => ({ cwd: '/definitely/not/a/real/dir' }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const opts = spawn.mock.calls[0]?.[2] as { cwd: string } | undefined
+    // installPath is /installs/inst-a (see the installations mock above).
+    expect(opts?.cwd).toBe('/installs/inst-a')
+  })
+
   it('streams output to subscribers and retains scrollback', async () => {
     const wc = makeWebContents()
     await subscribeTerminal('inst-a', asWc(wc))
@@ -134,10 +203,7 @@ describe('terminal manager', () => {
     ptyAt(0).emitData('world')
 
     const outputs = wc.sent.filter((m) => m.channel === 'terminal-output')
-    expect(outputs.map((m) => (m.payload as { data: string }).data)).toEqual([
-      'hello ',
-      'world',
-    ])
+    expect(outputs.map((m) => (m.payload as { data: string }).data)).toEqual(['hello ', 'world'])
     expect(getTerminalRestore('inst-a')?.buffer.join('')).toBe('hello world')
   })
 
@@ -179,9 +245,7 @@ describe('terminal manager', () => {
     const wc = makeWebContents()
     await subscribeTerminal('inst-a', asWc(wc))
     ptyAt(0).emitData('old-session-output')
-    expect(getTerminalRestore('inst-a')?.buffer.join('')).toContain(
-      'old-session-output',
-    )
+    expect(getTerminalRestore('inst-a')?.buffer.join('')).toContain('old-session-output')
 
     ptyAt(0).emitExit()
 
@@ -222,7 +286,7 @@ describe('terminal manager', () => {
     // Two surfaces racing to subscribe must share one PTY, not orphan extras.
     await Promise.all([
       subscribeTerminal('inst-a', asWc(makeWebContents())),
-      subscribeTerminal('inst-a', asWc(makeWebContents())),
+      subscribeTerminal('inst-a', asWc(makeWebContents()))
     ])
 
     expect(spawn).toHaveBeenCalledTimes(1)

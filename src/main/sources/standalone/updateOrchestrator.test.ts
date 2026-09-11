@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn() }
 }))
 
 import os from 'os'
@@ -55,7 +55,9 @@ describe('spawnCommand', { timeout: 30_000 }, () => {
   afterEach(async () => {
     // Let lingering taskkill processes release file handles; Windows holds dir locks briefly.
     await new Promise((r) => setTimeout(r, 200))
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    } catch {}
   })
 
   it('captures stdout and returns exit code 0 on success', async () => {
@@ -105,7 +107,14 @@ describe('spawnCommand', { timeout: 30_000 }, () => {
 
     setTimeout(() => controller.abort(), 200)
 
-    const result = await spawnCommand(command, args, tmpDir, undefined, undefined, controller.signal)
+    const result = await spawnCommand(
+      command,
+      args,
+      tmpDir,
+      undefined,
+      undefined,
+      controller.signal
+    )
 
     // Killed process exits non-zero. No elapsed-time assertion: Windows taskkill can be slow.
     expect(result.code).not.toBe(0)
@@ -137,7 +146,14 @@ describe('spawnCommand', { timeout: 30_000 }, () => {
     const { command, args } = sleepCmd()
 
     const start = Date.now()
-    const result = await spawnCommand(command, args, tmpDir, undefined, undefined, controller.signal)
+    const result = await spawnCommand(
+      command,
+      args,
+      tmpDir,
+      undefined,
+      undefined,
+      controller.signal
+    )
     const elapsed = Date.now() - start
 
     expect(result.code).toBe(1)
@@ -151,9 +167,11 @@ describe('spawnCommand', { timeout: 30_000 }, () => {
     const stderrChunks: string[] = []
     const script = 'process.stdout.write("hello"); process.stderr.write("world")'
     await spawnCommand(
-      'node', ['-e', script], tmpDir,
+      'node',
+      ['-e', script],
+      tmpDir,
       (text) => stdoutChunks.push(text),
-      (text) => stderrChunks.push(text),
+      (text) => stderrChunks.push(text)
     )
     expect(stdoutChunks.join('')).toBe('hello')
     expect(stderrChunks.join('')).toBe('world')

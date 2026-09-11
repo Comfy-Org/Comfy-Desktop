@@ -5,8 +5,15 @@ import { DraggableList } from './draggableList'
 function buildList(count: number, itemHeight = 50, gap = 10): HTMLElement {
   const container = document.createElement('div')
   container.getBoundingClientRect = () => ({
-    top: 0, bottom: count * (itemHeight + gap), left: 0, right: 100,
-    width: 100, height: count * (itemHeight + gap), x: 0, y: 0, toJSON: () => {}
+    top: 0,
+    bottom: count * (itemHeight + gap),
+    left: 0,
+    right: 100,
+    width: 100,
+    height: count * (itemHeight + gap),
+    x: 0,
+    y: 0,
+    toJSON: () => {}
   })
 
   for (let i = 0; i < count; i++) {
@@ -20,9 +27,15 @@ function buildList(count: number, itemHeight = 50, gap = 10): HTMLElement {
       const m = item.style.transform?.match(/translate\([\d.+-]+px,\s*([-\d.]+)px\)/)
       if (m) offsetY = parseFloat(m[1])
       return {
-        top: baseTop + offsetY, bottom: baseTop + itemHeight + offsetY,
-        left: 0, right: 100, width: 100, height: itemHeight,
-        x: 0, y: baseTop + offsetY, toJSON: () => {}
+        top: baseTop + offsetY,
+        bottom: baseTop + itemHeight + offsetY,
+        left: 0,
+        right: 100,
+        width: 100,
+        height: itemHeight,
+        x: 0,
+        y: baseTop + offsetY,
+        toJSON: () => {}
       }
     }
 
@@ -36,7 +49,9 @@ function buildList(count: number, itemHeight = 50, gap = 10): HTMLElement {
 }
 
 function mousedown(target: HTMLElement, clientY: number): void {
-  target.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientY, clientX: 0, bubbles: true }))
+  target.dispatchEvent(
+    new MouseEvent('mousedown', { button: 0, clientY, clientX: 0, bubbles: true })
+  )
 }
 
 function mousemove(clientY: number): void {

@@ -11,7 +11,7 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'Preview.',
     type: 'optional-value',
     metavar: 'METHOD',
-    category: 'Net',
+    category: 'Net'
   },
   {
     name: 'cache-ram',
@@ -19,8 +19,8 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'RAM caching thresholds.',
     type: 'multi-value',
     metavar: 'GB',
-    category: 'Cache',
-  },
+    category: 'Cache'
+  }
 ]
 
 describe('validateArgs', () => {

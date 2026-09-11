@@ -19,7 +19,7 @@ export function useAppUpdatePrompts(): {
       title: t('appUpdate.readyTitle'),
       message: t('appUpdate.readyMessage', { version: versionLabel(version) }),
       confirmLabel: t('appUpdate.restartNow'),
-      confirmStyle: 'primary',
+      confirmStyle: 'primary'
     })
     if (!ok) return
     await window.api.installUpdate()
@@ -31,7 +31,7 @@ export function useAppUpdatePrompts(): {
       title: t('appUpdate.availableTitle'),
       message: t('appUpdate.availableMessage', { version: versionLabel(version) }),
       confirmLabel: t('appUpdate.download'),
-      confirmStyle: 'primary',
+      confirmStyle: 'primary'
     })
     if (!ok) return
     await window.api.downloadUpdate()

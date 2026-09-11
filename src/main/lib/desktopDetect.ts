@@ -1,12 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 import { execFile } from 'child_process'
 import { homedir } from 'os'
 
 import { scanCustomNodes } from './nodes'
-import { buildExportEnvelope } from './snapshots'
-import type { Snapshot, SnapshotExportEnvelope } from './snapshots'
+import type { Snapshot } from './snapshots'
 import * as i18n from './i18n'
 
 // On macOS, accessing TCC-protected dirs returns EACCES/EPERM if the user
@@ -97,7 +95,7 @@ export function detectDesktopInstall(): DesktopInstallInfo | null {
     configDir,
     basePath,
     executablePath: findDesktopExecutable(),
-    hasVenv: fs.existsSync(path.join(basePath, '.venv')),
+    hasVenv: fs.existsSync(path.join(basePath, '.venv'))
   }
 }
 
@@ -175,27 +173,10 @@ export async function captureDesktopSnapshot(info: DesktopInstallInfo): Promise<
       ref: 'Legacy Desktop',
       commit: null,
       releaseTag: '',
-      variant: '',
+      variant: ''
     },
     customNodes,
     pipPackages,
-    skipPipSync: true,
+    skipPipSync: true
   }
-}
-
-// Capture a snapshot, wrap it in an export envelope, write to a temp file.
-export async function stageDesktopSnapshot(
-  info: DesktopInstallInfo
-): Promise<{ envelope: SnapshotExportEnvelope; stagedFile: string }> {
-  const snapshot = await captureDesktopSnapshot(info)
-  const envelope = buildExportEnvelope('Legacy Desktop Migration', [
-    { filename: 'desktop-migration.json', snapshot },
-  ])
-
-  const stagingDir = path.join(os.tmpdir(), 'comfyui-desktop-2-snapshots')
-  await fs.promises.mkdir(stagingDir, { recursive: true })
-  const stagedFile = path.join(stagingDir, `desktop-migrate-${Date.now()}.json`)
-  await fs.promises.writeFile(stagedFile, JSON.stringify(envelope, null, 2))
-
-  return { envelope, stagedFile }
 }

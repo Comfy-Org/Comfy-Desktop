@@ -32,13 +32,19 @@ export interface PortLock {
   timestamp: number
 }
 
-export function spawnProcess(cmd: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv, options?: { showWindow?: boolean }): ChildProcess {
+export function spawnProcess(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  env?: NodeJS.ProcessEnv,
+  options?: { showWindow?: boolean }
+): ChildProcess {
   return spawn(cmd, args, {
     cwd,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: !options?.showWindow,
-    detached: process.platform !== "win32",
-    env: env || process.env,
+    detached: process.platform !== 'win32',
+    env: env || process.env
   })
 }
 
@@ -53,49 +59,69 @@ export function killProcTree(proc: ChildProcess): void {
   if (process.platform === 'win32') {
     execFile('taskkill', ['/T', '/F', '/PID', String(proc.pid)], { windowsHide: true }, () => {})
   } else {
-    try { process.kill(-proc.pid!, 'SIGTERM') } catch { proc.kill() }
+    try {
+      process.kill(-proc.pid!, 'SIGTERM')
+    } catch {
+      proc.kill()
+    }
   }
 }
 
 export function killProcessTree(proc: ChildProcess | null): Promise<void> {
-  if (!proc || proc.killed) return Promise.resolve()
+  const pid = proc?.pid
+  if (!proc || !pid) return Promise.resolve()
   return new Promise<void>((resolve) => {
-    let settled = false
     const done = (): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
       proc.stdout?.destroy()
       proc.stderr?.destroy()
       resolve()
     }
-    // Resolve once the process actually exits, or after a timeout
-    const timeout = setTimeout(done, 5000)
-    proc.once('exit', done)
-    if (process.platform === "win32") {
-      // Kill the direct child via process.kill() which is instant on Windows.
-      // Then fire-and-forget taskkill /T /F to clean up any orphaned
-      // grandchildren (e.g. Python subprocesses). We don't await taskkill
-      // because it can take 5-7+ seconds on Windows even for simple kills.
-      try { process.kill(proc.pid!) } catch { done() }
-      execFile("taskkill", ["/T", "/F", "/PID", String(proc.pid)], { windowsHide: true }, () => {})
-    } else {
-      try { process.kill(-proc.pid!, "SIGKILL") } catch { done() }
+    if (process.platform === 'win32') {
+      execFile('taskkill', ['/T', '/F', '/PID', String(pid)], { windowsHide: true }, done)
+      return
     }
+
+    const processGroup = -pid
+    try {
+      process.kill(processGroup, 'SIGKILL')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ESRCH') return done()
+    }
+
+    // Bounded: a group member stuck in uninterruptible sleep (or persistently
+    // EPERM) would otherwise trap this poll forever and hang every caller that
+    // awaits the kill (launch cancel, relaunch). Resolving on the cap is the
+    // lesser evil - the caller proceeds against a possibly-lingering process
+    // instead of deadlocking the lifecycle.
+    const killDeadline = Date.now() + 5000
+    const waitForGroupExit = (): void => {
+      if (Date.now() > killDeadline) return done()
+      try {
+        process.kill(processGroup, 0)
+        setTimeout(waitForGroupExit, 25).unref()
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EPERM') {
+          setTimeout(waitForGroupExit, 25).unref()
+        } else {
+          done()
+        }
+      }
+    }
+    waitForGroupExit()
   })
 }
 
 export function findPidsByPort(port: number): Promise<number[]> {
   return new Promise((resolve) => {
-    if (process.platform === "win32") {
-      execFile("netstat", ["-ano", "-p", "TCP"], { windowsHide: true }, (err, stdout) => {
+    if (process.platform === 'win32') {
+      execFile('netstat', ['-ano', '-p', 'TCP'], { windowsHide: true }, (err, stdout) => {
         if (err) return resolve([])
         const pids = new Set<number>()
         const target = `:${port}`
-        for (const line of stdout.split("\n")) {
+        for (const line of stdout.split('\n')) {
           const parts = line.trim().split(/\s+/)
           // Format: Proto  LocalAddress  ForeignAddress  State  PID
-          if (parts.length >= 5 && parts[3] === "LISTENING") {
+          if (parts.length >= 5 && parts[3] === 'LISTENING') {
             const addr = parts[1]
             // Match exactly :port at the end of the address (e.g. 0.0.0.0:8188 or 127.0.0.1:8188)
             if (addr && addr.endsWith(target)) {
@@ -107,11 +133,20 @@ export function findPidsByPort(port: number): Promise<number[]> {
         resolve([...pids])
       })
     } else {
-      execFile("lsof", ["-nP", "-iTCP:" + port, "-sTCP:LISTEN", "-t"], { windowsHide: true }, (err, stdout) => {
-        if (err) return resolve([])
-        const pids = stdout.trim().split(/\s+/).map((s) => parseInt(s, 10)).filter((n) => n > 0)
-        resolve(pids)
-      })
+      execFile(
+        'lsof',
+        ['-nP', '-iTCP:' + port, '-sTCP:LISTEN', '-t'],
+        { windowsHide: true },
+        (err, stdout) => {
+          if (err) return resolve([])
+          const pids = stdout
+            .trim()
+            .split(/\s+/)
+            .map((s) => parseInt(s, 10))
+            .filter((n) => n > 0)
+          resolve(pids)
+        }
+      )
     }
   })
 }
@@ -119,44 +154,90 @@ export function findPidsByPort(port: number): Promise<number[]> {
 export function killByPort(port: number): Promise<void> {
   return findPidsByPort(port).then((pids) => {
     if (pids.length === 0) return
-    if (process.platform === "win32") {
+    if (process.platform === 'win32') {
       const args: string[] = []
-      for (const pid of pids) args.push("/F", "/T", "/PID", String(pid))
+      for (const pid of pids) args.push('/F', '/T', '/PID', String(pid))
       return new Promise<void>((resolve) => {
-        execFile("taskkill", args, { windowsHide: true }, () => resolve())
+        execFile('taskkill', args, { windowsHide: true }, () => resolve())
       })
     }
     for (const pid of pids) {
-      try { process.kill(pid, "SIGKILL") } catch {}
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch {}
     }
   })
 }
 
-export function waitForPort(port: number, host: string = "127.0.0.1", { timeoutMs = 60000, intervalMs = 500, onPoll, signal }: WaitOptions = {}): Promise<void> {
+export function waitForPort(
+  port: number,
+  host: string = '127.0.0.1',
+  { timeoutMs = 60000, intervalMs = 500, onPoll, signal }: WaitOptions = {}
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now()
     let attempt = 0
+    let done = false
+    let activeReq: http.ClientRequest | undefined
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+
+    // Settle the outer promise exactly once: tear down the abort listener,
+    // any pending retry, and the in-flight request so a late response can't
+    // resolve after cancellation.
+    const settle = (fn: () => void): void => {
+      if (done) return
+      done = true
+      signal?.removeEventListener('abort', onAbort)
+      if (retryTimer !== undefined) clearTimeout(retryTimer)
+      activeReq?.destroy()
+      fn()
+    }
+    const onAbort = (): void => settle(() => reject(new Error('Launch cancelled.')))
+
+    if (signal) {
+      if (signal.aborted) {
+        reject(new Error('Launch cancelled.'))
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
 
     const poll = (): void => {
-      if (signal && signal.aborted) { reject(new Error("Launch cancelled.")); return }
+      if (done) return
       const elapsed = Date.now() - start
       if (elapsed > timeoutMs) {
-        reject(new Error(`Timed out waiting for port ${port} after ${Math.round(elapsed / 1000)}s`))
+        settle(() =>
+          reject(
+            new Error(`Timed out waiting for port ${port} after ${Math.round(elapsed / 1000)}s`)
+          )
+        )
         return
       }
 
       attempt++
       if (onPoll) onPoll({ attempt, elapsedMs: elapsed })
 
-      const req = http.get({ host, port, path: "/", timeout: 2000 }, (res) => {
+      // Idempotency guard: `req.destroy()` on timeout synchronously emits
+      // 'error', so without it each timed-out attempt schedules TWO retry
+      // polls and the pollers multiply.
+      let attemptSettled = false
+      const retry = (): void => {
+        if (attemptSettled || done) return
+        attemptSettled = true
+        retryTimer = setTimeout(poll, intervalMs)
+      }
+      const req = http.get({ host, port, path: '/', timeout: 2000 }, (res) => {
         res.resume()
-        resolve()
+        if (attemptSettled || done) return
+        attemptSettled = true
+        settle(resolve)
       })
+      activeReq = req
 
-      req.on("error", () => setTimeout(poll, intervalMs))
-      req.on("timeout", () => {
+      req.on('error', retry)
+      req.on('timeout', () => {
         req.destroy()
-        setTimeout(poll, intervalMs)
+        retry()
       })
     }
 
@@ -164,32 +245,72 @@ export function waitForPort(port: number, host: string = "127.0.0.1", { timeoutM
   })
 }
 
-export function waitForUrl(url: string, { timeoutMs = 60000, intervalMs = 500, onPoll, signal }: WaitOptions = {}): Promise<void> {
-  const client = url.startsWith("https") ? https : http
+export function waitForUrl(
+  url: string,
+  { timeoutMs = 60000, intervalMs = 500, onPoll, signal }: WaitOptions = {}
+): Promise<void> {
+  const client = url.startsWith('https') ? https : http
   return new Promise((resolve, reject) => {
     const start = Date.now()
     let attempt = 0
+    let done = false
+    let activeReq: http.ClientRequest | undefined
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+
+    // Same single-settlement teardown as waitForPort: an abort must cancel
+    // the in-flight request and pending retries so a late response can't
+    // resolve after cancellation.
+    const settle = (fn: () => void): void => {
+      if (done) return
+      done = true
+      signal?.removeEventListener('abort', onAbort)
+      if (retryTimer !== undefined) clearTimeout(retryTimer)
+      activeReq?.destroy()
+      fn()
+    }
+    const onAbort = (): void => settle(() => reject(new Error('Launch cancelled.')))
+
+    if (signal) {
+      if (signal.aborted) {
+        reject(new Error('Launch cancelled.'))
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
 
     const poll = (): void => {
-      if (signal && signal.aborted) { reject(new Error("Launch cancelled.")); return }
+      if (done) return
       const elapsed = Date.now() - start
       if (elapsed > timeoutMs) {
-        reject(new Error(`Timed out waiting for ${url} after ${Math.round(elapsed / 1000)}s`))
+        settle(() =>
+          reject(new Error(`Timed out waiting for ${url} after ${Math.round(elapsed / 1000)}s`))
+        )
         return
       }
 
       attempt++
       if (onPoll) onPoll({ attempt, elapsedMs: elapsed })
 
+      // Same idempotency guard as waitForPort: destroy-on-timeout emits
+      // 'error', which must not schedule a second retry poll.
+      let attemptSettled = false
+      const retry = (): void => {
+        if (attemptSettled || done) return
+        attemptSettled = true
+        retryTimer = setTimeout(poll, intervalMs)
+      }
       const req = client.get(url, { timeout: 2000 }, (res) => {
         res.resume()
-        resolve()
+        if (attemptSettled || done) return
+        attemptSettled = true
+        settle(resolve)
       })
+      activeReq = req
 
-      req.on("error", () => setTimeout(poll, intervalMs))
-      req.on("timeout", () => {
+      req.on('error', retry)
+      req.on('timeout', () => {
         req.destroy()
-        setTimeout(poll, intervalMs)
+        retry()
       })
     }
 
@@ -200,45 +321,54 @@ export function waitForUrl(url: string, { timeoutMs = 60000, intervalMs = 500, o
 export function getProcessInfo(pid: number): Promise<ProcessInfo | null> {
   if (!Number.isInteger(pid) || pid <= 0) return Promise.resolve(null)
   return new Promise((resolve) => {
-    if (process.platform === "win32") {
+    if (process.platform === 'win32') {
       // Use PowerShell Get-CimInstance with JSON output (wmic is deprecated/removed on modern Windows)
       const cmd = `Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" | Select-Object Name,CommandLine | ConvertTo-Json`
-      execFile("powershell", ["-NoProfile", "-Command", cmd],
-        { windowsHide: true }, (err, stdout) => {
+      execFile(
+        'powershell',
+        ['-NoProfile', '-Command', cmd],
+        { windowsHide: true },
+        (err, stdout) => {
           if (err) return resolve(null)
           try {
             const obj = JSON.parse(stdout) as { Name?: string; CommandLine?: string }
-            resolve({ name: obj.Name || "", commandLine: obj.CommandLine || "" })
+            resolve({ name: obj.Name || '', commandLine: obj.CommandLine || '' })
           } catch {
             resolve(null)
           }
-        })
+        }
+      )
     } else {
-      execFile("ps", ["-p", String(pid), "-o", "comm=,args="], { windowsHide: true }, (err, stdout) => {
-        if (err) return resolve(null)
-        const parts = stdout.trim().split(/\s+/)
-        resolve({
-          name: parts[0] ?? "",
-          commandLine: stdout.trim(),
-        })
-      })
+      execFile(
+        'ps',
+        ['-p', String(pid), '-o', 'comm=,args='],
+        { windowsHide: true },
+        (err, stdout) => {
+          if (err) return resolve(null)
+          const parts = stdout.trim().split(/\s+/)
+          resolve({
+            name: parts[0] ?? '',
+            commandLine: stdout.trim()
+          })
+        }
+      )
     }
   })
 }
 
 export function looksLikeComfyUI(info: ProcessInfo | null): boolean {
   if (!info) return false
-  const cmd = (info.commandLine || "").toLowerCase()
+  const cmd = (info.commandLine || '').toLowerCase()
   // Match ComfyUI's main.py entry point and any path containing "comfyui"
-  return cmd.includes("main.py") && cmd.includes("comfyui")
+  return cmd.includes('main.py') && cmd.includes('comfyui')
 }
 
 export function setPortArg(launchCmd: LaunchCmd, port: number): void {
-  const portIdx = launchCmd.args.indexOf("--port")
+  const portIdx = launchCmd.args.indexOf('--port')
   if (portIdx >= 0 && launchCmd.args[portIdx + 1] != null) {
     launchCmd.args[portIdx + 1] = String(port)
   } else {
-    launchCmd.args.push("--port", String(port))
+    launchCmd.args.push('--port', String(port))
   }
   launchCmd.port = port
 }
@@ -327,7 +457,12 @@ export async function isPortListening(port: number, host: string = '127.0.0.1'):
   return !(await canBind(port, host))
 }
 
-export async function findAvailablePort(host: string, startPort: number, endPort: number, excludePorts?: ReadonlySet<number>): Promise<number> {
+export async function findAvailablePort(
+  host: string,
+  startPort: number,
+  endPort: number,
+  excludePorts?: ReadonlySet<number>
+): Promise<number> {
   for (let port = startPort; port <= endPort; port++) {
     if (excludePorts && excludePorts.has(port)) continue
     if (!(await isPortListening(port, host))) return port
@@ -340,18 +475,25 @@ export async function findAvailablePort(host: string, startPort: number, endPort
 // launcher instances can identify the owner without inspecting process trees.
 
 function portLockDir(): string {
-  return path.join(stateDir(), "port-locks")
+  return path.join(stateDir(), 'port-locks')
 }
 
 function portLockPath(port: number): string {
   return path.join(portLockDir(), `port-${port}.json`)
 }
 
-export function writePortLock(port: number, { pid, installationName }: { pid: number; installationName: string }): void {
+export function writePortLock(
+  port: number,
+  { pid, installationName }: { pid: number; installationName: string }
+): void {
   const dir = portLockDir()
-  try { fs.mkdirSync(dir, { recursive: true }) } catch {}
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+  } catch {}
   const data: PortLock = { pid, installationName, timestamp: Date.now() }
-  try { fs.writeFileSync(portLockPath(port), JSON.stringify(data)) } catch {}
+  try {
+    fs.writeFileSync(portLockPath(port), JSON.stringify(data))
+  } catch {}
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -359,13 +501,13 @@ function isProcessAlive(pid: number): boolean {
     process.kill(pid, 0)
     return true
   } catch (e) {
-    return Boolean(e && (e as NodeJS.ErrnoException).code === "EPERM")
+    return Boolean(e && (e as NodeJS.ErrnoException).code === 'EPERM')
   }
 }
 
 export function readPortLock(port: number): PortLock | null {
   try {
-    const raw = fs.readFileSync(portLockPath(port), "utf-8")
+    const raw = fs.readFileSync(portLockPath(port), 'utf-8')
     const lock = JSON.parse(raw) as PortLock | null
     if (!lock || !lock.pid || !isProcessAlive(lock.pid)) {
       // Stale lock — clean it up
@@ -379,5 +521,7 @@ export function readPortLock(port: number): PortLock | null {
 }
 
 export function removePortLock(port: number): void {
-  try { fs.unlinkSync(portLockPath(port)) } catch {}
+  try {
+    fs.unlinkSync(portLockPath(port))
+  } catch {}
 }

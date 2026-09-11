@@ -12,7 +12,9 @@ function resolveOutputDir(inst: InstallationRecord): string | null {
     return (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
   }
   const custom = inst.outputDir as string | undefined
-  return custom && custom.trim() !== '' ? custom : (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
+  return custom && custom.trim() !== ''
+    ? custom
+    : (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
 }
 
 export function registerAssetDownloadHandlers(opts: {
@@ -20,7 +22,10 @@ export function registerAssetDownloadHandlers(opts: {
 }): void {
   ipcMain.handle(
     'desktop2-download-asset',
-    async (event, { url, filename, authToken }: { url: string; filename: string; authToken?: string }) => {
+    async (
+      event,
+      { url, filename, authToken }: { url: string; filename: string; authToken?: string }
+    ) => {
       const win = BrowserWindow.fromWebContents(event.sender)
       if (!win) return false
       const installationId = opts.findInstallationIdForWindow(win)
@@ -30,6 +35,6 @@ export function registerAssetDownloadHandlers(opts: {
       const outputDir = resolveOutputDir(inst)
       if (!outputDir) return false
       return startAssetDownload(win, url, filename, outputDir, authToken, event.sender)
-    },
+    }
   )
 }

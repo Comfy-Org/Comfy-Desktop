@@ -24,8 +24,8 @@ export function deleteAction(installation: { installPath: string }): ActionDef {
     cancellable: true,
     confirm: {
       title: t('actions.deleteConfirmTitle'),
-      message: t('actions.deleteConfirmMessage') + `\n${installation.installPath}`,
-    },
+      message: t('actions.deleteConfirmMessage') + `\n${installation.installPath}`
+    }
   }
 }
 
@@ -37,8 +37,8 @@ export function untrackAction(): ActionDef {
     enabled: true,
     confirm: {
       title: t('actions.untrackConfirmTitle'),
-      message: t('actions.untrackConfirmMessage'),
-    },
+      message: t('actions.untrackConfirmMessage')
+    }
   }
 }
 
@@ -51,7 +51,28 @@ export function launchAction(enabled: boolean, disabledMessage?: string): Action
     ...(!enabled && disabledMessage ? { disabledMessage } : {}),
     showProgress: true,
     progressTitle: t('common.startingComfyUI'),
+    cancellable: true
+  }
+}
+
+export function copyAction(currentName: string, enabled: boolean): ActionDef {
+  return {
+    id: 'copy',
+    label: t('actions.copyInstallation'),
+    style: 'default',
+    enabled,
+    showProgress: true,
+    progressTitle: t('actions.copyingInstallation'),
     cancellable: true,
+    prompt: {
+      title: t('actions.copyInstallationTitle'),
+      message: t('actions.copyInstallationMessage'),
+      defaultValue: currentName,
+      uniquifyDefault: true,
+      confirmLabel: t('actions.copyInstallationConfirm'),
+      required: true,
+      field: 'name'
+    }
   }
 }
 
@@ -66,8 +87,8 @@ export function renameAction(currentName: string): ActionDef {
       title: t('actions.renameTitle'),
       message: t('actions.renameMessage'),
       defaultValue: currentName,
-      required: true,
-    },
+      required: true
+    }
   }
 }
 
@@ -76,7 +97,7 @@ export function openFolderAction(installPath: string): ActionDef {
     id: 'open-folder',
     label: t('actions.openDirectory'),
     style: 'default',
-    enabled: !!installPath,
+    enabled: !!installPath
   }
 }
 
@@ -92,7 +113,7 @@ export function migrateToStandaloneAction(enabled: boolean): ActionDef {
     confirm: {
       title: t('migrate.migrateToStandaloneConfirmTitle'),
       message: t('migrate.migrateToStandaloneConfirmMessage'),
-      confirmLabel: t('migrate.migrateToStandaloneConfirm'),
-    },
+      confirmLabel: t('migrate.migrateToStandaloneConfirm')
+    }
   }
 }

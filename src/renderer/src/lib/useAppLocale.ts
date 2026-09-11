@@ -38,10 +38,7 @@ export function useAppLocale(source: LocaleSource): { syncLocale: () => Promise<
   onUnmounted(() => unsubscribe?.())
 
   async function syncLocale(): Promise<void> {
-    const [activeLocale, messages] = await Promise.all([
-      source.getLocale(),
-      source.getMessages()
-    ])
+    const [activeLocale, messages] = await Promise.all([source.getLocale(), source.getMessages()])
     apply(activeLocale, messages)
   }
 

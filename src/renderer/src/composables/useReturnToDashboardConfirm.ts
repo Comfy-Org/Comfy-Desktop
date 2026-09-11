@@ -6,8 +6,12 @@ export type ReturnToDashboardReason = 'in_flight' | 'crashed' | 'stopped' | 'run
 
 /**
  * Confirms returning to the dashboard from an install-backed host.
- * Local installs are prompted (because returning stops ComfyUI); cloud/remote
- * installs resolve immediately since detach does not interrupt them.
+ * An in-flight operation always prompts (returning cancels it), even when the
+ * installation record is unavailable - an install-in-progress record has
+ * status 'installing' and is hidden from the renderer list, so it resolves to
+ * null here. Otherwise local installs are prompted (because returning stops
+ * ComfyUI); cloud/remote installs resolve immediately since detach does not
+ * interrupt them.
  */
 export function useReturnToDashboardConfirm() {
   const { t } = useI18n()
@@ -15,8 +19,16 @@ export function useReturnToDashboardConfirm() {
 
   async function confirmReturnToDashboard(
     installation: Installation | null | undefined,
-    reason: ReturnToDashboardReason,
+    reason: ReturnToDashboardReason
   ): Promise<boolean> {
+    if (reason === 'in_flight') {
+      return modal.confirm({
+        title: t('overlay.cancelCurrentTitle'),
+        message: t('overlay.cancelMessage'),
+        confirmLabel: t('overlay.cancelConfirm'),
+        confirmStyle: 'danger'
+      })
+    }
     if (!installation || installation.sourceCategory !== 'local') return true
     // Idle states have nothing to stop, so skip the prompt.
     if (reason === 'stopped' || reason === 'crashed') return true
@@ -24,7 +36,7 @@ export function useReturnToDashboardConfirm() {
       title: t('dashboard.confirmStopLocal.title'),
       message: t('dashboard.confirmStopLocal.message'),
       confirmLabel: t('dashboard.confirmStopLocal.confirmLabel'),
-      confirmStyle: 'danger',
+      confirmStyle: 'danger'
     })
   }
 

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Check } from 'lucide-vue-next'
+import { Check, Crown } from 'lucide-vue-next'
 import type { FieldOption } from '../types/ipc'
 import { getVariantImage } from '../lib/variants'
+import { isApiNodeTemplate } from '../lib/installHelpers'
 
 defineProps<{
   options: FieldOption[]
@@ -41,6 +42,10 @@ const { t } = useI18n()
           {{ opt.label }}
           <span v-if="opt.recommended" class="brand-tag-recommended">
             {{ t('newInstall.recommended') }}
+          </span>
+          <span v-if="isApiNodeTemplate(opt)" class="brand-variant-row__credits">
+            <Crown :size="12" :stroke-width="2.5" aria-hidden="true" />
+            {{ t('standalone.templateApiBadge') }}
           </span>
         </span>
         <span v-if="opt.description" class="brand-variant-row__meta">
@@ -127,6 +132,15 @@ const { t } = useI18n()
   font-size: var(--takeover-fs-body);
   font-weight: 600;
   color: var(--neutral-100);
+}
+.brand-variant-row__credits {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: var(--takeover-fs-caption);
+  font-weight: 500;
+  color: var(--upgrade);
 }
 .brand-variant-row__meta {
   font-size: var(--takeover-fs-caption);

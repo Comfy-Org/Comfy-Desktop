@@ -7,10 +7,17 @@ vi.mock('./git', () => ({
   countCommitsAhead: vi.fn(),
   countUniqueCommits: vi.fn(),
   isAncestorOf: vi.fn(),
-  findMergeBase: vi.fn(),
+  findMergeBase: vi.fn()
 }))
 
-import { findNearestTag, findLatestVersionTag, countCommitsAhead, countUniqueCommits, isAncestorOf, findMergeBase } from './git'
+import {
+  findNearestTag,
+  findLatestVersionTag,
+  countCommitsAhead,
+  countUniqueCommits,
+  isAncestorOf,
+  findMergeBase
+} from './git'
 import { resolveLocalVersion, clearVersionCache } from './version-resolve'
 
 const mockedFindNearestTag = vi.mocked(findNearestTag)
@@ -332,7 +339,7 @@ describe('resolveLocalVersion', () => {
 
       const result = await resolveLocalVersion('/repo', 'abc1234', undefined, {
         name: 'v0.17.1',
-        sha: 'sha-of-v0.17.1',
+        sha: 'sha-of-v0.17.1'
       })
       expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.1', commitsAhead: 7 })
       expect(mockedFindLatestVersionTag).not.toHaveBeenCalled()
@@ -345,7 +352,7 @@ describe('resolveLocalVersion', () => {
 
       await resolveLocalVersion('/repo', 'abc1234', undefined, {
         name: 'v0.17.1',
-        sha: 'sha-of-v0.17.1',
+        sha: 'sha-of-v0.17.1'
       })
       expect(mockedIsAncestorOf).toHaveBeenCalledWith('/repo', 'v0.16.4', 'sha-of-v0.17.1')
       expect(mockedIsAncestorOf).toHaveBeenCalledWith('/repo', 'sha-of-v0.17.1', 'abc1234')
@@ -359,10 +366,9 @@ describe('resolveLocalVersion', () => {
 
       const result = await resolveLocalVersion('/repo', 'abc1234', undefined, {
         name: 'v0.17.1',
-        sha: 'sha-of-v0.17.1',
+        sha: 'sha-of-v0.17.1'
       })
       expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.16.4', commitsAhead: 38 })
     })
   })
-
 })

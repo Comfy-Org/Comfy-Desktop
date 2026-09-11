@@ -22,7 +22,7 @@ const { t } = useI18n()
 
 const { handleOverlayMouseDown, handleOverlayClick } = useModalOverlay(
   () => true,
-  () => emit('cancel'),
+  () => emit('cancel')
 )
 </script>
 
@@ -36,7 +36,9 @@ const { handleOverlayMouseDown, handleOverlayClick } = useModalOverlay(
       <div class="modal-box restore-modal-box">
         <div class="modal-title">{{ t('snapshots.restorePreviewTitle') }}</div>
 
-        <div v-if="loading" class="restore-modal-loading with-spinner">{{ t('common.loading') }}</div>
+        <div v-if="loading" class="restore-modal-loading with-spinner">
+          {{ t('common.loading') }}
+        </div>
 
         <template v-else-if="diffData">
           <div v-if="diffData.empty" class="restore-modal-empty">
@@ -44,14 +46,46 @@ const { handleOverlayMouseDown, handleOverlayClick } = useModalOverlay(
           </div>
           <template v-else>
             <div class="restore-modal-summary">
-              <span v-if="diffData.diff.comfyuiChanged" class="restore-badge restore-badge-changed">{{ t('snapshots.comfyuiUpdated') }}</span>
-              <span v-if="diffData.diff.updateChannelChanged && diffData.diff.updateChannel" class="restore-badge restore-badge-changed">{{ diffData.diff.updateChannel.from }} → {{ diffData.diff.updateChannel.to }}</span>
-              <span v-if="diffData.diff.nodesAdded.length > 0" class="restore-badge restore-badge-added">+{{ diffData.diff.nodesAdded.length }} {{ t('snapshots.nodesLabel') }}</span>
-              <span v-if="diffData.diff.nodesRemoved.length > 0" class="restore-badge restore-badge-removed">−{{ diffData.diff.nodesRemoved.length }} {{ t('snapshots.nodesLabel') }}</span>
-              <span v-if="diffData.diff.nodesChanged.length > 0" class="restore-badge restore-badge-changed">~{{ diffData.diff.nodesChanged.length }} {{ t('snapshots.nodesLabel') }}</span>
-              <span v-if="diffData.diff.pipsAdded.length > 0" class="restore-badge restore-badge-added">+{{ diffData.diff.pipsAdded.length }} {{ t('snapshots.pkgsLabel') }}</span>
-              <span v-if="diffData.diff.pipsRemoved.length > 0" class="restore-badge restore-badge-removed">−{{ diffData.diff.pipsRemoved.length }} {{ t('snapshots.pkgsLabel') }}</span>
-              <span v-if="diffData.diff.pipsChanged.length > 0" class="restore-badge restore-badge-changed">~{{ diffData.diff.pipsChanged.length }} {{ t('snapshots.pkgsLabel') }}</span>
+              <span
+                v-if="diffData.diff.comfyuiChanged"
+                class="restore-badge restore-badge-changed"
+                >{{ t('snapshots.comfyuiUpdated') }}</span
+              >
+              <span
+                v-if="diffData.diff.updateChannelChanged && diffData.diff.updateChannel"
+                class="restore-badge restore-badge-changed"
+                >{{ diffData.diff.updateChannel.from }} → {{ diffData.diff.updateChannel.to }}</span
+              >
+              <span
+                v-if="diffData.diff.nodesAdded.length > 0"
+                class="restore-badge restore-badge-added"
+                >+{{ diffData.diff.nodesAdded.length }} {{ t('snapshots.nodesLabel') }}</span
+              >
+              <span
+                v-if="diffData.diff.nodesRemoved.length > 0"
+                class="restore-badge restore-badge-removed"
+                >−{{ diffData.diff.nodesRemoved.length }} {{ t('snapshots.nodesLabel') }}</span
+              >
+              <span
+                v-if="diffData.diff.nodesChanged.length > 0"
+                class="restore-badge restore-badge-changed"
+                >~{{ diffData.diff.nodesChanged.length }} {{ t('snapshots.nodesLabel') }}</span
+              >
+              <span
+                v-if="diffData.diff.pipsAdded.length > 0"
+                class="restore-badge restore-badge-added"
+                >+{{ diffData.diff.pipsAdded.length }} {{ t('snapshots.pkgsLabel') }}</span
+              >
+              <span
+                v-if="diffData.diff.pipsRemoved.length > 0"
+                class="restore-badge restore-badge-removed"
+                >−{{ diffData.diff.pipsRemoved.length }} {{ t('snapshots.pkgsLabel') }}</span
+              >
+              <span
+                v-if="diffData.diff.pipsChanged.length > 0"
+                class="restore-badge restore-badge-changed"
+                >~{{ diffData.diff.pipsChanged.length }} {{ t('snapshots.pkgsLabel') }}</span
+              >
             </div>
 
             <div class="restore-modal-diff">
@@ -62,11 +96,7 @@ const { handleOverlayMouseDown, handleOverlayClick } = useModalOverlay(
 
         <div class="modal-actions">
           <button @click="emit('cancel')">{{ t('snapshots.restoreCancel') }}</button>
-          <button
-            v-if="diffData && !diffData.empty"
-            class="primary"
-            @click="emit('confirm')"
-          >
+          <button v-if="diffData && !diffData.empty" class="primary" @click="emit('confirm')">
             {{ t('snapshots.restoreConfirm') }}
           </button>
         </div>

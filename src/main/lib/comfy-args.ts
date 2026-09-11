@@ -1,11 +1,11 @@
 /**
  * Parses ComfyUI's `python main.py --help` output into a structured schema
- * for the args-builder UI. Supports caching per installation version.
+ * for the args-builder UI. Supports caching per installation source revision.
  */
 
 import { execFile } from 'child_process'
 import * as path from 'path'
-
+import { readGitHead } from './git'
 
 export interface ComfyArgDef {
   /** CLI flag without leading dashes, e.g. "port" */
@@ -19,6 +19,7 @@ export interface ComfyArgDef {
   choices?: string[]
   /** Mutually exclusive group id (args sharing a group cannot coexist) */
   exclusiveGroup?: string
+  /** Stable category key (slug), translated in the renderer for display. */
   category: string
 }
 
@@ -27,121 +28,144 @@ export interface ComfyArgsSchema {
   knownFlags: Set<string>
 }
 
+/**
+ * Maps each flag to a stable category key (a slug, not a display string).
+ * The renderer translates these keys via i18n (`comfyUISettings.argsCategory.*`),
+ * so category headers can be localized without changing this file.
+ */
 const CATEGORY_MAP: Record<string, string> = {
-  'listen': 'Network',
-  'port': 'Network',
-  'tls-keyfile': 'Network',
-  'tls-certfile': 'Network',
-  'enable-cors-header': 'Network',
-  'max-upload-size': 'Network',
-  'multi-user': 'Network',
-  'enable-compress-response-body': 'Network',
+  listen: 'network',
+  port: 'network',
+  'tls-keyfile': 'network',
+  'tls-certfile': 'network',
+  'enable-cors-header': 'network',
+  'max-upload-size': 'network',
+  'multi-user': 'network',
+  'enable-compress-response-body': 'network',
 
-  'base-directory': 'Paths',
-  'extra-model-paths-config': 'Paths',
-  'output-directory': 'Paths',
-  'temp-directory': 'Paths',
-  'input-directory': 'Paths',
-  'user-directory': 'Paths',
-  'front-end-root': 'Paths',
+  'base-directory': 'paths',
+  'extra-model-paths-config': 'paths',
+  'output-directory': 'paths',
+  'temp-directory': 'paths',
+  'input-directory': 'paths',
+  'user-directory': 'paths',
+  'models-directory': 'paths',
+  'front-end-root': 'paths',
 
-  'auto-launch': 'Launch',
-  'disable-auto-launch': 'Launch',
-  'windows-standalone-build': 'Launch',
+  'auto-launch': 'launch',
+  'disable-auto-launch': 'launch',
+  'windows-standalone-build': 'launch',
 
-  'cuda-device': 'GPU & VRAM',
-  'default-device': 'GPU & VRAM',
-  'cuda-malloc': 'GPU & VRAM',
-  'disable-cuda-malloc': 'GPU & VRAM',
-  'directml': 'GPU & VRAM',
-  'oneapi-device-selector': 'GPU & VRAM',
-  'disable-ipex-optimize': 'GPU & VRAM',
-  'supports-fp8-compute': 'GPU & VRAM',
-  'gpu-only': 'GPU & VRAM',
-  'highvram': 'GPU & VRAM',
-  'normalvram': 'GPU & VRAM',
-  'lowvram': 'GPU & VRAM',
-  'novram': 'GPU & VRAM',
-  'cpu': 'GPU & VRAM',
-  'reserve-vram': 'GPU & VRAM',
-  'async-offload': 'GPU & VRAM',
-  'disable-async-offload': 'GPU & VRAM',
-  'disable-dynamic-vram': 'GPU & VRAM',
-  'enable-dynamic-vram': 'GPU & VRAM',
-  'fast-disk': 'GPU & VRAM',
-  'force-non-blocking': 'GPU & VRAM',
-  'disable-smart-memory': 'GPU & VRAM',
-  'disable-pinned-memory': 'GPU & VRAM',
+  'cuda-device': 'gpuVram',
+  'default-device': 'gpuVram',
+  'cuda-malloc': 'gpuVram',
+  'disable-cuda-malloc': 'gpuVram',
+  directml: 'gpuVram',
+  'oneapi-device-selector': 'gpuVram',
+  'disable-ipex-optimize': 'gpuVram',
+  'supports-fp8-compute': 'gpuVram',
+  'gpu-only': 'gpuVram',
+  highvram: 'gpuVram',
+  normalvram: 'gpuVram',
+  lowvram: 'gpuVram',
+  novram: 'gpuVram',
+  cpu: 'gpuVram',
+  'reserve-vram': 'gpuVram',
+  'vram-headroom': 'gpuVram',
+  'async-offload': 'gpuVram',
+  'disable-async-offload': 'gpuVram',
+  'disable-dynamic-vram': 'gpuVram',
+  'enable-dynamic-vram': 'gpuVram',
+  'fast-disk': 'gpuVram',
+  'force-non-blocking': 'gpuVram',
+  'disable-smart-memory': 'gpuVram',
+  'disable-pinned-memory': 'gpuVram',
 
-  'force-fp32': 'Precision',
-  'force-fp16': 'Precision',
-  'fp32-unet': 'Precision',
-  'fp64-unet': 'Precision',
-  'bf16-unet': 'Precision',
-  'fp16-unet': 'Precision',
-  'fp8_e4m3fn-unet': 'Precision',
-  'fp8_e5m2-unet': 'Precision',
-  'fp8_e8m0fnu-unet': 'Precision',
-  'fp16-vae': 'Precision',
-  'fp32-vae': 'Precision',
-  'bf16-vae': 'Precision',
-  'cpu-vae': 'Precision',
-  'fp8_e4m3fn-text-enc': 'Precision',
-  'fp8_e5m2-text-enc': 'Precision',
-  'fp16-text-enc': 'Precision',
-  'fp32-text-enc': 'Precision',
-  'bf16-text-enc': 'Precision',
-  'fp16-intermediates': 'Precision',
-  'force-channels-last': 'Precision',
+  'force-fp32': 'precision',
+  'force-fp16': 'precision',
+  'fp32-unet': 'precision',
+  'fp64-unet': 'precision',
+  'bf16-unet': 'precision',
+  'fp16-unet': 'precision',
+  'fp8_e4m3fn-unet': 'precision',
+  'fp8_e5m2-unet': 'precision',
+  'fp8_e8m0fnu-unet': 'precision',
+  'fp16-vae': 'precision',
+  'fp32-vae': 'precision',
+  'bf16-vae': 'precision',
+  'cpu-vae': 'precision',
+  'fp8_e4m3fn-text-enc': 'precision',
+  'fp8_e5m2-text-enc': 'precision',
+  'fp16-text-enc': 'precision',
+  'fp32-text-enc': 'precision',
+  'bf16-text-enc': 'precision',
+  'fp16-intermediates': 'precision',
+  'force-channels-last': 'precision',
 
-  'use-split-cross-attention': 'Performance',
-  'use-quad-cross-attention': 'Performance',
-  'use-pytorch-cross-attention': 'Performance',
-  'use-sage-attention': 'Performance',
-  'use-flash-attention': 'Performance',
-  'enable-triton-backend': 'Performance',
-  'disable-xformers': 'Performance',
-  'force-upcast-attention': 'Performance',
-  'dont-upcast-attention': 'Performance',
-  'deterministic': 'Performance',
-  'fast': 'Performance',
-  'mmap-torch-files': 'Performance',
-  'disable-mmap': 'Performance',
+  'use-split-cross-attention': 'performance',
+  'use-quad-cross-attention': 'performance',
+  'use-pytorch-cross-attention': 'performance',
+  'use-sage-attention': 'performance',
+  'use-flash-attention': 'performance',
+  'use-ck-attention': 'performance',
+  'enable-triton-backend': 'performance',
+  'disable-triton-backend': 'performance',
+  'disable-xformers': 'performance',
+  'force-upcast-attention': 'performance',
+  'dont-upcast-attention': 'performance',
+  deterministic: 'performance',
+  fast: 'performance',
+  'mmap-torch-files': 'performance',
+  'disable-mmap': 'performance',
 
-  'cache-classic': 'Cache',
-  'cache-lru': 'Cache',
-  'cache-none': 'Cache',
-  'cache-ram': 'Cache',
+  'cache-classic': 'cache',
+  'cache-lru': 'cache',
+  'cache-none': 'cache',
+  'cache-ram': 'cache',
+  'high-ram': 'cache',
 
-  'preview-method': 'Preview',
-  'preview-size': 'Preview',
+  'preview-method': 'preview',
+  'preview-size': 'preview',
 
-  'enable-manager': 'Manager',
-  'disable-manager-ui': 'Manager',
-  'enable-manager-legacy-ui': 'Manager',
+  'enable-manager': 'manager',
+  'disable-manager-ui': 'manager',
+  'enable-manager-legacy-ui': 'manager',
 
-  'front-end-version': 'Frontend',
+  'front-end-version': 'frontend',
 
-  'disable-metadata': 'Features',
-  'disable-all-custom-nodes': 'Features',
-  'whitelist-custom-nodes': 'Features',
-  'disable-api-nodes': 'Features',
-  'enable-assets': 'Features',
+  'disable-metadata': 'features',
+  'disable-all-custom-nodes': 'features',
+  'whitelist-custom-nodes': 'features',
+  'disable-api-nodes': 'features',
+  'enable-assets': 'features',
+  'enable-asset-hashing': 'features',
 
-  'verbose': 'Logging',
-  'log-stdout': 'Logging',
-  'dont-print-server': 'Logging',
+  verbose: 'logging',
+  'log-stdout': 'logging',
+  'dont-print-server': 'logging',
+  'debug-hang': 'logging',
 
-  'default-hashing-function': 'Advanced',
-  'quick-test-for-ci': 'Advanced',
-  'comfy-api-base': 'Advanced',
-  'database-url': 'Advanced',
+  'default-hashing-function': 'advanced',
+  'quick-test-for-ci': 'advanced',
+  'comfy-api-base': 'advanced',
+  'database-url': 'advanced'
 }
 
 const CATEGORY_ORDER = [
-  'Network', 'Launch', 'GPU & VRAM', 'Precision', 'Performance',
-  'Cache', 'Preview', 'Manager', 'Frontend', 'Features',
-  'Paths', 'Logging', 'Advanced', 'Other',
+  'network',
+  'launch',
+  'gpuVram',
+  'precision',
+  'performance',
+  'cache',
+  'preview',
+  'manager',
+  'frontend',
+  'features',
+  'paths',
+  'logging',
+  'advanced',
+  'other'
 ]
 
 /**
@@ -151,7 +175,7 @@ const CATEGORY_ORDER = [
 const HIDDEN_ARGS = new Set(['feature-flag', 'list-feature-flags'])
 
 function getCategory(flagName: string): string {
-  return CATEGORY_MAP[flagName] || 'Other'
+  return CATEGORY_MAP[flagName] || 'other'
 }
 
 /** Parse the usage line's mutually exclusive groups: `[--flag1 | --flag2 | --flag3]`.
@@ -268,9 +292,12 @@ function parseOptionBlock(flagLine: string, helpText: string): ParsedOption {
     // Brackets [] mean optional (usable without a value)
     const isOptional = afterFlag.startsWith('[')
     return {
-      name, flag, help: helpText, choices,
+      name,
+      flag,
+      help: helpText,
+      choices,
       type: isMulti ? 'multi-value' : isOptional ? 'optional-value' : 'value',
-      metavar: undefined,
+      metavar: undefined
     }
   }
 
@@ -279,9 +306,11 @@ function parseOptionBlock(flagLine: string, helpText: string): ParsedOption {
   if (metaMatch) {
     const isOptional = afterFlag.startsWith('[')
     return {
-      name, flag, help: helpText,
+      name,
+      flag,
+      help: helpText,
       type: isMulti ? 'multi-value' : isOptional ? 'optional-value' : 'value',
-      metavar: metaMatch[1]!.replace(/\s+\.\.\./, ''),
+      metavar: metaMatch[1]!.replace(/\s+\.\.\./, '')
     }
   }
 
@@ -318,7 +347,7 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
       metavar: opt.metavar,
       choices: opt.choices,
       exclusiveGroup: exclusiveGroups.get(opt.name),
-      category: getCategory(opt.name),
+      category: getCategory(opt.name)
     })
   }
 
@@ -332,26 +361,27 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
   return { args, knownFlags }
 }
 
-const schemaCache = new Map<string, { schema: ComfyArgsSchema; version: string }>()
+const schemaCache = new Map<string, { schema: ComfyArgsSchema; revision: string }>()
 
-/** Run `python main.py --help` and parse the output, cached per installationId+version. */
+/** Run `python main.py --help` and parse the output, cached per installation and source revision. */
 export async function getComfyArgsSchema(
   pythonPath: string,
   mainPyPath: string,
   cwd: string,
   installationId: string,
-  version?: string
+  fallbackRevision?: string
 ): Promise<ComfyArgsSchema> {
+  const revision = readGitHead(path.dirname(mainPyPath)) ?? fallbackRevision
   const cached = schemaCache.get(installationId)
-  if (cached && version && cached.version === version) {
+  if (cached && revision && cached.revision === revision) {
     return cached.schema
   }
 
   const helpText = await runHelp(pythonPath, mainPyPath, cwd)
   const schema = parseHelpOutput(helpText)
 
-  if (version) {
-    schemaCache.set(installationId, { schema, version })
+  if (revision) {
+    schemaCache.set(installationId, { schema, revision })
   }
 
   return schema
@@ -360,19 +390,24 @@ export async function getComfyArgsSchema(
 function runHelp(pythonPath: string, mainPyPath: string, cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const mainPyRel = path.relative(cwd, mainPyPath)
-    execFile(pythonPath, ['-s', mainPyRel, '--help'], { cwd, timeout: 15000 }, (err, stdout, stderr) => {
-      if (stdout && stdout.includes('usage:')) {
-        resolve(stdout)
-      } else if (stderr && stderr.includes('usage:')) {
-        // Some configurations print help to stderr
-        resolve(stderr)
-      } else if (err) {
-        const detail = stderr ? `\nstderr: ${stderr.slice(0, 500)}` : ''
-        reject(new Error(`Failed to get ComfyUI --help: ${err.message}${detail}`))
-      } else {
-        reject(new Error('No help output from ComfyUI'))
+    execFile(
+      pythonPath,
+      ['-s', mainPyRel, '--help'],
+      { cwd, timeout: 15000 },
+      (err, stdout, stderr) => {
+        if (stdout && stdout.includes('usage:')) {
+          resolve(stdout)
+        } else if (stderr && stderr.includes('usage:')) {
+          // Some configurations print help to stderr
+          resolve(stderr)
+        } else if (err) {
+          const detail = stderr ? `\nstderr: ${stderr.slice(0, 500)}` : ''
+          reject(new Error(`Failed to get ComfyUI --help: ${err.message}${detail}`))
+        } else {
+          reject(new Error('No help output from ComfyUI'))
+        }
       }
-    })
+    )
   })
 }
 
@@ -401,7 +436,11 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
       const name = arg.slice(2).replace(/=.*$/, '')
       const hasInlineValue = arg.includes('=')
       const isBoolean = argTypes.get(name) === 'boolean'
-      const hasTrailingValue = !hasInlineValue && !isBoolean && i + 1 < userArgs.length && !userArgs[i + 1]!.startsWith('--')
+      const hasTrailingValue =
+        !hasInlineValue &&
+        !isBoolean &&
+        i + 1 < userArgs.length &&
+        !userArgs[i + 1]!.startsWith('--')
       if (schema.knownFlags.has(name)) {
         result.push(arg)
         if (hasTrailingValue) result.push(userArgs[i + 1]!)
@@ -419,7 +458,7 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
   return result
 }
 
-/** Clear the schema cache for an installation (e.g. after version update). */
+/** Clear the schema cache for an installation. */
 export function clearSchemaCache(installationId: string): void {
   schemaCache.delete(installationId)
 }

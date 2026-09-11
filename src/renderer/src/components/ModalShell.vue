@@ -10,28 +10,31 @@ import Modal from './Modal.vue'
 
 type Opacity = 'dim' | 'heavy-dim' | 'opaque'
 
-withDefaults(defineProps<{
-  binding?: boolean
-  opacity?: Opacity
-  width?: 'regular' | 'wide'
-  contentClass?: string
-  inline?: boolean
-  /** Plain text title shown in the default header. Ignored if a `#header` slot is provided. */
-  title?: string
-  /** Hide the corner close button (binding takeovers without an in-header dismiss). */
-  hideClose?: boolean
-  /** Glyph for the corner close (defaults to ✕; ProgressModal/ConsoleModal swap to − while running). */
-  closeGlyph?: string
-}>(), {
-  binding: false,
-  opacity: undefined,
-  width: 'wide',
-  contentClass: '',
-  inline: false,
-  title: '',
-  hideClose: false,
-  closeGlyph: '✕',
-})
+withDefaults(
+  defineProps<{
+    binding?: boolean
+    opacity?: Opacity
+    width?: 'regular' | 'wide'
+    contentClass?: string
+    inline?: boolean
+    /** Plain text title shown in the default header. Ignored if a `#header` slot is provided. */
+    title?: string
+    /** Hide the corner close button (binding takeovers without an in-header dismiss). */
+    hideClose?: boolean
+    /** Glyph for the corner close (defaults to ✕; ProgressModal/ConsoleModal swap to − while running). */
+    closeGlyph?: string
+  }>(),
+  {
+    binding: false,
+    opacity: undefined,
+    width: 'wide',
+    contentClass: '',
+    inline: false,
+    title: '',
+    hideClose: false,
+    closeGlyph: '✕'
+  }
+)
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -58,7 +61,9 @@ const { t } = useI18n()
           :title="t('common.close')"
           :aria-label="t('common.close')"
           @click="emit('close')"
-        >{{ closeGlyph }}</button>
+        >
+          {{ closeGlyph }}
+        </button>
       </slot>
     </div>
     <div class="view-modal-body">

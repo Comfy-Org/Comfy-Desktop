@@ -1,5 +1,6 @@
 import { WebContentsView, ipcMain } from 'electron'
 import path from 'path'
+import { attachContextMenu } from '../lib/contextMenu'
 import { resolveTheme } from '../lib/ipc/shared'
 import { get as getSetting } from '../settings'
 import { TITLEBAR_BG } from '../lib/theme'
@@ -7,7 +8,7 @@ import { TITLEBAR_HEIGHT, titleBarOverlayForTheme } from '../lib/titleBarOverlay
 import {
   _registerExtraBroadcastTarget,
   _unregisterExtraBroadcastTarget,
-  _activeOperationStatus,
+  _activeOperationStatus
 } from '../lib/ipc/shared'
 import {
   comfyWindows,
@@ -15,7 +16,7 @@ import {
   findEntryByTitleBarSender,
   getEntryByInstallationId,
   revealColdStartHostIfPending,
-  VALID_PANELS,
+  VALID_PANELS
 } from './registry'
 import type { BodyMode, ComfyPanelKey, ComfyWindowEntry } from './registry'
 
@@ -43,7 +44,7 @@ function isOpaqueBodyMode(mode: BodyMode): boolean {
 export function ensurePanelView(
   windowKey: number,
   entry: ComfyWindowEntry,
-  initialPanel: BodyMode,
+  initialPanel: BodyMode
 ): WebContentsView {
   if (entry.panelView) return entry.panelView
 
@@ -54,12 +55,15 @@ export function ensurePanelView(
       // preload/index.js imports the shared window.api chunk; a sandboxed preload can't
       // require() relative chunks, which would break window.api in the panel.
       sandbox: false,
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.js')
       // Default session (no partition) keeps the panel isolated from ComfyUI's storage.
-    },
+    }
   })
   panelView.setBackgroundColor(isOpaqueBodyMode(initialPanel) ? opaquePanelBg() : '#00000000')
   entry.window.contentView.addChildView(panelView)
+  // Native right-click Copy/Paste for selectable text + inputs in panel bodies
+  // (chooser, install forms, settings, etc.).
+  attachContextMenu(entry.window, panelView.webContents)
   // Insert at zero size, behind the comfy view; layoutViews handles positioning.
   panelView.setBounds({ x: 0, y: TITLEBAR_HEIGHT + 1, width: 0, height: 0 })
   panelView.setVisible(false)
@@ -72,7 +76,10 @@ export function ensurePanelView(
     revealColdStartHostIfPending(windowKey)
     const mode = computeBodyMode(latest)
     if (mode !== 'comfy') {
-      panelView.webContents.send('panel-switch', { panel: mode, installationId: latest.installationId ?? '' })
+      panelView.webContents.send('panel-switch', {
+        panel: mode,
+        installationId: latest.installationId ?? ''
+      })
       if (latest.window.isFocused()) panelView.webContents.focus()
     }
   })
@@ -83,7 +90,7 @@ export function ensurePanelView(
   const panelQuery: Record<string, string> = {
     installationId: panelInstallationId,
     panel: initialPanel,
-    firstUseCompleted: String(firstUseCompleted),
+    firstUseCompleted: String(firstUseCompleted)
   }
   // Propagate the E2E flag via the URL query (the renderer can't read process.env) so the
   // renderer-side test hooks only register when the runner opted in.
@@ -93,12 +100,11 @@ export function ensurePanelView(
   const isDev = !!process.env['ELECTRON_RENDERER_URL']
   const loadPromise = isDev
     ? panelView.webContents.loadURL(
-        `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/panel.html?${new URLSearchParams(panelQuery).toString()}`,
+        `${(process.env['ELECTRON_RENDERER_URL'] as string).replace(/\/$/, '')}/panel.html?${new URLSearchParams(panelQuery).toString()}`
       )
-    : panelView.webContents.loadFile(
-        path.join(__dirname, '../renderer/panel.html'),
-        { query: panelQuery },
-      )
+    : panelView.webContents.loadFile(path.join(__dirname, '../renderer/panel.html'), {
+        query: panelQuery
+      })
   // Loads can reject if the window closes mid-load; swallow to avoid noisy forwarding.
   void loadPromise.catch(() => {})
 
@@ -122,7 +128,9 @@ export function destroyPanelView(entry: ComfyWindowEntry): void {
     oldPanel.webContents.close()
   }
   if (!entry.window.isDestroyed()) {
-    try { entry.window.contentView.removeChildView(oldPanel) } catch {}
+    try {
+      entry.window.contentView.removeChildView(oldPanel)
+    } catch {}
   }
   // The rebuilt panel starts with no overlay, so any `firstUseMode` the old renderer pushed
   // is stale. Reset to `'none'` and broadcast so the title bar paints full chrome; the new
@@ -141,7 +149,11 @@ export function focusActiveBody(entry: ComfyWindowEntry): void {
   const mode = computeBodyMode(entry)
   if (mode === 'comfy') {
     if (!entry.comfyView.webContents.isDestroyed()) entry.comfyView.webContents.focus()
-  } else if (entry.panelView && !entry.panelView.webContents.isDestroyed() && !entry.panelView.webContents.isLoadingMainFrame()) {
+  } else if (
+    entry.panelView &&
+    !entry.panelView.webContents.isDestroyed() &&
+    !entry.panelView.webContents.isLoadingMainFrame()
+  ) {
     // If still loading, ensurePanelView's did-finish-load handler focuses it instead.
     entry.panelView.webContents.focus()
   }
@@ -159,13 +171,47 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   if (mode !== 'comfy') {
     ensurePanelView(windowKey, entry, mode)
   }
-  forwardToPanelRenderer(entry, 'panel-switch', { panel: mode, installationId: entry.installationId ?? '' })
+  // Overlay panels reveal only after the renderer's `overlay-ready` ack (see
+  // layoutViews); clear the flag for non-overlay targets so it can't strand.
+  const isOverlay = mode === 'feedback' || mode === 'mcp-setup' || mode === 'announcement'
+  entry.pendingOverlayReveal = isOverlay
+  // Drop any prior fallback timer so a stale one can't reveal this open early.
+  if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
+  entry.overlayRevealTimer = undefined
+  forwardToPanelRenderer(entry, 'panel-switch', {
+    panel: mode,
+    installationId: entry.installationId ?? ''
+  })
   entry.layoutViews()
+  // Reveal anyway if the ack never arrives (crash / lost IPC); a late ack no-ops.
+  if (isOverlay) {
+    entry.overlayRevealTimer = setTimeout(() => {
+      entry.overlayRevealTimer = undefined
+      if (!entry.pendingOverlayReveal || entry.window.isDestroyed()) return
+      entry.pendingOverlayReveal = false
+      entry.layoutViews()
+    }, 400)
+  }
   if (!entry.titleBarView.webContents.isDestroyed()) {
     // Pill stays on the user-visible key, not 'comfy-lifecycle'.
     entry.titleBarView.webContents.send('comfy-titlebar:panel-changed', panel)
   }
   focusActiveBody(entry)
+}
+
+/**
+ * Warm the install-backed panel in the background right after a chooser-pick
+ * in-place attach, so the first Settings/MCP click doesn't build it cold.
+ *
+ * The reset to `'comfy'` MUST precede `ensurePanelView`: the picker drove its
+ * launch through a `'progress'` overlay on this host, and without clearing it
+ * `computeBodyMode` stays `'progress'` — the rebuilt panel would then cover the
+ * just-attached canvas with a stranded progress surface.
+ */
+export function prewarmAttachedPanel(entry: ComfyWindowEntry): void {
+  setActivePanel(entry.windowKey, 'comfy')
+  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
+  entry.layoutViews()
 }
 
 /**
@@ -203,7 +249,7 @@ export function refreshComfyTabBody(installationId: string): void {
 export function sendToPanelDeferred(
   panelView: WebContentsView,
   channel: string,
-  payload: unknown,
+  payload: unknown
 ): void {
   if (panelView.webContents.isDestroyed()) return
   const send = (): void => {
@@ -218,11 +264,7 @@ export function sendToPanelDeferred(
 }
 
 /** Forward an IPC to the entry's panel renderer, no-op if absent. */
-function forwardToPanelRenderer(
-  entry: ComfyWindowEntry,
-  channel: string,
-  payload?: unknown,
-): void {
+function forwardToPanelRenderer(entry: ComfyWindowEntry, channel: string, payload?: unknown): void {
   const pv = entry.panelView
   if (!pv || pv.webContents.isDestroyed()) return
   sendToPanelDeferred(pv, channel, payload)
@@ -249,4 +291,18 @@ export function registerPanelViewIpc(): void {
     }
   })
 
+  // The panel renderer painted an overlay modal; reveal the until-now-hidden
+  // panel view so it appears with content rather than as an opaque flash.
+  ipcMain.on('comfy-window:overlay-ready', (event) => {
+    for (const entry of comfyWindows.values()) {
+      if (entry.panelView?.webContents === event.sender) {
+        if (!entry.pendingOverlayReveal) return
+        entry.pendingOverlayReveal = false
+        if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
+        entry.overlayRevealTimer = undefined
+        if (!entry.window.isDestroyed()) entry.layoutViews()
+        return
+      }
+    }
+  })
 }

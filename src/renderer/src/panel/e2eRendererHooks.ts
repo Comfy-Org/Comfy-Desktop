@@ -120,7 +120,7 @@ export function registerE2ERendererHooks(): void {
         installationId,
         title: title ?? `Failed op — ${installationId}`,
         opKind: 'generic',
-        apiCall: () => Promise.resolve({ ok: false, message: errorMessage }),
+        apiCall: () => Promise.resolve({ ok: false, message: errorMessage })
       })
     },
     async injectProgressSuccess({ installationId, title, newInstallationId }) {
@@ -129,17 +129,23 @@ export function registerE2ERendererHooks(): void {
         installationId,
         title: title ?? `Copy — ${installationId}`,
         opKind: 'generic',
-        apiCall: () => Promise.resolve({
-          ok: true,
-          navigate: 'list',
-          newInstallationId,
-        }),
+        apiCall: () =>
+          Promise.resolve({
+            ok: true,
+            navigate: 'list',
+            newInstallationId
+          })
       })
     },
     isRunning(installationId) {
       return useSessionStore().isRunning(installationId)
     },
-    async injectRetryableProgressError({ installationId, title, errorMessage, failuresBeforeSuccess }) {
+    async injectRetryableProgressError({
+      installationId,
+      title,
+      errorMessage,
+      failuresBeforeSuccess
+    }) {
       const b = ensureBound()
       const failsRequired = failuresBeforeSuccess ?? 1
       // Reset so a leaked op from a previous test can't skew the count.
@@ -154,7 +160,7 @@ export function registerE2ERendererHooks(): void {
           return next <= failsRequired
             ? Promise.resolve({ ok: false, message: errorMessage })
             : Promise.resolve({ ok: true })
-        },
+        }
       })
     },
     async injectPortConflictResult({ installationId, title, port, nextPort, isComfy, pids }) {
@@ -174,16 +180,16 @@ export function registerE2ERendererHooks(): void {
               port,
               ...(pids !== undefined ? { pids } : {}),
               ...(nextPort !== undefined ? { nextPort } : {}),
-              ...(isComfy !== undefined ? { isComfy } : {}),
-            },
+              ...(isComfy !== undefined ? { isComfy } : {})
+            }
           })
-        },
+        }
       })
     },
     seedErrorInstance({ installationId, installationName, message }) {
       useSessionStore().errorInstances.set(installationId, {
         installationName,
-        message: message ?? `Seeded error for ${installationId}`,
+        message: message ?? `Seeded error for ${installationId}`
       })
     },
     hasErrorInstance(installationId) {
@@ -192,7 +198,13 @@ export function registerE2ERendererHooks(): void {
     getInjectedApiCallCount(installationId) {
       return injectedApiCallCounts.get(installationId) ?? 0
     },
-    async startInFlightOp({ installationId, title, opKind, destroysInstance, triggersInstanceStart }) {
+    async startInFlightOp({
+      installationId,
+      title,
+      opKind,
+      destroysInstance,
+      triggersInstanceStart
+    }) {
       const b = ensureBound()
       // Replace any prior settler so a leaked op can't intercept this resolve.
       inFlightSettlers.get(installationId)?.({ ok: false, cancelled: true })
@@ -205,7 +217,7 @@ export function registerE2ERendererHooks(): void {
         opKind: opKind ?? 'generic',
         destroysInstance: destroysInstance ?? false,
         triggersInstanceStart: triggersInstanceStart ?? false,
-        apiCall: () => pending,
+        apiCall: () => pending
       })
     },
     settleInFlightOp({ installationId, result }) {
@@ -217,7 +229,7 @@ export function registerE2ERendererHooks(): void {
     },
     runActionGuard({ installationId, actionLabel }) {
       return ensureBound().actionGuard.checkBeforeAction(installationId, actionLabel)
-    },
+    }
   }
   ;(globalThis as unknown as { __e2eRenderer: E2ERendererHelpers }).__e2eRenderer = helpers
 }

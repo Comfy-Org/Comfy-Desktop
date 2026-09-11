@@ -5,17 +5,12 @@ import {
   isChromeLockedMode,
   isFirstUseLockdownMode,
   isLoadingLockdownMode,
-  normaliseFirstUseMode,
+  normaliseFirstUseMode
 } from './firstUseMode'
 
 // Pins the chrome-lockdown taxonomy: first-use lockdown (hide chrome) and loading lockdown (keep chrome live) must not bleed into each other.
 
-const ALL_MODES: FirstUseMode[] = [
-  'none',
-  'consent-lockdown',
-  'post-consent',
-  'loading-lockdown',
-]
+const ALL_MODES: FirstUseMode[] = ['none', 'consent-lockdown', 'post-consent', 'loading-lockdown']
 
 describe('firstUseMode', () => {
   describe('isFirstUseLockdownMode', () => {
@@ -23,7 +18,7 @@ describe('firstUseMode', () => {
       ['none', false],
       ['consent-lockdown', true],
       ['post-consent', true],
-      ['loading-lockdown', false],
+      ['loading-lockdown', false]
     ])('%s -> %s', (mode, expected) => {
       expect(isFirstUseLockdownMode(mode)).toBe(expected)
     })
@@ -34,7 +29,7 @@ describe('firstUseMode', () => {
       ['none', false],
       ['consent-lockdown', false],
       ['post-consent', false],
-      ['loading-lockdown', true],
+      ['loading-lockdown', true]
     ])('%s -> %s', (mode, expected) => {
       expect(isLoadingLockdownMode(mode)).toBe(expected)
     })
@@ -45,7 +40,7 @@ describe('firstUseMode', () => {
       ['none', false],
       ['consent-lockdown', true],
       ['post-consent', true],
-      ['loading-lockdown', true],
+      ['loading-lockdown', true]
     ])('%s -> %s', (mode, expected) => {
       expect(isChromeLockedMode(mode)).toBe(expected)
     })
@@ -53,7 +48,7 @@ describe('firstUseMode', () => {
     it('stays consistent with the granular predicates: locked === first-use OR loading', () => {
       for (const mode of ALL_MODES) {
         expect(isChromeLockedMode(mode)).toBe(
-          isFirstUseLockdownMode(mode) || isLoadingLockdownMode(mode),
+          isFirstUseLockdownMode(mode) || isLoadingLockdownMode(mode)
         )
       }
     })
@@ -73,7 +68,7 @@ describe('firstUseMode', () => {
       ['unknown-mode', 'unknown string'],
       [42, 'number'],
       [{ mode: 'consent-lockdown' }, 'object'],
-      [['consent-lockdown'], 'array'],
+      [['consent-lockdown'], 'array']
     ])('coerces %s (%s) to "none"', (raw) => {
       expect(normaliseFirstUseMode(raw)).toBe('none')
     })

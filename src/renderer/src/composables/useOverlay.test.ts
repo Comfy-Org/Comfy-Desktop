@@ -1,24 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useOverlay } from './useOverlay'
 
-const confirmMock = vi.fn<(opts: {
-  title: string
-  message: string
-  confirmLabel?: string
-  confirmStyle?: string
-}) => Promise<boolean>>()
+const confirmMock =
+  vi.fn<
+    (opts: {
+      title: string
+      message: string
+      confirmLabel?: string
+      confirmStyle?: string
+    }) => Promise<boolean>
+  >()
 
 vi.mock('./useModal', () => ({
   useModal: () => ({
     alert: vi.fn(),
     confirm: confirmMock,
-    close: vi.fn(),
-  }),
+    close: vi.fn()
+  })
 }))
 
 vi.mock('../i18n', () => ({
   // Identity translator — tests assert against the i18n keys themselves.
-  i18n: { global: { t: (key: string) => key } },
+  i18n: { global: { t: (key: string) => key } }
 }))
 
 describe('useOverlay — cancel-prompt copy', () => {
@@ -35,7 +38,7 @@ describe('useOverlay — cancel-prompt copy', () => {
     await openOverlay({
       kind: 'takeover',
       component: 'first-use',
-      cancelCopyKey: 'quit-setup',
+      cancelCopyKey: 'quit-setup'
     })
     expect(current.value?.kind).toBe('takeover')
 
@@ -46,7 +49,7 @@ describe('useOverlay — cancel-prompt copy', () => {
       title: 'overlay.quitSetupTitle',
       message: 'overlay.quitSetupMessage',
       confirmLabel: 'overlay.quitSetupConfirm',
-      confirmStyle: 'danger',
+      confirmStyle: 'danger'
     })
     expect(current.value).toBeNull()
   })
@@ -63,26 +66,26 @@ describe('useOverlay — cancel-prompt copy', () => {
       title: 'overlay.cancelCurrentTitle',
       message: 'overlay.cancelMessage',
       confirmLabel: 'overlay.cancelConfirm',
-      confirmStyle: 'danger',
+      confirmStyle: 'danger'
     })
     expect(current.value).toBeNull()
   })
 
-  it("uses the named-operation generic title when a takeover carries operationName but no cancelCopyKey", async () => {
+  it('uses the named-operation generic title when a takeover carries operationName but no cancelCopyKey', async () => {
     confirmMock.mockResolvedValueOnce(true)
     const { openOverlay, closeOverlay } = useOverlay()
     await openOverlay({
       kind: 'takeover',
       component: 'update',
-      operationName: 'Updating ComfyUI',
+      operationName: 'Updating ComfyUI'
     })
 
     await closeOverlay()
     expect(confirmMock).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'overlay.cancelNamedTitle',
-        message: 'overlay.cancelMessage',
-      }),
+        message: 'overlay.cancelMessage'
+      })
     )
   })
 
@@ -92,7 +95,7 @@ describe('useOverlay — cancel-prompt copy', () => {
     await openOverlay({
       kind: 'takeover',
       component: 'first-use',
-      cancelCopyKey: 'quit-setup',
+      cancelCopyKey: 'quit-setup'
     })
 
     const cleared = await closeOverlay()
@@ -106,7 +109,7 @@ describe('useOverlay — cancel-prompt copy', () => {
     await openOverlay({
       kind: 'takeover',
       component: 'new-install',
-      cancelCopyKey: 'discard-setup',
+      cancelCopyKey: 'discard-setup'
     })
 
     await closeOverlay()
@@ -114,7 +117,7 @@ describe('useOverlay — cancel-prompt copy', () => {
       title: 'overlay.discardSetupTitle',
       message: 'overlay.discardSetupMessage',
       confirmLabel: 'overlay.discardSetupConfirm',
-      confirmStyle: 'danger',
+      confirmStyle: 'danger'
     })
     expect(current.value).toBeNull()
   })
@@ -136,7 +139,7 @@ describe('useOverlay — onCancel firing', () => {
       kind: 'progress',
       installationId: 'inst-1',
       operationName: 'Installing',
-      onCancel,
+      onCancel
     })
 
     const cleared = await closeOverlay()
@@ -155,13 +158,13 @@ describe('useOverlay — onCancel firing', () => {
       kind: 'progress',
       installationId: 'inst-1',
       operationName: 'Installing',
-      onCancel,
+      onCancel
     })
     await openOverlay({
       kind: 'takeover',
       component: 'update',
       installationId: 'inst-2',
-      operationName: 'Updating ComfyUI',
+      operationName: 'Updating ComfyUI'
     })
     expect(onCancel).toHaveBeenCalledTimes(1)
     expect(current.value?.kind).toBe('takeover')
@@ -178,7 +181,7 @@ describe('useOverlay — onCancel firing', () => {
       component: 'update',
       installationId: 'inst-1',
       operationName: 'Updating ComfyUI',
-      onCancel,
+      onCancel
     })
 
     const cleared = await closeOverlay()
@@ -197,13 +200,13 @@ describe('useOverlay — onCancel firing', () => {
       component: 'update',
       installationId: 'inst-1',
       operationName: 'Updating ComfyUI',
-      onCancel,
+      onCancel
     })
     await openOverlay({
       kind: 'takeover',
       component: 'update',
       installationId: 'inst-1',
-      operationName: 'Updating ComfyUI',
+      operationName: 'Updating ComfyUI'
     })
     expect(onCancel).not.toHaveBeenCalled()
     expect(current.value?.kind).toBe('takeover')
@@ -220,13 +223,13 @@ describe('useOverlay — onCancel firing', () => {
       component: 'update',
       installationId: 'inst-1',
       operationName: 'Updating ComfyUI',
-      onCancel,
+      onCancel
     })
     await openOverlay({
       kind: 'takeover',
       component: 'update',
       installationId: 'inst-2',
-      operationName: 'Updating ComfyUI',
+      operationName: 'Updating ComfyUI'
     })
     expect(onCancel).toHaveBeenCalledTimes(1)
     expect(current.value?.kind).toBe('takeover')
@@ -241,7 +244,7 @@ describe('useOverlay — onCancel firing', () => {
     await openOverlay({
       kind: 'takeover',
       component: 'new-install',
-      cancelCopyKey: 'discard-setup',
+      cancelCopyKey: 'discard-setup'
     })
 
     const cleared = await closeOverlay()

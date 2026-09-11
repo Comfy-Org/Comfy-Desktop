@@ -17,7 +17,12 @@ const wrappers: VueWrapper[] = []
 
 const defaultItems: ActionSheetItem[] = [
   { value: 'proceed', label: 'Launch anyway' },
-  { value: 'replace', label: 'Replace running instance', description: 'Stops the other one first', tone: 'danger' }
+  {
+    value: 'replace',
+    label: 'Replace running instance',
+    description: 'Stops the other one first',
+    tone: 'danger'
+  }
 ]
 
 function mountSheet(props: Record<string, unknown> = {}) {

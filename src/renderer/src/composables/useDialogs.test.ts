@@ -52,14 +52,14 @@ describe('useDialogs cancel contract', () => {
     await expect(previous).resolves.toBeNull()
   })
 
-  it('confirm primary resolves with `\'primary\'`', async () => {
+  it("confirm primary resolves with `'primary'`", async () => {
     const { confirm, confirmPrimary } = useDialogs()
     const pending = confirm({ title: 'T', message: 'M' })
     confirmPrimary()
     await expect(pending).resolves.toBe('primary')
   })
 
-  it('confirm secondary resolves with `\'secondary\'`', async () => {
+  it("confirm secondary resolves with `'secondary'`", async () => {
     const { confirm, confirmSecondary } = useDialogs()
     const pending = confirm({
       title: 'T',

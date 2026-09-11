@@ -23,7 +23,9 @@ interface MockBridgeState {
   fullscreenChangedCallbacks: ((fullscreen: boolean) => void)[]
   menuOpenedCallbacks: ((info: { menu: 'menu' }) => void)[]
   menuClosedCallbacks: ((info: { menu: 'menu' }) => void)[]
-  firstUseModeChangedCallbacks: ((mode: 'none' | 'consent-lockdown' | 'post-consent' | 'loading-lockdown') => void)[]
+  firstUseModeChangedCallbacks: ((
+    mode: 'none' | 'consent-lockdown' | 'post-consent' | 'loading-lockdown'
+  ) => void)[]
   previewModeChangedCallbacks: ((preview: boolean) => void)[]
   installationIdChangedCallbacks: ((installationId: string | null) => void)[]
   appUpdateStateCallbacks: ((state: {
@@ -31,7 +33,10 @@ interface MockBridgeState {
     version: string | null
     autoUpdate: boolean
   }) => void)[]
-  installUpdateAvailableCallbacks: ((state: { available: boolean; version: string | null }) => void)[]
+  installUpdateAvailableCallbacks: ((state: {
+    available: boolean
+    version: string | null
+  }) => void)[]
   downloadsChangedCallbacks: ((state: MockDownloadsTrayState) => void)[]
   setPanelCalls: string[]
   newWindowCalls: number
@@ -59,7 +64,9 @@ interface MockBridgeState {
   readyCalls: number
 }
 
-function installMockBridge(opts: { isMac?: boolean; installationId?: string | null } = {}): MockBridgeState {
+function installMockBridge(
+  opts: { isMac?: boolean; installationId?: string | null } = {}
+): MockBridgeState {
   const state: MockBridgeState = {
     panelChangedCallbacks: [],
     titleChangedCallbacks: [],
@@ -91,73 +98,83 @@ function installMockBridge(opts: { isMac?: boolean; installationId?: string | nu
     showCoachmarkCalls: [],
     hideCoachmarkCalls: 0,
     coachmarkDismissedCallbacks: [],
-    readyCalls: 0,
+    readyCalls: 0
   }
   const installationId = opts.installationId === undefined ? 'test-id' : opts.installationId
   const bridge = {
     getInstallationId: () => installationId,
     isMac: () => !!opts.isMac,
     setPanel: (panel: string) => state.setPanelCalls.push(panel),
-    openNewWindow: () => { state.newWindowCalls += 1 },
-    openFileMenu: (anchor: { x: number; y: number }) => { state.fileMenuAnchors.push(anchor) },
-    dismissFileMenu: () => { state.fileMenuDismisses += 1 },
+    openNewWindow: () => {
+      state.newWindowCalls += 1
+    },
+    openFileMenu: (anchor: { x: number; y: number }) => {
+      state.fileMenuAnchors.push(anchor)
+    },
+    dismissFileMenu: () => {
+      state.fileMenuDismisses += 1
+    },
     onPanelChanged: (cb: (panel: string) => void) => {
       state.panelChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onTitleChanged: (cb: (title: string) => void) => {
       state.titleChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onSourceCategoryChanged: (cb: (category: string | null) => void) => {
       state.sourceCategoryChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onZoomChanged: (cb: (level: number) => void) => {
       state.zoomChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onThemeChanged: (cb: (theme: { bg: string; text: string }) => void) => {
       state.themeChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onFullscreenChanged: (cb: (fullscreen: boolean) => void) => {
       state.fullscreenChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onMenuOpened: (cb: (info: { menu: 'menu' }) => void) => {
       state.menuOpenedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onMenuClosed: (cb: (info: { menu: 'menu' }) => void) => {
       state.menuClosedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
-    onFirstUseModeChanged: (cb: (mode: 'none' | 'consent-lockdown' | 'post-consent' | 'loading-lockdown') => void) => {
+    onFirstUseModeChanged: (
+      cb: (mode: 'none' | 'consent-lockdown' | 'post-consent' | 'loading-lockdown') => void
+    ) => {
       state.firstUseModeChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onPreviewModeChanged: (cb: (preview: boolean) => void) => {
       state.previewModeChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onInstallationIdChanged: (cb: (installationId: string | null) => void) => {
       state.installationIdChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     onAppUpdateStateChanged: (
       cb: (next: {
         kind: 'available' | 'ready' | null
         version: string | null
         autoUpdate: boolean
-      }) => void,
+      }) => void
     ) => {
       state.appUpdateStateCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
-    onInstallUpdateAvailable: (cb: (next: { available: boolean; version: string | null }) => void) => {
+    onInstallUpdateAvailable: (
+      cb: (next: { available: boolean; version: string | null }) => void
+    ) => {
       state.installUpdateAvailableCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     clickAppUpdatePill: () => {
       state.appUpdatePillClicks += 1
@@ -167,7 +184,7 @@ function installMockBridge(opts: { isMac?: boolean; installationId?: string | nu
     },
     onDownloadsChanged: (cb: (next: MockDownloadsTrayState) => void) => {
       state.downloadsChangedCallbacks.push(cb)
-      return () => { }
+      return () => {}
     },
     clickDownloadsTray: () => {
       state.downloadsTrayClicks += 1
@@ -209,9 +226,9 @@ function installMockBridge(opts: { isMac?: boolean; installationId?: string | nu
     },
     ready: () => {
       state.readyCalls += 1
-    },
+    }
   }
-    ; (window as unknown as { __comfyTitleBar: typeof bridge }).__comfyTitleBar = bridge
+  ;(window as unknown as { __comfyTitleBar: typeof bridge }).__comfyTitleBar = bridge
   return state
 }
 
@@ -485,7 +502,6 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('.title-install-type-icon').exists()).toBe(false)
   })
 
-
   it('renders the refresh button for local installs (parity with cloud)', async () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
@@ -554,7 +570,7 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp)
     await flushPromises()
     bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'available', version: '2.3.4', autoUpdate: false }),
+      cb({ kind: 'available', version: '2.3.4', autoUpdate: false })
     )
     await flushPromises()
     const pill = wrapper.find('.title-update-pill.is-app-update')
@@ -570,7 +586,7 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp)
     await flushPromises()
     bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'ready', version: '2.3.4', autoUpdate: false }),
+      cb({ kind: 'ready', version: '2.3.4', autoUpdate: false })
     )
     await flushPromises()
     const pill = wrapper.find('.title-update-pill.is-app-update')
@@ -585,7 +601,7 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp)
     await flushPromises()
     bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'ready', version: '2.3.4', autoUpdate: true }),
+      cb({ kind: 'ready', version: '2.3.4', autoUpdate: true })
     )
     await flushPromises()
     const pill = wrapper.find('.title-update-pill.is-app-update')
@@ -599,7 +615,9 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp)
     await flushPromises()
     expect(wrapper.find('.title-install-update-chip').exists()).toBe(false)
-    bridgeState.installUpdateAvailableCallbacks.forEach((cb) => cb({ available: true, version: null }))
+    bridgeState.installUpdateAvailableCallbacks.forEach((cb) =>
+      cb({ available: true, version: null })
+    )
     await flushPromises()
     const chip = wrapper.find('.title-install-update-chip')
     expect(chip.exists()).toBe(true)
@@ -611,7 +629,7 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp)
     await flushPromises()
     bridgeState.installUpdateAvailableCallbacks.forEach((cb) =>
-      cb({ available: true, version: 'v1.2.3' }),
+      cb({ available: true, version: 'v1.2.3' })
     )
     await flushPromises()
     const chip = wrapper.find('.title-install-update-chip')
@@ -627,7 +645,9 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    bridgeState.installUpdateAvailableCallbacks.forEach((cb) => cb({ available: true, version: null }))
+    bridgeState.installUpdateAvailableCallbacks.forEach((cb) =>
+      cb({ available: true, version: null })
+    )
     await flushPromises()
     expect(wrapper.find('.title-install-update-chip').exists()).toBe(false)
   })
@@ -637,7 +657,7 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp, { attachTo: document.body })
     await flushPromises()
     bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'available', version: '1.0.0', autoUpdate: false }),
+      cb({ kind: 'available', version: '1.0.0', autoUpdate: false })
     )
     await flushPromises()
     await wrapper.find('.title-update-pill.is-app-update').trigger('click')
@@ -649,7 +669,9 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp, { attachTo: document.body })
     await flushPromises()
-    bridgeState.installUpdateAvailableCallbacks.forEach((cb) => cb({ available: true, version: null }))
+    bridgeState.installUpdateAvailableCallbacks.forEach((cb) =>
+      cb({ available: true, version: null })
+    )
     await flushPromises()
     await wrapper.find('.title-install-update-chip').trigger('click')
     expect(bridgeState.installUpdatePillClicks).toBe(1)
@@ -661,12 +683,12 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp)
     await flushPromises()
     bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'ready', version: '2.0.0', autoUpdate: false }),
+      cb({ kind: 'ready', version: '2.0.0', autoUpdate: false })
     )
     await flushPromises()
     expect(wrapper.find('.title-update-pill.is-app-update').exists()).toBe(true)
     bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: null, version: null, autoUpdate: true }),
+      cb({ kind: null, version: null, autoUpdate: true })
     )
     await flushPromises()
     expect(wrapper.find('.title-update-pill.is-app-update').exists()).toBe(false)
@@ -694,18 +716,18 @@ describe('TitleBarApp', () => {
             filename: 'a.safetensors',
             directory: 'checkpoints',
             progress: 0.4,
-            status: 'downloading',
+            status: 'downloading'
           },
           {
             url: 'https://example.com/b.safetensors',
             filename: 'b.safetensors',
             directory: 'loras',
             progress: 0.1,
-            status: 'pending',
-          },
+            status: 'pending'
+          }
         ],
-        recent: [],
-      }),
+        recent: []
+      })
     )
     await flushPromises()
     const tray = wrapper.find('.title-downloads-tray')
@@ -733,10 +755,10 @@ describe('TitleBarApp', () => {
             filename: 'a.safetensors',
             directory: 'checkpoints',
             progress: 1,
-            status: 'completed',
-          },
-        ],
-      }),
+            status: 'completed'
+          }
+        ]
+      })
     )
     await flushPromises()
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
@@ -749,9 +771,7 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    bridgeState.downloadsChangedCallbacks.forEach((cb) =>
-      cb({ active: [], recent: [] }),
-    )
+    bridgeState.downloadsChangedCallbacks.forEach((cb) => cb({ active: [], recent: [] }))
     await flushPromises()
     bridgeState.downloadsChangedCallbacks.forEach((cb) =>
       cb({
@@ -760,11 +780,11 @@ describe('TitleBarApp', () => {
             url: 'https://example.com/a.safetensors',
             filename: 'a.safetensors',
             progress: 0.4,
-            status: 'downloading',
-          },
+            status: 'downloading'
+          }
         ],
-        recent: [],
-      }),
+        recent: []
+      })
     )
     await flushPromises()
     bridgeState.downloadsChangedCallbacks.forEach((cb) =>
@@ -775,10 +795,10 @@ describe('TitleBarApp', () => {
             url: 'https://example.com/a.safetensors',
             filename: 'a.safetensors',
             progress: 1,
-            status: 'completed',
-          },
-        ],
-      }),
+            status: 'completed'
+          }
+        ]
+      })
     )
     await flushPromises()
     const tray = wrapper.find('.title-downloads-tray')
@@ -794,9 +814,7 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    bridgeState.downloadsChangedCallbacks.forEach((cb) =>
-      cb({ active: [], recent: [] }),
-    )
+    bridgeState.downloadsChangedCallbacks.forEach((cb) => cb({ active: [], recent: [] }))
     await flushPromises()
     bridgeState.downloadsChangedCallbacks.forEach((cb) =>
       cb({
@@ -806,16 +824,14 @@ describe('TitleBarApp', () => {
             url: 'https://example.com/a.safetensors',
             filename: 'a.safetensors',
             progress: 1,
-            status: 'completed',
-          },
-        ],
-      }),
+            status: 'completed'
+          }
+        ]
+      })
     )
     await flushPromises()
     expect(wrapper.find('.title-downloads-tray').classes()).toContain('has-unseen')
-    bridgeState.menuOpenedCallbacks.forEach((cb) =>
-      cb({ menu: 'downloads' } as { menu: 'menu' }),
-    )
+    bridgeState.menuOpenedCallbacks.forEach((cb) => cb({ menu: 'downloads' } as { menu: 'menu' }))
     await flushPromises()
     const tray = wrapper.find('.title-downloads-tray')
     expect(tray.classes()).not.toContain('has-unseen')
@@ -828,9 +844,7 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp)
     await flushPromises()
     // Initial empty state so the next push counts as a real new arrival.
-    bridgeState.downloadsChangedCallbacks.forEach((cb) =>
-      cb({ active: [], recent: [] }),
-    )
+    bridgeState.downloadsChangedCallbacks.forEach((cb) => cb({ active: [], recent: [] }))
     await flushPromises()
     bridgeState.downloadsChangedCallbacks.forEach((cb) =>
       cb({
@@ -839,11 +853,11 @@ describe('TitleBarApp', () => {
             url: 'https://example.com/a.safetensors',
             filename: 'a.safetensors',
             progress: 0.1,
-            status: 'pending',
-          },
+            status: 'pending'
+          }
         ],
-        recent: [],
-      }),
+        recent: []
+      })
     )
     await flushPromises()
     expect(wrapper.find('.title-downloads-tray').classes()).toContain('is-flashing')
@@ -861,11 +875,11 @@ describe('TitleBarApp', () => {
             filename: 'a.safetensors',
             directory: 'checkpoints',
             progress: 0.4,
-            status: 'downloading',
-          },
+            status: 'downloading'
+          }
         ],
-        recent: [],
-      }),
+        recent: []
+      })
     )
     await flushPromises()
     expect(wrapper.find('.title-downloads-tray').attributes('title')).toBe('1 download in progress')
@@ -883,11 +897,11 @@ describe('TitleBarApp', () => {
             filename: 'a.safetensors',
             directory: 'checkpoints',
             progress: 0.5,
-            status: 'downloading',
-          },
+            status: 'downloading'
+          }
         ],
-        recent: [],
-      }),
+        recent: []
+      })
     )
     await flushPromises()
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
@@ -910,11 +924,11 @@ describe('TitleBarApp', () => {
             filename: 'a.safetensors',
             directory: 'checkpoints',
             progress: 0.5,
-            status: 'downloading',
-          },
+            status: 'downloading'
+          }
         ],
-        recent: [],
-      }),
+        recent: []
+      })
     )
     await flushPromises()
     await wrapper.find('.title-downloads-tray').trigger('click')
@@ -964,11 +978,11 @@ describe('TitleBarApp', () => {
             filename: 'a.safetensors',
             directory: 'checkpoints',
             progress: 0.5,
-            status: 'downloading',
-          },
+            status: 'downloading'
+          }
         ],
-        recent: [],
-      }),
+        recent: []
+      })
     )
     await flushPromises()
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
@@ -1035,7 +1049,7 @@ describe('TitleBarApp', () => {
       const btn = wrapper.find('.title-menu-button').element as HTMLElement
       // Stub a deterministic geometry — JSDOM returns 0×0 by default.
       btn.getBoundingClientRect = () =>
-        ({ left: 20, top: 6, right: 50, bottom: 30, width: 30, height: 24, x: 20, y: 6 } as DOMRect)
+        ({ left: 20, top: 6, right: 50, bottom: 30, width: 30, height: 24, x: 20, y: 6 }) as DOMRect
       btn.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))
       // Advance past the show delay.
       vi.advanceTimersByTime(500)
@@ -1083,9 +1097,9 @@ describe('TitleBarApp', () => {
           fire(width: number) {
             self.cb(
               [{ contentRect: { width, height: 28 } as DOMRectReadOnly } as ResizeObserverEntry],
-              self as unknown as ResizeObserver,
+              self as unknown as ResizeObserver
             )
-          },
+          }
         }
         handles.push(handle)
       }
@@ -1245,7 +1259,7 @@ describe('TitleBarApp', () => {
 
     it('does not show the coachmark when already seen', async () => {
       getSetting.mockImplementation((key: string) =>
-        key === 'hasSeenCentralPillHint' ? Promise.resolve(true) : Promise.resolve(undefined),
+        key === 'hasSeenCentralPillHint' ? Promise.resolve(true) : Promise.resolve(undefined)
       )
       bridgeState = installMockBridge({ installationId: 'inst-1' })
       vi.resetModules()

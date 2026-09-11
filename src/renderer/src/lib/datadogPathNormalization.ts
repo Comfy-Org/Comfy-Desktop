@@ -6,7 +6,7 @@ export const DATADOG_BUNDLE_BASE_URL = 'app://app'
 const DATADOG_BUNDLE_PATH_PATTERNS = [
   /file:\/\/\/[^\s)\n]*?[\\/]+out[\\/]+(renderer|main|preload)([\\/][^)\s\n:]+\.js)/g,
   /[A-Za-z]:\\[^\s)\n]*?\\out\\(renderer|main|preload)(\\[^)\s\n:]+\.js)/g,
-  /\/[^\s)\n]*?\/out\/(renderer|main|preload)(\/[^)\s\n:]+\.js)/g,
+  /\/[^\s)\n]*?\/out\/(renderer|main|preload)(\/[^)\s\n:]+\.js)/g
 ]
 
 export function normalizeDatadogBundlePaths(value: string | undefined): string | undefined {
@@ -25,7 +25,7 @@ export function normalizeDatadogBundlePaths(value: string | undefined): string |
 const PII_PATH_PATTERNS = [
   /([A-Za-z]:[\\/]Users[\\/])[^\\/]+?(?=[\\/]|$)/g,
   /(\/Users\/)[^\\/]+?(?=\/|$)/g,
-  /(\/home\/)[^\\/]+?(?=\/|$)/g,
+  /(\/home\/)[^\\/]+?(?=\/|$)/g
 ]
 
 export function scrubPII(value: string): string {
@@ -49,7 +49,8 @@ export function normalizeRumErrorEvent(event: RumErrorEvent): void {
     }
   }
   if (event.error.resource?.url) {
-    event.error.resource.url = normalizeDatadogBundlePaths(event.error.resource.url) || event.error.resource.url
+    event.error.resource.url =
+      normalizeDatadogBundlePaths(event.error.resource.url) || event.error.resource.url
     event.error.resource.url = scrubPII(event.error.resource.url)
   }
 }

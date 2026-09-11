@@ -22,7 +22,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   initialTab: 'status',
-  autoAction: null,
+  autoAction: null
 })
 
 const emit = defineEmits<{

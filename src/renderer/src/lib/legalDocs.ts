@@ -340,6 +340,7 @@ export const PRIVACY_POLICY: LegalDoc = {
       items: [
         '**Device identifier.** A pseudonymous identifier generated locally on first run. Before you sign in to Comfy Cloud it is not linked to your name, email address, or hardware. When you sign in, it is associated with your Comfy account.',
         '**Technical metadata.** Application version, operating system, and processor architecture.',
+        '**Approximate location (country only).** Derived from your IP address at the moment your telemetry is received. We retain only the country; the IP address itself and any finer location (city, region, coordinates) are discarded on receipt and not stored.',
         '**Product usage events.** Feature interactions, navigation between views, installation and update milestones, and approximate timing.',
         '**Custom node identifiers.** Public package names of custom nodes you install through Manager (for example, "comfyui-impact-pack"). The local installation path is not transmitted.',
         '**Crash and error diagnostics.** Stack traces, error messages, and short stdout/stderr fragments captured at the moment of failure.'

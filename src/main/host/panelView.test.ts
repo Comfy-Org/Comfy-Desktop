@@ -5,24 +5,25 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 import { _runningSessions } from '../lib/ipc/shared'
 import {
   comfyWindows,
+  computeBodyMode,
   indexInstallationId,
   nextWindowKey,
-  type ComfyWindowEntry,
+  type ComfyWindowEntry
 } from './registry'
-import { refreshComfyTabBody, setActivePanel } from './panelView'
+import { prewarmAttachedPanel, refreshComfyTabBody, setActivePanel } from './panelView'
 
 interface FakeWindow {
   destroyed: boolean
@@ -36,7 +37,7 @@ function makeWindow(opts: { destroyed?: boolean; focused?: boolean } = {}): Fake
     destroyed: opts.destroyed ?? false,
     focused: opts.focused ?? false,
     isDestroyed: () => win.destroyed,
-    isFocused: () => win.focused,
+    isFocused: () => win.focused
   }
   return win
 }
@@ -55,18 +56,22 @@ function makeWc(): FakeWebContents {
     destroyed: false,
     sent: [],
     isDestroyed: () => wc.destroyed,
-    send: (channel, ...args) => { wc.sent.push({ channel, args }) },
+    send: (channel, ...args) => {
+      wc.sent.push({ channel, args })
+    },
     focus: () => {},
-    isLoadingMainFrame: () => false,
+    isLoadingMainFrame: () => false
   }
   return wc
 }
 
-function makeEntry(opts: {
-  installationId?: string | null
-  activePanel?: ComfyWindowEntry['activePanel']
-  destroyed?: boolean
-} = {}): {
+function makeEntry(
+  opts: {
+    installationId?: string | null
+    activePanel?: ComfyWindowEntry['activePanel']
+    destroyed?: boolean
+  } = {}
+): {
   entry: ComfyWindowEntry
   titleBarWc: FakeWebContents
   layoutCalls: number
@@ -82,7 +87,9 @@ function makeEntry(opts: {
     panelView: null,
     activePanel: opts.activePanel ?? 'comfy',
     lastTheme: { bg: '#000', text: '#fff' },
-    layoutViews: () => { counters.layout += 1 },
+    layoutViews: () => {
+      counters.layout += 1
+    },
     comfyUrl: '',
     installationId: opts.installationId ?? null,
     constructedPartition: null,
@@ -92,12 +99,14 @@ function makeEntry(opts: {
     previewInstallationId: null,
     coldStartPendingReveal: false,
     _installCleanup: null,
-    detachInstall: () => {},
+    detachInstall: () => {}
   }
   return {
     entry,
     titleBarWc,
-    get layoutCalls(): number { return counters.layout },
+    get layoutCalls(): number {
+      return counters.layout
+    }
   }
 }
 
@@ -113,23 +122,46 @@ afterEach(() => {
 
 describe('setActivePanel', () => {
   it('no-ops when the requested panel is already active', () => {
-    const fixture = makeEntry({ activePanel: 'downloads-v2' })
+    const fixture = makeEntry({ activePanel: 'feedback' })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
-    setActivePanel(fixture.entry.windowKey, 'downloads-v2')
+    setActivePanel(fixture.entry.windowKey, 'feedback')
     expect(fixture.layoutCalls).toBe(0)
     expect(fixture.titleBarWc.sent).toHaveLength(0)
   })
 
   it('no-ops when the windowKey does not resolve to an entry', () => {
-    expect(() => setActivePanel(999_999, 'downloads-v2')).not.toThrow()
+    expect(() => setActivePanel(999_999, 'feedback')).not.toThrow()
   })
 
   it('no-ops when the host window has been destroyed', () => {
     const fixture = makeEntry({ activePanel: 'comfy', destroyed: true })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
-    setActivePanel(fixture.entry.windowKey, 'downloads-v2')
+    setActivePanel(fixture.entry.windowKey, 'feedback')
     expect(fixture.layoutCalls).toBe(0)
     expect(fixture.entry.activePanel).toBe('comfy')
+  })
+
+  // After a chooser-pick in-place attach the picker leaves the host on
+  // 'progress'; prewarmAttachedPanel must reset it to 'comfy' so the rebuilt
+  // panel stays hidden instead of covering the just-attached canvas.
+  it('prewarms the attached panel hidden by resetting a progress host to comfy', () => {
+    const fixture = makeEntry({ installationId: 'inst-A', activePanel: 'progress' })
+    // A pre-set panelView makes the real ensurePanelView short-circuit, so the
+    // helper runs without constructing an Electron WebContentsView.
+    fixture.entry.panelView = {
+      webContents: makeWc()
+    } as unknown as ComfyWindowEntry['panelView']
+    comfyWindows.set(fixture.entry.windowKey, fixture.entry)
+    indexInstallationId('inst-A', fixture.entry.windowKey)
+    _runningSessions.set('inst-A', {} as never)
+
+    expect(computeBodyMode(fixture.entry), 'starts stranded on progress').toBe('progress')
+
+    prewarmAttachedPanel(fixture.entry)
+
+    expect(fixture.entry.activePanel).toBe('comfy')
+    expect(computeBodyMode(fixture.entry), 'panel hidden, ComfyUI visible').toBe('comfy')
+    expect(fixture.layoutCalls, 'the prewarm lays the views out').toBeGreaterThan(0)
   })
 })
 
@@ -147,7 +179,7 @@ describe('refreshComfyTabBody', () => {
   })
 
   it('no-ops when the entry is currently parked on a non-comfy panel', () => {
-    const fixture = makeEntry({ installationId: 'inst-1', activePanel: 'downloads-v2' })
+    const fixture = makeEntry({ installationId: 'inst-1', activePanel: 'feedback' })
     comfyWindows.set(fixture.entry.windowKey, fixture.entry)
     indexInstallationId('inst-1', fixture.entry.windowKey)
     refreshComfyTabBody('inst-1')

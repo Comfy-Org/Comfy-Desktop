@@ -17,7 +17,9 @@ const settingsState: Record<string, unknown> = {}
 
 vi.mock('../settings', () => ({
   get: (key: string) => settingsState[key],
-  set: (key: string, value: unknown) => { settingsState[key] = value },
+  set: (key: string, value: unknown) => {
+    settingsState[key] = value
+  }
 }))
 
 vi.mock('electron', () => ({
@@ -27,17 +29,21 @@ vi.mock('electron', () => ({
         setHeader: vi.fn(),
         end: vi.fn(),
         abort: vi.fn(),
-        __url: url,
+        __url: url
       }) as FakeRequest
       requests.push(req)
       return req
-    }),
-  },
+    })
+  }
 }))
 
 import { download } from './download'
 
-function makeResponse(statusCode: number, body: Buffer | string, headers: Record<string, string | string[]> = {}): EventEmitter & { statusCode: number; headers: Record<string, string | string[]> } {
+function makeResponse(
+  statusCode: number,
+  body: Buffer | string,
+  headers: Record<string, string | string[]> = {}
+): EventEmitter & { statusCode: number; headers: Record<string, string | string[]> } {
   const res = Object.assign(new EventEmitter(), { statusCode, headers })
   const buf = typeof body === 'string' ? Buffer.from(body) : body
   if (!headers['content-length']) headers['content-length'] = String(buf.length)
@@ -119,9 +125,104 @@ describe('download — R2 mirror fallback for binaries', () => {
     // branch, _skipMirror=true prevents infinite ping-pong if the mirror itself
     // happens to live under R2_MIRROR_BASE_URL (it doesn't today, but lock it).
     const dest = path.join(tmpDir, 'bundle.7z')
-    const p = download(MIRROR_BIN, dest, null, { _skipMirror: true } as unknown as { _skipMirror: boolean })
+    const p = download(MIRROR_BIN, dest, null, { _skipMirror: true } as unknown as {
+      _skipMirror: boolean
+    })
     requests[0]!.emit('error', new Error('SECOND_DOWN'))
     await expect(p).rejects.toThrow(/SECOND_DOWN/)
     expect(requests.length).toBe(1)
+  })
+})
+
+describe('download — no-progress watchdog', () => {
+  let tmpDir: string
+  const URL = 'https://huggingface.co/x/model.safetensors'
+
+  beforeEach(() => {
+    requests.length = 0
+    for (const k of Object.keys(settingsState)) delete settingsState[k]
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-stall-'))
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  /** Open response with a Content-Length but emit no `end` — caller controls bytes. */
+  function openStreaming(req: FakeRequest, totalLen: number): EventEmitter {
+    const res = Object.assign(new EventEmitter(), {
+      statusCode: 200,
+      headers: { 'content-length': String(totalLen) } as Record<string, string>
+    })
+    req.emit('response', res)
+    return res
+  }
+
+  it('aborts and rejects when no bytes arrive within idleTimeoutMs', async () => {
+    const dest = path.join(tmpDir, 'model.safetensors')
+    const p = download(URL, dest, null, { idleTimeoutMs: 1000 })
+    const rejection = expect(p).rejects.toThrow(/stalled/i)
+    const res = openStreaming(requests[0]!, 100)
+    res.emit('data', Buffer.from('ab')) // one chunk, then silence
+    await vi.advanceTimersByTimeAsync(1000)
+    await rejection
+    expect(requests[0]!.abort).toHaveBeenCalled()
+  })
+
+  it('preserves idleTimeoutMs across redirects', async () => {
+    const dest = path.join(tmpDir, 'redirected.safetensors')
+    const p = download(URL, dest, null, { idleTimeoutMs: 150 })
+    const rejection = expect(p).rejects.toThrow('Download stalled: no data for 0s')
+    requests[0]!.emit('response', makeResponse(302, '', { location: `${URL}?redirected=1` }))
+    await vi.advanceTimersByTimeAsync(0)
+    openStreaming(requests[1]!, 100)
+    await vi.advanceTimersByTimeAsync(150)
+    await rejection
+    expect(requests[1]!.abort).toHaveBeenCalled()
+  })
+
+  it('does not fire while bytes keep arriving (timer rearms per chunk)', async () => {
+    const dest = path.join(tmpDir, 'model.safetensors')
+    const body = Buffer.from('hello world bytes!!!')
+    const p = download(URL, dest, null, { idleTimeoutMs: 1000, expectedSize: body.length })
+    const res = openStreaming(requests[0]!, body.length)
+    // Drip chunks 800ms apart — never idle for the full second.
+    for (const ch of [body.subarray(0, 7), body.subarray(7, 14), body.subarray(14)]) {
+      res.emit('data', ch)
+      await vi.advanceTimersByTimeAsync(800)
+    }
+    res.emit('end')
+    await vi.advanceTimersByTimeAsync(0)
+    await expect(p).resolves.toBe(dest)
+    expect(requests[0]!.abort).not.toHaveBeenCalled()
+  })
+})
+
+describe('download URL policy', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    requests.length = 0
+    for (const k of Object.keys(settingsState)) delete settingsState[k]
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-policy-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('rejects a redirect that violates the caller URL policy', async () => {
+    const dest = path.join(tmpDir, 'artifact.tar.gz')
+    const validateUrl = (url: string): boolean => new URL(url).protocol === 'https:'
+    const result = download('https://storage.example/artifact', dest, null, { validateUrl })
+    requests[0]!.emit(
+      'response',
+      makeResponse(302, '', { location: 'http://storage.example/artifact' })
+    )
+
+    await expect(result).rejects.toThrow(/not allowed/i)
+    expect(requests).toHaveLength(1)
   })
 })

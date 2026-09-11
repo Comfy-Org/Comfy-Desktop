@@ -5,16 +5,29 @@ import type { ComfyArgDef } from '../types/ipc'
 
 const SCHEMA: ComfyArgDef[] = [
   { name: 'cpu', flag: '--cpu', help: 'Run on CPU only.', type: 'boolean', category: 'GPU & VRAM' },
-  { name: 'lowvram', flag: '--lowvram', help: 'Reduce VRAM.', type: 'boolean', category: 'GPU & VRAM' },
+  {
+    name: 'lowvram',
+    flag: '--lowvram',
+    help: 'Reduce VRAM.',
+    type: 'boolean',
+    category: 'GPU & VRAM'
+  },
   { name: 'novram', flag: '--novram', help: 'No VRAM.', type: 'boolean', category: 'GPU & VRAM' },
-  { name: 'port', flag: '--port', help: 'Server port.', type: 'value', metavar: 'PORT', category: 'Network' },
+  {
+    name: 'port',
+    flag: '--port',
+    help: 'Server port.',
+    type: 'value',
+    metavar: 'PORT',
+    category: 'Network'
+  },
   {
     name: 'listen',
     flag: '--listen',
     help: 'Listen on host.',
     type: 'optional-value',
     metavar: '[HOST]',
-    category: 'Network',
+    category: 'Network'
   },
   {
     name: 'cache-ram',
@@ -22,15 +35,15 @@ const SCHEMA: ComfyArgDef[] = [
     help: 'RAM caching thresholds.',
     type: 'multi-value',
     metavar: 'GB',
-    category: 'Cache',
+    category: 'Cache'
   },
   {
     name: 'fp8_e8m0fnu-unet',
     flag: '--fp8_e8m0fnu-unet',
     help: 'Use fp8 e8m0 for the diffusion model.',
     type: 'boolean',
-    category: 'Precision',
-  },
+    category: 'Precision'
+  }
 ]
 
 function setup(initial = '', initialFocus = true) {
@@ -142,7 +155,7 @@ describe('useArgsAutocomplete — matches', () => {
       flag: `--flag${i}`,
       help: '',
       type: 'boolean' as const,
-      category: 'Misc',
+      category: 'Misc'
     }))
     const { ac, schema } = setup('--flag')
     schema.value = wide

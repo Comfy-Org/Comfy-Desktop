@@ -1,0 +1,175 @@
+name: Starter templates
+
+# Guards `assets/starter-templates.json`, which desktop reads from R2 at boot.
+# A bad edit is silent in the app: a short tab quietly backfills and a paid
+# auto-pick spends the user's credits, so it has to fail here instead.
+on:
+  pull_request:
+    paths:
+      - 'assets/starter-templates.json'
+      - 'scripts/starter-templates.mjs'
+      - 'scripts/starter-templates.spec.mjs'
+      - '.github/workflows/starter-templates.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'assets/starter-templates.json'
+      # A change to the validator itself must re-check the committed list on
+      # main, not only on the PR that changed it.
+      - 'scripts/starter-templates.mjs'
+      - '.github/workflows/starter-templates.yml'
+  # Lets us prove the credentials work before merging, rather than finding out
+  # on the merge that publishes to users.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Check credentials without touching the published file'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Checks the tab counts and the one-paid-per-tab rule, and confirms every
+      # id still exists upstream.
+      - run: node scripts/starter-templates.mjs validate
+
+      # Every way an edit can break the picker silently: wrong counts, a paid
+      # auto-pick, a duplicate id, a free card with no size.
+      # `node --test`, so this needs no dependency install.
+      - name: guardrails hold
+        run: node --test scripts/starter-templates.spec.mjs
+
+      # A hand-edit that skipped the script would drift from the index, so
+      # regenerating must be a no-op.
+      # A warning, not a failure: these fields are refreshed from upstream's
+      # `main`, so an unrelated edit there would otherwise redden every open PR
+      # and send the author hunting a hand-edit that does not exist.
+      - name: display fields match the live index
+        run: |
+          # `bash -e` would fail the step on a die(), which is the upstream
+          # drift this warning exists to tolerate.
+          node scripts/starter-templates.mjs regenerate >/dev/null || {
+            echo "::warning::Could not reach the template index to check for drift."
+            exit 0
+          }
+          if ! git diff --quiet -- assets/starter-templates.json; then
+            echo "::warning::Display fields differ from upstream. If this PR did not"
+            echo "::warning::edit them, upstream changed: run"
+            echo "::warning::  node scripts/starter-templates.mjs regenerate"
+            git diff -- assets/starter-templates.json
+          fi
+          git checkout -- assets/starter-templates.json
+
+  # Merging to main publishes the list. Desktop reads it at boot, so users pick
+  # the change up on their next launch with no app release.
+  publish:
+    # Only publishes share this group. At workflow level the PR runs would share
+    # it too, and a queued merge could be displaced by a later PR run.
+    concurrency:
+      group: starter-templates-publish
+      cancel-in-progress: false
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: starter-templates
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Authenticate first. It is the likeliest failure and writes nothing, so
+      # a bad key aborts before R2 is mutated and the hosts can diverge.
+      - name: authenticate to GCS
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_MIRROR_SA_KEY }}
+
+      # Uploaded to both hosts: regions where R2's edge is throttled read the
+      # GCS mirror, and a list that exists on only one of them is invisible to
+      # half the users it was written for.
+      - name: publish to R2
+        if: inputs.dry_run != true
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.R2_STARTER_TEMPLATES_TOKEN }}
+        run: |
+          npx --yes wrangler@3.114.1 r2 object put \
+            desktop-assets/standalone-environments/starter-templates.json \
+            --file assets/starter-templates.json \
+            --content-type application/json
+
+      - uses: google-github-actions/upload-cloud-storage@v2
+        if: inputs.dry_run != true
+        with:
+          path: assets/starter-templates.json
+          destination: comfy-desktop-public/standalone-environments
+          # Without this the object lands under .../standalone-environments/assets/
+          parent: false
+          headers: |-
+            content-type: application/json
+
+      # A real write and delete under a throwaway key, so the token is proven to
+      # have write access without touching the file users read.
+      # Diagnoses the token rather than just failing: which permissions it
+      # carries, and whether the bucket is even in this account.
+      # Reports what each credential can and cannot do, so a failure names the
+      # permission to request rather than just saying it was refused.
+      - name: dry run - R2 credentials
+        if: inputs.dry_run == true
+        env:
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_TOKEN: ${{ secrets.R2_STARTER_TEMPLATES_TOKEN }}
+        run: bash .github/scripts/check-r2.sh
+
+      # `always()` so an R2 failure never hides the mirror's status; the job
+      # still fails overall if either is refused.
+      # Preinstalled on ubuntu-latest today, but an undeclared dependency would
+      # surface as "the key is malformed" rather than "the package is missing".
+      - name: ensure the JWT signing dependency
+        if: ${{ !cancelled() && inputs.dry_run == true }}
+        run: python3 -c "import cryptography" || pip install --quiet cryptography
+
+      - name: dry run - GCS mirror credentials
+        if: ${{ !cancelled() && inputs.dry_run == true }}
+        run: bash .github/scripts/check-gcs.sh
+
+      - name: confirm both hosts serve it
+        if: inputs.dry_run != true
+        run: |
+          TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+          for url in \
+            https://desktop-assets.comfy.org/standalone-environments/starter-templates.json \
+            https://storage.googleapis.com/comfy-desktop-public/standalone-environments/starter-templates.json
+          do
+            # Both hosts sit behind a CDN, so a read straight after the write can
+            # still serve the previous object. Poll rather than fail on the race.
+            ok=false
+            for _ in $(seq 1 12); do
+              code=$(curl -s --connect-timeout 10 --max-time 30 \
+                -H 'Cache-Control: no-cache' -o "$TMP/got.json" \
+                -w '%{http_code}' "$url" || echo "000")
+              if [ "$code" = "200" ] && diff -q "$TMP/got.json" assets/starter-templates.json >/dev/null; then
+                ok=true; break
+              fi
+              sleep 5
+            done
+            if [ "$ok" != "true" ]; then
+              echo "::error::$url did not serve the published list within 60s (last HTTP $code)"
+              exit 1
+            fi
+          done
+          echo "Published. Desktop users get this on their next launch."

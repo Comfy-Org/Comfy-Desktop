@@ -44,42 +44,42 @@ export const DEFAULT_LAUNCH_PHASES: readonly LaunchPhaseDef[] = [
     phase: 'launchStart',
     match: NEVER,
     weight: 0.05,
-    streaming: true,
+    streaming: true
   },
   {
     phase: 'securityScan',
     match: /Adding extra search path|ComfyUI startup time/i,
     weight: 0.05,
-    streaming: false,
+    streaming: false
   },
   {
     phase: 'mountLibraries',
     match: /\[DONE\] Security scan/i,
     weight: 0.05,
-    streaming: true,
+    streaming: true
   },
   {
     // Entry captures VRAM (group 1). The long torch/mps init lives inside
     // this phase, so it owns the largest slot and streams live activity.
     phase: 'gpu',
     match: /Total VRAM\s+(\d+)\s*MB/i,
-    weight: 0.50,
-    streaming: true,
+    weight: 0.5,
+    streaming: true
   },
   {
     phase: 'customNodes',
     match: /ComfyUI version:|Import times for custom nodes:/i,
     weight: 0.15,
-    streaming: false,
+    streaming: false
   },
   {
     // The tail. Indeterminate + streaming so the bar shows live log lines
     // (not a frozen 99%) until the existing transition into ComfyUI fires.
     phase: 'startingServer',
     match: /Starting server|To see the GUI go to:|Uvicorn running on/i,
-    weight: 0.20,
-    streaming: true,
-  },
+    weight: 0.2,
+    streaming: true
+  }
 ]
 
 /**
@@ -96,13 +96,39 @@ export type PreLaunchPhase = 'repair' | 'torchRepair'
 
 const PRE_LAUNCH_PHASES: Record<PreLaunchPhase, LaunchPhaseDef> = {
   repair: { phase: 'repair', match: NEVER, weight: 0.1, streaming: true },
-  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true },
+  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true }
+}
+
+/** Starter-template model download, shown as the LAST launch step. Synthetic +
+ *  streaming: its bytes downloaded in the background since install-begin, and a
+ *  500 ms reader in `handleLaunch` feeds the rich substatus from the shared
+ *  download state.
+ *
+ *  Placed at the very end (after `startingServer`) on purpose: every other
+ *  install+launch step finishes first, so a still-running download can't make
+ *  the earlier steps' bar jump, and the "Skip model download" footer button —
+ *  gated on `template-models` being the active row — only appears once nothing
+ *  else is left. (The store's monotonic `activePhase` guard keeps the early
+ *  reader ticks from pulling the active row here before its turn.)
+ *
+ *  Weight matches the other light launch phases so a STILL-RUNNING download
+ *  fills its slot smoothly (the bar advances with the bytes). When the models
+ *  were already fetched in the background by launch time (the common case), the
+ *  reader in `handleLaunch` reports it INDETERMINATE so the slot isn't filled in
+ *  one frame. */
+const TEMPLATE_MODELS_PHASE: LaunchPhaseDef = {
+  phase: 'template-models',
+  match: NEVER,
+  weight: 0.05,
+  streaming: true
 }
 
 export interface BuildLaunchPhasesOpts {
   /** Synthetic repair steps to prepend, in display order (e.g. a source
    *  rollback then a PyTorch restore). Omitted/empty for an unaffected launch. */
   preLaunchPhases?: PreLaunchPhase[]
+  /** When true, append the `template-models` phase as the final launch step. */
+  templateModels?: boolean
 }
 
 /**
@@ -116,7 +142,16 @@ export interface BuildLaunchPhasesOpts {
  * Adding a step is one entry in `PRE_LAUNCH_PHASES` + a push here. `inst` is
  * untyped so this module stays decoupled from the main/renderer record split.
  */
-export function buildLaunchPhases(_inst: unknown, opts: BuildLaunchPhasesOpts = {}): LaunchPhaseDef[] {
+export function buildLaunchPhases(
+  _inst: unknown,
+  opts: BuildLaunchPhasesOpts = {}
+): LaunchPhaseDef[] {
   const pre = (opts.preLaunchPhases ?? []).map((id) => ({ ...PRE_LAUNCH_PHASES[id] }))
-  return [...pre, ...DEFAULT_LAUNCH_PHASES.map((p) => ({ ...p }))]
+  const phases = [...pre, ...DEFAULT_LAUNCH_PHASES.map((p) => ({ ...p }))]
+  if (opts.templateModels) {
+    // Append as the final step so every other install+launch phase completes
+    // before the (background) model download becomes the active row.
+    phases.push({ ...TEMPLATE_MODELS_PHASE })
+  }
+  return phases
 }

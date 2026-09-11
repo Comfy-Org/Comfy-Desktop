@@ -8,7 +8,7 @@ export const POPUP_ALLOWED_PREFIXES = [
   'https://dreamboothy.firebaseapp.com/',
   CHECKOUT_PREFIX,
   'https://accounts.google.com/',
-  'https://github.com/login/oauth/',
+  'https://github.com/login/oauth/'
 ]
 
 export function shouldOpenInPopup(url: string): boolean {
@@ -63,7 +63,7 @@ const DOWNLOAD_FILE_EXTENSIONS = [
   '.bin',
   '.gguf',
   '.pt',
-  '.pth',
+  '.pth'
 ]
 
 /** Does the URL's pathname end in a known archive/binary extension? Captures

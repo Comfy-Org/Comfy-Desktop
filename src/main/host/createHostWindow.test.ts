@@ -7,26 +7,57 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: {},
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 import type { InstallationRecord } from '../installations'
 import {
+  buildFirebaseAuthForwardedError,
   cascadeOffsetForCollisions,
   expectedPartitionFor,
   installCloseNeedsConfirm,
   isWindowLayoutable,
   shouldBailAfterCloseChoice,
   shouldBailAfterConsult,
-  shouldShowInstallCloseConfirm,
+  shouldShowInstallCloseConfirm
 } from './createHostWindow'
+
+describe('buildFirebaseAuthForwardedError', () => {
+  it.each([
+    ['desktop_login_code', 'firebase-desktop-login-code-failed'],
+    ['loopback_bridge', 'firebase-loopback-bridge-failed']
+  ] as const)('labels the %s flow without forwarding raw error text', (flow, source) => {
+    const forwarded = buildFirebaseAuthForwardedError({
+      provider: 'google.com',
+      error_class: 'DesktopLoginCodeError',
+      error_bucket: 'other',
+      flow,
+      retried_poll_errors: 2
+    })
+
+    expect(forwarded).toEqual({
+      source,
+      message: 'Firebase sign-in failed',
+      level: 'warn',
+      context: {
+        origin: 'main-process',
+        provider: 'google.com',
+        error_class: 'DesktopLoginCodeError',
+        error_bucket: 'other',
+        flow,
+        retried_poll_errors: 2
+      }
+    })
+    expect(forwarded.context).not.toHaveProperty('error')
+  })
+})
 
 function makeInstallation(overrides: Partial<InstallationRecord> = {}): InstallationRecord {
   return {
@@ -35,7 +66,7 @@ function makeInstallation(overrides: Partial<InstallationRecord> = {}): Installa
     sourceId: 'standalone',
     installPath: '/tmp/test',
     state: 'ready',
-    ...overrides,
+    ...overrides
   } as unknown as InstallationRecord
 }
 
@@ -76,15 +107,27 @@ describe('cascadeOffsetForCollisions', () => {
 
   it('offsets by 30px when one existing window matches the origin', () => {
     const opts = { x: 100, y: 100, width: 1280, height: 900 }
-    expect(cascadeOffsetForCollisions(opts, [{ x: 100, y: 100 }]))
-      .toEqual({ x: 130, y: 130, width: 1280, height: 900 })
+    expect(cascadeOffsetForCollisions(opts, [{ x: 100, y: 100 }])).toEqual({
+      x: 130,
+      y: 130,
+      width: 1280,
+      height: 900
+    })
   })
 
   it('cascades past chains of pre-cascaded windows', () => {
     const opts = { x: 100, y: 100, width: 1280, height: 900 }
-    const existing = [{ x: 100, y: 100 }, { x: 130, y: 130 }, { x: 160, y: 160 }]
-    expect(cascadeOffsetForCollisions(opts, existing))
-      .toEqual({ x: 190, y: 190, width: 1280, height: 900 })
+    const existing = [
+      { x: 100, y: 100 },
+      { x: 130, y: 130 },
+      { x: 160, y: 160 }
+    ]
+    expect(cascadeOffsetForCollisions(opts, existing)).toEqual({
+      x: 190,
+      y: 190,
+      width: 1280,
+      height: 900
+    })
   })
 
   it('skips destroyed/empty origin lists cleanly', () => {
@@ -197,5 +240,3 @@ describe('shouldBailAfterCloseChoice', () => {
     expect(shouldBailAfterCloseChoice('cancel', true)).toBe(false)
   })
 })
-
-

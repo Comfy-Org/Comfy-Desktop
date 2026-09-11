@@ -6,7 +6,10 @@ import { TITLEBAR_BG } from './theme'
 export const TITLEBAR_HEIGHT = 36
 
 /** Position of macOS traffic-light buttons, vertically centered within the title bar. */
-export const TRAFFIC_LIGHT_POSITION: Electron.Point = { x: 13, y: Math.round((TITLEBAR_HEIGHT - 16) / 2) }
+export const TRAFFIC_LIGHT_POSITION: Electron.Point = {
+  x: 13,
+  y: Math.round((TITLEBAR_HEIGHT - 16) / 2)
+}
 
 /** OS window-controls overlay color, sourced from {@link TITLEBAR_BG}. Locked to the dark surface
  *  regardless of app theme until light theme is plumbed through every title-bar surface.
@@ -16,7 +19,7 @@ export function titleBarOverlayForTheme(_isDark: boolean): Electron.TitleBarOver
   return {
     color: TITLEBAR_BG,
     symbolColor: '#dddddd',
-    height: TITLEBAR_HEIGHT,
+    height: TITLEBAR_HEIGHT
   }
 }
 
@@ -32,5 +35,7 @@ export function updateTitleBarOverlay(): void {
   const win = BrowserWindow.fromId(_mainWindowId)
   if (!win || win.isDestroyed()) return
   const resolved = resolveTheme()
-  try { win.setTitleBarOverlay(titleBarOverlayForTheme(resolved === 'dark')) } catch {}
+  try {
+    win.setTitleBarOverlay(titleBarOverlayForTheme(resolved === 'dark'))
+  } catch {}
 }

@@ -4,11 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { renderDoneHtml, renderErrorHtml, renderPopupBridgeHtml } from './bridgeHtml'
 import { getFirebaseConfig, type FirebaseEnv } from './config'
 import type { SupportedProvider } from './intercept'
-import {
-  buildPersistedUser,
-  createOauthAuthUri,
-  signInWithIdpExchange,
-} from './oauth'
+import { buildPersistedUser, createOauthAuthUri, signInWithIdpExchange } from './oauth'
 
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -218,7 +214,7 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
           firebaseConfig.apiKey,
           providerId,
           requestUri,
-          sessionId,
+          sessionId
         )
         const persistedUser = buildPersistedUser(firebaseConfig, idpResponse, providerId)
         res.statusCode = 200

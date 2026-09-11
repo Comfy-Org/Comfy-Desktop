@@ -1,4 +1,11 @@
-import { findNearestTag, findLatestVersionTag, countCommitsAhead, countUniqueCommits, isAncestorOf, findMergeBase } from './git'
+import {
+  findNearestTag,
+  findLatestVersionTag,
+  countCommitsAhead,
+  countUniqueCommits,
+  isAncestorOf,
+  findMergeBase
+} from './git'
 import type { ComfyVersion } from './version'
 
 /** Pre-resolved latest tag info, shared across repos with the same origin. */
@@ -19,7 +26,11 @@ let _latestTagCache: { repoPath: string; tag: string | undefined; ts: number } |
 const LATEST_TAG_TTL_MS = 5_000
 
 async function getCachedLatestTag(repoPath: string): Promise<string | undefined> {
-  if (_latestTagCache && _latestTagCache.repoPath === repoPath && Date.now() - _latestTagCache.ts < LATEST_TAG_TTL_MS) {
+  if (
+    _latestTagCache &&
+    _latestTagCache.repoPath === repoPath &&
+    Date.now() - _latestTagCache.ts < LATEST_TAG_TTL_MS
+  ) {
     return _latestTagCache.tag
   }
   const tag = await findLatestVersionTag(repoPath)
@@ -44,7 +55,7 @@ async function findBestBackportTag(
   startRef: string,
   commit: string,
   stopTag: string,
-  ancestorDist?: number,
+  ancestorDist?: number
 ): Promise<{ tag: string; commitsAhead: number } | undefined> {
   // Collect candidate tags by walking backward from startRef.
   const candidates: string[] = []
@@ -95,9 +106,11 @@ export async function resolveLocalVersion(
   comfyuiDir: string,
   commit: string,
   fallbackTag?: string,
-  latestTagOverride?: LatestTagOverride,
+  latestTagOverride?: LatestTagOverride
 ): Promise<ComfyVersion> {
-  const overrideKey = latestTagOverride ? `\0${latestTagOverride.name}\0${latestTagOverride.sha}` : ''
+  const overrideKey = latestTagOverride
+    ? `\0${latestTagOverride.name}\0${latestTagOverride.sha}`
+    : ''
   const cacheKey = `${comfyuiDir}\0${commit}${overrideKey}`
   const cached = _cache.get(cacheKey)
   if (cached) {
@@ -108,11 +121,13 @@ export async function resolveLocalVersion(
     return cached
   }
 
-  const latestTagName = latestTagOverride?.name ?? await getCachedLatestTag(comfyuiDir)
+  const latestTagName = latestTagOverride?.name ?? (await getCachedLatestTag(comfyuiDir))
   const latestTagRef = latestTagOverride?.sha ?? latestTagName
 
   const ancestorTag = await findNearestTag(comfyuiDir, commit)
-  const ancestorDist = ancestorTag ? await countCommitsAhead(comfyuiDir, ancestorTag, commit) : undefined
+  const ancestorDist = ancestorTag
+    ? await countCommitsAhead(comfyuiDir, ancestorTag, commit)
+    : undefined
 
   // Try to upgrade the ancestor tag to a newer one. Direct-ancestor case: use
   // latestTag directly. Backport case (latestTag not an ancestor, but ancestorTag
@@ -121,13 +136,16 @@ export async function resolveLocalVersion(
   let baseTag: string | undefined
   let commitsAhead: number | undefined
 
-  const shouldUpgrade = latestTagName && latestTagName !== ancestorTag && ancestorDist !== undefined && ancestorDist > 0
+  const shouldUpgrade =
+    latestTagName && latestTagName !== ancestorTag && ancestorDist !== undefined && ancestorDist > 0
   let upgraded = false
 
   if (shouldUpgrade) {
-    const ancestorIsParent = ancestorTag ? await isAncestorOf(comfyuiDir, ancestorTag, latestTagRef!) : false
+    const ancestorIsParent = ancestorTag
+      ? await isAncestorOf(comfyuiDir, ancestorTag, latestTagRef!)
+      : false
 
-    if (ancestorIsParent && await isAncestorOf(comfyuiDir, latestTagRef!, commit)) {
+    if (ancestorIsParent && (await isAncestorOf(comfyuiDir, latestTagRef!, commit))) {
       // Direct ancestor — count from tag to commit directly.
       const dist = await countCommitsAhead(comfyuiDir, latestTagRef!, commit)
       if (dist !== undefined) {
@@ -136,7 +154,13 @@ export async function resolveLocalVersion(
         upgraded = true
       }
     } else if (ancestorIsParent) {
-      const found = await findBestBackportTag(comfyuiDir, latestTagRef!, commit, ancestorTag!, ancestorDist)
+      const found = await findBestBackportTag(
+        comfyuiDir,
+        latestTagRef!,
+        commit,
+        ancestorTag!,
+        ancestorDist
+      )
       if (found) {
         baseTag = found.tag
         commitsAhead = found.commitsAhead
@@ -145,9 +169,10 @@ export async function resolveLocalVersion(
         // Cherry-pick detection failed (shallow clone). Fall back to merge-base:
         // less precise (+N includes cherry-picks) but still reasonable.
         const mergeBase = await findMergeBase(comfyuiDir, latestTagRef!, commit)
-        const dist = mergeBase && mergeBase !== commit
-          ? await countCommitsAhead(comfyuiDir, mergeBase, commit)
-          : undefined
+        const dist =
+          mergeBase && mergeBase !== commit
+            ? await countCommitsAhead(comfyuiDir, mergeBase, commit)
+            : undefined
         if (dist !== undefined) {
           baseTag = latestTagName
           commitsAhead = dist
@@ -172,7 +197,6 @@ export async function resolveLocalVersion(
   }
   return result
 }
-
 
 /** Clear the version cache (e.g. after an update changes tags). */
 export function clearVersionCache(): void {

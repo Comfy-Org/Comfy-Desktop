@@ -6,46 +6,32 @@ import { t } from '../../lib/i18n'
 import { launchAction } from '../../lib/actions'
 import { getLatestStableTag, getStableTags } from '../../lib/comfyui-releases'
 import { copyDirWithProgress } from '../../lib/copy'
+import { areModelsPresent } from '../../lib/modelDownloadPaths'
 import {
-  PLATFORM_PREFIX, DEFAULT_LAUNCH_ARGS,
-  getVariantLabel, stripPlatform, getActivePythonPath,
-  getVenvDir, recommendVariant, writeComfyEnvironment,
+  PLATFORM_PREFIX,
+  DEFAULT_LAUNCH_ARGS,
+  getVariantLabel,
+  stripPlatform,
+  getActivePythonPath,
+  getVenvDir,
+  recommendVariant,
+  variantMatchesHost,
+  writeComfyEnvironment
 } from './envPaths'
 import { install, postInstall, probeInstallation } from './install'
+import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
+import { loadTemplateCatalog } from './templateCatalog'
+import { resolveTemplateModels } from './templateModels'
+import * as installations from '../../installations'
+
 import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
 import { handleAction } from './actions'
 import type { InstallationRecord } from '../../installations'
-import type {
-  SourcePlugin,
-  FieldOption,
-  LaunchCommand,
-} from '../../types/sources'
+import type { SourcePlugin, FieldOption, LaunchCommand } from '../../types/sources'
 
 export { getVariantLabel } from './envPaths'
 
-// --- R2 release types ---
-
-interface R2Variant {
-  tag: string
-  comfyui_version: string
-  comfyui_commit: string
-  build: number
-  date: string
-  file: string
-  size: number
-  python_version: string
-  torch_version: string
-  torchvision_version?: string
-  torchaudio_version?: string
-}
-
-/** latest.json: vendor_id → newest release */
-type R2Latest = Record<string, R2Variant>
-
-/** {vendor}/releases.json: full history for one vendor */
-interface R2VendorReleases {
-  releases: R2Variant[]
-}
+import type { R2Variant, R2Latest, R2VendorReleases } from './r2Catalog'
 
 interface VariantData {
   variantId: string
@@ -54,27 +40,37 @@ interface VariantData {
   downloadFiles: { url: string; filename: string; size: number }[]
 }
 
+/** Max wait for the "models downloaded" check before returning options unbadged. */
+const MODELS_PRESENT_BUDGET_MS = 2500
+
 /**
  * Build a variant card FieldOption from a single R2 bundle release. Shared by
  * the install-wizard variant list (newest bundle per vendor) and the
- * snapshot-load flow (a specific historical bundle). `displayStableTag`, when
- * set, advertises the upstream stable version the post-install update lands on
- * instead of the bundle's checked-in ComfyUI version.
+ * snapshot-load flow (a specific historical bundle). `displayTag`, when set,
+ * advertises the upstream version the post-install update lands on instead of
+ * the bundle's checked-in ComfyUI version; pass `nightly: true` for the
+ * "Latest on GitHub" channel, where the install fast-forwards to master HEAD
+ * (a few commits past `displayTag`, the latest stable tag).
  */
 function buildVariantOption(
   vendorId: string,
   release: R2Variant,
-  displayStableTag: string | null,
-  gpu: string | undefined
+  displayTag: string | null,
+  gpu: string | undefined,
+  nightly = false
 ): FieldOption {
   const sizeMB = (release.size / 1048576).toFixed(0)
-  const downloadFiles = [{
-    url: `${R2_BASE_URL}/${vendorId}/${release.tag}/${release.file}`,
-    filename: release.file,
-    size: release.size,
-  }]
-  const displayVersion = displayStableTag
-    ? displayStableTag.replace(/^v/, '')
+  const downloadFiles = [
+    {
+      url: `${R2_BASE_URL}/${vendorId}/${release.tag}/${release.file}`,
+      filename: release.file,
+      size: release.size
+    }
+  ]
+  // The description is a fixed-format, non-localized string ("ComfyUI X ·
+  // Python Y · Z MB"), so the nightly marker is a plain literal too.
+  const displayVersion = displayTag
+    ? `${displayTag.replace(/^v/, '')}${nightly ? ' (nightly)' : ''}`
     : release.comfyui_version
   return {
     value: vendorId,
@@ -82,12 +78,16 @@ function buildVariantOption(
     description: `ComfyUI ${displayVersion}  ·  Python ${release.python_version}  ·  ${sizeMB} MB`,
     data: {
       variantId: vendorId,
-      manifest: { id: vendorId, comfyui_ref: release.comfyui_version, python_version: release.python_version },
+      manifest: {
+        id: vendorId,
+        comfyui_ref: release.comfyui_version,
+        python_version: release.python_version
+      },
       downloadFiles,
       downloadUrl: downloadFiles[0]!.url,
-      r2Release: release,
+      r2Release: release
     } as unknown as Record<string, unknown>,
-    recommended: recommendVariant(vendorId, gpu),
+    recommended: recommendVariant(vendorId, gpu)
   }
 }
 
@@ -114,8 +114,12 @@ export function buildPinnedVariant(
 
 export const standalone: SourcePlugin = {
   id: 'standalone',
-  get label() { return t('standalone.label') },
-  get description() { return t('standalone.desc') },
+  get label() {
+    return t('standalone.label')
+  },
+  get description() {
+    return t('standalone.desc')
+  },
   category: 'local',
 
   get fields() {
@@ -126,7 +130,21 @@ export const standalone: SourcePlugin = {
       // and a tag picker there would contradict the channel intent. The
       // wizard renders an empty/disabled select on 'latest' (zero options).
       { id: 'comfyVersion', label: t('standalone.comfyVersion'), type: 'select' as const },
-      { id: 'variant', label: t('standalone.variant'), type: 'select' as const, renderAs: 'cards' as const },
+      {
+        id: 'variant',
+        label: t('standalone.variant'),
+        type: 'select' as const,
+        renderAs: 'cards' as const
+      },
+      // POC: optional starter template to auto-open on first launch. Rendered
+      // as cards after the variant; always returns options (incl. a "None"
+      // skip), so the wizard's field chain completes and Continue enables.
+      {
+        id: 'bundledTemplate',
+        label: t('standalone.starterTemplate'),
+        type: 'select' as const,
+        renderAs: 'cards' as const
+      }
     ]
   },
 
@@ -138,7 +156,7 @@ export const standalone: SourcePlugin = {
       { phase: 'extract', label: t('common.extract') },
       { phase: 'setup', label: t('standalone.setupEnv') },
       { phase: 'cleanup', label: t('standalone.cleanupEnv') },
-      { phase: 'update', label: t('standalone.updateToStable') },
+      { phase: 'update', label: t('standalone.updateToStable') }
     ]
   },
 
@@ -170,15 +188,28 @@ export const standalone: SourcePlugin = {
     // future channel-switches stay consistent with the install-time pick.
     const isStable = selections.release?.value === 'stable'
     const isLatest = selections.release?.value === 'latest'
-    const releaseTag = r2Release?.tag || (selections.release?.value || 'unknown')
+    const releaseTag = r2Release?.tag || selections.release?.value || 'unknown'
     // Only honour a comfyVersion pick on the stable channel; getFieldOptions
     // returns [] for 'latest', so any stale value carried in selections from
     // a prior channel toggle is dropped here as a defence-in-depth.
     const pickedComfyTag = isStable
-      ? (typeof selections.comfyVersion?.value === 'string' && /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
-          ? selections.comfyVersion.value
-          : undefined)
+      ? typeof selections.comfyVersion?.value === 'string' &&
+        /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
+        ? selections.comfyVersion.value
+        : undefined
       : undefined
+    // Starter template: the chosen template id, or undefined when the user left
+    // the "None" option selected. Format-validated (not matched against the
+    // static curated set) so a live-index substitute still installs, while a
+    // stale/forged selection that could escape a path/URL is still rejected.
+    const tplValue = selections.bundledTemplate?.value
+    const bundledTemplateId = isPersistableTemplateId(tplValue) ? tplValue : undefined
+    // Freeze the hydrated size the user consented to, so the install-time
+    // download estimate matches the wizard label without re-hydrating the index.
+    const bundledTemplateSizeBytes =
+      typeof selections.bundledTemplate?.data?.sizeBytes === 'number'
+        ? (selections.bundledTemplate.data.sizeBytes as number)
+        : 0
     return {
       version: r2Release?.comfyui_version || manifest?.comfyui_ref || releaseTag,
       releaseTag,
@@ -200,6 +231,18 @@ export const standalone: SourcePlugin = {
       ...(isStable ? { updateChannel: 'stable' } : {}),
       ...(isLatest ? { updateChannel: 'latest' } : {}),
       ...(pickedComfyTag ? { comfyVersionTag: pickedComfyTag } : {}),
+      // POC starter template. `bundledTemplateId` is the durable record of the
+      // user's pick; `pendingTemplateOpen` is a one-shot flag the first launch
+      // consumes (appends `?template=` to the comfy URL, then clears) so the
+      // template only auto-opens once — not on every relaunch.
+      ...(bundledTemplateId
+        ? {
+            bundledTemplateId,
+            bundledTemplateSizeBytes,
+            pendingTemplateOpen: bundledTemplateId,
+            downloadTemplateModels: true
+          }
+        : {})
     }
   },
 
@@ -236,11 +279,13 @@ export const standalone: SourcePlugin = {
     )
     const adoptArgs = adoptedBaseDir
       ? [
-          '--base-directory', adoptedBaseDir,
-          '--user-directory', path.join(adoptedBaseDir, 'user'),
+          '--base-directory',
+          adoptedBaseDir,
+          '--user-directory',
+          path.join(adoptedBaseDir, 'user'),
           ...(userSetDatabaseUrl
             ? []
-            : ['--database-url', `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`]),
+            : ['--database-url', `sqlite:///${path.join(adoptedBaseDir, 'user', 'comfyui.db')}`])
         ]
       : []
     // Desktop-managed feature flags (e.g. show_signin_button) are injected in
@@ -250,15 +295,13 @@ export const standalone: SourcePlugin = {
       cmd: pythonPath,
       args: ['-s', path.join('ComfyUI', 'main.py'), ...adoptArgs, ...parsed],
       cwd: installation.installPath,
-      port,
+      port
     }
   },
 
   getListActions(installation: InstallationRecord): Record<string, unknown>[] {
     const installed = installation.status === 'installed'
-    return [
-      launchAction(installed, !installed ? t('errors.installNotReady') : undefined),
-    ]
+    return [launchAction(installed, !installed ? t('errors.installNotReady') : undefined)]
   },
 
   install,
@@ -270,7 +313,7 @@ export const standalone: SourcePlugin = {
     inst: InstallationRecord,
     destPath: string,
     sendProgress: (phase: string, detail: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<void> {
     await writeComfyEnvironment(path.join(destPath, 'ComfyUI'))
 
@@ -302,18 +345,25 @@ export const standalone: SourcePlugin = {
         // `custom_nodes/` checked in). Remove the empty placeholder
         // first so the merge isn't ambiguous.
         if (fs.existsSync(dst)) {
-          try { await fs.promises.rm(dst, { recursive: true, force: true }) } catch {}
+          try {
+            await fs.promises.rm(dst, { recursive: true, force: true })
+          } catch {}
         }
         sendProgress('copy', { percent: 0, status: `Copying legacy ${entry}…` })
-        await copyDirWithProgress(src, dst, (copied, total, elapsedSecs, etaSecs) => {
-          const percent = total > 0 ? Math.round((copied / total) * 100) : 0
-          const elapsed = formatTime(elapsedSecs)
-          const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
-          sendProgress('copy', {
-            percent,
-            status: `Copying legacy ${entry}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`,
-          })
-        }, { signal })
+        await copyDirWithProgress(
+          src,
+          dst,
+          (copied, total, elapsedSecs, etaSecs) => {
+            const percent = total > 0 ? Math.round((copied / total) * 100) : 0
+            const elapsed = formatTime(elapsedSecs)
+            const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
+            sendProgress('copy', {
+              percent,
+              status: `Copying legacy ${entry}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+            })
+          },
+          { signal }
+        )
       }
     }
 
@@ -356,7 +406,11 @@ export const standalone: SourcePlugin = {
     }
   },
 
-  async getFieldOptions(fieldId: string, selections: Record<string, FieldOption | undefined>, context: Record<string, unknown>): Promise<FieldOption[]> {
+  async getFieldOptions(
+    fieldId: string,
+    selections: Record<string, FieldOption | undefined>,
+    context: Record<string, unknown>
+  ): Promise<FieldOption[]> {
     if (fieldId === 'release') {
       const prefix = PLATFORM_PREFIX[process.platform]
       if (!prefix) return []
@@ -364,15 +418,23 @@ export const standalone: SourcePlugin = {
       // Always revalidate R2 manifests when populating the install wizard —
       // a stale persisted ETag can otherwise hide a freshly-shipped standalone
       // release and strand new installs on whatever the previous run cached.
-      const latest = await fetchJSON(`${R2_BASE_URL}/latest.json`, { refresh: true }) as R2Latest
-      const vendorIds = Object.keys(latest).filter((id) => id.startsWith(prefix))
+      const latest = (await fetchJSON(`${R2_BASE_URL}/latest.json`, { refresh: true })) as R2Latest
+      // Platform prefix AND architecture: only the host's own architecture can
+      // run. Windows publishes x64 and ARM64 today; Linux ARM64 intentionally
+      // gets no options until an explicitly suffixed bundle is published (see
+      // `variantMatchesHost`).
+      const vendorIds = Object.keys(latest).filter((id) => variantMatchesHost(id))
       if (vendorIds.length === 0) return []
 
       const vendorReleases = Object.fromEntries(
-        await Promise.all(vendorIds.map(async (id) => {
-          const data = await fetchJSON(`${R2_BASE_URL}/${id}/releases.json`, { refresh: true }) as R2VendorReleases
-          return [id, data.releases] as const
-        }))
+        await Promise.all(
+          vendorIds.map(async (id) => {
+            const data = (await fetchJSON(`${R2_BASE_URL}/${id}/releases.json`, {
+              refresh: true
+            })) as R2VendorReleases
+            return [id, data.releases] as const
+          })
+        )
       )
 
       // Collect unique release tags across all vendors for this platform
@@ -380,7 +442,11 @@ export const standalone: SourcePlugin = {
       for (const releases of Object.values(vendorReleases)) {
         for (const release of releases) {
           if (!tagMap.has(release.tag) || release.date > tagMap.get(release.tag)!.date) {
-            tagMap.set(release.tag, { comfyui_version: release.comfyui_version, date: release.date, tag: release.tag })
+            tagMap.set(release.tag, {
+              comfyui_version: release.comfyui_version,
+              date: release.date,
+              tag: release.tag
+            })
           }
         }
       }
@@ -389,33 +455,38 @@ export const standalone: SourcePlugin = {
       const options: FieldOption[] = []
 
       // Same two channel options the IPP Update tab uses (see
-      // `getChannelDefs()` in `./updateSections.ts`). 'stable' is
-      // recommended and triggers the post-install update-to-stable
-      // step. 'latest' (master HEAD) leaves the bundle's checked-in
-      // commit alone — the user can fast-forward from the IPP Update
-      // tab. Per-bundle-tag entries (v0.20.1-env1, etc.) were dropped
-      // at the same time; they exposed an implementation detail
-      // (the R2 bundle tag) instead of the channel users actually
-      // care about.
+      // `getChannelDefs()` in `./updateSections.ts`). Both trigger a
+      // post-install auto-update: 'stable' to the latest stable tag,
+      // 'latest' to master HEAD. Per-bundle-tag entries (v0.20.1-env1,
+      // etc.) were dropped at the same time; they exposed an
+      // implementation detail (the R2 bundle tag) instead of the channel
+      // users actually care about.
       if (tags.length > 0 && context?.includeLatestStable) {
         const latestStableTag = await getLatestStableTag()
         const newestBundle = tags[0]!
+        // `latestStableTag` is the upstream ComfyUI version the post-install
+        // auto-update resolves to. Thread it through so the variant cards show
+        // that (the latest stable tag for 'stable'; the same tag marked as a
+        // nightly for 'latest', which fast-forwards a few commits past it)
+        // rather than the older ComfyUI baked into the standalone bundle
+        // (issues #708, #1068).
+        const channelData = {
+          tag: newestBundle.tag,
+          vendorReleases,
+          latestStableTag
+        } as unknown as Record<string, unknown>
         options.push({
           value: 'stable',
           label: t('standalone.channelStable'),
           description: t('standalone.channelStableDesc'),
           recommended: true,
-          // `latestStableTag` is the upstream ComfyUI version the post-install
-          // "update to stable" step resolves to. Thread it through so the
-          // variant cards show that same version rather than the older
-          // ComfyUI baked into the standalone bundle (issue #708).
-          data: { tag: newestBundle.tag, vendorReleases, latestStableTag } as unknown as Record<string, unknown>,
+          data: channelData
         })
         options.push({
           value: 'latest',
           label: t('standalone.channelLatest'),
           description: t('standalone.channelLatestDesc'),
-          data: { tag: newestBundle.tag, vendorReleases } as unknown as Record<string, unknown>,
+          data: channelData
         })
       }
       return options
@@ -434,45 +505,121 @@ export const standalone: SourcePlugin = {
         value: tag,
         label: tag,
         recommended: i === 0,
-        description: i === 0 ? t('newInstall.latestStable') : undefined,
+        description: i === 0 ? t('newInstall.latestStable') : undefined
       }))
     }
 
     if (fieldId === 'variant') {
-      const releaseData = selections.release?.data as { tag: string; vendorReleases: Record<string, R2Variant[]>; latestStableTag?: string | null } | undefined
+      const releaseData = selections.release?.data as
+        | {
+            tag: string
+            vendorReleases: Record<string, R2Variant[]>
+            latestStableTag?: string | null
+          }
+        | undefined
       if (!releaseData) return []
       const prefix = PLATFORM_PREFIX[process.platform]
       if (!prefix) return []
 
       const isStable = selections.release?.value === 'stable'
+      const isLatest = selections.release?.value === 'latest'
       const gpu = context?.gpu as string | undefined
       // When the user picked a specific stable tag from the comfyVersion
       // dropdown, the variant card should advertise THAT version (the one
       // the post-install update checks out), not the channel head. Falls
       // back to the channel-head's resolved tag when no pick was made.
       const pickedComfyTag =
-        isStable && typeof selections.comfyVersion?.value === 'string'
-          && /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
+        isStable &&
+        typeof selections.comfyVersion?.value === 'string' &&
+        /^v\d+\.\d+\.\d+$/.test(selections.comfyVersion.value)
           ? selections.comfyVersion.value
           : null
 
       return Object.entries(releaseData.vendorReleases)
-        .filter(([vendorId]) => vendorId.startsWith(prefix))
+        .filter(([vendorId]) => variantMatchesHost(vendorId))
         .map(([vendorId, releases]): FieldOption | null => {
           const release = releases[0]
           if (!release) return null
           // Stable: advertise the upstream tag the user lands on after the
           // post-install auto-update (picked tag wins; otherwise channel
-          // head). Falls back to the bundled version when neither is
-          // resolvable (offline, etc.).
-          const displayStableTag = isStable
-            ? pickedComfyTag ?? releaseData.latestStableTag ?? null
-            : null
-          return buildVariantOption(vendorId, release, displayStableTag, gpu)
+          // head). Latest: advertise the latest stable tag as a nightly,
+          // since the install fast-forwards to master HEAD (a few commits
+          // past it). Both fall back to the bundled version when the tag is
+          // unresolvable (offline, etc.).
+          const displayTag = isStable
+            ? (pickedComfyTag ?? releaseData.latestStableTag ?? null)
+            : isLatest
+              ? (releaseData.latestStableTag ?? null)
+              : null
+          return buildVariantOption(vendorId, release, displayTag, gpu, isLatest)
         })
         .filter((item): item is FieldOption => item != null)
     }
 
+    if (fieldId === 'bundledTemplate') {
+      // "None" comes first as the skip option; the per-modality recommended
+      // picks carry `recommended` on their own option so the wizard auto-selects
+      // a real template (the lightest "wow"), not the skip.
+      const catalog = await loadTemplateCatalog()
+
+      const installId = typeof context.installationId === 'string' ? context.installationId : null
+      const installation = installId ? await installations.get(installId) : null
+      // `budgeted` stops the timed-out pass writing after we return, so a slow
+      // `modelsPresent: false` reads as "unbadged", never "confirmed absent".
+      let budgeted = false
+      const presenceById = new Map<string, boolean>()
+      const presencePass = Promise.all(
+        catalog.map(async (tpl) => {
+          try {
+            const models = await resolveTemplateModels(installation, tpl.id)
+            const present = await areModelsPresent(installId, models)
+            if (!budgeted) presenceById.set(tpl.id, present)
+          } catch {
+            if (!budgeted) presenceById.set(tpl.id, false)
+          }
+        })
+      )
+      let budgetTimer: NodeJS.Timeout | undefined
+      const timedOut = await Promise.race([
+        presencePass.then(() => false),
+        new Promise<boolean>((resolve) => {
+          budgetTimer = setTimeout(() => resolve(true), MODELS_PRESENT_BUDGET_MS)
+        })
+      ]).finally(() => clearTimeout(budgetTimer))
+      if (timedOut) {
+        budgeted = true
+        console.warn(
+          `Template models-present check hit ${MODELS_PRESENT_BUDGET_MS}ms budget for install ${installId ?? '(none)'}; some cards unbadged`
+        )
+      }
+
+      return [
+        {
+          value: NO_TEMPLATE_VALUE,
+          label: t('standalone.starterTemplateNone'),
+          description: t('standalone.starterTemplateNoneDesc')
+        },
+        ...catalog.map(
+          (tpl): FieldOption => ({
+            value: tpl.id,
+            label: tpl.title,
+            description: tpl.description,
+            recommended: tpl.recommended,
+            data: {
+              modality: tpl.modality,
+              category: tpl.category,
+              name: tpl.name,
+              task: tpl.task,
+              thumbnailUrl: tpl.thumbnailUrl,
+              sizeBytes: tpl.sizeBytes,
+              modelsPresent: presenceById.get(tpl.id) ?? false,
+              apiNode: tpl.apiNode
+            }
+          })
+        )
+      ]
+    }
+
     return []
-  },
+  }
 }

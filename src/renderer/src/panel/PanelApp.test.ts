@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+// @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
+// Keep the feedback iframe in the DOM without loading the external support site.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const installWizardOpen = vi.hoisted(() => vi.fn())
 
 vi.mock('../main', () => ({
   i18n: {
@@ -61,7 +65,7 @@ vi.mock('../views/ChooserView.vue', () => ({
     name: 'ChooserView',
     emits: ['pick', 'show-new-install'],
     template:
-      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\')">New</button></div>'
+      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\', \'workspace-1\')">New</button></div>'
   }
 }))
 vi.mock('../views/InstallWizardModal.vue', () => ({
@@ -69,7 +73,7 @@ vi.mock('../views/InstallWizardModal.vue', () => ({
     name: 'InstallWizardModal',
     emits: ['close', 'navigate-list', 'show-progress'],
     template: '<div data-testid="new-install-modal" />',
-    methods: { open: vi.fn() }
+    methods: { open: installWizardOpen }
   }
 }))
 vi.mock('../views/TrackModal.vue', () => ({
@@ -113,14 +117,6 @@ vi.mock('../views/FirstUseTakeover.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-vi.mock('../components/DownloadsModal.vue', () => ({
-  default: {
-    name: 'DownloadsModal',
-    props: ['open'],
-    emits: ['close'],
-    template: '<div data-testid="downloads-modal" />'
-  }
-}))
 vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
   default: {
     name: 'MigrateConfirmTakeover',
@@ -129,13 +125,16 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-import { mount, flushPromises } from '@vue/test-utils'
+import { enableAutoUnmount, mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useOverlay } from '../composables/useOverlay'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
+
+// Dispose panel scopes before happy-dom tears down document, including queued media prefetches.
+enableAutoUnmount(afterEach)
 
 const messages = {
   en: {
@@ -164,9 +163,14 @@ interface InstallationLike {
 }
 
 type PanelTriggerPayload = {
-  kind: 'install-update' | 'app-update-restart-prompt' | 'app-update-download-prompt'
+  kind:
+    | 'install-update'
+    | 'app-update-restart-prompt'
+    | 'app-update-download-prompt'
+    | 'picker-pick-install'
   installationId?: string
   version?: string | null
+  isRestart?: boolean
 }
 
 interface MockApiState {
@@ -253,6 +257,7 @@ function installMockApi(initial?: {
       state.openFeedbackCallbacks.push(cb)
       return () => {}
     }),
+    onOpenAnnouncement: vi.fn(() => () => {}),
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
     onSettingsChanged: vi.fn(() => () => {}),
@@ -289,6 +294,9 @@ function installMockApi(initial?: {
     onComfyOutput: vi.fn(() => () => {}),
     onComfyExited: vi.fn(() => () => {}),
     onInstanceCrashed: vi.fn(() => () => {}),
+    onAdoptPrompt: vi.fn(() => () => {}),
+    ackAdoptPrompt: vi.fn(),
+    respondAdoptPrompt: vi.fn(),
     onErrorDetail: vi.fn(() => () => {}),
     getSetting: vi.fn(async (key: string) => state.settings[key]),
     setSetting: vi.fn(async (key: string, value: unknown) => {
@@ -313,6 +321,10 @@ function installMockApi(initial?: {
     closeHostWindow: vi.fn(async () => {}),
     focusComfyWindow: vi.fn(async () => {}),
     getListActions: vi.fn(async () => []),
+    runAction: vi.fn(async () => ({ ok: true })),
+    // Picker thumbnail warm-up fetches the bundled-template options on the
+    // first-use cold-start path; returning users must never trigger it.
+    getFieldOptions: vi.fn(async () => []),
     openGlobalSettings: vi.fn(),
     openInstancePicker: vi.fn()
   }
@@ -417,6 +429,10 @@ describe('PanelApp', () => {
     // Both visible — takeover sits ABOVE the chooser body.
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
+    expect(installWizardOpen).toHaveBeenCalledWith({
+      entrypoint: 'chooser',
+      workspaceId: 'workspace-1'
+    })
   })
 
   it('returns to the underlying body when a takeover emits close', async () => {
@@ -521,6 +537,24 @@ describe('PanelApp', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
+  })
+
+  it('warms picker thumbnails on the first-use cold-start path', async () => {
+    mockState.settings.firstUseCompleted = false
+    window.history.replaceState({}, '', '/?panel=chooser')
+    mountPanel()
+    await flushPromises()
+    const api = (window as unknown as { api: { getFieldOptions: ReturnType<typeof vi.fn> } }).api
+    expect(api.getFieldOptions).toHaveBeenCalledTimes(1)
+    expect(api.getFieldOptions).toHaveBeenCalledWith('standalone', 'bundledTemplate', {}, {})
+  })
+
+  it('does NOT warm picker thumbnails for returning users', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    mountPanel()
+    await flushPromises()
+    const api = (window as unknown as { api: { getFieldOptions: ReturnType<typeof vi.fn> } }).api
+    expect(api.getFieldOptions).not.toHaveBeenCalled()
   })
 
   it('marks firstUseCompleted=true and closes the takeover on Cloud-branch pick', async () => {
@@ -749,6 +783,47 @@ describe('PanelApp', () => {
     })
   })
 
+  it('preserves restart intent when a chooser host relaunches a booting instance', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const api = (
+      window as unknown as {
+        api: {
+          getRunningInstances: ReturnType<typeof vi.fn>
+          getListActions: ReturnType<typeof vi.fn>
+          getSetting: ReturnType<typeof vi.fn>
+          runAction: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    api.getRunningInstances.mockResolvedValueOnce([
+      {
+        installationId: 'other-id',
+        installationName: 'Other Install',
+        mode: 'window'
+      }
+    ])
+    api.getListActions.mockResolvedValueOnce([
+      {
+        id: 'launch',
+        label: 'Launch',
+        style: 'primary',
+        showProgress: false
+      }
+    ])
+    mountPanel()
+    await flushPromises()
+    api.getSetting.mockClear()
+
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'picker-pick-install', installationId: 'test-id', isRestart: true })
+    )
+    await flushPromises()
+
+    expect(api.getListActions).toHaveBeenCalledWith('test-id')
+    expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
+    expect(api.getSetting).not.toHaveBeenCalledWith('warnBeforeRunningMultipleInstances')
+  })
+
   it('opens the instance picker on the Config tab when a panel-trigger-overlay open-settings event arrives with tab=comfy', async () => {
     // `comfy://open-settings?tab=comfy` on an install-backed host
     // opens the picker on the Config tab — the same surface the
@@ -797,6 +872,30 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(api.openGlobalSettings).toHaveBeenCalledTimes(1)
+    expect(api.openInstancePicker).not.toHaveBeenCalled()
+  })
+
+  it('opens global settings on its Storage tab when open-settings arrives with tab=global-storage', async () => {
+    // The instance pane's "Manage Shared Directories" link deep-links to
+    // Global Desktop Settings landed on Storage, not just the popup itself.
+    mountPanel()
+    await flushPromises()
+    const api = (
+      window as unknown as {
+        api: {
+          openInstancePicker: ReturnType<typeof vi.fn>
+          openGlobalSettings: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'open-settings', settingsTab: 'global-storage' })
+    )
+    await flushPromises()
+
+    expect(api.openGlobalSettings).toHaveBeenCalledTimes(1)
+    expect(api.openGlobalSettings).toHaveBeenCalledWith('storage')
     expect(api.openInstancePicker).not.toHaveBeenCalled()
   })
 

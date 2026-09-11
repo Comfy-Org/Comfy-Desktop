@@ -3,7 +3,13 @@ import { parseUrl } from '../../lib/util'
 import { t } from '../../lib/i18n'
 import * as settings from '../../settings'
 import type { InstallationRecord } from '../../installations'
-import type { SourcePlugin, FieldOption, ActionResult, ActionTools, LaunchCommand } from '../../types/sources'
+import type {
+  SourcePlugin,
+  FieldOption,
+  ActionResult,
+  ActionTools,
+  LaunchCommand
+} from '../../types/sources'
 
 export interface UrlSourceConfig {
   id: string
@@ -21,21 +27,36 @@ export interface UrlSourceConfig {
 
 export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
   const {
-    id, labelKey, descKey, category, defaultUrl,
-    transformUrl, editableUrl = false, includeUntrack = false,
+    id,
+    labelKey,
+    descKey,
+    category,
+    defaultUrl,
+    transformUrl,
+    editableUrl = false,
+    includeUntrack = false
   } = config
 
   return {
     id,
-    get label() { return t(labelKey) },
-    get description() { return t(descKey) },
+    get label() {
+      return t(labelKey)
+    },
+    get description() {
+      return t(descKey)
+    },
     category,
     hasConsole: false,
     skipInstall: true,
 
     get fields() {
       return [
-        { id: 'url', label: t('remote.comfyuiUrl'), type: 'text' as const, defaultValue: defaultUrl },
+        {
+          id: 'url',
+          label: t('remote.comfyuiUrl'),
+          type: 'text' as const,
+          defaultValue: defaultUrl
+        }
       ]
     },
 
@@ -43,14 +64,16 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
       return { launchMode: 'window', browserPartition: 'shared' }
     },
 
-    buildInstallation(selections: Record<string, FieldOption | undefined>): Record<string, unknown> {
+    buildInstallation(
+      selections: Record<string, FieldOption | undefined>
+    ): Record<string, unknown> {
       const url = selections.url?.value || defaultUrl
       const parsed = parseUrl(url)
       return {
         ...(category === 'remote' ? { version: 'remote' } : {}),
         remoteUrl: parsed ? parsed.href : url,
         launchMode: 'window',
-        browserPartition: 'shared',
+        browserPartition: 'shared'
       }
     },
 
@@ -67,25 +90,45 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
         remote: true,
         url: parsed.href,
         host: parsed.hostname,
-        port: parsed.port,
+        port: parsed.port
       }
     },
 
     getListActions(installation: InstallationRecord): Record<string, unknown>[] {
       return [
-        { id: 'launch', label: t('actions.connect'), style: 'primary', enabled: installation.status === 'installed',
-          showProgress: true, progressTitle: t('actions.connecting'), cancellable: true },
+        {
+          id: 'launch',
+          label: t('actions.connect'),
+          style: 'primary',
+          enabled: installation.status === 'installed',
+          showProgress: true,
+          progressTitle: t('actions.connecting'),
+          cancellable: true
+        }
       ]
     },
 
     getDetailSections(installation: InstallationRecord): Record<string, unknown>[] {
       const urlField: Record<string, unknown> = editableUrl
-        ? { id: 'remoteUrl', label: t('remote.url'), value: (installation.remoteUrl as string) || '—', editable: true, requiresRestart: true }
+        ? {
+            id: 'remoteUrl',
+            label: t('remote.url'),
+            value: (installation.remoteUrl as string) || '—',
+            editable: true,
+            requiresRestart: true
+          }
         : { label: t('remote.url'), value: (installation.remoteUrl as string) || '—' }
 
       const actions: Record<string, unknown>[] = [
-        { id: 'launch', label: t('actions.connect'), style: 'primary', enabled: installation.status === 'installed',
-          showProgress: true, progressTitle: t('actions.connecting'), cancellable: true },
+        {
+          id: 'launch',
+          label: t('actions.connect'),
+          style: 'primary',
+          enabled: installation.status === 'installed',
+          showProgress: true,
+          progressTitle: t('actions.connecting'),
+          cancellable: true
+        }
       ]
       // The Comfy Cloud entry is not user-renamable (issue #922).
       if (category !== 'cloud') {
@@ -102,36 +145,74 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
           fields: [
             { label: t('common.installMethod'), value: installation.sourceLabel as string },
             urlField,
-            { label: t('remote.added'), value: new Date(installation.createdAt).toLocaleDateString() },
-          ],
+            {
+              label: t('remote.added'),
+              value: new Date(installation.createdAt).toLocaleDateString()
+            }
+          ]
         },
         {
           tab: 'settings',
           title: t('common.launchSettings'),
           fields: [
-            { id: 'browserPartition', label: t('common.browserPartition'), value: (installation.browserPartition as string) || 'shared', editable: true,
-              editType: 'select', options: [
+            {
+              id: 'browserPartition',
+              label: t('common.browserPartition'),
+              value: (installation.browserPartition as string) || 'shared',
+              editable: true,
+              editType: 'select',
+              options: [
                 { value: 'shared', label: t('common.partitionShared') },
-                { value: 'unique', label: t('common.partitionUnique') },
-              ], tooltip: t('tooltips.browserPartition') },
-            { id: 'autoDownloadOutputs', label: t('common.autoDownloadOutputs'), value: (installation.autoDownloadOutputs as boolean | undefined) ?? true, editable: true,
-              editType: 'boolean', refreshSection: true, tooltip: t('tooltips.autoDownloadOutputs') },
-            ...((installation.autoDownloadOutputs as boolean | undefined) !== false ? [
-              { id: 'useSharedOutputDir', label: t('common.useSharedOutputDir'), value: (installation.useSharedOutputDir as boolean | undefined) ?? true, editable: true,
-                editType: 'boolean', refreshSection: true, nested: true, tooltip: t('tooltips.useSharedOutputDir') },
-              ...((installation.useSharedOutputDir as boolean | undefined) === false ? [
-                { id: 'outputDir', label: t('media.outputDir'),
-                  value: (installation.outputDir as string | undefined) || settings.defaults.outputDir,
-                  editable: true, editType: 'path', browseOnly: true, nested: true, tooltip: t('tooltips.outputDirPerInstall') },
-              ] : []),
-            ] : []),
-          ],
+                { value: 'unique', label: t('common.partitionUnique') }
+              ],
+              tooltip: t('tooltips.browserPartition')
+            },
+            {
+              id: 'autoDownloadOutputs',
+              label: t('common.autoDownloadOutputs'),
+              value: (installation.autoDownloadOutputs as boolean | undefined) ?? true,
+              editable: true,
+              editType: 'boolean',
+              refreshSection: true,
+              tooltip: t('tooltips.autoDownloadOutputs')
+            },
+            ...((installation.autoDownloadOutputs as boolean | undefined) !== false
+              ? [
+                  {
+                    id: 'useSharedOutputDir',
+                    label: t('common.useSharedOutputDir'),
+                    value: (installation.useSharedOutputDir as boolean | undefined) ?? true,
+                    editable: true,
+                    editType: 'boolean',
+                    refreshSection: true,
+                    nested: true,
+                    tooltip: t('tooltips.useSharedOutputDir')
+                  },
+                  ...((installation.useSharedOutputDir as boolean | undefined) === false
+                    ? [
+                        {
+                          id: 'outputDir',
+                          label: t('media.outputDir'),
+                          value:
+                            (installation.outputDir as string | undefined) ||
+                            settings.defaults.outputDir,
+                          editable: true,
+                          editType: 'path',
+                          browseOnly: true,
+                          nested: true,
+                          tooltip: t('tooltips.outputDirPerInstall')
+                        }
+                      ]
+                    : [])
+                ]
+              : [])
+          ]
         },
         {
           title: 'Actions',
           pinBottom: true,
-          actions,
-        },
+          actions
+        }
       ]
     },
 
@@ -146,6 +227,6 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
       _tools: ActionTools
     ): Promise<ActionResult> {
       return { ok: false, message: `Action "${actionId}" not yet implemented.` }
-    },
+    }
   }
 }

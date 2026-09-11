@@ -6,7 +6,10 @@
 // earlier release with this hook) shipped without bootstrap-python.
 const PLATFORM_MAP = {
   'windows-x64': 'win-x64',
-  'windows-arm64': 'win-x64', // Windows-on-ARM runs x64 under emulation
+  // Native Windows on Arm build (NVIDIA RTX Spark). Until bootstrap-v3 this
+  // shipped the x64 bootstrap under Prism emulation; the native ARM64
+  // python.exe runs git operations without the emulation layer.
+  'windows-arm64': 'win-arm64',
   'mac-arm64': 'mac-arm64',
   'linux-x64': 'linux-x64',
 }
@@ -20,6 +23,7 @@ const PLATFORM_MAP = {
 // path.join() below, which normalizes separators per-OS.
 const PYTHON_BINARY = {
   'win-x64': 'python.exe',
+  'win-arm64': 'python.exe',
   'mac-arm64': 'bin/python3',
   'linux-x64': 'bin/python3',
 }
@@ -31,6 +35,7 @@ const PYTHON_BINARY = {
 // adopted-install flows have no usable package manager.
 const UV_BINARY = {
   'win-x64': 'uv.exe',
+  'win-arm64': 'uv.exe',
   'mac-arm64': 'bin/uv',
   'linux-x64': 'bin/uv',
 }

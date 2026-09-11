@@ -47,7 +47,10 @@ async function loadSchema(id: string | undefined): Promise<void> {
 }
 
 onMounted(() => void loadSchema(props.installationId))
-watch(() => props.installationId, (id) => void loadSchema(id))
+watch(
+  () => props.installationId,
+  (id) => void loadSchema(id)
+)
 
 function handleEdit(): void {
   emit('open')

@@ -33,7 +33,7 @@ from collections import deque
 
 import pygit2
 
-from pygit2_compat import harden_pygit2_config
+from pygit2_compat import harden_pygit2_config, disable_symlinks
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +124,11 @@ def open_repo(repo_path):
         for err in errors:
             print(err, file=sys.stderr)
         sys.exit(1)
+
+    # Force core.symlinks=false on Windows so any checkout on this repo can't
+    # fail on a symlink the user lacks the privilege to create (see
+    # disable_symlinks). Covers checkout / fetch-and-checkout / rollback paths.
+    disable_symlinks(repo)
 
     return repo
 
@@ -522,7 +527,19 @@ def cmd_clone(url, dest):
                     _format_bytes(stats.received_bytes)),
                     file=sys.stderr)
 
-        pygit2.clone_repository(url, dest, callbacks=Progress(), proxy=HTTP_PROXY)
+        def _init_no_symlinks(path, bare):
+            # Force core.symlinks=false before clone_repository runs its initial
+            # checkout, so a tree containing a symlink (e.g. CLAUDE.md) can't fail
+            # the clone on Windows where the user lacks symlink privilege. No-op
+            # off Windows (see disable_symlinks).
+            repo = pygit2.init_repository(path, bare)
+            disable_symlinks(repo)
+            return repo
+
+        pygit2.clone_repository(
+            url, dest, callbacks=Progress(), proxy=HTTP_PROXY,
+            repository=_init_no_symlinks,
+        )
         print("Download complete.", file=sys.stderr)
     except Exception as e:
         print("Error: clone failed: %s" % e, file=sys.stderr)

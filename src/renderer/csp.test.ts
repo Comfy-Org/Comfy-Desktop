@@ -24,7 +24,7 @@ const TELEMETRY_RENDERER_HTMLS = ['panel.html', 'comfyTitleBar.html'] as const
 const NON_TELEMETRY_RENDERER_HTMLS = [
   'comfyTitlePopup.html',
   'comfyTitleTooltip.html',
-  'comfySystemModal.html',
+  'comfySystemModal.html'
 ] as const
 
 describe('Content-Security-Policy: panel.html', () => {
@@ -54,6 +54,13 @@ describe('Content-Security-Policy: panel.html', () => {
   it('allows the typeform feedback origin in frame-src (Send Feedback modal)', () => {
     expect(csp['frame-src']).toBe('https://form.typeform.com')
   })
+
+  it('allows GitHub-hosted starter-template thumbnails in img-src', () => {
+    // The template picker hydrates card previews from the live workflow_templates
+    // repo; without this the panel CSP would block them and every card would fall
+    // back to its modality glyph.
+    expect(csp['img-src']).toContain('https://raw.githubusercontent.com')
+  })
 })
 
 describe.each(TELEMETRY_RENDERER_HTMLS)(
@@ -73,7 +80,7 @@ describe.each(TELEMETRY_RENDERER_HTMLS)(
     it('restricts script-src to self', () => {
       expect(csp['script-src']).toBe("'self'")
     })
-  },
+  }
 )
 
 describe.each(NON_TELEMETRY_RENDERER_HTMLS)(
@@ -90,5 +97,5 @@ describe.each(NON_TELEMETRY_RENDERER_HTMLS)(
     it('does NOT include PostHog endpoints', () => {
       expect(csp['connect-src']).not.toContain('posthog.com')
     })
-  },
+  }
 )

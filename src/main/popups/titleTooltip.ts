@@ -74,7 +74,7 @@ function ensureTitleTooltipPopup(parent: BrowserWindow): TitleTooltipPopupEntry 
       x: 0,
       y: 0,
       width: TOOLTIP_POPUP_INITIAL_WIDTH,
-      height: TOOLTIP_POPUP_INITIAL_HEIGHT,
+      height: TOOLTIP_POPUP_INITIAL_HEIGHT
     },
     // Belt-and-braces dismiss for cases the renderer can't observe (drag-region
     // drags, OS focus changes); the renderer already hides on pointerleave / blur.
@@ -90,7 +90,7 @@ function ensureTitleTooltipPopup(parent: BrowserWindow): TitleTooltipPopupEntry 
         titleTooltipPopupsByParent.delete(parent.id)
       }
       titleTooltipPopupsByWebContents.delete(view.popupWebContentsId)
-    },
+    }
   })
   const entry: TitleTooltipPopupEntry = {
     view,
@@ -98,7 +98,7 @@ function ensureTitleTooltipPopup(parent: BrowserWindow): TitleTooltipPopupEntry 
     pendingAnchor: null,
     pendingConfigJson: null,
     pendingConfigToken: null,
-    lastSyncedConfigJson: null,
+    lastSyncedConfigJson: null
   }
   titleTooltipPopupsByParent.set(view.parentWindowId, entry)
   titleTooltipPopupsByWebContents.set(view.popupWebContentsId, entry)
@@ -111,7 +111,7 @@ function ensureTitleTooltipPopup(parent: BrowserWindow): TitleTooltipPopupEntry 
  *  each side (bubble centered inside) and clamped to the parent content bounds. */
 function positionTooltipPopup(
   entry: TitleTooltipPopupEntry,
-  bubbleSize: { width: number; height: number },
+  bubbleSize: { width: number; height: number }
 ): void {
   const anchor = entry.pendingAnchor
   if (!anchor) return
@@ -119,11 +119,11 @@ function positionTooltipPopup(
 
   const viewWidth = Math.max(
     bubbleSize.width + TOOLTIP_POPUP_SHADOW_GUTTER * 2,
-    TOOLTIP_POPUP_SHADOW_GUTTER * 2 + 1,
+    TOOLTIP_POPUP_SHADOW_GUTTER * 2 + 1
   )
   const viewHeight = Math.max(
     bubbleSize.height + TOOLTIP_POPUP_SHADOW_GUTTER,
-    TOOLTIP_POPUP_SHADOW_GUTTER + 1,
+    TOOLTIP_POPUP_SHADOW_GUTTER + 1
   )
 
   const parentBounds = entry.view.parentWindow.getContentBounds()
@@ -173,7 +173,7 @@ export function openTitleTooltipPopup(opts: {
     const bounds = entry.view.popup.getBounds()
     positionTooltipPopup(entry, {
       width: Math.max(0, bounds.width - TOOLTIP_POPUP_SHADOW_GUTTER * 2),
-      height: Math.max(0, bounds.height - TOOLTIP_POPUP_SHADOW_GUTTER),
+      height: Math.max(0, bounds.height - TOOLTIP_POPUP_SHADOW_GUTTER)
     })
     entry.view.showOnTop()
     return
@@ -194,7 +194,7 @@ export function openTitleTooltipPopup(opts: {
     const bounds = entry.view.popup.getBounds()
     positionTooltipPopup(entry, {
       width: Math.max(0, bounds.width - TOOLTIP_POPUP_SHADOW_GUTTER * 2),
-      height: Math.max(0, bounds.height - TOOLTIP_POPUP_SHADOW_GUTTER),
+      height: Math.max(0, bounds.height - TOOLTIP_POPUP_SHADOW_GUTTER)
     })
     entry.view.showOnTop()
   })
@@ -236,7 +236,7 @@ export function registerTitleTooltipIpc(opts: {
       // No-op if the timer fallback already showed it; otherwise show now.
       if (entry.view.pendingShowTimer === null) return
       entry.view.showOnTop()
-    },
+    }
   )
 
   // Title bar asks main to show a hover tooltip. Position is title-bar-local pixels
@@ -250,7 +250,7 @@ export function registerTitleTooltipIpc(opts: {
         leftX?: unknown
         rightX?: unknown
         bottomY?: unknown
-      },
+      }
     ) => {
       const parent = opts.findParentByTitleBarSender(event.sender)
       if (!parent || parent.isDestroyed()) return
@@ -265,9 +265,9 @@ export function registerTitleTooltipIpc(opts: {
         text,
         leftX: Math.round(leftX),
         rightX: Math.round(rightX),
-        bottomY: Math.round(bottomY),
+        bottomY: Math.round(bottomY)
       })
-    },
+    }
   )
 
   ipcMain.on('comfy-window:hide-titlebar-tooltip', (event) => {

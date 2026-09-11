@@ -26,9 +26,9 @@ export function useAdoptAction(opts?: { surface?: 'modal' | 'takeover' }) {
   // blocked entry (another op in flight).
   async function confirmAdoption(
     installation: Installation,
-    confirm?: AdoptConfirmOptions,
+    confirm?: AdoptConfirmOptions
   ): Promise<boolean | null> {
-    if (!await actionGuard.checkBeforeAction(installation.id, t('migrate.migrateToStandalone'))) {
+    if (!(await actionGuard.checkBeforeAction(installation.id, t('migrate.migrateToStandalone')))) {
       return null
     }
 
@@ -40,17 +40,28 @@ export function useAdoptAction(opts?: { surface?: 'modal' | 'takeover' }) {
     const dialogTitle = confirm?.title || t('migrate.migrateToStandaloneConfirmTitle')
     const dialogConfirmLabel = confirm?.confirmLabel || t('migrate.migrateToStandaloneConfirm')
     const dialogMessage = wasRunning
-      ? augmentMessageWithStopWarning(confirm?.message, t('errors.willStopRunning', { name: installation.name || 'ComfyUI' }))
+      ? augmentMessageWithStopWarning(
+          confirm?.message,
+          t('errors.willStopRunning', { name: installation.name || 'ComfyUI' })
+        )
       : confirm?.message || ''
 
     const reuseItems = [
       t('desktop.reuseUserData'),
       t('desktop.reuseInput'),
       t('desktop.reuseOutput'),
-      t('desktop.addModels'),
+      t('desktop.addModels')
     ]
     const details = wasRunning
-      ? [{ label: t('migrate.migrationWill'), items: [t('errors.willStopRunning', { name: installation.name || 'ComfyUI' }), ...reuseItems] }]
+      ? [
+          {
+            label: t('migrate.migrationWill'),
+            items: [
+              t('errors.willStopRunning', { name: installation.name || 'ComfyUI' }),
+              ...reuseItems
+            ]
+          }
+        ]
       : [{ label: t('migrate.migrationWill'), items: reuseItems }]
 
     if (takeover) {
@@ -63,7 +74,7 @@ export function useAdoptAction(opts?: { surface?: 'modal' | 'takeover' }) {
       message: dialogMessage,
       messageDetails: details,
       confirmLabel: dialogConfirmLabel,
-      confirmStyle: 'primary',
+      confirmStyle: 'primary'
     })
   }
 

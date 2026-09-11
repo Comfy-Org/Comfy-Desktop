@@ -58,7 +58,10 @@ export function noteCloudEntered(): void {
     markCloudEntered()
     telemetry.registerPersonProperties({ has_launched_cloud: true })
   }
-  telemetry.emit('comfy.desktop.cloud.entered', { first_time: firstTime })
+  telemetry.emit('comfy.desktop.cloud.entered', {
+    first_time: firstTime,
+    deployment: 'cloud' satisfies telemetry.Deployment
+  })
 }
 
 /** @internal — exposed for tests. */

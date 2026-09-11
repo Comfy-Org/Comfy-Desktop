@@ -5,24 +5,18 @@
  *   - `'post-consent'` — later first-use steps; locked but with a Skip Onboarding escape hatch.
  *   - `'loading-lockdown'` — a ProgressModal takeover; locked with no escape hatch (cancel via ProgressModal's ✕).
  */
-export type FirstUseMode =
-  | 'none'
-  | 'consent-lockdown'
-  | 'post-consent'
-  | 'loading-lockdown'
+export type FirstUseMode = 'none' | 'consent-lockdown' | 'post-consent' | 'loading-lockdown'
 
 const VALID: ReadonlySet<FirstUseMode> = new Set<FirstUseMode>([
   'none',
   'consent-lockdown',
   'post-consent',
-  'loading-lockdown',
+  'loading-lockdown'
 ])
 
 /** Coerce an unknown IPC payload to a valid mode, defaulting to `'none'`. */
 export function normaliseFirstUseMode(raw: unknown): FirstUseMode {
-  return typeof raw === 'string' && VALID.has(raw as FirstUseMode)
-    ? (raw as FirstUseMode)
-    : 'none'
+  return typeof raw === 'string' && VALID.has(raw as FirstUseMode) ? (raw as FirstUseMode) : 'none'
 }
 
 // First-use modes (consent + post-consent): full chrome lockdown, pill/feedback hidden.

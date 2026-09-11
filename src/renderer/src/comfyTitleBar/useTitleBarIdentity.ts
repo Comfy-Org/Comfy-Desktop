@@ -5,8 +5,9 @@ import {
   isChromeLockedMode,
   isFirstUseLockdownMode,
   isLoadingLockdownMode,
-  type FirstUseMode,
+  type FirstUseMode
 } from '../../../shared/firstUseMode'
+import { isColorLight } from '../lib/colorScheme'
 
 interface InstallTypeMeta {
   icon: ReturnType<typeof installTypeMetaFor>['icon']
@@ -77,34 +78,19 @@ export function useTitleBarIdentity(opts: UseTitleBarIdentityOpts): TitleBarIden
   const installTypeMeta = computed<InstallTypeMeta>(() => installTypeMetaFor(sourceCategory.value))
 
   const installTypeLabel = computed(() =>
-    t(installTypeMeta.value.labelKey, t('installType.unknown')),
+    t(installTypeMeta.value.labelKey, t('installType.unknown'))
   )
 
   /** Suppressed on install-less hosts unless an install-identity preview is active. */
   const showInstallTypeIcon = computed(
-    () =>
-      (!opts.isInstallLess.value || isPreviewMode.value) && sourceCategory.value !== null,
+    () => (!opts.isInstallLess.value || isPreviewMode.value) && sourceCategory.value !== null
   )
 
   const showBrandMark = computed(() => opts.isInstallLess.value && !isPreviewMode.value)
 
-  /** Locked to `false`: the title-bar surface is the dark token in both themes, so
-   *  light hover variants would produce light chrome on a dark bar. */
-  const isLight = computed(() => false)
-  // Original luminance test, kept inline for the restoration.
-  // const isLight = computed(() => {
-  //   const bg = themeBg.value
-  //   if (!bg) return false
-  //   const ctx = document.createElement('canvas').getContext('2d')
-  //   if (!ctx) return false
-  //   ctx.fillStyle = bg
-  //   const hex = ctx.fillStyle as string
-  //   if (!hex.startsWith('#') || hex.length < 7) return false
-  //   const r = parseInt(hex.slice(1, 3), 16)
-  //   const g = parseInt(hex.slice(3, 5), 16)
-  //   const b = parseInt(hex.slice(5, 7), 16)
-  //   return (r * 299 + g * 587 + b * 114) / 1000 >= 128
-  // })
+  /** True when the reported ComfyUI bg is light, so the title bar's `.is-light` chrome
+   *  variants (lighter hover/pills/chips) kick in to stay legible on the matching surface. */
+  const isLight = computed(() => isColorLight(themeBg.value))
 
   let unsubTitle: (() => void) | undefined
   let unsubSourceCategory: (() => void) | undefined
@@ -161,6 +147,6 @@ export function useTitleBarIdentity(opts: UseTitleBarIdentityOpts): TitleBarIden
     installTypeLabel,
     showInstallTypeIcon,
     showBrandMark,
-    isLight,
+    isLight
   }
 }

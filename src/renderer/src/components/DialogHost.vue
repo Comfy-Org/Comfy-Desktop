@@ -69,6 +69,7 @@ const showConfirm = computed(() => state.open && state.kind === 'confirm')
     :open="showConfirm"
     :title="state.confirm.title"
     :message="state.confirm.message"
+    :hint="state.confirm.hint"
     :button-label="state.confirm.confirmLabel"
     :tone="state.confirm.tone"
     :show-cancel="state.confirm.showCancel"

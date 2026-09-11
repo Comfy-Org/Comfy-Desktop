@@ -1,10 +1,40 @@
-import { describe, it, expect } from 'vitest'
-import { parseHelpOutput, validateArgs, filterUnsupportedArgs } from './comfy-args'
+// @vitest-environment node
+import { execFile } from 'child_process'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readGitHead } from './git'
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>
+  return { ...actual, execFile: vi.fn() }
+})
+
+vi.mock('./git', () => ({ readGitHead: vi.fn() }))
+
+import {
+  clearSchemaCache,
+  filterUnsupportedArgs,
+  getComfyArgsSchema,
+  parseHelpOutput,
+  validateArgs
+} from './comfy-args'
+
+const mockedExecFile = vi.mocked(execFile)
+const mockedReadGitHead = vi.mocked(readGitHead)
+
+function mockHelpOutput(getOutput: () => string): void {
+  mockedExecFile.mockImplementation(((
+    _cmd: string,
+    _args: string[],
+    _options: Record<string, unknown>,
+    callback: (err: Error | null, stdout: string, stderr: string) => void
+  ) => callback(null, getOutput(), '')) as never)
+}
 
 const SAMPLE_HELP = `usage: main.py [-h] [--listen [IP]] [--port PORT]
                [--cuda-malloc | --disable-cuda-malloc]
                [--force-fp32 | --force-fp16]
                [--gpu-only | --highvram | --normalvram | --lowvram | --novram | --cpu]
+               [--use-pytorch-cross-attention | --use-ck-attention]
                [--preview-method [none,auto,latent2rgb,taesd]]
                [--verbose [{DEBUG,INFO,WARNING,ERROR,CRITICAL}]]
                [--enable-manager]
@@ -26,6 +56,9 @@ options:
   --lowvram             Split the unet in parts to use less vram.
   --novram              When lowvram isn't enough.
   --cpu                 To use the CPU for everything (slow).
+  --use-pytorch-cross-attention
+                        Use the pytorch cross attention function.
+  --use-ck-attention    Use Comfy Kitchen attention.
   --preview-method [none,auto,latent2rgb,taesd]
                         Default preview method for sampler nodes.
   --verbose [{DEBUG,INFO,WARNING,ERROR,CRITICAL}]
@@ -43,6 +76,7 @@ describe('parseHelpOutput', () => {
     expect(byName.get('cuda-malloc')?.type).toBe('boolean')
     expect(byName.get('force-fp32')?.type).toBe('boolean')
     expect(byName.get('gpu-only')?.type).toBe('boolean')
+    expect(byName.get('use-ck-attention')?.type).toBe('boolean')
 
     // Value flag
     expect(byName.get('port')?.type).toBe('value')
@@ -85,7 +119,13 @@ options:
     const byName = new Map(schema.args.map((a) => [a.name, a]))
 
     expect(byName.get('preview-method')?.choices).toEqual(['none', 'auto', 'latent2rgb', 'taesd'])
-    expect(byName.get('verbose')?.choices).toEqual(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
+    expect(byName.get('verbose')?.choices).toEqual([
+      'DEBUG',
+      'INFO',
+      'WARNING',
+      'ERROR',
+      'CRITICAL'
+    ])
   })
 
   it('detects mutually exclusive groups from usage line', () => {
@@ -106,6 +146,10 @@ options:
 
     // force-fp32 and force-fp16 should be exclusive
     expect(byName.get('force-fp32')?.exclusiveGroup).toBe(byName.get('force-fp16')?.exclusiveGroup)
+
+    const ckAttentionGroup = byName.get('use-ck-attention')?.exclusiveGroup
+    expect(ckAttentionGroup).toBeDefined()
+    expect(ckAttentionGroup).toBe(byName.get('use-pytorch-cross-attention')?.exclusiveGroup)
   })
 
   it('populates knownFlags set', () => {
@@ -120,10 +164,11 @@ options:
     const schema = parseHelpOutput(SAMPLE_HELP)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
 
-    expect(byName.get('port')?.category).toBe('Network')
-    expect(byName.get('listen')?.category).toBe('Network')
-    expect(byName.get('gpu-only')?.category).toBe('GPU & VRAM')
-    expect(byName.get('enable-manager')?.category).toBe('Manager')
+    expect(byName.get('port')?.category).toBe('network')
+    expect(byName.get('listen')?.category).toBe('network')
+    expect(byName.get('gpu-only')?.category).toBe('gpuVram')
+    expect(byName.get('use-ck-attention')?.category).toBe('performance')
+    expect(byName.get('enable-manager')?.category).toBe('manager')
   })
 
   it('categorizes --fast-disk and --enable-triton-backend', () => {
@@ -137,8 +182,34 @@ options:
 `
     const schema = parseHelpOutput(help)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
-    expect(byName.get('fast-disk')?.category).toBe('GPU & VRAM')
-    expect(byName.get('enable-triton-backend')?.category).toBe('Performance')
+    expect(byName.get('fast-disk')?.category).toBe('gpuVram')
+    expect(byName.get('enable-triton-backend')?.category).toBe('performance')
+  })
+
+  it('categorizes newer ComfyUI flags instead of falling to "other"', () => {
+    const help = `usage: main.py [-h] [--vram-headroom VRAM_HEADROOM] [--high-ram] [--models-directory MODELS_DIRECTORY] [--disable-triton-backend] [--enable-asset-hashing] [--debug-hang]
+
+options:
+  -h, --help            show this help message and exit
+  --vram-headroom VRAM_HEADROOM
+                        Extra VRAM headroom for DynamicVRAM.
+  --high-ram            Improve performance on high RAM systems.
+  --models-directory MODELS_DIRECTORY
+                        Set the ComfyUI models directory.
+  --disable-triton-backend
+                        Force-disable the comfy-kitchen Triton backend.
+  --enable-asset-hashing
+                        Compute blake3 content hashes when scanning assets.
+  --debug-hang          Enable stack trace dumps on Ctrl-C for debugging hangs.
+`
+    const schema = parseHelpOutput(help)
+    const byName = new Map(schema.args.map((a) => [a.name, a]))
+    expect(byName.get('vram-headroom')?.category).toBe('gpuVram')
+    expect(byName.get('high-ram')?.category).toBe('cache')
+    expect(byName.get('models-directory')?.category).toBe('paths')
+    expect(byName.get('disable-triton-backend')?.category).toBe('performance')
+    expect(byName.get('enable-asset-hashing')?.category).toBe('features')
+    expect(byName.get('debug-hang')?.category).toBe('logging')
   })
 
   it('handles Windows \\r\\n line endings', () => {
@@ -196,6 +267,50 @@ options:
   })
 })
 
+describe('getComfyArgsSchema', () => {
+  const installationId = 'updated-comfy-install'
+
+  beforeEach(() => {
+    clearSchemaCache(installationId)
+    mockedExecFile.mockReset()
+    mockedReadGitHead.mockReset()
+  })
+
+  it('reuses a schema for one commit and refreshes it when the checkout changes', async () => {
+    const oldHelp = SAMPLE_HELP.replace(' | --use-ck-attention', '').replace(
+      '  --use-ck-attention    Use Comfy Kitchen attention.\n',
+      ''
+    )
+    let helpOutput = oldHelp
+    mockHelpOutput(() => helpOutput)
+    mockedReadGitHead.mockReturnValue('old-commit')
+
+    const oldSchema = await getComfyArgsSchema(
+      'python',
+      'main.py',
+      '.',
+      installationId,
+      'stored-version'
+    )
+    expect(oldSchema.knownFlags.has('use-ck-attention')).toBe(false)
+
+    await getComfyArgsSchema('python', 'main.py', '.', installationId, 'stored-version')
+    expect(mockedExecFile).toHaveBeenCalledTimes(1)
+
+    helpOutput = SAMPLE_HELP
+    mockedReadGitHead.mockReturnValue('new-commit')
+    const updatedSchema = await getComfyArgsSchema(
+      'python',
+      'main.py',
+      '.',
+      installationId,
+      'stored-version'
+    )
+    expect(mockedExecFile).toHaveBeenCalledTimes(2)
+    expect(updatedSchema.knownFlags.has('use-ck-attention')).toBe(true)
+  })
+})
+
 describe('validateArgs', () => {
   it('identifies unsupported flags', () => {
     const schema = parseHelpOutput(SAMPLE_HELP)
@@ -205,7 +320,10 @@ describe('validateArgs', () => {
 
   it('returns empty for all valid args', () => {
     const schema = parseHelpOutput(SAMPLE_HELP)
-    const unsupported = validateArgs(['--port', '8188', '--enable-manager'], schema)
+    const unsupported = validateArgs(
+      ['--port', '8188', '--use-ck-attention', '--enable-manager'],
+      schema
+    )
     expect(unsupported).toEqual([])
   })
 })
@@ -232,10 +350,16 @@ describe('filterUnsupportedArgs', () => {
   it('preserves all args when all are valid', () => {
     const schema = parseHelpOutput(SAMPLE_HELP)
     const filtered = filterUnsupportedArgs(
-      ['--port', '8188', '--listen', '--enable-manager'],
+      ['--port', '8188', '--listen', '--use-ck-attention', '--enable-manager'],
       schema
     )
-    expect(filtered).toEqual(['--port', '8188', '--listen', '--enable-manager'])
+    expect(filtered).toEqual([
+      '--port',
+      '8188',
+      '--listen',
+      '--use-ck-attention',
+      '--enable-manager'
+    ])
   })
 
   it('does not consume next token when skipping --unknown=value', () => {
@@ -249,10 +373,7 @@ describe('filterUnsupportedArgs', () => {
 
   it('does not double-consume value after --known=value', () => {
     const schema = parseHelpOutput(SAMPLE_HELP)
-    const filtered = filterUnsupportedArgs(
-      ['--port=8188', '--enable-manager'],
-      schema
-    )
+    const filtered = filterUnsupportedArgs(['--port=8188', '--enable-manager'], schema)
     expect(filtered).toEqual(['--port=8188', '--enable-manager'])
   })
 
@@ -265,10 +386,7 @@ options:
   --port PORT           Set the listen port.
 `
     const schema = parseHelpOutput(help)
-    const filtered = filterUnsupportedArgs(
-      ['--cache-ram', '4', '8', '--port', '8188'],
-      schema
-    )
+    const filtered = filterUnsupportedArgs(['--cache-ram', '4', '8', '--port', '8188'], schema)
     expect(filtered).toEqual(['--cache-ram', '4', '8', '--port', '8188'])
   })
 })

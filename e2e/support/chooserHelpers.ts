@@ -1,5 +1,6 @@
-import { expect } from '@playwright/test'
-import type { WebContentsPage } from './cdpPages'
+import { expect, type ElectronApplication } from '@playwright/test'
+import { isPopupVisible, titlePopupPage, waitForWebContents, type WebContentsPage } from './cdpPages'
+import { byTestId, TID } from './testIds'
 
 /** Assert that the chooser body is visible in the panel. */
 export async function expectChooserVisible(panel: WebContentsPage): Promise<void> {
@@ -45,6 +46,66 @@ export async function openDownloadsTray(titleBar: WebContentsPage): Promise<void
   await titleBar.waitForVisible('.title-downloads-tray')
   const ok = await titleBar.click('.title-downloads-tray')
   expect(ok, 'Downloads tray button click dispatched').toBe(true)
+}
+
+/**
+ * Open the instance picker for a dashboard install through the real UI:
+ * tile kebab -> context-menu "Manage" -> (optionally) a picker settings
+ * tab click. Returns the popup facade once the picker is visible.
+ *
+ * This is the lifecycle-grade replacement for calling
+ * `window.api.openInstancePicker()` directly, which bypasses the dashboard
+ * entry control - a broken kebab or Manage item must fail the test.
+ */
+export async function openManageViaDashboard(
+  app: ElectronApplication,
+  panel: WebContentsPage,
+  installationId: string,
+  tabKey?: string,
+): Promise<WebContentsPage> {
+  await panel.waitForVisible(byTestId(TID.dashboardTileKebab(installationId)), { timeout: 15_000 })
+  expect(await panel.click(byTestId(TID.dashboardTileKebab(installationId))), 'dashboard tile kebab clicked').toBe(true)
+  await panel.waitForVisible(byTestId(TID.contextMenuItem('manage')), { timeout: 5_000 })
+  expect(await panel.click(byTestId(TID.contextMenuItem('manage'))), 'Manage context-menu item clicked').toBe(true)
+  await waitForWebContents(app, 'comfyTitlePopup.html')
+  await expect
+    .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), { timeout: 15_000, intervals: [100, 250] })
+    .toBe(true)
+  const popup = titlePopupPage(app)
+  if (tabKey) {
+    await popup.waitForVisible(byTestId(TID.settingsTab(tabKey)), { timeout: 15_000 })
+    expect(await popup.click(byTestId(TID.settingsTab(tabKey))), `picker ${tabKey} tab clicked`).toBe(true)
+  }
+  return popup
+}
+
+/**
+ * Open the instance picker from a running install host through the real
+ * UI: the interactive title-bar install pill (and optionally a picker
+ * settings tab). Returns the popup facade once the picker is visible.
+ */
+export async function openPickerViaTitlePill(
+  app: ElectronApplication,
+  titleBar: WebContentsPage,
+  tabKey?: string,
+): Promise<WebContentsPage> {
+  // A pill click on an already-open popup toggles it closed; fail fast
+  // with a clear message instead of timing out on the visibility poll.
+  if (await isPopupVisible(app, 'comfyTitlePopup.html')) {
+    throw new Error('openPickerViaTitlePill: picker popup is already open - close it before re-entering via the pill')
+  }
+  await titleBar.waitForVisible('.title-install-pill.is-interactive', { timeout: 15_000 })
+  expect(await titleBar.click('.title-install-pill.is-interactive'), 'title-bar install pill clicked').toBe(true)
+  await waitForWebContents(app, 'comfyTitlePopup.html')
+  await expect
+    .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), { timeout: 15_000, intervals: [100, 250] })
+    .toBe(true)
+  const popup = titlePopupPage(app)
+  if (tabKey) {
+    await popup.waitForVisible(byTestId(TID.settingsTab(tabKey)), { timeout: 15_000 })
+    expect(await popup.click(byTestId(TID.settingsTab(tabKey))), `picker ${tabKey} tab clicked`).toBe(true)
+  }
+  return popup
 }
 
 /** Wait for any flow takeover to be visible inside the panel body. */

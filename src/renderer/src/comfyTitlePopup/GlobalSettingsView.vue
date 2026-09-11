@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
+import { FileText, HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
 import GlobalSettingsMicroSection from './globalSettings/GlobalSettingsMicroSection.vue'
 import GlobalStorageSections from './globalSettings/GlobalStorageSections.vue'
@@ -30,6 +30,9 @@ interface ModelsDir {
 }
 
 interface Snapshot {
+  /** Tab to land on; non-null only on the open push (rebroadcasts carry
+   *  null so live data refreshes never retarget the user's tab). */
+  initialTab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -58,6 +61,7 @@ interface Snapshot {
     storage: string
     models: string
     advanced: string
+    logs: string
     sharedDirectories: string
   }
 }
@@ -70,6 +74,7 @@ interface GlobalSettingsBridge {
   ): Promise<{ ok: boolean; message?: string }>
   globalSettingsBrowseFolder(defaultPath?: string): Promise<string | null>
   globalSettingsOpenPath(path: string): void
+  globalSettingsOpenLogsFolder(): void
   globalSettingsOpenExternal(url: string): void
   globalSettingsSetModelsDirs(dirs: string[]): Promise<{ ok: boolean }>
   globalSettingsCheckForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>
@@ -84,20 +89,32 @@ const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge 
 
 const LAST_CHECKED_KEY = 'globalSettings.lastCheckedAt'
 
-type TabId = 'general' | 'updates' | 'storage' | 'advanced'
+type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
 const activeTab = ref<TabId>('general')
+
+// Each open pushes a fresh snapshot object, so watching by identity lets a
+// reopen re-apply its requested tab. Rebroadcasts carry initialTab null and
+// are ignored, so a live refresh never yanks the user off their tab.
+watch(
+  () => props.snapshot,
+  (snap) => {
+    if (snap.initialTab) activeTab.value = snap.initialTab
+  },
+  { immediate: true }
+)
 
 const tabs = computed(() => [
   { id: 'general' as const, label: props.snapshot.i18n.overview, icon: Settings2 },
   { id: 'updates' as const, label: props.snapshot.i18n.updates, icon: RefreshCcw },
   { id: 'storage' as const, label: props.snapshot.i18n.storage, icon: HardDrive },
-  { id: 'advanced' as const, label: props.snapshot.i18n.advanced, icon: SlidersHorizontal }
+  { id: 'advanced' as const, label: props.snapshot.i18n.advanced, icon: SlidersHorizontal },
+  { id: 'logs' as const, label: props.snapshot.i18n.logs, icon: FileText }
 ])
 
 const storageSnapshot = computed(() => ({
   sharedDirectoriesFields: props.snapshot.sharedDirectoriesFields,
   modelsDirs: props.snapshot.modelsDirs,
-  modelsSystemDefault: props.snapshot.modelsSystemDefault,
+  modelsSystemDefault: props.snapshot.modelsSystemDefault
 }))
 
 const languageSections = computed<DetailSection[]>(() => [
@@ -132,8 +149,7 @@ async function handleBrowseCacheDir(): Promise<void> {
 }
 
 function handleOpenCacheDir(): void {
-  const p = fieldPath(cacheDirField.value)
-  if (p) bridge?.globalSettingsOpenPath(p)
+  handleOpenPath(fieldPath(cacheDirField.value))
 }
 const advancedSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.advancedFields as unknown as DetailField[] }
@@ -155,8 +171,11 @@ async function handleBrowseInstallDir(): Promise<void> {
 }
 
 function handleOpenInstallDir(): void {
-  const p = fieldPath(installDirField.value)
-  if (p) bridge?.globalSettingsOpenPath(p)
+  handleOpenPath(fieldPath(installDirField.value))
+}
+
+function handleOpenPath(path: string): void {
+  if (path) bridge?.globalSettingsOpenPath(path)
 }
 const appUpdateState = computed<AppUpdateState>(
   () => props.snapshot.appUpdate.state as unknown as AppUpdateState
@@ -172,6 +191,10 @@ async function handleUpdateField(field: DetailField, value: unknown): Promise<vo
 function handleOpenExternal(url: string): void {
   if (!url) return
   bridge?.globalSettingsOpenExternal(url)
+}
+
+function handleOpenLogsFolder(): void {
+  bridge?.globalSettingsOpenLogsFolder()
 }
 
 async function handleUpdateNow(): Promise<void> {
@@ -216,6 +239,7 @@ function handleTabKey(event: KeyboardEvent): void {
   const next =
     event.key === 'ArrowDown' ? (idx + 1) % ids.length : (idx - 1 + ids.length) % ids.length
   activeTab.value = ids[next] as TabId
+  void nextTick(() => document.getElementById(`gs-tab-${activeTab.value}`)?.focus())
 }
 
 onMounted(() => {
@@ -276,14 +300,26 @@ onMounted(() => {
         <template v-if="activeTab === 'general'">
           <!-- Locale picker first, no microsection header — it's a single
                control and the lone "Language" label on it is enough. -->
-          <SettingsSectionList :sections="languageSections" @update-field="handleUpdateField" />
+          <SettingsSectionList
+            :sections="languageSections"
+            @update-field="handleUpdateField"
+            @open-path="handleOpenPath"
+          />
 
           <GlobalSettingsMicroSection :title="t('settings.appBehavior', 'App Behavior')">
-            <SettingsSectionList :sections="generalSections" @update-field="handleUpdateField" />
+            <SettingsSectionList
+              :sections="generalSections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.privacy', 'Privacy')">
-            <SettingsSectionList :sections="telemetrySections" @update-field="handleUpdateField" />
+            <SettingsSectionList
+              :sections="telemetrySections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.community', 'Community')">
@@ -309,6 +345,7 @@ onMounted(() => {
             @update-now="handleUpdateNow"
             @check-for-update="handleCheckForUpdate"
             @update-field="handleUpdateField"
+            @open-path="handleOpenPath"
           />
         </template>
 
@@ -316,7 +353,7 @@ onMounted(() => {
           <GlobalStorageSections :snapshot="storageSnapshot" />
         </template>
 
-        <template v-else>
+        <template v-else-if="activeTab === 'advanced'">
           <GlobalSettingsMicroSection
             :title="t('settings.installLocation', 'Default Install Location')"
             :tooltip="t('tooltips.installDir')"
@@ -331,7 +368,11 @@ onMounted(() => {
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="snapshot.i18n.advanced">
-            <SettingsSectionList :sections="advancedSections" @update-field="handleUpdateField" />
+            <SettingsSectionList
+              :sections="advancedSections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
           </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.cache', 'Cache')">
@@ -342,6 +383,15 @@ onMounted(() => {
               @open="handleOpenCacheDir"
               @browse="handleBrowseCacheDir"
             />
+          </GlobalSettingsMicroSection>
+        </template>
+
+        <template v-else-if="activeTab === 'logs'">
+          <GlobalSettingsMicroSection :title="t('settings.diagnostics', 'Diagnostics')">
+            <button type="button" class="gs-logs-btn" @click="handleOpenLogsFolder">
+              <FileText :size="14" aria-hidden="true" />
+              <span>{{ t('settings.openLogsFolder', 'Open logs folder') }}</span>
+            </button>
           </GlobalSettingsMicroSection>
         </template>
       </section>
@@ -374,6 +424,23 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 700;
   color: color-mix(in oklab, var(--text) 90%, transparent);
+}
+
+.gs-logs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in oklab, var(--text) 12%, transparent);
+  background: color-mix(in oklab, var(--text) 4%, transparent);
+  border-radius: 8px;
+  color: var(--neutral-100);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.gs-logs-btn:hover {
+  background: color-mix(in oklab, var(--text) 8%, transparent);
 }
 
 .gs-close {

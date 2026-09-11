@@ -25,7 +25,7 @@ export interface TooltipPlacement {
 export function useTooltip(
   triggerRef: Ref<HTMLElement | null>,
   bubbleRef: Ref<HTMLElement | null>,
-  opts: UseTooltipOpts,
+  opts: UseTooltipOpts
 ): TooltipPlacement {
   const visible = ref(false)
   const bubbleStyle = ref<Record<string, string>>({})
@@ -56,7 +56,7 @@ export function useTooltip(
 
     bubbleStyle.value = {
       top: `${clampedTop}px`,
-      left: `${clampedLeft}px`,
+      left: `${clampedLeft}px`
     }
 
     const triggerCenterX = trigger.left + trigger.width / 2
@@ -111,7 +111,7 @@ export function useTooltip(
     bubbleStyle.value = {
       top: '-9999px',
       left: '-9999px',
-      visibility: 'hidden',
+      visibility: 'hidden'
     }
     await nextTick()
     measure()
@@ -129,16 +129,15 @@ function resolvePlacement(
   bubble: DOMRect,
   vw: number,
   vh: number,
-  offset: number,
+  offset: number
 ): TooltipSide {
   const room: Record<TooltipSide, number> = {
     top: trigger.top - offset,
     bottom: vh - trigger.bottom - offset,
     left: trigger.left - offset,
-    right: vw - trigger.right - offset,
+    right: vw - trigger.right - offset
   }
-  const need = (s: TooltipSide) =>
-    s === 'top' || s === 'bottom' ? bubble.height : bubble.width
+  const need = (s: TooltipSide) => (s === 'top' || s === 'bottom' ? bubble.height : bubble.width)
 
   if (room[requested] >= need(requested)) return requested
 
@@ -146,7 +145,7 @@ function resolvePlacement(
     top: 'bottom',
     bottom: 'top',
     left: 'right',
-    right: 'left',
+    right: 'left'
   }
   const flip = opposite[requested]
   if (room[flip] >= need(flip)) return flip
@@ -158,7 +157,7 @@ function computeBubbleOrigin(
   align: TooltipAlign,
   trigger: DOMRect,
   bubble: DOMRect,
-  offset: number,
+  offset: number
 ): { top: number; left: number } {
   if (side === 'top' || side === 'bottom') {
     const top = side === 'top' ? trigger.top - bubble.height - offset : trigger.bottom + offset
@@ -174,7 +173,7 @@ function alignedAxisOrigin(
   align: TooltipAlign,
   triggerStart: number,
   triggerSize: number,
-  bubbleSize: number,
+  bubbleSize: number
 ): number {
   if (align === 'start') return triggerStart
   if (align === 'end') return triggerStart + triggerSize - bubbleSize

@@ -5,6 +5,7 @@ import { fetchJSON } from './fetch'
 import { download } from './download'
 import { extract } from './extract'
 import * as telemetry from './telemetry'
+import { buildErrorFields } from '../../shared/errorEvent'
 
 interface CnrInstallInfo {
   downloadUrl: string
@@ -36,7 +37,7 @@ function walkDir(dir: string, base: string = ''): string[] {
 
 export async function getCnrInstallInfo(
   nodeId: string,
-  version?: string,
+  version?: string
 ): Promise<CnrInstallInfo | null> {
   try {
     let url = `https://api.comfy.org/nodes/${encodeURIComponent(nodeId)}/install`
@@ -57,7 +58,7 @@ export async function installCnrNode(
   nodeId: string,
   version: string,
   customNodesDir: string,
-  sendOutput: (text: string) => void,
+  sendOutput: (text: string) => void
 ): Promise<string[]> {
   const startedAt = Date.now()
   // Resolved version is unknown until the registry call returns; fall
@@ -110,15 +111,13 @@ export async function installCnrNode(
       } catch {}
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
     telemetry.capture('comfy.desktop.node.installed', {
       node_id: nodeId,
       version: resolvedVersion,
       action: 'install',
       result: 'failure',
       duration_ms: Date.now() - startedAt,
-      error_bucket: telemetry.bucketError(message),
-      error_message: message.slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }
@@ -128,7 +127,7 @@ export async function switchCnrVersion(
   nodeId: string,
   newVersion: string,
   nodePath: string,
-  sendOutput: (text: string) => void,
+  sendOutput: (text: string) => void
 ): Promise<string[]> {
   const startedAt = Date.now()
   let resolvedVersion = newVersion
@@ -211,19 +210,21 @@ export async function switchCnrVersion(
       })
       return newFiles
     } finally {
-      try { await fs.promises.unlink(tmpZip) } catch {}
-      try { await fs.promises.rm(tmpExtract, { recursive: true, force: true }) } catch {}
+      try {
+        await fs.promises.unlink(tmpZip)
+      } catch {}
+      try {
+        await fs.promises.rm(tmpExtract, { recursive: true, force: true })
+      } catch {}
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
     telemetry.capture('comfy.desktop.node.installed', {
       node_id: nodeId,
       version: resolvedVersion,
       action: 'switch',
       result: 'failure',
       duration_ms: Date.now() - startedAt,
-      error_bucket: telemetry.bucketError(message),
-      error_message: message.slice(0, 500)
+      ...buildErrorFields(err)
     })
     throw err
   }

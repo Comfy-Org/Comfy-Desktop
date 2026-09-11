@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { launchLauncherApp } from './support/electronHarness'
 import { panelPage, waitForWebContents } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 
 test.describe('Main window visibility (#283)', () => {
   test('main window becomes visible after launch @macos @windows @linux', async () => {
@@ -8,10 +9,10 @@ test.describe('Main window visibility (#283)', () => {
     try {
       // The host window starts with show:false and transitions via ready-to-show.
       await expect.poll(
-        async () => application.evaluate(({ BrowserWindow }) => {
+        async () => evalWithRetry(() => application.evaluate(({ BrowserWindow }) => {
           const wins = BrowserWindow.getAllWindows()
           return wins.length > 0 && wins[0]!.isVisible()
-        }),
+        })),
         {
           message: 'Main window never became visible — reproduces issue #283',
           timeout: 15_000,
@@ -19,10 +20,10 @@ test.describe('Main window visibility (#283)', () => {
         },
       ).toBe(true)
 
-      const bounds = await application.evaluate(({ BrowserWindow }) => {
+      const bounds = await evalWithRetry(() => application.evaluate(({ BrowserWindow }) => {
         const win = BrowserWindow.getAllWindows()[0]
         return win?.getBounds()
-      })
+      }))
       expect(bounds).toBeDefined()
       expect(bounds!.width).toBeGreaterThan(0)
       expect(bounds!.height).toBeGreaterThan(0)

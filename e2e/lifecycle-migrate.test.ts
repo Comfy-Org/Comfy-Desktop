@@ -7,30 +7,35 @@
  * auto-tracker registers a `sourceId: 'desktop'` install on boot. The
  * test then exercises the migration trigger surface:
  *   - the auto-tracker actually creates the desktop install record
- *   - `previewDesktopMigration` stages a snapshot envelope from the
- *     legacy install (the SCAN phase of `migrate-to-standalone`)
+ *   - the chooser tile's kebab exposes the real Migrate entry point,
+ *     which opens the adoption confirm; Cancel backs out without
+ *     dispatching the migration action or touching the record
  *   - the standalone source advertises a release + CPU variant the
- *     migration target picker would consume
+ *     migration flow's silent variant pick would consume
  *
- * The download / extract / setup phase of `migrate-to-standalone` itself
- * is left to the existing `lifecycle.test.ts` standalone install path,
- * which already exercises the same `standaloneSource.install + postInstall`
- * code at the same cost.
+ * The confirmed adoption op itself (validate legacy venv → copy source →
+ * reuse .venv) is exercised end-to-end by
+ * `lifecycle-first-use-migrate.test.ts` from the first-use branch; the
+ * download/extract phase of a fresh standalone install is left to
+ * `lifecycle.test.ts`, which already exercises the same
+ * `standaloneSource.install + postInstall` code at the same cost.
  */
 
 import { readFileSync } from 'node:fs'
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { resolve } from 'node:path'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
+import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { expectChooserVisible } from './support/chooserHelpers'
+import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
+import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 let legacyBasePath: string
 let legacyInstallId = ''
-let stagedSnapshotPath = ''
 
 const LEGACY_NAME = 'ComfyUI Legacy Desktop'
 
@@ -49,10 +54,6 @@ interface Installation {
   [key: string]: unknown
 }
 
-async function pathExists(p: string): Promise<boolean> {
-  try { await access(p); return true } catch { return false }
-}
-
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
@@ -69,8 +70,8 @@ test.beforeAll(async () => {
 
   legacyBasePath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-legacy-desktop-e2e-'))
   // Layout `detectDesktopInstall` recognizes: models/ + user/ + .venv/.
-  // Empty dirs are enough — captureDesktopSnapshot tolerates missing
-  // python and an empty custom_nodes/ directory.
+  // Empty dirs are enough for detection + the confirm surface; the
+  // confirmed adoption op (not driven here) is what needs a live venv.
   await mkdir(path.join(legacyBasePath, 'models'), { recursive: true })
   await mkdir(path.join(legacyBasePath, 'user'), { recursive: true })
   await mkdir(path.join(legacyBasePath, 'input'), { recursive: true })
@@ -97,7 +98,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await ctx?.cleanup()
   if (legacyBasePath) await rm(legacyBasePath, { recursive: true, force: true })
-  if (stagedSnapshotPath) await rm(stagedSnapshotPath, { force: true })
 })
 
 test('auto-tracker registers Legacy Desktop install on boot @lifecycle', async () => {
@@ -115,39 +115,67 @@ test('auto-tracker registers Legacy Desktop install on boot @lifecycle', async (
   const desktop = installs.find((i) => i.sourceId === 'desktop')
   expect(desktop, 'desktop install not present in get-installations result').toBeDefined()
   expect(desktop!.installPath).toBe(legacyBasePath)
-  // Capture the auto-allocated id so subsequent tests can drive runAction
-  // / previewDesktopMigration against the correct record.
+  // Capture the auto-allocated id so subsequent tests can address the
+  // tile's kebab menu.
   legacyInstallId = desktop!.id
 })
 
-test('preview-desktop-migration stages a snapshot envelope from the legacy install @lifecycle', async () => {
+test('chooser kebab Migrate opens the real adoption confirm; Cancel backs out cleanly @lifecycle', async () => {
   expect(legacyInstallId, 'legacyInstallId not captured by the prior test').toBeTruthy()
-  const result = await ctx.panel.evaluate<{
-    ok: boolean
-    message?: string
-    snapshotPath?: string
-    preview?: { snapshotCount: number }
-  }>(
-    `window.api.previewDesktopMigration()`,
+  await resetIpcInvocations(ctx.app, 'run-action')
+
+  // Kebab → Migrate. The menu item only renders when the backend tagged
+  // the install with a `migrate` status tag, so its presence is itself
+  // an assertion that the Legacy Desktop record is migratable.
+  expect(
+    await ctx.panel.click(byTestId(TID.dashboardTileKebab(legacyInstallId))),
+    'kebab click on legacy desktop tile',
+  ).toBe(true)
+  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('migrate')), { timeout: 5_000 })
+  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('migrate')))).toBe(true)
+
+  // The item routes through Manage with `autoAction: 'migrate-to-standalone'`,
+  // which opens the picker popup and lands in the desktop-adoption confirm.
+  // The confirm carries `messageDetails` (the reuse list), so ModalDialog
+  // renders it as a rich confirm (`modal-confirm-button` / `modal-cancel`),
+  // not a BaseAlert. Cancel must exist alongside the primary CTA.
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
+  await popup.waitForVisible(byTestId(TID.modalConfirm), { timeout: 15_000 })
+  await popup.waitForVisible(byTestId(TID.modalCancel))
+
+  expect(await popup.click(byTestId(TID.modalCancel))).toBe(true)
+  await popup.waitFor(
+    async () => !(await popup.exists(byTestId(TID.modalConfirm))),
+    { timeout: 10_000, message: 'adoption confirm never dismissed after Cancel' },
   )
-  expect(result.ok, `previewDesktopMigration failed: ${result.message ?? ''}`).toBe(true)
-  expect(result.snapshotPath, 'preview did not return a staged snapshot file').toBeTruthy()
-  expect(await pathExists(result.snapshotPath!), 'staged snapshot file missing on disk').toBe(true)
-  expect(result.preview?.snapshotCount).toBe(1)
-  // Track for afterAll cleanup — the handler only auto-deletes the
-  // previous file on its NEXT invocation, so a one-shot test leaks it.
-  stagedSnapshotPath = result.snapshotPath!
+
+  // Cancel means no dispatch and an untouched record.
+  type RunActionCall = { installationId: string; actionId: string }
+  const calls = await getIpcInvocations(ctx.app, 'run-action') as RunActionCall[]
+  expect(
+    calls.some((c) => c.actionId === 'migrate-to-standalone'),
+    'cancelled adoption confirm must not dispatch migrate-to-standalone',
+  ).toBe(false)
+  const installs = await ctx.panel.evaluate<Installation[]>(`window.api.getInstallations()`)
+  const desktop = installs.find((i) => i.id === legacyInstallId)
+  expect(desktop, 'legacy desktop record must survive a cancelled migrate').toBeDefined()
+  expect(desktop!.sourceId).toBe('desktop')
+
+  // Close the Manage popup the autoAction route left open.
+  await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('standalone source exposes a CPU variant the migration target picker can pin @lifecycle', async () => {
-  // The renderer-side migration target picker calls these same field-option
-  // IPCs to build its release / variant rows. The CI lifecycle suite pins
-  // CPU on Windows; without that pick we'd download a GPU payload that
-  // blows the budget. Asserting the pick is reachable here guards the
-  // upstream R2 contract (`latest.json` + per-vendor `releases.json`)
-  // the picker depends on.
+test('standalone source exposes a CPU variant the migration variant pick can pin @lifecycle', async () => {
+  // Read-only contract guard: `useMigrateAction` silently picks the
+  // recommended variant from these same field-option IPCs before
+  // dispatching `migrate-to-standalone`, and the CI lifecycle suite
+  // pins CPU on Windows — without a CPU variant the migrate path would
+  // download a GPU payload that blows the budget. Asserting the pick is
+  // reachable guards the upstream R2 contract (`latest.json` +
+  // per-vendor `releases.json`) that pick depends on.
   const releaseOptions = await ctx.panel.evaluate<FieldOption[]>(
-    `window.api.getFieldOptions('standalone', 'release', {})`,
+    `window.api.getFieldOptions('standalone', 'release', {}, { includeLatestStable: true })`,
   )
   expect(releaseOptions.length, 'no standalone releases available').toBeGreaterThan(0)
   const release = releaseOptions.find((r) => r.recommended) ?? releaseOptions[0]!
@@ -158,5 +186,4 @@ test('standalone source exposes a CPU variant the migration target picker can pi
   expect(variantOptions.length, 'no standalone variants available').toBeGreaterThan(0)
   const cpuVariant = variantOptions.find((v) => /cpu/i.test(v.value))
   expect(cpuVariant, `no CPU variant exposed for release ${release.value}: ${JSON.stringify(variantOptions.map((v) => v.value))}`).toBeDefined()
-  expect(legacyInstallId, 'legacyInstallId not captured by the prior test').toBeTruthy()
 })

@@ -13,6 +13,7 @@
 import { test, expect, type ElectronApplication } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { findWebContentsId } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 import {
   setAppUpdateState,
   setInstallUpdate,
@@ -131,7 +132,7 @@ test('install-update chip stays hidden on the install-less chooser host even wit
  *  teardown race) — a destroyed context means nothing is visible anyway. */
 async function isSystemModalVisible(app: ElectronApplication): Promise<boolean> {
   try {
-    return await app.evaluate(({ BrowserWindow, WebContentsView }) => {
+    return await evalWithRetry(() => app.evaluate(({ BrowserWindow, WebContentsView }) => {
       for (const win of BrowserWindow.getAllWindows()) {
         for (const child of win.contentView.children) {
           if (!(child instanceof WebContentsView)) continue
@@ -142,7 +143,7 @@ async function isSystemModalVisible(app: ElectronApplication): Promise<boolean> 
         }
       }
       return false
-    })
+    }))
   } catch {
     return false
   }
@@ -159,13 +160,13 @@ async function closeSystemModalIfOpen(app: ElectronApplication): Promise<void> {
   const id = await findWebContentsId(app, 'comfySystemModal.html')
   if (id === null) return
   if (!(await isSystemModalVisible(app))) return
-  await app.evaluate(({ webContents }) => {
+  await evalWithRetry(() => app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfySystemModal.html'))
     if (!wc) return
     return wc.executeJavaScript(`(() => {
       const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
       document.dispatchEvent(ev)
     })()`).catch(() => {})
-  })
+  }))
   await expect.poll(() => isSystemModalVisible(app), { timeout: 3_000, intervals: [100, 200] }).toBe(false)
 }

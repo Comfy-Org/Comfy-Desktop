@@ -25,23 +25,32 @@ function dispatchInvoke(
   return Promise.resolve(handler(event, ...args))
 }
 
-export function registerPickerSettingsIpc(): void {
+export interface PickerSettingsIpcOptions {
+  /** Controlled quit used for the relaunch path. Must route through
+   *  `app.quit()` semantics (destroying host windows whose close handlers
+   *  would otherwise consult/prompt), NEVER `app.exit()`: exit() skips
+   *  `will-quit`, where active managed model downloads park their staged
+   *  bytes for resume, so it would strand in-flight transfers. */
+  quitForRelaunch: () => void
+}
+
+export function registerPickerSettingsIpc(options: PickerSettingsIpcOptions): void {
   ipcMain.handle(CH.getDetailSections, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('get-detail-sections', event, payload?.installationId),
+    dispatchInvoke('get-detail-sections', event, payload?.installationId)
   )
 
   ipcMain.handle(CH.getDiskSpace, (event, payload: { path?: unknown }) =>
-    dispatchInvoke('get-disk-space', event, payload?.path),
+    dispatchInvoke('get-disk-space', event, payload?.path)
   )
 
   ipcMain.handle(CH.getInstallationSize, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('get-installation-size', event, payload?.installationId),
+    dispatchInvoke('get-installation-size', event, payload?.installationId)
   )
 
   ipcMain.handle(
     CH.updateInstallation,
     (event, payload: { installationId?: unknown; data?: unknown }) =>
-      dispatchInvoke('update-installation', event, payload?.installationId, payload?.data),
+      dispatchInvoke('update-installation', event, payload?.installationId, payload?.data)
   )
 
   ipcMain.handle(
@@ -52,8 +61,8 @@ export function registerPickerSettingsIpc(): void {
         event,
         payload?.installationId,
         payload?.actionId,
-        payload?.actionData,
-      ),
+        payload?.actionData
+      )
   )
 
   ipcMain.handle(
@@ -64,30 +73,34 @@ export function registerPickerSettingsIpc(): void {
         event,
         payload?.sourceId,
         payload?.fieldId,
-        payload?.selections,
-      ),
+        payload?.selections
+      )
   )
 
   ipcMain.handle(CH.getInstallations, (event) => dispatchInvoke('get-installations', event))
 
   ipcMain.handle(CH.getStableTags, (event) => dispatchInvoke('get-stable-tags', event))
 
+  ipcMain.handle(CH.getUniqueName, (event, payload: { baseName?: unknown }) =>
+    dispatchInvoke('get-unique-name', event, payload?.baseName)
+  )
+
   ipcMain.handle(CH.stopComfyUI, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('stop-comfyui', event, payload?.installationId),
+    dispatchInvoke('stop-comfyui', event, payload?.installationId)
   )
 
   ipcMain.handle(CH.cancelOperation, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('cancel-operation', event, payload?.installationId),
+    dispatchInvoke('cancel-operation', event, payload?.installationId)
   )
 
   ipcMain.handle(CH.getSnapshots, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('get-snapshots', event, payload?.installationId),
+    dispatchInvoke('get-snapshots', event, payload?.installationId)
   )
 
   ipcMain.handle(
     CH.getSnapshotDetail,
     (event, payload: { installationId?: unknown; filename?: unknown }) =>
-      dispatchInvoke('get-snapshot-detail', event, payload?.installationId, payload?.filename),
+      dispatchInvoke('get-snapshot-detail', event, payload?.installationId, payload?.filename)
   )
 
   ipcMain.handle(
@@ -98,66 +111,58 @@ export function registerPickerSettingsIpc(): void {
         event,
         payload?.installationId,
         payload?.filename,
-        payload?.mode,
-      ),
+        payload?.mode
+      )
   )
 
   ipcMain.handle(
     CH.exportSnapshot,
     (event, payload: { installationId?: unknown; filename?: unknown }) =>
-      dispatchInvoke('export-snapshot', event, payload?.installationId, payload?.filename),
+      dispatchInvoke('export-snapshot', event, payload?.installationId, payload?.filename)
   )
 
   ipcMain.handle(CH.exportAllSnapshots, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('export-all-snapshots', event, payload?.installationId),
+    dispatchInvoke('export-all-snapshots', event, payload?.installationId)
   )
 
   ipcMain.handle(CH.importSnapshotsPreview, (event) =>
-    dispatchInvoke('import-snapshots-preview', event),
+    dispatchInvoke('import-snapshots-preview', event)
   )
 
   ipcMain.handle(CH.importSnapshotsDiff, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('import-snapshots-diff', event, payload?.installationId),
+    dispatchInvoke('import-snapshots-diff', event, payload?.installationId)
   )
 
   ipcMain.handle(CH.importSnapshotsConfirm, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('import-snapshots-confirm', event, payload?.installationId),
+    dispatchInvoke('import-snapshots-confirm', event, payload?.installationId)
   )
 
   ipcMain.handle(CH.previewSnapshotFile, (event) => dispatchInvoke('preview-snapshot-file', event))
 
   ipcMain.handle(CH.getComfyArgs, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('get-comfy-args', event, payload?.installationId),
+    dispatchInvoke('get-comfy-args', event, payload?.installationId)
   )
 
   ipcMain.handle(CH.browseFolder, (event, payload: { defaultPath?: unknown }) =>
-    dispatchInvoke('browse-folder', event, payload?.defaultPath),
-  )
-
-  ipcMain.handle(
-    CH.previewDesktopMigration,
-    (event, payload: { installationId?: unknown; desktopId?: unknown }) =>
-      dispatchInvoke(
-        'preview-desktop-migration',
-        event,
-        payload?.installationId,
-        payload?.desktopId,
-      ),
+    dispatchInvoke('browse-folder', event, payload?.defaultPath)
   )
 
   ipcMain.handle(CH.previewLocalMigration, (event, payload: { installationId?: unknown }) =>
-    dispatchInvoke('preview-local-migration', event, payload?.installationId),
+    dispatchInvoke('preview-local-migration', event, payload?.installationId)
   )
 
-  // Fire-and-forget. If `relaunch()` throws (sandboxed builds), skip `exit()`
-  // so the user isn't killed without a respawn.
+  // Fire-and-forget. If `relaunch()` throws (sandboxed builds), skip the quit
+  // so the user isn't killed without a respawn. The quit itself is the
+  // controlled path (see PickerSettingsIpcOptions.quitForRelaunch), so active
+  // model downloads park resumably instead of being killed mid-write.
   ipcMain.on(CH.relaunchApp, () => {
     try {
       app.relaunch()
-      app.exit(0)
     } catch (err) {
       console.error('Picker: relaunch failed', err)
+      return
     }
+    options.quitForRelaunch()
   })
 
   // Pull main's full i18n catalog so keys like `actions.restart` resolve inside the popup.

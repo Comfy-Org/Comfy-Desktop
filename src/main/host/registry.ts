@@ -2,6 +2,8 @@ import { EventEmitter } from 'events'
 import type { BrowserWindow, WebContents, WebContentsView } from 'electron'
 import { _runningSessions, _isStopping } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
+import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
+import type { ViewKind } from '../../shared/viewKind'
 
 /**
  * Bus for host-window install attachment changes. `'changed'` fires when the
@@ -17,7 +19,6 @@ export const hostInstallEvents = new EventEmitter()
  */
 export type ComfyPanelKey =
   | 'comfy'
-  | 'downloads-v2'
   | 'feedback'
   | 'new-install'
   | 'track'
@@ -27,16 +28,23 @@ export type ComfyPanelKey =
    *  is mounted; survives `_runningSessions` flips during update→relaunch. Not
    *  a title-bar pill — set programmatically. */
   | 'progress'
+  /** Overlay mode (like `'feedback'`): the MCP setup modal mounts over the live
+   *  canvas, which stays visible underneath and dimmed. Set programmatically. */
+  | 'mcp-setup'
+  /** Overlay mode (like `'feedback'`): the launch-announcement modal, opened
+   *  from the title-bar news bell. Set programmatically. */
+  | 'announcement'
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
-  'downloads-v2',
   'feedback',
   'new-install',
   'track',
   'load-snapshot',
   'quick-install',
   'progress',
+  'mcp-setup',
+  'announcement'
 ])
 
 /**
@@ -47,7 +55,6 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
 export type BodyMode =
   | 'comfy'
   | 'comfy-lifecycle'
-  | 'downloads-v2'
   | 'feedback'
   | 'chooser'
   /** Mirror of the `'progress'` ComfyPanelKey; forces the panel to fully cover
@@ -57,6 +64,8 @@ export type BodyMode =
   | 'track'
   | 'load-snapshot'
   | 'quick-install'
+  | 'mcp-setup'
+  | 'announcement'
 
 /**
  * Per-installation handle for a ComfyUI window. The window is a parent
@@ -78,6 +87,13 @@ export interface ComfyWindowEntry {
   /** Currently rendered panel — always a user-visible key, never the internal
    *  `'comfy-lifecycle'` / `'chooser'` body modes. */
   activePanel: ComfyPanelKey
+  /** While set (overlay switch → renderer `overlay-ready` ack), `layoutViews`
+   *  keeps the panel hidden so its pre-transparent frame can't flash. */
+  pendingOverlayReveal?: boolean
+  /** Fallback timer that reveals the overlay if the ack never lands; cleared on
+   *  the next switch or the ack so a stale one can't reveal a later open early. */
+  overlayRevealTimer?: ReturnType<typeof setTimeout>
+
   /** Last theme reported by the ComfyUI frontend, applied to the panel on load. */
   lastTheme: { bg: string; text: string }
   /** Updates view bounds for the current activePanel. */
@@ -219,14 +235,14 @@ export function unregisterHostEntry(entry: ComfyWindowEntry): void {
 
 /** Predicate: install-less (chooser) host. Narrows `installationId` to `null`. */
 export function isChooserHost(
-  entry: ComfyWindowEntry,
+  entry: ComfyWindowEntry
 ): entry is ComfyWindowEntry & { installationId: null } {
   return entry.installationId === null
 }
 
 /** Predicate: this entry is an install-backed host. Inverse of `isChooserHost`. */
 export function isInstallHost(
-  entry: ComfyWindowEntry,
+  entry: ComfyWindowEntry
 ): entry is ComfyWindowEntry & { installationId: string } {
   return entry.installationId !== null
 }
@@ -238,7 +254,7 @@ export function isInstallHost(
  * an attached install).
  */
 export function shouldConfirmKillForEntry(
-  entry: ComfyWindowEntry | null | undefined,
+  entry: ComfyWindowEntry | null | undefined
 ): entry is ComfyWindowEntry & { installationId: string } {
   return !!entry && isInstallHost(entry) && entry.sourceCategory === 'local'
 }
@@ -249,7 +265,7 @@ export function shouldConfirmKillForEntry(
  * the install is a healthy "last active surface" worth restoring on next boot.
  */
 export function hasRunningSessionForEntry(
-  entry: ComfyWindowEntry | null | undefined,
+  entry: ComfyWindowEntry | null | undefined
 ): entry is ComfyWindowEntry & { installationId: string } {
   return !!entry && isInstallHost(entry) && _runningSessions.has(entry.installationId)
 }
@@ -272,15 +288,35 @@ export function computeBodyMode(entry: ComfyWindowEntry): BodyMode {
 }
 
 /**
+ * Classify a host window for the navigation matrix. Install-less (chooser) host
+ * → `'dashboard'`; a cloud OR remote install → `'cloud'` (the two share
+ * navigation behavior, so `remote` folds into `cloud`); a local install →
+ * `'instance'`. Centralised here so the picker's view-kind can't disagree with
+ * the body-mode it sits beside (`computeBodyMode`).
+ */
+export function computeViewKind(entry: ComfyWindowEntry): ViewKind {
+  return viewKindFor(entry.installationId, normaliseCategory(entry.sourceCategory))
+}
+
+/**
  * Resolve an IPC `event.sender` to the entry whose title-bar WebContentsView
  * owns it, by reference equality. The single chokepoint every title-bar IPC
  * must funnel through, so aux windows (preload-less popups) and the
  * comfy/panel views can't pop the file/install menu. Returning `null` makes
  * every consuming handler no-op. Prefer this over open-coding a sender match.
  */
-export function findEntryByTitleBarSender(wc: WebContents): { id: number; entry: ComfyWindowEntry } | null {
+export function findEntryByTitleBarSender(
+  wc: WebContents
+): { id: number; entry: ComfyWindowEntry } | null {
   for (const [id, entry] of comfyWindows) {
     if (entry.titleBarView.webContents === wc) return { id, entry }
+  }
+  return null
+}
+
+export function findEntryByComfySender(wc: WebContents): ComfyWindowEntry | null {
+  for (const entry of comfyWindows.values()) {
+    if (entry.comfyView.webContents === wc) return entry
   }
   return null
 }
@@ -289,10 +325,7 @@ export function findEntryByTitleBarSender(wc: WebContents): { id: number; entry:
  *  IPC message. Used by the terminal bridge so the served ComfyUI frontend
  *  (which has no idea which install it belongs to) reaches the right shell. */
 export function findInstallationIdByComfySender(wc: WebContents): string | null {
-  for (const entry of comfyWindows.values()) {
-    if (entry.comfyView.webContents === wc) return entry.installationId
-  }
-  return null
+  return findEntryByComfySender(wc)?.installationId ?? null
 }
 
 /** Resolve a host BrowserWindow back to its registry entry. */
@@ -307,7 +340,7 @@ export function findEntryByHostWindow(window: BrowserWindow): ComfyWindowEntry |
  *  non-minimised over minimised. Within each visibility bucket, returns
  *  insertion order. Returns `null` when nothing matches. */
 export function findPreferredHostByVisibility(
-  pred: (entry: ComfyWindowEntry) => boolean,
+  pred: (entry: ComfyWindowEntry) => boolean
 ): ComfyWindowEntry | null {
   let minimisedFallback: ComfyWindowEntry | null = null
   for (const [, entry] of comfyWindows) {
@@ -428,8 +461,7 @@ export function openOrFocusAnyHostWindow(): BrowserWindow {
  * macOS-only; the `index.ts` caller guards on platform.
  */
 export function raiseAllHostWindows(): BrowserWindow {
-  const preferred =
-    findPreferredInstallHostWindow() ?? findPreferredChooserHostWindow()
+  const preferred = findPreferredInstallHostWindow() ?? findPreferredChooserHostWindow()
   if (!preferred) return requireChooserFactory()()
 
   // Raise every other live host first so the whole app comes forward,

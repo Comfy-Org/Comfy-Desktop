@@ -3,17 +3,35 @@ import path from 'path'
 import { execFile } from 'child_process'
 import { fetchJSON } from '../lib/fetch'
 import { runLoggedProcess, formatProcessError } from '../lib/logged-process'
-import { untrackAction, launchAction, openFolderAction, migrateToStandaloneAction, renameAction } from '../lib/actions'
+import {
+  untrackAction,
+  launchAction,
+  openFolderAction,
+  migrateToStandaloneAction,
+  renameAction
+} from '../lib/actions'
 import { resolveGitDir, readGitHead, readGitRemoteUrl } from '../lib/git'
 import { parseArgs, extractPort } from '../lib/util'
 import { t } from '../lib/i18n'
 import { buildLaunchSettingsFields } from './common/launchSettingsFields'
 import type { InstallationRecord } from '../installations'
-import type { SourcePlugin, FieldOption, ActionResult, ActionTools, LaunchCommand, StatusTag } from '../types/sources'
+import type {
+  SourcePlugin,
+  FieldOption,
+  ActionResult,
+  ActionTools,
+  LaunchCommand,
+  StatusTag,
+  TerminalEnv
+} from '../types/sources'
 
 const DEFAULT_REPO = 'https://github.com/Comfy-Org/ComfyUI/'
 const DEFAULT_LAUNCH_ARGS = ''
-const DEFAULT_GIT_SETTINGS = { launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', browserPartition: 'shared' } as const
+const DEFAULT_GIT_SETTINGS = {
+  launchArgs: DEFAULT_LAUNCH_ARGS,
+  launchMode: 'window',
+  browserPartition: 'shared'
+} as const
 
 const VENV_CANDIDATES = ['.venv', 'venv', '.env', 'env']
 
@@ -31,7 +49,10 @@ function parseGitHubRepo(url: string): GitHubParsed | null {
   try {
     const parsed = new URL(cleaned)
     if (!parsed.hostname.match(/^(www\.)?github\.com$/)) return null
-    const parts = parsed.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '').split('/')
+    const parts = parsed.pathname
+      .replace(/^\/+|\/+$/g, '')
+      .replace(/\.git$/, '')
+      .split('/')
     if (parts.length < 2) return null
     return { owner: parts[0]!, repo: parts[1]! }
   } catch {
@@ -87,18 +108,26 @@ function findMainPy(dirPath: string): string | null {
 
 export const gitSource: SourcePlugin = {
   id: 'git',
-  get label() { return t('git.label') },
-  get description() { return t('git.desc') },
+  get label() {
+    return t('git.label')
+  },
+  get description() {
+    return t('git.desc')
+  },
   category: 'local',
   hidden: true,
   hasConsole: true,
 
   fields: [
-    { id: 'repo', label: 'Git Repository', type: 'text',
+    {
+      id: 'repo',
+      label: 'Git Repository',
+      type: 'text',
       defaultValue: DEFAULT_REPO,
-      action: { label: 'Update' } },
+      action: { label: 'Update' }
+    },
     { id: 'branch', label: 'Branch', type: 'select', errorTarget: 'repo' },
-    { id: 'commit', label: 'Commit', type: 'select', errorTarget: 'repo' },
+    { id: 'commit', label: 'Commit', type: 'select', errorTarget: 'repo' }
   ],
 
   skipInstall: true,
@@ -114,7 +143,7 @@ export const gitSource: SourcePlugin = {
       branch: selections.branch?.value ?? '',
       commit: selections.commit?.value ?? '',
       commitMessage: selections.commit?.label ?? '',
-      ...DEFAULT_GIT_SETTINGS,
+      ...DEFAULT_GIT_SETTINGS
     }
   },
 
@@ -131,7 +160,7 @@ export const gitSource: SourcePlugin = {
       cmd: pythonPath,
       args: ['-s', 'main.py', ...parsed],
       cwd,
-      port,
+      port
     }
   },
 
@@ -142,15 +171,32 @@ export const gitSource: SourcePlugin = {
     return repo || null
   },
 
+  getTerminalEnv(installation: InstallationRecord): TerminalEnv {
+    // A git install runs from its own venv (`venvPath`), not the standalone
+    // `ComfyUI/.venv`, and has no bundled `standalone-env/uv.exe`. Activate that
+    // venv so its own `pip` is on PATH; leave pip unaliased. Open the shell on
+    // the ComfyUI code folder (where `main.py` lives) regardless of whether a
+    // venv is usable.
+    const mainPy = findMainPy(installation.installPath)
+    const base: TerminalEnv = mainPy ? { cwd: path.dirname(mainPy) } : {}
+    const venvPath = installation.venvPath as string | undefined
+    if (!venvPath || !resolveVenvPython(installation)) return base
+    return { ...base, venvDir: venvPath, promptName: path.basename(venvPath) }
+  },
+
   getListActions(installation: InstallationRecord): Record<string, unknown>[] {
     const installed = installation.status === 'installed'
     const hasVenv = !!resolveVenvPython(installation)
     const hasMain = !!findMainPy(installation.installPath)
     const canLaunch = installed && hasVenv && hasMain
-    const disabledMsg = !canLaunch ? (!hasVenv ? t('git.noVenv') : !hasMain ? t('git.noMainPy') : t('errors.installNotReady')) : undefined
-    return [
-      launchAction(canLaunch, disabledMsg),
-    ]
+    const disabledMsg = !canLaunch
+      ? !hasVenv
+        ? t('git.noVenv')
+        : !hasMain
+          ? t('git.noMainPy')
+          : t('errors.installNotReady')
+      : undefined
+    return [launchAction(canLaunch, disabledMsg)]
   },
 
   getStatusTag(installation: InstallationRecord): StatusTag | undefined {
@@ -177,10 +223,20 @@ export const gitSource: SourcePlugin = {
           { label: t('git.repository'), value: (installation.repo as string) || '—' },
           { label: t('git.branch'), value: (installation.branch as string) || '—' },
           { label: t('git.commit'), value: (installation.commit as string) || '—' },
-          { id: 'venvPath', label: t('git.venv'), value: venvPath || '', editable: true, editType: 'path', browseOnly: true },
+          {
+            id: 'venvPath',
+            label: t('git.venv'),
+            value: venvPath || '',
+            editable: true,
+            editType: 'path',
+            browseOnly: true
+          },
           { label: t('common.location'), value: installation.installPath || '—' },
-          { label: t('common.installed'), value: new Date(installation.createdAt).toLocaleDateString() },
-        ],
+          {
+            label: t('common.installed'),
+            value: new Date(installation.createdAt).toLocaleDateString()
+          }
+        ]
       },
       {
         tab: 'settings',
@@ -188,23 +244,45 @@ export const gitSource: SourcePlugin = {
         fields: buildLaunchSettingsFields(installation, {
           defaultLaunchArgs: DEFAULT_LAUNCH_ARGS,
           extraFields: [
-            { id: 'venvPath', label: t('git.venv'), value: venvPath || '', editable: true, editType: 'path', browseOnly: true },
-          ],
-        }),
+            {
+              id: 'venvPath',
+              label: t('git.venv'),
+              value: venvPath || '',
+              editable: true,
+              editType: 'path',
+              browseOnly: true
+            }
+          ]
+        })
       },
       {
         title: 'Actions',
         pinBottom: true,
         actions: [
-          launchAction(canLaunch, !canLaunch ? (!hasVenv ? t('git.noVenv') : !hasMain ? t('git.noMainPy') : t('errors.installNotReady')) : undefined),
+          launchAction(
+            canLaunch,
+            !canLaunch
+              ? !hasVenv
+                ? t('git.noVenv')
+                : !hasMain
+                  ? t('git.noMainPy')
+                  : t('errors.installNotReady')
+              : undefined
+          ),
           renameAction(installation.name),
           openFolderAction(installation.installPath),
-          { id: 'git-pull', label: t('git.gitPull'), style: 'default', enabled: installed,
-            showProgress: true, progressTitle: t('git.gitPulling') },
+          {
+            id: 'git-pull',
+            label: t('git.gitPull'),
+            style: 'default',
+            enabled: installed,
+            showProgress: true,
+            progressTitle: t('git.gitPulling')
+          },
           migrateToStandaloneAction(installed),
-          untrackAction(),
-        ],
-      },
+          untrackAction()
+        ]
+      }
     ]
   },
 
@@ -262,11 +340,14 @@ export const gitSource: SourcePlugin = {
       const result = await runLoggedProcess(gitPath, ['pull'], {
         cwd: installation.installPath,
         env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-        sendOutput,
+        sendOutput
       })
 
       if (result.exitCode !== 0) {
-        return { ok: false, message: formatProcessError(t('git.gitPullFailed', { code: result.exitCode }), result) }
+        return {
+          ok: false,
+          message: formatProcessError(t('git.gitPullFailed', { code: result.exitCode }), result)
+        }
       }
 
       sendOutput(`\n✓ ${t('git.gitPullComplete')}\n`)
@@ -286,16 +367,20 @@ export const gitSource: SourcePlugin = {
       const parsed = parseGitHubRepo(selections.repo?.value ?? '')
       if (!parsed) throw new Error('Invalid GitHub repository URL.')
       const [repoInfo, branches] = await Promise.all([
-        fetchJSON(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`) as Promise<{ default_branch: string }>,
-        fetchJSON(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/branches?per_page=100`) as Promise<{ name: string }[]>,
+        fetchJSON(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`) as Promise<{
+          default_branch: string
+        }>,
+        fetchJSON(
+          `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/branches?per_page=100`
+        ) as Promise<{ name: string }[]>
       ])
       const defaultBranch = repoInfo.default_branch
-      branches.sort((a, b) =>
-        (a.name === defaultBranch ? 0 : 1) - (b.name === defaultBranch ? 0 : 1)
+      branches.sort(
+        (a, b) => (a.name === defaultBranch ? 0 : 1) - (b.name === defaultBranch ? 0 : 1)
       )
       return branches.map((b) => ({
         value: b.name,
-        label: b.name === defaultBranch ? `${b.name} (default)` : b.name,
+        label: b.name === defaultBranch ? `${b.name} (default)` : b.name
       }))
     }
     if (fieldId === 'commit') {
@@ -303,14 +388,14 @@ export const gitSource: SourcePlugin = {
       if (!parsed) throw new Error('Invalid GitHub repository URL.')
       const branch = selections.branch?.value
       if (!branch) return []
-      const commits = await fetchJSON(
+      const commits = (await fetchJSON(
         `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits?sha=${encodeURIComponent(branch)}&per_page=30`
-      ) as { sha: string; commit: { message: string } }[]
+      )) as { sha: string; commit: { message: string } }[]
       return commits.map((c) => ({
         value: c.sha,
-        label: `${c.sha.slice(0, 8)} — ${c.commit.message.split('\n')[0]}`,
+        label: `${c.sha.slice(0, 8)} — ${c.commit.message.split('\n')[0]}`
       }))
     }
     return []
-  },
+  }
 }

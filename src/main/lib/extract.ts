@@ -29,7 +29,9 @@ function get7zBin(): string {
   binPath = binPath.replace('app.asar', 'app.asar.unpacked')
   // Package managers don't always preserve the exec bit on non-Windows.
   if (process.platform !== 'win32') {
-    try { fs.chmodSync(binPath, 0o755) } catch {}
+    try {
+      fs.chmodSync(binPath, 0o755)
+    } catch {}
   }
   return binPath
 }
@@ -39,7 +41,7 @@ export function extract(
   archivePath: string,
   destDir: string,
   onProgress?: ((p: ExtractProgress) => void) | null,
-  options: ExtractOptions = {},
+  options: ExtractOptions = {}
 ): Promise<void> {
   const { signal } = options
   return new Promise((resolve, reject) => {
@@ -63,7 +65,9 @@ export function extract(
       killTree(child)
     }
     if (signal) signal.addEventListener('abort', onAbort, { once: true })
-    const cleanup = (): void => { if (signal) signal.removeEventListener('abort', onAbort) }
+    const cleanup = (): void => {
+      if (signal) signal.removeEventListener('abort', onAbort)
+    }
 
     child.stdout.on('data', (data: Buffer) => {
       const lines = data.toString().split(/\r?\n/)
@@ -72,9 +76,7 @@ export function extract(
         if (match && onProgress) {
           const percent = parseInt(match[1]!, 10)
           const elapsedSecs = (Date.now() - startTime) / 1000
-          const etaSecs = percent > 0
-            ? (elapsedSecs / percent) * (100 - percent)
-            : -1
+          const etaSecs = percent > 0 ? (elapsedSecs / percent) * (100 - percent) : -1
           onProgress({ percent, elapsedSecs, etaSecs })
         }
       }
@@ -86,19 +88,25 @@ export function extract(
 
     child.on('error', (err: Error) => {
       cleanup()
-      if (cancelled) { reject(new Error('Extraction cancelled')); return }
+      if (cancelled) {
+        reject(new Error('Extraction cancelled'))
+        return
+      }
       reject(new Error(`Extraction failed: ${err.message}`))
     })
 
     child.on('close', (code: number | null) => {
       cleanup()
-      if (cancelled) { reject(new Error('Extraction cancelled')); return }
+      if (cancelled) {
+        reject(new Error('Extraction cancelled'))
+        return
+      }
       if (code !== 0) {
         // "Unsupported Method" only affects files using filters the bundled
         // 7zip lacks (e.g. ARM64 BCJ); if every ERROR is that, treat as success.
         const errorLines = stderr.split(/\r?\n/).filter((l) => l.startsWith('ERROR:'))
-        const allUnsupported = errorLines.length > 0 &&
-          errorLines.every((l) => l.includes('Unsupported Method'))
+        const allUnsupported =
+          errorLines.length > 0 && errorLines.every((l) => l.includes('Unsupported Method'))
         if (!allUnsupported) {
           reject(new Error(`Extraction failed: ${stderr || `exit code ${code}`}`))
           return
@@ -118,7 +126,7 @@ export function extract(
 function extractTarNative(
   archivePath: string,
   destDir: string,
-  options: ExtractOptions = {},
+  options: ExtractOptions = {}
 ): Promise<void> {
   const { signal } = options
   return new Promise((resolve, reject) => {
@@ -131,19 +139,32 @@ function extractTarNative(
     let stderr = ''
     let cancelled = false
 
-    const onAbort = (): void => { cancelled = true; killTree(child) }
+    const onAbort = (): void => {
+      cancelled = true
+      killTree(child)
+    }
     if (signal) signal.addEventListener('abort', onAbort, { once: true })
-    const cleanup = (): void => { if (signal) signal.removeEventListener('abort', onAbort) }
+    const cleanup = (): void => {
+      if (signal) signal.removeEventListener('abort', onAbort)
+    }
 
-    child.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
+    child.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
     child.on('error', (err: Error) => {
       cleanup()
-      if (cancelled) { reject(new Error('Extraction cancelled')); return }
+      if (cancelled) {
+        reject(new Error('Extraction cancelled'))
+        return
+      }
       reject(new Error(`tar extraction failed: ${err.message}`))
     })
     child.on('close', (code: number | null) => {
       cleanup()
-      if (cancelled) { reject(new Error('Extraction cancelled')); return }
+      if (cancelled) {
+        reject(new Error('Extraction cancelled'))
+        return
+      }
       if (code !== 0) reject(new Error(`tar extraction failed: ${stderr || `exit code ${code}`}`))
       else resolve()
     })
@@ -156,7 +177,7 @@ export async function extractNested(
   archivePath: string,
   destDir: string,
   onProgress?: ((p: ExtractProgress) => void) | null,
-  options: ExtractOptions = {},
+  options: ExtractOptions = {}
 ): Promise<void> {
   await extract(archivePath, destDir, onProgress, options)
 

@@ -3,8 +3,8 @@
  * targeted assertions on top of the existing dropdown smoke tests in
  * `chooser.test.ts`:
  *
- * 1. The Reset Zoom item only appears when the comfyView is at a
- *    non-default zoom level (gated branch in `buildTitlePopupMenuItems`).
+ * 1. The Reset Zoom item is absent on the chooser dashboard, even if the
+ *    internal dummy comfyView carries a non-default zoom level.
  * 2. The popup webContents doesn't accumulate listeners across opens
  *    (regression net for `EmbeddedPopupView` lifecycle drift).
  * 3. Showing the title-bar tooltip and then opening the menu hides
@@ -23,6 +23,7 @@ import {
   waitForWebContents,
   type WebContentsPage,
 } from './support/cdpPages'
+import { evalWithRetry } from './support/evalRetry'
 
 let ctx: AppContext
 let popup: WebContentsPage
@@ -43,32 +44,13 @@ test.beforeEach(async () => {
   await new Promise((r) => setTimeout(r, TITLE_REOPEN_SUPPRESSION_MS))
 })
 
-// ---------------------------------------------------------------------------
-// `Reset Zoom` menu-item gating.
-// ---------------------------------------------------------------------------
-
-test('Reset Zoom menu item is absent at zoom level 0 @windows @macos @linux', async () => {
-  await setComfyViewZoomLevel(ctx.app, 0)
-  await openTitleMenu(ctx.titleBar)
-  await popup.waitForSelector('[role="menuitem"]', { timeout: 5_000 })
-
-  const labels = await popup.allText('[role="menuitem"]')
-  expect(labels.some((l) => /reset zoom/i.test(l))).toBe(false)
-})
-
-test('Reset Zoom menu item appears with the current percent label when zoom is non-zero @windows @macos @linux', async () => {
-  await setComfyViewZoomLevel(ctx.app, 1)
-  await openTitleMenu(ctx.titleBar)
-  await popup.waitForSelector('[role="menuitem"]', { timeout: 5_000 })
-
-  const labels = await popup.allText('[role="menuitem"]')
-  const resetZoom = labels.find((l) => /reset zoom/i.test(l))
-  expect(resetZoom, `expected "Reset Zoom" item among [${labels.join(', ')}]`).toBeTruthy()
-  // Label includes the percent (1.2^1 = 120%, rounded).
-  expect(resetZoom).toMatch(/\(\s*120\s*%\s*\)/)
-
-  // Reset for downstream tests in the serial run.
-  await setComfyViewZoomLevel(ctx.app, 0)
+// Dashboard host has no install bound, so the menu builder's
+// `installationId !== null` gate hides Reset Zoom regardless of the dummy
+// comfyView's zoom level. Asserting against a non-zero zoom is the stronger
+// case — would catch the gate flipping to `zoomLevel > 0` and resurfacing
+// dashboard zoom; the zoom=0 case is implied.
+test('Reset Zoom menu item is absent on the dashboard even when the dummy comfyView zoom is non-zero @windows @macos @linux', async () => {
+  await expectNoResetZoomAtLevel(ctx.app, 1)
 })
 
 // ---------------------------------------------------------------------------
@@ -110,13 +92,13 @@ test('title-popup webContents listener counts are stable across repeated opens @
 test('opening the title menu hides the title-bar tooltip @windows @macos @linux', async () => {
   // Drive the tooltip directly via the title-bar bridge, mirroring the
   // existing tooltip-on-demand test in chooser.test.ts.
-  await ctx.app.evaluate(({ webContents }) => {
+  await evalWithRetry(() => ctx.app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitleBar.html'))
     if (!wc) throw new Error('title-bar webContents missing')
     return wc.executeJavaScript(
       `(window).__comfyTitleBar.showTooltip({ text: 'g4 tooltip', leftX: 50, rightX: 200, bottomY: 30 })`,
     )
-  })
+  }))
   await waitForWebContents(ctx.app, 'comfyTitleTooltip.html', 5_000)
   await expect.poll(() => isPopupVisible(ctx.app, 'comfyTitleTooltip.html'), {
     timeout: 5_000,
@@ -137,14 +119,11 @@ test('opening the title menu hides the title-bar tooltip @windows @macos @linux'
 // Helpers (kept inline; promote to support/ if a third file needs them).
 // ---------------------------------------------------------------------------
 
-/** Set the chooser host's comfyView zoom level. The dummy comfyView
- *  on install-less hosts never loads a URL — and Electron's
- *  `setZoomLevel` is a no-op until a webContents has loaded SOMETHING
- *  — so we load `about:blank` first if the URL is empty. We identify
- *  the comfyView as the BrowserWindow's WebContentsView child whose
- *  URL doesn't match any known popup / panel / title-bar marker. */
+/** Force the chooser host's dummy comfyView zoom level. Users cannot zoom the
+ *  dashboard through app UI; this preserves regression coverage for stale
+ *  internal zoom state without treating it as supported dashboard behavior. */
 async function setComfyViewZoomLevel(app: ElectronApplication, level: number): Promise<void> {
-  await app.evaluate(async ({ BrowserWindow, WebContentsView }, lvl) => {
+  await evalWithRetry(() => app.evaluate(async ({ BrowserWindow, WebContentsView }, lvl) => {
     const KNOWN_HTML_MARKERS = [
       'panel.html',
       'comfyTitleBar.html',
@@ -163,7 +142,20 @@ async function setComfyViewZoomLevel(app: ElectronApplication, level: number): P
         child.webContents.setZoomLevel(lvl)
       }
     }
-  }, level)
+  }, level))
+}
+
+async function expectNoResetZoomAtLevel(app: ElectronApplication, level: number): Promise<void> {
+  await setComfyViewZoomLevel(app, level)
+  try {
+    await openTitleMenu(ctx.titleBar)
+    await popup.waitForSelector('[role="menuitem"]', { timeout: 5_000 })
+
+    const labels = await popup.allText('[role="menuitem"]')
+    expect(labels.some((l) => /reset zoom/i.test(l))).toBe(false)
+  } finally {
+    await setComfyViewZoomLevel(app, 0)
+  }
 }
 
 async function waitForPopupHidden(app: ElectronApplication): Promise<void> {
@@ -174,18 +166,18 @@ async function waitForPopupHidden(app: ElectronApplication): Promise<void> {
 }
 
 async function closeTitlePopupViaBridge(app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ webContents }) => {
+  await evalWithRetry(() => app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) return
     return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
-  })
+  }))
 }
 
 /** Sum of registered listeners on the popup webContents, summed across
  *  every event name. A leak would show as monotonic growth across
  *  open/close cycles. */
 async function getPopupListenerCount(app: ElectronApplication): Promise<number> {
-  return app.evaluate(({ webContents }) => {
+  return evalWithRetry(() => app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) return 0
     type EmitterLike = {
@@ -198,5 +190,5 @@ async function getPopupListenerCount(app: ElectronApplication): Promise<number> 
       total += emitter.listenerCount(name)
     }
     return total
-  })
+  }))
 }

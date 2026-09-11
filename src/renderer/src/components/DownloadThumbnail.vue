@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  useDownloadThumbnail,
-  type ThumbnailFetcher
-} from '../composables/useDownloadThumbnail'
+import { useDownloadThumbnail, type ThumbnailFetcher } from '../composables/useDownloadThumbnail'
 
 /**
  * Leading slot for a download row: shows a rounded preview thumbnail for a

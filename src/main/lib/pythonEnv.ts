@@ -41,9 +41,10 @@ export function getActivePythonPath(installation: InstallationRecord): string | 
   const pythonPath = getVenvPythonPath(installation.installPath)
   if (fs.existsSync(pythonPath)) return pythonPath
   // Fallback: legacy envs/default/ layout (pre-migration)
-  const legacyPath = process.platform === 'win32'
-    ? path.join(installation.installPath, 'envs', 'default', 'Scripts', 'python.exe')
-    : path.join(installation.installPath, 'envs', 'default', 'bin', 'python3')
+  const legacyPath =
+    process.platform === 'win32'
+      ? path.join(installation.installPath, 'envs', 'default', 'Scripts', 'python.exe')
+      : path.join(installation.installPath, 'envs', 'default', 'bin', 'python3')
   if (fs.existsSync(legacyPath)) return legacyPath
   return null
 }

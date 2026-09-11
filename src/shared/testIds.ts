@@ -4,9 +4,12 @@
 
 export const TID = {
   pickerRow: (installId: string) => `picker-row-${installId}`,
-  pickerRowOpen: (installId: string) => `picker-row-open-${installId}`,
-  pickerRowManage: (installId: string) => `picker-row-manage-${installId}`,
   pickerNewWindow: 'picker-new-window',
+  /** Pin-bottom primary CTA (Start / Restart / Switch per `decideNavigation`). */
+  pickerPrimaryCta: 'picker-primary-cta',
+  /** Footer "More" overflow-menu trigger (distinct from the CTA caret,
+   *  which shares the `data-more-trigger` attribute). */
+  pickerMoreTrigger: 'picker-more-trigger',
   pickerSettingsLoading: 'picker-settings-loading',
   pickerSettingsSections: 'picker-settings-sections',
   pickerOpErrorMessage: 'picker-op-error-message',
@@ -14,6 +17,7 @@ export const TID = {
 
   dashboardTile: (installId: string) => `dashboard-tile-${installId}`,
   dashboardTileKebab: (installId: string) => `dashboard-tile-kebab-${installId}`,
+  dashboardTileWhyCloud: (installId: string) => `dashboard-tile-why-cloud-${installId}`,
 
   /** A single item in the shared `ContextMenu`. `id` matches `ContextMenuItem.id`. */
   contextMenuItem: (id: string) => `context-menu-item-${id}`,
@@ -33,11 +37,17 @@ export const TID = {
 
   updateChannelCard: (channel: string) => `update-channel-card-${channel}`,
   updateActionButton: (actionId: string) => `update-action-${actionId}`,
+  /** A group dropdown of a cascading channel picker (level 0 = outermost). */
+  channelGroupSelect: (level: number) => `channel-group-select-${level}`,
+
+  /** A tab button in the picker settings tab bar. `key` matches `TabDef.key`. */
+  settingsTab: (key: string) => `settings-tab-${key}`,
 
   /** An action item in the Settings footer "More" menu. `actionId`
    *  matches the source's `ActionDef.id` (with Launch→Restart as `restart`). */
   pinBottomAction: (actionId: string) => `pin-bottom-action-${actionId}`,
 
+  snapshotsSaveCta: 'snapshots-save-cta',
   snapshotRow: (filename: string) => `snapshot-row-${filename}`,
   snapshotRowRestore: (filename: string) => `snapshot-row-restore-${filename}`,
   snapshotRowExport: (filename: string) => `snapshot-row-export-${filename}`,
@@ -47,6 +57,13 @@ export const TID = {
   snapshotsOpCardCancel: 'snapshots-op-card-cancel',
   snapshotsOpCardRetry: 'snapshots-op-card-retry',
   snapshotsOpCardDismiss: 'snapshots-op-card-dismiss',
+
+  /** Primary action on the lifecycle stopped/crashed card (teleported to
+   *  body via `BrandTakeoverLayout`, so it is NOT under `.lifecycle-view`). */
+  lifecycleRelaunch: 'lifecycle-relaunch',
+  /** Back / "Return to Dashboard" ghost action on the lifecycle
+   *  stopped/crashed card (calls `window.api.returnToDashboard()`). */
+  lifecycleReturnDashboard: 'lifecycle-return-dashboard',
 
   consoleTerminal: 'console-terminal',
   consoleSessionEnded: 'console-session-ended',
@@ -62,6 +79,12 @@ export const TID = {
   progressPortConflictUsePort: 'progress-port-conflict-use-port',
   /** Visible only when `portConflict.isComfy` is true. */
   progressPortConflictKill: 'progress-port-conflict-kill',
+
+  /** Feature carousel in the install takeover, above the wordmark. Passive:
+   *  rotation has no dots, arrows or pause button - see InstallShowcase.vue. */
+  installShowcase: 'install-showcase',
+  installShowcaseTitle: 'install-showcase-title',
+  installShowcaseCloud: 'install-showcase-cloud'
 } as const
 
 export type TestIdKey = keyof typeof TID

@@ -5,7 +5,7 @@ import {
   buildRemoveCopyLinkBannerScript,
   COPY_LINK_BANNER_ID,
   OPEN_LINK_SENTINEL,
-  type CopyLinkBannerLabels,
+  type CopyLinkBannerLabels
 } from './copyLinkBanner'
 
 const labels: CopyLinkBannerLabels = {
@@ -13,7 +13,7 @@ const labels: CopyLinkBannerLabels = {
   copy: 'Copy link',
   copied: 'Copied',
   openAgain: 'Open again',
-  dismiss: 'Dismiss',
+  dismiss: 'Dismiss'
 }
 
 const url = 'http://localhost:9876/?provider=google.com&n=abc123'
@@ -61,7 +61,7 @@ describe('buildCopyLinkBannerScript', () => {
     const tricky = 'http://x/?q="; alert(1); //</script>'
     const hostileLabels: CopyLinkBannerLabels = {
       ...labels,
-      message: '"; document.title="x"; //',
+      message: '"; document.title="x"; //'
     }
     const script = buildCopyLinkBannerScript(tricky, hostileLabels)
     expect(() => new Function(script)).not.toThrow()

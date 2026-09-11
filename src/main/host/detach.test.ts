@@ -5,14 +5,14 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => '/tmp',
     getVersion: () => '0.0.0-test',
-    getLocale: () => 'en',
+    getLocale: () => 'en'
   },
   ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
   dialog: { showMessageBox: vi.fn() },
   shell: {},
   WebContentsView: class {},
   BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
 import { _runningSessions } from '../lib/ipc/shared'
@@ -31,7 +31,9 @@ function makeWindow(opts: { destroyed?: boolean } = {}): FakeWindow {
     destroyed: opts.destroyed ?? false,
     closed: false,
     isDestroyed: () => win.destroyed,
-    close: () => { win.closed = true },
+    close: () => {
+      win.closed = true
+    }
   }
   return win
 }
@@ -55,7 +57,7 @@ function makeEntry(window: FakeWindow): ComfyWindowEntry {
     previewInstallationId: null,
     coldStartPendingReveal: false,
     _installCleanup: null,
-    detachInstall: () => {},
+    detachInstall: () => {}
   }
 }
 

@@ -42,7 +42,10 @@ interface MockBridgeState {
   restartInstallCalls: string[]
   openNewInstallCalls: number
   getLocaleCalls: number
-  localeChangedCallbacks: ((payload: { locale: string; messages: Record<string, unknown> }) => void)[]
+  localeChangedCallbacks: ((payload: {
+    locale: string
+    messages: Record<string, unknown>
+  }) => void)[]
 }
 
 function installMockBridge(): MockBridgeState {
@@ -62,7 +65,7 @@ function installMockBridge(): MockBridgeState {
     restartInstallCalls: [],
     openNewInstallCalls: 0,
     getLocaleCalls: 0,
-    localeChangedCallbacks: [],
+    localeChangedCallbacks: []
   }
   const bridge = {
     activate: (id: string) => state.activateCalls.push(id),
@@ -124,7 +127,7 @@ function installMockBridge(): MockBridgeState {
     ) => {
       state.localeChangedCallbacks.push(cb)
       return () => {}
-    },
+    }
   }
   ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return state
@@ -174,10 +177,10 @@ describe('TitlePopupApp', () => {
         items: [
           { id: 'a', label: 'Alpha' },
           { kind: 'separator' },
-          { id: 'b', label: 'Beta', checked: true },
+          { id: 'b', label: 'Beta', checked: true }
         ],
-        theme: { bg: '#262729', text: '#dddddd' },
-      }),
+        theme: { bg: '#262729', text: '#dddddd' }
+      })
     )
     await flushPromises()
     const items = wrapper.findAll('.menu .item')
@@ -195,8 +198,8 @@ describe('TitlePopupApp', () => {
       cb({
         kind: 'menu',
         items: [{ id: 'open-feedback', label: 'Send Feedback' }],
-        theme: { bg: '#262729', text: '#dddddd' },
-      }),
+        theme: { bg: '#262729', text: '#dddddd' }
+      })
     )
     await flushPromises()
     await wrapper.find('.menu .item').trigger('click')
@@ -210,8 +213,8 @@ describe('TitlePopupApp', () => {
     bridgeState.configCallbacks.forEach((cb) =>
       cb({
         kind: 'downloads',
-        theme: { bg: '#262729', text: '#dddddd' },
-      }),
+        theme: { bg: '#262729', text: '#dddddd' }
+      })
     )
     await flushPromises()
     expect(wrapper.find('.menu').exists()).toBe(false)
@@ -229,8 +232,8 @@ describe('TitlePopupApp', () => {
       cb({
         kind: 'menu',
         items: [{ id: 'a', label: 'Alpha' }],
-        theme: { bg: '#262729', text: '#dddddd' },
-      }),
+        theme: { bg: '#262729', text: '#dddddd' }
+      })
     )
     await flushPromises()
     await new Promise((r) => setTimeout(r, 20))
@@ -255,8 +258,8 @@ describe('TitlePopupApp', () => {
       cb({
         kind: 'menu',
         items: [],
-        theme: { bg: '#1f2024', text: '#eeeeee' },
-      }),
+        theme: { bg: '#1f2024', text: '#eeeeee' }
+      })
     )
     await flushPromises()
     const style = wrapper.find('.popup').attributes('style') ?? ''
@@ -297,14 +300,14 @@ describe('TitlePopupApp', () => {
             url: 'https://example.com/dl.bin',
             filename: 'dl.bin',
             progress: 0.25,
-            status: 'downloading',
-          },
+            status: 'downloading'
+          }
         ],
-        recent: [],
-      }),
+        recent: []
+      })
     )
     bridgeState.configCallbacks.forEach((cb) =>
-      cb({ kind: 'downloads', theme: { bg: '#262729', text: '#dddddd' } }),
+      cb({ kind: 'downloads', theme: { bg: '#262729', text: '#dddddd' } })
     )
     await flushPromises()
     expect(wrapper.find('.downloads-empty').exists()).toBe(false)
@@ -322,15 +325,15 @@ describe('TitlePopupApp', () => {
       cb({
         kind: 'menu',
         items: [{ id: 'a', label: 'Alpha' }],
-        theme: { bg: '#262729', text: '#dddddd' },
-      }),
+        theme: { bg: '#262729', text: '#dddddd' }
+      })
     )
     bridgeState.configCallbacks.forEach((cb) =>
       cb({
         kind: 'menu',
         items: [{ id: 'b', label: 'Beta' }],
-        theme: { bg: '#262729', text: '#dddddd' },
-      }),
+        theme: { bg: '#262729', text: '#dddddd' }
+      })
     )
     await flushPromises()
     await new Promise((r) => setTimeout(r, 30))
@@ -358,6 +361,42 @@ describe('TitlePopupApp', () => {
     const pending = modal.confirm({ title: 'Update ComfyUI', message: 'Confirm?' })
     expect(modal.state.visible).toBe(true)
     bridgeState.dismissModalsCallbacks.forEach((cb) => cb())
+    await expect(pending).resolves.toBe(false)
+    expect(modal.state.visible).toBe(false)
+  })
+
+  // A reopened picker auto-fires its action confirm right after `set-config`.
+  // Because `will-show` arrives AFTER `set-config`, a `will-show` dismiss would
+  // kill that freshly opened confirm — the exact bug where reopening the SAME
+  // install's pill never re-showed the modal. The picker is dismissed in
+  // `onConfig` instead, so `will-show` must NOT dismiss for the picker.
+  it('does NOT dismiss an open modal on will-show for the instance-picker', async () => {
+    const { useModal } = await import('../composables/useModal')
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    mount(TitlePopupApp, { attachTo: document.body })
+    await flushPromises()
+    const modal = useModal()
+    const pending = modal.confirm({ title: 'Update ComfyUI', message: 'Confirm?' })
+    expect(modal.state.visible).toBe(true)
+    bridgeState.willShowCallbacks.forEach((cb) => cb({ kind: 'instance-picker' }))
+    await flushPromises()
+    expect(modal.state.visible).toBe(true)
+    modal.dismiss()
+    await expect(pending).resolves.toBe(false)
+  })
+
+  // Non-picker kinds still rely on will-show to clear a confirm left pending
+  // when the user blurred the popup (those kinds may hit the fast path and skip
+  // set-config, so onConfig can't own their cleanup).
+  it('still dismisses an open modal on will-show for non-picker kinds', async () => {
+    const { useModal } = await import('../composables/useModal')
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    mount(TitlePopupApp, { attachTo: document.body })
+    await flushPromises()
+    const modal = useModal()
+    const pending = modal.confirm({ title: 'Confirm?', message: 'Confirm?' })
+    expect(modal.state.visible).toBe(true)
+    bridgeState.willShowCallbacks.forEach((cb) => cb({ kind: 'global-settings' }))
     await expect(pending).resolves.toBe(false)
     expect(modal.state.visible).toBe(false)
   })

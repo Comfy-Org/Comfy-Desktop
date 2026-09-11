@@ -40,7 +40,10 @@ const emit = defineEmits<{
   font-size: 13px;
   line-height: 1.2;
   flex-shrink: 0;
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .takeover-back:hover {

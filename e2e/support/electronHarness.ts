@@ -1,8 +1,10 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { _electron as electron, type ElectronApplication } from 'playwright'
+
+import { evalWithRetry } from './evalRetry'
 
 export interface LauncherAppHandle {
   application: ElectronApplication
@@ -21,6 +23,13 @@ export interface SeedOptions {
   /** Runs after the isolated dirs are created but before launch. Use to drop
    *  platform-specific files the main process inspects during early boot. */
   onSetup?: (paths: { homeDir: string; appDataDir: string }) => Promise<void>
+  /** Launch against this exact profile dir instead of a fresh mkdtemp one,
+   *  with the same semantics as `LIFECYCLE_REUSE_DIR` (persisted settings are
+   *  folded into the seed; the dir survives cleanup). Lets a spec quit and
+   *  relaunch the SAME profile to cover restart hydration. The caller owns
+   *  creating and removing the dir. Not supported on macOS (Application
+   *  Support ignores the HOME override). */
+  profileDir?: string
 }
 
 export interface SeedInstallation {
@@ -65,9 +74,14 @@ function formatSeedTimestamp(date: Date): string {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}_${pad(date.getMilliseconds(), 3)}`
 }
 
-function buildIsolatedEnv(homeDir: string, settingsSeed?: Record<string, unknown>): Record<string, string> {
+function buildIsolatedEnv(
+  homeDir: string,
+  settingsSeed?: Record<string, unknown>
+): Record<string, string> {
   const inheritedEnv = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string'
+    )
   )
 
   const env: Record<string, string> = {
@@ -79,7 +93,7 @@ function buildIsolatedEnv(homeDir: string, settingsSeed?: Record<string, unknown
     XDG_DATA_HOME: path.join(homeDir, '.local', 'share'),
     XDG_STATE_HOME: path.join(homeDir, '.local', 'state'),
     // Gates `registerE2EHooks()` in main so `globalThis.__e2e` is wired up.
-    E2E: '1',
+    E2E: '1'
   }
 
   // Windows resolves userData via APPDATA; point it into the isolated home
@@ -95,7 +109,7 @@ function buildIsolatedEnv(homeDir: string, settingsSeed?: Record<string, unknown
   const effectiveSeed: Record<string, unknown> = {
     firstUseCompleted: false,
     telemetryEnabled: false,
-    ...(settingsSeed ?? {}),
+    ...(settingsSeed ?? {})
   }
   env['E2E_SETTINGS_SEED'] = JSON.stringify(effectiveSeed)
 
@@ -103,31 +117,112 @@ function buildIsolatedEnv(homeDir: string, settingsSeed?: Record<string, unknown
 }
 
 export async function launchLauncherApp(options?: SeedOptions): Promise<LauncherAppHandle> {
-  // Honor `LIFECYCLE_REUSE_DIR` to reuse a previous run's profile dir so a
-  // rerun doesn't redo the ~2-minute install. A reused dir is preserved on
-  // cleanup; a fresh dir is printed so the operator can re-export it.
-  const reuseDir = process.env['LIFECYCLE_REUSE_DIR']
-  const homeDir = reuseDir ?? await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-'))
+  // Honor an explicit `profileDir` (spec-driven relaunch of the same
+  // profile) or `LIFECYCLE_REUSE_DIR` (operator rerun without redoing the
+  // ~2-minute install). A reused dir is preserved on cleanup; a fresh dir is
+  // printed so the operator can re-export it.
+  const reuseDir = options?.profileDir ?? process.env['LIFECYCLE_REUSE_DIR']
+  // macOS ignores the HOME override for userData (Application Support), so
+  // a reused profile's persisted settings can neither be read back nor kept
+  // from clobbering the developer's real profile - only fresh runs are
+  // supported there.
+  if (reuseDir && process.platform === 'darwin') {
+    throw new Error(
+      'Profile reuse (profileDir / LIFECYCLE_REUSE_DIR) is not supported on macOS: Electron resolves userData outside the isolated profile dir, so persisted settings cannot be reused safely - run against a fresh profile'
+    )
+  }
+  const homeDir = reuseDir ?? (await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-')))
   if (reuseDir) {
     console.log(`[lifecycle-harness] reusing profile dir: ${homeDir}`)
   } else {
     console.log(`[lifecycle-harness] fresh profile dir: ${homeDir}`)
-    console.log(`[lifecycle-harness] re-export as LIFECYCLE_REUSE_DIR=${homeDir} to rerun individual tests against this profile`)
+    console.log(
+      `[lifecycle-harness] re-export as LIFECYCLE_REUSE_DIR=${homeDir} to rerun individual tests against this profile`
+    )
   }
 
   // Pre-create the platform-specific config dir Electron resolves to so
   // `settings.set()` writes succeed. On macOS this lives outside the mkdtemp
   // sandbox (Application Support ignores HOME), so persisted settings are
   // seeded via `E2E_SETTINGS_SEED` rather than a settings.json file here.
-  const appDataDir = process.platform === 'win32'
-    ? path.join(homeDir, 'AppData', 'Roaming', 'comfyui-desktop-2')
-    : process.platform === 'darwin'
-      ? path.join(homeDir, 'Library', 'Application Support', 'comfyui-desktop-2')
-      : path.join(homeDir, '.config', 'comfyui-desktop-2')
+  const appDataDir =
+    process.platform === 'win32'
+      ? path.join(homeDir, 'AppData', 'Roaming', 'comfyui-desktop-2')
+      : process.platform === 'darwin'
+        ? path.join(homeDir, 'Library', 'Application Support', 'comfyui-desktop-2')
+        : path.join(homeDir, '.config', 'comfyui-desktop-2')
   await mkdir(appDataDir, { recursive: true })
 
   if (options?.onSetup) {
     await options.onSetup({ homeDir, appDataDir })
+  }
+
+  // Normalize seed records up front: they ride into main via
+  // `E2E_INSTALLATIONS_SEED` (mirroring `E2E_SETTINGS_SEED`), written to the
+  // platform-specific installations.json by main before its first read. A
+  // post-launch file write from here raced main's boot-time cloud-entry seed
+  // and the renderer store's one-shot hydration (which only refetches on an
+  // `installations-changed` broadcast that a behind-the-back write never fires).
+  const seedRecords = (options?.installations ?? []).map((inst, i) => {
+    const { snapshots: _snapshots, ...rest } = inst
+    return {
+      id: inst.id ?? `inst-test-${i}`,
+      name: inst.name ?? `Test Install ${i + 1}`,
+      createdAt: new Date().toISOString(),
+      installPath: inst.installPath ?? path.join(homeDir, `install-${i}`),
+      sourceId: inst.sourceId ?? 'standalone',
+      status: inst.status ?? 'installed',
+      ...rest
+    }
+  })
+
+  // Boot-time sweep protection: main reclaims install dirs that contain only
+  // ignored entries (marker file etc.) as aborted installs — removing the
+  // record. Seeded dirs typically hold just the marker, so give each EXISTING
+  // dir a `.launcher/` entry (what a real managed install has) to classify as
+  // populated. Dirs the test deliberately left missing stay missing (the sweep
+  // never reclaims those).
+  for (const record of seedRecords) {
+    if (!record.installPath) continue
+    try {
+      await stat(record.installPath)
+    } catch {
+      continue
+    }
+    await mkdir(path.join(record.installPath, '.launcher'), { recursive: true })
+  }
+
+  // Seed snapshot JSON files under `<installPath>/.launcher/snapshots/` so
+  // the snapshots tab finds them on first read. Pure fs under the install
+  // paths (created above by the caller), so it can run before launch.
+  if (options?.installations) {
+    const { writeFile: writeFileFs } = await import('node:fs/promises')
+    for (let i = 0; i < options.installations.length; i++) {
+      const snaps = options.installations[i]!.snapshots
+      if (!snaps || snaps.length === 0) continue
+      const installPath = seedRecords[i]!.installPath
+      const snapshotsDir = path.join(installPath, '.launcher', 'snapshots')
+      await mkdir(snapshotsDir, { recursive: true })
+      for (let j = 0; j < snaps.length; j++) {
+        const s = snaps[j]!
+        const createdAt =
+          s.createdAt ?? new Date(Date.now() - (snaps.length - j) * 1000).toISOString()
+        const full = {
+          version: 1,
+          createdAt,
+          trigger: s.trigger,
+          label: s.label ?? null,
+          comfyui: s.comfyui,
+          customNodes: s.customNodes ?? [],
+          pipPackages: s.pipPackages ?? {},
+          pythonVersion: s.pythonVersion,
+          updateChannel: s.updateChannel ?? 'stable',
+          ...(s.skipPipSync ? { skipPipSync: true } : {})
+        }
+        const filename = `${formatSeedTimestamp(new Date(createdAt))}-${s.trigger}-${(j + 1).toString(16).padStart(6, '0')}.json`
+        await writeFileFs(path.join(snapshotsDir, filename), JSON.stringify(full, null, 2))
+      }
+    }
   }
 
   // Expose a CDP remote-debugging port so tests can connect to non-BrowserWindow
@@ -141,79 +236,67 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     args.push('--no-sandbox')
   }
 
+  // A reused profile must keep its persisted settings: main overwrites
+  // settings.json with E2E_SETTINGS_SEED on every boot, so fold the
+  // profile's existing file into the seed (defaults < persisted < caller
+  // overrides). Without this a hydrated run boots with
+  // firstUseCompleted=false and lands on the first-use takeover instead
+  // of the chooser.
+  let persistedSettings: Record<string, unknown> = {}
+  if (reuseDir) {
+    try {
+      const parsed: unknown = JSON.parse(
+        await readFile(path.join(appDataDir, 'settings.json'), 'utf-8')
+      )
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        persistedSettings = parsed as Record<string, unknown>
+      }
+    } catch {
+      /* no settings yet on a first run against the reuse dir */
+    }
+    // Safety invariant: a persisted profile must never re-enable telemetry
+    // under the harness. Callers can still override explicitly.
+    delete persistedSettings['telemetryEnabled']
+  }
+  const env = buildIsolatedEnv(homeDir, { ...persistedSettings, ...(options?.settings ?? {}) })
+  if (seedRecords.length > 0) {
+    env['E2E_INSTALLATIONS_SEED'] = JSON.stringify(seedRecords)
+  }
+
   const application = await electron.launch({
     args,
-    env: buildIsolatedEnv(homeDir, options?.settings),
+    env
   })
 
   // Under Playwright the ready-to-show event may fire but isVisible() can lag,
-  // so force-show once a BrowserWindow exists.
+  // so force-show once a BrowserWindow exists. Retried because the show is
+  // idempotent; side-effectful evaluate calls must NOT be blanket-retried
+  // (a retry can re-run a callback that already executed - see evalRetry.ts).
   const page = await application.firstWindow()
   await page.waitForLoadState('domcontentloaded')
-  await application.evaluate(({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win && !win.isVisible()) win.show()
-  })
+  await evalWithRetry(() =>
+    application.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win && !win.isVisible()) win.show()
+    })
+  )
 
   // Suppress the native uncaught-exception dialog and exit fast so tests don't
   // time out. `process` is rewritten by Playwright's transpiler, so use app.exit().
-  await application.evaluate(({ app: electronApp, dialog }) => {
-    dialog.showErrorBox = () => {}
-    electronApp.on('render-process-gone', () => electronApp.exit(1))
-  })
-
-  // Seed installations after launch so we can query app.getPath('userData')
-  // for the correct dir (Electron may modify the app name per platform).
-  if (options?.installations && options.installations.length > 0) {
-    const userDataDir = await application.evaluate(async ({ app: electronApp }) => {
-      return electronApp.getPath('userData')
-    })
-    const records = options.installations.map((inst, i) => {
-      const { snapshots: _snapshots, ...rest } = inst
-      return {
-        id: inst.id ?? `inst-test-${i}`,
-        name: inst.name ?? `Test Install ${i + 1}`,
-        createdAt: new Date().toISOString(),
-        installPath: inst.installPath ?? path.join(homeDir, `install-${i}`),
-        sourceId: inst.sourceId ?? 'standalone',
-        status: inst.status ?? 'installed',
-        ...rest,
+  // Retried: re-assigning the stub is harmless, and the exit handler guards
+  // itself with a flag so a retry after a lost result can't register it twice.
+  await evalWithRetry(() =>
+    application.evaluate(({ app: electronApp, dialog }) => {
+      dialog.showErrorBox = () => {}
+      const marked = electronApp as typeof electronApp & {
+        __e2eRenderProcessGoneInstalled?: boolean
+      }
+      if (!marked.__e2eRenderProcessGoneInstalled) {
+        marked.__e2eRenderProcessGoneInstalled = true
+        electronApp.on('render-process-gone', () => electronApp.exit(1))
       }
     })
-    const { writeFile: writeFileFs } = await import('node:fs/promises')
-    await mkdir(userDataDir, { recursive: true })
-    await writeFileFs(
-      path.join(userDataDir, 'installations.json'),
-      JSON.stringify(records, null, 2),
-    )
-    // Seed snapshot JSON files under `<installPath>/.launcher/snapshots/` so
-    // the snapshots tab finds them on first read.
-    for (let i = 0; i < options.installations.length; i++) {
-      const snaps = options.installations[i]!.snapshots
-      if (!snaps || snaps.length === 0) continue
-      const installPath = records[i]!.installPath
-      const snapshotsDir = path.join(installPath, '.launcher', 'snapshots')
-      await mkdir(snapshotsDir, { recursive: true })
-      for (let j = 0; j < snaps.length; j++) {
-        const s = snaps[j]!
-        const createdAt = s.createdAt ?? new Date(Date.now() - (snaps.length - j) * 1000).toISOString()
-        const full = {
-          version: 1,
-          createdAt,
-          trigger: s.trigger,
-          label: s.label ?? null,
-          comfyui: s.comfyui,
-          customNodes: s.customNodes ?? [],
-          pipPackages: s.pipPackages ?? {},
-          pythonVersion: s.pythonVersion,
-          updateChannel: s.updateChannel ?? 'stable',
-          ...(s.skipPipSync ? { skipPipSync: true } : {}),
-        }
-        const filename = `${formatSeedTimestamp(new Date(createdAt))}-${s.trigger}-${(j + 1).toString(16).padStart(6, '0')}.json`
-        await writeFileFs(path.join(snapshotsDir, filename), JSON.stringify(full, null, 2))
-      }
-    }
-  }
+  )
 
   const cleanup = async (): Promise<void> => {
     try {
@@ -234,7 +317,10 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   return { application, homeDir, cdpPort, cleanup }
 }
 
-export async function waitForAppExit(application: ElectronApplication, timeoutMs = 10_000): Promise<void> {
+export async function waitForAppExit(
+  application: ElectronApplication,
+  timeoutMs = 10_000
+): Promise<void> {
   const child = application.process()
   if (child.exitCode !== null) return
 

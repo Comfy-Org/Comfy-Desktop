@@ -11,10 +11,11 @@ import {
   scheduleResolveAndBroadcastVersions,
   findDuplicatePath,
   uniqueName,
-  sanitizeDirName,
-  allocateUniqueDir,
   syncOemSeedBestEffort,
   isEffectivelyEmptyInstallDir,
+  getCachedInstallDirState,
+  refreshInstallDirStates,
+  isInstallDirUnavailable,
   download,
   createCache,
   extract,
@@ -27,9 +28,11 @@ import {
   _runningSessions,
   sanitizeEnvVars,
   getComfyArgsSchema,
-  COMFYUI_REPO
+  COMFYUI_REPO,
+  snapshotRestoreFailureResult
 } from './shared'
 import type { ComfyVersion, ComfyArgDef, InstallationRecord } from './shared'
+import { allocateInstallIdentity } from './installIdentity'
 import * as releaseCache from '../release-cache'
 import { runStartupReleaseChecks } from '../release-cache-startup'
 import { _broadcastToRenderer } from './shared'
@@ -37,8 +40,18 @@ import { hasGitDir } from '../git'
 import { parseUrl } from '../util'
 import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
 import * as mainTelemetry from '../telemetry'
+import { buildErrorFields } from '../../../shared/errorEvent'
 import { appendLog } from '../logsBroadcast'
+import { invalidateModelDownloadStartupPass } from '../comfyDownloadManager'
+import {
+  startTemplateDownload,
+  abortTemplateDownload,
+  requestSkipTemplateDownload
+} from '../../sources/standalone/templateDownloadTask'
+import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
+import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
+import { isInstallationVisibleToRenderer } from './installationVisibility'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -74,28 +87,72 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       .filter(
         (i) =>
           (i.copyReason as string | undefined) === 'standalone-migration' &&
-          i.status !== 'installing'
+          isInstallationVisibleToRenderer(i)
       )
       .map((i) => i.copiedFrom as string)
       .filter(Boolean)
   )
   const visible = allInstalls.filter(
-    (i) => i.status !== 'installing' && !migratedSourceIds.has(i.id)
+    (i) => isInstallationVisibleToRenderer(i) && !migratedSourceIds.has(i.id)
   )
   const enriched = visible.map((inst) => {
     const source = sourceMap[inst.sourceId]
     if (!source) return inst as unknown as Record<string, unknown>
     const listPreview = source.getListPreview ? source.getListPreview(inst) : undefined
+    // A local install whose folder is currently unavailable (e.g. an unplugged
+    // removable drive, offline network share, renamed folder, or one we're
+    // denied access to) is flagged with a danger pill rather than forgotten —
+    // restoring access clears it on the next refresh (issue #1155).
+    const dirState = source.skipInstall ? undefined : getCachedInstallDirState(inst.id)
+    const dirUnavailable = isInstallDirUnavailable(dirState)
+    // `detail` backs the dashboard's clickable danger pill — the full,
+    // human-readable explanation behind the short pill label. Both cases append
+    // the path so the user can see which location is affected. A folder we're
+    // denied access to gets a distinct "access denied" pill so the user can tell
+    // a permission problem from a folder that's actually gone.
+    const withInstallPath = (msg: string): string =>
+      inst.installPath ? `${msg}\n\n${inst.installPath}` : msg
+    const dirUnavailableTag =
+      dirState === 'no-permission'
+        ? {
+            label: i18n.t('errors.installDirNoPermissionTag'),
+            style: 'danger',
+            detail: withInstallPath(i18n.t('errors.installDirNoPermission'))
+          }
+        : {
+            label: i18n.t('errors.installDirNotFoundTag'),
+            style: 'danger',
+            detail: withInstallPath(i18n.t('errors.installDirNotFound'))
+          }
     const statusTag =
       inst.status === 'partial-delete'
-        ? { label: i18n.t('errors.deleteInterrupted'), style: 'danger' }
+        ? {
+            label: i18n.t('errors.deleteInterrupted'),
+            style: 'danger',
+            detail: i18n.t('errors.deleteInterruptedDetail')
+          }
         : inst.status === 'failed'
-          ? { label: i18n.t('errors.installFailed'), style: 'danger' }
-          : source.getStatusTag
-            ? source.getStatusTag(inst)
-            : undefined
+          ? {
+              label: i18n.t('errors.installFailed'),
+              style: 'danger',
+              detail: i18n.t('errors.installFailedDetail')
+            }
+          : dirUnavailable
+            ? dirUnavailableTag
+            : source.getStatusTag
+              ? source.getStatusTag(inst)
+              : undefined
+    // A comfybuilder install's raw `version` is its build version, not a
+    // ComfyUI one (see `installedBuildVersions`), so it gets its own
+    // field — otherwise a bare "7" lands where every other tile shows "v0.28.2".
+    const isFromBuild = inst.sourceId === 'comfybuilder'
+    const buildVersion = isFromBuild ? (inst.version as string | undefined) : undefined
     const cv = inst.comfyVersion as ComfyVersion | undefined
-    const rawVersion = cv ? formatComfyVersion(cv, 'short') : (inst.version as string | undefined)
+    const rawVersion = cv
+      ? formatComfyVersion(cv, 'short')
+      : isFromBuild
+        ? undefined
+        : (inst.version as string | undefined)
     const version = rawVersion === inst.sourceId ? undefined : rawVersion
     return {
       ...inst,
@@ -103,6 +160,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       sourceLabel: source.label,
       sourceCategory: source.category,
       hasConsole: source.hasConsole !== false,
+      ...(buildVersion ? { distributionVersion: buildVersion } : {}),
       ...(listPreview != null ? { listPreview } : {}),
       ...(statusTag ? { statusTag } : {})
     }
@@ -129,6 +187,10 @@ export function registerInstallationHandlers(): void {
     // don't spam GitHub.
     _kickReleaseCachePrewarm(visible)
 
+    // Re-probe local install dir availability so the "directory not found"
+    // indicator appears/clears as drives go offline/online. Single-flight +
+    // broadcasts only on change, so a dashboard refresh can't loop.
+    void refreshInstallDirStates()
     return enriched
   })
 
@@ -161,16 +223,18 @@ export function registerInstallationHandlers(): void {
   })
 
   ipcMain.handle('add-installation', async (_event, data: Record<string, unknown>) => {
-    data.name = await uniqueName((data.name as string) || 'ComfyUI')
-    if (data.installPath) {
-      const dirName = sanitizeDirName(data.name as string)
-      data.installPath = allocateUniqueDir(data.installPath as string, dirName)
-      const duplicate = await findDuplicatePath(data.installPath as string)
-      if (duplicate) {
-        return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
-      }
-    }
-    const entry = await installations.add({ ...data, seen: false })
+    const identity = await allocateInstallIdentity(
+      (data.name as string) || DEFAULT_INSTALL_NAME,
+      (data.installPath as string | undefined) || undefined
+    )
+    if (!identity.ok) return identity
+    data.name = identity.name
+    if (identity.installPath) data.installPath = identity.installPath
+    const entry = await installations.add({
+      ...data,
+      status: data.status ?? 'installing',
+      seen: false
+    })
     return { ok: true, entry }
   })
 
@@ -209,7 +273,7 @@ export function registerInstallationHandlers(): void {
     return { ok: true, entry }
   })
 
-  ipcMain.handle('install-instance', async (_event, installationId: string) => {
+  ipcMain.handle('install-instance', async (_event, installationId: string, express?: boolean) => {
     const inst = await installations.get(installationId)
     if (!inst) return { ok: false, message: 'Installation not found.' }
     const source = sourceMap[inst.sourceId]
@@ -235,6 +299,17 @@ export function registerInstallationHandlers(): void {
     const isComfyUpdate = priorComfyVersion != null
 
     if (source.install) {
+      // Durable per-person activation milestone (#1224). `$set_once` keeps the
+      // earliest FRESH local-install dispatch on the person profile, so the
+      // funnel can tell whether a user who onboarded ever actually started an
+      // install — regardless of the session it happened in. Gated on
+      // `!isComfyUpdate` so a post-release version update (which reuses this
+      // handler) can't masquerade as a first install for a returning user.
+      if (!isComfyUpdate) {
+        mainTelemetry.registerPersonPropertiesOnce({
+          first_local_install_dispatched_at: new Date().toISOString()
+        })
+      }
       fs.mkdirSync(inst.installPath, { recursive: true })
       fs.writeFileSync(path.join(inst.installPath, MARKER_FILE), installationId)
       if (source.installSteps) {
@@ -252,6 +327,36 @@ export function registerInstallationHandlers(): void {
       }
       const abort = new AbortController()
       _operationAborts.set(installationId, abort)
+
+      // This installation's model dirs were not part of the startup
+      // migration/scan pass (the install may reuse a pre-existing dir holding
+      // legacy download artifacts from an affected release). Mark the pass
+      // stale so the next `initializeModelDownloads` await - the template
+      // task's first managed job runs one - re-covers the current roots
+      // before any model is admitted or reported already-present.
+      invalidateModelDownloadStartupPass()
+
+      // A pending snapshot restore that fails after a successful base install
+      // must not fail the install itself — the env is bootable (#1255).
+      let snapshotRestoreError: string | null = null
+
+      // Kick off the starter-template model download in the BACKGROUND the
+      // moment install begins, so the (multi-GB, slow) bytes overlap env
+      // setup/extract/update instead of blocking. It's surfaced later as a
+      // launch-span stepper phase; logs stream into the durable ring buffer
+      // (appendLog) so the launch span's "View logs" can replay them.
+      // Fire-and-forget; torn down via abortTemplateDownload on cancel/close.
+      if (inst.bundledTemplateId && inst.downloadTemplateModels && inst.pendingTemplateOpen) {
+        const sendTemplateOutput = (text: string): void => {
+          try {
+            if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
+          } catch {}
+          appendLog(installationId, text)
+        }
+        const sizeBytes = inst.bundledTemplateSizeBytes ?? 0
+        startTemplateDownload(inst, sizeBytes, { sendOutput: sendTemplateOutput })
+      }
+
       const cache = createCache(
         settings.get('cacheDir') as string,
         settings.get('maxCachedDownloads') as number
@@ -267,7 +372,9 @@ export function registerInstallationHandlers(): void {
         // After postInstall, check for pending snapshot restore
         const freshInst = await installations.get(installationId)
         const pendingFile = freshInst?.pendingSnapshotRestore as string | undefined
-        if (freshInst && pendingFile && fs.existsSync(pendingFile)) {
+        // No existsSync gate: if the staged file is gone, restoreSnapshotIntoInstallation
+        // throws, failing the install explicitly instead of silently skipping the restore.
+        if (freshInst && pendingFile) {
           const sendOutput = (text: string): void => {
             try {
               if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
@@ -276,18 +383,40 @@ export function registerInstallationHandlers(): void {
           }
           const update = (data: Record<string, unknown>): Promise<void> =>
             installations.update(installationId, data).then(() => {})
-          await restoreSnapshotIntoInstallation(
-            freshInst,
-            pendingFile,
-            true,
-            { sendProgress, sendOutput, signal: abort.signal },
-            update
-          )
+          try {
+            await restoreSnapshotIntoInstallation(
+              freshInst,
+              pendingFile,
+              true,
+              { sendProgress, sendOutput, signal: abort.signal },
+              update
+            )
+          } catch (err) {
+            // Cancellation is handled by the outer catch's abort path.
+            if (abort.signal.aborted) throw err
+            // The base install completed and is bootable — only the snapshot
+            // could not be fully applied. Don't condemn the whole install
+            // (#1255): drop the retry pointer so a later re-install/update
+            // can't replay the failed restore, keep the install, and surface
+            // the failure to the user.
+            snapshotRestoreError = (err as Error).message
+            await installations.update(installationId, { pendingSnapshotRestore: undefined })
+            await fs.promises.unlink(pendingFile).catch(() => {})
+          }
         }
 
-        sendProgress('done', { percent: 100, status: 'Complete' })
+        if (!snapshotRestoreError) sendProgress('done', { percent: 100, status: 'Complete' })
       } catch (err) {
         _operationAborts.delete(installationId)
+        // Install failed or was cancelled - tear down the background template
+        // download too (the models would have nowhere to land). This releases
+        // this install's leases on the managed model jobs: a job no other
+        // caller holds is PARKED (network stops; staged bytes + sidecar kept,
+        // resumable from Downloads), and a job shared with another caller
+        // keeps transferring for its other holders.
+        abortTemplateDownload(installationId)
+        // Same for a build install's background model staging.
+        abortModelStaging(installationId)
         if (abort.signal.aborted) {
           if (isComfyUpdate) {
             mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {
@@ -351,8 +480,7 @@ export function registerInstallationHandlers(): void {
             from_version: formatComfyVersion(priorComfyVersion, 'short'),
             to_version: null,
             result: 'error',
-            error_bucket: mainTelemetry.bucketError(err),
-            error_message: (err as Error).message.slice(0, 500)
+            ...buildErrorFields(err)
           })
         }
         return { ok: false, message: (err as Error).message }
@@ -369,6 +497,25 @@ export function registerInstallationHandlers(): void {
           to_version: newComfyVersion ? formatComfyVersion(newComfyVersion, 'short') : null,
           result: 'success'
         })
+      } else {
+        // Fresh standalone install finished (NOT a version update — an install
+        // on a record that already had a comfyVersion is a re-install/update,
+        // handled above). Fire the once-per-install funnel event at the moment
+        // the install is ready to boot. Distinct from comfyui.boot_started,
+        // which fires on every launch. `express` labels the one-click path;
+        // the manual Configure-wizard path passes no flag → 'manual'.
+        // Best-effort: capture() swallows its own errors, so this can never
+        // abort the install.
+        mainTelemetry.captureInstallCompleted({
+          installationId,
+          method: express ? 'express' : 'manual',
+          express: !!express
+        })
+      }
+      if (snapshotRestoreError) {
+        // The install itself succeeded (status 'installed' above) — report the
+        // snapshot failure so the progress UI shows it.
+        return snapshotRestoreFailureResult(installationId, snapshotRestoreError)
       }
       return { ok: true }
     }
@@ -384,6 +531,15 @@ export function registerInstallationHandlers(): void {
     const source = sourceMap[inst.sourceId]
     if (!source) return []
     return source.getListActions ? source.getListActions(inst) : []
+  })
+
+  // User skipped waiting on the template-model download: release the launch gate
+  // (open ComfyUI now) and hand the still-running, resume-capable task off to the
+  // title-bar downloads tray. No restart.
+  ipcMain.handle('skip-template-download', (_event, installationId: string) => {
+    if (typeof installationId === 'string' && installationId) {
+      requestSkipTemplateDownload(installationId)
+    }
   })
 
   // Detail — validate editable fields dynamically from source schema
@@ -493,7 +649,7 @@ export function registerInstallationHandlers(): void {
     if (running?.port) {
       sections.push({
         tab: 'status',
-        fields: [{ key: 'active-port', label: i18n.t('common.port'), value: String(running.port) }],
+        fields: [{ key: 'active-port', label: i18n.t('common.port'), value: String(running.port) }]
       })
     }
     return sections
@@ -525,7 +681,7 @@ export function registerInstallationHandlers(): void {
           mainPyAbs,
           launchCmd.cwd,
           installationId,
-          inst.version as string | undefined
+          inst.comfyVersion?.commit ?? (inst.version as string | undefined)
         )
         return { args: schema.args }
       } catch (err) {

@@ -1,5 +1,6 @@
 import {
   fs,
+  app,
   installations,
   settings,
   sourceMap,
@@ -15,7 +16,9 @@ import {
   _broadcastToRenderer,
   migrateDefaults,
   checkInstallationUpdates,
-  isEffectivelyEmptyInstallDir,
+  installDirStateAsync,
+  refreshInstallDirStates,
+  sweepOrphanPartitions,
   UPDATE_CHECK_INTERVAL
 } from './shared'
 import { R2_BASE_URL } from '../r2Mirror'
@@ -27,13 +30,21 @@ import { registerSnapshotHandlers } from './registerSnapshotHandlers'
 import { registerSettingsHandlers } from './registerSettingsHandlers'
 import { registerSessionHandlers } from './registerSessionHandlers'
 import { registerTerminalHandlers } from './registerTerminalHandlers'
+import { setTerminalEnvResolver } from '../terminal'
 import { registerLogsHandlers } from './registerLogsHandlers'
 import { registerCrashHandlers } from './registerCrashHandlers'
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
+import { registerDevPlatformHandlers } from './registerDevPlatformHandlers'
+import { reconcileAdoptedSettings } from '../desktopAdopt'
+import {
+  finalizeComfyBuilderRecovery,
+  recoverComfyBuilderInstallation
+} from '../../sources/comfybuilder'
 
 export {
   getAppVersion,
   stopRunning,
+  cancelLaunching,
   hasRunningSessions,
   getSessionProcess,
   hasActiveOperations,
@@ -52,59 +63,124 @@ function wireReleaseCacheBroadcast(): void {
   })
 }
 
-export function register(callbacks: RegisterCallbacks = {}): void {
+export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   setCallbacks(callbacks)
   wireReleaseCacheBroadcast()
 
-  installations.seedDefaults([
-    {
+  // These startup writes go through loadForWrite(), which rejects when
+  // installations.json cannot be safely modified right now (locked or corrupt,
+  // issue #1367) - log and continue instead of an unhandled rejection.
+  const warnStartupWrite = (op: string) => (err: unknown) => {
+    console.warn(`[ipc] Skipped startup installations ${op}:`, err)
+  }
+  installations
+    .seedDefaults([
+      {
+        name: installations.CLOUD_INSTALL_NAME,
+        sourceId: installations.CLOUD_SOURCE_ID,
+        remoteUrl: 'https://cloud.comfy.org/',
+        launchMode: 'window',
+        browserPartition: 'shared'
+      }
+    ])
+    .catch(warnStartupWrite('seedDefaults'))
+  installations
+    .ensureExists(installations.CLOUD_SOURCE_ID, {
       name: installations.CLOUD_INSTALL_NAME,
       sourceId: installations.CLOUD_SOURCE_ID,
       remoteUrl: 'https://cloud.comfy.org/',
       launchMode: 'window',
-      browserPartition: 'shared'
-    }
-  ])
-  installations.ensureExists(installations.CLOUD_SOURCE_ID, {
-    name: installations.CLOUD_INSTALL_NAME,
-    sourceId: installations.CLOUD_SOURCE_ID,
-    remoteUrl: 'https://cloud.comfy.org/',
-    launchMode: 'window',
-    browserPartition: 'shared',
-    status: 'installed'
-  })
+      browserPartition: 'shared',
+      status: 'installed'
+    })
+    .catch(warnStartupWrite('ensureExists(cloud)'))
   // The Cloud entry is not user-renamable; reset any entry a prior build
   // let the user rename back to the canonical name (issue #922). Runs after
   // ensureExists via the shared FIFO write queue.
-  void installations.enforceCloudName()
+  installations.enforceCloudName().catch(warnStartupWrite('enforceCloudName'))
 
   // Auto-track a detected Legacy Desktop install.
   {
     const desktopInfo = detectDesktopInstall()
     if (desktopInfo) {
-      installations.ensureExists('desktop', {
-        name: 'ComfyUI Legacy Desktop',
-        sourceId: 'desktop',
-        installPath: desktopInfo.basePath,
-        launchMode: 'external',
-        desktopExePath: desktopInfo.executablePath || undefined,
-        status: 'installed'
-      })
+      installations
+        .ensureExists('desktop', {
+          name: 'ComfyUI Legacy Desktop',
+          sourceId: 'desktop',
+          installPath: desktopInfo.basePath,
+          launchMode: 'external',
+          desktopExePath: desktopInfo.executablePath || undefined,
+          status: 'installed'
+        })
+        .catch(warnStartupWrite('ensureExists(desktop)'))
     }
   }
 
-  migrateDefaults()
+  const startupMaintenance = migrateDefaults()
+    .then(async () => {
+      await reconcileAdoptedSettings()
+    })
+    .catch((err) => {
+      console.warn('[ipc] Failed to migrate startup defaults or adopted settings:', err)
+    })
 
-  // Sweep empty/broken local installations on startup.
-  void (async () => {
+  const startupRecovery = startupMaintenance.then(async () => {
     try {
-      const all = await installations.list()
-      let swept = false
-      for (const inst of all) {
+      let all = await installations.list()
+      let recovered = false
+      const recoveredInstallationIds = new Set<string>()
+      for (const inst of all.filter((item) => item.sourceId === 'comfybuilder')) {
+        try {
+          const result = await recoverComfyBuilderInstallation(inst)
+          if (result.action === 'update') {
+            const updated = await installations.update(inst.id, result.data)
+            if (!updated) continue
+            recovered = true
+            recoveredInstallationIds.add(inst.id)
+            await finalizeComfyBuilderRecovery(inst.installPath)
+          }
+        } catch (err) {
+          console.warn(`[ipc] Failed to recover ComfyBuilder install ${inst.id}:`, err)
+        }
+      }
+      if (recovered) all = await installations.list()
+      if (recovered) _broadcastToRenderer('installations-changed', {})
+      return { all, recoveredInstallationIds }
+    } catch (err) {
+      console.warn('[ipc] Failed to recover ComfyBuilder installations:', err)
+      return null
+    }
+  })
+
+  // Sweep leftover empty local install dirs (aborted installs) after recovery.
+  // Only reclaim dirs that exist but are effectively empty - never a missing
+  // or unreadable dir, which would silently forget a tracked instance whose
+  // drive is merely offline/renamed (issue #1155).
+  void startupRecovery.then(async (recovery) => {
+    if (!recovery) return
+    try {
+      const { all, recoveredInstallationIds } = recovery
+      const sweepable = all.filter((inst) => {
         const source = sourceMap[inst.sourceId]
-        if (!source || source.skipInstall) continue
-        if (!inst.installPath) continue
-        if (!isEffectivelyEmptyInstallDir(inst.installPath)) continue
+        return (
+          source &&
+          !source.skipInstall &&
+          inst.installPath &&
+          !recoveredInstallationIds.has(inst.id)
+        )
+      })
+      // Probe in parallel so a few offline paths don't serialize their timeouts.
+      // Only an existing-but-empty dir (aborted install) is reclaimed; a missing,
+      // access-denied, or timed-out ('inaccessible') dir is kept (issue #1155).
+      const states = await Promise.all(
+        sweepable.map(async (inst) => ({
+          inst,
+          state: await installDirStateAsync(inst.installPath)
+        }))
+      )
+      let swept = false
+      for (const { inst, state } of states) {
+        if (state !== 'empty') continue
         try {
           fs.rmSync(inst.installPath, { recursive: true, force: true })
         } catch {}
@@ -113,8 +189,14 @@ export function register(callbacks: RegisterCallbacks = {}): void {
       }
 
       if (swept) _broadcastToRenderer('installations-changed', {})
+
+      // Reclaim per-install browser partitions left behind by deletes (the
+      // inline cleanup can't remove them on Windows while their session is
+      // alive). Uses the post-sweep id set so swept installs are reclaimed too.
+      const remaining = await installations.list()
+      sweepOrphanPartitions(new Set(remaining.map((i) => i.id)))
     } catch {}
-  })()
+  })
 
   // Default to bundled bootstrap pygit2 so the pygit2 path is always exercised
   // (system git would otherwise mask bugs real users hit). Falls back to
@@ -216,14 +298,30 @@ export function register(callbacks: RegisterCallbacks = {}): void {
   setTimeout(() => checkInstallationUpdates(), 3_000)
   setInterval(() => checkInstallationUpdates(), UPDATE_CHECK_INTERVAL)
 
+  // Probe local install dir availability on startup, periodically, and whenever
+  // a window regains focus — the last one clears a stale "directory not found"
+  // pill promptly after the user reconnects a drive / restores a folder without
+  // waiting for the periodic pass. Single-flight + change-only broadcast keep
+  // the frequent focus events cheap.
+  void refreshInstallDirStates()
+  setInterval(() => refreshInstallDirStates(), UPDATE_CHECK_INTERVAL)
+  app.on('browser-window-focus', () => {
+    void refreshInstallDirStates()
+  })
+
   // Register all handler groups
   registerAppHandlers()
   registerInstallationHandlers()
   registerSnapshotHandlers()
   registerSettingsHandlers()
   registerSessionHandlers()
+  // Let the Console activate each install's actual environment (git venv,
+  // portable embedded python, …) instead of assuming the standalone layout.
+  setTerminalEnvResolver((inst) => sourceMap[inst.sourceId]?.getTerminalEnv?.(inst) ?? null)
   registerTerminalHandlers()
   registerLogsHandlers()
   registerCrashHandlers()
   registerTelemetryHandlers()
+  registerDevPlatformHandlers()
+  return startupRecovery.then(() => undefined)
 }

@@ -166,13 +166,15 @@ export function buildCacheEntry(release: Record<string, unknown>): ReleaseCacheE
   return {
     checkedAt: Date.now(),
     latestTag: release.tag_name as string,
-    releaseName: cv ? formatComfyVersion(cv, 'short') : ((release.name as string) || (release.tag_name as string)),
+    releaseName: cv
+      ? formatComfyVersion(cv, 'short')
+      : (release.name as string) || (release.tag_name as string),
     commitSha,
     baseTag,
     commitsAhead,
     releaseNotes: truncateNotes(release.body as string, 4000),
     releaseUrl: release.html_url as string,
-    publishedAt: release.published_at as string,
+    publishedAt: release.published_at as string
   }
 }
 
@@ -197,7 +199,8 @@ export async function checkForUpdate(
     return { ok: false, message: 'Could not fetch releases from GitHub.' }
   }
 
-  const existing = (installation.updateInfoByChannel as Record<string, Record<string, unknown>>) || {}
+  const existing =
+    (installation.updateInfoByChannel as Record<string, Record<string, unknown>>) || {}
   const prevChannelInfo = existing[channel]
   const cv = installation.comfyVersion as ComfyVersion | undefined
   const installedTag =
@@ -208,8 +211,8 @@ export async function checkForUpdate(
   await update({
     updateInfoByChannel: {
       ...existing,
-      [channel]: { installedTag },
-    },
+      [channel]: { installedTag }
+    }
   })
   return { ok: true, navigate: 'detail' }
 }
@@ -247,8 +250,11 @@ export async function enrichCommitsAhead(repo: string, comfyuiDir: string): Prom
     if (!fs.existsSync(path.join(comfyuiDir, '.git'))) return
     // Skip if a recent attempt just failed; the state won't change in the next few seconds
     // and the renderer already dropped its spinner on the prior settle.
-    if (entry.lastEnrichAttemptAt !== undefined
-      && Date.now() - entry.lastEnrichAttemptAt < ENRICH_RETRY_THROTTLE_MS) return
+    if (
+      entry.lastEnrichAttemptAt !== undefined &&
+      Date.now() - entry.lastEnrichAttemptAt < ENRICH_RETRY_THROTTLE_MS
+    )
+      return
 
     // Recover a missing baseTag (entries persisted with commitSha but no baseTag when
     // getLatestStableTag was failing) since the rev-list range needs an anchor. Try a network
@@ -294,13 +300,16 @@ export async function enrichCommitsAhead(repo: string, comfyuiDir: string): Prom
     const current = get(repo, 'latest')
     if (!current || current.commitSha !== entry.commitSha) return
     const resolvedBase = current.baseTag ?? baseTag
-    const releaseName = formatComfyVersion({ commit: current.commitSha!, baseTag: resolvedBase, commitsAhead: ahead }, 'short')
+    const releaseName = formatComfyVersion(
+      { commit: current.commitSha!, baseTag: resolvedBase, commitsAhead: ahead },
+      'short'
+    )
     set(repo, 'latest', {
       ...current,
       baseTag: resolvedBase,
       commitsAhead: ahead,
       releaseName,
-      lastEnrichAttemptAt: Date.now(),
+      lastEnrichAttemptAt: Date.now()
     })
     _notifyEnriched(repo)
   })().finally(() => _enrichInflight.delete(key))
@@ -340,22 +349,23 @@ export function isUpdateAvailable(
   // On stable: any commits ahead means installed is newer than stable. When commitsAhead is
   // undefined (API failure) but the commit differs, conservatively report an update.
   const cv = installation.comfyVersion as ComfyVersion | undefined
-  if (cv && channel === 'stable' && cv.commitsAhead !== undefined && cv.commitsAhead > 0) return true
+  if (cv && channel === 'stable' && cv.commitsAhead !== undefined && cv.commitsAhead > 0)
+    return true
   if (cv && channel === 'stable' && cv.commitsAhead === undefined && cv.baseTag) return true
 
   // Cross-channel: last update was on a different channel, so this channel's installedTag is stale;
   // fall back to comparing the current display version against this channel's latest tag.
-  const lastRollback = installation.lastRollback as
-    | Record<string, unknown>
-    | undefined
+  const lastRollback = installation.lastRollback as Record<string, unknown> | undefined
   const lastUpdateChannel = lastRollback?.channel as string | undefined
   if (lastUpdateChannel && lastUpdateChannel !== channel) {
     if (cv && info.commitSha && cv.commit === info.commitSha) return false
     const postHead = (lastRollback?.postUpdateHead as string | undefined) || ''
     const shortHead = postHead.slice(0, 7)
     const displayVersion = cv ? formatComfyVersion(cv, 'short') : ''
-    if (tagsEqual(displayVersion, info.latestTag) || tagsEqual(displayVersion, info.releaseName)) return false
-    if (shortHead && (shortHead === info.latestTag || info.releaseName?.includes(shortHead))) return false
+    if (tagsEqual(displayVersion, info.latestTag) || tagsEqual(displayVersion, info.releaseName))
+      return false
+    if (shortHead && (shortHead === info.latestTag || info.releaseName?.includes(shortHead)))
+      return false
     return true
   }
   // Most reliable for "latest", where latestTag is a short SHA and releaseName depends on

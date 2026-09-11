@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, toRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { LayoutDashboard, Plus, Search, X } from 'lucide-vue-next'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { FILTER_CHIPS, useInstallList } from '../composables/useInstallList'
-import { useCloudCapacity } from '../composables/useCloudCapacity'
 import { useDialogs } from '../composables/useDialogs'
+import { useInstanceActions } from '../composables/useInstanceActions'
+import type { NavDecision } from '../../../shared/navigation/navDecision'
+import type { Category, ViewKind } from '../../../shared/viewKind'
 import { useSessionStore } from '../stores/sessionStore'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
 import InfoTooltip from '../components/InfoTooltip.vue'
@@ -29,7 +32,7 @@ interface PickerInstall {
   lastLaunchedAt?: number
   installPath?: string
   status?: string
-  statusTag?: { style: string; label: string }
+  statusTag?: { style: string; label: string; detail?: string }
 }
 
 interface PickerStorageDir {
@@ -60,6 +63,10 @@ interface PickerOperationStatus {
 interface PickerSnapshot {
   installs: PickerInstall[]
   activeInstallationId: string | null
+  /** Host view-kind + active-install category for the navigation matrix.
+   *  Mirrors `InstancePickerSnapshot` in main; optional for older bundles. */
+  currentView?: ViewKind
+  currentCategory?: Category | null
   runningInstallationIds: string[]
   /** Installs launching but not yet started. Hydrated into
    *  sessionStore because the popup preload has no onInstanceLaunching. */
@@ -117,6 +124,7 @@ interface PickerBridge {
   activate?: (id: string) => void
   close?: () => void
   pickInstall: (installationId: string) => void
+  openInstallNewWindow: (installationId: string, opts?: { allowDuplicate?: boolean }) => void
   openNewInstall: () => void
   restartInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
   setPickerSelectedInstall: (installationId: string | null) => void
@@ -160,13 +168,8 @@ const installations = computed<Installation[]>(
   () => props.snapshot.installs as unknown as Installation[]
 )
 const installationsRef = toRef(() => installations.value)
-const {
-  searchQuery,
-  activeFilter,
-  visibleInstalls,
-  showEmptyHint,
-  lastLaunchedShortLabel
-} = useInstallList({ installations: installationsRef })
+const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, lastLaunchedShortLabel } =
+  useInstallList({ installations: installationsRef })
 
 const visibleChips = computed(() => {
   return FILTER_CHIPS.filter((chip) => {
@@ -347,10 +350,15 @@ watch(
 
 function handleSettingsShowProgress(opts: ShowProgressOpts): void {
   if (!opts.actionId) return
+  const existingOperation =
+    props.snapshot.installOperationStatus?.[opts.installationId] ??
+    localOperationStatus.value.get(opts.installationId)
+  if (existingOperation && !existingOperation.done) return
+
   // opts.actionData may be a Vue reactive proxy, which can't cross the
   // contextBridge structured-clone boundary; deep-clone to a plain object.
   const rawActionData = opts.actionData
-    ? JSON.parse(JSON.stringify(opts.actionData)) as Record<string, unknown>
+    ? (JSON.parse(JSON.stringify(opts.actionData)) as Record<string, unknown>)
     : undefined
   const { routing, successChoice } = resolveProgressRouting(
     opts,
@@ -369,7 +377,7 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
       cancellable: opts.cancellable ?? false,
       title: opts.title,
       actionId: opts.actionId,
-      actionData: rawActionData,
+      actionData: rawActionData
     })
     selectedId.value = opts.installationId
     bridge?.pickerStartBackgroundOp({
@@ -378,7 +386,7 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
       actionData: rawActionData,
       title: opts.title,
       cancellable: opts.cancellable,
-      opKind: opts.opKind,
+      opKind: opts.opKind
     })
     return
   }
@@ -411,7 +419,7 @@ function handleInlineProgressRetry(): void {
     actionId: op.actionId,
     actionData: op.actionData,
     title: op.title,
-    cancellable: op.cancellable,
+    cancellable: op.cancellable
   })
 }
 
@@ -425,45 +433,62 @@ function handleSettingsNavigateList(): void {
   selectedId.value = null
 }
 
-// Capacity-protection switch (PostHog flag `desktop-cloud-capacity`):
-// when disabled, the primary action no-ops for a cloud install.
-const cloudCapacity = useCloudCapacity()
 const dialogs = useDialogs()
-const ippCapacityStatus = computed(() => cloudCapacity.effectiveStatus())
+const { t } = useI18n()
 
-async function handleExpandedPrimaryAction(restartInPlace: boolean): Promise<void> {
+// Single funnel for navigation decisions (primary CTA + caret). The decision is
+// computed in `ComfyUISettingsContent` via `decideNavigation`; this routes its
+// verb onto the bridge, applying the renderer-side gates.
+const instanceActions = useInstanceActions({
+  bridge,
+  // Local restarts/switches confirm in-drawer (cloud/remote have no local
+  // process to kill); keeps the drawer open instead of a system-modal over the
+  // host. Non-local installs short-circuit to confirmed.
+  confirmLocalKill: async (inst) => {
+    if (inst.sourceCategory !== 'local') return true
+    const result = await dialogs.confirm({
+      title: t('instancePicker.restartConfirmHeading'),
+      message: t('instancePicker.restartConfirmTitle'),
+      confirmLabel: t('instancePicker.restartConfirmAction'),
+      cancelLabel: t('common.cancel'),
+      messageDetails: [
+        {
+          label: t('instancePicker.confirmHeadsUp'),
+          items: [t('instancePicker.restartConfirmItem1'), t('instancePicker.restartConfirmItem2')]
+        }
+      ]
+    })
+    return result === 'primary'
+  },
+  // In-drawer 3-way prompt (popup stays open) when the CURRENT host is a local
+  // install — swapping would stop its process. Cloud/remote hosts have no local
+  // process to stop → switch straight away.
+  confirmSwitch: async (inst) => {
+    const hostIsLocalInstall =
+      props.snapshot.currentView === 'instance' && props.snapshot.currentCategory === 'local'
+    if (!hostIsLocalInstall) return 'switch'
+    const result = await dialogs.confirm({
+      title: t('instancePicker.switchConfirmTitle'),
+      message: t('instancePicker.switchConfirmMessage', { name: inst.name }),
+      confirmLabel: t('instancePicker.switchConfirmAction'),
+      secondaryLabel: t('instancePicker.switchConfirmSecondary'),
+      cancelLabel: t('common.cancel'),
+      showCancel: true,
+      messageDetails: [
+        {
+          label: t('instancePicker.confirmHeadsUp'),
+          items: [t('instancePicker.switchConfirmItem1'), t('instancePicker.switchConfirmItem2')]
+        }
+      ]
+    })
+    return result === 'primary' ? 'switch' : result === 'secondary' ? 'new-window' : 'cancel'
+  }
+})
+
+async function handleExpandedNav(decision: NavDecision): Promise<void> {
   const inst = selectedInstall.value
   if (!inst) return
-  // Cloud capacity gate; matches the ChooserView path so the two can't diverge.
-  if (inst.sourceCategory === 'cloud' && !(await cloudCapacity.confirmEntry())) return
-  if (restartInPlace) {
-    // Confirm in-drawer for local restarts (cloud/remote have no local
-    // process to kill); keeps the drawer open instead of reopening as a
-    // system-modal over the host.
-    if (inst.sourceCategory === 'local') {
-      const result = await dialogs.confirm({
-        title: 'Restart instance?',
-        message: 'Restart this instance?',
-        confirmLabel: 'Restart',
-        cancelLabel: 'Cancel',
-        messageDetails: [
-          {
-            label: 'Heads up',
-            items: [
-              'Restarting will stop the running session.',
-              'Any unsaved work in the workflow will be lost.',
-            ],
-          },
-        ],
-      })
-      if (result !== 'primary') return
-    }
-    // `confirmed: true` tells main to skip its own system-modal since the
-    // renderer already prompted.
-    bridge?.restartInstall(inst.id, { confirmed: true })
-  } else {
-    bridge?.pickInstall(inst.id)
-  }
+  await instanceActions.dispatch(decision, inst)
 }
 </script>
 
@@ -527,7 +552,10 @@ async function handleExpandedPrimaryAction(restartInPlace: boolean): Promise<voi
     <div class="picker-body">
       <div class="picker-left">
         <div class="picker-list-section">
-          <div class="picker-list-section-title">{{ $t('instancePicker.instances') }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" /></div>
+          <div class="picker-list-section-title">
+            {{ $t('instancePicker.instances')
+            }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
+          </div>
 
           <TransitionGroup
             tag="div"
@@ -546,7 +574,6 @@ async function handleExpandedPrimaryAction(restartInPlace: boolean): Promise<voi
               :update-available="isRowUpdateAvailable(inst)"
               :operating="effectiveOperatingSet.has(inst.id)"
               :last-launched-short-label="lastLaunchedShortLabel(inst)"
-              :capacity-status="ippCapacityStatus"
               @select="handleSelect"
             />
 
@@ -575,12 +602,15 @@ async function handleExpandedPrimaryAction(restartInPlace: boolean): Promise<voi
               :global-settings-snapshot="snapshot.storage"
               :active-operation="activeOperation"
               :active-installation-id="snapshot.activeInstallationId"
+              :current-view="snapshot.currentView ?? 'dashboard'"
+              :current-category="snapshot.currentCategory ?? null"
               class="picker-expanded-body"
               @show-progress="handleSettingsShowProgress"
               @navigate-list="handleSettingsNavigateList"
               @request-close="handleSettingsNavigateList"
               @request-dismiss="handleClose"
-              @primary-action="handleExpandedPrimaryAction"
+              @primary-action="handleExpandedNav"
+              @open-new-window="handleExpandedNav"
               @op-cancel="handleInlineProgressCancel"
               @op-retry="handleInlineProgressRetry"
               @op-dismiss="handleInlineProgressDismiss"

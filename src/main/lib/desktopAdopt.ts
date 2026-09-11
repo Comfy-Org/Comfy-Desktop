@@ -3,7 +3,6 @@ import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
 
-
 import {
   detectDesktopInstall,
   captureDesktopSnapshot,
@@ -27,13 +26,13 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import * as telemetry from './telemetry'
-import { scrubAll } from '../../shared/piiScrub'
+import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
 import {
   KNOWN_MODEL_FOLDERS,
   parseExtraModelsSections,
   parseExtraModelsYaml,
-  type ExtraModelsSection,
+  type ExtraModelsSection
 } from './models'
 
 // Re-exported from ./models for back-compat with existing importers and tests.
@@ -50,7 +49,7 @@ const SNAPSHOTS_REL = '.snapshots'
 // Keeping the name plain — instead of "Adopted from Legacy Desktop" —
 // matches user expectation that the picker shows their app, not the
 // provenance story.
-const ADOPT_INSTALL_NAME = 'ComfyUI'
+const ADOPT_INSTALL_NAME = DEFAULT_INSTALL_NAME
 const COMFY_SETTINGS_FILE = 'comfy.settings.json'
 const DESKTOP_CONFIG_FILE = 'config.json'
 const EXTRA_MODELS_YAML = 'extra_models_config.yaml'
@@ -61,13 +60,23 @@ const EXTRA_MODELS_YAML = 'extra_models_config.yaml'
 const EXTRA_MODEL_PATHS_YAML = 'extra_model_paths.yaml'
 const WINDOW_FILE = 'window.json'
 const VENV_VALIDATE_TIMEOUT_MS = 30_000
+const ADOPTED_SETTINGS_VERSION = 1
+
+function legacyComfySettingsPath(basePath: string): string {
+  return path.join(basePath, 'user', 'default', COMFY_SETTINGS_FILE)
+}
+
+interface LegacyComfySettingsRead {
+  settings: Record<string, unknown>
+  status: 'ok' | 'missing' | 'error'
+}
 
 export type AdoptPromptKind = 'tcc' | 'venv-broken' | 'source-missing' | 'confirm-adopt'
 
 export type UserChoice =
   | { kind: 'tcc'; choice: 'continue' | 'denied' }
   | { kind: 'venv-broken'; choice: 'use-anyway' | 'cancel' }
-  | { kind: 'source-missing'; choice: 'switch-to-managed' | 'retry' | 'cancel' }
+  | { kind: 'source-missing'; choice: 'retry' | 'cancel' }
   | { kind: 'confirm-adopt'; choice: 'yes' | 'no' }
 
 export interface AdoptTools {
@@ -216,7 +225,6 @@ export async function cloneSourceFromGitDefault(
   return { ok: true }
 }
 
-
 /**
  * Keys legacy desktop wrote into `Comfy.Server.LaunchArgs` that v2 owns
  * itself or stripped from the user-editable string for clarity:
@@ -308,7 +316,10 @@ function normalizeLaunchValue(value: unknown): string | null {
  * the string and returned in `pathOverrides` so the caller can promote
  * them into the per-install `inputDir` / `outputDir` fields.
  */
-export function deriveLaunchArgs(comfySettings: Record<string, unknown>): DerivedLaunchArgs {
+export function deriveLaunchArgs(
+  comfySettings: Record<string, unknown>,
+  selectedDevice?: string | null
+): DerivedLaunchArgs {
   const asMap = (raw: unknown): Record<string, unknown> =>
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
 
@@ -317,6 +328,8 @@ export function deriveLaunchArgs(comfySettings: Record<string, unknown>): Derive
 
   // ServerConfigValues is the base; LaunchArgs overrides on key conflicts.
   const mergedMap: Record<string, unknown> = { ...serverConfigValues, ...launchArgsMap }
+  // selectedDevice is persisted separately and survives missing or damaged settings files.
+  if (selectedDevice === 'cpu' && !('cpu' in mergedMap)) mergedMap.cpu = true
 
   const parts: string[] = []
   const pathOverrides: DerivedLaunchArgs['pathOverrides'] = {}
@@ -358,15 +371,18 @@ export function deriveLaunchArgs(comfySettings: Record<string, unknown>): Derive
  * Read & coerce the subset of legacy front-end settings the orchestrator
  * actually uses. Missing values fall back to legacy defaults.
  */
-function readLegacyComfySettings(configDir: string): Record<string, unknown> {
+function readLegacyComfySettings(basePath: string): LegacyComfySettingsRead {
   try {
-    const raw = fs.readFileSync(path.join(configDir, COMFY_SETTINGS_FILE), 'utf-8')
+    const raw = fs.readFileSync(legacyComfySettingsPath(basePath), 'utf-8')
     const parsed: unknown = JSON.parse(raw)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
+      return { settings: parsed as Record<string, unknown>, status: 'ok' }
     }
-  } catch {}
-  return {}
+    return { settings: {}, status: 'error' }
+  } catch (err) {
+    const status = (err as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'error'
+    return { settings: {}, status }
+  }
 }
 
 function readLegacyComfyPrefs(raw: Record<string, unknown>): LegacyComfySettings {
@@ -518,9 +534,10 @@ export function computeModelsDirsToCarry(
       if (!isDir(resolvedOverride)) continue
       // A type-named leaf (e.g. `.../checkpoints`) means the models root is
       // its parent; carrying the parent lets buildYaml discover the subfolder.
-      const root = KNOWN_MODEL_FOLDERS.has(type) && path.basename(resolvedOverride) === type
-        ? path.dirname(resolvedOverride)
-        : resolvedOverride
+      const root =
+        KNOWN_MODEL_FOLDERS.has(type) && path.basename(resolvedOverride) === type
+          ? path.dirname(resolvedOverride)
+          : resolvedOverride
       if (carry(root)) carriedRoots.push(path.resolve(root))
     }
   }
@@ -572,11 +589,12 @@ export function preserveInstallExtraModelPaths(
 }
 
 /**
- * Best-effort copy of legacy userData files into a timestamped backup folder.
+ * Best-effort copy of legacy state files into a timestamped backup folder.
  * Logged on failure but never throws so adoption can continue.
  */
 async function backupLegacyState(
   configDir: string,
+  basePath: string,
   timestamp: string,
   sendOutput: (t: string) => void
 ): Promise<void> {
@@ -587,9 +605,13 @@ async function backupLegacyState(
     sendOutput(`Warning: could not create backup dir: ${(err as Error).message}\n`)
     return
   }
-  const files = [DESKTOP_CONFIG_FILE, COMFY_SETTINGS_FILE, EXTRA_MODELS_YAML, WINDOW_FILE]
-  for (const file of files) {
-    const src = path.join(configDir, file)
+  const files = [
+    { file: DESKTOP_CONFIG_FILE, src: path.join(configDir, DESKTOP_CONFIG_FILE) },
+    { file: COMFY_SETTINGS_FILE, src: legacyComfySettingsPath(basePath) },
+    { file: EXTRA_MODELS_YAML, src: path.join(configDir, EXTRA_MODELS_YAML) },
+    { file: WINDOW_FILE, src: path.join(configDir, WINDOW_FILE) }
+  ]
+  for (const { file, src } of files) {
     const dst = path.join(destDir, file)
     try {
       if (fs.existsSync(src)) await fs.promises.copyFile(src, dst)
@@ -869,14 +891,16 @@ interface CarryReport {
  */
 function carryLegacySettings(
   basePath: string,
-  configDir: string,
+  configDir: string | null,
   legacy: LegacyComfySettings,
   sendOutput: (t: string) => void
 ): CarryReport {
   let extraYamlContent: string | null = null
-  try {
-    extraYamlContent = fs.readFileSync(path.join(configDir, EXTRA_MODELS_YAML), 'utf-8')
-  } catch {}
+  if (configDir) {
+    try {
+      extraYamlContent = fs.readFileSync(path.join(configDir, EXTRA_MODELS_YAML), 'utf-8')
+    } catch {}
+  }
 
   const currentModelsDirs = (settings.get('modelsDirs') as string[] | undefined) ?? [
     ...settings.defaults.modelsDirs
@@ -940,7 +964,60 @@ function carryLegacySettings(
   tryCarry('inputDir', path.join(basePath, 'input'))
   tryCarry('outputDir', path.join(basePath, 'output'))
 
+  // This flow writes settings.json directly (not via applySettingSet), so refresh
+  // the durable per-setting person properties for what we just changed instead of
+  // waiting for the next boot (issues #1220/#1223). Consent-gated + queued.
+  const changedKeys = additions.length > 0 ? [...carriedKeys, 'modelsDirs'] : carriedKeys
+  const trackedProps = settings.getTrackedSettingsTelemetryProperties(changedKeys)
+  if (Object.keys(trackedProps).length > 0) {
+    telemetry.registerPersonProperties(trackedProps)
+  }
+
   return { addedModelsDirs: additions, carriedKeys, carrySkippedKeys }
+}
+
+/** Restore legacy settings on adopted records that still contain generated defaults. */
+export async function reconcileAdoptedSettings(): Promise<number> {
+  const all = await installations.list()
+  let repaired = 0
+  const generatedDefaultArgs = deriveLaunchArgs({}).launchArgs
+
+  for (const existing of all) {
+    if (existing.adopted !== true || existing.sourceId !== 'standalone') continue
+    if (existing.adoptedSettingsVersion === ADOPTED_SETTINGS_VERSION) continue
+
+    try {
+      const basePath = existing.adoptedBaseDir as string | undefined
+      if (!basePath) continue
+      const selectedDevice = existing.adoptedSelectedDevice as string | undefined
+      const settingsRead = readLegacyComfySettings(basePath)
+      if (settingsRead.status === 'error') continue
+      const rawComfySettings = settingsRead.settings
+      const derived = deriveLaunchArgs(rawComfySettings, selectedDevice)
+
+      carryLegacySettings(basePath, null, readLegacyComfyPrefs(rawComfySettings), () => {})
+
+      const patch: Record<string, unknown> = {
+        adoptedSettingsVersion: ADOPTED_SETTINGS_VERSION
+      }
+      // Only generated defaults are safe to replace; preserve launch args edited in v2.
+      if (existing.launchArgs === generatedDefaultArgs) {
+        patch.launchArgs = derived.launchArgs
+      }
+      if (derived.pathOverrides.inputDir && existing.inputDir === path.join(basePath, 'input')) {
+        patch.inputDir = derived.pathOverrides.inputDir
+      }
+      if (derived.pathOverrides.outputDir && existing.outputDir === path.join(basePath, 'output')) {
+        patch.outputDir = derived.pathOverrides.outputDir
+      }
+
+      if (await installations.update(existing.id, patch)) repaired += 1
+    } catch (err) {
+      console.warn(`Failed to reconcile adopted settings for ${existing.id}:`, err)
+    }
+  }
+
+  return repaired
 }
 
 /**
@@ -976,7 +1053,8 @@ async function reconcileAdoptedRequirements(
           basePath,
           tools
         )
-      }
+      },
+      { emitError: true }
     )
   } catch (err) {
     tools.sendOutput(`Warning: requirements reconcile threw: ${(err as Error).message}\n`)
@@ -1002,14 +1080,11 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
     now: opts.deps?.now ?? (() => new Date())
   }
 
-  const info = deps.detectDesktopInstall()
-  if (!info) {
-    telemetry.capture('comfy.desktop.adopt.failed', {
-      stage: 'detect',
-      error_bucket: 'no-legacy-install'
-    })
-    throw new Error('no-legacy-install')
-  }
+  const info = await telemetry.trackedStep('comfy.desktop.adopt.detect', {}, async () => {
+    const detected = deps.detectDesktopInstall()
+    if (!detected) throw new Error('no-legacy-install')
+    return detected
+  })
 
   // Idempotent re-run when the marker already names a recorded installation.
   // We still reconcile ComfyUI's requirements.txt against the legacy venv so
@@ -1017,7 +1092,9 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
   // installs whose deps drifted after a manual ComfyUI source update can
   // self-heal by re-running migrate-to-standalone. installFilteredRequirements
   // is idempotent — repeating it on an up-to-date venv is a uv no-op.
-  const existing = await findExistingAdoption(info.basePath)
+  const existing = await telemetry.trackedStep('comfy.desktop.adopt.find_existing', {}, async () =>
+    findExistingAdoption(info.basePath)
+  )
   if (existing) {
     tools.sendOutput(`Already adopted as installation ${existing.id}; reconciling requirements…\n`)
     // Backfill: older adoptions only wrote the marker under
@@ -1040,38 +1117,7 @@ export async function adoptDesktopInstall(opts: AdoptOptions): Promise<Installat
 
   telemetry.capture('comfy.desktop.adopt.started', {})
 
-  // Track the most recently entered phase so adopt.failed can report
-  // *which* step blew up. Without this, every failure surfaces with
-  // stage=null and the only debug signal is the free-text
-  // `error_message`. sendProgress is called at the start of each
-  // runAdoption phase, so the wrapped delegate updates this before the
-  // phase begins running. `init` covers everything that happens before
-  // runAdoption's first sendProgress (`backup`).
-  let currentPhase = 'init'
-  const phaseAwareTools: AdoptTools = {
-    ...tools,
-    sendProgress: (phase, detail) => {
-      currentPhase = phase
-      tools.sendProgress(phase, detail)
-    }
-  }
-
-  try {
-    const result = await runAdoption(info, phaseAwareTools, deps)
-    return result
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Scrub before slice so the redacted prefix doesn't get truncated
-    // mid-token. The bucket runs on raw text because its regexes don't
-    // care about user paths and would otherwise miss a legitimate match
-    // hidden inside a `[REDACTED]` substitution.
-    telemetry.capture('comfy.desktop.adopt.failed', {
-      stage: currentPhase,
-      error_bucket: telemetry.bucketError(message),
-      error_message: scrubAll(message).slice(0, 500)
-    })
-    throw err
-  }
+  return runAdoption(info, tools, deps)
 }
 
 async function runAdoption(
@@ -1103,7 +1149,7 @@ async function runAdoption(
 
   sendProgress('backup', { percent: 0 })
   await telemetry.trackedStep('comfy.desktop.adopt.backup', {}, async () => {
-    await backupLegacyState(info.configDir, timestamp, sendOutput)
+    await backupLegacyState(info.configDir, info.basePath, timestamp, sendOutput)
   })
 
   if (process.platform === 'darwin') {
@@ -1163,8 +1209,11 @@ async function runAdoption(
   })
 
   sendProgress('allocate', { percent: 0 })
-  const installPath = allocateUniqueDir(defaultInstallDir(), sanitizeDirName(ADOPT_INSTALL_NAME))
-  await fs.promises.mkdir(installPath, { recursive: true })
+  const installPath = await telemetry.trackedStep('comfy.desktop.adopt.allocate', {}, async () => {
+    const allocated = allocateUniqueDir(defaultInstallDir(), sanitizeDirName(ADOPT_INSTALL_NAME))
+    await fs.promises.mkdir(allocated, { recursive: true })
+    return allocated
+  })
 
   sendProgress('source', { percent: 0 })
   const destSource = path.join(installPath, 'ComfyUI')
@@ -1172,30 +1221,20 @@ async function runAdoption(
   let sourceAttempts = 0
   while (sourceMode === null) {
     sourceAttempts++
-    const sourceResult = await telemetry.trackedStep(
+    sourceMode = await telemetry.trackedStep(
       'comfy.desktop.adopt.source',
       { attempt: sourceAttempts },
       async () => {
-        return sourceComfyUI(info, destSource, tools, deps)
+        const sourceResult = await sourceComfyUI(info, destSource, tools, deps)
+        if (sourceResult.mode !== 'failed') return sourceResult.mode
+        const choice = await tools.promptUser('source-missing', {
+          message: sourceResult.message,
+          attempts: sourceAttempts
+        })
+        if (choice.kind === 'source-missing' && choice.choice === 'retry') return null
+        throw new Error(`source-missing: ${sourceResult.message}`)
       }
     )
-    if (sourceResult.mode !== 'failed') {
-      sourceMode = sourceResult.mode
-      break
-    }
-    const choice = await tools.promptUser('source-missing', {
-      message: sourceResult.message,
-      attempts: sourceAttempts
-    })
-    if (choice.kind !== 'source-missing') break
-    if (choice.choice === 'cancel') {
-      throw new Error(`source-missing: ${sourceResult.message}`)
-    }
-    if (choice.choice === 'switch-to-managed') {
-      // Caller (dispatcher) maps this to the fresh-standalone flow.
-      throw new Error('source-missing-switch-to-managed')
-    }
-    // 'retry' loops.
   }
 
   // Keep the legacy extra_model_paths.yaml as an install-local config (loaded
@@ -1235,9 +1274,7 @@ async function runAdoption(
         )
       }
     } catch (err) {
-      sendOutput(
-        `Warning: could not resolve adopted ComfyUI version: ${(err as Error).message}\n`
-      )
+      sendOutput(`Warning: could not resolve adopted ComfyUI version: ${(err as Error).message}\n`)
     }
   }
 
@@ -1266,9 +1303,9 @@ async function runAdoption(
     }
   )
 
-  const rawComfySettings = readLegacyComfySettings(info.configDir)
+  const settingsRead = readLegacyComfySettings(info.basePath)
+  const rawComfySettings = settingsRead.settings
   const prefs = readLegacyComfyPrefs(rawComfySettings)
-  const derived = deriveLaunchArgs(rawComfySettings)
   const legacyDesktopConfig = readLegacyDesktopConfig(info.configDir)
   const legacyAppVersion = readLegacyAppVersion(info.executablePath)
   const detectedGpu =
@@ -1279,6 +1316,7 @@ async function runAdoption(
     typeof legacyDesktopConfig['selectedDevice'] === 'string'
       ? (legacyDesktopConfig['selectedDevice'] as string)
       : null
+  const derived = deriveLaunchArgs(rawComfySettings, selectedDevice)
 
   sendProgress('settings', { percent: 0 })
   const carry = await telemetry.trackedStep('comfy.desktop.adopt.carry_settings', {}, async () => {
@@ -1305,6 +1343,9 @@ async function runAdoption(
       adoptedBaseDir: info.basePath,
       adoptedPythonPath: pythonPath,
       adoptedSourceMode: sourceMode!,
+      ...(settingsRead.status !== 'error'
+        ? { adoptedSettingsVersion: ADOPTED_SETTINGS_VERSION }
+        : {}),
       ...(legacyAppVersion ? { adoptedFromLegacyVersion: legacyAppVersion } : {}),
       // Hardware hints stashed for a future "rebuild as managed standalone"
       // flow that needs to preselect the right variant — no v2 consumer
@@ -1328,7 +1369,8 @@ async function runAdoption(
       // Shared input/output = off (workspace pinned to legacy basePath via
       // the per-install inputDir/outputDir fields below).
       useSharedModels: true,
-      useSharedInputOutput: false,
+      useSharedInput: false,
+      useSharedOutput: false,
       inputDir,
       outputDir,
       copiedFrom: 'legacy-desktop',
@@ -1401,6 +1443,17 @@ async function runAdoption(
     requirements_pygit2_exit: reqReport.pygit2ExitCode,
     gpu: detectedGpu,
     selected_device: selectedDevice
+  })
+
+  // Fire the once-per-install funnel event for the in-place Desktop-1 adoption
+  // path. Only reached on a fresh adoption — the idempotent re-run in
+  // `adoptDesktopInstall` returns the existing record before `runAdoption`, so
+  // this never re-fires for an already-adopted install. Best-effort:
+  // `capture()` swallows its own errors and never aborts adoption.
+  telemetry.captureInstallCompleted({
+    installationId: record.id,
+    method: 'adopt',
+    express: false
   })
 
   sendProgress('done', { percent: 100 })

@@ -71,9 +71,9 @@ export function buildSettingsSections(
           options: [
             { value: AUTO_LAUNCH_NONE, label: i18n.t('settings.autoLaunchOnStartupNone') },
             { value: AUTO_LAUNCH_LAST, label: i18n.t('settings.autoLaunchOnStartupLast') },
-            ...(installs ?? []).map((i) => ({ value: i.id, label: i.name })),
+            ...(installs ?? []).map((i) => ({ value: i.id, label: i.name }))
           ],
-          tooltip: i18n.t('settings.autoLaunchOnStartupDescription'),
+          tooltip: i18n.t('settings.autoLaunchOnStartupDescription')
         },
 
         // Close confirmation, off by default. When on, closing a local-install
@@ -85,6 +85,13 @@ export function buildSettingsSections(
           type: 'boolean',
           value: s.confirmBeforeClosingWindow === true,
           tooltip: i18n.t('settings.confirmBeforeClosingWindowDescription')
+        },
+        {
+          id: 'warnBeforeRunningMultipleInstances',
+          label: i18n.t('settings.warnBeforeRunningMultipleInstances'),
+          type: 'boolean',
+          value: s.warnBeforeRunningMultipleInstances !== false,
+          tooltip: i18n.t('settings.warnBeforeRunningMultipleInstancesDescription')
         },
 
         // Cloud opt-out — pure visibility toggle, doesn't affect any
@@ -146,7 +153,15 @@ export function buildSettingsSections(
           value: s.pypiMirror || '',
           placeholder: i18n.t('settings.pypiMirrorPlaceholder')
         },
-        ...(!isChinese ? [chineseMirrorsField] : [])
+        ...(!isChinese ? [chineseMirrorsField] : []),
+        {
+          id: 'hardwareAcceleration',
+          label: i18n.t('settings.hardwareAcceleration'),
+          type: 'boolean',
+          value: s.hardwareAcceleration !== false,
+          description: i18n.t('settings.hardwareAccelerationDescription'),
+          tooltip: i18n.t('settings.hardwareAccelerationDescription')
+        }
       ]
     }
   ]
@@ -280,6 +295,12 @@ export function applySettingSet(key: string, value: unknown): void {
   if (key === 'autoInstallUpdates' || key === 'autoUpdate') {
     // Re-broadcast so a pending 'ready' immediately reads as auto-on/off.
     updater.notifyAutoUpdateChanged()
+  }
+  // Keep the durable per-setting person properties current on toggle (issues
+  // #1220/#1223) instead of waiting for the next boot. No-op for 'omit' keys.
+  const trackedProps = settings.getTrackedSettingsTelemetryProperties([key])
+  if (Object.keys(trackedProps).length > 0) {
+    mainTelemetry.registerPersonProperties(trackedProps)
   }
   _broadcastToRenderer('settings-changed', { key })
   globalSettingsEvents.emit('changed')
