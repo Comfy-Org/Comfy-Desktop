@@ -376,9 +376,9 @@ async function initializeProviders(): Promise<void> {
         // Session replay is intentionally not configured. Datadog defaults
         // to off when the field is omitted; reintroduce only as a deliberate
         // code change in a release.
-        trackResources: true,
-        trackLongTasks: true,
-        trackUserInteractions: true
+        trackResources: false,
+        trackLongTasks: false,
+        trackUserInteractions: false
       })
       isDatadogInitialized = true
       // Tag every RUM event with the renderer surface so queries can
