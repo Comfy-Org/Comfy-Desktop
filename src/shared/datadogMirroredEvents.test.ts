@@ -29,6 +29,35 @@ describe('isDatadogMirroredEvent', () => {
   it('returns false for unknown event names', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.not.a.real.event')).toBe(false)
   })
+
+  // The eight scan-pipeline failures from assetsTap's ALLOWED_EVENTS (prefix
+  // plus bare event name, verified against assetsTap.ts's own
+  // `${EVENT_PREFIX}${event}` construction).
+  const ASSETS_ERROR_EVENTS = [
+    'comfy.desktop.comfyui.assets.scanner.hash_failed',
+    'comfy.desktop.comfyui.assets.scanner.enrich_failed',
+    'comfy.desktop.comfyui.assets.scanner.fast_scan_failed',
+    'comfy.desktop.comfyui.assets.scanner.temp_sync_failed',
+    'comfy.desktop.comfyui.assets.scanner.mark_missing_failed',
+    'comfy.desktop.comfyui.assets.scanner.stat_failed',
+    'comfy.desktop.comfyui.assets.seeder.batch_insert_failed',
+    'comfy.desktop.comfyui.assets.seeder.scan_failed'
+  ]
+
+  it('defines exactly eight assets error events', () => {
+    expect(ASSETS_ERROR_EVENTS).toHaveLength(8)
+  })
+
+  it.each(ASSETS_ERROR_EVENTS)('mirrors the assets error event %s', (name) => {
+    expect(isDatadogMirroredEvent(name)).toBe(true)
+  })
+
+  // Volume guard: scan_started fires once per scan (a funnel-timing event,
+  // not a failure signal) and must stay PostHog-only, same shape as
+  // boot_started / install.dispatched above.
+  it('does not mirror seeder.scan_started (volume guard)', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.comfyui.assets.seeder.scan_started')).toBe(false)
+  })
 })
 
 describe('stripDatadogDroppedKeys', () => {
