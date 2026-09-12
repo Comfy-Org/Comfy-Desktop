@@ -114,6 +114,16 @@
         { "from": "./lib", "to": "lib" },
         { "from": "./bootstrap-python/mac-arm64", "to": "bootstrap-python" }
       ]
+    },
+    "linux": {
+      "extraResources": [
+        { "from": "./lib", "to": "lib" },
+        { "from": "resources/apparmor-profile", "to": "apparmor-profile" },
+        {
+          "from": "./todesktop-targets/linux-x64/bootstrap-python",
+          "to": "bootstrap-python"
+        }
+      ]
     }
   }
 }
