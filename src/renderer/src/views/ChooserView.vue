@@ -100,6 +100,26 @@ defineExpose({ activeFilter })
 const selectedWorkspaceId = ref(PERSONAL_WORKSPACE_ID)
 let dashboardScopeInitialized = false
 
+async function initializeDashboardScope(): Promise<void> {
+  const [persistedWorkspaceId] = await Promise.all([
+    window.api.getSetting(DASHBOARD_WORKSPACE_SETTING).catch(() => undefined),
+    authStore.fetchStatus().catch(() => authStore.status)
+  ])
+  selectedWorkspaceId.value =
+    authStore.isSignedIn &&
+    typeof persistedWorkspaceId === 'string' &&
+    persistedWorkspaceId.trim()
+      ? persistedWorkspaceId
+      : workspaceContextId(authStore.status)
+  dashboardScopeInitialized = true
+
+  if (authStore.isSignedIn && authStore.status.workspaceId) {
+    void authStore.fetchBuilds()
+  }
+}
+
+void initializeDashboardScope()
+
 function setSelectedWorkspace(workspaceId: string): void {
   selectedWorkspaceId.value = workspaceId
   void window.api.setSetting(DASHBOARD_WORKSPACE_SETTING, workspaceId)
@@ -117,9 +137,12 @@ watch(
     workspaceType: authStore.status.workspaceType
   }),
   (next, previous) => {
+    if (!dashboardScopeInitialized) return
+
     if (!next.signedIn) {
       setSelectedWorkspace(PERSONAL_WORKSPACE_ID)
       dashboardScopeInitialized = false
+      void initializeDashboardScope()
       return
     }
     // Build versions drive each managed instance's Update status tag. Main
@@ -128,11 +151,6 @@ watch(
     // the authenticated dashboard has one.
     if (next.workspaceId && next.workspaceId !== previous?.workspaceId) {
       void authStore.fetchBuilds()
-    }
-    if (!dashboardScopeInitialized) {
-      setSelectedWorkspace(workspaceContextId(authStore.status))
-      dashboardScopeInitialized = true
-      return
     }
     // Follow an external authenticated workspace switch only while the user is
     // viewing that workspace. An explicit Personal/team selection remains local.
