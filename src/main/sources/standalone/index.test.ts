@@ -20,18 +20,28 @@ import { resetTemplateCatalogCache } from './templateCatalog'
 import { CURATED_TEMPLATES, NO_TEMPLATE_VALUE, INDEX_URL } from './curatedTemplates'
 import { fetchJSON } from '../../lib/fetch'
 import { getLatestStableTag } from '../../lib/comfyui-releases'
-import { PLATFORM_PREFIX } from './envPaths'
+import { PLATFORM_PREFIX, variantMatchesHost } from './envPaths'
 import type { FieldOption } from '../../types/sources'
 import type { InstallationRecord } from '../../installations'
 
 const mockedFetchJSON = vi.mocked(fetchJSON)
 const mockedGetLatestStableTag = vi.mocked(getLatestStableTag)
 
-// Use the running platform's vendor prefix (and, on Windows, the running
-// architecture's suffix) so tests work on win32/darwin/linux CI runners and on
-// native ARM64 Windows dev machines alike — the wizard filters by both.
-const ARCH_SUFFIX = process.platform === 'win32' && process.arch === 'arm64' ? '-arm64' : ''
+// Use the running platform's vendor prefix and architecture suffix so tests
+// pass on every runner and dev machine — the wizard filters by both. Mirrors
+// `variantMatchesHostArch`: macOS bundles are unsuffixed ARM64, every other
+// platform needs `-arm64` on an ARM64 host.
+const ARCH_SUFFIX = process.arch === 'arm64' && process.platform !== 'darwin' ? '-arm64' : ''
 const VENDOR_ID = `${PLATFORM_PREFIX[process.platform] || 'win-'}nvidia${ARCH_SUFFIX}`
+
+// Guard the line above: when the host filter and this id disagree, every
+// release/variant assertion below returns an empty list and fails for a
+// reason that points nowhere near the cause.
+describe('test fixture', () => {
+  it('derives a vendor id the host architecture filter accepts', () => {
+    expect(variantMatchesHost(VENDOR_ID)).toBe(true)
+  })
+})
 
 // --- Helpers ---
 
