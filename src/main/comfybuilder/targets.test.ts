@@ -31,28 +31,40 @@ describe('hostOs', () => {
 
 describe('selectArtifactForHost', () => {
   it.each<[string, Host, string | null]>([
-    ['exact os+gpu (windows/nvidia)', { os: 'windows', gpu: 'nvidia' }, 'windows-nvidia'],
-    ['cpu fallback (windows host, cpu gpu)', { os: 'windows', gpu: 'cpu' }, 'windows-cpu'],
-    ['os filter rejects a mac nvidia host', { os: 'mac', gpu: 'nvidia' }, null],
-    ['no artifact for the host os (mac)', { os: 'mac', gpu: 'mps' }, null],
-    ['linux nvidia', { os: 'linux', gpu: 'nvidia' }, 'linux-nvidia']
+    [
+      'exact os+gpu (windows/nvidia)',
+      { os: 'windows', arch: 'x64', gpu: 'nvidia' },
+      'windows-nvidia'
+    ],
+    [
+      'cpu fallback (windows host, cpu gpu)',
+      { os: 'windows', arch: 'x64', gpu: 'cpu' },
+      'windows-cpu'
+    ],
+    ['os filter rejects a mac nvidia host', { os: 'mac', arch: 'arm64', gpu: 'nvidia' }, null],
+    ['no artifact for the host os (mac)', { os: 'mac', arch: 'arm64', gpu: 'mps' }, null],
+    ['linux nvidia', { os: 'linux', arch: 'x64', gpu: 'nvidia' }, 'linux-nvidia']
   ])('%s', (_name, host, expectedId) => {
     expect(selectArtifactForHost(catalog, host)?.id ?? null).toBe(expectedId)
   })
 
   it('prefers exact gpu over the cpu fallback', () => {
     const both = [art('linux', 'cpu'), art('linux', 'nvidia')]
-    expect(selectArtifactForHost(both, { os: 'linux', gpu: 'nvidia' })?.gpu).toBe('nvidia')
+    expect(selectArtifactForHost(both, { os: 'linux', arch: 'x64', gpu: 'nvidia' })?.gpu).toBe(
+      'nvidia'
+    )
   })
 
   it('ignores non-ready artifacts', () => {
     const notReady = [art('linux', 'nvidia', { status: 'building' })]
-    expect(selectArtifactForHost(notReady, { os: 'linux', gpu: 'nvidia' })).toBeNull()
+    expect(selectArtifactForHost(notReady, { os: 'linux', arch: 'x64', gpu: 'nvidia' })).toBeNull()
   })
 
   it('an nvidia host still installs a cpu-only build', () => {
     const cpuOnly = [art('windows', 'cpu')]
-    expect(selectArtifactForHost(cpuOnly, { os: 'windows', gpu: 'nvidia' })?.gpu).toBe('cpu')
+    expect(selectArtifactForHost(cpuOnly, { os: 'windows', arch: 'x64', gpu: 'nvidia' })?.gpu).toBe(
+      'cpu'
+    )
   })
 
   it('prefers the matching accelVariant among same-gpu builds', () => {
@@ -61,20 +73,40 @@ describe('selectArtifactForHost', () => {
       art('linux', 'nvidia', { id: 'cu128', accelVariant: 'cu128' })
     ]
     expect(
-      selectArtifactForHost(cudas, { os: 'linux', gpu: 'nvidia', accelVariant: 'cu128' })?.id
+      selectArtifactForHost(cudas, {
+        os: 'linux',
+        arch: 'x64',
+        gpu: 'nvidia',
+        accelVariant: 'cu128'
+      })?.id
     ).toBe('cu128')
   })
 
   it('is deterministic (not input-order dependent) when accel ties', () => {
     const a = art('linux', 'nvidia', { id: 'cu118', accelVariant: 'cu118' })
     const b = art('linux', 'nvidia', { id: 'cu128', accelVariant: 'cu128' })
-    const host = { os: 'linux', gpu: 'nvidia' } as const
+    const host = { os: 'linux', arch: 'x64', gpu: 'nvidia' } as const
     expect(selectArtifactForHost([a, b], host)?.id).toBe('cu128')
     expect(selectArtifactForHost([b, a], host)?.id).toBe('cu128')
   })
 })
 
 describe('compatibleArtifactsForHost', () => {
+  it.each<Host>([
+    { os: 'windows', arch: 'arm64', gpu: 'nvidia' },
+    { os: 'windows', arch: 'arm64', gpu: 'cpu' },
+    { os: 'linux', arch: 'arm64', gpu: 'nvidia' },
+    { os: 'linux', arch: 'arm64', gpu: 'cpu' },
+    { os: 'linux', arch: 'riscv64', gpu: 'cpu' },
+    { os: 'windows', arch: 'ia32', gpu: 'cpu' },
+    { os: 'mac', arch: 'arm64', gpu: 'mps' },
+    { os: 'mac', arch: 'x64', gpu: 'cpu' }
+  ])('rejects unverified architectures: $os/$arch/$gpu', (host) => {
+    const targets = [art(host.os, host.gpu), art(host.os, 'cpu')]
+    expect(compatibleArtifactsForHost(targets, host)).toEqual([])
+    expect(selectArtifactForHost(targets, host)).toBeNull()
+  })
+
   it('returns exact GPU targets before CPU fallbacks', () => {
     const targets = [
       art('windows', 'cpu', { id: 'cpu' }),
@@ -83,7 +115,7 @@ describe('compatibleArtifactsForHost', () => {
     ]
 
     expect(
-      compatibleArtifactsForHost(targets, { os: 'windows', gpu: 'nvidia' }).map(
+      compatibleArtifactsForHost(targets, { os: 'windows', arch: 'x64', gpu: 'nvidia' }).map(
         (artifact) => artifact.id
       )
     ).toEqual(['cuda-128', 'cuda-118', 'cpu'])
@@ -98,7 +130,7 @@ describe('compatibleArtifactsForHost', () => {
     ]
 
     expect(
-      compatibleArtifactsForHost(targets, { os: 'windows', gpu: 'nvidia' }).map(
+      compatibleArtifactsForHost(targets, { os: 'windows', arch: 'x64', gpu: 'nvidia' }).map(
         (artifact) => artifact.id
       )
     ).toEqual(['ready'])

@@ -3,14 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   listCompleteVersions,
   listBuildRows,
+  resolveHost,
   resolveHostArtifact,
   resolveHostArtifactForVersion,
   resolveSelectedHostArtifact
 } from './builds'
 import { clearVersionCache, getCachedVersions } from './versionCache'
 import type { Artifact, Build, BuildVersion, Host } from '../comfybuilder'
+import { detectGPUCached } from '../lib/gpu'
 
-const HOST: Host = { os: 'linux', gpu: 'nvidia' }
+vi.mock('../lib/gpu', () => ({ detectGPUCached: vi.fn() }))
+
+const HOST: Host = { os: 'linux', arch: 'x64', gpu: 'nvidia' }
 
 beforeEach(() => clearVersionCache())
 
@@ -45,6 +49,56 @@ function stubClient(opts: {
     }))
   }
 }
+
+describe('resolveHost', () => {
+  it('includes the process architecture alongside detected OS and GPU', async () => {
+    vi.mocked(detectGPUCached).mockResolvedValueOnce({ id: 'nvidia', label: 'NVIDIA', model: null })
+    expect(await resolveHost()).toEqual({
+      os:
+        process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux',
+      arch: process.arch,
+      gpu: 'nvidia'
+    })
+  })
+})
+
+describe.each(['windows', 'linux'] as const)('Managed Builds on %s ARM64', (os) => {
+  const host: Host = { os, arch: 'arm64', gpu: 'nvidia' }
+  const client = () =>
+    stubClient({
+      builds: [{ id: 'd1', name: 'Build' }],
+      versionsByBuild: { d1: [version(2, 'complete')] },
+      artifactsByVersion: {
+        v2: [
+          artifact({ id: 'cuda', os }),
+          artifact({ id: 'cpu', os, gpu: 'cpu', accelVariant: 'cpu' })
+        ]
+      }
+    })
+
+  it.each([undefined, 1])(
+    'blocks installation and updates (installed version: %s)',
+    async (installedVersion) => {
+      const installed =
+        installedVersion === undefined ? undefined : new Map([['d1', installedVersion]])
+      const [row] = await listBuildRows(client() as never, host, installed)
+      expect(row).toMatchObject({
+        state: 'platform-mismatch',
+        blockedReason: 'noArtifactForMachine'
+      })
+      expect(row?.releaseTargets).toBeUndefined()
+    }
+  )
+
+  it('rejects latest, explicitly selected, and update artifacts', async () => {
+    const api = client()
+    expect(await resolveHostArtifact(api as never, host, 'd1')).toBeNull()
+    for (const id of ['cuda', 'cpu']) {
+      expect(await resolveSelectedHostArtifact(api as never, host, 'd1', 2, id)).toBeNull()
+    }
+    expect(await resolveHostArtifactForVersion(api as never, host, 'd1', 2)).toBeNull()
+  })
+})
 
 describe('listBuildRows', () => {
   it('marks a build installable when the latest complete version has a host artifact', async () => {
