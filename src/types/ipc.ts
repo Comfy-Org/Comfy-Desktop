@@ -1182,6 +1182,8 @@ export interface ElectronApi {
    *  release-update so the newly-created destination install gets
    *  focus without swapping the source host. */
   openInstallWindow(installationId: string): Promise<boolean>
+  /** Open an installation in its own window while preserving the dashboard. */
+  openInstallNewWindow(installationId: string): Promise<void>
   /** Close the BrowserWindow that hosts the given installation's ComfyUI
    *  view (and its title-bar / panel WebContentsViews). Returns true if a
    *  window was found and closed. Used by the embedded install-settings

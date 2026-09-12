@@ -1625,10 +1625,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       }
     }
 
+    ipcMain.handle('open-install-new-window', (_event, installationId: string) =>
+      openInstallInNewWindow(installationId)
+    )
+
     /**
-     * Swap-in-place: picking a different install from a Comfy-instance window
-     * replaces the current install IN THE SAME WINDOW (workflow continuity). The
-     * current session is stopped, the window detaches to chooser-shape, then
+     * Route an instance-picker selection. Dashboard hosts preserve themselves
+     * and open the target in a new window. From a Comfy-instance window, a
+     * selection replaces the current install IN THE SAME WINDOW (workflow
+     * continuity). The current session is stopped, the window detaches to chooser-shape, then
      * re-attaches the picked install via the dashboard chooser's attach-claim
      * path. Short-circuits: target running elsewhere → focus it; target is the
      * host's own install → no-op; user cancels the confirm → no-op. Cross-window
@@ -1651,6 +1656,21 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       // Picking the host's own install — picker already dismissed at
       // the IPC boundary, nothing more to do.
       if (parentEntry.installationId === installationId) return
+
+      // A dashboard-host picker selection preserves the dashboard and opens
+      // the target in a pre-created window. That window claims itself in place
+      // when its panel receives the forwarded pick.
+      if (parentEntry.installationId == null) {
+        // A running session normally has an attached entry and returns above.
+        // Preserve the renderer's focus-only fallback for startup/test races
+        // where session state arrives before that entry is registered.
+        if (_runningSessions.has(installationId)) {
+          deliverPickToEntry(parentEntry, installationId)
+          return
+        }
+        await openInstallInNewWindow(installationId)
+        return
+      }
 
       // Install-backed parent → swap by detaching first, then routing
       // through the chooser-pick path. Confirm only when the swap will

@@ -65,7 +65,10 @@ vi.mock('../views/ChooserView.vue', () => ({
     name: 'ChooserView',
     emits: ['pick', 'show-new-install'],
     template:
-      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\', \'workspace-1\')">New</button></div>'
+      '<div data-testid="chooser-view">' +
+      "<button data-testid=\"chooser-pick\" @click=\"$emit('pick', { id: 'test-id', name: 'Test Install', sourceLabel: 'Standalone', sourceCategory: 'local' })\">Open</button>" +
+      '<button data-testid="chooser-new-install" @click="$emit(\'show-new-install\', \'workspace-1\')">New</button>' +
+      '</div>'
   }
 }))
 vi.mock('../views/InstallWizardModal.vue', () => ({
@@ -324,6 +327,7 @@ function installMockApi(initial?: {
     focusComfyWindow: vi.fn(async () => {}),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
+    openInstallNewWindow: vi.fn(async () => {}),
     // Picker thumbnail warm-up fetches the bundled-template options on the
     // first-use cold-start path; returning users must never trigger it.
     getFieldOptions: vi.fn(async () => []),
@@ -469,6 +473,26 @@ describe('PanelApp', () => {
       entrypoint: 'titlebar',
       workspaceId: 'personal'
     })
+  })
+
+  it('opens a dashboard instance in a new window', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const api = (
+      window as unknown as {
+        api: {
+          openInstallNewWindow: ReturnType<typeof vi.fn>
+          claimAttachHost: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.find('[data-testid="chooser-pick"]').trigger('click')
+    await flushPromises()
+
+    expect(api.openInstallNewWindow).toHaveBeenCalledWith('test-id')
+    expect(api.claimAttachHost).not.toHaveBeenCalled()
   })
 
   it('returns to the underlying body when a takeover emits close', async () => {

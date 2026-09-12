@@ -29,13 +29,13 @@ export interface ChooserHandoffApi {
     installationId: string,
     triggersInstanceStart?: boolean
   ) => Promise<void>
-  /** Shared launch path for chooser-tile clicks and first-use auto-launch. */
+  /** In-place launch path for first-use and pre-created target windows. */
   performChooserLaunch: (
     installation: Installation,
     onMissingLaunchAction?: () => void,
     opts?: { isRestart?: boolean }
   ) => Promise<ChooserLaunchOutcome>
-  /** Bound to ChooserView's `pick` emit. */
+  /** Launches into the current chooser host. */
   handleChooserPick: (installation: Installation, opts?: { isRestart?: boolean }) => Promise<void>
   /** Bound to ChooserView's `show-new-install` empty-state CTA. */
   handleChooserShowNewInstall: (workspaceId: string) => void
@@ -89,7 +89,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     })
   }
 
-  /** Shared launch path for chooser-tile clicks and first-use auto-launch.
+  /** In-place launch path for first-use and pre-created target windows.
    *  `onMissingLaunchAction` diverges: tile click → new-install flow;
    *  auto-launch → no-op (the chained install already finished). */
   async function performChooserLaunch(
