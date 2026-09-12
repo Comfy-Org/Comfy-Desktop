@@ -110,6 +110,11 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 // PostHog's `FeatureFlagValue` lives in `@posthog/core` and is not
 // re-exported by `posthog-node`. Inlining the shape we actually use.
 export type FeatureFlagValue = string | boolean
+
+export interface OpsFlagResult {
+  value: FeatureFlagValue
+  payload: unknown
+}
 import {
   DEFAULT_POSTHOG_API_KEY,
   DEFAULT_POSTHOG_HOST,
@@ -223,7 +228,7 @@ let bootstrapTimeMs: number = Date.now()
 let initialized = false
 /** When `true`, all PostHog write paths (capture, identify,
  *  captureException, person-property updates) short-circuit. Set in
- *  `initTelemetry` based on `isPackaged`. Read paths (`getOpsFlag`,
+ *  `initTelemetry` based on `isPackaged`. Read paths (`getOpsFlagResult`,
  *  `loadFeatureFlagsImmediate`, `shutdown`) deliberately ignore this
  *  so devs can still resolve feature flags in `pnpm dev`. */
 let suppressEmit = false
@@ -551,7 +556,7 @@ export function initTelemetry(opts: InitOptions): void {
   // FLAG READS are NOT suppressed: a dev working on a feature gated by
   // a PostHog flag (e.g. `free_tier_workflow_submission_enabled`) needs to actually
   // see the flag's resolved value at boot. Previously the entire
-  // PostHog client was skipped in dev, which made `getOpsFlag` /
+  // PostHog client was skipped in dev, which made `getOpsFlagResult` /
   // `loadFeatureFlagsImmediate` return defaults and stranded any
   // operational-flag or experiment testing. Now the client is
   // always created so reads work; only the emission paths
@@ -1459,44 +1464,46 @@ export async function loadFeatureFlagsImmediate(
 }
 
 /**
- * Fetch a single OPERATIONAL feature flag value with a hard timeout.
+ * Fetch a single OPERATIONAL feature flag together with its matched payload.
  *
- * Bypasses the telemetry consent gate by design: this entry point is
- * reserved for operational flags, not A/B experiments or analytics. Those
- * are server-config pushed *to* the client to protect service
- * availability for everyone - distinct from analytics data collected
- * *from* the user, which `loadFeatureFlagsImmediate` correctly gates on
- * consent. The evaluation call supplies only the installation-stable
- * evaluation key and flag key; no person properties are sent.
+ * Bypasses the telemetry consent gate by design: this entry point is reserved
+ * for operational flags, not A/B experiments or analytics. Those are server
+ * config pushed *to* the client to protect service availability for everyone -
+ * distinct from analytics data collected *from* the user, which
+ * `loadFeatureFlagsImmediate` correctly gates on consent. The evaluation call
+ * supplies only the installation-stable evaluation key and flag key; no person
+ * properties are sent, and implicit `$feature_flag_called` capture is disabled
+ * so an evaluation-only key never creates a PostHog person behind the capture
+ * policy.
  *
  * Returns `undefined` when:
  *   - the PostHog client is not yet initialised
  *   - the network call times out or errors
  *   - the flag is missing on the server
  * Callers must choose a safe fallback so a fetch miss never accidentally
- * degrades the product.
+ * degrades the product. `makeOpsFlag` (opsFlag.ts) is that wrapper for every
+ * current caller.
  */
-export async function getOpsFlag(
+export async function getOpsFlagResult(
   key: string,
   distinctId: string,
   timeoutMs: number
-): Promise<FeatureFlagValue | undefined> {
+): Promise<OpsFlagResult | undefined> {
   if (!client) return undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    // No `personProperties` - ops flags are global, not user-keyed.
-    // We record explicit experiment exposures elsewhere. Disabling the SDK's
-    // implicit `$feature_flag_called` write also prevents this evaluation-only
-    // key from creating a PostHog person behind the capture policy.
-    const flagPromise = client.getFeatureFlag(key, distinctId, {
+    const flagPromise = client.getFeatureFlagResult(key, distinctId, {
       sendFeatureFlagEvents: false
     })
     const timeoutPromise = new Promise<undefined>((resolve) => {
       timer = setTimeout(() => resolve(undefined), timeoutMs)
     })
     const result = await Promise.race([flagPromise, timeoutPromise])
-    if (typeof result === 'string' || typeof result === 'boolean') return result
-    return undefined
+    if (!result) return undefined
+    return {
+      value: result.enabled ? (result.variant ?? true) : false,
+      payload: result.payload
+    }
   } catch {
     return undefined
   } finally {
