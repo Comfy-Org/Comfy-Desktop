@@ -16,6 +16,8 @@
  *     requested loads, dynamic-VRAM prepares, and multi-GPU deepclones. Its
  *     aligned arrays preserve model class, trigger, target device, count, and
  *     UTC observation date without emitting one event per tuple.
+ *   - `comfy.desktop.comfyui.asset_scan_error` forwards typed scanner failures
+ *     without file paths or exception messages.
  *
  * Log strings parsed (current ComfyUI main branch):
  *   - "Device: cuda:0 NVIDIA GeForce RTX 4090 : native"   (model_management.py)
@@ -53,6 +55,8 @@ const CUDA_DEVICE_LINE = /^Set cuda device to:\s*(\d+)/i
 // separate line that precedes a nameless `Device: privateuseone` line, so it's
 // the only way to recover the model for those vendors.
 const DIRECTML_LINE = /^Using directml with device:\s*(.+)$/i
+const ASSET_SCAN_ERROR_LINE =
+  /^Asset scan error: phase=(reference_stat|discovery_stat|enrichment_stat|hashing) error_type=(permission_denied|os_error)$/
 
 /** Emit one array-backed delta instead of an event for every model tuple. */
 const MODEL_USAGE_FLUSH_INTERVAL_MS = 60 * 60_000
@@ -132,6 +136,7 @@ export function createHardwareTap(opts: {
   let cudaDeviceSet: number | null = null
   let directmlDeviceName: string | null = null
   const devices: AcceleratorInfo[] = []
+  const emittedAssetScanErrors = new Set<string>()
   const modelUsage = createModelUsageSummary()
   let modelUsageFlushTimer: ReturnType<typeof setInterval> | null = null
 
@@ -210,6 +215,22 @@ export function createHardwareTap(opts: {
     // anchored parsers below match both the prefixed and bare log formats.
     const trimmed = stripLogLevelPrefix(stripAnsi(line).trim())
     if (trimmed.length === 0) return
+
+    const scanError = trimmed.match(ASSET_SCAN_ERROR_LINE)
+    if (scanError) {
+      const scanPhase = scanError[1]!
+      const errorType = scanError[2]!
+      const key = `${scanPhase}:${errorType}`
+      if (!emittedAssetScanErrors.has(key)) {
+        emittedAssetScanErrors.add(key)
+        telemetry.emit('comfy.desktop.comfyui.asset_scan_error', {
+          ...baseContext,
+          scan_phase: scanPhase,
+          error_type: errorType
+        })
+      }
+      return
+    }
 
     if (!acceleratorEmitted) {
       const vram = parseVramLine(trimmed)
@@ -300,6 +321,7 @@ export function createHardwareTap(opts: {
       cudaDeviceSet = null
       directmlDeviceName = null
       devices.length = 0
+      emittedAssetScanErrors.clear()
       // Drop any incomplete lines from the previous (now-dead) process streams.
       pendingBySource.stdout = ''
       pendingBySource.stderr = ''

@@ -13,6 +13,7 @@ describe('isDatadogMirroredEvent', () => {
   // boots and double its RUM volume for no monitor benefit.
   it('mirrors boot_failed but not boot_started / boot_completed', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.boot_failed')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.comfyui.asset_scan_error')).toBe(true)
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.boot_started')).toBe(false)
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.boot_completed')).toBe(false)
   })

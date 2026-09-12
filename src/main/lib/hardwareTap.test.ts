@@ -159,6 +159,42 @@ describe('createHardwareTap', () => {
     })
   })
 
+  it('forwards a typed asset scanner error without its raw path', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1', release: 'v0.4.0' })
+    tap.ingest(
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied path=/private/user/models/locked.safetensors\n',
+      'stderr'
+    )
+    expect(captured).toHaveLength(0)
+
+    tap.ingest(
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied\n',
+      'stderr'
+    )
+    tap.ingest(
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied\n',
+      'stderr'
+    )
+
+    const errors = captured.filter(
+      (entry) => entry.event === 'comfy.desktop.comfyui.asset_scan_error'
+    )
+    expect(errors).toEqual([
+      {
+        event: 'comfy.desktop.comfyui.asset_scan_error',
+        ctx: {
+          installation_id: 'inst-1',
+          variant: null,
+          release: 'v0.4.0',
+          scan_phase: 'discovery_stat',
+          error_type: 'permission_denied'
+        }
+      }
+    ])
+    expect(JSON.stringify(errors)).not.toContain('private')
+    expect(JSON.stringify(errors)).not.toContain('locked.safetensors')
+  })
+
   it('restores every model log signal in one array-backed delta', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-18T12:00:00Z'))
