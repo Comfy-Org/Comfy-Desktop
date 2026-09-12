@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as TemplatePinModule from './templatePin'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '' },
@@ -14,6 +15,15 @@ vi.mock('../../lib/fetch', () => ({
 vi.mock('../../lib/comfyui-releases', () => ({
   getLatestStableTag: vi.fn()
 }))
+
+const resolveTemplatePackageVersion = vi.fn()
+vi.mock('./templatePin', async (importOriginal) => {
+  const actual = await importOriginal<typeof TemplatePinModule>()
+  return {
+    ...actual,
+    resolveTemplatePackageVersion: (...a: unknown[]) => resolveTemplatePackageVersion(...a)
+  }
+})
 
 import { standalone, buildPinnedVariant } from './index'
 import { resetTemplateCatalogCache } from './templateCatalog'
@@ -239,7 +249,50 @@ describe('standalone.buildInstallation', () => {
 describe('standalone.getFieldOptions bundledTemplate', () => {
   beforeEach(() => {
     mockedFetchJSON.mockReset()
+    resolveTemplatePackageVersion.mockReset()
+    resolveTemplatePackageVersion.mockResolvedValue(null)
     resetTemplateCatalogCache()
+  })
+
+  const channel = (value: string, latestStableTag: string | null = 'v0.30.2'): FieldOption => ({
+    value,
+    label: value,
+    data: { latestStableTag } as unknown as Record<string, unknown>
+  })
+
+  it('pins the stable channel to the tag the install lands on', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    await standalone.getFieldOptions!('bundledTemplate', { release: channel('stable') }, {})
+    expect(resolveTemplatePackageVersion).toHaveBeenCalledWith('v0.30.2')
+  })
+
+  it('honours a specific stable tag pick over the channel head', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    await standalone.getFieldOptions!(
+      'bundledTemplate',
+      { release: channel('stable'), comfyVersion: { value: 'v0.28.2', label: 'v0.28.2' } },
+      {}
+    )
+    expect(resolveTemplatePackageVersion).toHaveBeenCalledWith('v0.28.2')
+  })
+
+  it('leaves the latest channel on main, since it installs past the newest tag', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    await standalone.getFieldOptions!('bundledTemplate', { release: channel('latest') }, {})
+    expect(
+      resolveTemplatePackageVersion,
+      'pinning master HEAD to a stable tag would hide templates it supports'
+    ).toHaveBeenCalledWith(null)
+  })
+
+  it('ignores a comfyVersion left over from a switch to latest', async () => {
+    mockedFetchJSON.mockResolvedValue([])
+    await standalone.getFieldOptions!(
+      'bundledTemplate',
+      { release: channel('latest'), comfyVersion: { value: 'v0.28.2', label: 'v0.28.2' } },
+      {}
+    )
+    expect(resolveTemplatePackageVersion).toHaveBeenCalledWith(null)
   })
 
   it('leads with the skip sentinel, then one option per curated template', async () => {

@@ -19,6 +19,10 @@ import { _test_getOpenTitlePopupBounds } from '../popups/titlePopup'
 import { stageModels, resolveModelManifest, installModelsRoot } from '../comfybuilder'
 import { getBuilderClient } from '../devplatform/session'
 import { returnToDashboard } from '../host/detach'
+import {
+  loadTemplateCatalog,
+  resetTemplateCatalogCache
+} from '../sources/standalone/templateCatalog'
 import { comfyWindows, getEntryByInstallationId, isInstallHost } from '../host/registry'
 import { ensurePanelView } from '../host/panelView'
 import {
@@ -58,6 +62,14 @@ interface SetInstallUpdateOpts {
   version?: string
 }
 
+export interface StarterTemplateCard {
+  id: string
+  modality: string
+  recommended: boolean
+  apiNode: boolean
+  thumbnailUrl: string | null
+}
+
 export interface E2EHelpers {
   /** Replace the downloads tray with a snapshot and broadcast `tray-state-changed`. */
   seedDownloads(snapshot: DownloadsTrayState): void
@@ -70,6 +82,10 @@ export interface E2EHelpers {
   /** "Return to Dashboard" on the first install-backed host window. Resolves to the
    *  BrowserWindow id flipped, or null if none exists. */
   returnFirstInstallHostToDashboard(): Promise<number | null>
+  /** Starter-template cards the picker would render for `comfyVersion`, resolved
+   *  through the real network path. `null` means the 'latest' channel, which
+   *  follows master HEAD and so resolves against the live index. */
+  resolveStarterTemplateCards(comfyVersion: string | null): Promise<StarterTemplateCard[]>
   /** Recorded invocations for an instrumented IPC channel; each entry is the handler's first arg. */
   getIpcInvocations(channel: string): unknown[]
   /** Clear recorded invocations for one channel, or all when called with no argument. */
@@ -136,6 +152,18 @@ export function registerE2EHooks(): void {
         return id
       }
       return null
+    },
+    async resolveStarterTemplateCards(comfyVersion) {
+      // Uncached, so consecutive versions in one test each resolve for real.
+      resetTemplateCatalogCache()
+      const cards = await loadTemplateCatalog({ comfyVersion })
+      return cards.map((c) => ({
+        id: c.id,
+        modality: c.modality,
+        recommended: c.recommended,
+        apiNode: c.apiNode,
+        thumbnailUrl: c.thumbnailUrl
+      }))
     },
     getIpcInvocations,
     resetIpcInvocations,
