@@ -1,4 +1,9 @@
-import { installModelsRoot, resolveModelManifest, stageModels } from '../../comfybuilder'
+import {
+  GOVERNANCE_MARKER_FIELD,
+  installModelsRoot,
+  resolveModelManifest,
+  stageModels
+} from '../../comfybuilder'
 import type { ModelDescriptor } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
 import * as installations from '../../installations'
@@ -42,17 +47,22 @@ export function abortModelStaging(installationId: string): void {
  * Synchronous + fire-and-forget; no-op if a task is already running for this
  * install. Failures are logged, never thrown: the launch-time re-stage is the
  * retry path.
+ *
+ * `governance` is passed explicitly by a caller that has just installed, whose
+ * copy of the record predates the marker write; every other caller leaves it
+ * out and the durable marker on the record is used.
  */
 export function startModelStaging(
   installation: InstallationRecord,
-  models: readonly ModelDescriptor[]
+  models: readonly ModelDescriptor[],
+  governance?: unknown
 ): void {
   const installationId = installation.id
   if (_stagingAborts.has(installationId)) return
   const abort = new AbortController()
   _stagingAborts.set(installationId, abort)
 
-  void runTask(installation, models, abort.signal)
+  void runTask(installation, models, abort.signal, governance)
     .catch((err) => {
       console.warn(
         `[buildModels:${installationId}] staging failed: ${err instanceof Error ? err.message : String(err)}`
@@ -69,9 +79,19 @@ export function startModelStaging(
 async function runTask(
   installation: InstallationRecord,
   models: readonly ModelDescriptor[],
-  signal: AbortSignal
+  signal: AbortSignal,
+  governance?: unknown
 ): Promise<void> {
   const installationId = installation.id
+  // Deliberately the RAW value, not a pre-narrowed marker: `stageModels`
+  // validates it, and a marker that fails to parse must stay distinguishable
+  // from an absent one so a corrupted record keeps the stricter rules.
+  //
+  // `undefined` (argument omitted) falls back to the record; an explicit
+  // `null` does NOT. A caller that just installed an ungoverned archive passes
+  // null deliberately, and `??` would swap that for the superseded marker
+  // still sitting on its stale copy of the record.
+  const marker = governance === undefined ? installation[GOVERNANCE_MARKER_FIELD] : governance
   if (models.length === 0) {
     await installations.update(installationId, { modelsStaged: true }).catch(() => {})
     return
@@ -98,6 +118,7 @@ async function runTask(
       models,
       installPath: installation.installPath,
       installationId,
+      governance: marker,
       jobs: {
         start: downloadManager.startManagedModelJob,
         cancel: downloadManager.cancelModelDownload

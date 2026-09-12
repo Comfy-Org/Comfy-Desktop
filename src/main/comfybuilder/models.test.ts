@@ -1,15 +1,28 @@
 // @vitest-environment node
-import { createHash, randomUUID } from 'crypto'
+import { blake3 } from '@noble/hashes/blake3.js'
+import { createHash, generateKeyPairSync, randomUUID, sign as signBytes } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { stageModels, installModelsRoot, type ModelJobSurface } from './models'
 import type { ModelJobOptions, ModelJobOutcome } from '../lib/comfyDownloadManager'
+import sharedModelLedgerFixture from './fixtures/model-ledger-v1.json'
+import { governancePolicyPath } from './governance'
+import type { GovernanceMarker } from './governance'
+import {
+  createModelLedgerEntry,
+  modelLedgerPath,
+  readModelLedger,
+  writeModelLedger
+} from './modelLedger'
+import { stageModels, installModelsRoot, type ModelJobSurface } from './models'
 import type { ModelDescriptor, StageProgress } from './types'
 
 const sha = (buf: Buffer): string => createHash('sha256').update(buf).digest('hex')
+const blake = (buf: Buffer): string => Buffer.from(blake3(buf)).toString('hex')
+const DOMAIN_SEPARATOR = Buffer.from('comfyui-governance-v1\0', 'utf-8')
+const BUILD_IDENTITY = 'build-7|release-3|artifact-9|linux/nvidia/cu124|sha256:abcd'
 
 const tmpRoots: string[] = []
 function freshInstall(): string {
@@ -48,6 +61,69 @@ function fakeJobs(
   return { start, cancel } satisfies ModelJobSurface
 }
 
+function verifiedJobs(bytesByFilename: Readonly<Record<string, Buffer>>) {
+  return fakeJobs((opts, dest) => {
+    const bytes = bytesByFilename[opts.filename]
+    if (!bytes) return { status: 'error', error: 'missing test bytes' }
+    if (!opts.digest) return { status: 'error', error: 'missing test digest' }
+    const actual = opts.digest.algo === 'blake3' ? blake(bytes) : sha(bytes)
+    if (actual !== opts.digest.value) {
+      return { status: 'error', error: 'checksum mismatch', code: 'checksum-mismatch' }
+    }
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    fs.writeFileSync(dest, bytes)
+    return { status: 'completed', savePath: dest }
+  })
+}
+
+function configureGovernedInstall(
+  installPath: string,
+  models: readonly string[],
+  activeForms: readonly string[] = ['model']
+): GovernanceMarker {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+  const rawPublicKey = publicKey.export({ format: 'der', type: 'spki' }).subarray(12)
+  const encodedPublicKey = Buffer.from(rawPublicKey).toString('base64url')
+  const customNodeMode = activeForms.includes('customNode') ? 'blocklist' : null
+  const payload = Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      audience: 'comfyui-core',
+      versionId: 'version-42',
+      buildIdentity: BUILD_IDENTITY,
+      sourcesDigest: `sha256:${'a'.repeat(64)}`,
+      policyGeneration: 3,
+      activeForms,
+      customNodeMode,
+      packs: [],
+      deniedPacks: [],
+      disabledNodes: [],
+      disabledPartnerNodes: [],
+      models
+    }),
+    'utf-8'
+  )
+  const signature = signBytes(
+    null,
+    Buffer.concat([DOMAIN_SEPARATOR, payload]),
+    privateKey
+  ).toString('base64url')
+  const policyPath = governancePolicyPath(installPath)
+  fs.mkdirSync(path.dirname(policyPath), { recursive: true })
+  fs.writeFileSync(
+    policyPath,
+    JSON.stringify({ schema: 1, payload: payload.toString('base64url'), signature })
+  )
+  return {
+    governanceMarkerVersion: 1,
+    governed: true,
+    expectedBuildIdentity: BUILD_IDENTITY,
+    publicKey: encodedPublicKey,
+    activeForms,
+    customNodeMode
+  }
+}
+
 const model = (o: Partial<ModelDescriptor> = {}): ModelDescriptor => ({
   type: 'checkpoints',
   filename: 'm.safetensors',
@@ -82,7 +158,7 @@ describe('stageModels', () => {
       filename: 'v.pt',
       directory: 'vae',
       installationId: 'inst-1',
-      sha256: sha(bytes),
+      digest: { algo: 'sha256', value: sha(bytes) },
       destinationBaseDir: installModelsRoot(install),
       bypassRootLockFor: installModelsRoot(install)
     })
@@ -97,7 +173,7 @@ describe('stageModels', () => {
       installPath: install,
       jobs
     })
-    expect(jobs.start.mock.calls[0]![0].sha256).toBe(sha(bytes))
+    expect(jobs.start.mock.calls[0]![0].digest).toEqual({ algo: 'sha256', value: sha(bytes) })
   })
 
   it('maps a checksum-mismatch outcome to model-checksum-mismatch without retrying', async () => {
@@ -158,13 +234,45 @@ describe('stageModels', () => {
     expect(jobs.start).toHaveBeenCalledTimes(1)
   })
 
-  it.each([undefined, '', '   '])('downloads a model without SHA-256 integrity', async (sha256) => {
+  it.each([undefined, '', '   '])(
+    'downloads a model without integrity on an ungoverned install',
+    async (blank) => {
+      const install = freshInstall()
+      const jobs = fakeJobs()
+      const untrusted: ModelDescriptor = { ...model(), sha256: blank, blake3: blank }
+      await stageModels({ models: [untrusted], installPath: install, jobs })
+      expect(jobs.start).toHaveBeenCalledTimes(1)
+      expect(jobs.start.mock.calls[0]![0].digest).toBeUndefined()
+    }
+  )
+
+  it.each([undefined, '', '   '])(
+    'refuses a model without integrity on a governed install',
+    async (blank) => {
+      const install = freshInstall()
+      const governance = configureGovernedInstall(install, [])
+      const jobs = fakeJobs()
+      const untrusted: ModelDescriptor = { ...model(), sha256: blank, blake3: blank }
+      await expect(
+        stageModels({ models: [untrusted], installPath: install, governance, jobs })
+      ).rejects.toMatchObject({ kind: 'invalid-model' })
+      expect(jobs.start).not.toHaveBeenCalled()
+    }
+  )
+
+  it('refuses a model without integrity when the governance marker is unreadable', async () => {
     const install = freshInstall()
     const jobs = fakeJobs()
-    const untrusted = { ...model(), sha256 } as unknown as ModelDescriptor
-    await stageModels({ models: [untrusted], installPath: install, jobs })
-    expect(jobs.start).toHaveBeenCalledTimes(1)
-    expect(jobs.start.mock.calls[0]![0].sha256).toBeUndefined()
+    const untrusted: ModelDescriptor = { ...model(), sha256: undefined }
+    await expect(
+      stageModels({
+        models: [untrusted],
+        installPath: install,
+        governance: { governed: true } as unknown as GovernanceMarker,
+        jobs
+      })
+    ).rejects.toMatchObject({ kind: 'invalid-model' })
+    expect(jobs.start).not.toHaveBeenCalled()
   })
 
   it.each(['not-a-sha256', 'sha256:'])(
@@ -179,16 +287,114 @@ describe('stageModels', () => {
     }
   )
 
+  it.each(['not-a-blake3', 'blake3:', `sha256:${'a'.repeat(64)}`])(
+    'rejects a model with malformed BLAKE3 before any download',
+    async (blake3) => {
+      const install = freshInstall()
+      const jobs = fakeJobs()
+      await expect(
+        stageModels({
+          models: [model({ blake3, sha256: undefined })],
+          installPath: install,
+          jobs
+        })
+      ).rejects.toMatchObject({ kind: 'invalid-model' })
+      expect(jobs.start).not.toHaveBeenCalled()
+    }
+  )
+
+  it('stages a nested model type at its nested path', async () => {
+    const install = freshInstall()
+    const bytes = Buffer.from('gemma-weights')
+    const jobs = fakeJobs((_opts, dest) => {
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.writeFileSync(dest, bytes)
+      return { status: 'completed', savePath: dest }
+    })
+    await stageModels({
+      models: [
+        model({
+          type: 'text_encoders/gemma_3_12b_it_hf',
+          filename: 'gemma.safetensors',
+          sha256: sha(bytes)
+        })
+      ],
+      installPath: install,
+      jobs
+    })
+    const dest = path.join(
+      installModelsRoot(install),
+      'text_encoders',
+      'gemma_3_12b_it_hf',
+      'gemma.safetensors'
+    )
+    expect(fs.readFileSync(dest)).toEqual(bytes)
+    expect(jobs.start.mock.calls[0]![0].directory).toBe('text_encoders/gemma_3_12b_it_hf')
+  })
+
+  // Every accepted value here is one Cloud can seal (`common.ValidModelDir`),
+  // so a distribution Cloud built cannot be unstageable on Desktop.
   it.each([
-    ['type', { type: '../evil' }],
-    ['type sep', { type: 'a/b' }],
-    ['filename', { filename: '../../etc/passwd' }],
-    ['filename sep', { filename: 'a/b.pt' }]
-  ])('rejects an unsafe %s before any download', async (_name, bad) => {
+    'checkpoints',
+    'text_encoders/gemma_3_12b_it_hf',
+    'diffusers/governance-fixture/text_encoder',
+    'insightface/models/antelopev2',
+    'LLM/Qwen-VL/Qwen3-VL-2B-Instruct',
+    'My-Type_1.2'
+  ])('accepts %s as a model type', async (type) => {
+    const install = freshInstall()
+    const jobs = fakeJobs()
+    await stageModels({ models: [model({ type })], installPath: install, jobs })
+    expect(jobs.start.mock.calls[0]![0].directory).toBe(type)
+    expect(fs.existsSync(path.join(installModelsRoot(install), type, 'm.safetensors'))).toBe(true)
+  })
+
+  it.each([
+    ['a leading traversal segment', '../evil'],
+    ['an interior traversal segment', 'text_encoders/../../evil'],
+    ['a bare traversal', '..'],
+    ['a posix absolute path', '/checkpoints'],
+    ['a windows drive path', 'C:/models'],
+    ['a backslash separator', 'checkpoints\\evil'],
+    ['a doubled separator', 'text_encoders//gemma'],
+    ['a trailing separator', 'text_encoders/'],
+    ['an empty type', ''],
+    ['a dot segment', 'text_encoders/./gemma'],
+    ['a hidden segment', 'text_encoders/.hidden'],
+    ['a reserved code root', 'custom_nodes/evil'],
+    ['a reserved config root', 'configs/evil'],
+    ['a dos device segment', 'nul/weights'],
+    ['a trailing-dot segment', 'text_encoders/gemma.'],
+    ['a whitespace segment', 'text encoders/gemma'],
+    ['a NUL byte', 'text_encoders/gem\0ma'],
+    ['an over-long path', `${'a/'.repeat(128)}b`]
+  ])('rejects %s as a model type before any download', async (_name, type) => {
     const install = freshInstall()
     const jobs = fakeJobs()
     await expect(
-      stageModels({ models: [model(bad)], installPath: install, jobs })
+      stageModels({ models: [model({ type })], installPath: install, jobs })
+    ).rejects.toMatchObject({ kind: 'invalid-model' })
+    expect(jobs.start).not.toHaveBeenCalled()
+  })
+
+  // A filename is ALWAYS a single segment: accepting nested TYPES must not have
+  // relaxed the filename half of `models/<type>/<filename>`.
+  it.each([
+    ['a traversal', '../../etc/passwd'],
+    ['a bare traversal', '..'],
+    ['a posix separator', 'a/b.pt'],
+    ['a windows separator', 'a\\b.pt'],
+    ['a nested fixture path', 'unet/diffusion_pytorch_model.safetensors'],
+    ['a dot', '.'],
+    ['an absolute path', '/etc/passwd'],
+    ['a drive prefix', 'C:evil.pt'],
+    ['a NUL byte', 'ev\0il.pt'],
+    ['nothing at all', '']
+  ])('still rejects a filename containing %s before any download', async (_name, filename) => {
+    const install = freshInstall()
+    const jobs = fakeJobs()
+    await expect(
+      stageModels({ models: [model({ filename })], installPath: install, jobs })
     ).rejects.toMatchObject({ kind: 'invalid-model' })
     expect(jobs.start).not.toHaveBeenCalled()
   })
@@ -230,6 +436,32 @@ describe('stageModels', () => {
     ).rejects.toMatchObject({ kind: 'invalid-model' })
     expect(jobs.start).not.toHaveBeenCalled()
     expect(fs.existsSync(path.join(outside, 'x.pth'))).toBe(false)
+  })
+
+  it('refuses a nested type whose parent segment symlinks outside the install', async () => {
+    const install = freshInstall()
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-escape-nested-'))
+    tmpRoots.push(outside)
+    const modelsRoot = installModelsRoot(install)
+    fs.mkdirSync(modelsRoot, { recursive: true })
+    // The grammar cannot see this: every segment of `diffusers/governance-fixture`
+    // is valid, and only the realpath check catches the redirected parent.
+    fs.symlinkSync(
+      outside,
+      path.join(modelsRoot, 'diffusers'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    )
+    const jobs = fakeJobs()
+    await expect(
+      stageModels({
+        models: [model({ type: 'diffusers/governance-fixture', filename: 'model_index.json' })],
+        installPath: install,
+        jobs
+      })
+    ).rejects.toMatchObject({ kind: 'invalid-model' })
+    expect(jobs.start).not.toHaveBeenCalled()
+    expect(fs.existsSync(path.join(outside, 'governance-fixture'))).toBe(true)
+    expect(fs.existsSync(path.join(outside, 'governance-fixture', 'model_index.json'))).toBe(false)
   })
 
   it('removes a legacy .partial leftover before starting the job', async () => {
@@ -333,5 +565,238 @@ describe('stageModels', () => {
     controller.abort()
     await expect(staging).rejects.toThrow(/cancel/i)
     expect(cancel).toHaveBeenCalledWith('job-1')
+  })
+})
+
+describe('model governance ledger', () => {
+  it('records exactly two successfully staged approved BLAKE3 models', async () => {
+    const install = freshInstall()
+    const firstBytes = Buffer.from('approved-model-one')
+    const secondBytes = Buffer.from('approved-model-two')
+    const firstDigest = `blake3:${blake(firstBytes)}`
+    const secondDigest = `blake3:${blake(secondBytes)}`
+    const governance = configureGovernedInstall(install, [firstDigest, secondDigest])
+
+    await stageModels({
+      models: [
+        model({ type: 'checkpoints', filename: 'one.safetensors', blake3: firstDigest }),
+        model({ type: 'vae', filename: 'two.safetensors', blake3: secondDigest })
+      ],
+      installPath: install,
+      governance,
+      jobs: verifiedJobs({
+        'one.safetensors': firstBytes,
+        'two.safetensors': secondBytes
+      })
+    })
+
+    const ledger = await readModelLedger(install)
+    expect(ledger?.entries).toHaveLength(2)
+    const firstPath = fs.realpathSync(
+      path.join(installModelsRoot(install), 'checkpoints', 'one.safetensors')
+    )
+    const secondPath = fs.realpathSync(
+      path.join(installModelsRoot(install), 'vae', 'two.safetensors')
+    )
+    expect(
+      ledger?.entries.map(({ path: entryPath, digest }) => ({ path: entryPath, digest }))
+    ).toEqual([
+      { path: firstPath.replace(/\\/g, '/'), digest: firstDigest },
+      { path: secondPath.replace(/\\/g, '/'), digest: secondDigest }
+    ])
+
+    for (const entry of ledger!.entries) {
+      const stat = fs.statSync(entry.path, { bigint: true })
+      expect(entry.size).toBe(Number(stat.size))
+      expect(entry.mtimeNs).toBe(stat.mtimeNs.toString())
+      expect(entry.inode).toBe(stat.ino.toString())
+      expect(entry.dev).toBe(stat.dev.toString())
+    }
+  })
+
+  it('records the managed job save path when its normalized filename differs', async () => {
+    const install = freshInstall()
+    const bytes = Buffer.from('approved-model')
+    const digest = `blake3:${blake(bytes)}`
+    const governance = configureGovernedInstall(install, [digest])
+    const actualPath = path.join(installModelsRoot(install), 'checkpoints', 'model.safetensors')
+    const jobs = fakeJobs((_opts, _dest) => {
+      fs.mkdirSync(path.dirname(actualPath), { recursive: true })
+      fs.writeFileSync(actualPath, bytes)
+      return { status: 'completed', savePath: actualPath }
+    })
+
+    await stageModels({
+      models: [model({ filename: 'model.safetensors?download=1', blake3: digest })],
+      installPath: install,
+      governance,
+      jobs
+    })
+
+    expect((await readModelLedger(install))?.entries[0]?.path).toBe(
+      fs.realpathSync(actualPath).replace(/\\/g, '/')
+    )
+  })
+
+  it('writes no entry when downloaded bytes fail their declared digest', async () => {
+    const install = freshInstall()
+    const declaredBytes = Buffer.from('declared-model-bytes')
+    const downloadedBytes = Buffer.from('different-downloaded-bytes')
+    const digest = `blake3:${blake(declaredBytes)}`
+    const governance = configureGovernedInstall(install, [digest])
+
+    await expect(
+      stageModels({
+        models: [model({ blake3: digest })],
+        installPath: install,
+        governance,
+        jobs: verifiedJobs({ 'm.safetensors': downloadedBytes })
+      })
+    ).rejects.toMatchObject({ kind: 'model-checksum-mismatch' })
+
+    expect(await readModelLedger(install)).toBeNull()
+    expect(fs.existsSync(modelLedgerPath(install))).toBe(false)
+  })
+
+  it('writes no entry when valid bytes are outside the verified approved set', async () => {
+    const install = freshInstall()
+    const bytes = Buffer.from('valid-but-unapproved-model')
+    const digest = `blake3:${blake(bytes)}`
+    const governance = configureGovernedInstall(install, [])
+
+    await stageModels({
+      models: [model({ blake3: digest })],
+      installPath: install,
+      governance,
+      jobs: verifiedJobs({ 'm.safetensors': bytes })
+    })
+
+    expect(
+      fs.readFileSync(path.join(installModelsRoot(install), 'checkpoints', 'm.safetensors'))
+    ).toEqual(bytes)
+    // An EMPTY ledger, not an absent one: the run must state that it vouches
+    // for nothing rather than stay silent (see the supersede case below).
+    expect(await readModelLedger(install)).toEqual({ ledgerVersion: 1, entries: [] })
+  })
+
+  it('supersedes a ledger from an earlier policy when the run approves nothing', async () => {
+    const install = freshInstall()
+    const bytes = Buffer.from('valid-but-unapproved-model')
+    const digest = `blake3:${blake(bytes)}`
+    const governance = configureGovernedInstall(install, [])
+
+    // A ledger left behind by a staging run under a previous, wider policy.
+    const stalePath = path.join(installModelsRoot(install), 'checkpoints', 'stale.safetensors')
+    fs.mkdirSync(path.dirname(stalePath), { recursive: true })
+    fs.writeFileSync(stalePath, Buffer.from('previously-approved'))
+    await writeModelLedger(install, [
+      await createModelLedgerEntry(stalePath, `blake3:${'7'.repeat(64)}`)
+    ])
+    expect((await readModelLedger(install))?.entries).toHaveLength(1)
+
+    await stageModels({
+      models: [model({ blake3: digest })],
+      installPath: install,
+      governance,
+      jobs: verifiedJobs({ 'm.safetensors': bytes })
+    })
+
+    // The superseded entry must not survive as evidence under the new policy.
+    expect(await readModelLedger(install)).toEqual({ ledgerVersion: 1, entries: [] })
+  })
+
+  it('does not consult policy or write a ledger when the model form is inactive', async () => {
+    const install = freshInstall()
+    const bytes = Buffer.from('ordinary-staged-model')
+    const digest = `blake3:${blake(bytes)}`
+    const governance = configureGovernedInstall(install, [], ['customNode'])
+    fs.rmSync(governancePolicyPath(install))
+    const readFileSpy = vi.spyOn(fs.promises, 'readFile')
+
+    try {
+      await stageModels({
+        models: [model({ blake3: digest })],
+        installPath: install,
+        governance,
+        jobs: verifiedJobs({ 'm.safetensors': bytes })
+      })
+      expect(readFileSpy).not.toHaveBeenCalled()
+    } finally {
+      readFileSpy.mockRestore()
+    }
+
+    expect(
+      fs.readFileSync(path.join(installModelsRoot(install), 'checkpoints', 'm.safetensors'))
+    ).toEqual(bytes)
+    expect(fs.existsSync(modelLedgerPath(install))).toBe(false)
+  })
+
+  it('leaves a complete old or new ledger when publication crashes', async () => {
+    const realRename = fs.promises.rename.bind(fs.promises)
+
+    for (const publishBeforeCrash of [false, true]) {
+      const install = freshInstall()
+      const oldFile = path.join(installModelsRoot(install), 'checkpoints', 'old.safetensors')
+      const newFile = path.join(installModelsRoot(install), 'checkpoints', 'new.safetensors')
+      fs.mkdirSync(path.dirname(oldFile), { recursive: true })
+      fs.writeFileSync(oldFile, 'old')
+      fs.writeFileSync(newFile, 'new')
+      const oldEntry = await createModelLedgerEntry(oldFile, `blake3:${'1'.repeat(64)}`)
+      const newEntry = await createModelLedgerEntry(newFile, `blake3:${'2'.repeat(64)}`)
+      await writeModelLedger(install, [oldEntry])
+
+      const renameSpy = vi.spyOn(fs.promises, 'rename').mockImplementationOnce(async (from, to) => {
+        if (publishBeforeCrash) await realRename(from, to)
+        throw new Error('simulated crash during ledger publication')
+      })
+      try {
+        await expect(writeModelLedger(install, [newEntry])).rejects.toThrow(/simulated crash/)
+      } finally {
+        renameSpy.mockRestore()
+      }
+
+      expect(await readModelLedger(install)).toEqual({
+        ledgerVersion: 1,
+        entries: publishBeforeCrash ? [newEntry] : [oldEntry]
+      })
+    }
+  })
+
+  it('matches the shared Python ModelLedgerKey tuple field order, units, and wire types', async () => {
+    const install = freshInstall()
+    const ledgerPath = modelLedgerPath(install)
+    fs.mkdirSync(path.dirname(ledgerPath), { recursive: true })
+    fs.writeFileSync(ledgerPath, JSON.stringify(sharedModelLedgerFixture.ledger))
+
+    const ledger = await readModelLedger(install)
+    expect(ledger).not.toBeNull()
+    const entry = ledger!.entries[0]!
+    expect([entry.path, entry.size, entry.mtimeNs, entry.inode, entry.dev]).toEqual(
+      sharedModelLedgerFixture.modelLedgerKey
+    )
+    expect(Object.keys(ledger!)).toEqual(['ledgerVersion', 'entries'])
+    expect(Object.keys(entry)).toEqual(['path', 'size', 'mtimeNs', 'inode', 'dev', 'digest'])
+    expect(typeof entry.size).toBe('number')
+    expect([typeof entry.mtimeNs, typeof entry.inode, typeof entry.dev]).toEqual([
+      'string',
+      'string',
+      'string'
+    ])
+  })
+
+  it('starts a freshly installed Builder archive without a ledger and creates it only after staging', async () => {
+    const install = freshInstall()
+    const bytes = Buffer.from('fresh-archive-model')
+    const digest = `blake3:${blake(bytes)}`
+    const governance = configureGovernedInstall(install, [digest])
+
+    expect(fs.existsSync(modelLedgerPath(install))).toBe(false)
+    await stageModels({
+      models: [model({ blake3: digest })],
+      installPath: install,
+      governance,
+      jobs: verifiedJobs({ 'm.safetensors': bytes })
+    })
+    expect(fs.existsSync(modelLedgerPath(install))).toBe(true)
   })
 })

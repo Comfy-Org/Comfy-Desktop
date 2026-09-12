@@ -1,0 +1,22 @@
+{
+  "ledger": {
+    "ledgerVersion": 1,
+    "entries": [
+      {
+        "path": "/opt/comfy/ComfyUI/models/checkpoints/shared-fixture.safetensors",
+        "size": 17,
+        "mtimeNs": "1735689600123456789",
+        "inode": "424242",
+        "dev": "2049",
+        "digest": "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  "modelLedgerKey": [
+    "/opt/comfy/ComfyUI/models/checkpoints/shared-fixture.safetensors",
+    17,
+    "1735689600123456789",
+    "424242",
+    "2049"
+  ]
+}

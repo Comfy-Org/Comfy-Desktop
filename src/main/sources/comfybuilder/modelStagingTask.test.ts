@@ -22,7 +22,8 @@ vi.mock('../../lib/comfyDownloadManager', () => ({
 vi.mock('../../comfybuilder', () => ({
   stageModels,
   installModelsRoot: vi.fn((installPath: string) => `${installPath}/ComfyUI/models`),
-  resolveModelManifest
+  resolveModelManifest,
+  GOVERNANCE_MARKER_FIELD: 'governance'
 }))
 vi.mock('../../devplatform/session', () => ({ getBuilderClient: vi.fn(() => ({})) }))
 vi.mock('../../installations', () => ({ update: updateInstallation }))

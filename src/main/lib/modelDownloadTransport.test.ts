@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Digest } from '../comfybuilder/integrity'
 import { R2_BASE_URL, R2_MIRROR_BASE_URL } from './r2Mirror'
 import {
   readStagedMeta,
@@ -456,6 +457,35 @@ describe('resume', () => {
     expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
   })
 
+  // Present-but-garbage integrity must never degrade into "no expectation":
+  // a hydrated job has no caller digest, so the sidecar is the only thing
+  // standing between these bytes and the final model name.
+  it.each([
+    ['a legacy sha256', { sha256: 'not-a-sha256' }],
+    ['a tagged digest', { digest: { algo: 'blake3', value: 'nope' } as unknown as Digest }],
+    [
+      'an unknown algorithm',
+      { digest: { algo: 'md5', value: 'a'.repeat(32) } as unknown as Digest }
+    ]
+  ])('discards staged bytes whose sidecar carries %s that does not parse', async (_name, bad) => {
+    preStage('0123456789', stagedMeta({ expectedSize: 10, ...bad }))
+
+    const handle = startModelTransfer(baseOpts())
+    const outcome = await handle.done
+
+    expect(outcome).toMatchObject({ outcome: 'error', code: 'checksum-mismatch' })
+    expect(fs.existsSync(finalPath)).toBe(false)
+    expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+  })
+
+  it('still finalizes staged bytes whose sidecar declares no integrity at all', async () => {
+    preStage('0123456789', stagedMeta({ expectedSize: 10 }))
+
+    const outcome = await startModelTransfer(baseOpts()).done
+
+    expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+  })
+
   it('never treats staged bytes EXCEEDING the expected size as complete', async () => {
     preStage('0123456789X', stagedMeta({ expectedSize: 10 }))
     const handle = startModelTransfer(baseOpts())
@@ -650,6 +680,7 @@ describe('resume', () => {
 })
 
 describe('sha-256 integrity', () => {
+  const sha256Digest = (value: string): Digest => ({ algo: 'sha256', value })
   const SHA_0123456789 = '84d89877f0d4041efb6bf91a16f0248f2fd573e6af05c19f96bedb9f882f7882'
   const SHA_AAAAABBBBB = '59158e9f11434e40f5af83230f07877ecf9acd90b9fbeb6002a5e836b6edecee'
 
@@ -660,7 +691,7 @@ describe('sha-256 integrity', () => {
   }
 
   it('persists the expected hash in the sidecar and finalizes when the bytes match', async () => {
-    const handle = startModelTransfer(baseOpts({ sha256: SHA_0123456789 }))
+    const handle = startModelTransfer(baseOpts({ digest: sha256Digest(SHA_0123456789) }))
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
     req.emit('response', res)
@@ -677,7 +708,7 @@ describe('sha-256 integrity', () => {
   })
 
   it('discards staged bytes and reports checksum-mismatch when the download is corrupt', async () => {
-    const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
+    const handle = startModelTransfer(baseOpts({ digest: sha256Digest(SHA_AAAAABBBBB) }))
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
     req.emit('response', res)
@@ -702,7 +733,7 @@ describe('sha-256 integrity', () => {
         etag: '"v1"'
       })
     )
-    const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
+    const handle = startModelTransfer(baseOpts({ digest: sha256Digest(SHA_AAAAABBBBB) }))
     const req = requests[0]!
     const headers = headerCalls(req)
     expect(headers['Range']).toBe('bytes=5-')
@@ -719,7 +750,7 @@ describe('sha-256 integrity', () => {
 
   it('restarts clean when the staged pair was written for different expected content', async () => {
     preStage('AAAAA', stagedMeta({ sha256: SHA_0123456789, expectedSize: 10, etag: '"v1"' }))
-    const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
+    const handle = startModelTransfer(baseOpts({ digest: sha256Digest(SHA_AAAAABBBBB) }))
     const headers = headerCalls(requests[0]!)
     // Splicing onto bytes for other content could only fail verification.
     expect(headers['Range']).toBeUndefined()

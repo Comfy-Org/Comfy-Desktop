@@ -89,6 +89,7 @@ import {
 } from '../../bootPhaseBuffer'
 import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
+import { checkGovernedInstallPolicy } from '../../../comfybuilder/governance'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
@@ -390,6 +391,23 @@ async function runLaunch(
     console.warn('Model download startup pass failed; launching anyway:', err)
   }
   if (abort.signal.aborted) return { ok: false, cancelled: true }
+
+  // Governed installs: refuse rather than spawn when the signed organization
+  // policy is missing or fails verification. A SECOND LAYER only - ComfyUI
+  // self-enforces from its compiled-in constant whatever happens here, so a
+  // pass enables nothing and merely declines to interrupt. Non-governed
+  // installs are a no-op.
+  //
+  // Deliberately the FIRST thing after the abort check and ahead of ALL of:
+  // background model re-staging (which resolves a manifest and can start
+  // multi-gigabyte downloads), arg-schema and feature-flag discovery (which
+  // each execute the install's own Python), and Manager config reconciliation
+  // (which writes to disk). A refusal has to mean nothing in the install ran.
+  const governance = await checkGovernedInstallPolicy(inst)
+  if (!governance.ok) {
+    return { ok: false, message: governance.message }
+  }
+
   const source = sourceMap[inst.sourceId]
   if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
   if (!source.skipInstall) {

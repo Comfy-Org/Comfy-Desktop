@@ -21,7 +21,35 @@ export { ComfyBuilderClient, ComfyBuilderApiError, DEFAULT_BASE_URL } from './cl
 export type { ComfyBuilderClientOptions, ComfyBuilderErrorKind } from './client'
 export { hostOs, selectArtifactForHost } from './targets'
 export { installArtifact, ComfyBuilderInstallError, sha256File } from './install'
-export type { InstallArtifactOptions, ComfyBuilderInstallErrorKind } from './install'
+export type {
+  InstallArtifactOptions,
+  InstallArtifactResult,
+  ComfyBuilderInstallErrorKind
+} from './install'
+export {
+  GOVERNANCE_MARKER_FIELD,
+  GOVERNANCE_MARKER_VERSION,
+  GOVERNANCE_POLICY_RELATIVE,
+  buildGovernanceMarker,
+  checkGovernedInstallPolicy,
+  governancePolicyPath,
+  governanceRefusalMessage,
+  governedModelDigests,
+  parseGovernanceConstants,
+  readArchiveGovernanceConstants,
+  readGovernanceMarker,
+  verifyGovernanceEnvelope,
+  verifyInstalledGovernancePolicy
+} from './governance'
+export type {
+  ArchiveGovernanceConstants,
+  CustomNodeMode,
+  GovernanceLaunchCheck,
+  GovernanceMarker,
+  GovernanceMarkerState,
+  GovernanceVerifyResult,
+  VerifiedGovernancePayload
+} from './governance'
 export { normalizeSha256 } from './integrity'
 export { stageModels, installModelsRoot, StageModelsError } from './models'
 export type { StageModelsOptions, StageModelsErrorKind, ModelJobSurface } from './models'
