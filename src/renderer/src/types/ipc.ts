@@ -42,6 +42,7 @@ export type {
   ComfyOutputData,
   ComfyExitedData,
   CrashKind,
+  CudaFailureCategory,
   GPUInfo,
   HardwareValidation,
   NvidiaDriverCheck,
