@@ -372,11 +372,13 @@ describe('telemetry default event properties', () => {
     setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'id' })
     exceptions.length = 0
 
-    telemetry.captureException(new Error('boom'), { foo: 'bar' })
+    telemetry.captureException(new Error('boom'), {
+      error_type: 'workspace_auth_gate_initialization_failure'
+    })
 
     expect(exceptions).toHaveLength(1)
     expect(exceptions[0]!.properties).toMatchObject({
-      foo: 'bar',
+      error_type: 'workspace_auth_gate_initialization_failure',
       app_version: '1.0.0',
       client: 'desktop',
       $process_person_profile: false
