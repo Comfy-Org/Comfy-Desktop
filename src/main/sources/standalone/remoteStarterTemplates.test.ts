@@ -10,6 +10,7 @@ import {
   _resetStarterTemplatesForTest
 } from './remoteStarterTemplates'
 import { CURATED_TEMPLATES, TEMPLATE_MODALITY_ORDER } from './curatedTemplates'
+import { R2_MIRROR_BASE_URL, r2MirrorUrl } from '../../lib/r2Mirror'
 import { fetchJSON } from '../../lib/fetch'
 
 const mockedFetchJSON = vi.mocked(fetchJSON)
@@ -439,6 +440,25 @@ describe('G. an oversized or hostile document cannot cost more than it should', 
       parsed?.map((t) => t.id),
       'the sentinel drops while its valid neighbour survives'
     ).toEqual(['ok'])
+  })
+})
+
+describe('H. restricted regions reach the document through the mirror', () => {
+  it('keeps the document inside the mirrorable R2 namespace', () => {
+    expect(
+      r2MirrorUrl(STARTER_TEMPLATES_URL),
+      'a URL outside the R2 prefix gets no mirror, silently cutting off regions where R2 is throttled'
+    ).toBe(`${R2_MIRROR_BASE_URL}/starter-templates.json`)
+  })
+
+  it('degrades to the built-in list when both the primary and the mirror are unreachable', async () => {
+    _resetStarterTemplatesForTest()
+    mockedFetchJSON.mockRejectedValue(new Error('ECONNRESET'))
+    const loaded = await loadStarterTemplates()
+    expect(
+      loaded.map((t) => t.id).sort(),
+      'a blocked region still gets a full picker, never an empty one'
+    ).toEqual([...CURATED_TEMPLATES].map((t) => t.id).sort())
   })
 })
 
