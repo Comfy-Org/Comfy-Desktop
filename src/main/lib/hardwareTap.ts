@@ -284,10 +284,12 @@ export function createHardwareTap(opts: {
       // Hard guarantee: this runs inside the launch stdout/stderr handler,
       // right before the boot-progress tracker. A throw here must never break
       // log streaming or boot detection. Telemetry must never break the app.
-      try {
-        for (const line of lineBuffer.append(source, chunk)) handleLine(line)
-      } catch {
-        // ignore - telemetry side effect, not user-visible
+      for (const line of lineBuffer.append(source, chunk)) {
+        try {
+          handleLine(line)
+        } catch {
+          // Isolate malformed lines and unexpected telemetry sink failures.
+        }
       }
     },
     /**
@@ -311,22 +313,29 @@ export function createHardwareTap(opts: {
       lineBuffer.reset()
     },
     flushSummary(): void {
-      try {
-        // Process complete-but-unterminated final lines so a trailing `Device:`
-        // line isn't dropped when the process exits without a newline.
-        for (const source of ['stdout', 'stderr'] as const) {
+      // Process complete-but-unterminated final lines independently so a bad
+      // stdout tail cannot suppress a valid stderr tail (or vice versa).
+      for (const source of ['stdout', 'stderr'] as const) {
+        try {
           const pending = lineBuffer.takePending(source)
           if (pending.trim()) handleLine(pending)
+        } catch {
+          // ignore - telemetry side effect, not user-visible
         }
-        // Processing a trailing model line can arm the timer, so clear it only
-        // after every pending line has passed through the parser.
-        if (modelUsageFlushTimer) {
-          clearInterval(modelUsageFlushTimer)
-          modelUsageFlushTimer = null
-        }
-        // Emit the accelerator event if the process exited right after its
-        // `Device:` lines with no following line to close the run.
+      }
+      // Processing a trailing model line can arm the timer. Every parser call
+      // above is contained, so cleanup is always reached.
+      if (modelUsageFlushTimer) {
+        clearInterval(modelUsageFlushTimer)
+        modelUsageFlushTimer = null
+      }
+      // Terminal summaries are independent: one failing must not suppress the other.
+      try {
         emitAccelerator()
+      } catch {
+        // ignore - telemetry side effect, not user-visible
+      }
+      try {
         emitModelUsage()
       } catch {
         // ignore - telemetry side effect, not user-visible

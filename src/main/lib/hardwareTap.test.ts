@@ -290,6 +290,67 @@ describe('createHardwareTap', () => {
     })
   })
 
+  it('continues parsing later complete lines when one telemetry sink throws', () => {
+    vi.mocked(telemetry.emit).mockImplementationOnce(() => {
+      throw new Error('sink failed')
+    })
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+
+    tap.ingest(
+      'Asset scan error: phase=discovery_stat error_type=os_error\n' +
+        'Asset scan error: phase=hashing error_type=permission_denied\n',
+      'stderr'
+    )
+
+    expect(captured).toContainEqual({
+      event: 'comfy.desktop.comfyui.asset_scan_error',
+      ctx: expect.objectContaining({ scan_phase: 'hashing', error_type: 'permission_denied' })
+    })
+  })
+
+  it('processes the second pending stream and clears the timer after the first throws', () => {
+    vi.useFakeTimers()
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load Existing\n', 'stdout')
+    expect(vi.getTimerCount()).toBe(1)
+    tap.ingest('Asset scan error: phase=discovery_stat error_type=os_error', 'stdout')
+    tap.ingest('Asset scan error: phase=hashing error_type=permission_denied', 'stderr')
+    vi.mocked(telemetry.emit).mockImplementationOnce(() => {
+      throw new Error('stdout sink failed')
+    })
+
+    tap.flushSummary()
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(captured).toContainEqual({
+      event: 'comfy.desktop.comfyui.asset_scan_error',
+      ctx: expect.objectContaining({ scan_phase: 'hashing', error_type: 'permission_denied' })
+    })
+  })
+
+  it('attempts the model summary even when the accelerator summary throws', () => {
+    vi.useFakeTimers()
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load Existing\n', 'stdout')
+    tap.ingest('Requested to load Pending', 'stdout')
+    tap.ingest('Device: cuda:0 NVIDIA RTX 4090 : native', 'stderr')
+    vi.mocked(telemetry.emit).mockImplementationOnce(() => {
+      throw new Error('accelerator sink failed')
+    })
+
+    tap.flushSummary()
+    vi.advanceTimersByTime(60 * 60_000)
+
+    const summaries = captured.filter(
+      (entry) => entry.event === 'comfy.desktop.comfyui.model_usage_summary'
+    )
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]?.ctx).toMatchObject({
+      model_classes: ['Existing', 'Pending'],
+      model_load_counts: [1, 1]
+    })
+  })
+
   it('detects a complete Device line even in an oversized chunk', () => {
     // A single large stdout chunk: complete metadata + Device lines, then a
     // huge unterminated tail. The buffer cap must only trim the tail, never
