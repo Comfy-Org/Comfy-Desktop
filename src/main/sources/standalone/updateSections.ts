@@ -7,6 +7,7 @@ import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { truncateNotes } from '../../lib/comfyui-releases'
 import {
+  copyAction,
   deleteAction,
   untrackAction,
   launchAction,
@@ -511,16 +512,13 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       // A channel switch reads as "Moving to <channel>"; the up/down direction
       // is incidental and frames it confusingly. Same-channel updates keep the
       // version-diff / rollback copy.
-      // Every in-place update path carries the breakage warning — custom
-      // nodes / saved workflows can pin to specific ComfyUI internals that
-      // shift across releases. Pair it with the snapshot-undo hint so the
-      // user knows the update is reversible. Both live in the confirm copy
-      // itself (not the collapsible details) so the user can't dismiss past
-      // them accidentally.
+      // Every in-place update path explains that custom-node breakage can be
+      // reversed from the auto-saved pre-update snapshot. Keep this in the
+      // confirm copy itself so the user cannot dismiss past it accidentally.
       const baseConfirmMessage = isSwitching
         ? t('channelCards.movingTo', { channel: `**${card.label}**` })
         : t(msgKey, { installed: boldInstalled, latest: boldLatest })
-      const confirmMessage = `${baseConfirmMessage}\n\n${t('standalone.updateBreakingWarning')}\n${t('standalone.updateSnapshotUndoHint')}`
+      const confirmMessage = `${baseConfirmMessage}\n\n${t('standalone.updateSnapshotUndoHint')}`
       actions.push({
         id: 'update-comfyui',
         label: t('standalone.updateNow'),
@@ -629,27 +627,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       actions: [
         launchAction(installed, !installed ? t('errors.installNotReady') : undefined),
         renameAction(installation.name),
-        {
-          id: 'copy',
-          label: t('actions.copyInstallation'),
-          style: 'default',
-          enabled: installed,
-          showProgress: true,
-          progressTitle: t('actions.copyingInstallation'),
-          cancellable: true,
-          prompt: {
-            title: t('actions.copyInstallationTitle'),
-            message: t('actions.copyInstallationMessage'),
-            // Pre-fill with the numbered name the duplicate will actually get on
-            // save ("ComfyUI" → "ComfyUI (1)"), via uniqueName(), instead of a
-            // "(Copy)" label or a stale suggestion that differs from the result.
-            defaultValue: installation.name,
-            uniquifyDefault: true,
-            confirmLabel: t('actions.copyInstallationConfirm'),
-            required: true,
-            field: 'name'
-          }
-        },
+        copyAction(installation.name, installed),
         openFolderAction(installation.installPath),
         { id: 'share', label: t('actions.share'), style: 'default', enabled: installed },
         // Adopted installs are non-forgettable: the `.comfyui-desktop-2`

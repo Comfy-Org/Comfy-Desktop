@@ -1,19 +1,16 @@
 /**
- * ComfyBuilder catalog client - the read side of the functionality library.
- *
- * Lists builds -> versions -> artifacts and resolves an artifact's
- * presigned download URL, over the deployed builder gateway. Every request
- * carries a bearer token from the injected {@link TokenProvider}; the token
- * never leaves this process and is never returned to callers. Failures surface
- * as a typed {@link ComfyBuilderApiError} whose `kind` a caller can branch on.
+ * Authenticated client for Builder catalog reads, artifact download resolution,
+ * and Desktop snapshot drafts. Tokens never leave this process.
  */
 import type {
   Artifact,
-  Distribution,
-  DistributionVersion,
+  Build,
+  BuildDraft,
+  BuildVersion,
   ModelManifest,
   TokenProvider
 } from './types'
+import type { SnapshotExportEnvelope } from '../lib/snapshots/types'
 import { isSecureDownloadUrl, isValidSha256 } from './integrity'
 
 /** Prod builder gateway. Pass `baseUrl` to target staging or a mock. */
@@ -68,21 +65,42 @@ export interface ComfyBuilderClientOptions {
   timeoutMs?: number
 }
 
-interface DistributionsResponse {
-  builds?: Distribution[]
+interface BuildsResponse {
+  builds?: Build[]
+  nextCursor?: string
 }
-interface VersionsResponse {
-  versions?: DistributionVersion[]
+interface ReleasesResponse {
+  releases?: BuildVersion[]
 }
-interface VersionDetailResponse {
+interface ReleaseArtifact extends Omit<Artifact, 'accelVariant'> {
+  accelVariant?: string
+  imageRef?: string
+  imageDigest?: string
+}
+interface ReleaseDetailResponse {
   version?: number
-  artifacts?: Artifact[]
+  artifacts?: ReleaseArtifact[]
 }
 interface SignedDownloadResponse {
   downloadUrl?: string
 }
+interface SnapshotResolutionResponse {
+  definition?: unknown
+}
+interface CreatedBuildResponse {
+  id?: unknown
+  workspaceId?: unknown
+}
 
-/** The catalog + download-resolve surface the UI calls to populate its tiles. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isOpaqueId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 500
+}
+
+/** The authenticated Builder API surface used by Desktop. */
 export class ComfyBuilderClient {
   private readonly baseUrl: string
   private readonly auth: TokenProvider
@@ -94,28 +112,84 @@ export class ComfyBuilderClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   }
 
-  /** Every build visible to the signed-in workspace. */
-  async listDistributions(): Promise<Distribution[]> {
-    const body = await this.get<DistributionsResponse>('/v1/builds')
-    return body.builds ?? []
+  /** Every product Build visible to the workspace. */
+  async listBuilds(): Promise<Build[]> {
+    const token = await this.accessToken()
+    const builds: Build[] = []
+    const seenCursors = new Set<string>()
+    let cursor: string | undefined
+    do {
+      const query = new URLSearchParams({ limit: '100' })
+      if (cursor) {
+        // A repeated cursor would page forever; fail instead of spinning.
+        if (seenCursors.has(cursor)) {
+          throw new ComfyBuilderApiError('server', 'Builder returned a repeated build cursor')
+        }
+        seenCursors.add(cursor)
+        query.set('cursor', cursor)
+      }
+      const body = await this.get<BuildsResponse>(`/v1/builds?${query}`, token)
+      builds.push(...(body.builds ?? []))
+      cursor = body.nextCursor || undefined
+    } while (cursor)
+    return builds
   }
 
-  /** Versions (build history) of one build. */
-  async listVersions(distributionId: string): Promise<DistributionVersion[]> {
-    const body = await this.get<VersionsResponse>(
-      `/v1/builds/${encodeURIComponent(distributionId)}/versions`
+  /** Resolve a Desktop snapshot into a draft Build and return its web handoff. */
+  async createBuildDraft(snapshot: SnapshotExportEnvelope): Promise<BuildDraft> {
+    const name = snapshot.installationName.trim()
+    if (!name || name.length > 200 || snapshot.snapshots.length !== 1) {
+      throw new ComfyBuilderApiError('server', 'Desktop snapshot cannot be promoted')
+    }
+    const envelope = { ...snapshot, installationName: name }
+    const token = await this.accessToken()
+    const resolvedBody = await this.post<SnapshotResolutionResponse>(
+      '/v1/snapshots/resolve',
+      { snapshot: envelope },
+      token
     )
-    return body.versions ?? []
+    if (!isRecord(resolvedBody.definition)) {
+      throw new ComfyBuilderApiError('server', 'Builder returned an invalid snapshot resolution')
+    }
+
+    const created = await this.post<CreatedBuildResponse>(
+      '/v1/builds',
+      { name, definition: resolvedBody.definition },
+      token
+    )
+    if (!isOpaqueId(created.id) || !isOpaqueId(created.workspaceId)) {
+      throw new ComfyBuilderApiError('server', 'Builder returned an invalid draft Build')
+    }
+    const query = new URLSearchParams({
+      workspace: created.workspaceId,
+      edit: created.id
+    })
+    return {
+      buildId: created.id,
+      workspaceId: created.workspaceId,
+      editUrl: `/profile/builds/new?${query.toString()}`
+    }
+  }
+
+  /** Published versions of one product Build. */
+  async listVersions(buildId: string): Promise<BuildVersion[]> {
+    const token = await this.accessToken()
+    const id = encodeURIComponent(buildId)
+    const body = await this.get<ReleasesResponse>(`/v1/builds/${id}/releases`, token)
+    return body.releases ?? []
   }
 
   /** One version's per-target artifacts (plus its version number). */
   async getVersion(
     versionId: string
   ): Promise<{ version: number | undefined; artifacts: Artifact[] }> {
-    const body = await this.get<VersionDetailResponse>(
-      `/v1/build-versions/${encodeURIComponent(versionId)}`
-    )
-    return { version: body.version, artifacts: body.artifacts ?? [] }
+    const token = await this.accessToken()
+    const id = encodeURIComponent(versionId)
+    const body = await this.get<ReleaseDetailResponse>(`/v1/releases/${id}`, token)
+    const artifacts = (body.artifacts ?? [])
+      .filter((artifact) => !artifact.imageRef && !artifact.imageDigest)
+      .map((artifact) => ({ ...artifact, accelVariant: artifact.accelVariant ?? '' }))
+    return { version: body.version, artifacts }
   }
 
   /**
@@ -125,19 +199,27 @@ export class ComfyBuilderClient {
    * array is normal (a version may declare none).
    */
   async fetchModelManifest(versionId: string): Promise<ModelManifest> {
-    const body = await this.get<Partial<ModelManifest>>(
-      `/v1/build-versions/${encodeURIComponent(versionId)}/manifest`
-    )
+    const token = await this.accessToken()
+    const id = encodeURIComponent(versionId)
+    const body = await this.get<Partial<ModelManifest>>(`/v1/releases/${id}/manifest`, token)
     if (!Array.isArray(body.models)) {
       throw new ComfyBuilderApiError(
         'server',
         `Manifest for version ${versionId} has no model list`
       )
     }
-    if (body.models.some((model) => !isValidSha256(model.sha256))) {
+    const invalidModel = body.models.find((model) => {
+      const sha256 = model.sha256?.trim()
+      return Boolean(sha256 && !isValidSha256(sha256))
+    })
+    if (invalidModel) {
+      const rawSha256 = invalidModel.sha256?.trim() ?? ''
+      const received = JSON.stringify(
+        rawSha256.length > 80 ? `${rawSha256.slice(0, 77)}...` : rawSha256
+      )
       throw new ComfyBuilderApiError(
         'server',
-        `Manifest for version ${versionId} contains a model without a valid SHA-256`
+        `Manifest for version ${versionId} has invalid model integrity for ${invalidModel.type}/${invalidModel.filename}: expected SHA-256 as 64 hexadecimal characters, optionally prefixed with "sha256:", but received ${received} (${rawSha256.length} characters).`
       )
     }
     return {
@@ -161,14 +243,38 @@ export class ComfyBuilderClient {
     return body.downloadUrl
   }
 
-  private async get<T>(path: string): Promise<T> {
+  private async get<T>(path: string, token?: string): Promise<T> {
+    return this.request<T>('GET', path, undefined, token)
+  }
+
+  private async post<T>(path: string, payload: unknown, token?: string): Promise<T> {
+    return this.request<T>('POST', path, payload, token)
+  }
+
+  private async accessToken(): Promise<string> {
     const token = await this.auth.getAccessToken()
     if (!token) throw new ComfyBuilderApiError('unauthorized', 'Not signed in to ComfyBuilder')
+    return token
+  }
+
+  private async request<T>(
+    method: 'GET' | 'POST',
+    path: string,
+    payload: unknown,
+    pinnedToken?: string
+  ): Promise<T> {
+    const token = pinnedToken ?? (await this.accessToken())
 
     let res: Response
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
-        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+        method,
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {})
+        },
+        ...(method === 'POST' ? { body: JSON.stringify(payload) } : {}),
         signal: AbortSignal.timeout(this.timeoutMs)
       })
     } catch (err) {

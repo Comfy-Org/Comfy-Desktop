@@ -146,6 +146,22 @@ describe('terminal manager', () => {
     expect(init).not.toMatch(/\bpip\b/)
   })
 
+  it('supports a managed archive whose interpreter is outside the venv scripts dir', async () => {
+    setTerminalEnvResolver(() => ({
+      venvDir: '/archive/venv',
+      pathPrepends: ['/archive/venv/base'],
+      promptName: 'venv',
+      pip: { exe: '/archive/venv/base/python.exe', args: ['-s', '-m', 'pip'] }
+    }))
+    await subscribeTerminal('inst-a', asWc(makeWebContents()))
+    const init = ptyAt(0).written.join('\n')
+    expect(init).toContain('/archive/venv/base')
+    expect(init).toContain('/archive/venv')
+    expect(init).toContain('python.exe')
+    expect(init).toContain('-s -m pip')
+    expect(init).not.toContain('standalone-env')
+  })
+
   it("puts a portable install's embedded python on PATH and routes pip through it", async () => {
     setTerminalEnvResolver(() => ({
       pathPrepends: ['/p/python_embeded', '/p/python_embeded/Scripts'],

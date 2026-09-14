@@ -11,8 +11,6 @@ import {
   scheduleResolveAndBroadcastVersions,
   findDuplicatePath,
   uniqueName,
-  sanitizeDirName,
-  allocateUniqueDir,
   syncOemSeedBestEffort,
   isEffectivelyEmptyInstallDir,
   getCachedInstallDirState,
@@ -34,6 +32,7 @@ import {
   snapshotRestoreFailureResult
 } from './shared'
 import type { ComfyVersion, ComfyArgDef, InstallationRecord } from './shared'
+import { allocateInstallIdentity } from './installIdentity'
 import * as releaseCache from '../release-cache'
 import { runStartupReleaseChecks } from '../release-cache-startup'
 import { _broadcastToRenderer } from './shared'
@@ -49,8 +48,10 @@ import {
   abortTemplateDownload,
   requestSkipTemplateDownload
 } from '../../sources/standalone/templateDownloadTask'
+import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
+import { isInstallationVisibleToRenderer } from './installationVisibility'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -86,13 +87,13 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       .filter(
         (i) =>
           (i.copyReason as string | undefined) === 'standalone-migration' &&
-          i.status !== 'installing'
+          isInstallationVisibleToRenderer(i)
       )
       .map((i) => i.copiedFrom as string)
       .filter(Boolean)
   )
   const visible = allInstalls.filter(
-    (i) => i.status !== 'installing' && !migratedSourceIds.has(i.id)
+    (i) => isInstallationVisibleToRenderer(i) && !migratedSourceIds.has(i.id)
   )
   const enriched = visible.map((inst) => {
     const source = sourceMap[inst.sourceId]
@@ -141,17 +142,15 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
             : source.getStatusTag
               ? source.getStatusTag(inst)
               : undefined
-    // A comfybuilder install's raw `version` is its DISTRIBUTION version, not a
-    // ComfyUI one (see `installedDistributionVersions`), so it gets its own
+    // A comfybuilder install's raw `version` is its build version, not a
+    // ComfyUI one (see `installedBuildVersions`), so it gets its own
     // field — otherwise a bare "7" lands where every other tile shows "v0.28.2".
-    const isFromDistribution = inst.sourceId === 'comfybuilder'
-    const distributionVersion = isFromDistribution
-      ? (inst.version as string | undefined)
-      : undefined
+    const isFromBuild = inst.sourceId === 'comfybuilder'
+    const buildVersion = isFromBuild ? (inst.version as string | undefined) : undefined
     const cv = inst.comfyVersion as ComfyVersion | undefined
     const rawVersion = cv
       ? formatComfyVersion(cv, 'short')
-      : isFromDistribution
+      : isFromBuild
         ? undefined
         : (inst.version as string | undefined)
     const version = rawVersion === inst.sourceId ? undefined : rawVersion
@@ -161,7 +160,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       sourceLabel: source.label,
       sourceCategory: source.category,
       hasConsole: source.hasConsole !== false,
-      ...(distributionVersion ? { distributionVersion } : {}),
+      ...(buildVersion ? { distributionVersion: buildVersion } : {}),
       ...(listPreview != null ? { listPreview } : {}),
       ...(statusTag ? { statusTag } : {})
     }
@@ -224,16 +223,18 @@ export function registerInstallationHandlers(): void {
   })
 
   ipcMain.handle('add-installation', async (_event, data: Record<string, unknown>) => {
-    data.name = await uniqueName((data.name as string) || DEFAULT_INSTALL_NAME)
-    if (data.installPath) {
-      const dirName = sanitizeDirName(data.name as string)
-      data.installPath = allocateUniqueDir(data.installPath as string, dirName)
-      const duplicate = await findDuplicatePath(data.installPath as string)
-      if (duplicate) {
-        return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
-      }
-    }
-    const entry = await installations.add({ ...data, seen: false })
+    const identity = await allocateInstallIdentity(
+      (data.name as string) || DEFAULT_INSTALL_NAME,
+      (data.installPath as string | undefined) || undefined
+    )
+    if (!identity.ok) return identity
+    data.name = identity.name
+    if (identity.installPath) data.installPath = identity.installPath
+    const entry = await installations.add({
+      ...data,
+      status: data.status ?? 'installing',
+      seen: false
+    })
     return { ok: true, entry }
   })
 
@@ -414,6 +415,8 @@ export function registerInstallationHandlers(): void {
         // resumable from Downloads), and a job shared with another caller
         // keeps transferring for its other holders.
         abortTemplateDownload(installationId)
+        // Same for a build install's background model staging.
+        abortModelStaging(installationId)
         if (abort.signal.aborted) {
           if (isComfyUpdate) {
             mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {

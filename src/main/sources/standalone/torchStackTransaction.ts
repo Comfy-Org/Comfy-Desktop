@@ -33,6 +33,7 @@ import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer
 import { createCache } from '../../lib/cache'
 import { download } from '../../lib/download'
 import { extractNested as extract } from '../../lib/extract'
+import { renameWithLockRetry } from '../../lib/fsRetry'
 import * as settings from '../../settings'
 import { findSitePackages, stripPlatform } from './envPaths'
 import {
@@ -647,36 +648,6 @@ async function runPipTorchInstall(
   const [cmd, args] = pipCmd('install', [...pipIndexArgs(prepared), ...specs])
   await runStreamed(cmd, args, 'PyTorch package install failed', tools)
   return plan.expectAbsent
-}
-
-/** Windows releases directory handles a beat after the owning process dies
- *  (the ComfyUI tree is killed via fire-and-forget `taskkill /T`, and AV or
- *  indexer scans pile on), so the whole-venv renames can hit a transient
- *  EPERM/EACCES/EBUSY. Retry with backoff; once the handles drop, the
- *  rename is instant. */
-const RENAME_LOCK_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
-const RENAME_RETRY_TOTAL_MS = 30_000
-
-/** The signal is only passed for the pre-mutation rename (venv -> backup):
- *  until that rename succeeds nothing has been touched, so aborting there is
- *  a clean cancel. Rollback and commit renames must never be cancellable. */
-export async function renameWithLockRetry(
-  src: string,
-  dst: string,
-  signal?: AbortSignal
-): Promise<void> {
-  const deadline = Date.now() + RENAME_RETRY_TOTAL_MS
-  for (let delay = 250; ; delay = Math.min(delay * 2, 4_000)) {
-    try {
-      await fs.promises.rename(src, dst)
-      return
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (!RENAME_LOCK_CODES.has(code ?? '') || Date.now() + delay > deadline) throw err
-      if (signal?.aborted) throw new Error('Cancelled', { cause: err })
-      await new Promise((resolve) => setTimeout(resolve, delay))
-    }
-  }
 }
 
 async function rollback(venvPath: string, backupPath: string): Promise<void> {

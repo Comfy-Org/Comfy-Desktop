@@ -5,7 +5,7 @@
  * The install record carries the version NUMBER, so the id is resolved from the
  * versions list first (pinned to the COMPLETE version the archive came from).
  * Fetch failures fail the install: treating an unknown manifest as empty would
- * report success and auto-launch without the distribution's required models.
+ * report success and auto-launch without the build's required models.
  *
  * `COMFY_BUILDER_MODELS_MANIFEST` (E2E only) overrides the endpoint with an
  * explicit manifest so a hermetic e2e can point every model at a local server.
@@ -32,10 +32,10 @@ function loadOverride(value: string): ModelManifest {
  *  from (never a failed row that shares the number). */
 async function resolveVersionId(
   client: Pick<ComfyBuilderClient, 'listVersions'>,
-  distributionId: string,
+  buildId: string,
   versionNumber: string
 ): Promise<string | null> {
-  const versions = await client.listVersions(distributionId)
+  const versions = await client.listVersions(buildId)
   const match = versions.find((v) => String(v.version) === versionNumber && v.status === 'complete')
   return match?.id ?? null
 }
@@ -46,16 +46,16 @@ async function resolveVersionId(
  */
 export async function resolveModelManifest(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'fetchModelManifest'>,
-  distributionId: string,
+  buildId: string,
   version: string
 ): Promise<ModelManifest> {
   // Test seam, E2E-gated so a shipped build can't be fed attacker-chosen models.
   const override = process.env.COMFY_BUILDER_MODELS_MANIFEST
   if (override && process.env.E2E === '1') return loadOverride(override)
 
-  const versionId = await resolveVersionId(client, distributionId, version)
+  const versionId = await resolveVersionId(client, buildId, version)
   if (!versionId) {
-    throw new Error(`No complete distribution version ${version} was found for model staging.`)
+    throw new Error(`No complete build version ${version} was found for model staging.`)
   }
   return client.fetchModelManifest(versionId)
 }

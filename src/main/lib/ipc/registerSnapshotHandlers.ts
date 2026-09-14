@@ -38,7 +38,11 @@ import * as telemetry from '../telemetry'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { resolveSnapshotManagedTarget } from '../../sources/standalone/torchStackCatalog'
 import { torchTupleMatches } from '../../sources/standalone/torchStackTypes'
-import { getInstalledTorchTuple } from '../../sources/standalone/envPaths'
+import {
+  getInstalledTorchTuple,
+  PLATFORM_PREFIX,
+  stripPlatform
+} from '../../sources/standalone/envPaths'
 import type { InstallationRecord } from '../../installations'
 
 /**
@@ -501,14 +505,11 @@ export function registerSnapshotHandlers(): void {
       const targetSnapshot = envelope.snapshots[0]!
       const snapshotVariant = targetSnapshot.comfyui.variant || ''
 
-      const platformPrefix: Record<string, string> = {
-        win32: 'win-',
-        darwin: 'mac-',
-        linux: 'linux-'
-      }
-      const prefix = platformPrefix[process.platform]
+      const prefix = PLATFORM_PREFIX[process.platform]
       if (!prefix) return { ok: false, message: `Unsupported platform: ${process.platform}` }
-      const strippedVariant = snapshotVariant.replace(/^(win|mac|linux)-/, '')
+      // stripPlatform also drops a beta- prefix, so a snapshot taken on a
+      // pre-release bundle still maps to its accelerator here.
+      const strippedVariant = stripPlatform(snapshotVariant)
       const baseGpu = strippedVariant.replace(/-.*$/, '')
 
       const source = sourceMap['standalone']!
@@ -558,7 +559,7 @@ export function registerSnapshotHandlers(): void {
         matched = variantOptions.find((v) => (v.data?.variantId as string) === localVariant)
         if (!matched) {
           matched = variantOptions.find((v) => {
-            const vid = ((v.data?.variantId as string) || '').replace(/^(win|mac|linux)-/, '')
+            const vid = stripPlatform((v.data?.variantId as string) || '')
             return vid === baseGpu || vid.startsWith(baseGpu + '-')
           })
         }

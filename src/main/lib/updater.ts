@@ -1,4 +1,6 @@
 import { app, ipcMain } from 'electron'
+import { randomUUID } from 'node:crypto'
+import { release as osRelease } from 'node:os'
 import semver from 'semver'
 import todesktop from '@todesktop/runtime'
 import { autoUpdater as electronAutoUpdater } from 'electron-updater'
@@ -8,11 +10,12 @@ import {
   clearStartupAttemptMarker,
   readStartupAttemptMarker,
   recordStartupAttempt,
+  recordStartupAttemptOutcome,
   type StartupAttemptMarkerRead
 } from './startup-attempt-marker'
-import { clearQuitReason, isSessionEnding, setQuitReason } from './quit-state'
+import { clearQuitReason, getQuitReason, isSessionEnding, setQuitReason } from './quit-state'
 import { _broadcastToRenderer } from './ipc/shared'
-import { emit as emitTelemetry } from './telemetry'
+import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
 
 /**
@@ -81,7 +84,68 @@ function _shouldEmitAppUpdateOnce(event: string, version: string | null): boolea
  *  the prompt) and on `update-error`. */
 let _userInitiatedDownload = false
 const _stateChangeCallbacks = new Set<(state: AppUpdateState) => void>()
+/** Observers notified on every raw `download-progress` tick, regardless of who
+ *  initiated the download. The cached `AppUpdateState` only flips to
+ *  `'downloading'` for user-initiated downloads, so the startup-install wait
+ *  needs this raw signal to detect that electron-updater rejected the cached
+ *  installer and started re-downloading it. */
+const _downloadProgressObservers = new Set<() => void>()
 let _listenersBound = false
+
+interface UpdateAttempt {
+  id: string
+  version: string
+}
+
+let _updateAttempt: UpdateAttempt | null = null
+
+function updateAttemptId(targetVersion: string | null, create = false): string | null {
+  if (_updateAttempt?.version === targetVersion) return _updateAttempt.id
+  const existing = settings.get('pendingDesktopUpdateAttemptId')
+  const existingVersion = settings.get('pendingDesktopUpdateAttemptVersion')
+  if (typeof existing === 'string' && existing && existingVersion === targetVersion) {
+    _updateAttempt = { id: existing, version: targetVersion }
+    return existing
+  }
+  if (!create || !targetVersion) return null
+  const id = randomUUID()
+  _updateAttempt = { id, version: targetVersion }
+  try {
+    settings.set('pendingDesktopUpdateAttemptId', id)
+    settings.set('pendingDesktopUpdateAttemptVersion', targetVersion)
+  } catch {}
+  return id
+}
+
+function clearUpdateAttempt(attemptId: string): void {
+  if (_updateAttempt?.id === attemptId) _updateAttempt = null
+  if (settings.get('pendingDesktopUpdateAttemptId') !== attemptId) return
+  try {
+    settings.set('pendingDesktopUpdateAttemptId', undefined)
+    settings.set('pendingDesktopUpdateAttemptVersion', undefined)
+  } catch {}
+}
+
+/** Common privacy-safe context for the complete updater chain. */
+function emitUpdateTelemetry(
+  event: string,
+  targetVersion: string | null,
+  properties: Record<string, string | number | boolean | null | undefined> = {},
+  createAttempt = false
+): void {
+  emitTelemetry(event, {
+    running_version: app.getVersion(),
+    target_version: targetVersion,
+    update_attempt_id: updateAttemptId(targetVersion, createAttempt),
+    platform: process.platform,
+    os_version: osRelease(),
+    app_channel: deriveAppChannel(app.getVersion()),
+    is_packaged: app.isPackaged,
+    updater_provider: 'todesktop',
+    updater_mode: app.isPackaged ? 'packaged' : 'development',
+    ...properties
+  })
+}
 
 function _setUpdateState(next: AppUpdateState): void {
   _appUpdateState = next
@@ -274,7 +338,7 @@ function isStrictlyNewerVersion(offered: string | null | undefined, current: str
 function shouldIgnoreNonNewerVersion(version: string, stage: string): boolean {
   if (isStrictlyNewerVersion(version, app.getVersion())) return false
   if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.ignored_not_newer', version)) {
-    emitTelemetry('comfy.desktop.app_update.ignored_not_newer', {
+    emitUpdateTelemetry('comfy.desktop.app_update.ignored_not_newer', version, {
       version,
       current: app.getVersion(),
       stage
@@ -326,13 +390,10 @@ function emitDesktopUpdateError(
     : error instanceof Error
       ? error
       : null
-  emitTelemetry('comfy.desktop.app_update.error', {
+  emitUpdateTelemetry('comfy.desktop.app_update.error', targetVersion, {
     component: 'desktop_application',
     operation,
     stage: operation === 'apply_restart' ? 'install' : operation,
-    running_version: app.getVersion(),
-    target_version: targetVersion,
-    updater_provider: 'todesktop',
     error_source: options.source,
     setting_use_chinese_mirrors: settings.get('useChineseMirrors') === true,
     ...buildErrorFields(errorObject ?? message),
@@ -358,10 +419,15 @@ function bindUpdaterEvents(): void {
     if (shouldIgnoreNonNewerVersion(version, 'available')) return
     const autoInstall = isAutoInstallEnabled()
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.available', version)) {
-      emitTelemetry('comfy.desktop.app_update.available', {
+      emitUpdateTelemetry(
+        'comfy.desktop.app_update.available',
         version,
-        auto_update_setting: autoInstall ? 'on' : 'off'
-      })
+        {
+          version,
+          auto_update_setting: autoInstall ? 'on' : 'off'
+        },
+        true
+      )
     }
     if (autoInstall) {
       const active = currentUpdateOperation()
@@ -384,7 +450,12 @@ function bindUpdaterEvents(): void {
       if (_autoDownloadTriggeredFor !== version) {
         _autoDownloadTriggeredFor = version
         if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.download_started', version)) {
-          emitTelemetry('comfy.desktop.app_update.download_started', { version, initiator: 'auto' })
+          emitUpdateTelemetry(
+            'comfy.desktop.app_update.download_started',
+            version,
+            { version, initiator: 'auto' },
+            true
+          )
         }
       }
       return
@@ -400,7 +471,7 @@ function bindUpdaterEvents(): void {
     if (shouldIgnoreNonNewerVersion(version, 'downloaded')) return
     _autoDownloadTriggeredFor = null
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.download_complete', version)) {
-      emitTelemetry('comfy.desktop.app_update.download_complete', { version })
+      emitUpdateTelemetry('comfy.desktop.app_update.download_complete', version, { version }, true)
     }
     // Persist that an installer is staged on disk. electron-updater caches the
     // download across restarts; this marker lets the startup-install path apply
@@ -440,14 +511,21 @@ function bindUpdaterEvents(): void {
     clearQuitReason()
     _autoDownloadTriggeredFor = null
     _userInitiatedDownload = false
-    // Roll a `'downloading'` state back to `'available'` so the
+    // A failed download can't stay in `'downloading'`. Auto-on downloads
+    // return to the silent idle state (the periodic auto-check retries on
+    // its own; surfacing an "available" pill for a background blip would be
+    // noise). User-initiated downloads roll back to `'available'` so the
     // pill/panel offer "Download" again and the user can retry.
     if (_appUpdateState.kind === 'downloading') {
-      _setUpdateState({
-        kind: 'available',
-        version: _appUpdateState.version,
-        autoUpdate: _appUpdateState.autoUpdate
-      })
+      if (_appUpdateState.autoUpdate) {
+        _setUpdateState({ kind: null, version: null, autoUpdate: true })
+      } else {
+        _setUpdateState({
+          kind: 'available',
+          version: _appUpdateState.version,
+          autoUpdate: _appUpdateState.autoUpdate
+        })
+      }
     }
     if (wasUserInitiated) {
       // Only surface failures the user is actively waiting on.
@@ -465,30 +543,29 @@ function bindUpdaterEvents(): void {
   // electron-updater's `ProgressInfo` — we narrow it to the fields
   // the UI actually uses.
   //
-  // The first tick of a user-initiated download also flips the cached
-  // app-update state from `'available'` → `'downloading'`, so the
-  // title-bar pill and the Settings panel both swap their CTAs and
-  // share a single source of truth (clicking the pill now routes to
-  // Settings instead of re-opening the Download confirm modal).
-  // Auto-on background downloads stay silent (state stays `null`)
-  // until `update-downloaded` flips to `'ready'`, preserving the
-  // existing zero-noise auto-install UX.
+  // The first tick of ANY download (user-initiated or auto-on background)
+  // flips the cached app-update state to `'downloading'`, so the title-bar
+  // pill shows "Downloading update" and the Settings panel shows the
+  // progress bar with percent / bytes / speed; clicking the pill routes to
+  // Settings. Auto-on downloads used to stay silent (state `null`) until
+  // `update-downloaded`, which left the UI claiming "up to date" while
+  // hundreds of megabytes were in flight - the same invisibility that hid
+  // the startup re-download behind the update loop.
   updater.on('download-progress', (info: unknown) => {
+    for (const cb of _downloadProgressObservers) cb()
     const p = asRecord(info)
     if (!p) return
     const percent = typeof p.percent === 'number' ? p.percent : null
     const transferred = typeof p.transferred === 'number' ? p.transferred : null
     const total = typeof p.total === 'number' ? p.total : null
     const bytesPerSecond = typeof p.bytesPerSecond === 'number' ? p.bytesPerSecond : null
-    if (
-      _userInitiatedDownload &&
-      _appUpdateState.kind !== 'downloading' &&
-      _appUpdateState.kind !== 'ready'
-    ) {
+    if (_appUpdateState.kind !== 'downloading' && _appUpdateState.kind !== 'ready') {
       _setUpdateState({
         kind: 'downloading',
-        version: _appUpdateState.version,
-        autoUpdate: _appUpdateState.autoUpdate
+        // Auto-on downloads skip the `'available'` state, so the cached
+        // state carries no version; the auto-download trigger recorded it.
+        version: _appUpdateState.version ?? _autoDownloadTriggeredFor,
+        autoUpdate: isAutoInstallEnabled()
       })
     }
     _broadcastToRenderer('app-update:download-progress', {
@@ -531,7 +608,7 @@ async function checkForUpdate(
     const updater = getAutoUpdater()
     if (!updater) {
       if (USER_INITIATED_CHECK_TRIGGERS.has(source)) {
-        emitTelemetry('comfy.desktop.app_update.checked', {
+        emitUpdateTelemetry('comfy.desktop.app_update.checked', null, {
           trigger: source,
           result: 'updater_unavailable'
         })
@@ -553,7 +630,15 @@ async function checkForUpdate(
       USER_INITIATED_CHECK_TRIGGERS.has(source) &&
       _shouldEmitAppUpdateOnce('comfy.desktop.app_update.checked', version)
     ) {
-      emitTelemetry('comfy.desktop.app_update.checked', { trigger: source, result: 'available' })
+      emitUpdateTelemetry(
+        'comfy.desktop.app_update.checked',
+        version,
+        {
+          trigger: source,
+          result: 'available'
+        },
+        true
+      )
     }
     return version ? { available: true, version } : { available: false }
   } catch (err) {
@@ -628,10 +713,15 @@ export function onUpdateStateChanged(cb: (state: AppUpdateState) => void): () =>
  */
 export async function downloadUpdate(): Promise<void> {
   _userInitiatedDownload = true
-  emitTelemetry('comfy.desktop.app_update.download_started', {
-    version: _appUpdateState.version,
-    initiator: 'user'
-  })
+  emitUpdateTelemetry(
+    'comfy.desktop.app_update.download_started',
+    _appUpdateState.version,
+    {
+      version: _appUpdateState.version,
+      initiator: 'user'
+    },
+    true
+  )
   try {
     const result = await runCheck('download-button')
     if (!result.available && _appUpdateState.kind !== 'ready') {
@@ -679,7 +769,7 @@ export function installUpdate(userInitiated = true): void {
     _broadcastToRenderer('app-update:user-action-failed', { message: UPDATER_UNAVAILABLE_MESSAGE })
     return
   }
-  emitTelemetry('comfy.desktop.app_update.install_triggered', {
+  emitUpdateTelemetry('comfy.desktop.app_update.install_triggered', _appUpdateState.version, {
     version: _appUpdateState.version,
     auto_update_setting: isAutoInstallEnabled() ? 'on' : 'off'
   })
@@ -733,23 +823,53 @@ export function _test_setUpdateState(next: AppUpdateState): void {
   _setUpdateState(next)
 }
 
+/** Record recovery when the startup installer did not enter Electron's quit path. */
+export function recordStartupInstallBackstopRecovered(): void {
+  emitUpdateTelemetry(
+    'comfy.desktop.app_update.startup_install_backstop_recovered',
+    _appUpdateState.version ?? settings.get('pendingDownloadedUpdateVersion') ?? null
+  )
+}
+
+let _processExitRecorded = false
+
+/** Record the updater state after the app's quit checks have accepted the quit. */
+export function recordProcessExit(): void {
+  if (_processExitRecorded) return
+  const targetVersion = _appUpdateState.version ?? _autoDownloadTriggeredFor
+  if (!targetVersion && !_activeUpdateOperation) return
+  _processExitRecorded = true
+  emitUpdateTelemetry('comfy.desktop.app_update.process_exit', targetVersion, {
+    quit_reason: getQuitReason(),
+    download_in_progress:
+      _activeUpdateOperation?.operation === 'download' ||
+      _autoDownloadTriggeredFor !== null ||
+      _userInitiatedDownload
+  })
+}
+
 /** Upper bound on how long the startup-install check may delay boot. The
  *  installer was already downloaded in a previous session, so this only
  *  re-validates the cached file against the release feed (no re-download); the
  *  cap keeps a slow / offline network from ever hanging the launch. */
 const STARTUP_UPDATE_CHECK_TIMEOUT_MS = 5000
 
-/** Minimum time the "Updating…" splash stays up before the install quits the
- *  app. The bounded check above usually resolves near-instantly (the installer
- *  was already downloaded and cached), which would otherwise flash the splash
- *  for a fraction of a second before the app quits — feeling like a glitch
- *  rather than an intentional update. This floor (measured from when the splash
- *  was shown, so the check's own elapsed time counts toward it) keeps the splash
- *  up long enough for the user to read it and watch the countdown finish. Keep
- *  in sync with `UPDATE_INSTALL_COUNTDOWN_SECONDS` (updateSplash.ts), the
- *  countdown the splash shows over this window. Only applies when a splash is
- *  actually up (startup-install path). */
+/** How long the splash stays up between committing to the install and quitting
+ *  the app to run it. Measured from the commit point (when the splash swaps to
+ *  its install-countdown copy), so the countdown the user is watching runs its
+ *  full length regardless of how long the readiness check took. Keep in sync
+ *  with `UPDATE_INSTALL_COUNTDOWN_SECONDS` (updateSplash.ts). Only applies when
+ *  a splash is actually up (startup-install path). */
 const STARTUP_INSTALL_MIN_SPLASH_MS = 5000
+
+/** Consecutive boots that may skip the same staged version as not-ready before
+ *  the staged marker is abandoned. Each such boot costs the user a splash plus
+ *  the bounded wait, so a staged installer that never becomes ready (corrupt or
+ *  partial on disk, with re-downloads that never complete before the app exits)
+ *  must not show that splash forever. Abandoning only clears the marker: if a
+ *  background re-download later completes, `update-downloaded` re-stages the
+ *  version and the next boot installs it normally. */
+const STARTUP_INSTALL_NOT_READY_LIMIT = 3
 
 /** Why a startup install was or wasn't attempted. The skip reasons that carry
  *  canary signal (`loop_breaker`, `session_ending`, `not_ready`) are reported via
@@ -834,33 +954,53 @@ export function hasPendingStartupUpdate(): boolean {
   return evaluateStartupInstall(readStartupAttemptMarker()).attempt
 }
 
+/** How the bounded startup update check settled. Only `'ready'` can lead to an
+ *  install; the others mean "bail into the normal UI now" and say why:
+ *  `'downloading'` = the cached installer was rejected and electron-updater
+ *  started re-downloading it (finishing takes minutes, not the seconds the boot
+ *  wait allows), `'check_failed'` = the feed check found no applicable update
+ *  (offline, feed error, or the update was pulled), `'timeout'` = the deadline
+ *  passed without any of the above. */
+type StartupUpdateWaitOutcome = 'ready' | 'downloading' | 'check_failed' | 'timeout'
+
 /**
- * Kick off a startup update check and resolve once the update reaches the
- * `'ready'` state or the deadline passes. Don't rely on `runCheck` resolving to
- * imply readiness — the `'ready'` transition happens in the `update-downloaded`
- * handler, which (depending on the updater) can fire slightly after the check
- * promise settles. Subscribing first closes that race.
+ * Kick off a startup update check and resolve with how it settled. Don't rely
+ * on `runCheck` resolving to imply readiness - the `'ready'` transition happens
+ * in the `update-downloaded` handler, which (depending on the updater) can fire
+ * slightly after the check promise settles. Subscribing first closes that race.
+ *
+ * Resolves as soon as the outcome is knowable instead of always burning the
+ * full deadline: a `download-progress` tick proves the staged installer was
+ * invalid and a full re-download is underway (which cannot finish within a
+ * boot-time budget), and a check that finds no applicable update means the
+ * ready state can never be reached this launch.
  */
-function waitForReadyState(timeoutMs: number): Promise<void> {
-  if (getCurrentUpdateState().kind === 'ready') return Promise.resolve()
-  return new Promise<void>((resolve) => {
+function waitForStartupUpdateOutcome(timeoutMs: number): Promise<StartupUpdateWaitOutcome> {
+  if (getCurrentUpdateState().kind === 'ready') return Promise.resolve('ready')
+  return new Promise<StartupUpdateWaitOutcome>((resolve) => {
     let done = false
-    const finish = (): void => {
+    const finish = (outcome: StartupUpdateWaitOutcome): void => {
       if (done) return
       done = true
       unsub()
+      _downloadProgressObservers.delete(onDownloadProgress)
       clearTimeout(timer)
-      resolve()
+      resolve(outcome)
     }
     const unsub = onUpdateStateChanged((s) => {
-      if (s.kind === 'ready') finish()
+      if (s.kind === 'ready') finish('ready')
     })
-    const timer = setTimeout(finish, timeoutMs)
+    const onDownloadProgress = (): void => finish('downloading')
+    _downloadProgressObservers.add(onDownloadProgress)
+    const timer = setTimeout(() => finish('timeout'), timeoutMs)
     runCheck('startup-install')
-      .then(() => {
-        if (getCurrentUpdateState().kind === 'ready') finish()
+      .then((result) => {
+        if (getCurrentUpdateState().kind === 'ready') finish('ready')
+        else if (!result.available) finish('check_failed')
+        // Otherwise an update exists upstream but isn't ready yet; keep
+        // waiting for a ready transition, a re-download tick, or the deadline.
       })
-      .catch(() => {})
+      .catch(() => finish('check_failed'))
   })
 }
 
@@ -874,33 +1014,97 @@ function waitForReadyState(timeoutMs: number): Promise<void> {
  * usual) when there's nothing to do, the check can't confirm a ready update, or
  * the loop-breaker is engaged.
  *
- * `splashShownAt` is the timestamp (from `Date.now()`) when the caller put up
- * the "Updating…" splash; when provided, the install is held until the splash
- * has been visible for at least `STARTUP_INSTALL_MIN_SPLASH_MS` so it doesn't
- * flash by before the app quits.
+ * `hooks.onInstallCommitted` is called once the staged update is confirmed
+ * ready and the install WILL proceed, before the pre-install splash hold
+ * starts. The caller uses it to swap the splash from its "checking" copy to the
+ * install countdown, so the countdown only ever shows for a real install.
  */
-export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promise<boolean> {
+export interface StartupInstallHooks {
+  onInstallCommitted?: () => void | Promise<void>
+}
+
+export async function applyPendingUpdateOnStartup(hooks?: StartupInstallHooks): Promise<boolean> {
   // Clear markers that no longer point at a strictly-newer target, while
   // preserving genuinely-newer attempts so the loop-breaker below stays armed.
   const running = app.getVersion()
   const lastAttempt = settings.get('lastStartupUpdateAttemptVersion')
-  if (lastAttempt && !isStrictlyNewerVersion(lastAttempt, running)) {
-    settings.set('lastStartupUpdateAttemptVersion', undefined)
-  }
   const pendingVersion = settings.get('pendingDownloadedUpdateVersion')
-  if (pendingVersion && !isStrictlyNewerVersion(pendingVersion, running)) {
-    settings.set('pendingDownloadedUpdateVersion', undefined)
-  }
   // Read the sidecar once and pass it down: each read is synchronous and can
   // block up to the transient-lock retry budget when the file is locked, and
   // this codepath runs before the first window appears.
   let sidecar = readStartupAttemptMarker()
+
+  // The sidecar is the durable cross-launch identity source because late
+  // settings.json writes may be unavailable or restored from backup. A pending
+  // result stays open so a later successful explicit install remains visible.
+  if (sidecar.state === 'present' && sidecar.marker.attemptId) {
+    const previousAttemptId = sidecar.marker.attemptId
+    const previousAttemptVersion = sidecar.marker.version
+    _updateAttempt = { id: previousAttemptId, version: previousAttemptVersion }
+    const outcome = !isStrictlyNewerVersion(previousAttemptVersion, running)
+      ? 'installed'
+      : pendingVersion === previousAttemptVersion
+        ? 'still_pending'
+        : !pendingVersion
+          ? 'staged_marker_missing'
+          : 'unknown'
+    if (sidecar.marker.reportedOutcome !== outcome) {
+      emitUpdateTelemetry(
+        'comfy.desktop.app_update.previous_attempt_outcome',
+        previousAttemptVersion,
+        {
+          update_attempt_id: previousAttemptId,
+          outcome,
+          bakFallbacks: getSafeFileDiagnostics().bakFallbacks
+        }
+      )
+      recordStartupAttemptOutcome(sidecar.marker, outcome)
+    }
+    if (outcome === 'installed') clearUpdateAttempt(previousAttemptId)
+  }
+
+  if (lastAttempt && !isStrictlyNewerVersion(lastAttempt, running)) {
+    settings.set('lastStartupUpdateAttemptVersion', undefined)
+  }
+  if (pendingVersion && !isStrictlyNewerVersion(pendingVersion, running)) {
+    settings.set('pendingDownloadedUpdateVersion', undefined)
+  }
+  const notReadyVersion = settings.get('startupInstallNotReadyVersion')
+  if (notReadyVersion && !isStrictlyNewerVersion(notReadyVersion, running)) {
+    settings.set('startupInstallNotReadyVersion', undefined)
+    settings.set('startupInstallNotReadyCount', undefined)
+  }
+  const pendingAttemptId = settings.get('pendingDesktopUpdateAttemptId')
+  const pendingAttemptVersion = settings.get('pendingDesktopUpdateAttemptVersion')
+  if (
+    typeof pendingAttemptId === 'string' &&
+    typeof pendingAttemptVersion === 'string' &&
+    !isStrictlyNewerVersion(pendingAttemptVersion, running)
+  ) {
+    clearUpdateAttempt(pendingAttemptId)
+  }
   if (sidecar.state === 'present' && !isStrictlyNewerVersion(sidecar.marker.version, running)) {
     clearStartupAttemptMarker()
     sidecar = { state: 'absent' }
   }
 
   const decision = evaluateStartupInstall(sidecar)
+  if (pendingVersion && isStrictlyNewerVersion(pendingVersion, running)) {
+    emitUpdateTelemetry(
+      'comfy.desktop.app_update.startup_decision',
+      pendingVersion,
+      {
+        decision: decision.attempt ? 'install' : 'skip',
+        reason: decision.attempt ? 'ready_check' : decision.reason,
+        pending_version: pendingVersion,
+        updater_state: getCurrentUpdateState().kind ?? 'unknown',
+        marker_state: sidecar.state,
+        marker_source: !decision.attempt ? (decision.loopBreakerSource ?? null) : null,
+        bakFallbacks: getSafeFileDiagnostics().bakFallbacks
+      },
+      true
+    )
+  }
   if (!decision.attempt) {
     // Only the skips that mean "a staged update exists but we declined it"
     // carry canary signal; normal boots (no pending / feature off) stay silent.
@@ -909,48 +1113,117 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
       decision.reason === 'session_ending' ||
       decision.reason === 'marker_unavailable'
     ) {
-      emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
-        reason: decision.reason,
-        version: settings.get('pendingDownloadedUpdateVersion') ?? null,
-        // Which marker home tripped a loop_breaker skip (see loopBreakerSource).
-        source: decision.loopBreakerSource ?? null,
-        bakFallbacks: getSafeFileDiagnostics().bakFallbacks
-      })
+      emitUpdateTelemetry(
+        'comfy.desktop.app_update.startup_install_skipped',
+        settings.get('pendingDownloadedUpdateVersion') ?? null,
+        {
+          reason: decision.reason,
+          version: settings.get('pendingDownloadedUpdateVersion') ?? null,
+          // Which marker home tripped a loop_breaker skip (see loopBreakerSource).
+          source: decision.loopBreakerSource ?? null,
+          bakFallbacks: getSafeFileDiagnostics().bakFallbacks
+        }
+      )
     }
     return false
   }
 
   // The installer is cached on disk from a previous session; this check
-  // re-validates it (no re-download) and populates the updater's ready state.
-  // Bounded so a slow/offline network can't hang boot — if it doesn't resolve
-  // to a ready update in time, we open the UI and try again next launch.
-  await waitForReadyState(STARTUP_UPDATE_CHECK_TIMEOUT_MS)
+  // usually just re-validates it (no re-download) and populates the updater's
+  // ready state. Bounded so a slow/offline network can't hang boot - if it
+  // doesn't resolve to a ready update in time, we open the UI and try again
+  // next launch. When the cached installer turns out invalid, electron-updater
+  // deletes it and starts a re-download; the wait detects that and bails
+  // immediately so the user gets into the app while the download continues in
+  // the background (a completed download re-stages the update for next boot).
+  const waitOutcome = await waitForStartupUpdateOutcome(STARTUP_UPDATE_CHECK_TIMEOUT_MS)
 
   const state = getCurrentUpdateState()
   // Require the ready version to be the exact staged version we decided to
-  // install — a concurrent check could surface a different (or no) ready
+  // install - a concurrent check could surface a different (or no) ready
   // version, which must not bypass the loop-breaker recorded for `decision.version`.
   if (state.kind !== 'ready' || state.version !== decision.version) {
-    emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
+    // Bound how many consecutive boots may skip this same version as not-ready.
+    // Without a bound, a permanently-invalid staged installer (e.g. a corrupt
+    // or partial file whose re-download never completes before the app exits)
+    // would show the update splash on every boot forever. After the limit, the
+    // staged marker is abandoned; a later completed download re-stages it.
+    const seenVersion = settings.get('startupInstallNotReadyVersion')
+    const seenCount = settings.get('startupInstallNotReadyCount')
+    const consecutive =
+      (seenVersion === decision.version && typeof seenCount === 'number' ? seenCount : 0) + 1
+    // `update-downloaded` can restage the pending marker DURING the wait (e.g. a
+    // newer version finished downloading). Strikes only apply while the marker
+    // still belongs to the version this boot decided to install; a restaged
+    // marker must never be abandoned on the old version's strikes.
+    const pendingNow = settings.get('pendingDownloadedUpdateVersion')
+    const markerStillOurs = pendingNow === decision.version
+    const abandoned = markerStillOurs && consecutive >= STARTUP_INSTALL_NOT_READY_LIMIT
+    try {
+      if (abandoned) {
+        settings.set('pendingDownloadedUpdateVersion', undefined)
+        settings.set('startupInstallNotReadyVersion', undefined)
+        settings.set('startupInstallNotReadyCount', undefined)
+      } else if (markerStillOurs) {
+        settings.set('startupInstallNotReadyVersion', decision.version)
+        settings.set('startupInstallNotReadyCount', consecutive)
+      } else {
+        // A different version is staged now; the old version's strikes are
+        // obsolete and the new version starts with a clean count.
+        settings.set('startupInstallNotReadyVersion', undefined)
+        settings.set('startupInstallNotReadyCount', undefined)
+      }
+    } catch {
+      // Best-effort: if settings can't persist, next boot just repeats the
+      // bounded wait, which is the pre-counter behavior.
+    }
+    emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', decision.version, {
       reason: 'not_ready',
-      version: decision.version
+      version: decision.version,
+      // Ready state with the wrong version means a concurrent check surfaced a
+      // different update than the one staged for install.
+      wait_outcome:
+        waitOutcome === 'ready' || state.kind === 'ready' ? 'version_mismatch' : waitOutcome,
+      consecutive_not_ready: consecutive,
+      abandoned
     })
     return false
   }
-  // Hold the "Updating…" splash on screen for a readable minimum before the
-  // install quits the app. The check above often resolves instantly (cached
-  // installer), so without this the splash would flash by in a fraction of a
-  // second. Measured from when the splash was shown, so the check's own elapsed
-  // time counts toward the floor.
-  if (splashShownAt !== undefined) {
-    const remaining = STARTUP_INSTALL_MIN_SPLASH_MS - (Date.now() - splashShownAt)
-    if (remaining > 0) await new Promise<void>((resolve) => setTimeout(resolve, remaining))
+  // The staged update is confirmed and the install will proceed; the not-ready
+  // strike counter no longer applies to this version.
+  try {
+    settings.set('startupInstallNotReadyVersion', undefined)
+    settings.set('startupInstallNotReadyCount', undefined)
+  } catch {
+    // Stale counter keys are also cleaned up by the marker hygiene above.
   }
 
-  // The session may have started ending while we awaited the check / held the
-  // splash up.
+  // The session may have started ending while we awaited the check. Skip
+  // before the commit hook so the user is never shown an install countdown
+  // for an install that must not happen.
   if (isSessionEnding()) {
-    emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
+    emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', state.version, {
+      reason: 'session_ending',
+      version: state.version
+    })
+    return false
+  }
+
+  // Commit point for the caller's splash: swap it from "checking" to the
+  // install countdown (awaited so the hold starts only once the countdown is
+  // actually on screen), then hold so the countdown plays out before the app
+  // quits. The hold is measured from here (not from when the splash appeared)
+  // so it matches the countdown the user just started watching. Keep
+  // `STARTUP_INSTALL_MIN_SPLASH_MS` in sync with
+  // `UPDATE_INSTALL_COUNTDOWN_SECONDS` (updateSplash.ts).
+  if (hooks) {
+    await hooks.onInstallCommitted?.()
+    await new Promise<void>((resolve) => setTimeout(resolve, STARTUP_INSTALL_MIN_SPLASH_MS))
+  }
+
+  // The session may have started ending while the splash countdown played.
+  if (isSessionEnding()) {
+    emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', state.version, {
       reason: 'session_ending',
       version: state.version
     })
@@ -963,8 +1236,9 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
   // WITHOUT writing any marker - installing unguarded risks an unbounded
   // reinstall loop (issue #1367), and a lone settings marker would block every
   // future auto-install of this version instead of retrying next launch.
-  if (!recordStartupAttempt(state.version)) {
-    emitTelemetry('comfy.desktop.app_update.startup_install_skipped', {
+  const attemptId = updateAttemptId(state.version, true)
+  if (!attemptId || !recordStartupAttempt(state.version, attemptId)) {
+    emitUpdateTelemetry('comfy.desktop.app_update.startup_install_skipped', state.version, {
       reason: 'marker_not_durable',
       version: state.version,
       bakFallbacks: getSafeFileDiagnostics().bakFallbacks
@@ -972,12 +1246,12 @@ export async function applyPendingUpdateOnStartup(splashShownAt?: number): Promi
     return false
   }
   try {
-    settings.set('lastStartupUpdateAttemptVersion', state.version)
+    settings.set('lastStartupUpdateAttemptVersion', decision.version)
   } catch {
     // The sidecar is already durable, so the loop-breaker holds without the
     // settings copy.
   }
-  emitTelemetry('comfy.desktop.app_update.startup_install', {
+  emitUpdateTelemetry('comfy.desktop.app_update.startup_install', state.version, {
     version: state.version,
     // Non-zero means reads were served from `.bak` this session (primary
     // missing, empty, or locked past retries - issue #1367's environment);
