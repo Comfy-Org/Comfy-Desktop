@@ -14,7 +14,8 @@
  * process's stdout can emit a tagged line, so the tap carries its own closed
  * contract: an event allowlist, a field-name allowlist, per-field type and
  * value checks, and rejection of any key colliding with the trusted base
- * context. A line that fails any check is dropped whole and silently:
+ * context. Ordinary unknown fields are omitted for version skew. Invalid
+ * known values and malformed or spoofing keys drop the whole line silently:
  * reporting the rejection would put the untrusted content back into a signal
  * we forward.
  *
@@ -144,9 +145,9 @@ function isAllowedFieldValue(key: string, value: unknown): value is TelemetryVal
 }
 
 /**
- * Parse the logfmt tail into forwardable fields, or null if ANY pair fails the
- * closed contract. Rejection is whole-line: a record with one bad field is not
- * worth partially trusting.
+ * Parse the logfmt tail into forwardable fields, omitting ordinary unknown
+ * fields. Invalid known values and malformed, duplicate or spoofing keys
+ * reject the whole line.
  */
 function parseFields(
   tail: string,
