@@ -131,9 +131,14 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'hashing_enabled'
 ])
 
-/** Mirror of each field validator in ComfyUI `app/assets/event_log.py`. */
+/**
+ * Mirror of each field validator in ComfyUI `app/assets/event_log.py`, plus
+ * JavaScript's exact transport restriction for integers. Core's integers are
+ * signed, but values outside Number's safe range would be silently rounded
+ * before telemetry emission, so reject those in addition to Core validation.
+ */
 function isAllowedFieldValue(key: string, value: unknown): value is TelemetryValue {
-  if (INTEGER_FIELDS.has(key)) return typeof value === 'number' && Number.isInteger(value)
+  if (INTEGER_FIELDS.has(key)) return typeof value === 'number' && Number.isSafeInteger(value)
   if (key === 'hashing_enabled') return typeof value === 'boolean'
   if (key === 'error_type') return isSafeString(value)
   if (typeof value !== 'string') return false

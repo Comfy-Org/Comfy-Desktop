@@ -196,6 +196,16 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx.created).toBe(12)
     })
 
+    it.each([
+      ['9007199254740991', 9007199254740991],
+      ['-9007199254740991', -9007199254740991]
+    ])('preserves the exact safe integer token %s', (rawValue, expectedValue) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(`[assets-event] seeder.scan_completed created=${rawValue}\n`, 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.created).toBe(expectedValue)
+    })
+
     it('coerces a boolean field to a boolean', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] assets.enabled hashing_enabled=false\n', 'stdout')
@@ -449,6 +459,18 @@ describe('assetsTap', () => {
       tap.ingest('[assets-event] seeder.scan_completed count=1e400\n', 'stdout')
       expect(captured).toHaveLength(0)
     })
+
+    it.each(['9007199254740993', '-9007199254740993'])(
+      'rejects the whole line for an integer token outside exact JS transport range: %s',
+      (rawValue) => {
+        const tap = createAssetsTap(baseOpts)
+        tap.ingest(
+          `[assets-event] seeder.scan_completed created=${rawValue} phase=fast\n`,
+          'stdout'
+        )
+        expect(captured).toHaveLength(0)
+      }
+    )
 
     it('rejects the whole line when only one of several fields is bad', () => {
       const tap = createAssetsTap(baseOpts)
