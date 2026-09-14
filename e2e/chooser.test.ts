@@ -43,6 +43,13 @@ test.afterAll(async () => {
 test('chooser body renders on cold start @windows @macos @linux', async () => {
   await expectChooserVisible(ctx.panel)
   expect(await ctx.panel.exists('.chooser-tile-new')).toBe(true)
+  expect(
+    (
+      await ctx.panel.textOf(
+        '[data-testid="devplatform-workspace-selector"] .workspace-selector__name',
+      )
+    )?.trim(),
+  ).toBe('Personal')
 })
 
 test('title bar shows install-less pill on chooser host @windows @macos @linux', async () => {
@@ -53,6 +60,7 @@ test('title bar shows install-less pill on chooser host @windows @macos @linux',
 test('clicking New Install tile opens the new-install takeover @windows @macos @linux', async () => {
   await clickNewInstallTile(ctx.panel)
   await expectTakeoverOpen(ctx.panel)
+  expect(await ctx.panel.exists('[data-testid="workspace-install-source-managed"]')).toBe(true)
   await dismissOverlay(ctx.panel)
   await expectChooserVisible(ctx.panel)
 })

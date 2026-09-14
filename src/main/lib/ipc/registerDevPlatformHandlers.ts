@@ -48,6 +48,11 @@ import { allocateInstallIdentity } from './installIdentity'
 import { COMFYBUILDER_INSTALL_DEFAULTS } from '../../sources/comfybuilder/constants'
 import type { InstallationRecord } from '../../installations'
 import type { InstallBuildRequest, InstallBuildResult } from '../../../types/ipc'
+import {
+  isPersonalWorkspace,
+  PERSONAL_WORKSPACE_ID,
+  workspaceContextId
+} from '../../../shared/workspaces'
 
 /** IPC channels for the dev-platform bridge. Kept together so a rename can't desync. */
 export const DEVPLATFORM_CHANNELS = {
@@ -190,10 +195,14 @@ export function registerDevPlatformHandlers(): void {
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.getAuthStatus, (): AuthStatus => session.status())
 
-  ipcMain.handle(
-    DEVPLATFORM_CHANNELS.listWorkspaces,
-    (): Promise<Workspace[]> => session.listWorkspaces()
-  )
+  ipcMain.handle(DEVPLATFORM_CHANNELS.listWorkspaces, async (): Promise<Workspace[]> => {
+    const workspaces = await session.listWorkspaces()
+    const personal = workspaces.find(isPersonalWorkspace)
+    if (personal) {
+      await installations.reassignWorkspace(personal.id, PERSONAL_WORKSPACE_ID)
+    }
+    return workspaces
+  })
 
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.openBuildsPage,
@@ -236,7 +245,15 @@ export function registerDevPlatformHandlers(): void {
         }
         const status = session.status()
         if (!status.signedIn) return { ok: false, message: 'Not signed in.' }
-        const workspaceId = inst.workspaceId || status.workspaceId
+        let workspaceId: string | undefined
+        if (!inst.workspaceId || inst.workspaceId === PERSONAL_WORKSPACE_ID) {
+          workspaceId =
+            workspaceContextId(status) === PERSONAL_WORKSPACE_ID
+              ? status.workspaceId
+              : (await session.listWorkspaces()).find(isPersonalWorkspace)?.id
+        } else {
+          workspaceId = inst.workspaceId
+        }
         if (!workspaceId) return { ok: false, message: 'No active workspace.' }
         if (status.workspaceId !== workspaceId) {
           clearVersionCache()
@@ -305,7 +322,12 @@ export function registerDevPlatformHandlers(): void {
   // map lets a row whose newer build runs here surface as `update-available`.
   ipcMain.handle(DEVPLATFORM_CHANNELS.listBuilds, async (): Promise<BuildRow[]> => {
     if (!session.isSignedIn()) return []
-    const workspaceId = session.status().workspaceId
+    const status = session.status()
+    const workspaceId = status.workspaceId
+    const localWorkspaceId = workspaceContextId(status)
+    if (localWorkspaceId === PERSONAL_WORKSPACE_ID && workspaceId) {
+      await installations.reassignWorkspace(workspaceId, PERSONAL_WORKSPACE_ID)
+    }
     const cacheGeneration = getVersionCacheGeneration()
     const host = await resolveHost()
     const client = getBuilderClient()
@@ -321,7 +343,7 @@ export function registerDevPlatformHandlers(): void {
     if (workspaceId && session.status().workspaceId === workspaceId) {
       try {
         await installations.associateUnownedBuildInstalls(
-          workspaceId,
+          localWorkspaceId,
           new Set(builds.map((build) => build.id))
         )
       } catch (err) {
@@ -333,7 +355,7 @@ export function registerDevPlatformHandlers(): void {
         client,
         host,
         builds,
-        await installedBuildVersions(workspaceId),
+        await installedBuildVersions(localWorkspaceId),
         cacheGeneration
       ),
       membersPromise
@@ -358,7 +380,8 @@ export function registerDevPlatformHandlers(): void {
     DEVPLATFORM_CHANNELS.installBuild,
     async (_event, request: InstallBuildRequest): Promise<InstallBuildResult> => {
       if (!session.isSignedIn()) return { ok: false, message: 'Not signed in.' }
-      const workspaceId = session.status().workspaceId
+      const status = session.status()
+      const workspaceId = status.workspaceId
       if (!workspaceId) return { ok: false, message: 'No active workspace.' }
       if (!request || typeof request !== 'object') {
         return { ok: false, message: 'Invalid build install request.' }
@@ -420,7 +443,7 @@ export function registerDevPlatformHandlers(): void {
           sourceId: COMFYBUILDER_SOURCE_ID,
           sourceLabel: COMFYBUILDER_SOURCE_LABEL,
           installPath: identity.installPath,
-          workspaceId,
+          workspaceId: workspaceContextId(status),
           distributionId: buildId,
           distributionName: build.name,
           version: String(resolved.version),

@@ -317,6 +317,32 @@ export async function update(
   return updated
 }
 
+/** Re-key installations from one workspace to another. */
+export async function reassignWorkspace(
+  fromWorkspaceId: string,
+  toWorkspaceId: string
+): Promise<InstallationRecord[]> {
+  if (!fromWorkspaceId || !toWorkspaceId || fromWorkspaceId === toWorkspaceId) return []
+
+  const updated = await enqueue(async () => {
+    const list = await loadForWrite()
+    const changed: InstallationRecord[] = []
+    for (let index = 0; index < list.length; index++) {
+      const existing = list[index]!
+      if (existing.workspaceId !== fromWorkspaceId) continue
+      const next = { ...existing, workspaceId: toWorkspaceId }
+      list[index] = next
+      changed.push(next)
+    }
+    if (changed.length > 0) await save(list)
+    return changed
+  })
+
+  for (const record of updated) installationEvents.emit('updated', record)
+  if (updated.length > 0) installationEvents.emit('changed')
+  return updated
+}
+
 /**
  * Associate unowned Builder build installs with a workspace using exact ids
  * returned by that workspace. The check and write share the mutation queue, so

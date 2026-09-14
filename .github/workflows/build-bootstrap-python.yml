@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag for the bootstrap-python assets (e.g. bootstrap-v2)"
+        description: "Release tag for the bootstrap-python assets (e.g. bootstrap-v3)"
         required: true
-        default: "bootstrap-v2"
+        default: "bootstrap-v3"
 
 permissions:
   contents: write
@@ -19,6 +19,10 @@ jobs:
         include:
           - platform: win-x64
             os: windows-latest
+          # Native Windows on Arm (NVIDIA RTX Spark). GitHub's arm64 Windows
+          # runners are free for public repositories.
+          - platform: win-arm64
+            os: windows-11-arm
           - platform: mac-arm64
             os: macos-latest
           - platform: linux-x64

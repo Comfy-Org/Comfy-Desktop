@@ -22,7 +22,6 @@ const messages = {
     devPlatform: {
       workspace: {
         personalLabel: 'Personal',
-        unmanagedLabel: 'No workspace',
         switchLabel: 'Workspace',
         currentFallback: 'Current workspace',
         loadError: "Couldn't load workspaces. Retry"
@@ -31,7 +30,7 @@ const messages = {
   }
 }
 
-function mountSelector(modelValue: string | null = 'w1') {
+function mountSelector(modelValue = 'w1') {
   return mount(DevPlatformWorkspaceSelector, {
     props: { modelValue },
     global: {
@@ -131,13 +130,51 @@ describe('DevPlatformWorkspaceSelector', () => {
     ).toBe('team')
   })
 
-  it('uses an empty neutral avatar when No workspace is selected', async () => {
-    const wrapper = mountSelector(null)
+  it('uses the Personal workspace as the local selection', async () => {
+    const wrapper = mountSelector('personal')
     await flushPromises()
 
     const avatar = wrapper.get('[data-testid="devplatform-workspace-selector"] .dp-avatar')
-    expect(avatar.classes()).toContain('dp-avatar--neutral')
-    expect(avatar.text()).toBe('')
+    expect(avatar.classes()).not.toContain('dp-avatar--neutral')
+    expect(avatar.text()).toBe('P')
+  })
+
+  it('normalizes a server Personal workspace name even when its type is stale', async () => {
+    api.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId: 'server-personal',
+      workspaceName: 'Personal workspace'
+    })
+    api.listWorkspaces.mockResolvedValue([
+      {
+        id: 'server-personal',
+        name: 'Personal workspace',
+        type: 'team',
+        role: 'owner'
+      }
+    ])
+    const wrapper = mountSelector('server-personal')
+    await flushPromises()
+
+    expect(wrapper.get('.workspace-selector__name').text()).toBe('Personal')
+    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    expect(wrapper.findAll('.workspace-selector__item')).toHaveLength(1)
+    expect(wrapper.get('.workspace-selector__item-name').text()).toBe('Personal')
+    expect(wrapper.text()).not.toContain('Personal workspace')
+  })
+
+  it('offers only Personal when signed out', async () => {
+    api.getAuthStatus.mockResolvedValue({ signedIn: false })
+    const wrapper = mountSelector('personal')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    expect(wrapper.findAll('.workspace-selector__item')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="devplatform-workspace-personal"]').text()).toContain(
+      'Personal'
+    )
+    expect(api.listWorkspaces).not.toHaveBeenCalled()
   })
 
   it('closes without switching when the active workspace is selected', async () => {
@@ -163,17 +200,15 @@ describe('DevPlatformWorkspaceSelector', () => {
     expect(wrapper.find('[data-testid="devplatform-workspace-menu"]').exists()).toBe(false)
   })
 
-  it('selects No workspace without changing the authenticated workspace', async () => {
+  it('selects Personal without changing the authenticated workspace', async () => {
     const wrapper = mountSelector()
     await flushPromises()
     await wrapper.find('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    const noWorkspace = wrapper.find('[data-testid="devplatform-workspace-unmanaged"]')
-    expect(noWorkspace.text()).toContain('No workspace')
-    expect(noWorkspace.get('.dp-avatar').classes()).toContain('dp-avatar--neutral')
-    expect(noWorkspace.get('.dp-avatar').text()).toBe('')
-    await noWorkspace.trigger('click')
+    const personal = wrapper.get('[data-testid="devplatform-workspace-personal"]')
+    expect(personal.text()).toContain('Personal')
+    await personal.trigger('click')
 
     expect(api.switchWorkspace).not.toHaveBeenCalled()
-    expect(wrapper.emitted('update:modelValue')).toEqual([[null]])
+    expect(wrapper.emitted('update:modelValue')).toEqual([['personal']])
   })
 })

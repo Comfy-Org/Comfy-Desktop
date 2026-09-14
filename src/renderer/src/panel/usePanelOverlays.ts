@@ -10,6 +10,7 @@ import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
+import { DASHBOARD_WORKSPACE_SETTING, PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 
 /**
  * Panel body modes available in the WebContentsView.
@@ -381,9 +382,19 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       const cameFromLocalBranch = opts.firstUseChain
         ? opts.firstUseChain.consumeCameFromLocalBranch() === true
         : false
+      let workspaceId = newInstallOpts.workspaceId
+      if (!workspaceId) {
+        const persistedWorkspaceId = await window.api
+          .getSetting(DASHBOARD_WORKSPACE_SETTING)
+          .catch(() => undefined)
+        workspaceId =
+          typeof persistedWorkspaceId === 'string' && persistedWorkspaceId.trim()
+            ? persistedWorkspaceId
+            : PERSONAL_WORKSPACE_ID
+      }
       await newInstallRef.value?.open({
         entrypoint,
-        ...newInstallOpts,
+        workspaceId,
         ...(cameFromLocalBranch ? { cameFromLocalBranch } : {})
       })
     } else if (component === 'track') trackRef.value?.open()

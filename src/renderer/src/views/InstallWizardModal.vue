@@ -15,6 +15,7 @@ import type {
 } from '../types/ipc'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
+import { PERSONAL_WORKSPACE_ID, workspaceContextId } from '../../../shared/workspaces'
 import { emitTelemetryAction, toSizeBucket, toVariantBucket, toErrorBucket } from '../lib/telemetry'
 import {
   trackGuardrailBlocked,
@@ -78,17 +79,50 @@ const sourceError = ref('')
 const workspaceId = ref<string | null>(null)
 const selectedBuildId = ref('')
 const selectedBuildTargetId = ref('')
-const workspaceMode = computed(() => workspaceId.value !== null)
+/** Resolve the local Personal scope to its server workspace for managed operations. */
+const managedWorkspaceId = computed(() => {
+  if (!authStore.isSignedIn || !workspaceId.value) return null
+  if (workspaceId.value !== PERSONAL_WORKSPACE_ID) return workspaceId.value
+  if (workspaceContextId(authStore.status) === PERSONAL_WORKSPACE_ID) {
+    return authStore.status.workspaceId ?? null
+  }
+  return authStore.personalWorkspace?.id ?? null
+})
 const workspaceInstallMode = ref<'managed' | 'public'>('managed')
 const managedBuildMode = computed(
-  () => workspaceMode.value && workspaceInstallMode.value === 'managed'
+  () => managedWorkspaceId.value !== null && workspaceInstallMode.value === 'managed'
 )
-const localInstallMode = computed(
-  () => !workspaceMode.value || workspaceInstallMode.value === 'public'
-)
+const localInstallMode = computed(() => !managedBuildMode.value)
+
+type InstallSourceTab =
+  | { key: 'managed'; kind: 'managed' }
+  | { key: string; kind: 'source'; source: Source }
+
+const installSourceTabs = computed<InstallSourceTab[]>(() => {
+  const sourceOrder = new Map([
+    ['standalone', 0],
+    ['remote', 1],
+    ['portable', 2]
+  ])
+  const tabs: InstallSourceTab[] = [...sources.value]
+    .sort(
+      (a, b) =>
+        (sourceOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+        (sourceOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+    )
+    .map((source) => ({ key: `source-${source.id}`, kind: 'source', source }))
+
+  const standaloneIndex = tabs.findIndex(
+    (tab) => tab.kind === 'source' && tab.source.id === 'standalone'
+  )
+  tabs.splice(standaloneIndex + 1, 0, { key: 'managed', kind: 'managed' })
+
+  return tabs
+})
 
 const workspaceBuilds = computed(() => {
-  if (!workspaceId.value || authStore.status.workspaceId !== workspaceId.value) return []
+  if (!managedWorkspaceId.value || authStore.status.workspaceId !== managedWorkspaceId.value)
+    return []
   return authStore.builds.filter(
     (build) => build.state === 'installable' || build.state === 'update-available'
   )
@@ -552,8 +586,8 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
   const gen = ++modeGeneration
   instName.value = ''
-  workspaceId.value = opts.workspaceId?.trim() || null
-  workspaceInstallMode.value = 'managed'
+  workspaceId.value = opts.workspaceId?.trim() || PERSONAL_WORKSPACE_ID
+  workspaceInstallMode.value = 'public'
   selectedBuildId.value = ''
   selectedBuildTargetId.value = ''
   cameFromLocalBranch.value = opts.cameFromLocalBranch === true
@@ -570,6 +604,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   textFieldValues.value.clear()
 
   detectedGpu.value = t('newInstall.detectingGpu')
+  hardwareValidation = null
   hardwareWarning.value = ''
   resetDiskSpace()
   sourceError.value = ''
@@ -583,24 +618,44 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   hasLocalInstall.value = false
 
   try {
+    await authStore.fetchStatus().catch(() => authStore.status)
+    if (!authStore.isSignedIn) {
+      workspaceId.value = PERSONAL_WORKSPACE_ID
+    } else {
+      workspaceInstallMode.value = 'managed'
+    }
+    if (
+      workspaceId.value === PERSONAL_WORKSPACE_ID &&
+      authStore.isSignedIn &&
+      !managedWorkspaceId.value
+    ) {
+      await authStore.fetchWorkspaces()
+    }
     await initializeInstallMode(gen, true)
   } finally {
     if (gen === modeGeneration) initializing.value = false
   }
 }
 
-async function initializeInstallMode(gen: number, refreshManagedBuilds = false): Promise<void> {
+async function initializeInstallMode(
+  gen: number,
+  refreshManagedBuilds = false,
+  source?: Source
+): Promise<void> {
   const installDir = await installDirPromise
   if (gen !== modeGeneration) return
   defaultInstPath.value = installDir ?? ''
   instPath.value = defaultInstPath.value
 
-  if (managedBuildMode.value) await initializeManagedBuilds(gen, refreshManagedBuilds)
-  else await initializeLocalInstall(gen)
+  if (managedBuildMode.value) {
+    await Promise.all([initializeManagedBuilds(gen, refreshManagedBuilds), loadSources()])
+  } else {
+    await initializeLocalInstall(gen, source)
+  }
 }
 
 async function initializeManagedBuilds(gen: number, refreshBuilds: boolean): Promise<void> {
-  const targetWorkspaceId = workspaceId.value
+  const targetWorkspaceId = managedWorkspaceId.value
   if (!targetWorkspaceId) return
   try {
     let status = authStore.status
@@ -626,7 +681,7 @@ async function initializeManagedBuilds(gen: number, refreshBuilds: boolean): Pro
   }
 }
 
-async function initializeLocalInstall(gen: number): Promise<void> {
+async function initializeLocalInstall(gen: number, requestedSource?: Source): Promise<void> {
   void window.api
     .getUniqueName(DEFAULT_INSTALL_NAME)
     .then((name) => {
@@ -654,33 +709,55 @@ async function initializeLocalInstall(gen: number): Promise<void> {
   await loadSources()
   if (gen !== modeGeneration || !localInstallMode.value) return
 
-  // Pre-select Standalone (the recommended method); other sources remain
-  // reachable through the same Advanced controls used outside workspaces.
+  const source = requestedSource ?? sources.value.find((source) => source.id === 'standalone')
+  if (!source) return
+
+  if (source.id !== 'standalone') {
+    await selectSourceCard(source)
+    return
+  }
+
   hardwareValidation = await window.api.validateHardware()
   if (gen !== modeGeneration || !localInstallMode.value) return
   hardwareWarning.value = hardwareValidation.warning ?? ''
-  const standalone = sources.value.find((source) => source.id === 'standalone')
-  if (standalone && hardwareValidation.supported) {
-    await selectSourceCard(standalone)
-  } else if (standalone) {
+  if (hardwareValidation.supported) {
+    await selectSourceCard(source)
+  } else {
     detectedGpu.value = hardwareValidation.error || t('newInstall.noGpuDetected')
   }
 }
 
-async function selectWorkspaceInstallMode(mode: 'managed' | 'public'): Promise<void> {
-  if (!workspaceMode.value || workspaceInstallMode.value === mode) return
-  authorizingWorkspace.value = false
-  workspaceInstallMode.value = mode
-  // Clear source-scoped state from the previous mode so nothing carries over
-  // (e.g. a Public-tab visit leaving standalone template options loaded, which
-  // would surface the template picker on a managed install). Public mode
-  // re-selects Standalone in initializeInstallMode.
+async function selectManagedInstallMode(): Promise<void> {
+  if (authorizingWorkspace.value || managedBuildMode.value) return
+  let authenticatedNow = false
+  if (!authStore.isSignedIn) {
+    authorizingWorkspace.value = true
+    try {
+      const status = await authStore.signIn()
+      if (!status.signedIn) return
+      authenticatedNow = true
+      if (workspaceId.value === PERSONAL_WORKSPACE_ID) await authStore.fetchWorkspaces()
+    } catch {
+      return
+    } finally {
+      authorizingWorkspace.value = false
+    }
+  }
+  if (!managedWorkspaceId.value) {
+    await modal.alert({
+      title: t('chooser.errorTitle'),
+      message: t('devPlatform.workspace.loadError')
+    })
+    return
+  }
+  workspaceInstallMode.value = 'managed'
+  // Managed installs must not inherit source or template selections.
   resetSourceState(null)
   suggestedName.value = ''
   const gen = ++modeGeneration
   initializing.value = true
   try {
-    await initializeInstallMode(gen)
+    await initializeInstallMode(gen, authenticatedNow)
   } finally {
     if (gen === modeGeneration) initializing.value = false
   }
@@ -697,8 +774,25 @@ async function loadSources(): Promise<void> {
 }
 
 async function selectSourceCard(source: Source): Promise<void> {
+  if (managedBuildMode.value) {
+    workspaceInstallMode.value = 'public'
+    resetSourceState(null)
+    suggestedName.value = ''
+    const gen = ++modeGeneration
+    initializing.value = true
+    try {
+      await initializeInstallMode(gen, false, source)
+    } finally {
+      if (gen === modeGeneration) initializing.value = false
+    }
+    return
+  }
   if (currentSource.value?.id === source.id) return
 
+  if (source.id === 'standalone' && !hardwareValidation) {
+    hardwareValidation = await window.api.validateHardware()
+    hardwareWarning.value = hardwareValidation.warning ?? ''
+  }
   if (source.id === 'standalone' && hardwareValidation && !hardwareValidation.supported) {
     trackGuardrailBlocked('unsupported_hw', 'wizard', 'source_select')
     await modal.alert({
@@ -925,8 +1019,8 @@ function handleOpenInstPath(): void {
 }
 
 function openBuildsPage(): void {
-  if (!workspaceId.value) return
-  void window.api.comfybuilder.openBuildsPage(workspaceId.value).catch(() => {})
+  if (!managedWorkspaceId.value) return
+  void window.api.comfybuilder.openBuildsPage(managedWorkspaceId.value).catch(() => {})
 }
 
 async function validateSelectedInstallRoot(): Promise<boolean> {
@@ -1172,12 +1266,10 @@ defineExpose({ open })
 </script>
 
 <template>
-  <BrandTakeoverLayout>
+  <BrandTakeoverLayout :scroll-content="step === 'configure'">
     <div v-if="step === 'configure'" ref="brandShellRef" class="config-shell">
       <h1 class="brand-title">{{ $t('newInstall.configureTitle') }}</h1>
-      <p class="brand-lead">
-        {{ $t(managedBuildMode ? 'newInstall.configureWorkspaceLead' : 'chooser.newInstallDesc') }}
-      </p>
+      <p class="brand-lead">{{ $t('chooser.newInstallDesc') }}</p>
       <div class="config-card">
         <div class="config-card__body">
           <div
@@ -1207,39 +1299,45 @@ defineExpose({ open })
           </div>
 
           <div
-            v-if="workspaceMode"
-            class="config-field"
-            data-testid="workspace-install-source-field"
+            v-if="sources.length > 0"
+            class="config-method-row"
+            role="radiogroup"
+            :aria-label="$t('newInstall.chooseMethod')"
+            data-testid="install-source-tabs"
           >
-            <span id="workspace-install-source-label" class="config-label">
-              {{ $t('newInstall.buildSourceLabel') }}
-            </span>
-            <div
-              class="workspace-install-source"
-              role="radiogroup"
-              aria-labelledby="workspace-install-source-label"
-            >
+            <template v-for="tab in installSourceTabs" :key="tab.key">
               <button
+                v-if="tab.kind === 'managed'"
                 type="button"
                 role="radio"
                 data-testid="workspace-install-source-managed"
-                :aria-checked="workspaceInstallMode === 'managed'"
-                :class="{ 'is-selected': workspaceInstallMode === 'managed' }"
-                @click="selectWorkspaceInstallMode('managed')"
+                :aria-checked="managedBuildMode"
+                :disabled="authorizingWorkspace"
+                :class="['brand-pill', { 'brand-pill--selected': managedBuildMode }]"
+                @click="selectManagedInstallMode"
               >
                 {{ $t('newInstall.managedBuilds') }}
               </button>
               <button
+                v-else
                 type="button"
                 role="radio"
-                data-testid="workspace-install-source-public"
-                :aria-checked="workspaceInstallMode === 'public'"
-                :class="{ 'is-selected': workspaceInstallMode === 'public' }"
-                @click="selectWorkspaceInstallMode('public')"
+                :data-testid="`install-source-${tab.source.id}`"
+                :aria-checked="!managedBuildMode && currentSource?.id === tab.source.id"
+                :disabled="authorizingWorkspace"
+                :class="[
+                  'brand-pill',
+                  {
+                    'brand-pill--selected': !managedBuildMode && currentSource?.id === tab.source.id
+                  }
+                ]"
+                @click="selectSourceCard(tab.source)"
               >
-                {{ $t('newInstall.publicBuilds') }}
+                {{
+                  tab.source.id === 'standalone' ? $t('newInstall.publicBuilds') : tab.source.label
+                }}
               </button>
-            </div>
+            </template>
           </div>
 
           <div v-if="managedBuildMode" class="config-field" data-testid="workspace-build-field">
@@ -1317,27 +1415,6 @@ defineExpose({ open })
           <div v-if="!managedBuildMode" class="config-advanced config-advanced--direct is-open">
             <div class="config-advanced__wrap">
               <div class="config-advanced__body">
-                <div
-                  v-if="sources.length > 1"
-                  class="config-method-row"
-                  role="radiogroup"
-                  :aria-label="$t('newInstall.chooseMethod')"
-                >
-                  <button
-                    v-for="s in sources"
-                    :key="s.id"
-                    type="button"
-                    role="radio"
-                    :aria-checked="currentSource?.id === s.id"
-                    :class="['brand-pill', { 'brand-pill--selected': currentSource?.id === s.id }]"
-                    @click="selectSourceCard(s)"
-                  >
-                    <span>{{ s.label }}</span>
-                    <span v-if="s.id === 'standalone'" class="brand-tag-recommended">
-                      {{ $t('newInstall.recommended') }}
-                    </span>
-                  </button>
-                </div>
                 <div v-if="sourceError" class="wizard-error">{{ sourceError }}</div>
                 <div v-if="currentSource" id="source-fields">
                   <div
@@ -1509,22 +1586,14 @@ defineExpose({ open })
           </TooltipWrap>
         </div>
 
-        <div class="config-card__footer">
+        <div v-if="cameFromLocalBranch" class="config-card__footer">
           <button
-            v-if="cameFromLocalBranch"
             type="button"
             class="brand-ghost config-back"
             data-testid="config-back-to-local-branch"
             @click="handleBackToLocalBranch"
           >
             {{ $t('common.back') }}
-          </button>
-          <button
-            class="brand-primary config-continue"
-            :disabled="!canContinue"
-            @click="handleConfigureContinue"
-          >
-            {{ $t('common.continue') }}
           </button>
         </div>
       </div>
@@ -1600,24 +1669,28 @@ defineExpose({ open })
         @back="emit('close')"
       />
     </template>
+    <template #footer>
+      <button
+        v-if="step === 'configure'"
+        class="brand-primary config-continue"
+        :disabled="!canContinue"
+        @click="handleConfigureContinue"
+      >
+        {{ $t('common.continue') }}
+      </button>
+    </template>
   </BrandTakeoverLayout>
 </template>
 
 <style scoped>
 .config-shell {
   align-self: stretch;
-  height: 100%;
-  max-height: 100%;
   width: 100%;
   max-width: 640px;
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   text-align: center;
-  padding-block: clamp(1.5rem, 4vh, 3rem);
-  min-height: 0;
+  padding-top: clamp(1.5rem, 4vh, 3rem);
+  padding-bottom: max(5rem, 8vh);
 }
 .config-shell > .brand-lead {
   margin: var(--takeover-gap-sm) 0 var(--takeover-gap-md);
@@ -1758,10 +1831,6 @@ defineExpose({ open })
 
 .config-card {
   width: 100%;
-  /* Capped at shell height so the card doesn't overflow the viewport when Advanced expands; body scrolls instead. */
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
   border: 1px solid var(--brand-surface-border);
   border-radius: 8px;
   background: var(--brand-surface-bg);
@@ -1771,19 +1840,10 @@ defineExpose({ open })
 }
 
 .config-card__body {
-  /* `flex: 1 1 auto` lets this body absorb leftover space and scroll internally once the card hits the shell cap, keeping the title centered. */
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  /* Hide scrollbar to prevent layout shift when content overflows. */
-  scrollbar-width: none;
-}
-.config-card__body::-webkit-scrollbar {
-  display: none;
 }
 
 .workspace-authorization-status {
@@ -1814,7 +1874,8 @@ defineExpose({ open })
   z-index: 2;
 }
 
-.config-field {
+.config-field,
+#source-fields > .field {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1841,36 +1902,6 @@ defineExpose({ open })
 .config-label {
   font-size: 13px;
   color: var(--neutral-200);
-}
-
-.workspace-install-source {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--brand-surface-border);
-  border-radius: 7px;
-  background: var(--brand-surface-bg);
-}
-.workspace-install-source button {
-  min-width: 0;
-  padding: 7px 12px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.workspace-install-source button:hover,
-.workspace-install-source button.is-selected {
-  background: var(--brand-surface-bg-hover);
-  color: var(--neutral-100);
-}
-.workspace-install-source button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
 }
 
 .workspace-build-label-row {
@@ -2031,12 +2062,22 @@ defineExpose({ open })
   border-top: 0;
   padding-top: 0;
 }
+.config-advanced--direct .config-advanced__wrap {
+  display: block;
+}
 .config-advanced--direct.config-advanced.is-open .config-advanced__body {
   margin-top: 0;
 }
 
-/* Install-method chips: pill picker inside Advanced for swapping source without
- * leaving the brand chrome. Chips use the shared `.brand-pill` in main.css. */
+#source-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+#source-fields > .field {
+  margin-top: 0;
+}
+
 .config-method-row {
   display: flex;
   flex-wrap: wrap;
@@ -2045,6 +2086,10 @@ defineExpose({ open })
 }
 
 .config-continue {
+  position: absolute;
+  right: clamp(1.25rem, 2vw, 2rem);
+  bottom: clamp(1.25rem, 2vw, 2rem);
+  z-index: 2;
   min-width: 120px;
 }
 </style>
