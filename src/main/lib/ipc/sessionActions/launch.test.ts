@@ -904,6 +904,34 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
   })
 
+  it('continues a skip-port launch when renderer reporting throws', async () => {
+    const ctx = ctxFor('harness-skip-port-report-throws')
+    const send = ctx.event.sender.send.bind(ctx.event.sender)
+    ctx.event.sender.send = vi.fn((channel: string, payload: { text?: string }) => {
+      if (payload.text?.startsWith('[core-beta]')) throw new Error('renderer unavailable')
+      send(channel, payload)
+    })
+
+    const res = await handleLaunch(ctx)
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-assets')
+    expect(reportedEvents()).toContain('comfy.desktop.core_beta.applied')
+    expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
+  })
+
+  it('continues a skip-port launch when beta telemetry reporting throws', async () => {
+    vi.mocked(telemetry.emit).mockImplementation((event) => {
+      if (event === 'comfy.desktop.core_beta.applied') throw new Error('sink unavailable')
+    })
+
+    const res = await handleLaunch(ctxFor('harness-skip-port-telemetry-throws'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-assets')
+    expect(sent.join('')).toContain('[core-beta] --enable-assets')
+  })
+
   it.each([
     ['supported grant only', true, [HARNESS_GRANT], ['--enable-assets']],
     [

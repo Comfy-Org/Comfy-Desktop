@@ -210,8 +210,16 @@ export function emitCoreBetaRecords(
   sinks: { writeLog: (text: string) => void; sendOutput: (text: string) => void }
 ): void {
   for (const record of records) {
-    sinks.writeLog(record)
-    sinks.sendOutput(record)
+    try {
+      sinks.writeLog(record)
+    } catch {
+      // Reporting must not affect launch; still attempt the independent renderer sink.
+    }
+    try {
+      sinks.sendOutput(record)
+    } catch {
+      // Reporting must not affect launch.
+    }
   }
 }
 
@@ -738,12 +746,16 @@ async function runLaunch(
       writeLog: (text) => writeLog(logStream, text),
       sendOutput
     })
-    emitCoreBetaTelemetry({
-      appliedArgs: coreBeta.applied.map((grant) => grant.arg),
-      droppedUnsupported: coreBeta.droppedUnsupported,
-      coreVersion: coreBeta.coreVersion,
-      optedIn: coreBeta.optedIn
-    })
+    try {
+      emitCoreBetaTelemetry({
+        appliedArgs: coreBeta.applied.map((grant) => grant.arg),
+        droppedUnsupported: coreBeta.droppedUnsupported,
+        coreVersion: coreBeta.coreVersion,
+        optedIn: coreBeta.optedIn
+      })
+    } catch {
+      // The telemetry layer normally contains SDK failures; also isolate unexpected sink throws.
+    }
   }
 
   // Migrate legacy envs/default/ → ComfyUI/.venv/ for standalone installs.
