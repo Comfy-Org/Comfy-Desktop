@@ -279,6 +279,14 @@ export function buildMediaSections(): SettingsSection[] {
 // Write a setting and run its side-effect branches (theme/locale/telemetry
 // broadcasts, updater hint, settings-changed) plus the Global Settings refresh.
 export function applySettingSet(key: string, value: unknown): void {
+  if (
+    key === 'betaFeaturesEnabled' &&
+    value === true &&
+    settings.get('betaFeaturesEnabled') !== true &&
+    settings.get('telemetryEnabled') !== true
+  ) {
+    return
+  }
   settings.set(key, value)
   if (key === 'theme') {
     _broadcastToRenderer('theme-changed', resolveTheme())

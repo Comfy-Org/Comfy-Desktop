@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Configurable settings store returned by the mocked `./shared` module.
 const mockSettings: Record<string, unknown> = {}
+const mockSettingsSet = vi.fn((key: string, value: unknown) => {
+  mockSettings[key] = value
+})
 
 // Stubbed seeding resolver. Held in an object so the vi.mock factory (hoisted
 // above this file's statements) reads the value at call time, not at import.
@@ -18,6 +21,9 @@ vi.mock('./shared', async () => {
     sources: [],
     settings: {
       getAll: () => mockSettings,
+      get: (key: string) => mockSettings[key],
+      set: (key: string, value: unknown) => mockSettingsSet(key, value),
+      getTrackedSettingsTelemetryProperties: () => ({}),
       resolveBetaFeaturesEnabled: () => mockBeta.resolved
     },
     i18n: {
@@ -33,9 +39,12 @@ vi.mock('./shared', async () => {
   }
 })
 vi.mock('../titleBarOverlay', () => ({ updateTitleBarOverlay: vi.fn() }))
-vi.mock('../telemetry', () => ({}))
+vi.mock('../telemetry', () => ({
+  setConsentState: vi.fn(),
+  registerPersonProperties: vi.fn()
+}))
 vi.mock('../firstUseDetection', () => ({ detectFirstUseState: vi.fn() }))
-vi.mock('../updater', () => ({}))
+vi.mock('../updater', () => ({ notifyAutoUpdateChanged: vi.fn() }))
 vi.mock('../globalSettingsEvents', () => ({
   globalSettingsEvents: { on: vi.fn(), emit: vi.fn() }
 }))
@@ -43,11 +52,16 @@ vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
 // Values mirror src/main/settings.ts; mocked because the real module imports electron.
 vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: 'last' }))
 
-import { buildSettingsSections } from './registerSettingsHandlers'
+import { applySettingSet, buildSettingsSections } from './registerSettingsHandlers'
+
+function resetMockSettings(): void {
+  for (const key of Object.keys(mockSettings)) delete mockSettings[key]
+  mockSettingsSet.mockClear()
+}
 
 describe('buildSettingsSections', () => {
   beforeEach(() => {
-    for (const key of Object.keys(mockSettings)) delete mockSettings[key]
+    resetMockSettings()
     mockBeta.resolved = false
   })
 
@@ -144,5 +158,55 @@ describe('buildSettingsSections', () => {
     const updatedFields = buildSettingsSections().find((section) => section.title === 'Advanced')
       ?.fields as { id?: string; value?: unknown }[]
     expect(updatedFields.find((field) => field.id === 'hardwareAcceleration')?.value).toBe(false)
+  })
+})
+
+describe('applySettingSet beta enrolment consent', () => {
+  beforeEach(resetMockSettings)
+
+  it.each([
+    [false, false],
+    [undefined, undefined]
+  ])(
+    'rejects new beta enrolment when telemetry consent is %s without writing',
+    (telemetryEnabled, betaFeaturesEnabled) => {
+      mockSettings.betaFeaturesEnabled = betaFeaturesEnabled
+      mockSettings.telemetryEnabled = telemetryEnabled
+
+      applySettingSet('betaFeaturesEnabled', true)
+
+      expect(mockSettingsSet).not.toHaveBeenCalled()
+      expect(mockSettings.betaFeaturesEnabled).toBe(betaFeaturesEnabled)
+    }
+  )
+
+  it('allows new beta enrolment with explicit telemetry consent', () => {
+    mockSettings.betaFeaturesEnabled = false
+    mockSettings.telemetryEnabled = true
+
+    applySettingSet('betaFeaturesEnabled', true)
+
+    expect(mockSettingsSet).toHaveBeenCalledWith('betaFeaturesEnabled', true)
+    expect(mockSettings.betaFeaturesEnabled).toBe(true)
+  })
+
+  it('preserves an existing beta opt-in when telemetry is off', () => {
+    mockSettings.betaFeaturesEnabled = true
+    mockSettings.telemetryEnabled = false
+
+    applySettingSet('betaFeaturesEnabled', true)
+
+    expect(mockSettingsSet).toHaveBeenCalledWith('betaFeaturesEnabled', true)
+    expect(mockSettings.betaFeaturesEnabled).toBe(true)
+  })
+
+  it('allows opting out of beta features when telemetry is off', () => {
+    mockSettings.betaFeaturesEnabled = true
+    mockSettings.telemetryEnabled = false
+
+    applySettingSet('betaFeaturesEnabled', false)
+
+    expect(mockSettingsSet).toHaveBeenCalledWith('betaFeaturesEnabled', false)
+    expect(mockSettings.betaFeaturesEnabled).toBe(false)
   })
 })
