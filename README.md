@@ -153,10 +153,10 @@ The app ships a minimal (~15–20 MB) standalone Python with `pygit2` baked in, 
 
 | Command                    | What it does                                                                                                                                                                                              |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm run bootstrap`       | Build locally via `scripts/build-bootstrap-python.py` (requires Python 3.13). Auto-detects the host platform; pass `--platform win-x64\|mac-arm64\|linux-x64` for another.                                |
-| `pnpm run bootstrap:fetch` | Download a prebuilt archive from the [`bootstrap-v1`](https://github.com/Comfy-Org/Comfy-Desktop/releases/tag/bootstrap-v1) release (faster; no local Python needed). Set `GITHUB_TOKEN` to authenticate. |
+| `pnpm run bootstrap`       | Build locally via `scripts/build-bootstrap-python.mjs` (no system Python needed). Auto-detects the host platform and architecture; pass `--platform win-x64\|win-arm64\|mac-arm64\|linux-x64` for another. |
+| `pnpm run bootstrap:fetch` | Download a prebuilt archive from the [`bootstrap-v3`](https://github.com/Comfy-Org/Comfy-Desktop/releases/tag/bootstrap-v3) release (faster). Set `GITHUB_TOKEN` to authenticate.                          |
 
-Both write to `bootstrap-python/{win-x64,mac-arm64,linux-x64}/` (gitignored). The directory must exist before `pnpm run dev` or `pnpm run build:*`.
+Both write to `bootstrap-python/{win-x64,win-arm64,mac-arm64,linux-x64}/` (gitignored). The directory must exist before `pnpm run dev` or `pnpm run build:*`. `win-arm64` is the native Windows on Arm build (NVIDIA RTX Spark, Snapdragon X); the app picks `win-<process.arch>` in dev and ToDesktop's `targetOverrides` select it for the arm64 installer.
 
 At runtime the main process picks a git backend in priority order ([`src/main/lib/ipc/index.ts`](src/main/lib/ipc/index.ts)): bootstrap pygit2 → standalone-install pygit2 → system `git`. Set `COMFY_FORCE_BOOTSTRAP_GIT=1` (or `pnpm run dev:bootstrap`) to verify the bundled path that ships to users without git.
 

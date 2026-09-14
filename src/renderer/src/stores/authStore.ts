@@ -2,6 +2,7 @@ import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import type { AuthStatus, ElectronApi, Workspace } from '../../../types/ipc'
+import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import type { Build } from '../devplatform/types'
 
 /**
@@ -18,7 +19,7 @@ export const useAuthStore = defineStore('auth', () => {
   const workspaces = ref<Workspace[]>([])
   const builds = ref<Build[]>([])
   /** Workspace currently selected in workspace-scoped renderer surfaces. */
-  const selectedWorkspaceId = ref<string | null>(null)
+  const selectedWorkspaceId = ref(PERSONAL_WORKSPACE_ID)
   const loadingWorkspaces = ref(false)
   const loadingBuilds = ref(false)
   /** Distinguishes a successfully loaded empty catalog from one not fetched yet. */
@@ -36,12 +37,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   function initializeWorkspaceContext(workspaceId?: string): void {
     if (workspaceContextInitialized) return
-    selectedWorkspaceId.value = workspaceId ?? null
+    selectedWorkspaceId.value = workspaceId ?? PERSONAL_WORKSPACE_ID
     workspaceContextInitialized = true
   }
 
   function resetWorkspaceContext(): void {
-    selectedWorkspaceId.value = null
+    selectedWorkspaceId.value = PERSONAL_WORKSPACE_ID
     workspaceContextInitialized = false
   }
 
@@ -161,6 +162,7 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   const isSignedIn = computed(() => status.value.signedIn)
+  const personalWorkspace = computed(() => workspaces.value.find(isPersonalWorkspace) ?? null)
 
   /** The builds published to the signed-in workspace, as display rows. */
   async function fetchBuilds(): Promise<Build[]> {
@@ -198,6 +200,7 @@ export const useAuthStore = defineStore('auth', () => {
     workspacesError,
     buildsError,
     isSignedIn,
+    personalWorkspace,
     initializeWorkspaceContext,
     resetWorkspaceContext,
     fetchStatus,

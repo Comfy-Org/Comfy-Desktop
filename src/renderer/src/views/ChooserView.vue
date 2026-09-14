@@ -1,16 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
-import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { Search } from 'lucide-vue-next'
+import { RefreshCw, Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BrandBackground from '../components/BrandBackground.vue'
@@ -18,9 +17,14 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
-import WorkspaceSelectorBar from './devplatform/WorkspaceSelectorBar.vue'
+import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 import { openInstallManager } from '../lib/openInstallManager'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
+import {
+  DASHBOARD_WORKSPACE_SETTING,
+  PERSONAL_WORKSPACE_ID,
+  workspaceContextId
+} from '../../../shared/workspaces'
 
 /**
  * Chooser view - recents grid.
@@ -29,8 +33,9 @@ import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc
  * window hosts this as the Comfy tab body when no install backs the
  * entry.
  *
- * Signed-in users choose either No workspace or one authenticated workspace.
- * The grid contains only installed instances in that scope.
+ * Every user has a local Personal workspace. Signed-in users additionally see
+ * authenticated team workspaces; the server Personal workspace merges into
+ * the local Personal scope.
  * Available Builds belong in the workspace New Instance flow, not this grid.
  */
 
@@ -48,7 +53,7 @@ const emit = defineEmits<{
    *  open a fresh window, or hand off to a launch flow. */
   pick: [installation: Installation]
   /** User triggered the new-install flow in the current dashboard scope. */
-  'show-new-install': [workspaceId?: string]
+  'show-new-install': [workspaceId: string]
   /** A long-running action was kicked off from the inline Manage...
    *  DetailModal. Forwarded to PanelApp so it can wire the operation
    *  through `progressStore`. */
@@ -92,8 +97,63 @@ defineExpose({ activeFilter })
 
 // --- Dashboard scope ---
 
-const { selectedWorkspaceId, installationIsInSelectedScope } =
-  useWorkspaceInstallScope(installationsRef)
+const selectedWorkspaceId = ref(PERSONAL_WORKSPACE_ID)
+let dashboardScopeInitialized = false
+
+function setSelectedWorkspace(workspaceId: string): void {
+  selectedWorkspaceId.value = workspaceId
+  authStore.initializeWorkspaceContext(workspaceId)
+  authStore.selectedWorkspaceId = workspaceId
+  void window.api.setSetting(DASHBOARD_WORKSPACE_SETTING, workspaceId)
+}
+
+const selectedWorkspaceModel = computed({
+  get: () => selectedWorkspaceId.value,
+  set: setSelectedWorkspace
+})
+
+watch(
+  () => ({
+    signedIn: authStore.isSignedIn,
+    workspaceId: authStore.status.workspaceId,
+    workspaceType: authStore.status.workspaceType
+  }),
+  (next, previous) => {
+    if (!next.signedIn) {
+      setSelectedWorkspace(PERSONAL_WORKSPACE_ID)
+      dashboardScopeInitialized = false
+      return
+    }
+    // Build versions drive each managed instance's Update status tag. Main
+    // warms that synchronous cache during listBuilds and then broadcasts an
+    // installation refresh, so load the active workspace catalog as soon as
+    // the authenticated dashboard has one.
+    if (next.workspaceId && next.workspaceId !== previous?.workspaceId) {
+      void authStore.fetchBuilds()
+    }
+    if (!dashboardScopeInitialized) {
+      setSelectedWorkspace(workspaceContextId(authStore.status))
+      dashboardScopeInitialized = true
+      return
+    }
+    // Follow an external authenticated workspace switch only while the user is
+    // viewing that workspace. An explicit Personal/team selection remains local.
+    if (
+      previous &&
+      selectedWorkspaceId.value === workspaceContextId(previous) &&
+      workspaceContextId(authStore.status) !== selectedWorkspaceId.value
+    ) {
+      setSelectedWorkspace(workspaceContextId(authStore.status))
+    }
+  },
+  { immediate: true }
+)
+
+function installationIsInSelectedScope(inst: Installation): boolean {
+  return selectedWorkspaceId.value === PERSONAL_WORKSPACE_ID
+    ? inst.workspaceId === undefined || inst.workspaceId === PERSONAL_WORKSPACE_ID
+    : inst.workspaceId === selectedWorkspaceId.value
+}
 
 const scopedVisibleInstalls = computed(() =>
   visibleInstalls.value.filter(installationIsInSelectedScope)
@@ -106,6 +166,13 @@ const showNoMatches = computed(
     scopedVisibleInstalls.value.length === 0 &&
     (searchQuery.value.trim().length > 0 || activeFilter.value !== 'all')
 )
+
+const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
+
+async function refreshWorkspace(): Promise<void> {
+  emitTelemetryAction('comfy.desktop.workspace.refresh', {})
+  await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
+}
 
 // --- Cluster top offset ---
 
@@ -218,11 +285,7 @@ onMounted(async () => {
   }
 })
 function handleNewInstallClick(): void {
-  if (authStore.isSignedIn && selectedWorkspaceId.value) {
-    emit('show-new-install', selectedWorkspaceId.value)
-  } else {
-    emit('show-new-install')
-  }
+  emit('show-new-install', selectedWorkspaceId.value)
 }
 
 const gridHandlers = {
@@ -240,11 +303,7 @@ const gridHandlers = {
 
 <template>
   <BrandBackground v-show="props.visible" class="chooser-bg">
-    <div
-      class="chooser-view"
-      :class="{ 'chooser-view--workspace': authStore.isSignedIn }"
-      :style="{ '--rows': clusterRows }"
-    >
+    <div class="chooser-view chooser-view--workspace" :style="{ '--rows': clusterRows }">
       <!-- Signed-in account identity, pinned outside the centered content column. -->
       <div class="chooser-account">
         <DevPlatformAccountChip />
@@ -263,14 +322,34 @@ const gridHandlers = {
         </div>
       </div>
 
-      <WorkspaceSelectorBar
-        v-if="authStore.isSignedIn"
-        v-model="selectedWorkspaceId"
-        class="chooser-workspace-bar"
-      >
-        <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
-        <strong>{{ scopedInstallCount }}</strong>
-      </WorkspaceSelectorBar>
+      <div class="chooser-workspace-bar">
+        <div
+          class="chooser-workspace-controls"
+          :class="{ 'chooser-workspace-controls--no-refresh': !authStore.isSignedIn }"
+        >
+          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceModel" />
+          <button
+            v-if="authStore.isSignedIn"
+            type="button"
+            class="chooser-workspace-refresh"
+            :disabled="refreshingWorkspace"
+            :aria-label="t('devPlatform.workspace.refresh')"
+            :title="t('devPlatform.workspace.refresh')"
+            data-testid="chooser-workspace-refresh"
+            @click="refreshWorkspace"
+          >
+            <RefreshCw
+              :size="13"
+              :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
+            />
+          </button>
+        </div>
+        <div class="chooser-workspace-divider" aria-hidden="true" />
+        <div class="chooser-workspace-count">
+          <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
+          <strong>{{ scopedInstallCount }}</strong>
+        </div>
+      </div>
 
       <div
         v-if="installationStore.loading && installationStore.installations.length === 0"
@@ -528,6 +607,122 @@ const gridHandlers = {
 
 .chooser-workspace-bar {
   grid-row: 4;
-  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 1168px;
+}
+.chooser-workspace-divider {
+  flex: 1 1 auto;
+  min-width: 16px;
+  height: 1px;
+  background: var(--chooser-surface-border);
+}
+.chooser-workspace-controls {
+  --chooser-workspace-refresh-size: 30px;
+  --chooser-workspace-refresh-gap: 8px;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--chooser-workspace-refresh-size);
+  flex: 0 1 290px;
+  align-items: center;
+  gap: var(--chooser-workspace-refresh-gap);
+  min-width: 0;
+}
+.chooser-workspace-controls--no-refresh {
+  grid-template-columns: minmax(0, 1fr);
+  flex-basis: calc(
+    290px - var(--chooser-workspace-refresh-size) - var(--chooser-workspace-refresh-gap)
+  );
+  gap: 0;
+}
+.chooser-workspace-count {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.chooser-workspace-count strong {
+  color: var(--neutral-100);
+  font-weight: 600;
+}
+.chooser-workspace-controls :deep(.workspace-selector) {
+  width: 100%;
+  min-width: 0;
+}
+.chooser-workspace-controls :deep(.workspace-selector__face) {
+  --dp-avatar-size: 20px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 180px;
+  padding: 4px 8px;
+}
+.chooser-workspace-controls :deep(.workspace-selector__menu) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+.chooser-workspace-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--chooser-workspace-refresh-size);
+  height: var(--chooser-workspace-refresh-size);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chooser-workspace-refresh:hover:not(:disabled) {
+  border-color: var(--chooser-surface-border-hover);
+  background: var(--chooser-surface-bg-hover);
+  color: var(--neutral-100);
+}
+.chooser-workspace-refresh:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.chooser-workspace-refresh:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.chooser-workspace-refresh__icon--busy {
+  animation: chooser-workspace-refresh-spin 900ms linear infinite;
+}
+@keyframes chooser-workspace-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 640px) {
+  .chooser-workspace-bar {
+    flex-wrap: wrap;
+  }
+
+  .chooser-workspace-divider {
+    display: none;
+  }
+
+  .chooser-workspace-controls {
+    flex-basis: 100%;
+  }
+
+  .chooser-workspace-controls--no-refresh {
+    flex-basis: calc(
+      100% - var(--chooser-workspace-refresh-size) - var(--chooser-workspace-refresh-gap)
+    );
+  }
+
+  .chooser-workspace-count {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 </style>

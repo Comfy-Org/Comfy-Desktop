@@ -360,7 +360,6 @@
     "chooseMethod": "Choose Install Method",
     "configuration": "Configuration",
     "configureTitle": "Create a New Instance",
-    "configureWorkspaceLead": "Select a release to install.",
     "detectedGpuLabel": "Detected GPU",
     "notAvailableRemote": "Not available in Remote Connection mode",
     "helpImproveTitle": "Help improve Comfy",
@@ -372,10 +371,9 @@
     "changeInstallType": "Change Install Type",
     "nameWhitespace": "Enter a name, or leave blank to use the suggested one.",
     "urlInvalid": "Enter a valid URL (e.g. http://localhost:8188).",
-    "buildSourceLabel": "Select build",
-    "managedBuilds": "Managed",
-    "publicBuilds": "Public",
-    "workspaceBuildLabel": "Build",
+    "managedBuilds": "Managed Builds",
+    "publicBuilds": "Public Builds",
+    "workspaceBuildLabel": "Release",
     "selectWorkspaceBuild": "Select a Build",
     "noCompatibleBuilds": "No compatible Builds are available to install.",
     "refreshWorkspaceBuilds": "Refresh Builds",
@@ -390,7 +388,7 @@
     "buildModels": "Models",
     "buildCustomNodes": "Custom nodes",
     "buildSize": "Size",
-    "buildTarget": "Release target"
+    "buildTarget": "Hardware"
   },
   "templateQuit": {
     "title": "Template models are still downloading",
@@ -723,6 +721,20 @@
       "requestLicenseCta": "Request License",
       "learnMoreCta": "Learn More",
       "imageAlt": "MiniMax H3 announcement",
+      "unmute": "Unmute video",
+      "mute": "Mute video"
+    },
+    "cloudNodes": {
+      "title": "Run open weight models on Comfy Cloud GPUs",
+      "lead": "New Comfy Cloud nodes run the latest open weight models on our hardware, from inside your own graph",
+      "highlights": [
+        "No subscription: an account and credits are enough",
+        "Nothing to download and no VRAM floor"
+      ],
+      "primaryCta": "Read More",
+      "beta": "In beta: the node set is still changing, so options may be added or removed and a workflow may be retired.",
+      "docsCta": "Read the Docs",
+      "imageAlt": "Comfy Cloud nodes announcement",
       "unmute": "Unmute video",
       "mute": "Mute video"
     }
@@ -1284,7 +1296,6 @@
     },
     "workspace": {
       "personalLabel": "Personal",
-      "unmanagedLabel": "No workspace",
       "switchLabel": "Workspace",
       "currentFallback": "Current workspace",
       "instanceCountLabel": "INSTANCES",

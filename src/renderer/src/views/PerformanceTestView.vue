@@ -473,7 +473,7 @@ watch(performanceTestLogs, async () => {
                   {{ t('performanceTest.workspaceLabel') }}
                 </span>
                 <div class="performance-test__selection-control performance-test__workspace-select">
-                  <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" compact />
+                  <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
                 </div>
               </div>
               <div class="performance-test__selection-row">

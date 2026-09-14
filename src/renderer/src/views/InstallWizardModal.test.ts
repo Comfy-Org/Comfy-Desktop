@@ -8,6 +8,7 @@ import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import BrandVariantList from '../components/BrandVariantList.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
+import { useModal } from '../composables/useModal'
 
 function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
@@ -19,12 +20,17 @@ function mountModal() {
   return mount(InstallWizardModal, {
     global: {
       plugins: [makeI18n(), pinia],
-      stubs: { BrandTakeoverLayout: { template: '<div><slot /></div>' } }
+      stubs: {
+        BrandTakeoverLayout: {
+          template: '<div><slot /><slot name="footer-left" /><slot name="footer" /></div>'
+        }
+      }
     }
   })
 }
 
 beforeEach(() => {
+  useModal().dismiss()
   window.api = {
     openPath: vi.fn().mockResolvedValue(undefined),
     browseFolder: vi.fn().mockResolvedValue('/home/user/Picked'),
@@ -90,6 +96,76 @@ describe('InstallWizardModal heading', () => {
     const fieldLabel = wrapper.get('#source-fields label')
     expect(fieldLabel.classes()).toContain('config-label')
     expect(fieldLabel.text()).toBe('ComfyUI version')
+    expect(
+      wrapper
+        .get('[data-testid="install-source-tabs"]')
+        .findAll('button')
+        .map((button) => button.text())
+    ).toEqual(['Public Builds', 'Managed Builds'])
+    expect(
+      wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
+    ).toBe('true')
+    expect(
+      wrapper.get('[data-testid="workspace-install-source-managed"]').attributes('aria-checked')
+    ).toBe('false')
+  })
+
+  it('starts sign-in when a signed-out user selects Managed Builds', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'standalone', label: 'Standalone', fields: [] }
+    ])
+    const status = {
+      signedIn: true,
+      workspaceId: 'personal-server-id',
+      workspaceType: 'personal'
+    }
+    ;(window.api.comfybuilder.signIn as ReturnType<typeof vi.fn>).mockResolvedValue(status)
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'ready', name: 'Ready Build', state: 'installable' }
+    ])
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
+    await flushPromises()
+
+    expect(window.api.comfybuilder.signIn).toHaveBeenCalledOnce()
+    expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
+    expect(
+      wrapper.get('[data-testid="workspace-install-source-managed"]').attributes('aria-checked')
+    ).toBe('true')
+    expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain('Ready Build')
+  })
+
+  it('reports a workspace load failure when Managed Builds cannot resolve Personal', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'standalone', label: 'Standalone', fields: [] }
+    ])
+    ;(window.api.comfybuilder.signIn as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'team-workspace',
+      workspaceType: 'team'
+    })
+    ;(window.api.comfybuilder.listWorkspaces as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('offline')
+    )
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
+    await flushPromises()
+
+    const modal = useModal()
+    expect(modal.state).toMatchObject({
+      visible: true,
+      type: 'alert',
+      title: 'Error',
+      message: "Couldn't load workspaces. Retry"
+    })
+    expect(window.api.comfybuilder.listBuilds).not.toHaveBeenCalled()
+    modal.dismiss()
   })
 })
 
@@ -145,6 +221,11 @@ describe('InstallWizardModal workspace Builds', () => {
   }
 
   it('shows compatible Builds even when their releases are already installed', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'standalone', label: 'Standalone', fields: [] },
+      { id: 'portable', label: 'Portable', fields: [] },
+      { id: 'remote', label: 'Remote Connection', fields: [] }
+    ])
     signInToWorkspace([
       { id: 'ready', name: 'Ready Build', state: 'installable' },
       { id: 'none', name: 'No Build Yet', state: 'no-build' },
@@ -164,9 +245,18 @@ describe('InstallWizardModal workspace Builds', () => {
       wrapper.get('[data-testid="workspace-install-source-managed"]').attributes()
     ).toMatchObject({ 'aria-checked': 'true' })
     expect(
-      wrapper.get('[data-testid="workspace-install-source-public"]').attributes()
-    ).toMatchObject({ 'aria-checked': 'false' })
+      wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
+    ).toBe('false')
+    expect(
+      wrapper
+        .get('[data-testid="install-source-tabs"]')
+        .findAll('button')
+        .map((button) => button.text())
+    ).toEqual(['Public Builds', 'Managed Builds', 'Remote Connection', 'Portable'])
+    expect(wrapper.get('[data-testid="install-source-tabs"]').text()).not.toContain('RECOMMENDED')
+    expect(wrapper.find('[data-testid="workspace-install-source-public"]').exists()).toBe(false)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workspace-build-field"] label').text()).toBe('Release')
     const buildSelect = wrapper.getComponent(BaseSelect)
     expect(buildSelect.props('options')).toEqual([
       { value: 'ready', label: 'Ready Build' },
@@ -175,6 +265,44 @@ describe('InstallWizardModal workspace Builds', () => {
       { value: 'update', label: 'Updated Build' }
     ])
     expect(buildSelect.props('modelValue')).toBe('ready')
+  })
+
+  it('switches directly from Managed to a peer source tab', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'version', label: 'Version', type: 'select' }]
+      },
+      {
+        id: 'remote',
+        label: 'Remote Connection',
+        skipInstall: true,
+        fields: [{ id: 'url', label: 'Server URL', type: 'text' }]
+      }
+    ])
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    const wrapper = await openWorkspaceModal()
+
+    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await flushPromises()
+
+    expect(
+      wrapper.get('[data-testid="workspace-install-source-managed"]').attributes('aria-checked')
+    ).toBe('false')
+    expect(wrapper.get('[data-testid="install-source-remote"]').attributes('aria-checked')).toBe(
+      'true'
+    )
+    expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
+    expect(wrapper.get('#source-fields').text()).toContain('Server URL')
+    expect(window.api.getFieldOptions).not.toHaveBeenCalled()
+    expect(window.api.validateHardware).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
+    await flushPromises()
+
+    expect(window.api.validateHardware).toHaveBeenCalledOnce()
+    expect(window.api.getFieldOptions).toHaveBeenCalledOnce()
   })
 
   it('shows Build metadata in the dropdown without a separate details panel', async () => {
@@ -228,7 +356,7 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
   })
 
-  it('uses the existing local installer and template picker for Public builds', async () => {
+  it('uses the existing local installer and template picker for Standalone', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -243,10 +371,12 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
     const wrapper = await openWorkspaceModal()
 
-    expect(wrapper.get('[data-testid="workspace-install-source-managed"]').text()).toBe('Managed')
-    expect(wrapper.get('[data-testid="workspace-install-source-public"]').text()).toBe('Public')
+    expect(wrapper.get('[data-testid="workspace-install-source-managed"]').text()).toBe(
+      'Managed Builds'
+    )
+    expect(wrapper.find('[data-testid="workspace-install-source-public"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
+    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
@@ -270,7 +400,7 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(window.api.comfybuilder.installBuild).not.toHaveBeenCalled()
   })
 
-  it('assigns a Public install to the selected workspace', async () => {
+  it('assigns a Standalone install to the selected workspace', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -288,7 +418,7 @@ describe('InstallWizardModal workspace Builds', () => {
     })
     const wrapper = await openWorkspaceModal()
 
-    await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
+    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
@@ -300,6 +430,54 @@ describe('InstallWizardModal workspace Builds', () => {
       status: 'installing',
       workspaceId: 'w1'
     })
+  })
+
+  it('uses the server Personal workspace for Builds but persists the stable local context', async () => {
+    const status = {
+      signedIn: true,
+      workspaceId: 'server-personal-id',
+      workspaceType: 'team',
+      workspaceName: 'Personal workspace'
+    }
+    ;(window.api.comfybuilder.getAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValue(status)
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'ready', name: 'Personal Build', state: 'installable' }
+    ])
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU' }
+    ])
+    ;(window.api.addInstallation as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      entry: { id: 'personal-public', name: 'ComfyUI' }
+    })
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'personal' })
+    await flushPromises()
+
+    expect(window.api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
+    expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
+      { value: 'ready', label: 'Personal Build' }
+    ])
+
+    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(window.api.addInstallation).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: 'personal' })
+    )
   })
 
   it('switches back to cached Managed builds without another catalog request', async () => {
@@ -322,14 +500,14 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
     const wrapper = await openWorkspaceModal()
 
-    await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
+    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
     expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(2_250)
 
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.brand-lead').text()).toBe('Select a release to install.')
+    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
     expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(4_500)
@@ -355,8 +533,8 @@ describe('InstallWizardModal workspace Builds', () => {
     })
     const wrapper = await openWorkspaceModal()
 
-    // Visit Public (loads standalone template options), then return to Managed.
-    await wrapper.get('[data-testid="workspace-install-source-public"]').trigger('click')
+    // Visit Standalone (loads template options), then return to Managed.
+    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
@@ -382,7 +560,7 @@ describe('InstallWizardModal workspace Builds', () => {
     signInToWorkspace([{ id: 'none', name: 'No Build Yet', state: 'no-build' }])
     const wrapper = await openWorkspaceModal()
 
-    expect(wrapper.get('.brand-lead').text()).toBe('Select a release to install.')
+    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
     expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain(
       'No compatible Builds are available to install.'
     )
@@ -539,7 +717,9 @@ describe('InstallWizardModal workspace Builds', () => {
     const wrapper = await openWorkspaceModal()
 
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="workspace-build-targets"]').isVisible()).toBe(true)
+    const targetSection = wrapper.get('[data-testid="workspace-build-targets"]')
+    expect(targetSection.isVisible()).toBe(true)
+    expect(targetSection.get('label').text()).toBe('Hardware')
     const targetPicker = wrapper.getComponent(BrandVariantList)
     expect(targetPicker.props('options')).toEqual([
       {
