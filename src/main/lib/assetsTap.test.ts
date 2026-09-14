@@ -437,7 +437,7 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(1)
     })
 
-    it('rejects oversized or path-bearing phase values through structural checks', () => {
+    it('rejects oversized or path-bearing phase values outside the enum', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_started', { phase: 'P'.repeat(65) }), 'stdout')
       tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast/path' }), 'stdout')

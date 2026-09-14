@@ -12,8 +12,8 @@
  * Unlike the hardware tap, which matches known prose, this one parses a single
  * grammar. That makes core's stdout UNTRUSTED INPUT: anything writing to the
  * process's stdout can emit a tagged line, so the tap carries its own closed
- * contract — an event allowlist, a field-name allowlist, global structural
- * value checks, and a rejection of any key colliding with the trusted base
+ * contract: an event allowlist, a field-name allowlist, per-field type and
+ * value checks, and rejection of any key colliding with the trusted base
  * context. A line that fails any check is dropped whole and silently:
  * reporting the rejection would put the untrusted content back into a signal
  * we forward.
