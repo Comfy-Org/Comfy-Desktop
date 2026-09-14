@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import * as safeFile from './safe-file'
 
 const getOpsFlagResult = vi.fn()
 vi.mock('./telemetry', () => ({
@@ -47,6 +48,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   fs.rmSync(testConfigDir, { recursive: true, force: true })
 })
 
@@ -414,12 +416,16 @@ describe('makeOpsFlag revocation coherence', () => {
   })
 
   it('refuses the persisted write when the primary exists but is unreadable', async () => {
-    // Given a primary that EXISTS but cannot be read (mode 000 → EACCES outlasting the retry
-    // budget), with a readable backup standing in for it. `readFileSafe` serves the backup
+    // Given a primary that EXISTS but cannot be read, with a readable backup standing in for it.
+    // `readFileSafe` serves the backup
     // tagged `primaryUnreadable`, so the file's REAL content is unknown — a read-modify-write
     // would replace an intact primary with state reconstructed from the backup.
     seedGrantedFiles()
-    fs.chmodSync(flagsFilePath(), 0o000)
+    vi.spyOn(safeFile, 'readFileSafe').mockReturnValue({
+      kind: 'data',
+      data: grantEntry(true),
+      primaryUnreadable: true
+    })
 
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(false, null))
@@ -431,7 +437,6 @@ describe('makeOpsFlag revocation coherence', () => {
 
     // And neither file was rewritten: the refusal happens before the backup write too, so it
     // cannot leave the pair half-updated.
-    fs.chmodSync(flagsFilePath(), 0o644)
     expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
     expect(JSON.parse(fs.readFileSync(bakFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
   })
@@ -441,14 +446,13 @@ describe('makeOpsFlag revocation coherence', () => {
     // than serving data. Still a refusal: an unrecoverable file is not an empty one, and
     // writing would replace real entries with a single reconstructed key.
     fs.writeFileSync(flagsFilePath(), grantEntry(true), 'utf-8')
-    fs.chmodSync(flagsFilePath(), 0o000)
+    vi.spyOn(safeFile, 'readFileSafe').mockReturnValue({ kind: 'unreadable' })
 
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(false, null))
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
 
     expect(await flag.get()).toBe('revoked')
-    fs.chmodSync(flagsFilePath(), 0o644)
     expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
     expect(fs.existsSync(bakFilePath())).toBe(false)
   })
