@@ -708,6 +708,54 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
 // diagnostics exactly when they matter. Consent only ever seeds the initial
 // value, once.
 describe('resolveBetaFeaturesEnabled', () => {
+  it.each([true, false])(
+    'retains a stored %s from a backup when the primary is unreadable',
+    (choice) => {
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+      fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: !choice }))
+      fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ betaFeaturesEnabled: choice }))
+
+      const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+      vi.spyOn(fs, 'readFileSync').mockImplementation(((
+        p: fs.PathOrFileDescriptor,
+        opts?: unknown
+      ) => {
+        if (p === settingsPath) {
+          const err = new Error('fake EPERM') as NodeJS.ErrnoException
+          err.code = 'EPERM'
+          throw err
+        }
+        return realRead(p, opts as BufferEncoding)
+      }) as typeof fs.readFileSync)
+
+      expect(settings.resolveBetaFeaturesEnabled()).toBe(choice)
+    }
+  )
+
+  it('does not enroll from a stale telemetry backup when the primary is unreadable', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: false }))
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ telemetryEnabled: true }))
+
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (p === settingsPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM'
+        throw err
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
+
+    vi.restoreAllMocks()
+    expect(readPersistedSettings()).toEqual({ telemetryEnabled: false })
+  })
+
   it('returns a stored true without consulting telemetry consent', () => {
     settings.set('betaFeaturesEnabled', true)
     settings.set('telemetryEnabled', false)
