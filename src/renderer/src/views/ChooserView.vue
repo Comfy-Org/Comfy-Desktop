@@ -458,11 +458,9 @@ const gridHandlers = {
 .chooser-shelves {
   grid-row: 4;
   width: 100%;
-  /* Content box must hold exactly 4 tracks (4 x 280 + 3 x 16 = 1168px), so the
-   * side padding sits OUTSIDE the cap - inside it, `auto-fit` drops to 3
-   * columns on a wide viewport. */
-  --shelf-pad-x: 4px;
-  max-width: calc(1168px + 2 * var(--shelf-pad-x));
+  /* Content box holds exactly 4 tracks (4 x 280 + 3 x 16 = 1168px). */
+  max-width: 1168px;
+  justify-self: start;
   /* Reserve the unfiltered row height so the cluster doesn't jump while typing
    * in search. Tile is 178px tall (280px at the golden-ratio aspect). */
   --tile-h: 178px;
@@ -479,7 +477,7 @@ const gridHandlers = {
    * glide under it rather than clip abruptly. Fluid on height (`--chooser-fade`)
    * so short viewports reclaim the band for an extra tile row. */
   --chooser-fade: clamp(12px, 2.5vh, 24px);
-  padding: var(--chooser-fade) var(--shelf-pad-x);
+  padding-block: var(--chooser-fade);
   /* Size container so each shelf below can snap its width to a whole number
    * of tile columns. */
   container-type: inline-size;
@@ -503,16 +501,14 @@ const gridHandlers = {
   flex-direction: column;
   /* The grid's own row gap, so two stacked grids read as continuous rows. */
   gap: 16px;
-  /* Snap each shelf to a whole number of 280px tracks (16px gaps) and center
-   * the snapped block. Without this, a viewport that fits fewer than 4
-   * columns leaves the start-aligned grids pinned left under the centered
-   * wordmark/search with a dead right gutter. Snapping makes start-aligned
-   * and centered rows coincide, and shelf header rules end at the last
-   * column. Thresholds are `cols * 280 + (cols - 1) * 16` against the
-   * shelves' content box (the container defined above). */
+  /* Snap each shelf to a whole number of 280px tracks (16px gaps) while
+   * keeping partial-width shelves aligned with the left edge. Thresholds are
+   * `cols * 280 + (cols - 1) * 16` against the shelves' content box (the
+   * container defined above). */
   width: 100%;
   max-width: 280px;
-  margin-inline: auto;
+  align-self: flex-start;
+  margin: 0;
 }
 @container (width >= 576px) {
   .chooser-shelf {
@@ -532,5 +528,6 @@ const gridHandlers = {
 
 .chooser-workspace-bar {
   grid-row: 4;
+  justify-self: start;
 }
 </style>

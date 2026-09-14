@@ -788,6 +788,73 @@ export interface SystemInfo {
   }>
 }
 
+export interface PerformanceTestResultsSummary {
+  createdAt: string
+  instance: {
+    id: string
+    name: string
+  }
+  workspace: {
+    id: string | null
+    name: string | null
+  }
+  workflowName: string
+  fastestJobDurationSeconds: number | null
+  slowestJobDurationSeconds: number | null
+  averageJobDurationSeconds: number | null
+  medianJobDurationSeconds: number | null
+  measuredJobCount: number
+  failedRunCount: number
+  hardware: {
+    deviceType: string
+    deviceIndex: number | null
+    deviceName: string | null
+    backend: string | null
+    devices: Array<{
+      deviceType: string
+      deviceIndex: number | null
+      deviceName: string | null
+      backend: string | null
+    }>
+    vramMb: number | null
+    ramMb: number | null
+    pytorchVersion: string | null
+    xformersVersion: string | null
+    cudaDeviceSet: number | null
+  } | null
+  systemInfo: SystemInfo
+}
+
+export type PerformanceTestResultValue =
+  | string
+  | number
+  | boolean
+  | null
+  | PerformanceTestResultValue[]
+  | { [key: string]: PerformanceTestResultValue }
+
+export interface PerformanceTestBenchmark {
+  id: string
+  createdAt: string | null
+  instance: {
+    id: string
+    name: string
+  }
+  workspace: {
+    id: string | null
+    name: string | null
+  }
+  workflowName: string
+  fastestJobDurationSeconds: number | null
+  slowestJobDurationSeconds: number | null
+  averageJobDurationSeconds: number | null
+  medianJobDurationSeconds: number | null
+  measuredJobCount: number
+  hardwareName: string | null
+  /** Complete results.json payload used to discover configurable table columns. */
+  result: Record<string, PerformanceTestResultValue>
+}
+
 export interface SnapshotDiffEntry {
   createdAt: string
   trigger: string
@@ -1108,6 +1175,14 @@ export interface ElectronApi {
     canceled?: boolean
   }>
   deletePerformanceTestWorkflow(filePath: string): Promise<{ ok: boolean; message?: string }>
+  savePerformanceTestLogs(
+    filePath: string,
+    logs: string
+  ): Promise<{ ok: boolean; logsPath?: string; message?: string }>
+  listPerformanceTestBenchmarks(folderPath?: string): Promise<{
+    folderPath: string
+    benchmarks: PerformanceTestBenchmark[]
+  }>
   runPerformanceTestWorkflow(
     sessionId: string,
     filePath: string,
@@ -1121,7 +1196,7 @@ export interface ElectronApi {
     promptIds?: string[]
     resultPath?: string
     resultsSummaryPath?: string
-    unsuccessfulJobs?: number
+    failedRuns?: number
     statistics?: {
       fastest: { jobId: string; durationSeconds: number }
       slowest: { jobId: string; durationSeconds: number }
@@ -1147,10 +1222,13 @@ export interface ElectronApi {
       cudaDeviceSet: number | null
     } | null
     systemInfo?: SystemInfo
+    resultsSummary?: PerformanceTestResultsSummary
     message?: string
   }>
-  exportPerformanceTestResultsImage(
-    svg: string,
+  readPerformanceTestResultsSummary(filePath: string): Promise<PerformanceTestResultsSummary>
+  exportResultsImage(
+    png: ArrayBuffer,
+    imageType: 'performance-test' | 'benchmark-comparison',
     defaultPath?: string
   ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
@@ -1561,6 +1639,9 @@ export interface ElectronApi {
   // Event listeners (return unsubscribe functions)
   onInstallProgress(callback: (data: ProgressData) => void): Unsubscribe
   onComfyOutput(callback: (data: ComfyOutputData) => void): Unsubscribe
+  onPerformanceTestProgress(
+    callback: (data: { sessionId: string; completedRuns: number; totalRuns: number }) => void
+  ): Unsubscribe
   onComfyExited(callback: (data: ComfyExitedData) => void): Unsubscribe
   /** Crash broadcast to every renderer (unlike `onComfyExited`, which only
    *  reaches the launching window). Lets any open dashboard show the red

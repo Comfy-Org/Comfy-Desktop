@@ -17,6 +17,8 @@ export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
   const workspaces = ref<Workspace[]>([])
   const builds = ref<Build[]>([])
+  /** Workspace currently selected in workspace-scoped renderer surfaces. */
+  const selectedWorkspaceId = ref<string | null>(null)
   const loadingWorkspaces = ref(false)
   const loadingBuilds = ref(false)
   /** Distinguishes a successfully loaded empty catalog from one not fetched yet. */
@@ -30,6 +32,18 @@ export const useAuthStore = defineStore('auth', () => {
   /** Bumped on every authoritative status change (push, sign-in, switch,
    *  sign-out) so a slower in-flight pull can never overwrite a newer status. */
   let revision = 0
+  let workspaceContextInitialized = false
+
+  function initializeWorkspaceContext(workspaceId?: string): void {
+    if (workspaceContextInitialized) return
+    selectedWorkspaceId.value = workspaceId ?? null
+    workspaceContextInitialized = true
+  }
+
+  function resetWorkspaceContext(): void {
+    selectedWorkspaceId.value = null
+    workspaceContextInitialized = false
+  }
 
   /** Advance the revision on an authoritative status change. Every in-flight
    *  fetch becomes stale, and a stale fetch's guarded `finally` refuses to
@@ -62,8 +76,10 @@ export const useAuthStore = defineStore('auth', () => {
     }
     advanceRevision()
     status.value = next
-    if (!next.signedIn) resetScopedState()
-    else {
+    if (!next.signedIn) {
+      resetScopedState()
+      resetWorkspaceContext()
+    } else {
       builds.value = []
       buildsLoaded.value = false
     }
@@ -175,12 +191,15 @@ export const useAuthStore = defineStore('auth', () => {
     status,
     workspaces,
     builds,
+    selectedWorkspaceId,
     loadingWorkspaces,
     loadingBuilds,
     buildsLoaded,
     workspacesError,
     buildsError,
     isSignedIn,
+    initializeWorkspaceContext,
+    resetWorkspaceContext,
     fetchStatus,
     signIn,
     signOut,

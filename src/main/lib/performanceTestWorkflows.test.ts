@@ -7,7 +7,10 @@ import {
   calculatePerformanceTestStatistics,
   deletePerformanceTestWorkflow,
   incrementWorkflowSeeds,
+  listPerformanceTestBenchmarks,
+  readPerformanceTestResultsSummary,
   savePerformanceTestJobsResponse,
+  savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
   storePerformanceTestWorkflow,
   submitPerformanceTestWorkflow,
@@ -47,6 +50,12 @@ describe('calculatePerformanceTestStatistics', () => {
           status: 'completed',
           execution_start_time: 20000,
           execution_end_time: 26000
+        },
+        {
+          id: 'measured-failed',
+          status: 'failed',
+          execution_start_time: 50000,
+          execution_end_time: 150000
         }
       ]
     }
@@ -56,7 +65,8 @@ describe('calculatePerformanceTestStatistics', () => {
         'measured-1',
         'measured-2',
         'measured-3',
-        'measured-4'
+        'measured-4',
+        'measured-failed'
       ])
     ).toEqual({
       fastest: { jobId: 'measured-1', durationSeconds: 2 },
@@ -105,6 +115,87 @@ afterEach(async () => {
   )
 })
 
+describe('listPerformanceTestBenchmarks', () => {
+  it('returns valid summaries newest first and ignores incomplete or malformed sessions', async () => {
+    const root = await makeTempDir()
+    const userDataPath = path.join(root, 'user-data')
+    const testsPath = path.join(userDataPath, 'performance-tests')
+    const validSummary = {
+      instance: { id: 'instance-1', name: 'Comfy One' },
+      workspace: { id: 'workspace-1', name: 'Design' },
+      workflowName: 'portrait.json',
+      fastestJobDurationSeconds: 1.25,
+      slowestJobDurationSeconds: 3.5,
+      averageJobDurationSeconds: 2.125,
+      medianJobDurationSeconds: 2,
+      measuredJobCount: 5,
+      hardware: { deviceName: 'NVIDIA RTX 4090' },
+      customMetric: 42
+    }
+    await Promise.all(
+      ['original-session', 'renamed session', 'malformed-session', 'incomplete-session'].map((id) =>
+        fs.promises.mkdir(path.join(testsPath, id), { recursive: true })
+      )
+    )
+    await fs.promises.writeFile(
+      path.join(testsPath, 'original-session', 'results.json'),
+      JSON.stringify(validSummary)
+    )
+    await fs.promises.writeFile(
+      path.join(testsPath, 'renamed session', 'results.json'),
+      JSON.stringify({
+        ...validSummary,
+        createdAt: '2026-09-13T15:30:45.000Z',
+        instance: { id: 'instance-2', name: 'Comfy Two' },
+        workspace: { id: null, name: null },
+        workflowName: 'product.json',
+        hardware: { deviceType: 'mps' }
+      })
+    )
+    await fs.promises.writeFile(
+      path.join(testsPath, 'malformed-session', 'results.json'),
+      '{ malformed'
+    )
+
+    const benchmarks = await listPerformanceTestBenchmarks(testsPath)
+
+    expect(benchmarks.map((benchmark) => benchmark.id)).toEqual([
+      'renamed session',
+      'original-session'
+    ])
+    expect(benchmarks[0]).toEqual({
+      id: 'renamed session',
+      createdAt: '2026-09-13T15:30:45.000Z',
+      instance: { id: 'instance-2', name: 'Comfy Two' },
+      workspace: { id: null, name: null },
+      workflowName: 'product.json',
+      fastestJobDurationSeconds: 1.25,
+      slowestJobDurationSeconds: 3.5,
+      averageJobDurationSeconds: 2.125,
+      medianJobDurationSeconds: 2,
+      measuredJobCount: 5,
+      hardwareName: 'mps',
+      result: {
+        ...validSummary,
+        createdAt: '2026-09-13T15:30:45.000Z',
+        instance: { id: 'instance-2', name: 'Comfy Two' },
+        workspace: { id: null, name: null },
+        workflowName: 'product.json',
+        hardware: { deviceType: 'mps' }
+      }
+    })
+    expect(benchmarks[1]!.createdAt).toBeNull()
+  })
+
+  it('returns an empty list before any performance tests have been saved', async () => {
+    const root = await makeTempDir()
+
+    await expect(
+      listPerformanceTestBenchmarks(path.join(root, 'user-data', 'performance-tests'))
+    ).resolves.toEqual([])
+  })
+})
+
 describe('storePerformanceTestWorkflow', () => {
   it('copies an API-format workflow into the app user-data directory', async () => {
     const root = await makeTempDir()
@@ -139,7 +230,7 @@ describe('storePerformanceTestWorkflow', () => {
     expect(path.dirname(secondPath)).not.toBe(path.dirname(firstPath))
   })
 
-  it.each(['results.json', 'results_summary.json'])(
+  it.each(['jobs.json', 'results.json'])(
     'reserves %s for performance test output',
     async (name) => {
       const root = await makeTempDir()
@@ -193,23 +284,26 @@ describe('deletePerformanceTestWorkflow', () => {
     expect(await fs.promises.readFile(sourcePath, 'utf8')).toBe('{}')
   })
 
-  it('preserves a completed session when clearing its workflow from the page', async () => {
-    const root = await makeTempDir()
-    const userDataPath = path.join(root, 'user-data')
-    const sourcePath = path.join(root, 'performanceTest.json')
-    await fs.promises.writeFile(
-      sourcePath,
-      JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
-    )
-    const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
-    const resultsPath = path.join(path.dirname(storedPath), 'results.json')
-    await fs.promises.writeFile(resultsPath, '{}')
+  it.each(['jobs.json', 'results.json', 'logs.txt'])(
+    'preserves a completed session with %s when clearing its workflow from the page',
+    async (outputName) => {
+      const root = await makeTempDir()
+      const userDataPath = path.join(root, 'user-data')
+      const sourcePath = path.join(root, 'performanceTest.json')
+      await fs.promises.writeFile(
+        sourcePath,
+        JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
+      )
+      const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+      const outputPath = path.join(path.dirname(storedPath), outputName)
+      await fs.promises.writeFile(outputPath, '{}')
 
-    await deletePerformanceTestWorkflow(storedPath, userDataPath)
+      await deletePerformanceTestWorkflow(storedPath, userDataPath)
 
-    await expect(fs.promises.stat(storedPath)).resolves.toBeDefined()
-    await expect(fs.promises.stat(resultsPath)).resolves.toBeDefined()
-  })
+      await expect(fs.promises.stat(storedPath)).resolves.toBeDefined()
+      await expect(fs.promises.stat(outputPath)).resolves.toBeDefined()
+    }
+  )
 })
 
 describe('submitPerformanceTestWorkflow', () => {
@@ -327,18 +421,24 @@ describe('waitForPerformanceTestJobs', () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify(pendingResponse)))
       .mockResolvedValueOnce(new Response(JSON.stringify(terminalApiResponse)))
+    const onProgress = vi.fn()
 
     await expect(
       waitForPerformanceTestJobs(
         'http://127.0.0.1:8189/base',
         ['warmup-1', 'measured-1', 'measured-2'],
         fetchMock,
-        0
+        0,
+        onProgress
       )
     ).resolves.toEqual(terminalResponse)
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(String(fetchMock.mock.calls[0]![0])).toBe('http://127.0.0.1:8189/api/jobs?limit=3')
+    expect(onProgress.mock.calls).toEqual([
+      [2, 3],
+      [3, 3]
+    ])
   })
 })
 
@@ -356,13 +456,35 @@ describe('savePerformanceTestJobsResponse', () => {
 
     const resultPath = await savePerformanceTestJobsResponse(response, storedPath, userDataPath)
 
-    expect(resultPath).toBe(path.join(path.dirname(storedPath), 'results.json'))
+    expect(resultPath).toBe(path.join(path.dirname(storedPath), 'jobs.json'))
     expect(JSON.parse(await fs.promises.readFile(resultPath, 'utf8'))).toEqual(response)
   })
 })
 
+describe('savePerformanceTestLogs', () => {
+  it('writes the displayed instance logs beside the session workflow', async () => {
+    const root = await makeTempDir()
+    const userDataPath = path.join(root, 'user-data')
+    const sourcePath = path.join(root, 'performanceTest.json')
+    await fs.promises.writeFile(
+      sourcePath,
+      JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
+    )
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+
+    const logsPath = await savePerformanceTestLogs(
+      'launching\ncompleted\n',
+      storedPath,
+      userDataPath
+    )
+
+    expect(logsPath).toBe(path.join(path.dirname(storedPath), 'logs.txt'))
+    await expect(fs.promises.readFile(logsPath, 'utf8')).resolves.toBe('launching\ncompleted\n')
+  })
+})
+
 describe('savePerformanceTestResultsSummary', () => {
-  it('writes duration aggregates and compact hardware info beside the raw results', async () => {
+  it('writes every value needed by the image export beside the raw results', async () => {
     const root = await makeTempDir()
     const userDataPath = path.join(root, 'user-data')
     const sourcePath = path.join(root, 'performanceTest.json')
@@ -384,6 +506,15 @@ describe('savePerformanceTestResultsSummary', () => {
       xformersVersion: '0.0.31',
       cudaDeviceSet: 0
     }
+    const systemInfo = {
+      cpu_model: 'AMD Ryzen 9 7950X',
+      cpu_cores: 32,
+      arch: 'x64',
+      platform: 'win32',
+      os_version: '10.0.26200',
+      os_distro: 'Microsoft Windows 11 Pro',
+      os_release: '10.0.26200'
+    } as Parameters<typeof savePerformanceTestResultsSummary>[4]
     const summaryPath = await savePerformanceTestResultsSummary(
       {
         fastest: { jobId: 'job-1', durationSeconds: 1.25 },
@@ -395,12 +526,17 @@ describe('savePerformanceTestResultsSummary', () => {
       { id: 'local-instance', name: 'Local Instance' },
       { id: 'workspace-2', name: 'Workspace Two' },
       hardware,
+      systemInfo,
       storedPath,
-      userDataPath
+      userDataPath,
+      2,
+      1
     )
 
-    expect(summaryPath).toBe(path.join(path.dirname(storedPath), 'results_summary.json'))
-    expect(JSON.parse(await fs.promises.readFile(summaryPath, 'utf8'))).toEqual({
+    expect(summaryPath).toBe(path.join(path.dirname(storedPath), 'results.json'))
+    const savedSummary = JSON.parse(await fs.promises.readFile(summaryPath, 'utf8'))
+    expect(savedSummary).toEqual({
+      createdAt: expect.any(String),
       instance: { id: 'local-instance', name: 'Local Instance' },
       workspace: { id: 'workspace-2', name: 'Workspace Two' },
       workflowName: 'performanceTest.json',
@@ -409,8 +545,17 @@ describe('savePerformanceTestResultsSummary', () => {
       averageJobDurationSeconds: 2,
       medianJobDurationSeconds: 1.875,
       measuredJobCount: 2,
-      hardware
+      failedRunCount: 1,
+      hardware,
+      systemInfo
     })
+    expect(Number.isFinite(Date.parse(savedSummary.createdAt))).toBe(true)
+
+    savedSummary.workflowName = 'renamed-after-test.json'
+    await fs.promises.writeFile(summaryPath, JSON.stringify(savedSummary))
+    await expect(readPerformanceTestResultsSummary(summaryPath, userDataPath)).resolves.toEqual(
+      expect.objectContaining({ workflowName: 'renamed-after-test.json' })
+    )
   })
 })
 

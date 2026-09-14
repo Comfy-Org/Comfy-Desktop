@@ -1,6 +1,12 @@
 import fs from 'fs'
 import path from 'path'
 import type { AcceleratorSnapshot } from './hardwareTap'
+import type {
+  PerformanceTestBenchmark,
+  PerformanceTestResultValue,
+  PerformanceTestResultsSummary,
+  SystemInfo
+} from '../../types/ipc'
 
 const PERFORMANCE_TESTS_DIR = 'performance-tests'
 const PERFORMANCE_TEST_POLL_INTERVAL_MS = 1000
@@ -32,22 +38,93 @@ export interface PerformanceTestStatistics {
   measuredJobCount: number
 }
 
-export interface PerformanceTestResultsSummary {
-  instance: {
-    id: string
-    name: string
+function isDuration(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+}
+
+function parsePerformanceTestBenchmark(
+  value: unknown,
+  id: string
+): PerformanceTestBenchmark | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const summary = value as Partial<PerformanceTestResultsSummary>
+  if (
+    !summary.instance ||
+    typeof summary.instance.id !== 'string' ||
+    typeof summary.instance.name !== 'string' ||
+    !summary.workspace ||
+    (summary.workspace.id !== null && typeof summary.workspace.id !== 'string') ||
+    (summary.workspace.name !== null && typeof summary.workspace.name !== 'string') ||
+    (summary.createdAt !== undefined &&
+      (typeof summary.createdAt !== 'string' || Number.isNaN(Date.parse(summary.createdAt)))) ||
+    typeof summary.workflowName !== 'string' ||
+    !isDuration(summary.fastestJobDurationSeconds) ||
+    !isDuration(summary.slowestJobDurationSeconds) ||
+    !isDuration(summary.averageJobDurationSeconds) ||
+    !isDuration(summary.medianJobDurationSeconds) ||
+    !Number.isInteger(summary.measuredJobCount) ||
+    summary.measuredJobCount! < 0 ||
+    (summary.failedRunCount !== undefined &&
+      (!Number.isInteger(summary.failedRunCount) || summary.failedRunCount < 0))
+  ) {
+    return null
   }
-  workspace: {
-    id: string | null
-    name: string | null
+  const hardware = summary.hardware
+  const hardwareName =
+    hardware && typeof hardware.deviceName === 'string'
+      ? hardware.deviceName
+      : hardware && typeof hardware.deviceType === 'string'
+        ? hardware.deviceType
+        : null
+  return {
+    id,
+    createdAt: summary.createdAt ?? null,
+    instance: summary.instance,
+    workspace: summary.workspace,
+    workflowName: summary.workflowName,
+    fastestJobDurationSeconds: summary.fastestJobDurationSeconds,
+    slowestJobDurationSeconds: summary.slowestJobDurationSeconds,
+    averageJobDurationSeconds: summary.averageJobDurationSeconds,
+    medianJobDurationSeconds: summary.medianJobDurationSeconds,
+    measuredJobCount: summary.measuredJobCount!,
+    hardwareName,
+    result: value as Record<string, PerformanceTestResultValue>
   }
-  workflowName: string
-  fastestJobDurationSeconds: number | null
-  slowestJobDurationSeconds: number | null
-  averageJobDurationSeconds: number | null
-  medianJobDurationSeconds: number | null
-  measuredJobCount: number
-  hardware: AcceleratorSnapshot | null
+}
+
+/** List valid completed performance test summaries, newest first. */
+export async function listPerformanceTestBenchmarks(
+  performanceTestsDir: string
+): Promise<PerformanceTestBenchmark[]> {
+  let entries: fs.Dirent[]
+  try {
+    entries = await fs.promises.readdir(performanceTestsDir, { withFileTypes: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+
+  const benchmarks: PerformanceTestBenchmark[] = []
+  const sessions = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+
+  for (const session of sessions) {
+    try {
+      const contents = await fs.promises.readFile(
+        path.join(performanceTestsDir, session, 'results.json'),
+        'utf8'
+      )
+      const benchmark = parsePerformanceTestBenchmark(JSON.parse(contents) as unknown, session)
+      if (benchmark) benchmarks.push(benchmark)
+    } catch {
+      // Missing or malformed sessions are ignored without hiding valid results.
+    }
+  }
+  return benchmarks.sort((a, b) => {
+    if (a.createdAt && b.createdAt) return b.createdAt.localeCompare(a.createdAt)
+    if (a.createdAt) return -1
+    if (b.createdAt) return 1
+    return b.id.localeCompare(a.id)
+  })
 }
 
 /** Calculate duration statistics for measured jobs with valid start and end timestamps. */
@@ -57,7 +134,7 @@ export function calculatePerformanceTestStatistics(
 ): PerformanceTestStatistics | null {
   const measuredIds = new Set(measuredPromptIds)
   const durations = response.jobs.flatMap((job) => {
-    if (!measuredIds.has(job.id)) return []
+    if (!measuredIds.has(job.id) || job.status !== 'completed') return []
     const start = job.execution_start_time
     const end = job.execution_end_time
     if (
@@ -177,6 +254,49 @@ async function readPerformanceTestWorkflow(
   return parsed
 }
 
+/** Read and validate the persisted data used by the results UI and image export. */
+export async function readPerformanceTestResultsSummary(
+  filePath: string,
+  userDataPath: string
+): Promise<PerformanceTestResultsSummary> {
+  const managedPath = resolveManagedWorkflowPath(filePath, userDataPath).filePath
+  if (path.basename(managedPath).toLowerCase() !== 'results.json') {
+    throw new Error('Select a performance test results.json file.')
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await fs.promises.readFile(managedPath, 'utf8')) as unknown
+  } catch {
+    throw new Error('The performance test results are not valid JSON.')
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('The performance test results are invalid.')
+  }
+
+  const summary = parsed as Partial<PerformanceTestResultsSummary>
+  const systemInfo = summary.systemInfo as Partial<SystemInfo> | undefined
+  const hardware = summary.hardware
+  if (
+    typeof summary.createdAt !== 'string' ||
+    !Number.isFinite(Date.parse(summary.createdAt)) ||
+    !parsePerformanceTestBenchmark(summary, '') ||
+    !Number.isInteger(summary.failedRunCount) ||
+    summary.failedRunCount! < 0 ||
+    !systemInfo ||
+    typeof systemInfo.cpu_model !== 'string' ||
+    typeof systemInfo.cpu_cores !== 'number' ||
+    typeof systemInfo.arch !== 'string' ||
+    typeof systemInfo.platform !== 'string' ||
+    typeof systemInfo.os_version !== 'string' ||
+    (hardware !== null &&
+      (!hardware || typeof hardware !== 'object' || !Array.isArray(hardware.devices)))
+  ) {
+    throw new Error('The performance test results are invalid.')
+  }
+  return summary as PerformanceTestResultsSummary
+}
+
 /** Validate and persist a user-selected API workflow outside any installation. */
 export async function storePerformanceTestWorkflow(
   sourcePath: string,
@@ -186,7 +306,7 @@ export async function storePerformanceTestWorkflow(
     throw new Error('Select a .json workflow file.')
   }
   const sourceFileName = path.basename(sourcePath)
-  if (['results.json', 'results_summary.json'].includes(sourceFileName.toLowerCase())) {
+  if (['jobs.json', 'results.json'].includes(sourceFileName.toLowerCase())) {
     throw new Error(
       `The workflow filename ${sourceFileName} is reserved for performance test output.`
     )
@@ -233,11 +353,13 @@ export async function deletePerformanceTestWorkflow(
   userDataPath: string
 ): Promise<void> {
   const managedPath = resolveManagedWorkflowPath(filePath, userDataPath)
-  try {
-    await fs.promises.access(path.join(managedPath.sessionDir, 'results.json'))
-    return
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  for (const outputName of ['jobs.json', 'results.json', 'logs.txt']) {
+    try {
+      await fs.promises.access(path.join(managedPath.sessionDir, outputName))
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
   }
   await fs.promises.unlink(managedPath.filePath)
   await fs.promises.rmdir(managedPath.sessionDir).catch((error: NodeJS.ErrnoException) => {
@@ -297,7 +419,8 @@ export async function waitForPerformanceTestJobs(
   sessionUrl: string,
   promptIds: string[],
   fetchImpl: typeof fetch = fetch,
-  pollIntervalMs = PERFORMANCE_TEST_POLL_INTERVAL_MS
+  pollIntervalMs = PERFORMANCE_TEST_POLL_INTERVAL_MS,
+  onProgress?: (completedRuns: number, totalRuns: number) => void
 ): Promise<PerformanceTestJobsResponse> {
   const endpoint = new URL('/api/jobs', sessionUrl)
   endpoint.searchParams.set('limit', String(promptIds.length))
@@ -326,6 +449,11 @@ export async function waitForPerformanceTestJobs(
         expectedPromptIds.has(job.id)
     )
     const statuses = new Map(jobs.map((job) => [job.id, job.status]))
+    const completedRuns = [...expectedPromptIds].filter((id) => {
+      const status = statuses.get(id)
+      return status !== undefined && TERMINAL_JOB_STATUSES.has(status)
+    }).length
+    onProgress?.(completedRuns, expectedPromptIds.size)
     const allTerminal = [...expectedPromptIds].every((id) => {
       const status = statuses.get(id)
       return status !== undefined && TERMINAL_JOB_STATUSES.has(status)
@@ -343,9 +471,21 @@ export async function savePerformanceTestJobsResponse(
   userDataPath: string
 ): Promise<string> {
   const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
-  const resultPath = path.join(sessionDir, 'results.json')
+  const resultPath = path.join(sessionDir, 'jobs.json')
   await fs.promises.writeFile(resultPath, `${JSON.stringify(response, null, 2)}\n`, 'utf8')
   return resultPath
+}
+
+/** Persist the instance output displayed by the performance test page. */
+export async function savePerformanceTestLogs(
+  logs: string,
+  workflowFilePath: string,
+  userDataPath: string
+): Promise<string> {
+  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
+  const logsPath = path.join(sessionDir, 'logs.txt')
+  await fs.promises.writeFile(logsPath, logs, 'utf8')
+  return logsPath
 }
 
 /** Persist the displayed performance test summary beside the workflow and raw jobs response. */
@@ -354,11 +494,15 @@ export async function savePerformanceTestResultsSummary(
   instance: PerformanceTestResultsSummary['instance'],
   workspace: PerformanceTestResultsSummary['workspace'],
   hardware: AcceleratorSnapshot | null,
+  systemInfo: SystemInfo,
   workflowFilePath: string,
-  userDataPath: string
+  userDataPath: string,
+  successfulRunCount: number,
+  failedRunCount: number
 ): Promise<string> {
   const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
   const summary: PerformanceTestResultsSummary = {
+    createdAt: new Date().toISOString(),
     instance,
     workspace,
     workflowName: path.basename(workflowFilePath),
@@ -366,10 +510,12 @@ export async function savePerformanceTestResultsSummary(
     slowestJobDurationSeconds: statistics?.slowest.durationSeconds ?? null,
     averageJobDurationSeconds: statistics?.averageDurationSeconds ?? null,
     medianJobDurationSeconds: statistics?.medianDurationSeconds ?? null,
-    measuredJobCount: statistics?.measuredJobCount ?? 0,
-    hardware
+    measuredJobCount: successfulRunCount,
+    failedRunCount,
+    hardware,
+    systemInfo
   }
-  const summaryPath = path.join(sessionDir, 'results_summary.json')
+  const summaryPath = path.join(sessionDir, 'results.json')
   await fs.promises.writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8')
   return summaryPath
 }

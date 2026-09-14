@@ -43,7 +43,10 @@ import { deriveGpuTier } from '../../../shared/gpuTier'
 import {
   calculatePerformanceTestStatistics,
   deletePerformanceTestWorkflow,
+  listPerformanceTestBenchmarks,
+  readPerformanceTestResultsSummary,
   savePerformanceTestJobsResponse,
+  savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
   storePerformanceTestWorkflow,
   submitPerformanceTestWorkflow,
@@ -180,16 +183,60 @@ export function registerAppHandlers(): void {
     }
   })
 
+  ipcMain.handle('save-performance-test-logs', async (_event, filePath: string, logs: string) => {
+    try {
+      if (typeof logs !== 'string') throw new Error('Invalid performance test logs.')
+      const logsPath = await savePerformanceTestLogs(logs, filePath, app.getPath('userData'))
+      return { ok: true, logsPath }
+    } catch (error) {
+      return { ok: false, message: (error as Error)?.message || String(error) }
+    }
+  })
+
   ipcMain.handle(
-    'export-performance-test-results-image',
-    async (_event, svg: string, defaultPath?: string) => {
-      if (typeof svg !== 'string' || !svg.includes('<svg') || Buffer.byteLength(svg) > 1_000_000) {
-        return { ok: false, message: 'Invalid performance test results image.' }
+    'list-performance-test-benchmarks',
+    async (_event, selectedFolderPath?: string) => {
+      const folderPath =
+        selectedFolderPath || path.join(app.getPath('userData'), 'performance-tests')
+      return {
+        folderPath,
+        benchmarks: await listPerformanceTestBenchmarks(folderPath)
       }
+    }
+  )
+
+  ipcMain.handle('read-performance-test-results-summary', (_event, filePath: string) =>
+    readPerformanceTestResultsSummary(filePath, app.getPath('userData'))
+  )
+
+  ipcMain.handle(
+    'export-results-image',
+    async (
+      _event,
+      png: ArrayBuffer,
+      imageType: 'performance-test' | 'benchmark-comparison',
+      defaultPath?: string
+    ) => {
+      const contents = png instanceof ArrayBuffer ? Buffer.from(png) : Buffer.alloc(0)
+      const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+      if (
+        contents.length === 0 ||
+        contents.length > 50_000_000 ||
+        !contents.subarray(0, pngSignature.length).equals(pngSignature)
+      ) {
+        return { ok: false, message: 'Invalid results image.' }
+      }
+      const exportConfig =
+        imageType === 'benchmark-comparison'
+          ? { title: 'Export benchmark comparison', prefix: 'benchmark-comparison' }
+          : imageType === 'performance-test'
+            ? { title: 'Export performance test results', prefix: 'performance-test-results' }
+            : null
+      if (!exportConfig) return { ok: false, message: 'Invalid results image type.' }
       const win = BrowserWindow.fromWebContents(_event.sender)
       if (!win) return { ok: false, message: 'No window.' }
       const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-        title: 'Export performance test results',
+        title: exportConfig.title,
         buttonLabel: 'Export here',
         defaultPath,
         properties: ['openDirectory', 'createDirectory']
@@ -198,8 +245,8 @@ export function registerAppHandlers(): void {
 
       try {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23)
-        const filePath = path.join(filePaths[0]!, `performance-test-results-${timestamp}.svg`)
-        await fs.promises.writeFile(filePath, svg, 'utf8')
+        const filePath = path.join(filePaths[0]!, `${exportConfig.prefix}-${timestamp}.png`)
+        await fs.promises.writeFile(filePath, contents)
         return { ok: true, filePath }
       } catch (error) {
         return { ok: false, message: (error as Error)?.message || String(error) }
@@ -248,7 +295,28 @@ export function registerAppHandlers(): void {
         )
         const preparationRuns = warmupRuns
         const measuredPromptIds = promptIds.slice(warmupRuns)
-        const jobsResponse = await waitForPerformanceTestJobs(sessionUrl, promptIds)
+        const jobsResponse = await waitForPerformanceTestJobs(
+          sessionUrl,
+          promptIds,
+          fetch,
+          undefined,
+          (completedRuns, totalRuns) => {
+            if (!_event.sender.isDestroyed()) {
+              _event.sender.send('performance-test-progress', {
+                sessionId,
+                completedRuns,
+                totalRuns
+              })
+            }
+          }
+        )
+        const submittedPromptIds = new Set(measuredPromptIds)
+        const successfulRuns = jobsResponse.jobs.filter(
+          (job) => submittedPromptIds.has(job.id) && job.status === 'completed'
+        ).length
+        const failedRuns = jobsResponse.jobs.filter(
+          (job) => submittedPromptIds.has(job.id) && job.status !== 'completed'
+        ).length
         const statistics = calculatePerformanceTestStatistics(jobsResponse, measuredPromptIds)
         const resultPath = await savePerformanceTestJobsResponse(
           jobsResponse,
@@ -265,12 +333,15 @@ export function registerAppHandlers(): void {
           },
           workspace,
           hardware,
+          systemInfo,
           filePath,
-          app.getPath('userData')
+          app.getPath('userData'),
+          successfulRuns,
+          failedRuns
         )
-        const submittedPromptIds = new Set(measuredPromptIds)
-        const unsuccessfulJobs = jobsResponse.jobs.filter(
-          (job) => submittedPromptIds.has(job.id) && job.status !== 'completed'
+        const resultsSummary = await readPerformanceTestResultsSummary(
+          resultsSummaryPath,
+          app.getPath('userData')
         )
         return {
           ok: true,
@@ -283,7 +354,8 @@ export function registerAppHandlers(): void {
           statistics,
           hardware,
           systemInfo,
-          unsuccessfulJobs: unsuccessfulJobs.length
+          resultsSummary,
+          failedRuns
         }
       } catch (error) {
         return {

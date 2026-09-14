@@ -563,7 +563,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
   const comfyWindow = new BrowserWindow({
     ...windowOptions,
     show: !opts.initiallyHidden,
-    minWidth: 800,
+    minWidth: 1200,
     minHeight: 600,
     icon: APP_ICON,
     title: opts.windowTitle,

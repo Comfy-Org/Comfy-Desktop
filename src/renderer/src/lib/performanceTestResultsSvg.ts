@@ -1,3 +1,5 @@
+import comfyWordmarkSource from '../components/icons/ComfyWordmark.vue?raw'
+
 export interface PerformanceTestImageMetric {
   label: string
   value: string
@@ -8,10 +10,13 @@ export interface PerformanceTestResultsImageData {
   title: string
   aggregateTitle: string
   systemInformationTitle: string
+  testDateTime: string
   metrics: PerformanceTestImageMetric[]
   hardware: PerformanceTestImageMetric[]
   system: PerformanceTestImageMetric[]
 }
+
+const COMFY_WORDMARK_PATH = comfyWordmarkSource.match(/\sd="([^"]+)"/)?.[1]
 
 function escapeXml(value: string): string {
   return value
@@ -100,6 +105,7 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
     .chart-track { fill: #393939; }
     .chart-bar { fill: #f4c430; }
     .divider { stroke: #333333; stroke-width: 1; }
+    .footer-date { fill: #a3a3a3; font: 12px system-ui, sans-serif; }
   </style>
   <rect width="${width}" height="${height}" class="background" />
   ${text(margin, 55, data.title, 'title')}
@@ -109,5 +115,39 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
   ${text(margin, systemY, data.systemInformationTitle, 'section-title')}
   ${informationCard(margin, systemY + 24, cardWidth, cardHeight, data.hardware)}
   ${informationCard(margin + cardWidth + cardGap, systemY + 24, cardWidth, cardHeight, data.system)}
+  <g role="img" aria-label="Comfy" transform="translate(${margin} ${height - 51}) scale(0.65)">
+    <path d="${COMFY_WORDMARK_PATH}" fill="#F2FF59" />
+  </g>
+  ${text(width - margin, height - 28, data.testDateTime, 'footer-date', 'end')}
 </svg>`
+}
+
+/** Rasterize the self-contained results SVG at its intrinsic dimensions. */
+export async function createResultsPng(svg: string): Promise<ArrayBuffer> {
+  const dimensions = svg.match(/<svg\b[^>]*\bwidth="(\d+)"[^>]*\bheight="(\d+)"/)
+  const width = Number(dimensions?.[1])
+  const height = Number(dimensions?.[2])
+  if (!width || !height) throw new Error('Invalid results image dimensions.')
+
+  const image = new Image()
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve()
+    image.onerror = () => reject(new Error('Could not render the results image.'))
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  })
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Could not render the results image.')
+  context.drawImage(image, 0, 0, width, height)
+
+  const png = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('Could not encode the results image.'))),
+      'image/png'
+    )
+  })
+  return png.arrayBuffer()
 }

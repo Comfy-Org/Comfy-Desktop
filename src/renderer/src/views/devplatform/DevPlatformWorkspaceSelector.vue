@@ -9,6 +9,7 @@ import { useAuthStore } from '../../stores/authStore'
 
 const props = defineProps<{
   modelValue: string | null
+  compact?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -77,7 +78,12 @@ function onSelectUnmanaged(): void {
 </script>
 
 <template>
-  <div ref="rootRef" class="workspace-selector" @keydown="onKeydown">
+  <div
+    ref="rootRef"
+    class="workspace-selector"
+    :class="{ 'workspace-selector--compact': compact }"
+    @keydown="onKeydown"
+  >
     <button
       ref="faceRef"
       type="button"
@@ -197,6 +203,14 @@ function onSelectUnmanaged(): void {
 .workspace-selector__face:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+.workspace-selector--compact .workspace-selector__face {
+  --dp-avatar-size: 20px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 180px;
+  padding: 4px 8px;
 }
 
 .workspace-selector__name,

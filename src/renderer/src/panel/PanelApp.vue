@@ -606,13 +606,16 @@ onUnmounted(() => {
           />
         </div>
 
-        <div v-else-if="activePanel === 'performance-test'" class="panel-performance-test">
-          <PerformanceTestView />
-        </div>
-
         <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
           <BenchmarksView />
         </div>
+
+        <KeepAlive>
+          <PerformanceTestView
+            v-if="activePanel === 'performance-test'"
+            class="panel-performance-test"
+          />
+        </KeepAlive>
       </div>
     </main>
 

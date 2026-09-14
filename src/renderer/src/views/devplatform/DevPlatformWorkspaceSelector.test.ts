@@ -93,6 +93,17 @@ describe('DevPlatformWorkspaceSelector', () => {
     expect(wrapper.get('[data-testid="devplatform-workspace-w1"]').text()).toContain('team')
   })
 
+  it('applies the shared compact dashboard style when requested', () => {
+    const wrapper = mount(DevPlatformWorkspaceSelector, {
+      props: { modelValue: 'w1', compact: true },
+      global: {
+        plugins: [createI18n({ legacy: false, locale: 'en', messages }), createPinia()]
+      }
+    })
+
+    expect(wrapper.get('.workspace-selector').classes()).toContain('workspace-selector--compact')
+  })
+
   it('keeps the cached workspace identity while the startup refresh is pending', async () => {
     api.getAuthStatus.mockResolvedValue({
       signedIn: true,

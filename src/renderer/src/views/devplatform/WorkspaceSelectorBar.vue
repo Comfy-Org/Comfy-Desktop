@@ -29,6 +29,7 @@ async function refreshWorkspace(): Promise<void> {
     <div class="workspace-selector-bar__controls">
       <DevPlatformWorkspaceSelector
         :model-value="modelValue"
+        compact
         @update:model-value="emit('update:modelValue', $event)"
       />
       <button
@@ -95,14 +96,6 @@ async function refreshWorkspace(): Promise<void> {
 .workspace-selector-bar__controls :deep(.workspace-selector) {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.workspace-selector-bar__controls :deep(.workspace-selector__face) {
-  --dp-avatar-size: 20px;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 180px;
-  padding: 4px 8px;
 }
 
 .workspace-selector-bar__refresh {

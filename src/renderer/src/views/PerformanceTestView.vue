@@ -1,54 +1,31 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, toRef, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
+import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
 import BrandBackground from '../components/BrandBackground.vue'
-import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
+import BrandedPageHeader from '../components/BrandedPageHeader.vue'
+import CollapsibleSectionToggle from '../components/CollapsibleSectionToggle.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { ActionResult } from '../types/ipc'
+import type { ActionResult, PerformanceTestResultsSummary } from '../types/ipc'
 import {
+  createResultsPng,
   createPerformanceTestResultsSvg,
   type PerformanceTestImageMetric
 } from '../lib/performanceTestResultsSvg'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
+import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
-const unmanagedWorkspaceValue = '__unmanaged__'
 const { selectedWorkspaceId, scopedInstallations } = useWorkspaceInstallScope(
   toRef(installationStore, 'installations')
 )
-const workspaceOptions = computed<BaseSelectOption[]>(() => {
-  const options = authStore.workspaces.map((workspace) => ({
-    value: workspace.id,
-    label: workspace.type === 'team' ? workspace.name : t('devPlatform.workspace.personalLabel')
-  }))
-  const currentWorkspaceId = selectedWorkspaceId.value
-
-  if (currentWorkspaceId && !options.some((workspace) => workspace.value === currentWorkspaceId)) {
-    options.unshift({
-      value: currentWorkspaceId,
-      label:
-        authStore.status.workspaceType === 'team'
-          ? authStore.status.workspaceName || t('devPlatform.workspace.currentFallback')
-          : t('devPlatform.workspace.personalLabel')
-    })
-  }
-
-  return [
-    {
-      value: unmanagedWorkspaceValue,
-      label: t('devPlatform.workspace.unmanagedLabel')
-    },
-    ...options
-  ]
-})
 const performanceTestInstallations = computed(() =>
   scopedInstallations.value.filter((installation) => installation.sourceCategory !== 'cloud')
 )
@@ -78,6 +55,14 @@ const performanceTestInstallationId = ref<string | null>(null)
 const logsElement = ref<HTMLElement | null>(null)
 type PerformanceTestRunResult = Awaited<ReturnType<typeof window.api.runPerformanceTestWorkflow>>
 const performanceTestResult = ref<PerformanceTestRunResult | null>(null)
+const progressSessionId = ref<string | null>(null)
+const completedProgressRuns = ref(0)
+const totalProgressRuns = ref(0)
+const progressPercent = computed(() =>
+  totalProgressRuns.value > 0
+    ? Math.round((completedProgressRuns.value / totalProgressRuns.value) * 100)
+    : 0
+)
 const performanceTestLogs = computed(() => {
   if (!logInstallationId.value) return ''
   return sessionStore.getSession(logInstallationId.value)?.output ?? ''
@@ -141,24 +126,16 @@ const canStop = computed(() => {
   return Boolean(performanceTestInstallationId.value && !isStopping.value)
 })
 let activeLaunchPromise: Promise<ActionResult> | null = null
+const unsubscribePerformanceTestProgress = window.api.onPerformanceTestProgress((progress) => {
+  if (progress.sessionId !== progressSessionId.value) return
+  completedProgressRuns.value = progress.completedRuns
+  totalProgressRuns.value = progress.totalRuns
+})
+onUnmounted(unsubscribePerformanceTestProgress)
 
 watch(selectedWorkspaceId, () => {
   selectedInstallationId.value = null
 })
-
-watch(
-  () => authStore.isSignedIn,
-  (signedIn) => {
-    if (signedIn && authStore.workspaces.length === 0 && !authStore.loadingWorkspaces) {
-      void authStore.fetchWorkspaces().catch(() => {})
-    }
-  },
-  { immediate: true }
-)
-
-function selectWorkspace(workspaceId: string): void {
-  selectedWorkspaceId.value = workspaceId === unmanagedWorkspaceValue ? null : workspaceId
-}
 
 function correctRunCount(
   value: string,
@@ -241,6 +218,9 @@ async function runPerformanceTest(): Promise<void> {
   const sessionId = performanceTestSessionId(installationId)
   isLaunching.value = true
   performanceTestResult.value = null
+  progressSessionId.value = sessionId
+  completedProgressRuns.value = 0
+  totalProgressRuns.value = warmups + runs
   try {
     if (sessionStore.isRunning(sessionId)) await window.api.stopComfyUI(sessionId)
     logInstallationId.value = sessionId
@@ -276,13 +256,15 @@ async function runPerformanceTest(): Promise<void> {
         runs,
         warmups
       )
-      if (submission.ok) performanceTestResult.value = submission
+      if (submission.ok) {
+        performanceTestResult.value = submission
+      }
       sessionStore.appendOutput(
         sessionId,
         submission.ok
           ? `${t('performanceTest.completedRuns', {
               count: submission.submitted,
-              unsuccessful: submission.unsuccessfulJobs,
+              failed: submission.failedRuns,
               path: submission.resultPath
             })}\n`
           : `${submission.message || t('performanceTest.submitFailed')}\n`
@@ -301,7 +283,19 @@ async function runPerformanceTest(): Promise<void> {
     )
     performanceTestInstallationId.value = null
   } finally {
+    const logs = sessionStore.getSession(sessionId)?.output
+    if (logs !== undefined) {
+      try {
+        const savedLogs = await window.api.savePerformanceTestLogs(filePath, logs)
+        if (!savedLogs.ok) {
+          console.error('Failed to save performance test logs:', savedLogs.message)
+        }
+      } catch (error) {
+        console.error('Failed to save performance test logs:', error)
+      }
+    }
     activeLaunchPromise = null
+    progressSessionId.value = null
     isLaunching.value = false
   }
 }
@@ -314,7 +308,7 @@ function formatMemory(megabytes: number): string {
   return `${(megabytes / 1024).toFixed(1)} GB`
 }
 
-function formatOperatingSystem(info: NonNullable<PerformanceTestRunResult['systemInfo']>): string {
+function formatOperatingSystem(info: PerformanceTestResultsSummary['systemInfo']): string {
   return (
     [info.os_distro, info.os_release].filter(Boolean).join(' ') ||
     `${info.platform} ${info.os_version}`
@@ -326,79 +320,93 @@ function openResultsFolder(): void {
 }
 
 async function exportResultsImage(): Promise<void> {
-  const result = performanceTestResult.value
-  const statistics = result?.statistics
-  const hardware = result?.hardware
-  const systemInfo = result?.systemInfo
-  if (!statistics || !hardware || !systemInfo || !resultsFolderPath.value) return
-
-  const hardwareRows: PerformanceTestImageMetric[] = [
-    { label: t('performanceTest.device'), value: computeDeviceNames.value }
-  ]
-  if (hardware.vramMb != null)
-    hardwareRows.push({ label: t('performanceTest.vram'), value: formatMemory(hardware.vramMb) })
-  if (hardware.ramMb != null)
-    hardwareRows.push({ label: t('performanceTest.ram'), value: formatMemory(hardware.ramMb) })
-  if (hardware.pytorchVersion)
-    hardwareRows.push({
-      label: t('performanceTest.pytorchVersion'),
-      value: hardware.pytorchVersion
-    })
-  if (hardware.xformersVersion)
-    hardwareRows.push({
-      label: t('performanceTest.xformersVersion'),
-      value: hardware.xformersVersion
-    })
-
-  const svg = createPerformanceTestResultsSvg({
-    title: t('performanceTest.imageTitle'),
-    aggregateTitle: t('performanceTest.runDurationChart'),
-    systemInformationTitle: t('performanceTest.systemInformation'),
-    metrics: [
-      {
-        label: t('performanceTest.measuredRunCount'),
-        value: String(statistics.measuredJobCount)
-      },
-      {
-        label: t('performanceTest.fastestRun'),
-        value: formatDuration(statistics.fastest.durationSeconds),
-        durationSeconds: statistics.fastest.durationSeconds
-      },
-      {
-        label: t('performanceTest.slowestRun'),
-        value: formatDuration(statistics.slowest.durationSeconds),
-        durationSeconds: statistics.slowest.durationSeconds
-      },
-      {
-        label: t('performanceTest.averageRunDuration'),
-        value: formatDuration(statistics.averageDurationSeconds),
-        durationSeconds: statistics.averageDurationSeconds
-      },
-      {
-        label: t('performanceTest.medianRunDuration'),
-        value: formatDuration(statistics.medianDurationSeconds),
-        durationSeconds: statistics.medianDurationSeconds
-      }
-    ],
-    hardware: hardwareRows,
-    system: [
-      { label: t('performanceTest.cpu'), value: systemInfo.cpu_model },
-      { label: t('performanceTest.cpuCores'), value: String(systemInfo.cpu_cores) },
-      { label: t('performanceTest.architecture'), value: systemInfo.arch },
-      {
-        label: t('performanceTest.operatingSystem'),
-        value: formatOperatingSystem(systemInfo)
-      }
-    ]
-  })
-
+  const summaryPath = performanceTestResult.value?.resultsSummaryPath
+  const defaultPath = resultsFolderPath.value
+  if (!summaryPath || !defaultPath) return
   isExportingResults.value = true
   exportResultsError.value = null
   try {
-    const exported = await window.api.exportPerformanceTestResultsImage(
-      svg,
-      resultsFolderPath.value
-    )
+    const summary = await window.api.readPerformanceTestResultsSummary(summaryPath)
+    const hardware = summary.hardware
+    const fastest = summary.fastestJobDurationSeconds
+    const slowest = summary.slowestJobDurationSeconds
+    const average = summary.averageJobDurationSeconds
+    const median = summary.medianJobDurationSeconds
+    if (!hardware || fastest === null || slowest === null || average === null || median === null) {
+      throw new Error(t('performanceTest.exportImageFailed'))
+    }
+    const hardwareRows: PerformanceTestImageMetric[] = [
+      {
+        label: t('performanceTest.device'),
+        value: hardware.devices.flatMap((device) => device.deviceName ?? []).join(', ')
+      }
+    ]
+    if (hardware.vramMb != null)
+      hardwareRows.push({ label: t('performanceTest.vram'), value: formatMemory(hardware.vramMb) })
+    if (hardware.ramMb != null)
+      hardwareRows.push({ label: t('performanceTest.ram'), value: formatMemory(hardware.ramMb) })
+    if (hardware.pytorchVersion)
+      hardwareRows.push({
+        label: t('performanceTest.pytorchVersion'),
+        value: hardware.pytorchVersion
+      })
+    if (hardware.xformersVersion)
+      hardwareRows.push({
+        label: t('performanceTest.xformersVersion'),
+        value: hardware.xformersVersion
+      })
+
+    const svg = createPerformanceTestResultsSvg({
+      title: t('performanceTest.imageTitle', { workflowName: summary.workflowName }),
+      aggregateTitle: t('performanceTest.runDurationChart'),
+      systemInformationTitle: t('performanceTest.systemInformation'),
+      testDateTime: new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      }).format(new Date(summary.createdAt)),
+      metrics: [
+        {
+          label: t('performanceTest.measuredRunCount'),
+          value: String(summary.measuredJobCount)
+        },
+        {
+          label: t('performanceTest.failedRunCount'),
+          value: String(summary.failedRunCount)
+        },
+        {
+          label: t('performanceTest.fastestRun'),
+          value: formatDuration(fastest),
+          durationSeconds: fastest
+        },
+        {
+          label: t('performanceTest.slowestRun'),
+          value: formatDuration(slowest),
+          durationSeconds: slowest
+        },
+        {
+          label: t('performanceTest.averageRunDuration'),
+          value: formatDuration(average),
+          durationSeconds: average
+        },
+        {
+          label: t('performanceTest.medianRunDuration'),
+          value: formatDuration(median),
+          durationSeconds: median
+        }
+      ],
+      hardware: hardwareRows,
+      system: [
+        { label: t('performanceTest.cpu'), value: summary.systemInfo.cpu_model },
+        { label: t('performanceTest.cpuCores'), value: String(summary.systemInfo.cpu_cores) },
+        { label: t('performanceTest.architecture'), value: summary.systemInfo.arch },
+        {
+          label: t('performanceTest.operatingSystem'),
+          value: formatOperatingSystem(summary.systemInfo)
+        }
+      ]
+    })
+    const png = await createResultsPng(svg)
+    const exported = await window.api.exportResultsImage(png, 'performance-test', defaultPath)
     if (!exported.ok && !exported.canceled) {
       exportResultsError.value = exported.message || t('performanceTest.exportImageFailed')
     }
@@ -451,14 +459,11 @@ watch(performanceTestLogs, async () => {
   <BrandBackground class="performance-test" data-testid="performance-test">
     <div class="performance-test__layout">
       <div class="performance-test__intro">
-        <ComfyWordmark
-          class="performance-test__wordmark"
-          data-testid="performance-test-logo"
-          aria-hidden="true"
+        <BrandedPageHeader
+          :title="t('performanceTest.title')"
+          :description="t('performanceTest.description')"
+          logo-test-id="performance-test-logo"
         />
-        <p class="performance-test__description">
-          {{ t('performanceTest.description') }}
-        </p>
         <div v-if="authStore.isSignedIn" class="performance-test__content">
           <div class="performance-test__columns">
             <section class="performance-test__column">
@@ -468,14 +473,7 @@ watch(performanceTestLogs, async () => {
                   {{ t('performanceTest.workspaceLabel') }}
                 </span>
                 <div class="performance-test__selection-control performance-test__workspace-select">
-                  <BaseSelect
-                    :model-value="selectedWorkspaceId ?? unmanagedWorkspaceValue"
-                    :options="workspaceOptions"
-                    :aria-label="t('performanceTest.workspaceLabel')"
-                    :loading="authStore.loadingWorkspaces"
-                    :loading-label="t('common.loading')"
-                    @update:model-value="selectWorkspace"
-                  />
+                  <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" compact />
                 </div>
               </div>
               <div class="performance-test__selection-row">
@@ -601,31 +599,46 @@ watch(performanceTestLogs, async () => {
           </div>
 
           <section class="performance-test__results-section">
-            <button
-              class="performance-test__logs-toggle"
-              type="button"
-              :aria-expanded="resultsExpanded"
-              @click="resultsExpanded = !resultsExpanded"
-            >
-              <ChevronRight
-                :size="16"
-                class="performance-test__logs-chevron"
-                :class="{ 'performance-test__logs-chevron--open': resultsExpanded }"
-                aria-hidden="true"
-              />
-              {{ t('performanceTest.results') }}
-            </button>
+            <CollapsibleSectionToggle
+              :expanded="resultsExpanded"
+              :label="t('performanceTest.results')"
+              @toggle="resultsExpanded = !resultsExpanded"
+            />
             <div v-show="resultsExpanded" class="performance-test__results">
-              <template v-if="performanceTestResult?.statistics">
+              <div v-if="isLaunching && totalProgressRuns > 0" class="performance-test__progress">
+                <div class="performance-test__progress-heading">
+                  <span>{{ t('performanceTest.runProgress') }}</span>
+                  <span>
+                    {{
+                      t('performanceTest.runProgressCount', {
+                        completed: completedProgressRuns,
+                        total: totalProgressRuns
+                      })
+                    }}
+                  </span>
+                </div>
+                <div
+                  class="performance-test__progress-track"
+                  role="progressbar"
+                  :aria-label="t('performanceTest.runProgress')"
+                  :aria-valuenow="completedProgressRuns"
+                  aria-valuemin="0"
+                  :aria-valuemax="totalProgressRuns"
+                >
+                  <i :style="{ width: `${progressPercent}%` }" />
+                </div>
+              </div>
+              <template v-else-if="performanceTestResult?.resultsSummary">
                 <div class="performance-test__summary">
                   <div class="performance-test__summary-column">
                     <dl class="performance-test__result-list">
-                      <div>
-                        <dt>{{ t('performanceTest.measuredRunCount') }}</dt>
-                        <dd>{{ performanceTestResult.statistics.measuredJobCount }}</dd>
+                      <div class="performance-test__result-workflow">
+                        <dt>{{ t('performanceTest.workflowFileName') }}</dt>
+                        <dd>{{ performanceTestResult.resultsSummary.workflowName }}</dd>
                       </div>
                     </dl>
                     <div
+                      v-if="performanceTestResult.statistics"
                       class="performance-test__aggregate-chart"
                       role="img"
                       :aria-label="t('performanceTest.runDurationChart')"
@@ -642,39 +655,49 @@ watch(performanceTestLogs, async () => {
                       </div>
                     </div>
                   </div>
-                  <dl class="performance-test__result-list">
+                  <dl class="performance-test__result-list performance-test__timing-list">
                     <div>
-                      <dt>{{ t('performanceTest.fastestRun') }}</dt>
-                      <dd>
-                        {{
-                          formatDuration(performanceTestResult.statistics.fastest.durationSeconds)
-                        }}
-                      </dd>
+                      <dt>{{ t('performanceTest.measuredRunCount') }}</dt>
+                      <dd>{{ performanceTestResult.resultsSummary.measuredJobCount }}</dd>
                     </div>
                     <div>
-                      <dt>{{ t('performanceTest.slowestRun') }}</dt>
-                      <dd>
-                        {{
-                          formatDuration(performanceTestResult.statistics.slowest.durationSeconds)
-                        }}
-                      </dd>
+                      <dt>{{ t('performanceTest.failedRunCount') }}</dt>
+                      <dd>{{ performanceTestResult.resultsSummary.failedRunCount }}</dd>
                     </div>
-                  </dl>
-                  <dl class="performance-test__result-list">
-                    <div>
-                      <dt>{{ t('performanceTest.averageRunDuration') }}</dt>
-                      <dd>
-                        {{
-                          formatDuration(performanceTestResult.statistics.averageDurationSeconds)
-                        }}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{{ t('performanceTest.medianRunDuration') }}</dt>
-                      <dd>
-                        {{ formatDuration(performanceTestResult.statistics.medianDurationSeconds) }}
-                      </dd>
-                    </div>
+                    <template v-if="performanceTestResult.statistics">
+                      <div>
+                        <dt>{{ t('performanceTest.fastestRun') }}</dt>
+                        <dd>
+                          {{
+                            formatDuration(performanceTestResult.statistics.fastest.durationSeconds)
+                          }}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{{ t('performanceTest.averageRunDuration') }}</dt>
+                        <dd>
+                          {{
+                            formatDuration(performanceTestResult.statistics.averageDurationSeconds)
+                          }}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{{ t('performanceTest.slowestRun') }}</dt>
+                        <dd>
+                          {{
+                            formatDuration(performanceTestResult.statistics.slowest.durationSeconds)
+                          }}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{{ t('performanceTest.medianRunDuration') }}</dt>
+                        <dd>
+                          {{
+                            formatDuration(performanceTestResult.statistics.medianDurationSeconds)
+                          }}
+                        </dd>
+                      </div>
+                    </template>
                   </dl>
                 </div>
               </template>
@@ -773,20 +796,11 @@ watch(performanceTestLogs, async () => {
             class="performance-test__logs-section"
             :class="{ 'performance-test__logs-section--collapsed': !logsExpanded }"
           >
-            <button
-              class="performance-test__logs-toggle"
-              type="button"
-              :aria-expanded="logsExpanded"
-              @click="toggleLogs"
-            >
-              <ChevronRight
-                :size="16"
-                class="performance-test__logs-chevron"
-                :class="{ 'performance-test__logs-chevron--open': logsExpanded }"
-                aria-hidden="true"
-              />
-              {{ t('settings.logs') }}
-            </button>
+            <CollapsibleSectionToggle
+              :expanded="logsExpanded"
+              :label="t('settings.logs')"
+              @toggle="toggleLogs"
+            />
             <div
               v-show="logsExpanded"
               ref="logsElement"
@@ -811,10 +825,16 @@ watch(performanceTestLogs, async () => {
   min-height: 0;
 }
 
+.performance-test :deep(.brand-outer-frame),
+.performance-test :deep(.brand-inner-frame) {
+  min-height: 0;
+}
+
 .performance-test__layout {
   position: relative;
   width: 100%;
   height: 100%;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -863,32 +883,6 @@ watch(performanceTestLogs, async () => {
   line-height: 1.4;
 }
 
-.performance-test__logs-toggle {
-  display: flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 6px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--neutral-200);
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.4;
-}
-
-.performance-test__logs-toggle:hover {
-  background: transparent;
-}
-
-.performance-test__logs-chevron {
-  transition: transform 120ms ease;
-}
-
-.performance-test__logs-chevron--open {
-  transform: rotate(90deg);
-}
-
 .performance-test__setting {
   display: flex;
   align-items: center;
@@ -897,16 +891,22 @@ watch(performanceTestLogs, async () => {
 }
 
 .performance-test__setting label {
+  flex: 0 0 68px;
   color: var(--neutral-200);
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .performance-test__setting-input {
-  width: 160px;
+  box-sizing: border-box;
+  flex: 0 1 260px;
+  width: 260px;
+  min-width: 180px;
+  min-height: 30px;
   margin-left: auto;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: var(--takeover-fs-caption);
 }
 
 .performance-test__selection-row {
@@ -923,8 +923,18 @@ watch(performanceTestLogs, async () => {
 }
 
 .performance-test__selection-control {
-  min-width: 0;
   flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 320px;
+}
+
+.performance-test__workspace-select :deep(.workspace-selector) {
+  width: 100%;
+}
+
+.performance-test__workspace-select :deep(.workspace-selector__face) {
+  min-width: 0;
 }
 
 .performance-test__drop-zone,
@@ -1047,7 +1057,7 @@ watch(performanceTestLogs, async () => {
 }
 
 .performance-test__logs {
-  flex: 0 0 clamp(140px, 25vh, 240px);
+  flex: 0 0 clamp(210px, 37.5vh, 360px);
   min-height: 0;
   overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
@@ -1094,6 +1104,38 @@ watch(performanceTestLogs, async () => {
   margin-top: 16px;
 }
 
+.performance-test__progress {
+  display: grid;
+  gap: 12px;
+}
+
+.performance-test__progress-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--neutral-200);
+}
+
+.performance-test__progress-heading span:first-child {
+  color: var(--text-primary);
+}
+
+.performance-test__progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--chooser-surface-border);
+}
+
+.performance-test__progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--comfy-yellow);
+  transition: width 180ms ease;
+}
+
 .performance-test__open-results,
 .performance-test__export-results {
   display: inline-flex;
@@ -1132,17 +1174,20 @@ watch(performanceTestLogs, async () => {
 
 .performance-test__summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
 }
 
-.performance-test__summary > .performance-test__result-list {
-  grid-template-columns: minmax(0, 1fr);
+.performance-test__timing-list {
   align-content: start;
 }
 
 .performance-test__summary-column > .performance-test__result-list {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.performance-test__result-workflow {
+  grid-column: 1 / -1;
 }
 
 .performance-test__summary .performance-test__result-list dt,
@@ -1150,10 +1195,15 @@ watch(performanceTestLogs, async () => {
   text-align: right;
 }
 
+.performance-test__summary-column .performance-test__result-list dt,
+.performance-test__summary-column .performance-test__result-list dd {
+  text-align: left;
+}
+
 .performance-test__aggregate-chart {
   display: grid;
   gap: 5px;
-  margin-top: 14px;
+  margin-top: 32px;
 }
 
 .performance-test__aggregate-bar {
@@ -1251,25 +1301,11 @@ watch(performanceTestLogs, async () => {
   max-width: min(340px, 45%);
 }
 
-.performance-test__wordmark {
-  display: block;
-  width: clamp(120px, 8vw, 180px);
-  height: auto;
-  aspect-ratio: 173 / 48;
-  color: var(--comfy-yellow);
-  flex-shrink: 0;
-  anchor-name: --brand-beam-target;
-}
-
-.performance-test__description {
-  max-width: 560px;
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 16px;
-  line-height: 1.5;
-}
-
 @media (max-width: 900px) {
+  .performance-test__columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .performance-test__summary {
     grid-template-columns: minmax(0, 1fr);
   }
