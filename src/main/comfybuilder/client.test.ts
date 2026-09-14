@@ -277,7 +277,7 @@ describe('ComfyBuilderClient', () => {
       },
       body: JSON.stringify({
         name: 'Local One',
-        definition: resolution.definition
+        definition: { ...resolution.definition, uiOrigin: 'desktop-snapshot' }
       })
     })
     expect(getAccessToken).toHaveBeenCalledOnce()
