@@ -43,6 +43,7 @@ const launchHarness = vi.hoisted(() => ({
   launchCommand: null as null | Record<string, unknown>,
   schemaNames: ['enable-assets', 'listen', 'feature-flag'] as string[],
   schemaThrows: false,
+  registryThrows: false,
   betaEnabled: true,
   /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
    *  read, so a read-only or full disk surfaces here. */
@@ -85,6 +86,10 @@ vi.mock('../shared', async (importOriginal) => {
     spawnProcess: (...args: unknown[]) => launchHarness.spawn?.(...args),
     waitForPort: (...args: Parameters<typeof actual.waitForPort>) =>
       launchHarness.waitForPort ? launchHarness.waitForPort() : actual.waitForPort(...args),
+    getComfyFeatureFlagRegistry: async () => {
+      if (launchHarness.registryThrows) throw new Error('feature registry unavailable')
+      return {}
+    },
     findAvailablePort: async () => launchHarness.nextPort,
     // Never let a test reach the real one: the fake child's pid is invented, and killing it
     // would signal whatever real process happens to hold that pid.
@@ -693,6 +698,7 @@ describe('core beta report placement', () => {
     sent = []
     events = []
     launchHarness.schemaThrows = false
+    launchHarness.registryThrows = false
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
@@ -746,6 +752,63 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.applied')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
   })
+
+  it.each([
+    ['schema', true, false],
+    ['feature registry', false, true]
+  ])(
+    'strips baked canary args before failed %s discovery without mutating stored args',
+    async (_discovery, schemaThrows, registryThrows) => {
+      const storedArgs = [
+        '--enable-assets',
+        '-s',
+        path.join(installDir, 'ComfyUI', 'main.py'),
+        '--listen',
+        '--enable-assets',
+        '--enable-asset-hashing',
+        '--cpu'
+      ]
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: storedArgs,
+        cwd: installDir,
+        skipPortWait: true
+      }
+      launchHarness.schemaNames = [
+        'enable-assets',
+        'enable-asset-hashing',
+        'listen',
+        'cpu',
+        'feature-flag',
+        'list-feature-flags'
+      ]
+      launchHarness.schemaThrows = schemaThrows
+      launchHarness.registryThrows = registryThrows
+
+      const res = await handleLaunch(ctxFor(`harness-${_discovery}-failure`))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs.slice(0, 3)).toEqual([
+        '--enable-assets',
+        '-s',
+        path.join(installDir, 'ComfyUI', 'main.py')
+      ])
+      expect(spawnArgs).toContain('--listen')
+      expect(spawnArgs).toContain('--cpu')
+      expect(spawnArgs.slice(3)).not.toContain('--enable-assets')
+      expect(spawnArgs).not.toContain('--enable-asset-hashing')
+      expect(storedArgs).toEqual([
+        '--enable-assets',
+        '-s',
+        path.join(installDir, 'ComfyUI', 'main.py'),
+        '--listen',
+        '--enable-assets',
+        '--enable-asset-hashing',
+        '--cpu'
+      ])
+      expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.applied')
+    }
+  )
 
   it('does not report when cancelled at the skip-port pre-spawn gate', async () => {
     // Cancel lands while resources are being acquired — after the launching marker, before

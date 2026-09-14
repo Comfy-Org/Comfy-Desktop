@@ -821,6 +821,11 @@ async function runLaunch(
       const mainPyRel = launchCmd.args[sIdx + 1]!
       const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
       const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
+      const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
+      const userArgs = stripCanaryArgs(launchCmd.args.slice(sIdx + 2))
+      // Discovery is fallible. Strip managed user tokens before it so the fallback path cannot
+      // preserve a stale install-time grant. Keep the Python prefix outside the policy boundary.
+      launchCmd.args = [...prefixArgs, ...userArgs]
       try {
         const schema = await getComfyArgsSchema(
           launchCmd.cmd,
@@ -829,9 +834,6 @@ async function runLaunch(
           installationId,
           revision
         )
-        const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
-        const userArgs = launchCmd.args.slice(sIdx + 2)
-
         // Skip when the discovery flag is absent (avoids a pointless python spawn).
         const desktopFlagArgs: string[] = []
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
