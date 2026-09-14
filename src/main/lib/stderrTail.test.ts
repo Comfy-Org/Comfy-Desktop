@@ -95,17 +95,27 @@ describe('createStreamLineBuffer', () => {
     expect(buffer.append('stdout', 'end\n')).toEqual(['partial stdout end'])
   })
 
-  it('caps the carried tail while returning that chunk\u2019s complete lines in full', () => {
+  it('discards an oversized carried tail while returning that chunk\u2019s complete lines in full', () => {
     const buffer = createStreamLineBuffer(8)
     const long = 'A'.repeat(20)
     expect(buffer.append('stdout', `${long}\nkeep\n${'B'.repeat(20)}`)).toEqual([long, 'keep'])
-    expect(buffer.takePending('stdout')).toBe('B'.repeat(8))
+    expect(buffer.takePending('stdout')).toBe('')
+    expect(buffer.append('stdout', 'fresh\n')).toEqual(['fresh'])
   })
 
-  it('keeps the END of an oversized tail, so a line completing later is truncated', () => {
+  it('discards the rest of an oversized incomplete line through its delimiter', () => {
     const buffer = createStreamLineBuffer(4)
     buffer.append('stdout', 'abcdefgh')
-    expect(buffer.append('stdout', 'ij\n')).toEqual(['efghij'])
+    expect(buffer.append('stdout', 'ij\nnext\n')).toEqual(['next'])
+  })
+
+  it('keeps exact-limit tails and recovers oversized streams independently', () => {
+    const buffer = createStreamLineBuffer(4)
+    buffer.append('stdout', 'abcd')
+    buffer.append('stderr', 'oversized')
+    expect(buffer.append('stdout', '\r')).toEqual([])
+    expect(buffer.append('stdout', '\n')).toEqual(['abcd'])
+    expect(buffer.append('stderr', '\nfresh\n')).toEqual(['fresh'])
   })
 
   it('takePending returns the tail and clears it in the same step', () => {
@@ -118,7 +128,7 @@ describe('createStreamLineBuffer', () => {
   it('reset drops both streams\u2019 tails', () => {
     const buffer = createStreamLineBuffer()
     buffer.append('stdout', 'stdout tail')
-    buffer.append('stderr', 'stderr tail')
+    buffer.append('stderr', 'x'.repeat(20_000))
     buffer.reset()
     expect(buffer.takePending('stdout')).toBe('')
     expect(buffer.takePending('stderr')).toBe('')

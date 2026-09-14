@@ -44,29 +44,46 @@ export interface StreamLineBuffer {
  * Buffers are per stream: stdout and stderr arrive as independent chunk
  * streams, so one shared buffer could splice unrelated partial lines together.
  * Each chunk is split BEFORE capping so a large chunk's complete lines are
- * never lost — only the unterminated tail is capped, since that is the sole
- * unbounded-growth risk.
+ * never lost. An unterminated line that exceeds the cap is discarded through
+ * its next delimiter; retaining a suffix would invent a new physical line.
  */
 export function createStreamLineBuffer(
   maxPendingChars: number = MAX_PENDING_CHARS
 ): StreamLineBuffer {
   const pendingBySource: Record<StreamSource, string> = { stdout: '', stderr: '' }
+  const discardingBySource: Record<StreamSource, boolean> = { stdout: false, stderr: false }
 
   return {
     append(source, chunk) {
+      if (discardingBySource[source]) {
+        const delimiter = chunk.indexOf('\n')
+        if (delimiter === -1) return []
+        discardingBySource[source] = false
+        chunk = chunk.slice(delimiter + 1)
+      }
+
       const lines = (pendingBySource[source] + chunk).split(/\r?\n/)
       const tail = lines.pop() ?? ''
-      pendingBySource[source] = tail.length > maxPendingChars ? tail.slice(-maxPendingChars) : tail
+      const isSplitCrlf = tail.length === maxPendingChars + 1 && tail.endsWith('\r')
+      if (tail.length > maxPendingChars && !isSplitCrlf) {
+        pendingBySource[source] = ''
+        discardingBySource[source] = true
+      } else {
+        pendingBySource[source] = tail
+      }
       return lines
     },
     takePending(source) {
       const pending = pendingBySource[source]
       pendingBySource[source] = ''
+      discardingBySource[source] = false
       return pending
     },
     reset() {
       pendingBySource.stdout = ''
       pendingBySource.stderr = ''
+      discardingBySource.stdout = false
+      discardingBySource.stderr = false
     }
   }
 }

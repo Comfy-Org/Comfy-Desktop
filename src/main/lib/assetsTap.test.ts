@@ -559,6 +559,11 @@ describe('assetsTap', () => {
   })
 
   describe('stream buffering', () => {
+    const forgedRetainedSuffix = (): string => {
+      const event = '[assets-event] seeder.scan_started phase=fast'
+      return event + '\u001b[0m'.repeat(4_081) + '\u001b[31m'.repeat(3)
+    }
+
     it('handles a line split across chunk boundaries', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_com', 'stdout')
@@ -610,6 +615,26 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
       tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
       expect(captured).toHaveLength(1)
+    })
+
+    it('does not invent an event from the retained suffix of an oversized ordinary line', () => {
+      const tap = createAssetsTap(baseOpts)
+      const suffix = forgedRetainedSuffix()
+      expect(suffix).toHaveLength(16_384)
+      tap.ingest(`${'ordinary'.repeat(3_000)}${suffix}`, 'stdout')
+      tap.ingest('\n', 'stdout')
+      expect(captured).toHaveLength(0)
+
+      tap.ingest(taggedLine('seeder.scan_started', { phase: 'enrich' }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ phase: 'enrich' })
+    })
+
+    it('does not flush an invented event from an oversized ordinary line suffix', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(`${'ordinary'.repeat(3_000)}${forgedRetainedSuffix()}`, 'stderr')
+      tap.flushSummary()
+      expect(captured).toHaveLength(0)
     })
 
     it('splits a chunk carrying many complete lines rather than capping them away', () => {
