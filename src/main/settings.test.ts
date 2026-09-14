@@ -32,6 +32,7 @@ let settings: {
   get: (key: string) => unknown
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
+  resolveBetaFeaturesEnabled: () => boolean
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
   ) => Record<string, boolean | number | string | null>
@@ -698,5 +699,74 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
 
     vi.restoreAllMocks()
     expect(readPersistedSettings()).toEqual({ pypiMirror: 'https://newer.example' })
+  })
+})
+
+// The beta-features toggle is the gate for injecting core beta launch args.
+// It is deliberately NOT telemetry consent: gating on consent creates a trap
+// where a user hitting beta bugs escapes by disabling telemetry, killing the
+// diagnostics exactly when they matter. Consent only ever seeds the initial
+// value, once.
+describe('resolveBetaFeaturesEnabled', () => {
+  it('returns a stored true without consulting telemetry consent', () => {
+    settings.set('betaFeaturesEnabled', true)
+    settings.set('telemetryEnabled', false)
+
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(true)
+    expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(true)
+  })
+
+  it('returns a stored false without consulting telemetry consent', () => {
+    settings.set('betaFeaturesEnabled', false)
+    settings.set('telemetryEnabled', true)
+
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
+    expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(false)
+  })
+
+  it('seeds true from an existing telemetry opt-in and persists the seed', () => {
+    settings.set('telemetryEnabled', true)
+    expect(settings.get('betaFeaturesEnabled')).toBeUndefined()
+
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(true)
+    expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(true)
+  })
+
+  it('seeds false from an explicit telemetry opt-out and persists the seed', () => {
+    settings.set('telemetryEnabled', false)
+
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
+    expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(false)
+  })
+
+  // Desktop-1 migrants have no telemetryEnabled key at all (see the migrator
+  // note at src/main/index.ts). Absent consent must seed OFF, not ON.
+  it('seeds false when telemetryEnabled was never recorded', () => {
+    expect(settings.get('telemetryEnabled')).toBeUndefined()
+
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
+    expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(false)
+  })
+
+  // The trap this whole design exists to kill: once seeded, the value is the
+  // user's own, and revoking telemetry consent must never eject them.
+  it('ignores a telemetry flip after seeding', () => {
+    settings.set('telemetryEnabled', true)
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(true)
+
+    settings.set('telemetryEnabled', false)
+
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(true)
+    expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(true)
+  })
+
+  it('does not re-seed a stored false when telemetry is later granted', () => {
+    settings.set('telemetryEnabled', false)
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
+
+    settings.set('telemetryEnabled', true)
+
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
+    expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(false)
   })
 })

@@ -899,3 +899,101 @@ describe('FirstUseTakeover recommendation telemetry', () => {
     }
   })
 })
+
+describe('FirstUseTakeover beta-features opt-in', () => {
+  type Wrapper = ReturnType<typeof mountTakeover>
+
+  async function openWith(persisted: Record<string, unknown>): Promise<Wrapper> {
+    vi.mocked(window.api.getSetting).mockImplementation(async (key: string) => persisted[key])
+    const wrapper = mountTakeover()
+    await (wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    return wrapper
+  }
+
+  const betaRow = (w: Wrapper) => w.find('[data-testid="first-use-consent-beta"]')
+  const betaBox = (w: Wrapper) => w.find('[data-testid="first-use-consent-beta"] input')
+  const telemetryBox = (w: Wrapper) => w.find('[data-testid="first-use-consent-telemetry"] input')
+  const isChecked = (el: ReturnType<typeof betaBox>) => (el.element as HTMLInputElement).checked
+
+  it('mirrors the telemetry choice until the user touches it, then diverges', async () => {
+    const w = await openWith({ telemetryEnabled: true })
+    expect(isChecked(betaBox(w))).toBe(true)
+
+    await telemetryBox(w).setValue(false)
+    expect(isChecked(betaBox(w))).toBe(false)
+    expect(betaBox(w).attributes('disabled')).toBeDefined()
+
+    await telemetryBox(w).setValue(true)
+    expect(isChecked(betaBox(w))).toBe(true)
+
+    await betaBox(w).setValue(false)
+    expect(isChecked(betaBox(w))).toBe(false)
+    expect(isChecked(telemetryBox(w))).toBe(true)
+  })
+
+  it('never re-enables a touched toggle when telemetry is switched back on', async () => {
+    const w = await openWith({ telemetryEnabled: true })
+    await betaBox(w).setValue(false)
+    await betaBox(w).setValue(true)
+    expect(isChecked(betaBox(w))).toBe(true)
+
+    await telemetryBox(w).setValue(false)
+    expect(isChecked(betaBox(w))).toBe(false)
+
+    await telemetryBox(w).setValue(true)
+    expect(isChecked(betaBox(w))).toBe(false)
+  })
+
+  it('replays a persisted opt-out unchanged through a telemetry off/on cycle', async () => {
+    const w = await openWith({ telemetryEnabled: true, betaFeaturesEnabled: false })
+    expect(isChecked(betaBox(w))).toBe(false)
+    expect(isChecked(telemetryBox(w))).toBe(true)
+
+    await telemetryBox(w).setValue(false)
+    expect(isChecked(betaBox(w))).toBe(false)
+
+    await telemetryBox(w).setValue(true)
+    expect(isChecked(betaBox(w))).toBe(false)
+  })
+
+  it('replays a persisted opt-in', async () => {
+    const w = await openWith({ telemetryEnabled: true, betaFeaturesEnabled: true })
+    expect(isChecked(betaBox(w))).toBe(true)
+  })
+
+  it('forces the toggle off and disabled with the entry-rule hint while telemetry is off', async () => {
+    const w = await openWith({ telemetryEnabled: false, betaFeaturesEnabled: true })
+    expect(isChecked(betaBox(w))).toBe(false)
+    expect(betaBox(w).attributes('disabled')).toBeDefined()
+    expect(betaRow(w).attributes('title')).toBe('tooltips.betaFeaturesNeedTelemetry')
+
+    await telemetryBox(w).setValue(true)
+    expect(betaBox(w).attributes('disabled')).toBeUndefined()
+    expect(betaRow(w).attributes('title')).toBeUndefined()
+    expect(isChecked(betaBox(w))).toBe(false)
+  })
+
+  it('forces a persisted opt-in off on a replay that never changes the telemetry choice', async () => {
+    // Second open() with telemetry already off: nothing about the telemetry
+    // choice transitions, so only an entry rule applied at initialization can
+    // hold the line here.
+    const w = await openWith({ telemetryEnabled: false, betaFeaturesEnabled: true })
+    await (w.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    expect(isChecked(betaBox(w))).toBe(false)
+    expect(betaBox(w).attributes('disabled')).toBeDefined()
+  })
+
+  it('persists both the telemetry and the beta choice at the same commit point', async () => {
+    const w = await openWith({ telemetryEnabled: true })
+    await w.find('[data-testid="first-use-consent-tos"] input[type="checkbox"]').setValue(true)
+    await w.find('[data-testid="first-use-pick-local"]').trigger('click')
+    await betaBox(w).setValue(false)
+    await w.find('[data-testid="first-use-continue"]').trigger('click')
+    await flushPromises()
+
+    expect(window.api.setSetting).toHaveBeenCalledWith('telemetryEnabled', true)
+    expect(window.api.setSetting).toHaveBeenCalledWith('betaFeaturesEnabled', false)
+  })
+})

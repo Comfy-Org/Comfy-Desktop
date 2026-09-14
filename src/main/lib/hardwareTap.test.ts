@@ -393,4 +393,26 @@ describe('createHardwareTap', () => {
     expect(accel).toHaveLength(1)
     expect(accel[0]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4090', vram_mb: 24576 })
   })
+
+  it('stamps the launch-injected core beta flags onto every emitted event', () => {
+    const tap = createHardwareTap({
+      installationId: 'inst-1',
+      coreBetaFlags: ['--enable-assets']
+    })
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    tap.ingest('Using xformers attention\n', 'stdout')
+
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel).toHaveLength(1)
+    expect(accel[0]!.ctx['core_beta_flags']).toEqual(['--enable-assets'])
+  })
+
+  it('reports an empty core beta list when the launch injected nothing', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    tap.ingest('Using xformers attention\n', 'stdout')
+
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel[0]!.ctx['core_beta_flags']).toEqual([])
+  })
 })

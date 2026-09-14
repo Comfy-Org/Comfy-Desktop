@@ -67,7 +67,7 @@ interface ExceptionCall {
   properties?: Record<string, unknown>
 }
 const exceptions: ExceptionCall[] = []
-const featureFlagCalls: Array<{
+const featureFlagResultCalls: Array<{
   key: string
   distinctId: string
   options?: { sendFeatureFlagEvents?: boolean }
@@ -76,7 +76,12 @@ const featureFlagCalls: Array<{
 const posthogClientMock = vi.hoisted(() => ({
   failNextCaptures: 0,
   failNextFlushes: 0,
-  autoFailNextIdentifies: 0
+  autoFailNextIdentifies: 0,
+  featureFlagResult: undefined as
+    | { enabled: boolean; variant?: string; payload?: unknown }
+    | undefined,
+  /** `hang` never settles, so only the caller's timeout can win the race. */
+  featureFlagBehavior: 'resolve' as 'resolve' | 'throw' | 'hang'
 }))
 
 vi.mock('posthog-node', () => ({
@@ -135,13 +140,17 @@ vi.mock('posthog-node', () => ({
     shutdown(): Promise<void> {
       return Promise.resolve()
     }
-    getFeatureFlag(
+    getFeatureFlagResult(
       key: string,
       distinctId: string,
       options?: { sendFeatureFlagEvents?: boolean }
-    ): Promise<undefined> {
-      featureFlagCalls.push({ key, distinctId, options })
-      return Promise.resolve(undefined)
+    ): Promise<{ enabled: boolean; variant?: string; payload?: unknown } | undefined> {
+      featureFlagResultCalls.push({ key, distinctId, options })
+      if (posthogClientMock.featureFlagBehavior === 'throw') {
+        return Promise.reject(new Error('flag evaluation failed'))
+      }
+      if (posthogClientMock.featureFlagBehavior === 'hang') return new Promise(() => {})
+      return Promise.resolve(posthogClientMock.featureFlagResult)
     }
   }
 }))
@@ -228,7 +237,7 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   captured.length = 0
   identifies.length = 0
   exceptions.length = 0
-  featureFlagCalls.length = 0
+  featureFlagResultCalls.length = 0
   process.env['POSTHOG_API_KEY'] = 'test-key'
   process.env['POSTHOG_ENABLED'] = '1'
   telemetry._resetForTest()
@@ -245,6 +254,8 @@ afterEach(() => {
   posthogClientMock.failNextCaptures = 0
   posthogClientMock.failNextFlushes = 0
   posthogClientMock.autoFailNextIdentifies = 0
+  posthogClientMock.featureFlagResult = undefined
+  posthogClientMock.featureFlagBehavior = 'resolve'
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
   delete process.env['POSTHOG_API_KEY']
@@ -421,21 +432,76 @@ describe('telemetry default event properties', () => {
   })
 })
 
+// Revocation semantics hang off this classification: a `value` (including an explicit
+// `false`) overwrites the persisted treatment, `unreachable` holds it. Collapsing the two
+// lets an offline launch silently revoke, or a disable silently fail to.
 describe('telemetry anonymous flag reads', () => {
-  it('disables PostHog implicit feature-flag capture', async () => {
+  it('classifies an enabled flag as a value result, without implicit capture', async () => {
     setupTelemetry({ consent: null, bind: null })
-    telemetry.bindAnonymousId('anonymous-flag-id', 'installation-id')
-    featureFlagCalls.length = 0
+    posthogClientMock.featureFlagResult = {
+      enabled: true,
+      variant: 'canary',
+      payload: { flags: ['enable-assets'] }
+    }
 
-    await telemetry.getOpsFlag('free_tier_workflow_submission_enabled', 'anonymous-flag-id', 100)
-
-    expect(featureFlagCalls).toEqual([
+    await expect(
+      telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+    ).resolves.toEqual({
+      kind: 'value',
+      value: 'canary',
+      payload: { flags: ['enable-assets'] }
+    })
+    expect(featureFlagResultCalls).toEqual([
       {
-        key: 'free_tier_workflow_submission_enabled',
-        distinctId: 'anonymous-flag-id',
+        key: 'desktop_core_beta_features',
+        distinctId: 'installation-id',
         options: { sendFeatureFlagEvents: false }
       }
     ])
+  })
+
+  it('classifies a disabled flag as a value result carrying false', async () => {
+    // Given a flag turned off on the server, with a variant left over from when it was on
+    setupTelemetry({ consent: null, bind: null })
+    posthogClientMock.featureFlagResult = {
+      enabled: false,
+      variant: 'canary',
+      payload: { flags: ['enable-assets'] }
+    }
+
+    // Then it reads as a VALUE of false, not as a miss — this is the revocation signal
+    await expect(
+      telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+    ).resolves.toMatchObject({ kind: 'value', value: false })
+  })
+
+  it('classifies a missing flag result as unreachable', async () => {
+    // Given the SDK resolves undefined — a key the server did not return
+    setupTelemetry({ consent: null, bind: null })
+    posthogClientMock.featureFlagResult = undefined
+
+    await expect(
+      telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+    ).resolves.toEqual({ kind: 'unreachable' })
+  })
+
+  it('classifies a thrown evaluation request as unreachable', async () => {
+    setupTelemetry({ consent: null, bind: null })
+    posthogClientMock.featureFlagBehavior = 'throw'
+
+    await expect(
+      telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+    ).resolves.toEqual({ kind: 'unreachable' })
+  })
+
+  it('classifies a timed-out evaluation request as unreachable', async () => {
+    // Given a request that never settles, so only the caller's timeout can resolve the race
+    setupTelemetry({ consent: null, bind: null })
+    posthogClientMock.featureFlagBehavior = 'hang'
+
+    await expect(
+      telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 10)
+    ).resolves.toEqual({ kind: 'unreachable' })
   })
 })
 
