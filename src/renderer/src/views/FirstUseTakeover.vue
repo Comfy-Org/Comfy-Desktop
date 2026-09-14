@@ -46,7 +46,7 @@
  * locale; the host calls it post-mount the same way the flow modals
  * are reset.
  */
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, useId, watch } from 'vue'
 import { Check, Copy, FolderInput, Info, Loader2 } from 'lucide-vue-next'
 import TakeoverHeader from '../components/TakeoverHeader.vue'
 import ModalShell from '../components/ModalShell.vue'
@@ -108,6 +108,8 @@ const betaTouched = ref(false)
 /** A stored membership predates this first-use consent gate and remains valid
  *  without telemetry. Explicit interaction transfers ownership to this UI. */
 const preservePersistedBetaOptIn = ref(false)
+const betaBlocked = computed(() => !telemetryEnabled.value && !betaFeaturesEnabled.value)
+const betaBlockedReasonId = useId()
 const locale = ref('en')
 
 /** A/B/C experiment that varies the pre-selected fork on the merged
@@ -1103,19 +1105,20 @@ defineExpose({ open, resetContinue })
             <label
               class="brand-checkbox start-consent-row"
               data-testid="first-use-consent-beta"
-              :title="
-                !telemetryEnabled && !betaFeaturesEnabled
-                  ? $t('tooltips.betaFeaturesNeedTelemetry')
-                  : undefined
-              "
+              :title="betaBlocked ? $t('tooltips.betaFeaturesNeedTelemetry') : undefined"
             >
               <input
                 type="checkbox"
                 :checked="betaFeaturesEnabled"
+                :aria-disabled="betaBlocked"
+                :aria-describedby="betaBlocked ? betaBlockedReasonId : undefined"
                 @change="onBetaFeaturesToggle"
               />
               <span class="start-consent-row__text">
                 {{ $t('firstUse.consentBetaHint') }}
+              </span>
+              <span v-if="betaBlocked" :id="betaBlockedReasonId" class="sr-only">
+                {{ $t('tooltips.betaFeaturesNeedTelemetry') }}
               </span>
             </label>
           </div>
