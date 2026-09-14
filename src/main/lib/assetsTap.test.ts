@@ -53,7 +53,7 @@ type LogfmtValue = boolean | number | string
 
 const FIELD_VALUES: Array<{ field: string; value: LogfmtValue }> = [
   { field: 'root', value: 'models' },
-  { field: 'phase', value: 'none' },
+  { field: 'phase', value: 'fast' },
   { field: 'stage', value: 'finalize' },
   { field: 'site', value: 'discovery' },
   ...COUNTER_FIELDS.map((field) => ({
@@ -444,11 +444,10 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
     })
 
-    it('keeps a non-integer numeric-looking value as a string', () => {
+    it('rejects a non-integer numeric-looking value for an integer field', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_completed count=1e400\n', 'stdout')
-      expect(captured).toHaveLength(1)
-      expect(captured[0]!.ctx.count).toBe('1e400')
+      expect(captured).toHaveLength(0)
     })
 
     it('rejects the whole line when only one of several fields is bad', () => {
@@ -466,11 +465,44 @@ describe('assetsTap', () => {
   })
 
   describe('field-name and structural validation', () => {
-    it.each(FIELD_VALUES)('accepts a structurally safe $field value', ({ field, value }) => {
+    it.each(FIELD_VALUES)('accepts a valid $field value of the right type', ({ field, value }) => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { [field]: value }), 'stdout')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx[field]).toEqual(value)
+    })
+
+    it.each<[string, LogfmtValue]>([
+      ['root', 1],
+      ['phase', true],
+      ['stage', 1],
+      ['site', false],
+      ...COUNTER_FIELDS.map((field): [string, LogfmtValue] => [field, true]),
+      ['error_type', 404],
+      ['hashing_enabled', 1]
+    ])('rejects $0 with a value of the wrong type', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { [field]: value }), 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
+    it.each([
+      ['root', 'cache'],
+      ['phase', 'none'],
+      ['stage', 'scan'],
+      ['site', 'finalize']
+    ])('rejects invalid enum value $1 for $0', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { [field]: value }), 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
+    it('handles numeric-looking exception names according to their parsed type', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_failed', { error_type: '404' }), 'stdout')
+      tap.ingest(taggedLine('seeder.scan_failed', { error_type: 'Error404' }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.error_type).toBe('Error404')
     })
   })
 

@@ -70,6 +70,26 @@ const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
 
 const MAX_STRING_LENGTH = 64
 const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"']
+const ROOTS: ReadonlySet<string> = new Set(['models', 'input', 'output', 'user', 'temp'])
+const PHASES: ReadonlySet<string> = new Set(['fast', 'enrich', 'full'])
+const STAGES: ReadonlySet<string> = new Set([
+  'mark_missing',
+  'pruning',
+  'fast_scan',
+  'enrich',
+  'finalize'
+])
+const STAT_SITES: ReadonlySet<string> = new Set(['discovery', 'enrich'])
+const INTEGER_FIELDS: ReadonlySet<string> = new Set([
+  'elapsed_ms',
+  'created',
+  'enriched',
+  'skipped',
+  'hash_failed',
+  'enrich_failed',
+  'permission_denied',
+  'count'
+])
 
 /** Cheap first-pass filter: core's field names are lowercase words only. */
 const FIELD_NAME = /^[a-z_]+$/
@@ -77,6 +97,7 @@ const FIELD_NAME = /^[a-z_]+$/
 function isSafeString(value: unknown): value is string {
   return (
     typeof value === 'string' &&
+    value.length > 0 &&
     value.length <= MAX_STRING_LENGTH &&
     !FORBIDDEN_STRING_CHARS.some((char) => value.includes(char))
   )
@@ -109,13 +130,17 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'hashing_enabled'
 ])
 
-/** Global value shape accepted after the field-name and collision checks. */
-function isTransportableValue(value: unknown): value is TelemetryValue {
-  return (
-    (typeof value === 'number' && Number.isFinite(value)) ||
-    typeof value === 'boolean' ||
-    isSafeString(value)
-  )
+/** Mirror of each field validator in ComfyUI `app/assets/event_log.py`. */
+function isAllowedFieldValue(key: string, value: unknown): value is TelemetryValue {
+  if (INTEGER_FIELDS.has(key)) return typeof value === 'number' && Number.isInteger(value)
+  if (key === 'hashing_enabled') return typeof value === 'boolean'
+  if (key === 'error_type') return isSafeString(value)
+  if (typeof value !== 'string') return false
+  if (key === 'root') return ROOTS.has(value)
+  if (key === 'phase') return PHASES.has(value)
+  if (key === 'stage') return STAGES.has(value)
+  if (key === 'site') return STAT_SITES.has(value)
+  return false
 }
 
 /**
@@ -153,7 +178,7 @@ function parseFields(
         : rawValue === 'false'
           ? false
           : rawValue
-    if (!isTransportableValue(value)) return null
+    if (!isAllowedFieldValue(key, value)) return null
     fields[key] = value
   }
   return fields
