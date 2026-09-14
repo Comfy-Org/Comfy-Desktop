@@ -867,7 +867,7 @@ async function runLaunch(
         launchCmd.args = built.args
         coreBeta = built.beta
       } catch {
-        // Schema not available — pass args as-is.
+        // Discovery failed; keep the sanitized args without injecting managed flags.
       }
     }
   }
