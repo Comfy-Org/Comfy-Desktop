@@ -380,20 +380,25 @@ describe('handleLaunch model-download startup await (#1322)', () => {
 })
 
 describe('createAssetsTapSafe', () => {
-  const BASE = { installationId: 'assets-tap-base', variant: 'nvidia', release: '0.3.68' }
+  const BASE = {
+    installationId: 'assets-tap-base',
+    variant: 'nvidia',
+    release: '0.3.68',
+    coreBetaFlags: ['--enable-assets']
+  }
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('forwards the launch base context with an empty core-beta flag list', () => {
+  it('forwards the launch-gated core-beta flags with the base context', () => {
     const create = vi.spyOn(assetsTapModule, 'createAssetsTap')
     createAssetsTapSafe(BASE)
     expect(create).toHaveBeenCalledWith({
       installationId: 'assets-tap-base',
       variant: 'nvidia',
       release: '0.3.68',
-      coreBetaFlags: []
+      coreBetaFlags: ['--enable-assets']
     })
   })
 
@@ -495,7 +500,12 @@ describe('attachLaunchStreams assets tap wiring', () => {
     })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
-      const inert = createAssetsTapSafe({ installationId: 'inert', variant: null, release: null })
+      const inert = createAssetsTapSafe({
+        installationId: 'inert',
+        variant: null,
+        release: null,
+        coreBetaFlags: []
+      })
       const h = harness(inert as unknown as ReturnType<typeof fakeTap>)
       expect(() => {
         h.stdout.emit('data', Buffer.from('out\n'))
@@ -895,6 +905,52 @@ describe('core beta report placement', () => {
   })
 
   it.each([
+    ['supported grant only', true, [HARNESS_GRANT], ['--enable-assets']],
+    [
+      'mixed supported and unsupported grants',
+      true,
+      [HARNESS_GRANT, { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }],
+      ['--enable-assets']
+    ],
+    ['revoked grant', true, [], []],
+    ['beta opt-out', false, [HARNESS_GRANT], []],
+    ['outside version window', true, [{ ...HARNESS_GRANT, minCoreVersion: '0.3.82' }], []]
+  ])(
+    'attributes assets events to %s, never persisted args',
+    async (_name, optedIn, grants, expected) => {
+      launchHarness.betaEnabled = optedIn
+      launchHarness.grants = grants
+      launchHarness.launchCommand!.args = [
+        '-s',
+        path.join(installDir, 'ComfyUI', 'main.py'),
+        '--listen',
+        '--enable-assets'
+      ]
+      const child = fakeChild()
+      launchHarness.spawn = (_cmd, args) => {
+        spawnArgs = args as string[]
+        return child
+      }
+
+      const res = await handleLaunch(ctxFor(`harness-assets-context-${_name}`))
+      expect(res.ok).toBe(true)
+      child.stdout.emit(
+        'data',
+        Buffer.from('[assets-event] assets.enabled hashing_enabled=false\n')
+      )
+
+      const assetsEvents = events.filter(
+        (e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled'
+      )
+      expect(assetsEvents).toHaveLength(1)
+      expect(assetsEvents[0]!.properties).toMatchObject({ core_beta_flags: expected })
+      expect(
+        spawnArgs.filter((arg) => arg === '--enable-assets' || arg === '--enable-asset-hashing')
+      ).toEqual(expected)
+    }
+  )
+
+  it.each([
     ['schema', true, false],
     ['feature registry', false, true]
   ])(
@@ -989,7 +1045,7 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.opt_state')
   })
 
-  it('reports exactly once when a port conflict retries the spawn', async () => {
+  it('reports once and drains both assets tails before a port-conflict retry without resetting caps', async () => {
     // The only test that proves the latch: the report site lives INSIDE the recursing
     // `tryLaunch`, so an unlatched report fires once per attempt.
     const children: FakeChild[] = []
@@ -1002,6 +1058,14 @@ describe('core beta report placement', () => {
       port: 48232
     }
     launchHarness.spawn = () => {
+      if (children.length === 1) {
+        expect(
+          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled')
+        ).toHaveLength(1)
+        expect(
+          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed')
+        ).toHaveLength(1)
+      }
       const child = fakeChild()
       children.push(child)
       return child
@@ -1013,6 +1077,15 @@ describe('core beta report placement', () => {
       // from here is deterministic — no racing the stream/exit handler registration.
       const first = children[0]!
       first.stderr.emit('data', Buffer.from('OSError: [Errno 98] Address already in use\n'))
+      first.stdout.emit(
+        'data',
+        Buffer.from('[assets-event] seeder.scan_started root=models\n'.repeat(60))
+      )
+      first.stdout.emit('data', Buffer.from('[assets-event] assets.enabled hashing_enabled=true'))
+      first.stderr.emit(
+        'data',
+        Buffer.from('[assets-event] scanner.stat_failed error_type=OSError site=discovery')
+      )
       first.emit('close', 1, null)
       return new Promise<void>(() => {})
     }
@@ -1024,6 +1097,13 @@ describe('core beta report placement', () => {
     expect(children).toHaveLength(2)
     expect(events.filter((e) => e.event === 'comfy.desktop.core_beta.opt_state')).toHaveLength(1)
     expect(sent.join('').match(/\[core-beta\]/g) ?? []).toHaveLength(1)
+    children[1]!.stdout.emit(
+      'data',
+      Buffer.from('[assets-event] seeder.scan_started root=models\n')
+    )
+    expect(
+      events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.seeder.scan_started')
+    ).toHaveLength(60)
   })
 
   it('still filters user args, injecting nothing, when the beta setting cannot be resolved', async () => {

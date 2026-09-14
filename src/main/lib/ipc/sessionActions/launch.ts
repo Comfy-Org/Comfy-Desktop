@@ -434,18 +434,10 @@ export function createAssetsTapSafe(base: {
   installationId: string
   variant: string | null
   release: string | null
+  coreBetaFlags: string[]
 }): ReturnType<typeof createAssetsTap> {
   try {
-    return createAssetsTap({
-      ...base,
-      // TODO(core-beta): PR A (Comfy-Desktop#1487, same stack) supplies the
-      // launch-gated flags here once both branches land — that PR owns the
-      // list's contents AND its length, so a `[]` diff against #1487 is
-      // expected here, not a regression. Nothing to derive from yet —
-      // `userArgs` is assembled after resource acquisition, so reading it
-      // here is a dead zone.
-      coreBetaFlags: []
-    })
+    return createAssetsTap(base)
   } catch (err) {
     console.error('Failed to create assets telemetry tap; continuing without it:', err)
     return { ingest: () => {}, beginBoot: () => {}, flushSummary: () => {} }
@@ -725,7 +717,8 @@ async function runLaunch(
       const assetsTap = createAssetsTapSafe({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
       })
       const tracker = await armLaunchTracker()
       return { logStream, execTap, hwTap, assetsTap, tracker }
