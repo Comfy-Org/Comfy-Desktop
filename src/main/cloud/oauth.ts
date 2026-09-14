@@ -107,8 +107,15 @@ export async function signIn(
       ...(options.workspaceId ? { workspaceId: options.workspaceId } : {})
     })
     // System browser only (RFC 8252): never an embedded window/webview.
-    await shell.openExternal(authorizeUrl)
-    const { code } = await listener.waitForCode()
+    // Never gate the flow on openExternal settling: a wedged shell handler
+    // (seen on Windows) can leave that promise pending forever, which would
+    // strand the single-flight login and disable sign-in in every window.
+    // The loopback callback timeout is the flow's deadline; a fast
+    // openExternal rejection (no browser handler) still fails immediately.
+    const { code } = await Promise.race([
+      listener.waitForCode(),
+      shell.openExternal(authorizeUrl).then(() => listener.waitForCode())
+    ])
 
     const r = await requestToken(
       cfg.tokenUrl,

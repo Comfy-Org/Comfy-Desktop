@@ -1,6 +1,6 @@
 import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from 'lucide-vue-next'
 import type { LucideIcon } from 'lucide-vue-next'
-import { isDistributionSource } from '../devplatform/distributionState'
+import { isBuildSource } from '../devplatform/buildState'
 
 /** Stable UX-side install-type key. Callers switch on this for styling /
  *  analytics rather than the raw `sourceCategory` from the source plugins. */
@@ -9,7 +9,7 @@ export type InstallTypeKey =
   | 'cloud'
   | 'legacyDesktop'
   | 'remote'
-  | 'distribution'
+  | 'build'
   | 'unknown'
 
 export interface InstallTypeIconMeta {
@@ -30,8 +30,8 @@ export function installTypeMetaFor(category: string | undefined | null): Install
       return { key: 'remote', icon: Globe, labelKey: 'installType.remote' }
     case 'local':
       return { key: 'standalone', icon: LaptopMinimal, labelKey: 'installType.standalone' }
-    case 'distribution':
-      return { key: 'distribution', icon: Package, labelKey: 'installType.distribution' }
+    case 'build':
+      return { key: 'build', icon: Package, labelKey: 'installType.build' }
     default:
       return { key: 'unknown', icon: Box, labelKey: 'installType.unknown' }
   }
@@ -41,7 +41,7 @@ export function installTypeMetaFor(category: string | undefined | null): Install
  *  installs report `sourceCategory === 'local'`, so the distinct
  *  `legacyDesktop` identity is keyed off the `desktop` sourceId instead.
  *
- *  A distribution install also reports `local`, but wears the distribution
+ *  A build install also reports `local`, but wears the build
  *  glyph everywhere — what it IS matters more than where it runs, and it keeps
  *  one identity whether it's an install tile, a picker row or a card. */
 export function installTypeMetaForInstall(inst: {
@@ -49,8 +49,8 @@ export function installTypeMetaForInstall(inst: {
   sourceCategory: string | null | undefined
   distributionId?: unknown
 }): InstallTypeIconMeta {
-  if (isDistributionSource(inst.sourceId, inst.distributionId)) {
-    return installTypeMetaFor('distribution')
+  if (isBuildSource(inst.sourceId, inst.distributionId)) {
+    return installTypeMetaFor('build')
   }
   if (inst.sourceId === 'desktop') return installTypeMetaFor('desktop')
   return installTypeMetaFor(inst.sourceCategory)

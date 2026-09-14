@@ -1,9 +1,9 @@
 /**
- * Model staging: the models half of a distribution install.
+ * Model staging: the models half of a Builder build install.
  *
- * A distribution archive carries only code and the environment (`venv/` +
+ * A build archive carries only code and the environment (`venv/` +
  * `ComfyUI/`), never model weights. After the archive extracts, this stages the
- * distribution's declared models into the install's own ComfyUI model tree so
+ * build's declared models into the install's own ComfyUI model tree so
  * they are present before ComfyUI starts, mirroring how comfy-deploy provisions
  * weights onto a volume before boot.
  *
@@ -20,10 +20,10 @@
  * source registry, which includes the ComfyBuilder plugin, so importing it
  * here at runtime would be a cycle.
  *
- * Integrity mirrors archive install: every model requires a sha256, verified
- * byte-for-byte by the managed transport before the file appears under its
- * final name. A file already at the destination must match the hash to be
- * kept; a mismatch is a conflict, never silently overwritten.
+ * When a model declares a sha256, the managed transport verifies it before the
+ * file appears under its final name. A file already at the destination must
+ * match a declared hash to be kept; a mismatch is a conflict, never silently
+ * overwritten. Public model sources may omit the hash.
  */
 import fs from 'fs'
 import path from 'path'
@@ -165,12 +165,14 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
         `Model ${model.type}/${model.filename} download URL must be https.`
       )
     }
-    if (!isValidSha256(model.sha256)) {
+    const rawSha256 = model.sha256?.trim()
+    if (rawSha256 && !isValidSha256(rawSha256)) {
       throw new StageModelsError(
         'invalid-model',
-        `Model ${model.type}/${model.filename} has no valid SHA-256 integrity value.`
+        `Model ${model.type}/${model.filename} has an invalid SHA-256 integrity value.`
       )
     }
+    const sha256 = normalizeSha256(rawSha256)
 
     const destDir = path.join(modelsRoot, model.type)
     // Create the target dir first, then confirm it really resolves inside the
@@ -197,7 +199,7 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
       filename: model.filename,
       directory: model.type,
       installationId,
-      sha256: normalizeSha256(model.sha256),
+      ...(sha256 ? { sha256 } : {}),
       // Always the install's own model tree, even when the install's model
       // settings would route interactive downloads to a shared root - and the
       // caller holds this root's download lock for the whole transaction.

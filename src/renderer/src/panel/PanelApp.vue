@@ -5,6 +5,7 @@ import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
+import AnnouncementModal from '../components/AnnouncementModal.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
@@ -23,6 +24,7 @@ import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboardConfirm'
 import { useSendFeedback } from '../composables/useSendFeedback'
+import { useAnnouncement } from '../composables/useAnnouncement'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
@@ -72,6 +74,7 @@ const modal = useModal()
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
+const { announcementOpen, closeAnnouncement } = useAnnouncement()
 
 // installationStore.fetchInstallations() is wired to onInstallationsChanged
 // inside the store itself, so the panel just needs to read from it.
@@ -373,7 +376,7 @@ function handleMcpOpenTerminal(): void {
 watch(
   activePanel,
   (next) => {
-    const isOverlay = next === 'feedback' || next === 'mcp-setup'
+    const isOverlay = next === 'feedback' || next === 'mcp-setup' || next === 'announcement'
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     // Signal after the modal mounts (nextTick), NOT on rAF: the panel is hidden
@@ -670,6 +673,7 @@ onUnmounted(() => {
     />
 
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
+    <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 
     <ModalDialog />
     <DialogHost />

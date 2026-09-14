@@ -14,7 +14,7 @@
  * Each flag supplies its own key, fail-direction (`fallback`), and `parse`. The shared part is
  * the plumbing every one of them needs: a single in-flight fetch, an accessor that awaits it
  * rather than racing it to the default, and a fallback that survives both a rejection and an
- * unrecognised payload. See `cloudFreeRuns.ts` and `coreCanary.ts` for the current callers.
+ * unrecognised payload. See `cloudFreeRuns.ts` for an existing caller.
  */
 import * as mainTelemetry from './telemetry'
 import type { FeatureFlagValue } from './telemetry'

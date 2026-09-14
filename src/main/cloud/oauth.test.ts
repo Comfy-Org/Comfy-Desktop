@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ shell: { openExternal: vi.fn(async () => {}) } }))
 
-import { refresh } from './oauth'
+import { get } from 'node:http'
+import { shell } from 'electron'
+import { refresh, signIn } from './oauth'
 
 function stub(status: number, body: unknown): void {
   vi.stubGlobal(
@@ -67,5 +69,47 @@ describe('oauth.refresh', () => {
   it('rejects a response with a non-numeric expires_in', async () => {
     stub(200, { access_token: 'a', expires_in: 'soon' })
     await expect(refresh('r', { tokenUrl: 'https://c/oauth/token' })).rejects.toThrow(/expires_in/)
+  })
+})
+
+describe('oauth.signIn', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const opts = {
+    authorizeUrl: 'https://c/oauth/authorize',
+    tokenUrl: 'https://c/oauth/token',
+    clientId: 'cid',
+    scope: 'openid',
+    resource: 'https://c/api'
+  }
+
+  it('completes the flow when the browser opens and calls back', async () => {
+    stub(200, { access_token: 'tok', refresh_token: 'r1', expires_in: 3600 })
+    vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
+      const u = new URL(authorizeUrl)
+      const redirect = u.searchParams.get('redirect_uri')
+      const state = u.searchParams.get('state')
+      // Simulate the browser redirect with raw http (global fetch is stubbed).
+      get(`${redirect}?code=abc&state=${state}`, (res) => res.resume())
+    })
+    const { tokens, status } = await signIn({ ...opts, timeoutMs: 5000 })
+    expect(tokens.accessToken).toBe('tok')
+    expect(tokens.refreshToken).toBe('r1')
+    expect(status.signedIn).toBe(true)
+  })
+
+  it('rejects on the callback timeout even when openExternal never settles', async () => {
+    // A wedged OS shell handler must not strand the sign-in (and with it the
+    // single-flight login promise) forever.
+    stub(200, {})
+    vi.mocked(shell.openExternal).mockImplementation(() => new Promise<void>(() => {}))
+    await expect(signIn({ ...opts, timeoutMs: 250 })).rejects.toThrow(/timed out/)
+  })
+
+  it('fails fast when the browser cannot be opened, without waiting for the timeout', async () => {
+    stub(200, {})
+    vi.mocked(shell.openExternal).mockRejectedValue(new Error('no browser handler'))
+    // timeoutMs far beyond the test timeout proves the rejection is immediate.
+    await expect(signIn({ ...opts, timeoutMs: 600_000 })).rejects.toThrow('no browser handler')
   })
 })

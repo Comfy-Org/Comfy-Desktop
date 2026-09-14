@@ -4,6 +4,7 @@ import type { AuthStatus } from './types'
 
 /** Claims read (never verified here; the server does that) from the access-token JWT. */
 interface AccessTokenClaims {
+  sub?: string
   email?: string
   workspace_id?: string
   workspace_type?: string
@@ -45,4 +46,9 @@ export function statusFromAccessToken(accessToken: string): AuthStatus {
 /** The workspace id a token is scoped to, or null. Used to detect a scope switch. */
 export function workspaceIdOf(accessToken: string): string | null {
   return decodeJwtPayload(accessToken)?.workspace_id ?? null
+}
+
+/** The account subject a token belongs to, or null for malformed/legacy tokens. */
+export function subjectOf(accessToken: string): string | null {
+  return decodeJwtPayload(accessToken)?.sub ?? null
 }

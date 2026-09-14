@@ -8,15 +8,22 @@ import beam2Svg from '../assets/lighting/beam_2.svg?raw'
 withDefaults(
   defineProps<{
     vignette?: boolean
+    scrollContent?: boolean
   }>(),
-  { vignette: false }
+  { vignette: false, scrollContent: false }
 )
 </script>
 
 <template>
   <div class="brand-background" data-theme="dark">
     <div class="brand-outer-frame">
-      <div class="brand-inner-frame" :class="{ 'brand-inner-frame--vignette': vignette }">
+      <div
+        class="brand-inner-frame"
+        :class="{
+          'brand-inner-frame--vignette': vignette,
+          'brand-inner-frame--scroll-content': scrollContent
+        }"
+      >
         <div class="brand-beam" aria-hidden="true" v-html="beamSvg" />
         <div class="brand-beam brand-beam--2" aria-hidden="true" v-html="beam2Svg" />
         <slot />
@@ -81,5 +88,9 @@ withDefaults(
   background:
     radial-gradient(circle 196px at 50% 50%, #151317 0%, #151317 35%, var(--neutral-800) 100%),
     var(--neutral-800);
+}
+.brand-inner-frame--scroll-content {
+  justify-content: flex-start;
+  overflow-y: auto;
 }
 </style>

@@ -158,14 +158,22 @@ describe('stageModels', () => {
     expect(jobs.start).toHaveBeenCalledTimes(1)
   })
 
-  it.each([undefined, '', 'not-a-sha256'])(
-    'rejects a model without a valid SHA-256 before any download',
+  it.each([undefined, '', '   '])('downloads a model without SHA-256 integrity', async (sha256) => {
+    const install = freshInstall()
+    const jobs = fakeJobs()
+    const untrusted = { ...model(), sha256 } as unknown as ModelDescriptor
+    await stageModels({ models: [untrusted], installPath: install, jobs })
+    expect(jobs.start).toHaveBeenCalledTimes(1)
+    expect(jobs.start.mock.calls[0]![0].sha256).toBeUndefined()
+  })
+
+  it.each(['not-a-sha256', 'sha256:'])(
+    'rejects a model with malformed SHA-256 before any download',
     async (sha256) => {
       const install = freshInstall()
       const jobs = fakeJobs()
-      const untrusted = { ...model(), sha256 } as unknown as ModelDescriptor
       await expect(
-        stageModels({ models: [untrusted], installPath: install, jobs })
+        stageModels({ models: [model({ sha256 })], installPath: install, jobs })
       ).rejects.toMatchObject({ kind: 'invalid-model' })
       expect(jobs.start).not.toHaveBeenCalled()
     }

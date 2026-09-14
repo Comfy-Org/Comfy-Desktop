@@ -14,7 +14,7 @@ import {
   _getStoppingInstallationIds,
   stopRunning
 } from './shared'
-import { dispatchSessionAction } from './sessionActions'
+import { dispatchSessionAction, _getActiveOperations } from './sessionActions'
 import { recordIpcInvocation } from '../e2eOverrides'
 
 export function registerSessionHandlers(): void {
@@ -32,6 +32,8 @@ export function registerSessionHandlers(): void {
   ipcMain.handle('get-launching-instances', () => _getLaunchingInstances())
 
   ipcMain.handle('get-stopping-instances', () => _getStoppingInstallationIds())
+
+  ipcMain.handle('get-active-operations', () => _getActiveOperations())
 
   ipcMain.handle('cancel-launch', () => {
     for (const [_id, abort] of _operationAborts) {

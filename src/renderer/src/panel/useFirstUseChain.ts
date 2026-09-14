@@ -397,7 +397,8 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       const result = await window.api.addInstallation({
         name,
         installPath,
-        ...instData
+        ...instData,
+        status: 'installing'
       })
       if (!result.ok || !result.entry) {
         console.warn('[firstUseChain] express: addInstallation failed', result)

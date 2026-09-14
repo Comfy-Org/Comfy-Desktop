@@ -23,6 +23,8 @@ import { readFileWithRetrySync, writeFileSafe } from './safe-file'
 export interface StartupAttemptMarker {
   version: string
   attemptedAt: string
+  attemptId?: string
+  reportedOutcome?: string
 }
 
 export type StartupAttemptMarkerRead =
@@ -50,7 +52,13 @@ export function readStartupAttemptMarker(): StartupAttemptMarkerRead {
         state: 'present',
         marker: {
           version: marker.version,
-          attemptedAt: typeof marker.attemptedAt === 'string' ? marker.attemptedAt : ''
+          attemptedAt: typeof marker.attemptedAt === 'string' ? marker.attemptedAt : '',
+          ...(typeof marker.attemptId === 'string' && marker.attemptId
+            ? { attemptId: marker.attemptId }
+            : {}),
+          ...(typeof marker.reportedOutcome === 'string' && marker.reportedOutcome
+            ? { reportedOutcome: marker.reportedOutcome }
+            : {})
         }
       }
     }
@@ -62,22 +70,40 @@ export function readStartupAttemptMarker(): StartupAttemptMarkerRead {
 
 /**
  * Record that a startup install of `version` is about to run, and verify the
- * marker actually landed on disk. The write is durable (fsynced before the
- * rename publishes it) so the machine rebooting into the installer - or losing
- * power mid-update - cannot roll it back out of the OS write cache. Returns
- * false when it could not be persisted or the read-back does not match - the
- * caller must then NOT install, because a marker that only lives in memory
- * cannot break the reinstall loop.
+ * marker actually landed on disk. `attemptId` keeps telemetry correlated when
+ * settings.json is unavailable or restored from backup. The write is durable
+ * (fsynced before the rename publishes it) so the machine rebooting into the
+ * installer - or losing power mid-update - cannot roll it back out of the OS
+ * write cache. Returns false when it could not be persisted or the read-back
+ * does not match - the caller must then NOT install, because a marker that only
+ * lives in memory cannot break the reinstall loop.
  */
-export function recordStartupAttempt(version: string): boolean {
-  const marker: StartupAttemptMarker = { version, attemptedAt: new Date().toISOString() }
+export function recordStartupAttempt(version: string, attemptId: string): boolean {
+  const marker: StartupAttemptMarker = {
+    version,
+    attemptedAt: new Date().toISOString(),
+    attemptId
+  }
   try {
     writeFileSafe(markerPath(), JSON.stringify(marker, null, 2), { durable: true })
   } catch {
     return false
   }
   const readBack = readStartupAttemptMarker()
-  return readBack.state === 'present' && readBack.marker.version === version
+  return (
+    readBack.state === 'present' &&
+    readBack.marker.version === version &&
+    readBack.marker.attemptId === attemptId
+  )
+}
+
+/** Persist the latest emitted status without removing the loop-breaker. */
+export function recordStartupAttemptOutcome(marker: StartupAttemptMarker, outcome: string): void {
+  try {
+    writeFileSafe(markerPath(), JSON.stringify({ ...marker, reportedOutcome: outcome }, null, 2), {
+      durable: true
+    })
+  } catch {}
 }
 
 export function clearStartupAttemptMarker(): void {

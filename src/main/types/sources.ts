@@ -115,8 +115,8 @@ export interface TerminalEnv {
   /** venv dir to activate: sets VIRTUAL_ENV, prepends its Scripts/bin to PATH,
    *  and shows the venv prompt. Omit when there is no venv to activate. */
   venvDir?: string
-  /** Dirs to prepend to PATH when there is no venv (e.g. a portable build's
-   *  embedded `python_embeded` + its `Scripts`). */
+  /** Additional dirs to prepend to PATH (e.g. a portable build's embedded
+   *  Python or a managed Build's relocated interpreter). */
   pathPrepends?: string[]
   /** Prompt label shown in the activated shell; defaults to the venvDir basename. */
   promptName?: string

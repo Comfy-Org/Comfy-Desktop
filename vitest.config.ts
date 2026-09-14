@@ -15,6 +15,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     exclude: ['src/**/*.integration.test.ts', 'node_modules'],
     globals: true,
+    maxWorkers: 8,
     // Installs the shared vue-i18n plugin into @vue/test-utils'
     // global mount config so components that call `useI18n()` work
     // out of the box in every test file.

@@ -72,6 +72,7 @@ import {
   awaitTemplateDownloadSettled
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
+import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
 import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
@@ -418,6 +419,18 @@ async function runLaunch(
 
   const sender = event.sender
   const sendProgress = makeSendProgress(sender, installationId)
+
+  // A build install whose background model staging never finished (crash,
+  // abort, staging failure, or a record written before `modelsStaged` existed)
+  // resumes its downloads now. Fire-and-forget: launch is not gated on models;
+  // already-staged files are skipped by hash.
+  if (
+    inst.sourceId === 'comfybuilder' &&
+    inst.status === 'installed' &&
+    inst.modelsStaged !== true
+  ) {
+    restageBuildModelsIfNeeded(inst)
+  }
 
   /** Show template model-download phase for first launch if needed. */
   const showTemplatePhase =

@@ -20,6 +20,8 @@ export interface AuthStatus {
   signedIn: boolean
   email?: string
   workspaceId?: string
+  /** Cached display name for the active workspace. */
+  workspaceName?: string
   workspaceType?: string
   role?: string
 }
@@ -33,4 +35,14 @@ export interface Workspace {
   subscriptionTier?: string
   createdAt?: string
   joinedAt?: string
+}
+
+/** One member of the active workspace (GET /api/workspace/members). */
+export interface WorkspaceMember {
+  id: string
+  name?: string
+  email?: string
+  role?: string
+  joinedAt?: string
+  isOriginalOwner?: boolean
 }

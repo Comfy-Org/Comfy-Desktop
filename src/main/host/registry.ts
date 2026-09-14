@@ -31,6 +31,9 @@ export type ComfyPanelKey =
   /** Overlay mode (like `'feedback'`): the MCP setup modal mounts over the live
    *  canvas, which stays visible underneath and dimmed. Set programmatically. */
   | 'mcp-setup'
+  /** Overlay mode (like `'feedback'`): the launch-announcement modal, opened
+   *  from the title-bar news bell. Set programmatically. */
+  | 'announcement'
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
@@ -40,7 +43,8 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'load-snapshot',
   'quick-install',
   'progress',
-  'mcp-setup'
+  'mcp-setup',
+  'announcement'
 ])
 
 /**
@@ -61,6 +65,7 @@ export type BodyMode =
   | 'load-snapshot'
   | 'quick-install'
   | 'mcp-setup'
+  | 'announcement'
 
 /**
  * Per-installation handle for a ComfyUI window. The window is a parent
