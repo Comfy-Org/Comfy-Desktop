@@ -44,6 +44,7 @@ const launchHarness = vi.hoisted(() => ({
   schemaNames: ['enable-assets', 'listen', 'feature-flag'] as string[],
   schemaThrows: false,
   registryThrows: false,
+  registryCalls: 0,
   betaEnabled: true,
   /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
    *  read, so a read-only or full disk surfaces here. */
@@ -87,6 +88,7 @@ vi.mock('../shared', async (importOriginal) => {
     waitForPort: (...args: Parameters<typeof actual.waitForPort>) =>
       launchHarness.waitForPort ? launchHarness.waitForPort() : actual.waitForPort(...args),
     getComfyFeatureFlagRegistry: async () => {
+      launchHarness.registryCalls += 1
       if (launchHarness.registryThrows) throw new Error('feature registry unavailable')
       return {}
     },
@@ -699,6 +701,7 @@ describe('core beta report placement', () => {
     events = []
     launchHarness.schemaThrows = false
     launchHarness.registryThrows = false
+    launchHarness.registryCalls = 0
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
@@ -788,6 +791,7 @@ describe('core beta report placement', () => {
       const res = await handleLaunch(ctxFor(`harness-${_discovery}-failure`))
 
       expect(res.ok).toBe(true)
+      expect(launchHarness.registryCalls).toBe(schemaThrows ? 0 : 1)
       expect(spawnArgs.slice(0, 3)).toEqual([
         '--enable-assets',
         '-s',
