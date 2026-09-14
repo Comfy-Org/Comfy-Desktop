@@ -701,10 +701,13 @@ export function getAll(): Settings {
  * beta by revoking consent, taking the diagnostics with them.
  */
 export function resolveBetaFeaturesEnabled(): boolean {
-  const stored = get('betaFeaturesEnabled')
+  const { settings, unreadable } = loadOutcome()
+  const stored = settings.betaFeaturesEnabled
   if (typeof stored === 'boolean') return stored
-  const seeded = get('telemetryEnabled') === true
-  set('betaFeaturesEnabled', seeded)
+  if (unreadable) return false
+  const seeded = settings.telemetryEnabled === true
+  settings.betaFeaturesEnabled = seeded
+  save(settings)
   return seeded
 }
 

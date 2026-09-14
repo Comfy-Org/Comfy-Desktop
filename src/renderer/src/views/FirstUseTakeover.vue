@@ -46,7 +46,7 @@
  * locale; the host calls it post-mount the same way the flow modals
  * are reset.
  */
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, useId, watch } from 'vue'
 import { Check, Copy, FolderInput, Info, Loader2 } from 'lucide-vue-next'
 import TakeoverHeader from '../components/TakeoverHeader.vue'
 import ModalShell from '../components/ModalShell.vue'
@@ -105,6 +105,11 @@ const telemetryEnabled = ref(true)
  *  back on can never re-opt a user who already opted out. */
 const betaFeaturesEnabled = ref(true)
 const betaTouched = ref(false)
+/** A stored membership predates this first-use consent gate and remains valid
+ *  without telemetry. Explicit interaction transfers ownership to this UI. */
+const preservePersistedBetaOptIn = ref(false)
+const betaBlocked = computed(() => !telemetryEnabled.value && !betaFeaturesEnabled.value)
+const betaBlockedReasonId = useId()
 const locale = ref('en')
 
 /** A/B/C experiment that varies the pre-selected fork on the merged
@@ -468,15 +473,11 @@ const isBrandStep = computed(() => step.value === 'start' || step.value === 'loc
  *  its current persisted state, not as a freshly-defaulted opt-in).
  *  China-mirror sub-step still runs first when the locale calls for
  *  it; the post-mirror branch reuses the same routing logic. */
-/** Entry rule: joining the beta programme requires telemetry, so a telemetry
- *  choice of off forces the beta choice off too — including an explicit ON, which
- *  is overwritten. `betaTouched` is never cleared, so turning telemetry back on
- *  re-mirrors ONLY for a user who never touched the toggle; a user who had
- *  explicitly chosen ON is left off. An explicit ON therefore does not survive an
- *  off→on flick of telemetry, and has to be chosen again. */
+/** Entry rule: joining the beta programme requires telemetry. Existing stored
+ *  membership is independent and survives replay until the user changes it. */
 function applyBetaEntryRule(): void {
   if (!telemetryEnabled.value) {
-    betaFeaturesEnabled.value = false
+    if (!preservePersistedBetaOptIn.value) betaFeaturesEnabled.value = false
     return
   }
   if (!betaTouched.value) betaFeaturesEnabled.value = true
@@ -484,7 +485,14 @@ function applyBetaEntryRule(): void {
 
 watch(telemetryEnabled, applyBetaEntryRule)
 
-function onBetaFeaturesToggle(next: boolean): void {
+function onBetaFeaturesToggle(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const next = input.checked
+  if (!telemetryEnabled.value && next) {
+    input.checked = betaFeaturesEnabled.value
+    return
+  }
+  preservePersistedBetaOptIn.value = false
   betaTouched.value = true
   betaFeaturesEnabled.value = next
 }
@@ -761,6 +769,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // and counts as touched; its absence means the wizard has yet to ask, so it
   // mirrors. Either way the entry rule gets the final word.
   betaTouched.value = typeof existingBeta === 'boolean'
+  preservePersistedBetaOptIn.value = existingBeta === true
   betaFeaturesEnabled.value = betaTouched.value ? existingBeta === true : telemetryEnabled.value
   applyBetaEntryRule()
   // Locale + hardware detection run non-blocking so the start hero paints
@@ -1096,16 +1105,20 @@ defineExpose({ open, resetContinue })
             <label
               class="brand-checkbox start-consent-row"
               data-testid="first-use-consent-beta"
-              :title="telemetryEnabled ? undefined : $t('tooltips.betaFeaturesNeedTelemetry')"
+              :title="betaBlocked ? $t('tooltips.betaFeaturesNeedTelemetry') : undefined"
             >
               <input
                 type="checkbox"
                 :checked="betaFeaturesEnabled"
-                :disabled="!telemetryEnabled"
-                @change="onBetaFeaturesToggle(($event.target as HTMLInputElement).checked)"
+                :aria-disabled="betaBlocked"
+                :aria-describedby="betaBlocked ? betaBlockedReasonId : undefined"
+                @change="onBetaFeaturesToggle"
               />
               <span class="start-consent-row__text">
                 {{ $t('firstUse.consentBetaHint') }}
+              </span>
+              <span v-if="betaBlocked" :id="betaBlockedReasonId" class="sr-only">
+                {{ $t('tooltips.betaFeaturesNeedTelemetry') }}
               </span>
             </label>
           </div>
