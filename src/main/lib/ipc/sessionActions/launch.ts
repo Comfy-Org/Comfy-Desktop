@@ -681,6 +681,18 @@ async function runLaunch(
     })
   }
 
+  /** Applied launch state shared by every boot-lifecycle event. This is deliberately
+   *  derived from the post-schema grants rather than the opt-in toggle: an opted-in
+   *  launch on an older Core may still have Assets disabled. `app_version` is added
+   *  centrally by telemetry.ts. */
+  function bootCohort(): { core_beta_flags: string[]; assets_enabled: boolean } {
+    const coreBetaFlags = coreBeta.applied.map((grant) => grant.arg)
+    return {
+      core_beta_flags: coreBetaFlags,
+      assets_enabled: coreBetaFlags.includes('--enable-assets')
+    }
+  }
+
   // Migrate legacy envs/default/ → ComfyUI/.venv/ for standalone installs.
   if (inst.sourceId === 'standalone') {
     // Recover from an update/restore interrupted by a hard process kill (power
@@ -1423,6 +1435,7 @@ async function runLaunch(
       installation_id: installationId,
       boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
+      ...bootCohort(),
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries
     })
@@ -1603,6 +1616,7 @@ async function runLaunch(
       installation_id: installationId,
       boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
+      ...bootCohort(),
       failed_phase: failedPhase,
       ...buildErrorFields(errorSource),
       error_tail: tail,
@@ -1645,6 +1659,7 @@ async function runLaunch(
     installation_id: installationId,
     boot_id: bootId,
     variant: (inst.variant as string | undefined) ?? null,
+    ...bootCohort(),
     boot_time_ms: bootTimeMs,
     port_retry_count: portRetries,
     reboot_retry_count: rebootRetries
