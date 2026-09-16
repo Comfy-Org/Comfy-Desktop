@@ -1,8 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
 const getOpsFlagResult = vi.fn()
 vi.mock('./telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
+}))
+
+// `coreCanary` is the one flag that persists, so resolving a value here writes `ops-flags.json`
+// for real — into the developer's own config dir, granting them the canary on their next launch.
+// Pinning `configDir()` to a temp dir is how `opsFlag.test.ts` and `experiments.test.ts` contain
+// that. Set for every test, not just the fetch one: an empty dir would resolve the file relative
+// to cwd and drop it in the repo root.
+let testConfigDir = ''
+vi.mock('./paths', () => ({
+  configDir: () => testConfigDir
 }))
 
 import {
@@ -22,6 +35,11 @@ import type { InstallationRecord } from '../installations'
 beforeEach(() => {
   _resetForTest()
   getOpsFlagResult.mockReset()
+  testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-canary-'))
+})
+
+afterEach(() => {
+  fs.rmSync(testConfigDir, { recursive: true, force: true })
 })
 
 describe('parseCoreCanaryFlags', () => {
@@ -436,6 +454,7 @@ describe('selectCoreCanaryArgs', () => {
 describe('core canary fetch', () => {
   it('reads its own PostHog key once at boot', async () => {
     getOpsFlagResult.mockResolvedValue({
+      kind: 'value',
       value: true,
       payload: { flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }] }
     })
