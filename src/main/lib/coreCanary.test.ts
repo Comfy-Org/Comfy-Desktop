@@ -12,8 +12,7 @@ import {
   getCoreCanaryFlagsAsync,
   initCoreCanary,
   parseCoreCanaryFlags,
-  selectCoreCanaryArgs,
-  stripCanaryArgs
+  selectCoreCanaryArgs
 } from './coreCanary'
 import type { CoreVersionState } from './coreCanary'
 import { coreSemverExact } from './version'
@@ -98,13 +97,27 @@ describe('parseCoreCanaryFlags', () => {
           { arg: '--enable-assets=true', min_core_version: '0.3.80' },
           { arg: '--Enable-assets', min_core_version: '0.3.80' },
           { arg: '--enable-manager', min_core_version: '0.3.80' },
-          { arg: '--disable-assets', min_core_version: '0.3.80' },
           null,
           42
         ]
       })
     ).toEqual([])
-    expect(CORE_CANARY_ALLOWED_FLAGS).toEqual(['--enable-assets', '--enable-asset-hashing'])
+    expect(CORE_CANARY_ALLOWED_FLAGS).toEqual([
+      '--enable-assets',
+      '--enable-asset-hashing',
+      '--disable-assets'
+    ])
+  })
+
+  it('grants --disable-assets, the remote force-off for when assets go default-on', () => {
+    // Core has no such flag yet. Granting one it cannot parse is already safe — the args
+    // schema filters it and the launch reports it as `dropped_unsupported` — so the allowlist
+    // can carry it ahead of Core.
+    expect(
+      parseCoreCanaryFlags(true, {
+        flags: [{ arg: '--disable-assets', min_core_version: '0.4.0' }]
+      })
+    ).toEqual([{ arg: '--disable-assets', minCoreVersion: '0.4.0' }])
   })
 
   it('drops non-string and non-semver bounds, including SHA-like tokens', () => {
@@ -181,15 +194,47 @@ describe('selectCoreCanaryArgs', () => {
     ).toEqual([])
   })
 
-  it('does not suppress a grant when the conflicting opposite is present', () => {
+  it('suppresses an --enable grant when the user supplied the --disable opposite', () => {
     expect(
       selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, ['--disable-assets'])
+    ).toEqual([])
+  })
+
+  it('suppresses a --disable grant when the user supplied the --enable opposite', () => {
+    const disableGrant = { arg: '--disable-assets', minCoreVersion: '0.3.80' }
+    expect(selectCoreCanaryArgs([disableGrant], at('0.3.81'), true, ['--enable-assets'])).toEqual(
+      []
+    )
+  })
+
+  it('pairs opposites by exact stem, not by a shared prefix', () => {
+    // `--enable-assets` and `--disable-asset-hashing` are different features; the stems
+    // (`assets` vs `asset-hashing`) must not collide just because one prefixes the other.
+    expect(
+      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, ['--disable-asset-hashing'])
     ).toEqual([unboundedGrant])
   })
 
-  it('does not treat a value-taking near miss as the exact arg token', () => {
+  it.each([['--enable-assets=true'], ['--disable-assets=true'], ['--DISABLE-ASSETS']])(
+    'does not treat the near miss %s as an exact arg token',
+    (userArg) => {
+      // Exact-token match on both the duplicate and the conflict check: the allowlist grammar
+      // has no `=value` or mixed-case form, so a lookalike is an ordinary user arg that
+      // neither suppresses the grant nor counts as already present.
+      expect(selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, [userArg])).toEqual([
+        unboundedGrant
+      ])
+    }
+  )
+
+  it('leaves unrelated user args alone when deciding a grant', () => {
     expect(
-      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, ['--enable-assets=true'])
+      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, [
+        '--listen',
+        '--port',
+        '8188',
+        '--cpu'
+      ])
     ).toEqual([unboundedGrant])
   })
 
@@ -264,64 +309,5 @@ describe('core canary fetch', () => {
     await expect(getCoreCanaryFlagsAsync()).resolves.toEqual([
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }
     ])
-  })
-})
-
-describe('stripCanaryArgs', () => {
-  it('removes every canary-managed token and keeps the rest in order', () => {
-    expect(
-      stripCanaryArgs([
-        '--listen',
-        '--enable-assets',
-        '--port',
-        '8188',
-        '--enable-asset-hashing',
-        '--cpu'
-      ])
-    ).toEqual(['--listen', '--port', '8188', '--cpu'])
-  })
-
-  it('strips every entry of the allowlist', () => {
-    expect(stripCanaryArgs([...CORE_CANARY_ALLOWED_FLAGS])).toEqual([])
-  })
-
-  it('logs once per stripped flag, however many times it was baked in', () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    try {
-      expect(
-        stripCanaryArgs([
-          '--enable-assets',
-          '--listen',
-          '--enable-assets',
-          '--enable-asset-hashing'
-        ])
-      ).toEqual(['--listen'])
-
-      expect(log.mock.calls.map(([line]) => line)).toEqual([
-        '[core-canary] removed baked flag --enable-assets from user args',
-        '[core-canary] removed baked flag --enable-asset-hashing from user args'
-      ])
-    } finally {
-      log.mockRestore()
-    }
-  })
-
-  it('leaves args that merely resemble a managed flag alone', () => {
-    // Exact-token match only: the allowlist grammar has no `=value` or negated form, so a
-    // lookalike is an ordinary user arg and stays the user's to pass.
-    const args = [
-      '--enable-assets-extra',
-      '--disable-assets',
-      '--enable-assets=true',
-      '--ENABLE-ASSETS'
-    ]
-    expect(stripCanaryArgs(args)).toEqual(args)
-  })
-
-  it('returns a new array rather than mutating the caller', () => {
-    // The stored launchArgs this is fed from must not be edited in place.
-    const args = ['--enable-assets', '--listen']
-    expect(stripCanaryArgs(args)).toEqual(['--listen'])
-    expect(args).toEqual(['--enable-assets', '--listen'])
   })
 })
