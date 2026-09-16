@@ -572,6 +572,21 @@ export function initTelemetry(opts: InitOptions): void {
       host: cfg.host,
       flushAt: 20,
       flushInterval: 10_000,
+      // Bound on the SDK's own `/flags` POST, raised from its 3000 ms default. A cold POST
+      // measured ~2572 ms and is always cold at boot, so the default leaves ~430 ms of headroom:
+      // on a slower link or a loaded machine the SDK gives up first, `getFeatureFlagResult`
+      // yields nothing, and the late continuation in `getOpsFlagResult` never fires — so a
+      // revocation is silently held forever, the exact failure late persistence exists to end.
+      //
+      // This does NOT slow boot. The launch decision is governed by the 2000 ms race inside
+      // `getOpsFlagResult`, which is unchanged; the app never waits longer to start. All a
+      // longer flag timeout buys is keeping the ALREADY-ABANDONED background fetch alive long
+      // enough for a slow cold answer to be captured and persisted for the NEXT launch.
+      //
+      // Not to be confused with `requestTimeout`, a separate option that only reaches
+      // `FeatureFlagsPoller` — built solely when `personalApiKey` is set, which Desktop never
+      // sets. Setting it here would configure a path this app does not take.
+      featureFlagsRequestTimeoutMs: 10_000,
       // GeoIP: posthog-node runs in the desktop main process ON the user's
       // machine, so the request IP is the real user IP and PostHog can derive
       // the user's location. We opt IN to country-level cohorts (the IP is no

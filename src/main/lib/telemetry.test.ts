@@ -72,6 +72,9 @@ const featureFlagResultCalls: Array<{
   distinctId: string
   options?: { sendFeatureFlagEvents?: boolean }
 }> = []
+/** Constructor arguments the SDK actually received. An option the app "sets" but never passes
+ *  through to `new PostHog(...)` has no effect at all, which is the failure this records. */
+const posthogConstructorCalls: Array<{ apiKey: string; options: Record<string, unknown> }> = []
 
 const posthogClientMock = vi.hoisted(() => ({
   failNextCaptures: 0,
@@ -94,6 +97,10 @@ vi.mock('posthog-node', () => ({
   PostHog: class {
     private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
     private queuedIdentifies: Array<Record<string, unknown>> = []
+
+    constructor(apiKey: string, options: Record<string, unknown>) {
+      posthogConstructorCalls.push({ apiKey, options })
+    }
 
     on(event: string, listener: (...args: unknown[]) => void): () => void {
       const listeners = this.listeners.get(event) ?? new Set()
@@ -249,6 +256,7 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   identifies.length = 0
   exceptions.length = 0
   featureFlagResultCalls.length = 0
+  posthogConstructorCalls.length = 0
   process.env['POSTHOG_API_KEY'] = 'test-key'
   process.env['POSTHOG_ENABLED'] = '1'
   telemetry._resetForTest()
@@ -441,6 +449,44 @@ describe('telemetry default event properties', () => {
     // bindAnonymousId stamps installation_id only as a property. Only the
     // Firebase UID login path may call the SDK's identify.
     expect(identifies).toHaveLength(0)
+  })
+})
+
+// The SDK bounds a `/flags` POST at `featureFlagsRequestTimeoutMs` (default 3000 ms) with retries
+// disabled. A cold POST measured ~2572 ms and is always cold at boot, so the default leaves ~430 ms
+// of headroom: on a slower link the SDK yields nothing at all, the late continuation never fires,
+// and a revocation can never land. The launch deadline is unaffected — that is `opsFlag`'s own
+// 2000 ms race, which still answers on time.
+describe('telemetry PostHog client options', () => {
+  function constructorOptions(): Record<string, unknown> {
+    expect(posthogConstructorCalls).toHaveLength(1)
+    return posthogConstructorCalls[0]!.options
+  }
+
+  it('passes a feature-flag request timeout above the SDK default to the client', () => {
+    setupTelemetry()
+
+    // Asserted on the CONSTRUCTOR argument, not on a local constant: an option the SDK never
+    // receives changes nothing, and is indistinguishable from the default at every other seam.
+    expect(constructorOptions().featureFlagsRequestTimeoutMs).toBe(10_000)
+  })
+
+  it('leaves the delivery and geoip options alone', () => {
+    setupTelemetry()
+
+    expect(constructorOptions()).toMatchObject({
+      flushAt: 20,
+      flushInterval: 10_000,
+      disableGeoip: false
+    })
+  })
+
+  it('does not set requestTimeout, which governs a path this app never takes', () => {
+    // `requestTimeout` only reaches `FeatureFlagsPoller`, built solely when `personalApiKey` is
+    // set. Desktop never sets one, so touching it would be cargo-culted config.
+    setupTelemetry()
+
+    expect(constructorOptions()).not.toHaveProperty('requestTimeout')
   })
 })
 
