@@ -209,7 +209,9 @@ export function makeOpsFlag<T>(opts: {
           initOpts.distinctId,
           initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           // Non-persisting flags pass no callback at all, so they stay write-free structurally
-          // rather than by a guard inside one — nothing is even attached to the abandoned fetch.
+          // rather than by a guard inside one — no write path is attached to the abandoned fetch.
+          // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
+          // not a write, and deliberately does not depend on whether the flag persists.)
           persist ? (late) => persistLate(generationAtInit, late) : undefined
         )
         .then((result) => {

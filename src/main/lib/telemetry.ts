@@ -1491,26 +1491,86 @@ function toOpsFlagValue(
   }
 }
 
-/** Observe a fetch the deadline already abandoned, so an explicit value arriving late still
- *  reaches the caller.
+/**
+ * How an abandoned ops-flag fetch eventually settled.
+ *
+ * `no_result` is deliberately not called "missing": a fetch the SDK timed out on and a key the
+ * server genuinely has no result for arrive as the same falsy value, so this field cannot tell
+ * them apart on its own. `duration_ms` is what does — a `no_result` near the SDK's own `/flags`
+ * ceiling is a timeout, a fast one is a deleted or absent key. That indistinguishability is what
+ * let the sticky-grant bug live unnoticed, and what would otherwise hide the ceiling in the field.
+ */
+type LateOpsFlagOutcome = 'value' | 'no_result' | 'rejected'
+
+/** One name with fields rather than three names, so the outcomes stay comparable in one query. */
+const OPS_FLAG_LATE_RESULT_EVENT = 'comfy.desktop.ops_flag.late_result'
+
+interface AbandonedOpsFlagFetch {
+  key: string
+  /** Stamped before the fetch starts, not when the deadline expires. The number worth reporting is
+   *  how long the WHOLE fetch ran, since that is what compares against the SDK's own ceiling;
+   *  measured from the deadline it would read ~0 and say nothing. */
+  startedAt: number
+  flagPromise: ReturnType<PostHog['getFeatureFlagResult']>
+  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void
+}
+
+/** Observe a fetch the deadline already abandoned: report how it settled, and hand an explicit
+ *  value back so it still reaches the caller that persists it.
  *
  *  Detached on purpose: `getOpsFlagResult` has answered `unreachable` and its caller has moved
- *  on, so nothing awaits this. It therefore needs its own `.catch` — without one, a rejection
- *  of an abandoned fetch (or a throwing callback) surfaces as an unhandled rejection.
+ *  on, so nothing awaits this. Every step is therefore contained individually — without that, a
+ *  rejection of an abandoned fetch (or a throwing callback, or a throwing report) surfaces as an
+ *  unhandled rejection.
  *
- *  Fires for a TRUTHY resolution only. A falsy resolution means the server returned no result
- *  for the key, which is `unreachable` and must not be reported as a value: routing it through
- *  here would make deleting a flag revoke it. */
-function reportLateResult(
-  flagPromise: ReturnType<PostHog['getFeatureFlagResult']>,
-  onLateResult: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void
-): void {
-  void flagPromise
-    .then((late) => {
-      if (late) onLateResult(toOpsFlagValue(late))
-    })
+ *  Reporting does NOT widen what may be persisted. `onLateResult` still fires for a TRUTHY
+ *  resolution only. A falsy resolution means the server returned no result for the key, which is
+ *  `unreachable` and must not be handed back as a value: routing it through would make deleting a
+ *  flag revoke it. The report is the only thing a late miss or rejection now produces. */
+function observeAbandonedOpsFlagFetch(abandoned: AbandonedOpsFlagFetch): void {
+  const report = (outcome: LateOpsFlagOutcome, extra: TelemetryContext = {}): void => {
+    try {
+      // `capture`, not the client this module already holds: ops-flag READS bypass the consent
+      // gate by design, but emission derived from one must not.
+      capture(OPS_FLAG_LATE_RESULT_EVENT, {
+        flag_key: abandoned.key,
+        outcome,
+        duration_ms: Date.now() - abandoned.startedAt,
+        ...extra
+      })
+    } catch {
+      // Diagnostics must never cost the caller the value it is still owed.
+    }
+  }
+
+  void abandoned.flagPromise
+    .then(
+      (late) => {
+        if (!late) {
+          report('no_result')
+          return
+        }
+        report('value')
+        try {
+          abandoned.onLateResult?.(toOpsFlagValue(late))
+        } catch {
+          // The caller owns its own persist failures (see `persistLate` in opsFlag.ts); this is
+          // the backstop that keeps one escaping from becoming an unhandled rejection.
+        }
+      },
+      // Two-argument `then` rather than a trailing `.catch`: a single catch would also swallow a
+      // throw from the success branch and bill it as a REJECTED fetch, blaming the network for a
+      // local bug and emitting a second event for one settlement.
+      (err: unknown) => report('rejected', { error_bucket: sharedBucketError(err) })
+    )
     .catch(() => {})
 }
+
+/** Separates "the deadline won" from "the fetch answered with no result for the key". Both classify
+ *  `unreachable`, but only the first leaves a fetch in flight worth observing — reporting an
+ *  in-band miss as a late one would invent a timeout that never happened, and drop a ~0 ms sample
+ *  into the one field that distinguishes a real timeout from a deleted key. */
+const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
 
 /**
  * Fetch a single OPERATIONAL feature flag together with its matched payload.
@@ -1547,7 +1607,9 @@ function reportLateResult(
  *
  * Deletion is still not revocation. Only a TRUTHY resolution reaches
  * `onLateResult`; a late miss (deleted/archived/absent key) and a late rejection
- * are both `unreachable`, which callers must never persist.
+ * are both `unreachable`, which callers must never persist. All three are
+ * REPORTED (`comfy.desktop.ops_flag.late_result`) — reporting an outcome and
+ * persisting it are deliberately different things, and only the value is both.
  */
 export async function getOpsFlagResult(
   key: string,
@@ -1557,21 +1619,25 @@ export async function getOpsFlagResult(
 ): Promise<OpsFlagFetchResult> {
   if (!client) return { kind: 'unreachable' }
   let timer: ReturnType<typeof setTimeout> | undefined
+  const startedAt = Date.now()
   try {
     const flagPromise = client.getFeatureFlagResult(key, distinctId, {
       sendFeatureFlagEvents: false
     })
-    const timeoutPromise = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), timeoutMs)
+    const timeoutPromise = new Promise<typeof OPS_FLAG_DEADLINE>((resolve) => {
+      timer = setTimeout(() => resolve(OPS_FLAG_DEADLINE), timeoutMs)
     })
     const result = await Promise.race([flagPromise, timeoutPromise])
-    if (!result) {
-      // Either the timer won and `flagPromise` is still in flight, or `flagPromise` itself
-      // resolved with no result for the key. `reportLateResult` fires on a truthy resolution
-      // only, so the second case settles as the no-op it must be.
-      if (onLateResult) reportLateResult(flagPromise, onLateResult)
+    if (result === OPS_FLAG_DEADLINE) {
+      // The timer won and `flagPromise` is still in flight. Observed unconditionally, not only
+      // when a caller registered for late values: a flag that never persists can still hit the
+      // SDK's ceiling, and a timeout nobody can see is the state this reporting exists to end.
+      observeAbandonedOpsFlagFetch({ key, startedAt, flagPromise, onLateResult })
       return { kind: 'unreachable' }
     }
+    // The fetch itself answered, with no result for the key. `unreachable` exactly as a timeout
+    // is, but nothing was abandoned — so there is nothing to observe and nothing to report.
+    if (!result) return { kind: 'unreachable' }
     return toOpsFlagValue(result)
   } catch {
     return { kind: 'unreachable' }

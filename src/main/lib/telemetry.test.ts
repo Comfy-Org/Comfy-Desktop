@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
@@ -223,7 +224,16 @@ vi.mock('./pendingIdentityMerge', () => ({
   }
 }))
 
+/** `opsFlag` resolves `ops-flags.json` under `configDir()`; pinning it to a temp dir is what lets
+ *  the real persistence layer run against the real `getOpsFlagResult` below. `telemetry.ts` itself
+ *  never imports this module, so the mock reaches `opsFlag` alone. */
+let testConfigDir = ''
+vi.mock('./paths', () => ({
+  configDir: () => testConfigDir
+}))
+
 const telemetry = await import('./telemetry')
+const { makeOpsFlag } = await import('./opsFlag')
 
 function bindTestAnonymous(id: string, properties: Record<string, TelemetryValue> = {}): void {
   telemetry.bindAnonymousId(id, id, properties)
@@ -680,6 +690,309 @@ describe('telemetry late ops-flag results', () => {
     await flush()
 
     expect(late).toEqual([])
+  })
+})
+
+// A fetch that times out INSIDE the SDK and a key the server genuinely has no result for are the
+// same falsy value to us, and both classify `unreachable`. That indistinguishability is what let
+// the sticky-grant bug live unnoticed, and it is what would hide the `/flags` ceiling being hit in
+// the field. The separator is the elapsed time: a miss at ~3000 ms is the SDK's own timeout, a miss
+// at ~200 ms is a deleted key. One event name, an `outcome` field, and a duration make the three
+// late outcomes tellable apart without changing which of them may be persisted — still values only.
+describe('telemetry late ops-flag reporting', () => {
+  const EVENT = 'comfy.desktop.ops_flag.late_result'
+
+  function lateEvents(): CapturedCall[] {
+    return captured.filter((call) => call.event === EVENT)
+  }
+
+  function lateEvent(): Record<string, unknown> {
+    expect(lateEvents()).toHaveLength(1)
+    return lateEvents()[0]!.properties ?? {}
+  }
+
+  /** Lose the race under GRANTED consent, unlike `raceLostWith` above: reads bypass the consent
+   *  gate, reporting must not, so a report is only observable once consent admits it. */
+  async function raceLostReporting(
+    onLate?: (result: unknown) => void,
+    options: SetupTelemetryOptions = {}
+  ): Promise<void> {
+    setupTelemetry(options)
+    posthogClientMock.featureFlagBehavior = 'defer'
+    captured.length = 0
+    await expect(
+      telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 0, onLate)
+    ).resolves.toEqual({ kind: 'unreachable' })
+  }
+
+  function flush(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  it('reports a late value, and still hands it to the caller', async () => {
+    const late: unknown[] = []
+    await raceLostReporting((result) => late.push(result))
+
+    posthogClientMock.deferred?.resolve({ enabled: true, variant: 'canary', payload: { a: 1 } })
+    await flush()
+
+    // Then reporting is purely additive: the value still reaches the caller that persists it
+    expect(late).toEqual([{ kind: 'value', value: 'canary', payload: { a: 1 } }])
+    expect(lateEvent()).toMatchObject({
+      flag_key: 'desktop_core_beta_features',
+      outcome: 'value'
+    })
+  })
+
+  it('reports a late miss, and withholds it from the caller', async () => {
+    // Given an abandoned fetch that answers with nothing — an SDK timeout and a deleted key are
+    // the same `undefined` here, which is exactly why the event has to exist
+    const late: unknown[] = []
+    await raceLostReporting((result) => late.push(result))
+
+    posthogClientMock.deferred?.resolve(undefined)
+    await flush()
+
+    // Then the outcome is observable, and the write rule is untouched: `unreachable` never
+    // reaches the caller, so deleting a flag still cannot revoke it
+    expect(lateEvent()).toMatchObject({
+      flag_key: 'desktop_core_beta_features',
+      outcome: 'no_result'
+    })
+    expect(late).toEqual([])
+  })
+
+  it('reports a late rejection with its error bucket, and withholds it from the caller', async () => {
+    const late: unknown[] = []
+    await raceLostReporting((result) => late.push(result))
+
+    posthogClientMock.deferred?.reject(new Error('request timeout after 30s'))
+    await flush()
+
+    // The bucket is what separates "the SDK gave up" from "the socket died" once both land here
+    expect(lateEvent()).toMatchObject({ outcome: 'rejected', error_bucket: 'timeout' })
+    expect(late).toEqual([])
+  })
+
+  it('reports how long the abandoned fetch actually ran, not how long it ran past the deadline', async () => {
+    // Given a fetch abandoned at a 0 ms deadline that only settles well afterwards. `setTimeout`
+    // guarantees a MINIMUM delay, so this measures a floor and cannot fire early.
+    await raceLostReporting()
+    await sleep(40)
+
+    posthogClientMock.deferred?.resolve(undefined)
+    await flush()
+
+    // Then the duration spans the whole fetch. Measured from the deadline it would read ~0 and
+    // could never be compared against the SDK's own 3000 ms ceiling, which is its only purpose.
+    const durationMs = lateEvent()['duration_ms']
+    expect(typeof durationMs).toBe('number')
+    expect(durationMs as number).toBeGreaterThanOrEqual(25)
+  })
+
+  it('reports a timed-out fetch even when no caller registered for late values', async () => {
+    // `cloudFreeRuns` passes no callback because it must never persist. It can still hit the
+    // ceiling, and a flag whose timeouts are invisible is the state this event exists to end.
+    await raceLostReporting()
+
+    posthogClientMock.deferred?.resolve(undefined)
+    await flush()
+
+    expect(lateEvent()).toMatchObject({ outcome: 'no_result' })
+  })
+
+  it('reports nothing when the fetch wins the race', async () => {
+    setupTelemetry()
+    posthogClientMock.featureFlagResult = { enabled: true, variant: 'canary', payload: null }
+    captured.length = 0
+
+    await expect(
+      telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+    ).resolves.toMatchObject({ kind: 'value' })
+    await flush()
+
+    expect(lateEvents()).toEqual([])
+  })
+
+  it('reports nothing when the fetch answers IN BAND with no result for the key', async () => {
+    // Given a miss that beats the deadline. It classifies `unreachable` exactly like a timeout,
+    // but nothing was ever abandoned — reporting here would invent a timeout that never happened
+    // and put a ~0 ms sample into the only field that separates the two.
+    setupTelemetry()
+    posthogClientMock.featureFlagResult = undefined
+    captured.length = 0
+
+    await expect(
+      telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+    ).resolves.toEqual({ kind: 'unreachable' })
+    await flush()
+
+    expect(lateEvents()).toEqual([])
+  })
+
+  it('does not report without consent, though the read itself still happens', async () => {
+    // Ops-flag READS bypass the consent gate by design; emission must not. This is the whole
+    // reason the report goes through `capture` rather than the client the read already holds.
+    const late: unknown[] = []
+    await raceLostReporting((result) => late.push(result), { consent: 'denied' })
+
+    posthogClientMock.deferred?.resolve({ enabled: true, variant: 'canary', payload: null })
+    await flush()
+
+    expect(lateEvents()).toEqual([])
+    expect(late).toEqual([{ kind: 'value', value: 'canary', payload: null }])
+  })
+
+  it('still hands the caller its late value when the capture path throws', async () => {
+    // Given an SDK that rejects the report. Nothing awaits this continuation, so a throw here
+    // would strand the value AND surface as an unhandled rejection.
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const late: unknown[] = []
+      await raceLostReporting((result) => late.push(result))
+      posthogClientMock.failNextCaptures = 1
+
+      posthogClientMock.deferred?.resolve({ enabled: false, variant: 'canary', payload: null })
+      await flush()
+
+      expect(late).toEqual([{ kind: 'value', value: false, payload: null }])
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
+  it('reports the outcome exactly once when the caller itself throws', async () => {
+    // Given a caller whose persist step throws. A single `.catch` covering both the fetch and the
+    // callback would bill that throw as a REJECTED fetch — a second event, blaming the network
+    // for a local bug.
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      await raceLostReporting(() => {
+        throw new Error('persist failed')
+      })
+
+      posthogClientMock.deferred?.resolve({ enabled: true, variant: 'canary', payload: null })
+      await flush()
+
+      expect(lateEvent()).toMatchObject({ outcome: 'value' })
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+})
+
+// The two modules that split this invariant are mocked out of each other's unit tests: `opsFlag`
+// stubs `getOpsFlagResult`, so it cannot tell WHY no late value arrived, and the tests above stop
+// at the callback without a disk. Reporting and persistence are now driven from the same
+// continuation, so "reports but does not write" has to be proven somewhere both really run.
+describe('late ops-flag results reaching real persistence', () => {
+  const EVENT = 'comfy.desktop.ops_flag.late_result'
+  const KEY = 'grant-flag'
+
+  function flagsFilePath(): string {
+    return path.join(testConfigDir, 'ops-flags.json')
+  }
+
+  function seedGrant(): string {
+    // Indented on purpose: canonical `JSON.stringify` output cannot tell "never written" from
+    // "rewritten identically", and rewriting is the bug under test.
+    const stored = JSON.stringify({ [KEY]: { value: true, payload: null } }, null, 2)
+    fs.writeFileSync(flagsFilePath(), stored, 'utf-8')
+    fs.writeFileSync(flagsFilePath() + '.bak', stored, 'utf-8')
+    return stored
+  }
+
+  function makeGrantFlag() {
+    return makeOpsFlag<'granted' | 'revoked' | 'unknown'>({
+      key: KEY,
+      fallback: 'unknown',
+      parse: (value) => (value === true ? 'granted' : value === false ? 'revoked' : undefined),
+      persist: true
+    })
+  }
+
+  /** A real launch that loses its race: the deadline answers while the fetch is still in flight,
+   *  leaving the production continuation attached to a promise this test still controls. */
+  async function launchLosingTheRace(): Promise<ReturnType<typeof makeGrantFlag>> {
+    setupTelemetry()
+    posthogClientMock.featureFlagBehavior = 'defer'
+    captured.length = 0
+    const flag = makeGrantFlag()
+    await flag.init({ distinctId: 'installation-id', timeoutMs: 0 })
+    return flag
+  }
+
+  function flush(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  function lateEventOutcome(): unknown {
+    const events = captured.filter((call) => call.event === EVENT)
+    expect(events).toHaveLength(1)
+    return events[0]!.properties?.['outcome']
+  }
+
+  beforeEach(() => {
+    testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telemetry-ops-flag-'))
+  })
+
+  it('writes a late VALUE through to disk while reporting it', async () => {
+    // The positive control for the two tests below: without it, "the file was not written" would
+    // also pass if this harness could not write at all.
+    seedGrant()
+    const flag = await launchLosingTheRace()
+
+    posthogClientMock.deferred?.resolve({ enabled: false, payload: null })
+    await flush()
+
+    expect(lateEventOutcome()).toBe('value')
+    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual({
+      [KEY]: { value: false, payload: null }
+    })
+    // And this launch keeps what the deadline decided — convergence happens on the NEXT one
+    expect(await flag.get()).toBe('granted')
+  })
+
+  it('reports a late MISS without letting it reach the file', async () => {
+    // Given a grant on disk and an abandoned fetch that answers with nothing — deleted, archived,
+    // or the SDK's own timeout, all indistinguishable at this seam
+    const stored = seedGrant()
+    const flag = await launchLosingTheRace()
+
+    posthogClientMock.deferred?.resolve(undefined)
+    await flush()
+
+    // Then the timeout became visible, and the grant stands byte for byte: deletion is still not
+    // revocation, which is the contract `persist` documents against
+    expect(lateEventOutcome()).toBe('no_result')
+    expect(fs.readFileSync(flagsFilePath(), 'utf-8')).toBe(stored)
+    expect(await flag.get()).toBe('granted')
+  })
+
+  it('reports a late REJECTION without letting it reach the file', async () => {
+    const stored = seedGrant()
+    const flag = await launchLosingTheRace()
+
+    posthogClientMock.deferred?.reject(new Error('connection reset'))
+    await flush()
+
+    expect(lateEventOutcome()).toBe('rejected')
+    expect(fs.readFileSync(flagsFilePath(), 'utf-8')).toBe(stored)
+    expect(await flag.get()).toBe('granted')
   })
 })
 

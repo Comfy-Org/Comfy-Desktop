@@ -654,8 +654,9 @@ describe('makeOpsFlag late results', () => {
   })
 
   it('hands a non-persisting flag no late callback at all', async () => {
-    // `cloudFreeRuns` must stay write-free structurally, not by a guard inside a callback:
-    // nothing is attached to its abandoned fetch in the first place.
+    // `cloudFreeRuns` must stay write-free structurally, not by a guard inside a callback: no
+    // write path is handed to its abandoned fetch in the first place. `getOpsFlagResult` still
+    // observes that fetch to report how it settled, which is not a write.
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
