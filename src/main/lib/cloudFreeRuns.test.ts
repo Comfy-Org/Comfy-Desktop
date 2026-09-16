@@ -7,7 +7,14 @@ vi.mock('./telemetry', () => ({
 }))
 
 function flagResult(value: unknown): unknown {
-  return value === undefined ? undefined : { value, payload: undefined }
+  return { kind: 'value', value, payload: undefined }
+}
+
+/** The classification `getOpsFlagResult` returns for a timeout, a network error, or a key the
+ *  server is not serving. Distinct from a value: `parse` never runs, so the fail direction is
+ *  what decides. */
+function unreachable(): unknown {
+  return { kind: 'unreachable' }
 }
 
 import {
@@ -17,10 +24,14 @@ import {
   _resetForTest
 } from './cloudFreeRuns'
 
-async function resolveWith(value: unknown): Promise<boolean> {
-  getOpsFlagResult.mockResolvedValue(flagResult(value))
+async function resolveWithResult(result: unknown): Promise<boolean> {
+  getOpsFlagResult.mockResolvedValue(result)
   await initCloudFreeRuns({ distinctId: 'anon' })
   return getCloudFreeRunsEnabledAsync()
+}
+
+async function resolveWith(value: unknown): Promise<boolean> {
+  return resolveWithResult(flagResult(value))
 }
 
 beforeEach(() => {
@@ -48,14 +59,17 @@ describe('cloudFreeRuns', () => {
     expect(await resolveWith(value)).toBe(true)
   })
 
-  it.each([['off'], [false], [undefined], ['garbage']])(
-    'keeps the pill hidden for %s',
-    async (value) => {
-      // The pill asserts a live entitlement. Anything short of an explicit
-      // yes means we can't confirm the offer, so we don't make it.
-      expect(await resolveWith(value)).toBe(false)
-    }
-  )
+  it.each([['off'], [false], ['garbage']])('keeps the pill hidden for %s', async (value) => {
+    // The pill asserts a live entitlement. Anything short of an explicit
+    // yes means we can't confirm the offer, so we don't make it.
+    expect(await resolveWith(value)).toBe(false)
+  })
+
+  it('keeps the pill hidden when the flag is unreachable', async () => {
+    // Its own case rather than a value alongside the ones above: a miss never reaches `parse`,
+    // so this is the only one of them that exercises the fail direction itself.
+    expect(await resolveWithResult(unreachable())).toBe(false)
+  })
 
   it('keeps the pill hidden when the fetch rejects', async () => {
     getOpsFlagResult.mockRejectedValue(new Error('network'))
