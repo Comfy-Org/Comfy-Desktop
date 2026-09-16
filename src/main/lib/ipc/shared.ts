@@ -1357,7 +1357,12 @@ export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): 
       }
       const resolvedStr = formatComfyVersion(resolved, 'short')
       const storedStr = formatComfyVersion(cv, 'short')
-      const versionChanged = resolvedStr !== storedStr
+      // `formatComfyVersion` ignores `baseTagVerified`, so without the second term a record
+      // written before that field existed would keep its fail-closed absence forever on an
+      // install whose displayed version never changes. Re-resolving is the only thing that
+      // can establish it, and the canary gate refuses an unverified base.
+      const versionChanged =
+        resolvedStr !== storedStr || resolved.baseTagVerified !== cv.baseTagVerified
 
       const existing = inst.updateInfoByChannel as
         | Record<string, Record<string, unknown>>
