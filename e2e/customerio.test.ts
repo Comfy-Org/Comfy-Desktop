@@ -32,7 +32,9 @@ app.whenReady().then(() => {
   ipcMain.on('customerio:action', event => { event.returnValue = false })
 })`
     )
-    app = await _electron.launch({ args: [main] })
+    // Match the existing Electron harness: Linux CI has no SUID sandbox binary.
+    const args = process.platform === 'linux' ? [main, '--no-sandbox'] : [main]
+    app = await _electron.launch({ args })
     const page = await app.firstWindow()
     const requests: { url: string; body: string | null; headers: Record<string, string> }[] = []
     const errors: string[] = []
