@@ -48,7 +48,7 @@ app.whenReady().then(() => {
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text())
     })
-    let delivery = 0
+    const deliveries = new Map<string, number>()
     await app.context().route('**/*', async (route) => {
       const request = route.request()
       const url = request.url()
@@ -96,7 +96,12 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
         })
       }
       if (url.includes('/api/v4/users')) {
-        delivery += 1
+        const user = request.headers()['x-gist-encoded-user-token'] ?? ''
+        if (!deliveries.has(user)) deliveries.set(user, deliveries.size + 1)
+        // Polls return the same delivery until dismissed, as the service does.
+        // Inventing a new campaign every poll makes slow runs show another modal
+        // immediately after the first one closes.
+        const delivery = deliveries.get(user)!
         return route.fulfill({
           headers: {
             'x-gist-queue-polling-interval': '1',
@@ -155,6 +160,9 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
       path: testInfo.outputPath('customerio-message.png'),
       animations: 'disabled'
     })
+    await expect
+      .poll(() => requests.filter(({ url }) => url.includes('/api/v4/users')).length)
+      .toBeGreaterThanOrEqual(2)
     await message.getByRole('button', { name: 'Dismiss' }).click()
     await expect(page.locator('#gist-overlay')).toHaveCount(0)
 
