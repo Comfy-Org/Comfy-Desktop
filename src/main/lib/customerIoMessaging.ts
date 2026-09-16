@@ -2,6 +2,7 @@ import { app, ipcMain, shell, type IpcMainEvent, type WebContents } from 'electr
 import type { ComfyWindowEntry } from '../host/registry'
 import {
   CUSTOMER_IO_DEFAULTS,
+  CUSTOMER_IO_PAGES,
   CUSTOMER_IO_ACTION,
   CUSTOMER_IO_READY,
   CUSTOMER_IO_STATE
@@ -42,6 +43,7 @@ export function customerIoSession(entry: ComfyWindowEntry): CustomerIoSession | 
   if (!userId) return null
   return {
     userId,
+    page: CUSTOMER_IO_PAGES.comfyui,
     locale: i18n.getLocale(),
     writeKey: process.env.COMFY_CUSTOMER_IO_WRITE_KEY || CUSTOMER_IO_DEFAULTS.writeKey,
     siteId: process.env.COMFY_CUSTOMER_IO_SITE_ID || CUSTOMER_IO_DEFAULTS.siteId

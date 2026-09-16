@@ -2,7 +2,7 @@ import type { CustomerIoSession } from '../../../shared/customerIo'
 
 export interface MessagingClient {
   identify(session: CustomerIoSession): Promise<void>
-  page(): Promise<void>
+  page(session: CustomerIoSession): Promise<void>
   reset(): Promise<void>
   dismiss(): void
 }
@@ -59,7 +59,7 @@ export function createMessagingController(
         await bounded(client.identify(session))
         if (revision !== version) return
         identified = session
-        await bounded(client.page())
+        await bounded(client.page(session))
       })
       .catch((error: unknown) => {
         client?.dismiss()
