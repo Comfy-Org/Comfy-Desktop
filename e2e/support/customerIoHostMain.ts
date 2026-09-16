@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import { attachCustomerIoMessaging } from '../../src/main/lib/customerIoMessaging'
 import { customerIoEvents } from '../../src/main/lib/customerIoEvents'
 import type { ComfyWindowEntry } from '../../src/main/host/registry'
-import { CUSTOMER_IO_STATE } from '../../src/shared/customerIo'
+import { CUSTOMER_IO_READY, CUSTOMER_IO_STATE } from '../../src/shared/customerIo'
 import type { CustomerIoSession } from '../../src/shared/customerIo'
 import {
   authChanged,
@@ -102,6 +102,7 @@ window.addEventListener('message', event => {
     })
   const views = { launcher: view('index.js'), comfyui: view('comfyPreload.js') }
   const publications: Publication[] = []
+  const readyFrames: { surface: Surface; mainFrame: boolean; url: string }[] = []
   const grants = new Set<Surface>()
   const visible = (): Surface[] =>
     (Object.keys(views) as Surface[]).filter((surface) => views[surface].getVisible())
@@ -111,6 +112,14 @@ window.addEventListener('message', event => {
     nativeView.setBounds({ x: 0, y: 0, width: 1100, height: 700 })
     nativeView.setVisible(surface === 'launcher')
     nativeView.webContents.on('preload-error', (_event, _path, error) => errors.push(error.message))
+    nativeView.webContents.on('ipc-message', (event, channel) => {
+      if (channel === CUSTOMER_IO_READY)
+        readyFrames.push({
+          surface,
+          mainFrame: event.senderFrame === nativeView.webContents.mainFrame,
+          url: nativeView.webContents.getURL()
+        })
+    })
   }
   // Observe real IPC across main-frame replacement on the initial navigation.
   // The original Electron method still delivers every publication to the preload.
@@ -233,6 +242,11 @@ window.addEventListener('message', event => {
       publications: [...publications],
       visible: visible(),
       focused: window.isFocused(),
+      readyFrames: [...readyFrames],
+      urls: Object.fromEntries(
+        Object.entries(views).map(([surface, view]) => [surface, view.webContents.getURL()])
+      ),
+      panelPath: join(__dirname, '../renderer/panel.html'),
       profile: app.getPath('userData'),
       queueUsers: [...queueUsers],
       siteIds: [...siteIds],

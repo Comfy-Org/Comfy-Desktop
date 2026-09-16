@@ -150,6 +150,8 @@ async function withHost(run: (app: ElectronApplication) => Promise<void>): Promi
     )
     await run(app)
     const result = await app.evaluate(() => customerIoHostFixture.snapshot())
+    if (test.info().status !== test.info().expectedStatus)
+      console.error('Native messaging fixture state:', JSON.stringify(result))
     expect(result.errors).toEqual([])
     expect(
       result.queueUsers.every((user) =>
