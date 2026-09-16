@@ -10,6 +10,17 @@ export interface ComfyVersion {
   baseTag?: string
   /** Commits ahead of baseTag (0 = on the tag, >0 = latest channel). */
   commitsAhead?: number
+  /**
+   * Whether `baseTag` was established by ANCESTRY — the tag is reachable from `commit`, so the
+   * install provably contains that release. False when it came from a fallback that labels the
+   * install with a release it may not contain: `resolveLocalVersion`'s merge-base branch runs
+   * only because the tag is NOT an ancestor, and a caller-supplied `fallbackTag` is not derived
+   * from the graph at all. Absent on records written before this field existed.
+   *
+   * Display tolerates an unverified label (a reasonable name beats a bare SHA); a version GATE
+   * must not — see {@link coreSemverVerified}.
+   */
+  baseTagVerified?: boolean
 }
 
 /**
@@ -74,6 +85,21 @@ export function coreSemver(inst: InstallationRecord): string | null {
  */
 export function coreSemverExact(inst: InstallationRecord): boolean {
   return inst.comfyVersion?.commitsAhead === 0
+}
+
+/**
+ * Whether {@link coreSemver} names a release the install PROVABLY contains, rather than one
+ * `resolveLocalVersion` pinned on it by a fallback. Only an ancestry-established `baseTag`
+ * qualifies; see {@link ComfyVersion.baseTagVerified}.
+ *
+ * Fail-closed on absence, which covers three cases that must all read the same way: a record
+ * persisted before this field existed, a `comfyVersion` reconstructed by hand (snapshot
+ * restore replays a stored tag it cannot re-derive), and the `inst.version` path `coreSemver`
+ * falls back to, where there is no resolved tag to have verified in the first place. Each is
+ * a tag of unknown provenance, so `=== true` is the only reading that grants.
+ */
+export function coreSemverVerified(inst: InstallationRecord): boolean {
+  return inst.comfyVersion?.baseTagVerified === true
 }
 
 /**

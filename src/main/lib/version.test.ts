@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import semver from 'semver'
-import { coreSemver, coreSemverExact, formatComfyVersion } from './version'
+import { coreSemver, coreSemverExact, coreSemverVerified, formatComfyVersion } from './version'
 import type { ComfyVersion } from './version'
 import type { InstallationRecord } from '../installations'
 
@@ -99,6 +99,38 @@ describe('coreSemverExact', () => {
 
   it('is not exact for a legacy install carrying no comfyVersion', () => {
     expect(coreSemverExact(record({ version: 'v0.3.80' }))).toBe(false)
+  })
+})
+
+describe('coreSemverVerified', () => {
+  const commit = '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'
+
+  it('is verified when resolution established the tag by ancestry', () => {
+    const inst = record({
+      comfyVersion: { commit, baseTag: 'v0.3.80', commitsAhead: 21, baseTagVerified: true }
+    })
+    expect(coreSemverVerified(inst)).toBe(true)
+  })
+
+  it('is not verified when resolution fell back to a tag it could not prove', () => {
+    const inst = record({
+      comfyVersion: { commit, baseTag: 'v0.3.80', commitsAhead: 21, baseTagVerified: false }
+    })
+    expect(coreSemverVerified(inst)).toBe(false)
+  })
+
+  it('is not verified for a record persisted before the field existed', () => {
+    // The whole persisted shape an older Desktop wrote: a tag with no provenance recorded.
+    // Reading that as verified would restore exactly the gap this field closes.
+    const legacy = JSON.parse(
+      `{"commit":"${commit}","baseTag":"v0.3.80","commitsAhead":0}`
+    ) as ComfyVersion
+    expect('baseTagVerified' in legacy).toBe(false)
+    expect(coreSemverVerified(record({ comfyVersion: legacy }))).toBe(false)
+  })
+
+  it('is not verified for a legacy install carrying no comfyVersion', () => {
+    expect(coreSemverVerified(record({ version: 'v0.3.80' }))).toBe(false)
   })
 })
 
