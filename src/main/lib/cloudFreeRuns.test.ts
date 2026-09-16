@@ -34,10 +34,13 @@ describe('cloudFreeRuns', () => {
     // pill appears when free-tier submission actually becomes available.
     expect(CLOUD_FREE_RUNS_FLAG_KEY).toBe('free_tier_workflow_submission_enabled')
     await resolveWith('on')
+    // The trailing `undefined` is the late-result callback. This flag does not persist, so it
+    // must not receive one: nothing is attached to an abandoned fetch and it stays write-free.
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       CLOUD_FREE_RUNS_FLAG_KEY,
       'anon',
-      expect.any(Number)
+      expect.any(Number),
+      undefined
     )
   })
 
