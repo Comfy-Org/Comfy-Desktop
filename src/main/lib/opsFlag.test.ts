@@ -69,9 +69,11 @@ describe('makeOpsFlag', () => {
     expect(await flag.get()).toBe('disabled')
   })
 
-  it.each([['garbage'], [true], [undefined]])('keeps the fallback for %s', async (value) => {
+  it.each([['garbage'], [true]])('keeps the fallback for %s', async (value) => {
     // `parse` returning undefined is how an unrecognised payload is told apart from a
-    // legitimate value — it must not overwrite the fail direction.
+    // legitimate value — it must not overwrite the fail direction. Both values here are real
+    // `FeatureFlagValue`s the parser declines, so this reaches the value branch as production
+    // would; a fixture carrying `value: undefined` would not be a valid result at all.
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(value))
     await flag.init({ distinctId: 'anon' })
@@ -79,6 +81,9 @@ describe('makeOpsFlag', () => {
   })
 
   it('keeps the fallback when the fetch rejects', async () => {
+    // Defensive: `getOpsFlagResult` classifies its own failures as `unreachable` and does not
+    // reject (telemetry.ts). This pins the wrapper's own catch so a future caller that does
+    // reject cannot drop the flag to an unparsed state.
     const flag = makeTestFlag()
     getOpsFlagResult.mockRejectedValue(new Error('network'))
     await flag.init({ distinctId: 'anon' })
@@ -577,35 +582,26 @@ describe('makeOpsFlag late results', () => {
     expect(await flag.get()).toBe('granted')
   })
 
-  // Both outcomes below classify as `unreachable`, so `getOpsFlagResult` withholds the callback
-  // and nothing reaches this wrapper at all. That it withholds them is the load-bearing half and
-  // is pinned directly in `telemetry.test.ts`; what these two prove is the other half — that an
-  // unreachable launch has no OTHER route to the file, so a withheld result really is a no-op.
-  it('leaves the cache alone when the abandoned fetch finds no result for the key', async () => {
-    // Given a grant on disk, and a launch whose fetch is abandoned at the deadline
+  // A late miss and a late rejection both classify as `unreachable`, so `getOpsFlagResult`
+  // withholds the callback and nothing reaches this wrapper. That it withholds them is the
+  // load-bearing half and is pinned in `telemetry.test.ts` ("withholds a late result that
+  // carries no result for the key" / "withholds a late rejection"). This is the other half:
+  // a launch that never receives a late value has no OTHER route to the file, so withholding
+  // really is a no-op. Named for what it asserts — the wrapper cannot distinguish WHY no late
+  // value arrived, so a test here claiming to cover a specific late outcome would be a fiction.
+  it('writes nothing when a launch is never handed a late value', async () => {
+    // Given a grant on disk, and a launch whose fetch was abandoned at the deadline
     const stored = JSON.stringify({ 'grant-flag': { value: true, payload: null } }, null, 2)
     fs.writeFileSync(flagsFilePath(), stored, 'utf-8')
     const flag = await launchLosingTheRace()
 
-    // When that fetch eventually answers with no result — a deleted or archived key
+    // When the callback is registered but never invoked, as a withheld outcome leaves it
     expect(lateCallback()).toBeTypeOf('function')
     await Promise.resolve()
 
     // Then the grant stands, byte for byte. Deletion is not revocation, late or otherwise.
     // Indented JSON on purpose: canonical output could not tell "untouched" from "rewritten
     // identically", and rewriting is the bug under test.
-    expect(fs.readFileSync(flagsFilePath(), 'utf-8')).toBe(stored)
-    expect(await flag.get()).toBe('granted')
-  })
-
-  it('leaves the cache alone when the abandoned fetch rejects', async () => {
-    const stored = JSON.stringify({ 'grant-flag': { value: true, payload: null } }, null, 2)
-    fs.writeFileSync(flagsFilePath(), stored, 'utf-8')
-    const flag = await launchLosingTheRace()
-
-    expect(lateCallback()).toBeTypeOf('function')
-    await Promise.resolve()
-
     expect(fs.readFileSync(flagsFilePath(), 'utf-8')).toBe(stored)
     expect(await flag.get()).toBe('granted')
   })
