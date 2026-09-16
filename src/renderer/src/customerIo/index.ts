@@ -2,6 +2,7 @@ import { AnalyticsBrowser, InAppPlugin } from '@customerio/cdp-analytics-browser
 import Gist from 'customerio-gist-web'
 import type { CustomerIoSession } from '../../../shared/customerIo'
 import { createMessagingController } from './controller'
+import { setMessagingPage } from './environment'
 
 const controller = createMessagingController(async (session, currentSession) => {
   const analytics = AnalyticsBrowser.load(
@@ -10,6 +11,7 @@ const controller = createMessagingController(async (session, currentSession) => 
       user: { persist: false },
       group: { persist: false },
       retryQueue: false,
+      disableClientPersistence: true,
       integrations: {
         All: false,
         'Customer.io Data Pipelines': true,
@@ -110,6 +112,7 @@ let lastSession: CustomerIoSession | null = null
 messagingGlobal.__comfyCustomerIo = {
   update(session) {
     lastSession = session
+    setMessagingPage(session?.page ?? null)
     return controller.update(session)
   }
 }

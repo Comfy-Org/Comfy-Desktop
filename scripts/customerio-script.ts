@@ -23,20 +23,26 @@ export function customerIoScriptPlugin(): Plugin {
         target: 'chrome144',
         minify: true,
         metafile: true,
+        inject: [resolve(__dirname, '../src/renderer/src/customerIo/environment.ts')],
         define: {
           'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
-          localStorage: '__desktopCioLocalStorage',
-          'window.localStorage': '__desktopCioLocalStorage',
-          'globalThis.localStorage': '__desktopCioLocalStorage',
-          sessionStorage: '__desktopCioSessionStorage',
-          'window.sessionStorage': '__desktopCioSessionStorage',
-          'globalThis.sessionStorage': '__desktopCioSessionStorage'
+          localStorage: 'sdkLocalStorage',
+          'window.localStorage': 'sdkLocalStorage',
+          'globalThis.localStorage': 'sdkLocalStorage',
+          sessionStorage: 'sdkSessionStorage',
+          'window.sessionStorage': 'sdkSessionStorage',
+          'globalThis.sessionStorage': 'sdkSessionStorage',
+          location: 'sdkLocation',
+          'window.location': 'sdkLocation',
+          'globalThis.location': 'sdkLocation',
+          'document.location': 'sdkLocation',
+          'document.URL': 'sdkLocation.href',
+          'document.documentURI': 'sdkLocation.href',
+          'document.referrer': '""'
         }
       })
       for (const file of Object.keys(result.metafile!.inputs)) this.addWatchFile(resolve(file))
-      const storage = `function storage(){const m=new Map();return {get length(){return m.size},clear(){m.clear()},getItem(k){return m.get(k)??null},key(i){return [...m.keys()][i]??null},removeItem(k){m.delete(k)},setItem(k,v){m.set(k,String(v))}}}`
-      const source = `(()=>{${storage};const __desktopCioLocalStorage=storage(),__desktopCioSessionStorage=storage();${result.outputFiles[0]!.text}})();`
-      return `export default ${JSON.stringify(source)}`
+      return `export default ${JSON.stringify(result.outputFiles[0]!.text)}`
     }
   }
 }
