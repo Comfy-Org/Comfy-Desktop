@@ -293,7 +293,9 @@ export function applySettingSet(key: string, value: unknown): void {
       value === true ? 'granted' : value === false ? 'denied' : 'undecided'
     mainTelemetry.setConsentState(state)
   }
-  if (key === 'telemetryEnabled' || key === 'language') customerIoEvents.emit('changed')
+  if (key === 'telemetryEnabled' || key === 'language' || key === 'firstUseCompleted') {
+    customerIoEvents.emit('changed')
+  }
   if (key === 'autoInstallUpdates' || key === 'autoUpdate') {
     // Re-broadcast so a pending 'ready' immediately reads as auto-on/off.
     updater.notifyAutoUpdateChanged()

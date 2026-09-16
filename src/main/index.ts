@@ -835,12 +835,12 @@ ipcMain.on('comfy-window:set-first-use-mode', (event, payload: { mode: unknown }
   for (const entry of comfyWindows.values()) {
     if (entry.panelView?.webContents === event.sender) {
       entry.firstUseMode = mode
+      entry.refreshCustomerIo?.()
       if (!entry.titleBarView.webContents.isDestroyed()) {
         entry.titleBarView.webContents.send('comfy-titlebar:first-use-mode-changed', mode)
       }
       return
     }
-    return
   }
 })
 
