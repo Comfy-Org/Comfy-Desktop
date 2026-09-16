@@ -58,6 +58,7 @@ import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
+import { diagnoseCudaUnavailable } from '../../cudaUnavailable'
 import { decodeExitCode } from '../../exitCodeInfo'
 import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
@@ -236,23 +237,36 @@ export function onProcessTerminated(
   })
 }
 
+type CrashDiagnosis = Pick<
+  ComfyExitedData,
+  'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing' | 'cudaUnavailable'
+>
+
 /**
- * Diagnose a crash exit code into the extra fields the UI needs to show a
- * human-readable message. Returns `{}` for a plain application exit (the
- * generic "exited with code N" copy still applies). For a Windows native
- * fault it adds the decoded hex + kind, and for an access violation it also
- * audits the VC++ runtime so the UI can suggest repairing it when DLLs are
- * actually missing.
+ * Diagnose a crash into the extra fields the UI needs to show a human-readable
+ * message. Returns `{}` for a plain application exit with nothing recognisable
+ * in its output (the generic "exited with code N" copy still applies).
+ *
+ * Two independent passes:
+ *  - the exit code, for Windows native faults (decoded hex + kind, plus a VC++
+ *    runtime audit on an access violation);
+ *  - the stderr tail, for a "no usable CUDA on this machine" Python failure,
+ *    which exits with a plain code 1 and so is invisible to the code pass.
  */
-async function diagnoseCrash(
-  code: number | null
-): Promise<Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'>> {
-  const decoded = decodeExitCode(code)
-  if (!decoded) return {}
-  const out: Pick<ComfyExitedData, 'exitCodeHex' | 'crashKind' | 'vcRuntimeMissing'> = {
-    exitCodeHex: decoded.hex,
-    crashKind: decoded.kind
+async function diagnoseCrash(code: number | null, lastStderr?: string): Promise<CrashDiagnosis> {
+  const out: CrashDiagnosis = {}
+
+  // A caught custom-node import failure is not why the process exited, so it
+  // must not be reported as the cause — see `cudaUnavailable.ts`.
+  const cuda = diagnoseCudaUnavailable(lastStderr)
+  if (cuda && !cuda.handledByNodeImport) {
+    out.cudaUnavailable = { category: cuda.category, customNode: cuda.customNode }
   }
+
+  const decoded = decodeExitCode(code)
+  if (!decoded) return out
+  out.exitCodeHex = decoded.hex
+  out.crashKind = decoded.kind
   if (decoded.kind === 'access-violation') {
     // Never let an audit failure reject this helper: it runs inside an async
     // EventEmitter listener, so a throw would become an unhandledRejection and
@@ -294,6 +308,35 @@ async function describeExitCode(code: number | null): Promise<string> {
     }
   }
   return out
+}
+
+/**
+ * One clause of CUDA guidance for a launch-failure message, or `''` when the
+ * stderr shows no such failure.
+ *
+ * A fatal CUDA error happens while ComfyUI is still starting up, so it exits
+ * BEFORE the port is ready and never reaches the exit handler that calls
+ * `diagnoseCrash`. Without this, the failure most likely to need the guidance
+ * is the one that wouldn't get it. Mirrors how `describeExitCode` inlines the
+ * access-violation / VC++ hint on this same path.
+ *
+ * Silent when ComfyUI caught the error as a custom-node import failure — that
+ * pack is merely disabled and the boot failed for some other reason.
+ *
+ * English-only to match the surrounding non-localized launch-failure strings.
+ */
+export function _describeCudaFailure(stderr: string | undefined): string {
+  const cuda = diagnoseCudaUnavailable(stderr)
+  if (!cuda || cuda.handledByNodeImport) return ''
+  const from = cuda.customNode ? ` from the custom node ${cuda.customNode}` : ''
+  switch (cuda.category) {
+    case 'no-cuda-build':
+      return `. Something${from} asked for an NVIDIA CUDA GPU, but this PyTorch build has no CUDA support — expected on Apple Silicon, and a sign of the wrong PyTorch build elsewhere`
+    case 'no-cuda-device':
+      return `. Something${from} asked for an NVIDIA CUDA GPU, but no usable GPU was found — usually a driver problem`
+    case 'cuda-deserialize':
+      return `. A model file saved on an NVIDIA GPU was loaded${from} without remapping it to this machine's device`
+  }
 }
 
 async function openLogStream(installPath: string): Promise<WriteStream> {
@@ -1006,7 +1049,7 @@ async function runLaunch(
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
-      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
+      const crashDiagnosis = crashed ? await diagnoseCrash(code, lastStderr) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,
@@ -1284,7 +1327,10 @@ async function runLaunch(
           // and add the VC++ hint inline so the launch-failure modal is useful.
           // A signal-kill (code null) reports the signal name instead.
           const rendered = signal ? `signal ${signal}` : `code ${await describeExitCode(code)}`
-          earlyExit = `Process exited with ${rendered}${detail}`
+          // Outside the ternary: a CUDA failure can also arrive as a signal
+          // kill, and the guidance is just as relevant there.
+          const cudaHint = _describeCudaFailure(spawned.getStderr())
+          earlyExit = `Process exited with ${rendered}${cudaHint}${detail}`
           reject(new Error(earlyExit))
         }
       })
@@ -1655,7 +1701,7 @@ async function runLaunch(
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
-      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
+      const crashDiagnosis = crashed ? await diagnoseCrash(code, lastStderr) : {}
       _removeSession(installationId)
       const exitedPayload = {
         installationId,

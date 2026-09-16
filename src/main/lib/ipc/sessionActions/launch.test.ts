@@ -36,7 +36,8 @@ import {
   handleLaunch,
   isCrashedExit,
   onProcessTerminated,
-  _cleanupFailedLaunchSetup
+  _cleanupFailedLaunchSetup,
+  _describeCudaFailure
 } from './launch'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
@@ -149,6 +150,50 @@ describe('onProcessTerminated', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('_describeCudaFailure', () => {
+  const FATAL = [
+    'Traceback (most recent call last):',
+    '  File "/Users/gp/ComfyUI/custom_nodes/ComfyUI-FramePackWrapper/diffusers_helper/memory.py", line 8, in <module>',
+    'AssertionError: Torch not compiled with CUDA enabled'
+  ].join('\n')
+
+  it('explains a fatal CUDA failure and names the node pack', () => {
+    // This is the path that matters: a CUDA failure kills ComfyUI during
+    // startup, before the port is ready, so it never reaches the exit handler
+    // that runs diagnoseCrash. Without this the guidance would be missing from
+    // the exact failure it was written for.
+    const out = _describeCudaFailure(FATAL)
+    expect(out).toContain('ComfyUI-FramePackWrapper')
+    expect(out).toContain('no CUDA support')
+  })
+
+  it('stays silent when ComfyUI caught the error as a node import failure', () => {
+    // A caught import disables that pack and boot continues, so it is not why
+    // the launch failed. Blaming it here would be wrong.
+    const caught = `${FATAL}\nCannot import /Users/gp/ComfyUI/custom_nodes/ComfyUI-FramePackWrapper module for custom nodes: Torch not compiled with CUDA enabled`
+    expect(_describeCudaFailure(caught)).toBe('')
+  })
+
+  it('stays silent on stderr with no CUDA failure', () => {
+    expect(_describeCudaFailure('Total VRAM 0 MB\nDevice: mps')).toBe('')
+    expect(_describeCudaFailure(undefined)).toBe('')
+  })
+
+  it('distinguishes a missing device from a missing CUDA build', () => {
+    const noDevice = _describeCudaFailure('RuntimeError: No CUDA GPUs are available')
+    expect(noDevice).toContain('no usable GPU was found')
+    expect(noDevice).not.toContain('no CUDA support')
+  })
+
+  it('reads as one clause appended to the launch-failure message', () => {
+    // Rendered as `Process exited with code 1<hint>`, so it must start with the
+    // separator and carry no trailing punctuation of its own.
+    const out = _describeCudaFailure(FATAL)
+    expect(out.startsWith('. ')).toBe(true)
+    expect(out.endsWith('.')).toBe(false)
   })
 })
 
