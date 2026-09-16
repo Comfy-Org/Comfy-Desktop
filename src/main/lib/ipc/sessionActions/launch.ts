@@ -98,7 +98,8 @@ import type { PersistedTorchStack } from '../../../sources/standalone/torchStack
 import type { WriteStream } from 'fs'
 import { getCoreCanaryFlagsAsync, selectCoreCanaryArgs } from '../../coreCanary'
 import type { CoreCanaryFlag } from '../../coreCanary'
-import { coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
+import { coreRecordCurrent, coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
+import { readGitHead } from '../../git'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -172,13 +173,19 @@ export function buildLaunchArgs(input: {
   coreVersion: string | null
   coreVersionExact: boolean
   coreVersionVerified: boolean
+  coreVersionCurrent: boolean
   betaEnabled: boolean
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
   const selected = selectCoreCanaryArgs(
     input.betaFlags,
-    { semver: coreVersion, exact: input.coreVersionExact, verified: input.coreVersionVerified },
+    {
+      semver: coreVersion,
+      exact: input.coreVersionExact,
+      verified: input.coreVersionVerified,
+      current: input.coreVersionCurrent
+    },
     input.betaEnabled,
     userArgs
   )
@@ -956,6 +963,9 @@ async function runLaunch(
           coreVersion: coreSemver(inst),
           coreVersionExact: coreSemverExact(inst),
           coreVersionVerified: coreSemverVerified(inst),
+          // Read here rather than reused from `revision` above: that one falls back to the
+          // record when HEAD is unreadable, which is the very disagreement being checked for.
+          coreVersionCurrent: coreRecordCurrent(inst, readGitHead(path.dirname(mainPyAbs))),
           betaEnabled
         })
         launchCmd.args = built.args

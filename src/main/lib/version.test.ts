@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import semver from 'semver'
-import { coreSemver, coreSemverExact, coreSemverVerified, formatComfyVersion } from './version'
+import {
+  coreRecordCurrent,
+  coreSemver,
+  coreSemverExact,
+  coreSemverVerified,
+  formatComfyVersion
+} from './version'
 import type { ComfyVersion } from './version'
 import type { InstallationRecord } from '../installations'
 
@@ -131,6 +137,42 @@ describe('coreSemverVerified', () => {
 
   it('is not verified for a legacy install carrying no comfyVersion', () => {
     expect(coreSemverVerified(record({ version: 'v0.3.80' }))).toBe(false)
+  })
+})
+
+describe('coreRecordCurrent', () => {
+  const commit = '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'
+  const pulled = '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c'
+  const git = record({ comfyVersion: { commit, baseTag: 'v0.3.80', commitsAhead: 0 } })
+
+  it('is current when the live checkout is still at the recorded commit', () => {
+    expect(coreRecordCurrent(git, commit)).toBe(true)
+  })
+
+  it('is not current once a pull has moved the checkout off the recorded commit', () => {
+    // `commitsAhead: 0` above stays true of the SUPERSEDED commit, so every other reader still
+    // reports an exact, on-tag install. This is the only one that notices.
+    expect(coreSemverExact(git)).toBe(true)
+    expect(coreRecordCurrent(git, pulled)).toBe(false)
+  })
+
+  it('is current for a standalone install, which has no HEAD to read', () => {
+    expect(coreRecordCurrent(git, null)).toBe(true)
+    expect(coreRecordCurrent(record({ version: 'v0.3.80' }), null)).toBe(true)
+  })
+
+  it('is not current when HEAD is readable but the record names no commit to compare', () => {
+    expect(coreRecordCurrent(record({ version: 'v0.3.80' }), commit)).toBe(false)
+  })
+
+  it('accepts the recorded commit in either case, since hex SHAs name the same commit', () => {
+    expect(coreRecordCurrent(git, commit.toUpperCase())).toBe(true)
+  })
+
+  it('rejects an abbreviation of the recorded commit rather than prefix-matching it', () => {
+    // Whole-token on purpose: a prefix match would accept a record that merely starts the same
+    // way, which is the assurance this check exists to provide.
+    expect(coreRecordCurrent(git, commit.slice(0, 8))).toBe(false)
   })
 })
 

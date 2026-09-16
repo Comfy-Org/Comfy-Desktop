@@ -107,6 +107,11 @@ export interface CoreVersionState {
   exact: boolean
   /** Whether that release was established by ancestry (`coreSemverVerified`). */
   verified: boolean
+  /** Whether the record those three came from still describes the live checkout
+   *  (`coreRecordCurrent`). The other three are assertions about the RECORDED commit and stay
+   *  true once it is superseded, so without this the gate can decide on code that is no longer
+   *  installed. */
+  current: boolean
 }
 
 const ENABLE_PREFIX = '--enable-'
@@ -138,6 +143,12 @@ function oppositeArg(arg: string): string | null {
 // ancestor — and such a label can satisfy a minimum the running code does not meet. Core's args
 // schema absorbs the common case, since an install without the feature does not know the flag,
 // but not a minimum raised to require a later FIX to a flag it already has.
+//
+// Every bound is also measured against a PERSISTED record that a `git pull` outdates without
+// touching, so the payload is refused outright when the live checkout disagrees with it. The args
+// schema is asymmetric here and cannot stand in for that check: an older core does not know the
+// granted flag and drops it, but a newer one still parses it, which leaves the MAXIMUM bound
+// resting on nothing but the stale record.
 export function selectCoreCanaryArgs(
   flags: readonly CoreCanaryFlag[],
   core: CoreVersionState,
@@ -146,6 +157,13 @@ export function selectCoreCanaryArgs(
 ): CoreCanaryFlag[] {
   const version = core.semver
   if (version === null || betaEnabled !== true) return []
+  if (!core.current) {
+    // Before `verified`, which once the checkout has moved is a true statement about the wrong
+    // commit — reporting that instead would name the less useful of the two faults.
+    if (flags.length > 0)
+      console.log(`[core-canary] refused: base ${version} from a record the checkout contradicts`)
+    return []
+  }
   if (!core.verified) {
     // Echoed for the same reason as the per-flag windows below: this refusal drops grants an
     // operator can see in the payload, so it must not be silent.

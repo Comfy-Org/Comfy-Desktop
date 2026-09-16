@@ -103,6 +103,32 @@ export function coreSemverVerified(inst: InstallationRecord): boolean {
 }
 
 /**
+ * Whether the record still describes the checkout being launched, given the live git HEAD
+ * (`readGitHead`, `null` for a non-git install).
+ *
+ * The other gate readers all answer questions about the RECORDED commit — {@link coreSemverExact}
+ * asks whether that commit sat on its tag, {@link coreSemverVerified} whether ancestry
+ * established the tag. Neither asks whether the install is still AT that commit, so a `git pull`
+ * after the record was written leaves both of them true of code that is no longer running. This
+ * closes that gap, and only that gap: it is a staleness check, not a version claim.
+ *
+ * Fail-closed, but only where a contradiction is observable. A `null` HEAD is the ordinary
+ * standalone/archive install — there is no second opinion to disagree with, so the record stands
+ * and those installs keep their grants. Once HEAD is readable it is authoritative: a record with
+ * no commit to compare cannot be confirmed and reads as stale.
+ *
+ * Compared case-insensitively (hex SHAs name the same commit in either case) but whole-token: the
+ * field is a full 40-character SHA, and prefix-matching an abbreviated one would accept a record
+ * that merely starts the same way.
+ */
+export function coreRecordCurrent(inst: InstallationRecord, liveHead: string | null): boolean {
+  if (liveHead === null) return true
+  const recorded = inst.comfyVersion?.commit
+  if (typeof recorded !== 'string') return false
+  return recorded.toLowerCase() === liveHead.toLowerCase()
+}
+
+/**
  * Compare two tag-ish strings tolerant of a leading `v`. The comfyui_version.py
  * `__version__` string is bare ("0.24.0") while GitHub tag names are
  * "v"-prefixed ("v0.24.0"); legacy code paths persist either form. Without

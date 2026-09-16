@@ -15,7 +15,7 @@ import {
   selectCoreCanaryArgs
 } from './coreCanary'
 import type { CoreVersionState } from './coreCanary'
-import { coreSemverExact, coreSemverVerified } from './version'
+import { coreRecordCurrent, coreSemverExact, coreSemverVerified } from './version'
 import type { ComfyVersion } from './version'
 import type { InstallationRecord } from '../installations'
 
@@ -181,10 +181,11 @@ describe('selectCoreCanaryArgs', () => {
     maxCoreVersion: '0.4.0'
   }
 
-  /** Defaults to exact and verified: an install sitting on an ancestry-established release tag
-   *  is the ordinary case, so the cases below vary only what they are actually about. */
+  /** Defaults to exact, verified and current: an install sitting on an ancestry-established
+   *  release tag its record still describes is the ordinary case, so the cases below vary only
+   *  what they are actually about. */
   function at(semver: string | null, exact = true): CoreVersionState {
-    return { semver, exact, verified: true }
+    return { semver, exact, verified: true, current: true }
   }
 
   it.each([
@@ -305,7 +306,12 @@ describe('selectCoreCanaryArgs', () => {
     expect(
       selectCoreCanaryArgs(
         [unboundedGrant],
-        { semver: '0.3.99', exact: false, verified: coreSemverVerified(mergeBaseFallback) },
+        {
+          semver: '0.3.99',
+          exact: false,
+          verified: coreSemverVerified(mergeBaseFallback),
+          current: true
+        },
         true,
         []
       )
@@ -317,7 +323,7 @@ describe('selectCoreCanaryArgs', () => {
     expect(
       selectCoreCanaryArgs(
         [unboundedGrant],
-        { semver: '0.3.99', exact: true, verified: coreSemverVerified(legacy) },
+        { semver: '0.3.99', exact: true, verified: coreSemverVerified(legacy), current: true },
         true,
         []
       )
@@ -334,7 +340,61 @@ describe('selectCoreCanaryArgs', () => {
     expect(
       selectCoreCanaryArgs(
         [unboundedGrant],
-        { semver: '0.3.99', exact: false, verified: coreSemverVerified(verifiedBase) },
+        {
+          semver: '0.3.99',
+          exact: false,
+          verified: coreSemverVerified(verifiedBase),
+          current: true
+        },
+        true,
+        []
+      )
+    ).toEqual([unboundedGrant])
+  })
+
+  const PULLED_COMMIT = '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c'
+
+  it('returns no grants when the live checkout has moved off the recorded commit', () => {
+    // A pull after the record was written leaves `exact` and `verified` true of a commit that is
+    // no longer running, so neither of them can refuse this — they are assertions about the
+    // recorded commit, not about the checkout still being at it.
+    const pulled = installWith({
+      commit: COMMIT,
+      baseTag: 'v0.3.99',
+      commitsAhead: 0,
+      baseTagVerified: true
+    })
+    expect(
+      selectCoreCanaryArgs(
+        [unboundedGrant],
+        {
+          semver: '0.3.99',
+          exact: coreSemverExact(pulled),
+          verified: coreSemverVerified(pulled),
+          current: coreRecordCurrent(pulled, PULLED_COMMIT)
+        },
+        true,
+        []
+      )
+    ).toEqual([])
+  })
+
+  it('returns the grant when the live checkout is still at the recorded commit', () => {
+    const atRecord = installWith({
+      commit: COMMIT,
+      baseTag: 'v0.3.99',
+      commitsAhead: 0,
+      baseTagVerified: true
+    })
+    expect(
+      selectCoreCanaryArgs(
+        [unboundedGrant],
+        {
+          semver: '0.3.99',
+          exact: coreSemverExact(atRecord),
+          verified: coreSemverVerified(atRecord),
+          current: coreRecordCurrent(atRecord, COMMIT)
+        },
         true,
         []
       )
