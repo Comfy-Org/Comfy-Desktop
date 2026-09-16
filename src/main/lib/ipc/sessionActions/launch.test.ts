@@ -487,9 +487,7 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(build({ schema: schemaOf('enable-assets') }).beta.coreVersion).toBe('0.3.81')
   })
 
-  it('lands a baked canary token exactly once, sourced from the grant and not the user', () => {
-    // The token an install-time path baked into launchArgs is stripped, then re-supplied by the
-    // grant — so the arg survives, but only because the canary system decided it should.
+  it('lands the arg exactly once when the user and the grant both supply it', () => {
     const built = build({
       userArgs: ['--enable-assets'],
       schema: schemaOf('enable-assets')
@@ -497,53 +495,60 @@ describe('buildLaunchArgs core beta injection', () => {
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets'])
     expect(built.args.filter((arg) => arg === '--enable-assets')).toHaveLength(1)
-    expect(built.beta.applied).toEqual([ASSETS_GRANT])
+    expect(built.beta.applied).toEqual([])
+    // A grant withheld because the user already had the arg is not a grant the core refused.
+    expect(built.beta.droppedUnsupported).toEqual([])
   })
 
-  it('strips a baked canary token the beta toggle has turned off', () => {
-    // The revocation case that motivated the strip: an opted-out dogfood install whose stored
-    // launchArgs still carry the flag must not keep running with it.
+  it("keeps the user's own --enable-assets when the beta toggle is off", () => {
+    // `--enable-assets` is a first-class launch argument the Desktop UI invites users to set.
+    // The canary may only ADD flags: opting out of beta withdraws the GRANT, never the user's
+    // own argument.
     const built = build({
       userArgs: ['--enable-assets', '--listen'],
       schema: schemaOf('enable-assets', 'listen'),
       betaEnabled: false
     })
 
-    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets', '--listen'])
     expect(built.beta.applied).toEqual([])
     expect(built.beta.droppedUnsupported).toEqual([])
   })
 
-  it('strips a baked canary token whose grant has been revoked from the payload', () => {
+  it("keeps the user's own --enable-assets when the grant is revoked from the payload", () => {
     const built = build({
       userArgs: ['--enable-assets', '--listen'],
       schema: schemaOf('enable-assets', 'listen'),
       betaFlags: []
     })
 
-    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets', '--listen'])
     expect(built.beta.applied).toEqual([])
   })
 
-  it('strips a baked canary token when the install sits outside the version window', () => {
+  it("keeps the user's own --enable-assets when the install is outside the version window", () => {
     const built = build({
       userArgs: ['--enable-assets'],
       schema: schemaOf('enable-assets'),
       coreVersion: '0.3.79'
     })
 
-    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets'])
     expect(built.beta.applied).toEqual([])
   })
 
-  it('keeps a baked token out even when the grant it re-supplies is schema-dropped', () => {
-    // Stripping runs ahead of filtering, so a core that cannot parse the flag sees it from
-    // neither side: the user's copy is gone and the grant is reported as dropped.
-    const built = build({ userArgs: ['--enable-assets'], schema: schemaOf('listen') })
+  it('drops a user arg the running core cannot parse', () => {
+    // With no grant in play, the args schema is the only thing left that removes a user token —
+    // an unparseable `--enable-assets` goes exactly like any other unsupported user arg.
+    const built = build({
+      userArgs: ['--enable-assets', '--listen'],
+      schema: schemaOf('listen'),
+      betaFlags: []
+    })
 
-    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
     expect(built.beta.applied).toEqual([])
-    expect(built.beta.droppedUnsupported).toEqual(['--enable-assets'])
+    expect(built.beta.droppedUnsupported).toEqual([])
   })
 
   it('still applies the grant when the user typed the opposite token the core cannot parse', () => {
@@ -568,6 +573,22 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets', '--disable-assets'])
     expect(built.beta.applied).toEqual([ASSETS_GRANT])
     expect(built.beta.droppedUnsupported).toEqual([])
+  })
+
+  it('never touches user args the canary has no opinion about', () => {
+    const built = build({
+      userArgs: ['--listen', '--port', '8188'],
+      schema: schemaOf('enable-assets', 'listen', 'port')
+    })
+
+    expect(built.args).toEqual([
+      ...PREFIX,
+      ...DESKTOP_FLAGS,
+      '--enable-assets',
+      '--listen',
+      '--port',
+      '8188'
+    ])
   })
 
   it.each([
@@ -760,7 +781,7 @@ describe('core beta report placement', () => {
     ['schema', true, false],
     ['feature registry', false, true]
   ])(
-    'strips baked canary args before failed %s discovery without mutating stored args',
+    'launches the user args verbatim after failed %s discovery without mutating stored args',
     async (_discovery, schemaThrows, registryThrows) => {
       const storedArgs = [
         '--enable-assets',
@@ -799,8 +820,11 @@ describe('core beta report placement', () => {
       ])
       expect(spawnArgs).toContain('--listen')
       expect(spawnArgs).toContain('--cpu')
-      expect(spawnArgs.slice(3)).not.toContain('--enable-assets')
-      expect(spawnArgs).not.toContain('--enable-asset-hashing')
+      // The fallback injects no grants, but it withdraws nothing either: discovery failing is
+      // not a reason to launch with fewer of the user's own args than they asked for.
+      expect(spawnArgs.slice(3)).toContain('--enable-assets')
+      expect(spawnArgs).toContain('--enable-asset-hashing')
+      // Mutating `launchCmd.args` in place would edit the array the source object owns.
       expect(storedArgs).toEqual([
         '--enable-assets',
         '-s',

@@ -95,7 +95,7 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
-import { getCoreCanaryFlagsAsync, selectCoreCanaryArgs, stripCanaryArgs } from '../../coreCanary'
+import { getCoreCanaryFlagsAsync, selectCoreCanaryArgs } from '../../coreCanary'
 import type { CoreCanaryFlag } from '../../coreCanary'
 import { coreSemver, coreSemverExact } from '../../version'
 import type { ComfyArgsSchema } from '../../comfy-args'
@@ -156,10 +156,11 @@ function coreBetaLogRecord(grant: CoreCanaryFlag, coreVersion: string): string {
 /**
  * Assemble the spawn args and resolve this launch's Core beta grants.
  *
- * Canary-managed tokens are stripped from the user args first, so a grant is the only way one
- * reaches core. Grants are selected against those stripped-but-UNFILTERED args, then passed
- * through the same schema filter as user args so a core that predates a flag never sees it.
- * Ordering is fixed: prefix, desktop feature flags, beta grants, user args.
+ * User args pass through untouched: grants are additive, so the only thing that ever removes a
+ * user token is the running core's args schema. Grants are selected against the UNFILTERED user
+ * args — so a grant conflicting with a token this core cannot parse is still suppressed — then
+ * passed through that same schema filter so a core predating a flag never sees it. Ordering is
+ * fixed: prefix, desktop feature flags, beta grants, user args.
  */
 export function buildLaunchArgs(input: {
   prefixArgs: readonly string[]
@@ -171,8 +172,7 @@ export function buildLaunchArgs(input: {
   coreVersionExact: boolean
   betaEnabled: boolean
 }): { args: string[]; beta: CoreBetaLaunch } {
-  const { prefixArgs, desktopFlagArgs, schema, coreVersion } = input
-  const userArgs = stripCanaryArgs(input.userArgs)
+  const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
   const selected = selectCoreCanaryArgs(
     input.betaFlags,
@@ -835,10 +835,12 @@ async function runLaunch(
       const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
       const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
       const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
-      const userArgs = stripCanaryArgs(launchCmd.args.slice(sIdx + 2))
-      // Discovery is fallible. Strip managed user tokens before it so the fallback path cannot
-      // preserve a stale install-time grant. Keep the Python prefix outside the policy boundary.
-      launchCmd.args = [...prefixArgs, ...userArgs]
+      const userArgs = launchCmd.args.slice(sIdx + 2)
+      // Take ownership of the array before anything downstream mutates it in place:
+      // `applyStorageLaunchArgs` pushes onto `launchCmd.args`, and when discovery fails there is
+      // no `built.args` to replace it, so those pushes would otherwise reach the array the
+      // source handed us. Same values either way — this is about aliasing, not content.
+      launchCmd.args = [...launchCmd.args]
       try {
         const schema = await getComfyArgsSchema(
           launchCmd.cmd,
@@ -880,7 +882,7 @@ async function runLaunch(
         launchCmd.args = built.args
         coreBeta = built.beta
       } catch {
-        // Discovery failed; keep the sanitized args without injecting managed flags.
+        // Discovery failed; launch the user's own args without injecting managed flags.
       }
     }
   }

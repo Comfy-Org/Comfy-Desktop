@@ -12,8 +12,7 @@ import {
   getCoreCanaryFlagsAsync,
   initCoreCanary,
   parseCoreCanaryFlags,
-  selectCoreCanaryArgs,
-  stripCanaryArgs
+  selectCoreCanaryArgs
 } from './coreCanary'
 import type { CoreVersionState } from './coreCanary'
 import { coreSemverExact } from './version'
@@ -181,15 +180,20 @@ describe('selectCoreCanaryArgs', () => {
     ).toEqual([])
   })
 
-  it('does not suppress a grant when the conflicting opposite is present', () => {
-    expect(
-      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, ['--disable-assets'])
-    ).toEqual([unboundedGrant])
-  })
-
   it('does not treat a value-taking near miss as the exact arg token', () => {
     expect(
       selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, ['--enable-assets=true'])
+    ).toEqual([unboundedGrant])
+  })
+
+  it('leaves unrelated user args alone when deciding a grant', () => {
+    expect(
+      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, [
+        '--listen',
+        '--port',
+        '8188',
+        '--cpu'
+      ])
     ).toEqual([unboundedGrant])
   })
 
@@ -264,64 +268,5 @@ describe('core canary fetch', () => {
     await expect(getCoreCanaryFlagsAsync()).resolves.toEqual([
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }
     ])
-  })
-})
-
-describe('stripCanaryArgs', () => {
-  it('removes every canary-managed token and keeps the rest in order', () => {
-    expect(
-      stripCanaryArgs([
-        '--listen',
-        '--enable-assets',
-        '--port',
-        '8188',
-        '--enable-asset-hashing',
-        '--cpu'
-      ])
-    ).toEqual(['--listen', '--port', '8188', '--cpu'])
-  })
-
-  it('strips every entry of the allowlist', () => {
-    expect(stripCanaryArgs([...CORE_CANARY_ALLOWED_FLAGS])).toEqual([])
-  })
-
-  it('logs once per stripped flag, however many times it was baked in', () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    try {
-      expect(
-        stripCanaryArgs([
-          '--enable-assets',
-          '--listen',
-          '--enable-assets',
-          '--enable-asset-hashing'
-        ])
-      ).toEqual(['--listen'])
-
-      expect(log.mock.calls.map(([line]) => line)).toEqual([
-        '[core-canary] removed baked flag --enable-assets from user args',
-        '[core-canary] removed baked flag --enable-asset-hashing from user args'
-      ])
-    } finally {
-      log.mockRestore()
-    }
-  })
-
-  it('leaves args that merely resemble a managed flag alone', () => {
-    // Exact-token match only: the allowlist grammar has no `=value` or negated form, so a
-    // lookalike is an ordinary user arg and stays the user's to pass.
-    const args = [
-      '--enable-assets-extra',
-      '--disable-assets',
-      '--enable-assets=true',
-      '--ENABLE-ASSETS'
-    ]
-    expect(stripCanaryArgs(args)).toEqual(args)
-  })
-
-  it('returns a new array rather than mutating the caller', () => {
-    // The stored launchArgs this is fed from must not be edited in place.
-    const args = ['--enable-assets', '--listen']
-    expect(stripCanaryArgs(args)).toEqual(['--listen'])
-    expect(args).toEqual(['--enable-assets', '--listen'])
   })
 })

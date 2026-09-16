@@ -2,6 +2,11 @@
  * PostHog-controlled Core beta grants selected for each launch.
  * Payload entries name allowlisted dashed args and strict Core version windows;
  * launch code applies eligible grants only when beta features are enabled.
+ *
+ * This system may only ADD args. It has no authority over the user's own launch arguments and
+ * never removes or overrides one — several of these flags are first-class, user-settable
+ * options in Desktop's launch-args UI, so a grant is an addition on top of what the user asked
+ * for, never a substitute for it.
  */
 import semver from 'semver'
 import { makeOpsFlag } from './opsFlag'
@@ -9,41 +14,18 @@ import type { FeatureFlagValue } from './telemetry'
 
 export const CORE_CANARY_FLAG_KEY = 'desktop_core_beta_features'
 
+/**
+ * The args a PostHog payload may GRANT. That is this list's only job — it is not a registry of
+ * canary-owned tokens, and membership says nothing about whether a user may pass the same arg
+ * by hand (they may, and it wins; see `selectCoreCanaryArgs`).
+ *
+ */
 export const CORE_CANARY_ALLOWED_FLAGS = ['--enable-assets', '--enable-asset-hashing'] as const
 
 export type CoreCanaryFlag = {
   readonly arg: string
   readonly minCoreVersion: string
   readonly maxCoreVersion?: string
-}
-
-/**
- * Drop canary-managed tokens from a launch's user args, in memory, before anything else reads
- * them.
- *
- * Passing these experimental flags by hand is unsupported by design: this system is their sole
- * authority, so `selectCoreCanaryArgs` is the only thing that may put one on a command line.
- * Without this, a dogfood install whose stored `launchArgs` had a flag baked in at install time
- * would keep launching with it after the opt-out, the revocation or the version window said
- * otherwise — the grant is checked every launch, a baked token never is.
- *
- * The persisted installation record is deliberately left as the user wrote it; this is assembly
- * time only.
- */
-export function stripCanaryArgs(userArgs: readonly string[]): string[] {
-  const managed = new Set<string>(CORE_CANARY_ALLOWED_FLAGS)
-  const reported = new Set<string>()
-  const kept: string[] = []
-  for (const arg of userArgs) {
-    if (!managed.has(arg)) {
-      kept.push(arg)
-      continue
-    }
-    if (reported.has(arg)) continue
-    reported.add(arg)
-    console.log(`[core-canary] removed baked flag ${arg} from user args`)
-  }
-  return kept
 }
 
 const MAX_FLAGS = 32
@@ -112,6 +94,9 @@ export interface CoreVersionState {
 // The version window is min-INCLUSIVE and max-EXCLUSIVE (`>=min <max`). The payload field names
 // `min_core_version`/`max_core_version` don't say which way either bound closes, so the boundary
 // is settled here and echoed in the selection log rather than by renaming the wire format.
+//
+// Grants are additive only: one is withheld when the user already passed that same arg, because
+// the user's own argument always wins and the canary yields.
 export function selectCoreCanaryArgs(
   flags: readonly CoreCanaryFlag[],
   core: CoreVersionState,
