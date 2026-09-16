@@ -1,9 +1,10 @@
 import { resolve } from 'path'
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
+import { customerIoScriptPlugin } from './scripts/customerio-script'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), customerIoScriptPlugin()],
   resolve: {
     alias: {
       '@renderer': resolve(__dirname, 'src/renderer/src'),

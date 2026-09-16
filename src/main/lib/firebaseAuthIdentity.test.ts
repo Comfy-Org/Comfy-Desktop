@@ -47,6 +47,7 @@ import {
   activateFirebaseAuthReporter,
   bindMainVerifiedFirebaseUser,
   deactivateFirebaseAuthReporter,
+  getCustomerIoUserId,
   PENDING_CONSENSUS_DEADLINE_MS,
   reportFirebaseAuthState as recordFirebaseAuthState,
   trackFirebaseAuthReporter
@@ -198,6 +199,24 @@ describe('firebaseAuthIdentity consensus', () => {
     telemetry.markAnonymousEpochUnmergeable.mockReturnValue(true)
     verifiedLocalUsers.clear()
     verifiedLocalPersistence.succeeds = true
+  })
+
+  it('exposes messaging identity only after local confirmation and revokes it on conflict or navigation', () => {
+    const local = new FakeWebContents('http://127.0.0.1:8188/')
+    activate(local)
+    bindMainVerifiedFirebaseUser('F', {}, local.asWebContents())
+    expect(getCustomerIoUserId(local.asWebContents())).toBeNull()
+    telemetry.isFirebaseConsensusPending.mockReturnValue(false)
+    reportFirebaseAuthState(local.asWebContents(), { status: 'signed_in', userId: 'F' })
+    expect(getCustomerIoUserId(local.asWebContents())).toBe('F')
+    const cloud = new FakeWebContents(cloudUrl)
+    activate(cloud)
+    reportFirebaseAuthState(cloud.asWebContents(), { status: 'signed_in', userId: 'other' })
+    expect(getCustomerIoUserId(local.asWebContents())).toBeNull()
+    reportFirebaseAuthState(cloud.asWebContents(), { status: 'signed_in', userId: 'F' })
+    expect(getCustomerIoUserId(local.asWebContents())).toBe('F')
+    local.startNavigation(local.getURL())
+    expect(getCustomerIoUserId(local.asWebContents())).toBeNull()
   })
 
   it('waits for every live trusted reporter before binding one agreed user', () => {

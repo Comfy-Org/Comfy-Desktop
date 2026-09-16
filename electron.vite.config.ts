@@ -3,6 +3,7 @@ import { resolve } from 'path'
 import { defineConfig } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
+import { customerIoScriptPlugin } from './scripts/customerio-script'
 
 const require = createRequire(import.meta.url)
 const { resolveDatadogReleaseVersion } = require('./scripts/datadog-release-version.cjs') as {
@@ -25,6 +26,7 @@ export default defineConfig({
     }
   },
   preload: {
+    plugins: [customerIoScriptPlugin()],
     build: {
       sourcemap: 'hidden',
       rollupOptions: {
