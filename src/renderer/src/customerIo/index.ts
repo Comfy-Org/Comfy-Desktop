@@ -79,6 +79,9 @@ const controller = createMessagingController(async (session, currentSession) => 
       const messages = [...Gist.currentMessages]
       for (const message of messages) {
         const element = document.getElementById(`gist-${message.instanceId}`)
+        // Persistent-message dismissal waits for a view-log request. Remove its
+        // modal backdrop synchronously so revoked messages cannot block input.
+        element?.closest('#gist-overlay')?.remove()
         if (element) element.style.visibility = 'hidden'
       }
       dismissal = Promise.all([

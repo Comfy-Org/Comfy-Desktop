@@ -17,6 +17,12 @@ test('Desktop SDK renders, dismisses, and revokes messages @macos @windows @linu
   const testInfo = test.info()
   const directory = await mkdtemp(join(tmpdir(), 'comfy-customerio-'))
   let app: ElectronApplication | undefined
+  let holdViewLog = false
+  let viewLogPending = false
+  let releaseViewLog!: () => void
+  const viewLog = new Promise<void>((resolve) => {
+    releaseViewLog = resolve
+  })
   try {
     const main = join(directory, 'main.cjs')
     await writeFile(
@@ -105,7 +111,10 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
                 properties: {
                   gist: {
                     campaignId: `fixture-delivery-${delivery}`,
-                    routeRuleWeb: 'desktop/local-workflow'
+                    routeRuleWeb: 'desktop/local-workflow',
+                    persistent:
+                      request.headers()['x-gist-encoded-user-token'] ===
+                      Buffer.from('second-test-user').toString('base64')
                   }
                 }
               }
@@ -113,6 +122,10 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
             inboxMessages: []
           }
         })
+      }
+      if (holdViewLog && url.includes('/api/v1/logs/')) {
+        viewLogPending = true
+        await viewLog
       }
       // No request is allowed to reach Customer.io, including delivery metrics.
       return route.fulfill({ json: {} })
@@ -149,9 +162,25 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
     await page.evaluate('globalThis.__comfyCustomerIo.update(null)')
     await update({ ...identity, userId: 'second-test-user' })
     await expect(message.getByRole('heading', { name: 'Desktop message fixture' })).toBeVisible()
+    holdViewLog = true
     await update(null)
-    await expect(page.locator('#gist-overlay')).toHaveCount(0)
+    await expect.poll(() => viewLogPending).toBe(true)
+    // Revocation must release input before the persistent-message view log
+    // completes. Checking the hit target cannot pass by waiting for its timeout.
+    expect(
+      await page.getByRole('button', { name: 'Run workflow' }).evaluate((button) => {
+        const bounds = button.getBoundingClientRect()
+        return (
+          button.ownerDocument.elementFromPoint(
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2
+          ) === button
+        )
+      })
+    ).toBe(true)
     await page.getByRole('button', { name: 'Run workflow' }).click()
+    releaseViewLog()
+    await expect(page.locator('#gist-overlay')).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Workflow running' })).toBeVisible()
     expect(await page.evaluate('localStorage.getItem("fixture-auth")')).toBe('untouched')
     expect(await page.evaluate('localStorage.length')).toBe(1)
@@ -166,6 +195,7 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
     expect(queues.every(({ headers }) => headers['x-cio-site-id'] === identity.siteId)).toBe(true)
     expect(errors).toEqual([])
   } finally {
+    releaseViewLog()
     await app?.close()
     await rm(directory, { recursive: true, force: true })
   }
