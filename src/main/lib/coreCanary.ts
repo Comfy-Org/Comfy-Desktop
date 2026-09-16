@@ -19,8 +19,16 @@ export const CORE_CANARY_FLAG_KEY = 'desktop_core_beta_features'
  * canary-owned tokens, and membership says nothing about whether a user may pass the same arg
  * by hand (they may, and it wins; see `selectCoreCanaryArgs`).
  *
+ * An entry need not exist in Core yet: `--disable-assets` is the planned remote force-off for
+ * when assets go default-on, and granting an arg Core cannot parse is already safe — the
+ * running core's supported-argument schema filters it and the launch reports it as
+ * `dropped_unsupported`.
  */
-export const CORE_CANARY_ALLOWED_FLAGS = ['--enable-assets', '--enable-asset-hashing'] as const
+export const CORE_CANARY_ALLOWED_FLAGS = [
+  '--enable-assets',
+  '--enable-asset-hashing',
+  '--disable-assets'
+] as const
 
 export type CoreCanaryFlag = {
   readonly arg: string
@@ -91,12 +99,28 @@ export interface CoreVersionState {
   exact: boolean
 }
 
+const ENABLE_PREFIX = '--enable-'
+const DISABLE_PREFIX = '--disable-'
+
+/** The token that contradicts `arg`, or `null` for an arg with no negated form. Derived from
+ *  the `--enable-`/`--disable-` prefix pair rather than a hardcoded table, so a new allowlist
+ *  entry gets its conflict rule for free. Swapping only the prefix keeps the stem exact, so
+ *  `--enable-assets` pairs with `--disable-assets` and never with `--disable-asset-hashing`. */
+function oppositeArg(arg: string): string | null {
+  if (arg.startsWith(ENABLE_PREFIX)) return DISABLE_PREFIX + arg.slice(ENABLE_PREFIX.length)
+  if (arg.startsWith(DISABLE_PREFIX)) return ENABLE_PREFIX + arg.slice(DISABLE_PREFIX.length)
+  return null
+}
+
 // The version window is min-INCLUSIVE and max-EXCLUSIVE (`>=min <max`). The payload field names
 // `min_core_version`/`max_core_version` don't say which way either bound closes, so the boundary
 // is settled here and echoed in the selection log rather than by renaming the wire format.
 //
-// Grants are additive only: one is withheld when the user already passed that same arg, because
-// the user's own argument always wins and the canary yields.
+// Grants are additive only. A grant is withheld when the user already passed that same arg, and
+// equally when they passed its opposite: someone who set `--disable-assets` must not also
+// receive `--enable-assets`, and vice versa. Contradictory flags never go on one command line —
+// Core's precedence between them is unspecified — and the tie is always broken the same way,
+// with the user's own argument winning and the canary yielding.
 export function selectCoreCanaryArgs(
   flags: readonly CoreCanaryFlag[],
   core: CoreVersionState,
@@ -116,6 +140,8 @@ export function selectCoreCanaryArgs(
     console.log(`[core-canary] window ${arg}: ${window} version=${version} exact=${core.exact}`)
 
     if (presentArgs.has(arg)) continue
+    const opposite = oppositeArg(arg)
+    if (opposite !== null && presentArgs.has(opposite)) continue
     if (!semver.gte(version, minCoreVersion)) continue
     if (maxCoreVersion !== undefined) {
       // An upper bound only means anything on an exact tag match. `coreSemver` resolves from

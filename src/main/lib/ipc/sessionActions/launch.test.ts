@@ -551,28 +551,39 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.beta.droppedUnsupported).toEqual([])
   })
 
-  it('still applies the grant when the user typed the opposite token the core cannot parse', () => {
-    // No opposite modeling: `--disable-assets` is filtered like any other
-    // unsupported user arg, and the grant is unaffected by its presence.
+  it('suppresses the grant when the user typed the opposite the core cannot parse', () => {
+    // Conflict suppression reads the UNFILTERED user args, so a user who opted out still wins
+    // even on a core too old to parse their token.
     const built = build({
       userArgs: ['--disable-assets', '--listen'],
       schema: schemaOf('enable-assets', 'listen')
     })
 
-    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets', '--listen'])
-    expect(built.beta.applied).toEqual([ASSETS_GRANT])
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
+    expect(built.beta.applied).toEqual([])
+    expect(built.beta.droppedUnsupported).toEqual([])
   })
 
-  it('lands both tokens when the core knows the opposite the user typed', () => {
-    // A future core that parses both: we suppress neither side and let core decide.
+  it("suppresses the grant and lands only the user's token when the core knows both", () => {
     const built = build({
       userArgs: ['--disable-assets'],
       schema: schemaOf('enable-assets', 'disable-assets')
     })
 
-    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets', '--disable-assets'])
-    expect(built.beta.applied).toEqual([ASSETS_GRANT])
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--disable-assets'])
+    expect(built.beta.applied).toEqual([])
     expect(built.beta.droppedUnsupported).toEqual([])
+  })
+
+  it("suppresses a granted --disable-assets against the user's own --enable-assets", () => {
+    const built = build({
+      userArgs: ['--enable-assets'],
+      betaFlags: [{ arg: '--disable-assets', minCoreVersion: '0.3.80' }],
+      schema: schemaOf('enable-assets', 'disable-assets')
+    })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets'])
+    expect(built.beta.applied).toEqual([])
   })
 
   it('never touches user args the canary has no opinion about', () => {
