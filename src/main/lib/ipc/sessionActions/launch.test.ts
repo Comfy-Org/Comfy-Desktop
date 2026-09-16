@@ -973,6 +973,16 @@ describe('core beta report placement', () => {
     fs.writeFileSync(path.join(gitDir, 'HEAD'), `${sha}\n`)
   }
 
+  /** Give the install a git checkout whose HEAD cannot be established: the `.git` directory is
+   *  there, but HEAD is empty. Empty rather than chmod-ed or deleted because it is the one
+   *  shape that reproduces identically on every platform CI runs on, and it is a real state —
+   *  mid-`git pull`, HEAD is rewritten, which is exactly when this gate is asked. */
+  function writeUnreadableGitHead(): void {
+    const gitDir = path.join(installDir, 'ComfyUI', '.git')
+    fs.mkdirSync(gitDir, { recursive: true })
+    fs.writeFileSync(path.join(gitDir, 'HEAD'), '')
+  }
+
   it('withholds grants when the live checkout has moved off the recorded commit', async () => {
     // A `git pull` after the record was written leaves `commitsAhead: 0` true of a commit that
     // is no longer checked out, so `exact` and `verified` both still pass — they are assertions
@@ -1007,6 +1017,20 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).toContain('--enable-assets')
+  })
+
+  it('withholds grants when the install is git-managed but its HEAD cannot be read', async () => {
+    // Between "no git" and "HEAD says X" sits a third state: a git checkout whose HEAD we could
+    // not establish. Collapsing it into the no-git case grants on it, which inverts the gate —
+    // an unreadable HEAD is most likely mid-pull, i.e. precisely the move this check exists to
+    // catch. The `.git` directory is the observable difference from the standalone case.
+    writeUnreadableGitHead()
+
+    const res = await handleLaunch(ctxFor('harness-git-head-unreadable'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
+    expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
   })
 
   it('continues a skip-port launch when renderer reporting throws', async () => {

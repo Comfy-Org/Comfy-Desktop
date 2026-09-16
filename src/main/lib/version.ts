@@ -103,8 +103,21 @@ export function coreSemverVerified(inst: InstallationRecord): boolean {
 }
 
 /**
- * Whether the record still describes the checkout being launched, given the live git HEAD
- * (`readGitHead`, `null` for a non-git install).
+ * What the launching install's git checkout could be established to be. Three states, because
+ * `readGitHead`'s `string | null` conflates two very different absences: it returns `null` both
+ * for an install that has no git directory at all and for one that has a git directory whose
+ * HEAD it could not read (empty HEAD, ref escaping the git dir, missing ref with no packed-refs
+ * entry, or an IO/permission error). Only the first means nothing can contradict the record.
+ *
+ * Resolved by the caller — {@link coreRecordCurrent} stays free of filesystem access.
+ */
+export type CoreCheckout =
+  | { kind: 'not-git' }
+  | { kind: 'head'; commit: string }
+  | { kind: 'unreadable' }
+
+/**
+ * Whether the record still describes the checkout being launched.
  *
  * The other gate readers all answer questions about the RECORDED commit — {@link coreSemverExact}
  * asks whether that commit sat on its tag, {@link coreSemverVerified} whether ancestry
@@ -112,20 +125,29 @@ export function coreSemverVerified(inst: InstallationRecord): boolean {
  * after the record was written leaves both of them true of code that is no longer running. This
  * closes that gap, and only that gap: it is a staleness check, not a version claim.
  *
- * Fail-closed, but only where a contradiction is observable. A `null` HEAD is the ordinary
- * standalone/archive install — there is no second opinion to disagree with, so the record stands
- * and those installs keep their grants. Once HEAD is readable it is authoritative: a record with
- * no commit to compare cannot be confirmed and reads as stale.
+ * Fail-closed on every state except the one where there is provably nothing to disagree with.
+ * `not-git` is the ordinary standalone/archive install — no second opinion exists, so the record
+ * stands and those installs keep their grants. `unreadable` is NOT that: the install is git-
+ * managed and we failed to inspect it, which is likeliest during the `git pull` this gate exists
+ * to catch, so it refuses. With a readable `head` the checkout is authoritative, and a record
+ * with no comparable commit cannot be confirmed against it.
  *
  * Compared case-insensitively (hex SHAs name the same commit in either case) but whole-token: the
  * field is a full 40-character SHA, and prefix-matching an abbreviated one would accept a record
  * that merely starts the same way.
  */
-export function coreRecordCurrent(inst: InstallationRecord, liveHead: string | null): boolean {
-  if (liveHead === null) return true
-  const recorded = inst.comfyVersion?.commit
-  if (typeof recorded !== 'string') return false
-  return recorded.toLowerCase() === liveHead.toLowerCase()
+export function coreRecordCurrent(inst: InstallationRecord, checkout: CoreCheckout): boolean {
+  switch (checkout.kind) {
+    case 'not-git':
+      return true
+    case 'unreadable':
+      return false
+    case 'head': {
+      const recorded = inst.comfyVersion?.commit
+      if (typeof recorded !== 'string') return false
+      return recorded.toLowerCase() === checkout.commit.toLowerCase()
+    }
+  }
 }
 
 /**

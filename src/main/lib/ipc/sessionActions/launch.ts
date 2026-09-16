@@ -99,7 +99,8 @@ import type { WriteStream } from 'fs'
 import { getCoreCanaryFlagsAsync, selectCoreCanaryArgs } from '../../coreCanary'
 import type { CoreCanaryFlag } from '../../coreCanary'
 import { coreRecordCurrent, coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
-import { readGitHead } from '../../git'
+import type { CoreCheckout } from '../../version'
+import { readGitHead, resolveGitDir } from '../../git'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -120,6 +121,17 @@ export function desktopFeatureFlags(
     flags.enable_telemetry = 'true'
   }
   return flags
+}
+
+/** Establish what the launching checkout is, keeping the two reasons `readGitHead` returns
+ *  `null` apart: no git directory (a standalone/archive install, nothing to contradict the
+ *  record) versus a git directory whose HEAD would not read (a checkout we failed to inspect).
+ *  {@link coreRecordCurrent} grants on the first and refuses the second, so collapsing them —
+ *  as a bare `readGitHead` call does — is what made the gate fail open. */
+function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
+  if (resolveGitDir(comfyuiDir) === null) return { kind: 'not-git' }
+  const head = readGitHead(comfyuiDir)
+  return head === null ? { kind: 'unreadable' } : { kind: 'head', commit: head }
 }
 
 /** The single post-filter view of this launch's Core beta grants: what survived
@@ -965,7 +977,7 @@ async function runLaunch(
           coreVersionVerified: coreSemverVerified(inst),
           // Read here rather than reused from `revision` above: that one falls back to the
           // record when HEAD is unreadable, which is the very disagreement being checked for.
-          coreVersionCurrent: coreRecordCurrent(inst, readGitHead(path.dirname(mainPyAbs))),
+          coreVersionCurrent: coreRecordCurrent(inst, resolveCoreCheckout(path.dirname(mainPyAbs))),
           betaEnabled
         })
         launchCmd.args = built.args

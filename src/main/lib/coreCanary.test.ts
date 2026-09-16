@@ -389,7 +389,7 @@ describe('selectCoreCanaryArgs', () => {
           semver: '0.3.99',
           exact: coreSemverExact(pulled),
           verified: coreSemverVerified(pulled),
-          current: coreRecordCurrent(pulled, PULLED_COMMIT)
+          current: coreRecordCurrent(pulled, { kind: 'head', commit: PULLED_COMMIT })
         },
         true,
         []
@@ -411,7 +411,7 @@ describe('selectCoreCanaryArgs', () => {
           semver: '0.3.99',
           exact: coreSemverExact(atRecord),
           verified: coreSemverVerified(atRecord),
-          current: coreRecordCurrent(atRecord, COMMIT)
+          current: coreRecordCurrent(atRecord, { kind: 'head', commit: COMMIT })
         },
         true,
         []

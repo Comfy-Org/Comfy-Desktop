@@ -146,33 +146,60 @@ describe('coreRecordCurrent', () => {
   const git = record({ comfyVersion: { commit, baseTag: 'v0.3.80', commitsAhead: 0 } })
 
   it('is current when the live checkout is still at the recorded commit', () => {
-    expect(coreRecordCurrent(git, commit)).toBe(true)
+    expect(coreRecordCurrent(git, { kind: 'head', commit })).toBe(true)
   })
 
   it('is not current once a pull has moved the checkout off the recorded commit', () => {
     // `commitsAhead: 0` above stays true of the SUPERSEDED commit, so every other reader still
     // reports an exact, on-tag install. This is the only one that notices.
     expect(coreSemverExact(git)).toBe(true)
-    expect(coreRecordCurrent(git, pulled)).toBe(false)
+    expect(coreRecordCurrent(git, { kind: 'head', commit: pulled })).toBe(false)
   })
 
   it('is current for a standalone install, which has no HEAD to read', () => {
-    expect(coreRecordCurrent(git, null)).toBe(true)
-    expect(coreRecordCurrent(record({ version: 'v0.3.80' }), null)).toBe(true)
+    expect(coreRecordCurrent(git, { kind: 'not-git' })).toBe(true)
+    expect(coreRecordCurrent(record({ version: 'v0.3.80' }), { kind: 'not-git' })).toBe(true)
+  })
+
+  it('is not current when the install is git-managed but its HEAD could not be read', () => {
+    // The state this distinction exists for. "No git" and "HEAD unreadable" are both absences
+    // of a comparable SHA, but only the first means nothing can contradict the record; the
+    // second is a checkout we failed to inspect, and an unreadable HEAD most often means one is
+    // being rewritten under us. Granting on it would fail open in a gate that must fail closed.
+    expect(coreRecordCurrent(git, { kind: 'unreadable' })).toBe(false)
+  })
+
+  it('is not current on an unreadable HEAD however complete the record is', () => {
+    // Nothing the record can say earns a grant here: the refusal is a property of not having
+    // established the checkout, so a fully-populated verified record must not buy past it.
+    const complete = record({
+      comfyVersion: { commit, baseTag: 'v0.3.80', commitsAhead: 0, baseTagVerified: true }
+    })
+    expect(coreSemverVerified(complete)).toBe(true)
+    expect(coreRecordCurrent(complete, { kind: 'unreadable' })).toBe(false)
   })
 
   it('is not current when HEAD is readable but the record names no commit to compare', () => {
-    expect(coreRecordCurrent(record({ version: 'v0.3.80' }), commit)).toBe(false)
+    expect(coreRecordCurrent(record({ version: 'v0.3.80' }), { kind: 'head', commit })).toBe(false)
+  })
+
+  it('is not current when HEAD is readable but the recorded commit is not a string', () => {
+    // Records are persisted JSON and reach this reader unvalidated, so the type is a claim
+    // rather than a guarantee; a non-string cannot be compared and must not pass as a match.
+    const malformed = JSON.parse(`{"commit":61,"baseTag":"v0.3.80"}`) as ComfyVersion
+    expect(coreRecordCurrent(record({ comfyVersion: malformed }), { kind: 'head', commit })).toBe(
+      false
+    )
   })
 
   it('accepts the recorded commit in either case, since hex SHAs name the same commit', () => {
-    expect(coreRecordCurrent(git, commit.toUpperCase())).toBe(true)
+    expect(coreRecordCurrent(git, { kind: 'head', commit: commit.toUpperCase() })).toBe(true)
   })
 
   it('rejects an abbreviation of the recorded commit rather than prefix-matching it', () => {
     // Whole-token on purpose: a prefix match would accept a record that merely starts the same
     // way, which is the assurance this check exists to provide.
-    expect(coreRecordCurrent(git, commit.slice(0, 8))).toBe(false)
+    expect(coreRecordCurrent(git, { kind: 'head', commit: commit.slice(0, 8) })).toBe(false)
   })
 })
 
