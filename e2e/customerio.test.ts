@@ -131,7 +131,9 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
       return route.fulfill({ json: {} })
     })
 
-    await page.goto('http://127.0.0.1:8188/private-workflow-name')
+    await page.goto('http://127.0.0.1:8188/private-workflow-name?private-query=workflow-secret', {
+      referer: 'http://127.0.0.1:8188/private-referrer'
+    })
     await page.waitForFunction('typeof window.__comfyDesktop2 === "object"')
     expect(requests).toHaveLength(1)
     const update = async (session: CustomerIoSession | null): Promise<void> => {
@@ -189,7 +191,16 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
       /^https:\/\/cdp\.customer\.io\/v1\/[ipt]$/.test(url)
     )
     expect(events.some(({ body }) => body?.includes('"name":"desktop/local-workflow"'))).toBe(true)
-    expect(events.every(({ body }) => !body?.includes('private-workflow-name'))).toBe(true)
+    expect(
+      events.every(
+        ({ body }) => !/private-workflow|private-query|private-referrer/.test(body ?? '')
+      )
+    ).toBe(true)
+    const pages = events.filter(({ url }) => url.endsWith('/p'))
+    expect(pages.length).toBeGreaterThan(0)
+    for (const { body } of pages) {
+      expect(JSON.parse(body!).properties).toMatchObject({ search: '', referrer: '' })
+    }
     const queues = requests.filter(({ url }) => url.includes('/api/v4/users'))
     expect(queues.length).toBeGreaterThanOrEqual(2)
     expect(queues.every(({ headers }) => headers['x-cio-site-id'] === identity.siteId)).toBe(true)

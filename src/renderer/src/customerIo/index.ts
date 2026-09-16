@@ -65,7 +65,13 @@ const controller = createMessagingController(async (session, currentSession) => 
       await analytics.identify(identity.userId, { locale: identity.locale })
     },
     page: async () => {
-      await analytics.page(PAGE, { url: PAGE, path: PAGE, title: 'ComfyUI Desktop' })
+      await analytics.page(PAGE, {
+        url: PAGE,
+        path: PAGE,
+        title: 'ComfyUI Desktop',
+        search: '',
+        referrer: ''
+      })
     },
     reset: async () => {
       await dismissal
