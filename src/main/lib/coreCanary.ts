@@ -154,8 +154,13 @@ export function selectCoreCanaryArgs(
     if (maxCoreVersion !== undefined) {
       // An upper bound only means anything on an exact tag match. `coreSemver` resolves from
       // `baseTag`, so a latest-channel install 40 commits past v0.3.99 still measures as 0.3.99
-      // and would slip under a `<0.4.0` ceiling it is well past. The lower bound needs no such
-      // guard: baseTag lag can only under-report the running code, never over-report it.
+      // and would slip under a `<0.4.0` ceiling it is well past.
+      //
+      // `baseTag` usually under-reports the running code, but it can over-report: in the
+      // backport case `resolveLocalVersion` assigns the newer tag on a path only reached
+      // because that tag is NOT an ancestor. The lower bound has no guard for that. Core's
+      // argument schema absorbs the common case, since an install without the feature does not
+      // know the flag, so what is left exposed is a minimum raised to require a later FIX.
       if (!core.exact) continue
       if (!semver.lt(version, maxCoreVersion)) continue
     }
