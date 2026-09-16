@@ -107,6 +107,53 @@ function launcherFixture() {
 }
 
 describe('Desktop messaging eligibility', () => {
+  it('accepts equivalent percent-encoding of the bundled panel file', async () => {
+    const { panelContents, panelFrame, ready } = launcherFixture()
+    panelContents.getURL.mockReturnValue(
+      panelContents.getURL().replace('panel.html', '%70anel.html')
+    )
+    ready()
+    await Promise.resolve()
+    expect(panelFrame.send).toHaveBeenLastCalledWith(
+      CUSTOMER_IO_STATE,
+      expect.objectContaining({ userId: 'launcher-person' })
+    )
+  })
+
+  it.each(['other.html', '%2Fpanel.html', '%5Cpanel.html'])(
+    'rejects a different or ambiguously encoded launcher path: %s',
+    (path) => {
+      const { panelContents, ready } = launcherFixture()
+      panelContents.getURL.mockReturnValue(panelContents.getURL().replace('panel.html', path))
+      ready()
+      expect(state.getIdentity).not.toHaveBeenCalled()
+    }
+  )
+
+  it('rejects a non-file protocol with the same opaque origin and pathname', () => {
+    const { panelContents, ready } = launcherFixture()
+    panelContents.getURL.mockReturnValue(panelContents.getURL().replace('file:', 'other:'))
+    ready()
+    expect(state.getIdentity).not.toHaveBeenCalled()
+  })
+
+  it('keeps the configured development URL origin and pathname exact', async () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173')
+    const { panelContents, panelFrame, ready } = launcherFixture()
+    for (const url of ['http://localhost:5173/%70anel.html', 'http://other.test:5173/panel.html']) {
+      panelContents.getURL.mockReturnValue(url)
+      ready()
+      expect(state.getIdentity).not.toHaveBeenCalled()
+    }
+    panelContents.getURL.mockReturnValue('http://localhost:5173/panel.html')
+    ready()
+    await Promise.resolve()
+    expect(panelFrame.send).toHaveBeenLastCalledWith(
+      CUSTOMER_IO_STATE,
+      expect.objectContaining({ userId: 'launcher-person' })
+    )
+  })
+
   it('waits for the launcher document and uses only the server-confirmed Firebase UID', async () => {
     const { panelContents, panelFrame, ready } = launcherFixture()
     expect(state.getIdentity).not.toHaveBeenCalled()

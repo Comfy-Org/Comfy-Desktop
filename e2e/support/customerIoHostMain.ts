@@ -171,14 +171,16 @@ window.addEventListener('message', event => {
     })`)
   return {
     async start() {
-      const focused = once(window, 'focus')
-      window.show()
-      window.focus()
-      await focused
       await Promise.all([
         views.launcher.webContents.loadFile(join(__dirname, '../renderer/panel.html')),
         views.comfyui.webContents.loadURL(entry.comfyUrl)
       ])
+      // Establish focus after initial native-view navigation has finished.
+      const focused = once(window, 'focus')
+      window.show()
+      app.focus({ steal: true })
+      window.focus()
+      await focused
     },
     switchTo(surface: Surface) {
       // Exercise the host's visibility-before-refresh contract with real native

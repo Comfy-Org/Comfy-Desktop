@@ -87,7 +87,9 @@ test('late launcher identity cannot cross a native-view transition or consent re
 })
 
 async function withHost(run: (app: ElectronApplication) => Promise<void>): Promise<void> {
-  const directory = await mkdtemp(join(tmpdir(), 'comfy-customerio-host-'))
+  // Electron loadFile leaves '~' literal while pathToFileURL percent-encodes it.
+  // Exercise Windows short-path spelling on every platform.
+  const directory = await mkdtemp(join(tmpdir(), 'comfy-customerio~host-'))
   let app: ElectronApplication | undefined
   try {
     const main = join(directory, 'main/main.cjs')
@@ -124,6 +126,7 @@ async function withHost(run: (app: ElectronApplication) => Promise<void>): Promi
       /<meta\s+http-equiv="Content-Security-Policy"[^>]*>/
     )?.[0]
     expect(csp).toBeTruthy()
+    await mkdir(join(directory, 'profile'))
     await mkdir(join(directory, 'renderer'))
     await writeFile(
       join(directory, 'renderer/panel.html'),
@@ -148,6 +151,7 @@ async function withHost(run: (app: ElectronApplication) => Promise<void>): Promi
     expect(await app.evaluate(() => customerIoHostFixture.snapshot().profile)).toBe(
       join(directory, 'profile')
     )
+    expect(await app.evaluate(() => customerIoHostFixture.snapshot().focused)).toBe(true)
     await run(app)
     const result = await app.evaluate(() => customerIoHostFixture.snapshot())
     if (test.info().status !== test.info().expectedStatus)
