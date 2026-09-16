@@ -51,8 +51,12 @@ describe('Content-Security-Policy: panel.html', () => {
     expect(csp['default-src']).toBe("'self'")
   })
 
-  it('allows the typeform feedback origin in frame-src (Send Feedback modal)', () => {
-    expect(csp['frame-src']).toBe('https://form.typeform.com')
+  it('limits frames to feedback and Customer.io message origins', () => {
+    expect(csp['frame-src'].split(/\s+/).sort()).toEqual([
+      'https://code.gist.build',
+      'https://form.typeform.com',
+      'https://renderer.gist.build'
+    ])
   })
 
   it('allows GitHub-hosted starter-template thumbnails in img-src', () => {
