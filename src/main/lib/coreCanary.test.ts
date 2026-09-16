@@ -142,6 +142,31 @@ describe('parseCoreCanaryFlags', () => {
       })
     ).toEqual([])
   })
+
+  it('grants nothing when a payload names both a flag and its opposite', () => {
+    expect(
+      parseCoreCanaryFlags(true, {
+        flags: [
+          { arg: '--enable-assets', min_core_version: '0.3.80' },
+          { arg: '--disable-assets', min_core_version: '0.3.80' }
+        ]
+      })
+    ).toEqual([])
+  })
+
+  it('keeps unrelated grants when no pair contradicts', () => {
+    expect(
+      parseCoreCanaryFlags(true, {
+        flags: [
+          { arg: '--enable-assets', min_core_version: '0.3.80' },
+          { arg: '--enable-asset-hashing', min_core_version: '0.3.80' }
+        ]
+      })
+    ).toEqual([
+      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }
+    ])
+  })
 })
 
 describe('selectCoreCanaryArgs', () => {
@@ -205,6 +230,16 @@ describe('selectCoreCanaryArgs', () => {
     expect(selectCoreCanaryArgs([disableGrant], at('0.3.81'), true, ['--enable-assets'])).toEqual(
       []
     )
+  })
+
+  it('suppresses a grant whose opposite another grant in the same payload already took', () => {
+    const disableGrant = { arg: '--disable-assets', minCoreVersion: '0.3.80' }
+    expect(selectCoreCanaryArgs([unboundedGrant, disableGrant], at('0.3.81'), true, [])).toEqual([
+      unboundedGrant
+    ])
+    expect(selectCoreCanaryArgs([disableGrant, unboundedGrant], at('0.3.81'), true, [])).toEqual([
+      disableGrant
+    ])
   })
 
   it('pairs opposites by exact stem, not by a shared prefix', () => {
