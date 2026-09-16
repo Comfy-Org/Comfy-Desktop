@@ -149,6 +149,12 @@ export function selectCoreCanaryArgs(
 // `false` on this key is what takes a grant back. Deleting or archiving the key instead reads as
 // `unreachable` — indistinguishable from an offline launch — and HOLDS every grant already on
 // disk. Disable first, let clients pick it up, delete only afterwards.
+//
+// Unchanged by late-result persistence, which only moves WHEN a disable lands, never whether a
+// deletion counts as one. What it buys is convergence: a client whose `/flags` POST reliably
+// outruns the boot deadline used to lose the revocation on every launch and hold the grant
+// forever. It now persists the late `false` and picks it up on the next launch, so expect a
+// retraction to take one extra restart rather than never arriving.
 const flag = makeOpsFlag<CoreCanaryFlag[]>({
   key: CORE_CANARY_FLAG_KEY,
   fallback: [],

@@ -253,10 +253,13 @@ describe('core canary fetch', () => {
     ])
 
     expect(getOpsFlagResult).toHaveBeenCalledOnce()
+    // The trailing callback is what lets a revocation arriving after the boot deadline reach
+    // disk for the next launch. This flag persists grants, so it is the one that must have one.
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       CORE_CANARY_FLAG_KEY,
       'device-id',
-      expect.any(Number)
+      expect.any(Number),
+      expect.any(Function)
     )
     await expect(getCoreCanaryFlagsAsync()).resolves.toEqual([
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }

@@ -20,7 +20,9 @@ import path from 'path'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
 import * as mainTelemetry from './telemetry'
-import type { FeatureFlagValue } from './telemetry'
+import type { FeatureFlagValue, OpsFlagFetchResult } from './telemetry'
+
+type OpsFlagValueResult = Extract<OpsFlagFetchResult, { kind: 'value' }>
 
 const DEFAULT_TIMEOUT_MS = 2000
 
@@ -135,10 +137,17 @@ export function makeOpsFlag<T>(opts: {
    *  `fallback`. Any successful fetch is authoritative and overwrites what is stored —
    *  including an explicit `false`, which is how a treatment already granted is taken back.
    *
+   *  "Successfully fetched" includes a fetch that answered AFTER this launch's deadline. The
+   *  deadline is a bound on how long boot waits, not on how long the answer stays useful: a
+   *  cold `/flags` POST measured ~2572 ms on Windows and is always cold at boot, so a 2000 ms
+   *  race is lost every launch and a revocation that only ever arrives late would never land.
+   *  A late value is written for the NEXT launch and deliberately does not disturb this one.
+   *
    *  REVOKING: deleting or archiving the flag does NOT revoke it. A missing key reads as
    *  `unreachable`, indistinguishable from an offline launch, so deletion HOLDS the very grant
-   *  it was meant to remove. Disable the flag first (serve `false`) and let clients pick that
-   *  up; delete it only afterwards.
+   *  it was meant to remove — late arrivals included, since a late miss is `unreachable` too.
+   *  Disable the flag first (serve `false`) and let clients pick that up; delete it only
+   *  afterwards.
    *
    *  Only for flags whose fail direction is a downgrade a returning user would notice; a
    *  fail-closed guard must NOT persist. */
@@ -147,6 +156,10 @@ export function makeOpsFlag<T>(opts: {
   const { key, fallback, parse, logLabel, persist } = opts
   let cached: T = fallback
   let initPromise: Promise<void> | null = null
+  /** Captured by each `init`, bumped by `_resetForTest`. A fetch this flag abandoned at the
+   *  deadline can still settle long after the launch (or the test) that started it moved on;
+   *  without the token its write would land under whatever state replaced it. */
+  let generation = 0
 
   /** The `unreachable` path — `getOpsFlagResult` classifies timeout/network errors rather
    *  than rejecting, so this covers both that and a defensive rejection. Read-only: an
@@ -161,11 +174,44 @@ export function makeOpsFlag<T>(opts: {
     return true
   }
 
+  /** Store a value the server produced after this launch's deadline, so the NEXT launch reads
+   *  it. Only ever reached for an explicit value — `getOpsFlagResult` withholds late misses and
+   *  late errors, both of which are `unreachable` and must never be persisted.
+   *
+   *  Deliberately does not touch `cached`. The deadline governs this launch's decision, and a
+   *  treatment that flipped partway through a session would be a worse failure than one that
+   *  converges on restart.
+   *
+   *  `writePersistedResult` is a read-modify-write over a single shared `ops-flags.json`, and a
+   *  late write is the first thing that makes concurrent writers structurally possible — it can
+   *  now land after its own launch has moved on, so two overlapping launches could interleave.
+   *  Left unlocked on purpose: `coreCanary` is the only flag that persists, so there is one
+   *  writer per process, and the loser of such a race re-fetches on the next launch anyway.
+   *  Revisit if a second `persist` flag is ever added. */
+  function persistLate(generationAtInit: number, result: OpsFlagValueResult): void {
+    if (generationAtInit !== generation) return
+    try {
+      writePersistedResult(key, { value: result.value, payload: result.payload })
+    } catch (err) {
+      // Same containment as the in-band write: a failed persist costs the next launch its
+      // convergence and nothing else, so it must not escape as an unhandled rejection.
+      if (logLabel) console.log(`[${logLabel}] late persist error:`, err)
+    }
+  }
+
   return {
     init(initOpts) {
       if (initPromise) return initPromise
+      const generationAtInit = generation
       initPromise = mainTelemetry
-        .getOpsFlagResult(key, initOpts.distinctId, initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+        .getOpsFlagResult(
+          key,
+          initOpts.distinctId,
+          initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          // Non-persisting flags pass no callback at all, so they stay write-free structurally
+          // rather than by a guard inside one — nothing is even attached to the abandoned fetch.
+          persist ? (late) => persistLate(generationAtInit, late) : undefined
+        )
         .then((result) => {
           if (result.kind === 'unreachable') {
             if (!applyPersisted()) {
@@ -213,6 +259,9 @@ export function makeOpsFlag<T>(opts: {
     _resetForTest() {
       cached = fallback
       initPromise = null
+      // Strands any fetch still in flight, so a late result from the previous test cannot
+      // write into the next one's config dir.
+      generation += 1
     }
   }
 }
