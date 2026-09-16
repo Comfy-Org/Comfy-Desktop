@@ -975,40 +975,64 @@ describe('core beta report placement', () => {
     ['revoked grant', true, [], []],
     ['beta opt-out', false, [HARNESS_GRANT], []],
     ['outside version window', true, [{ ...HARNESS_GRANT, minCoreVersion: '0.3.82' }], []]
-  ])(
-    'attributes assets events to %s, never persisted args',
-    async (_name, optedIn, grants, expected) => {
-      launchHarness.betaEnabled = optedIn
-      launchHarness.grants = grants
-      launchHarness.launchCommand!.args = [
-        '-s',
-        path.join(installDir, 'ComfyUI', 'main.py'),
-        '--listen',
-        '--enable-assets'
-      ]
-      const child = fakeChild()
-      launchHarness.spawn = (_cmd, args) => {
-        spawnArgs = args as string[]
-        return child
-      }
-
-      const res = await handleLaunch(ctxFor(`harness-assets-context-${_name}`))
-      expect(res.ok).toBe(true)
-      child.stdout.emit(
-        'data',
-        Buffer.from('[assets-event] assets.enabled hashing_enabled=false\n')
-      )
-
-      const assetsEvents = events.filter(
-        (e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled'
-      )
-      expect(assetsEvents).toHaveLength(1)
-      expect(assetsEvents[0]!.properties).toMatchObject({ core_beta_flags: expected })
-      expect(
-        spawnArgs.filter((arg) => arg === '--enable-assets' || arg === '--enable-asset-hashing')
-      ).toEqual(expected)
+  ])('attributes assets events to %s', async (_name, optedIn, grants, expected) => {
+    launchHarness.betaEnabled = optedIn
+    launchHarness.grants = grants
+    launchHarness.launchCommand!.args = [
+      '-s',
+      path.join(installDir, 'ComfyUI', 'main.py'),
+      '--listen'
+    ]
+    const child = fakeChild()
+    launchHarness.spawn = (_cmd, args) => {
+      spawnArgs = args as string[]
+      return child
     }
-  )
+
+    const res = await handleLaunch(ctxFor(`harness-assets-context-${_name}`))
+    expect(res.ok).toBe(true)
+    child.stdout.emit('data', Buffer.from('[assets-event] assets.enabled hashing_enabled=false\n'))
+
+    const assetsEvents = events.filter(
+      (e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled'
+    )
+    expect(assetsEvents).toHaveLength(1)
+    expect(assetsEvents[0]!.properties).toMatchObject({ core_beta_flags: expected })
+    expect(
+      spawnArgs.filter((arg) => arg === '--enable-assets' || arg === '--enable-asset-hashing')
+    ).toEqual(expected)
+  })
+
+  // Assets can now run without the canary having granted anything, so attribution must report what
+  // the canary applied rather than what is on the command line — otherwise a self-enrolled user
+  // lands inside the cohort and skews the soak denominator.
+  it("reports no beta flags when assets run from the user's own argument", async () => {
+    launchHarness.betaEnabled = false
+    launchHarness.grants = []
+    launchHarness.launchCommand!.args = [
+      '-s',
+      path.join(installDir, 'ComfyUI', 'main.py'),
+      '--listen',
+      '--enable-assets'
+    ]
+    const child = fakeChild()
+    launchHarness.spawn = (_cmd, args) => {
+      spawnArgs = args as string[]
+      return child
+    }
+
+    const res = await handleLaunch(ctxFor('harness-assets-context-user-owned'))
+    expect(res.ok).toBe(true)
+    child.stdout.emit('data', Buffer.from('[assets-event] assets.enabled hashing_enabled=false\n'))
+
+    expect(spawnArgs).toContain('--enable-assets')
+
+    const assetsEvents = events.filter(
+      (e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled'
+    )
+    expect(assetsEvents).toHaveLength(1)
+    expect(assetsEvents[0]!.properties).toMatchObject({ core_beta_flags: [] })
+  })
 
   it.each([
     ['schema', true, false],
