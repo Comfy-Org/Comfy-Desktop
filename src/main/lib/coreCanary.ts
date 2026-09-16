@@ -105,6 +105,8 @@ export interface CoreVersionState {
   semver: string | null
   /** Whether the install sits exactly on that release tag (`coreSemverExact`). */
   exact: boolean
+  /** Whether that release was established by ancestry (`coreSemverVerified`). */
+  verified: boolean
 }
 
 const ENABLE_PREFIX = '--enable-'
@@ -129,6 +131,13 @@ function oppositeArg(arg: string): string | null {
 // receive `--enable-assets`, and vice versa. Contradictory flags never go on one command line —
 // Core's precedence between them is unspecified — and the tie is always broken the same way,
 // with the user's own argument winning and the canary yielding.
+//
+// Both bounds are measured against `baseTag`, so the whole payload is refused unless that tag was
+// established by ancestry. `resolveLocalVersion` also reaches for a tag on paths that do NOT
+// prove the install contains it — the merge-base fallback runs only because the tag is not an
+// ancestor — and such a label can satisfy a minimum the running code does not meet. Core's args
+// schema absorbs the common case, since an install without the feature does not know the flag,
+// but not a minimum raised to require a later FIX to a flag it already has.
 export function selectCoreCanaryArgs(
   flags: readonly CoreCanaryFlag[],
   core: CoreVersionState,
@@ -137,6 +146,12 @@ export function selectCoreCanaryArgs(
 ): CoreCanaryFlag[] {
   const version = core.semver
   if (version === null || betaEnabled !== true) return []
+  if (!core.verified) {
+    // Echoed for the same reason as the per-flag windows below: this refusal drops grants an
+    // operator can see in the payload, so it must not be silent.
+    if (flags.length > 0) console.log(`[core-canary] refused: base ${version} not verified`)
+    return []
+  }
   const presentArgs = new Set(userArgs)
   const selected: CoreCanaryFlag[] = []
   for (const flag of flags) {
@@ -154,13 +169,8 @@ export function selectCoreCanaryArgs(
     if (maxCoreVersion !== undefined) {
       // An upper bound only means anything on an exact tag match. `coreSemver` resolves from
       // `baseTag`, so a latest-channel install 40 commits past v0.3.99 still measures as 0.3.99
-      // and would slip under a `<0.4.0` ceiling it is well past.
-      //
-      // `baseTag` usually under-reports the running code, but it can over-report: in the
-      // backport case `resolveLocalVersion` assigns the newer tag on a path only reached
-      // because that tag is NOT an ancestor. The lower bound has no guard for that. Core's
-      // argument schema absorbs the common case, since an install without the feature does not
-      // know the flag, so what is left exposed is a minimum raised to require a later FIX.
+      // and would slip under a `<0.4.0` ceiling it is well past. Under-reporting like that is
+      // what `exact` guards; over-reporting is `verified`'s job, above.
       if (!core.exact) continue
       if (!semver.lt(version, maxCoreVersion)) continue
     }

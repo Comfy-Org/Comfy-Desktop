@@ -544,6 +544,7 @@ const build = (over: {
   betaFlags?: CoreCanaryFlag[]
   coreVersion?: string | null
   coreVersionExact?: boolean
+  coreVersionVerified?: boolean
   betaEnabled?: boolean
 }): ReturnType<typeof buildLaunchArgs> =>
   buildLaunchArgs({
@@ -554,6 +555,7 @@ const build = (over: {
     betaFlags: over.betaFlags ?? [ASSETS_GRANT],
     coreVersion: over.coreVersion === undefined ? '0.3.81' : over.coreVersion,
     coreVersionExact: over.coreVersionExact ?? true,
+    coreVersionVerified: over.coreVersionVerified ?? true,
     betaEnabled: over.betaEnabled ?? true
   })
 
@@ -599,6 +601,16 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
     expect(built.beta.applied).toEqual([])
     expect(built.beta.logRecords).toEqual([])
+  })
+
+  it("injects nothing when the install's base tag was not established by ancestry", () => {
+    const built = build({ schema: schemaOf('enable-assets'), coreVersionVerified: false })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
+    expect(built.beta.applied).toEqual([])
+    expect(built.beta.logRecords).toEqual([])
+    // Refusing the version claim is not the core refusing the arg; telemetry must not conflate them.
+    expect(built.beta.droppedUnsupported).toEqual([])
   })
 
   it('drops a granted arg the running core does not accept, and reports it', () => {
@@ -856,7 +868,8 @@ describe('core beta report placement', () => {
       comfyVersion: {
         commit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
         baseTag: 'v0.3.81',
-        commitsAhead: 0
+        commitsAhead: 0,
+        baseTagVerified: true
       }
     }) as unknown as InstallationRecord
 
