@@ -371,12 +371,14 @@ async function initializeProviders(): Promise<void> {
           import.meta.env.VITE_DATADOG_RUM_SESSION_SAMPLE_RATE,
           100
         ),
+        // `createHostWindow.ts` `loadTitleBarUrl` uses `file://` packaged, where Chromium ignores cookies.
+        sessionPersistence: 'local-storage',
         // Session replay is intentionally not configured. Datadog defaults
         // to off when the field is omitted; reintroduce only as a deliberate
         // code change in a release.
-        trackResources: true,
-        trackLongTasks: true,
-        trackUserInteractions: true
+        trackResources: false,
+        trackLongTasks: false,
+        trackUserInteractions: false
       })
       isDatadogInitialized = true
       // Tag every RUM event with the renderer surface so queries can

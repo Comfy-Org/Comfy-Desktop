@@ -87,6 +87,14 @@ export function parseCoreCanaryFlags(
         : { arg: candidate.arg, minCoreVersion, maxCoreVersion }
     )
   }
+  // Naming a flag and its opposite is an operator mistake, not a precedence order. Applying
+  // either one would pick a silent winner from payload order, so the whole payload grants
+  // nothing — the same way a malformed one does, and visibly enough to get corrected.
+  const grantedArgs = new Set(flags.map((flag) => flag.arg))
+  for (const { arg } of flags) {
+    const opposite = oppositeArg(arg)
+    if (opposite !== null && grantedArgs.has(opposite)) return []
+  }
   return flags
 }
 
@@ -151,6 +159,9 @@ export function selectCoreCanaryArgs(
       if (!core.exact) continue
       if (!semver.lt(version, maxCoreVersion)) continue
     }
+    // Selected grants join the conflict set so the checks above hold between two grants too, not
+    // just against the user's args. Redundant after `parseCoreCanaryFlags`, load-bearing without it.
+    presentArgs.add(arg)
     selected.push(flag)
   }
   return selected
