@@ -1,6 +1,7 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
 import type { HardwareValidation, NvidiaDriverCheck } from '../../types/ipc'
+import { unsupportedHostReason } from '../sources/standalone/envPaths'
 
 type GpuId = 'nvidia' | 'amd' | 'intel' | 'mps'
 
@@ -559,9 +560,17 @@ export async function checkLinuxAmdKfdAccess(kfdPath = KFD_PATH): Promise<string
 }
 
 /** Validate hardware for standalone install. Rejects Intel Macs (MPS needs
- *  Apple Silicon); surfaces a non-blocking warning when a Linux AMD GPU is
- *  present but its compute device node is missing or inaccessible. */
+ *  Apple Silicon) and architectures with no published bundle; surfaces a
+ *  non-blocking warning when a Linux AMD GPU is present but its compute
+ *  device node is missing or inaccessible. */
 async function validateHardware(): Promise<HardwareValidation> {
+  // Ask before probing the GPU: no bundle exists for this architecture, so
+  // whatever the GPU turns out to be, the local install has nothing to offer.
+  // Reporting it here gets the wizard's existing explain-and-block treatment
+  // instead of an empty release list the user cannot tell from an outage.
+  const unsupportedHost = unsupportedHostReason()
+  if (unsupportedHost) return { supported: false, error: unsupportedHost }
+
   if (process.platform === 'darwin') {
     const gpu = await detectMacGPU()
     if (!gpu) {
