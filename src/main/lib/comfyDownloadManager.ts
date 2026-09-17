@@ -712,17 +712,106 @@ function broadcastProgress(progress: DownloadProgress): void {
   downloadEvents.emit('tray-state-changed')
 }
 
-function setTaskbarProgress(win: BrowserWindow, progress: DownloadProgress): void {
-  if (win.isDestroyed()) return
-  if (progress.status === 'downloading') {
-    win.setProgressBar(progress.progress)
-  } else if (
-    progress.status === 'completed' ||
-    progress.status === 'error' ||
-    progress.status === 'cancelled'
-  ) {
-    win.setProgressBar(-1)
+interface TaskbarDownload extends DownloadProgress {
+  id: string
+}
+
+/** A taskbar batch retains completed jobs until the last job finishes. Without
+ *  that retention, completing one of two downloads would remove its bytes
+ *  from the denominator and make the aggregate bar jump backwards. Cancelled
+ *  and failed jobs are removed because they no longer belong to the workload. */
+const taskbarBatches = new Map<BrowserWindow, Map<string, TaskbarDownload>>()
+
+function mergeTaskbarDownload(
+  previous: TaskbarDownload | undefined,
+  progress: DownloadProgress & { id: string }
+): TaskbarDownload {
+  const merged = {
+    ...previous,
+    ...progress,
+    receivedBytes: progress.receivedBytes ?? previous?.receivedBytes,
+    totalBytes: progress.totalBytes ?? previous?.totalBytes
   }
+  // A transport may complete between throttled progress ticks. Its terminal
+  // report is authoritative even when the last sampled byte count was lower.
+  if (merged.status === 'completed' && merged.totalBytes && merged.totalBytes > 0) {
+    merged.receivedBytes = merged.totalBytes
+  }
+  return merged
+}
+
+/** Aggregate known byte totals. Keep the bar empty until every active job has
+ *  reported its size: Electron's indeterminate value (> 1) briefly renders as
+ *  a full Dock bar on macOS. Completed unknown-size jobs do not hide progress
+ *  for work that is still measurable. */
+function aggregateTaskbarProgress(downloads: Iterable<TaskbarDownload>): number {
+  const jobs = [...downloads]
+  if (!jobs.some((job) => !isTerminalStatus(job.status))) return -1
+  if (
+    jobs.some((job) => !isTerminalStatus(job.status) && !(job.totalBytes && job.totalBytes > 0))
+  ) {
+    return 0
+  }
+
+  let receivedBytes = 0
+  let totalBytes = 0
+  for (const job of jobs) {
+    if (!(job.totalBytes && job.totalBytes > 0)) continue
+    totalBytes += job.totalBytes
+    const received =
+      job.status === 'completed'
+        ? job.totalBytes
+        : (job.receivedBytes ?? job.progress * job.totalBytes)
+    receivedBytes += Math.max(0, Math.min(job.totalBytes, received))
+  }
+  return totalBytes > 0 ? Math.max(0, Math.min(1, receivedBytes / totalBytes)) : 0
+}
+
+function liveTaskbarBatches(): Array<[BrowserWindow, Map<string, TaskbarDownload>]> {
+  const live: Array<[BrowserWindow, Map<string, TaskbarDownload>]> = []
+  for (const [win, batch] of taskbarBatches) {
+    if (win.isDestroyed()) taskbarBatches.delete(win)
+    else live.push([win, batch])
+  }
+  return live
+}
+
+function setTaskbarProgress(win: BrowserWindow, progress: DownloadProgress & { id: string }): void {
+  if (win.isDestroyed()) return
+  let batch = taskbarBatches.get(win)
+  if (!batch) taskbarBatches.set(win, (batch = new Map()))
+  if (progress.status === 'cancelled' || progress.status === 'error') {
+    batch.delete(progress.id)
+  } else {
+    batch.set(progress.id, mergeTaskbarDownload(batch.get(progress.id), progress))
+  }
+
+  // macOS exposes one Dock progress bar for the whole application, so every
+  // window-backed download must contribute to the same value. Other platforms
+  // retain their native per-window taskbar behavior.
+  const batches = liveTaskbarBatches()
+  const scopedBatches =
+    process.platform === 'darwin' ? batches : batches.filter(([candidate]) => candidate === win)
+  const aggregate = aggregateTaskbarProgress(
+    scopedBatches.flatMap(([, jobs]) => [...jobs.values()])
+  )
+
+  for (const [target] of scopedBatches) target.setProgressBar(aggregate)
+  if (aggregate < 0) {
+    for (const [target] of scopedBatches) taskbarBatches.delete(target)
+  }
+}
+
+function detachTaskbarProgress(win: BrowserWindow): void {
+  taskbarBatches.delete(win)
+  if (!win.isDestroyed()) win.setProgressBar(-1)
+  if (process.platform !== 'darwin') return
+
+  const batches = liveTaskbarBatches()
+  if (batches.length === 0) return
+  const aggregate = aggregateTaskbarProgress(batches.flatMap(([, jobs]) => [...jobs.values()]))
+  for (const [target] of batches) target.setProgressBar(aggregate)
+  if (aggregate < 0) taskbarBatches.clear()
 }
 
 /** First-seen timestamp per job id, preserved across status transitions and
@@ -2230,6 +2319,7 @@ export function clearFinishedDownloads(): number {
  *  retained reference would pin the closed BrowserWindow forever. */
 export function detachWindowDownloads(win: BrowserWindow): void {
   const contents = win.isDestroyed() ? undefined : win.webContents
+  detachTaskbarProgress(win)
   // The initiating sender is usually a ComfyUI WebContentsView hosted by the
   // window, not the window's own webContents - match by owner (or by already
   // being destroyed), not only by identity with `win.webContents`.
@@ -2245,7 +2335,6 @@ export function detachWindowDownloads(win: BrowserWindow): void {
   }
   for (const pending of pendingDownloads.values()) {
     if (pending.window === win) {
-      if (!win.isDestroyed()) win.setProgressBar(-1)
       pending.window = undefined
     }
     pending.subscriberWindows.delete(win)
