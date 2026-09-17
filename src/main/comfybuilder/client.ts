@@ -154,7 +154,7 @@ export class ComfyBuilderClient {
 
     const created = await this.post<CreatedBuildResponse>(
       '/v1/builds',
-      { name, definition: resolvedBody.definition },
+      { name, definition: { ...resolvedBody.definition, uiOrigin: 'desktop-snapshot' } },
       token
     )
     if (!isOpaqueId(created.id) || !isOpaqueId(created.workspaceId)) {
