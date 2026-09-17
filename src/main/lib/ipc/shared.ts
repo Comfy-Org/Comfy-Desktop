@@ -36,6 +36,7 @@ import { _broadcastToRenderer } from './broadcast'
 import { appendLog } from '../logsBroadcast'
 import { flushOperationOutput } from '../appLog'
 import { stripAnsi } from '../stderrTail'
+import type { AcceleratorSnapshot } from '../hardwareTap'
 import {
   spawnProcess,
   waitForPort,
@@ -277,9 +278,12 @@ export interface SessionInfo {
   url?: string
   mode: string
   installationName: string
+  sourceInstallationId?: string
   startedAt: number
   /** Synchronously queue final telemetry before app-level shutdown drains the SDK. */
   flushTelemetry?: () => void
+  /** Latest accelerator details parsed from this session's ComfyUI startup logs. */
+  getAcceleratorInfo?: () => AcceleratorSnapshot | null
 }
 
 export interface LaunchCallbackInfo {
@@ -1051,13 +1055,23 @@ export {
 
 export function _addSession(
   installationId: string,
-  { proc, port, url, mode, installationName, flushTelemetry }: Omit<SessionInfo, 'startedAt'>,
+  {
+    proc,
+    port,
+    url,
+    mode,
+    installationName,
+    flushTelemetry,
+    getAcceleratorInfo
+  }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
    *  renderer's `instance_started` telemetry can carry them without a
    *  separate `server_ready` event. Omitted for the remote / skip-port paths
    *  (no spawn retry there). */
-  retries?: { portRetries: number; rebootRetries: number }
+  retries?: { portRetries: number; rebootRetries: number },
+  /** Durable installation identity when the runtime session uses an isolated key. */
+  sourceInstallationId: string = installationId
 ): void {
   _runningSessions.set(installationId, {
     proc,
@@ -1065,7 +1079,9 @@ export function _addSession(
     url,
     mode,
     installationName,
+    sourceInstallationId,
     flushTelemetry,
+    getAcceleratorInfo,
     startedAt: Date.now()
   })
   // Clear the launching marker first so subscribers never double-count this id across the
@@ -1087,7 +1103,7 @@ export function _addSession(
   // callback could fire. Fire-and-forget; never blocks the launch.
   if (_onInstanceStarted) {
     _onInstanceStarted({
-      installationId,
+      installationId: sourceInstallationId,
       bootTimeMs,
       portRetries: retries?.portRetries ?? 0,
       rebootRetries: retries?.rebootRetries ?? 0
@@ -1095,7 +1111,7 @@ export function _addSession(
   }
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
   installations
-    .markLaunched(installationId, (inst) => sourceMap[inst.sourceId]?.category)
+    .markLaunched(sourceInstallationId, (inst) => sourceMap[inst.sourceId]?.category)
     .then(() => _broadcastToRenderer('installations-changed', {}))
     .catch((err) => {
       console.error('Failed to mark installation launched:', err)
@@ -1124,6 +1140,14 @@ export function _getPublicSessions(): Record<string, unknown>[] {
     installationName: s.installationName,
     startedAt: s.startedAt
   }))
+}
+
+export function hasRunningSessionForInstallation(installationId: string): boolean {
+  return Array.from(
+    _runningSessions,
+    ([sessionId, session]) =>
+      sessionId === installationId || session.sourceInstallationId === installationId
+  ).some(Boolean)
 }
 
 /**

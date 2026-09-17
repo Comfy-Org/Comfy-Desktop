@@ -3,6 +3,8 @@ import type { InstallationRecord } from '../shared'
 export interface ActionContext {
   event: Electron.IpcMainInvokeEvent
   installationId: string
+  /** Runtime identity when one installation owns an isolated secondary session. */
+  sessionId?: string
   inst: InstallationRecord
   actionData?: Record<string, unknown>
 }

@@ -29,7 +29,14 @@ const { syncLocale } = useAppLocale(windowApiLocaleSource())
 // file isn't visible to tsconfig.web (only its .d.ts would be). Kept in
 // sync with the literal union in src/preload/comfyTitleBarPreload.ts and
 // the ComfyPanelKey export in src/main/index.ts.
-type ComfyPanelKey = 'comfy' | 'new-install' | 'track' | 'load-snapshot' | 'quick-install'
+type ComfyPanelKey =
+  | 'comfy'
+  | 'performance-test'
+  | 'benchmarks'
+  | 'new-install'
+  | 'track'
+  | 'load-snapshot'
+  | 'quick-install'
 
 /** Position passed to main so the native menu pops below the anchor button.
  *  Coordinates are in title-bar-local pixels — main translates to window

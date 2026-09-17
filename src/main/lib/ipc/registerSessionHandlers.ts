@@ -8,10 +8,10 @@ import {
   REQUIRES_STOPPED,
   _onStop,
   _operationAborts,
-  _runningSessions,
   _getPublicSessions,
   _getLaunchingInstances,
   _getStoppingInstallationIds,
+  hasRunningSessionForInstallation,
   stopRunning
 } from './shared'
 import { dispatchSessionAction, _getActiveOperations } from './sessionActions'
@@ -72,7 +72,7 @@ export function registerSessionHandlers(): void {
       const maybeInst = await installations.get(installationId)
       if (!maybeInst) return { ok: false, message: 'Installation not found.' }
       const inst = maybeInst
-      if (REQUIRES_STOPPED.has(actionId) && _runningSessions.has(installationId)) {
+      if (REQUIRES_STOPPED.has(actionId) && hasRunningSessionForInstallation(installationId)) {
         return { ok: false, message: i18n.t('errors.stopRequired'), running: true }
       }
       if (REQUIRES_STOPPED.has(actionId) && _operationAborts.has(installationId)) {
@@ -84,7 +84,15 @@ export function registerSessionHandlers(): void {
         return { ok: false, message: i18n.t('errors.operationInProgress', { operation }) }
       }
 
-      return dispatchSessionAction({ event: _event, installationId, inst, actionData }, actionId)
+      const requestedSessionId = actionData?.sessionIdOverride
+      const sessionId =
+        actionId === 'launch' && requestedSessionId === `performance-test:${installationId}`
+          ? requestedSessionId
+          : undefined
+      return dispatchSessionAction(
+        { event: _event, installationId, sessionId, inst, actionData },
+        actionId
+      )
     }
   )
 }
