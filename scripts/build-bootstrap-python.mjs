@@ -11,8 +11,14 @@
  *
  * Usage:
  *   node build-bootstrap-python.mjs [--output DIR] [--platform PLATFORM]
+ *   node build-bootstrap-python.mjs --check       # warn if absent, build nothing
+ *   node build-bootstrap-python.mjs --if-missing  # build only when absent
  *
  * Platforms: win-x64, win-arm64, mac-arm64, linux-x64
+ *
+ * Hosts outside that list (Linux ARM64 today) have no published bootstrap.
+ * That is not an error — the app falls back to system git — so every mode
+ * reports it and exits 0 rather than failing `pnpm run init`.
  */
 import { spawnSync } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
@@ -99,15 +105,16 @@ const STRIP_FILES = new Set([
   '_testcapi.pyd', '_tkinter.pyd', '_sqlite3.pyd',
 ])
 
+/** The bootstrap this host can run, or null when none is published for it.
+ *  The running Node's architecture is the one the resulting Python must
+ *  match. Never substitute linux-x64 on ARM64: that produces a bootstrap
+ *  which exists but cannot execute on the target machine. */
 function detectPlatform() {
   const sys = process.platform
-  // The running Node's architecture is the one the resulting Python must
-  // match. Do not silently substitute linux-x64 on ARM64: that produces a
-  // bootstrap which exists but cannot execute on the target machine.
   if (sys === 'win32') return process.arch === 'arm64' ? 'win-arm64' : 'win-x64'
   if (sys === 'darwin') return 'mac-arm64'
   if (sys === 'linux' && process.arch === 'x64') return 'linux-x64'
-  throw new Error(`Unsupported platform: ${sys} ${process.arch}`)
+  return null
 }
 
 function isWindowsPlatform(plat) {
@@ -115,13 +122,17 @@ function isWindowsPlatform(plat) {
 }
 
 function parseArgs(argv) {
-  const args = { output: 'bootstrap-python', platform: null }
+  const args = { output: 'bootstrap-python', platform: null, check: false, ifMissing: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--output') args.output = argv[++i]
     else if (a === '--platform') args.platform = argv[++i]
+    else if (a === '--check') args.check = true
+    else if (a === '--if-missing') args.ifMissing = true
     else if (a === '-h' || a === '--help') {
-      console.log('Usage: node build-bootstrap-python.mjs [--output DIR] [--platform PLATFORM]')
+      console.log(
+        'Usage: node build-bootstrap-python.mjs [--output DIR] [--platform PLATFORM] [--check] [--if-missing]'
+      )
       process.exit(0)
     }
   }
@@ -292,9 +303,26 @@ function runPython(pythonPath, args, opts = {}) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const plat = args.platform || detectPlatform()
+  if (!plat) {
+    console.log(
+      `No bootstrap python is published for ${process.platform} ${process.arch}. ` +
+        'Skipping — Comfy Desktop falls back to system git.'
+    )
+    return
+  }
   const platInfo = PLATFORM_MAP[plat]
   if (!platInfo) throw new Error(`Unknown platform: ${plat}`)
   const outputDir = path.join(args.output, plat)
+
+  if (args.check) {
+    if (!(await isDir(outputDir))) {
+      console.log(
+        '\n\x1b[33m⚠ Bootstrap python not found. Run "pnpm run bootstrap" for pre-install git support.\x1b[0m\n'
+      )
+    }
+    return
+  }
+  if (args.ifMissing && (await isDir(outputDir))) return
 
   console.log(`Building bootstrap Python for ${plat}`)
   console.log(`  Python ${PYTHON_VERSION}, PBS release ${PBS_RELEASE}`)
