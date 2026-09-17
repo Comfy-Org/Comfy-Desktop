@@ -934,7 +934,16 @@ watch(performanceTestLogs, async () => {
 }
 
 .performance-test__workspace-select :deep(.workspace-selector__face) {
+  --dp-avatar-size: 20px;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
+  padding: 4px 8px;
+}
+
+.performance-test__instance-select :deep(.ui-select-trigger) {
+  height: 30px;
+  padding: 4px 8px;
 }
 
 .performance-test__drop-zone,

@@ -40,6 +40,7 @@ import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { deriveGpuTier } from '../../../shared/gpuTier'
+import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import {
   calculatePerformanceTestStatistics,
   deletePerformanceTestWorkflow,
@@ -273,7 +274,12 @@ export function registerAppHandlers(): void {
           session.sourceInstallationId ?? sessionId.slice('performance-test:'.length)
         const sourceInstallation = await installations.get(sourceInstallationId)
         const workspaceId = sourceInstallation?.workspaceId ?? null
-        let workspaceName = workspaceId ? getCachedWorkspaceName(workspaceId) : null
+        let workspaceName =
+          workspaceId === PERSONAL_WORKSPACE_ID
+            ? 'Personal'
+            : workspaceId
+              ? getCachedWorkspaceName(workspaceId)
+              : null
         if (workspaceId) {
           try {
             const owningWorkspace = (await getCloudSession().listWorkspaces()).find(
