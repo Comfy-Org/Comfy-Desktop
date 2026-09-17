@@ -1033,6 +1033,64 @@ describe('core beta report placement', () => {
     expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
   })
 
+  it('withholds grants when .git is a pointer file the git dir cannot be resolved from', async () => {
+    // One layer below the unreadable-HEAD case: `.git` exists, so this IS a git-managed
+    // checkout, but it is a worktree/submodule pointer with no `gitdir:` line, so there is no
+    // git directory to read a HEAD out of. Classifying that as "not a git install" — which is
+    // what a bare `resolveGitDir() === null` check does — hands it the standalone install's
+    // unconditional grant, on a checkout whose commit was never established.
+    const dotGit = path.join(installDir, 'ComfyUI', '.git')
+    fs.writeFileSync(dotGit, 'this file is not a gitdir pointer\n')
+
+    const res = await handleLaunch(ctxFor('harness-git-pointer-unresolvable'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
+    expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
+  })
+
+  it('withholds grants when .git is a dangling symlink', async () => {
+    // The case that forces `lstat` over `stat`: `stat` follows the link, finds nothing, and
+    // raises ENOENT — indistinguishable from an install that never had a `.git` at all, so the
+    // checkout is waved through as standalone. `lstat` sees the link itself, and a link
+    // pointing at a missing git dir is a broken checkout, not an absent one.
+    const dotGit = path.join(installDir, 'ComfyUI', '.git')
+    try {
+      fs.symlinkSync(path.join(installDir, 'no-such-git-dir'), dotGit)
+    } catch {
+      // Windows without Developer Mode / SeCreateSymbolicLink cannot create one at all.
+      return
+    }
+    expect(fs.existsSync(dotGit)).toBe(false) // `stat`-based existence says "absent"
+
+    const res = await handleLaunch(ctxFor('harness-git-dangling-symlink'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
+    expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
+  })
+
+  it('withholds grants when the .git entry cannot be stat-ed at all', async () => {
+    // The third way `.git` resolution fails: the entry is neither absent nor readable — an
+    // EACCES/EPERM/ELOOP on the `lstat` itself. No portable way to produce that on a real
+    // filesystem (a chmod-ed parent does nothing when the suite runs as root, and Windows has
+    // no equivalent), so the error is injected at the one syscall that classifies it. Every
+    // other path stays real.
+    const realLstatSync = fs.lstatSync
+    vi.spyOn(fs, 'lstatSync').mockImplementation(((target: fs.PathLike, opts?: object) => {
+      if (String(target).endsWith(`${path.sep}.git`)) {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+      }
+      return realLstatSync(target, opts as never)
+    }) as typeof fs.lstatSync)
+
+    const res = await handleLaunch(ctxFor('harness-git-stat-indeterminate'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
+    expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
+  })
+
   it('continues a skip-port launch when renderer reporting throws', async () => {
     const ctx = ctxFor('harness-skip-port-report-throws')
     const send = ctx.event.sender.send.bind(ctx.event.sender)
