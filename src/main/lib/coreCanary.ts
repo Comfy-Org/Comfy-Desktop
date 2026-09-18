@@ -20,14 +20,17 @@ export const CORE_CANARY_FLAG_KEY = 'desktop_core_beta_features'
  * by hand (they may, and it wins; see `selectCoreCanaryArgs`).
  *
  * An entry need not exist in Core yet: `--disable-assets` is the planned remote force-off for
- * when assets go default-on, and granting an arg Core cannot parse is already safe — the
+ * when assets go default-on, and `--enable-agent` lands here ahead of the Core flag because
+ * Desktop reaches users on its own update cadence — the allowlist has to already be installed
+ * before a payload can grant anything. Granting an arg Core cannot parse is safe meanwhile: the
  * running core's supported-argument schema filters it and the launch reports it as
  * `dropped_unsupported`.
  */
 export const CORE_CANARY_ALLOWED_FLAGS = [
   '--enable-assets',
   '--enable-asset-hashing',
-  '--disable-assets'
+  '--disable-assets',
+  '--enable-agent'
 ] as const
 
 export type CoreCanaryFlag = {

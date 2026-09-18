@@ -124,7 +124,8 @@ describe('parseCoreCanaryFlags', () => {
     expect(CORE_CANARY_ALLOWED_FLAGS).toEqual([
       '--enable-assets',
       '--enable-asset-hashing',
-      '--disable-assets'
+      '--disable-assets',
+      '--enable-agent'
     ])
   })
 
