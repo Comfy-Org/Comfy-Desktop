@@ -4,7 +4,9 @@ import {
   buildCopyLinkBannerScript,
   buildRemoveCopyLinkBannerScript,
   COPY_LINK_BANNER_CSS,
-  OPEN_LINK_SENTINEL
+  type CopyLinkBannerLabels,
+  OPEN_LINK_SENTINEL,
+  START_OVER_SENTINEL
 } from './copyLinkBanner'
 import type { BridgeHandle } from './server'
 import * as i18n from '../../lib/i18n'
@@ -61,28 +63,45 @@ export function runBannerCleanup(): void {
   cleanup?.()
 }
 
-/** Inject the browser-opened card and own its singleton teardown. */
-export function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string): void {
+/**
+ * Inject the browser-opened card and own its singleton teardown. With
+ * `onStartOver` the card offers a "Start over" button that replaces the
+ * in-flight sign-in attempt.
+ */
+export function showCopyLinkBanner(
+  comfyContents: WebContents,
+  loginUrl: string,
+  onStartOver?: () => void
+): void {
   if (comfyContents.isDestroyed()) return
 
-  const labels = {
+  const labels: CopyLinkBannerLabels = {
     message: i18n.t('cloud.signInBanner.message'),
     copy: i18n.t('cloud.signInBanner.copy'),
     copied: i18n.t('cloud.signInBanner.copied'),
     openAgain: i18n.t('cloud.signInBanner.openAgain'),
     dismiss: i18n.t('cloud.signInBanner.dismiss')
   }
+  if (onStartOver) labels.startOver = i18n.t('cloud.signInBanner.startOver')
 
   void comfyContents
     .insertCSS(COPY_LINK_BANNER_CSS)
     .then(() => comfyContents.executeJavaScript(buildCopyLinkBannerScript(loginUrl, labels), true))
     .catch(() => {})
 
+  // One-shot per card: the page can emit the sentinel too, so a spammy page
+  // (or double-click) must not restart sign-in more than once per attempt.
+  let startedOver = false
   const onConsoleMessage = (
     details: Electron.Event<Electron.WebContentsConsoleMessageEventParams>
   ): void => {
-    if (details.frame?.parent != null || details.message !== OPEN_LINK_SENTINEL) return
-    openExternalSafely(loginUrl)
+    if (details.frame?.parent != null) return
+    if (details.message === OPEN_LINK_SENTINEL) {
+      openExternalSafely(loginUrl)
+    } else if (details.message === START_OVER_SENTINEL && onStartOver && !startedOver) {
+      startedOver = true
+      onStartOver()
+    }
   }
   comfyContents.on('console-message', onConsoleMessage)
 

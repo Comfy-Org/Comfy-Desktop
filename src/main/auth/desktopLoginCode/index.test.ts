@@ -211,7 +211,8 @@ describe('signInViaDesktopLoginCode', () => {
     expect(openedUrl).toContain('desktop_login_code=dlc_test-code')
     expect(openedUrl).not.toContain('installation_id')
     expect(openedUrl).not.toContain('machine-hash-1234')
-    expect(h.showCopyLinkBanner).toHaveBeenCalledWith(contents, openedUrl)
+    // No restart hook in opts → the card renders without Start over.
+    expect(h.showCopyLinkBanner).toHaveBeenCalledWith(contents, openedUrl, undefined)
 
     expect(h.createDesktopLoginCode).toHaveBeenCalledWith(
       'https://cloud.comfy.org',
@@ -583,32 +584,107 @@ describe('signInViaDesktopLoginCode', () => {
     })
   })
 
-  it('aborts the prior poll loop on re-entry without reporting a failure', async () => {
+  it('reopens the same URL and keeps polling the same code on repeat clicks', async () => {
     h.settingsGet.mockReturnValue(true)
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode
+      .mockResolvedValueOnce({ status: 'pending' })
+      .mockResolvedValueOnce({ status: 'complete', custom_token: 'custom-token-value' })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+    const contents = fakeContents()
+    const restartSignIn = vi.fn()
+
+    const first = mod.signInViaDesktopLoginCode(AUTH_URL, contents, { restartSignIn })
+    await vi.advanceTimersByTimeAsync(3500)
+    expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
+    const openedUrl = h.openExternal.mock.calls[0]![0]
+
+    const second = mod.signInViaDesktopLoginCode(AUTH_URL, contents, { restartSignIn })
+
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
+    expect(h.openExternal).toHaveBeenCalledTimes(2)
+    expect(h.openExternal.mock.calls[1]![0]).toBe(openedUrl)
+    // The re-click restores the card (it may have been dismissed) and hands
+    // its Start over the same restart hook as the original attempt.
+    expect(h.showCopyLinkBanner).toHaveBeenCalledTimes(2)
+    expect(h.showCopyLinkBanner.mock.calls[0]).toEqual([contents, openedUrl, restartSignIn])
+    expect(h.showCopyLinkBanner.mock.calls[1]).toEqual([contents, openedUrl, restartSignIn])
+
+    await vi.runAllTimersAsync()
+    expect(await first).toBe('handled')
+    expect(await second).toBe('handled')
+    expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(2)
+    expect(h.signInWithCustomToken).toHaveBeenCalledWith(expect.any(String), 'custom-token-value', {
+      signal: expect.any(AbortSignal)
+    })
+    expect(h.emit).not.toHaveBeenCalled()
+  })
+
+  it('joins code creation without giving a repeat caller ownership of fallback', async () => {
+    let rejectCreate!: (reason: unknown) => void
+    h.createDesktopLoginCode.mockImplementation(
+      () => new Promise((_, reject) => (rejectCreate = reject))
+    )
+    const mod = await loadOrchestrator()
+    const contents = fakeContents()
+
+    const first = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    const second = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
+    rejectCreate(new Error('create failed'))
+
+    expect(await first).toBe('fallback')
+    expect(await second).toBe('handled')
+    expect(h.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('recovers after an attempt crashes before its own cleanup paths', async () => {
+    h.settingsGet.mockReturnValue(true)
+    h.getDeviceId.mockImplementation(() => {
+      throw new Error('device id unavailable')
+    })
+    const mod = await loadOrchestrator()
+    const contents = fakeContents()
+
+    await expect(mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})).rejects.toThrow(
+      'device id unavailable'
+    )
+
+    // The crashed attempt must not stay joinable — that would turn every
+    // later click into a silent no-op. The next click starts fresh instead.
+    h.getDeviceId.mockReturnValue('machine-hash-1234')
+    h.createDesktopLoginCode.mockRejectedValueOnce(new Error('create failed'))
+    const second = await mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    expect(second).toBe('fallback')
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
+  })
+
+  it('replaces the active attempt when its originating view is gone', async () => {
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
     const mod = await loadOrchestrator()
+    let destroyed = false
+    const contents = fakeContents()
+    contents.isDestroyed = vi.fn(() => destroyed)
 
-    const first = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    const first = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
     await vi.advanceTimersByTimeAsync(3500)
-    expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
 
-    // Second click: the new attempt cancels the stale poll loop. Its own
-    // create fails fast so the test doesn't leave a flow in flight.
+    // A click from a recreated view must not join a flow that can never
+    // inject its session; it cancels the orphan and starts over. The fresh
+    // attempt's create fails fast so the test leaves no flow in flight.
+    destroyed = true
     h.createDesktopLoginCode.mockRejectedValueOnce(new Error('create failed'))
-    const second = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
-
+    const second = await mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    expect(second).toBe('fallback')
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(2)
     expect(await first).toBe('handled')
-    expect(await second).toBe('fallback')
-    // A superseded attempt is not a failure.
-    expect(h.emit).not.toHaveBeenCalled()
-
-    // The stale loop is dead: no further polls happen.
-    await vi.advanceTimersByTimeAsync(30_000)
-    expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
   })
 
-  it('cancels a prior code flow before falling back to the legacy bridge', async () => {
+  it('cancels a prior code flow only when start-over is explicit', async () => {
     h.settingsGet.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
@@ -621,7 +697,7 @@ describe('signInViaDesktopLoginCode', () => {
     const fallback = await mod.signInViaDesktopLoginCode(
       'https://dreamboothy-dev.firebaseapp.com/__/auth/handler?providerId=google.com',
       fakeContents('https://cloud.comfy.org/'),
-      {}
+      { startOver: true }
     )
 
     expect(fallback).toBe('fallback')
@@ -659,10 +735,10 @@ describe('signInViaDesktopLoginCode', () => {
     await vi.advanceTimersByTimeAsync(3000)
     expect(h.signInWithCustomToken).toHaveBeenCalledTimes(1)
 
-    // Re-click while A is mid-tail: B aborts A, then fails create fast so
-    // the test doesn't leave a second flow in flight.
+    // An explicit start-over while A is mid-tail aborts A, then B fails create
+    // fast so the test doesn't leave a second flow in flight.
     h.createDesktopLoginCode.mockRejectedValueOnce(new Error('create failed'))
-    const second = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    const second = mod.signInViaDesktopLoginCode(AUTH_URL, contents, { startOver: true })
     const bannerCleanupsAfterSecondStart = h.runBannerCleanup.mock.calls.length
 
     resolveSignIn({ idToken: 'id-token', refreshToken: 'refresh-token', expiresIn: '3600' })

@@ -55,6 +55,15 @@ export async function handleFirebasePopup(
   comfyContents: WebContents,
   opts: HandleFirebasePopupOpts = {}
 ): Promise<void> {
+  // The banner's "Start over" re-enters this whole orchestration — not just
+  // the code flow — so a replacement attempt keeps the legacy-bridge fallback.
+  // Spread `opts` (not `optsWithRestart`) so each entry installs a fresh hook.
+  const optsWithRestart: HandleFirebasePopupOpts = {
+    ...opts,
+    restartSignIn: () => {
+      void handleFirebasePopup(url, comfyContents, { ...opts, startOver: true })
+    }
+  }
   // Prefer the cloud login-code flow (GTM-93): sign-in happens on the
   // real Cloud login page and Desktop polls for a one-time custom token —
   // no loopback server. 'fallback' means the flow died before the browser
@@ -65,7 +74,7 @@ export async function handleFirebasePopup(
   // user with no login-code flow, no legacy fallback, no sign_in_failed, and an
   // unhandled rejection — a Sign in button that silently does nothing. Degrade
   // to the legacy bridge instead.
-  const outcome = await signInViaDesktopLoginCode(url, comfyContents, opts).catch(() => {
+  const outcome = await signInViaDesktopLoginCode(url, comfyContents, optsWithRestart).catch(() => {
     console.error('Desktop login-code flow failed unexpectedly; using legacy fallback')
     return 'fallback' as const
   })
@@ -130,7 +139,7 @@ export async function handleFirebasePopup(
     openExternalSafely(loginUrl)
     // Surface a Notion/Claude-style "didn't open? copy the link" card in
     // the Cloud view so users can finish sign-in in a non-default browser.
-    showCopyLinkBanner(comfyContents, loginUrl)
+    showCopyLinkBanner(comfyContents, loginUrl, optsWithRestart.restartSignIn)
     const { user, apiKey } = await abortable(handle.signInPromise, signal)
     if (signal.aborted || !isActiveBridgeFlow(flow)) return
     if (comfyContents.isDestroyed()) return
