@@ -551,8 +551,7 @@ const DEDUP_RESERVE = 6
 /**
  * Unique temp file name for an in-flight download. A random nonce (not just
  * a timestamp) prevents collisions when two downloads with the same leaf
- * name start in the same millisecond - plausible now that nested output
- * subfolders make identical basenames (a/video.mp4, b/video.mp4) common.
+ * name (a/video.mp4, b/video.mp4) start in the same millisecond.
  */
 function tempFileNameFor(filename: string): string {
   return `${Date.now()}-${randomUUID().slice(0, 8)}-${filename}.tmp`
@@ -1528,10 +1527,9 @@ export async function startAssetDownload(
   }
   registerPending(pending)
 
-  // Failures below report a terminal `error` entry and resolve false instead
-  // of rethrowing: `retryDownload` re-dispatches fire-and-forget, so a
-  // rejection here would surface as an unhandled promise rejection rather
-  // than an error row, unlike `startModelDownload`'s failure paths.
+  // Setup failures report a terminal `error` entry and resolve false:
+  // `retryDownload` re-dispatches fire-and-forget, so a rejection here
+  // would become an unhandled promise rejection.
   let savePath: string
   try {
     savePath = await deduplicatePath(path.join(outputDir, safeFilename))
@@ -1655,10 +1653,8 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
     if (state === 'completed') {
       // If a byte-identical file already sits at the originally requested
       // destination, keep it and discard the temp copy instead of saving a
-      // duplicate "name (1)" file. This is the normal case when the "remote"
-      // server is actually local and writes its outputs into the same
-      // directory the auto-download saves to, and when a re-run re-serves an
-      // output that was already downloaded.
+      // duplicate "name (1)" file - e.g. a local "remote" server writing its
+      // outputs into the same directory the auto-download saves to.
       if (
         pending.tempPath &&
         pending.outputDir &&
