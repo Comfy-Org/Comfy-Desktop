@@ -75,8 +75,15 @@ trigger events, or add campaign/referrer metadata. The SDK's fallback route uses
 the synthetic surface path, never the real workflow path. Native link handling owns
 navigation; SDK location assignments cannot replace the workflow. Browser
 persistence is disabled and ComfyUI's own URL and storage remain intact.
-Session identity is reset before switching accounts. Network failures do
-not block loading or using ComfyUI; another activation or an online event can retry.
+Session identity is reset before switching accounts. Network failures do not block
+loading or using ComfyUI. A settings-fetch failure can retry on activation or an
+online event. After SDK construction begins, the document retains that one SDK;
+an unexpected partial-initialization failure requires a document reload.
+
+SDK operations stay serialized even when the caller's 10-second wait expires.
+The timeout revokes display immediately, and a late operation must settle before
+the latest eligible session can reset and identify. This prevents a stalled
+request for one account from overtaking the next account's session.
 
 ## Verification
 
