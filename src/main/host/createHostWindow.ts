@@ -680,6 +680,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
         entry.panelView.setVisible(false)
       }
     }
+    entry?.refreshCustomerIo?.()
   }
   comfyWindow.on('resize', layoutViews)
 

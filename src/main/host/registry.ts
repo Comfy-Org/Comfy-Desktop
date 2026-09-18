@@ -98,6 +98,8 @@ export interface ComfyWindowEntry {
   lastTheme: { bg: string; text: string }
   /** Updates view bounds for the current activePanel. */
   layoutViews: () => void
+  /** Re-evaluate in-page messaging after host visibility or panel changes. */
+  refreshCustomerIo?: () => void
   /** Current ComfyUI URL for the comfyView, updated on every `onLaunch` so
    *  reload / did-fail-load handlers don't hold stale URLs. Empty for
    *  install-less hosts. */

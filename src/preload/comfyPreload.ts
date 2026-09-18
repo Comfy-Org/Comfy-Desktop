@@ -11,6 +11,7 @@ import type {
   TerminalRestore
 } from '../types/comfyDesktopBridge'
 import { startLocalFirebaseAuthMonitor } from './localFirebaseAuthMonitor'
+import { startCustomerIoMessaging } from './customerIoPreload'
 
 export type LegacyTerminalBridge = ComfyDesktop2TerminalBridge & {
   restore(): Promise<TerminalRestore>
@@ -94,6 +95,7 @@ const Telemetry: ComfyDesktop2TelemetryBridge = {
 }
 
 startLocalFirebaseAuthMonitor(reportFirebaseAuthState)
+startCustomerIoMessaging()
 
 const bridge = {
   isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,

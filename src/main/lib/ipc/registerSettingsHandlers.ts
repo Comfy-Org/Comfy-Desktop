@@ -15,6 +15,7 @@ import * as mainTelemetry from '../telemetry'
 import { detectFirstUseState } from '../firstUseDetection'
 import * as updater from '../updater'
 import { globalSettingsEvents } from '../globalSettingsEvents'
+import { customerIoEvents } from '../customerIoEvents'
 import { recordIpcInvocation } from '../e2eOverrides'
 import type { SettingsSection } from '../../../types/ipc'
 import { AUTO_LAUNCH_LAST, AUTO_LAUNCH_NONE } from '../../settings'
@@ -309,6 +310,7 @@ export function applySettingSet(key: string, value: unknown): void {
       value === true ? 'granted' : value === false ? 'denied' : 'undecided'
     mainTelemetry.setConsentState(state)
   }
+  if (key === 'telemetryEnabled' || key === 'language') customerIoEvents.emit('changed')
   if (key === 'autoInstallUpdates' || key === 'autoUpdate') {
     // Re-broadcast so a pending 'ready' immediately reads as auto-on/off.
     updater.notifyAutoUpdateChanged()
