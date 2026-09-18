@@ -1,5 +1,4 @@
 import * as ipc from '../lib/ipc'
-import { attachCustomerIoMessaging } from '../lib/customerIoMessaging'
 import { getAppVersion } from '../lib/ipc'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { getModelDownloadContentScript } from '../lib/comfyContentScript'
@@ -173,7 +172,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   // state field keeps a later detach from clobbering identity twice.
   entry.previewInstallationId = null
   indexInstallationId(installationId, entry.windowKey)
-  const stopCustomerIo = isLocal ? attachCustomerIoMessaging(entry) : () => {}
+  entry.refreshCustomerIo?.()
 
   // Seed the MRU tracker if this in-place attach happens on the
   // already-focused host: no fresh OS `'focus'` event would fire to
@@ -665,7 +664,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     // Retire async work still pending from this attach so a late resolution
     // can't touch a detached or re-attached view.
     attachActive = false
-    stopCustomerIo()
     deactivateFirebaseAuthReporter(comfyContents)
     installationEvents.off('updated', onInstallationUpdated)
     cancelFailRetry()
