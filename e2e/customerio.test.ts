@@ -111,6 +111,12 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
           json: {
             inAppMessages: [
               {
+                messageId: 'private-route-message',
+                queueId: 'private-route-queue',
+                priority: 0,
+                properties: { gist: { routeRuleWeb: '^/private-workflow-name$' } }
+              },
+              {
                 messageId: `fixture-message-${delivery}`,
                 queueId: `fixture-queue-${delivery}`,
                 priority: 1,
@@ -137,9 +143,12 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
       return route.fulfill({ json: {} })
     })
 
-    await page.goto('http://127.0.0.1:8188/private-workflow-name?private-query=workflow-secret', {
-      referer: 'http://127.0.0.1:8188/private-referrer'
-    })
+    await page.goto(
+      'http://127.0.0.1:8188/private-workflow-name?private-query=workflow-secret&ajs_uid=unverified-person&ajs_event=private-event&utm_campaign=private-campaign&btid=private-ad',
+      {
+        referer: 'http://127.0.0.1:8188/private-referrer'
+      }
+    )
     await page.waitForFunction('typeof window.__comfyDesktop2 === "object"')
     expect(requests).toHaveLength(1)
     const update = async (session: CustomerIoSession | null): Promise<void> => {
@@ -202,7 +211,10 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
     expect(events.some(({ body }) => body?.includes('"name":"desktop/comfyui"'))).toBe(true)
     expect(
       events.every(
-        ({ body }) => !/private-workflow|private-query|private-referrer/.test(body ?? '')
+        ({ body }) =>
+          !/private-workflow|private-query|private-referrer|private-event|private-campaign|private-ad|unverified-person/.test(
+            body ?? ''
+          )
       )
     ).toBe(true)
     const pages = events.filter(({ url }) => url.endsWith('/p'))
@@ -214,6 +226,14 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
     const queues = requests.filter(({ url }) => url.includes('/api/v4/users'))
     expect(queues.length).toBeGreaterThanOrEqual(2)
     expect(queues.every(({ headers }) => headers['x-cio-site-id'] === identity.siteId)).toBe(true)
+    expect(requests.every(({ url }) => !url.includes('private-route-message'))).toBe(true)
+    expect(
+      queues.every(({ headers }) =>
+        ['desktop-test-user', 'second-test-user'].includes(
+          Buffer.from(headers['x-gist-encoded-user-token'] ?? '', 'base64').toString()
+        )
+      )
+    ).toBe(true)
     expect(errors).toEqual([])
   } finally {
     releaseViewLog()
