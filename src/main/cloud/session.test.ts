@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./oauth', () => ({ signIn: vi.fn(), refresh: vi.fn() }))
+vi.mock('./identity', () => ({ getUserIdentity: vi.fn() }))
 vi.mock('./tokenStore', () => ({
   activateWorkspace: vi.fn(),
   clearTokens: vi.fn(),
@@ -18,6 +19,8 @@ vi.mock('./workspaces', () => ({
 }))
 
 import { statusFromAccessToken, workspaceIdOf } from './claims'
+import { getUserIdentity } from './identity'
+import type { CloudUserIdentity } from './identity'
 import { refresh, signIn } from './oauth'
 import { CloudSession } from './session'
 import {
@@ -99,6 +102,83 @@ beforeEach(() => {
 })
 
 afterEach(() => vi.clearAllMocks())
+
+describe('CloudSession person identity', () => {
+  it('does not resolve identity when signed out', async () => {
+    await expect(new CloudSession().getUserIdentity()).resolves.toBeNull()
+    expect(getUserIdentity).not.toHaveBeenCalled()
+  })
+
+  it('shares concurrent lookups, then revalidates subsequent activations', async () => {
+    cache(makeTokens('w1'), true)
+    let resolve!: (identity: CloudUserIdentity) => void
+    mocked(getUserIdentity).mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        })
+    )
+    const session = new CloudSession()
+    const requests = [session.getUserIdentity(), session.getUserIdentity()]
+    await Promise.resolve()
+    expect(getUserIdentity).toHaveBeenCalledOnce()
+    const identity = { userId: 'canonical', firebaseUid: 'firebase' }
+    resolve(identity)
+    await expect(Promise.all(requests)).resolves.toEqual([identity, identity])
+    mocked(getUserIdentity).mockResolvedValue(identity)
+    await expect(session.getUserIdentity()).resolves.toEqual(identity)
+    expect(getUserIdentity).toHaveBeenCalledTimes(2)
+  })
+
+  it('revokes immediately and ignores an identity response that completes after logout', async () => {
+    cache(makeTokens('w1'), true)
+    let resolve!: (identity: CloudUserIdentity) => void
+    mocked(getUserIdentity).mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        })
+    )
+    const session = new CloudSession()
+    const changed = vi.fn()
+    const unsubscribe = session.onAuthChanged(changed)
+    const pending = session.getUserIdentity()
+    await Promise.resolve()
+    const signal = mocked(getUserIdentity).mock.calls[0]![1]!.signal!
+    session.logout()
+    expect(changed).toHaveBeenCalledOnce()
+    expect(signal.aborted).toBe(true)
+    resolve({ userId: 'old-person', firebaseUid: 'old-firebase' })
+    await expect(pending).resolves.toBeNull()
+    unsubscribe()
+    session.logout()
+    expect(changed).toHaveBeenCalledOnce()
+  })
+
+  it('discards an old workspace response after activating different credentials', async () => {
+    cache(makeTokens('w1'), true)
+    cache(makeTokens('w2'))
+    let resolve!: (identity: CloudUserIdentity) => void
+    mocked(getUserIdentity).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        })
+    )
+    const session = new CloudSession()
+    const changed = vi.fn()
+    session.onAuthChanged(changed)
+    const pending = session.getUserIdentity()
+    await Promise.resolve()
+    await session.switchWorkspace('w2')
+    expect(changed).toHaveBeenCalledOnce()
+    resolve({ userId: 'canonical', firebaseUid: 'old-firebase' })
+    await expect(pending).resolves.toBeNull()
+    const identity = { userId: 'canonical', firebaseUid: 'new-firebase' }
+    mocked(getUserIdentity).mockResolvedValue(identity)
+    await expect(session.getUserIdentity()).resolves.toEqual(identity)
+  })
+})
 
 describe('CloudSession access tokens', () => {
   it('returns null when signed out and an unexpired token without refreshing', async () => {
