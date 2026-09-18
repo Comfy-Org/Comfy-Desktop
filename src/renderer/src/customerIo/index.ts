@@ -3,8 +3,6 @@ import Gist from 'customerio-gist-web'
 import type { CustomerIoSession } from '../../../shared/customerIo'
 import { createMessagingController } from './controller'
 
-const PAGE = 'desktop/local-workflow'
-
 const controller = createMessagingController(async (session, currentSession) => {
   const analytics = AnalyticsBrowser.load(
     { writeKey: session.writeKey },
@@ -24,12 +22,13 @@ const controller = createMessagingController(async (session, currentSession) => 
   await analytics.addSourceMiddleware(({ payload, next }) => {
     const current = currentSession()
     if (!current || payload.obj.userId !== current.userId) return
+    if (payload.obj.type === 'page' && payload.obj.name !== current.page) return
     // A desktop file path or local workflow URL is not a useful campaign page.
     payload.obj.context = {
       ...payload.obj.context,
       page: {
-        path: PAGE,
-        url: PAGE,
+        path: current.page,
+        url: current.page,
         title: 'ComfyUI Desktop',
         referrer: '',
         search: ''
@@ -64,10 +63,10 @@ const controller = createMessagingController(async (session, currentSession) => 
       Gist.setUserLocale(identity.locale)
       await analytics.identify(identity.userId, { locale: identity.locale })
     },
-    page: async () => {
-      await analytics.page(PAGE, {
-        url: PAGE,
-        path: PAGE,
+    page: async ({ page }) => {
+      await analytics.page(page, {
+        url: page,
+        path: page,
         title: 'ComfyUI Desktop',
         search: '',
         referrer: ''

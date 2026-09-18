@@ -9,7 +9,8 @@ const identity: CustomerIoSession = {
   userId: 'desktop-test-user',
   locale: 'ja',
   writeKey: 'test-write-key',
-  siteId: 'test-site'
+  siteId: 'test-site',
+  page: 'desktop/comfyui'
 }
 
 /** Exercise the shipped preload and real SDK without a ComfyUI install or vendor traffic. */
@@ -116,7 +117,7 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
                 properties: {
                   gist: {
                     campaignId: `fixture-delivery-${delivery}`,
-                    routeRuleWeb: 'desktop/local-workflow',
+                    routeRuleWeb: 'desktop/comfyui',
                     persistent:
                       request.headers()['x-gist-encoded-user-token'] ===
                       Buffer.from('second-test-user').toString('base64')
@@ -198,7 +199,7 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
     const events = requests.filter(({ url }) =>
       /^https:\/\/cdp\.customer\.io\/v1\/[ipt]$/.test(url)
     )
-    expect(events.some(({ body }) => body?.includes('"name":"desktop/local-workflow"'))).toBe(true)
+    expect(events.some(({ body }) => body?.includes('"name":"desktop/comfyui"'))).toBe(true)
     expect(
       events.every(
         ({ body }) => !/private-workflow|private-query|private-referrer/.test(body ?? '')
@@ -209,6 +210,7 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
     for (const { body } of pages) {
       expect(JSON.parse(body!).properties).toMatchObject({ search: '', referrer: '' })
     }
+
     const queues = requests.filter(({ url }) => url.includes('/api/v4/users'))
     expect(queues.length).toBeGreaterThanOrEqual(2)
     expect(queues.every(({ headers }) => headers['x-cio-site-id'] === identity.siteId)).toBe(true)

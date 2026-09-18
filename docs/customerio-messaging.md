@@ -18,7 +18,7 @@ Embedded Cloud continues to own its existing integration.
 The default public browser keys in `src/shared/customerIo.ts` use the existing
 Cloud Customer.io source. Identity is the same Firebase UID used on Cloud.
 Desktop sends `identify` with the selected locale, a page named
-**`desktop/local-workflow`**, and the SDK's delivery/interaction metrics. Page
+**`desktop/comfyui`**, and the SDK's delivery/interaction metrics. Page
 properties also use this synthetic target, rather than the local workflow URL.
 
 Configure Desktop messages to match that page name. Audit campaigns with no page
