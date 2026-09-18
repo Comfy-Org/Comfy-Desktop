@@ -1,6 +1,6 @@
 import { app, type WebContents } from 'electron'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { computeBodyMode, type ComfyWindowEntry } from '../host/registry'
 import { CUSTOMER_IO_DEFAULTS, CUSTOMER_IO_PAGES } from '../../shared/customerIo'
 import type { CustomerIoSession } from '../../shared/customerIo'
@@ -67,7 +67,15 @@ function launcherContents(entry: ComfyWindowEntry): WebContents | null {
     const expected = process.env.ELECTRON_RENDERER_URL
       ? new URL('panel.html', `${process.env.ELECTRON_RENDERER_URL.replace(/\/+$/, '')}/`)
       : pathToFileURL(join(__dirname, '../renderer/panel.html'))
-    if (url.origin !== expected.origin || url.pathname !== expected.pathname) return null
+    if (url.protocol !== expected.protocol || url.origin !== expected.origin) return null
+    // Electron loadFile and Node encode characters such as '~' differently.
+    // Compare the file itself without broadening the configured HTTP dev URL.
+    if (
+      url.protocol === 'file:'
+        ? fileURLToPath(url) !== fileURLToPath(expected)
+        : url.pathname !== expected.pathname
+    )
+      return null
   } catch {
     return null
   }
