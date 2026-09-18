@@ -1,11 +1,12 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { _electron, expect, test, type ElectronApplication } from '@playwright/test'
-import { CUSTOMER_IO_STATE } from '../src/shared/customerIo'
+import { CUSTOMER_IO_PAGES, CUSTOMER_IO_STATE } from '../src/shared/customerIo'
 import type { CustomerIoSession } from '../src/shared/customerIo'
 
-const identity: CustomerIoSession = {
+const defaultIdentity: CustomerIoSession = {
   userId: 'desktop-test-user',
   locale: 'ja',
   writeKey: 'test-write-key',
@@ -14,7 +15,8 @@ const identity: CustomerIoSession = {
 }
 
 /** Exercise the shipped preload and real SDK without a ComfyUI install or vendor traffic. */
-test('Desktop SDK renders, dismisses, and revokes messages @macos @windows @linux', async () => {
+async function exerciseMessaging(surface: keyof typeof CUSTOMER_IO_PAGES): Promise<void> {
+  const identity = { ...defaultIdentity, page: CUSTOMER_IO_PAGES[surface] }
   const testInfo = test.info()
   const directory = await mkdtemp(join(tmpdir(), 'comfy-customerio-'))
   let app: ElectronApplication | undefined
@@ -25,6 +27,17 @@ test('Desktop SDK renders, dismisses, and revokes messages @macos @windows @linu
     releaseViewLog = resolve
   })
   try {
+    const csp =
+      surface === 'launcher'
+        ? (await readFile(resolve('src/renderer/panel.html'), 'utf8')).match(
+            /<meta\s+http-equiv="Content-Security-Policy"[^>]*>/
+          )?.[0]
+        : ''
+    if (surface === 'launcher') expect(csp).toBeTruthy()
+    const fixtureHtml = `<html><head>${csp ?? ''}</head><body style="background:#171717;color:white"><h1>Desktop ${surface} fixture</h1>
+<button id="workflow">Run workflow</button></body></html>`
+    const fixtureFile = join(directory, 'private-workflow-name.html')
+    await writeFile(fixtureFile, fixtureHtml)
     const main = join(directory, 'main.cjs')
     await writeFile(
       main,
@@ -32,7 +45,7 @@ test('Desktop SDK renders, dismisses, and revokes messages @macos @windows @linu
 app.setPath('userData', ${JSON.stringify(join(directory, 'profile'))})
 app.whenReady().then(() => {
   const window = new BrowserWindow({ width: 1100, height: 700, webPreferences: {
-    preload: ${JSON.stringify(resolve('out/preload/comfyPreload.js'))},
+    preload: ${JSON.stringify(resolve(`out/preload/${surface === 'launcher' ? 'index' : 'comfyPreload'}.js`))},
     contextIsolation: true, sandbox: false, nodeIntegration: false
   } })
   window.loadURL('about:blank')
@@ -54,12 +67,13 @@ app.whenReady().then(() => {
       const request = route.request()
       const url = request.url()
       requests.push({ url, body: request.postData(), headers: request.headers() })
-      if (url.startsWith('http://127.0.0.1:8188')) {
+      if (
+        url.startsWith('http://127.0.0.1:8188') ||
+        url.startsWith(pathToFileURL(fixtureFile).href)
+      ) {
         return route.fulfill({
           contentType: 'text/html',
-          body: `<html><body style="background:#171717;color:white"><h1>ComfyUI fixture</h1>
-<button id="workflow" onclick="this.textContent='Workflow running'">Run workflow</button>
-<script>localStorage.setItem('fixture-auth', 'untouched')</script></body></html>`
+          body: fixtureHtml
         })
       }
       if (url.endsWith('/settings')) {
@@ -123,7 +137,7 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
                 properties: {
                   gist: {
                     campaignId: `fixture-delivery-${delivery}`,
-                    routeRuleWeb: 'desktop/comfyui',
+                    routeRuleWeb: identity.page,
                     persistent:
                       request.headers()['x-gist-encoded-user-token'] ===
                       Buffer.from('second-test-user').toString('base64')
@@ -143,14 +157,26 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
       return route.fulfill({ json: {} })
     })
 
+    const fixtureUrl =
+      surface === 'launcher'
+        ? pathToFileURL(fixtureFile).href
+        : 'http://127.0.0.1:8188/private-workflow-name'
     await page.goto(
-      'http://127.0.0.1:8188/private-workflow-name?private-query=workflow-secret&ajs_uid=unverified-person&ajs_event=private-event&utm_campaign=private-campaign&btid=private-ad',
-      {
-        referer: 'http://127.0.0.1:8188/private-referrer'
-      }
+      `${fixtureUrl}?private-query=workflow-secret&ajs_uid=unverified-person&ajs_event=private-event&utm_campaign=private-campaign&btid=private-ad`,
+      surface === 'comfyui' ? { referer: 'http://127.0.0.1:8188/private-referrer' } : undefined
     )
-    await page.waitForFunction('typeof window.__comfyDesktop2 === "object"')
-    expect(requests).toHaveLength(1)
+    await page.waitForFunction(
+      surface === 'launcher'
+        ? 'typeof window.api === "object"'
+        : 'typeof window.__comfyDesktop2 === "object"'
+    )
+    await page.evaluate(`
+      localStorage.setItem('fixture-auth', 'untouched');
+      document.getElementById('workflow').addEventListener('click', event => {
+        event.target.textContent = 'Workflow running';
+      });
+    `)
+    expect(requests.filter(({ url }) => url.startsWith('https://'))).toHaveLength(0)
     const update = async (session: CustomerIoSession | null): Promise<void> => {
       await app!.evaluate(
         ({ BrowserWindow }, { channel, session }) => {
@@ -208,7 +234,7 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
     const events = requests.filter(({ url }) =>
       /^https:\/\/cdp\.customer\.io\/v1\/[ipt]$/.test(url)
     )
-    expect(events.some(({ body }) => body?.includes('"name":"desktop/comfyui"'))).toBe(true)
+    expect(events.some(({ body }) => body?.includes(`"name":"${identity.page}"`))).toBe(true)
     expect(
       events.every(
         ({ body }) =>
@@ -240,4 +266,10 @@ document.getElementById('close').onclick = () => parent.postMessage({gist:{insta
     await app?.close()
     await rm(directory, { recursive: true, force: true })
   }
-})
+}
+
+for (const surface of ['comfyui', 'launcher'] as const) {
+  test(`Desktop ${surface} SDK renders, dismisses, and revokes messages @macos @windows @linux`, async () => {
+    await exerciseMessaging(surface)
+  })
+}

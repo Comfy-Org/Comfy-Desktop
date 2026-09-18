@@ -3,7 +3,7 @@ import script from 'virtual:customerio-script'
 import { CUSTOMER_IO_ACTION, CUSTOMER_IO_READY, CUSTOMER_IO_STATE } from '../shared/customerIo'
 import type { CustomerIoSession } from '../shared/customerIo'
 
-/** Runs the browser SDK in ComfyUI's DOM, never in the privileged preload world. */
+/** Runs the browser SDK in an eligible page's DOM, never in the privileged preload world. */
 export function startCustomerIoMessaging(): void {
   let bridgeInstalled = false
   let installed = false
@@ -29,4 +29,5 @@ export function startCustomerIoMessaging(): void {
   window.addEventListener('DOMContentLoaded', () => ipcRenderer.send(CUSTOMER_IO_READY), {
     once: true
   })
+  window.addEventListener('online', () => ipcRenderer.send(CUSTOMER_IO_READY))
 }
