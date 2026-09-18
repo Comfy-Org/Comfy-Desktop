@@ -872,6 +872,29 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('AvailableThing')
   })
 
+  it('restores the persisted workspace when a new dashboard opens', async () => {
+    const api = installMockApiSignedIn(
+      [
+        makeInstall({ id: 'workspace-a', name: 'Workspace A Instance', workspaceId: 'w1' }),
+        makeInstall({ id: 'workspace-b', name: 'Workspace B Instance', workspaceId: 'w2' })
+      ],
+      [],
+      { id: 'w1', name: 'Workspace A' }
+    )
+    api.getSetting.mockResolvedValue('w2')
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
+      { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
+    ])
+
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Workspace B Instance')
+    expect(wrapper.text()).not.toContain('Workspace A Instance')
+    expect(api.setSetting).not.toHaveBeenCalled()
+  })
+
   it('switches between Personal and team workspaces without leaking other-workspace installs', async () => {
     const api = installMockApiSignedIn(
       [
