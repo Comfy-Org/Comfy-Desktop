@@ -23,12 +23,15 @@ import {
   buildLaunchSpec,
   venvPython,
   resolveModelManifest,
-  normalizeSha256
+  normalizeSha256,
+  GOVERNANCE_MARKER_FIELD,
+  readGovernanceMarker
 } from '../../comfybuilder'
 import type {
   Artifact,
   ArtifactGpu,
   ArtifactOs,
+  GovernanceMarker,
   InstallProgress,
   ModelDescriptor
 } from '../../comfybuilder'
@@ -48,6 +51,7 @@ import { renameWithLockRetry } from '../../lib/fsRetry'
 import { defaultDownloadCacheDir } from '../../lib/paths'
 import { releaseInstallTerminalForFsOp } from '../../lib/popoutWindows'
 import { t } from '../../lib/i18n'
+import { update as updateInstallation } from '../../installations'
 import type { InstallationRecord } from '../../installations'
 import type {
   SourcePlugin,
@@ -77,6 +81,7 @@ interface EnvironmentRollback {
   artifactAccelVariant?: string
   artifactSha256?: string
   status?: string
+  [GOVERNANCE_MARKER_FIELD]?: unknown
 }
 
 export type ComfyBuilderRecovery =
@@ -393,6 +398,11 @@ export function withAccelArgs(installation: InstallationRecord, launchArgs: stri
  * transaction, so a build whose model list cannot be fetched fails (and rolls
  * back) rather than landing without its models.
  *
+ * The governance marker is returned alongside, because the caller's copy of
+ * the installation record predates the write below and would still read as
+ * ungoverned - and background staging must know it is staging into a managed
+ * install.
+ *
  * Takes only what both callers have: progress + an abort signal.
  */
 async function installEnvironment(
@@ -404,7 +414,10 @@ async function installEnvironment(
     signal?: AbortSignal
   },
   onTransactionStarted?: () => Promise<void>
-): Promise<readonly ModelDescriptor[]> {
+): Promise<{
+  readonly models: readonly ModelDescriptor[]
+  readonly governance: GovernanceMarker | null
+}> {
   releaseInstallTerminalForFsOp(installation.id)
   const artifact = artifactFromRecord(installation)
   const client = getBuilderClient()
@@ -420,7 +433,7 @@ async function installEnvironment(
     const artifactInstallPath = hasExistingEnvironment
       ? paths.nextEnvironment
       : installation.installPath
-    await installArtifact({
+    const installed = await installArtifact({
       artifact,
       client,
       installPath: artifactInstallPath,
@@ -460,6 +473,16 @@ async function installEnvironment(
       await onTransactionStarted?.()
     }
 
+    // Persist governed status durably, in ONE record write (temp file +
+    // rename), so a crash mid-install can never leave a partially written
+    // marker that reads as ungoverned. Written only once the swap has landed,
+    // so the record describes the tree actually on disk. Cleared explicitly
+    // when the new archive is not governed, so a version change out of a
+    // governed build does not leave the old build's marker behind.
+    await updateInstallation(installation.id, {
+      [GOVERNANCE_MARKER_FIELD]: installed.governance ?? undefined
+    })
+
     // Resolve the build's declared models while a failure can still roll the
     // environment back cleanly; the actual downloads run in the background
     // task the caller starts, so launch is not gated on model bytes.
@@ -472,7 +495,7 @@ async function installEnvironment(
 
     await fs.rm(paths.previousVenv, { recursive: true, force: true }).catch(() => {})
     await fs.rm(paths.previousComfy, { recursive: true, force: true }).catch(() => {})
-    return manifest.models
+    return { models: manifest.models, governance: installed.governance }
   } catch (err) {
     // Put the complete working environment back before surfacing the failure.
     if (hasExistingEnvironment) {
@@ -539,7 +562,8 @@ export const comfybuilder: SourcePlugin = {
       launchArgs: withAccelArgs(
         installation,
         (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS
-      )
+      ),
+      governance: readGovernanceMarker(installation)
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
@@ -575,11 +599,11 @@ export const comfybuilder: SourcePlugin = {
   },
 
   async install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
-    const models = await installEnvironment(installation, tools)
+    const { models, governance } = await installEnvironment(installation, tools)
     // Models download in the background; the install is launchable as soon as
     // the environment is on disk. Completion is recorded as `modelsStaged`,
     // and an unfinished staging re-runs at the next launch.
-    startModelStaging(installation, models)
+    startModelStaging(installation, models, governance)
   },
 
   // Launch / rename / open-folder / remove / delete never reach here — the
@@ -655,7 +679,8 @@ async function updateBuildVersion(
     artifactOs: installation.artifactOs as string | undefined,
     artifactGpu: installation.artifactGpu as string | undefined,
     artifactAccelVariant: installation.artifactAccelVariant as string | undefined,
-    artifactSha256: installation.artifactSha256 as string | undefined
+    artifactSha256: installation.artifactSha256 as string | undefined,
+    [GOVERNANCE_MARKER_FIELD]: installation[GOVERNANCE_MARKER_FIELD]
   }
   let environmentReady = false
 
@@ -684,7 +709,7 @@ async function updateBuildVersion(
     }
 
     const updated = { ...installation, ...next } as InstallationRecord
-    const models = await installEnvironment(updated, tools, () =>
+    const { models, governance } = await installEnvironment(updated, tools, () =>
       tools.update({ ...next, status: 'updating', [ROLLBACK_FIELD]: previous })
     )
     environmentReady = true
@@ -693,7 +718,7 @@ async function updateBuildVersion(
     // before the background task finishes knows to re-stage.
     await tools.update({ status: 'installed', modelsStaged: false, [ROLLBACK_FIELD]: undefined })
     await finalizeEnvironmentTransaction(installation.installPath).catch(() => {})
-    startModelStaging(updated, models)
+    startModelStaging(updated, models, governance)
     return { ok: true, navigate: 'detail' }
   } catch (err) {
     // Put the record back where it was. Leaving it pointed at a version whose

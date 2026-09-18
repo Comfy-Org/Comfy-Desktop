@@ -41,7 +41,7 @@ interface FakeTransfer {
     directory: string
     filename: string
     session?: unknown
-    sha256?: string
+    digest?: Digest
     onProgress?: (p: { receivedBytes: number; totalBytes: number }) => void
   }
   resolve: (outcome: Record<string, unknown>) => void
@@ -108,14 +108,18 @@ const revalidateStagedPair = vi.fn((finalPath: string) => {
   }
   return null
 })
-vi.mock('./modelDownloadStaging', () => ({
-  removeStagedArtifacts: (p: string) => removeStagedArtifacts(p),
-  ensureStagedPlaceholder: (p: string, meta: unknown) => ensureStagedPlaceholder(p, meta),
-  scanForStagedDownloads: (roots: string[]) => scanForStagedDownloads(roots),
-  migrateLegacyModelDownloadArtifacts: (roots: string[]) =>
-    migrateLegacyModelDownloadArtifacts(roots),
-  revalidateStagedPair: (finalPath: string) => revalidateStagedPair(finalPath)
-}))
+vi.mock('./modelDownloadStaging', async (importOriginal) => {
+  const actual = await importOriginal<typeof ModelDownloadStagingModule>()
+  return {
+    ...actual,
+    removeStagedArtifacts: (p: string) => removeStagedArtifacts(p),
+    ensureStagedPlaceholder: (p: string, meta: unknown) => ensureStagedPlaceholder(p, meta),
+    scanForStagedDownloads: (roots: string[]) => scanForStagedDownloads(roots),
+    migrateLegacyModelDownloadArtifacts: (roots: string[]) =>
+      migrateLegacyModelDownloadArtifacts(roots),
+    revalidateStagedPair: (finalPath: string) => revalidateStagedPair(finalPath)
+  }
+})
 
 // Targeted overrides for otherwise-real modules: a test flips one on, runs,
 // and restores null so every other test keeps the real behavior.
@@ -150,6 +154,8 @@ vi.mock('./modelDownloadPaths', async (importOriginal) => {
 import type * as ComfyDownloadManager from './comfyDownloadManager'
 import type * as InstallationsModule from '../installations'
 import type * as ModelDownloadPathsModule from './modelDownloadPaths'
+import type * as ModelDownloadStagingModule from './modelDownloadStaging'
+import type { Digest } from '../comfybuilder/integrity'
 import { getModelsBaseDir } from './modelDownloadPaths'
 import { _registerExtraBroadcastTarget, _unregisterExtraBroadcastTarget } from './ipc/broadcast'
 
@@ -1993,6 +1999,20 @@ describe('sha-256 expectations and install-local roots', () => {
     return { installRoot, modelsRoot: path.join(installRoot, 'ComfyUI', 'models') }
   }
 
+  it('does not let retry drop a malformed integrity expectation', async () => {
+    const before = transfers.length
+    const h = await mod.startManagedModelJob({
+      url: `https://host.example/${uniqueName()}`,
+      filename: uniqueName(),
+      directory: 'checkpoints',
+      digest: { algo: 'blake3', value: 'not-a-digest' } as unknown as Digest
+    })
+
+    await expect(h.completion).resolves.toMatchObject({ status: 'error' })
+    expect(mod.retryDownload(h.id)).toBe(false)
+    expect(transfers).toHaveLength(before)
+  })
+
   it('passes the expected hash to the transport and keeps it across a retry', async () => {
     const name = uniqueName()
     const url = `https://host.example/${name}`
@@ -2004,7 +2024,7 @@ describe('sha-256 expectations and install-local roots', () => {
       sha256: SHA_A
     })
     await waitForTransfers(before + 1)
-    expect(transfers[before]!.opts.sha256).toBe(SHA_A)
+    expect(transfers[before]!.opts.digest).toEqual({ algo: 'sha256', value: SHA_A })
     transfers[before]!.resolve({ outcome: 'error', error: 'network gone' })
     await expect(h.completion).resolves.toMatchObject({ status: 'error' })
     await flush()
@@ -2012,7 +2032,7 @@ describe('sha-256 expectations and install-local roots', () => {
     expect(mod.retryDownload(h.id)).toBe(true)
     await waitForTransfers(before + 2)
     // The retry is a fresh job, but the integrity expectation must survive it.
-    expect(transfers[before + 1]!.opts.sha256).toBe(SHA_A)
+    expect(transfers[before + 1]!.opts.digest).toEqual({ algo: 'sha256', value: SHA_A })
     expect(mod.cancelModelDownload(transfers[before + 1]!.opts.jobId as string)).toBe(true)
     await flush()
   })
@@ -2218,7 +2238,7 @@ describe('sha-256 expectations and install-local roots', () => {
       expect(mod.resumeModelDownload(row.id!)).toBe(true)
       await waitForTransfers(before + 1)
       expect(transfers[before]!.opts.finalPath).toBe(dest)
-      expect(transfers[before]!.opts.sha256).toBe(SHA_A)
+      expect(transfers[before]!.opts.digest).toEqual({ algo: 'sha256', value: SHA_A })
       transfers[before]!.resolve({ outcome: 'error', error: 'presigned url expired' })
       await flush()
 
@@ -2228,7 +2248,7 @@ describe('sha-256 expectations and install-local roots', () => {
       expect(mod.retryDownload(row.id!)).toBe(true)
       await waitForTransfers(before + 1)
       expect(transfers[before]!.opts.finalPath).toBe(dest)
-      expect(transfers[before]!.opts.sha256).toBe(SHA_A)
+      expect(transfers[before]!.opts.digest).toEqual({ algo: 'sha256', value: SHA_A })
 
       expect(mod.cancelModelDownload(transfers[before]!.opts.jobId as string)).toBe(true)
       await flush()

@@ -99,8 +99,14 @@ export interface InstallProgress {
 export interface ModelDescriptor {
   type: string
   filename: string
-  /** Hex sha256 of the content. Verified during installation when provided. */
+  /** Hex sha256 of the content. Verified during installation when provided.
+   *  Manifests sealed before BLAKE3 sealing carry ONLY this, are never re-cut
+   *  and are never backfilled, so it stays a fully supported verification
+   *  input. */
   sha256?: string
+  /** Hex BLAKE3 of the content when the distribution was sealed with one.
+   *  Preferred over `sha256` when both are present. */
+  blake3?: string
   downloadUrl: string
   /** When `downloadUrl` expires (presigned URLs only). Advisory. */
   expiresAt?: string

@@ -22,7 +22,7 @@ vi.mock('electron', () => ({
 
 // Stub the library so install() wiring can be asserted without real downloads.
 vi.mock('../../comfybuilder', () => ({
-  installArtifact: vi.fn(async () => {}),
+  installArtifact: vi.fn(async () => ({ governance: null })),
   buildLaunchSpec: vi.fn(() => null),
   venvPython: vi.fn((installPath: string) =>
     process.platform === 'win32'
@@ -36,8 +36,11 @@ vi.mock('../../comfybuilder', () => ({
     models: [],
     modelPolicy: null,
     partnerNodePolicy: null
-  }))
+  })),
+  GOVERNANCE_MARKER_FIELD: 'governance',
+  GOVERNANCE_POLICY_RELATIVE: 'ComfyUI/governance/policy.signed.json'
 }))
+vi.mock('../../installations', () => ({ update: vi.fn(async () => null) }))
 vi.mock('../../devplatform/session', () => ({ getBuilderClient: vi.fn(() => ({})) }))
 vi.mock('../../lib/comfyDownloadManager', () => ({
   acquireModelDownloadRootLock,
@@ -198,6 +201,7 @@ describe('comfybuilder.install wiring', () => {
         await fsp.writeFile(path.join(installPath, 'ComfyUI', 'main.py'), 'new code')
         await fsp.writeFile(path.join(installPath, 'ComfyUI', 'models', 'build.bin'), 'debris')
         await fsp.writeFile(path.join(installPath, 'ComfyUI', 'user', 'build.json'), 'debris')
+        return { governance: null }
       })
 
       await comfybuilder.install!(record({ installPath: root }), fakeTools())
@@ -270,9 +274,13 @@ describe('comfybuilder.install wiring', () => {
     expect(resolveModelManifest).toHaveBeenCalledWith(expect.anything(), 'd1', '1')
     // The declared models are handed to the background staging task; install
     // itself never blocks on model bytes.
-    expect(startModelStaging).toHaveBeenCalledWith(installation, [
-      { type: 'checkpoints', filename: 'm.safetensors', downloadUrl: 'https://x/m' }
-    ])
+    // The third argument is the governance marker the archive install
+    // reported, so staging never has to re-read a record it would find stale.
+    expect(startModelStaging).toHaveBeenCalledWith(
+      installation,
+      [{ type: 'checkpoints', filename: 'm.safetensors', downloadUrl: 'https://x/m' }],
+      null
+    )
     expect(stageModels).not.toHaveBeenCalled()
   })
 
@@ -769,7 +777,8 @@ describe('comfybuilder update-comfyui', () => {
     expect(abortModelStaging).toHaveBeenCalledWith('i1')
     expect(startModelStaging).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'i1', version: '9' }),
-      []
+      [],
+      null
     )
     // The environment is laid down for the NEW artifact, not the old one.
     const passed = vi.mocked(installArtifact).mock.calls[0]![0] as { artifact: { id: string } }
@@ -844,6 +853,7 @@ describe('comfybuilder update-comfyui', () => {
       fs.mkdirSync(path.join(installPath, 'ComfyUI'), { recursive: true })
       fs.writeFileSync(path.join(installPath, 'venv', 'new.txt'), 'new venv')
       fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), 'new code')
+      return { governance: null }
     })
     vi.mocked(resolveModelManifest).mockRejectedValueOnce(new Error('disk full'))
     const previousVenv = path.join(root, 'venv.previous')
