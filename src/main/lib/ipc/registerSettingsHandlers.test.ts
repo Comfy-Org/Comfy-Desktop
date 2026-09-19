@@ -22,6 +22,12 @@ vi.mock('./shared', async () => {
     settings: {
       getAll: () => mockSettings,
       get: (key: string) => mockSettings[key],
+      getMirrorConfig: () => ({
+        hfMirror:
+          typeof mockSettings.hfMirror === 'string' && mockSettings.hfMirror.trim()
+            ? mockSettings.hfMirror.trim()
+            : undefined
+      }),
       set: (key: string, value: unknown) => mockSettingsSet(key, value),
       getTrackedSettingsTelemetryProperties: () => ({}),
       resolveBetaFeaturesEnabled: () => mockBeta.resolved
@@ -162,8 +168,7 @@ describe('buildSettingsSections', () => {
 
   it('offers an hfMirror text field in Advanced beside pypiMirror', () => {
     const advancedFields =
-      (buildSettingsSections().find((section) => section.title === 'Advanced')
-        ?.fields as
+      (buildSettingsSections().find((section) => section.title === 'Advanced')?.fields as
         | { id?: string; value?: unknown; description?: string }[]
         | undefined) ?? []
 
@@ -189,6 +194,11 @@ describe('buildSettingsSections', () => {
     expect(updatedFields.find((field) => field.id === 'hfMirror')?.value).toBe(
       'https://hf-mirror.com'
     )
+
+    mockSettings.hfMirror = '   '
+    const whitespaceFields = buildSettingsSections().find((section) => section.title === 'Advanced')
+      ?.fields as { id?: string; value?: unknown }[]
+    expect(whitespaceFields.find((field) => field.id === 'hfMirror')?.value).toBe('')
   })
 })
 

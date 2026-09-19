@@ -166,7 +166,7 @@ export function buildSettingsSections(
           id: 'hfMirror',
           label: i18n.t('settings.hfMirror'),
           type: 'text' as const,
-          value: s.hfMirror || '',
+          value: settings.getMirrorConfig().hfMirror || '',
           placeholder: i18n.t('settings.hfMirrorPlaceholder'),
           description: i18n.t('settings.hfMirrorDescription'),
           tooltip: i18n.t('settings.hfMirrorDescription')
