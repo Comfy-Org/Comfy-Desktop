@@ -85,6 +85,7 @@ interface GlobalSettingsSnapshot {
   installLocationFields: Record<string, unknown>[]
   modelsDirs: GlobalSettingsModelsDir[]
   modelsSystemDefault: string
+  telemetryGranted: boolean
   appUpdate: {
     state: Record<string, unknown>
     progress: Record<string, unknown> | null
@@ -182,6 +183,7 @@ const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
   installLocationFields: [],
   modelsDirs: [],
   modelsSystemDefault: '',
+  telemetryGranted: false,
   appUpdate: {
     state: { kind: null, version: null, autoUpdate: true },
     progress: null,

@@ -39,7 +39,12 @@ describe('resolveLocalVersion', () => {
     mockedCountCommitsAhead.mockResolvedValue(0)
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.0', commitsAhead: 0 })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.17.0',
+      commitsAhead: 0,
+      baseTagVerified: true
+    })
   })
 
   it('upgrades to latest tag when ancestor is behind and is an ancestor of latest', async () => {
@@ -53,7 +58,12 @@ describe('resolveLocalVersion', () => {
     mockedIsAncestorOf.mockResolvedValue(true)
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.1', commitsAhead: 7 })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.17.1',
+      commitsAhead: 7,
+      baseTagVerified: true
+    })
     expect(mockedFindMergeBase).not.toHaveBeenCalled()
   })
 
@@ -84,7 +94,12 @@ describe('resolveLocalVersion', () => {
     })
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.1', commitsAhead: 8 })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.17.1',
+      commitsAhead: 8,
+      baseTagVerified: false
+    })
     expect(mockedFindMergeBase).not.toHaveBeenCalled()
   })
 
@@ -115,7 +130,12 @@ describe('resolveLocalVersion', () => {
     })
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.2', commitsAhead: 10 })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.17.2',
+      commitsAhead: 10,
+      baseTagVerified: false
+    })
   })
 
   it('falls back to ancestor tag when no backport tag qualifies', async () => {
@@ -141,7 +161,12 @@ describe('resolveLocalVersion', () => {
     })
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.0', commitsAhead: 9 })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.17.0',
+      commitsAhead: 9,
+      baseTagVerified: true
+    })
   })
 
   it('falls back to merge-base when cherry-pick detection is unreliable (shallow clone)', async () => {
@@ -171,7 +196,14 @@ describe('resolveLocalVersion', () => {
     mockedFindMergeBase.mockResolvedValue('merge-base-sha')
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.2', commitsAhead: 12 })
+    // This path runs only because v0.17.2 is NOT an ancestor of the commit, so the label is a
+    // display convenience, not a claim the install contains that release.
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.17.2',
+      commitsAhead: 12,
+      baseTagVerified: false
+    })
   })
 
   it('keeps ancestor tag when it is NOT an ancestor of latest (different branch)', async () => {
@@ -181,7 +213,12 @@ describe('resolveLocalVersion', () => {
     mockedIsAncestorOf.mockResolvedValue(false)
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.16.4', commitsAhead: 38 })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.16.4',
+      commitsAhead: 38,
+      baseTagVerified: true
+    })
   })
 
   it('falls back to ancestor tag when merge-base equals commit (older commit, newer tag)', async () => {
@@ -210,7 +247,12 @@ describe('resolveLocalVersion', () => {
     mockedFindMergeBase.mockResolvedValue('abc1234')
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.0', commitsAhead: 12 })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.17.0',
+      commitsAhead: 12,
+      baseTagVerified: true
+    })
   })
 
   it('falls back to ancestor tag when merge-base fails (backport path)', async () => {
@@ -232,7 +274,12 @@ describe('resolveLocalVersion', () => {
     mockedFindMergeBase.mockResolvedValue(undefined)
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.16.4', commitsAhead: 38 })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.16.4',
+      commitsAhead: 38,
+      baseTagVerified: true
+    })
   })
 
   it('uses fallbackTag when no git tags exist', async () => {
@@ -240,7 +287,12 @@ describe('resolveLocalVersion', () => {
     mockedFindLatestVersionTag.mockResolvedValue(undefined)
 
     const result = await resolveLocalVersion('/repo', 'abc1234', 'v0.14.0')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.14.0', commitsAhead: undefined })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.14.0',
+      commitsAhead: undefined,
+      baseTagVerified: false
+    })
   })
 
   it('returns no baseTag when no tags and no fallback', async () => {
@@ -248,7 +300,12 @@ describe('resolveLocalVersion', () => {
     mockedFindLatestVersionTag.mockResolvedValue(undefined)
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: undefined, commitsAhead: undefined })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: undefined,
+      commitsAhead: undefined,
+      baseTagVerified: false
+    })
   })
 
   it('does not upgrade when ancestor and latest are the same tag', async () => {
@@ -257,7 +314,12 @@ describe('resolveLocalVersion', () => {
     mockedCountCommitsAhead.mockResolvedValue(3)
 
     const result = await resolveLocalVersion('/repo', 'abc1234')
-    expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.1', commitsAhead: 3 })
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.17.1',
+      commitsAhead: 3,
+      baseTagVerified: true
+    })
     expect(mockedIsAncestorOf).not.toHaveBeenCalled()
   })
 
@@ -271,7 +333,12 @@ describe('resolveLocalVersion', () => {
       vi.resetAllMocks()
 
       const result = await resolveLocalVersion('/repo', 'abc1234')
-      expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.0', commitsAhead: 0 })
+      expect(result).toEqual({
+        commit: 'abc1234',
+        baseTag: 'v0.17.0',
+        commitsAhead: 0,
+        baseTagVerified: true
+      })
       expect(mockedFindNearestTag).not.toHaveBeenCalled()
     })
 
@@ -285,6 +352,7 @@ describe('resolveLocalVersion', () => {
       // Second call without fallback should NOT get the previous fallback
       const r2 = await resolveLocalVersion('/repo', 'abc1234')
       expect(r2.baseTag).toBeUndefined()
+      expect(r2.baseTagVerified).toBe(false)
     })
 
     it('applies different fallbackTags to the same cached entry', async () => {
@@ -295,9 +363,30 @@ describe('resolveLocalVersion', () => {
 
       const r1 = await resolveLocalVersion('/repo', 'abc1234', 'v0.14.0')
       expect(r1.baseTag).toBe('v0.14.0')
+      expect(r1.baseTagVerified).toBe(false)
 
       const r2 = await resolveLocalVersion('/repo', 'abc1234', 'v0.15.0')
       expect(r2.baseTag).toBe('v0.15.0')
+      expect(r2.baseTagVerified).toBe(false)
+    })
+
+    it('keeps a cached verified base when a later caller supplies a fallbackTag', async () => {
+      mockedFindNearestTag.mockResolvedValue('v0.17.0')
+      mockedFindLatestVersionTag.mockResolvedValue('v0.17.0')
+      mockedCountCommitsAhead.mockResolvedValue(0)
+
+      const resolved = await resolveLocalVersion('/repo', 'abc1234')
+      expect(resolved.baseTagVerified).toBe(true)
+
+      // The overlay only fires for an entry with no baseTag, so a caller's unverified tag can
+      // never displace an ancestry-established one on a shared cache entry.
+      const withFallback = await resolveLocalVersion('/repo', 'abc1234', 'v0.14.0')
+      expect(withFallback).toEqual({
+        commit: 'abc1234',
+        baseTag: 'v0.17.0',
+        commitsAhead: 0,
+        baseTagVerified: true
+      })
     })
 
     it('clears cache on clearVersionCache', async () => {
@@ -341,7 +430,12 @@ describe('resolveLocalVersion', () => {
         name: 'v0.17.1',
         sha: 'sha-of-v0.17.1'
       })
-      expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.17.1', commitsAhead: 7 })
+      expect(result).toEqual({
+        commit: 'abc1234',
+        baseTag: 'v0.17.1',
+        commitsAhead: 7,
+        baseTagVerified: true
+      })
       expect(mockedFindLatestVersionTag).not.toHaveBeenCalled()
     })
 
@@ -368,7 +462,12 @@ describe('resolveLocalVersion', () => {
         name: 'v0.17.1',
         sha: 'sha-of-v0.17.1'
       })
-      expect(result).toEqual({ commit: 'abc1234', baseTag: 'v0.16.4', commitsAhead: 38 })
+      expect(result).toEqual({
+        commit: 'abc1234',
+        baseTag: 'v0.16.4',
+        commitsAhead: 38,
+        baseTagVerified: true
+      })
     })
   })
 })

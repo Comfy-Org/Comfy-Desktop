@@ -95,6 +95,9 @@ async function findBestBackportTag(
  * ancestor or a cherry-pick–aware match on a parallel release branch. Results
  * are cached by (repoPath, commit).
  *
+ * `baseTagVerified` reports whether the chosen tag is reachable from `commit`; the upgrade
+ * heuristics and `fallbackTag` produce a label good enough to display but not to gate on.
+ *
  * @param comfyuiDir         Path to the ComfyUI git working tree.
  * @param commit             The commit SHA to resolve.
  * @param fallbackTag        Tag to use when no git tags exist (e.g. manifest comfyui_ref).
@@ -116,7 +119,7 @@ export async function resolveLocalVersion(
   if (cached) {
     // Apply fallbackTag at read time without mutating the git-only cache entry.
     if (fallbackTag && !cached.baseTag) {
-      return { ...cached, baseTag: fallbackTag }
+      return { ...cached, baseTag: fallbackTag, baseTagVerified: false }
     }
     return cached
   }
@@ -135,6 +138,7 @@ export async function resolveLocalVersion(
   // highest cherry-pick–aware match.
   let baseTag: string | undefined
   let commitsAhead: number | undefined
+  let baseTagVerified = false
 
   const shouldUpgrade =
     latestTagName && latestTagName !== ancestorTag && ancestorDist !== undefined && ancestorDist > 0
@@ -152,6 +156,7 @@ export async function resolveLocalVersion(
         baseTag = latestTagName
         commitsAhead = dist
         upgraded = true
+        baseTagVerified = true
       }
     } else if (ancestorIsParent) {
       const found = await findBestBackportTag(
@@ -165,6 +170,10 @@ export async function resolveLocalVersion(
         baseTag = found.tag
         commitsAhead = found.commitsAhead
         upgraded = true
+        // Patch-id equivalence, not reachability: the qualifying test tolerates up to
+        // `branchDist` of the tag's commits having no match in `commit`, so the install may
+        // still be missing part of that release.
+        baseTagVerified = false
       } else {
         // Cherry-pick detection failed (shallow clone). Fall back to merge-base:
         // less precise (+N includes cherry-picks) but still reasonable.
@@ -177,6 +186,9 @@ export async function resolveLocalVersion(
           baseTag = latestTagName
           commitsAhead = dist
           upgraded = true
+          // Reached only because latestTag is NOT an ancestor of commit, so this labels the
+          // install with a release it provably does not contain in full.
+          baseTagVerified = false
         }
       }
     }
@@ -185,15 +197,18 @@ export async function resolveLocalVersion(
   if (!upgraded) {
     baseTag = ancestorTag
     commitsAhead = ancestorDist
+    // `findNearestTag` is `git describe`, so the tag it names is reachable from commit.
+    baseTagVerified = ancestorTag !== undefined
   }
 
   // Cache git-only data (no fallbackTag) so callers sharing (repoPath, commit)
   // don't poison each other.
-  const result: ComfyVersion = { commit, baseTag, commitsAhead }
+  const result: ComfyVersion = { commit, baseTag, commitsAhead, baseTagVerified }
   _cache.set(cacheKey, result)
 
   if (fallbackTag && !baseTag) {
-    return { ...result, baseTag: fallbackTag }
+    // A caller-supplied tag (e.g. a manifest's comfyui_ref) was never checked against the graph.
+    return { ...result, baseTag: fallbackTag, baseTagVerified: false }
   }
   return result
 }

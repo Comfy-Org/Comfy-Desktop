@@ -487,7 +487,7 @@ describe('registerDevPlatformHandlers', () => {
       type: 'comfyui-desktop-2-snapshot'
     })
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/builds/build-1?workspace=w1'
+      'https://platform.comfy.org/profile/builds/build-1/draft?workspace=w1'
     )
   })
 
@@ -574,7 +574,7 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
     expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/builds/build-2?workspace=w2'
+      'https://platform.comfy.org/profile/builds/build-2/draft?workspace=w2'
     )
   })
 

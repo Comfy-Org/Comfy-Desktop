@@ -111,10 +111,10 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 // re-exported by `posthog-node`. Inlining the shape we actually use.
 export type FeatureFlagValue = string | boolean
 
-export interface OpsFlagResult {
-  value: FeatureFlagValue
-  payload: unknown
-}
+/** Every outcome of an ops-flag fetch, classified. See `getOpsFlagResult`. */
+export type OpsFlagFetchResult =
+  | { kind: 'value'; value: FeatureFlagValue; payload: unknown }
+  | { kind: 'unreachable' }
 import {
   DEFAULT_POSTHOG_API_KEY,
   DEFAULT_POSTHOG_HOST,
@@ -572,6 +572,21 @@ export function initTelemetry(opts: InitOptions): void {
       host: cfg.host,
       flushAt: 20,
       flushInterval: 10_000,
+      // Bound on the SDK's own `/flags` POST, raised from its 3000 ms default. A cold POST
+      // measured ~2572 ms and is always cold at boot, so the default leaves ~430 ms of headroom:
+      // on a slower link or a loaded machine the SDK gives up first, `getFeatureFlagResult`
+      // yields nothing, and the late continuation in `getOpsFlagResult` never fires — so a
+      // revocation is silently held forever, the exact failure late persistence exists to end.
+      //
+      // This does NOT slow boot. The launch decision is governed by the 2000 ms race inside
+      // `getOpsFlagResult`, which is unchanged; the app never waits longer to start. All a
+      // longer flag timeout buys is keeping the ALREADY-ABANDONED background fetch alive long
+      // enough for a slow cold answer to be captured and persisted for the NEXT launch.
+      //
+      // Not to be confused with `requestTimeout`, a separate option that only reaches
+      // `FeatureFlagsPoller` — built solely when `personalApiKey` is set, which Desktop never
+      // sets. Setting it here would configure a path this app does not take.
+      featureFlagsRequestTimeoutMs: 10_000,
       // GeoIP: posthog-node runs in the desktop main process ON the user's
       // machine, so the request IP is the real user IP and PostHog can derive
       // the user's location. We opt IN to country-level cohorts (the IP is no
@@ -1463,6 +1478,100 @@ export async function loadFeatureFlagsImmediate(
   }
 }
 
+/** Taken from the SDK rather than restated, so the in-band and late mappings cannot drift. */
+type PostHogFeatureFlagResult = NonNullable<Awaited<ReturnType<PostHog['getFeatureFlagResult']>>>
+
+function toOpsFlagValue(
+  result: PostHogFeatureFlagResult
+): Extract<OpsFlagFetchResult, { kind: 'value' }> {
+  return {
+    kind: 'value',
+    value: result.enabled ? (result.variant ?? true) : false,
+    payload: result.payload
+  }
+}
+
+/**
+ * How an abandoned ops-flag fetch eventually settled.
+ *
+ * `no_result` is deliberately not called "missing": a fetch the SDK timed out on and a key the
+ * server genuinely has no result for arrive as the same falsy value, so this field cannot tell
+ * them apart on its own. `duration_ms` is what does — a `no_result` near the SDK's own `/flags`
+ * ceiling is a timeout, a fast one is a deleted or absent key. That indistinguishability is what
+ * let the sticky-grant bug live unnoticed, and what would otherwise hide the ceiling in the field.
+ */
+type LateOpsFlagOutcome = 'value' | 'no_result' | 'rejected'
+
+/** One name with fields rather than three names, so the outcomes stay comparable in one query. */
+const OPS_FLAG_LATE_RESULT_EVENT = 'comfy.desktop.ops_flag.late_result'
+
+interface AbandonedOpsFlagFetch {
+  key: string
+  /** Stamped before the fetch starts, not when the deadline expires. The number worth reporting is
+   *  how long the WHOLE fetch ran, since that is what compares against the SDK's own ceiling;
+   *  measured from the deadline it would read ~0 and say nothing. */
+  startedAt: number
+  flagPromise: ReturnType<PostHog['getFeatureFlagResult']>
+  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void
+}
+
+/** Observe a fetch the deadline already abandoned: report how it settled, and hand an explicit
+ *  value back so it still reaches the caller that persists it.
+ *
+ *  Detached on purpose: `getOpsFlagResult` has answered `unreachable` and its caller has moved
+ *  on, so nothing awaits this. Every step is therefore contained individually — without that, a
+ *  rejection of an abandoned fetch (or a throwing callback, or a throwing report) surfaces as an
+ *  unhandled rejection.
+ *
+ *  Reporting does NOT widen what may be persisted. `onLateResult` still fires for a TRUTHY
+ *  resolution only. A falsy resolution means the server returned no result for the key, which is
+ *  `unreachable` and must not be handed back as a value: routing it through would make deleting a
+ *  flag revoke it. The report is the only thing a late miss or rejection now produces. */
+function observeAbandonedOpsFlagFetch(abandoned: AbandonedOpsFlagFetch): void {
+  const report = (outcome: LateOpsFlagOutcome, extra: TelemetryContext = {}): void => {
+    try {
+      // `capture`, not the client this module already holds: ops-flag READS bypass the consent
+      // gate by design, but emission derived from one must not.
+      capture(OPS_FLAG_LATE_RESULT_EVENT, {
+        flag_key: abandoned.key,
+        outcome,
+        duration_ms: Date.now() - abandoned.startedAt,
+        ...extra
+      })
+    } catch {
+      // Diagnostics must never cost the caller the value it is still owed.
+    }
+  }
+
+  void abandoned.flagPromise
+    .then(
+      (late) => {
+        if (!late) {
+          report('no_result')
+          return
+        }
+        report('value')
+        try {
+          abandoned.onLateResult?.(toOpsFlagValue(late))
+        } catch {
+          // The caller owns its own persist failures (see `persistLate` in opsFlag.ts); this is
+          // the backstop that keeps one escaping from becoming an unhandled rejection.
+        }
+      },
+      // Two-argument `then` rather than a trailing `.catch`: a single catch would also swallow a
+      // throw from the success branch and bill it as a REJECTED fetch, blaming the network for a
+      // local bug and emitting a second event for one settlement.
+      (err: unknown) => report('rejected', { error_bucket: sharedBucketError(err) })
+    )
+    .catch(() => {})
+}
+
+/** Separates "the deadline won" from "the fetch answered with no result for the key". Both classify
+ *  `unreachable`, but only the first leaves a fetch in flight worth observing — reporting an
+ *  in-band miss as a late one would invent a timeout that never happened, and drop a ~0 ms sample
+ *  into the one field that distinguishes a real timeout from a deleted key. */
+const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
+
 /**
  * Fetch a single OPERATIONAL feature flag together with its matched payload.
  *
@@ -1476,36 +1585,62 @@ export async function loadFeatureFlagsImmediate(
  * so an evaluation-only key never creates a PostHog person behind the capture
  * policy.
  *
- * Returns `undefined` when:
- *   - the PostHog client is not yet initialised
- *   - the network call times out or errors
- *   - the flag is missing on the server
- * Callers must choose a safe fallback so a fetch miss never accidentally
- * degrades the product. `makeOpsFlag` (opsFlag.ts) is that wrapper for every
- * current caller.
+ * Classifies every outcome as exactly one `OpsFlagFetchResult`:
+ *   - `value` — the server answered. A disabled flag is a value of `false`,
+ *     NOT a miss, which is what makes disabling the supported way to revoke a
+ *     treatment a client has already persisted.
+ *   - `unreachable` — the client is not initialised, the call timed out or
+ *     threw, or the server returned no result for the key. The treatment is
+ *     unknown FOR THIS LAUNCH rather than withdrawn, so callers hold what they
+ *     had instead of degrading the product on a bad network. A DELETED flag key
+ *     lands here too, which is why deleting a flag does not revoke it — see the
+ *     `persist` option on `makeOpsFlag` (opsFlag.ts), the wrapper every caller
+ *     uses.
+ *
+ * A timeout no longer LOSES the answer, only defers it. A cold `/flags` POST
+ * measured ~2572 ms on Windows and is always cold at boot, so a 2000 ms deadline
+ * lost every launch and an abandoned explicit `false` never reached disk — a
+ * grant could not be withdrawn at all. `onLateResult` reports an explicit value
+ * that arrives after the deadline, so the caller can persist it for the NEXT
+ * launch. The returned classification is unaffected: this launch was already
+ * answered `unreachable` and acts on that.
+ *
+ * Deletion is still not revocation. Only a TRUTHY resolution reaches
+ * `onLateResult`; a late miss (deleted/archived/absent key) and a late rejection
+ * are both `unreachable`, which callers must never persist. All three are
+ * REPORTED (`comfy.desktop.ops_flag.late_result`) — reporting an outcome and
+ * persisting it are deliberately different things, and only the value is both.
  */
 export async function getOpsFlagResult(
   key: string,
   distinctId: string,
-  timeoutMs: number
-): Promise<OpsFlagResult | undefined> {
-  if (!client) return undefined
+  timeoutMs: number,
+  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void
+): Promise<OpsFlagFetchResult> {
+  if (!client) return { kind: 'unreachable' }
   let timer: ReturnType<typeof setTimeout> | undefined
+  const startedAt = Date.now()
   try {
     const flagPromise = client.getFeatureFlagResult(key, distinctId, {
       sendFeatureFlagEvents: false
     })
-    const timeoutPromise = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), timeoutMs)
+    const timeoutPromise = new Promise<typeof OPS_FLAG_DEADLINE>((resolve) => {
+      timer = setTimeout(() => resolve(OPS_FLAG_DEADLINE), timeoutMs)
     })
     const result = await Promise.race([flagPromise, timeoutPromise])
-    if (!result) return undefined
-    return {
-      value: result.enabled ? (result.variant ?? true) : false,
-      payload: result.payload
+    if (result === OPS_FLAG_DEADLINE) {
+      // The timer won and `flagPromise` is still in flight. Observed unconditionally, not only
+      // when a caller registered for late values: a flag that never persists can still hit the
+      // SDK's ceiling, and a timeout nobody can see is the state this reporting exists to end.
+      observeAbandonedOpsFlagFetch({ key, startedAt, flagPromise, onLateResult })
+      return { kind: 'unreachable' }
     }
+    // The fetch itself answered, with no result for the key. `unreachable` exactly as a timeout
+    // is, but nothing was abandoned — so there is nothing to observe and nothing to report.
+    if (!result) return { kind: 'unreachable' }
+    return toOpsFlagValue(result)
   } catch {
-    return undefined
+    return { kind: 'unreachable' }
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }
