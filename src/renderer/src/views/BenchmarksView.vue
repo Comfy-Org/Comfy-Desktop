@@ -1407,15 +1407,15 @@ onMounted(() => {
   min-width: 0;
   margin: 0;
   padding: 1px 2px;
-  border: 1px solid var(--brand-surface-border-hover);
-  border-radius: 4px;
-  background: var(--neutral-900);
-  color: var(--neutral-100);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
 }
 
 .benchmarks__session-name-input:focus {
-  border-color: var(--focus-ring);
+  border-color: var(--accent);
   outline: none;
 }
 
@@ -1732,7 +1732,7 @@ onMounted(() => {
   top: 37px;
   width: 9px;
   height: 9px;
-  background: var(--neutral-100);
+  background: var(--series-color);
 }
 
 .benchmarks__chart-point-label {

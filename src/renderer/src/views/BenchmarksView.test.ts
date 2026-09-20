@@ -413,7 +413,10 @@ describe('BenchmarksView', () => {
     const slowestLabelMatch = svg.match(
       /<text x="([^"]+)" y="([^"]+)" class="chart-point-label" text-anchor="start">47\.24 s<\/text>/
     )
-    const averageMarkerX = svg.match(/<circle cx="([^"]+)"[^>]+r="5" class="chart-average"/)?.[1]
+    const averageMarkerX = svg.match(
+      /<circle cx="([^"]+)"[^>]+r="5"[^>]+class="chart-average"/
+    )?.[1]
+    expect(svg).toContain('r="5" fill="#55e0d1" class="chart-average"')
     const averageLabelX = svg.match(
       /<text x="([^"]+)"[^>]+class="chart-point-label" text-anchor="middle">45\.83 s<\/text>/
     )?.[1]

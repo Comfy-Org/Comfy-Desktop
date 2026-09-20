@@ -179,7 +179,7 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
       const averageMarker =
         average === null || averageX === null
           ? ''
-          : `<circle cx="${averageX}" cy="${trackY}" r="5" class="chart-average" />
+          : `<circle cx="${averageX}" cy="${trackY}" r="5" fill="${escapeXml(run.color)}" class="chart-average" />
              ${text(averageX, trackY + 22, formatDuration(average), 'chart-point-label', 'middle')}`
       return [
         `<circle cx="${margin + 6}" cy="${y + 7}" r="6" fill="${escapeXml(run.color)}" />`,
@@ -208,7 +208,7 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
     .best-value { fill: #e5eb86; font-weight: 600; }
     .chart-track { stroke: #393939; stroke-width: 2; }
     .chart-range { stroke-width: 3; }
-    .chart-average { fill: #d4d4d4; stroke: #121212; stroke-width: 2; }
+    .chart-average { stroke: #121212; stroke-width: 2; }
     .chart-point-label { fill: #a3a3a3; font: 12px system-ui, sans-serif; }
     .footer-date { fill: #a3a3a3; font: 12px system-ui, sans-serif; }
   </style>
