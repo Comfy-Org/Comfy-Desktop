@@ -514,7 +514,7 @@ describe('telemetry anonymous flag reads', () => {
     setupTelemetry({ consent: null, bind: null })
     posthogClientMock.featureFlagResult = {
       enabled: true,
-      variant: 'canary',
+      variant: 'beta',
       payload: { flags: ['enable-assets'] }
     }
 
@@ -522,7 +522,7 @@ describe('telemetry anonymous flag reads', () => {
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
     ).resolves.toEqual({
       kind: 'value',
-      value: 'canary',
+      value: 'beta',
       payload: { flags: ['enable-assets'] }
     })
     expect(featureFlagResultCalls).toEqual([
@@ -539,7 +539,7 @@ describe('telemetry anonymous flag reads', () => {
     setupTelemetry({ consent: null, bind: null })
     posthogClientMock.featureFlagResult = {
       enabled: false,
-      variant: 'canary',
+      variant: 'beta',
       payload: { flags: ['enable-assets'] }
     }
 
@@ -609,7 +609,7 @@ describe('telemetry late ops-flag results', () => {
     await raceLostWith((result) => late.push(result))
 
     // When the abandoned fetch finally answers — the disable that lost the race
-    posthogClientMock.deferred?.resolve({ enabled: false, variant: 'canary', payload: { a: 1 } })
+    posthogClientMock.deferred?.resolve({ enabled: false, variant: 'beta', payload: { a: 1 } })
     await flush()
 
     // Then it is handed back mapped exactly as the in-band path would have mapped it: a
@@ -621,10 +621,10 @@ describe('telemetry late ops-flag results', () => {
     const late: unknown[] = []
     await raceLostWith((result) => late.push(result))
 
-    posthogClientMock.deferred?.resolve({ enabled: true, variant: 'canary', payload: null })
+    posthogClientMock.deferred?.resolve({ enabled: true, variant: 'beta', payload: null })
     await flush()
 
-    expect(late).toEqual([{ kind: 'value', value: 'canary', payload: null }])
+    expect(late).toEqual([{ kind: 'value', value: 'beta', payload: null }])
   })
 
   it('withholds a late result that carries no result for the key', async () => {
@@ -667,14 +667,14 @@ describe('telemetry late ops-flag results', () => {
   it('does not report late when the fetch wins the race', async () => {
     // Given a fetch that beats the deadline, so its value is delivered in band
     setupTelemetry({ consent: null, bind: null })
-    posthogClientMock.featureFlagResult = { enabled: true, variant: 'canary', payload: null }
+    posthogClientMock.featureFlagResult = { enabled: true, variant: 'beta', payload: null }
     const late: unknown[] = []
 
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100, (result) =>
         late.push(result)
       )
-    ).resolves.toMatchObject({ kind: 'value', value: 'canary' })
+    ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
     await flush()
 
     // Then the caller is told exactly once — a second delivery would double every persist
@@ -743,11 +743,11 @@ describe('telemetry late ops-flag reporting', () => {
     const late: unknown[] = []
     await raceLostReporting((result) => late.push(result))
 
-    posthogClientMock.deferred?.resolve({ enabled: true, variant: 'canary', payload: { a: 1 } })
+    posthogClientMock.deferred?.resolve({ enabled: true, variant: 'beta', payload: { a: 1 } })
     await flush()
 
     // Then reporting is purely additive: the value still reaches the caller that persists it
-    expect(late).toEqual([{ kind: 'value', value: 'canary', payload: { a: 1 } }])
+    expect(late).toEqual([{ kind: 'value', value: 'beta', payload: { a: 1 } }])
     expect(lateEvent()).toMatchObject({
       flag_key: 'desktop_core_beta_features',
       outcome: 'value'
@@ -813,7 +813,7 @@ describe('telemetry late ops-flag reporting', () => {
 
   it('reports nothing when the fetch wins the race', async () => {
     setupTelemetry()
-    posthogClientMock.featureFlagResult = { enabled: true, variant: 'canary', payload: null }
+    posthogClientMock.featureFlagResult = { enabled: true, variant: 'beta', payload: null }
     captured.length = 0
 
     await expect(
@@ -846,11 +846,11 @@ describe('telemetry late ops-flag reporting', () => {
     const late: unknown[] = []
     await raceLostReporting((result) => late.push(result), { consent: 'denied' })
 
-    posthogClientMock.deferred?.resolve({ enabled: true, variant: 'canary', payload: null })
+    posthogClientMock.deferred?.resolve({ enabled: true, variant: 'beta', payload: null })
     await flush()
 
     expect(lateEvents()).toEqual([])
-    expect(late).toEqual([{ kind: 'value', value: 'canary', payload: null }])
+    expect(late).toEqual([{ kind: 'value', value: 'beta', payload: null }])
   })
 
   it('still hands the caller its late value when the capture path throws', async () => {
@@ -866,7 +866,7 @@ describe('telemetry late ops-flag reporting', () => {
       await raceLostReporting((result) => late.push(result))
       posthogClientMock.failNextCaptures = 1
 
-      posthogClientMock.deferred?.resolve({ enabled: false, variant: 'canary', payload: null })
+      posthogClientMock.deferred?.resolve({ enabled: false, variant: 'beta', payload: null })
       await flush()
 
       expect(late).toEqual([{ kind: 'value', value: false, payload: null }])
@@ -890,7 +890,7 @@ describe('telemetry late ops-flag reporting', () => {
         throw new Error('persist failed')
       })
 
-      posthogClientMock.deferred?.resolve({ enabled: true, variant: 'canary', payload: null })
+      posthogClientMock.deferred?.resolve({ enabled: true, variant: 'beta', payload: null })
       await flush()
 
       expect(lateEvent()).toMatchObject({ outcome: 'value' })

@@ -14,7 +14,7 @@
  * Each flag supplies its own key, fail-direction (`fallback`), and `parse`. The shared part is
  * the plumbing every one of them needs: a single in-flight fetch, an accessor that awaits it
  * rather than racing it to the default, and a fallback that survives both a rejection and an
- * unrecognised payload. See `cloudFreeRuns.ts` and `coreCanary.ts` for the current callers.
+ * unrecognised payload. See `cloudFreeRuns.ts` and `coreBetaGrants.ts` for the current callers.
  */
 import path from 'path'
 import { configDir } from './paths'
@@ -185,7 +185,7 @@ export function makeOpsFlag<T>(opts: {
    *  `writePersistedResult` is a read-modify-write over a single shared `ops-flags.json`, and a
    *  late write is the first thing that makes concurrent writers structurally possible — it can
    *  now land after its own launch has moved on, so two overlapping launches could interleave.
-   *  Left unlocked on purpose: `coreCanary` is the only flag that persists, so there is one
+   *  Left unlocked on purpose: `coreBetaGrants` is the only flag that persists, so there is one
    *  writer per process, and the loser of such a race re-fetches on the next launch anyway.
    *  Revisit if a second `persist` flag is ever added. */
   function persistLate(generationAtInit: number, result: OpsFlagValueResult): void {

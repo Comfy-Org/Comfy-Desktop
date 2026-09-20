@@ -12,12 +12,12 @@ import semver from 'semver'
 import { makeOpsFlag } from './opsFlag'
 import type { FeatureFlagValue } from './telemetry'
 
-export const CORE_CANARY_FLAG_KEY = 'desktop_core_beta_features'
+export const CORE_BETA_FEATURES_FLAG_KEY = 'desktop_core_beta_features'
 
 /**
  * The args a PostHog payload may GRANT. That is this list's only job — it is not a registry of
- * canary-owned tokens, and membership says nothing about whether a user may pass the same arg
- * by hand (they may, and it wins; see `selectCoreCanaryArgs`).
+ * grant-owned tokens, and membership says nothing about whether a user may pass the same arg
+ * by hand (they may, and it wins; see `selectCoreBetaGrantArgs`).
  *
  * An entry need not exist in Core yet: `--disable-assets` is the planned remote force-off for
  * when assets go default-on, and `--enable-agent` lands here ahead of the Core flag because
@@ -26,21 +26,21 @@ export const CORE_CANARY_FLAG_KEY = 'desktop_core_beta_features'
  * running core's supported-argument schema filters it and the launch reports it as
  * `dropped_unsupported`.
  */
-export const CORE_CANARY_ALLOWED_FLAGS = [
+export const CORE_BETA_GRANTABLE_ARGS = [
   '--enable-assets',
   '--enable-asset-hashing',
   '--disable-assets',
   '--enable-agent'
 ] as const
 
-export type CoreCanaryFlag = {
+export type CoreBetaGrant = {
   readonly arg: string
   readonly minCoreVersion: string
   readonly maxCoreVersion?: string
 }
 
 const MAX_FLAGS = 32
-const CORE_CANARY_ARG_RE = /^--[a-z][a-z0-9-]+$/
+const CORE_BETA_ARG_RE = /^--[a-z][a-z0-9-]+$/
 
 // Prevent a control payload copied between PostHog variants from enrolling users.
 const OFF_VARIANTS = new Set(['control', 'off', 'false', 'disabled'])
@@ -55,22 +55,22 @@ function parseCoreVersion(value: unknown): string | null {
   return semver.valid(value.replace(/^v/, ''))
 }
 
-export function parseCoreCanaryFlags(
+export function parseCoreBetaGrants(
   value: FeatureFlagValue | undefined,
   payload: unknown
-): CoreCanaryFlag[] {
+): CoreBetaGrant[] {
   if (!isEnabled(value) || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return []
   }
   const requested = 'flags' in payload ? payload.flags : undefined
   if (!Array.isArray(requested) || requested.length > MAX_FLAGS) return []
 
-  const allowed = new Set(CORE_CANARY_ALLOWED_FLAGS)
-  const flags: CoreCanaryFlag[] = []
+  const allowed = new Set(CORE_BETA_GRANTABLE_ARGS)
+  const flags: CoreBetaGrant[] = []
   for (const candidate of requested) {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
     if (!('arg' in candidate) || typeof candidate.arg !== 'string') continue
-    if (!CORE_CANARY_ARG_RE.test(candidate.arg) || !allowed.has(candidate.arg)) continue
+    if (!CORE_BETA_ARG_RE.test(candidate.arg) || !allowed.has(candidate.arg)) continue
 
     const minCoreVersion =
       'min_core_version' in candidate ? parseCoreVersion(candidate.min_core_version) : null
@@ -138,7 +138,7 @@ function oppositeArg(arg: string): string | null {
 // equally when they passed its opposite: someone who set `--disable-assets` must not also
 // receive `--enable-assets`, and vice versa. Contradictory flags never go on one command line —
 // Core's precedence between them is unspecified — and the tie is always broken the same way,
-// with the user's own argument winning and the canary yielding.
+// with the user's own argument winning and the grant yielding.
 //
 // Both bounds are measured against `baseTag`, so the whole payload is refused unless that tag was
 // established by ancestry. `resolveLocalVersion` also reaches for a tag on paths that do NOT
@@ -152,36 +152,36 @@ function oppositeArg(arg: string): string | null {
 // schema is asymmetric here and cannot stand in for that check: an older core does not know the
 // granted flag and drops it, but a newer one still parses it, which leaves the MAXIMUM bound
 // resting on nothing but the stale record.
-export function selectCoreCanaryArgs(
-  flags: readonly CoreCanaryFlag[],
+export function selectCoreBetaGrantArgs(
+  flags: readonly CoreBetaGrant[],
   core: CoreVersionState,
   betaEnabled: boolean,
   userArgs: readonly string[]
-): CoreCanaryFlag[] {
+): CoreBetaGrant[] {
   const version = core.semver
   if (version === null || betaEnabled !== true) return []
   if (!core.current) {
     // Before `verified`, which once the checkout has moved is a true statement about the wrong
     // commit — reporting that instead would name the less useful of the two faults.
     if (flags.length > 0)
-      console.log(`[core-canary] refused: base ${version} from a record the checkout contradicts`)
+      console.log(`[core-beta] refused: base ${version} from a record the checkout contradicts`)
     return []
   }
   if (!core.verified) {
     // Echoed for the same reason as the per-flag windows below: this refusal drops grants an
     // operator can see in the payload, so it must not be silent.
-    if (flags.length > 0) console.log(`[core-canary] refused: base ${version} not verified`)
+    if (flags.length > 0) console.log(`[core-beta] refused: base ${version} not verified`)
     return []
   }
   const presentArgs = new Set(userArgs)
-  const selected: CoreCanaryFlag[] = []
+  const selected: CoreBetaGrant[] = []
   for (const flag of flags) {
     const { arg, minCoreVersion, maxCoreVersion } = flag
     const window =
       maxCoreVersion === undefined
         ? `>=${minCoreVersion}`
         : `>=${minCoreVersion} <${maxCoreVersion}`
-    console.log(`[core-canary] window ${arg}: ${window} version=${version} exact=${core.exact}`)
+    console.log(`[core-beta] window ${arg}: ${window} version=${version} exact=${core.exact}`)
 
     if (presentArgs.has(arg)) continue
     const opposite = oppositeArg(arg)
@@ -196,7 +196,7 @@ export function selectCoreCanaryArgs(
       if (!semver.lt(version, maxCoreVersion)) continue
     }
     // Selected grants join the conflict set so the checks above hold between two grants too, not
-    // just against the user's args. Redundant after `parseCoreCanaryFlags`, load-bearing without it.
+    // just against the user's args. Redundant after `parseCoreBetaGrants`, load-bearing without it.
     presentArgs.add(arg)
     selected.push(flag)
   }
@@ -213,16 +213,16 @@ export function selectCoreCanaryArgs(
 // outruns the boot deadline used to lose the revocation on every launch and hold the grant
 // forever. It now persists the late `false` and picks it up on the next launch, so expect a
 // retraction to take one extra restart rather than never arriving.
-const flag = makeOpsFlag<CoreCanaryFlag[]>({
-  key: CORE_CANARY_FLAG_KEY,
+const flag = makeOpsFlag<CoreBetaGrant[]>({
+  key: CORE_BETA_FEATURES_FLAG_KEY,
   fallback: [],
-  parse: parseCoreCanaryFlags,
-  logLabel: 'core-canary',
+  parse: parseCoreBetaGrants,
+  logLabel: 'core-beta',
   persist: true
 })
 
-export const initCoreCanary = flag.init
+export const initCoreBetaGrants = flag.init
 
-export const getCoreCanaryFlagsAsync = flag.get
+export const getCoreBetaGrantsAsync = flag.get
 
 export const _resetForTest = flag._resetForTest

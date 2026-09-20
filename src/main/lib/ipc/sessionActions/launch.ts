@@ -96,8 +96,8 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
-import { getCoreCanaryFlagsAsync, selectCoreCanaryArgs } from '../../coreCanary'
-import type { CoreCanaryFlag } from '../../coreCanary'
+import { getCoreBetaGrantsAsync, selectCoreBetaGrantArgs } from '../../coreBetaGrants'
+import type { CoreBetaGrant } from '../../coreBetaGrants'
 import { coreRecordCurrent, coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
@@ -151,7 +151,7 @@ function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
  *  what selection granted that the schema then refused. Every downstream signal
  *  (final args, tap context, telemetry, log records) reads from this one value. */
 export interface CoreBetaLaunch {
-  readonly applied: readonly CoreCanaryFlag[]
+  readonly applied: readonly CoreBetaGrant[]
   readonly droppedUnsupported: readonly string[]
   readonly logRecords: readonly string[]
   readonly coreVersion: string | null
@@ -175,7 +175,7 @@ function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
 
 /** Newline-terminated because `writeLog` and `sendOutput` forward text verbatim:
  *  without it the first child-process line joins the record. */
-function coreBetaLogRecord(grant: CoreCanaryFlag, coreVersion: string): string {
+function coreBetaLogRecord(grant: CoreBetaGrant, coreVersion: string): string {
   return `[core-beta] ${grant.arg} (core ${coreVersion} >= ${grant.minCoreVersion}, opted in)\n`
 }
 
@@ -193,7 +193,7 @@ export function buildLaunchArgs(input: {
   userArgs: readonly string[]
   desktopFlagArgs: readonly string[]
   schema: ComfyArgsSchema
-  betaFlags: readonly CoreCanaryFlag[]
+  betaFlags: readonly CoreBetaGrant[]
   coreVersion: string | null
   coreVersionExact: boolean
   coreVersionVerified: boolean
@@ -202,7 +202,7 @@ export function buildLaunchArgs(input: {
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
-  const selected = selectCoreCanaryArgs(
+  const selected = selectCoreBetaGrantArgs(
     input.betaFlags,
     {
       semver: coreVersion,
@@ -983,7 +983,7 @@ async function runLaunch(
           userArgs,
           desktopFlagArgs,
           schema,
-          betaFlags: await getCoreCanaryFlagsAsync(),
+          betaFlags: await getCoreBetaGrantsAsync(),
           coreVersion: coreSemver(inst),
           coreVersionExact: coreSemverExact(inst),
           coreVersionVerified: coreSemverVerified(inst),

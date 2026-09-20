@@ -117,7 +117,7 @@ import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
-import { initCoreCanary } from './lib/coreCanary'
+import { initCoreBetaGrants } from './lib/coreBetaGrants'
 import { initUserTier } from './lib/userTier'
 
 import {
@@ -1510,7 +1510,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
 
-    void initCoreCanary({ distinctId: installationId })
+    void initCoreBetaGrants({ distinctId: installationId })
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and
     // free-tier offer UI. `userTier.ts` refreshes it on every cloud

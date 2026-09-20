@@ -8,8 +8,8 @@ vi.mock('./telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
 }))
 
-// `coreCanary` is the one flag that persists, so resolving a value here writes `ops-flags.json`
-// for real — into the developer's own config dir, granting them the canary on their next launch.
+// `coreBetaGrants` is the one flag that persists, so resolving a value here writes `ops-flags.json`
+// for real — into the developer's own config dir, granting them the beta grants on their next launch.
 // Pinning `configDir()` to a temp dir is how `opsFlag.test.ts` and `experiments.test.ts` contain
 // that. Set for every test, not just the fetch one: an empty dir would resolve the file relative
 // to cwd and drop it in the repo root.
@@ -19,15 +19,15 @@ vi.mock('./paths', () => ({
 }))
 
 import {
-  CORE_CANARY_ALLOWED_FLAGS,
-  CORE_CANARY_FLAG_KEY,
+  CORE_BETA_GRANTABLE_ARGS,
+  CORE_BETA_FEATURES_FLAG_KEY,
   _resetForTest,
-  getCoreCanaryFlagsAsync,
-  initCoreCanary,
-  parseCoreCanaryFlags,
-  selectCoreCanaryArgs
-} from './coreCanary'
-import type { CoreVersionState } from './coreCanary'
+  getCoreBetaGrantsAsync,
+  initCoreBetaGrants,
+  parseCoreBetaGrants,
+  selectCoreBetaGrantArgs
+} from './coreBetaGrants'
+import type { CoreVersionState } from './coreBetaGrants'
 import { coreRecordCurrent, coreSemverExact, coreSemverVerified } from './version'
 import type { ComfyVersion } from './version'
 import type { InstallationRecord } from '../installations'
@@ -35,17 +35,17 @@ import type { InstallationRecord } from '../installations'
 beforeEach(() => {
   _resetForTest()
   getOpsFlagResult.mockReset()
-  testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-canary-'))
+  testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-'))
 })
 
 afterEach(() => {
   fs.rmSync(testConfigDir, { recursive: true, force: true })
 })
 
-describe('parseCoreCanaryFlags', () => {
+describe('parseCoreBetaGrants', () => {
   it('accepts dashed allowlisted grants, normalizes bounds, and deduplicates by arg', () => {
     expect(
-      parseCoreCanaryFlags(true, {
+      parseCoreBetaGrants(true, {
         flags: [
           { arg: '--enable-assets', min_core_version: 'v0.3.80' },
           {
@@ -68,7 +68,7 @@ describe('parseCoreCanaryFlags', () => {
 
   it('accepts a multivariate flag assignment as enabled', () => {
     expect(
-      parseCoreCanaryFlags('canary', {
+      parseCoreBetaGrants('beta', {
         flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }]
       })
     ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
@@ -78,7 +78,7 @@ describe('parseCoreCanaryFlags', () => {
     'treats the %s variant as off',
     (variant) => {
       expect(
-        parseCoreCanaryFlags(variant, {
+        parseCoreBetaGrants(variant, {
           flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }]
         })
       ).toEqual([])
@@ -103,12 +103,12 @@ describe('parseCoreCanaryFlags', () => {
     ],
     ['a fetch miss', undefined, undefined]
   ])('fails closed for %s', (_label, value, payload) => {
-    expect(parseCoreCanaryFlags(value, payload)).toEqual([])
+    expect(parseCoreBetaGrants(value, payload)).toEqual([])
   })
 
   it('drops legacy strings, bare names, missing minimums, malformed args, and unknown args', () => {
     expect(
-      parseCoreCanaryFlags(true, {
+      parseCoreBetaGrants(true, {
         flags: [
           '--enable-assets',
           { arg: 'enable-assets', min_core_version: '0.3.80' },
@@ -121,7 +121,7 @@ describe('parseCoreCanaryFlags', () => {
         ]
       })
     ).toEqual([])
-    expect(CORE_CANARY_ALLOWED_FLAGS).toEqual([
+    expect(CORE_BETA_GRANTABLE_ARGS).toEqual([
       '--enable-assets',
       '--enable-asset-hashing',
       '--disable-assets',
@@ -134,7 +134,7 @@ describe('parseCoreCanaryFlags', () => {
     // schema filters it and the launch reports it as `dropped_unsupported` — so the allowlist
     // can carry it ahead of Core.
     expect(
-      parseCoreCanaryFlags(true, {
+      parseCoreBetaGrants(true, {
         flags: [{ arg: '--disable-assets', min_core_version: '0.4.0' }]
       })
     ).toEqual([{ arg: '--disable-assets', minCoreVersion: '0.4.0' }])
@@ -142,7 +142,7 @@ describe('parseCoreCanaryFlags', () => {
 
   it('drops non-string and non-semver bounds, including SHA-like tokens', () => {
     expect(
-      parseCoreCanaryFlags(true, {
+      parseCoreBetaGrants(true, {
         flags: [
           { arg: '--enable-assets', min_core_version: 380 },
           { arg: '--enable-assets', min_core_version: '61e5e3b5' },
@@ -165,7 +165,7 @@ describe('parseCoreCanaryFlags', () => {
 
   it('grants nothing when a payload names both a flag and its opposite', () => {
     expect(
-      parseCoreCanaryFlags(true, {
+      parseCoreBetaGrants(true, {
         flags: [
           { arg: '--enable-assets', min_core_version: '0.3.80' },
           { arg: '--disable-assets', min_core_version: '0.3.80' }
@@ -176,7 +176,7 @@ describe('parseCoreCanaryFlags', () => {
 
   it('keeps unrelated grants when no pair contradicts', () => {
     expect(
-      parseCoreCanaryFlags(true, {
+      parseCoreBetaGrants(true, {
         flags: [
           { arg: '--enable-assets', min_core_version: '0.3.80' },
           { arg: '--enable-asset-hashing', min_core_version: '0.3.80' }
@@ -189,7 +189,7 @@ describe('parseCoreCanaryFlags', () => {
   })
 })
 
-describe('selectCoreCanaryArgs', () => {
+describe('selectCoreBetaGrantArgs', () => {
   const unboundedGrant = {
     arg: '--enable-assets',
     minCoreVersion: '0.3.80'
@@ -212,7 +212,7 @@ describe('selectCoreCanaryArgs', () => {
     ['equal to', '0.3.80', [unboundedGrant]],
     ['above', '0.3.81', [unboundedGrant]]
   ])('selects by a core version %s the inclusive minimum', (_label, coreVersion, expected) => {
-    expect(selectCoreCanaryArgs([unboundedGrant], at(coreVersion), true, [])).toEqual(expected)
+    expect(selectCoreBetaGrantArgs([unboundedGrant], at(coreVersion), true, [])).toEqual(expected)
   })
 
   it.each([
@@ -220,19 +220,21 @@ describe('selectCoreCanaryArgs', () => {
     ['at', '0.4.0', []],
     ['above', '0.4.1', []]
   ])('selects by a core version %s the exclusive maximum', (_label, coreVersion, expected) => {
-    expect(selectCoreCanaryArgs([boundedGrant], at(coreVersion), true, [])).toEqual(expected)
+    expect(selectCoreBetaGrantArgs([boundedGrant], at(coreVersion), true, [])).toEqual(expected)
   })
 
   it.each([
     ['enabled', true, [unboundedGrant]],
     ['disabled', false, []]
   ])('returns the grant when beta features are %s', (_label, betaEnabled, expected) => {
-    expect(selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), betaEnabled, [])).toEqual(expected)
+    expect(selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81'), betaEnabled, [])).toEqual(
+      expected
+    )
   })
 
   it('skips a grant when the exact dashed arg is already present', () => {
     expect(
-      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, [
+      selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81'), true, [
         '--cpu',
         '--enable-assets',
         'unfiltered-user-value'
@@ -242,32 +244,32 @@ describe('selectCoreCanaryArgs', () => {
 
   it('suppresses an --enable grant when the user supplied the --disable opposite', () => {
     expect(
-      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, ['--disable-assets'])
+      selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81'), true, ['--disable-assets'])
     ).toEqual([])
   })
 
   it('suppresses a --disable grant when the user supplied the --enable opposite', () => {
     const disableGrant = { arg: '--disable-assets', minCoreVersion: '0.3.80' }
-    expect(selectCoreCanaryArgs([disableGrant], at('0.3.81'), true, ['--enable-assets'])).toEqual(
-      []
-    )
+    expect(
+      selectCoreBetaGrantArgs([disableGrant], at('0.3.81'), true, ['--enable-assets'])
+    ).toEqual([])
   })
 
   it('suppresses a grant whose opposite another grant in the same payload already took', () => {
     const disableGrant = { arg: '--disable-assets', minCoreVersion: '0.3.80' }
-    expect(selectCoreCanaryArgs([unboundedGrant, disableGrant], at('0.3.81'), true, [])).toEqual([
-      unboundedGrant
-    ])
-    expect(selectCoreCanaryArgs([disableGrant, unboundedGrant], at('0.3.81'), true, [])).toEqual([
-      disableGrant
-    ])
+    expect(selectCoreBetaGrantArgs([unboundedGrant, disableGrant], at('0.3.81'), true, [])).toEqual(
+      [unboundedGrant]
+    )
+    expect(selectCoreBetaGrantArgs([disableGrant, unboundedGrant], at('0.3.81'), true, [])).toEqual(
+      [disableGrant]
+    )
   })
 
   it('pairs opposites by exact stem, not by a shared prefix', () => {
     // `--enable-assets` and `--disable-asset-hashing` are different features; the stems
     // (`assets` vs `asset-hashing`) must not collide just because one prefixes the other.
     expect(
-      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, ['--disable-asset-hashing'])
+      selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81'), true, ['--disable-asset-hashing'])
     ).toEqual([unboundedGrant])
   })
 
@@ -277,7 +279,7 @@ describe('selectCoreCanaryArgs', () => {
       // Exact-token match on both the duplicate and the conflict check: the allowlist grammar
       // has no `=value` or mixed-case form, so a lookalike is an ordinary user arg that
       // neither suppresses the grant nor counts as already present.
-      expect(selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, [userArg])).toEqual([
+      expect(selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81'), true, [userArg])).toEqual([
         unboundedGrant
       ])
     }
@@ -285,7 +287,7 @@ describe('selectCoreCanaryArgs', () => {
 
   it('leaves unrelated user args alone when deciding a grant', () => {
     expect(
-      selectCoreCanaryArgs([unboundedGrant], at('0.3.81'), true, [
+      selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81'), true, [
         '--listen',
         '--port',
         '8188',
@@ -295,7 +297,7 @@ describe('selectCoreCanaryArgs', () => {
   })
 
   it('returns no grants when the core version is unknown', () => {
-    expect(selectCoreCanaryArgs([unboundedGrant], at(null), true, [])).toEqual([])
+    expect(selectCoreBetaGrantArgs([unboundedGrant], at(null), true, [])).toEqual([])
   })
 
   /** An install record carrying exactly the version data under test, so the cases below derive
@@ -323,7 +325,7 @@ describe('selectCoreCanaryArgs', () => {
       baseTagVerified: false
     })
     expect(
-      selectCoreCanaryArgs(
+      selectCoreBetaGrantArgs(
         [unboundedGrant],
         {
           semver: '0.3.99',
@@ -340,7 +342,7 @@ describe('selectCoreCanaryArgs', () => {
   it('returns no grants for a legacy record persisted without the verification field', () => {
     const legacy = installWith({ commit: COMMIT, baseTag: 'v0.3.99', commitsAhead: 0 })
     expect(
-      selectCoreCanaryArgs(
+      selectCoreBetaGrantArgs(
         [unboundedGrant],
         { semver: '0.3.99', exact: true, verified: coreSemverVerified(legacy), current: true },
         true,
@@ -357,7 +359,7 @@ describe('selectCoreCanaryArgs', () => {
       baseTagVerified: true
     })
     expect(
-      selectCoreCanaryArgs(
+      selectCoreBetaGrantArgs(
         [unboundedGrant],
         {
           semver: '0.3.99',
@@ -384,7 +386,7 @@ describe('selectCoreCanaryArgs', () => {
       baseTagVerified: true
     })
     expect(
-      selectCoreCanaryArgs(
+      selectCoreBetaGrantArgs(
         [unboundedGrant],
         {
           semver: '0.3.99',
@@ -406,7 +408,7 @@ describe('selectCoreCanaryArgs', () => {
       baseTagVerified: true
     })
     expect(
-      selectCoreCanaryArgs(
+      selectCoreBetaGrantArgs(
         [unboundedGrant],
         {
           semver: '0.3.99',
@@ -427,9 +429,9 @@ describe('selectCoreCanaryArgs', () => {
   }
 
   it('applies a max-bounded grant when the install sits exactly on its tag', () => {
-    expect(selectCoreCanaryArgs([boundedGrant], at('0.3.99', exactnessOf(0)), true, [])).toEqual([
-      boundedGrant
-    ])
+    expect(selectCoreBetaGrantArgs([boundedGrant], at('0.3.99', exactnessOf(0)), true, [])).toEqual(
+      [boundedGrant]
+    )
   })
 
   it.each([
@@ -439,7 +441,7 @@ describe('selectCoreCanaryArgs', () => {
     // `coreSemver` resolves from `baseTag`, so a latest-channel install still MEASURES as
     // 0.3.99 and would otherwise slip under the `<0.4.0` ceiling it is actually well past.
     expect(
-      selectCoreCanaryArgs([boundedGrant], at('0.3.99', exactnessOf(commitsAhead)), true, [])
+      selectCoreBetaGrantArgs([boundedGrant], at('0.3.99', exactnessOf(commitsAhead)), true, [])
     ).toEqual([])
   })
 
@@ -447,12 +449,12 @@ describe('selectCoreCanaryArgs', () => {
     // The lower bound stays conservative under baseTag lag: the running code can only be NEWER
     // than its tag, so `>=min` can under-report but never over-report.
     expect(
-      selectCoreCanaryArgs([unboundedGrant], at('0.3.81', exactnessOf(undefined)), true, [])
+      selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81', exactnessOf(undefined)), true, [])
     ).toEqual([unboundedGrant])
   })
 })
 
-describe('core canary fetch', () => {
+describe('core beta grants fetch', () => {
   it('reads its own PostHog key once at boot', async () => {
     getOpsFlagResult.mockResolvedValue({
       kind: 'value',
@@ -460,20 +462,20 @@ describe('core canary fetch', () => {
       payload: { flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }] }
     })
     await Promise.all([
-      initCoreCanary({ distinctId: 'device-id' }),
-      initCoreCanary({ distinctId: 'device-id' })
+      initCoreBetaGrants({ distinctId: 'device-id' }),
+      initCoreBetaGrants({ distinctId: 'device-id' })
     ])
 
     expect(getOpsFlagResult).toHaveBeenCalledOnce()
     // The trailing callback is what lets a revocation arriving after the boot deadline reach
     // disk for the next launch. This flag persists grants, so it is the one that must have one.
     expect(getOpsFlagResult).toHaveBeenCalledWith(
-      CORE_CANARY_FLAG_KEY,
+      CORE_BETA_FEATURES_FLAG_KEY,
       'device-id',
       expect.any(Number),
       expect.any(Function)
     )
-    await expect(getCoreCanaryFlagsAsync()).resolves.toEqual([
+    await expect(getCoreBetaGrantsAsync()).resolves.toEqual([
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }
     ])
   })

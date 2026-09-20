@@ -111,9 +111,9 @@ vi.mock('../../comfy-args', async (importOriginal) => {
   }
 })
 
-vi.mock('../../coreCanary', async (importOriginal) => {
-  const actual = await importOriginal<typeof CoreCanaryModule>()
-  return { ...actual, getCoreCanaryFlagsAsync: async () => launchHarness.grants }
+vi.mock('../../coreBetaGrants', async (importOriginal) => {
+  const actual = await importOriginal<typeof CoreBetaGrantsModule>()
+  return { ...actual, getCoreBetaGrantsAsync: async () => launchHarness.grants }
 })
 
 vi.mock('../../hardwareTap', async (importOriginal) => {
@@ -147,7 +147,7 @@ import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
-import type { CoreCanaryFlag } from '../../coreCanary'
+import type { CoreBetaGrant } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import {
   makeSendOutput,
@@ -160,7 +160,7 @@ import {
 import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
-import type * as CoreCanaryModule from '../../coreCanary'
+import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as HardwareTapModule from '../../hardwareTap'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
@@ -534,14 +534,14 @@ const schemaOf = (...names: string[]): ComfyArgsSchema => ({
   knownFlags: new Set(names)
 })
 
-const ASSETS_GRANT: CoreCanaryFlag = { arg: '--enable-assets', minCoreVersion: '0.3.80' }
+const ASSETS_GRANT: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.80' }
 const PREFIX = ['/opt/py', '-s', 'ComfyUI/main.py']
 const DESKTOP_FLAGS = ['--feature-flag', 'show_signin_button=true']
 
 const build = (over: {
   userArgs?: string[]
   schema: ComfyArgsSchema
-  betaFlags?: CoreCanaryFlag[]
+  betaFlags?: CoreBetaGrant[]
   coreVersion?: string | null
   coreVersionExact?: boolean
   coreVersionVerified?: boolean
@@ -635,7 +635,7 @@ describe('buildLaunchArgs core beta injection', () => {
   })
 
   it('keeps a supported grant while dropping an unsupported one from the same payload', () => {
-    const hashing: CoreCanaryFlag = { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }
+    const hashing: CoreBetaGrant = { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }
     const built = build({
       schema: schemaOf('enable-assets'),
       betaFlags: [ASSETS_GRANT, hashing]
@@ -673,7 +673,7 @@ describe('buildLaunchArgs core beta injection', () => {
 
   it("keeps the user's own --enable-assets when the beta toggle is off", () => {
     // `--enable-assets` is a first-class launch argument the Desktop UI invites users to set.
-    // The canary may only ADD flags: opting out of beta withdraws the GRANT, never the user's
+    // Grants may only ADD flags: opting out of beta withdraws the GRANT, never the user's
     // own argument.
     const built = build({
       userArgs: ['--enable-assets', '--listen'],
@@ -757,7 +757,7 @@ describe('buildLaunchArgs core beta injection', () => {
     expect(built.beta.applied).toEqual([])
   })
 
-  it('never touches user args the canary has no opinion about', () => {
+  it('never touches user args the grants have no opinion about', () => {
     const built = build({
       userArgs: ['--listen', '--port', '8188'],
       schema: schemaOf('enable-assets', 'listen', 'port')
@@ -1158,8 +1158,8 @@ describe('core beta report placement', () => {
     ).toEqual(expected)
   })
 
-  // Assets can now run without the canary having granted anything, so attribution must report what
-  // the canary applied rather than what is on the command line — otherwise a self-enrolled user
+  // Assets can now run without a grant having been applied, so attribution must report what
+  // the grant system applied rather than what is on the command line — otherwise a self-enrolled user
   // lands inside the cohort and skews the soak denominator.
   it("reports no beta flags when assets run from the user's own argument", async () => {
     launchHarness.betaEnabled = false
