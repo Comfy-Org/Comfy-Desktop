@@ -555,10 +555,11 @@ function reportRendererError(payload: {
   if (!claimRendererTelemetryBudget('comfy.desktop.exception.error')) return
   if (isDatadogInitialized) {
     try {
-      const datadogError = new Error('Desktop application exception')
-      datadogError.name = 'DesktopTelemetryError'
-      datadogError.stack = undefined
-      datadogRum.addError(datadogError, {
+      // `error` is the scrubbed, length-capped copy built above. Reporting a
+      // fixed string here instead collapsed every failure mode into one
+      // indistinguishable Datadog error, which a monitor cannot act on.
+      error.name = 'DesktopTelemetryError'
+      datadogRum.addError(error, {
         origin: context['origin'],
         source: context['source'],
         forwarded_source: context['forwarded_source'],
@@ -566,7 +567,8 @@ function reportRendererError(payload: {
         reason: context['reason'],
         exitCode: context['exitCode'],
         exit_code: context['exit_code'],
-        type: context['type']
+        type: context['type'],
+        error_type: context['error_type']
       })
     } catch {}
   }

@@ -269,6 +269,9 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   posthogConstructorCalls.length = 0
   process.env['POSTHOG_API_KEY'] = 'test-key'
   process.env['POSTHOG_ENABLED'] = '1'
+  // Opt in by default here so tests that use the exception stream as an
+  // observable keep working; the opt-out default is pinned by its own test.
+  process.env['POSTHOG_EXCEPTIONS'] = '1'
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
   telemetry.initTelemetry({ appVersion, appEnv, isPackaged: true })
@@ -290,6 +293,7 @@ afterEach(() => {
   pendingIdentityMergeMock.nextId = 1
   delete process.env['POSTHOG_API_KEY']
   delete process.env['POSTHOG_ENABLED']
+  delete process.env['POSTHOG_EXCEPTIONS']
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
 })
@@ -1981,7 +1985,7 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     })
   })
 
-  it('forwards exceptions to Datadog without message, stack, or arbitrary context', () => {
+  it('forwards a bare notice to Datadog when no error is supplied', () => {
     const target = makeStubWebContents()
     telemetry.registerTelemetryRelayTarget(target.wc)
 
@@ -2008,6 +2012,55 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     expect(forwarded).not.toHaveProperty('stack')
     expect(forwardedContext).not.toHaveProperty('error_message')
     expect(forwardedContext).not.toHaveProperty('error_stack')
+  })
+
+  it('forwards the scrubbed message, stack and error_type so a monitor can tell failures apart', () => {
+    const target = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(target.wc)
+    const scrubbed = new Error('workspace auth gate failed to initialise')
+    scrubbed.stack = 'Error: workspace auth gate failed to initialise\n at gate.ts:1:1'
+
+    telemetry.forwardExceptionToRenderer(
+      {
+        origin: 'renderer',
+        source: 'hosted-frontend',
+        error_type: 'workspace_auth_gate_initialization_failure',
+        error_message: 'private failure text'
+      },
+      scrubbed
+    )
+
+    expect(target.sends[0]).toMatchObject({
+      channel: 'dd-error',
+      data: {
+        message: 'workspace auth gate failed to initialise',
+        stack: scrubbed.stack,
+        context: { error_type: 'workspace_auth_gate_initialization_failure' },
+        skipPostHog: true
+      }
+    })
+    const forwardedContext = (target.sends[0]!.data as Record<string, unknown>)[
+      'context'
+    ] as Record<string, unknown>
+    expect(forwardedContext).not.toHaveProperty('error_message')
+  })
+
+  it('suppresses the PostHog exception copy unless POSTHOG_EXCEPTIONS opts in', () => {
+    delete process.env['POSTHOG_EXCEPTIONS']
+    const target = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(target.wc)
+
+    telemetry.captureExceptionAndForward(new Error('boom'), {
+      error_type: 'workspace_auth_gate_initialization_failure'
+    })
+
+    expect(exceptions).toHaveLength(0)
+    // Datadog is the alerting surface now, so the forward must still happen.
+    expect(target.sends).toHaveLength(1)
+    expect(target.sends[0]).toMatchObject({
+      channel: 'dd-error',
+      data: { message: 'boom' }
+    })
   })
 
   it('emit() captures via PostHog Node AND forwards to relay targets', () => {

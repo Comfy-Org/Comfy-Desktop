@@ -933,9 +933,10 @@ export interface DatadogForwardedError {
   level?: 'debug' | 'info' | 'warn' | 'error' | 'critical'
   context?: Record<string, unknown>
   /**
-   * Set when the error has already been captured by main-process PostHog
-   * (via `mainTelemetry.captureException`). The renderer's listener forwards
-   * such errors to Datadog only, avoiding duplicate PostHog exceptions.
+   * Set when main has already handled the PostHog side of this error (which
+   * since `POSTHOG_EXCEPTIONS` became opt-in may mean it deliberately sent
+   * nothing). Either way the renderer's listener forwards to Datadog only,
+   * so it never double-reports.
    */
   skipPostHog?: boolean
 }

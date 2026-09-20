@@ -68,11 +68,16 @@
  *
  * ## Provider split
  *
- *   PostHog gets everything. Datadog only mirrors the failure / reliability
- *   allow-list in `src/shared/datadogMirroredEvents.ts`. Datadog is for
- *   alerting, not analysis - adding a name to the allow-list is a
+ *   PostHog gets every *event*. Datadog only mirrors the failure /
+ *   reliability allow-list in `src/shared/datadogMirroredEvents.ts`. Datadog
+ *   is for alerting, not analysis - adding a name to the allow-list is a
  *   deliberate ops decision ("I want a monitor on this"). PostHog
  *   dashboards + ad-hoc HogQL are the source of truth for everything else.
+ *
+ *   *Exceptions* invert that split: Datadog is the sink, unconditionally and
+ *   independently of the allow-list (which governs Actions only), and the
+ *   PostHog copy is opt-in behind `POSTHOG_EXCEPTIONS` because both sinks
+ *   carry the same scrubbed error and PostHog bills per event.
  *
  * ## A/B experiments
  *
@@ -118,7 +123,8 @@ export type OpsFlagFetchResult =
 import {
   DEFAULT_POSTHOG_API_KEY,
   DEFAULT_POSTHOG_HOST,
-  isPostHogFlagDisabled as isFlagDisabled
+  isPostHogFlagDisabled as isFlagDisabled,
+  isPostHogFlagEnabled as isFlagEnabled
 } from '../../shared/posthogConfig'
 import { isDatadogMirroredEvent } from '../../shared/datadogMirroredEvents'
 import { bucketError as sharedBucketError } from '../../shared/errorBucket'
@@ -1413,6 +1419,17 @@ function captureExceptionWrite(
   return true
 }
 
+/**
+ * Datadog is the alerting surface for exceptions; PostHog's copy is opt-in.
+ *
+ * Off by default because the two sinks carry the same scrubbed error and
+ * PostHog is billed per event. Set `POSTHOG_EXCEPTIONS=1` to restore it for
+ * an investigation that wants the error alongside product events.
+ */
+function isPostHogExceptionCaptureEnabled(): boolean {
+  return isFlagEnabled(process.env['POSTHOG_EXCEPTIONS'])
+}
+
 function deliverException(error: unknown, properties: TelemetryContext, forward: boolean): boolean {
   try {
     // Same default merge as capture() so exception events stay filterable by
@@ -1427,14 +1444,16 @@ function deliverException(error: unknown, properties: TelemetryContext, forward:
         safeErrorRecord[scrubAll(key).slice(0, 128)] = scrubAll(value).slice(0, ERROR_MESSAGE_MAX)
       }
     }
-    client!.captureException(
-      safeError,
-      distinctId!,
-      normalizeExceptionContext(
-        enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
-      ) as TelemetryContext
-    )
-    if (forward) forwardExceptionToRenderer(properties)
+    if (isPostHogExceptionCaptureEnabled()) {
+      client!.captureException(
+        safeError,
+        distinctId!,
+        normalizeExceptionContext(
+          enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+        ) as TelemetryContext
+      )
+    }
+    if (forward) forwardExceptionToRenderer(properties, safeError)
     return true
   } catch {
     // ignore
@@ -1739,8 +1758,15 @@ export function forwardToRenderer(event: string, context: TelemetryContext = {})
   }
 }
 
-/** Forward an accepted exception to the renderer-only Datadog SDK without diagnostics. */
-export function forwardExceptionToRenderer(context: TelemetryContext = {}): void {
+/**
+ * Forward an accepted exception to the renderer-only Datadog SDK.
+ *
+ * `error` carries the scrubbed message and stack; context keys stay
+ * allow-listed, so free-form diagnostics still never reach Datadog. Omit it
+ * and the renderer gets a bare notice, as it did before Datadog became the
+ * primary exception sink.
+ */
+export function forwardExceptionToRenderer(context: TelemetryContext = {}, error?: Error): void {
   const allowedKeys = [
     'origin',
     'source',
@@ -1749,18 +1775,24 @@ export function forwardExceptionToRenderer(context: TelemetryContext = {}): void
     'reason',
     'exitCode',
     'exit_code',
-    'type'
+    'type',
+    // Datadog is the alerting surface, and a monitor that cannot tell one
+    // failure mode from another is not an alert. This is the frontend's
+    // stable slug, not free-form text.
+    'error_type'
   ]
   const safeContext: TelemetryContext = {}
   for (const key of allowedKeys) {
     const value = context[key]
     if (!Array.isArray(value)) safeContext[key] = value
   }
+  // `error` is already scrubbed and length-capped by `deliverException`.
   const payload = {
     source: String(
       safeContext['source'] ?? safeContext['forwarded_source'] ?? 'captured-exception'
     ),
-    message: 'Desktop application exception',
+    message: error?.message || 'Desktop application exception',
+    ...(error?.stack ? { stack: error.stack } : {}),
     context: safeContext,
     skipPostHog: true
   }
