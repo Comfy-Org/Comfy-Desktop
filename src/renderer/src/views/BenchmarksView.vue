@@ -1,6 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { FolderOpen, ImageDown, RefreshCw, Search, SlidersHorizontal } from 'lucide-vue-next'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import {
+  ArrowUpDown,
+  FolderOpen,
+  GripVertical,
+  ImageDown,
+  Pencil,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Trash2
+} from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import type { PerformanceTestBenchmark, PerformanceTestResultValue } from '../types/ipc'
 import BrandBackground from '../components/BrandBackground.vue'
@@ -10,6 +20,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import { createBenchmarkComparisonSvg } from '../lib/benchmarkComparisonSvg'
 import { createResultsPng } from '../lib/performanceTestResultsSvg'
+import { useDialogs } from '../composables/useDialogs'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 
 type DurationKey =
@@ -18,16 +29,26 @@ type DurationKey =
   | 'medianJobDurationSeconds'
   | 'slowestJobDurationSeconds'
 type MetricKey = DurationKey | 'measuredJobCount'
+type ComparisonSortMetric = 'manual' | DurationKey
 
 const { t } = useI18n()
+const dialogs = useDialogs()
 const benchmarks = ref<PerformanceTestBenchmark[]>([])
-const selectedIds = ref<Set<string>>(new Set())
+const selectedOrderIds = ref<string[]>([])
+const selectedIds = computed(() => new Set(selectedOrderIds.value))
+const draggedBenchmarkId = ref<string | null>(null)
+const dropTargetBenchmarkId = ref<string | null>(null)
 const comparisonExpanded = ref(true)
 const benchmarksFolderPath = ref('')
 const loading = ref(true)
 const loadError = ref(false)
 const isExportingResults = ref(false)
 const exportResultsError = ref<string | null>(null)
+const deletingIds = ref<Set<string>>(new Set())
+const editingSessionId = ref<string | null>(null)
+const renamingSessionId = ref<string | null>(null)
+const sessionNameDraft = ref('')
+const sessionNameInput = ref<HTMLInputElement | null>(null)
 const searchQuery = ref('')
 const workspaceFilter = ref('')
 const instanceFilter = ref('')
@@ -45,6 +66,8 @@ const visibleColumnKeys = ref(new Set(defaultColumnKeys))
 const comparisonColumnKeys = ref(new Set(defaultComparisonColumnKeys))
 const sortKey = ref('createdAt')
 const sortAscending = ref(false)
+const comparisonSortMetric = ref<ComparisonSortMetric>('manual')
+const comparisonSortAscending = ref(true)
 
 const seriesColors = ['#55e0d1', '#a970ff', '#f6f31b', '#ff8a65', '#62a8ff']
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -251,9 +274,23 @@ const filteredBenchmarks = computed(() => {
     })
 })
 
-const selectedBenchmarks = computed(() =>
-  benchmarks.value.filter((benchmark) => selectedIds.value.has(benchmark.id))
-)
+const selectedBenchmarks = computed(() => {
+  const benchmarksById = new Map(benchmarks.value.map((benchmark) => [benchmark.id, benchmark]))
+  const selected = selectedOrderIds.value.flatMap((id) => {
+    const benchmark = benchmarksById.get(id)
+    return benchmark ? [benchmark] : []
+  })
+  if (comparisonSortMetric.value === 'manual') return selected
+
+  const key = comparisonSortMetric.value
+  return selected.sort((a, b) => {
+    const aValue = a[key]
+    const bValue = b[key]
+    if (aValue === null) return bValue === null ? 0 : 1
+    if (bValue === null) return -1
+    return comparisonSortAscending.value ? aValue - bValue : bValue - aValue
+  })
+})
 const allFilteredSelected = computed(
   () =>
     filteredBenchmarks.value.length > 0 &&
@@ -265,6 +302,14 @@ const metricRows = computed<Array<{ key: MetricKey; label: string }>>(() => [
   { key: 'medianJobDurationSeconds', label: t('benchmarks.median') },
   { key: 'slowestJobDurationSeconds', label: t('benchmarks.slowest') },
   { key: 'measuredJobCount', label: t('benchmarks.measuredRuns') }
+])
+const comparisonSortOptions = computed<BaseSelectOption[]>(() => [
+  { value: 'manual', label: t('benchmarks.manualSort') },
+  ...metricRows.value
+    .filter(
+      (metric): metric is { key: DurationKey; label: string } => metric.key !== 'measuredJobCount'
+    )
+    .map((metric) => ({ value: metric.key, label: metric.label }))
 ])
 const chartMaximum = computed(() => {
   const values = selectedBenchmarks.value.flatMap((benchmark) =>
@@ -282,20 +327,79 @@ function setSort(key: string): void {
 }
 
 function toggleBenchmark(id: string): void {
-  const next = new Set(selectedIds.value)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  selectedIds.value = next
+  if (selectedIds.value.has(id)) {
+    selectedOrderIds.value = selectedOrderIds.value.filter((selectedId) => selectedId !== id)
+  } else {
+    selectedOrderIds.value = [...selectedOrderIds.value, id]
+  }
 }
 
 function toggleAllFiltered(): void {
-  const next = new Set(selectedIds.value)
+  const filteredIds = new Set(filteredBenchmarks.value.map((benchmark) => benchmark.id))
   if (allFilteredSelected.value) {
-    for (const benchmark of filteredBenchmarks.value) next.delete(benchmark.id)
+    selectedOrderIds.value = selectedOrderIds.value.filter((id) => !filteredIds.has(id))
   } else {
-    for (const benchmark of filteredBenchmarks.value) next.add(benchmark.id)
+    const nextOrder = [...selectedOrderIds.value]
+    for (const benchmark of filteredBenchmarks.value) {
+      if (!selectedIds.value.has(benchmark.id)) nextOrder.push(benchmark.id)
+    }
+    selectedOrderIds.value = nextOrder
   }
-  selectedIds.value = next
+}
+
+function moveComparisonColumn(id: string, offset: -1 | 1): void {
+  useManualComparisonOrder()
+  const oldIndex = selectedOrderIds.value.indexOf(id)
+  const newIndex = oldIndex + offset
+  reorderComparisonColumn(id, newIndex)
+}
+
+function reorderComparisonColumn(id: string, newIndex: number): void {
+  const oldIndex = selectedOrderIds.value.indexOf(id)
+  if (oldIndex < 0 || newIndex < 0 || newIndex >= selectedOrderIds.value.length) return
+  const next = [...selectedOrderIds.value]
+  next.splice(oldIndex, 1)
+  next.splice(newIndex, 0, id)
+  selectedOrderIds.value = next
+}
+
+function startComparisonColumnDrag(event: DragEvent, id: string): void {
+  useManualComparisonOrder()
+  draggedBenchmarkId.value = id
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', id)
+  }
+}
+
+function dragOverComparisonColumn(event: DragEvent, id: string): void {
+  if (!draggedBenchmarkId.value || draggedBenchmarkId.value === id) return
+  event.preventDefault()
+  dropTargetBenchmarkId.value = id
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+}
+
+function dropComparisonColumn(event: DragEvent, targetId: string): void {
+  event.preventDefault()
+  const sourceId = draggedBenchmarkId.value ?? event.dataTransfer?.getData('text/plain')
+  if (sourceId && sourceId !== targetId) {
+    const sourceIndex = selectedOrderIds.value.indexOf(sourceId)
+    let newIndex = selectedOrderIds.value.indexOf(targetId)
+    if (sourceIndex < newIndex) newIndex -= 1
+    reorderComparisonColumn(sourceId, newIndex)
+  }
+  endComparisonColumnDrag()
+}
+
+function endComparisonColumnDrag(): void {
+  draggedBenchmarkId.value = null
+  dropTargetBenchmarkId.value = null
+}
+
+function useManualComparisonOrder(): void {
+  if (comparisonSortMetric.value === 'manual') return
+  selectedOrderIds.value = selectedBenchmarks.value.map((benchmark) => benchmark.id)
+  comparisonSortMetric.value = 'manual'
 }
 
 function formatDate(value: string | null): string {
@@ -335,37 +439,6 @@ function chartPosition(value: number | null): string {
 
 function chartPositionPercent(value: number): number {
   return Math.min(100, Math.max(0, (value / chartMaximum.value) * 100))
-}
-
-function chartLabelAlignment(value: number): 'start' | 'center' | 'end' {
-  const position = chartPositionPercent(value)
-  if (position < 8) return 'start'
-  if (position > 92) return 'end'
-  return 'center'
-}
-
-function chartEndpointLabelClass(
-  benchmark: PerformanceTestBenchmark,
-  endpoint: 'fastest' | 'slowest'
-): string {
-  const fastest = benchmark.fastestJobDurationSeconds
-  const slowest = benchmark.slowestJobDurationSeconds
-  if (fastest === null || slowest === null) return ''
-
-  const fastestPosition = chartPositionPercent(fastest)
-  const slowestPosition = chartPositionPercent(slowest)
-  if (slowestPosition - fastestPosition >= 14) {
-    const value = endpoint === 'fastest' ? fastest : slowest
-    return `benchmarks__chart-point-label--${chartLabelAlignment(value)}`
-  }
-
-  if (fastestPosition < 8) {
-    return `benchmarks__chart-point-label--collision-left-edge-${endpoint}`
-  }
-  if (slowestPosition > 92) {
-    return `benchmarks__chart-point-label--collision-right-edge-${endpoint}`
-  }
-  return `benchmarks__chart-point-label--collision-${endpoint}`
 }
 
 function chartWidth(benchmark: PerformanceTestBenchmark): string {
@@ -437,7 +510,7 @@ async function loadBenchmarks(folderPath?: string): Promise<void> {
     const result = await window.api.listPerformanceTestBenchmarks(folderPath)
     benchmarksFolderPath.value = result.folderPath
     benchmarks.value = result.benchmarks
-    selectedIds.value = new Set(benchmarks.value.slice(0, 3).map((benchmark) => benchmark.id))
+    selectedOrderIds.value = benchmarks.value.slice(0, 3).map((benchmark) => benchmark.id)
   } catch {
     loadError.value = true
   } finally {
@@ -452,6 +525,118 @@ async function selectBenchmarksFolder(): Promise<void> {
 
 function refreshBenchmarks(): void {
   void loadBenchmarks(benchmarksFolderPath.value || undefined)
+}
+
+function setSessionNameInput(element: unknown): void {
+  sessionNameInput.value = element instanceof HTMLInputElement ? element : null
+}
+
+function editSessionName(benchmark: PerformanceTestBenchmark): void {
+  if (renamingSessionId.value) return
+  editingSessionId.value = benchmark.id
+  sessionNameDraft.value = benchmark.id
+  void nextTick(() => {
+    sessionNameInput.value?.focus()
+    sessionNameInput.value?.select()
+  })
+}
+
+function cancelSessionNameEdit(): void {
+  if (renamingSessionId.value) return
+  editingSessionId.value = null
+  sessionNameDraft.value = ''
+}
+
+async function showSessionRenameError(message?: string): Promise<void> {
+  await dialogs.alert({
+    title: t('benchmarks.renameErrorTitle'),
+    message: message || t('benchmarks.renameErrorMessage'),
+    tone: 'danger'
+  })
+}
+
+async function saveSessionName(benchmark: PerformanceTestBenchmark): Promise<void> {
+  if (editingSessionId.value !== benchmark.id || renamingSessionId.value) return
+  const newSessionId = sessionNameDraft.value.trim()
+  if (newSessionId === benchmark.id) {
+    cancelSessionNameEdit()
+    return
+  }
+  if (!newSessionId) {
+    await showSessionRenameError(t('benchmarks.sessionNameRequired'))
+    await nextTick(() => sessionNameInput.value?.focus())
+    return
+  }
+
+  renamingSessionId.value = benchmark.id
+  try {
+    const result = await window.api.renamePerformanceTestBenchmark(
+      benchmarksFolderPath.value,
+      benchmark.id,
+      newSessionId
+    )
+    if (!result.ok) {
+      await showSessionRenameError(result.message)
+      return
+    }
+
+    const renamedId = result.sessionId ?? newSessionId
+    benchmarks.value = benchmarks.value.map((candidate) =>
+      candidate.id === benchmark.id ? { ...candidate, id: renamedId } : candidate
+    )
+    selectedOrderIds.value = selectedOrderIds.value.map((selectedId) =>
+      selectedId === benchmark.id ? renamedId : selectedId
+    )
+    editingSessionId.value = null
+    sessionNameDraft.value = ''
+  } catch (error) {
+    await showSessionRenameError((error as Error)?.message)
+  } finally {
+    renamingSessionId.value = null
+    if (editingSessionId.value === benchmark.id) {
+      await nextTick(() => sessionNameInput.value?.focus())
+    }
+  }
+}
+
+async function confirmDeleteBenchmark(benchmark: PerformanceTestBenchmark): Promise<void> {
+  const confirmed = await dialogs.confirm({
+    title: t('benchmarks.deleteConfirmTitle', { workflow: benchmark.workflowName }),
+    message: t('benchmarks.deleteConfirmMessage', { session: benchmark.id }),
+    confirmLabel: t('benchmarks.deleteFiles'),
+    tone: 'danger'
+  })
+  if (confirmed !== 'primary') return
+
+  deletingIds.value = new Set(deletingIds.value).add(benchmark.id)
+  try {
+    const result = await window.api.deletePerformanceTestBenchmark(
+      benchmarksFolderPath.value,
+      benchmark.id
+    )
+    if (!result.ok) {
+      await dialogs.alert({
+        title: t('benchmarks.deleteErrorTitle'),
+        message: result.message || t('benchmarks.deleteErrorMessage'),
+        tone: 'danger'
+      })
+      return
+    }
+    benchmarks.value = benchmarks.value.filter((candidate) => candidate.id !== benchmark.id)
+    selectedOrderIds.value = selectedOrderIds.value.filter(
+      (selectedId) => selectedId !== benchmark.id
+    )
+  } catch (error) {
+    await dialogs.alert({
+      title: t('benchmarks.deleteErrorTitle'),
+      message: (error as Error)?.message || t('benchmarks.deleteErrorMessage'),
+      tone: 'danger'
+    })
+  } finally {
+    const next = new Set(deletingIds.value)
+    next.delete(benchmark.id)
+    deletingIds.value = next
+  }
 }
 
 onMounted(() => {
@@ -584,6 +769,7 @@ onMounted(() => {
                       <span v-if="sortKey === column.key">{{ sortAscending ? '↑' : '↓' }}</span>
                     </button>
                   </th>
+                  <th class="benchmarks__actions-cell" :aria-label="t('benchmarks.actions')" />
                 </tr>
               </thead>
               <tbody>
@@ -615,7 +801,57 @@ onMounted(() => {
                     :key="column.key"
                     :class="{ benchmarks__strong: column.key === 'workflowName' }"
                   >
-                    {{ formatColumnValue(benchmark, column.key) }}
+                    <template v-if="column.key === 'id'">
+                      <span class="benchmarks__session-name-editor">
+                        <button
+                          class="benchmarks__session-name"
+                          :class="{
+                            'benchmarks__session-name--editing': editingSessionId === benchmark.id
+                          }"
+                          type="button"
+                          :disabled="editingSessionId === benchmark.id"
+                          :aria-label="t('benchmarks.editSessionName', { session: benchmark.id })"
+                          :title="t('benchmarks.editSessionName', { session: benchmark.id })"
+                          @click="editSessionName(benchmark)"
+                        >
+                          <span>{{ benchmark.id }}</span>
+                          <Pencil
+                            class="benchmarks__session-name-icon"
+                            :size="12"
+                            aria-hidden="true"
+                          />
+                        </button>
+                        <input
+                          v-if="editingSessionId === benchmark.id"
+                          :ref="setSessionNameInput"
+                          v-model="sessionNameDraft"
+                          class="benchmarks__session-name-input"
+                          type="text"
+                          :disabled="renamingSessionId === benchmark.id"
+                          :aria-label="t('benchmarks.sessionName')"
+                          @blur="saveSessionName(benchmark)"
+                          @keydown.enter.prevent="saveSessionName(benchmark)"
+                          @keydown.escape.prevent="cancelSessionNameEdit"
+                        />
+                      </span>
+                    </template>
+                    <template v-else>
+                      {{ formatColumnValue(benchmark, column.key) }}
+                    </template>
+                  </td>
+                  <td class="benchmarks__actions-cell">
+                    <button
+                      class="benchmarks__delete-record"
+                      type="button"
+                      :disabled="deletingIds.has(benchmark.id) || editingSessionId === benchmark.id"
+                      :aria-label="
+                        t('benchmarks.deleteRecord', { workflow: benchmark.workflowName })
+                      "
+                      :title="t('benchmarks.deleteRecord', { workflow: benchmark.workflowName })"
+                      @click="confirmDeleteBenchmark(benchmark)"
+                    >
+                      <Trash2 :size="14" aria-hidden="true" />
+                    </button>
                   </td>
                 </tr>
               </tbody>
@@ -645,6 +881,32 @@ onMounted(() => {
             <span v-if="exportResultsError" class="benchmarks__export-error">
               {{ exportResultsError }}
             </span>
+            <div class="benchmarks__comparison-sort">
+              <BaseSelect
+                v-model="comparisonSortMetric"
+                :options="comparisonSortOptions"
+                :aria-label="t('benchmarks.sortComparison')"
+                compact
+              />
+            </div>
+            <button
+              class="secondary benchmarks__sort-direction"
+              type="button"
+              :disabled="comparisonSortMetric === 'manual'"
+              :aria-label="
+                comparisonSortAscending
+                  ? t('benchmarks.switchSortDescending')
+                  : t('benchmarks.switchSortAscending')
+              "
+              :title="
+                comparisonSortAscending
+                  ? t('benchmarks.switchSortDescending')
+                  : t('benchmarks.switchSortAscending')
+              "
+              @click="comparisonSortAscending = !comparisonSortAscending"
+            >
+              <ArrowUpDown :size="16" aria-hidden="true" />
+            </button>
             <button
               class="secondary benchmarks__export-results"
               type="button"
@@ -694,9 +956,36 @@ onMounted(() => {
                     <th
                       v-for="benchmark in selectedBenchmarks"
                       :key="benchmark.id"
+                      :class="{
+                        'benchmarks__matrix-column--dragging': draggedBenchmarkId === benchmark.id,
+                        'benchmarks__matrix-column--drop-target':
+                          dropTargetBenchmarkId === benchmark.id
+                      }"
                       :style="{ '--series-color': seriesColor(benchmark) }"
+                      :data-testid="`benchmark-comparison-column-title-${benchmark.id}`"
+                      @dragover="dragOverComparisonColumn($event, benchmark.id)"
+                      @drop="dropComparisonColumn($event, benchmark.id)"
                     >
-                      <span class="benchmarks__matrix-title">
+                      <span
+                        class="benchmarks__matrix-title benchmarks__matrix-title--draggable"
+                        draggable="true"
+                        tabindex="0"
+                        :aria-label="
+                          t('benchmarks.reorderComparisonColumn', {
+                            workflow: benchmark.workflowName
+                          })
+                        "
+                        :title="t('benchmarks.reorderComparisonHint')"
+                        @dragstart="startComparisonColumnDrag($event, benchmark.id)"
+                        @dragend="endComparisonColumnDrag"
+                        @keydown.alt.left.prevent="moveComparisonColumn(benchmark.id, -1)"
+                        @keydown.alt.right.prevent="moveComparisonColumn(benchmark.id, 1)"
+                      >
+                        <GripVertical
+                          class="benchmarks__column-grip"
+                          :size="14"
+                          aria-hidden="true"
+                        />
                         <span class="benchmarks__series-dot" />
                         <span>
                           <template v-for="column in comparisonColumns" :key="column.key">
@@ -741,69 +1030,73 @@ onMounted(() => {
             <div class="benchmarks__chart">
               <h3>{{ t('benchmarks.durationRange') }}</h3>
               <p>{{ t('benchmarks.durationRangeHint') }}</p>
-              <div
-                v-for="benchmark in selectedBenchmarks"
-                :key="benchmark.id"
-                class="benchmarks__chart-row"
-                :style="{ '--series-color': seriesColor(benchmark) }"
-              >
-                <div class="benchmarks__chart-label">
-                  <span class="benchmarks__series-dot" />
-                  <span>
-                    <template v-for="column in comparisonColumns" :key="column.key">
-                      <strong
-                        v-if="column.key === 'workflowName'"
-                        :data-testid="`benchmark-chart-${benchmark.id}-${column.key}`"
+              <div class="benchmarks__chart-rows">
+                <div
+                  v-for="benchmark in selectedBenchmarks"
+                  :key="benchmark.id"
+                  class="benchmarks__chart-row"
+                  :style="{ '--series-color': seriesColor(benchmark) }"
+                >
+                  <div class="benchmarks__chart-label">
+                    <span class="benchmarks__series-dot" />
+                    <span>
+                      <template v-for="column in comparisonColumns" :key="column.key">
+                        <strong
+                          v-if="column.key === 'workflowName'"
+                          :data-testid="`benchmark-chart-${benchmark.id}-${column.key}`"
+                        >
+                          {{ formatColumnValue(benchmark, column.key) }}
+                        </strong>
+                        <small
+                          v-else
+                          :data-testid="`benchmark-chart-${benchmark.id}-${column.key}`"
+                        >
+                          <span>{{ column.label }}:</span>
+                          {{ formatColumnValue(benchmark, column.key) }}
+                        </small>
+                      </template>
+                    </span>
+                  </div>
+                  <div class="benchmarks__chart-track">
+                    <div class="benchmarks__chart-plot">
+                      <span
+                        class="benchmarks__chart-range"
+                        :style="{
+                          left: chartPosition(benchmark.fastestJobDurationSeconds),
+                          width: chartWidth(benchmark)
+                        }"
+                      />
+                      <span
+                        v-if="benchmark.averageJobDurationSeconds !== null"
+                        class="benchmarks__chart-average"
+                        :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
+                      />
+                      <span
+                        v-if="benchmark.fastestJobDurationSeconds !== null"
+                        :data-testid="`benchmark-chart-${benchmark.id}-fastest-label`"
+                        class="benchmarks__chart-point-label benchmarks__chart-point-label--endpoint benchmarks__chart-point-label--fastest"
+                        :style="{ left: chartPosition(benchmark.fastestJobDurationSeconds) }"
                       >
-                        {{ formatColumnValue(benchmark, column.key) }}
-                      </strong>
-                      <small v-else :data-testid="`benchmark-chart-${benchmark.id}-${column.key}`">
-                        <span>{{ column.label }}:</span>
-                        {{ formatColumnValue(benchmark, column.key) }}
-                      </small>
-                    </template>
-                  </span>
-                </div>
-                <div class="benchmarks__chart-track">
-                  <span
-                    class="benchmarks__chart-range"
-                    :style="{
-                      left: chartPosition(benchmark.fastestJobDurationSeconds),
-                      width: chartWidth(benchmark)
-                    }"
-                  />
-                  <span
-                    v-if="benchmark.averageJobDurationSeconds !== null"
-                    class="benchmarks__chart-average"
-                    :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
-                  />
-                  <span
-                    v-if="benchmark.fastestJobDurationSeconds !== null"
-                    :data-testid="`benchmark-chart-${benchmark.id}-fastest-label`"
-                    class="benchmarks__chart-point-label benchmarks__chart-point-label--above"
-                    :class="chartEndpointLabelClass(benchmark, 'fastest')"
-                    :style="{ left: chartPosition(benchmark.fastestJobDurationSeconds) }"
-                  >
-                    {{ formatDuration(benchmark.fastestJobDurationSeconds) }}
-                  </span>
-                  <span
-                    v-if="benchmark.slowestJobDurationSeconds !== null"
-                    :data-testid="`benchmark-chart-${benchmark.id}-slowest-label`"
-                    class="benchmarks__chart-point-label benchmarks__chart-point-label--above"
-                    :class="chartEndpointLabelClass(benchmark, 'slowest')"
-                    :style="{ left: chartPosition(benchmark.slowestJobDurationSeconds) }"
-                  >
-                    {{ formatDuration(benchmark.slowestJobDurationSeconds) }}
-                  </span>
-                  <span
-                    v-if="benchmark.averageJobDurationSeconds !== null"
-                    :data-testid="`benchmark-chart-${benchmark.id}-average-label`"
-                    class="benchmarks__chart-point-label benchmarks__chart-point-label--below"
-                    :class="`benchmarks__chart-point-label--${chartLabelAlignment(benchmark.averageJobDurationSeconds)}`"
-                    :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
-                  >
-                    {{ formatDuration(benchmark.averageJobDurationSeconds) }}
-                  </span>
+                        {{ formatDuration(benchmark.fastestJobDurationSeconds) }}
+                      </span>
+                      <span
+                        v-if="benchmark.slowestJobDurationSeconds !== null"
+                        :data-testid="`benchmark-chart-${benchmark.id}-slowest-label`"
+                        class="benchmarks__chart-point-label benchmarks__chart-point-label--endpoint benchmarks__chart-point-label--slowest"
+                        :style="{ left: chartPosition(benchmark.slowestJobDurationSeconds) }"
+                      >
+                        {{ formatDuration(benchmark.slowestJobDurationSeconds) }}
+                      </span>
+                      <span
+                        v-if="benchmark.averageJobDurationSeconds !== null"
+                        :data-testid="`benchmark-chart-${benchmark.id}-average-label`"
+                        class="benchmarks__chart-point-label benchmarks__chart-point-label--below benchmarks__chart-point-label--center"
+                        :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
+                      >
+                        {{ formatDuration(benchmark.averageJobDurationSeconds) }}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1065,9 +1358,104 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.benchmarks__session-name-editor {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.benchmarks__session-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: text;
+}
+
+.benchmarks__session-name--editing {
+  visibility: hidden;
+}
+
+.benchmarks__session-name-icon {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.benchmarks__session-name:hover .benchmarks__session-name-icon,
+.benchmarks__session-name:focus-visible .benchmarks__session-name-icon {
+  opacity: 1;
+}
+
+.benchmarks__session-name:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.benchmarks__session-name-input {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 1px 2px;
+  border: 1px solid var(--brand-surface-border-hover);
+  border-radius: 4px;
+  background: var(--neutral-900);
+  color: var(--neutral-100);
+  font: inherit;
+}
+
+.benchmarks__session-name-input:focus {
+  border-color: var(--focus-ring);
+  outline: none;
+}
+
 .benchmarks__check-cell {
   width: 44px;
   text-align: center;
+}
+
+.benchmarks__actions-cell {
+  width: 44px;
+  text-align: center;
+}
+
+.benchmarks__delete-record {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.benchmarks__delete-record:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+.benchmarks__delete-record:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.benchmarks__delete-record:disabled {
+  cursor: wait;
+  opacity: 0.5;
 }
 
 .benchmarks__checkbox {
@@ -1158,6 +1546,20 @@ onMounted(() => {
   margin-bottom: 14px;
 }
 
+.benchmarks__comparison-sort {
+  width: 220px;
+}
+
+.benchmarks__sort-direction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
 .benchmarks__export-results {
   display: inline-flex;
   align-items: center;
@@ -1209,6 +1611,35 @@ onMounted(() => {
   text-align: left;
 }
 
+.benchmarks__matrix-title--draggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.benchmarks__matrix-title--draggable:active {
+  cursor: grabbing;
+}
+
+.benchmarks__matrix-title--draggable:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.benchmarks__column-grip {
+  flex: 0 0 auto;
+  margin-left: -6px;
+  color: var(--text-muted);
+}
+
+.benchmarks__matrix-column--dragging {
+  opacity: 0.55;
+}
+
+.benchmarks__matrix-column--drop-target {
+  box-shadow: inset 3px 0 var(--accent);
+}
+
 .benchmarks__best {
   background: color-mix(in srgb, #3ecf8e 18%, transparent);
   color: #78e7b6;
@@ -1227,19 +1658,21 @@ onMounted(() => {
   margin: 4px 0 18px;
 }
 
-.benchmarks__chart-row {
+.benchmarks__chart-rows {
   display: grid;
-  grid-template-areas:
-    'label'
-    'track';
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: fit-content(40%) minmax(0, 1fr);
+  column-gap: 10px;
+}
+
+.benchmarks__chart-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 6px;
   margin: 18px 0;
 }
 
 .benchmarks__chart-label {
-  grid-area: label;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1247,7 +1680,6 @@ onMounted(() => {
 }
 
 .benchmarks__chart-track {
-  grid-area: track;
   position: relative;
   height: 64px;
 }
@@ -1260,6 +1692,11 @@ onMounted(() => {
   left: 0;
   height: 2px;
   background: var(--chooser-surface-border);
+}
+
+.benchmarks__chart-plot {
+  position: absolute;
+  inset: 0 52px;
 }
 
 .benchmarks__chart-range {
@@ -1307,44 +1744,24 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-.benchmarks__chart-point-label--above {
-  top: 19px;
-}
-
 .benchmarks__chart-point-label--below {
   top: 48px;
 }
 
+.benchmarks__chart-point-label--endpoint {
+  top: 30px;
+}
+
+.benchmarks__chart-point-label--fastest {
+  transform: translateX(calc(-100% - 5px));
+}
+
+.benchmarks__chart-point-label--slowest {
+  transform: translateX(5px);
+}
+
 .benchmarks__chart-point-label--center {
   transform: translateX(-50%);
-}
-
-.benchmarks__chart-point-label--end {
-  transform: translateX(-100%);
-}
-
-.benchmarks__chart-point-label--collision-fastest {
-  transform: translateX(calc(-100% - 4px));
-}
-
-.benchmarks__chart-point-label--collision-slowest {
-  transform: translateX(4px);
-}
-
-.benchmarks__chart-point-label--collision-left-edge-fastest {
-  transform: translateX(4px);
-}
-
-.benchmarks__chart-point-label--collision-left-edge-slowest {
-  transform: translateX(88px);
-}
-
-.benchmarks__chart-point-label--collision-right-edge-fastest {
-  transform: translateX(calc(-100% - 88px));
-}
-
-.benchmarks__chart-point-label--collision-right-edge-slowest {
-  transform: translateX(calc(-100% - 4px));
 }
 
 @media (max-width: 1100px) {

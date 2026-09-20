@@ -43,8 +43,10 @@ import { deriveGpuTier } from '../../../shared/gpuTier'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import {
   calculatePerformanceTestStatistics,
+  deletePerformanceTestBenchmark,
   deletePerformanceTestWorkflow,
   listPerformanceTestBenchmarks,
+  renamePerformanceTestBenchmark,
   readPerformanceTestResultsSummary,
   savePerformanceTestJobsResponse,
   savePerformanceTestLogs,
@@ -202,6 +204,39 @@ export function registerAppHandlers(): void {
       return {
         folderPath,
         benchmarks: await listPerformanceTestBenchmarks(folderPath)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'delete-performance-test-benchmark',
+    async (_event, folderPath: string, sessionId: string) => {
+      try {
+        if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath)) {
+          throw new Error('Invalid performance test folder.')
+        }
+        await deletePerformanceTestBenchmark(folderPath, sessionId)
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, message: (error as Error)?.message || String(error) }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'rename-performance-test-benchmark',
+    async (_event, folderPath: string, sessionId: string, newSessionId: string) => {
+      try {
+        if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath)) {
+          throw new Error('Invalid performance test folder.')
+        }
+        if (typeof sessionId !== 'string' || typeof newSessionId !== 'string') {
+          throw new Error('Invalid performance test benchmark ID.')
+        }
+        await renamePerformanceTestBenchmark(folderPath, sessionId, newSessionId)
+        return { ok: true, sessionId: newSessionId }
+      } catch (error) {
+        return { ok: false, message: (error as Error)?.message || String(error) }
       }
     }
   )

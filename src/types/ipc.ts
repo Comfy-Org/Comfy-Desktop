@@ -1183,6 +1183,15 @@ export interface ElectronApi {
     folderPath: string
     benchmarks: PerformanceTestBenchmark[]
   }>
+  deletePerformanceTestBenchmark(
+    folderPath: string,
+    sessionId: string
+  ): Promise<{ ok: boolean; message?: string }>
+  renamePerformanceTestBenchmark(
+    folderPath: string,
+    sessionId: string,
+    newSessionId: string
+  ): Promise<{ ok: boolean; sessionId?: string; message?: string }>
   runPerformanceTestWorkflow(
     sessionId: string,
     filePath: string,

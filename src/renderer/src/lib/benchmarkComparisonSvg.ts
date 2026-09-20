@@ -65,6 +65,10 @@ function propertyTextLines(properties: BenchmarkComparisonImageProperty[]) {
   })
 }
 
+function estimatedPropertyLineWidth(line: string, propertyIndex: number): number {
+  return line.length * (propertyIndex === 0 ? 7.2 : 6.6)
+}
+
 function propertyLines(
   properties: BenchmarkComparisonImageProperty[],
   x: number,
@@ -81,45 +85,6 @@ function formatDuration(value: number): string {
   return `${value.toFixed(2).replace(/\.?0+$/, '')} s`
 }
 
-function chartLabelAnchor(x: number, start: number, end: number): 'start' | 'middle' | 'end' {
-  if (x - start < 45) return 'start'
-  if (end - x < 45) return 'end'
-  return 'middle'
-}
-
-function rangeLabelPlacement(
-  fastestX: number,
-  slowestX: number,
-  start: number,
-  end: number
-): {
-  fastest: { x: number; anchor: 'start' | 'middle' | 'end' }
-  slowest: { x: number; anchor: 'start' | 'middle' | 'end' }
-} {
-  if (slowestX - fastestX >= 84) {
-    return {
-      fastest: { x: fastestX, anchor: chartLabelAnchor(fastestX, start, end) },
-      slowest: { x: slowestX, anchor: chartLabelAnchor(slowestX, start, end) }
-    }
-  }
-  if (fastestX - start < 45) {
-    return {
-      fastest: { x: fastestX + 4, anchor: 'start' },
-      slowest: { x: slowestX + 88, anchor: 'start' }
-    }
-  }
-  if (end - slowestX < 45) {
-    return {
-      fastest: { x: fastestX - 88, anchor: 'end' },
-      slowest: { x: slowestX - 4, anchor: 'end' }
-    }
-  }
-  return {
-    fastest: { x: fastestX - 4, anchor: 'end' },
-    slowest: { x: slowestX + 4, anchor: 'start' }
-  }
-}
-
 /** Create a self-contained SVG containing the selected benchmark comparison. */
 export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData): string {
   const margin = 56
@@ -127,10 +92,16 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
   const runCount = Math.max(1, data.runs.length)
   const width = Math.max(1200, margin * 2 + metricColumnWidth + runCount * 270)
   const runColumnWidth = (width - margin * 2 - metricColumnWidth) / runCount
-  const propertyLineCount = Math.max(
-    1,
-    ...data.runs.map((run) => propertyTextLines(run.properties).length)
-  )
+  const runPropertyLines = data.runs.map((run) => propertyTextLines(run.properties))
+  const propertyLineCount = Math.max(1, ...runPropertyLines.map((lines) => lines.length))
+  const chartLabelWidth =
+    20 +
+    Math.max(
+      0,
+      ...runPropertyLines.flatMap((lines) =>
+        lines.map(({ line, propertyIndex }) => estimatedPropertyLineWidth(line, propertyIndex))
+      )
+    )
   const headerHeight = Math.max(88, 34 + propertyLineCount * 19)
   const metricCount = Math.max(1, ...data.runs.map((run) => run.metrics.length))
   const metricRowHeight = 42
@@ -139,8 +110,11 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
   const tableWidth = width - margin * 2
   const tableHeight = headerHeight + metricCount * metricRowHeight
   const chartY = tableY + tableHeight + 70
-  const chartLabelWidth = 370
-  const chartWidth = width - margin * 2 - chartLabelWidth
+  const chartLabelGap = 10
+  const chartEndpointLabelSpace = 56
+  const chartStart = margin + chartLabelWidth + chartLabelGap + chartEndpointLabelSpace
+  const chartEnd = width - margin - chartEndpointLabelSpace
+  const chartWidth = chartEnd - chartStart
   const chartRowHeight = Math.max(96, 52 + propertyLineCount * 19)
   const height = chartY + 44 + data.runs.length * chartRowHeight + 80
   const maximumDuration = Math.max(
@@ -149,8 +123,7 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
       run.slowestDurationSeconds === null ? [] : [run.slowestDurationSeconds]
     )
   )
-  const durationX = (value: number) =>
-    margin + chartLabelWidth + (value / maximumDuration) * chartWidth
+  const durationX = (value: number) => chartStart + (value / maximumDuration) * chartWidth
 
   const headers = data.runs
     .map((run, index) => {
@@ -188,7 +161,7 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
   const chartRows = data.runs
     .map((run, index) => {
       const y = chartY + 44 + index * chartRowHeight
-      const trackY = y + Math.max(42, (propertyTextLines(run.properties).length * 19) / 2)
+      const trackY = y + Math.max(42, (runPropertyLines[index]!.length * 19) / 2)
       const fastest = run.fastestDurationSeconds
       const average = run.averageDurationSeconds
       const slowest = run.slowestDurationSeconds
@@ -197,29 +170,21 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
       const slowestX = slowest === null ? null : durationX(slowest)
       const range =
         fastest !== null && slowest !== null && fastestX !== null && slowestX !== null
-          ? (() => {
-              const labels = rangeLabelPlacement(
-                fastestX,
-                slowestX,
-                margin + chartLabelWidth,
-                width - margin
-              )
-              return `<line x1="${fastestX}" y1="${trackY}" x2="${slowestX}" y2="${trackY}" stroke="${escapeXml(run.color)}" class="chart-range" />
+          ? `<line x1="${fastestX}" y1="${trackY}" x2="${slowestX}" y2="${trackY}" stroke="${escapeXml(run.color)}" class="chart-range" />
              <circle cx="${fastestX}" cy="${trackY}" r="4" fill="${escapeXml(run.color)}" />
              <circle cx="${slowestX}" cy="${trackY}" r="4" fill="${escapeXml(run.color)}" />
-             ${text(labels.fastest.x, trackY - 10, formatDuration(fastest), 'chart-point-label', labels.fastest.anchor)}
-             ${text(labels.slowest.x, trackY - 10, formatDuration(slowest), 'chart-point-label', labels.slowest.anchor)}`
-            })()
+             ${text(fastestX - 4, trackY + 4, formatDuration(fastest), 'chart-point-label', 'end')}
+             ${text(slowestX + 4, trackY + 4, formatDuration(slowest), 'chart-point-label', 'start')}`
           : ''
       const averageMarker =
         average === null || averageX === null
           ? ''
           : `<circle cx="${averageX}" cy="${trackY}" r="5" class="chart-average" />
-             ${text(averageX, trackY + 22, formatDuration(average), 'chart-point-label', chartLabelAnchor(averageX, margin + chartLabelWidth, width - margin))}`
+             ${text(averageX, trackY + 22, formatDuration(average), 'chart-point-label', 'middle')}`
       return [
         `<circle cx="${margin + 6}" cy="${y + 7}" r="6" fill="${escapeXml(run.color)}" />`,
         propertyLines(run.properties, margin + 20, y + 12),
-        `<line x1="${margin + chartLabelWidth}" y1="${trackY}" x2="${width - margin}" y2="${trackY}" class="chart-track" />`,
+        `<line x1="${margin + chartLabelWidth + chartLabelGap}" y1="${trackY}" x2="${width - margin}" y2="${trackY}" class="chart-track" />`,
         range,
         averageMarker
       ].join('')

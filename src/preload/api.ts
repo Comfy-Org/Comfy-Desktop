@@ -36,6 +36,10 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('save-performance-test-logs', filePath, logs),
     listPerformanceTestBenchmarks: (folderPath?) =>
       ipcRenderer.invoke('list-performance-test-benchmarks', folderPath),
+    deletePerformanceTestBenchmark: (folderPath, sessionId) =>
+      ipcRenderer.invoke('delete-performance-test-benchmark', folderPath, sessionId),
+    renamePerformanceTestBenchmark: (folderPath, sessionId, newSessionId) =>
+      ipcRenderer.invoke('rename-performance-test-benchmark', folderPath, sessionId, newSessionId),
     readPerformanceTestResultsSummary: (filePath) =>
       ipcRenderer.invoke('read-performance-test-results-summary', filePath),
     runPerformanceTestWorkflow: (sessionId, filePath, measuredRuns, warmupRuns) =>

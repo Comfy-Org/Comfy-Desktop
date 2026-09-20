@@ -3,6 +3,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import type { PerformanceTestBenchmark } from '../types/ipc'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
+import BaseSelect from '../components/ui/BaseSelect.vue'
+import { useDialogs } from '../composables/useDialogs'
 import BenchmarksView from './BenchmarksView.vue'
 
 const createResultsPngMock = vi.hoisted(() =>
@@ -10,6 +12,13 @@ const createResultsPngMock = vi.hoisted(() =>
 )
 const exportResultsImageMock = vi.hoisted(() =>
   vi.fn(async () => ({ ok: true, filePath: 'C:\\Exports\\benchmark-comparison.png' }))
+)
+const deletePerformanceTestBenchmarkMock = vi.hoisted(() => vi.fn(async () => ({ ok: true })))
+const renamePerformanceTestBenchmarkMock = vi.hoisted(() =>
+  vi.fn(async (_folderPath: string, _sessionId: string, newSessionId: string) => ({
+    ok: true,
+    sessionId: newSessionId
+  }))
 )
 
 vi.mock('../lib/performanceTestResultsSvg', async (importOriginal) => ({
@@ -52,7 +61,26 @@ const messages = {
     measuredRuns: 'Measured runs',
     selectVisible: 'Select all visible runs',
     selectRun: 'Select {workflow}',
+    actions: 'Actions',
+    deleteRecord: 'Delete {workflow} benchmark',
+    deleteConfirmTitle: 'Delete {workflow}?',
+    deleteConfirmMessage:
+      'This will permanently delete all files for session {session}. This cannot be undone.',
+    deleteFiles: 'Delete files',
+    deleteErrorTitle: 'Could not delete benchmark',
+    deleteErrorMessage: 'The benchmark files could not be deleted.',
+    sessionName: 'Session name',
+    editSessionName: 'Edit session {session}',
+    renameErrorTitle: 'Could not rename session',
+    renameErrorMessage: 'The session folder could not be renamed.',
+    sessionNameRequired: 'Enter a session name.',
     comparison: 'Comparison',
+    sortComparison: 'Sort comparison',
+    manualSort: 'Manual sort',
+    switchSortAscending: 'Switch to ascending sort',
+    switchSortDescending: 'Switch to descending sort',
+    reorderComparisonColumn: 'Reorder {workflow} comparison column',
+    reorderComparisonHint: 'Drag to reorder. You can also press Alt+Left or Alt+Right.',
     comparisonImageTitle: 'Benchmark Comparison',
     exportResultsImage: 'Export results',
     exportingImage: 'Exporting image...',
@@ -122,11 +150,17 @@ function mountView() {
 
 describe('BenchmarksView', () => {
   beforeEach(() => {
+    useDialogs().cancel()
     createResultsPngMock.mockClear()
     exportResultsImageMock.mockClear()
+    deletePerformanceTestBenchmarkMock.mockClear()
+    deletePerformanceTestBenchmarkMock.mockResolvedValue({ ok: true })
+    renamePerformanceTestBenchmarkMock.mockClear()
     ;(window as unknown as { api: object }).api = {
       browseFolder: vi.fn(),
       exportResultsImage: exportResultsImageMock,
+      deletePerformanceTestBenchmark: deletePerformanceTestBenchmarkMock,
+      renamePerformanceTestBenchmark: renamePerformanceTestBenchmarkMock,
       listPerformanceTestBenchmarks: vi.fn(async () => ({
         folderPath: 'C:\\results\\performance-tests',
         benchmarks: sampleBenchmarks
@@ -145,7 +179,8 @@ describe('BenchmarksView', () => {
       'Session',
       'GPU / Hardware',
       'Runs',
-      'Date / Time ↓'
+      'Date / Time ↓',
+      ''
     ])
     expect(wrapper.get('[data-testid="benchmark-row-13"]').text()).toContain('13')
     expect(wrapper.find('.benchmarks__selection-tray').exists()).toBe(false)
@@ -174,7 +209,7 @@ describe('BenchmarksView', () => {
     expect(
       wrapper
         .get('[data-testid="benchmark-chart-13-slowest-label"]')
-        .classes('benchmarks__chart-point-label--center')
+        .classes('benchmarks__chart-point-label--slowest')
     ).toBe(true)
 
     const exportButton = wrapper.get('.benchmarks__export-results')
@@ -262,6 +297,209 @@ describe('BenchmarksView', () => {
     expect(wrapper.get('.benchmarks__comparison').text()).toContain(
       'Select runs from the library to compare them.'
     )
+  })
+
+  it('reorders comparison columns by dragging a column title', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const columnIds = () =>
+      wrapper
+        .findAll('[data-testid^="benchmark-comparison-column-title-"]')
+        .map((header) => header.attributes('data-testid')?.split('-').at(-1))
+
+    expect(columnIds()).toEqual(['13', '12', '11'])
+
+    const dataTransfer = {
+      effectAllowed: 'none',
+      dropEffect: 'none',
+      setData: vi.fn(),
+      getData: vi.fn(() => '13')
+    }
+    await wrapper
+      .get('[data-testid="benchmark-comparison-column-title-13"] .benchmarks__matrix-title')
+      .trigger('dragstart', { dataTransfer })
+    await wrapper.get('[data-testid="benchmark-comparison-column-title-11"]').trigger('dragover', {
+      dataTransfer
+    })
+    expect(
+      wrapper
+        .get('[data-testid="benchmark-comparison-column-title-11"]')
+        .classes('benchmarks__matrix-column--drop-target')
+    ).toBe(true)
+    await wrapper.get('[data-testid="benchmark-comparison-column-title-11"]').trigger('drop', {
+      dataTransfer
+    })
+
+    expect(columnIds()).toEqual(['12', '13', '11'])
+
+    await wrapper
+      .get('[data-testid="benchmark-comparison-column-title-11"] .benchmarks__matrix-title')
+      .trigger('dragstart', { dataTransfer })
+    await wrapper.get('[data-testid="benchmark-comparison-column-title-12"]').trigger('drop', {
+      dataTransfer
+    })
+
+    expect(columnIds()).toEqual(['11', '12', '13'])
+    expect(wrapper.findAll('.benchmarks__chart-row strong').map((title) => title.text())).toEqual([
+      'portrait.json',
+      'product.json',
+      'portrait.json'
+    ])
+  })
+
+  it('sorts comparison columns by duration metrics in either direction', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const columnIds = () =>
+      wrapper
+        .findAll('[data-testid^="benchmark-comparison-column-title-"]')
+        .map((header) => header.attributes('data-testid')?.split('-').at(-1))
+    const sortSelect = wrapper
+      .findAllComponents(BaseSelect)
+      .find((select) => select.props('ariaLabel') === 'Sort comparison')
+
+    expect(sortSelect?.props('options').map((option) => option.label)).toEqual([
+      'Manual sort',
+      'Fastest',
+      'Average',
+      'Median',
+      'Slowest'
+    ])
+
+    sortSelect?.vm.$emit('update:modelValue', 'fastestJobDurationSeconds')
+    await wrapper.vm.$nextTick()
+    expect(columnIds()).toEqual(['11', '13', '12'])
+
+    await wrapper.get('.benchmarks__sort-direction').trigger('click')
+    expect(columnIds()).toEqual(['12', '13', '11'])
+    expect(wrapper.get('.benchmarks__sort-direction').attributes('aria-label')).toBe(
+      'Switch to ascending sort'
+    )
+  })
+
+  it('places endpoint labels immediately outside their data point markers', async () => {
+    const edgeBenchmark = {
+      ...benchmark('14', 'qwen_image_2.1_int8_bf16.json', 45.83),
+      fastestJobDurationSeconds: 44.7,
+      averageJobDurationSeconds: 45.83,
+      medianJobDurationSeconds: 45.61,
+      slowestJobDurationSeconds: 47.24
+    }
+    vi.mocked(window.api.listPerformanceTestBenchmarks).mockResolvedValueOnce({
+      folderPath: 'C:\\results\\performance-tests',
+      benchmarks: [edgeBenchmark]
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const fastestLabel = wrapper.get('[data-testid="benchmark-chart-14-fastest-label"]')
+    expect(fastestLabel.classes()).toContain('benchmarks__chart-point-label--fastest')
+    expect(wrapper.get('[data-testid="benchmark-chart-14-slowest-label"]').classes()).toContain(
+      'benchmarks__chart-point-label--slowest'
+    )
+    expect(wrapper.get('[data-testid="benchmark-chart-14-average-label"]').classes()).toContain(
+      'benchmarks__chart-point-label--center'
+    )
+
+    await wrapper.get('.benchmarks__export-results').trigger('click')
+    await flushPromises()
+    const svg = createResultsPngMock.mock.calls[0]![0]
+    const markerMatches = [...svg.matchAll(/<circle cx="([^"]+)" cy="([^"]+)" r="4"[^>]*\/>/g)]
+    const fastestLabelMatch = svg.match(
+      /<text x="([^"]+)" y="([^"]+)" class="chart-point-label" text-anchor="end">44\.7 s<\/text>/
+    )
+    const slowestLabelMatch = svg.match(
+      /<text x="([^"]+)" y="([^"]+)" class="chart-point-label" text-anchor="start">47\.24 s<\/text>/
+    )
+    const averageMarkerX = svg.match(/<circle cx="([^"]+)"[^>]+r="5" class="chart-average"/)?.[1]
+    const averageLabelX = svg.match(
+      /<text x="([^"]+)"[^>]+class="chart-point-label" text-anchor="middle">45\.83 s<\/text>/
+    )?.[1]
+    expect(Number(fastestLabelMatch?.[1])).toBe(Number(markerMatches[0]?.[1]) - 4)
+    expect(Number(slowestLabelMatch?.[1])).toBe(Number(markerMatches[1]?.[1]) + 4)
+    expect(Number(fastestLabelMatch?.[2])).toBe(Number(markerMatches[0]?.[2]) + 4)
+    expect(Number(slowestLabelMatch?.[2])).toBe(Number(markerMatches[1]?.[2]) + 4)
+    expect(averageLabelX).toBe(averageMarkerX)
+  })
+
+  it('confirms before deleting all files for a benchmark record', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const dialogs = useDialogs()
+
+    expect(wrapper.findAll('.benchmarks__delete-record')).toHaveLength(4)
+    await wrapper
+      .get('[data-testid="benchmark-row-13"] .benchmarks__delete-record')
+      .trigger('click')
+    expect(dialogs.state.open).toBe(true)
+    expect(dialogs.state.kind).toBe('confirm')
+    expect(dialogs.state.confirm.title).toBe('Delete portrait.json?')
+    expect(dialogs.state.confirm.message).toContain('permanently delete all files for session 13')
+    expect(deletePerformanceTestBenchmarkMock).not.toHaveBeenCalled()
+
+    dialogs.confirmPrimary()
+    await flushPromises()
+
+    expect(deletePerformanceTestBenchmarkMock).toHaveBeenCalledWith(
+      'C:\\results\\performance-tests',
+      '13'
+    )
+    expect(wrapper.find('[data-testid="benchmark-row-13"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="benchmark-comparison-column-title-13"]').exists()).toBe(
+      false
+    )
+  })
+
+  it('shows an error when the benchmark delete bridge rejects', async () => {
+    deletePerformanceTestBenchmarkMock.mockRejectedValueOnce(new Error('Delete IPC unavailable'))
+    const wrapper = mountView()
+    await flushPromises()
+    const dialogs = useDialogs()
+
+    await wrapper
+      .get('[data-testid="benchmark-row-13"] .benchmarks__delete-record')
+      .trigger('click')
+    dialogs.confirmPrimary()
+    await flushPromises()
+
+    expect(dialogs.state.kind).toBe('alert')
+    expect(dialogs.state.alert.title).toBe('Could not delete benchmark')
+    expect(dialogs.state.alert.message).toBe('Delete IPC unavailable')
+    expect(wrapper.find('[data-testid="benchmark-row-13"]').exists()).toBe(true)
+  })
+
+  it('renames a session inline and preserves its comparison selection', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const sessionButton = wrapper.get('[data-testid="benchmark-row-13"] .benchmarks__session-name')
+    expect(sessionButton.text()).toBe('13')
+    expect(sessionButton.attributes('aria-label')).toBe('Edit session 13')
+
+    await sessionButton.trigger('click')
+    const input = wrapper.get<HTMLInputElement>('.benchmarks__session-name-input')
+    expect(input.element.value).toBe('13')
+    expect(
+      wrapper.get('[data-testid="benchmark-row-13"] .benchmarks__delete-record').attributes()
+    ).toHaveProperty('disabled')
+    await input.setValue('gpu-baseline')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(renamePerformanceTestBenchmarkMock).toHaveBeenCalledWith(
+      'C:\\results\\performance-tests',
+      '13',
+      'gpu-baseline'
+    )
+    expect(wrapper.find('[data-testid="benchmark-row-13"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="benchmark-row-gpu-baseline"]').text()).toContain(
+      'gpu-baseline'
+    )
+    expect(
+      wrapper.find('[data-testid="benchmark-comparison-column-title-gpu-baseline"]').exists()
+    ).toBe(true)
   })
 
   it('opens the current results folder in the picker and loads a selected folder', async () => {

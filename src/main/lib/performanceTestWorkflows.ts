@@ -92,6 +92,28 @@ function parsePerformanceTestBenchmark(
   }
 }
 
+function resolvePerformanceTestSessionDir(performanceTestsDir: string, sessionId: string): string {
+  const testsDir = path.resolve(performanceTestsDir)
+  const sessionDir = path.resolve(testsDir, sessionId)
+  if (
+    !sessionId ||
+    path.dirname(sessionDir) !== testsDir ||
+    path.basename(sessionDir) !== sessionId
+  ) {
+    throw new Error('Invalid performance test benchmark ID.')
+  }
+  return sessionDir
+}
+
+async function readPerformanceTestBenchmark(
+  performanceTestsDir: string,
+  sessionId: string
+): Promise<PerformanceTestBenchmark | null> {
+  const sessionDir = resolvePerformanceTestSessionDir(performanceTestsDir, sessionId)
+  const contents = await fs.promises.readFile(path.join(sessionDir, 'results.json'), 'utf8')
+  return parsePerformanceTestBenchmark(JSON.parse(contents) as unknown, sessionId)
+}
+
 /** List valid completed performance test summaries, newest first. */
 export async function listPerformanceTestBenchmarks(
   performanceTestsDir: string
@@ -109,11 +131,7 @@ export async function listPerformanceTestBenchmarks(
 
   for (const session of sessions) {
     try {
-      const contents = await fs.promises.readFile(
-        path.join(performanceTestsDir, session, 'results.json'),
-        'utf8'
-      )
-      const benchmark = parsePerformanceTestBenchmark(JSON.parse(contents) as unknown, session)
+      const benchmark = await readPerformanceTestBenchmark(performanceTestsDir, session)
       if (benchmark) benchmarks.push(benchmark)
     } catch {
       // Missing or malformed sessions are ignored without hiding valid results.
@@ -125,6 +143,39 @@ export async function listPerformanceTestBenchmarks(
     if (b.createdAt) return 1
     return b.id.localeCompare(a.id)
   })
+}
+
+/** Delete a completed benchmark session and all files stored with it. */
+export async function deletePerformanceTestBenchmark(
+  performanceTestsDir: string,
+  sessionId: string
+): Promise<void> {
+  const sessionDir = resolvePerformanceTestSessionDir(performanceTestsDir, sessionId)
+  if (!(await readPerformanceTestBenchmark(performanceTestsDir, sessionId))) {
+    throw new Error('The performance test benchmark is invalid.')
+  }
+  await fs.promises.rm(sessionDir, { recursive: true })
+}
+
+/** Rename a completed benchmark session folder. */
+export async function renamePerformanceTestBenchmark(
+  performanceTestsDir: string,
+  sessionId: string,
+  newSessionId: string
+): Promise<void> {
+  const sessionDir = resolvePerformanceTestSessionDir(performanceTestsDir, sessionId)
+  const renamedSessionDir = resolvePerformanceTestSessionDir(performanceTestsDir, newSessionId)
+  if (!(await readPerformanceTestBenchmark(performanceTestsDir, sessionId))) {
+    throw new Error('The performance test benchmark is invalid.')
+  }
+  if (sessionDir === renamedSessionDir) return
+  try {
+    await fs.promises.stat(renamedSessionDir)
+    throw new Error('A benchmark session with that name already exists.')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  await fs.promises.rename(sessionDir, renamedSessionDir)
 }
 
 /** Calculate duration statistics for measured jobs with valid start and end timestamps. */

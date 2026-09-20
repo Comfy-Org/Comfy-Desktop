@@ -5,9 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   calculatePerformanceTestStatistics,
+  deletePerformanceTestBenchmark,
   deletePerformanceTestWorkflow,
   incrementWorkflowSeeds,
   listPerformanceTestBenchmarks,
+  renamePerformanceTestBenchmark,
   readPerformanceTestResultsSummary,
   savePerformanceTestJobsResponse,
   savePerformanceTestLogs,
@@ -105,6 +107,20 @@ async function makeTempDir(): Promise<string> {
   return dir
 }
 
+function benchmarkSummary(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    instance: { id: 'instance-1', name: 'Comfy' },
+    workspace: { id: null, name: null },
+    workflowName: 'workflow.json',
+    fastestJobDurationSeconds: 1,
+    slowestJobDurationSeconds: 2,
+    averageJobDurationSeconds: 1.5,
+    medianJobDurationSeconds: 1.5,
+    measuredJobCount: 2,
+    ...overrides
+  }
+}
+
 afterEach(async () => {
   await Promise.all(
     tempDirs
@@ -193,6 +209,83 @@ describe('listPerformanceTestBenchmarks', () => {
     await expect(
       listPerformanceTestBenchmarks(path.join(root, 'user-data', 'performance-tests'))
     ).resolves.toEqual([])
+  })
+})
+
+describe('deletePerformanceTestBenchmark', () => {
+  it('deletes the complete validated session directory without allowing path traversal', async () => {
+    const root = await makeTempDir()
+    const testsPath = path.join(root, 'performance-tests')
+    const sessionPath = path.join(testsPath, 'session-1')
+    const siblingPath = path.join(root, 'keep-me')
+    await fs.promises.mkdir(sessionPath, { recursive: true })
+    await fs.promises.mkdir(siblingPath)
+    await fs.promises.writeFile(path.join(sessionPath, 'workflow.json'), '{}')
+    await fs.promises.writeFile(path.join(sessionPath, 'jobs.json'), '{}')
+    await fs.promises.writeFile(
+      path.join(sessionPath, 'results.json'),
+      JSON.stringify(benchmarkSummary())
+    )
+
+    await expect(deletePerformanceTestBenchmark(testsPath, '../keep-me')).rejects.toThrow(
+      'Invalid performance test benchmark ID.'
+    )
+    await expect(deletePerformanceTestBenchmark(testsPath, '.')).rejects.toThrow(
+      'Invalid performance test benchmark ID.'
+    )
+    await expect(deletePerformanceTestBenchmark(testsPath, '..')).rejects.toThrow(
+      'Invalid performance test benchmark ID.'
+    )
+    await expect(fs.promises.stat(siblingPath)).resolves.toBeDefined()
+
+    await deletePerformanceTestBenchmark(testsPath, 'session-1')
+    await expect(fs.promises.stat(sessionPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
+describe('renamePerformanceTestBenchmark', () => {
+  it('renames the complete validated session directory', async () => {
+    const root = await makeTempDir()
+    const testsPath = path.join(root, 'performance-tests')
+    const sessionPath = path.join(testsPath, 'session-1')
+    const renamedPath = path.join(testsPath, 'my-session')
+    await fs.promises.mkdir(sessionPath, { recursive: true })
+    await fs.promises.writeFile(path.join(sessionPath, 'workflow.json'), '{}')
+    await fs.promises.writeFile(
+      path.join(sessionPath, 'results.json'),
+      JSON.stringify(benchmarkSummary())
+    )
+
+    await renamePerformanceTestBenchmark(testsPath, 'session-1', 'my-session')
+
+    await expect(fs.promises.stat(sessionPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(
+      fs.promises.readFile(path.join(renamedPath, 'workflow.json'), 'utf8')
+    ).resolves.toBe('{}')
+    await expect(listPerformanceTestBenchmarks(testsPath)).resolves.toMatchObject([
+      { id: 'my-session' }
+    ])
+  })
+
+  it('rejects invalid or existing destination names', async () => {
+    const root = await makeTempDir()
+    const testsPath = path.join(root, 'performance-tests')
+    const sessionPath = path.join(testsPath, 'session-1')
+    await fs.promises.mkdir(sessionPath, { recursive: true })
+    await fs.promises.mkdir(path.join(testsPath, 'existing'))
+    await fs.promises.writeFile(
+      path.join(sessionPath, 'results.json'),
+      JSON.stringify(benchmarkSummary())
+    )
+
+    await expect(renamePerformanceTestBenchmark(testsPath, 'missing', 'missing')).rejects.toThrow()
+    await expect(renamePerformanceTestBenchmark(testsPath, 'session-1', '..')).rejects.toThrow(
+      'Invalid performance test benchmark ID.'
+    )
+    await expect(
+      renamePerformanceTestBenchmark(testsPath, 'session-1', 'existing')
+    ).rejects.toThrow('A benchmark session with that name already exists.')
+    await expect(fs.promises.stat(sessionPath)).resolves.toBeDefined()
   })
 })
 
