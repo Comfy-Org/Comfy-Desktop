@@ -8,8 +8,13 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { execFile, spawn } from 'child_process'
 import { EventEmitter } from 'events'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import {
   countCommitsAhead,
+  gitDirPresence,
+  resolveGitDir,
   findNearestTag,
   findLatestVersionTag,
   lsRemoteLatestTag,
@@ -438,6 +443,71 @@ describe('gitFetchAndCheckout (system git)', () => {
     const result = await gitFetchAndCheckout('/repo', 'abc123', () => {}, controller.signal)
     expect(result.exitCode).toBe(1)
     expect(mockedSpawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('gitDirPresence', () => {
+  let repoDir = ''
+
+  beforeEach(() => {
+    repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-dir-presence-'))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    fs.rmSync(repoDir, { recursive: true, force: true })
+  })
+
+  const dotGit = (): string => path.join(repoDir, '.git')
+
+  it('reports absent when there is no .git entry', () => {
+    expect(gitDirPresence(repoDir)).toBe('absent')
+  })
+
+  it('reports present for a .git directory', () => {
+    fs.mkdirSync(dotGit())
+    expect(gitDirPresence(repoDir)).toBe('present')
+  })
+
+  it('reports present for a .git pointer file, resolvable or not', () => {
+    fs.writeFileSync(dotGit(), 'gitdir: ../.git/worktrees/wt\n')
+    expect(gitDirPresence(repoDir)).toBe('present')
+
+    // Presence is about the entry, not about what it points at: a pointer file with no
+    // `gitdir:` line is still a git-managed checkout, just a broken one. Callers distinguish
+    // the two by then asking `resolveGitDir`, which is null only for this second shape.
+    fs.writeFileSync(dotGit(), 'not a pointer at all\n')
+    expect(gitDirPresence(repoDir)).toBe('present')
+    expect(resolveGitDir(repoDir)).toBeNull()
+  })
+
+  it('reports present for a dangling .git symlink that stat would call absent', () => {
+    try {
+      fs.symlinkSync(path.join(repoDir, 'missing-git-dir'), dotGit())
+    } catch {
+      return // Windows without Developer Mode cannot create a symlink at all.
+    }
+    // The whole reason this probe uses lstat: stat follows the link and raises ENOENT, which
+    // would classify a broken checkout as one that was never a checkout.
+    expect(() => fs.statSync(dotGit())).toThrow(/ENOENT/)
+    expect(gitDirPresence(repoDir)).toBe('present')
+  })
+
+  it('reports indeterminate when the lstat itself fails', () => {
+    // EACCES/EPERM/ELOOP on the entry: it may well exist, we just cannot see it. Injected at
+    // the syscall because no filesystem state produces it on every platform CI runs on — a
+    // chmod-ed parent is a no-op for root, and Windows has no equivalent.
+    vi.spyOn(fs, 'lstatSync').mockImplementation(() => {
+      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+    })
+    expect(gitDirPresence(repoDir)).toBe('indeterminate')
+  })
+
+  it('reports absent only for ENOENT', () => {
+    vi.spyOn(fs, 'lstatSync').mockImplementation(() => {
+      throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' })
+    })
+    expect(gitDirPresence(repoDir)).toBe('absent')
   })
 })
 

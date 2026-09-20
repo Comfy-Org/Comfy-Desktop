@@ -38,6 +38,11 @@ export type ComfyDesktop2TelemetryProperties = Record<
   ComfyDesktop2TelemetryValue | ComfyDesktop2TelemetryValue[]
 >
 
+export interface ComfyDesktop2Error {
+  message: string
+  stack?: string
+}
+
 export type ComfyDesktop2FirebaseAuthState =
   | { status: 'pending' }
   | { status: 'signed_out' }
@@ -63,6 +68,8 @@ export interface ComfyDesktop2LogsBridge {
 
 export interface ComfyDesktop2TelemetryBridge {
   capture(event: string, properties?: ComfyDesktop2TelemetryProperties): void
+  /** Capture a hosted-frontend exception through Desktop's privacy and release-context boundary. */
+  captureException?(error: ComfyDesktop2Error, properties?: ComfyDesktop2TelemetryProperties): void
   /** Report the hosted view's complete Firebase state for process-wide consensus. */
   reportFirebaseAuthState?(state: ComfyDesktop2FirebaseAuthState): void
 }

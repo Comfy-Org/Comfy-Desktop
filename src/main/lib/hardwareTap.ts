@@ -37,7 +37,7 @@
  */
 import * as telemetry from './telemetry'
 import { createModelUsageSummary } from './modelUsageSummary'
-import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 export interface AcceleratorInfo {
   deviceType: string
@@ -121,6 +121,9 @@ export function createHardwareTap(opts: {
   installationId: string
   variant?: string | null
   release?: string | null
+  /** Core beta args Desktop injected for this launch (exact dashed tokens), so
+   *  every event can be split by beta cohort. */
+  coreBetaFlags?: readonly string[]
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
@@ -130,7 +133,8 @@ export function createHardwareTap(opts: {
   const baseContext = {
     installation_id: opts.installationId,
     variant: opts.variant ?? null,
-    release: opts.release ?? null
+    release: opts.release ?? null,
+    core_beta_flags: [...(opts.coreBetaFlags ?? [])]
   }
 
   // Accelerator accumulation: fields trickle in over several lines. ComfyUI
@@ -304,36 +308,19 @@ export function createHardwareTap(opts: {
     if (modelUsage.recordLine(trimmed)) ensureModelUsageFlushTimer()
   }
 
-  // Separate per-stream buffers: stdout and stderr arrive as independent
-  // chunk streams, so a single shared buffer could splice unrelated partial
-  // lines together. Each buffer is capped so a long burst without a newline
-  // can't grow unbounded.
-  const MAX_PENDING_CHARS = 16_384
-  const pendingBySource: Record<'stdout' | 'stderr', string> = {
-    stdout: '',
-    stderr: ''
-  }
-
-  function appendChunk(source: 'stdout' | 'stderr', chunk: string): string[] {
-    // Split first so a large chunk's complete lines (e.g. `Device:`) are never
-    // lost; cap only the unterminated tail we carry over, which is the sole
-    // unbounded-growth risk.
-    const lines = (pendingBySource[source] + chunk).split(/\r?\n/)
-    const tail = lines.pop() ?? ''
-    pendingBySource[source] =
-      tail.length > MAX_PENDING_CHARS ? tail.slice(-MAX_PENDING_CHARS) : tail
-    return lines
-  }
+  const lineBuffer = createStreamLineBuffer()
 
   return {
     ingest(chunk: string, source: 'stdout' | 'stderr'): void {
       // Hard guarantee: this runs inside the launch stdout/stderr handler,
       // right before the boot-progress tracker. A throw here must never break
       // log streaming or boot detection. Telemetry must never break the app.
-      try {
-        for (const line of appendChunk(source, chunk)) handleLine(line)
-      } catch {
-        // ignore - telemetry side effect, not user-visible
+      for (const line of lineBuffer.append(source, chunk)) {
+        try {
+          handleLine(line)
+        } catch {
+          // Isolate malformed lines and unexpected telemetry sink failures.
+        }
       }
     },
     /**
@@ -354,28 +341,33 @@ export function createHardwareTap(opts: {
       devices.length = 0
       emittedAssetScanErrors.clear()
       // Drop any incomplete lines from the previous (now-dead) process streams.
-      pendingBySource.stdout = ''
-      pendingBySource.stderr = ''
+      lineBuffer.reset()
     },
     getAcceleratorInfo,
     flushSummary(): void {
-      try {
-        // Process complete-but-unterminated final lines so a trailing `Device:`
-        // line isn't dropped when the process exits without a newline.
-        for (const source of ['stdout', 'stderr'] as const) {
-          const pending = pendingBySource[source]
+      // Process complete-but-unterminated final lines independently so a bad
+      // stdout tail cannot suppress a valid stderr tail (or vice versa).
+      for (const source of ['stdout', 'stderr'] as const) {
+        try {
+          const pending = lineBuffer.takePending(source)
           if (pending.trim()) handleLine(pending)
-          pendingBySource[source] = ''
+        } catch {
+          // ignore - telemetry side effect, not user-visible
         }
-        // Processing a trailing model line can arm the timer, so clear it only
-        // after every pending line has passed through the parser.
-        if (modelUsageFlushTimer) {
-          clearInterval(modelUsageFlushTimer)
-          modelUsageFlushTimer = null
-        }
-        // Emit the accelerator event if the process exited right after its
-        // `Device:` lines with no following line to close the run.
+      }
+      // Processing a trailing model line can arm the timer. Every parser call
+      // above is contained, so cleanup is always reached.
+      if (modelUsageFlushTimer) {
+        clearInterval(modelUsageFlushTimer)
+        modelUsageFlushTimer = null
+      }
+      // Terminal summaries are independent: one failing must not suppress the other.
+      try {
         emitAccelerator()
+      } catch {
+        // ignore - telemetry side effect, not user-visible
+      }
+      try {
         emitModelUsage()
       } catch {
         // ignore - telemetry side effect, not user-visible

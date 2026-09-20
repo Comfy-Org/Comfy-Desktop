@@ -371,12 +371,14 @@ async function initializeProviders(): Promise<void> {
           import.meta.env.VITE_DATADOG_RUM_SESSION_SAMPLE_RATE,
           100
         ),
+        // `createHostWindow.ts` `loadTitleBarUrl` uses `file://` packaged, where Chromium ignores cookies.
+        sessionPersistence: 'local-storage',
         // Session replay is intentionally not configured. Datadog defaults
         // to off when the field is omitted; reintroduce only as a deliberate
         // code change in a release.
-        trackResources: true,
-        trackLongTasks: true,
-        trackUserInteractions: true
+        trackResources: false,
+        trackLongTasks: false,
+        trackUserInteractions: false
       })
       isDatadogInitialized = true
       // Tag every RUM event with the renderer surface so queries can
@@ -553,10 +555,11 @@ function reportRendererError(payload: {
   if (!claimRendererTelemetryBudget('comfy.desktop.exception.error')) return
   if (isDatadogInitialized) {
     try {
-      const datadogError = new Error('Desktop application exception')
-      datadogError.name = 'DesktopTelemetryError'
-      datadogError.stack = undefined
-      datadogRum.addError(datadogError, {
+      // `error` is the scrubbed, length-capped copy built above. Reporting a
+      // fixed string here instead collapsed every failure mode into one
+      // indistinguishable Datadog error, which a monitor cannot act on.
+      error.name = 'DesktopTelemetryError'
+      datadogRum.addError(error, {
         origin: context['origin'],
         source: context['source'],
         forwarded_source: context['forwarded_source'],
@@ -564,7 +567,8 @@ function reportRendererError(payload: {
         reason: context['reason'],
         exitCode: context['exitCode'],
         exit_code: context['exit_code'],
-        type: context['type']
+        type: context['type'],
+        error_type: context['error_type']
       })
     } catch {}
   }

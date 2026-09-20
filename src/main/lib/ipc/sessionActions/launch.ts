@@ -61,6 +61,7 @@ import { lastNLines, stripAnsi } from '../../stderrTail'
 import { decodeExitCode } from '../../exitCodeInfo'
 import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
+import { createAssetsTap } from '../../assetsTap'
 import { createExecutionTap } from '../../executionTap'
 import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
@@ -95,6 +96,12 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
+import { getCoreBetaGrantsAsync, selectCoreBetaGrantArgs } from '../../coreBetaGrants'
+import type { CoreBetaGrant } from '../../coreBetaGrants'
+import { coreRecordCurrent, coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
+import type { CoreCheckout } from '../../version'
+import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
+import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
 // --list-feature-flags registry so we never inject unrecognized keys.
@@ -114,6 +121,157 @@ export function desktopFeatureFlags(
     flags.enable_telemetry = 'true'
   }
   return flags
+}
+
+/** Establish what the launching checkout is, failing closed at every step, because each step
+ *  has an absence meaning "we could not look" alongside the one meaning "there is nothing here".
+ *  Exactly one state is the latter: no `.git` entry at all, i.e. the standalone/archive install
+ *  with nothing to contradict the record. A `.git` that cannot be stat-ed, one that yields no
+ *  git directory (a worktree/submodule pointer missing its `gitdir:` line), and a git directory
+ *  whose HEAD would not read are all git-managed checkouts we failed to inspect.
+ *  {@link coreRecordCurrent} grants on `not-git` and refuses `unreadable`, so collapsing any of
+ *  the three into it — as a bare `readGitHead` call does, and as a bare `resolveGitDir(…) ===
+ *  null` test does one layer below that — is what made the gate fail open. */
+function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
+  switch (gitDirPresence(comfyuiDir)) {
+    case 'absent':
+      return { kind: 'not-git' }
+    case 'indeterminate':
+      return { kind: 'unreadable' }
+    case 'present': {
+      if (resolveGitDir(comfyuiDir) === null) return { kind: 'unreadable' }
+      const head = readGitHead(comfyuiDir)
+      return head === null ? { kind: 'unreadable' } : { kind: 'head', commit: head }
+    }
+  }
+}
+
+/** The single post-filter view of this launch's Core beta grants: what survived
+ *  BOTH the version/toggle selection and the running core's args schema, plus
+ *  what selection granted that the schema then refused. Every downstream signal
+ *  (final args, tap context, telemetry, log records) reads from this one value. */
+export interface CoreBetaLaunch {
+  readonly applied: readonly CoreBetaGrant[]
+  readonly droppedUnsupported: readonly string[]
+  readonly logRecords: readonly string[]
+  readonly coreVersion: string | null
+  /** The beta toggle as resolved for THIS launch. Carried on the DTO rather than re-read at
+   *  the report site so `opt_state` still tells the truth on the paths that never reach arg
+   *  assembly — schema discovery failing must not make an opted-in user report as opted out. */
+  readonly optedIn: boolean
+}
+
+/** No grants resolved: either the install opted out, or the launch never reached arg assembly
+ *  (schema discovery unavailable). `optedIn` is still the real toggle in both cases. */
+function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
+  return {
+    applied: [],
+    droppedUnsupported: [],
+    logRecords: [],
+    coreVersion: null,
+    optedIn
+  }
+}
+
+/** Newline-terminated because `writeLog` and `sendOutput` forward text verbatim:
+ *  without it the first child-process line joins the record. */
+function coreBetaLogRecord(grant: CoreBetaGrant, coreVersion: string): string {
+  return `[core-beta] ${grant.arg} (core ${coreVersion} >= ${grant.minCoreVersion}, opted in)\n`
+}
+
+/**
+ * Assemble the spawn args and resolve this launch's Core beta grants.
+ *
+ * User args pass through untouched: grants are additive, so the only thing that ever removes a
+ * user token is the running core's args schema. Grants are selected against the UNFILTERED user
+ * args — so a grant conflicting with a token this core cannot parse is still suppressed — then
+ * passed through that same schema filter so a core predating a flag never sees it. Ordering is
+ * fixed: prefix, desktop feature flags, beta grants, user args.
+ */
+export function buildLaunchArgs(input: {
+  prefixArgs: readonly string[]
+  userArgs: readonly string[]
+  desktopFlagArgs: readonly string[]
+  schema: ComfyArgsSchema
+  betaFlags: readonly CoreBetaGrant[]
+  coreVersion: string | null
+  coreVersionExact: boolean
+  coreVersionVerified: boolean
+  coreVersionCurrent: boolean
+  betaEnabled: boolean
+}): { args: string[]; beta: CoreBetaLaunch } {
+  const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
+  const filtered = filterUnsupportedArgs([...userArgs], schema)
+  const selected = selectCoreBetaGrantArgs(
+    input.betaFlags,
+    {
+      semver: coreVersion,
+      exact: input.coreVersionExact,
+      verified: input.coreVersionVerified,
+      current: input.coreVersionCurrent
+    },
+    input.betaEnabled,
+    userArgs
+  )
+  const supported = new Set(
+    filterUnsupportedArgs(
+      selected.map((grant) => grant.arg),
+      schema
+    )
+  )
+  const applied = selected.filter((grant) => supported.has(grant.arg))
+  const betaArgs = applied.map((grant) => grant.arg)
+  return {
+    args: [...prefixArgs, ...desktopFlagArgs, ...betaArgs, ...filtered],
+    beta: {
+      applied,
+      droppedUnsupported: selected
+        .filter((grant) => !supported.has(grant.arg))
+        .map((grant) => grant.arg),
+      logRecords:
+        coreVersion === null ? [] : applied.map((grant) => coreBetaLogRecord(grant, coreVersion)),
+      coreVersion,
+      optedIn: input.betaEnabled
+    }
+  }
+}
+
+/** Put each record in the on-disk log (bug reports) and the user-visible output. */
+export function emitCoreBetaRecords(
+  records: readonly string[],
+  sinks: { writeLog: (text: string) => void; sendOutput: (text: string) => void }
+): void {
+  for (const record of records) {
+    try {
+      sinks.writeLog(record)
+    } catch {
+      // Reporting must not affect launch; still attempt the independent renderer sink.
+    }
+    try {
+      sinks.sendOutput(record)
+    } catch {
+      // Reporting must not affect launch.
+    }
+  }
+}
+
+/** `opt_state` reports every launch's toggle so opt-in/out is countable; `applied`
+ *  reports the grants that reached core and the ones its schema refused. Delivery
+ *  is the telemetry module's consent gate to decide, never a branch here. */
+export function emitCoreBetaTelemetry(input: {
+  appliedArgs: readonly string[]
+  droppedUnsupported: readonly string[]
+  coreVersion: string | null
+  optedIn: boolean
+}): void {
+  if (input.appliedArgs.length > 0 || input.droppedUnsupported.length > 0) {
+    telemetry.emit('comfy.desktop.core_beta.applied', {
+      args: [...input.appliedArgs],
+      core_version: input.coreVersion,
+      dropped_unsupported: [...input.droppedUnsupported]
+    })
+  }
+  telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
 }
 
 export interface StorageLaunchState {
@@ -303,7 +461,7 @@ async function openLogStream(installPath: string): Promise<WriteStream> {
   return fs.createWriteStream(path.join(logDir, 'comfyui.log'), { flags: 'w' })
 }
 
-function writeLog(stream: WriteStream, text: string): void {
+export function writeLog(stream: WriteStream, text: string): void {
   if (!stream.writableEnded) stream.write(stripAnsi(text))
 }
 
@@ -331,6 +489,63 @@ export function _resolvePortConflictPolicy(
       actionData?.portOverride != null ||
       (!autoPortOnConflict && /(?:^|\s)--port(?:\s|=|$)/.test(String(inst.launchArgs ?? '')))
   }
+}
+
+/** Builds the assets tap, substituting an inert one if construction throws.
+ *  Deliberately stricter than the neighbouring `createHardwareTap`, whose
+ *  construction failures propagate and abort the launch: this tap is pure
+ *  diagnostics for an off-by-default subsystem and must never cost a user their
+ *  launch. Same shape, so downstream lifecycle sites need no null checks. */
+export function createAssetsTapSafe(base: {
+  installationId: string
+  variant: string | null
+  release: string | null
+  coreBetaFlags: string[]
+}): ReturnType<typeof createAssetsTap> {
+  try {
+    return createAssetsTap(base)
+  } catch (err) {
+    console.error('Failed to create assets telemetry tap; continuing without it:', err)
+    return { ingest: () => {}, beginBoot: () => {}, flushSummary: () => {} }
+  }
+}
+
+/** Pipe a spawned process's output to the log file, renderer, telemetry taps,
+ *  and the launch tracker (ANSI-stripped); returns a bounded stderr tail for
+ *  crash diagnostics. */
+export function attachLaunchStreams(
+  proc: ChildProcess,
+  logStream: WriteStream,
+  sendOutput: (text: string) => void,
+  execTap: ReturnType<typeof createExecutionTap>,
+  hwTap: ReturnType<typeof createHardwareTap>,
+  assetsTap: ReturnType<typeof createAssetsTap>,
+  tracker: LaunchProgressTracker
+): { getStderr: () => string } {
+  let stderrBuf = ''
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString('utf-8')
+    writeLog(logStream, text)
+    sendOutput(text)
+    execTap.ingest(text, 'stdout')
+    hwTap.ingest(text, 'stdout')
+    assetsTap.ingest(text, 'stdout')
+    tracker.ingest(stripAnsi(text))
+  })
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString('utf-8')
+    // Strip ANSI once for both the tail buffer and the launch tracker.
+    const clean = stripAnsi(text)
+    stderrBuf += clean
+    if (stderrBuf.length > 16 * 1024) stderrBuf = stderrBuf.slice(-(16 * 1024))
+    writeLog(logStream, text)
+    sendOutput(text)
+    execTap.ingest(text, 'stderr')
+    hwTap.ingest(text, 'stderr')
+    assetsTap.ingest(text, 'stderr')
+    tracker.ingest(clean)
+  })
+  return { getStderr: () => stderrBuf }
 }
 
 /** Failure cleanup for a throw after launch resources were acquired (launching
@@ -388,6 +603,27 @@ async function runLaunch(
   // Synthetic repair steps that ran during launch prep, prepended to the launch
   // progress in display order (e.g. a source rollback, then a PyTorch restore).
   const preLaunchPhases: PreLaunchPhase[] = []
+  // Resolved ONCE here, independent of the schema block below: arg assembly can be skipped
+  // entirely (schema discovery unavailable) and `opt_state` must still report the real toggle.
+  //
+  // Isolated in its own try because resolving WRITES the default back on first read, so a
+  // read-only or full profile throws on what looks like a pure read. Failing to resolve costs
+  // this launch its beta grants (fail closed) and nothing else: the launch continues into arg
+  // assembly, so user args are still filtered against the running core's schema — which is what
+  // keeps flags an older core cannot parse from reaching it.
+  let betaEnabled = false
+  try {
+    betaEnabled = settings.resolveBetaFeaturesEnabled()
+  } catch (err) {
+    console.warn('[core-beta] beta setting resolution failed:', err)
+  }
+  // Resolved during arg assembly below, then read by the taps, the launch log
+  // records and the beta telemetry - all after assembly, never before.
+  let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
+  // LAUNCH-SCOPED on purpose. `tryLaunch` recurses on reboot and port retries, re-entering
+  // past the report site, so an unlatched report fires once per attempt; a module-global
+  // latch would instead silence every launch after the first in the process lifetime.
+  let coreBetaReported = false
   // Claim the operation slot for the whole launch, prep included, so no other
   // operation can start against this install while the launch is preparing.
   _operationAborts.set(sessionId, abort)
@@ -527,25 +763,57 @@ async function runLaunch(
     logStream: WriteStream
     execTap: ReturnType<typeof createExecutionTap>
     hwTap: ReturnType<typeof createHardwareTap>
+    assetsTap: ReturnType<typeof createAssetsTap>
     tracker: LaunchProgressTracker
   }> {
     const logStream = await openLogStream(inst.installPath)
+    const coreBetaFlags = coreBeta.applied.map((grant) => grant.arg)
     try {
       const execTap = createExecutionTap({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
       })
       const hwTap = createHardwareTap({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
+      })
+      const assetsTap = createAssetsTapSafe({
+        installationId,
+        variant: (inst.variant as string | undefined) ?? null,
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
       })
       const tracker = await armLaunchTracker()
-      return { logStream, execTap, hwTap, tracker }
+      return { logStream, execTap, hwTap, assetsTap, tracker }
     } catch (err) {
       logStream.end()
       throw err
+    }
+  }
+
+  // Called once per launch from each spawn path, as soon as that path has both
+  // destinations: the log records go to the on-disk log and the renderer, the
+  // events to telemetry.
+  function reportCoreBetaLaunch(logStream: WriteStream, sendOutput: (text: string) => void): void {
+    if (coreBetaReported) return
+    coreBetaReported = true
+    emitCoreBetaRecords(coreBeta.logRecords, {
+      writeLog: (text) => writeLog(logStream, text),
+      sendOutput
+    })
+    try {
+      emitCoreBetaTelemetry({
+        appliedArgs: coreBeta.applied.map((grant) => grant.arg),
+        droppedUnsupported: coreBeta.droppedUnsupported,
+        coreVersion: coreBeta.coreVersion,
+        optedIn: coreBeta.optedIn
+      })
+    } catch {
+      // The telemetry layer normally contains SDK failures; also isolate unexpected sink throws.
     }
   }
 
@@ -702,6 +970,13 @@ async function runLaunch(
       const mainPyRel = launchCmd.args[sIdx + 1]!
       const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
       const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
+      const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
+      const userArgs = launchCmd.args.slice(sIdx + 2)
+      // Take ownership of the array before anything downstream mutates it in place:
+      // `applyStorageLaunchArgs` pushes onto `launchCmd.args`, and when discovery fails there is
+      // no `built.args` to replace it, so those pushes would otherwise reach the array the
+      // source handed us. Same values either way — this is about aliasing, not content.
+      launchCmd.args = [...launchCmd.args]
       try {
         const schema = await getComfyArgsSchema(
           launchCmd.cmd,
@@ -710,10 +985,6 @@ async function runLaunch(
           installationId,
           revision
         )
-        const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
-        const userArgs = launchCmd.args.slice(sIdx + 2)
-        const filtered = filterUnsupportedArgs(userArgs, schema)
-
         // Skip when the discovery flag is absent (avoids a pointless python spawn).
         const desktopFlagArgs: string[] = []
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
@@ -734,9 +1005,24 @@ async function runLaunch(
           }
         }
 
-        launchCmd.args = [...prefixArgs, ...desktopFlagArgs, ...filtered]
+        const built = buildLaunchArgs({
+          prefixArgs,
+          userArgs,
+          desktopFlagArgs,
+          schema,
+          betaFlags: await getCoreBetaGrantsAsync(),
+          coreVersion: coreSemver(inst),
+          coreVersionExact: coreSemverExact(inst),
+          coreVersionVerified: coreSemverVerified(inst),
+          // Read here rather than reused from `revision` above: that one falls back to the
+          // record when HEAD is unreadable, which is the very disagreement being checked for.
+          coreVersionCurrent: coreRecordCurrent(inst, resolveCoreCheckout(path.dirname(mainPyAbs))),
+          betaEnabled
+        })
+        launchCmd.args = built.args
+        coreBeta = built.beta
       } catch {
-        // Schema not available — pass args as-is.
+        // Discovery failed; launch the user's own args without injecting managed flags.
       }
     }
   }
@@ -758,41 +1044,6 @@ async function runLaunch(
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd)
-
-  /** Pipe a spawned process's output to the log file, renderer, execution tap,
-   *  and the launch tracker (ANSI-stripped); returns a bounded stderr tail for
-   *  crash diagnostics. */
-  function attachLaunchStreams(
-    proc: ChildProcess,
-    logStream: WriteStream,
-    sendOutput: (text: string) => void,
-    execTap: ReturnType<typeof createExecutionTap>,
-    hwTap: ReturnType<typeof createHardwareTap>,
-    tracker: LaunchProgressTracker
-  ): { getStderr: () => string } {
-    let stderrBuf = ''
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString('utf-8')
-      writeLog(logStream, text)
-      sendOutput(text)
-      execTap.ingest(text, 'stdout')
-      hwTap.ingest(text, 'stdout')
-      tracker.ingest(stripAnsi(text))
-    })
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString('utf-8')
-      // Strip ANSI once for both the tail buffer and the launch tracker.
-      const clean = stripAnsi(text)
-      stderrBuf += clean
-      if (stderrBuf.length > 16 * 1024) stderrBuf = stderrBuf.slice(-(16 * 1024))
-      writeLog(logStream, text)
-      sendOutput(text)
-      execTap.ingest(text, 'stderr')
-      hwTap.ingest(text, 'stderr')
-      tracker.ingest(clean)
-    })
-    return { getStderr: () => stderrBuf }
-  }
 
   /** Gates the `template-models` reader: the bar derives "prior steps done" from
    *  the active phase index, so the reader stays silent through the real phases
@@ -972,11 +1223,10 @@ async function runLaunch(
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
     // the handler settles.
-    const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(() => {
+    const { logStream, execTap, hwTap, assetsTap, tracker } = await guardLaunchSetup(() => {
       _markLaunching(sessionId, inst.name)
       return acquireLaunchResources()
     })
-
     // Last pre-spawn cancellation point on this path: a launch cancelled
     // during the awaits above must never spawn.
     if (abort.signal.aborted) {
@@ -984,17 +1234,21 @@ async function runLaunch(
       _clearLaunchingFailed(sessionId)
       return { ok: false, cancelled: true }
     }
+    // Past the final gate: this launch is going to spawn, so the grants it applied are now
+    // real. Reporting before the gate attributes grants to launches that never started.
+    reportCoreBetaLaunch(logStream, sendOutput)
 
     const { proc, getStderr } = await guardLaunchSetup(
       async () => {
         hwTap.beginBoot()
+        assetsTap.beginBoot()
         const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
           showWindow: launchCmd.showWindow
         })
         try {
           return {
             proc: p,
-            ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker)
+            ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, assetsTap, tracker)
           }
         } catch (err) {
           // Stream wiring failed: kill and WAIT for the child so the settled
@@ -1019,6 +1273,7 @@ async function runLaunch(
         flushTelemetry: () => {
           execTap.flushSummary()
           hwTap.flushSummary()
+          assetsTap.flushSummary()
         }
       },
       Date.now() - launchStartedAt,
@@ -1035,6 +1290,7 @@ async function runLaunch(
       const lastStderr = lastNLines(getStderr(), 100)
       execTap.flushSummary()
       hwTap.flushSummary()
+      assetsTap.flushSummary()
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
@@ -1200,7 +1456,7 @@ async function runLaunch(
   // marker's renderer broadcast can throw, and every throw after either
   // exists must tear them back down before the handler settles. Pre-armed
   // tracker so the synchronous relaunch loop can reuse the single instance.
-  const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(
+  const { logStream, execTap, hwTap, assetsTap, tracker } = await guardLaunchSetup(
     () => {
       _reservePort(launchCmd.port!, inst.name)
       _markLaunching(sessionId, inst.name)
@@ -1213,11 +1469,17 @@ async function runLaunch(
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected.
     hwTap.beginBoot()
+    // Drain the previous attempt's unterminated records before resetting its buffers.
+    assetsTap.flushSummary()
+    assetsTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
     })
     try {
-      return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
+      return {
+        proc: p,
+        ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, assetsTap, tracker)
+      }
     } catch (err) {
       // Stream wiring failed: kill and WAIT for the child so cleanup can't
       // outlive a live process.
@@ -1256,6 +1518,9 @@ async function runLaunch(
     if (abort.signal.aborted) {
       return { ok: false, message: 'Launch cancelled', cancelled: true }
     }
+    // Past the final gate, so this attempt will spawn. Latched: retries re-enter here, and the
+    // grants belong to the launch, not to each attempt at it.
+    reportCoreBetaLaunch(logStream, sendOutput)
     const cmdLine = [launchCmd.cmd!, ...launchCmd.args!]
       .map((a, ci, ca) => {
         if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
@@ -1429,6 +1694,7 @@ async function runLaunch(
     // with the proc still alive, leaving a pending accelerator event unemitted.
     // flushSummary is idempotent, so a later exit re-flush is harmless.
     hwTap.flushSummary()
+    assetsTap.flushSummary()
     if (launchResult.cancelled) {
       // User-initiated cancel is not a boot failure — discard the buffer so a
       // later relaunch starts clean and we don't emit phantom boot_phase rows.
@@ -1488,6 +1754,7 @@ async function runLaunch(
       flushTelemetry: () => {
         execTap.flushSummary()
         hwTap.flushSummary()
+        assetsTap.flushSummary()
       }
     },
     bootTimeMs,
@@ -1570,6 +1837,7 @@ async function runLaunch(
         // flushSummary is idempotent.
         execTap.flushSummary()
         hwTap.flushSummary()
+        assetsTap.flushSummary()
         _removeSession(sessionId)
         _clearLaunchingFailed(sessionId)
         if (abort.signal.aborted) return { ok: false, cancelled: true }
@@ -1686,6 +1954,7 @@ async function runLaunch(
       const lastStderr = lastNLines(currentGetStderr(), 100)
       execTap.flushSummary()
       hwTap.flushSummary()
+      assetsTap.flushSummary()
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().

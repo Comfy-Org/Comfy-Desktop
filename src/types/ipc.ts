@@ -281,6 +281,15 @@ export interface DetailField {
    *  groups adjacent fields so unrelated fields never merge. */
   rowGroup?: string
   tooltip?: string
+  /** Blocks only the off -> on transition of a boolean row; turning it back
+   *  off stays available. Derived renderer-side from live state (the beta
+   *  opt-in reads telemetry consent), never copied out of a `SettingsField` —
+   *  `toDetailField` has no business knowing about it. */
+  turnOnDisabled?: boolean
+  /** i18n key for the hover text explaining why turning this row on is
+   *  blocked. A key rather than a string because the deriving renderer and
+   *  the rendering control share one catalog. */
+  turnOnDisabledTooltipKey?: string
   /** Marks fields that only take effect on next process start.
    *  Renderer shows a per-field tag + promotes the footer Restart
    *  button when one of these is edited while the install is running. */
@@ -991,9 +1000,10 @@ export interface DatadogForwardedError {
   level?: 'debug' | 'info' | 'warn' | 'error' | 'critical'
   context?: Record<string, unknown>
   /**
-   * Set when the error has already been captured by main-process PostHog
-   * (via `mainTelemetry.captureException`). The renderer's listener forwards
-   * such errors to Datadog only, avoiding duplicate PostHog exceptions.
+   * Set when main has already handled the PostHog side of this error (which
+   * since `POSTHOG_EXCEPTIONS` became opt-in may mean it deliberately sent
+   * nothing). Either way the renderer's listener forwards to Datadog only,
+   * so it never double-reports.
    */
   skipPostHog?: boolean
 }

@@ -298,11 +298,11 @@ export function registerDevPlatformHandlers(): void {
         if (session.status().workspaceId !== workspaceId) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
-        // The portal's detail route processes workspace deep links; the editor
-        // route does not. Open the newly created Build in its owning workspace,
-        // where the Edit action continues into the draft editor in that context.
+        // The portal's draft route receives a hand-off: it processes workspace
+        // deep links, marks the Build as just arrived, and redirects to the
+        // Build page, which opens the "Desktop snapshot received" dialog.
         const url = new URL(
-          `/profile/builds/${encodeURIComponent(draft.buildId)}`,
+          `/profile/builds/${encodeURIComponent(draft.buildId)}/draft`,
           PLATFORM_WEB_BASE_URL
         )
         url.searchParams.set('workspace', workspaceId)

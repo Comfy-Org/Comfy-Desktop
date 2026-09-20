@@ -470,6 +470,29 @@ function spawnStreamed(
 }
 
 /**
+ * Whether a `.git` entry exists at `repoPath` - a different question from whether it resolves.
+ * {@link resolveGitDir} returns null for four unrelated situations (no entry at all, an entry it
+ * could not stat, a pointer file carrying no `gitdir:` line, an unreadable pointer) and only the
+ * first of them means "this is not a git checkout". A caller that must fail closed on a checkout
+ * it cannot establish asks this first, then resolves.
+ *
+ * Deliberately `lstat`, not `stat`: a dangling symlink at `.git` is a BROKEN checkout, not an
+ * absent one. `lstat` sees the symlink itself and reports `present`, so the caller goes on to
+ * fail closed when resolution fails. `stat` would follow the link, throw ENOENT, and report
+ * `absent`, handing a broken checkout whatever the no-git path grants.
+ */
+export function gitDirPresence(repoPath: string): 'absent' | 'present' | 'indeterminate' {
+  try {
+    fs.lstatSync(path.join(repoPath, '.git'))
+    return 'present'
+  } catch (err) {
+    // Any code but ENOENT (EACCES/EPERM on the parent, ELOOP, EIO, ...) means the entry may
+    // well be there and we simply could not look at it: unknowable, not absent.
+    return (err as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'absent' : 'indeterminate'
+  }
+}
+
+/**
  * Resolve the actual .git directory for a repository.
  * Handles worktrees/submodules where .git is a file containing "gitdir: <path>".
  */
