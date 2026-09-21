@@ -294,6 +294,27 @@ async function restoreFromBackup(backupDir: string, sitePackages: string): Promi
   }
 }
 
+/** Metadata entries that mark an installed distribution in site-packages.
+ *  `.dist-info` is the modern form (PEP 376); `.egg-info` and `.egg-link` are
+ *  legacy setuptools forms still produced by some installs. Any of them is
+ *  evidence the package is present, and presence is what decides whether the
+ *  revert may uninstall it — so the list errs towards recognising more. */
+const DIST_METADATA_SUFFIXES = ['.dist-info', '.egg-info', '.egg-link']
+
+/** Normalized distribution name from a site-packages metadata entry, or '' if
+ *  the entry is not one. */
+function distNameFromMetadataEntry(entry: string): string {
+  const suffix = DIST_METADATA_SUFFIXES.find((s) => entry.endsWith(s))
+  if (!suffix) return ''
+  // `{name}-{version}{suffix}` for dist-info and versioned egg-info; bare
+  // `{name}{suffix}` for egg-link and unversioned egg-info. Normalized names
+  // use '_', so the first '-' separates name from version.
+  const stem = entry.slice(0, -suffix.length)
+  const dashIdx = stem.indexOf('-')
+  const name = dashIdx < 0 ? stem : stem.slice(0, dashIdx)
+  return name ? normalizeDistInfoName(name) : ''
+}
+
 /**
  * Packages the plan calls "new" that are in fact already installed, judged from
  * site-packages rather than from the freeze.
@@ -302,27 +323,15 @@ async function restoreFromBackup(backupDir: string, sitePackages: string): Promi
  * installed. Deriving that set from the freeze diff alone is unsafe: any fault
  * that makes the freeze unreadable makes every target package look absent, and
  * the revert then uninstalls the user's whole environment (#1514 — a
- * colourised freeze produced exactly that, dropping 100 packages to 6). A
- * dist-info directory on disk is independent evidence that the package
+ * colourised freeze produced exactly that, dropping 100 packages to 6).
+ * Distribution metadata on disk is independent evidence that the package
  * predates this restore, so those names are excluded from the revert.
  */
 export function preexistingOnDisk(sitePackages: string, packageNames: string[]): string[] {
   if (packageNames.length === 0) return []
   let installed: Set<string>
   try {
-    installed = new Set(
-      fs
-        .readdirSync(sitePackages)
-        .filter((entry) => entry.endsWith('.dist-info'))
-        .map((entry) => {
-          // {normalized_name}-{version}.dist-info; the normalized name uses
-          // '_', so the first '-' separates name from version.
-          const stem = entry.slice(0, -'.dist-info'.length)
-          const dashIdx = stem.indexOf('-')
-          return dashIdx < 0 ? '' : normalizeDistInfoName(stem.slice(0, dashIdx))
-        })
-        .filter(Boolean)
-    )
+    installed = new Set(fs.readdirSync(sitePackages).map(distNameFromMetadataEntry).filter(Boolean))
   } catch {
     // site-packages unreadable: "can't tell" must not read as "nothing was
     // installed before", which is the reading that uninstalls the user's
@@ -553,16 +562,6 @@ export async function restorePipPackages(
     throw new Error('Could not locate site-packages directory')
   }
 
-  const packagesToBackup = [
-    ...toInstall.filter((p) => p.name in currentPips).map((p) => p.name),
-    ...toRemove
-  ]
-
-  let backupDir: string | null = null
-  if (packagesToBackup.length > 0) {
-    backupDir = await createTargetedBackup(sitePackages, packagesToBackup)
-  }
-
   // Ground truth for the revert, taken before anything is installed: of the
   // packages the plan calls new, these are already on disk and therefore
   // predate this restore. They are never uninstalled by the revert, however
@@ -575,6 +574,27 @@ export async function restorePipPackages(
       `Note: ${alreadyInstalled.length} package(s) planned as new are already installed on disk; ` +
         `a revert will leave them in place.\n`
     )
+  }
+
+  // Back up everything this operation may overwrite or delete. `alreadyInstalled`
+  // has to be in here as well as excluded from the revert's uninstall list: the
+  // freeze does not list those packages, so the install step still overwrites
+  // them, and not uninstalling one is not the same as putting its original
+  // version back. Without the backup a failed restore would leave them at the
+  // snapshot's version while reporting a complete revert.
+  const packagesToBackup = [
+    ...new Set([
+      ...toInstall.filter((p) => p.name in currentPips).map((p) => p.name),
+      ...alreadyInstalled,
+      ...toRemove
+    ])
+  ]
+
+  let backupDir: string | null = null
+  // Set when a revert could not put the backup back, so the `finally` keeps it.
+  let keepBackup = false
+  if (packagesToBackup.length > 0) {
+    backupDir = await createTargetedBackup(sitePackages, packagesToBackup)
   }
 
   try {
@@ -677,7 +697,10 @@ export async function restorePipPackages(
       let restoredFromBackup = false
       if (backupDir) {
         restoredFromBackup = await restoreFromBackup(backupDir, sitePackages)
-        if (!restoredFromBackup) complete = false
+        if (!restoredFromBackup) {
+          complete = false
+          keepBackup = true
+        }
       }
 
       // Use pre-computed revertUninstall (not result.installed): a killed bulk install may
@@ -716,11 +739,17 @@ export async function restorePipPackages(
     // Catastrophic failure — revert
     if (backupDir) {
       sendOutput(`\n⚠ Restore failed: ${(err as Error).message}\nReverting from backup…\n`)
-      await restoreFromBackup(backupDir, sitePackages)
+      if (!(await restoreFromBackup(backupDir, sitePackages))) keepBackup = true
     }
     throw err
   } finally {
-    if (backupDir) {
+    // Only discard the backup once it is known to be unneeded. If putting it
+    // back failed, it is the only remaining copy of the user's pre-restore
+    // package files, and deleting it would turn a recoverable failure into
+    // permanent data loss.
+    if (backupDir && keepBackup) {
+      sendOutput(`\nPre-restore package files were kept at ${backupDir}\n`)
+    } else if (backupDir) {
       await fs.promises.rm(backupDir, { recursive: true, force: true }).catch(() => {})
     }
   }

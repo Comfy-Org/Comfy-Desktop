@@ -6,7 +6,8 @@ import type { SnapshotSummary } from '../../types/ipc'
 import {
   triggerLabel as _triggerLabel,
   formatRelative as _formatRelative,
-  formatDate
+  formatDate,
+  isDisplayableLabel
 } from '../../lib/snapshots'
 import BaseAccordion from '../../components/ui/BaseAccordion.vue'
 
@@ -78,10 +79,11 @@ const hasPipChanges = computed(
 )
 
 // Title pill: the snapshot's label, else a version transition `prev → this`, else
-// the resulting version. Any labelled snapshot shows its label, not just manual
-// ones — a post-restore snapshot written after a failed or cancelled restore is
-// labelled so the row cannot read as a completed restore (#1514).
-const hasCustomLabel = computed(() => !!props.snapshot.label)
+// the resulting version. Any displayable label shows, not just a manual one — a
+// post-restore snapshot written after a failed or cancelled restore is labelled
+// so the row cannot read as a completed restore (#1514). Older builds also
+// wrote internal sentinels into `label`, which `isDisplayableLabel` filters out.
+const hasCustomLabel = computed(() => isDisplayableLabel(props.snapshot.label))
 const comfyuiChanged = computed(
   () => !!props.snapshot.diffVsPrevious?.comfyuiChanged && !!props.previousComfyuiVersion
 )

@@ -208,6 +208,37 @@ describe('restorePipPackages', () => {
       }
     })
 
+    // The backup gap both reviewers flagged: a package the freeze omits is
+    // planned as new, so the install overwrites the copy already on disk. Not
+    // uninstalling it is not the same as putting its original version back —
+    // only the backup does that, so it has to be backed up despite not
+    // appearing in the freeze.
+    it('backs up a disk-detected package whose installed version differs', async () => {
+      installOnDisk('aiohttp', '1.0.0')
+      const pkgFile = path.join(sitePackagesPath, 'aiohttp', '__init__.py')
+      fs.writeFileSync(pkgFile, '# pre-restore 1.0.0\n')
+      vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
+      vi.mocked(runUvPip).mockImplementation(async (_uv, args) => {
+        const a = args as string[]
+        // The install really does overwrite the copy already on disk — that is
+        // the whole reason it needs backing up.
+        if (a[1] === 'install') {
+          fs.writeFileSync(pkgFile, '# snapshot 2.0.0\n')
+          return 0
+        }
+        return 1 // every uninstall fails, tipping the restore into its revert
+      })
+
+      // The snapshot wants a different version of the package already on disk.
+      const result = await run(snapshotWith({ aiohttp: '2.0.0' }))
+
+      expect(result.revert!.keptPreexisting).toEqual(['aiohttp'])
+      expect(result.revert!.uninstalled).toEqual([])
+      // Not uninstalling it is not enough: the revert has to put the
+      // pre-restore version's files back, which only the backup can do.
+      expect(fs.readFileSync(pkgFile, 'utf-8')).toBe('# pre-restore 1.0.0\n')
+    })
+
     it('still uninstalls packages the restore genuinely added', async () => {
       // `brand-new` has no dist-info on disk, so it really is new; the other
       // two predate the restore. Only the new one may be rolled back.
@@ -296,6 +327,19 @@ describe('preexistingOnDisk', () => {
     expect(preexistingOnDisk(tmp, ['typing-extensions', 'Pillow'])).toEqual([
       'typing-extensions',
       'Pillow'
+    ])
+  })
+
+  // Legacy setuptools metadata still marks an installed distribution. Missing
+  // it would put a pre-existing package back on the revert's uninstall list.
+  it('recognises legacy .egg-info and .egg-link metadata', () => {
+    fs.mkdirSync(path.join(tmp, 'oldpkg.egg-info'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'versioned_pkg-1.0-py3.12.egg-info'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'linked_pkg.egg-link'), '/src/linked_pkg\n')
+    expect(preexistingOnDisk(tmp, ['oldpkg', 'versioned-pkg', 'linked-pkg', 'absent'])).toEqual([
+      'oldpkg',
+      'versioned-pkg',
+      'linked-pkg'
     ])
   })
 
