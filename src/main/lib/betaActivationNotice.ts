@@ -57,24 +57,6 @@ export interface BetaActivationNotice {
  */
 const pendingByInstallation = new Map<string, PendingBetaGrant[]>()
 
-/** What each install actually put on its command line this launch, whether or not it won the
- *  claim. Kept because losing a race is not the same as having nothing to say: when two
- *  installs launch with the same fresh arg, the loser stores no pending entry, so if the
- *  winner's launch then fails there is otherwise no record that anyone else wanted it. The
- *  running install would stay silent until its next relaunch. */
-const appliedByInstallation = new Map<string, CoreBetaGrant[]>()
-
-/** Every arg currently pending across all installs. Two windows launching with the same fresh
- *  grant would otherwise each show a card for it, since neither has acknowledged yet and the
- *  persisted list is still empty. First claim wins; the second install stays silent. */
-function claimedArgs(): Set<string> {
-  const claimed = new Set<string>()
-  for (const grants of pendingByInstallation.values()) {
-    for (const grant of grants) claimed.add(grant.arg)
-  }
-  return claimed
-}
-
 /** The persisted list, defensive about content: `settings.json` is user-writable, so a
  *  hand-edited non-array or a non-string entry has to read as "nothing announced yet" rather
  *  than throwing on the launch path.
@@ -169,13 +151,13 @@ export function armBetaActivationNotice(
     // claim can be left behind by a launch that then failed to boot. The next launch of this
     // install is the authority on what is actually on its command line: relaunching with beta
     // turned off must clear the old claim, not inherit it and then announce a feature that is
-    // no longer on. Dropping a claim also releases it for other installs, since `claimedArgs`
-    // reads the same map.
+    // no longer on.
     pendingByInstallation.delete(installationId)
-    appliedByInstallation.delete(installationId)
     if (applied.length === 0) return
-    appliedByInstallation.set(installationId, [...applied])
-    const spokenFor = new Set([...readAnnouncedBetaArgs(), ...claimedArgs()])
+    // Queues are per-install and independent. The persisted announced list is the only thing
+    // that silences an arg, and it is what "once" actually means: it survives restarts, which
+    // no in-memory cross-install bookkeeping can. See the note on `readAnnouncedBetaArgs`.
+    const spokenFor = new Set(readAnnouncedBetaArgs())
     const fresh = selectNewlyActiveBetaGrants(applied, spokenFor)
     if (fresh.length === 0) return
     pendingByInstallation.set(installationId, fresh)
@@ -188,32 +170,16 @@ export function armBetaActivationNotice(
  *
  *  Arming happens just before the spawn, so a launch that then fails leaves a claim for a
  *  Core that never started: the title bar would announce "a beta feature is on" once the
- *  progress takeover closes, and because `claimedArgs` spans every install, the dead claim
- *  would also silence the same arg for a DIFFERENT install that launches successfully.
- *  `armBetaActivationNotice` already clears the entry on the NEXT launch of this install,
- *  which repairs the state eventually. This closes the window in between, where the claim is
- *  live and wrong: the failed launch's own progress takeover ends long before any relaunch.
+ *  progress takeover closes. `armBetaActivationNotice` already clears the entry on the NEXT
+ *  launch of this install, which repairs the state eventually. This closes the window in
+ *  between, where the claim is live and wrong: the failed launch's own progress takeover ends
+ *  long before any relaunch.
  *
  *  Nothing is persisted here, so this only discards an unannounced claim; an arg already
  *  written to the announced list stays announced. */
 export function clearBetaActivationClaim(installationId: string): void {
   try {
     pendingByInstallation.delete(installationId)
-    appliedByInstallation.delete(installationId)
-    // Hand the released args to whoever lost the race for them. Without this the claim is
-    // freed but nobody is reconsidered, so an install that launched successfully alongside
-    // the failed one stays silent until its own next relaunch.
-    // Read the announced list once: it cannot change inside this loop, and this runs on the
-    // launch-failure path where a settings read per install would be pure waste. `claimedArgs`
-    // does have to be recomputed, since each handover below adds to it.
-    const announced = readAnnouncedBetaArgs()
-    for (const [otherId, applied] of appliedByInstallation) {
-      // Only installs with nothing queued: one that already has a card keeps it, and one
-      // whose card was acknowledged is filtered by the announced list anyway.
-      if (pendingByInstallation.has(otherId)) continue
-      const fresh = selectNewlyActiveBetaGrants(applied, new Set([...announced, ...claimedArgs()]))
-      if (fresh.length > 0) pendingByInstallation.set(otherId, fresh)
-    }
   } catch (err) {
     console.log('[beta-notice] clear failed:', err)
   }
@@ -272,5 +238,4 @@ export function acknowledgeBetaActivationNotice(
 /** @internal — exposed for tests. */
 export function _resetForTest(): void {
   pendingByInstallation.clear()
-  appliedByInstallation.clear()
 }

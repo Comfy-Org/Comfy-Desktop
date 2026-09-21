@@ -309,15 +309,6 @@ describe('arm / peek / acknowledge', () => {
     expect(pendingArgs('inst-2')).toEqual(['--enable-agent'])
   })
 
-  it('lets only the first of two concurrent installs claim an arg', () => {
-    // Neither has acknowledged yet, so the persisted list is still empty. Without the
-    // in-flight claim both windows would raise a card for the same feature.
-    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
-    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
-    expect(pendingArgs('inst-1')).toEqual(['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-2')).toBeNull()
-  })
-
   it('merges into what other installs already announced rather than replacing it', () => {
     store.set(BETA_NOTICE_ANNOUNCED_ARGS_KEY, ['--enable-assets'])
     armBetaActivationNotice('inst-2', [grant('--enable-agent')])
@@ -387,24 +378,32 @@ describe('arm / peek / acknowledge', () => {
     expect(pendingArgs('inst-1')).toEqual(['--enable-assets'])
   })
 
+  it('gives every install its own card, and lets the announced list do the silencing', () => {
+    // Queues are per-install. Two instances really do both have the feature on, and each has
+    // its own title bar, so each gets told. Suppressing the second permanently silenced an
+    // install whose user might never see the other window at all.
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
+    expect(pendingArgs('inst-1')).toEqual(['--enable-assets'])
+    expect(pendingArgs('inst-2')).toEqual(['--enable-assets'])
+  })
+
+  it('stays silent everywhere once any install has acknowledged the arg', () => {
+    // This is what "once" means, and it is the only mechanism that survives a restart.
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    acknowledgeBetaActivationNotice('inst-1', ['--enable-assets'])
+    expect(readAnnouncedBetaArgs()).toEqual(['--enable-assets'])
+
+    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
+    expect(peekBetaActivationNotice('inst-2')).toBeNull()
+  })
+
   it('clears a stale claim when the next launch applies no grants', () => {
     // A beta launch that failed to boot leaves a claim behind. If the user then turns beta off
     // and relaunches, the card must not still say a beta feature is on.
     armBetaActivationNotice('inst-1', [grant('--enable-assets')])
     armBetaActivationNotice('inst-1', [])
     expect(peekBetaActivationNotice('inst-1')).toBeNull()
-  })
-
-  it('releases a dropped claim back to other installs', () => {
-    // `claimedArgs` reads the same map, so a stale claim would otherwise silence the arg
-    // everywhere for the rest of the process.
-    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
-    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
-    expect(peekBetaActivationNotice('inst-2')).toBeNull()
-
-    armBetaActivationNotice('inst-1', [])
-    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
-    expect(pendingArgs('inst-2')).toEqual(['--enable-assets'])
   })
 
   // Arming already repairs this on the install's NEXT launch. These cover the window in
@@ -415,36 +414,6 @@ describe('arm / peek / acknowledge', () => {
 
     clearBetaActivationClaim('inst-1')
     expect(peekBetaActivationNotice('inst-1')).toBeNull()
-  })
-
-  it('hands the arg to the install that lost the race, with no relaunch of its own', () => {
-    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
-    // inst-2 launches successfully alongside it and loses the claim, so it queues nothing.
-    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
-    expect(peekBetaActivationNotice('inst-2')).toBeNull()
-
-    // inst-1's launch then fails. inst-2 is still running and must be reconsidered HERE:
-    // production has no second arm to lean on, only this release.
-    clearBetaActivationClaim('inst-1')
-    expect(peekBetaActivationNotice('inst-2')?.args).toEqual(['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-1')).toBeNull()
-  })
-
-  it('does not hand a released arg to an install that already had its card', () => {
-    // The handover must not resurrect a spent notice. inst-2 loses the race, is later
-    // reconsidered, shows and acknowledges; a second release must not re-offer it.
-    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
-    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
-    clearBetaActivationClaim('inst-1')
-    expect(peekBetaActivationNotice('inst-2')?.args).toEqual(['--enable-assets'])
-
-    acknowledgeBetaActivationNotice('inst-2', ['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-2')).toBeNull()
-
-    // Another install fails and releases; the announced arg stays spent for everyone.
-    armBetaActivationNotice('inst-3', [grant('--enable-assets')])
-    clearBetaActivationClaim('inst-3')
-    expect(peekBetaActivationNotice('inst-2')).toBeNull()
   })
 
   it('discards only the unannounced claim, never an arg already announced', () => {

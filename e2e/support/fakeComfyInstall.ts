@@ -89,25 +89,40 @@ const body = \`<!doctype html><html><head><meta charset="utf-8"><title>ComfyUI (
   <p>ComfyUI stub &mdash; e2e fixture canvas</p>
   <p>launched with <code>\${assetsOn ? '--enable-assets' : 'no beta grant'}</code></p>
 </div></body></html>\`
-http
-  .createServer((_req, res) => {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    res.end(body)
-  })
-  .listen(port, '127.0.0.1', () => {
-    // The launcher's boot-log tap reads stdout; printing the usual banner keeps the console
-    // pane readable while a run is being watched.
-    console.log('Starting server\\n')
-    console.log('To see the GUI go to: http://127.0.0.1:' + port)
-  })
+const server = http.createServer((_req, res) => {
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+  res.end(body)
+})
+// The port was reserved by binding 0 and closing, so between that close and this listen the
+// OS may hand it to someone else, and a lingering TIME_WAIT can refuse it briefly. The port
+// is fixed (the launcher was told it explicitly), so retry the SAME one rather than shifting
+// to another the launcher would never poll. Zero tolerance for flaky tests means the transient
+// case has to self-heal, not merely be documented.
+let attemptsLeft = 40
+server.on('error', (err) => {
+  if (err.code !== 'EADDRINUSE' || attemptsLeft <= 0) throw err
+  attemptsLeft -= 1
+  setTimeout(() => server.listen(port, '127.0.0.1'), 250)
+})
+server.on('listening', () => {
+  // The launcher's boot-log tap reads stdout; printing the usual banner keeps the console
+  // pane readable while a run is being watched.
+  console.log('Starting server\\n')
+  console.log('To see the GUI go to: http://127.0.0.1:' + port)
+})
+server.listen(port, '127.0.0.1')
 `
 
 /**
  * A port nothing is listening on right now, found by binding 0 and reading back what the OS
- * chose. There is an unavoidable gap between releasing it and the stub binding it, but that is
- * far better than a constant: a fixed port collides with whatever else is on the machine, and
- * the failure mode is either `EADDRINUSE` or — worse — the launcher mistaking an unrelated
- * listener for the booted fixture.
+ * chose. Far better than a constant, which collides with whatever else is on the machine and
+ * fails as either `EADDRINUSE` or — worse — the launcher mistaking an unrelated listener for
+ * the booted fixture.
+ *
+ * A gap remains between releasing the probe socket and the stub binding the port, and it
+ * cannot be closed from here without handing the listening socket to the child. The stub
+ * absorbs it instead: it retries the same port on `EADDRINUSE` (see `stubServerSource`), so a
+ * lost race costs a few hundred milliseconds rather than a failed run.
  */
 export async function reserveFreePort(): Promise<number> {
   const { createServer } = await import('node:net')
