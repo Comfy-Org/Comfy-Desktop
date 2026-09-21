@@ -250,6 +250,9 @@ export interface ComfyTitleBarBridge {
    *  window moved or resized, leaving the anchor stale. NOT an acknowledgement: the owner
    *  should forget the card so it can be raised again, not mark it as seen. */
   onCoachmarkAutoHidden(cb: (payload: { kind: CoachmarkKind }) => void): () => void
+  /** Subscribe to "the host window has stopped moving", debounced in main across every
+   *  `move`/`resize`. The cue to put a forgotten card back, once and not mid-drag. */
+  onCoachmarkSettled(cb: (payload: { kind: CoachmarkKind }) => void): () => void
   /** Tell main this title bar is mounted; main responds with the initial state. */
   ready(): void
 }
@@ -460,6 +463,12 @@ const bridge: ComfyTitleBarBridge = {
       cb({ kind: coachmarkKindOf(payload) })
     ipcRenderer.on('comfy-titlebar:coachmark-auto-hidden', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-auto-hidden', handler)
+  },
+  onCoachmarkSettled: (cb: (payload: { kind: CoachmarkKind }) => void) => {
+    const handler = (_e: unknown, payload?: { kind?: unknown }): void =>
+      cb({ kind: coachmarkKindOf(payload) })
+    ipcRenderer.on('comfy-titlebar:coachmark-settled', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-settled', handler)
   },
   ready: () => {
     ipcRenderer.send('comfy-window:title-bar-ready')

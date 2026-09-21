@@ -65,6 +65,7 @@ interface MockBridgeState {
   coachmarkDismissedCallbacks: ((payload: { kind: string }) => void)[]
   coachmarkActionCallbacks: ((payload: { kind: string }) => void)[]
   coachmarkAutoHiddenCallbacks: ((payload: { kind: string }) => void)[]
+  coachmarkSettledCallbacks: ((payload: { kind: string }) => void)[]
   readyCalls: number
 }
 
@@ -104,6 +105,7 @@ function installMockBridge(
     coachmarkDismissedCallbacks: [],
     coachmarkActionCallbacks: [],
     coachmarkAutoHiddenCallbacks: [],
+    coachmarkSettledCallbacks: [],
     readyCalls: 0
   }
   const installationId = opts.installationId === undefined ? 'test-id' : opts.installationId
@@ -236,6 +238,10 @@ function installMockBridge(
     },
     onCoachmarkAutoHidden: (cb: (payload: { kind: string }) => void) => {
       state.coachmarkAutoHiddenCallbacks.push(cb)
+      return () => {}
+    },
+    onCoachmarkSettled: (cb: (payload: { kind: string }) => void) => {
+      state.coachmarkSettledCallbacks.push(cb)
       return () => {}
     },
     ready: () => {
@@ -1431,51 +1437,24 @@ describe('TitleBarApp', () => {
     // The host window moving or resizing auto-hides the shared popup in main (the anchor the
     // beak points at has gone stale). Nothing retired the card, so the user may never have
     // read it — and if the composable stayed latched, no later card could be raised at all.
-    it('puts the card back by itself once the window settles', async () => {
-      vi.useFakeTimers()
-      try {
-        const wrapper = await mountBar()
-        expect(betaCards().length).toBe(1)
-
-        // A drag fires `move` repeatedly; main hides the popup on each one.
-        bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
-        bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
-        bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
-        await vi.advanceTimersByTimeAsync(100)
-        // Still mid-gesture: the debounce has not elapsed, so nothing has been re-raised.
-        expect(betaCards().length).toBe(1)
-
-        await vi.advanceTimersByTimeAsync(300)
-        // Settled: exactly one re-show for the whole drag, not one per event.
-        expect(betaCards().length).toBe(2)
-        // Still never acknowledged - the user has not acted on it.
-        expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
-        wrapper.unmount()
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    // A retirement hides the popup itself, so the auto-hide notice follows its own dismiss.
-    // That must NOT resurrect the card: `retire` records the key before hiding and
-    // `forgetWithoutAcknowledging` deliberately leaves `retiredKeys` alone. This is the
-    // specific hazard the auto-hide wiring introduces, so it is pinned.
-    it('does not resurrect a card whose own retirement triggered the auto-hide', async () => {
+    it('does not put the card back until the window has stopped moving', async () => {
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(1)
 
-      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
-      await flushPromises()
-      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
-
-      // The hide that retirement performed comes back round as an auto-hide.
+      // A drag: many hides, no settle yet. Main owns the debounce, so nothing arrives here.
+      bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
-      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+      // Re-showing mid-drag would flash the card and steal focus on every move.
+      expect(betaCards().length).toBe(1)
+
+      bridgeState.coachmarkSettledCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
 
-      // Same args still pending from main, but the card was acknowledged: it stays gone.
-      expect(betaCards().length).toBe(1)
+      // Exactly one re-show for the whole gesture.
+      expect(betaCards().length).toBe(2)
+      expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
       wrapper.unmount()
     })
 
@@ -1536,20 +1515,15 @@ describe('TitleBarApp', () => {
       // The hint owns the popup, so the beta notice correctly defers.
       expect(betaCards().length).toBe(0)
 
-      // Fake timers only now: the mount path needs real ones to settle.
-      vi.useFakeTimers()
-      try {
-        bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
-        await vi.advanceTimersByTimeAsync(400)
+      bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+      bridgeState.coachmarkSettledCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+      await flushPromises()
 
-        // Raised again rather than stranded: the user never read it, so it is not spent.
-        expect(hintCards().length).toBe(2)
-        // And it was NOT persisted as seen, which only a real dismissal may do.
-        expect(setSetting).not.toHaveBeenCalledWith('hasSeenCentralPillHint', true)
-        wrapper.unmount()
-      } finally {
-        vi.useRealTimers()
-      }
+      // Raised again rather than stranded: the user never read it, so it is not spent.
+      expect(hintCards().length).toBe(2)
+      // And it was NOT persisted as seen, which only a real dismissal may do.
+      expect(setSetting).not.toHaveBeenCalledWith('hasSeenCentralPillHint', true)
+      wrapper.unmount()
     })
 
     it('retries once the onboarding hint releases the popup', async () => {

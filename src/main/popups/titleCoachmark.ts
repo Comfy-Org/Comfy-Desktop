@@ -147,6 +147,11 @@ interface CoachmarkPopupEntry {
   /** Owner of the card currently configured on this popup, so a dismiss or action click
    *  reaches the composable that raised it and not the other one. */
   kind: CoachmarkKind
+  /** Debounce for "the host window has stopped moving". Lives here rather than in the
+   *  renderer because only main sees every `move`: the popup hides on the FIRST one and
+   *  `onHide` fires only on that open-to-hidden transition, so a renderer-side timer could
+   *  never be extended by the rest of a drag. */
+  settleTimer: ReturnType<typeof setTimeout> | null
 }
 
 /** The title-bar lookup, captured from `registerTitleCoachmarkIpc` so a popup built later
@@ -157,6 +162,10 @@ let findTitleBarByParent: ((parent: BrowserWindow) => WebContents | null) | null
  *  channel, so the auto-hide notice would be a duplicate — and a harmful one: it would tell
  *  the owner to FORGET a card it has just acknowledged. */
 let retireDrivingHide = false
+
+/** How long the host window must be still before a card is put back. Long enough that a
+ *  drag made of many `move` events resolves to ONE re-show at the end. */
+const COACHMARK_MOVE_SETTLE_MS = 250
 
 const coachmarkPopupsByParent = new Map<number, CoachmarkPopupEntry>()
 const coachmarkPopupsByWebContents = new Map<number, CoachmarkPopupEntry>()
@@ -193,6 +202,8 @@ function ensureCoachmarkPopup(parent: BrowserWindow): CoachmarkPopupEntry {
       }
     },
     onParentClosed: () => {
+      const entry = coachmarkPopupsByParent.get(parent.id)
+      if (entry?.settleTimer) clearTimeout(entry.settleTimer)
       coachmarkPopupsByParent.delete(parent.id)
       coachmarkPopupsByWebContents.delete(view.popupWebContentsId)
     },
@@ -207,10 +218,34 @@ function ensureCoachmarkPopup(parent: BrowserWindow): CoachmarkPopupEntry {
     pendingConfig: null,
     pendingAnchor: null,
     pendingConfigToken: null,
-    kind: 'pill-hint'
+    kind: 'pill-hint',
+    settleTimer: null
   }
   coachmarkPopupsByParent.set(view.parentWindowId, entry)
   coachmarkPopupsByWebContents.set(view.popupWebContentsId, entry)
+
+  /** "The window has stopped moving." Separate from the auto-hide notice on purpose: the
+   *  owner should FORGET its card immediately (that is a state correction), but only RE-SHOW
+   *  once the drag is over. Debounced from every `move`/`resize`, which is why it has to live
+   *  here — the popup is hidden after the first event, so no further `onHide` arrives to
+   *  extend a renderer-side timer, and the card would reopen and steal focus mid-drag. */
+  const scheduleSettled = (): void => {
+    const cur = coachmarkPopupsByParent.get(parent.id)
+    if (!cur) return
+    if (cur.settleTimer) clearTimeout(cur.settleTimer)
+    cur.settleTimer = setTimeout(() => {
+      cur.settleTimer = null
+      if (parent.isDestroyed()) return
+      const tb = findTitleBarByParent?.(parent)
+      if (tb && !tb.isDestroyed()) {
+        tb.send('comfy-titlebar:coachmark-settled', { kind: cur.kind })
+      }
+    }, COACHMARK_MOVE_SETTLE_MS)
+  }
+  for (const event of ['move', 'resize'] as const) {
+    ;(parent as unknown as { on: (e: string, cb: () => void) => void }).on(event, scheduleSettled)
+  }
+
   return entry
 }
 
