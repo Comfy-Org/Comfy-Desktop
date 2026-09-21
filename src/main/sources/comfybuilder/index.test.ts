@@ -52,7 +52,7 @@ vi.mock('./modelStagingTask', () => ({
   restageBuildModelsIfNeeded: vi.fn()
 }))
 vi.mock('../../devplatform/builds', () => ({
-  resolveHost: vi.fn(async () => ({ os: 'linux', gpu: 'nvidia' })),
+  resolveHost: vi.fn(async () => ({ os: 'linux', arch: 'x64', gpu: 'nvidia' })),
   resolveHostArtifactForVersion: vi.fn(),
   listCompleteVersions: vi.fn(async () => [])
 }))
@@ -61,7 +61,11 @@ import fs, { promises as fsp } from 'fs'
 import os from 'os'
 import path from 'path'
 import { installArtifact, stageModels, resolveModelManifest, venvPython } from '../../comfybuilder'
-import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
+import {
+  listCompleteVersions,
+  resolveHost,
+  resolveHostArtifactForVersion
+} from '../../devplatform/builds'
 import {
   clearVersionCache,
   getCachedVersions,
@@ -167,6 +171,22 @@ describe('comfybuilder.install wiring', () => {
     )
     expect(releaseInstallTerminalForFsOp).toHaveBeenCalledWith('i1')
   })
+
+  it.each(['windows', 'linux'] as const)(
+    'rejects a saved %s x64 selection on ARM64 before changing the environment',
+    async (os) => {
+      vi.mocked(resolveHost).mockResolvedValueOnce({ os, arch: 'arm64', gpu: 'nvidia' })
+      await expect(
+        comfybuilder.install!(record({ artifactOs: os, status: 'failed' }), fakeTools())
+      ).rejects.toThrow('This build is not compatible with this machine.')
+      expect(installArtifact).not.toHaveBeenCalled()
+      expect(releaseInstallTerminalForFsOp).not.toHaveBeenCalled()
+      expect(rm).not.toHaveBeenCalled()
+      expect(rename).not.toHaveBeenCalled()
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(startModelStaging).not.toHaveBeenCalled()
+    }
+  )
 
   it('updates code while models and user data remain at stable paths', async () => {
     access.mockImplementation(realFsp.access)
