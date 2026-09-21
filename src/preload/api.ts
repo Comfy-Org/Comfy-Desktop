@@ -77,6 +77,8 @@ export function buildElectronApi(): ElectronApi {
     terminalRestart: (installationId) => ipcRenderer.invoke('terminal-restart', installationId),
     openInstallWindow: (installationId) =>
       ipcRenderer.invoke('open-install-window', installationId),
+    openInstallNewWindow: (installationId) =>
+      ipcRenderer.invoke('open-install-new-window', installationId),
     closeComfyWindow: (installationId, opts) =>
       ipcRenderer.invoke('close-comfy-window', installationId, opts),
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
