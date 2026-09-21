@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as ComfyBuilderModule from '../../comfybuilder'
+
 const acquireModelDownloadRootLock = vi.hoisted(() =>
   vi.fn<(modelsRoot: string) => (() => void) | null>(() => vi.fn())
 )
@@ -24,15 +26,10 @@ vi.mock('electron', () => ({
 }))
 
 // Stub the library so install() wiring can be asserted without real downloads.
-vi.mock('../../comfybuilder', () => ({
+vi.mock('../../comfybuilder', async (importOriginal) => ({
+  ...(await importOriginal<typeof ComfyBuilderModule>()),
   installArtifact: vi.fn(async () => {}),
   buildLaunchSpec: vi.fn(() => null),
-  managerAllowedByPolicy: vi.fn(
-    (policy: { mode?: string } | null | undefined) => policy?.mode !== 'allowlist'
-  ),
-  launchArgsForManagerAnswer: vi.fn((args: string, allowed: boolean) =>
-    allowed ? args : args.replace('--enable-manager', '').trim()
-  ),
   venvPython: vi.fn((installPath: string) =>
     process.platform === 'win32'
       ? `${installPath}\\venv\\base\\python.exe`

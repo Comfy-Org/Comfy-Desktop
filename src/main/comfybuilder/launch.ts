@@ -9,13 +9,17 @@
 import fs from 'fs'
 import path from 'path'
 
-import { extractPort, parseArgs } from '../lib/util'
+import { extractPort, parseArgs, parseArgSpans } from '../lib/util'
 import type { LaunchSpec, ModelPolicy } from './types'
 
 const DEFAULT_LAUNCH_ARGS = '--enable-manager'
 
 /** Every flag that turns ComfyUI-Manager on. */
 const MANAGER_ENABLING_ARGS = new Set(['--enable-manager', '--enable-manager-legacy-ui'])
+
+function isManagerEnablingArg(arg: string): boolean {
+  return MANAGER_ENABLING_ARGS.has(arg)
+}
 
 /**
  * Whether a build's author left ComfyUI-Manager on.
@@ -50,7 +54,23 @@ export function venvPython(installPath: string): string {
   return fs.existsSync(staged) ? staged : path.join(installPath, 'venv', 'python.exe')
 }
 
-const MANAGER_ENABLING_ARG = /(^|\s)--enable-manager(?:-legacy-ui)?(?=\s|$)/g
+function withoutManagerEnablingArgs(launchArgs: string): string {
+  let result = launchArgs
+  const spans = parseArgSpans(launchArgs)
+  for (let i = spans.length - 1; i >= 0; i--) {
+    const span = spans[i]!
+    if (!isManagerEnablingArg(span.value)) continue
+
+    let start = span.start
+    let end = span.end
+    while (end < result.length && /\s/.test(result[end]!)) end++
+    if (end === span.end) {
+      while (start > 0 && /\s/.test(result[start - 1]!)) start--
+    }
+    result = result.slice(0, start) + result.slice(end)
+  }
+  return result.trim()
+}
 
 /**
  * The launch args to store on an install once its release's manager answer is
@@ -66,10 +86,9 @@ export function launchArgsForManagerAnswer(
   managerAllowed: boolean,
   previouslyAllowed: boolean | undefined
 ): string {
-  if (!managerAllowed)
-    return launchArgs.replace(MANAGER_ENABLING_ARG, '$1').replace(/\s+/g, ' ').trim()
-  const hasFlag = launchArgs.search(MANAGER_ENABLING_ARG) !== -1
-  if (previouslyAllowed === false && !hasFlag) return `--enable-manager ${launchArgs}`.trim()
+  if (!managerAllowed) return withoutManagerEnablingArgs(launchArgs)
+  const hasFlag = parseArgs(launchArgs).some(isManagerEnablingArg)
+  if (previouslyAllowed === false && !hasFlag) return `${DEFAULT_LAUNCH_ARGS} ${launchArgs}`.trim()
   return launchArgs
 }
 
@@ -98,7 +117,7 @@ export function buildLaunchSpec(installPath: string, opts: LaunchOptions = {}): 
   const raw = (opts.launchArgs ?? DEFAULT_LAUNCH_ARGS).trim()
   const all = raw.length > 0 ? parseArgs(raw) : []
   const parsed =
-    opts.managerAllowed === false ? all.filter((arg) => !MANAGER_ENABLING_ARGS.has(arg)) : all
+    opts.managerAllowed === false ? all.filter((arg) => !isManagerEnablingArg(arg)) : all
   return {
     cmd: python,
     args: ['-s', path.join('ComfyUI', 'main.py'), ...parsed],

@@ -127,6 +127,21 @@ describe('launch', () => {
       '--enable-manager-foo'
     ],
     [
+      'a No build preserves whitespace inside a quoted value',
+      '--enable-manager --path "C:\\My  Models"',
+      false,
+      undefined,
+      '--path "C:\\My  Models"'
+    ],
+    [
+      'a No build leaves a manager-looking substring inside a quoted value alone',
+      '--label "use --enable-manager here"',
+      false,
+      undefined,
+      '--label "use --enable-manager here"'
+    ],
+    ['a No build removes a quoted manager flag', '"--enable-manager" --cpu', false, true, '--cpu'],
+    [
       'a Yes build is left alone',
       '--enable-manager --cpu',
       true,
