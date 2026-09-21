@@ -1450,7 +1450,11 @@ describe('TitleBarApp', () => {
       await flushPromises()
       // A fresh grant clears its version gate later in the same session. The pill-hint
       // retirement is just the re-trigger seam: it calls the beta notice's retry.
-      getPendingBetaNotice.mockResolvedValue(['--enable-something-else'])
+      getPendingBetaNotice.mockResolvedValue({
+        args: ['--enable-something-else'],
+        direction: 'enabled',
+        description: null
+      })
       bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
       await flushPromises()
 
