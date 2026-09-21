@@ -1449,10 +1449,15 @@ export interface ElectronApi {
    *  back on the next launch. `description` carries the feature name the
    *  PostHog payload supplied, when it supplied one. */
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
-  /** Retire this install's activation notice: its args are persisted as
+  /** Retire this install's activation notice: the args are persisted as
    *  announced and never raise a card again. Called when the user dismisses
-   *  the card or follows its settings link. */
-  acknowledgeBetaNotice(installationId: string): Promise<void>
+   *  the card or follows its settings link.
+   *
+   *  `shownArgs` names what the card actually displayed. Main retires exactly
+   *  those rather than whatever is queued at retire time — a relaunch can
+   *  re-arm while the sticky card floats, and the announced list is
+   *  append-only, so acknowledging the wrong set silences it forever. */
+  acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
 
   // Theme
   getResolvedTheme(): Promise<ResolvedTheme>

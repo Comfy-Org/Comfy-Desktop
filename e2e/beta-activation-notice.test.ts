@@ -14,9 +14,9 @@
  * and the screenshots come from `BrowserWindow.capturePage()` — the whole host window,
  * chrome and canvas and floating card together, which is the thing a reviewer needs to see.
  *
- * Tagged `@linux @macos`, never `@windows`: the fixture's interpreter stub cannot be a PE
- * executable, so the launch it drives can never start there (see `fakeComfyInstall.ts`'s
- * header, and the same exclusion documented in `e2e/comfybuilder-launch.test.ts`).
+ * Tagged `@linux` only — the fixture cannot run on Windows (no PE interpreter stub) or macOS
+ * (nothing isolates `userData`, so the ops-flag seed would hit the real profile). Both reasons
+ * are spelled out in `fakeComfyInstall.ts`'s header.
  *
  * Run: `pnpm exec playwright test --project=linux e2e/beta-activation-notice.test.ts`
  * Screenshots go to Playwright's own output dir and are attached to the report, not written
@@ -29,7 +29,11 @@ import { expect, test, type ElectronApplication } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { WebContentsPage, titlePopupPage } from './support/cdpPages'
-import { opsFlagsGrantSeed, writeFakeComfyInstall } from './support/fakeComfyInstall'
+import {
+  opsFlagsGrantSeed,
+  reserveFreePort,
+  writeFakeComfyInstall,
+} from './support/fakeComfyInstall'
 import { captureHostWindow } from './support/windowCapture'
 
 // A real launch (args-schema spawn, port wait, attach) does not fit the default 45s budget.
@@ -37,8 +41,10 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
 const INSTALL_ID = 'inst-beta-notice'
 const INSTALL_NAME = 'Beta Notice Fixture'
-/** Explicit so the launcher's port-conflict auto-shift can never move the stub's port. */
-const PORT = 49517
+/** Chosen at run time rather than hard-coded: a constant collides with whatever else happens
+ *  to be on the machine, and this repo does not tolerate flaky tests. Passed explicitly in
+ *  `launchArgs` so the launcher's port-conflict auto-shift cannot move it afterwards. */
+let port = 0
 /** The grant under test. `--enable-assets` is on the real allowlist and the stub's `--help`
  *  advertises it, so it survives selection AND the schema filter. */
 const GRANT_ARG = '--enable-assets'
@@ -80,7 +86,8 @@ test.beforeAll(async () => {
   process.env['POSTHOG_HOST'] = UNREACHABLE_POSTHOG_HOST
 
   installPath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-beta-notice-'))
-  await writeFakeComfyInstall({ installPath, port: PORT })
+  port = await reserveFreePort()
+  await writeFakeComfyInstall({ installPath, port })
 
   ctx = await launchApp({
     settings: {
@@ -101,7 +108,7 @@ test.beforeAll(async () => {
         sourceLabel: 'ComfyBuilder',
         installPath,
         status: 'installed',
-        launchArgs: `--port ${PORT}`,
+        launchArgs: `--port ${port}`,
         launchMode: 'window',
         browserPartition: 'unique',
         seen: true,
@@ -131,7 +138,7 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-test('a first beta activation raises a nonblocking notice over live ComfyUI @linux @macos', async () => {
+test('a first beta activation raises a nonblocking notice over live ComfyUI @linux', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
 
   // The grant reaches the real command line, not just the selection step: this is what the
@@ -140,9 +147,9 @@ test('a first beta activation raises a nonblocking notice over live ComfyUI @lin
   await ctx.panel.waitFor(
     async () =>
       (await ctx.app.evaluate(
-        ({ webContents }, port) =>
-          webContents.getAllWebContents().some((wc) => wc.getURL().includes(String(port))),
-        PORT,
+        ({ webContents }, p) =>
+          webContents.getAllWebContents().some((wc) => wc.getURL().includes(String(p))),
+        port,
       )) === true,
     { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' },
   )
@@ -171,7 +178,7 @@ test('a first beta activation raises a nonblocking notice over live ComfyUI @lin
   test.info().attach('notice over ComfyUI', { path: shot, contentType: 'image/png' })
 })
 
-test('the card is anchored on the bell it points at @linux @macos', async () => {
+test('the card is anchored on the bell it points at @linux', async () => {
   // The beak is drawn at a fixed position within the card, so "points at the bell" is really
   // "the popup is centred on the bell". Asserted numerically rather than by eye: a composited
   // screenshot is evidence, not a guarantee, and this is the property that actually breaks
@@ -191,17 +198,29 @@ test('the card is anchored on the bell it points at @linux @macos', async () => 
       if (!(child instanceof WebContentsView)) continue
       if (!child.webContents.getURL().includes('comfyTitleTooltip')) continue
       const b = child.getBounds()
-      return { centre: b.x + b.width / 2, right: b.x + b.width, width: b.width }
+      return { centre: b.x + b.width / 2, x: b.x, right: b.x + b.width, width: b.width }
     }
     return null
   })
   expect(popup, 'coachmark popup view not found').not.toBeNull()
 
-  // One device pixel of rounding is fine; ~20 px means the card is pointing at a neighbour.
-  expect(Math.abs(popup!.centre - bellCentre)).toBeLessThanOrEqual(2)
+  // The card must COVER the bell horizontally — that holds whether or not the view clamped.
+  expect(popup!.x).toBeLessThanOrEqual(bellCentre)
+  expect(popup!.right).toBeGreaterThanOrEqual(bellCentre)
+
+  // When nothing clamped it, the view is centred on the bell exactly. Asserting this only in
+  // the unclamped case keeps it honest on a layout where the bell sits too close to an edge
+  // for the card to centre — there the beak does the pointing, which `positionCoachmark`'s
+  // unit tests cover directly.
+  const windowWidth = await ctx.app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.isVisible())
+    return win ? win.getContentBounds().width : 0
+  })
+  const clamped = popup!.x <= 0 || popup!.right >= windowWidth
+  if (!clamped) expect(Math.abs(popup!.centre - bellCentre)).toBeLessThanOrEqual(2)
 })
 
-test('the notice does not block the canvas underneath it @linux @macos', async () => {
+test('the notice does not block the canvas underneath it @linux', async () => {
   // Nonblocking is the firm constraint, and it is a property of the popup's BOUNDS: the card
   // is its own small WebContentsView, so it takes clicks only where it is drawn. A full-window
   // overlay would report a height near the host window's.
@@ -223,7 +242,7 @@ test('the notice does not block the canvas underneath it @linux @macos', async (
   expect(bounds!.card.width).toBeLessThan(bounds!.window.width / 2)
 })
 
-test('the settings link lands on the beta opt-in row and retires the card @linux @macos', async () => {
+test('the settings link lands on the beta opt-in row and retires the card @linux', async () => {
   const popup = coachmarkPopup(ctx.app)
   expect(await popup.click('.coachmark-action')).toBe(true)
 
@@ -253,7 +272,7 @@ test('the settings link lands on the beta opt-in row and retires the card @linux
   test.info().attach('settings opt-out highlighted', { path: shot, contentType: 'image/png' })
 })
 
-test('the notice is spent: a second launch stays silent @linux @macos', async () => {
+test('the notice is spent: a second launch stays silent @linux', async () => {
   // The whole point of persisting on retire rather than on show. Read through the same IPC
   // the title bar uses, so this asserts the contract the renderer actually depends on.
   const stillPending = await ctx.titleBar.evaluate<unknown>(

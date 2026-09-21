@@ -15,13 +15,23 @@
  * Node runs the server rather than Python because there is no interpreter to depend on: the
  * absolute path of the node binary already running Playwright is baked into the stub.
  *
- * POSIX only, deliberately. A Windows stub would have to be a real PE executable: `venvPython`
+ * LINUX only, deliberately — two independent reasons.
+ *
+ * A Windows stub would have to be a real PE executable: `venvPython`
  * resolves to `venv/python.exe`, and both callers run it with no shell (`execFile` in
  * `comfy-args.ts`, `spawn` in `process.ts`), so `CreateProcessW` rejects anything that is not a
  * PE image. Naming a batch file `.exe` does not help — only a `.bat`/`.cmd` EXTENSION makes
  * Windows hand off to `cmd.exe`. `e2e/comfybuilder-launch.test.ts` writes an EMPTY `python.exe`
- * for exactly this reason: its assertion is that the launch is attempted and fails. Specs using
- * this fixture are therefore tagged `@linux @macos`, never `@windows`.
+ * for exactly this reason: its assertion is that the launch is attempted and fails.
+ *
+ * macOS is excluded for a different reason: nothing isolates it. `configDir()` resolves to
+ * Electron's `userData` there, which ignores the harness's HOME override, so the ops-flag seed
+ * these specs need would be written into the developer's (or runner's) REAL profile — leaving
+ * the seeded rollout enabled after the run and leaking state into later tests. Fixing that
+ * needs the harness to redirect `userData` before main resolves any path, which is a change to
+ * app startup and does not belong in this PR.
+ *
+ * Specs using this fixture are therefore tagged `@linux` only.
  */
 import path from 'node:path'
 import process from 'node:process'
@@ -92,6 +102,30 @@ http
   })
 `
 
+/**
+ * A port nothing is listening on right now, found by binding 0 and reading back what the OS
+ * chose. There is an unavoidable gap between releasing it and the stub binding it, but that is
+ * far better than a constant: a fixed port collides with whatever else is on the machine, and
+ * the failure mode is either `EADDRINUSE` or — worse — the launcher mistaking an unrelated
+ * listener for the booted fixture.
+ */
+export async function reserveFreePort(): Promise<number> {
+  const { createServer } = await import('node:net')
+  return new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.once('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address()
+      if (addr === null || typeof addr === 'string') {
+        srv.close(() => reject(new Error('could not determine a free port')))
+        return
+      }
+      const { port } = addr
+      srv.close(() => resolve(port))
+    })
+  })
+}
+
 export interface FakeComfyInstall {
   /** `installPath` for the seeded record. */
   installPath: string
@@ -117,9 +151,9 @@ export async function writeFakeComfyInstall(opts: {
   const serverPath = path.join(installPath, 'stub-server.cjs')
   await writeFile(serverPath, SERVER_JS)
 
-  if (process.platform === 'win32') {
+  if (process.platform !== 'linux') {
     throw new Error(
-      'writeFakeComfyInstall is POSIX-only (see the file header); tag the spec @linux @macos.'
+      'writeFakeComfyInstall is Linux-only (see the file header); tag the spec @linux.'
     )
   }
 

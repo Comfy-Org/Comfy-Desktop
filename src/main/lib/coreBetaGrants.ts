@@ -65,6 +65,13 @@ const CORE_BETA_ARG_RE = /^--[a-z][a-z0-9-]+$/
  *  back to wording that is at least correct. */
 const MAX_DESCRIPTION_LENGTH = 48
 
+/** A feature name is rendered verbatim in desktop chrome, beside an action that opens
+ *  Settings — so it is held to printable characters only. Newlines would reshape the card,
+ *  C0/C1 controls can do worse, and a bidi override (U+202E) can visually reverse the
+ *  sentence around it. The payload is hand-authored by operators, so this guards a typo as
+ *  much as anything else; a name that fails it falls back to the generic wording. */
+const PRINTABLE_DESCRIPTION = /^[^\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}]+$/u
+
 // Prevent a control payload copied between PostHog variants from enrolling users.
 const OFF_VARIANTS = new Set(['control', 'off', 'false', 'disabled'])
 
@@ -101,7 +108,11 @@ function parseCoreBetaNotice(candidate: object): CoreBetaNotice | undefined {
     const raw = (candidate as { description?: unknown }).description
     if (typeof raw === 'string') {
       const trimmed = raw.trim()
-      if (trimmed.length > 0 && trimmed.length <= MAX_DESCRIPTION_LENGTH) {
+      if (
+        trimmed.length > 0 &&
+        trimmed.length <= MAX_DESCRIPTION_LENGTH &&
+        PRINTABLE_DESCRIPTION.test(trimmed)
+      ) {
         notice.description = trimmed
       }
     }

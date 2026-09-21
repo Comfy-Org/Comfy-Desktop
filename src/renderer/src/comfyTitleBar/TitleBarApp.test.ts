@@ -1428,7 +1428,7 @@ describe('TitleBarApp', () => {
       const wrapper = await mountBar()
       bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
-      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1')
+      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
       expect(bridgeState.hideCoachmarkCalls).toBeGreaterThan(0)
       wrapper.unmount()
     })
@@ -1441,7 +1441,7 @@ describe('TitleBarApp', () => {
         highlightField: 'betaFeaturesEnabled'
       })
       // Acting on the card acknowledges it: the user is now looking at the switch it named.
-      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1')
+      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
       wrapper.unmount()
     })
 
@@ -1489,7 +1489,51 @@ describe('TitleBarApp', () => {
 
       bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
-      expect(acknowledgeBetaNotice).not.toHaveBeenCalledWith('inst-2')
+      expect(acknowledgeBetaNotice).not.toHaveBeenCalledWith('inst-2', expect.anything())
+      wrapper.unmount()
+    })
+
+    it('shows a SECOND, different notice for the same install after the first is retired', async () => {
+      // The latch is keyed on the card, not the install. A user who updates Core without
+      // restarting Desktop can have a later grant newly clear its version gate; main queues it
+      // and this must be able to show it.
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(1)
+
+      getPendingBetaNotice.mockResolvedValue({
+        args: ['--enable-agent'],
+        direction: 'enabled',
+        description: null
+      })
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
+
+      // A gate transition re-runs the watcher; the new card is a different arg set.
+      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('loading-lockdown'))
+      await flushPromises()
+      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('none'))
+      await flushPromises()
+
+      expect(betaCards().length).toBe(2)
+      wrapper.unmount()
+    })
+
+    it('does not re-raise the same card when acknowledging it failed', async () => {
+      // Main still holds it pending, so without a per-card latch every gate transition would
+      // put the identical card back up.
+      acknowledgeBetaNotice.mockRejectedValue(new Error('ipc down'))
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(1)
+
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('loading-lockdown'))
+      await flushPromises()
+      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('none'))
+      await flushPromises()
+
+      expect(betaCards().length).toBe(1)
       wrapper.unmount()
     })
 

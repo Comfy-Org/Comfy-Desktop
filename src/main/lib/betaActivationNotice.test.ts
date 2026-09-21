@@ -92,6 +92,14 @@ describe('selectNewlyActiveBetaGrants', () => {
     expect(announcedArgsFor([grant('--enable-assets', { silent: true })])).toEqual([])
   })
 
+  it('honours a silent first occurrence over a duplicate that omits it', () => {
+    // De-duplication has to claim the arg before the silent skip, or the second entry
+    // announces the very thing the first asked to keep quiet.
+    expect(
+      announcedArgsFor([grant('--enable-assets', { silent: true }), grant('--enable-assets')])
+    ).toEqual([])
+  })
+
   it('silences only the grant that asked for it', () => {
     expect(
       announcedArgsFor([grant('--enable-assets', { silent: true }), grant('--enable-agent')])
@@ -326,7 +334,7 @@ describe('arm / peek / acknowledge', () => {
     ])
     expect(peekBetaActivationNotice('inst-1')?.args).toEqual(['--enable-agent'])
 
-    acknowledgeBetaActivationNotice('inst-1')
+    acknowledgeBetaActivationNotice('inst-1', ['--enable-agent'])
     expect(announced()).toEqual(['--enable-agent'])
     // The withdrawal survives and gets its own, correctly worded card.
     expect(peekBetaActivationNotice('inst-1')).toEqual({
@@ -334,6 +342,18 @@ describe('arm / peek / acknowledge', () => {
       direction: 'disabled',
       description: 'Assets browser'
     })
+  })
+
+  it('retires the args the card displayed, not whatever is queued at retire time', () => {
+    // A relaunch can re-arm while the sticky card floats. Acknowledging the queue would then
+    // persist a grant the user was never shown.
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets'), grant('--enable-agent')])
+
+    acknowledgeBetaActivationNotice('inst-1', ['--enable-assets'])
+
+    expect(announced()).toEqual(['--enable-assets'])
+    expect(peekBetaActivationNotice('inst-1')?.args).toEqual(['--enable-agent'])
   })
 
   it('acknowledging an install with nothing pending writes nothing', () => {

@@ -552,12 +552,21 @@ const betaNotice = useBetaActivationNotice({
   // on or withdrew it, and whether the PostHog payload named it. The generic pair is the
   // fallback, so an unnamed feature still gets a card that is true.
   copyFor: ({ direction, description }) => {
-    const suffix = description ? 'Named' : ''
-    const prefix = direction === 'disabled' ? 'betaNoticeOff' : 'betaNotice'
+    // Static keys rather than composed ones: `createAppI18n` disables missing-key warnings, so
+    // a rename in en.json would otherwise degrade silently to a card titled with the literal
+    // key. Written out, the four are greppable and fail visibly.
+    const keys =
+      direction === 'disabled'
+        ? description
+          ? (['titleBar.betaNoticeOffTitleNamed', 'titleBar.betaNoticeOffBodyNamed'] as const)
+          : (['titleBar.betaNoticeOffTitle', 'titleBar.betaNoticeOffBody'] as const)
+        : description
+          ? (['titleBar.betaNoticeTitleNamed', 'titleBar.betaNoticeBodyNamed'] as const)
+          : (['titleBar.betaNoticeTitle', 'titleBar.betaNoticeBody'] as const)
     const params = { feature: description ?? '' }
     return {
-      title: t(`titleBar.${prefix}Title${suffix}`, params),
-      body: t(`titleBar.${prefix}Body${suffix}`, params),
+      title: t(keys[0], params),
+      body: t(keys[1], params),
       dismissLabel: t('titleBar.betaNoticeDismiss'),
       actionLabel: t('titleBar.betaNoticeSettings')
     }

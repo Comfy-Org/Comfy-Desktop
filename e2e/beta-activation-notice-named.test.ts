@@ -5,8 +5,9 @@
  * trigger path. This one covers only what the PostHog payload adds: a `description` reaching
  * the card as a feature name, through the real parser and the real launch.
  *
- * Tagged `@linux @macos`, never `@windows`, for the reason documented in
- * `fakeComfyInstall.ts`: the interpreter stub cannot be a PE executable.
+ * Tagged `@linux` only, for the two reasons documented in `fakeComfyInstall.ts`: the
+ * interpreter stub cannot be a PE executable on Windows, and nothing isolates `userData` on
+ * macOS, so the ops-flag seed would hit the real profile.
  *
  * Run: `pnpm exec playwright test --project=linux e2e/beta-activation-notice-named.test.ts`
  */
@@ -96,7 +97,7 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-test('a payload-supplied feature name reaches the card @linux @macos', async () => {
+test('a payload-supplied feature name reaches the card @linux', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
 
   await ctx.panel.waitFor(

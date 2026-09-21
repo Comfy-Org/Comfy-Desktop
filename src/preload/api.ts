@@ -196,8 +196,8 @@ export function buildElectronApi(): ElectronApi {
     getSetting: (key) => ipcRenderer.invoke('get-setting', key),
     getPendingBetaNotice: (installationId) =>
       ipcRenderer.invoke('get-pending-beta-notice', installationId),
-    acknowledgeBetaNotice: (installationId) =>
-      ipcRenderer.invoke('acknowledge-beta-notice', installationId),
+    acknowledgeBetaNotice: (installationId, shownArgs) =>
+      ipcRenderer.invoke('acknowledge-beta-notice', installationId, shownArgs),
 
     // Theme
     getResolvedTheme: () => ipcRenderer.invoke('get-resolved-theme'),

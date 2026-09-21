@@ -110,8 +110,12 @@ export function selectNewlyActiveBetaGrants(
   const fresh: PendingBetaGrant[] = []
   const seen = new Set(spokenFor)
   for (const grant of applied) {
-    if (grant.notice?.silent === true) continue
     if (seen.has(grant.arg)) continue
+    // Claimed before any skip below, so the de-duplication the doc comment promises holds even
+    // when the FIRST occurrence is the one that gets skipped — otherwise
+    // `[{arg: X, silent}, {arg: X}]` would announce X after asking for silence.
+    seen.add(grant.arg)
+    if (grant.notice?.silent === true) continue
     const description = grant.notice?.description ?? null
     // Derived from the prefix PAIR, not as a binary else. An allowlist entry with neither
     // prefix is possible (`oppositeArg` already handles that case, and the list is documented
@@ -120,7 +124,6 @@ export function selectNewlyActiveBetaGrants(
     if (!grant.arg.startsWith(ENABLE_PREFIX) && !grant.arg.startsWith(DISABLE_PREFIX)) continue
     const direction = grant.arg.startsWith(ENABLE_PREFIX) ? 'enabled' : 'disabled'
     if (direction === 'disabled' && description === null) continue
-    seen.add(grant.arg)
     fresh.push({ arg: grant.arg, direction, description })
   }
   return fresh
@@ -191,22 +194,32 @@ export function peekBetaActivationNotice(installationId: string): BetaActivation
  * acknowledging it. Merged into the stored list rather than replacing it, so two installs
  * retiring different notices cannot clobber each other.
  */
-export function acknowledgeBetaActivationNotice(installationId: string): void {
+export function acknowledgeBetaActivationNotice(
+  installationId: string,
+  shownArgs?: readonly string[]
+): void {
   const queued = pendingByInstallation.get(installationId)
   if (!queued || queued.length === 0) return
-  // Retire exactly the grants the card spoke for. Anything left over was never described to
-  // the user, so it stays queued for its own card rather than being silently consumed.
-  const shown = resolveBetaActivationNotice(queued)
-  if (shown === null) return
-  const covered = new Set(shown.args)
-  const remaining = queued.filter((grant) => !covered.has(grant.arg))
-  if (remaining.length > 0) pendingByInstallation.set(installationId, remaining)
-  else pendingByInstallation.delete(installationId)
-  const pending = shown.args
+  // Retire exactly what the card DISPLAYED. Two things make that different from "the queue":
+  // a card covers only one direction, so a mixed launch deliberately leaves the rest pending;
+  // and a relaunch can re-arm between show and retire while the sticky card floats. Either
+  // way, acknowledging more than was shown persists a grant the user never saw, which the
+  // append-only list then makes unannounceable forever. Falls back to resolving the queue only
+  // when the renderer named nothing.
+  const shown = shownArgs?.length ? shownArgs : resolveBetaActivationNotice(queued)?.args
+  if (!shown || shown.length === 0) return
+  const coveredSet = new Set(shown)
+  const covered = queued.filter((grant) => coveredSet.has(grant.arg)).map((grant) => grant.arg)
+  if (covered.length === 0) return
   try {
-    const merged = [...new Set([...readAnnouncedBetaArgs(), ...pending])]
+    const merged = [...new Set([...readAnnouncedBetaArgs(), ...covered])]
     settings.set(BETA_NOTICE_ANNOUNCED_ARGS_KEY, merged)
     announcedCache = merged
+    // Only drop from the queue once the write succeeded: clearing first would lose the card
+    // for this session while leaving nothing on disk, so it would re-announce next launch.
+    const remaining = queued.filter((grant) => !coveredSet.has(grant.arg))
+    if (remaining.length > 0) pendingByInstallation.set(installationId, remaining)
+    else pendingByInstallation.delete(installationId)
   } catch (err) {
     // A failed write costs the user a repeat card on the next launch and nothing else.
     console.log('[beta-notice] acknowledge failed:', err)

@@ -258,6 +258,21 @@ describe('parseCoreBetaGrants notice wording', () => {
     }
   })
 
+  it.each([
+    ['a newline', 'Assets\nbrowser'],
+    ['a C0 control', 'Assets\u0007browser'],
+    ['a bidi override', 'Assets\u202Ebrowser'],
+    ['a zero-width joiner', 'Assets\u200Dbrowser']
+  ])('drops a description containing %s', (_label, description) => {
+    // The name is rendered verbatim in desktop chrome next to a Settings action, so anything
+    // that can reshape or reverse the sentence falls back to the generic wording.
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description }]
+      })
+    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+  })
+
   it('keeps a description exactly at the limit', () => {
     const description = 'x'.repeat(48)
     expect(

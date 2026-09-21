@@ -347,10 +347,18 @@ export function registerSettingsHandlers(): void {
 
   // Retire the card: persist its args as announced so it never shows again. Deliberately
   // separate from the read, so a notice that is shown but never retired replays next launch.
-  ipcMain.handle('acknowledge-beta-notice', (_event, installationId: string) => {
-    recordIpcInvocation('acknowledge-beta-notice', { installationId })
-    acknowledgeBetaActivationNotice(installationId)
-  })
+  ipcMain.handle(
+    'acknowledge-beta-notice',
+    (_event, installationId: string, shownArgs?: unknown) => {
+      recordIpcInvocation('acknowledge-beta-notice', { installationId })
+      // The renderer names what its card covered; anything else is ignored rather than
+      // trusted, since this is an untrusted boundary like every other handler here.
+      const args = Array.isArray(shownArgs)
+        ? shownArgs.filter((a): a is string => typeof a === 'string')
+        : undefined
+      acknowledgeBetaActivationNotice(installationId, args)
+    }
+  )
 
   ipcMain.handle('get-locale-messages', () => i18n.getMessages())
   ipcMain.handle('get-available-locales', () => i18n.getAvailableLocales())
