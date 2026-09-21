@@ -61,12 +61,14 @@ function maybeSeedFromEnv(): void {
   // Electron runtime. Unit tests import this module outside it, so touching `app` on the
   // common path would make every persisted-read test depend on mocking electron.
   if (process.env['E2E'] !== '1') return
-  // Hard guard: never run in production builds.
-  if (app.isPackaged) return
   const seed = process.env['E2E_OPS_FLAGS_SEED']
   if (!seed) return
   delete process.env['E2E_OPS_FLAGS_SEED']
   try {
+    // Inside the try with everything else: `readPersistedFile`'s whole contract is to degrade
+    // to "no cache", and a partially-mocked `app` throwing here would take that down with it.
+    // Hard guard: never run in production builds.
+    if (app.isPackaged) return
     JSON.parse(seed) // validate before writing
     const filePath = persistFilePath()
     fs.mkdirSync(path.dirname(filePath), { recursive: true })

@@ -34,10 +34,11 @@ export interface ComfyTitleTooltipBridge {
   /** Beak position, pushed after main has measured the card and settled its final (possibly
    *  clamped) bounds. Separate from the config push because it is only knowable then. */
   onBeak(cb: (payload: { beakFraction: number }) => void): () => void
-  /** Coachmark dismiss button; no-op for the tooltip variant. */
-  dismissCoachmark(): void
+  /** Coachmark dismiss button; no-op for the tooltip variant. `configToken` names the card
+   *  the click landed on, so main can discard a click from a card it has since replaced. */
+  dismissCoachmark(configToken: string): void
   /** Coachmark secondary action. Also retires the card — acting on it is acknowledging it. */
-  actionCoachmark(): void
+  actionCoachmark(configToken: string): void
 }
 
 function isTooltipConfig(value: unknown): value is TitleTooltipConfig {
@@ -79,11 +80,11 @@ const bridge: ComfyTitleTooltipBridge = {
     ipcRenderer.on('comfy-titletooltip:set-beak', handler)
     return () => ipcRenderer.removeListener('comfy-titletooltip:set-beak', handler)
   },
-  dismissCoachmark: () => {
-    ipcRenderer.send('comfy-titlecoachmark:dismiss')
+  dismissCoachmark: (configToken) => {
+    ipcRenderer.send('comfy-titlecoachmark:dismiss', { configToken })
   },
-  actionCoachmark: () => {
-    ipcRenderer.send('comfy-titlecoachmark:action')
+  actionCoachmark: (configToken) => {
+    ipcRenderer.send('comfy-titlecoachmark:action', { configToken })
   }
 }
 

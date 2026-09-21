@@ -125,7 +125,10 @@ export function positionCoachmark(opts: {
   const cardWidth = Math.max(1, viewWidth - COACHMARK_SHADOW_GUTTER * 2)
   const cardLeft = x + COACHMARK_SHADOW_GUTTER
   const rawFraction = (pillCenter - cardLeft) / cardWidth
-  const beakMargin = COACHMARK_BEAK_EDGE_MARGIN / cardWidth
+  // Capped at the midpoint: for a card narrower than two margins the bounds would otherwise
+  // cross over, and `Math.min(1 - margin, …)` would return something below `margin` — pinning
+  // the beak to the very corner the margin exists to keep it off.
+  const beakMargin = Math.min(0.5, COACHMARK_BEAK_EDGE_MARGIN / cardWidth)
   const beakFraction = Math.min(1 - beakMargin, Math.max(beakMargin, rawFraction))
   return { x, y, width: viewWidth, height: viewHeight, beakFraction }
 }
@@ -307,9 +310,13 @@ export function registerTitleCoachmarkIpc(opts: {
       // Unrecognised kinds fall back to the onboarding hint rather than being refused: an
       // unroutable retirement would leave a card the title bar can never retire.
       const kind: CoachmarkKind = payload?.kind === 'beta-notice' ? 'beta-notice' : 'pill-hint'
-      const leftX = typeof payload?.leftX === 'number' ? payload.leftX : 0
-      const rightX = typeof payload?.rightX === 'number' ? payload.rightX : leftX
-      const bottomY = typeof payload?.bottomY === 'number' ? payload.bottomY : TITLEBAR_HEIGHT
+      // `Number.isFinite`, not `typeof`: NaN and Infinity survive `Math.round` and reach
+      // `setBounds`, which throws in the main process.
+      const finite = (v: unknown, fallback: number): number =>
+        typeof v === 'number' && Number.isFinite(v) ? v : fallback
+      const leftX = finite(payload?.leftX, 0)
+      const rightX = finite(payload?.rightX, leftX)
+      const bottomY = finite(payload?.bottomY, TITLEBAR_HEIGHT)
       openCoachmarkPopup({
         parent,
         kind,
@@ -334,9 +341,16 @@ export function registerTitleCoachmarkIpc(opts: {
    *  dismiss and the secondary action — are retirements: the title-bar renderer owns the
    *  once-ever persistence for whichever `kind` raised the card, so it is told either way and
    *  decides what else the click means. */
-  const retire = (senderId: number, channel: string): void => {
+  const retire = (senderId: number, channel: string, token: string | null): void => {
     const entry = coachmarkPopupsByWebContents.get(senderId)
     if (!entry) return
+    // The popup is reused, so a click can arrive from a card rendered for a PREVIOUS open —
+    // a config push still queued, or a click already in flight when it was reconfigured.
+    // `entry.kind` has moved on by then, and routing on it would attribute the click to the
+    // new owner: an unseen beta notice acknowledged by a click on the onboarding hint.
+    if (token !== null && entry.pendingConfigToken !== null && token !== entry.pendingConfigToken) {
+      return
+    }
     entry.view.hide()
     const parent = entry.view.parentWindow
     if (parent && !parent.isDestroyed()) {
@@ -345,11 +359,14 @@ export function registerTitleCoachmarkIpc(opts: {
     }
   }
 
-  ipcMain.on('comfy-titlecoachmark:dismiss', (event) => {
-    retire(event.sender.id, 'comfy-titlebar:coachmark-dismissed')
+  const tokenOf = (payload?: { configToken?: unknown }): string | null =>
+    typeof payload?.configToken === 'string' ? payload.configToken : null
+
+  ipcMain.on('comfy-titlecoachmark:dismiss', (event, payload?: { configToken?: unknown }) => {
+    retire(event.sender.id, 'comfy-titlebar:coachmark-dismissed', tokenOf(payload))
   })
 
-  ipcMain.on('comfy-titlecoachmark:action', (event) => {
-    retire(event.sender.id, 'comfy-titlebar:coachmark-action')
+  ipcMain.on('comfy-titlecoachmark:action', (event, payload?: { configToken?: unknown }) => {
+    retire(event.sender.id, 'comfy-titlebar:coachmark-action', tokenOf(payload))
   })
 }

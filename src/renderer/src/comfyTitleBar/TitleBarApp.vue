@@ -648,9 +648,15 @@ onMounted(() => {
     // The card names "this instance", so it must not outlive the host retargeting to another.
     // Forgotten rather than retired: it was never acknowledged, so it replays for its own
     // install instead of being spent on one the user never saw it for.
-    if (previous !== installationId.value && betaNotice.isShowing.value) {
-      bridge.hideCoachmark()
-      betaNotice.forgetWithoutAcknowledging()
+    if (previous !== installationId.value) {
+      if (betaNotice.isShowing.value) {
+        bridge.hideCoachmark()
+        betaNotice.forgetWithoutAcknowledging()
+      }
+      // The gate watcher keys on install-less/lockdown, none of which move on a retarget
+      // between two real installs — so without this the new install's pending notice is never
+      // queried again for the rest of the session.
+      retryBetaNoticeAfterHint()
     }
   })
   // The popup's own dismiss button (✕ / "Got it") routes through main

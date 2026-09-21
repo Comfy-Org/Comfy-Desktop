@@ -50,24 +50,19 @@ function claimedArgs(): Set<string> {
   return claimed
 }
 
-/** In-memory mirror of the persisted list. `settings.get` re-reads and re-parses the whole
- *  file on every call, and its retry path blocks the main thread with `Atomics.wait` — which
- *  `armBetaActivationNotice` would otherwise pay on the spawn critical path, once per launch.
- *  Safe to cache because this module is the only writer of the key; it is refreshed on write
- *  and cleared for tests. */
-let announcedCache: string[] | null = null
-
 /** The persisted list, defensive about content: `settings.json` is user-writable, so a
  *  hand-edited non-array or a non-string entry has to read as "nothing announced yet" rather
- *  than throwing on the launch path. */
+ *  than throwing on the launch path.
+ *
+ *  Read straight through rather than cached. A cache here would have to stay coherent with
+ *  every other writer of the key — it is schema-known, so the generic `set-setting` IPC and
+ *  any settings import or reset can change it — and a stale entry either replays an announced
+ *  notice or suppresses a new one for the process lifetime. The read it avoids is one of
+ *  several the launch path already performs. */
 export function readAnnouncedBetaArgs(): string[] {
-  if (announcedCache !== null) return announcedCache
   const raw = settings.get(BETA_NOTICE_ANNOUNCED_ARGS_KEY)
-  const parsed = Array.isArray(raw)
-    ? raw.filter((entry): entry is string => typeof entry === 'string')
-    : []
-  announcedCache = parsed
-  return parsed
+  if (!Array.isArray(raw)) return []
+  return raw.filter((entry): entry is string => typeof entry === 'string')
 }
 
 /**
@@ -151,9 +146,12 @@ export function acknowledgeBetaActivationNotice(
   try {
     const merged = [...new Set([...readAnnouncedBetaArgs(), ...covered])]
     settings.set(BETA_NOTICE_ANNOUNCED_ARGS_KEY, merged)
-    announcedCache = merged
-    // Only drop from the queue once the write succeeded: clearing first would lose the card
-    // for this session while leaving nothing on disk, so it would re-announce next launch.
+    // Only drop from the queue once the value is actually readable back. `settings.set` can
+    // decline to persist (it refuses while settings.json is unreadable) without throwing, so
+    // a bare call is not evidence the write landed — and dropping it then would lose the card
+    // for this session while leaving nothing on disk.
+    const persisted = new Set(readAnnouncedBetaArgs())
+    if (!covered.every((arg) => persisted.has(arg))) return
     const remaining = queued.filter((a) => !covered.includes(a))
     if (remaining.length > 0) pendingByInstallation.set(installationId, remaining)
     else pendingByInstallation.delete(installationId)
@@ -166,5 +164,4 @@ export function acknowledgeBetaActivationNotice(
 /** @internal — exposed for tests. */
 export function _resetForTest(): void {
   pendingByInstallation.clear()
-  announcedCache = null
 }

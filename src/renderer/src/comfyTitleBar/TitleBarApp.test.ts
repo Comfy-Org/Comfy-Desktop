@@ -1463,20 +1463,42 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
-    it('acknowledges the install the card was raised for, not whatever the host retargets to', async () => {
-      // The card names "this instance". If the window attaches elsewhere while it floats,
-      // acknowledging the new install would permanently consume a notice never shown for it.
+    it('never acknowledges an install the card was not raised for', async () => {
+      // The card names "this instance". If the window attaches elsewhere while it floats, the
+      // card comes down unspent — acknowledging the new install would permanently consume a
+      // notice that was never shown for it.
+      getPendingBetaNotice.mockImplementation(async (id: string) =>
+        id === 'inst-1' ? ['--enable-assets'] : []
+      )
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(1)
 
       bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-2'))
       await flushPromises()
-      // The card belonged to inst-1, so it comes down — without being spent.
       expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
+      // inst-2 has nothing pending, so nothing new is raised either.
+      expect(betaCards().length).toBe(1)
 
       bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
       expect(acknowledgeBetaNotice).not.toHaveBeenCalledWith('inst-2', expect.anything())
+      wrapper.unmount()
+    })
+
+    it('queries the NEW install after the host retargets between two real instances', async () => {
+      // The gate watcher keys on install-less/lockdown, neither of which moves on a retarget,
+      // so without an explicit re-query the new install's notice is never asked for again.
+      getPendingBetaNotice.mockImplementation(async (id: string) =>
+        id === 'inst-2' ? ['--enable-agent'] : []
+      )
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(0)
+
+      bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-2'))
+      await flushPromises()
+
+      expect(getPendingBetaNotice).toHaveBeenCalledWith('inst-2')
+      expect(betaCards().length).toBe(1)
       wrapper.unmount()
     })
 

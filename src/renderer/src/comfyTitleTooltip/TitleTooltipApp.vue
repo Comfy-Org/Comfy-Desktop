@@ -30,13 +30,13 @@ interface Bridge {
   onConfig(cb: (config: TooltipConfig) => void): () => void
   /** Coachmark dismiss button — tells main to hide + persist the
    *  once-ever flag. No-op for the tooltip variant. */
-  dismissCoachmark?(): void
+  dismissCoachmark?(configToken: string): void
   /** Beak position as a fraction of the card's width, pushed once main has measured the card
    *  and settled its final bounds. */
   onBeak?(cb: (payload: { beakFraction: number }) => void): () => void
   /** Coachmark secondary action — retires the card the same way dismiss does, and lets the
    *  owning feature run its follow-up (e.g. opening Settings). */
-  actionCoachmark?(): void
+  actionCoachmark?(configToken: string): void
 }
 
 const bridge = (window as unknown as { __comfyTitleTooltip?: Bridge }).__comfyTitleTooltip
@@ -131,11 +131,11 @@ watch([text, cmTitle, cmBody, cmActionLabel], () => {
 })
 
 function onDismiss(): void {
-  bridge?.dismissCoachmark?.()
+  bridge?.dismissCoachmark?.(currentConfigToken)
 }
 
 function onAction(): void {
-  bridge?.actionCoachmark?.()
+  bridge?.actionCoachmark?.(currentConfigToken)
 }
 
 onUnmounted(() => {
