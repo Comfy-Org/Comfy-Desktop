@@ -89,14 +89,17 @@ export const DEFAULT_LAUNCH_PHASES: readonly LaunchPhaseDef[] = [
  * boot milestone fires. Weights add on top of the base 1.0; the renderer
  * normalizes, so injection just shrinks every slot proportionally.
  *
- *   - `repair`      interrupted-op source rollback was performed
- *   - `torchRepair` GPU PyTorch was restored after the v1.13.0 `--upgrade` bug
+ *   - `repair`            interrupted-op source rollback was performed
+ *   - `torchRepair`       GPU PyTorch was restored after the v1.13.0 `--upgrade` bug
+ *   - `agentRequirements` the agent's Python packages were installed for a
+ *                         launch that starts Core with `--enable-agent`
  */
-export type PreLaunchPhase = 'repair' | 'torchRepair'
+export type PreLaunchPhase = 'repair' | 'torchRepair' | 'agentRequirements'
 
 const PRE_LAUNCH_PHASES: Record<PreLaunchPhase, LaunchPhaseDef> = {
   repair: { phase: 'repair', match: NEVER, weight: 0.1, streaming: true },
-  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true }
+  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true },
+  agentRequirements: { phase: 'agentRequirements', match: NEVER, weight: 0.1, streaming: true }
 }
 
 /** Starter-template model download, shown as the LAST launch step. Synthetic +

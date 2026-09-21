@@ -90,6 +90,10 @@ import {
 } from '../../bootPhaseBuffer'
 import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
+import {
+  installAgentRequirements,
+  planAgentRequirementsInstall
+} from '../../agentRequirementsLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
@@ -1013,6 +1017,25 @@ async function runLaunch(
   })
   if (!managerReconcile.ok) {
     return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
+  }
+
+  // The args are final here, so this is the first point that knows the agent is
+  // actually starting - whether the user typed the flag or a beta grant added
+  // it, and whether the running core can parse it at all. The package is tens of
+  // megabytes, so it gets its own launch step; a failure is reported in the
+  // launch output and the flag is kept, leaving core to print its install hint
+  // and disable the agent itself.
+  const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
+  if (agentRequirements) {
+    preLaunchPhases.push('agentRequirements')
+    await armLaunchTracker()
+    sendProgress('agentRequirements', { percent: -1, status: '' })
+    await installAgentRequirements(
+      agentRequirements,
+      makeSendOutput(sender, installationId),
+      abort.signal
+    )
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
   }
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =

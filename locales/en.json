@@ -481,6 +481,7 @@
       "launchStart": "Starting ComfyUI…",
       "repair": "Repairing installation…",
       "torchRepair": "Restoring GPU PyTorch…",
+      "agentRequirements": "Installing agent requirements…",
       "securityScan": "Running security scan…",
       "mountLibraries": "Loading libraries…",
       "gpu": "Initializing GPU…",
