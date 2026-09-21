@@ -275,6 +275,25 @@ describe('restorePipPackages', () => {
       expect(result.errors.some((e) => e.includes('reverted to pre-restore state'))).toBe(false)
     })
 
+    it('does not claim a complete revert for a package it could not back up', async () => {
+      // Legacy metadata only: `findPackageEntries` locates `.dist-info`, so
+      // nothing is captured and the install's effect on it cannot be undone.
+      fs.mkdirSync(path.join(sitePackagesPath, 'legacy_pkg.egg-info'), { recursive: true })
+      vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
+      vi.mocked(runUvPip).mockImplementation(async (_uv, args) =>
+        (args as string[])[1] === 'uninstall' ? 1 : 0
+      )
+
+      const result = await run(snapshotWith({ 'legacy-pkg': '2.0.0' }))
+
+      // Still never uninstalled — that part holds...
+      expect(result.revert!.keptPreexisting).toEqual(['legacy-pkg'])
+      expect(result.revert!.uninstalled).toEqual([])
+      // ...but the revert is honest that it could not restore it.
+      expect(result.revert!.complete).toBe(false)
+      expect(output.join('')).toContain('No backup was captured')
+    })
+
     it('reports a clean revert when every step succeeded', async () => {
       installOnDisk('ghost-pkg', '9.9.9')
       vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
@@ -341,6 +360,26 @@ describe('preexistingOnDisk', () => {
       'versioned-pkg',
       'linked-pkg'
     ])
+  })
+
+  // The bare legacy forms carry the raw name, hyphens and all. Splitting at the
+  // first hyphen would read `my-package.egg-link` as `my`, miss the package,
+  // and put it back on the revert's uninstall list.
+  it('keeps hyphens in bare legacy metadata names', () => {
+    fs.writeFileSync(path.join(tmp, 'my-package.egg-link'), '/src/my-package\n')
+    fs.mkdirSync(path.join(tmp, 'other-thing.egg-info'), { recursive: true })
+    expect(preexistingOnDisk(tmp, ['my-package', 'other-thing'])).toEqual([
+      'my-package',
+      'other-thing'
+    ])
+  })
+
+  // A longer distribution name must not be mistaken for a version of a
+  // shorter one — only a digit can follow the separator.
+  it('does not match a package against a longer package name', () => {
+    distInfo('foo_bar-1.0')
+    expect(preexistingOnDisk(tmp, ['foo'])).toEqual([])
+    expect(preexistingOnDisk(tmp, ['foo-bar'])).toEqual(['foo-bar'])
   })
 
   it('ignores non-dist-info entries', () => {

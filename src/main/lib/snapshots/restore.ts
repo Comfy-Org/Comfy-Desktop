@@ -237,14 +237,22 @@ function findPackageEntries(sitePackages: string, packageName: string): string[]
   return entries
 }
 
-/** Back up only the site-packages entries belonging to `packageNames`. */
-async function createTargetedBackup(sitePackages: string, packageNames: string[]): Promise<string> {
+/** Back up only the site-packages entries belonging to `packageNames`.
+ *  `uncaptured` names the packages no entries were found for — `findPackageEntries`
+ *  locates `.dist-info` only, so a legacy `.egg-info` / `.egg-link` install yields
+ *  nothing. The revert cannot put those back, so it must not claim it did. */
+async function createTargetedBackup(
+  sitePackages: string,
+  packageNames: string[]
+): Promise<{ dir: string; uncaptured: string[] }> {
   const backupDir = path.join(path.dirname(sitePackages), `.restore-backup-${Date.now()}`)
   await fs.promises.mkdir(backupDir, { recursive: true })
 
   const failures: string[] = []
+  const uncaptured: string[] = []
   for (const pkg of packageNames) {
     const pkgEntries = findPackageEntries(sitePackages, pkg)
+    if (pkgEntries.length === 0) uncaptured.push(pkg)
     for (const entry of pkgEntries) {
       const src = path.join(sitePackages, entry)
       const dst = path.join(backupDir, entry)
@@ -268,7 +276,7 @@ async function createTargetedBackup(sitePackages: string, packageNames: string[]
     throw new Error(`Backup failed for ${failures.length} entry(s): ${failures.join('; ')}`)
   }
 
-  return backupDir
+  return { dir: backupDir, uncaptured }
 }
 
 /** Restore backed-up package files to site-packages. Returns false when any
@@ -301,18 +309,20 @@ async function restoreFromBackup(backupDir: string, sitePackages: string): Promi
  *  revert may uninstall it — so the list errs towards recognising more. */
 const DIST_METADATA_SUFFIXES = ['.dist-info', '.egg-info', '.egg-link']
 
-/** Normalized distribution name from a site-packages metadata entry, or '' if
- *  the entry is not one. */
-function distNameFromMetadataEntry(entry: string): string {
-  const suffix = DIST_METADATA_SUFFIXES.find((s) => entry.endsWith(s))
-  if (!suffix) return ''
-  // `{name}-{version}{suffix}` for dist-info and versioned egg-info; bare
-  // `{name}{suffix}` for egg-link and unversioned egg-info. Normalized names
-  // use '_', so the first '-' separates name from version.
-  const stem = entry.slice(0, -suffix.length)
-  const dashIdx = stem.indexOf('-')
-  const name = dashIdx < 0 ? stem : stem.slice(0, dashIdx)
-  return name ? normalizeDistInfoName(name) : ''
+/**
+ * Does this site-packages metadata stem belong to `normalizedName`?
+ *
+ * Asked this way round deliberately. Parsing a name back out of an entry is
+ * ambiguous — `my-package.egg-link` and `my-package-1.0.egg-info` both split
+ * at the first hyphen and yield `my` — whereas testing a known package against
+ * an entry is exact. `{name}{suffix}` is the bare legacy form; anything after
+ * the separator must start with a digit so a version matches but a longer
+ * package name (`foo` must not match `foo-bar-1.0.dist-info`) does not.
+ */
+function stemBelongsTo(stem: string, normalizedName: string): boolean {
+  if (stem === normalizedName) return true
+  if (!stem.startsWith(`${normalizedName}_`)) return false
+  return /^\d/.test(stem.slice(normalizedName.length + 1))
 }
 
 /**
@@ -329,16 +339,24 @@ function distNameFromMetadataEntry(entry: string): string {
  */
 export function preexistingOnDisk(sitePackages: string, packageNames: string[]): string[] {
   if (packageNames.length === 0) return []
-  let installed: Set<string>
+  let entries: string[]
   try {
-    installed = new Set(fs.readdirSync(sitePackages).map(distNameFromMetadataEntry).filter(Boolean))
+    entries = fs.readdirSync(sitePackages)
   } catch {
     // site-packages unreadable: "can't tell" must not read as "nothing was
     // installed before", which is the reading that uninstalls the user's
     // environment. Treat every candidate as pre-existing.
     return [...packageNames]
   }
-  return packageNames.filter((name) => installed.has(normalizeDistInfoName(name)))
+  const stems: string[] = []
+  for (const entry of entries) {
+    const suffix = DIST_METADATA_SUFFIXES.find((s) => entry.endsWith(s))
+    if (suffix) stems.push(normalizeDistInfoName(entry.slice(0, -suffix.length)))
+  }
+  return packageNames.filter((name) => {
+    const normalized = normalizeDistInfoName(name)
+    return stems.some((stem) => stemBelongsTo(stem, normalized))
+  })
 }
 
 const runUvPip = sharedRunUvPip
@@ -593,8 +611,12 @@ export async function restorePipPackages(
   let backupDir: string | null = null
   // Set when a revert could not put the backup back, so the `finally` keeps it.
   let keepBackup = false
+  // Packages with no backed-up entries: a revert cannot restore these.
+  let uncapturedByBackup: string[] = []
   if (packagesToBackup.length > 0) {
-    backupDir = await createTargetedBackup(sitePackages, packagesToBackup)
+    const backup = await createTargetedBackup(sitePackages, packagesToBackup)
+    backupDir = backup.dir
+    uncapturedByBackup = backup.uncaptured
   }
 
   try {
@@ -701,6 +723,16 @@ export async function restorePipPackages(
           complete = false
           keepBackup = true
         }
+      }
+      if (uncapturedByBackup.length > 0) {
+        // Nothing was saved for these, so whatever the install did to them
+        // stands. Claiming a complete revert here would be the same false
+        // reassurance this change exists to remove.
+        complete = false
+        sendOutput(
+          `⚠ No backup was captured for ${uncapturedByBackup.length} package(s); ` +
+            `their pre-restore state could not be put back: ${uncapturedByBackup.join(', ')}\n`
+        )
       }
 
       // Use pre-computed revertUninstall (not result.installed): a killed bulk install may
