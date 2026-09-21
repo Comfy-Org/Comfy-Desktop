@@ -1429,21 +1429,29 @@ describe('TitleBarApp', () => {
     // The host window moving or resizing auto-hides the shared popup in main (the anchor the
     // beak points at has gone stale). Nothing retired the card, so the user may never have
     // read it — and if the composable stayed latched, no later card could be raised at all.
-    it('can raise the notice again after an auto-hide, rather than latching for the session', async () => {
-      const wrapper = await mountBar()
-      expect(betaCards().length).toBe(1)
+    it('puts the card back by itself once the window settles', async () => {
+      vi.useFakeTimers()
+      try {
+        const wrapper = await mountBar()
+        expect(betaCards().length).toBe(1)
 
-      bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
-      await flushPromises()
-      // A fresh grant clears its version gate later in the same session. The pill-hint
-      // retirement is just the re-trigger seam: it calls the beta notice's retry.
-      getPendingBetaNotice.mockResolvedValue(['--enable-something-else'])
-      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
-      await flushPromises()
+        // A drag fires `move` repeatedly; main hides the popup on each one.
+        bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+        bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+        bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+        await vi.advanceTimersByTimeAsync(100)
+        // Still mid-gesture: the debounce has not elapsed, so nothing has been re-raised.
+        expect(betaCards().length).toBe(1)
 
-      expect(betaCards().length).toBe(2)
-      expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
-      wrapper.unmount()
+        await vi.advanceTimersByTimeAsync(300)
+        // Settled: exactly one re-show for the whole drag, not one per event.
+        expect(betaCards().length).toBe(2)
+        // Still never acknowledged - the user has not acted on it.
+        expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     // A retirement hides the popup itself, so the auto-hide notice follows its own dismiss.

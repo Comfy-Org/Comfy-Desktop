@@ -97,7 +97,7 @@ import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 import { getCoreBetaGrantsAsync, selectCoreBetaGrantArgs } from '../../coreBetaGrants'
-import { armBetaActivationNotice } from '../../betaActivationNotice'
+import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
 import type { CoreBetaGrant } from '../../coreBetaGrants'
 import { coreRecordCurrent, coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
 import type { CoreCheckout } from '../../version'
@@ -1667,6 +1667,10 @@ async function runLaunch(
     if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
     abort.abort() // stop the template-models reader timer on launch failure
     _clearLaunchingFailed(installationId)
+    // The grants were claimed just before the spawn, which has now failed or been cancelled.
+    // Drop the claim: nothing started, so there is nothing to announce — and leaving it would
+    // also silence the same arg for another install, since claims are global.
+    clearBetaActivationClaim(installationId)
     // Flush the hardware tap on terminal failure/cancel too: the exit handler
     // covers a process that exits, but a waitForPort timeout can return here
     // with the proc still alive, leaving a pending accelerator event unemitted.
@@ -1816,6 +1820,7 @@ async function runLaunch(
         assetsTap.flushSummary()
         _removeSession(installationId)
         _clearLaunchingFailed(installationId)
+        clearBetaActivationClaim(installationId)
         if (abort.signal.aborted) return { ok: false, cancelled: true }
         return { ok: false, message: (err as Error).message }
       }

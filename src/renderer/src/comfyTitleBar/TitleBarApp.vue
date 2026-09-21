@@ -565,6 +565,25 @@ function handleInstallPillWithCoachmark(): void {
   handleInstallPill()
 }
 
+/** Re-raise a card that main hid out from under us. Forgetting alone only unlatches the
+ *  composable — no watcher observes window movement, so without this the notice stays absent
+ *  until some unrelated relaunch or retarget happens to re-run the gate.
+ *
+ *  Debounced because `move` fires continuously through a drag: each event hides the popup
+ *  again, so re-showing per event would thrash the card on and off for the whole gesture.
+ *  One re-show once the window settles. `maybeShow` re-reads the anchor rect, which is the
+ *  point — the old rect is exactly what went stale. */
+const BETA_NOTICE_RESHOW_DEBOUNCE_MS = 250
+let betaReshowTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleBetaNoticeReshow(): void {
+  if (unmounted) return
+  if (betaReshowTimer !== null) clearTimeout(betaReshowTimer)
+  betaReshowTimer = setTimeout(() => {
+    betaReshowTimer = null
+    if (!unmounted) void betaNotice.maybeShow()
+  }, BETA_NOTICE_RESHOW_DEBOUNCE_MS)
+}
+
 /** The beta notice defers while the hint owns the popup, and nothing in the gate watcher
  *  changes when the hint goes away — so without this the deferred card waits for the next
  *  launch. Safe to call unconditionally: `maybeShow` re-checks the gate and main still holds
@@ -680,7 +699,10 @@ onMounted(() => {
   // read the card, and leaving the composable believing it is still up would turn away every
   // later show for the rest of the session.
   unsubCoachmarkAutoHidden = bridge.onCoachmarkAutoHidden(({ kind }) => {
-    if (kind === 'beta-notice') betaNotice.forgetWithoutAcknowledging()
+    if (kind !== 'beta-notice') return
+    betaNotice.forgetWithoutAcknowledging()
+    // Unlatching is only half of it: put the card back once the window settles.
+    scheduleBetaNoticeReshow()
   })
   bridge.ready()
 })
@@ -746,6 +768,10 @@ onUnmounted(() => {
   unsubCoachmarkDismissed?.()
   unsubCoachmarkAction?.()
   unsubCoachmarkAutoHidden?.()
+  if (betaReshowTimer !== null) {
+    clearTimeout(betaReshowTimer)
+    betaReshowTimer = null
+  }
   bridge?.hideCoachmark()
   hideTip()
   trailingObserver?.disconnect()

@@ -18,6 +18,7 @@ import {
   _resetForTest,
   acknowledgeBetaActivationNotice,
   armBetaActivationNotice,
+  clearBetaActivationClaim,
   peekBetaActivationNotice,
   readAnnouncedBetaArgs,
   selectNewlyActiveBetaArgs
@@ -222,5 +223,38 @@ describe('arm / peek / acknowledge', () => {
     armBetaActivationNotice('inst-1', [])
     armBetaActivationNotice('inst-2', ['--enable-assets'])
     expect(peekBetaActivationNotice('inst-2')).toEqual(['--enable-assets'])
+  })
+
+  // Arming already repairs this on the install's NEXT launch. These cover the window in
+  // between, which the relaunch cannot: the failed launch's progress takeover ends first.
+  it('drops a claim left by a launch that never started', () => {
+    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    expect(peekBetaActivationNotice('inst-1')).toEqual(['--enable-assets'])
+
+    clearBetaActivationClaim('inst-1')
+    expect(peekBetaActivationNotice('inst-1')).toEqual([])
+  })
+
+  it('frees the arg for another install straight away, not at the next relaunch', () => {
+    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    // inst-2 launches successfully while inst-1's dead claim still holds the arg.
+    armBetaActivationNotice('inst-2', ['--enable-assets'])
+    expect(peekBetaActivationNotice('inst-2')).toEqual([])
+
+    clearBetaActivationClaim('inst-1')
+    armBetaActivationNotice('inst-2', ['--enable-assets'])
+    expect(peekBetaActivationNotice('inst-2')).toEqual(['--enable-assets'])
+  })
+
+  it('discards only the unannounced claim, never an arg already announced', () => {
+    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    acknowledgeBetaActivationNotice('inst-1', ['--enable-assets'])
+    expect(readAnnouncedBetaArgs()).toEqual(['--enable-assets'])
+
+    clearBetaActivationClaim('inst-1')
+    expect(readAnnouncedBetaArgs()).toEqual(['--enable-assets'])
+    // Announced means spent: a later launch of the same arg stays silent.
+    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    expect(peekBetaActivationNotice('inst-1')).toEqual([])
   })
 })
