@@ -109,6 +109,8 @@ interface Bridge {
   onCoachmarkAutoHidden: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
   /** The host window has stopped moving; safe to put a forgotten card back. */
   onCoachmarkSettled: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
+  /** The popup was reconfigured for the other card; `kind` is the owner that lost it. */
+  onCoachmarkDisplaced: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
   onPanelChanged: (cb: (panel: ComfyPanelKey) => void) => () => void
   onTitleChanged: (cb: (title: string) => void) => () => void
   /** Install source-category pushes from main. The raw category
@@ -645,6 +647,7 @@ let unsubCoachmarkDismissed: (() => void) | undefined
 let unsubCoachmarkAction: (() => void) | undefined
 let unsubCoachmarkAutoHidden: (() => void) | undefined
 let unsubCoachmarkSettled: (() => void) | undefined
+let unsubCoachmarkDisplaced: (() => void) | undefined
 
 onMounted(() => {
   // Observe the trailing cluster so the left cluster can mirror its
@@ -736,6 +739,14 @@ onMounted(() => {
   unsubCoachmarkSettled = bridge.onCoachmarkSettled(() => {
     reshowCoachmarksAfterMove()
   })
+  // The other card took the popup. Not a hide, so `onCoachmarkAutoHidden` never fires for it —
+  // and a composable that still believes its card is up refuses every later show, which is how
+  // a beta notice ended up armed but permanently invisible behind the onboarding hint.
+  // Forget WITHOUT acknowledging: the user never acted on it, so main keeps it and it replays.
+  unsubCoachmarkDisplaced = bridge.onCoachmarkDisplaced(({ kind }) => {
+    if (kind === 'beta-notice') betaNotice.forgetWithoutAcknowledging()
+    else coachmark.forgetWithoutAcknowledging()
+  })
   bridge.ready()
 })
 
@@ -801,6 +812,7 @@ onUnmounted(() => {
   unsubCoachmarkAction?.()
   unsubCoachmarkAutoHidden?.()
   unsubCoachmarkSettled?.()
+  unsubCoachmarkDisplaced?.()
   bridge?.hideCoachmark()
   hideTip()
   trailingObserver?.disconnect()
