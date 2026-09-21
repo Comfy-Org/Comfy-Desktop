@@ -34,6 +34,7 @@ import {
 import * as mainTelemetry from '../lib/telemetry'
 import { getUserTier } from '../lib/userTier'
 import { trackFirebaseAuthReporter } from '../lib/firebaseAuthIdentity'
+import { attachCustomerIoMessaging } from '../lib/customerIoMessaging'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordDashboardSurface, recordInstanceSurface } from '../lib/lastSession'
 import * as settings from '../settings'
@@ -1025,6 +1026,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
   // reference, not by a copy at literal-build time.
   entry.detachInstall = () => fx.detachInstallImpl(entry)
   registerHostEntry(entry)
+  const stopMessaging = attachCustomerIoMessaging(entry)
+  comfyWindow.once('closed', stopMessaging)
 
   return { windowKey, comfyWindow, titleBarView, comfyView, entry, layoutViews }
 }
@@ -1219,6 +1222,7 @@ export function rebuildComfyViewIfNeeded(
   entry.window.contentView.removeChildView(oldView)
   if (!oldView.webContents.isDestroyed()) oldView.webContents.close()
   entry.comfyView = newView
+  entry.refreshCustomerIo?.()
   entry.constructedPartition = expectedPartition
 }
 

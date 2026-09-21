@@ -67,6 +67,8 @@ export function ensurePanelView(
   // Insert at zero size, behind the comfy view; layoutViews handles positioning.
   panelView.setBounds({ x: 0, y: TITLEBAR_HEIGHT + 1, width: 0, height: 0 })
   panelView.setVisible(false)
+  entry.panelView = panelView
+  entry.refreshCustomerIo?.()
 
   // Push the latest body mode (may differ from initialPanel) and steal focus if focused.
   panelView.webContents.once('did-finish-load', () => {
@@ -109,7 +111,6 @@ export function ensurePanelView(
   void loadPromise.catch(() => {})
 
   _registerExtraBroadcastTarget(panelView.webContents)
-  entry.panelView = panelView
   return panelView
 }
 
@@ -123,6 +124,7 @@ export function destroyPanelView(entry: ComfyWindowEntry): void {
   if (!entry.panelView) return
   const oldPanel = entry.panelView
   entry.panelView = null
+  entry.refreshCustomerIo?.()
   if (!oldPanel.webContents.isDestroyed()) {
     _unregisterExtraBroadcastTarget(oldPanel.webContents)
     oldPanel.webContents.close()
