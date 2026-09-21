@@ -782,10 +782,7 @@ async function runLaunch(
     // Same latch, same reason: a grant is only worth announcing once it is provably on this
     // launch's command line. Queued rather than shown — the host window may still be mid-attach
     // or under the progress takeover, so the title bar drains this when its own gate opens.
-    armBetaActivationNotice(
-      installationId,
-      coreBeta.applied.map((grant) => grant.arg)
-    )
+    armBetaActivationNotice(installationId, coreBeta.applied)
     try {
       emitCoreBetaTelemetry({
         appliedArgs: coreBeta.applied.map((grant) => grant.arg),

@@ -89,6 +89,12 @@
     "pillHintDismiss": "Got it",
     "betaNoticeTitle": "A beta feature is on",
     "betaNoticeBody": "This instance started with a beta feature enabled. You can turn beta features off in Settings.",
+    "betaNoticeTitleNamed": "The {feature} beta is on",
+    "betaNoticeBodyNamed": "This instance started with the {feature} beta enabled. You can turn beta features off in Settings.",
+    "betaNoticeOffTitle": "A beta feature is off",
+    "betaNoticeOffBody": "We've turned a beta feature off for this instance. You can manage beta features in Settings.",
+    "betaNoticeOffTitleNamed": "The {feature} beta is off",
+    "betaNoticeOffBodyNamed": "We've turned the {feature} beta off for this instance. You can manage beta features in Settings.",
     "betaNoticeDismiss": "Got it",
     "betaNoticeSettings": "Settings"
   },

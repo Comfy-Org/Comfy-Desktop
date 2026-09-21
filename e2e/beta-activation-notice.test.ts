@@ -256,10 +256,10 @@ test('the settings link lands on the beta opt-in row and retires the card @linux
 test('the notice is spent: a second launch stays silent @linux @macos', async () => {
   // The whole point of persisting on retire rather than on show. Read through the same IPC
   // the title bar uses, so this asserts the contract the renderer actually depends on.
-  const stillPending = await ctx.titleBar.evaluate<string[]>(
+  const stillPending = await ctx.titleBar.evaluate<unknown>(
     `window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`,
   )
-  expect(stillPending).toEqual([])
+  expect(stillPending).toBeNull()
 
   const announced = await ctx.titleBar.evaluate<unknown>(
     `window.api.getSetting('betaNoticeAnnouncedArgs')`,

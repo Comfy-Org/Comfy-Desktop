@@ -152,11 +152,24 @@ export async function writeFakeComfyInstall(opts: {
 export function opsFlagsGrantSeed(opts: {
   arg: string
   minCoreVersion: string
+  /** Optional per-flag notice wording, written in the payload's own wire shape so the fixture
+   *  exercises the real parser rather than the already-parsed type. */
+  description?: string
+  notice?: 'silent'
 }): Record<string, unknown> {
   return {
     desktop_core_beta_features: {
       value: 'treatment',
-      payload: { flags: [{ arg: opts.arg, min_core_version: opts.minCoreVersion }] },
+      payload: {
+        flags: [
+          {
+            arg: opts.arg,
+            min_core_version: opts.minCoreVersion,
+            ...(opts.description === undefined ? {} : { description: opts.description }),
+            ...(opts.notice === undefined ? {} : { notice: opts.notice }),
+          },
+        ],
+      },
     },
   }
 }

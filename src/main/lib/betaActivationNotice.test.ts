@@ -20,45 +20,110 @@ import {
   armBetaActivationNotice,
   peekBetaActivationNotice,
   readAnnouncedBetaArgs,
-  selectNewlyActiveBetaArgs
+  resolveBetaActivationNotice,
+  selectNewlyActiveBetaGrants
 } from './betaActivationNotice'
+import type { CoreBetaGrant } from './coreBetaGrants'
 
 const announced = (): unknown => store.get(BETA_NOTICE_ANNOUNCED_ARGS_KEY)
+
+/** A grant as `buildLaunchArgs` hands it over: the version window is already spent by then,
+ *  so only the arg and the payload's notice wording matter here. */
+function grant(arg: string, notice?: CoreBetaGrant['notice']): CoreBetaGrant {
+  return { arg, minCoreVersion: '0.3.80', ...(notice ? { notice } : {}) }
+}
+
+/** The args a set of applied grants would announce. */
+function announcedArgsFor(
+  applied: readonly CoreBetaGrant[],
+  spokenFor: ReadonlySet<string> = new Set()
+): string[] {
+  return selectNewlyActiveBetaGrants(applied, spokenFor).map((g) => g.arg)
+}
+
+const pendingArgs = (installationId: string): string[] =>
+  peekBetaActivationNotice(installationId)?.args.slice() ?? []
 
 beforeEach(() => {
   store.clear()
   _resetForTest()
 })
 
-describe('selectNewlyActiveBetaArgs', () => {
+describe('selectNewlyActiveBetaGrants', () => {
   it('announces an enable-grant nobody has spoken for yet', () => {
-    expect(selectNewlyActiveBetaArgs(['--enable-assets'], new Set())).toEqual(['--enable-assets'])
+    expect(announcedArgsFor([grant('--enable-assets')])).toEqual(['--enable-assets'])
   })
 
-  it('never announces a disable-grant', () => {
-    // `--disable-assets` is the remote force-OFF. The card says "a beta feature is on" and
-    // points at the opt-out switch, so announcing one would state the opposite of what
-    // happened and offer an action that does not apply.
-    expect(selectNewlyActiveBetaArgs(['--disable-assets'], new Set())).toEqual([])
-    expect(selectNewlyActiveBetaArgs(['--disable-assets', '--enable-agent'], new Set())).toEqual([
+  it('does not announce an unnamed disable-grant', () => {
+    // `--disable-assets` is the remote force-OFF. The generic copy says a feature is on and
+    // points at the opt-out, so with no payload-supplied name there is nothing truthful to
+    // put on a card.
+    expect(announcedArgsFor([grant('--disable-assets')])).toEqual([])
+    expect(announcedArgsFor([grant('--disable-assets'), grant('--enable-agent')])).toEqual([
       '--enable-agent'
     ])
   })
 
+  it('stays silent for an arg with neither prefix, rather than calling it a force-off', () => {
+    // The allowlist is documented as growing ahead of Core. A future entry with neither prefix
+    // plus a description would otherwise render "The X beta is off" for something switched ON
+    // — a degradation from silence to a false statement.
+    expect(
+      selectNewlyActiveBetaGrants(
+        [{ arg: '--use-assets', minCoreVersion: '0.3.80', notice: { description: 'Assets' } }],
+        new Set()
+      )
+    ).toEqual([])
+  })
+
+  it('announces a NAMED disable-grant, because the payload supplied what was missing', () => {
+    const fresh = selectNewlyActiveBetaGrants(
+      [grant('--disable-assets', { description: 'Assets browser' })],
+      new Set()
+    )
+    expect(fresh).toEqual([
+      { arg: '--disable-assets', direction: 'disabled', description: 'Assets browser' }
+    ])
+  })
+
+  it('honours a payload that asked for no card', () => {
+    // Not every granted flag is user-visible; ops can grant one without training people to
+    // dismiss cards.
+    expect(announcedArgsFor([grant('--enable-assets', { silent: true })])).toEqual([])
+  })
+
+  it('silences only the grant that asked for it', () => {
+    expect(
+      announcedArgsFor([grant('--enable-assets', { silent: true }), grant('--enable-agent')])
+    ).toEqual(['--enable-agent'])
+  })
+
+  it('carries a payload-supplied feature name through to the card', () => {
+    expect(
+      selectNewlyActiveBetaGrants(
+        [grant('--enable-assets', { description: 'Assets browser' })],
+        new Set()
+      )
+    ).toEqual([{ arg: '--enable-assets', direction: 'enabled', description: 'Assets browser' }])
+  })
+
   it('withholds an arg already spoken for', () => {
-    expect(selectNewlyActiveBetaArgs(['--enable-assets'], new Set(['--enable-assets']))).toEqual([])
+    expect(announcedArgsFor([grant('--enable-assets')], new Set(['--enable-assets']))).toEqual([])
   })
 
   it('announces a LATER grant even once an earlier one is spoken for', () => {
     // The whole reason the store is a list rather than a boolean: a second beta feature
     // months from now still owes the user a heads-up.
     expect(
-      selectNewlyActiveBetaArgs(['--enable-assets', '--enable-agent'], new Set(['--enable-assets']))
+      announcedArgsFor(
+        [grant('--enable-assets'), grant('--enable-agent')],
+        new Set(['--enable-assets'])
+      )
     ).toEqual(['--enable-agent'])
   })
 
   it('collapses a repeated arg so one launch cannot double-announce it', () => {
-    expect(selectNewlyActiveBetaArgs(['--enable-assets', '--enable-assets'], new Set())).toEqual([
+    expect(announcedArgsFor([grant('--enable-assets'), grant('--enable-assets')])).toEqual([
       '--enable-assets'
     ])
   })
@@ -75,6 +140,64 @@ describe('the allowlist invariant this module depends on', () => {
     for (const arg of CORE_BETA_GRANTABLE_ARGS) {
       expect(arg.startsWith('--enable-') || arg.startsWith('--disable-')).toBe(true)
     }
+  })
+})
+
+describe('resolveBetaActivationNotice', () => {
+  it('has nothing to show when nothing is pending', () => {
+    expect(resolveBetaActivationNotice([])).toBeNull()
+  })
+
+  it('names the feature when the card covers exactly one named grant', () => {
+    expect(
+      resolveBetaActivationNotice([
+        { arg: '--enable-assets', direction: 'enabled', description: 'Assets browser' }
+      ])
+    ).toEqual({ args: ['--enable-assets'], direction: 'enabled', description: 'Assets browser' })
+  })
+
+  it('covers only the grants matching the direction it reports', () => {
+    // A launch can both enable and withdraw. One card cannot honestly describe both, so it
+    // takes the enables and leaves the withdrawal queued for its own card.
+    const notice = resolveBetaActivationNotice([
+      { arg: '--enable-agent', direction: 'enabled', description: null },
+      { arg: '--disable-assets', direction: 'disabled', description: 'Assets browser' }
+    ])
+    expect(notice).toEqual({ args: ['--enable-agent'], direction: 'enabled', description: null })
+  })
+
+  it('drops the name when the card covers two grants', () => {
+    // Two features at once have no single honest name, so the card falls back to generic
+    // rather than naming one of them and implying it is the whole story.
+    expect(
+      resolveBetaActivationNotice([
+        { arg: '--enable-assets', direction: 'enabled', description: 'Assets browser' },
+        { arg: '--enable-agent', direction: 'enabled', description: 'Agent' }
+      ])
+    ).toEqual({
+      args: ['--enable-assets', '--enable-agent'],
+      direction: 'enabled',
+      description: null
+    })
+  })
+
+  it('reads as enabled when anything was turned on', () => {
+    // "A beta feature is on" is true of a launch that turned one on, whatever else it
+    // withdrew; the reverse claim would not be.
+    expect(
+      resolveBetaActivationNotice([
+        { arg: '--disable-assets', direction: 'disabled', description: 'Assets browser' },
+        { arg: '--enable-agent', direction: 'enabled', description: null }
+      ])?.direction
+    ).toBe('enabled')
+  })
+
+  it('reads as disabled only when every covered grant was a force-off', () => {
+    expect(
+      resolveBetaActivationNotice([
+        { arg: '--disable-assets', direction: 'disabled', description: 'Assets browser' }
+      ])?.direction
+    ).toBe('disabled')
   })
 })
 
@@ -103,70 +226,114 @@ describe('readAnnouncedBetaArgs', () => {
 
 describe('arm / peek / acknowledge', () => {
   it('queues a first activation for the install that launched it', () => {
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-1')).toEqual(['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-2')).toEqual([])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    expect(pendingArgs('inst-1')).toEqual(['--enable-assets'])
+    expect(peekBetaActivationNotice('inst-2')).toBeNull()
   })
 
   it('queues nothing when the launch applied no grants', () => {
     armBetaActivationNotice('inst-1', [])
-    expect(peekBetaActivationNotice('inst-1')).toEqual([])
+    expect(peekBetaActivationNotice('inst-1')).toBeNull()
+  })
+
+  it('carries the payload wording through to the pending card', () => {
+    armBetaActivationNotice('inst-1', [grant('--enable-assets', { description: 'Assets browser' })])
+    expect(peekBetaActivationNotice('inst-1')).toEqual({
+      args: ['--enable-assets'],
+      direction: 'enabled',
+      description: 'Assets browser'
+    })
   })
 
   it('leaves the notice pending across repeated reads', () => {
     // Persisting on show rather than on retire would spend a card the user may never have
     // seen — window closed, app quit, bell not rendered.
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-1')).toEqual(['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-1')).toEqual(['--enable-assets'])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    expect(pendingArgs('inst-1')).toEqual(['--enable-assets'])
+    expect(pendingArgs('inst-1')).toEqual(['--enable-assets'])
     expect(announced()).toBeUndefined()
   })
 
   it('persists the args and clears the queue on acknowledge', () => {
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
     acknowledgeBetaActivationNotice('inst-1')
     expect(announced()).toEqual(['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-1')).toEqual([])
+    expect(peekBetaActivationNotice('inst-1')).toBeNull()
   })
 
   it('stays silent on every later launch of the same feature', () => {
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
     acknowledgeBetaActivationNotice('inst-1')
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-1')).toEqual([])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    expect(peekBetaActivationNotice('inst-1')).toBeNull()
   })
 
   it('stays silent when the same feature is revoked and later re-granted', () => {
     // The list is append-only, so a grant taken back and handed out again does not read as
     // news the second time.
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
     acknowledgeBetaActivationNotice('inst-1')
     armBetaActivationNotice('inst-1', []) // revoked: nothing applied
-    armBetaActivationNotice('inst-1', ['--enable-assets']) // re-granted
-    expect(peekBetaActivationNotice('inst-1')).toEqual([])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')]) // re-granted
+    expect(peekBetaActivationNotice('inst-1')).toBeNull()
+  })
+
+  it('announces a named force-off of a feature it already announced turning on', () => {
+    // Distinct arg tokens, so `--disable-assets` gets its own once-ever: being told a beta
+    // arrived does not cover being told it was withdrawn.
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    acknowledgeBetaActivationNotice('inst-1')
+    armBetaActivationNotice('inst-1', [
+      grant('--disable-assets', { description: 'Assets browser' })
+    ])
+    expect(peekBetaActivationNotice('inst-1')).toEqual({
+      args: ['--disable-assets'],
+      direction: 'disabled',
+      description: 'Assets browser'
+    })
   })
 
   it('tells a SECOND install about a feature the first never announced', () => {
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
     acknowledgeBetaActivationNotice('inst-1')
-    armBetaActivationNotice('inst-2', ['--enable-assets', '--enable-agent'])
-    expect(peekBetaActivationNotice('inst-2')).toEqual(['--enable-agent'])
+    armBetaActivationNotice('inst-2', [grant('--enable-assets'), grant('--enable-agent')])
+    expect(pendingArgs('inst-2')).toEqual(['--enable-agent'])
   })
 
   it('lets only the first of two concurrent installs claim an arg', () => {
     // Neither has acknowledged yet, so the persisted list is still empty. Without the
     // in-flight claim both windows would raise a card for the same feature.
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
-    armBetaActivationNotice('inst-2', ['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-1')).toEqual(['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-2')).toEqual([])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
+    expect(pendingArgs('inst-1')).toEqual(['--enable-assets'])
+    expect(peekBetaActivationNotice('inst-2')).toBeNull()
   })
 
   it('merges into what other installs already announced rather than replacing it', () => {
     store.set(BETA_NOTICE_ANNOUNCED_ARGS_KEY, ['--enable-assets'])
-    armBetaActivationNotice('inst-2', ['--enable-agent'])
+    armBetaActivationNotice('inst-2', [grant('--enable-agent')])
     acknowledgeBetaActivationNotice('inst-2')
     expect(announced()).toEqual(['--enable-assets', '--enable-agent'])
+  })
+
+  it('acknowledges only the grants the card described, leaving the rest queued', () => {
+    // The bug this guards: the card said "a beta feature is on", then acknowledgement consumed
+    // the undescribed withdrawal too — and because the list is append-only, that withdrawal
+    // could never be announced again on any install.
+    armBetaActivationNotice('inst-1', [
+      grant('--enable-agent'),
+      grant('--disable-assets', { description: 'Assets browser' })
+    ])
+    expect(peekBetaActivationNotice('inst-1')?.args).toEqual(['--enable-agent'])
+
+    acknowledgeBetaActivationNotice('inst-1')
+    expect(announced()).toEqual(['--enable-agent'])
+    // The withdrawal survives and gets its own, correctly worded card.
+    expect(peekBetaActivationNotice('inst-1')).toEqual({
+      args: ['--disable-assets'],
+      direction: 'disabled',
+      description: 'Assets browser'
+    })
   })
 
   it('acknowledging an install with nothing pending writes nothing', () => {
@@ -176,28 +343,37 @@ describe('arm / peek / acknowledge', () => {
 
   it("re-arming replaces the install's pending set with the latest launch's grants", () => {
     // Each launch is the authority on what is on its own command line.
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
-    armBetaActivationNotice('inst-1', ['--enable-assets', '--enable-agent'])
-    expect(peekBetaActivationNotice('inst-1')).toEqual(['--enable-assets', '--enable-agent'])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets'), grant('--enable-agent')])
+    expect(pendingArgs('inst-1')).toEqual(['--enable-assets', '--enable-agent'])
+  })
+
+  it('acknowledges a silenced grant is never queued, so it never reaches the store', () => {
+    armBetaActivationNotice('inst-1', [grant('--enable-assets', { silent: true })])
+    acknowledgeBetaActivationNotice('inst-1')
+    expect(announced()).toBeUndefined()
+    // And a later payload that drops `silent` still owes the user the card.
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    expect(pendingArgs('inst-1')).toEqual(['--enable-assets'])
   })
 
   it('clears a stale claim when the next launch applies no grants', () => {
     // A beta launch that failed to boot leaves a claim behind. If the user then turns beta off
     // and relaunches, the card must not still say a beta feature is on.
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
     armBetaActivationNotice('inst-1', [])
-    expect(peekBetaActivationNotice('inst-1')).toEqual([])
+    expect(peekBetaActivationNotice('inst-1')).toBeNull()
   })
 
   it('releases a dropped claim back to other installs', () => {
     // `claimedArgs` reads the same map, so a stale claim would otherwise silence the arg
     // everywhere for the rest of the process.
-    armBetaActivationNotice('inst-1', ['--enable-assets'])
-    armBetaActivationNotice('inst-2', ['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-2')).toEqual([])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
+    expect(peekBetaActivationNotice('inst-2')).toBeNull()
 
     armBetaActivationNotice('inst-1', [])
-    armBetaActivationNotice('inst-2', ['--enable-assets'])
-    expect(peekBetaActivationNotice('inst-2')).toEqual(['--enable-assets'])
+    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
+    expect(pendingArgs('inst-2')).toEqual(['--enable-assets'])
   })
 })

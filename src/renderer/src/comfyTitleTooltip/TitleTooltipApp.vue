@@ -273,6 +273,14 @@ onUnmounted(() => {
   border-top-left-radius: 3px;
 }
 
+/* The card is `max-width: 280px` with `overflow: hidden` on the viewport, and a
+   payload-supplied feature name can be a single unbroken token — which would otherwise be
+   clipped rather than wrapped. */
+.coachmark-title,
+.coachmark-text {
+  overflow-wrap: anywhere;
+}
+
 .coachmark-title {
   font-size: 13px;
   font-weight: 600;

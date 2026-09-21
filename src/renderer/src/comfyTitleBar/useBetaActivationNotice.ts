@@ -1,7 +1,14 @@
 import { ref, type Ref, type ShallowRef } from 'vue'
+import type { BetaActivationNotice } from '../types/ipc'
 
 /** The Settings row the notice's link flashes — the beta opt-in switch itself, so the
- *  "turn it off" the copy promises is the thing under the user's cursor when Settings opens. */
+ *  "turn it off" the copy promises is the thing under the user's cursor when Settings opens.
+ *
+ *  Deliberately the same target for a withdrawal card. Turning this switch off drops every
+ *  grant including a `--disable-*` one, so it would restore the feature the card just said was
+ *  withdrawn — but the card only offers to "manage beta features", which is exactly what this
+ *  row does. Pointing a withdrawal somewhere else would mean inventing a second destination
+ *  for a path that no shipped core can reach yet. */
 export const BETA_FEATURES_FIELD_ID = 'betaFeaturesEnabled'
 
 interface BetaNoticeBridge {
@@ -35,11 +42,15 @@ interface UseBetaActivationNoticeOpts {
   anchorRef: Readonly<ShallowRef<HTMLElement | null>>
   /** True while another card owns the single popup (currently the pill hint). */
   isSuppressed: () => boolean
-  /** Resolved copy (i18n done by the caller). */
-  title: string
-  body: string
-  dismissLabel: string
-  actionLabel: string
+  /** Copy for the card main actually resolved. A callback rather than fixed strings because
+   *  the wording depends on the notice: the PostHog payload may name the feature, and a
+   *  remote force-off reads the opposite way from an activation. i18n stays with the caller. */
+  copyFor: (notice: BetaActivationNotice) => {
+    title: string
+    body: string
+    dismissLabel: string
+    actionLabel: string
+  }
 }
 
 interface BetaActivationNoticeApi {
@@ -94,14 +105,14 @@ export function useBetaActivationNotice(
     )
   }
 
-  async function hasPendingNotice(installationId: string): Promise<boolean> {
+  async function pendingNotice(): Promise<BetaActivationNotice | null> {
     try {
-      const pending = await window.api.getPendingBetaNotice(installationId)
-      return Array.isArray(pending) && pending.length > 0
+      const pending = await window.api.getPendingBetaNotice(opts.installationId())
+      return pending && Array.isArray(pending.args) && pending.args.length > 0 ? pending : null
     } catch {
       // Read failed; stay silent. Unlike the pill hint's "treat as unseen", guessing wrong
       // here would announce a beta feature that may not be on at all.
-      return false
+      return null
     }
   }
 
@@ -110,21 +121,23 @@ export function useBetaActivationNotice(
     if (!opts.bridge || !installationId) return
     if (shownFor === installationId || retiredFor === installationId) return
     if (!gatePasses() || !opts.anchorRef.value) return
-    if (!(await hasPendingNotice(installationId))) return
+    const notice = await pendingNotice()
+    if (!notice) return
     // Re-check after the await; the host could have flipped state or the pill hint could have
     // claimed the popup while we were asking.
     const anchor = opts.anchorRef.value
     if (!gatePasses() || !anchor || opts.installationId() !== installationId) return
 
+    const copy = opts.copyFor(notice)
     const rect = anchor.getBoundingClientRect()
     shownFor = installationId
     isShowing.value = true
     opts.bridge.showCoachmark({
       kind: 'beta-notice',
-      title: opts.title,
-      body: opts.body,
-      dismissLabel: opts.dismissLabel,
-      actionLabel: opts.actionLabel,
+      title: copy.title,
+      body: copy.body,
+      dismissLabel: copy.dismissLabel,
+      actionLabel: copy.actionLabel,
       leftX: Math.round(rect.left),
       rightX: Math.round(rect.right),
       bottomY: Math.round(rect.bottom)

@@ -1224,7 +1224,7 @@ describe('TitleBarApp', () => {
       setSetting = vi.fn().mockResolvedValue(undefined)
       // Nothing pending, so the beta notice never competes for the single popup and these
       // assertions keep counting only pill-hint shows.
-      getPendingBetaNotice = vi.fn().mockResolvedValue([])
+      getPendingBetaNotice = vi.fn().mockResolvedValue(null)
       ;(window as unknown as { api: unknown }).api = {
         getSetting,
         setSetting,
@@ -1328,8 +1328,22 @@ describe('TitleBarApp', () => {
     let acknowledgeBetaNotice: ReturnType<typeof vi.fn>
     let openGlobalSettings: ReturnType<typeof vi.fn>
 
-    function installApiMock(opts: { pending?: string[]; pillHintSeen?: boolean } = {}): void {
-      getPendingBetaNotice = vi.fn().mockResolvedValue(opts.pending ?? ['--enable-assets'])
+    function installApiMock(
+      opts: {
+        /** `null` = main has nothing to announce. */
+        pending?: {
+          args: string[]
+          direction: 'enabled' | 'disabled'
+          description: string | null
+        } | null
+        pillHintSeen?: boolean
+      } = {}
+    ): void {
+      const pending =
+        opts.pending === undefined
+          ? { args: ['--enable-assets'], direction: 'enabled' as const, description: null }
+          : opts.pending
+      getPendingBetaNotice = vi.fn().mockResolvedValue(pending)
       acknowledgeBetaNotice = vi.fn().mockResolvedValue(undefined)
       openGlobalSettings = vi.fn()
       ;(window as unknown as { api: unknown }).api = {
@@ -1377,8 +1391,7 @@ describe('TitleBarApp', () => {
       expect(betaCards().length).toBe(1)
       const payload = betaCards()[0]!
       expect(payload.title).toBe('A beta feature is on')
-      // Copy is generic on purpose: the card never names the arg, so it cannot be wrong
-      // about which feature turned on.
+      // With no payload-supplied name the copy stays generic, and it never leaks the raw arg.
       expect(payload.body).not.toContain('--enable-assets')
       // The action is what makes it more than an FYI.
       expect(payload.actionLabel).toBe('Settings')
@@ -1386,7 +1399,7 @@ describe('TitleBarApp', () => {
     })
 
     it('stays silent when main has nothing pending', async () => {
-      installApiMock({ pending: [] })
+      installApiMock({ pending: null })
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(0)
       wrapper.unmount()
@@ -1477,6 +1490,36 @@ describe('TitleBarApp', () => {
       bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
       expect(acknowledgeBetaNotice).not.toHaveBeenCalledWith('inst-2')
+      wrapper.unmount()
+    })
+
+    it('names the feature when the PostHog payload supplied a name', async () => {
+      installApiMock({
+        pending: { args: ['--enable-assets'], direction: 'enabled', description: 'Assets browser' }
+      })
+      const wrapper = await mountBar()
+      const payload = betaCards()[0]!
+      expect(payload.title).toBe('The Assets browser beta is on')
+      expect(payload.body).toContain('Assets browser')
+      wrapper.unmount()
+    })
+
+    it('reads the other way round for a named remote force-off', async () => {
+      // A withdrawn beta is not "a beta feature is on". Main only resolves this direction for
+      // a grant the payload named, so there is always something to put in the sentence.
+      installApiMock({
+        pending: {
+          args: ['--disable-assets'],
+          direction: 'disabled',
+          description: 'Assets browser'
+        }
+      })
+      const wrapper = await mountBar()
+      const payload = betaCards()[0]!
+      expect(payload.title).toBe('The Assets browser beta is off')
+      expect(payload.title).not.toContain('is on')
+      // Still points at Settings — the beta program switch is what the user can act on.
+      expect(payload.actionLabel).toBe('Settings')
       wrapper.unmount()
     })
 

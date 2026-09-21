@@ -548,10 +548,20 @@ const betaNotice = useBetaActivationNotice({
   isLoadingLockdown,
   anchorRef: announcementBtnRef,
   isSuppressed: () => coachmark.isShowing.value,
-  title: t('titleBar.betaNoticeTitle'),
-  body: t('titleBar.betaNoticeBody'),
-  dismissLabel: t('titleBar.betaNoticeDismiss'),
-  actionLabel: t('titleBar.betaNoticeSettings')
+  // Four wordings, picked by what main could establish: whether the grant turned the feature
+  // on or withdrew it, and whether the PostHog payload named it. The generic pair is the
+  // fallback, so an unnamed feature still gets a card that is true.
+  copyFor: ({ direction, description }) => {
+    const suffix = description ? 'Named' : ''
+    const prefix = direction === 'disabled' ? 'betaNoticeOff' : 'betaNotice'
+    const params = { feature: description ?? '' }
+    return {
+      title: t(`titleBar.${prefix}Title${suffix}`, params),
+      body: t(`titleBar.${prefix}Body${suffix}`, params),
+      dismissLabel: t('titleBar.betaNoticeDismiss'),
+      actionLabel: t('titleBar.betaNoticeSettings')
+    }
+  }
 })
 
 /** Wrap the pill opener so opening the drawer retires the coachmark

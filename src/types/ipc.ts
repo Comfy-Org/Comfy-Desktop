@@ -11,6 +11,13 @@ export type { FirstUseMode }
 import type { AuthStatus, Workspace } from '../main/cloud/types'
 export type { AuthStatus, Workspace }
 
+// One Core beta activation card, as main resolves it for the title bar. Re-exported from its
+// producer rather than restated here: this file's header forbids duplicating types, and an
+// independent copy would drift silently — `ipcMain.handle` is ungeneric and `ipcRenderer.invoke`
+// returns `Promise<any>`, so nothing would fail the build.
+import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
+export type { BetaActivationNotice }
+
 /** Every renderer-safe Build catalog state. */
 export type DevPlatformBuildState =
   | 'installable'
@@ -1436,11 +1443,12 @@ export interface ElectronApi {
   getSetting(key: string): Promise<unknown>
 
   // Core beta activation notice
-  /** Core beta args this install turned on for the first time and has not
-   *  announced yet, or `[]`. Read repeatedly without side effects — the
-   *  pending set is only cleared by `acknowledgeBetaNotice`, so a card that is
-   *  shown but never retired comes back on the next launch. */
-  getPendingBetaNotice(installationId: string): Promise<string[]>
+  /** The activation card this install owes the user, or `null`. Read repeatedly
+   *  without side effects — the pending set is only cleared by
+   *  `acknowledgeBetaNotice`, so a card that is shown but never retired comes
+   *  back on the next launch. `description` carries the feature name the
+   *  PostHog payload supplied, when it supplied one. */
+  getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   /** Retire this install's activation notice: its args are persisted as
    *  announced and never raise a card again. Called when the user dismisses
    *  the card or follows its settings link. */

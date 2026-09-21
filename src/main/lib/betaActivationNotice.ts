@@ -17,18 +17,36 @@
  * bar's own gate (`useBetaActivationNotice`) opens and asks for it.
  */
 import * as settings from '../settings'
+import type { CoreBetaGrant } from './coreBetaGrants'
 
 /** Args already announced, as a durable string list. A LIST rather than a boolean so a second
  *  beta feature granted months later still gets its own heads-up; append-only, so a grant that
  *  is revoked and later re-granted stays silent the second time. */
 export const BETA_NOTICE_ANNOUNCED_ARGS_KEY = 'betaNoticeAnnouncedArgs'
 
-/** Only grants that turn something ON announce. `--disable-*` exists in the allowlist as a
- *  remote force-OFF (see `CORE_BETA_GRANTABLE_ARGS`), and the notice's copy — "a beta feature
- *  is on", pointing at the opt-out switch — would be flatly wrong for one: it names the
- *  opposite of what happened and offers an action that does not apply. Silent is the honest
- *  reading until the payload can carry its own copy. */
 const ENABLE_PREFIX = '--enable-'
+const DISABLE_PREFIX = '--disable-'
+
+/** One grant the user has not been told about, plus the wording its payload asked for. */
+export interface PendingBetaGrant {
+  readonly arg: string
+  /** Whether this grant turned the feature on or off. */
+  readonly direction: 'enabled' | 'disabled'
+  /** Payload-supplied feature name, or `null` for the generic wording. */
+  readonly description: string | null
+}
+
+/** What the title bar needs to render one card: which args it covers (so retiring it can
+ *  acknowledge exactly those), and the copy to use. */
+export interface BetaActivationNotice {
+  readonly args: readonly string[]
+  /** `'disabled'` only when EVERY covered grant was a force-off; a launch that turned
+   *  something on is "a beta feature is on" regardless of what else it turned off. */
+  readonly direction: 'enabled' | 'disabled'
+  /** Non-null only when the card covers exactly one grant AND its payload named the feature.
+   *  Two features at once have no single honest name, so that falls back to generic. */
+  readonly description: string | null
+}
 
 /**
  * Pending notices by installation id, drained by the title bar of that install's host window.
@@ -37,15 +55,15 @@ const ENABLE_PREFIX = '--enable-'
  * closed, app quit, bell not reachable — must REPLAY on the next launch rather than being lost,
  * so nothing is written to disk until the user actually retires the card.
  */
-const pendingByInstallation = new Map<string, string[]>()
+const pendingByInstallation = new Map<string, PendingBetaGrant[]>()
 
 /** Every arg currently pending across all installs. Two windows launching with the same fresh
  *  grant would otherwise each show a card for it, since neither has acknowledged yet and the
  *  persisted list is still empty. First claim wins; the second install stays silent. */
 function claimedArgs(): Set<string> {
   const claimed = new Set<string>()
-  for (const args of pendingByInstallation.values()) {
-    for (const arg of args) claimed.add(arg)
+  for (const grants of pendingByInstallation.values()) {
+    for (const grant of grants) claimed.add(grant.arg)
   }
   return claimed
 }
@@ -74,22 +92,61 @@ export function readAnnouncedBetaArgs(): string[] {
  * The grants from this launch the user has not been told about yet.
  *
  * Pure so the trigger rule is testable without settings or a launch: takes what was applied
- * plus what is already spoken for, returns what is new. Order follows `appliedArgs` and
- * duplicates collapse, so a payload naming an arg twice cannot double-announce it.
+ * plus what is already spoken for, returns what is new. Order follows `applied` and duplicates
+ * collapse, so a payload naming an arg twice cannot double-announce it.
+ *
+ * Three ways a grant stays silent:
+ *   - the payload asked for it (`notice: 'silent'`), for a flag with nothing to tell the user;
+ *   - it is a `--disable-*` force-off with no payload-supplied name, because the generic
+ *     wording describes turning something ON and there would be nothing truthful to say;
+ *   - it has already been announced, here or on another install.
+ * A named force-off DOES announce: the payload has supplied the one thing the generic copy
+ * could not, so the card can say which beta was withdrawn.
  */
-export function selectNewlyActiveBetaArgs(
-  appliedArgs: readonly string[],
+export function selectNewlyActiveBetaGrants(
+  applied: readonly CoreBetaGrant[],
   spokenFor: ReadonlySet<string>
-): string[] {
-  const fresh: string[] = []
+): PendingBetaGrant[] {
+  const fresh: PendingBetaGrant[] = []
   const seen = new Set(spokenFor)
-  for (const arg of appliedArgs) {
-    if (!arg.startsWith(ENABLE_PREFIX)) continue
-    if (seen.has(arg)) continue
-    seen.add(arg)
-    fresh.push(arg)
+  for (const grant of applied) {
+    if (grant.notice?.silent === true) continue
+    if (seen.has(grant.arg)) continue
+    const description = grant.notice?.description ?? null
+    // Derived from the prefix PAIR, not as a binary else. An allowlist entry with neither
+    // prefix is possible (`oppositeArg` already handles that case, and the list is documented
+    // as growing ahead of Core); defaulting it to `disabled` would turn a card that used to
+    // stay silent into one that actively says a feature was switched off when it was not.
+    if (!grant.arg.startsWith(ENABLE_PREFIX) && !grant.arg.startsWith(DISABLE_PREFIX)) continue
+    const direction = grant.arg.startsWith(ENABLE_PREFIX) ? 'enabled' : 'disabled'
+    if (direction === 'disabled' && description === null) continue
+    seen.add(grant.arg)
+    fresh.push({ arg: grant.arg, direction, description })
   }
   return fresh
+}
+
+/**
+ * Collapse this install's pending grants into the single card the title bar renders.
+ *
+ * Exported and pure because the collapse rules are the interesting part: what a card may
+ * honestly claim when it covers more than one grant. Returns `null` when nothing is pending,
+ * which is how the renderer decides whether to show anything at all.
+ */
+export function resolveBetaActivationNotice(
+  pending: readonly PendingBetaGrant[]
+): BetaActivationNotice | null {
+  if (pending.length === 0) return null
+  // One direction per card, and the card covers ONLY the grants in it. A single launch can
+  // both turn something on and withdraw something else; collapsing those into one card would
+  // describe one of them and then acknowledge both, so the undescribed withdrawal could never
+  // be announced again on any install. Enables go first because "a beta feature is on" is the
+  // more urgent thing to say; the rest stay pending and get their own card next launch.
+  const direction = pending.some((grant) => grant.direction === 'enabled') ? 'enabled' : 'disabled'
+  const covered = pending.filter((grant) => grant.direction === direction)
+  // A name only belongs on the card when it names everything the card covers.
+  const description = covered.length === 1 ? covered[0]!.description : null
+  return { args: covered.map((grant) => grant.arg), direction, description }
 }
 
 /**
@@ -100,7 +157,7 @@ export function selectNewlyActiveBetaArgs(
  */
 export function armBetaActivationNotice(
   installationId: string,
-  appliedArgs: readonly string[]
+  applied: readonly CoreBetaGrant[]
 ): void {
   try {
     // Replace, never append. Arming happens before the spawn is known to have succeeded, so a
@@ -110,9 +167,9 @@ export function armBetaActivationNotice(
     // no longer on. Dropping a claim also releases it for other installs, since `claimedArgs`
     // reads the same map.
     pendingByInstallation.delete(installationId)
-    if (appliedArgs.length === 0) return
+    if (applied.length === 0) return
     const spokenFor = new Set([...readAnnouncedBetaArgs(), ...claimedArgs()])
-    const fresh = selectNewlyActiveBetaArgs(appliedArgs, spokenFor)
+    const fresh = selectNewlyActiveBetaGrants(applied, spokenFor)
     if (fresh.length === 0) return
     pendingByInstallation.set(installationId, fresh)
   } catch (err) {
@@ -120,11 +177,11 @@ export function armBetaActivationNotice(
   }
 }
 
-/** What this install's title bar should announce, or `[]`. Read-only: the pending entry
+/** The card this install's title bar should raise, or `null`. Read-only: the pending entry
  *  survives until `acknowledgeBetaActivationNotice`, so a card that is shown but never retired
  *  (window closed, app quit) comes back on the next launch. */
-export function peekBetaActivationNotice(installationId: string): string[] {
-  return [...(pendingByInstallation.get(installationId) ?? [])]
+export function peekBetaActivationNotice(installationId: string): BetaActivationNotice | null {
+  return resolveBetaActivationNotice(pendingByInstallation.get(installationId) ?? [])
 }
 
 /**
@@ -135,9 +192,17 @@ export function peekBetaActivationNotice(installationId: string): string[] {
  * retiring different notices cannot clobber each other.
  */
 export function acknowledgeBetaActivationNotice(installationId: string): void {
-  const pending = pendingByInstallation.get(installationId)
-  pendingByInstallation.delete(installationId)
-  if (!pending || pending.length === 0) return
+  const queued = pendingByInstallation.get(installationId)
+  if (!queued || queued.length === 0) return
+  // Retire exactly the grants the card spoke for. Anything left over was never described to
+  // the user, so it stays queued for its own card rather than being silently consumed.
+  const shown = resolveBetaActivationNotice(queued)
+  if (shown === null) return
+  const covered = new Set(shown.args)
+  const remaining = queued.filter((grant) => !covered.has(grant.arg))
+  if (remaining.length > 0) pendingByInstallation.set(installationId, remaining)
+  else pendingByInstallation.delete(installationId)
+  const pending = shown.args
   try {
     const merged = [...new Set([...readAnnouncedBetaArgs(), ...pending])]
     settings.set(BETA_NOTICE_ANNOUNCED_ARGS_KEY, merged)

@@ -89,6 +89,12 @@
     "pillHintDismiss": "知道了",
     "betaNoticeTitle": "已启用 Beta 功能",
     "betaNoticeBody": "此实例启动时启用了一项 Beta 功能。你可以在设置中关闭 Beta 功能。",
+    "betaNoticeTitleNamed": "已启用 {feature} Beta 功能",
+    "betaNoticeBodyNamed": "此实例启动时启用了 {feature} Beta 功能。你可以在设置中关闭 Beta 功能。",
+    "betaNoticeOffTitle": "已关闭一项 Beta 功能",
+    "betaNoticeOffBody": "我们已为此实例关闭了一项 Beta 功能。你可以在设置中管理 Beta 功能。",
+    "betaNoticeOffTitleNamed": "已关闭 {feature} Beta 功能",
+    "betaNoticeOffBodyNamed": "我们已为此实例关闭了 {feature} Beta 功能。你可以在设置中管理 Beta 功能。",
     "betaNoticeDismiss": "知道了",
     "betaNoticeSettings": "设置"
   },

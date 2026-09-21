@@ -49,7 +49,7 @@ const launchHarness = vi.hoisted(() => ({
   /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
-  grants: [] as { arg: string; minCoreVersion: string }[],
+  grants: [] as { arg: string; minCoreVersion: string; notice?: CoreBetaNotice }[],
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -154,7 +154,7 @@ import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
-import type { CoreBetaGrant } from '../../coreBetaGrants'
+import type { CoreBetaGrant, CoreBetaNotice } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import {
   makeSendOutput,
@@ -974,12 +974,12 @@ describe('core beta report placement', () => {
 
   it('arms the activation notice from the same latch that reports the grant', async () => {
     const id = 'harness-arms-beta-notice'
-    expect(peekBetaActivationNotice(id)).toEqual([])
+    expect(peekBetaActivationNotice(id)).toBeNull()
 
     const res = await handleLaunch(ctxFor(id))
 
     expect(res.ok).toBe(true)
-    expect(peekBetaActivationNotice(id)).toEqual(['--enable-assets'])
+    expect(peekBetaActivationNotice(id)?.args).toEqual(['--enable-assets'])
   })
 
   it('arms nothing on a launch whose grants the args schema refused', async () => {
@@ -993,7 +993,7 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).not.toContain('--enable-assets')
-    expect(peekBetaActivationNotice(id)).toEqual([])
+    expect(peekBetaActivationNotice(id)).toBeNull()
   })
 
   it('arms nothing for an install that opted out of beta features', async () => {
@@ -1003,7 +1003,33 @@ describe('core beta report placement', () => {
     const res = await handleLaunch(ctxFor(id))
 
     expect(res.ok).toBe(true)
-    expect(peekBetaActivationNotice(id)).toEqual([])
+    expect(peekBetaActivationNotice(id)).toBeNull()
+  })
+
+  it('arms nothing when the payload asked for a silent grant', async () => {
+    // Copy control, not flag control: the arg still reaches the command line, the user just
+    // is not told about it.
+    launchHarness.grants = [{ ...HARNESS_GRANT, notice: { silent: true } }]
+    const id = 'harness-silent-grant'
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-assets')
+    expect(peekBetaActivationNotice(id)).toBeNull()
+  })
+
+  it('carries the payload feature name onto the pending card', async () => {
+    launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Assets browser' } }]
+    const id = 'harness-named-grant'
+
+    await handleLaunch(ctxFor(id))
+
+    expect(peekBetaActivationNotice(id)).toEqual({
+      args: ['--enable-assets'],
+      direction: 'enabled',
+      description: 'Assets browser'
+    })
   })
 
   it('stays silent on the NEXT launch once the notice has been acknowledged', async () => {
@@ -1014,7 +1040,7 @@ describe('core beta report placement', () => {
 
     await handleLaunch(ctxFor(id))
 
-    expect(peekBetaActivationNotice(id)).toEqual([])
+    expect(peekBetaActivationNotice(id)).toBeNull()
   })
 
   /** The commit `harnessInstall`'s record names, i.e. what the version gate believes is running. */
