@@ -388,6 +388,29 @@ describe('arm / peek / acknowledge', () => {
     expect(pendingArgs('inst-2')).toEqual(['--enable-assets'])
   })
 
+  // The ordering the arm-time filter misses: BOTH queues are populated first, and only then
+  // does one install acknowledge. It clears its own queue and persists the arg, so the other
+  // install's copy is already sitting in memory when its title bar asks.
+  it('does not serve a queued card for an arg another install acknowledged first', () => {
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
+    expect(pendingArgs('inst-2')).toEqual(['--enable-assets'])
+
+    // inst-2 is still booting; inst-1's user dismisses theirs.
+    acknowledgeBetaActivationNotice('inst-1', ['--enable-assets'])
+
+    expect(peekBetaActivationNotice('inst-2')).toBeNull()
+  })
+
+  it('keeps an unseen grant queued when only the other one was acknowledged', () => {
+    // Filtered, not dropped: inst-2 still has something worth saying.
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    armBetaActivationNotice('inst-2', [grant('--enable-assets'), grant('--enable-agent')])
+    acknowledgeBetaActivationNotice('inst-1', ['--enable-assets'])
+
+    expect(pendingArgs('inst-2')).toEqual(['--enable-agent'])
+  })
+
   it('stays silent everywhere once any install has acknowledged the arg', () => {
     // This is what "once" means, and it is the only mechanism that survives a restart.
     armBetaActivationNotice('inst-1', [grant('--enable-assets')])
