@@ -64,6 +64,7 @@ interface MockBridgeState {
   hideCoachmarkCalls: number
   coachmarkDismissedCallbacks: ((payload: { kind: string }) => void)[]
   coachmarkActionCallbacks: ((payload: { kind: string }) => void)[]
+  coachmarkAutoHiddenCallbacks: ((payload: { kind: string }) => void)[]
   readyCalls: number
 }
 
@@ -102,6 +103,7 @@ function installMockBridge(
     hideCoachmarkCalls: 0,
     coachmarkDismissedCallbacks: [],
     coachmarkActionCallbacks: [],
+    coachmarkAutoHiddenCallbacks: [],
     readyCalls: 0
   }
   const installationId = opts.installationId === undefined ? 'test-id' : opts.installationId
@@ -230,6 +232,10 @@ function installMockBridge(
     },
     onCoachmarkAction: (cb: (payload: { kind: string }) => void) => {
       state.coachmarkActionCallbacks.push(cb)
+      return () => {}
+    },
+    onCoachmarkAutoHidden: (cb: (payload: { kind: string }) => void) => {
+      state.coachmarkAutoHiddenCallbacks.push(cb)
       return () => {}
     },
     ready: () => {
@@ -1417,6 +1423,43 @@ describe('TitleBarApp', () => {
       await flushPromises()
       expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
       expect(bridgeState.hideCoachmarkCalls).toBeGreaterThan(0)
+      wrapper.unmount()
+    })
+
+    // The host window moving or resizing auto-hides the shared popup in main (the anchor the
+    // beak points at has gone stale). Nothing retired the card, so the user may never have
+    // read it — and if the composable stayed latched, no later card could be raised at all.
+    it('can raise the notice again after an auto-hide, rather than latching for the session', async () => {
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(1)
+
+      bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+      // A fresh grant clears its version gate later in the same session. The pill-hint
+      // retirement is just the re-trigger seam: it calls the beta notice's retry.
+      getPendingBetaNotice.mockResolvedValue(['--enable-something-else'])
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+      await flushPromises()
+
+      expect(betaCards().length).toBe(2)
+      expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    // One popup backs both cards, so the auto-hide is addressed by kind. The pill hint's own
+    // auto-hide must not make the beta notice forget which card it has on screen — if it did,
+    // the later dismissal would acknowledge nothing and the notice would replay forever.
+    it('ignores an auto-hide addressed to the other card', async () => {
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(1)
+
+      bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+      await flushPromises()
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+
+      // Still knew which args were on screen, so the dismissal spent exactly those.
+      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
       wrapper.unmount()
     })
 

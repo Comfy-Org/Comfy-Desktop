@@ -149,6 +149,15 @@ interface CoachmarkPopupEntry {
   kind: CoachmarkKind
 }
 
+/** The title-bar lookup, captured from `registerTitleCoachmarkIpc` so a popup built later
+ *  can reach the title bar that owns it. Null until the IPC is registered. */
+let findTitleBarByParent: ((parent: BrowserWindow) => WebContents | null) | null = null
+
+/** True only while `retire` is driving the hide. Retirement reports itself on its own
+ *  channel, so the auto-hide notice would be a duplicate — and a harmful one: it would tell
+ *  the owner to FORGET a card it has just acknowledged. */
+let retireDrivingHide = false
+
 const coachmarkPopupsByParent = new Map<number, CoachmarkPopupEntry>()
 const coachmarkPopupsByWebContents = new Map<number, CoachmarkPopupEntry>()
 
@@ -169,6 +178,20 @@ function ensureCoachmarkPopup(parent: BrowserWindow): CoachmarkPopupEntry {
     // Sticky: hide only when the host window moves/resizes (stale anchor).
     // Not on blur — the dismiss button needs focus.
     hideOnParentEvents: ['will-move', 'move', 'resize'],
+    /** The popup also hides for reasons the owning composable never sees — `will-move`,
+     *  `move` and `resize` above, because the anchor it points at has gone stale. Without
+     *  this the renderer still believes its card is up and turns away every later show for
+     *  the rest of the session, so a notice the user never read ends up neither displayed
+     *  nor acknowledged. Addressed with `kind` so it reaches the composable that raised it. */
+    onHide: () => {
+      if (retireDrivingHide) return
+      const entry = coachmarkPopupsByParent.get(parent.id)
+      if (!entry || parent.isDestroyed()) return
+      const tb = findTitleBarByParent?.(parent)
+      if (tb && !tb.isDestroyed()) {
+        tb.send('comfy-titlebar:coachmark-auto-hidden', { kind: entry.kind })
+      }
+    },
     onParentClosed: () => {
       coachmarkPopupsByParent.delete(parent.id)
       coachmarkPopupsByWebContents.delete(view.popupWebContentsId)
@@ -261,6 +284,7 @@ export function registerTitleCoachmarkIpc(opts: {
   findParentByTitleBarSender: (wc: WebContents) => BrowserWindow | null
   findTitleBarByParent: (parent: BrowserWindow) => WebContents | null
 }): void {
+  findTitleBarByParent = opts.findTitleBarByParent
   ipcMain.on('comfy-titletooltip:ready', (event) => {
     const entry = coachmarkPopupsByWebContents.get(event.sender.id)
     if (!entry) return
@@ -351,7 +375,12 @@ export function registerTitleCoachmarkIpc(opts: {
     if (token !== null && entry.pendingConfigToken !== null && token !== entry.pendingConfigToken) {
       return
     }
-    entry.view.hide()
+    retireDrivingHide = true
+    try {
+      entry.view.hide()
+    } finally {
+      retireDrivingHide = false
+    }
     const parent = entry.view.parentWindow
     if (parent && !parent.isDestroyed()) {
       const tb = opts.findTitleBarByParent(parent)

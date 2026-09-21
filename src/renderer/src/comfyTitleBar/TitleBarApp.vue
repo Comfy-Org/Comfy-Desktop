@@ -105,6 +105,8 @@ interface Bridge {
   onCoachmarkDismissed: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
   /** The card's secondary action, when it has one. Retires the card like dismiss does. */
   onCoachmarkAction: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
+  /** The popup was hidden without a retirement (host window moved/resized). */
+  onCoachmarkAutoHidden: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
   onPanelChanged: (cb: (panel: ComfyPanelKey) => void) => () => void
   onTitleChanged: (cb: (title: string) => void) => () => void
   /** Install source-category pushes from main. The raw category
@@ -598,6 +600,7 @@ let unsubInstallationId: (() => void) | undefined
 let unsubZoom: (() => void) | undefined
 let unsubCoachmarkDismissed: (() => void) | undefined
 let unsubCoachmarkAction: (() => void) | undefined
+let unsubCoachmarkAutoHidden: (() => void) | undefined
 
 onMounted(() => {
   // Observe the trailing cluster so the left cluster can mirror its
@@ -672,6 +675,13 @@ onMounted(() => {
   unsubCoachmarkAction = bridge.onCoachmarkAction(({ kind }) => {
     if (kind === 'beta-notice') void betaNotice.openSettings()
   })
+  // Main hid the popup without anyone retiring it — the host window moved or resized, so the
+  // anchor the beak points at is stale. Forget WITHOUT acknowledging: the user may never have
+  // read the card, and leaving the composable believing it is still up would turn away every
+  // later show for the rest of the session.
+  unsubCoachmarkAutoHidden = bridge.onCoachmarkAutoHidden(({ kind }) => {
+    if (kind === 'beta-notice') betaNotice.forgetWithoutAcknowledging()
+  })
   bridge.ready()
 })
 
@@ -681,7 +691,17 @@ onMounted(() => {
 watch(
   [isInstallLess, isFirstUseLockdown, isLoadingLockdown],
   ([installLess, lockdown, loading]) => {
-    if (installLess || lockdown || loading) return
+    if (installLess || lockdown || loading) {
+      // The gate has CLOSED on a card that is already up — most often a relaunch of this same
+      // install driving the progress takeover. The gate alone only suppresses new shows, so
+      // without this the stale card floats over the loader and, worse, leaves the composable
+      // latched: main re-arms the install with a fresh grant set and the loading-to-ready
+      // transition below cannot raise it. Hiding retires nothing; main still holds the
+      // pending notice and `onCoachmarkAutoHidden` clears the display state, so the newer
+      // queue is what gets queried when the gate reopens.
+      if (betaNotice.isShowing.value) bridge?.hideCoachmark()
+      return
+    }
     // Defer past the responsive fit settle so the pill's centre is final
     // before anchoring: nextTick flushes the DOM, the rAF the layout.
     void nextTick().then(() => {
@@ -725,6 +745,7 @@ onUnmounted(() => {
   unsubZoom?.()
   unsubCoachmarkDismissed?.()
   unsubCoachmarkAction?.()
+  unsubCoachmarkAutoHidden?.()
   bridge?.hideCoachmark()
   hideTip()
   trailingObserver?.disconnect()

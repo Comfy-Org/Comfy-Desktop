@@ -246,6 +246,10 @@ export interface ComfyTitleBarBridge {
   /** Subscribe to the coachmark's secondary action. Retires the card the same way
    *  dismiss does, and additionally lets the owner run its follow-up. */
   onCoachmarkAction(cb: (payload: { kind: CoachmarkKind }) => void): () => void
+  /** Subscribe to the popup being hidden by something other than a retirement — the host
+   *  window moved or resized, leaving the anchor stale. NOT an acknowledgement: the owner
+   *  should forget the card so it can be raised again, not mark it as seen. */
+  onCoachmarkAutoHidden(cb: (payload: { kind: CoachmarkKind }) => void): () => void
   /** Tell main this title bar is mounted; main responds with the initial state. */
   ready(): void
 }
@@ -450,6 +454,12 @@ const bridge: ComfyTitleBarBridge = {
       cb({ kind: coachmarkKindOf(payload) })
     ipcRenderer.on('comfy-titlebar:coachmark-action', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-action', handler)
+  },
+  onCoachmarkAutoHidden: (cb: (payload: { kind: CoachmarkKind }) => void) => {
+    const handler = (_e: unknown, payload?: { kind?: unknown }): void =>
+      cb({ kind: coachmarkKindOf(payload) })
+    ipcRenderer.on('comfy-titlebar:coachmark-auto-hidden', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-auto-hidden', handler)
   },
   ready: () => {
     ipcRenderer.send('comfy-window:title-bar-ready')
