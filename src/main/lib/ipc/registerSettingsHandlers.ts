@@ -355,12 +355,14 @@ export function registerSettingsHandlers(): void {
       // than trusted: a non-string would silently fail to retire the real pending notice.
       if (typeof installationId !== 'string' || installationId === '') return
       recordIpcInvocation('acknowledge-beta-notice', { installationId })
-      // The renderer names what its card covered; anything else is ignored rather than
-      // trusted, since this is an untrusted boundary like every other handler here.
-      const args = Array.isArray(shownArgs)
-        ? shownArgs.filter((a): a is string => typeof a === 'string')
-        : undefined
-      acknowledgeBetaActivationNotice(installationId, args)
+      // Malformed input is REFUSED, not filtered. Filtering `[123]` down to `[]` would read
+      // as "the renderer named nothing", and the fallback for that is to acknowledge the whole
+      // queue — so a junk array would permanently retire notices the user was never shown.
+      // Only an omitted value, or a non-empty array of strings, is accepted.
+      const isStringArray = (v: unknown): v is string[] =>
+        Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === 'string')
+      if (shownArgs !== undefined && !isStringArray(shownArgs)) return
+      acknowledgeBetaActivationNotice(installationId, shownArgs)
     }
   )
 
