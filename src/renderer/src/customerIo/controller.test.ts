@@ -6,7 +6,8 @@ const session: CustomerIoSession = {
   userId: 'user-a',
   locale: 'en',
   writeKey: 'test',
-  siteId: 'test'
+  siteId: 'test',
+  page: 'desktop/comfyui'
 }
 function client(): MessagingClient {
   return {
@@ -35,6 +36,7 @@ describe('Desktop messaging lifecycle', () => {
     await controller.update({ ...session })
     expect(load).toHaveBeenCalledTimes(1)
     expect(sdk.identify).toHaveBeenCalledExactlyOnceWith(session)
+    expect(sdk.page).toHaveBeenCalledExactlyOnceWith(session)
     expect(vi.mocked(sdk.identify).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(sdk.page).mock.invocationCallOrder[0]!
     )
