@@ -185,6 +185,20 @@ describe('CLASSIFY_STAFF_JS', () => {
     expect(result).toEqual({ known: true, staff: true })
   })
 
+  it.each([['__proto__'], ['constructor'], ['toString']])(
+    'counts a record whose uid is %s, so the one-account guard cannot be slipped past',
+    async (uid) => {
+      // On a plain object these keys are truthy before any record is seen, so such a record
+      // would be skipped, leaving one survivor and passing the "exactly one account" check on
+      // a two-account state.
+      const { result } = await classify({
+        entries: [authRecord('real', 'someone@comfy.org'), authRecord(uid, 'other@example.com')]
+      })
+
+      expect(result).toEqual({ known: false })
+    }
+  )
+
   it.each([
     ['there is no Firebase database', { databases: [] }],
     ['the object store is missing', { stores: [] }],
@@ -203,6 +217,21 @@ describe('CLASSIFY_STAFF_JS', () => {
     })
 
     expect(result).toEqual({ known: true, staff: false })
+  })
+
+  it('gives up on an open that never settles, rather than hanging forever', async () => {
+    // `executeJavaScript` has no timeout, so without the bounded wait the awaiting main-process
+    // promise never settles and leaks a `WebContents` reference per page load.
+    vi.useFakeTimers()
+    try {
+      const pending = classify({ openOutcome: 'never' })
+      await vi.advanceTimersByTimeAsync(5000)
+      const { result } = await pending
+
+      expect(result).toEqual({ known: false })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('closes the database even when it answers nothing', async () => {
@@ -396,6 +425,19 @@ describe('refreshStaffFlagTargeting', () => {
     // then suppress the write a genuine sign-out needs to make.
     fs.writeFileSync(persistFilePath(), JSON.stringify({ staff: true }), 'utf-8')
     fs.chmodSync(persistFilePath(), 0o000)
+    // `chmod 000` does not stop root, and does nothing on Windows. Without this the read would
+    // succeed, the test would pass down the ordinary path, and the unreadable branch it claims
+    // to cover would never run — a test that chmods and nods.
+    let unreadable = false
+    try {
+      fs.readFileSync(persistFilePath())
+    } catch {
+      unreadable = true
+    }
+    if (!unreadable) {
+      fs.chmodSync(persistFilePath(), 0o644)
+      return
+    }
     initStaffFlagTargeting()
 
     await refreshStaffFlagTargeting(stubContents(false))

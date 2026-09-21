@@ -172,7 +172,13 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       req.onupgradeneeded = function () {
         try { req.transaction.abort(); } catch (_) { finish(rej, new Error('created')); }
       };
-      req.onsuccess = function () { finish(res, req.result); };
+      req.onsuccess = function () {
+        // The open can still succeed after a timeout or a blocked rejection. The outer
+        // handle is null by then, so the finally block has nothing to close and the
+        // connection would linger and block a later Firebase versionchange.
+        if (settled) { try { req.result.close(); } catch (_) {} return; }
+        finish(res, req.result);
+      };
       req.onerror = function () { finish(rej, req.error); };
       setTimeout(function () { finish(rej, new Error('timeout')); }, OPEN_TIMEOUT_MS);
     });
@@ -185,7 +191,10 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       allReq.onerror = function () { rej(allReq.error); };
     });
     var users = [];
-    var uids = {};
+    // Prototype-free. On a plain object the keys __proto__, constructor and toString are
+    // already truthy, so a record whose uid is one of them would be skipped and the
+    // "exactly one account" guard below would pass on what is really a two-account state.
+    var uids = Object.create(null);
     (all || []).forEach(function (e) {
       if (!e || typeof e !== 'object') return;
       if (typeof e.fbase_key !== 'string') return;
