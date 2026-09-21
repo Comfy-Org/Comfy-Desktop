@@ -54,6 +54,10 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
   ): Promise<LockingProcess[]> {
     let result: LockingProcess[] = []
     for (let attempt = 0; attempt < attempts; attempt++) {
+      // Back off first: an empty answer means the machine was too busy for
+      // `lsof` to finish inside the cap, and three full fd-table scans run
+      // back to back add to exactly the load that caused it.
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, attempt * 1000))
       result = await findLockingProcesses(filePath)
       if (result.some((entry) => entry.pid === pid)) break
     }

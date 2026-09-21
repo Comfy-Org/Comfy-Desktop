@@ -55,6 +55,7 @@ async function listenConsecutive(
   count: number,
   attempts = 50
 ): Promise<{ servers: net.Server[]; basePort: number }> {
+  let lastError: unknown
   for (let attempt = 0; attempt < attempts; attempt++) {
     const servers: net.Server[] = []
     try {
@@ -66,12 +67,16 @@ async function listenConsecutive(
         }
         return { servers, basePort: base.port }
       }
-    } catch {
-      // Neighbour taken between the base bind and this one.
+    } catch (err) {
+      // Usually a neighbour taken between the base bind and this one, which is
+      // worth another base. Keep it anyway: a deterministic failure (EACCES,
+      // say) otherwise burns every attempt and surfaces as a bare "could not
+      // bind", with the one useful detail thrown away 50 times.
+      lastError = err
     }
     await closeServers(servers)
   }
-  throw new Error(`could not bind ${count} consecutive ports on ${host}`)
+  throw new Error(`could not bind ${count} consecutive ports on ${host}`, { cause: lastError })
 }
 
 describe('findAvailablePort', () => {

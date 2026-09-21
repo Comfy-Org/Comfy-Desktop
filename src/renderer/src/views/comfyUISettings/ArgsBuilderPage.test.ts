@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n'
 import ArgsBuilderPage from './ArgsBuilderPage.vue'
 import { en } from '../../lib/i18nMessages'
 import type { ComfyArgDef } from '../../types/ipc'
+import { TELEMETRY_ACTION_EVENT_NAME } from '../../lib/telemetry'
 
 // Pins the deselectable "Choose one" contract: the exclusive group renders as
 // a compact BaseSelect with a synthetic "None" option so it can clear, the
@@ -121,10 +122,15 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  while (wrappers.length) wrappers.pop()?.unmount()
-  vi.useRealTimers()
-  delete (window as unknown as { api?: unknown }).api
-  vi.restoreAllMocks()
+  // `finally`, or one throwing unmount leaves fake timers installed for every
+  // remaining test in the file.
+  try {
+    while (wrappers.length) wrappers.pop()?.unmount()
+  } finally {
+    vi.useRealTimers()
+    delete (window as unknown as { api?: unknown }).api
+    vi.restoreAllMocks()
+  }
 })
 
 describe('ArgsBuilderPage — exclusive group dropdown', () => {
@@ -304,5 +310,52 @@ describe('ArgsBuilderPage — raw-args validation', () => {
     await wrapper.find('.args-raw-input').trigger('focusout')
     await flushPromises()
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(true)
+  })
+})
+
+// Faking `setTimeout` for the whole file means the 500ms debounce never
+// elapses on its own, which would leave `comfy.desktop.args.changed` - emitted
+// from this component and nowhere else - with no coverage in the suite. Drive
+// it deliberately instead, which also pins the debounce itself.
+describe('ArgsBuilderPage — args.changed telemetry', () => {
+  function captureTelemetry(): { events: string[]; stop: () => void } {
+    const events: string[] = []
+    const listener = (e: Event): void => {
+      events.push((e as CustomEvent<{ actionName: string }>).detail.actionName)
+    }
+    window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, listener)
+    return { events, stop: () => window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, listener) }
+  }
+
+  it('emits args.changed once the 500ms debounce elapses', async () => {
+    const wrapper = await mountPage()
+    const { events, stop } = captureTelemetry()
+    try {
+      await wrapper.find('button[role="switch"]').trigger('click')
+      await flushPromises()
+      // Still debouncing: nothing emitted yet.
+      expect(events).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(500)
+      expect(events).toEqual(['comfy.desktop.args.changed'])
+    } finally {
+      stop()
+    }
+  })
+
+  it('coalesces a burst of edits into a single emission', async () => {
+    const wrapper = await mountPage()
+    const { events, stop } = captureTelemetry()
+    try {
+      const switches = wrapper.findAll('button[role="switch"]')
+      for (const toggle of switches.slice(0, 3)) {
+        await toggle.trigger('click')
+        await vi.advanceTimersByTimeAsync(100)
+      }
+      await vi.advanceTimersByTimeAsync(500)
+      expect(events).toEqual(['comfy.desktop.args.changed'])
+    } finally {
+      stop()
+    }
   })
 })

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -28,6 +28,15 @@ function mountModal() {
     }
   })
 }
+
+// Unmount each wrapper when its test ends. 17 of the 18 mounts here used to
+// outlive their test, and so did their in-flight work: `createDiskSpaceChecker`
+// arms a 300ms `setTimeout` whose only cleanup is `onUnmounted`, so an orphaned
+// wrapper's timer fired into a later test - or past this file's happy-dom
+// teardown, where touching `window` throws `window is not defined` and fails
+// the run. This is the only `afterEach` in the file, so it cannot race a
+// file-local teardown.
+enableAutoUnmount(afterEach)
 
 beforeEach(() => {
   useModal().dismiss()
