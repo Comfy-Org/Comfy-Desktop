@@ -16,6 +16,8 @@ import type { Build } from '../devplatform/types'
  */
 export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
+  /** False until a status read or authoritative auth event succeeds. */
+  const statusLoaded = ref(false)
   const workspaces = ref<Workspace[]>([])
   const builds = ref<Build[]>([])
   const loadingWorkspaces = ref(false)
@@ -62,6 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
    *  arrival triggered, and no watcher re-fires for an unchanged identity,
    *  leaving the UI showing a false empty workspace. */
   function applyAuthoritativeStatus(next: AuthStatus): void {
+    statusLoaded.value = true
     if (sameIdentity(status.value, next)) {
       status.value = next
       return
@@ -86,7 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchStatus(): Promise<AuthStatus> {
     const seen = revision
     const next = await comfybuilderApi.getAuthStatus()
-    if (revision === seen && next) status.value = next
+    if (revision === seen && next) applyAuthoritativeStatus(next)
     return next
   }
 
@@ -191,6 +194,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     status,
+    statusLoaded,
     workspaces,
     builds,
     loadingWorkspaces,

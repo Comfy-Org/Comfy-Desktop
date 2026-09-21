@@ -128,9 +128,6 @@ describe('useAuthStore', () => {
     await Promise.all([first, second])
     expect(store.workspacesLoaded).toBe(true)
     expect(store.workspaces).toEqual([])
-
-    authChangedCb?.({ signedIn: false })
-    expect(store.workspacesLoaded).toBe(false)
   })
 
   it('reconciles the cached active workspace name after loading the workspace list', async () => {
@@ -282,6 +279,7 @@ describe('useAuthStore', () => {
     authChangedCb?.({ signedIn: false })
     expect(store.isSignedIn).toBe(false)
     expect(store.workspaces).toEqual([])
+    expect(store.workspacesLoaded).toBe(false)
     expect(store.builds).toEqual([])
     expect(store.buildsLoaded).toBe(false)
   })

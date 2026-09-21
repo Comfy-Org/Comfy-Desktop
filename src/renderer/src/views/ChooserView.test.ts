@@ -96,6 +96,7 @@ interface MockApi {
   onInstallationsVersionsUpdated: ReturnType<typeof vi.fn>
   getSetting: ReturnType<typeof vi.fn>
   setSetting: ReturnType<typeof vi.fn>
+  onSettingsChanged: ReturnType<typeof vi.fn>
   runAction: ReturnType<typeof vi.fn>
   // progressStore subscribes to onErrorDetail at construction time.
   onErrorDetail: ReturnType<typeof vi.fn>
@@ -114,6 +115,7 @@ function installMockApi(initial: Installation[]): MockApi {
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     getSetting: vi.fn().mockResolvedValue(undefined),
     setSetting: vi.fn().mockResolvedValue(undefined),
+    onSettingsChanged: vi.fn(() => () => {}),
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     onErrorDetail: vi.fn(() => () => {}),
     focusComfyWindow: vi.fn().mockResolvedValue(true),
@@ -871,91 +873,6 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('Workspace B Build')
     expect(wrapper.text()).not.toContain('LocalThing')
     expect(wrapper.text()).not.toContain('AvailableThing')
-  })
-
-  it('restores the persisted workspace when a new dashboard opens', async () => {
-    const api = installMockApiSignedIn(
-      [
-        makeInstall({ id: 'workspace-a', name: 'Workspace A Instance', workspaceId: 'w1' }),
-        makeInstall({ id: 'workspace-b', name: 'Workspace B Instance', workspaceId: 'w2' })
-      ],
-      [],
-      { id: 'w1', name: 'Workspace A' }
-    )
-    api.getSetting.mockResolvedValue('w2')
-    api.comfybuilder.listWorkspaces.mockResolvedValue([
-      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
-      { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
-    ])
-
-    const wrapper = mountChooser()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Workspace B Instance')
-    expect(wrapper.text()).not.toContain('Workspace A Instance')
-    expect(api.setSetting).not.toHaveBeenCalled()
-  })
-
-  it.each([undefined, '', 'removed-workspace'])(
-    'persists the authenticated fallback for an unavailable saved scope (%s)',
-    async (savedWorkspaceId) => {
-      const api = installMockApiSignedIn(
-        [makeInstall({ id: 'a', name: 'Workspace A Instance', workspaceId: 'w1' })],
-        [],
-        { id: 'w1', name: 'Workspace A' }
-      )
-      api.getSetting.mockResolvedValue(savedWorkspaceId)
-      const wrapper = mountChooser()
-      await flushPromises()
-
-      expect(wrapper.text()).toContain('Workspace A Instance')
-      expect(api.setSetting).toHaveBeenCalledWith('dashboardWorkspaceId', 'w1')
-      await wrapper.find('.chooser-tile-new').trigger('click')
-      expect(useDashboardScopeStore().selectedWorkspaceId).toBe('w1')
-      expect(wrapper.emitted('show-new-install')).toEqual([[]])
-      wrapper.unmount()
-    }
-  )
-
-  it('preserves an explicit Personal selection while signed in', async () => {
-    const api = installMockApiSignedIn([makeInstall({ id: 'local', name: 'Local Instance' })], [], {
-      id: 'w1',
-      name: 'Workspace A'
-    })
-    api.getSetting.mockResolvedValue('personal')
-    const wrapper = mountChooser()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Local Instance')
-    expect(api.setSetting).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('preserves the saved workspace when the membership request fails', async () => {
-    const api = installMockApiSignedIn(
-      [makeInstall({ id: 'b', name: 'Workspace B Instance', workspaceId: 'w2' })],
-      [],
-      { id: 'w1', name: 'Workspace A' }
-    )
-    api.getSetting.mockResolvedValue('w2')
-    api.comfybuilder.listWorkspaces.mockRejectedValue(new Error('offline'))
-    const wrapper = mountChooser()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Workspace B Instance')
-    expect(api.setSetting).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('persists Personal when reopening signed out with a saved team workspace', async () => {
-    const api = installMockApi([makeInstall({ id: 'local', name: 'Local Instance' })])
-    api.getSetting.mockResolvedValue('w1')
-    const wrapper = mountChooser()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Local Instance')
-    expect(api.setSetting).toHaveBeenCalledWith('dashboardWorkspaceId', 'personal')
-    wrapper.unmount()
   })
 
   it('restores the saved scope and reconciles its grid and label after membership changes', async () => {

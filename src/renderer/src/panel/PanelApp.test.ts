@@ -510,7 +510,8 @@ describe('PanelApp', () => {
     warning.mockRestore()
   })
 
-  it('waits for scope restoration when the menu opens New Instance without a dashboard', async () => {
+  it('opens menu-driven New Instance in the saved scope while membership loads', async () => {
+    mockState.settings.dashboardWorkspaceId = 'w1'
     mockState.comfybuilder.getAuthStatus.mockResolvedValue({
       signedIn: true,
       workspaceId: 'w1',
@@ -528,7 +529,10 @@ describe('PanelApp', () => {
 
     mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
     await flushPromises()
-    expect(installWizardOpen).not.toHaveBeenCalled()
+    expect(installWizardOpen).toHaveBeenCalledExactlyOnceWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'w1'
+    })
     resolveMembership([{ id: 'w1', name: 'One', type: 'team', role: 'owner' }])
     await flushPromises()
     expect(installWizardOpen).toHaveBeenCalledExactlyOnceWith({

@@ -13,6 +13,7 @@ const signedIn: AuthStatus = { signedIn: true, workspaceId: 'w1', workspaceType:
 const api = {
   getSetting: vi.fn(),
   setSetting: vi.fn(),
+  onSettingsChanged: vi.fn(),
   comfybuilder: {
     getAuthStatus: vi.fn(),
     onAuthChanged: vi.fn(),
@@ -38,6 +39,7 @@ describe('useDashboardScopeStore', () => {
     vi.resetAllMocks()
     api.getSetting.mockResolvedValue(undefined)
     api.setSetting.mockResolvedValue(undefined)
+    api.onSettingsChanged.mockReturnValue(() => {})
     api.comfybuilder.getAuthStatus.mockResolvedValue(signedIn)
     api.comfybuilder.listWorkspaces.mockResolvedValue(workspaces)
     api.comfybuilder.onAuthChanged.mockImplementation((cb: typeof authChanged) => {
@@ -52,62 +54,55 @@ describe('useDashboardScopeStore', () => {
     vi.unstubAllGlobals()
   })
 
-  it.each([undefined, '', 'removed'])(
-    'resolves and persists the authenticated fallback for saved scope %s',
-    async (saved) => {
+  it.each<{
+    name: string
+    saved?: string
+    expected: string
+    status?: AuthStatus
+    catalog?: Workspace[]
+  }>([
+    { name: 'missing preference', expected: 'w1' },
+    { name: 'empty preference', saved: '', expected: 'w1' },
+    { name: 'removed team', saved: 'removed', expected: 'w1' },
+    { name: 'explicit Personal', saved: 'personal', expected: 'personal' },
+    { name: 'valid team', saved: 'w2', expected: 'w2' },
+    { name: 'stale authenticated fallback', saved: 'removed', catalog: [], expected: 'personal' },
+    {
+      name: 'server Personal workspace',
+      saved: 'server-personal',
+      expected: 'personal',
+      catalog: [
+        ...workspaces,
+        { id: 'server-personal', name: 'Personal workspace', type: 'team', role: 'owner' }
+      ]
+    },
+    { name: 'signed out', saved: 'w2', status: { signedIn: false }, expected: 'personal' }
+  ])(
+    'restores and persists scope: $name',
+    async ({ saved, expected, status = signedIn, catalog = workspaces }) => {
       api.getSetting.mockResolvedValue(saved)
+      api.comfybuilder.getAuthStatus.mockResolvedValue(status)
+      api.comfybuilder.listWorkspaces.mockResolvedValue(catalog)
       const scope = useDashboardScopeStore()
       await scope.initialize()
-      expect(scope.selectedWorkspaceId).toBe('w1')
-      expect(api.setSetting).toHaveBeenCalledExactlyOnceWith('dashboardWorkspaceId', 'w1')
+      await flushPromises()
+
+      expect(scope.selectedWorkspaceId).toBe(expected)
+      expect(useAuthStore().status.workspaceId).toBe(status.workspaceId)
+      if (saved === expected) expect(api.setSetting).not.toHaveBeenCalled()
+      else expect(api.setSetting).toHaveBeenCalledExactlyOnceWith('dashboardWorkspaceId', expected)
+      if (saved === 'personal' || !status.signedIn) {
+        expect(api.comfybuilder.listWorkspaces).not.toHaveBeenCalled()
+      }
     }
   )
-
-  it.each(['personal', 'w2'])(
-    'restores %s without rewriting it or switching authentication',
-    async (saved) => {
-      api.getSetting.mockResolvedValue(saved)
-      const scope = useDashboardScopeStore()
-      await scope.initialize()
-      expect(scope.selectedWorkspaceId).toBe(saved)
-      expect(useAuthStore().status.workspaceId).toBe('w1')
-      expect(api.setSetting).not.toHaveBeenCalled()
-    }
-  )
-
-  it('does not choose an authenticated workspace absent from a successful catalog', async () => {
-    api.getSetting.mockResolvedValue('removed')
-    api.comfybuilder.listWorkspaces.mockResolvedValue([])
-    const scope = useDashboardScopeStore()
-    await scope.initialize()
-    expect(scope.selectedWorkspaceId).toBe('personal')
-    expect(api.setSetting).toHaveBeenCalledWith('dashboardWorkspaceId', 'personal')
-  })
-
-  it('restores an explicit Personal selection without waiting for membership', async () => {
-    api.getSetting.mockResolvedValue('personal')
-    const scope = useDashboardScopeStore()
-    await scope.initialize()
-    expect(scope.selectedWorkspaceId).toBe('personal')
-    expect(api.comfybuilder.listWorkspaces).not.toHaveBeenCalled()
-  })
-
-  it('normalizes a saved server Personal workspace to the local Personal scope', async () => {
-    api.getSetting.mockResolvedValue('server-personal')
-    api.comfybuilder.listWorkspaces.mockResolvedValue([
-      ...workspaces,
-      { id: 'server-personal', name: 'Personal workspace', type: 'team', role: 'owner' }
-    ])
-    const scope = useDashboardScopeStore()
-    await scope.initialize()
-    expect(scope.selectedWorkspaceId).toBe('personal')
-  })
 
   it('preserves an unavailable saved workspace offline, then reconciles on successful retry', async () => {
     api.getSetting.mockResolvedValue('removed')
     api.comfybuilder.listWorkspaces.mockRejectedValueOnce(new Error('offline'))
     const scope = useDashboardScopeStore()
     await scope.initialize()
+    await flushPromises()
     expect(scope.selectedWorkspaceId).toBe('removed')
     expect(api.setSetting).not.toHaveBeenCalled()
 
@@ -121,6 +116,7 @@ describe('useDashboardScopeStore', () => {
     api.getSetting.mockResolvedValue('w2')
     const scope = useDashboardScopeStore()
     await scope.initialize()
+    await flushPromises()
     const auth = useAuthStore()
     api.comfybuilder.listWorkspaces.mockRejectedValueOnce(new Error('offline'))
     await auth.fetchWorkspaces()
@@ -163,15 +159,6 @@ describe('useDashboardScopeStore', () => {
     expect(api.setSetting).toHaveBeenCalledExactlyOnceWith('dashboardWorkspaceId', 'personal')
   })
 
-  it('resolves Personal when signed out, without validating the saved team', async () => {
-    api.getSetting.mockResolvedValue('w2')
-    api.comfybuilder.getAuthStatus.mockResolvedValue({ signedIn: false })
-    const scope = useDashboardScopeStore()
-    await scope.initialize()
-    expect(scope.selectedWorkspaceId).toBe('personal')
-    expect(api.comfybuilder.listWorkspaces).not.toHaveBeenCalled()
-  })
-
   it('does not restore a team if sign-out arrives while membership is loading', async () => {
     api.getSetting.mockResolvedValue('w2')
     const catalog = deferred<Workspace[]>()
@@ -185,7 +172,7 @@ describe('useDashboardScopeStore', () => {
     expect(scope.selectedWorkspaceId).toBe('personal')
   })
 
-  it('waits for the current session if authentication changes during initialization', async () => {
+  it('reconciles the current session when auth changes during a membership request', async () => {
     api.getSetting.mockResolvedValue('w2')
     const stale = deferred<Workspace[]>()
     api.comfybuilder.listWorkspaces.mockReturnValueOnce(stale.promise)
@@ -198,6 +185,7 @@ describe('useDashboardScopeStore', () => {
     ])
     stale.resolve(workspaces)
     await initializing
+    await flushPromises()
     expect(scope.selectedWorkspaceId).toBe('w3')
   })
 
