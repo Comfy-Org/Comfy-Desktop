@@ -134,6 +134,21 @@ export interface SnapshotDiffData {
   empty: boolean
 }
 
+/** What a reverted pip phase actually did, so the failure report can describe
+ *  the real outcome instead of asserting a revert that may not have happened. */
+export interface RestoreRevertOutcome {
+  reason: 'cancelled' | 'failures'
+  /** Packages this operation installed and has now uninstalled again. */
+  uninstalled: string[]
+  /** Packages the plan called new but that were already installed before the
+   *  restore — deliberately left in place rather than uninstalled (#1514). */
+  keptPreexisting: string[]
+  /** The pre-restore file backup was put back in full. */
+  restoredFromBackup: boolean
+  /** Every revert step completed without error. */
+  complete: boolean
+}
+
 export interface RestoreResult {
   installed: string[]
   removed: string[]
@@ -141,6 +156,8 @@ export interface RestoreResult {
   protectedSkipped: string[]
   failed: string[]
   errors: string[]
+  /** Present only when the pip phase reverted itself. */
+  revert?: RestoreRevertOutcome
 }
 
 export interface NodeRestoreResult {

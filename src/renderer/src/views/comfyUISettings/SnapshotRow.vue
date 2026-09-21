@@ -77,15 +77,16 @@ const hasPipChanges = computed(
   () => pipDelta.value.added + pipDelta.value.removed + pipDelta.value.changed > 0
 )
 
-// Title pill: manual label, else a version transition `prev → this`, else the resulting version.
-const isManualWithLabel = computed(
-  () => props.snapshot.trigger === 'manual' && !!props.snapshot.label
-)
+// Title pill: the snapshot's label, else a version transition `prev → this`, else
+// the resulting version. Any labelled snapshot shows its label, not just manual
+// ones — a post-restore snapshot written after a failed or cancelled restore is
+// labelled so the row cannot read as a completed restore (#1514).
+const hasCustomLabel = computed(() => !!props.snapshot.label)
 const comfyuiChanged = computed(
   () => !!props.snapshot.diffVsPrevious?.comfyuiChanged && !!props.previousComfyuiVersion
 )
 const titlePillText = computed(() => {
-  if (isManualWithLabel.value) return props.snapshot.label as string
+  if (hasCustomLabel.value) return props.snapshot.label as string
   if (comfyuiChanged.value)
     return `${props.previousComfyuiVersion} → ${props.snapshot.comfyuiVersion}`
   return props.snapshot.comfyuiVersion
