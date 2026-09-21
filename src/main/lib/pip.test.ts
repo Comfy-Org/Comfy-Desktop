@@ -1,12 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  getPipIndexArgs,
-  parsePipFreeze,
-  stripAnsi,
-  uvEnv,
-  PYPI_INDEX_URL,
-  PYPI_MIRROR_URLS
-} from './pip'
+import { getPipIndexArgs, parsePipFreeze, uvEnv, PYPI_INDEX_URL, PYPI_MIRROR_URLS } from './pip'
 
 /** Extract --index-url value from args. */
 function getIndexUrl(args: string[]): string | undefined {
@@ -182,13 +175,6 @@ describe('parsePipFreeze', () => {
   })
 })
 
-describe('stripAnsi', () => {
-  it('removes SGR sequences and leaves plain text untouched', () => {
-    expect(stripAnsi('\u001B[1mbold\u001B[0m plain')).toBe('bold plain')
-    expect(stripAnsi('plain')).toBe('plain')
-  })
-})
-
 describe('uvEnv', () => {
   it('forces colour off, overriding an inherited FORCE_COLOR/CLICOLOR_FORCE', () => {
     const env = uvEnv({ PATH: '/usr/bin', FORCE_COLOR: '1', CLICOLOR_FORCE: '1' })
@@ -198,9 +184,51 @@ describe('uvEnv', () => {
     expect(env.PATH).toBe('/usr/bin')
   })
 
+  // Windows environment names are case-insensitive, so `Force_Color` reaches
+  // the child exactly as `FORCE_COLOR` would — and Windows is the platform
+  // this guard most needs to cover.
+  it.each([
+    ['Force_Color', 'clicolor_force'],
+    ['force_color', 'CliColor_Force']
+  ])('drops colour-forcing vars whatever their case (%s, %s)', (a, b) => {
+    const env = uvEnv({ [a]: '1', [b]: '1', PATH: '/usr/bin' })
+    const names = Object.keys(env).map((k) => k.toUpperCase())
+    expect(names).not.toContain('FORCE_COLOR')
+    expect(names).not.toContain('CLICOLOR_FORCE')
+    expect(env.NO_COLOR).toBe('1')
+    expect(env.PATH).toBe('/usr/bin')
+  })
+
   it('does not mutate the environment it is given', () => {
     const base = { FORCE_COLOR: '1' }
     uvEnv(base)
     expect(base.FORCE_COLOR).toBe('1')
+  })
+})
+
+describe('parsePipFreeze hardening', () => {
+  // These keys become argv for `uv pip uninstall`, so an option-shaped token
+  // must never survive parsing.
+  it('drops names that are not valid distribution names', () => {
+    const parsed = parsePipFreeze(
+      ['-e git+https://x/y@abc#egg=--python=/other/env', '--upgrade==1.0', 'good-pkg==1.0'].join(
+        '\n'
+      )
+    )
+    expect(Object.keys(parsed)).toEqual(['good-pkg'])
+  })
+
+  it('trims a name whose styling enclosed trailing whitespace', () => {
+    expect(parsePipFreeze('\u001B[1maiohttp \u001B[0m==3.9.5')).toEqual({ aiohttp: '3.9.5' })
+  })
+
+  it('does not inherit Object.prototype members as installed packages', () => {
+    const parsed = parsePipFreeze('good-pkg==1.0')
+    expect('constructor' in parsed).toBe(false)
+    expect('toString' in parsed).toBe(false)
+  })
+
+  it('parses a real distribution named like a prototype member', () => {
+    expect(parsePipFreeze('constructor==1.2.3')).toEqual({ constructor: '1.2.3' })
   })
 })

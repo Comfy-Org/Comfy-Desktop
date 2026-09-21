@@ -4,7 +4,7 @@ import { execFile } from 'child_process'
 import { homedir } from 'os'
 
 import { scanCustomNodes } from './nodes'
-import { parsePipFreeze } from './pip'
+import { parsePipFreeze, uvEnv } from './pip'
 import type { Snapshot } from './snapshots'
 import * as i18n from './i18n'
 
@@ -116,7 +116,10 @@ export async function pipFreezeDirect(pythonPath: string): Promise<Record<string
     execFile(
       pythonPath,
       ['-m', 'pip', 'freeze', '--local'],
-      { windowsHide: true, timeout: 60_000, maxBuffer: 10 * 1024 * 1024 },
+      // Same colour-free environment as the uv calls: pip colourises through
+      // rich when colour is forced, and this capture feeds the same
+      // snapshot/restore pipeline.
+      { windowsHide: true, timeout: 60_000, maxBuffer: 10 * 1024 * 1024, env: uvEnv() },
       (err, stdout, stderr) => {
         if (err) {
           const detail = stderr ? stderr.slice(0, 500) : err.message
