@@ -127,9 +127,21 @@ export function clearBetaActivationClaim(installationId: string): void {
 
 /** What this install's title bar should announce, or `[]`. Read-only: the pending entry
  *  survives until `acknowledgeBetaActivationNotice`, so a card that is shown but never retired
- *  (window closed, app quit) comes back on the next launch. */
+ *  (window closed, app quit) comes back on the next launch.
+ *
+ *  Announced args are filtered HERE, not only at arm time. Queues are per-install, so another
+ *  install acknowledging an arg persists it but clears only its own queue — a copy already
+ *  queued elsewhere would otherwise still be served, and that install would raise a card for
+ *  something the user has just dismissed. "Acknowledged anywhere, silent everywhere" has to
+ *  hold for cards already queued, not merely for launches that come afterwards.
+ *
+ *  Filtered rather than dropped: an install queued for two grants keeps the one still unseen
+ *  when only the other has been announced. */
 export function peekBetaActivationNotice(installationId: string): string[] {
-  return [...(pendingByInstallation.get(installationId) ?? [])]
+  const queued = pendingByInstallation.get(installationId) ?? []
+  if (queued.length === 0) return []
+  const announced = new Set(readAnnouncedBetaArgs())
+  return queued.filter((arg) => !announced.has(arg))
 }
 
 /**
