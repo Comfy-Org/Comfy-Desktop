@@ -311,12 +311,12 @@ describe('_cleanupFailedLaunchSetup', () => {
   // dropped here: otherwise the title bar announces a beta feature for a Core that never ran.
   it('drops a beta claim armed by a launch that then failed to spawn', () => {
     _resetBetaNotice()
-    armBetaActivationNotice(INSTALL, ['--enable-assets'])
-    expect(peekBetaActivationNotice(INSTALL)).toEqual(['--enable-assets'])
+    armBetaActivationNotice(INSTALL, [{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+    expect(peekBetaActivationNotice(INSTALL)?.args).toEqual(['--enable-assets'])
 
     _cleanupFailedLaunchSetup(INSTALL, new AbortController())
 
-    expect(peekBetaActivationNotice(INSTALL)).toEqual([])
+    expect(peekBetaActivationNotice(INSTALL)).toBeNull()
   })
 
   it('ends the log stream when one was opened', () => {
