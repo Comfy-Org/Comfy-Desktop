@@ -3,6 +3,7 @@ import type { ComfyDesktop2FirebaseAuthState } from '../../types/comfyDesktopBri
 import * as mainTelemetry from './telemetry'
 import { normalizePostHogUserId } from './opaqueIdentifier'
 import { isTrustedCloudUrl } from './trustedCloudUrl'
+import { customerIoEvents } from './customerIoEvents'
 import {
   clearVerifiedLocalFirebaseUser,
   isLoopbackOrigin,
@@ -170,6 +171,7 @@ function detachToAnonymousIdentity(): void {
   clearPendingConsensusDeadline()
   requestedUserId = null
   mainTelemetry.applyFirebaseAnonymousConsensus()
+  customerIoEvents.emit('changed')
 }
 
 function requestAnonymousIdentity(): void {
@@ -196,6 +198,7 @@ function requestPendingIdentity(): void {
         // evidence of sign-out, so release the quarantine and keep the bound
         // identity. A real report still resolves through reconcile as usual.
         mainTelemetry.releaseFirebasePendingConsensus()
+        customerIoEvents.emit('changed')
         mainTelemetry.capture('comfy.desktop.identity.pending_consensus_expired')
       }
     }, PENDING_CONSENSUS_DEADLINE_MS)
@@ -300,7 +303,31 @@ export function bindMainVerifiedFirebaseUser(
   reconcile()
 }
 
+/** A local page must affirm the verified user and agree with all other auth reporters. */
+export function getCustomerIoUserId(webContents: WebContents): string | null {
+  const reporter = reporters.get(webContents)
+  if (
+    !requestedUserId ||
+    mainTelemetry.isFirebaseConsensusPending() ||
+    !reporter?.eligible ||
+    !reporter.active ||
+    !reporter.localReportingAuthorized ||
+    reporter.awaitingCommittedFrame ||
+    reporter.mainFrameNavigationsInFlight > 0 ||
+    reporter.state.status !== 'signed_in' ||
+    reporter.state.userId !== requestedUserId ||
+    reporter.localExpectedUserId !== requestedUserId
+  )
+    return null
+  return requestedUserId
+}
+
 function reconcile(): void {
+  reconcileIdentity()
+  customerIoEvents.emit('changed')
+}
+
+function reconcileIdentity(): void {
   let expiredPendingContributors = 0
   const activeReporterStates: ComfyDesktop2FirebaseAuthState[] = []
   for (const [webContents, reporter] of reporters) {

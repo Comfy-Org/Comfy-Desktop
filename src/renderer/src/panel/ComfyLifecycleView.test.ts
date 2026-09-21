@@ -1,11 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import { useSessionStore } from '../stores/sessionStore'
 import type { Installation } from '../types/ipc'
+
+// Run component cleanup before happy-dom removes window; the unknown-state
+// placeholder timer must not outlive the view that scheduled it.
+enableAutoUnmount(afterEach)
 
 const messages = {
   en: {

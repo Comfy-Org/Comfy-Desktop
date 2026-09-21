@@ -18,6 +18,7 @@
   },
   "include": [
     "electron.vite.config.*",
+    "scripts/customerio-script.ts",
     "src/main/**/*",
     "src/preload/**/*",
     "src/types/**/*",
