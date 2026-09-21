@@ -1446,6 +1446,29 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
+    // A retirement hides the popup itself, so the auto-hide notice follows its own dismiss.
+    // That must NOT resurrect the card: `retire` records the key before hiding and
+    // `forgetWithoutAcknowledging` deliberately leaves `retiredKeys` alone. This is the
+    // specific hazard the auto-hide wiring introduces, so it is pinned.
+    it('does not resurrect a card whose own retirement triggered the auto-hide', async () => {
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(1)
+
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
+
+      // The hide that retirement performed comes back round as an auto-hide.
+      bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+      await flushPromises()
+
+      // Same args still pending from main, but the card was acknowledged: it stays gone.
+      expect(betaCards().length).toBe(1)
+      wrapper.unmount()
+    })
+
     // One popup backs both cards, so the auto-hide is addressed by kind. The pill hint's own
     // auto-hide must not make the beta notice forget which card it has on screen — if it did,
     // the later dismissal would acknowledge nothing and the notice would replay forever.
