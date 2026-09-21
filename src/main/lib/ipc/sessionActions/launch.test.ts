@@ -145,6 +145,7 @@ import {
   BETA_NOTICE_ANNOUNCED_ARGS_KEY,
   _resetForTest as _resetBetaNotice,
   acknowledgeBetaActivationNotice,
+  armBetaActivationNotice,
   peekBetaActivationNotice
 } from '../../betaActivationNotice'
 import * as settingsModule from '../../../settings'
@@ -302,6 +303,20 @@ describe('_cleanupFailedLaunchSetup', () => {
     expect(_getLaunchingInstallationIds()).not.toContain(INSTALL)
     expect(_operationAborts.has(INSTALL)).toBe(false)
     expect(abort.signal.aborted).toBe(true)
+  })
+
+  // Arming happens just before the spawn, and on the `skipPortWait` path a spawn failure
+  // rethrows out of `guardLaunchSetup` rather than reaching the `!launchResult.ok` cleanup.
+  // This is the chokepoint every guarded setup failure passes through, so the claim is
+  // dropped here: otherwise the title bar announces a beta feature for a Core that never ran.
+  it('drops a beta claim armed by a launch that then failed to spawn', () => {
+    _resetBetaNotice()
+    armBetaActivationNotice(INSTALL, ['--enable-assets'])
+    expect(peekBetaActivationNotice(INSTALL)).toEqual(['--enable-assets'])
+
+    _cleanupFailedLaunchSetup(INSTALL, new AbortController())
+
+    expect(peekBetaActivationNotice(INSTALL)).toEqual([])
   })
 
   it('ends the log stream when one was opened', () => {
