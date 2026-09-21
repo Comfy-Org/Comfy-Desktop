@@ -341,7 +341,8 @@ export function registerSettingsHandlers(): void {
   // Core beta activation notice. A PULL pair rather than a push: main arms the pending set
   // during launch, when the host window may still be mid-attach or under the progress
   // takeover, and the title bar drains it once its own gate opens.
-  ipcMain.handle('get-pending-beta-notice', (_event, installationId: string) => {
+  ipcMain.handle('get-pending-beta-notice', (_event, installationId: unknown) => {
+    if (typeof installationId !== 'string' || installationId === '') return []
     return peekBetaActivationNotice(installationId)
   })
 
@@ -349,7 +350,10 @@ export function registerSettingsHandlers(): void {
   // separate from the read, so a notice that is shown but never retired replays next launch.
   ipcMain.handle(
     'acknowledge-beta-notice',
-    (_event, installationId: string, shownArgs?: unknown) => {
+    (_event, installationId: unknown, shownArgs?: unknown) => {
+      // A persistent, append-only write driven from the renderer, so the id is checked rather
+      // than trusted: a non-string would silently fail to retire the real pending notice.
+      if (typeof installationId !== 'string' || installationId === '') return
       recordIpcInvocation('acknowledge-beta-notice', { installationId })
       // The renderer names what its card covered; anything else is ignored rather than
       // trusted, since this is an untrusted boundary like every other handler here.
