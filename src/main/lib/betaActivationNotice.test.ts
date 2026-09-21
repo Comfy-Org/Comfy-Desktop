@@ -169,6 +169,20 @@ describe('arm / peek / acknowledge', () => {
     expect(announced()).toEqual(['--enable-assets', '--enable-agent'])
   })
 
+  it('retires the args the card displayed, not whatever is queued at retire time', () => {
+    // A relaunch can re-arm while the sticky card floats. Acknowledging the queue would then
+    // persist a grant the user was never shown — and the list is append-only, so it could
+    // never be announced again on any install.
+    armBetaActivationNotice('inst-1', ['--enable-assets'])
+    armBetaActivationNotice('inst-1', ['--enable-assets', '--enable-agent'])
+
+    acknowledgeBetaActivationNotice('inst-1', ['--enable-assets'])
+
+    expect(announced()).toEqual(['--enable-assets'])
+    // The grant that was never on the card is still owed one.
+    expect(peekBetaActivationNotice('inst-1')).toEqual(['--enable-agent'])
+  })
+
   it('acknowledging an install with nothing pending writes nothing', () => {
     acknowledgeBetaActivationNotice('inst-1')
     expect(announced()).toBeUndefined()

@@ -57,9 +57,12 @@ let e2eSeedApplied = false
 function maybeSeedFromEnv(): void {
   if (e2eSeedApplied) return
   e2eSeedApplied = true
+  // Env gate first: it is a plain string read, whereas `app` is only a real object inside the
+  // Electron runtime. Unit tests import this module outside it, so touching `app` on the
+  // common path would make every persisted-read test depend on mocking electron.
+  if (process.env['E2E'] !== '1') return
   // Hard guard: never run in production builds.
   if (app.isPackaged) return
-  if (process.env['E2E'] !== '1') return
   const seed = process.env['E2E_OPS_FLAGS_SEED']
   if (!seed) return
   delete process.env['E2E_OPS_FLAGS_SEED']

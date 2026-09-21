@@ -134,14 +134,29 @@ export function peekBetaActivationNotice(installationId: string): string[] {
  * acknowledging it. Merged into the stored list rather than replacing it, so two installs
  * retiring different notices cannot clobber each other.
  */
-export function acknowledgeBetaActivationNotice(installationId: string): void {
-  const pending = pendingByInstallation.get(installationId)
-  pendingByInstallation.delete(installationId)
-  if (!pending || pending.length === 0) return
+export function acknowledgeBetaActivationNotice(
+  installationId: string,
+  shownArgs?: readonly string[]
+): void {
+  const queued = pendingByInstallation.get(installationId)
+  if (!queued || queued.length === 0) return
+  // Retire exactly what the card DISPLAYED. Re-deriving from the queue at retire time would
+  // acknowledge whatever is pending now, and a relaunch can re-arm between show and retire
+  // while the sticky card floats — persisting a grant set the user was never shown, which the
+  // append-only list then makes unannounceable forever. Falls back to the queue only when no
+  // args were supplied (an older renderer), which is the pre-existing behaviour.
+  const covered =
+    shownArgs && shownArgs.length > 0 ? queued.filter((a) => shownArgs.includes(a)) : queued
+  if (covered.length === 0) return
   try {
-    const merged = [...new Set([...readAnnouncedBetaArgs(), ...pending])]
+    const merged = [...new Set([...readAnnouncedBetaArgs(), ...covered])]
     settings.set(BETA_NOTICE_ANNOUNCED_ARGS_KEY, merged)
     announcedCache = merged
+    // Only drop from the queue once the write succeeded: clearing first would lose the card
+    // for this session while leaving nothing on disk, so it would re-announce next launch.
+    const remaining = queued.filter((a) => !covered.includes(a))
+    if (remaining.length > 0) pendingByInstallation.set(installationId, remaining)
+    else pendingByInstallation.delete(installationId)
   } catch (err) {
     // A failed write costs the user a repeat card on the next launch and nothing else.
     console.log('[beta-notice] acknowledge failed:', err)
