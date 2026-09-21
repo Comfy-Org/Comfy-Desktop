@@ -7,6 +7,8 @@
  * the main process; the UI only ever gets {@link AuthStatus} + {@link Workspace}.
  */
 import type { TokenProvider } from '../comfybuilder'
+import { EventEmitter } from 'node:events'
+import { getUserIdentity, type CloudUserIdentity } from './identity'
 import { workspaceIdOf } from './claims'
 import { refresh, signIn } from './oauth'
 import {
@@ -26,6 +28,44 @@ import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 const REFRESH_SKEW_MS = 60_000
 
 export class CloudSession {
+  private readonly changes = new EventEmitter()
+  private identityRequest: {
+    accessToken: string
+    abort: AbortController
+    promise: Promise<CloudUserIdentity | null>
+  } | null = null
+
+  /** Main-process consumers can revoke identity as soon as credentials change. */
+  onAuthChanged(listener: () => void): () => void {
+    this.changes.on('changed', listener)
+    return () => {
+      this.changes.off('changed', listener)
+    }
+  }
+
+  private credentialsChanged(): void {
+    this.identityRequest?.abort.abort()
+    this.identityRequest = null
+    this.changes.emit('changed')
+  }
+
+  /** Server-confirmed person identity; auth tokens never cross the renderer bridge. */
+  async getUserIdentity(): Promise<CloudUserIdentity | null> {
+    const accessToken = await this.getAccessToken()
+    if (!accessToken || loadTokens()?.accessToken !== accessToken) return null
+    if (this.identityRequest?.accessToken === accessToken) return this.identityRequest.promise
+    const abort = new AbortController()
+    const promise = getUserIdentity(accessToken, { signal: abort.signal })
+      .then((identity) =>
+        abort.signal.aborted || loadTokens()?.accessToken !== accessToken ? null : identity
+      )
+      .finally(() => {
+        if (this.identityRequest?.abort === abort) this.identityRequest = null
+      })
+    this.identityRequest = { accessToken, abort, promise }
+    return promise
+  }
+
   /** Refresh rotations are single-flight per workspace token family. */
   private readonly refreshing = new Map<string, Promise<AuthTokens | null>>()
   private loginInFlight: Promise<AuthStatus> | null = null
@@ -49,6 +89,7 @@ export class CloudSession {
     this.authGeneration += 1
     this.loginInFlight = null
     clearTokens()
+    this.credentialsChanged()
   }
 
   status(): AuthStatus {
@@ -106,7 +147,9 @@ export class CloudSession {
     if (!refreshToken) return tokens
     try {
       const rotated = await refresh(refreshToken)
+      const wasActive = loadTokens()?.accessToken === tokens.accessToken
       const saved = replaceWorkspaceTokens(workspaceId, tokens.accessToken, refreshToken, rotated)
+      if (saved && wasActive) this.credentialsChanged()
       return saved ? rotated : loadWorkspaceTokens(workspaceId)
     } catch {
       return loadWorkspaceTokens(workspaceId)
@@ -143,7 +186,10 @@ export class CloudSession {
     }
     if (generation !== this.authGeneration) return this.status()
     if (cached && cached.expiresAt > Date.now()) {
-      if (cached !== current) activateWorkspace(workspaceId)
+      if (cached !== current) {
+        activateWorkspace(workspaceId)
+        this.credentialsChanged()
+      }
       return this.status()
     }
     return this.authenticateAtGeneration(generation, workspaceId)
@@ -162,6 +208,7 @@ export class CloudSession {
     if (generation !== this.authGeneration) return this.status()
     if (workspaceId && status.workspaceId !== workspaceId) return this.status()
     saveTokens(tokens)
+    this.credentialsChanged()
     return status
   }
 
