@@ -10,9 +10,27 @@ import fs from 'fs'
 import path from 'path'
 
 import { extractPort, parseArgs } from '../lib/util'
-import type { LaunchSpec } from './types'
+import type { LaunchSpec, ModelPolicy } from './types'
 
 const DEFAULT_LAUNCH_ARGS = '--enable-manager'
+
+/** Every flag that turns ComfyUI-Manager on. */
+const MANAGER_ENABLING_ARGS = new Set(['--enable-manager', '--enable-manager-legacy-ui'])
+
+/**
+ * Whether a build's author left ComfyUI-Manager on.
+ *
+ * The build wizard has no manager field of its own: "Custom nodes manager: No"
+ * is written as a custom-node allowlist (only the packs the build ships), and
+ * "Yes" as an empty blocklist. The builder reads it the same way when deciding
+ * whether the archive carries the `comfyui_manager` package, so an allowlist
+ * build has no manager to enable. A missing policy means the author never
+ * answered (e.g. a build made from a Desktop snapshot), which the builder
+ * treats as Yes.
+ */
+export function managerAllowedByPolicy(policy: ModelPolicy | null | undefined): boolean {
+  return policy?.mode !== 'allowlist'
+}
 
 /**
  * The archive's bundled interpreter.
@@ -35,6 +53,13 @@ export function venvPython(installPath: string): string {
 export interface LaunchOptions {
   /** Extra ComfyUI args, e.g. `--cpu --port 8188`. Defaults to `--enable-manager`. */
   launchArgs?: string
+  /**
+   * False when the build's author turned ComfyUI-Manager off. Every
+   * manager-enabling flag is then dropped, including one the user typed into
+   * the launch args, because the archive ships no manager package to enable.
+   * Defaults to true.
+   */
+  managerAllowed?: boolean
 }
 
 /**
@@ -48,7 +73,9 @@ export function buildLaunchSpec(installPath: string, opts: LaunchOptions = {}): 
   if (!fs.existsSync(mainPy)) return null
 
   const raw = (opts.launchArgs ?? DEFAULT_LAUNCH_ARGS).trim()
-  const parsed = raw.length > 0 ? parseArgs(raw) : []
+  const all = raw.length > 0 ? parseArgs(raw) : []
+  const parsed =
+    opts.managerAllowed === false ? all.filter((arg) => !MANAGER_ENABLING_ARGS.has(arg)) : all
   return {
     cmd: python,
     args: ['-s', path.join('ComfyUI', 'main.py'), ...parsed],

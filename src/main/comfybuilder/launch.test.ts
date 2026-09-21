@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildLaunchSpec, venvPython } from './launch'
+import { buildLaunchSpec, managerAllowedByPolicy, venvPython } from './launch'
 
 const isWin = process.platform === 'win32'
 
@@ -55,6 +55,46 @@ describe('launch', () => {
       cwd: p,
       port: 9001
     })
+  })
+
+  it('drops every manager-enabling flag when the build turned the manager off', () => {
+    const p = path.join(dir, 'install')
+    layout(p)
+    const spec = buildLaunchSpec(p, {
+      launchArgs: '--enable-manager --cpu --enable-manager-legacy-ui --port 9001',
+      managerAllowed: false
+    })
+    expect(spec?.args).toEqual(['-s', path.join('ComfyUI', 'main.py'), '--cpu', '--port', '9001'])
+    expect(spec?.port).toBe(9001)
+  })
+
+  it('drops the default manager flag too when the build turned the manager off', () => {
+    const p = path.join(dir, 'install')
+    layout(p)
+    expect(buildLaunchSpec(p, { managerAllowed: false })?.args).toEqual([
+      '-s',
+      path.join('ComfyUI', 'main.py')
+    ])
+  })
+
+  it.each([[true], [undefined]])('keeps the manager flag when managerAllowed is %s', (allowed) => {
+    const p = path.join(dir, 'install')
+    layout(p)
+    expect(buildLaunchSpec(p, { managerAllowed: allowed })?.args).toEqual([
+      '-s',
+      path.join('ComfyUI', 'main.py'),
+      '--enable-manager'
+    ])
+  })
+
+  it.each([
+    ['an allowlist (the wizard wrote No)', { mode: 'allowlist' as const }, false],
+    ['an allowlist naming packs', { mode: 'allowlist' as const, list: ['KJNodes'] }, false],
+    ['an empty blocklist (the wizard wrote Yes)', { mode: 'blocklist' as const, list: [] }, true],
+    ['no policy (a snapshot build)', null, true],
+    ['an absent policy', undefined, true]
+  ])('managerAllowedByPolicy reads %s', (_name, policy, expected) => {
+    expect(managerAllowedByPolicy(policy)).toBe(expected)
   })
 
   it.each([

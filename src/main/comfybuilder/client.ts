@@ -225,7 +225,8 @@ export class ComfyBuilderClient {
     return {
       models: body.models,
       modelPolicy: body.modelPolicy ?? null,
-      partnerNodePolicy: body.partnerNodePolicy ?? null
+      partnerNodePolicy: body.partnerNodePolicy ?? null,
+      customNodePolicy: body.customNodePolicy ?? null
     }
   }
 

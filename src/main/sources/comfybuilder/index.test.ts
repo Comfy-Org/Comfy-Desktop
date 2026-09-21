@@ -10,6 +10,9 @@ const cancelModelDownload = vi.hoisted(() => vi.fn(async () => {}))
 const releaseInstallTerminalForFsOp = vi.hoisted(() => vi.fn<(installationId: string) => void>())
 const startModelStaging = vi.hoisted(() => vi.fn())
 const abortModelStaging = vi.hoisted(() => vi.fn())
+const updateInstallation = vi.hoisted(() =>
+  vi.fn<(id: string, data: Record<string, unknown>) => Promise<void>>(async () => {})
+)
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', isPackaged: false },
@@ -24,6 +27,9 @@ vi.mock('electron', () => ({
 vi.mock('../../comfybuilder', () => ({
   installArtifact: vi.fn(async () => {}),
   buildLaunchSpec: vi.fn(() => null),
+  managerAllowedByPolicy: vi.fn(
+    (policy: { mode?: string } | null | undefined) => policy?.mode !== 'allowlist'
+  ),
   venvPython: vi.fn((installPath: string) =>
     process.platform === 'win32'
       ? `${installPath}\\venv\\base\\python.exe`
@@ -39,6 +45,7 @@ vi.mock('../../comfybuilder', () => ({
   }))
 }))
 vi.mock('../../devplatform/session', () => ({ getBuilderClient: vi.fn(() => ({})) }))
+vi.mock('../../installations', () => ({ update: updateInstallation }))
 vi.mock('../../lib/comfyDownloadManager', () => ({
   acquireModelDownloadRootLock,
   releaseParkedModelJobsUnder,
@@ -60,7 +67,13 @@ vi.mock('../../devplatform/builds', () => ({
 import fs, { promises as fsp } from 'fs'
 import os from 'os'
 import path from 'path'
-import { installArtifact, stageModels, resolveModelManifest, venvPython } from '../../comfybuilder'
+import {
+  buildLaunchSpec,
+  installArtifact,
+  stageModels,
+  resolveModelManifest,
+  venvPython
+} from '../../comfybuilder'
 import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
 import {
   clearVersionCache,
@@ -245,6 +258,42 @@ describe('comfybuilder.install wiring', () => {
     } finally {
       rename.mockRestore()
     }
+  })
+
+  it.each([
+    ['No (an allowlist)', { mode: 'allowlist' }, false],
+    ['Yes (an empty blocklist)', { mode: 'blocklist', list: [] }, true],
+    ['nothing (no policy)', null, true]
+  ])(
+    'records the manager answer on the install when the author said %s',
+    async (_name, customNodePolicy, expected) => {
+      vi.mocked(resolveModelManifest).mockResolvedValueOnce({
+        models: [],
+        modelPolicy: null,
+        partnerNodePolicy: null,
+        customNodePolicy
+      } as never)
+      updateInstallation.mockClear()
+
+      await comfybuilder.install!(record(), fakeTools())
+
+      expect(updateInstallation).toHaveBeenCalledWith('i1', {
+        comfybuilderManagerAllowed: expected
+      })
+    }
+  )
+
+  it.each([
+    ['off', false, false],
+    ['on', true, true],
+    ['unrecorded (an install older than the field)', undefined, true]
+  ])('launches with the manager %s', (_name, recorded, expected) => {
+    vi.mocked(buildLaunchSpec).mockClear()
+    comfybuilder.getLaunchCommand!(record({ comfybuilderManagerAllowed: recorded }))
+    expect(buildLaunchSpec).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ managerAllowed: expected })
+    )
   })
 
   it('installs the archive, resolves the manifest, then stages models in the background', async () => {
@@ -763,7 +812,11 @@ describe('comfybuilder update-comfyui', () => {
       status: 'updating'
     })
     // The new version's models are unstaged until the background task finishes.
-    expect(tools.updates.at(-1)).toMatchObject({ status: 'installed', modelsStaged: false })
+    expect(tools.updates.at(-1)).toMatchObject({
+      status: 'installed',
+      modelsStaged: false,
+      comfybuilderManagerAllowed: true
+    })
     // A staging still running for the old version is stopped before the swap,
     // and the new version's models stage in the background afterwards.
     expect(abortModelStaging).toHaveBeenCalledWith('i1')
