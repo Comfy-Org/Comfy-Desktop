@@ -44,6 +44,9 @@ interface CentralPillCoachmarkApi {
   dismiss: () => Promise<void>
   /** Opening the pill drawer counts as acknowledgement; same as `dismiss`. */
   acknowledgeViaPillOpen: () => Promise<void>
+  /** The popup was hidden by something other than a retirement (the host window moved).
+   *  Clears display state without persisting `seen`, so the hint can be raised again. */
+  forgetWithoutAcknowledging: () => void
   /** `true` between show and dismiss; drives the pill highlight. */
   isShowing: Ref<boolean>
 }
@@ -102,6 +105,21 @@ export function useCentralPillCoachmark(
     })
   }
 
+  /** The popup was pulled out from under this hint by something that is not a retirement —
+   *  main auto-hides it when the host window moves or resizes. Clears the display state
+   *  WITHOUT persisting `seen`, and releases the once-per-renderer show latch so the hint can
+   *  be raised again: the user may never have read it.
+   *
+   *  Leaving this unhandled strands more than the hint. `isShowing` is the beta notice's
+   *  suppression gate, so a hint stuck "showing" with no popup on screen silences the beta
+   *  card for the rest of the renderer's life, and cannot itself be dismissed — there is no
+   *  card left to click. */
+  function forgetWithoutAcknowledging(): void {
+    if (hasCoachmarkRetired) return
+    isShowing.value = false
+    hasCoachmarkShown = false
+  }
+
   async function retire(): Promise<void> {
     const owned = opts.ownsPopup?.() ?? true
     isShowing.value = false
@@ -120,6 +138,7 @@ export function useCentralPillCoachmark(
     maybeShow,
     dismiss: retire,
     acknowledgeViaPillOpen: retire,
+    forgetWithoutAcknowledging,
     isShowing
   }
 }

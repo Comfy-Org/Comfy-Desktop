@@ -1333,6 +1333,7 @@ describe('TitleBarApp', () => {
     let getPendingBetaNotice: ReturnType<typeof vi.fn>
     let acknowledgeBetaNotice: ReturnType<typeof vi.fn>
     let openGlobalSettings: ReturnType<typeof vi.fn>
+    let setSetting: ReturnType<typeof vi.fn>
 
     function installApiMock(
       opts: {
@@ -1352,6 +1353,7 @@ describe('TitleBarApp', () => {
       getPendingBetaNotice = vi.fn().mockResolvedValue(pending)
       acknowledgeBetaNotice = vi.fn().mockResolvedValue(undefined)
       openGlobalSettings = vi.fn()
+      setSetting = vi.fn().mockResolvedValue(undefined)
       ;(window as unknown as { api: unknown }).api = {
         getSetting: vi
           .fn()
@@ -1360,7 +1362,7 @@ describe('TitleBarApp', () => {
               ? Promise.resolve(opts.pillHintSeen !== false)
               : Promise.resolve(undefined)
           ),
-        setSetting: vi.fn().mockResolvedValue(undefined),
+        setSetting,
         getPendingBetaNotice,
         acknowledgeBetaNotice,
         openGlobalSettings
@@ -1534,6 +1536,33 @@ describe('TitleBarApp', () => {
       expect(bridgeState.hideCoachmarkCalls).toBe(hidesBefore)
       expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
       wrapper.unmount()
+    })
+
+    // The hint shares the popup, so it gets auto-hidden by movement too — and stranding it is
+    // worse than stranding the notice: `coachmark.isShowing` IS the beta notice's suppression
+    // gate, and the hint cannot be dismissed once its card is gone.
+    it('re-raises the onboarding hint after movement auto-hides it', async () => {
+      installApiMock({ pillHintSeen: false })
+      const wrapper = await mountBar()
+      const hintCards = () => bridgeState.showCoachmarkCalls.filter((c) => c.kind !== 'beta-notice')
+      expect(hintCards().length).toBe(1)
+      // The hint owns the popup, so the beta notice correctly defers.
+      expect(betaCards().length).toBe(0)
+
+      // Fake timers only now: the mount path needs real ones to settle.
+      vi.useFakeTimers()
+      try {
+        bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+        await vi.advanceTimersByTimeAsync(400)
+
+        // Raised again rather than stranded: the user never read it, so it is not spent.
+        expect(hintCards().length).toBe(2)
+        // And it was NOT persisted as seen, which only a real dismissal may do.
+        expect(setSetting).not.toHaveBeenCalledWith('hasSeenCentralPillHint', true)
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('retries once the onboarding hint releases the popup', async () => {

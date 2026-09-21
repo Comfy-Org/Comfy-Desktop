@@ -590,15 +590,21 @@ function handleInstallPillWithCoachmark(): void {
  *  again, so re-showing per event would thrash the card on and off for the whole gesture.
  *  One re-show once the window settles. `maybeShow` re-reads the anchor rect, which is the
  *  point — the old rect is exactly what went stale. */
-const BETA_NOTICE_RESHOW_DEBOUNCE_MS = 250
-let betaReshowTimer: ReturnType<typeof setTimeout> | null = null
-function scheduleBetaNoticeReshow(): void {
+const COACHMARK_RESHOW_DEBOUNCE_MS = 250
+let coachmarkReshowTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleCoachmarkReshow(): void {
   if (unmounted) return
-  if (betaReshowTimer !== null) clearTimeout(betaReshowTimer)
-  betaReshowTimer = setTimeout(() => {
-    betaReshowTimer = null
-    if (!unmounted) void betaNotice.maybeShow()
-  }, BETA_NOTICE_RESHOW_DEBOUNCE_MS)
+  if (coachmarkReshowTimer !== null) clearTimeout(coachmarkReshowTimer)
+  coachmarkReshowTimer = setTimeout(() => {
+    coachmarkReshowTimer = null
+    if (unmounted) return
+    // Both cards, in the gate watcher's order and for its reason: the hint wins a collision,
+    // and awaiting it keeps the beta notice's suppression check from reading a stale `false`.
+    // Each is gated and idempotent, so the one that was not hidden simply declines.
+    void coachmark.maybeShow().then(() => {
+      if (!unmounted) void betaNotice.maybeShow()
+    })
+  }, COACHMARK_RESHOW_DEBOUNCE_MS)
 }
 
 /** The beta notice defers while the hint owns the popup, and nothing in the gate watcher
@@ -716,10 +722,14 @@ onMounted(() => {
   // read the card, and leaving the composable believing it is still up would turn away every
   // later show for the rest of the session.
   unsubCoachmarkAutoHidden = bridge.onCoachmarkAutoHidden(({ kind }) => {
-    if (kind !== 'beta-notice') return
-    betaNotice.forgetWithoutAcknowledging()
+    // Whichever card was on the popup, the owner has to be told. The hint matters as much as
+    // the notice: `coachmark.isShowing` is the beta notice's suppression gate, so a hint left
+    // believing it is up silences the beta card for the renderer's whole life — and cannot be
+    // dismissed either, since there is no longer a card to click.
+    if (kind === 'beta-notice') betaNotice.forgetWithoutAcknowledging()
+    else coachmark.forgetWithoutAcknowledging()
     // Unlatching is only half of it: put the card back once the window settles.
-    scheduleBetaNoticeReshow()
+    scheduleCoachmarkReshow()
   })
   bridge.ready()
 })
@@ -785,9 +795,9 @@ onUnmounted(() => {
   unsubCoachmarkDismissed?.()
   unsubCoachmarkAction?.()
   unsubCoachmarkAutoHidden?.()
-  if (betaReshowTimer !== null) {
-    clearTimeout(betaReshowTimer)
-    betaReshowTimer = null
+  if (coachmarkReshowTimer !== null) {
+    clearTimeout(coachmarkReshowTimer)
+    coachmarkReshowTimer = null
   }
   bridge?.hideCoachmark()
   hideTip()
