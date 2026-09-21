@@ -106,9 +106,7 @@ async function initializeDashboardScope(): Promise<void> {
     authStore.fetchStatus().catch(() => authStore.status)
   ])
   selectedWorkspaceId.value =
-    authStore.isSignedIn &&
-    typeof persistedWorkspaceId === 'string' &&
-    persistedWorkspaceId.trim()
+    authStore.isSignedIn && typeof persistedWorkspaceId === 'string' && persistedWorkspaceId.trim()
       ? persistedWorkspaceId
       : workspaceContextId(authStore.status)
   dashboardScopeInitialized = true
