@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMessagingController, type MessagingClient } from './controller'
 import type { CustomerIoSession } from '../../../shared/customerIo'
 
@@ -26,6 +26,7 @@ function deferred<T>() {
 }
 
 describe('Desktop messaging lifecycle', () => {
+  afterEach(() => vi.useRealTimers())
   it('does not load for an ineligible session and identifies before reporting the page', async () => {
     const sdk = client()
     const load = vi.fn(async () => sdk)
@@ -90,8 +91,9 @@ describe('Desktop messaging lifecycle', () => {
     await controller.update(session)
     const second = { ...session, userId: 'user-b' }
     const changing = controller.update(second)
-    expect(current()).toEqual(second)
+    expect(current()).toBeNull()
     await changing
+    expect(current()).toEqual(second)
     expect(sdk.reset).toHaveBeenCalledTimes(2)
     expect(sdk.identify).toHaveBeenLastCalledWith(second)
     const logout = controller.update(null)
@@ -111,5 +113,92 @@ describe('Desktop messaging lifecycle', () => {
     expect(report).toHaveBeenCalledOnce()
     await controller.update(session)
     expect(sdk.page).toHaveBeenCalledOnce()
+  })
+})
+
+describe('SDK ownership after a timeout', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('keeps the original loader when activation times out and is retried', async () => {
+    vi.useFakeTimers()
+    const loading = deferred<MessagingClient>()
+    const sdk = client()
+    const load = vi.fn(() => loading.promise)
+    const controller = createMessagingController(load, vi.fn())
+    const first = controller.update(session)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await first
+    const retry = controller.update(session)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(load).toHaveBeenCalledOnce()
+    loading.resolve(sdk)
+    await retry
+    expect(sdk.identify).toHaveBeenCalledExactlyOnceWith(session)
+  })
+
+  it.each(['identify', 'reset'] as const)(
+    'does not let a newer identity overtake a timed-out %s',
+    async (operation) => {
+      vi.useFakeTimers()
+      const sdk = client()
+      const controller = createMessagingController(async () => sdk, vi.fn())
+      await controller.update(session)
+      const pending = deferred<void>()
+      vi.mocked(sdk[operation]).mockImplementationOnce(() => pending.promise)
+      const changing = controller.update(
+        operation === 'reset' ? null : { ...session, locale: 'ja' }
+      )
+      await vi.advanceTimersByTimeAsync(10_000)
+      await changing
+      const second = { ...session, userId: 'user-b' }
+      const switching = controller.update(second)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sdk.identify).not.toHaveBeenCalledWith(second)
+      pending.resolve()
+      await switching
+      expect(sdk.identify).toHaveBeenLastCalledWith(second)
+      expect(sdk.page).toHaveBeenLastCalledWith(second)
+    }
+  )
+
+  it('reconciles a late identify from reset and keeps messaging disabled until ownership is released', async () => {
+    vi.useFakeTimers()
+    const sdk = client()
+    const identifying = deferred<void>()
+    vi.mocked(sdk.identify).mockImplementationOnce(() => identifying.promise)
+    let current!: () => CustomerIoSession | null
+    const controller = createMessagingController(async (_session, getSession) => {
+      current = getSession
+      return sdk
+    }, vi.fn())
+    const first = controller.update(session)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await first
+    expect(current()).toBeNull()
+    expect(sdk.dismiss).toHaveBeenCalled()
+    expect(sdk.page).not.toHaveBeenCalled()
+    identifying.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sdk.reset).toHaveBeenCalledTimes(2)
+    expect(sdk.identify).toHaveBeenCalledTimes(2)
+    expect(sdk.page).toHaveBeenCalledExactlyOnceWith(session)
+    expect(current()).toEqual(session)
+  })
+
+  it('cleans up a late loader without activating a user revoked during its timeout', async () => {
+    vi.useFakeTimers()
+    const loading = deferred<MessagingClient>()
+    const sdk = client()
+    const controller = createMessagingController(() => loading.promise, vi.fn())
+    const first = controller.update(session)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await first
+    const logout = controller.update(null)
+    loading.resolve(sdk)
+    await logout
+    expect(sdk.identify).not.toHaveBeenCalled()
+    expect(sdk.page).not.toHaveBeenCalled()
+    expect(sdk.dismiss).toHaveBeenCalled()
+    expect(sdk.reset).toHaveBeenCalledOnce()
   })
 })

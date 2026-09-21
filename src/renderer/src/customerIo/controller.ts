@@ -7,13 +7,16 @@ export interface MessagingClient {
   dismiss(): void
 }
 
-async function bounded<T>(operation: Promise<T>): Promise<T> {
+async function bounded(operation: Promise<void>, onTimeout: () => void): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    return await Promise.race([
+    await Promise.race([
       operation,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('Customer.io operation timed out')), 10_000)
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          onTimeout()
+          resolve()
+        }, 10_000)
       })
     ])
   } finally {
@@ -21,7 +24,7 @@ async function bounded<T>(operation: Promise<T>): Promise<T> {
   }
 }
 
-/** Serializes identity changes while rejecting work queued for an obsolete session. */
+/** One owner of SDK operations; only the caller's wait may time out. */
 export function createMessagingController(
   load: (
     session: CustomerIoSession,
@@ -31,44 +34,73 @@ export function createMessagingController(
     console.warn('Desktop messaging is unavailable', error)
 ): { update: (session: CustomerIoSession | null) => Promise<void> } {
   let desired: CustomerIoSession | null = null
+  let permitted: CustomerIoSession | null = null
   let client: MessagingClient | null = null
   let identified: CustomerIoSession | null = null
   let version = 0
+  let retry = false
   let queue = Promise.resolve()
+  let completion = queue
   function update(session: CustomerIoSession | null): Promise<void> {
-    if (JSON.stringify(desired) === JSON.stringify(session)) return queue
+    if (!retry && JSON.stringify(desired) === JSON.stringify(session)) return completion
     desired = session
+    permitted = null
+    retry = false
     const revision = ++version
-    // Hide a previous user's message immediately, even if an SDK operation is pending.
+    let expired = false
+    let failed = false
+    const isCurrent = (): boolean => revision === version && !expired
+    // Revoke before waiting for a previous operation to release the SDK.
     if (!session || identified?.userId !== session.userId) client?.dismiss()
     queue = queue
       .then(async () => {
-        if (revision !== version) return
+        if (!isCurrent()) return
         if (!session) {
-          if (client) await bounded(client.reset())
+          if (client) await client.reset()
           identified = null
           return
         }
-        client ??= await bounded(load(session, () => desired))
-        if (revision !== version) return
+        client ??= await load(session, () => permitted)
+        if (!isCurrent()) return
         if (identified?.userId !== session.userId) {
-          await bounded(client.reset())
+          await client.reset()
           identified = null
         }
-        if (revision !== version) return
-        await bounded(client.identify(session))
-        if (revision !== version) return
+        if (!isCurrent()) return
+        permitted = session
+        await client.identify(session)
+        if (!isCurrent()) return
         identified = session
-        await bounded(client.page(session))
+        await client.page(session)
       })
       .catch((error: unknown) => {
+        failed = true
         client?.dismiss()
         identified = null
-        // A later focus, auth report, or online event can retry this same session.
-        if (revision === version) desired = null
+        if (revision === version) {
+          permitted = null
+          // A later focus, auth report, or online event can retry this session.
+          retry = true
+        }
         reportError(error)
       })
-    return queue
+      .then(() => {
+        if (!isCurrent()) client?.dismiss()
+        // A late successful operation releases ownership. Reconcile the latest
+        // session from reset; never resume the expired identity/page sequence.
+        if (expired && !failed && revision === version) void update(desired)
+      })
+    completion = bounded(queue, () => {
+      expired = true
+      if (revision === version) {
+        permitted = null
+        identified = null
+        retry = true
+        client?.dismiss()
+      }
+      reportError(new Error('Customer.io operation timed out'))
+    })
+    return completion
   }
   return { update }
 }
