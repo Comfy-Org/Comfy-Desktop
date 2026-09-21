@@ -417,15 +417,34 @@ describe('arm / peek / acknowledge', () => {
     expect(peekBetaActivationNotice('inst-1')).toBeNull()
   })
 
-  it('frees the arg for another install straight away, not at the next relaunch', () => {
+  it('hands the arg to the install that lost the race, with no relaunch of its own', () => {
     armBetaActivationNotice('inst-1', [grant('--enable-assets')])
-    // inst-2 launches successfully while inst-1's dead claim still holds the arg.
+    // inst-2 launches successfully alongside it and loses the claim, so it queues nothing.
     armBetaActivationNotice('inst-2', [grant('--enable-assets')])
     expect(peekBetaActivationNotice('inst-2')).toBeNull()
 
+    // inst-1's launch then fails. inst-2 is still running and must be reconsidered HERE:
+    // production has no second arm to lean on, only this release.
     clearBetaActivationClaim('inst-1')
-    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
     expect(peekBetaActivationNotice('inst-2')?.args).toEqual(['--enable-assets'])
+    expect(peekBetaActivationNotice('inst-1')).toBeNull()
+  })
+
+  it('does not hand a released arg to an install that already had its card', () => {
+    // The handover must not resurrect a spent notice. inst-2 loses the race, is later
+    // reconsidered, shows and acknowledges; a second release must not re-offer it.
+    armBetaActivationNotice('inst-1', [grant('--enable-assets')])
+    armBetaActivationNotice('inst-2', [grant('--enable-assets')])
+    clearBetaActivationClaim('inst-1')
+    expect(peekBetaActivationNotice('inst-2')?.args).toEqual(['--enable-assets'])
+
+    acknowledgeBetaActivationNotice('inst-2', ['--enable-assets'])
+    expect(peekBetaActivationNotice('inst-2')).toBeNull()
+
+    // Another install fails and releases; the announced arg stays spent for everyone.
+    armBetaActivationNotice('inst-3', [grant('--enable-assets')])
+    clearBetaActivationClaim('inst-3')
+    expect(peekBetaActivationNotice('inst-2')).toBeNull()
   })
 
   it('discards only the unannounced claim, never an arg already announced', () => {
