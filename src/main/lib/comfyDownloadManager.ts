@@ -17,13 +17,16 @@ import {
   regularFileExists,
   resolveDownloadContextById
 } from './modelDownloadPaths'
+import { coerceDigest, digestsEqual, makeDigest, type Digest } from '../comfybuilder/integrity'
 import {
+  digestFile,
   ensureStagedPlaceholder,
   migrateLegacyModelDownloadArtifacts,
   removeStagedArtifacts,
   revalidateStagedPair,
   scanForStagedDownloads,
-  sha256File,
+  stagedMetaDigest,
+  stagedMetaDigestFields,
   type DiscoveredStagedDownload
 } from './modelDownloadStaging'
 import { startModelTransfer, type ModelTransferHandle } from './modelDownloadTransport'
@@ -165,9 +168,9 @@ interface PendingDownload {
   leases?: Set<string>
   installationId?: string | null
   expectedSize?: number
-  /** Expected lowercase-hex sha256 of the complete file; the transport
+  /** Expected algorithm-tagged digest of the complete file; the transport
    *  verifies staged bytes against it before finalizing. */
-  sha256?: string
+  digest?: Digest
   /** Explicit session for headless callers (template task). Falls back to
    *  senderContents.session, then the install's partition, then default. */
   explicitSession?: Electron.Session
@@ -234,9 +237,9 @@ function findActiveByRef(ref: string): PendingDownload | undefined {
 
 /** Machine-readable cause for callers that must distinguish integrity
  *  failures from transport failures (e.g. ComfyBuilder model staging):
- *  `checksum-mismatch` means the downloaded bytes failed sha256 verification;
+ *  `checksum-mismatch` means the downloaded bytes failed digest verification;
  *  `existing-file-mismatch` means a file already at the destination does not
- *  match the expected sha256. */
+ *  match the expected digest. */
 export type ModelJobErrorCode = 'checksum-mismatch' | 'existing-file-mismatch'
 
 /** Terminal outcome of a managed model job. `paused` is deliberately absent:
@@ -339,7 +342,7 @@ export function acquireModelDownloadRootLock(modelsRoot: string): (() => void) |
  * rows hydrated from a previous run or left parked by a released caller.
  * Their rows leave the Downloads surfaces and their completion settles as
  * cancelled, but the staged bytes + sidecar STAY on disk, so a new job for
- * the same content (matched by persisted sha256 or URL) resumes them.
+ * the same content (matched by persisted digest or URL) resumes them.
  *
  * For ComfyBuilder installs/updates: a parked row inside the install's model
  * root would otherwise permanently block `acquireModelDownloadRootLock`, and
@@ -423,8 +426,9 @@ interface RetryParams {
    *  Retry dedupe compares canonical destinations, never URL + directory -
    *  two installs can share both while writing different files. */
   savePath?: string
-  /** Model jobs: expected sha256, so a retry keeps verifying integrity. */
-  sha256?: string
+  /** Model jobs: the expected algorithm-tagged digest, so a retry keeps
+   *  verifying integrity under the SAME algorithm the original attempt used. */
+  digest?: Digest
   /** Model jobs: explicit destination root of the original attempt, so a
    *  retry resolves the same final path. */
   destinationBaseDir?: string
@@ -823,10 +827,14 @@ export interface ModelJobOptions {
   session?: Electron.Session
   /** Caller-known expected byte count, validated against the server. */
   expectedSize?: number
-  /** Expected lowercase-hex sha256 of the complete file. When set, the staged
-   *  bytes are verified before finalization (mismatch -> error with code
-   *  'checksum-mismatch'), and a file already at the destination must match
-   *  it to count as already present (mismatch -> 'existing-file-mismatch'). */
+  /** Expected ALGORITHM-TAGGED digest of the complete file. When set, the
+   *  staged bytes are verified before finalization (mismatch -> error with
+   *  code 'checksum-mismatch'), and a file already at the destination must
+   *  match it to count as already present (-> 'existing-file-mismatch'). */
+  digest?: Digest
+  /** Legacy bare sha256 for callers that predate algorithm tagging (the
+   *  in-Comfy bridge). Tagged as `sha256` on entry; `digest` wins when both
+   *  are supplied. */
   sha256?: string
   /** Explicit models root the file must land under, bypassing the install's
    *  model-settings resolution (ComfyBuilder staging always targets the
@@ -1044,7 +1052,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
     installationId: pending.installationId,
     session: sess,
     expectedSize: pending.expectedSize,
-    sha256: pending.sha256,
+    digest: pending.digest,
     onProgress: ({ receivedBytes, totalBytes }) => {
       if (gen !== pending.attemptGen) return
       if (pending.progressSubscribers) {
@@ -1147,7 +1155,15 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   const url = opts.url
   const filename = stripQueryParams(opts.filename)
   const directory = opts.directory
-  const sha256 = opts.sha256?.trim().toLowerCase()
+  // A caller supplying only the legacy bare hex is tagged `sha256` here, so
+  // everything downstream compares algorithm-tagged identities exclusively.
+  const digest = coerceDigest(opts.digest) ?? makeDigest(opts.sha256, 'sha256')
+  // A caller that DECLARED an expectation which does not parse is refused
+  // rather than downgraded to "no expectation": silently dropping it would
+  // skip both the already-present check and final verification, finalizing
+  // unverified bytes under a final model name.
+  const declaredIntegrity = opts.digest !== undefined || opts.sha256 !== undefined
+  const integrityUnusable = declaredIntegrity && digest === null
   // Resolve the initiating install so destination + existence check follow its
   // model settings. An explicit `installationId` (from retries / templates)
   // wins over the live sender so a retry still targets the right install
@@ -1163,18 +1179,20 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
 
   // Capture before the validation early-returns so even a synchronous
   // error (bad path / extension) lands a retryable terminal entry.
-  retryParamsById.set(id, {
-    kind: 'model',
-    url,
-    filename,
-    directory,
-    window: opts.window,
-    senderContents: opts.senderContents,
-    installationId: resolvedInstallId,
-    savePath,
-    sha256,
-    destinationBaseDir: opts.destinationBaseDir
-  })
+  if (!integrityUnusable) {
+    retryParamsById.set(id, {
+      kind: 'model',
+      url,
+      filename,
+      directory,
+      window: opts.window,
+      senderContents: opts.senderContents,
+      installationId: resolvedInstallId,
+      savePath,
+      digest: digest ?? undefined,
+      destinationBaseDir: opts.destinationBaseDir
+    })
+  }
 
   const makeProgress = (
     overrides: Partial<DownloadProgress>
@@ -1206,6 +1224,12 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
 
   if (!hasValidExtension(filename)) {
     const error = `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`
+    reportProgress(makeProgress({ status: 'error', error }))
+    return settledJobHandle(id, url, savePath, { status: 'error', error })
+  }
+
+  if (integrityUnusable) {
+    const error = 'Invalid integrity value: expected a 32-byte hex digest'
     reportProgress(makeProgress({ status: 'error', error }))
     return settledJobHandle(id, url, savePath, { status: 'error', error })
   }
@@ -1257,19 +1281,19 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     if (await regularFileExists(candidate)) {
       const lockedBeforeExistingResult = rejectLockedRoot(candidate)
       if (lockedBeforeExistingResult) return lockedBeforeExistingResult
-      if (sha256) {
+      if (digest) {
         // An integrity-checked caller can only accept an existing file that
         // IS the expected content; anything else at the destination is a
         // conflict the caller must resolve, not a completed download.
-        let actual: string
+        let actual: Digest
         try {
-          actual = await sha256File(candidate)
+          actual = await digestFile(candidate, digest.algo)
         } catch (err) {
           const error = `Cannot verify existing file: ${(err as Error).message}`
           reportProgress(makeProgress({ status: 'error', error }))
           return settledJobHandle(id, url, savePath, { status: 'error', error })
         }
-        if (actual !== sha256) {
+        if (!digestsEqual(actual, digest)) {
           const error = `Existing file ${filename} does not match the expected checksum`
           reportProgress(makeProgress({ status: 'error', error }))
           return settledJobHandle(id, url, savePath, {
@@ -1317,17 +1341,18 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     if (active) {
       // Joining is only safe when the caller wants the same bytes: the same
       // source URL and (when both sides declare one) the same expected size
-      // and hash. A caller that REQUIRES integrity verification can also
-      // never join a job that does not verify - the guarantee would silently
-      // vanish. A different source aimed at the same final file is a
-      // conflict, not a join - silently attaching would hand the caller
-      // another URL's file.
+      // and digest. Digests are compared by `digestKey`, so the same hex
+      // under a different algorithm is a conflict, not a join. A caller that
+      // REQUIRES integrity verification can also never join a job that does
+      // not verify - the guarantee would silently vanish. A different source
+      // aimed at the same final file is a conflict, not a join - silently
+      // attaching would hand the caller another URL's file.
       if (
         active.url !== url ||
         (opts.expectedSize !== undefined &&
           active.expectedSize !== undefined &&
           opts.expectedSize !== active.expectedSize) ||
-        (sha256 !== undefined && active.sha256 !== sha256)
+        (digest !== null && !digestsEqual(active.digest, digest))
       ) {
         const error = `Another download is already writing ${filename} from a different source`
         reportProgress(makeProgress({ status: 'error', error }))
@@ -1362,7 +1387,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     suspended: false,
     installationId: resolvedInstallId,
     expectedSize: opts.expectedSize,
-    sha256,
+    digest: digest ?? undefined,
     explicitSession: opts.session,
     progressSubscribers: opts.onProgress ? new Set([opts.onProgress]) : undefined,
     settleJob,
@@ -1427,7 +1452,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
       directory,
       filename,
       installationId: resolvedInstallId ?? undefined,
-      sha256
+      ...stagedMetaDigestFields(digest)
     })
     pending.starting = false
     if (!staged) {
@@ -2111,7 +2136,7 @@ export function retryDownload(ref: string): boolean {
       window: win ?? undefined,
       senderContents: sender,
       installationId: params.installationId,
-      sha256: params.sha256,
+      digest: params.digest,
       destinationBaseDir: params.destinationBaseDir
     })
   }
@@ -2559,7 +2584,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       suspended: true,
       installationId: meta.installationId ?? null,
       expectedSize: meta.expectedSize > 0 ? meta.expectedSize : undefined,
-      sha256: meta.sha256,
+      digest: stagedMetaDigest(meta) ?? undefined,
       settleJob,
       completion,
       lastProgress: progress,
@@ -2575,7 +2600,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       directory: meta.directory,
       installationId: meta.installationId ?? null,
       savePath: finalPath,
-      sha256: meta.sha256,
+      digest: stagedMetaDigest(meta) ?? undefined,
       // Pin the retry to the root this pair was staged under; resolving the
       // current install/shared settings could pick a different root.
       destinationBaseDir: deriveDestinationBaseDir(finalPath, meta.directory)
