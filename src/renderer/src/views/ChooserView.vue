@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useModal } from '../composables/useModal'
@@ -20,11 +21,7 @@ import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 import { resolvePickerTab } from '../lib/pickerTabs'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
-import {
-  DASHBOARD_WORKSPACE_SETTING,
-  PERSONAL_WORKSPACE_ID,
-  workspaceContextId
-} from '../../../shared/workspaces'
+import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 
 /**
  * Chooser view - recents grid.
@@ -53,7 +50,7 @@ const emit = defineEmits<{
    *  open a fresh window, or hand off to a launch flow. */
   pick: [installation: Installation]
   /** User triggered the new-install flow in the current dashboard scope. */
-  'show-new-install': [workspaceId: string]
+  'show-new-install': []
   /** A long-running action was kicked off from the inline Manage...
    *  DetailModal. Forwarded to PanelApp so it can wire the operation
    *  through `progressStore`. */
@@ -65,6 +62,8 @@ const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 const authStore = useAuthStore()
 const modal = useModal()
+const dashboardScope = useDashboardScopeStore()
+void dashboardScope.initialize()
 
 onMounted(() => {
   if (installationStore.installations.length === 0) {
@@ -97,97 +96,25 @@ defineExpose({ activeFilter })
 
 // --- Dashboard scope ---
 
-const selectedWorkspaceId = ref(PERSONAL_WORKSPACE_ID)
-let dashboardScopeInitialized = false
-
-async function initializeDashboardScope(): Promise<void> {
-  const [persistedWorkspaceId] = await Promise.all([
-    window.api.getSetting(DASHBOARD_WORKSPACE_SETTING).catch(() => undefined),
-    authStore.fetchStatus().catch(() => authStore.status)
-  ])
-  const savedWorkspaceId =
-    typeof persistedWorkspaceId === 'string' && persistedWorkspaceId.trim()
-      ? persistedWorkspaceId
-      : undefined
-  if (authStore.isSignedIn && savedWorkspaceId && savedWorkspaceId !== PERSONAL_WORKSPACE_ID) {
-    await authStore.fetchWorkspaces()
-  }
-  // A failed catalog request does not establish that membership was removed.
-  const canRestoreSavedWorkspace =
-    authStore.isSignedIn &&
-    savedWorkspaceId &&
-    (savedWorkspaceId === PERSONAL_WORKSPACE_ID ||
-      authStore.workspacesError ||
-      authStore.workspaces.some((workspace) => workspace.id === savedWorkspaceId))
-  const resolvedWorkspaceId = canRestoreSavedWorkspace
-    ? savedWorkspaceId
-    : authStore.isSignedIn
-      ? workspaceContextId(authStore.status)
-      : PERSONAL_WORKSPACE_ID
-  if (resolvedWorkspaceId === persistedWorkspaceId) {
-    selectedWorkspaceId.value = resolvedWorkspaceId
-  } else {
-    // Menu-driven New Instance reads this setting instead of the local ref.
-    setSelectedWorkspace(resolvedWorkspaceId)
-  }
-  dashboardScopeInitialized = true
-
-  if (authStore.isSignedIn && authStore.status.workspaceId) {
-    void authStore.fetchBuilds()
-  }
-}
-
-void initializeDashboardScope()
-
-function setSelectedWorkspace(workspaceId: string): void {
-  selectedWorkspaceId.value = workspaceId
-  void window.api.setSetting(DASHBOARD_WORKSPACE_SETTING, workspaceId)
-}
-
 const selectedWorkspaceModel = computed({
-  get: () => selectedWorkspaceId.value,
-  set: setSelectedWorkspace
+  get: () => dashboardScope.selectedWorkspaceId,
+  set: dashboardScope.selectWorkspace
 })
 
+// Build versions drive the managed instances' Update status tags. Browsing
+// another dashboard scope must not switch the authenticated build catalog.
 watch(
-  () => ({
-    signedIn: authStore.isSignedIn,
-    workspaceId: authStore.status.workspaceId,
-    workspaceType: authStore.status.workspaceType
-  }),
-  (next, previous) => {
-    if (!dashboardScopeInitialized) return
-
-    if (!next.signedIn) {
-      setSelectedWorkspace(PERSONAL_WORKSPACE_ID)
-      dashboardScopeInitialized = false
-      void initializeDashboardScope()
-      return
-    }
-    // Build versions drive each managed instance's Update status tag. Main
-    // warms that synchronous cache during listBuilds and then broadcasts an
-    // installation refresh, so load the active workspace catalog as soon as
-    // the authenticated dashboard has one.
-    if (next.workspaceId && next.workspaceId !== previous?.workspaceId) {
-      void authStore.fetchBuilds()
-    }
-    // Follow an external authenticated workspace switch only while the user is
-    // viewing that workspace. An explicit Personal/team selection remains local.
-    if (
-      previous &&
-      selectedWorkspaceId.value === workspaceContextId(previous) &&
-      workspaceContextId(authStore.status) !== selectedWorkspaceId.value
-    ) {
-      setSelectedWorkspace(workspaceContextId(authStore.status))
-    }
+  [() => authStore.isSignedIn, () => authStore.status.workspaceId],
+  ([signedIn, workspaceId]) => {
+    if (signedIn && workspaceId) void authStore.fetchBuilds()
   },
   { immediate: true }
 )
 
 function installationIsInSelectedScope(inst: Installation): boolean {
-  return selectedWorkspaceId.value === PERSONAL_WORKSPACE_ID
+  return dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID
     ? inst.workspaceId === undefined || inst.workspaceId === PERSONAL_WORKSPACE_ID
-    : inst.workspaceId === selectedWorkspaceId.value
+    : inst.workspaceId === dashboardScope.selectedWorkspaceId
 }
 
 const scopedVisibleInstalls = computed(() =>
@@ -376,7 +303,7 @@ onMounted(async () => {
   }
 })
 function handleNewInstallClick(): void {
-  emit('show-new-install', selectedWorkspaceId.value)
+  emit('show-new-install')
 }
 
 const gridHandlers = {
@@ -443,7 +370,10 @@ const gridHandlers = {
       </div>
 
       <div
-        v-if="installationStore.loading && installationStore.installations.length === 0"
+        v-if="
+          !dashboardScope.initialized ||
+          (installationStore.loading && installationStore.installations.length === 0)
+        "
         class="chooser-loading"
       >
         {{ t('common.loading') }}
