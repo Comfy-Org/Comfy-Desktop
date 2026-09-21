@@ -113,21 +113,25 @@ function readPersistedStaff(): boolean {
  * signed-out instead of throwing; and it closes the connection, so a later Firebase
  * `versionchange` is not blocked. `userTier.ts` predates that pattern and does none of the three.
  *
- * Resolves `null` for no signed-in user, no record, or a record without an email — all ordinary
- * states, not failures.
+ * Resolves `{known: true, email}` when this origin HAS an auth store — `email: null` there means
+ * genuinely signed out. Resolves `{known: false}` when the origin has no Firebase store at all,
+ * or the read failed: those are not evidence of being signed out, and the caller must not treat
+ * them as a classification (see `refreshStaffFlagTargeting`).
  */
 const READ_ACCOUNT_EMAIL_JS = `(async () => {
   var db = null;
   try {
-    if (!indexedDB.databases) return null;
+    if (!indexedDB.databases) return { known: false };
     var dbs = await indexedDB.databases();
-    if (!dbs.some(function (d) { return d && d.name === 'firebaseLocalStorageDb'; })) return null;
+    if (!dbs.some(function (d) { return d && d.name === 'firebaseLocalStorageDb'; })) {
+      return { known: false };
+    }
     var req = indexedDB.open('firebaseLocalStorageDb');
     db = await new Promise(function (res, rej) {
       req.onsuccess = function () { res(req.result); };
       req.onerror = function () { rej(req.error); };
     });
-    if (!db.objectStoreNames.contains('firebaseLocalStorage')) return null;
+    if (!db.objectStoreNames.contains('firebaseLocalStorage')) return { known: false };
     var store = db.transaction('firebaseLocalStorage', 'readonly')
       .objectStore('firebaseLocalStorage');
     var allReq = store.getAll();
@@ -140,9 +144,9 @@ const READ_ACCOUNT_EMAIL_JS = `(async () => {
         e.fbase_key.indexOf('firebase:authUser:') === 0;
     });
     var email = entry && entry.value ? entry.value.email : null;
-    return typeof email === 'string' && email.length > 0 ? email : null;
+    return { known: true, email: typeof email === 'string' && email.length > 0 ? email : null };
   } catch (e) {
-    return null;
+    return { known: false };
   } finally {
     if (db) { try { db.close(); } catch (_) {} }
   }
@@ -162,18 +166,39 @@ const READ_ACCOUNT_EMAIL_JS = `(async () => {
  * A sign-out or a switch to a non-staff account stores `false`, so a machine that changes hands
  * stops presenting as staff on the next launch. Combined with the boot evaluation being
  * authoritative, that is also what lets the server take the grant back normally.
+ *
+ * KNOWN GAP, deliberate for now: this is driven by `dom-ready`, so an in-page sign-out that never
+ * navigates is not seen until the next navigation, reload, or launch, and the classification can
+ * stay `true` across that window. Reclassification is eventual, not immediate, and must not be
+ * described as immediate. The preload's `startLocalFirebaseAuthMonitor` already polls this same
+ * store on a 1s tick and would close the gap, but it reports a UID and no email, so wiring this
+ * to it — or to the identity consensus in `firebaseAuthIdentity.ts`, which is what properly
+ * reconciles several views — is a larger change than this one.
  */
 export async function refreshStaffFlagTargeting(webContents: WebContents): Promise<void> {
   try {
-    const email = (await webContents.executeJavaScript(READ_ACCOUNT_EMAIL_JS)) as string | null
-    const isStaff = isStaffEmail(email)
+    const read = (await webContents.executeJavaScript(READ_ACCOUNT_EMAIL_JS)) as {
+      known?: unknown
+      email?: unknown
+    } | null
+    // A view with no Firebase store has NO OPINION and must stay silent. Absence of an auth
+    // record is not evidence of being signed out, and treating it as such lets a local install
+    // that was never signed into clear a classification a signed-in view established — a wrong
+    // answer, not merely a racy one. Only a view that can actually see auth state votes.
+    if (!read || read.known !== true) return
+    const isStaff = isStaffEmail(typeof read.email === 'string' ? read.email : null)
     // Bound immediately even though this launch's flag fetch has long since gone out: a flag
     // initialised later in the session (or re-read in a test) should see the current answer, and
     // it costs nothing.
     telemetry.setFlagEvaluationStaff(isStaff)
     if (isStaff === cached) return
-    cached = isStaff
     writeFileSafe(persistFilePath(), JSON.stringify({ staff: isStaff, ts: Date.now() }))
+    // AFTER the write, never before. `writeFileSafe` can exhaust its retries on a transient lock
+    // or an unavailable config dir, and the catch below swallows that. Moving `cached` first
+    // would record a write that never landed, and the equality check above would then suppress
+    // every later attempt at the same classification — so the next launch would read the stale
+    // value even once the filesystem recovered.
+    cached = isStaff
     console.log('[staff-targeting] refresh: staff=', isStaff, '→ next launch')
   } catch (err) {
     console.log('[staff-targeting] refresh skipped:', err)

@@ -22,11 +22,25 @@ vi.mock('./telemetry', () => ({
 const { initStaffFlagTargeting, refreshStaffFlagTargeting, isStaffEmail, _resetForTest } =
   await import('./staffFlagTargeting')
 
-/** Stub WebContents whose page-context read resolves to a fixed email (or rejects). */
-function stubContents(result: unknown, opts: { throws?: boolean } = {}): Electron.WebContents {
+/** A view that HAS an auth store, signed in as `email` (or signed out when null). */
+function stubContents(email: string | null, opts: { throws?: boolean } = {}): Electron.WebContents {
   return {
     executeJavaScript: () =>
-      opts.throws ? Promise.reject(new Error('page gone')) : Promise.resolve(result)
+      opts.throws ? Promise.reject(new Error('page gone')) : Promise.resolve({ known: true, email })
+  } as unknown as Electron.WebContents
+}
+
+/** A view with NO auth store — it has no opinion about who is signed in. */
+function stubContentsWithoutAuthStore(): Electron.WebContents {
+  return {
+    executeJavaScript: () => Promise.resolve({ known: false })
+  } as unknown as Electron.WebContents
+}
+
+/** A view whose read returns something unexpected entirely. */
+function stubContentsReturning(result: unknown): Electron.WebContents {
+  return {
+    executeJavaScript: () => Promise.resolve(result)
   } as unknown as Electron.WebContents
 }
 
@@ -207,10 +221,40 @@ describe('refreshStaffFlagTargeting', () => {
     expect(nextLaunchBinding()).toBe(true)
   })
 
-  it('treats a non-string page value as not signed in', async () => {
-    await refreshStaffFlagTargeting(stubContents({ email: 'someone@comfy.org' }))
+  it('treats a signed-in account with a malformed email as not staff', async () => {
+    await refreshStaffFlagTargeting(stubContentsReturning({ known: true, email: 42 }))
 
     expect(storedFile()).toMatchObject({ staff: false })
+  })
+
+  it.each([
+    ['a view with no auth store', () => stubContentsWithoutAuthStore()],
+    ['a read that returned null', () => stubContentsReturning(null)],
+    ['a read that returned an unexpected shape', () => stubContentsReturning('nope')]
+  ])('stays silent for %s rather than voting "not staff"', async (_label, make) => {
+    // Absence of an auth record is not evidence of being signed out. A local install that was
+    // never signed into must not clear a classification a signed-in view established — that
+    // would be a wrong answer, not merely a racy one.
+    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    expect(nextLaunchBinding()).toBe(true)
+
+    await refreshStaffFlagTargeting(make())
+
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('retries the write on a later page load after a failure', async () => {
+    // The cache moves only after a successful write. Moving it first would record a write that
+    // never landed, and the unchanged-classification check would then suppress every later
+    // attempt — leaving the next launch reading the stale value even once the disk recovered.
+    fs.rmSync(testConfigDir, { recursive: true, force: true })
+    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+
+    fs.mkdirSync(testConfigDir, { recursive: true })
+    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+
+    expect(storedFile()).toMatchObject({ staff: true })
+    expect(nextLaunchBinding()).toBe(true)
   })
 
   it('survives an unwritable config dir', async () => {
