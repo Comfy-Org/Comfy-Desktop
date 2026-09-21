@@ -91,7 +91,7 @@ After building, run the isolated Electron fixture on the current platform:
 
 ```sh
 pnpm exec electron-vite build
-pnpm exec playwright test e2e/customerio.test.ts --project=macos --retries=0
+pnpm exec playwright test e2e/customerio.test.ts e2e/customerio-host.test.ts --project=macos --retries=0
 ```
 
 Use `windows` or `linux` for the corresponding host. These tests run both shipped
@@ -100,8 +100,16 @@ The launcher fixture uses a file URL and the production panel's CSP.
 It covers rendering, opened metrics, dismissal, account changes, revocation, and
 continued access to the workflow and its existing browser storage.
 
+The native-host fixture additionally bundles the production coordinator and IPC
+transport, mounts the shipped preloads in real WebContentsViews, and uses the
+production launcher CSP. It covers launcher-to-ComfyUI handoff, clearing the
+previous message, consent revocation, and out-of-order identity responses. Both
+fixtures intercept vendor requests and use disposable profiles. Run Electron UI
+tests serially because the native-host fixture exercises real window focus.
+
 Unit tests cover main-process eligibility, frame validation, link handling,
-authentication consensus, and asynchronous session changes.
+authentication consensus, asynchronous session changes, and serialized SDK
+recovery after timeouts.
 
 Release verification still needs a restricted live Customer.io campaign and
 packaged macOS/Windows checks. Confirm the intended profile receives a message in
