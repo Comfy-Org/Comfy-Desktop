@@ -30,7 +30,7 @@ const GRANT_ARG = '--enable-assets'
 const GRANT_MIN_CORE = '0.3.80'
 /** What the payload calls the feature. Deliberately not derivable from the arg token, so a
  *  card showing it proves the payload reached the copy rather than a table in Desktop. */
-const FEATURE_NAME = 'Assets browser'
+const FEATURE_NAME = 'Asset library'
 
 let ctx: AppContext
 let installPath: string

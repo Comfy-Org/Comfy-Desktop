@@ -205,7 +205,7 @@ describe('parseCoreBetaGrants notice wording', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
-          { arg: '--enable-assets', min_core_version: '0.3.80', description: 'Assets browser' },
+          { arg: '--enable-assets', min_core_version: '0.3.80', description: 'Asset library' },
           { arg: '--enable-agent', min_core_version: '0.3.80', notice: 'silent' }
         ]
       })
@@ -213,7 +213,7 @@ describe('parseCoreBetaGrants notice wording', () => {
       {
         arg: '--enable-assets',
         minCoreVersion: '0.3.80',
-        notice: { description: 'Assets browser' }
+        notice: { description: 'Asset library' }
       },
       { arg: '--enable-agent', minCoreVersion: '0.3.80', notice: { silent: true } }
     ])

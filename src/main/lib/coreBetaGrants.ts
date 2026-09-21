@@ -40,7 +40,7 @@ export type CoreBetaNotice = {
    *  granted flag is user-visible: a diagnostic or an internal rollout has nothing to tell the
    *  user, and a card for it is noise that trains people to dismiss the real ones. */
   readonly silent?: true
-  /** Human name of the feature, e.g. `"Assets browser"`. Supplied by the payload rather than
+  /** Human name of the feature, e.g. `"Asset library"`. Supplied by the payload rather than
    *  mapped in Desktop because the allowlist is installed ahead of the features it names — a
    *  table here would have to ship before anyone knew what to call them. Absent means the
    *  card falls back to its generic wording. */

@@ -1035,7 +1035,7 @@ describe('core beta report placement', () => {
   })
 
   it('carries the payload feature name onto the pending card', async () => {
-    launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Assets browser' } }]
+    launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset library' } }]
     const id = 'harness-named-grant'
 
     await handleLaunch(ctxFor(id))
@@ -1043,7 +1043,7 @@ describe('core beta report placement', () => {
     expect(peekBetaActivationNotice(id)).toEqual({
       args: ['--enable-assets'],
       direction: 'enabled',
-      description: 'Assets browser'
+      description: 'Asset library'
     })
   })
 

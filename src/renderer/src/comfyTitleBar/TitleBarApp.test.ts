@@ -1675,12 +1675,12 @@ describe('TitleBarApp', () => {
 
     it('names the feature when the PostHog payload supplied a name', async () => {
       installApiMock({
-        pending: { args: ['--enable-assets'], direction: 'enabled', description: 'Assets browser' }
+        pending: { args: ['--enable-assets'], direction: 'enabled', description: 'Asset library' }
       })
       const wrapper = await mountBar()
       const payload = betaCards()[0]!
-      expect(payload.title).toBe('The Assets browser beta is on')
-      expect(payload.body).toContain('Assets browser')
+      expect(payload.title).toBe('The Asset library beta is on')
+      expect(payload.body).toContain('Asset library')
       wrapper.unmount()
     })
 
@@ -1691,12 +1691,12 @@ describe('TitleBarApp', () => {
         pending: {
           args: ['--disable-assets'],
           direction: 'disabled',
-          description: 'Assets browser'
+          description: 'Asset library'
         }
       })
       const wrapper = await mountBar()
       const payload = betaCards()[0]!
-      expect(payload.title).toBe('The Assets browser beta is off')
+      expect(payload.title).toBe('The Asset library beta is off')
       expect(payload.title).not.toContain('is on')
       // Still points at Settings — the beta program switch is what the user can act on.
       expect(payload.actionLabel).toBe('Settings')

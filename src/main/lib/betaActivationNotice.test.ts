@@ -79,11 +79,11 @@ describe('selectNewlyActiveBetaGrants', () => {
 
   it('announces a NAMED disable-grant, because the payload supplied what was missing', () => {
     const fresh = selectNewlyActiveBetaGrants(
-      [grant('--disable-assets', { description: 'Assets browser' })],
+      [grant('--disable-assets', { description: 'Asset library' })],
       new Set()
     )
     expect(fresh).toEqual([
-      { arg: '--disable-assets', direction: 'disabled', description: 'Assets browser' }
+      { arg: '--disable-assets', direction: 'disabled', description: 'Asset library' }
     ])
   })
 
@@ -110,10 +110,10 @@ describe('selectNewlyActiveBetaGrants', () => {
   it('carries a payload-supplied feature name through to the card', () => {
     expect(
       selectNewlyActiveBetaGrants(
-        [grant('--enable-assets', { description: 'Assets browser' })],
+        [grant('--enable-assets', { description: 'Asset library' })],
         new Set()
       )
-    ).toEqual([{ arg: '--enable-assets', direction: 'enabled', description: 'Assets browser' }])
+    ).toEqual([{ arg: '--enable-assets', direction: 'enabled', description: 'Asset library' }])
   })
 
   it('withholds an arg already spoken for', () => {
@@ -160,9 +160,9 @@ describe('resolveBetaActivationNotice', () => {
   it('names the feature when the card covers exactly one named grant', () => {
     expect(
       resolveBetaActivationNotice([
-        { arg: '--enable-assets', direction: 'enabled', description: 'Assets browser' }
+        { arg: '--enable-assets', direction: 'enabled', description: 'Asset library' }
       ])
-    ).toEqual({ args: ['--enable-assets'], direction: 'enabled', description: 'Assets browser' })
+    ).toEqual({ args: ['--enable-assets'], direction: 'enabled', description: 'Asset library' })
   })
 
   it('covers only the grants matching the direction it reports', () => {
@@ -170,7 +170,7 @@ describe('resolveBetaActivationNotice', () => {
     // takes the enables and leaves the withdrawal queued for its own card.
     const notice = resolveBetaActivationNotice([
       { arg: '--enable-agent', direction: 'enabled', description: null },
-      { arg: '--disable-assets', direction: 'disabled', description: 'Assets browser' }
+      { arg: '--disable-assets', direction: 'disabled', description: 'Asset library' }
     ])
     expect(notice).toEqual({ args: ['--enable-agent'], direction: 'enabled', description: null })
   })
@@ -180,7 +180,7 @@ describe('resolveBetaActivationNotice', () => {
     // rather than naming one of them and implying it is the whole story.
     expect(
       resolveBetaActivationNotice([
-        { arg: '--enable-assets', direction: 'enabled', description: 'Assets browser' },
+        { arg: '--enable-assets', direction: 'enabled', description: 'Asset library' },
         { arg: '--enable-agent', direction: 'enabled', description: 'Agent' }
       ])
     ).toEqual({
@@ -195,7 +195,7 @@ describe('resolveBetaActivationNotice', () => {
     // withdrew; the reverse claim would not be.
     expect(
       resolveBetaActivationNotice([
-        { arg: '--disable-assets', direction: 'disabled', description: 'Assets browser' },
+        { arg: '--disable-assets', direction: 'disabled', description: 'Asset library' },
         { arg: '--enable-agent', direction: 'enabled', description: null }
       ])?.direction
     ).toBe('enabled')
@@ -204,7 +204,7 @@ describe('resolveBetaActivationNotice', () => {
   it('reads as disabled only when every covered grant was a force-off', () => {
     expect(
       resolveBetaActivationNotice([
-        { arg: '--disable-assets', direction: 'disabled', description: 'Assets browser' }
+        { arg: '--disable-assets', direction: 'disabled', description: 'Asset library' }
       ])?.direction
     ).toBe('disabled')
   })
@@ -246,11 +246,11 @@ describe('arm / peek / acknowledge', () => {
   })
 
   it('carries the payload wording through to the pending card', () => {
-    armBetaActivationNotice('inst-1', [grant('--enable-assets', { description: 'Assets browser' })])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets', { description: 'Asset library' })])
     expect(peekBetaActivationNotice('inst-1')).toEqual({
       args: ['--enable-assets'],
       direction: 'enabled',
-      description: 'Assets browser'
+      description: 'Asset library'
     })
   })
 
@@ -292,13 +292,11 @@ describe('arm / peek / acknowledge', () => {
     // arrived does not cover being told it was withdrawn.
     armBetaActivationNotice('inst-1', [grant('--enable-assets')])
     acknowledgeBetaActivationNotice('inst-1')
-    armBetaActivationNotice('inst-1', [
-      grant('--disable-assets', { description: 'Assets browser' })
-    ])
+    armBetaActivationNotice('inst-1', [grant('--disable-assets', { description: 'Asset library' })])
     expect(peekBetaActivationNotice('inst-1')).toEqual({
       args: ['--disable-assets'],
       direction: 'disabled',
-      description: 'Assets browser'
+      description: 'Asset library'
     })
   })
 
@@ -322,7 +320,7 @@ describe('arm / peek / acknowledge', () => {
     // could never be announced again on any install.
     armBetaActivationNotice('inst-1', [
       grant('--enable-agent'),
-      grant('--disable-assets', { description: 'Assets browser' })
+      grant('--disable-assets', { description: 'Asset library' })
     ])
     expect(peekBetaActivationNotice('inst-1')?.args).toEqual(['--enable-agent'])
 
@@ -332,7 +330,7 @@ describe('arm / peek / acknowledge', () => {
     expect(peekBetaActivationNotice('inst-1')).toEqual({
       args: ['--disable-assets'],
       direction: 'disabled',
-      description: 'Assets browser'
+      description: 'Asset library'
     })
   })
 
