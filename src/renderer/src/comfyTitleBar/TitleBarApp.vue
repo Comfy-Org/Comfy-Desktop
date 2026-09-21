@@ -19,6 +19,7 @@ import { useTitleBarIdentity } from './useTitleBarIdentity'
 import { useUpdatePills } from './useUpdatePills'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useCentralPillCoachmark } from './useCentralPillCoachmark'
+import { useBetaActivationNotice } from './useBetaActivationNotice'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 
@@ -30,6 +31,10 @@ const { syncLocale } = useAppLocale(windowApiLocaleSource())
 // sync with the literal union in src/preload/comfyTitleBarPreload.ts and
 // the ComfyPanelKey export in src/main/index.ts.
 type ComfyPanelKey = 'comfy' | 'new-install' | 'track' | 'load-snapshot' | 'quick-install'
+
+/** Which feature owns the single sticky coachmark card. Same reason as `ComfyPanelKey` above:
+ *  kept in sync with the `CoachmarkKind` union in src/preload/comfyTitleBarPreload.ts. */
+type CoachmarkKind = 'pill-hint' | 'beta-notice'
 
 /** Position passed to main so the native menu pops below the anchor button.
  *  Coordinates are in title-bar-local pixels — main translates to window
@@ -82,18 +87,24 @@ interface Bridge {
   showTooltip: (payload: { text: string; leftX: number; rightX: number; bottomY: number }) => void
   /** Issue #514 — hide the title-bar hover tooltip popup. */
   hideTooltip: () => void
-  /** First-instance onboarding coachmark (issue #701) — show/hide the
-   *  sticky card pointing at the centre pill; subscribe to its dismiss. */
+  /** Sticky title-bar coachmark card (issue #701) — show/hide the card pointing at a
+   *  title-bar element, and subscribe to how it was retired. One popup per window serves
+   *  both the onboarding pill hint and the Core beta activation notice, so `kind` names the
+   *  owner on the way out and back. */
   showCoachmark: (payload: {
+    kind?: CoachmarkKind
     title: string
     body: string
     dismissLabel: string
+    actionLabel?: string
     leftX: number
     rightX: number
     bottomY: number
   }) => void
   hideCoachmark: () => void
-  onCoachmarkDismissed: (cb: () => void) => () => void
+  onCoachmarkDismissed: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
+  /** The card's secondary action, when it has one. Retires the card like dismiss does. */
+  onCoachmarkAction: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
   onPanelChanged: (cb: (panel: ComfyPanelKey) => void) => () => void
   onTitleChanged: (cb: (title: string) => void) => () => void
   /** Install source-category pushes from main. The raw category
@@ -214,6 +225,7 @@ const activePanel = ref<ComfyPanelKey>('comfy')
  * via `onInstallationIdChanged` pushes from main as the host transitions
  * across attach / detach without a title-bar URL reload.
  */
+const installationId = ref(bridge?.getInstallationId() ?? '')
 const isInstallLess = ref((bridge?.getInstallationId() ?? '') === '')
 
 const {
@@ -330,6 +342,8 @@ onUnmounted(() => {
 const titleBarRef = useTemplateRef<HTMLElement>('titleBar')
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
+/** News bell — also the anchor the beta activation notice's beak points at. */
+const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 const installPillRef = useTemplateRef<HTMLElement>('installPill')
 const titleTrailingRef = useTemplateRef<HTMLElement>('titleTrailing')
 
@@ -511,17 +525,51 @@ const coachmark = useCentralPillCoachmark({
   isInstallLess,
   isFirstUseLockdown,
   isLoadingLockdown,
+  // One popup per window: the hint must not hide a card it did not raise.
+  ownsPopup: () => coachmark.isShowing.value,
   installPillRef,
   title: t('titleBar.pillHintTitle'),
   body: t('titleBar.pillHintBody'),
   dismissLabel: t('titleBar.pillHintDismiss')
 })
 
+/**
+ * Core beta activation notice pointing at the news bell — a beta feature turned on for this
+ * install, here is how to turn it off. Suppressed while the onboarding hint is up: one popup
+ * per window backs both cards, so the later show would replace the earlier one mid-read.
+ * The hint is once-ever on first instance entry, so this only defers a brand-new user's
+ * notice to their next launch.
+ */
+const betaNotice = useBetaActivationNotice({
+  bridge,
+  installationId: () => installationId.value,
+  isInstallLess,
+  isFirstUseLockdown,
+  isLoadingLockdown,
+  anchorRef: announcementBtnRef,
+  isSuppressed: () => coachmark.isShowing.value,
+  title: t('titleBar.betaNoticeTitle'),
+  body: t('titleBar.betaNoticeBody'),
+  dismissLabel: t('titleBar.betaNoticeDismiss'),
+  actionLabel: t('titleBar.betaNoticeSettings')
+})
+
 /** Wrap the pill opener so opening the drawer retires the coachmark
  *  (the hint did its job) before delegating to the real handler. */
 function handleInstallPillWithCoachmark(): void {
-  void coachmark.acknowledgeViaPillOpen()
+  void coachmark.acknowledgeViaPillOpen().then(retryBetaNoticeAfterHint)
   handleInstallPill()
+}
+
+/** The beta notice defers while the hint owns the popup, and nothing in the gate watcher
+ *  changes when the hint goes away — so without this the deferred card waits for the next
+ *  launch. Safe to call unconditionally: `maybeShow` re-checks the gate and main still holds
+ *  the pending notice (deferring never acknowledges). */
+function retryBetaNoticeAfterHint(): void {
+  if (unmounted) return
+  void nextTick().then(() => {
+    if (!unmounted) void betaNotice.maybeShow()
+  })
 }
 
 /** One-shot "downloads started" attention flash. Driven by
@@ -547,6 +595,7 @@ let unsubPanel: (() => void) | undefined
 let unsubInstallationId: (() => void) | undefined
 let unsubZoom: (() => void) | undefined
 let unsubCoachmarkDismissed: (() => void) | undefined
+let unsubCoachmarkAction: (() => void) | undefined
 
 onMounted(() => {
   // Observe the trailing cluster so the left cluster can mirror its
@@ -592,13 +641,28 @@ onMounted(() => {
   unsubZoom = bridge.onZoomChanged((level) => {
     zoomLevel.value = level
   })
-  unsubInstallationId = bridge.onInstallationIdChanged((installationId) => {
-    isInstallLess.value = installationId === null
+  unsubInstallationId = bridge.onInstallationIdChanged((nextInstallationId) => {
+    const previous = installationId.value
+    installationId.value = nextInstallationId ?? ''
+    isInstallLess.value = nextInstallationId === null
+    // The card names "this instance", so it must not outlive the host retargeting to another.
+    // Forgotten rather than retired: it was never acknowledged, so it replays for its own
+    // install instead of being spent on one the user never saw it for.
+    if (previous !== installationId.value && betaNotice.isShowing.value) {
+      bridge.hideCoachmark()
+      betaNotice.forgetWithoutAcknowledging()
+    }
   })
   // The popup's own dismiss button (✕ / "Got it") routes through main
-  // back to here — flip the once-ever flag + hide.
-  unsubCoachmarkDismissed = bridge.onCoachmarkDismissed(() => {
-    void coachmark.dismiss()
+  // back to here — flip the once-ever flag + hide. One popup serves both cards,
+  // so the retirement arrives addressed with the kind that raised it.
+  unsubCoachmarkDismissed = bridge.onCoachmarkDismissed(({ kind }) => {
+    if (kind === 'beta-notice') void betaNotice.dismiss()
+    else void coachmark.dismiss().then(retryBetaNoticeAfterHint)
+  })
+  // Secondary action; only the beta notice has one today.
+  unsubCoachmarkAction = bridge.onCoachmarkAction(({ kind }) => {
+    if (kind === 'beta-notice') void betaNotice.openSettings()
   })
   bridge.ready()
 })
@@ -615,7 +679,13 @@ watch(
     void nextTick().then(() => {
       requestAnimationFrame(() => {
         if (unmounted) return
-        void coachmark.maybeShow()
+        // AWAITED, not fired alongside: the hint's `maybeShow` suspends on an IPC read before
+        // it sets `isShowing`, so launching both together would leave the beta notice's
+        // suppression check reading a stale `false`. It happens to work today only because the
+        // two IPC replies come back in call order; awaiting makes the dependency real.
+        void coachmark.maybeShow().then(() => {
+          if (!unmounted) void betaNotice.maybeShow()
+        })
       })
     })
   },
@@ -646,6 +716,7 @@ onUnmounted(() => {
   unsubInstallationId?.()
   unsubZoom?.()
   unsubCoachmarkDismissed?.()
+  unsubCoachmarkAction?.()
   bridge?.hideCoachmark()
   hideTip()
   trailingObserver?.disconnect()
@@ -860,6 +931,7 @@ onUnmounted(() => {
       </Transition>
       <button
         v-if="!isFirstUseLockdown"
+        ref="announcementBtn"
         type="button"
         class="title-menu-button title-menu-button--icon title-announcement-button"
         v-bind="tooltipAttrs(t('titleBar.announcementTooltip'), t('titleBar.announcement'))"

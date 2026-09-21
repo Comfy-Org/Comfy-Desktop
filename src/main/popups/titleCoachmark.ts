@@ -4,11 +4,18 @@ import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import { EmbeddedPopupView } from './embeddedPopupView'
 
 /**
- * First-instance onboarding coachmark popup: a sticky card with an upward beak
- * pointing at the centre title-bar pill. Reuses the `comfyTitleTooltip` renderer
- * (the `variant: 'coachmark'` config switches it to the beak/accent/dismiss card)
- * but owns a separate popup view so its sticky lifecycle (no auto-hide on blur,
- * since the dismiss button needs focus) doesn't fight the tooltip's auto-dismiss.
+ * Sticky title-bar coachmark popup: a card with an upward beak pointing at a title-bar
+ * element. Reuses the `comfyTitleTooltip` renderer (the `variant: 'coachmark'` config
+ * switches it to the beak/accent/dismiss card) but owns a separate popup view so its sticky
+ * lifecycle (no auto-hide on blur, since the dismiss button needs focus) doesn't fight the
+ * tooltip's auto-dismiss.
+ *
+ * Two callers share it: the first-instance onboarding hint pointing at the centre pill, and
+ * the Core beta activation notice pointing at the news bell. ONE popup per window on purpose
+ * — two sticky cards over the same canvas at once is worse than the later one replacing the
+ * earlier, and the renderer sequences them so that can only happen by accident. `kind` rides
+ * along on the config and is echoed back on dismiss/action so the title bar can route the
+ * result to the right owner.
  */
 
 const COACHMARK_POPUP_INITIAL_WIDTH = 300
@@ -17,6 +24,9 @@ const COACHMARK_POPUP_INITIAL_HEIGHT = 96
 export const COACHMARK_VERTICAL_GAP = 10
 /** Gutter (px) reserved for the card's box-shadow + beak so neither gets clipped. */
 export const COACHMARK_SHADOW_GUTTER = 18
+/** Keep the beak this far from the card's corners, so it always overlaps a straight edge
+ *  rather than floating off a rounded one. */
+export const COACHMARK_BEAK_EDGE_MARGIN = 14
 /** Fallback show timeout (ms) if the renderer's `:rendered` ack is slow. */
 const COACHMARK_RENDER_ACK_TIMEOUT_MS = 120
 
@@ -27,11 +37,22 @@ export interface CoachmarkTheme {
   accent: string
 }
 
+/** Which feature owns the card. Echoed back on dismiss/action so one popup can serve
+ *  several owners without either acting on the other's click. */
+export type CoachmarkKind = 'pill-hint' | 'beta-notice'
+
 export interface CoachmarkConfig {
   variant: 'coachmark'
+  kind: CoachmarkKind
   title: string
   body: string
   dismissLabel: string
+  /** Optional secondary action rendered beside dismiss. Omitted (not empty) when the card has
+   *  no action, so the renderer can tell "no action" from "action with a missing label". */
+  actionLabel?: string
+  /** Horizontal position of the beak as a fraction of the card's width. Sent on the SHOW push
+   *  (after measuring), never on the initial config, because it depends on the measured size. */
+  beakFraction?: number
   theme: CoachmarkTheme
   configToken: string
 }
@@ -42,27 +63,43 @@ function resolveCoachmarkTheme(): CoachmarkTheme {
 }
 
 export function buildCoachmarkConfig(opts: {
+  kind: CoachmarkKind
   title: string
   body: string
   dismissLabel: string
+  actionLabel?: string
   token: string
 }): CoachmarkConfig {
   return {
     variant: 'coachmark',
+    kind: opts.kind,
     title: opts.title,
     body: opts.body,
     dismissLabel: opts.dismissLabel,
+    ...(opts.actionLabel ? { actionLabel: opts.actionLabel } : {}),
     theme: resolveCoachmarkTheme(),
     configToken: opts.token
   }
 }
 
-/** Compute popup bounds centering the card under the pill, clamped to the parent. */
+/** Where the beak should sit, as a fraction of the CARD's width (0..1). `0.5` is the centre.
+ *  Returned alongside the bounds because clamping moves the card without moving the anchor:
+ *  a beak hard-fixed at 50% then points at whatever the clamp shifted it onto. */
+export interface CoachmarkPlacement {
+  x: number
+  y: number
+  width: number
+  height: number
+  beakFraction: number
+}
+
+/** Compute popup bounds centering the card under the anchor, clamped to the parent, plus where
+ *  the beak must sit within the card to keep pointing at the anchor after any clamp. */
 export function positionCoachmark(opts: {
   anchor: { leftX: number; rightX: number; bottomY: number }
   bubble: { width: number; height: number }
   parentBounds: { width: number; height: number }
-}): { x: number; y: number; width: number; height: number } {
+}): CoachmarkPlacement {
   const viewWidth = Math.max(
     opts.bubble.width + COACHMARK_SHADOW_GUTTER * 2,
     COACHMARK_SHADOW_GUTTER * 2 + 1
@@ -82,7 +119,15 @@ export function positionCoachmark(opts: {
   if (y + viewHeight > opts.parentBounds.height) {
     y = Math.max(0, opts.parentBounds.height - viewHeight)
   }
-  return { x, y, width: viewWidth, height: viewHeight }
+  // The card is centred inside the view, so its left edge sits one gutter in. Express the
+  // anchor's centre as a fraction of the card, then clamp to the card's rounded corners so the
+  // beak can never detach from the card's own edge.
+  const cardWidth = Math.max(1, viewWidth - COACHMARK_SHADOW_GUTTER * 2)
+  const cardLeft = x + COACHMARK_SHADOW_GUTTER
+  const rawFraction = (pillCenter - cardLeft) / cardWidth
+  const beakMargin = COACHMARK_BEAK_EDGE_MARGIN / cardWidth
+  const beakFraction = Math.min(1 - beakMargin, Math.max(beakMargin, rawFraction))
+  return { x, y, width: viewWidth, height: viewHeight, beakFraction }
 }
 
 let _coachmarkTokenSeq = 0
@@ -96,6 +141,9 @@ interface CoachmarkPopupEntry {
   pendingConfig: CoachmarkConfig | null
   pendingAnchor: { leftX: number; rightX: number; bottomY: number } | null
   pendingConfigToken: string | null
+  /** Owner of the card currently configured on this popup, so a dismiss or action click
+   *  reaches the composable that raised it and not the other one. */
+  kind: CoachmarkKind
 }
 
 const coachmarkPopupsByParent = new Map<number, CoachmarkPopupEntry>()
@@ -132,7 +180,8 @@ function ensureCoachmarkPopup(parent: BrowserWindow): CoachmarkPopupEntry {
     view,
     pendingConfig: null,
     pendingAnchor: null,
-    pendingConfigToken: null
+    pendingConfigToken: null,
+    kind: 'pill-hint'
   }
   coachmarkPopupsByParent.set(view.parentWindowId, entry)
   coachmarkPopupsByWebContents.set(view.popupWebContentsId, entry)
@@ -145,8 +194,14 @@ function repositionAndShow(
 ): void {
   if (!entry.pendingAnchor || entry.view.isDestroyed()) return
   const parentBounds = entry.view.parentWindow.getContentBounds()
-  const bounds = positionCoachmark({ anchor: entry.pendingAnchor, bubble, parentBounds })
+  const { beakFraction, ...bounds } = positionCoachmark({
+    anchor: entry.pendingAnchor,
+    bubble,
+    parentBounds
+  })
   entry.view.popup.setBounds(bounds)
+  // Tell the card where to draw its beak now that the final, possibly clamped, x is known.
+  entry.view.popup.webContents.send('comfy-titletooltip:set-beak', { beakFraction })
   // Focus so the dismiss button is keyboard-reachable.
   entry.view.showOnTop({ focus: true })
 }
@@ -158,9 +213,11 @@ export function hideCoachmarkPopup(entry: CoachmarkPopupEntry | undefined): void
 
 export function openCoachmarkPopup(opts: {
   parent: BrowserWindow
+  kind?: CoachmarkKind
   title: string
   body: string
   dismissLabel: string
+  actionLabel?: string
   leftX: number
   rightX: number
   bottomY: number
@@ -170,12 +227,16 @@ export function openCoachmarkPopup(opts: {
 
   entry.pendingAnchor = { leftX: opts.leftX, rightX: opts.rightX, bottomY: opts.bottomY }
   const token = nextCoachmarkToken()
+  const kind = opts.kind ?? 'pill-hint'
   const config = buildCoachmarkConfig({
+    kind,
     title: opts.title,
     body: opts.body,
     dismissLabel: opts.dismissLabel,
+    actionLabel: opts.actionLabel,
     token
   })
+  entry.kind = kind
   entry.pendingConfigToken = token
   if (entry.view.rendererReady) {
     entry.view.popup.webContents.send('comfy-titletooltip:set-config', config)
@@ -225,9 +286,11 @@ export function registerTitleCoachmarkIpc(opts: {
     (
       event,
       payload: {
+        kind?: unknown
         title?: unknown
         body?: unknown
         dismissLabel?: unknown
+        actionLabel?: unknown
         leftX?: unknown
         rightX?: unknown
         bottomY?: unknown
@@ -238,16 +301,22 @@ export function registerTitleCoachmarkIpc(opts: {
       const title = typeof payload?.title === 'string' ? payload.title : ''
       const body = typeof payload?.body === 'string' ? payload.body : ''
       if (!title && !body) return
-      // Renderer supplies the i18n label; main only forwards it.
+      // Renderer supplies the i18n labels; main only forwards them.
       const dismissLabel = typeof payload?.dismissLabel === 'string' ? payload.dismissLabel : ''
+      const actionLabel = typeof payload?.actionLabel === 'string' ? payload.actionLabel : undefined
+      // Unrecognised kinds fall back to the onboarding hint rather than being refused: an
+      // unroutable retirement would leave a card the title bar can never retire.
+      const kind: CoachmarkKind = payload?.kind === 'beta-notice' ? 'beta-notice' : 'pill-hint'
       const leftX = typeof payload?.leftX === 'number' ? payload.leftX : 0
       const rightX = typeof payload?.rightX === 'number' ? payload.rightX : leftX
       const bottomY = typeof payload?.bottomY === 'number' ? payload.bottomY : TITLEBAR_HEIGHT
       openCoachmarkPopup({
         parent,
+        kind,
         title,
         body,
         dismissLabel,
+        actionLabel,
         leftX: Math.round(leftX),
         rightX: Math.round(rightX),
         bottomY: Math.round(bottomY)
@@ -261,16 +330,26 @@ export function registerTitleCoachmarkIpc(opts: {
     hideCoachmarkPopup(coachmarkPopupsByParent.get(parent.id))
   })
 
-  // Dismiss fires from the popup's webContents; the title-bar renderer owns the
-  // once-ever flag persistence, so tell it to flip.
-  ipcMain.on('comfy-titlecoachmark:dismiss', (event) => {
-    const entry = coachmarkPopupsByWebContents.get(event.sender.id)
+  /** Hide the card and tell the parent's title bar what happened to it. Both outcomes —
+   *  dismiss and the secondary action — are retirements: the title-bar renderer owns the
+   *  once-ever persistence for whichever `kind` raised the card, so it is told either way and
+   *  decides what else the click means. */
+  const retire = (senderId: number, channel: string): void => {
+    const entry = coachmarkPopupsByWebContents.get(senderId)
     if (!entry) return
     entry.view.hide()
     const parent = entry.view.parentWindow
     if (parent && !parent.isDestroyed()) {
       const tb = opts.findTitleBarByParent(parent)
-      if (tb && !tb.isDestroyed()) tb.send('comfy-titlebar:coachmark-dismissed')
+      if (tb && !tb.isDestroyed()) tb.send(channel, { kind: entry.kind })
     }
+  }
+
+  ipcMain.on('comfy-titlecoachmark:dismiss', (event) => {
+    retire(event.sender.id, 'comfy-titlebar:coachmark-dismissed')
+  })
+
+  ipcMain.on('comfy-titlecoachmark:action', (event) => {
+    retire(event.sender.id, 'comfy-titlebar:coachmark-action')
   })
 }

@@ -86,7 +86,11 @@
     "resetZoomTooltip": "Reset zoom to 100%",
     "pillHintTitle": "Switch & manage instances",
     "pillHintBody": "Click here to switch instances, start a new local instance, or return to the dashboard.",
-    "pillHintDismiss": "Got it"
+    "pillHintDismiss": "Got it",
+    "betaNoticeTitle": "A beta feature is on",
+    "betaNoticeBody": "This instance started with a beta feature enabled. You can turn beta features off in Settings.",
+    "betaNoticeDismiss": "Got it",
+    "betaNoticeSettings": "Settings"
   },
   "comfyUISettings": {
     "title": "Settings",

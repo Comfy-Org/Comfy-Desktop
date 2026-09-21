@@ -97,6 +97,7 @@ import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 import { getCoreBetaGrantsAsync, selectCoreBetaGrantArgs } from '../../coreBetaGrants'
+import { armBetaActivationNotice } from '../../betaActivationNotice'
 import type { CoreBetaGrant } from '../../coreBetaGrants'
 import { coreRecordCurrent, coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
 import type { CoreCheckout } from '../../version'
@@ -778,6 +779,13 @@ async function runLaunch(
       writeLog: (text) => writeLog(logStream, text),
       sendOutput
     })
+    // Same latch, same reason: a grant is only worth announcing once it is provably on this
+    // launch's command line. Queued rather than shown — the host window may still be mid-attach
+    // or under the progress takeover, so the title bar drains this when its own gate opens.
+    armBetaActivationNotice(
+      installationId,
+      coreBeta.applied.map((grant) => grant.arg)
+    )
     try {
       emitCoreBetaTelemetry({
         appliedArgs: coreBeta.applied.map((grant) => grant.arg),

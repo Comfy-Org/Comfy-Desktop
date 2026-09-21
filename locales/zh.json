@@ -86,7 +86,11 @@
     "resetZoomTooltip": "将缩放重置为 100%",
     "pillHintTitle": "切换和管理实例",
     "pillHintBody": "点击这里切换实例、启动新的本地实例，或返回仪表板。",
-    "pillHintDismiss": "知道了"
+    "pillHintDismiss": "知道了",
+    "betaNoticeTitle": "已启用 Beta 功能",
+    "betaNoticeBody": "此实例启动时启用了一项 Beta 功能。你可以在设置中关闭 Beta 功能。",
+    "betaNoticeDismiss": "知道了",
+    "betaNoticeSettings": "设置"
   },
   "comfyUISettings": {
     "title": "设置",

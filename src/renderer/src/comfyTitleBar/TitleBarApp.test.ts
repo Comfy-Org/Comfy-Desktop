@@ -52,15 +52,18 @@ interface MockBridgeState {
   showTooltipCalls: { text: string; leftX: number; rightX: number; bottomY: number }[]
   hideTooltipCalls: number
   showCoachmarkCalls: {
+    kind?: string
     title: string
     body: string
     dismissLabel: string
+    actionLabel?: string
     leftX: number
     rightX: number
     bottomY: number
   }[]
   hideCoachmarkCalls: number
-  coachmarkDismissedCallbacks: (() => void)[]
+  coachmarkDismissedCallbacks: ((payload: { kind: string }) => void)[]
+  coachmarkActionCallbacks: ((payload: { kind: string }) => void)[]
   readyCalls: number
 }
 
@@ -98,6 +101,7 @@ function installMockBridge(
     showCoachmarkCalls: [],
     hideCoachmarkCalls: 0,
     coachmarkDismissedCallbacks: [],
+    coachmarkActionCallbacks: [],
     readyCalls: 0
   }
   const installationId = opts.installationId === undefined ? 'test-id' : opts.installationId
@@ -220,8 +224,12 @@ function installMockBridge(
     hideCoachmark: () => {
       state.hideCoachmarkCalls += 1
     },
-    onCoachmarkDismissed: (cb: () => void) => {
+    onCoachmarkDismissed: (cb: (payload: { kind: string }) => void) => {
       state.coachmarkDismissedCallbacks.push(cb)
+      return () => {}
+    },
+    onCoachmarkAction: (cb: (payload: { kind: string }) => void) => {
+      state.coachmarkActionCallbacks.push(cb)
       return () => {}
     },
     ready: () => {
@@ -1209,11 +1217,21 @@ describe('TitleBarApp', () => {
   describe('first-instance pill coachmark', () => {
     let getSetting: ReturnType<typeof vi.fn>
     let setSetting: ReturnType<typeof vi.fn>
+    let getPendingBetaNotice: ReturnType<typeof vi.fn>
 
     beforeEach(() => {
       getSetting = vi.fn().mockResolvedValue(undefined)
       setSetting = vi.fn().mockResolvedValue(undefined)
-      ;(window as unknown as { api: unknown }).api = { getSetting, setSetting }
+      // Nothing pending, so the beta notice never competes for the single popup and these
+      // assertions keep counting only pill-hint shows.
+      getPendingBetaNotice = vi.fn().mockResolvedValue([])
+      ;(window as unknown as { api: unknown }).api = {
+        getSetting,
+        setSetting,
+        getPendingBetaNotice,
+        acknowledgeBetaNotice: vi.fn().mockResolvedValue(undefined),
+        openGlobalSettings: vi.fn()
+      }
       // Run the deferred rAF synchronously so the coachmark trigger
       // resolves within a flushPromises() tick.
       vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
@@ -1295,6 +1313,180 @@ describe('TitleBarApp', () => {
       await flushPromises()
       expect(bridgeState.showCoachmarkCalls.length).toBe(1)
       expect(wrapper.find('.title-install-pill.is-coachmark').exists()).toBe(true)
+      wrapper.unmount()
+    })
+  })
+
+  /**
+   * Core beta activation notice — the card raised when a launch turned a beta feature on for
+   * the first time. `hasSeenCentralPillHint: true` throughout so the onboarding hint is spent
+   * and the beta notice is the only card competing for the window's single popup; the one
+   * exception is the suppression test, which deliberately lets both want it at once.
+   */
+  describe('core beta activation notice', () => {
+    let getPendingBetaNotice: ReturnType<typeof vi.fn>
+    let acknowledgeBetaNotice: ReturnType<typeof vi.fn>
+    let openGlobalSettings: ReturnType<typeof vi.fn>
+
+    function installApiMock(opts: { pending?: string[]; pillHintSeen?: boolean } = {}): void {
+      getPendingBetaNotice = vi.fn().mockResolvedValue(opts.pending ?? ['--enable-assets'])
+      acknowledgeBetaNotice = vi.fn().mockResolvedValue(undefined)
+      openGlobalSettings = vi.fn()
+      ;(window as unknown as { api: unknown }).api = {
+        getSetting: vi
+          .fn()
+          .mockImplementation((key: string) =>
+            key === 'hasSeenCentralPillHint'
+              ? Promise.resolve(opts.pillHintSeen !== false)
+              : Promise.resolve(undefined)
+          ),
+        setSetting: vi.fn().mockResolvedValue(undefined),
+        getPendingBetaNotice,
+        acknowledgeBetaNotice,
+        openGlobalSettings
+      }
+    }
+
+    beforeEach(() => {
+      installApiMock()
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        cb(0)
+        return 0
+      })
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+      delete (window as unknown as { api?: unknown }).api
+    })
+
+    async function mountBar(installationId: string | null = 'inst-1') {
+      bridgeState = installMockBridge({ installationId })
+      vi.resetModules()
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp, { attachTo: document.body })
+      await flushPromises()
+      return wrapper
+    }
+
+    const betaCards = () => bridgeState.showCoachmarkCalls.filter((c) => c.kind === 'beta-notice')
+
+    it('shows the notice anchored at the news bell when main has one pending', async () => {
+      const wrapper = await mountBar()
+      expect(getPendingBetaNotice).toHaveBeenCalledWith('inst-1')
+      expect(betaCards().length).toBe(1)
+      const payload = betaCards()[0]!
+      expect(payload.title).toBe('A beta feature is on')
+      // Copy is generic on purpose: the card never names the arg, so it cannot be wrong
+      // about which feature turned on.
+      expect(payload.body).not.toContain('--enable-assets')
+      // The action is what makes it more than an FYI.
+      expect(payload.actionLabel).toBe('Settings')
+      wrapper.unmount()
+    })
+
+    it('stays silent when main has nothing pending', async () => {
+      installApiMock({ pending: [] })
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(0)
+      wrapper.unmount()
+    })
+
+    it('stays silent on an install-less (dashboard) window, which launched nothing', async () => {
+      const wrapper = await mountBar(null)
+      expect(getPendingBetaNotice).not.toHaveBeenCalled()
+      expect(betaCards().length).toBe(0)
+      wrapper.unmount()
+    })
+
+    it('defers while the onboarding pill hint owns the popup', async () => {
+      // Both want the single popup on this launch. The hint wins and the notice replays next
+      // launch, rather than replacing a card the user is mid-read of.
+      installApiMock({ pillHintSeen: false })
+      const wrapper = await mountBar()
+      expect(bridgeState.showCoachmarkCalls.length).toBe(1)
+      expect(bridgeState.showCoachmarkCalls[0]!.kind).not.toBe('beta-notice')
+      // Nothing was acknowledged, so main still holds the pending notice.
+      expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('acknowledges on dismiss so the notice never returns', async () => {
+      const wrapper = await mountBar()
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1')
+      expect(bridgeState.hideCoachmarkCalls).toBeGreaterThan(0)
+      wrapper.unmount()
+    })
+
+    it('opens Settings on the beta opt-in row and retires the card in one click', async () => {
+      const wrapper = await mountBar()
+      bridgeState.coachmarkActionCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+      expect(openGlobalSettings).toHaveBeenCalledWith('general', {
+        highlightField: 'betaFeaturesEnabled'
+      })
+      // Acting on the card acknowledges it: the user is now looking at the switch it named.
+      expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1')
+      wrapper.unmount()
+    })
+
+    it('survives the pill drawer opening: the hint must not hide a card it did not raise', async () => {
+      // One popup per window. The hint's retire path hides it unconditionally, and by the time
+      // the drawer is opened the hint has usually never been on it — so without an ownership
+      // check the card vanishes with nothing acknowledged.
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(1)
+      const hidesBefore = bridgeState.hideCoachmarkCalls
+
+      expect(await wrapper.find('.title-install-pill').exists()).toBe(true)
+      await wrapper.find('.title-install-pill').trigger('click')
+      await flushPromises()
+
+      expect(bridgeState.hideCoachmarkCalls).toBe(hidesBefore)
+      expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('retries once the onboarding hint releases the popup', async () => {
+      // Deferring is correct, but nothing in the gate watcher changes when the hint goes away,
+      // so the card would otherwise wait for the next launch.
+      installApiMock({ pillHintSeen: false })
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(0)
+
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+      await flushPromises()
+
+      expect(betaCards().length).toBe(1)
+      wrapper.unmount()
+    })
+
+    it('acknowledges the install the card was raised for, not whatever the host retargets to', async () => {
+      // The card names "this instance". If the window attaches elsewhere while it floats,
+      // acknowledging the new install would permanently consume a notice never shown for it.
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(1)
+
+      bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-2'))
+      await flushPromises()
+      // The card belonged to inst-1, so it comes down — without being spent.
+      expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
+
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+      expect(acknowledgeBetaNotice).not.toHaveBeenCalledWith('inst-2')
+      wrapper.unmount()
+    })
+
+    it('routes a pill-hint dismiss away from the beta notice', async () => {
+      // One popup, two owners: a retirement addressed to the hint must not spend the
+      // notice's once-ever acknowledgement.
+      const wrapper = await mountBar()
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+      await flushPromises()
+      expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
       wrapper.unmount()
     })
   })

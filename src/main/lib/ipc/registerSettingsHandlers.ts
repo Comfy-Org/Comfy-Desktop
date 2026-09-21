@@ -15,6 +15,7 @@ import * as mainTelemetry from '../telemetry'
 import { detectFirstUseState } from '../firstUseDetection'
 import * as updater from '../updater'
 import { globalSettingsEvents } from '../globalSettingsEvents'
+import { acknowledgeBetaActivationNotice, peekBetaActivationNotice } from '../betaActivationNotice'
 import { recordIpcInvocation } from '../e2eOverrides'
 import type { SettingsSection } from '../../../types/ipc'
 import { AUTO_LAUNCH_LAST, AUTO_LAUNCH_NONE } from '../../settings'
@@ -335,6 +336,20 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle('get-setting', (_event, key: string) => {
     return settings.get(key)
+  })
+
+  // Core beta activation notice. A PULL pair rather than a push: main arms the pending set
+  // during launch, when the host window may still be mid-attach or under the progress
+  // takeover, and the title bar drains it once its own gate opens.
+  ipcMain.handle('get-pending-beta-notice', (_event, installationId: string) => {
+    return peekBetaActivationNotice(installationId)
+  })
+
+  // Retire the card: persist its args as announced so it never shows again. Deliberately
+  // separate from the read, so a notice that is shown but never retired replays next launch.
+  ipcMain.handle('acknowledge-beta-notice', (_event, installationId: string) => {
+    recordIpcInvocation('acknowledge-beta-notice', { installationId })
+    acknowledgeBetaActivationNotice(installationId)
   })
 
   ipcMain.handle('get-locale-messages', () => i18n.getMessages())

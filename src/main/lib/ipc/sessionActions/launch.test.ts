@@ -141,6 +141,13 @@ import {
   _cleanupFailedLaunchSetup
 } from './launch'
 import * as assetsTapModule from '../../assetsTap'
+import {
+  BETA_NOTICE_ANNOUNCED_ARGS_KEY,
+  _resetForTest as _resetBetaNotice,
+  acknowledgeBetaActivationNotice,
+  peekBetaActivationNotice
+} from '../../betaActivationNotice'
+import * as settingsModule from '../../../settings'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import type { createExecutionTap } from '../../executionTap'
@@ -912,6 +919,11 @@ describe('core beta report placement', () => {
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
     launchHarness.duringResourceAcquire = null
+    // Both halves of the activation-notice state: the in-process pending queue and the
+    // persisted announced list, which the real settings module keeps in this run's temp
+    // app dir. Without the reset, the first test to launch spends the notice for the rest.
+    _resetBetaNotice()
+    settingsModule.set(BETA_NOTICE_ANNOUNCED_ARGS_KEY, [])
     launchHarness.spawn = (_cmd: unknown, args: unknown) => {
       spawnArgs = args as string[]
       return fakeChild()
@@ -958,6 +970,51 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain('[core-beta] --enable-assets')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.applied')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
+  })
+
+  it('arms the activation notice from the same latch that reports the grant', async () => {
+    const id = 'harness-arms-beta-notice'
+    expect(peekBetaActivationNotice(id)).toEqual([])
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(true)
+    expect(peekBetaActivationNotice(id)).toEqual(['--enable-assets'])
+  })
+
+  it('arms nothing on a launch whose grants the args schema refused', async () => {
+    // A grant the running core cannot parse is dropped as `dropped_unsupported`, so the
+    // feature is NOT on and announcing it would be a lie. The schema is the gate the notice
+    // inherits by reading `applied` rather than the selected set.
+    launchHarness.schemaNames = ['listen', 'feature-flag']
+    const id = 'harness-schema-refused'
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
+    expect(peekBetaActivationNotice(id)).toEqual([])
+  })
+
+  it('arms nothing for an install that opted out of beta features', async () => {
+    launchHarness.betaEnabled = false
+    const id = 'harness-opted-out'
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(true)
+    expect(peekBetaActivationNotice(id)).toEqual([])
+  })
+
+  it('stays silent on the NEXT launch once the notice has been acknowledged', async () => {
+    const id = 'harness-announces-once'
+    await handleLaunch(ctxFor(id))
+    acknowledgeBetaActivationNotice(id)
+    expect(settingsModule.get(BETA_NOTICE_ANNOUNCED_ARGS_KEY)).toEqual(['--enable-assets'])
+
+    await handleLaunch(ctxFor(id))
+
+    expect(peekBetaActivationNotice(id)).toEqual([])
   })
 
   /** The commit `harnessInstall`'s record names, i.e. what the version gate believes is running. */

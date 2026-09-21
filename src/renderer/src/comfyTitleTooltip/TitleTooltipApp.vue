@@ -18,6 +18,8 @@ interface TooltipConfig {
   title?: string
   body?: string
   dismissLabel?: string
+  /** Secondary action beside dismiss, when the card has one. Absent = dismiss-only. */
+  actionLabel?: string
   theme: { bg: string; text: string; border: string; accent?: string }
   configToken: string
 }
@@ -29,6 +31,12 @@ interface Bridge {
   /** Coachmark dismiss button — tells main to hide + persist the
    *  once-ever flag. No-op for the tooltip variant. */
   dismissCoachmark?(): void
+  /** Beak position as a fraction of the card's width, pushed once main has measured the card
+   *  and settled its final bounds. */
+  onBeak?(cb: (payload: { beakFraction: number }) => void): () => void
+  /** Coachmark secondary action — retires the card the same way dismiss does, and lets the
+   *  owning feature run its follow-up (e.g. opening Settings). */
+  actionCoachmark?(): void
 }
 
 const bridge = (window as unknown as { __comfyTitleTooltip?: Bridge }).__comfyTitleTooltip
@@ -38,6 +46,10 @@ const text = ref<string>('')
 const cmTitle = ref<string>('')
 const cmBody = ref<string>('')
 const cmDismissLabel = ref<string>('Got it')
+const cmActionLabel = ref<string>('')
+/** Defaults to centred, which is what a card with no clamp and a correct anchor resolves to
+ *  anyway — so a missed push degrades to the old behaviour rather than to a detached beak. */
+const cmBeakFraction = ref<number>(0.5)
 const themeBg = ref<string>('#211927')
 const themeText = ref<string>('#ffffff')
 const themeBorder = ref<string>('#38303d')
@@ -50,6 +62,7 @@ let currentConfigToken = ''
 const bubbleRef = useTemplateRef<HTMLElement>('bubble')
 
 let unsubConfig: (() => void) | undefined
+let unsubBeak: (() => void) | undefined
 
 /** Wait for the Inter web font before measuring, else the first show measures in
  *  the fallback font and reports a wrong size, making the bubble visibly
@@ -88,11 +101,17 @@ onMounted(() => {
     cmTitle.value = cfg.title ?? ''
     cmBody.value = cfg.body ?? ''
     cmDismissLabel.value = cfg.dismissLabel ?? cmDismissLabel.value
+    // Reset rather than retain: one popup serves several cards, so a dismiss-only card
+    // following an actioned one must not inherit the previous card's button.
+    cmActionLabel.value = cfg.actionLabel ?? ''
     themeBg.value = cfg.theme.bg
     themeText.value = cfg.theme.text
     themeBorder.value = cfg.theme.border
     if (cfg.theme.accent) themeAccent.value = cfg.theme.accent
     void measureAndAck()
+  })
+  unsubBeak = bridge?.onBeak?.(({ beakFraction }) => {
+    cmBeakFraction.value = Math.min(1, Math.max(0, beakFraction))
   })
   bridge?.ready()
   // Re-measure if Inter loads mid-session (after the initial ack) so main can
@@ -105,8 +124,9 @@ onMounted(() => {
 })
 
 // Defensive re-measure if rendered text changes outside the config push (HMR,
-// future mutations that bypass `onConfig`).
-watch([text, cmTitle, cmBody], () => {
+// future mutations that bypass `onConfig`). `cmActionLabel` is in here because adding or
+// dropping the action button changes the card's measured width.
+watch([text, cmTitle, cmBody, cmActionLabel], () => {
   void measureAndAck()
 })
 
@@ -114,8 +134,13 @@ function onDismiss(): void {
   bridge?.dismissCoachmark?.()
 }
 
+function onAction(): void {
+  bridge?.actionCoachmark?.()
+}
+
 onUnmounted(() => {
   unsubConfig?.()
+  unsubBeak?.()
 })
 </script>
 
@@ -133,18 +158,36 @@ onUnmounted(() => {
       borderColor: coachmarkBorder
     }"
   >
-    <span class="coachmark-beak" :style="{ background: themeBg, borderColor: coachmarkBorder }" />
+    <span
+      class="coachmark-beak"
+      :style="{
+        background: themeBg,
+        borderColor: coachmarkBorder,
+        left: `${cmBeakFraction * 100}%`
+      }"
+    />
     <div class="coachmark-body">
       <div class="coachmark-title" :style="{ color: themeAccent }">{{ cmTitle }}</div>
       <p class="coachmark-text">{{ cmBody }}</p>
-      <button
-        type="button"
-        class="coachmark-dismiss"
-        :style="{ color: themeAccent }"
-        @click="onDismiss"
-      >
-        {{ cmDismissLabel }}
-      </button>
+      <div class="coachmark-actions">
+        <button
+          v-if="cmActionLabel"
+          type="button"
+          class="coachmark-action"
+          :style="{ color: themeAccent }"
+          @click="onAction"
+        >
+          {{ cmActionLabel }}
+        </button>
+        <button
+          type="button"
+          class="coachmark-dismiss"
+          :style="{ color: themeAccent }"
+          @click="onDismiss"
+        >
+          {{ cmDismissLabel }}
+        </button>
+      </div>
     </div>
   </div>
   <span
@@ -216,6 +259,8 @@ onUnmounted(() => {
 }
 
 /* Upward beak: a rotated square sharing the card's bg + border. */
+/* `left` is set inline from the measured anchor position; 50% is the fallback for a card
+   whose beak push never arrived. */
 .coachmark-beak {
   position: absolute;
   top: -6px;
@@ -241,6 +286,15 @@ onUnmounted(() => {
   opacity: 0.88;
 }
 
+/* Action (when present) sits left of dismiss, which stays the rightmost button so its
+   position doesn't move between a dismiss-only and an actioned card. */
+.coachmark-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.coachmark-action,
 .coachmark-dismiss {
   appearance: none;
   background: transparent;
@@ -252,6 +306,7 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+.coachmark-action:hover,
 .coachmark-dismiss:hover {
   text-decoration: underline;
 }

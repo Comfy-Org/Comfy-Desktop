@@ -24,6 +24,12 @@ interface UseCentralPillCoachmarkOpts {
   isFirstUseLockdown: Ref<boolean>
   /** Wait out a ProgressModal takeover so the hint fires over real ComfyUI, not the loader. */
   isLoadingLockdown?: Ref<boolean>
+  /** Whether this hint currently owns the window's single coachmark popup. Retiring hides that
+   *  popup, and by the time the pill drawer opens the hint has usually never been on it (it is
+   *  once-ever, and having been seen is exactly what lets another card through) — so without
+   *  this check, acknowledging the hint would hide someone else's card. Defaults to "owns it",
+   *  preserving the original behaviour for callers that do not share the popup. */
+  ownsPopup?: () => boolean
   installPillRef: Readonly<ShallowRef<HTMLElement | null>>
   /** Resolved coachmark copy (i18n done by the caller). */
   title: string
@@ -97,10 +103,12 @@ export function useCentralPillCoachmark(
   }
 
   async function retire(): Promise<void> {
+    const owned = opts.ownsPopup?.() ?? true
     isShowing.value = false
     if (hasCoachmarkRetired) return
     hasCoachmarkRetired = true
-    opts.bridge?.hideCoachmark()
+    // Only pull down the popup if this hint is what is on it.
+    if (owned) opts.bridge?.hideCoachmark()
     try {
       await window.api.setSetting(CENTRAL_PILL_HINT_SEEN_KEY, true)
     } catch {

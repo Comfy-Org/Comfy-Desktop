@@ -1234,7 +1234,15 @@ export interface ElectronApi {
    *  `comfy://open-settings?tab=global` deep link. Main reuses the
    *  same helper the hamburger Settings entry calls. `tab` lands the
    *  popup on that tab instead of its remembered one. */
-  openGlobalSettings(tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs'): void
+  openGlobalSettings(
+    tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
+    opts?: {
+      /** Field id to scroll to and flash once the tab renders (e.g.
+       *  `'betaFeaturesEnabled'`). A per-open command like `tab`, not state:
+       *  the rebroadcast snapshot carries none, so the flash does not repeat. */
+      highlightField?: string
+    }
+  ): void
   /** Open the instance-picker popup for the panel's host window with
    *  `installationId` seeded as the picker's right-pane selection.
    *  Used by chooser-card "Manage…" (and future per-install entry
@@ -1426,6 +1434,17 @@ export interface ElectronApi {
   getUniqueName(baseName: string): Promise<string>
   setSetting(key: string, value: unknown): Promise<void>
   getSetting(key: string): Promise<unknown>
+
+  // Core beta activation notice
+  /** Core beta args this install turned on for the first time and has not
+   *  announced yet, or `[]`. Read repeatedly without side effects — the
+   *  pending set is only cleared by `acknowledgeBetaNotice`, so a card that is
+   *  shown but never retired comes back on the next launch. */
+  getPendingBetaNotice(installationId: string): Promise<string[]>
+  /** Retire this install's activation notice: its args are persisted as
+   *  announced and never raise a card again. Called when the user dismisses
+   *  the card or follows its settings link. */
+  acknowledgeBetaNotice(installationId: string): Promise<void>
 
   // Theme
   getResolvedTheme(): Promise<ResolvedTheme>
