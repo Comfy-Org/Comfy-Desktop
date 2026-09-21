@@ -1139,6 +1139,7 @@
     "triggerPreUpdate": "更新",
     "triggerPostUpdate": "已更新",
     "triggerPostRestore": "已恢复",
+    "labelRestoreIncomplete": "恢复未完成",
     "environment": "环境",
     "comfyuiVersion": "ComfyUI",
     "releaseTag": "版本",

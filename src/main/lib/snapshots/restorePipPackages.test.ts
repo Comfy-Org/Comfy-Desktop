@@ -1,0 +1,343 @@
+// @vitest-environment node
+/**
+ * Regression tests for #1514: a snapshot restore of an unmodified install
+ * destroyed the environment (100 packages down to 6, ComfyUI unbootable).
+ *
+ * Two independent faults produced it:
+ *
+ *  A. the current-package list was read from a colourised `uv pip freeze`, so
+ *     every name arrived as `ESC[1mname ESC[0m`. An identical 100-package set
+ *     diffed as "install 94, remove 100", and every removal was rejected by uv.
+ *  B. the failure handler then "reverted" the 94 installs — which had been
+ *     no-ops, every package was already present — by uninstalling them.
+ *
+ * B is the data-loss mechanism and is fixed independently of A: the revert now
+ * only uninstalls packages that were provably absent from site-packages before
+ * the restore began.
+ */
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import type * as PipModule from '../pip'
+
+vi.mock('electron', () => ({
+  app: { getPath: () => '/tmp', isPackaged: false }
+}))
+vi.mock('../git', () => ({
+  readGitHead: vi.fn(),
+  isGitAvailable: vi.fn(() => false),
+  gitClone: vi.fn(),
+  gitCheckoutCommit: vi.fn(),
+  gitFetchAndCheckout: vi.fn()
+}))
+vi.mock('../nodes', () => ({
+  scanCustomNodes: vi.fn(async () => []),
+  nodeKey: vi.fn()
+}))
+vi.mock('../cnr', () => ({
+  installCnrNode: vi.fn(),
+  switchCnrVersion: vi.fn(),
+  isSafePathComponent: vi.fn(() => true)
+}))
+vi.mock('../../settings', () => ({
+  get: vi.fn(),
+  getMirrorConfig: vi.fn(() => undefined)
+}))
+vi.mock('../pip', () => ({
+  pipFreeze: vi.fn(),
+  runUvPip: vi.fn(async () => 0),
+  installFilteredRequirements: vi.fn(async () => 0),
+  getPipIndexArgs: vi.fn(() => [])
+}))
+vi.mock('../pythonEnv', () => ({
+  getActiveUvPath: vi.fn(() => uvBinPath),
+  getActivePythonPath: vi.fn(() => '/fake/python'),
+  getActiveVenvDir: vi.fn(() => venvDirPath)
+}))
+vi.mock('../../sources/standalone/envPaths', () => ({
+  findSitePackages: vi.fn(() => sitePackagesPath)
+}))
+
+import { restorePipPackages, preexistingOnDisk } from './restore'
+import { pipFreeze, runUvPip } from '../pip'
+import type { Snapshot } from './types'
+import type { InstallationRecord } from '../../installations'
+
+// Paths the mocked env accessors hand back; assigned per test in beforeEach.
+let uvBinPath = ''
+let venvDirPath = ''
+let sitePackagesPath = ''
+let tmpRoot = ''
+
+const installation = { id: 'test', installPath: '' } as unknown as InstallationRecord
+
+/** Write a package's `.dist-info` directory, as an installed package has. */
+function installOnDisk(name: string, version: string): void {
+  const distInfo = path.join(
+    sitePackagesPath,
+    `${name.replace(/[-.]+/g, '_')}-${version}.dist-info`
+  )
+  fs.mkdirSync(distInfo, { recursive: true })
+  fs.writeFileSync(path.join(distInfo, 'RECORD'), `${name}/__init__.py,,\n`)
+  fs.mkdirSync(path.join(sitePackagesPath, name), { recursive: true })
+  fs.writeFileSync(path.join(sitePackagesPath, name, '__init__.py'), '')
+}
+
+function snapshotWith(pipPackages: Record<string, string>): Snapshot {
+  return {
+    version: 2,
+    createdAt: new Date().toISOString(),
+    trigger: 'manual',
+    label: null,
+    comfyui: { ref: 'master', commit: 'abc1234', releaseTag: 'v0.36.0', variant: 'nvidia' },
+    customNodes: [],
+    pipPackages
+  }
+}
+
+/** Every `uv pip <verb>` invocation the run made, as recorded arg arrays. */
+function uvCalls(): string[][] {
+  return vi.mocked(runUvPip).mock.calls.map((call) => call[1] as string[])
+}
+
+function uninstallArgs(): string[] {
+  return uvCalls()
+    .filter((args) => args[0] === 'pip' && args[1] === 'uninstall')
+    .flatMap((args) => args.slice(2).filter((a) => !a.startsWith('--') && a !== '/fake/python'))
+}
+
+const noProgress = (): void => {}
+
+describe('restorePipPackages', () => {
+  let output: string[]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(runUvPip).mockResolvedValue(0)
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'restore-pip-'))
+    venvDirPath = path.join(tmpRoot, '.venv')
+    sitePackagesPath = path.join(venvDirPath, 'lib', 'python3.12', 'site-packages')
+    fs.mkdirSync(sitePackagesPath, { recursive: true })
+    uvBinPath = path.join(tmpRoot, 'uv')
+    fs.writeFileSync(uvBinPath, '')
+    installation.installPath = tmpRoot
+    output = []
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
+  })
+
+  const run = (target: Snapshot, signal?: AbortSignal): ReturnType<typeof restorePipPackages> =>
+    restorePipPackages(
+      tmpRoot,
+      installation,
+      target,
+      noProgress,
+      (text) => output.push(text),
+      signal
+    )
+
+  describe('identity case (#1514 acceptance criterion 3)', () => {
+    it('does nothing when the live environment already matches the snapshot', async () => {
+      const packages = Object.fromEntries(
+        Array.from({ length: 100 }, (_, i) => [`pkg-${i}`, `1.${i}.0`])
+      )
+      for (const [name, version] of Object.entries(packages)) installOnDisk(name, version)
+      vi.mocked(pipFreeze).mockResolvedValue({ ...packages })
+
+      const result = await run(snapshotWith({ ...packages }))
+
+      expect(runUvPip).not.toHaveBeenCalled()
+      expect(result).toMatchObject({ installed: [], removed: [], changed: [], failed: [] })
+      expect(result.revert).toBeUndefined()
+      expect(output.join('')).toContain('No package changes needed')
+    })
+
+    it('is still a no-op when uv colourises the freeze it parsed (#1514 bug A)', async () => {
+      // The freeze the launcher reads is produced by `parsePipFreeze`, which
+      // strips SGR codes. Feeding it the colourised stream uv emits under an
+      // inherited FORCE_COLOR must yield the same plan as a plain one: nothing.
+      const { parsePipFreeze } = await vi.importActual<typeof PipModule>('../pip')
+      const names = Array.from({ length: 100 }, (_, i) => `pkg-${i}`)
+      const colourised = names.map((n, i) => `\u001B[1m${n}\u001B[0m==1.${i}.0\n`).join('')
+      const target = Object.fromEntries(names.map((n, i) => [n, `1.${i}.0`]))
+      for (const [name, version] of Object.entries(target)) installOnDisk(name, version)
+      vi.mocked(pipFreeze).mockResolvedValue(parsePipFreeze(colourised))
+
+      const result = await run(snapshotWith(target))
+
+      expect(runUvPip).not.toHaveBeenCalled()
+      expect(result.installed).toEqual([])
+      expect(result.removed).toEqual([])
+    })
+  })
+
+  describe('revert never uninstalls pre-existing packages (#1514 acceptance criterion 1)', () => {
+    /**
+     * The #1514 shape, reproduced without depending on bug A: the freeze
+     * under-reports what is installed, so packages that are in fact present
+     * are planned as fresh installs. A later removal failure then triggers the
+     * revert. Those packages must survive it.
+     */
+    const brokenFreezeSetup = (): Snapshot => {
+      for (const name of ['aiohttp', 'filelock', 'numpy']) installOnDisk(name, '1.0.0')
+      // The freeze sees none of the installed packages, only an extra one.
+      vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
+      return snapshotWith({ aiohttp: '1.0.0', filelock: '1.0.0', numpy: '1.0.0' })
+    }
+
+    it('leaves packages that were already on disk alone when the restore fails', async () => {
+      const target = brokenFreezeSetup()
+      // Installs succeed (they are no-ops in reality); every removal fails,
+      // exactly as uv rejected the mangled names in the bug report.
+      vi.mocked(runUvPip).mockImplementation(async (_uv, args) =>
+        (args as string[])[1] === 'uninstall' ? 1 : 0
+      )
+
+      const result = await run(target)
+
+      expect(result.failed).toEqual(['ghost-pkg'])
+      expect(result.revert).toBeDefined()
+      expect(result.revert!.reason).toBe('failures')
+      // The three pre-existing packages are recognised and spared...
+      expect(result.revert!.keptPreexisting.sort()).toEqual(['aiohttp', 'filelock', 'numpy'])
+      expect(result.revert!.uninstalled).toEqual([])
+      // ...and no uv invocation ever names them as an uninstall target.
+      for (const name of ['aiohttp', 'filelock', 'numpy']) {
+        expect(uninstallArgs()).not.toContain(name)
+      }
+      // Their files are still in site-packages.
+      for (const name of ['aiohttp', 'filelock', 'numpy']) {
+        expect(fs.existsSync(path.join(sitePackagesPath, name, '__init__.py'))).toBe(true)
+      }
+      expect(output.join('')).toContain('already installed on disk')
+    })
+
+    it('leaves them alone when the restore is cancelled, too', async () => {
+      const target = brokenFreezeSetup()
+      const controller = new AbortController()
+      vi.mocked(runUvPip).mockImplementation(async () => {
+        controller.abort()
+        return 0
+      })
+
+      const result = await run(target, controller.signal)
+
+      expect(result.revert?.reason).toBe('cancelled')
+      expect(result.revert?.uninstalled).toEqual([])
+      for (const name of ['aiohttp', 'filelock', 'numpy']) {
+        expect(uninstallArgs()).not.toContain(name)
+      }
+    })
+
+    it('still uninstalls packages the restore genuinely added', async () => {
+      // `brand-new` has no dist-info on disk, so it really is new; the other
+      // two predate the restore. Only the new one may be rolled back.
+      installOnDisk('aiohttp', '1.0.0')
+      installOnDisk('numpy', '1.0.0')
+      vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
+      vi.mocked(runUvPip).mockImplementation(async (_uv, args) =>
+        (args as string[])[1] === 'uninstall' && (args as string[]).includes('ghost-pkg') ? 1 : 0
+      )
+
+      const result = await run(
+        snapshotWith({ aiohttp: '1.0.0', numpy: '1.0.0', 'brand-new': '2.0.0' })
+      )
+
+      expect(result.revert!.uninstalled).toEqual(['brand-new'])
+      expect(result.revert!.keptPreexisting.sort()).toEqual(['aiohttp', 'numpy'])
+      expect(uninstallArgs()).toContain('brand-new')
+      expect(uninstallArgs()).not.toContain('aiohttp')
+      expect(uninstallArgs()).not.toContain('numpy')
+    })
+  })
+
+  describe('revert reporting (#1514 acceptance criterion 4)', () => {
+    it('reports an incomplete revert instead of asserting a clean one', async () => {
+      installOnDisk('ghost-pkg', '9.9.9')
+      vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
+      // Both the removal and the revert's uninstall fail.
+      vi.mocked(runUvPip).mockResolvedValue(1)
+
+      const result = await run(snapshotWith({ 'brand-new': '2.0.0' }))
+
+      expect(result.revert!.complete).toBe(false)
+      expect(result.errors.some((e) => e.includes('did not fully complete'))).toBe(true)
+      expect(result.errors.some((e) => e.includes('reverted to pre-restore state'))).toBe(false)
+    })
+
+    it('reports a clean revert when every step succeeded', async () => {
+      installOnDisk('ghost-pkg', '9.9.9')
+      vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
+      let installs = 0
+      vi.mocked(runUvPip).mockImplementation(async (_uv, args) => {
+        const a = args as string[]
+        // The bulk install fails, then each single install fails, so the phase
+        // reports failures; every uninstall (removal + revert) succeeds.
+        if (a[1] === 'install') {
+          installs++
+          return 1
+        }
+        return 0
+      })
+
+      const result = await run(snapshotWith({ 'brand-new': '2.0.0' }))
+
+      expect(installs).toBeGreaterThan(0)
+      expect(result.failed).toEqual(['brand-new'])
+      expect(result.revert!.complete).toBe(true)
+      expect(result.revert!.uninstalled).toEqual(['brand-new'])
+      expect(result.errors).toContain('Restore reverted to pre-restore state due to failures')
+    })
+  })
+})
+
+describe('preexistingOnDisk', () => {
+  let tmp = ''
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'preexisting-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  const distInfo = (dirName: string): void => {
+    fs.mkdirSync(path.join(tmp, `${dirName}.dist-info`), { recursive: true })
+  }
+
+  it('reports only the names with a dist-info directory', () => {
+    distInfo('aiohttp-3.9.5')
+    expect(preexistingOnDisk(tmp, ['aiohttp', 'brand-new'])).toEqual(['aiohttp'])
+  })
+
+  it('matches PEP 503 name variants (case and separators)', () => {
+    distInfo('typing_extensions-4.12.2')
+    distInfo('pillow-11.0.0')
+    expect(preexistingOnDisk(tmp, ['typing-extensions', 'Pillow'])).toEqual([
+      'typing-extensions',
+      'Pillow'
+    ])
+  })
+
+  it('ignores non-dist-info entries', () => {
+    fs.mkdirSync(path.join(tmp, 'aiohttp'))
+    expect(preexistingOnDisk(tmp, ['aiohttp'])).toEqual([])
+  })
+
+  // "Can't tell" must never read as "nothing was installed before" — that is
+  // the reading that uninstalls the user's environment (#1514).
+  it('treats every candidate as pre-existing when site-packages cannot be read', () => {
+    expect(preexistingOnDisk(path.join(tmp, 'does-not-exist'), ['aiohttp', 'numpy'])).toEqual([
+      'aiohttp',
+      'numpy'
+    ])
+  })
+
+  it('returns an empty list for no candidates', () => {
+    expect(preexistingOnDisk(tmp, [])).toEqual([])
+  })
+})

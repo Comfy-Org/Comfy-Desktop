@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { getPipIndexArgs, PYPI_INDEX_URL, PYPI_MIRROR_URLS } from './pip'
+import {
+  getPipIndexArgs,
+  parsePipFreeze,
+  stripAnsi,
+  uvEnv,
+  PYPI_INDEX_URL,
+  PYPI_MIRROR_URLS
+} from './pip'
 
 /** Extract --index-url value from args. */
 function getIndexUrl(args: string[]): string | undefined {
@@ -131,5 +138,69 @@ describe('getPipIndexArgs', () => {
 
   it('passes undefined the same as no argument', () => {
     expect(getPipIndexArgs(undefined)).toEqual(getPipIndexArgs())
+  })
+})
+
+describe('parsePipFreeze', () => {
+  it('parses a plain freeze', () => {
+    expect(parsePipFreeze('aiohttp==3.9.5\nnumpy==1.26.4\n')).toEqual({
+      aiohttp: '3.9.5',
+      numpy: '1.26.4'
+    })
+  })
+
+  // #1514: uv honours FORCE_COLOR/CLICOLOR_FORCE even into a pipe, so the
+  // freeze can arrive as `ESC[1mname ESC[0m==version`. A name carrying those
+  // bytes matches nothing in the snapshot and is rejected by `uv pip
+  // uninstall` — which is what tipped a no-op restore into a destructive one.
+  it('parses a colourised freeze to the same result as a plain one', () => {
+    const colourised =
+      '\u001B[1maiohttp\u001B[0m==3.9.5\n' +
+      '\u001B[1mnumpy\u001B[0m==1.26.4\n' +
+      '\u001B[1mtorch\u001B[0m==2.4.1+cu121\n'
+    const parsed = parsePipFreeze(colourised)
+    expect(parsed).toEqual({ aiohttp: '3.9.5', numpy: '1.26.4', torch: '2.4.1+cu121' })
+    for (const name of Object.keys(parsed)) {
+      expect(name).not.toContain('\u001B')
+    }
+  })
+
+  it('strips colour from editable installs and PEP 508 direct references', () => {
+    const output =
+      '-e \u001B[1mgit+https://github.com/x/y@abc#egg=ynode\u001B[0m\n' +
+      '\u001B[1mmypkg\u001B[0m @ \u001B[2mfile:///tmp/mypkg\u001B[0m\n'
+    const parsed = parsePipFreeze(output)
+    expect(Object.keys(parsed)).toEqual(['ynode', 'mypkg'])
+    expect(parsed.mypkg).toBe('file:///tmp/mypkg')
+    expect(parsed.ynode).not.toContain('\u001B')
+  })
+
+  it('ignores blank lines, comments, and uv status chatter', () => {
+    expect(
+      parsePipFreeze('\n# a comment\nUsing Python 3.12.4 environment at: .venv\nnumpy==1.26.4\n')
+    ).toEqual({ numpy: '1.26.4' })
+  })
+})
+
+describe('stripAnsi', () => {
+  it('removes SGR sequences and leaves plain text untouched', () => {
+    expect(stripAnsi('\u001B[1mbold\u001B[0m plain')).toBe('bold plain')
+    expect(stripAnsi('plain')).toBe('plain')
+  })
+})
+
+describe('uvEnv', () => {
+  it('forces colour off, overriding an inherited FORCE_COLOR/CLICOLOR_FORCE', () => {
+    const env = uvEnv({ PATH: '/usr/bin', FORCE_COLOR: '1', CLICOLOR_FORCE: '1' })
+    expect(env.NO_COLOR).toBe('1')
+    expect('FORCE_COLOR' in env).toBe(false)
+    expect('CLICOLOR_FORCE' in env).toBe(false)
+    expect(env.PATH).toBe('/usr/bin')
+  })
+
+  it('does not mutate the environment it is given', () => {
+    const base = { FORCE_COLOR: '1' }
+    uvEnv(base)
+    expect(base.FORCE_COLOR).toBe('1')
   })
 })

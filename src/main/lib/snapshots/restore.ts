@@ -23,7 +23,7 @@ import { killProcTree } from '../process'
 import { formatComfyVersion } from '../version'
 import { getActivePythonPath, getActiveUvPath, getActiveVenvDir } from '../pythonEnv'
 import { findSitePackages } from '../../sources/standalone/envPaths'
-import type { Snapshot, RestoreResult, NodeRestoreResult } from './types'
+import type { Snapshot, RestoreResult, RestoreRevertOutcome, NodeRestoreResult } from './types'
 import type { ScannedNode } from '../nodes'
 import type { InstallationRecord } from '../../installations'
 import type { ComfyVersion } from '../version'
@@ -271,8 +271,9 @@ async function createTargetedBackup(sitePackages: string, packageNames: string[]
   return backupDir
 }
 
-/** Restore backed-up package files to site-packages. */
-async function restoreFromBackup(backupDir: string, sitePackages: string): Promise<void> {
+/** Restore backed-up package files to site-packages. Returns false when any
+ *  entry could not be put back — the caller must not then claim a clean revert. */
+async function restoreFromBackup(backupDir: string, sitePackages: string): Promise<boolean> {
   try {
     const entries = await fs.promises.readdir(backupDir)
     for (const entry of entries) {
@@ -286,9 +287,49 @@ async function restoreFromBackup(backupDir: string, sitePackages: string): Promi
         await fs.promises.copyFile(src, dst)
       }
     }
+    return true
   } catch (err) {
     console.error('Failed to restore from backup:', (err as Error).message)
+    return false
   }
+}
+
+/**
+ * Packages the plan calls "new" that are in fact already installed, judged from
+ * site-packages rather than from the freeze.
+ *
+ * The revert path may only uninstall packages this operation actually
+ * installed. Deriving that set from the freeze diff alone is unsafe: any fault
+ * that makes the freeze unreadable makes every target package look absent, and
+ * the revert then uninstalls the user's whole environment (#1514 — a
+ * colourised freeze produced exactly that, dropping 100 packages to 6). A
+ * dist-info directory on disk is independent evidence that the package
+ * predates this restore, so those names are excluded from the revert.
+ */
+export function preexistingOnDisk(sitePackages: string, packageNames: string[]): string[] {
+  if (packageNames.length === 0) return []
+  let installed: Set<string>
+  try {
+    installed = new Set(
+      fs
+        .readdirSync(sitePackages)
+        .filter((entry) => entry.endsWith('.dist-info'))
+        .map((entry) => {
+          // {normalized_name}-{version}.dist-info; the normalized name uses
+          // '_', so the first '-' separates name from version.
+          const stem = entry.slice(0, -'.dist-info'.length)
+          const dashIdx = stem.indexOf('-')
+          return dashIdx < 0 ? '' : normalizeDistInfoName(stem.slice(0, dashIdx))
+        })
+        .filter(Boolean)
+    )
+  } catch {
+    // site-packages unreadable: "can't tell" must not read as "nothing was
+    // installed before", which is the reading that uninstalls the user's
+    // environment. Treat every candidate as pre-existing.
+    return [...packageNames]
+  }
+  return packageNames.filter((name) => installed.has(normalizeDistInfoName(name)))
 }
 
 const runUvPip = sharedRunUvPip
@@ -522,6 +563,20 @@ export async function restorePipPackages(
     backupDir = await createTargetedBackup(sitePackages, packagesToBackup)
   }
 
+  // Ground truth for the revert, taken before anything is installed: of the
+  // packages the plan calls new, these are already on disk and therefore
+  // predate this restore. They are never uninstalled by the revert, however
+  // the freeze diff classified them (#1514).
+  const alreadyInstalled = preexistingOnDisk(sitePackages, newPkgNames)
+  const alreadyInstalledSet = new Set(alreadyInstalled)
+  const revertUninstall = newPkgNames.filter((name) => !alreadyInstalledSet.has(name))
+  if (alreadyInstalled.length > 0) {
+    sendOutput(
+      `Note: ${alreadyInstalled.length} package(s) planned as new are already installed on disk; ` +
+        `a revert will leave them in place.\n`
+    )
+  }
+
   try {
     // 4. Install missing + upgrade/downgrade changed packages
     if (toInstall.length > 0 && !signal?.aborted) {
@@ -618,25 +673,44 @@ export async function restorePipPackages(
       sendProgress('restore', { percent: 90, status: `Reverting due to ${reason}…` })
       sendOutput(`\n⚠ Restore ${reason}. Reverting…\n`)
 
+      let complete = true
+      let restoredFromBackup = false
       if (backupDir) {
-        await restoreFromBackup(backupDir, sitePackages)
+        restoredFromBackup = await restoreFromBackup(backupDir, sitePackages)
+        if (!restoredFromBackup) complete = false
       }
 
-      // Use pre-computed newPkgNames (not result.installed): a killed bulk install may have
-      // partially installed packages without populating result.installed.
-      if (newPkgNames.length > 0) {
-        await runUvPip(
+      // Use pre-computed revertUninstall (not result.installed): a killed bulk install may
+      // have partially installed packages without populating result.installed. Packages that
+      // were already on disk before the restore are excluded — uninstalling those is what
+      // destroyed environments in #1514.
+      const uninstalled: string[] = []
+      if (revertUninstall.length > 0) {
+        const code = await runUvPip(
           uvPath,
-          ['pip', 'uninstall', ...newPkgNames, '--python', pythonPath],
+          ['pip', 'uninstall', ...revertUninstall, '--python', pythonPath],
           installPath,
           sendOutput
-        ).catch(() => {})
+        ).catch(() => 1)
+        if (code === 0) uninstalled.push(...revertUninstall)
+        else complete = false
       }
 
       result.installed = []
       result.removed = []
       result.changed = []
-      result.errors.push(`Restore reverted to pre-restore state due to ${reason}`)
+      result.revert = {
+        reason,
+        uninstalled,
+        keptPreexisting: alreadyInstalled,
+        restoredFromBackup,
+        complete
+      }
+      result.errors.push(
+        complete
+          ? `Restore reverted to pre-restore state due to ${reason}`
+          : `Restore ${reason}, and the revert did not fully complete — see the log for details`
+      )
     }
   } catch (err) {
     // Catastrophic failure — revert
@@ -652,6 +726,23 @@ export async function restorePipPackages(
   }
 
   return result
+}
+
+/**
+ * One sentence describing what the pip phase's revert actually did, for the
+ * failure dialog. The old text asserted that "package changes were reverted
+ * where possible" whatever happened — in #1514 that ran alongside a revert that
+ * had just deleted 94 pre-existing packages. The claim is now derived from the
+ * recorded outcome, and stays deliberately vague only when there is no outcome
+ * to report (the phase threw before it could record one).
+ */
+export function describePackageRevert(revert: RestoreRevertOutcome | undefined): string {
+  if (!revert) return 'Package changes were reverted where possible.'
+  if (!revert.complete)
+    return 'Some package changes could not be reverted — see the log for details.'
+  if (revert.uninstalled.length === 0 && !revert.restoredFromBackup)
+    return 'No package changes were applied.'
+  return 'The package changes this restore made were reverted.'
 }
 
 export interface RequirementsRepairResult {
