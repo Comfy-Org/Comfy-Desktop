@@ -35,11 +35,16 @@ interface UseBetaActivationNoticeOpts {
   anchorRef: Readonly<ShallowRef<HTMLElement | null>>
   /** True while another card owns the single popup (currently the pill hint). */
   isSuppressed: () => boolean
-  /** Resolved copy (i18n done by the caller). */
-  title: string
-  body: string
-  dismissLabel: string
-  actionLabel: string
+  /** Card copy, resolved by the caller at show time rather than passed as strings.
+   *
+   *  Lazy deliberately: the title bar's i18n instance starts in English and `syncLocale()`
+   *  does not run until mount, so anything read during setup is an English snapshot that
+   *  never updates — wrong copy for a non-English user, and permanently wrong for every
+   *  later card in this renderer. Called when the card is built instead. */
+  title: () => string
+  body: () => string
+  dismissLabel: () => string
+  actionLabel: () => string
 }
 
 interface BetaActivationNoticeApi {
@@ -176,10 +181,10 @@ export function useBetaActivationNotice(
     isShowing.value = true
     opts.bridge.showCoachmark({
       kind: 'beta-notice',
-      title: opts.title,
-      body: opts.body,
-      dismissLabel: opts.dismissLabel,
-      actionLabel: opts.actionLabel,
+      title: opts.title(),
+      body: opts.body(),
+      dismissLabel: opts.dismissLabel(),
+      actionLabel: opts.actionLabel(),
       leftX: Math.round(rect.left),
       rightX: Math.round(rect.right),
       bottomY: Math.round(rect.bottom)

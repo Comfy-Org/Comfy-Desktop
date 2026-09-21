@@ -548,10 +548,12 @@ const betaNotice = useBetaActivationNotice({
   isLoadingLockdown,
   anchorRef: announcementBtnRef,
   isSuppressed: () => coachmark.isShowing.value,
-  title: t('titleBar.betaNoticeTitle'),
-  body: t('titleBar.betaNoticeBody'),
-  dismissLabel: t('titleBar.betaNoticeDismiss'),
-  actionLabel: t('titleBar.betaNoticeSettings')
+  // Getters, not strings: `syncLocale()` runs on mount, after this setup block, so a
+  // snapshot taken here is English regardless of the user's persisted locale.
+  title: () => t('titleBar.betaNoticeTitle'),
+  body: () => t('titleBar.betaNoticeBody'),
+  dismissLabel: () => t('titleBar.betaNoticeDismiss'),
+  actionLabel: () => t('titleBar.betaNoticeSettings')
 })
 
 /** Wrap the pill opener so opening the drawer retires the coachmark
