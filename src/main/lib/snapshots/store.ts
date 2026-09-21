@@ -432,12 +432,18 @@ export async function saveSnapshot(
  */
 function snapshotRepresentsCurrentState(
   snapshot: Snapshot,
-  current: Omit<Snapshot, 'createdAt' | 'trigger' | 'label' | 'version'>
+  current: Omit<Snapshot, 'createdAt' | 'trigger' | 'label' | 'version'>,
+  label?: string
 ): boolean {
   return (
     statesMatch(snapshot, current) &&
     (snapshot.updateChannel || 'stable') === (current.updateChannel || 'stable') &&
-    (snapshot.pythonVersion || '') === (current.pythonVersion || '')
+    (snapshot.pythonVersion || '') === (current.pythonVersion || '') &&
+    // The label is a note about how this state was reached, so a top whose
+    // caveat no longer applies is stale even when the state matches: a
+    // successful retry must not leave "Restore did not complete" on Latest.
+    // Repeated failures carry the same label and still collapse to one row.
+    (snapshot.label || null) === (label || null)
   )
 }
 
@@ -475,7 +481,7 @@ export async function ensureCurrentSnapshotOnTop(
     const current = await captureState(installPath, installation)
     const [top] = await listSnapshots(installPath)
 
-    if (top && snapshotRepresentsCurrentState(top.snapshot, current)) {
+    if (top && snapshotRepresentsCurrentState(top.snapshot, current, label)) {
       return { saved: false, filename: top.filename }
     }
 

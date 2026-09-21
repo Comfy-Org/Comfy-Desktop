@@ -478,6 +478,16 @@ export async function handleAction(
           ? 'The package sync was skipped for this snapshot.'
           : snapshots.describePackageRevert(pipResult.revert)
         if (signal?.aborted) {
+          // A cancel whose package revert did not complete is not a clean
+          // cancellation: the environment is part-applied, so it surfaces as a
+          // failure rather than something the UI quietly dismisses.
+          if (pipResult.revert?.complete === false) {
+            await revertSourceIfMoved()
+            await ensureLiveStateOnTop({ incomplete: true })
+            const message = `Snapshot restore cancelled, but the package changes could not be fully reverted. ${packageNote}`
+            sendOutput(`\n${message}\n`)
+            return { ok: false, message }
+          }
           return await cancelledResult(packageNote)
         }
         const rolledBack = await revertSourceIfMoved()
@@ -830,6 +840,12 @@ export async function handleAction(
         }
       }
 
+      // Node, PyTorch and protected-drift failures fall through to here and
+      // then return ok:false, so this snapshot needs the same caveat as the
+      // earlier exits — otherwise those failed restores still leave a row that
+      // reads as completed.
+      const incompleteLabel = totalFailures > 0 ? t('snapshots.labelRestoreIncomplete') : undefined
+
       try {
         if (stagedEnvelope) {
           // Make the newest snapshot reflect the real current state. On success the
@@ -840,7 +856,8 @@ export async function handleAction(
           if (!adaptedStateRecorded) {
             const { filename } = await snapshots.ensureCurrentSnapshotOnTop(
               installation.installPath,
-              updatedInstallation
+              updatedInstallation,
+              incompleteLabel
             )
             const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
             if (filename) await update({ lastSnapshot: filename, snapshotCount })
@@ -851,7 +868,8 @@ export async function handleAction(
           const filename = await snapshots.saveSnapshot(
             installation.installPath,
             updatedInstallation,
-            'post-restore'
+            'post-restore',
+            incompleteLabel
           )
           const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
           await update({ lastSnapshot: filename, snapshotCount })

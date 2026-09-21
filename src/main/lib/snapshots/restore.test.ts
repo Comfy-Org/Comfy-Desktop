@@ -254,8 +254,20 @@ describe('describePackageRevert', () => {
     ...over
   })
 
-  it('stays vague only when there is no recorded outcome', () => {
-    expect(describePackageRevert(undefined)).toBe('Package changes were reverted where possible.')
+  // The no-outcome path is where the phase threw before recording anything: it
+  // restores the file backup without checking the result and never uninstalls
+  // what the run already installed. It must not read as the most reassuring.
+  it('reports an unknown outcome when nothing was recorded', () => {
+    expect(describePackageRevert(undefined)).toBe(
+      'The state of the package changes is unknown — see the log for details.'
+    )
+  })
+
+  // Installs ran against these, so "nothing was applied" is not knowable.
+  it('does not claim nothing was applied when packages were kept', () => {
+    expect(describePackageRevert(outcome({ keptPreexisting: ['aiohttp'] }))).toBe(
+      'The package changes this restore made were reverted.'
+    )
   })
 
   // #1514: the old text asserted a revert unconditionally, alongside a revert

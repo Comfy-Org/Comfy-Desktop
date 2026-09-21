@@ -294,6 +294,50 @@ describe('restorePipPackages', () => {
       expect(output.join('')).toContain('No backup was captured')
     })
 
+    // The restore loop deletes each destination before copying over it, so
+    // letting one failure abort would leave the earlier entries deleted and the
+    // later ones never restored — a revert that destroys more than it repairs.
+    it('keeps restoring the remaining packages when one entry fails', async () => {
+      for (const name of ['alpha', 'omega']) {
+        installOnDisk(name, '1.0.0')
+        fs.writeFileSync(path.join(sitePackagesPath, name, '__init__.py'), `# live ${name}\n`)
+      }
+      // Both are extras the snapshot does not have, so both get backed up and
+      // are removal targets; the removal then fails and tips it into a revert.
+      vi.mocked(pipFreeze).mockResolvedValue({ alpha: '1.0.0', omega: '1.0.0' })
+      vi.mocked(runUvPip).mockImplementation(async (_uv, args) => {
+        const a = args as string[]
+        if (a[1] === 'uninstall') {
+          // Simulate uv having deleted the files before reporting failure.
+          for (const name of ['alpha', 'omega']) {
+            fs.rmSync(path.join(sitePackagesPath, name), { recursive: true, force: true })
+          }
+          return 1
+        }
+        return 0
+      })
+      // One entry fails on the way BACK into site-packages (not while the
+      // backup is being taken); the rest must still be restored.
+      const realCp = fs.promises.cp
+      vi.spyOn(fs.promises, 'cp').mockImplementation(async (src, dst, opts) => {
+        const target = String(dst)
+        if (target.startsWith(sitePackagesPath) && target.includes('alpha')) {
+          throw new Error('simulated copy failure')
+        }
+        return realCp(src as string, dst as string, opts)
+      })
+
+      const result = await run(snapshotWith({}))
+
+      // omega came back despite alpha failing...
+      expect(fs.readFileSync(path.join(sitePackagesPath, 'omega', '__init__.py'), 'utf-8')).toBe(
+        '# live omega\n'
+      )
+      // ...and the failure is reported rather than papered over.
+      expect(result.revert!.complete).toBe(false)
+      expect(result.revert!.restoredFromBackup).toBe(false)
+    })
+
     it('reports a clean revert when every step succeeded', async () => {
       installOnDisk('ghost-pkg', '9.9.9')
       vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })

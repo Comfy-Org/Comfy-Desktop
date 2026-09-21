@@ -280,26 +280,40 @@ async function createTargetedBackup(
 }
 
 /** Restore backed-up package files to site-packages. Returns false when any
- *  entry could not be put back — the caller must not then claim a clean revert. */
+ *  entry could not be put back — the caller must not then claim a clean revert.
+ *
+ *  Each entry is attempted independently: the loop deletes a destination before
+ *  copying over it, so letting the first failure abort would leave the earlier
+ *  entries removed and the remaining ones never restored — a revert that
+ *  destroys more than it repairs. */
 async function restoreFromBackup(backupDir: string, sitePackages: string): Promise<boolean> {
+  let entries: string[]
   try {
-    const entries = await fs.promises.readdir(backupDir)
-    for (const entry of entries) {
-      const src = path.join(backupDir, entry)
-      const dst = path.join(sitePackages, entry)
-      await fs.promises.rm(dst, { recursive: true, force: true }).catch(() => {})
+    entries = await fs.promises.readdir(backupDir)
+  } catch (err) {
+    console.error('Failed to read backup directory:', (err as Error).message)
+    return false
+  }
+
+  let allRestored = true
+  for (const entry of entries) {
+    const src = path.join(backupDir, entry)
+    const dst = path.join(sitePackages, entry)
+    try {
       const stat = await fs.promises.stat(src)
+      await fs.promises.rm(dst, { recursive: true, force: true }).catch(() => {})
       if (stat.isDirectory()) {
         await fs.promises.cp(src, dst, { recursive: true })
       } else {
         await fs.promises.copyFile(src, dst)
       }
+    } catch (err) {
+      // Keep going: every remaining entry is another package the user gets back.
+      console.error(`Failed to restore ${entry} from backup:`, (err as Error).message)
+      allRestored = false
     }
-    return true
-  } catch (err) {
-    console.error('Failed to restore from backup:', (err as Error).message)
-    return false
   }
+  return allRestored
 }
 
 /** Metadata entries that mark an installed distribution in site-packages.
@@ -798,10 +812,20 @@ export async function restorePipPackages(
  * to report (the phase threw before it could record one).
  */
 export function describePackageRevert(revert: RestoreRevertOutcome | undefined): string {
-  if (!revert) return 'Package changes were reverted where possible.'
+  // No recorded outcome means the phase threw before it could record one. That
+  // path restores the file backup without checking the result and never
+  // uninstalls what the run had already installed, so it is the least certain
+  // of all — it must not read as the most reassuring.
+  if (!revert) return 'The state of the package changes is unknown — see the log for details.'
   if (!revert.complete)
     return 'Some package changes could not be reverted — see the log for details.'
-  if (revert.uninstalled.length === 0 && !revert.restoredFromBackup)
+  // `keptPreexisting` packages had installs run against them, so "nothing was
+  // applied" is not something the code can claim once any are present.
+  if (
+    revert.uninstalled.length === 0 &&
+    !revert.restoredFromBackup &&
+    revert.keptPreexisting.length === 0
+  )
     return 'No package changes were applied.'
   return 'The package changes this restore made were reverted.'
 }
