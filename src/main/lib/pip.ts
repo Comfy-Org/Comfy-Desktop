@@ -6,6 +6,33 @@ import { killProcTree } from './process'
 /** Regex matching PyTorch-family packages that must never be overwritten by pip. */
 export const PYTORCH_RE = /^(torch|torchvision|torchaudio|torchsde)(\s*[<>=!~;[#]|$)/i
 
+/** ANSI CSI sequences (SGR colour codes and friends). */
+// eslint-disable-next-line no-control-regex -- ESC is exactly what we are matching.
+const ANSI_CSI_RE = /\u001B\[[0-?]*[ -/]*[@-~]/g
+
+/** Strip ANSI escape sequences from captured subprocess output. */
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI_CSI_RE, '')
+}
+
+/**
+ * Environment for a `uv` subprocess, with colour forced off.
+ *
+ * `uv` honours `FORCE_COLOR` / `CLICOLOR_FORCE` even when its stdout is a pipe,
+ * so whatever env the app was launched with can wrap every package name in SGR
+ * codes — `\x1b[1maiohttp\x1b[0m==3.9.5` instead of `aiohttp==3.9.5`. Parsed
+ * output must never carry them: in #1514 those names were fed back to
+ * `uv pip uninstall`, which rejected them all and tipped the restore into a
+ * revert that deleted the user's environment.
+ */
+export function uvEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: Record<string, string | undefined> = { ...base }
+  env.NO_COLOR = '1'
+  delete env.FORCE_COLOR
+  delete env.CLICOLOR_FORCE
+  return env
+}
+
 /** Cap on captured pip output (characters) so a verbose install can't grow an unbounded string in memory. */
 const MAX_CAPTURED_OUTPUT_CHARS = 256 * 1024
 
@@ -29,7 +56,8 @@ export function runUvPipDetailed(
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      detached: process.platform !== 'win32'
+      detached: process.platform !== 'win32',
+      env: uvEnv()
     })
 
     let captured = ''
@@ -203,27 +231,17 @@ export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean
   return args
 }
 
-export async function pipFreeze(
-  uvPath: string,
-  pythonPath: string
-): Promise<Record<string, string>> {
-  const output = await new Promise<string>((resolve, reject) => {
-    execFile(
-      uvPath,
-      ['pip', 'freeze', '--python', pythonPath],
-      { windowsHide: true, timeout: 60_000, maxBuffer: 10 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) {
-          const detail = stderr ? stderr.slice(0, 500) : err.message
-          return reject(new Error(`uv pip freeze failed: ${detail}`))
-        }
-        resolve(stdout)
-      }
-    )
-  })
-
+/**
+ * Parse `uv pip freeze` output into `{ name: version }`.
+ *
+ * ANSI escapes are stripped before parsing, not after: a colourised stream
+ * yields `\x1b[1maiohttp\x1b[0m==3.9.5`, and a name carrying those bytes is
+ * both unmatchable against a snapshot and unusable as a `uv pip` argument
+ * (#1514). Callers pass the raw stdout; nothing downstream sees an escape.
+ */
+export function parsePipFreeze(output: string): Record<string, string> {
   const packages: Record<string, string> = {}
-  for (const line of output.split('\n')) {
+  for (const line of stripAnsi(output).split('\n')) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
     // Editable installs: "-e git+https://...@commit#egg=name"
@@ -247,4 +265,26 @@ export async function pipFreeze(
     }
   }
   return packages
+}
+
+export async function pipFreeze(
+  uvPath: string,
+  pythonPath: string
+): Promise<Record<string, string>> {
+  const output = await new Promise<string>((resolve, reject) => {
+    execFile(
+      uvPath,
+      ['pip', 'freeze', '--python', pythonPath],
+      { windowsHide: true, timeout: 60_000, maxBuffer: 10 * 1024 * 1024, env: uvEnv() },
+      (err, stdout, stderr) => {
+        if (err) {
+          const detail = stderr ? stderr.slice(0, 500) : err.message
+          return reject(new Error(`uv pip freeze failed: ${detail}`))
+        }
+        resolve(stdout)
+      }
+    )
+  })
+
+  return parsePipFreeze(output)
 }
