@@ -65,7 +65,7 @@ import { createAssetsTap } from '../../assetsTap'
 import { createExecutionTap } from '../../executionTap'
 import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
-import { buildLaunchPhases } from '../../launchPhases'
+import { buildLaunchPhases, AGENT_REQUIREMENTS_PHASE } from '../../launchPhases'
 import {
   getTemplateDownloadState,
   summarizeTemplateState,
@@ -1019,17 +1019,20 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
   }
 
-  // The args are final here, so this is the first point that knows the agent is
-  // actually starting - whether the user typed the flag or a beta grant added
-  // it, and whether the running core can parse it at all. The package is tens of
-  // megabytes, so it gets its own launch step; a failure is reported in the
-  // launch output and the flag is kept, leaving core to print its install hint
-  // and disable the agent itself.
+  // The agent flag is final here (only path args are appended after this), so
+  // this is the first point that knows the agent is actually starting - whether
+  // the user typed the flag or a beta grant added it, and whether the running
+  // core can parse it at all. The package is tens of megabytes, so it gets its
+  // own launch step. Bounded and fail-open: a failure or a timeout is reported
+  // in the launch output and the flag is kept, leaving core to print its install
+  // hint and disable the agent itself.
+  //
+  // The step is added through `addLatePhase` rather than `preLaunchPhases`
+  // because a torch repair may already have armed the tracker, freezing that list.
   const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
   if (agentRequirements) {
-    preLaunchPhases.push('agentRequirements')
-    await armLaunchTracker()
-    sendProgress('agentRequirements', { percent: -1, status: '' })
+    const tracker = await armLaunchTracker()
+    tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
     await installAgentRequirements(
       agentRequirements,
       makeSendOutput(sender, installationId),

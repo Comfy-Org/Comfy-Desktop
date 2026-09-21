@@ -151,9 +151,8 @@ describe('installAgentRequirements', () => {
 
   it('installs the planned file through the shared uv helper', async () => {
     const sendOutput = vi.fn()
-    const signal = new AbortController().signal
 
-    await installAgentRequirements(plan, sendOutput, signal)
+    await installAgentRequirements(plan, sendOutput)
 
     expect(mockInstall).toHaveBeenCalledWith(
       plan.reqPath,
@@ -162,7 +161,7 @@ describe('installAgentRequirements', () => {
       plan.installPath,
       '.launch-agent-reqs.txt',
       sendOutput,
-      signal,
+      expect.any(AbortSignal),
       mirrors
     )
     expect(sendOutput.mock.calls.join('')).toContain('Installing agent requirements')
@@ -186,6 +185,102 @@ describe('installAgentRequirements', () => {
     await expect(installAgentRequirements(plan, sendOutput)).resolves.toBeUndefined()
 
     expect(sendOutput.mock.calls.join('')).toContain('EACCES: permission denied')
+  })
+
+  it('abandons an install that outlives the ceiling and lets the launch continue', async () => {
+    // The whole point of the bound: a stalled uv must not hold the user at the
+    // launcher. Core starts with the flag and disables the agent itself.
+    vi.useFakeTimers()
+    try {
+      let uvSignal: AbortSignal | undefined
+      mockInstall.mockImplementationOnce(
+        async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+          uvSignal = args[6]
+          // Resolve only once something aborts uv, the way the real helper does.
+          return new Promise((resolve) => {
+            uvSignal!.addEventListener('abort', () => resolve({ code: 1, output: '' }), {
+              once: true
+            })
+          })
+        }
+      )
+      const sendOutput = vi.fn()
+
+      const pending = installAgentRequirements(plan, sendOutput)
+      await vi.advanceTimersByTimeAsync(120_000)
+      await expect(pending).resolves.toBeUndefined()
+
+      expect(uvSignal?.aborted).toBe(true)
+      expect(sendOutput.mock.calls.join('')).toContain('starting ComfyUI without it')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not cancel the launch when the ceiling fires', async () => {
+    // The deadline aborts a controller this module owns, never the launch's own
+    // signal - the launch must proceed, not report itself cancelled.
+    vi.useFakeTimers()
+    try {
+      const launchAbort = new AbortController()
+      mockInstall.mockImplementationOnce(
+        async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+          const uvSignal = args[6]!
+          return new Promise((resolve) => {
+            uvSignal.addEventListener('abort', () => resolve({ code: 1, output: '' }), {
+              once: true
+            })
+          })
+        }
+      )
+
+      const pending = installAgentRequirements(plan, vi.fn(), launchAbort.signal)
+      await vi.advanceTimersByTimeAsync(120_000)
+      await pending
+
+      expect(launchAbort.signal.aborted).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves the deadline behind no timer once the install finishes', async () => {
+    vi.useFakeTimers()
+    try {
+      await installAgentRequirements(plan, vi.fn())
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('kills uv when the launch itself is cancelled', async () => {
+    const launchAbort = new AbortController()
+    let uvSignal: AbortSignal | undefined
+    mockInstall.mockImplementationOnce(
+      async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+        uvSignal = args[6]
+        launchAbort.abort()
+        return { code: 1, output: '' }
+      }
+    )
+
+    await installAgentRequirements(plan, vi.fn(), launchAbort.signal)
+
+    expect(uvSignal?.aborted).toBe(true)
+  })
+
+  it('stays quiet about a thrown install when the launch was cancelled', async () => {
+    const launchAbort = new AbortController()
+    mockInstall.mockImplementationOnce(async () => {
+      launchAbort.abort()
+      throw new Error('EIO')
+    })
+    const sendOutput = vi.fn()
+
+    await installAgentRequirements(plan, sendOutput, launchAbort.signal)
+
+    expect(sendOutput.mock.calls.join('')).not.toContain('EIO')
   })
 
   it('stays quiet about the exit code when the launch was cancelled mid-install', async () => {

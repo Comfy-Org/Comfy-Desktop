@@ -1505,6 +1505,7 @@ describe('agent requirements at launch', () => {
   const AGENT_GRANT: CoreBetaGrant = { arg: '--enable-agent', minCoreVersion: '0.3.80' }
   let installDir = ''
   let sent: string[] = []
+  let progress: { phase: string; steps?: { phase: string }[] }[] = []
   let spawnArgs: string[] = []
   let spawned = 0
 
@@ -1535,8 +1536,11 @@ describe('agent requirements at launch', () => {
     event: {
       sender: {
         isDestroyed: () => false,
-        send: (_channel: string, payload: { text?: string }) => {
+        send: (channel: string, payload: { text?: string; phase?: string }) => {
           if (typeof payload?.text === 'string') sent.push(payload.text)
+          if (channel === 'install-progress' && typeof payload?.phase === 'string') {
+            progress.push(payload as { phase: string; steps?: { phase: string }[] })
+          }
         }
       }
     } as unknown as Electron.IpcMainInvokeEvent,
@@ -1553,6 +1557,7 @@ describe('agent requirements at launch', () => {
     touch(getVenvPythonPath(installDir))
     fs.writeFileSync(agentReqPath(), 'comfyui-agent==1.0.0\n')
     sent = []
+    progress = []
     spawnArgs = []
     spawned = 0
     pipHarness.calls = []
@@ -1680,6 +1685,16 @@ describe('agent requirements at launch', () => {
     expect(res.ok).toBe(true)
     expect(spawnArgs).toContain('--enable-agent')
     expect(sent.join('')).toContain('exited with code 1')
+  })
+
+  it('publishes the install as a step the renderer can show', async () => {
+    // The renderer drops progress for a phase absent from the steps payload, so
+    // the payload is what makes the step visible at all.
+    await handleLaunch(ctxFor('agent-reqs-step-published'))
+
+    const lastSteps = progress.filter((p) => p.phase === 'steps').at(-1)
+    expect(lastSteps?.steps?.map((s) => s.phase)).toContain('agentRequirements')
+    expect(progress.some((p) => p.phase === 'agentRequirements')).toBe(true)
   })
 
   it('cancels the launch without spawning when it is aborted mid-install', async () => {

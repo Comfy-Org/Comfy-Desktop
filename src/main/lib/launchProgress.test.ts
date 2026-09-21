@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { createLaunchProgressTracker } from './launchProgress'
-import { DEFAULT_LAUNCH_PHASES, buildLaunchPhases } from './launchPhases'
+import { DEFAULT_LAUNCH_PHASES, buildLaunchPhases, AGENT_REQUIREMENTS_PHASE } from './launchPhases'
 
 const FIXTURE = fs.readFileSync(
   path.join(__dirname, '__fixtures__', 'launch', 'first-run.log'),
@@ -257,5 +257,102 @@ describe('buildLaunchPhases — extensibility', () => {
     expect(order[0]).toBe('torchRepair')
     expect(order).toContain('securityScan')
     expect(order).toContain('mountLibraries')
+  })
+})
+
+describe('addLatePhase for work discovered after the tracker was armed', () => {
+  /** Arm a tracker over `phases` and return it with its emit log. */
+  function armed(phases = buildLaunchPhases({}, { preLaunchPhases: ['torchRepair'] })): {
+    tracker: ReturnType<typeof createLaunchProgressTracker>
+    emits: Emit[]
+  } {
+    const emits: Emit[] = []
+    const tracker = createLaunchProgressTracker({
+      phases,
+      sendProgress: (phase, detail) => emits.push({ phase, ...detail })
+    })
+    tracker.start()
+    return { tracker, emits }
+  }
+
+  it('re-emits the steps payload so the renderer knows the new phase', () => {
+    // Without the re-emit the renderer drops the phase's progress outright:
+    // progressStore returns early when the phase is absent from `steps`.
+    const { tracker, emits } = armed()
+    const initial = emits
+      .filter((e) => e.phase === 'steps')
+      .at(-1)!
+      .steps!.map((s) => s.phase)
+    expect(initial).not.toContain('agentRequirements')
+
+    tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
+
+    const stepPayloads = emits.filter((e) => e.phase === 'steps')
+    expect(stepPayloads).toHaveLength(2)
+    expect(stepPayloads[1]!.steps?.map((s) => s.phase)).toContain('agentRequirements')
+  })
+
+  it('enters the new phase, so it is the active step while the work runs', () => {
+    const { tracker, emits } = armed()
+    const before = emits.length
+
+    tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
+
+    const after = emits.slice(before).filter((e) => e.phase !== 'steps')
+    expect(after.map((e) => e.phase)).toEqual(['agentRequirements'])
+    expect(after[0]!.percent).toBe(-1)
+  })
+
+  it('inserts directly after the active phase so the bar cannot regress', () => {
+    // torchRepair is active (phase 0). The new phase must land at 1, ahead of
+    // it and ahead of nothing already completed.
+    const { tracker, emits } = armed()
+
+    tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
+
+    const published = emits
+      .filter((e) => e.phase === 'steps')
+      .at(-1)!
+      .steps!.map((s) => s.phase)
+    expect(published.slice(0, 2)).toEqual(['torchRepair', 'agentRequirements'])
+    expect(published).toEqual([
+      'torchRepair',
+      'agentRequirements',
+      ...DEFAULT_LAUNCH_PHASES.map((p) => p.phase)
+    ])
+  })
+
+  it('still advances into the real boot phases afterwards', () => {
+    const { tracker, emits } = armed()
+    tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
+
+    tracker.ingest('Total VRAM 24576 MB\n')
+
+    expect(phaseOrder(emits).at(-1)).toBe('gpu')
+  })
+
+  it('works when nothing else injected a phase (the common launch)', () => {
+    const { tracker, emits } = armed(buildLaunchPhases({}))
+
+    tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
+
+    const published = emits
+      .filter((e) => e.phase === 'steps')
+      .at(-1)!
+      .steps!.map((s) => s.phase)
+    // launchStart is active at index 0, so the install lands right after it.
+    expect(published.slice(0, 2)).toEqual(['launchStart', 'agentRequirements'])
+    expect(phaseOrder(emits).at(-1)).toBe('agentRequirements')
+  })
+
+  it("does not mutate the caller's phase array", () => {
+    const phases = buildLaunchPhases({})
+    const { tracker } = armed(phases)
+    const lengthBefore = phases.length
+
+    tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
+
+    expect(phases).toHaveLength(lengthBefore)
+    expect(phases.map((p) => p.phase)).not.toContain('agentRequirements')
   })
 })

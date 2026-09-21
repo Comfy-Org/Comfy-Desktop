@@ -89,17 +89,25 @@ export const DEFAULT_LAUNCH_PHASES: readonly LaunchPhaseDef[] = [
  * boot milestone fires. Weights add on top of the base 1.0; the renderer
  * normalizes, so injection just shrinks every slot proportionally.
  *
- *   - `repair`            interrupted-op source rollback was performed
- *   - `torchRepair`       GPU PyTorch was restored after the v1.13.0 `--upgrade` bug
- *   - `agentRequirements` the agent's Python packages were installed for a
- *                         launch that starts Core with `--enable-agent`
+ *   - `repair`      interrupted-op source rollback was performed
+ *   - `torchRepair` GPU PyTorch was restored after the v1.13.0 `--upgrade` bug
  */
-export type PreLaunchPhase = 'repair' | 'torchRepair' | 'agentRequirements'
+export type PreLaunchPhase = 'repair' | 'torchRepair'
 
 const PRE_LAUNCH_PHASES: Record<PreLaunchPhase, LaunchPhaseDef> = {
   repair: { phase: 'repair', match: NEVER, weight: 0.1, streaming: true },
-  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true },
-  agentRequirements: { phase: 'agentRequirements', match: NEVER, weight: 0.1, streaming: true }
+  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true }
+}
+
+/** The agent requirements install. Not one of `PRE_LAUNCH_PHASES`: whether it
+ *  runs is only known once the launch args are final, which is after a torch
+ *  repair may already have armed the tracker and frozen the phase list. It is
+ *  handed to `addLatePhase` instead of being injected here. */
+export const AGENT_REQUIREMENTS_PHASE: LaunchPhaseDef = {
+  phase: 'agentRequirements',
+  match: NEVER,
+  weight: 0.1,
+  streaming: true
 }
 
 /** Starter-template model download, shown as the LAST launch step. Synthetic +
