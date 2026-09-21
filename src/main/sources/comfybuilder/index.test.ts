@@ -30,6 +30,9 @@ vi.mock('../../comfybuilder', () => ({
   managerAllowedByPolicy: vi.fn(
     (policy: { mode?: string } | null | undefined) => policy?.mode !== 'allowlist'
   ),
+  launchArgsForManagerAnswer: vi.fn((args: string, allowed: boolean) =>
+    allowed ? args : args.replace('--enable-manager', '').trim()
+  ),
   venvPython: vi.fn((installPath: string) =>
     process.platform === 'win32'
       ? `${installPath}\\venv\\base\\python.exe`
@@ -261,12 +264,12 @@ describe('comfybuilder.install wiring', () => {
   })
 
   it.each([
-    ['No (an allowlist)', { mode: 'allowlist' }, false],
-    ['Yes (an empty blocklist)', { mode: 'blocklist', list: [] }, true],
-    ['nothing (no policy)', null, true]
+    ['No (an allowlist)', { mode: 'allowlist' }, false, '--cpu'],
+    ['Yes (an empty blocklist)', { mode: 'blocklist', list: [] }, true, '--enable-manager --cpu'],
+    ['nothing (no policy)', null, true, '--enable-manager --cpu']
   ])(
-    'records the manager answer on the install when the author said %s',
-    async (_name, customNodePolicy, expected) => {
+    'records the manager answer and matching launch args when the author said %s',
+    async (_name, customNodePolicy, expected, expectedArgs) => {
       vi.mocked(resolveModelManifest).mockResolvedValueOnce({
         models: [],
         modelPolicy: null,
@@ -275,10 +278,11 @@ describe('comfybuilder.install wiring', () => {
       } as never)
       updateInstallation.mockClear()
 
-      await comfybuilder.install!(record(), fakeTools())
+      await comfybuilder.install!(record({ launchArgs: '--enable-manager --cpu' }), fakeTools())
 
       expect(updateInstallation).toHaveBeenCalledWith('i1', {
-        comfybuilderManagerAllowed: expected
+        comfybuilderManagerAllowed: expected,
+        launchArgs: expectedArgs
       })
     }
   )

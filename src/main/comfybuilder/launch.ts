@@ -50,6 +50,29 @@ export function venvPython(installPath: string): string {
   return fs.existsSync(staged) ? staged : path.join(installPath, 'venv', 'python.exe')
 }
 
+const MANAGER_ENABLING_ARG = /(^|\s)--enable-manager(?:-legacy-ui)?(?=\s|$)/g
+
+/**
+ * The launch args to store on an install once its release's manager answer is
+ * known, so the Startup Arguments field shows what actually launches.
+ *
+ * A No build loses every manager-enabling flag. A build that was No and is now
+ * Yes (the author changed the answer in a newer release) gets `--enable-manager`
+ * back, unless the user already has one. Otherwise the args are left alone: a
+ * Yes build whose user removed the flag on purpose keeps it removed.
+ */
+export function launchArgsForManagerAnswer(
+  launchArgs: string,
+  managerAllowed: boolean,
+  previouslyAllowed: boolean | undefined
+): string {
+  if (!managerAllowed)
+    return launchArgs.replace(MANAGER_ENABLING_ARG, '$1').replace(/\s+/g, ' ').trim()
+  const hasFlag = launchArgs.search(MANAGER_ENABLING_ARG) !== -1
+  if (previouslyAllowed === false && !hasFlag) return `--enable-manager ${launchArgs}`.trim()
+  return launchArgs
+}
+
 export interface LaunchOptions {
   /** Extra ComfyUI args, e.g. `--cpu --port 8188`. Defaults to `--enable-manager`. */
   launchArgs?: string

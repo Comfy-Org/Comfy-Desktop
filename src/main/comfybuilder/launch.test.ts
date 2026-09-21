@@ -3,7 +3,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildLaunchSpec, managerAllowedByPolicy, venvPython } from './launch'
+import {
+  buildLaunchSpec,
+  launchArgsForManagerAnswer,
+  managerAllowedByPolicy,
+  venvPython
+} from './launch'
 
 const isWin = process.platform === 'win32'
 
@@ -95,6 +100,56 @@ describe('launch', () => {
     ['an absent policy', undefined, true]
   ])('managerAllowedByPolicy reads %s', (_name, policy, expected) => {
     expect(managerAllowedByPolicy(policy)).toBe(expected)
+  })
+
+  it.each([
+    // [name, stored args, allowed now, allowed before, expected]
+    ['a No build loses the default flag', '--enable-manager', false, undefined, ''],
+    [
+      'a No build keeps its other args',
+      '--enable-manager --cpu --port 9001',
+      false,
+      undefined,
+      '--cpu --port 9001'
+    ],
+    [
+      'a No build loses the legacy flag too',
+      '--cpu --enable-manager-legacy-ui',
+      false,
+      true,
+      '--cpu'
+    ],
+    [
+      'a No build leaves a lookalike flag alone',
+      '--enable-manager-foo',
+      false,
+      undefined,
+      '--enable-manager-foo'
+    ],
+    [
+      'a Yes build is left alone',
+      '--enable-manager --cpu',
+      true,
+      undefined,
+      '--enable-manager --cpu'
+    ],
+    ['a Yes build whose user removed the flag stays that way', '--cpu', true, true, '--cpu'],
+    [
+      'a build that went from No to Yes gets the flag back',
+      '--cpu',
+      true,
+      false,
+      '--enable-manager --cpu'
+    ],
+    [
+      'a build that went from No to Yes keeps a flag the user already has',
+      '--enable-manager-legacy-ui',
+      true,
+      false,
+      '--enable-manager-legacy-ui'
+    ]
+  ])('launchArgsForManagerAnswer: %s', (_name, args, allowed, before, expected) => {
+    expect(launchArgsForManagerAnswer(args, allowed, before)).toBe(expected)
   })
 
   it.each([

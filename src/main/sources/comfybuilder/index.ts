@@ -21,6 +21,7 @@ import path from 'path'
 import {
   installArtifact,
   buildLaunchSpec,
+  launchArgsForManagerAnswer,
   managerAllowedByPolicy,
   venvPython,
   resolveModelManifest,
@@ -72,6 +73,24 @@ const ROLLBACK_FIELD = 'comfybuilderRollback'
 /** Record field: false when the installed release's author turned
  *  ComfyUI-Manager off. Written once the release's environment has landed. */
 const MANAGER_ALLOWED_FIELD = 'comfybuilderManagerAllowed'
+
+/** The record fields that carry a release's manager answer: the answer itself
+ *  (launch reads it) and the stored launch args rewritten to match it (the
+ *  Startup Arguments field shows them). */
+function managerAnswerFields(
+  installation: InstallationRecord,
+  manifest: ModelManifest
+): Record<string, unknown> {
+  const allowed = managerAllowedByPolicy(manifest.customNodePolicy)
+  return {
+    [MANAGER_ALLOWED_FIELD]: allowed,
+    launchArgs: launchArgsForManagerAnswer(
+      (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS,
+      allowed,
+      installation[MANAGER_ALLOWED_FIELD] as boolean | undefined
+    )
+  }
+}
 const PRESERVED_COMFY_ENTRIES = new Set(['models', 'user'])
 
 interface EnvironmentRollback {
@@ -587,9 +606,7 @@ export const comfybuilder: SourcePlugin = {
     const manifest = await installEnvironment(installation, tools)
     // Launch reads the author's manager answer off the record, so it has to be
     // there before the install becomes launchable.
-    await installations.update(installation.id, {
-      [MANAGER_ALLOWED_FIELD]: managerAllowedByPolicy(manifest.customNodePolicy)
-    })
+    await installations.update(installation.id, managerAnswerFields(installation, manifest))
     // Models download in the background; the install is launchable as soon as
     // the environment is on disk. Completion is recorded as `modelsStaged`,
     // and an unfinished staging re-runs at the next launch.
@@ -710,7 +727,7 @@ async function updateBuildVersion(
     await tools.update({
       status: 'installed',
       modelsStaged: false,
-      [MANAGER_ALLOWED_FIELD]: managerAllowedByPolicy(manifest.customNodePolicy),
+      ...managerAnswerFields(installation, manifest),
       [ROLLBACK_FIELD]: undefined
     })
     await finalizeEnvironmentTransaction(installation.installPath).catch(() => {})
