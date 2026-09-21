@@ -107,6 +107,8 @@ interface Bridge {
   onCoachmarkAction: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
   /** The popup was hidden without a retirement (host window moved/resized). */
   onCoachmarkAutoHidden: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
+  /** The host window has stopped moving; safe to put a forgotten card back. */
+  onCoachmarkSettled: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
   onPanelChanged: (cb: (panel: ComfyPanelKey) => void) => () => void
   onTitleChanged: (cb: (title: string) => void) => () => void
   /** Install source-category pushes from main. The raw category
@@ -590,21 +592,20 @@ function handleInstallPillWithCoachmark(): void {
  *  again, so re-showing per event would thrash the card on and off for the whole gesture.
  *  One re-show once the window settles. `maybeShow` re-reads the anchor rect, which is the
  *  point — the old rect is exactly what went stale. */
-const COACHMARK_RESHOW_DEBOUNCE_MS = 250
-let coachmarkReshowTimer: ReturnType<typeof setTimeout> | null = null
-function scheduleCoachmarkReshow(): void {
+/** Put a forgotten card back. Fired from main's settled signal rather than a timer here:
+ *  the popup hides on the FIRST move and `onHide` only reports that one transition, so a
+ *  local timer could not be extended by the rest of a drag and would reopen the card
+ *  mid-gesture — flashing it and stealing focus on every subsequent move. Main sees every
+ *  event, so it owns the debounce.
+ *
+ *  Both cards, in the gate watcher's order and for its reason: the hint wins a collision,
+ *  and awaiting it keeps the beta notice's suppression check from reading a stale `false`.
+ *  Each is gated and idempotent, so the one that was not hidden simply declines. */
+function reshowCoachmarksAfterMove(): void {
   if (unmounted) return
-  if (coachmarkReshowTimer !== null) clearTimeout(coachmarkReshowTimer)
-  coachmarkReshowTimer = setTimeout(() => {
-    coachmarkReshowTimer = null
-    if (unmounted) return
-    // Both cards, in the gate watcher's order and for its reason: the hint wins a collision,
-    // and awaiting it keeps the beta notice's suppression check from reading a stale `false`.
-    // Each is gated and idempotent, so the one that was not hidden simply declines.
-    void coachmark.maybeShow().then(() => {
-      if (!unmounted) void betaNotice.maybeShow()
-    })
-  }, COACHMARK_RESHOW_DEBOUNCE_MS)
+  void coachmark.maybeShow().then(() => {
+    if (!unmounted) void betaNotice.maybeShow()
+  })
 }
 
 /** The beta notice defers while the hint owns the popup, and nothing in the gate watcher
@@ -643,6 +644,7 @@ let unsubZoom: (() => void) | undefined
 let unsubCoachmarkDismissed: (() => void) | undefined
 let unsubCoachmarkAction: (() => void) | undefined
 let unsubCoachmarkAutoHidden: (() => void) | undefined
+let unsubCoachmarkSettled: (() => void) | undefined
 
 onMounted(() => {
   // Observe the trailing cluster so the left cluster can mirror its
@@ -728,8 +730,11 @@ onMounted(() => {
     // dismissed either, since there is no longer a card to click.
     if (kind === 'beta-notice') betaNotice.forgetWithoutAcknowledging()
     else coachmark.forgetWithoutAcknowledging()
-    // Unlatching is only half of it: put the card back once the window settles.
-    scheduleCoachmarkReshow()
+    // Forgetting is immediate — it is a state correction, and leaving the composable latched
+    // is what strands the card. Re-showing waits for `onCoachmarkSettled` below.
+  })
+  unsubCoachmarkSettled = bridge.onCoachmarkSettled(() => {
+    reshowCoachmarksAfterMove()
   })
   bridge.ready()
 })
@@ -795,10 +800,7 @@ onUnmounted(() => {
   unsubCoachmarkDismissed?.()
   unsubCoachmarkAction?.()
   unsubCoachmarkAutoHidden?.()
-  if (coachmarkReshowTimer !== null) {
-    clearTimeout(coachmarkReshowTimer)
-    coachmarkReshowTimer = null
-  }
+  unsubCoachmarkSettled?.()
   bridge?.hideCoachmark()
   hideTip()
   trailingObserver?.disconnect()
