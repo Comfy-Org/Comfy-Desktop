@@ -9,16 +9,27 @@
  *
  * ## What is stored, and what is not
  *
- * A single boolean, in `<configDir>/staff-targeting.json`. The email is classified the moment it
- * is read and then discarded: it is never persisted, never handed to `telemetry.ts`, and never
- * leaves the page context it was read in. So the strongest privacy claim here is structural
- * rather than procedural — there is no code path by which an address could reach PostHog or the
- * disk, because no module downstream of this one is ever given one.
+ * A single boolean, in `<configDir>/staff-targeting.json`. The address is compared inside the
+ * page (`CLASSIFY_STAFF_JS`) and only the derived boolean crosses the IPC boundary, so it is
+ * never persisted, never handed to `telemetry.ts`, and never present in main-process memory at
+ * all. The privacy claim is therefore structural rather than procedural: no module downstream of
+ * the page script is ever given an address, so none can leak one.
  *
  * The cost of that is deliberate and worth naming: the `@comfy.org` test lives in the CLIENT
- * (`isStaffEmail`), so changing which cohort is targeted needs a Desktop release rather than a
- * PostHog config edit. Sending the raw email instead would keep that flexibility, at the price
- * of a plaintext address at rest for every logged-in user.
+ * (`STAFF_EMAIL_SUFFIX`), so changing which cohort is targeted needs a Desktop release rather
+ * than a PostHog config edit. Sending the raw email instead would keep that flexibility, at the
+ * price of a plaintext address at rest for every logged-in user.
+ *
+ * ## What this is NOT
+ *
+ * NOT an authorization boundary. The classification comes from the page's own main world, so
+ * page-level code — a custom-node extension, or XSS on a hosted frontend — can forge a
+ * `firebase:authUser:*` record or patch the IndexedDB API and self-classify as staff. What that
+ * buys is bounded: the property only makes a person CONDITION evaluable, the server still
+ * decides, and `coreBetaGrants` will only ever add args already on its own allowlist. Nothing
+ * here should ever gate access, entitlement, or anything a user could want to forge their way
+ * into. Closing it properly means cross-checking against main's own Firebase identity
+ * (`firebaseAuthIdentity.ts`), which is a larger change than this one.
  *
  * ## Why the boolean is persisted rather than resolved at boot
  *
@@ -43,6 +54,13 @@
  * `telemetry.opsFlagPersonProperties`: the flag fetch itself deliberately bypasses the consent
  * gate (an ops flag is config pushed TO the client), but that argument does not extend to a fact
  * about the person, so this rides only on the consented path.
+ *
+ * One consequence to know about: because the boot evaluation is authoritative, a staff user who
+ * later turns telemetry OFF stops matching the condition, the server answers an explicit
+ * `false`, and `coreBetaGrants` treats that as a revocation. So declining telemetry withdraws a
+ * grant already held rather than merely declining a new one. That follows from consent being a
+ * real gate, and is documented rather than worked around — exempting held grants would mean
+ * keeping a targeting decision alive for someone who has withdrawn consent to be targeted.
  */
 import path from 'path'
 import type { WebContents } from 'electron'
@@ -52,7 +70,10 @@ import * as telemetry from './telemetry'
 
 const PERSIST_FILENAME = 'staff-targeting.json'
 
-/** Lower-cased before comparison so `Foo@Comfy.org` classifies the same as `foo@comfy.org`;
+/** The entire definition of the cohort, and the one place a client-side membership rule exists.
+ *  Interpolated into `CLASSIFY_STAFF_JS` so the page and this module cannot drift apart.
+ *
+ *  Compared lower-cased so `Foo@Comfy.org` classifies the same as `foo@comfy.org`, with
  *  `toLowerCase` rather than `toLocaleLowerCase` to avoid the Turkish dotless-I hazard. */
 const STAFF_EMAIL_SUFFIX = '@comfy.org'
 
@@ -60,19 +81,9 @@ function persistFilePath(): string {
   return path.join(configDir(), PERSIST_FILENAME)
 }
 
-/**
- * Whether an address belongs to Comfy staff.
- *
- * Exported for its own test rather than inlined: it is the entire definition of the cohort, and
- * the one place a client-side membership rule exists at all.
- */
-export function isStaffEmail(email: string | null | undefined): boolean {
-  if (typeof email !== 'string') return false
-  return email.trim().toLowerCase().endsWith(STAFF_EMAIL_SUFFIX)
-}
-
-/** Mirrors the process-wide value so a repeat classification does not rewrite an unchanged file
- *  on every page load. `null` until `initStaffFlagTargeting` has read the disk. */
+/** What the disk is believed to hold, so a repeat classification does not rewrite an unchanged
+ *  file on every page load. `null` means UNKNOWN — before the first read, or when the file
+ *  exists but could not be read — and an unknown value never suppresses a write. */
 let cached: boolean | null = null
 
 /**
@@ -83,17 +94,22 @@ let cached: boolean | null = null
  * async read would have to be awaited by every caller that follows, and the ordering would be a
  * convention rather than a guarantee.
  *
- * Missing, unreadable, or malformed content all mean "not staff" — the file is user-writable
- * JSON on disk, so every failure mode has to read as the safe direction.
+ * Missing or malformed content means "not staff" — the file is user-writable JSON on disk, so
+ * those failure modes read as the safe direction. An UNREADABLE file (it exists but is locked)
+ * is different and must not collapse into `false`: that would leave `cached` disagreeing with a
+ * file that may hold `true`, and the unchanged-classification check would then suppress the
+ * write that a genuine sign-out needs to make.
  */
 export function initStaffFlagTargeting(): void {
   cached = readPersistedStaff()
-  telemetry.setFlagEvaluationStaff(cached)
+  telemetry.setFlagEvaluationStaff(cached === true)
   console.log('[staff-targeting] init: persisted=', cached)
 }
 
-function readPersistedStaff(): boolean {
+/** `null` when the file exists but its contents could not be recovered — unknown, not absent. */
+function readPersistedStaff(): boolean | null {
   const outcome = readFileSafe(persistFilePath())
+  if (outcome.kind === 'unreadable') return null
   if (outcome.kind !== 'data') return false
   try {
     const parsed: unknown = JSON.parse(outcome.data)
@@ -105,22 +121,39 @@ function readPersistedStaff(): boolean {
 }
 
 /**
- * Page-context read of the signed-in account's email.
+ * Page-context classification of the signed-in account.
  *
- * Follows `localFirebaseAuthMonitor.ts` rather than `userTier.ts`: it checks
- * `indexedDB.databases()` before opening, so a read never CREATES an empty database on an origin
- * that has no Firebase record; it guards `objectStoreNames.contains`, so an absent store reads as
- * signed-out instead of throwing; and it closes the connection, so a later Firebase
- * `versionchange` is not blocked. `userTier.ts` predates that pattern and does none of the three.
+ * Returns only a BOOLEAN. The address is compared in the page and never crosses the IPC
+ * boundary, so the privacy claim above is structurally true rather than a convention — and no
+ * unbounded page-controlled string reaches main-process memory or a crash dump.
  *
- * Resolves `{known: true, email}` when this origin HAS an auth store — `email: null` there means
- * genuinely signed out. Resolves `{known: false}` when the origin has no Firebase store at all,
- * or the read failed: those are not evidence of being signed out, and the caller must not treat
- * them as a classification (see `refreshStaffFlagTargeting`).
+ * Three guards, each answering a way the naive read gets the cohort wrong:
+ *
+ *   - **`emailVerified`.** Firebase email/password sign-up accepts any address, so an
+ *     unverified `@comfy.org` one proves nothing about domain ownership. Unverified is not staff.
+ *   - **Exactly one record.** Several `firebase:authUser:` entries can coexist, and taking the
+ *     first makes the answer depend on IndexedDB iteration order — a stale record for a former
+ *     staff account would classify a current non-staff session as staff. More than one distinct
+ *     uid is treated as unresolved, mirroring `localFirebaseAuthMonitor`'s `pending`.
+ *   - **`onblocked` and a bounded wait.** A blocked `open` never fires success or error, and
+ *     `executeJavaScript` has no timeout, so the awaiting main-process promise would never
+ *     settle and would leak one `WebContents` reference per page load.
+ *
+ * `{known: false}` means "this view cannot say" — no auth store, an unresolved multi-record
+ * state, or a failed read. Only `{known: true}` is a classification.
+ *
+ * NOT a trust boundary. This runs in the page's main world, so page-level code could forge a
+ * record or patch the IndexedDB API. See the module note on that.
+ *
+ * @internal — exported so its own spec can run it against a stubbed IndexedDB. It holds the
+ * cohort rule, so it is tested directly rather than through a main-process stand-in that could
+ * agree with a mistake.
  */
-const READ_ACCOUNT_EMAIL_JS = `(async () => {
+export const CLASSIFY_STAFF_JS = `(async () => {
   var db = null;
   try {
+    var SUFFIX = ${JSON.stringify(STAFF_EMAIL_SUFFIX)};
+    var OPEN_TIMEOUT_MS = 5000;
     if (!indexedDB.databases) return { known: false };
     var dbs = await indexedDB.databases();
     if (!dbs.some(function (d) { return d && d.name === 'firebaseLocalStorageDb'; })) {
@@ -128,8 +161,20 @@ const READ_ACCOUNT_EMAIL_JS = `(async () => {
     }
     var req = indexedDB.open('firebaseLocalStorageDb');
     db = await new Promise(function (res, rej) {
-      req.onsuccess = function () { res(req.result); };
-      req.onerror = function () { rej(req.error); };
+      var settled = false;
+      var finish = function (fn, v) { if (!settled) { settled = true; fn(v); } };
+      // A blocked open fires neither success nor error. Without this the promise never
+      // settles and main keeps the page alive waiting for it.
+      req.onblocked = function () { finish(rej, new Error('blocked')); };
+      // The databases() check above and this open are a TOCTOU pair: if the database is removed
+      // in between, a versionless open CREATES it. Aborting the version change keeps the read
+      // from having a side effect, and surfaces as onerror.
+      req.onupgradeneeded = function () {
+        try { req.transaction.abort(); } catch (_) { finish(rej, new Error('created')); }
+      };
+      req.onsuccess = function () { finish(res, req.result); };
+      req.onerror = function () { finish(rej, req.error); };
+      setTimeout(function () { finish(rej, new Error('timeout')); }, OPEN_TIMEOUT_MS);
     });
     if (!db.objectStoreNames.contains('firebaseLocalStorage')) return { known: false };
     var store = db.transaction('firebaseLocalStorage', 'readonly')
@@ -139,12 +184,24 @@ const READ_ACCOUNT_EMAIL_JS = `(async () => {
       allReq.onsuccess = function () { res(allReq.result); };
       allReq.onerror = function () { rej(allReq.error); };
     });
-    var entry = (all || []).find(function (e) {
-      return e && typeof e === 'object' && typeof e.fbase_key === 'string' &&
-        e.fbase_key.indexOf('firebase:authUser:') === 0;
+    var users = [];
+    var uids = {};
+    (all || []).forEach(function (e) {
+      if (!e || typeof e !== 'object') return;
+      if (typeof e.fbase_key !== 'string') return;
+      if (e.fbase_key.indexOf('firebase:authUser:') !== 0) return;
+      var v = e.value;
+      if (!v || typeof v.uid !== 'string' || v.uid.length === 0) return;
+      if (!uids[v.uid]) { uids[v.uid] = true; users.push(v); }
     });
-    var email = entry && entry.value ? entry.value.email : null;
-    return { known: true, email: typeof email === 'string' && email.length > 0 ? email : null };
+    // No record at all is a real signed-out state and votes "not staff".
+    if (users.length === 0) return { known: true, staff: false };
+    // Two accounts at once is unresolved, not a coin flip on iteration order.
+    if (users.length > 1) return { known: false };
+    var user = users[0];
+    if (user.emailVerified !== true) return { known: true, staff: false };
+    var email = typeof user.email === 'string' ? user.email : '';
+    return { known: true, staff: email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX };
   } catch (e) {
     return { known: false };
   } finally {
@@ -177,16 +234,16 @@ const READ_ACCOUNT_EMAIL_JS = `(async () => {
  */
 export async function refreshStaffFlagTargeting(webContents: WebContents): Promise<void> {
   try {
-    const read = (await webContents.executeJavaScript(READ_ACCOUNT_EMAIL_JS)) as {
+    const read = (await webContents.executeJavaScript(CLASSIFY_STAFF_JS)) as {
       known?: unknown
-      email?: unknown
+      staff?: unknown
     } | null
     // A view with no Firebase store has NO OPINION and must stay silent. Absence of an auth
     // record is not evidence of being signed out, and treating it as such lets a local install
     // that was never signed into clear a classification a signed-in view established — a wrong
     // answer, not merely a racy one. Only a view that can actually see auth state votes.
     if (!read || read.known !== true) return
-    const isStaff = isStaffEmail(typeof read.email === 'string' ? read.email : null)
+    const isStaff = read.staff === true
     // Bound immediately even though this launch's flag fetch has long since gone out: a flag
     // initialised later in the session (or re-read in a test) should see the current answer, and
     // it costs nothing.

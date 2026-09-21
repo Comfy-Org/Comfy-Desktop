@@ -19,14 +19,14 @@ vi.mock('./telemetry', () => ({
   setFlagEvaluationStaff: (isStaff: boolean) => setFlagEvaluationStaff(isStaff)
 }))
 
-const { initStaffFlagTargeting, refreshStaffFlagTargeting, isStaffEmail, _resetForTest } =
+const { initStaffFlagTargeting, refreshStaffFlagTargeting, CLASSIFY_STAFF_JS, _resetForTest } =
   await import('./staffFlagTargeting')
 
-/** A view that HAS an auth store, signed in as `email` (or signed out when null). */
-function stubContents(email: string | null, opts: { throws?: boolean } = {}): Electron.WebContents {
+/** A view that CAN classify — it reached an auth store and reached a verdict. */
+function stubContents(staff: boolean, opts: { throws?: boolean } = {}): Electron.WebContents {
   return {
     executeJavaScript: () =>
-      opts.throws ? Promise.reject(new Error('page gone')) : Promise.resolve({ known: true, email })
+      opts.throws ? Promise.reject(new Error('page gone')) : Promise.resolve({ known: true, staff })
   } as unknown as Electron.WebContents
 }
 
@@ -72,7 +72,71 @@ afterEach(() => {
   fs.rmSync(testConfigDir, { recursive: true, force: true })
 })
 
-describe('isStaffEmail', () => {
+/** Minimal IndexedDB good enough for `CLASSIFY_STAFF_JS`. Handlers are attached after `open()`
+ *  returns, exactly as in a browser, so every callback fires on a later microtask. */
+function fakeIndexedDB(opts: {
+  databases?: { name: string }[]
+  stores?: string[]
+  entries?: unknown[]
+  openOutcome?: 'success' | 'error' | 'blocked' | 'never'
+}) {
+  const closed = { count: 0 }
+  const db = {
+    objectStoreNames: {
+      contains: (n: string) => (opts.stores ?? ['firebaseLocalStorage']).includes(n)
+    },
+    transaction: () => ({
+      objectStore: () => ({
+        getAll: () => {
+          const req: Record<string, unknown> = { result: opts.entries ?? [] }
+          queueMicrotask(() => (req['onsuccess'] as (() => void) | undefined)?.())
+          return req
+        }
+      })
+    }),
+    close: () => {
+      closed.count += 1
+    }
+  }
+  const idb = {
+    databases: () => Promise.resolve(opts.databases ?? [{ name: 'firebaseLocalStorageDb' }]),
+    open: () => {
+      const req: Record<string, unknown> = { result: db, error: new Error('open failed') }
+      const outcome = opts.openOutcome ?? 'success'
+      if (outcome !== 'never') {
+        queueMicrotask(() => {
+          const handler = { success: 'onsuccess', error: 'onerror', blocked: 'onblocked' }[outcome]
+          ;(req[handler] as (() => void) | undefined)?.()
+        })
+      }
+      return req
+    }
+  }
+  return { idb, closed }
+}
+
+/** A stored Firebase auth record. */
+function authRecord(uid: string, email: string | null, emailVerified = true): unknown {
+  return { fbase_key: `firebase:authUser:key:${uid}`, value: { uid, email, emailVerified } }
+}
+
+/** Run the REAL injected script against a stubbed IndexedDB. */
+async function classify(opts: Parameters<typeof fakeIndexedDB>[0]): Promise<{
+  result: { known?: boolean; staff?: boolean }
+  closed: number
+}> {
+  const { idb, closed } = fakeIndexedDB(opts)
+  const run = new Function('indexedDB', 'setTimeout', `return ${CLASSIFY_STAFF_JS}`) as (
+    i: unknown,
+    t: unknown
+  ) => Promise<{ known?: boolean; staff?: boolean }>
+  const result = await run(idb, setTimeout)
+  return { result, closed: closed.count }
+}
+
+// The cohort rule lives in the injected script, so it is tested there rather than through a
+// main-process stand-in that could agree with a mistake.
+describe('CLASSIFY_STAFF_JS', () => {
   it.each([
     ['a plain staff address', 'someone@comfy.org', true],
     ['mixed case', 'Foo@Comfy.Org', true],
@@ -81,15 +145,78 @@ describe('isStaffEmail', () => {
     ['a non-staff address', 'someone@example.com', false],
     ['a lookalike domain', 'someone@notcomfy.org', false],
     ['the domain in the local part', 'comfy.org@example.com', false],
-    ['an empty string', '', false],
-    ['null', null, false],
-    ['undefined', undefined, false]
-  ])('classifies %s', (_label, email, expected) => {
-    expect(isStaffEmail(email as string | null | undefined)).toBe(expected)
+    ['an empty address', '', false],
+    ['a null address', null, false]
+  ])('classifies %s', async (_label, email, expected) => {
+    const { result } = await classify({ entries: [authRecord('u1', email as string | null)] })
+
+    expect(result).toEqual({ known: true, staff: expected })
   })
 
-  it('rejects a non-string without throwing', () => {
-    expect(isStaffEmail(42 as unknown as string)).toBe(false)
+  it('refuses an unverified address, which proves nothing about domain ownership', async () => {
+    // Firebase email/password sign-up accepts any address, so an unverified `@comfy.org` one is
+    // self-asserted. Without this check anyone could sign up and enter the cohort.
+    const { result } = await classify({ entries: [authRecord('u1', 'someone@comfy.org', false)] })
+
+    expect(result).toEqual({ known: true, staff: false })
+  })
+
+  it('reports signed out when no auth record exists', async () => {
+    const { result } = await classify({ entries: [] })
+
+    expect(result).toEqual({ known: true, staff: false })
+  })
+
+  it('declines to answer when two accounts are stored', async () => {
+    // Taking the first would make the answer depend on iteration order, and a stale record for a
+    // former staff account would classify a current non-staff session as staff.
+    const { result } = await classify({
+      entries: [authRecord('u1', 'someone@comfy.org'), authRecord('u2', 'other@example.com')]
+    })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('still answers when one account is stored under duplicate keys', async () => {
+    const { result } = await classify({
+      entries: [authRecord('u1', 'someone@comfy.org'), authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true })
+  })
+
+  it.each([
+    ['there is no Firebase database', { databases: [] }],
+    ['the object store is missing', { stores: [] }],
+    ['the open fails', { openOutcome: 'error' as const }],
+    ['the open is blocked', { openOutcome: 'blocked' as const }]
+  ])('declines to answer when %s', async (_label, opts) => {
+    // None of these is evidence of being signed out, so none may vote "not staff".
+    const { result } = await classify(opts)
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('ignores entries that are not auth records', async () => {
+    const { result } = await classify({
+      entries: [{ fbase_key: 'something:else', value: { uid: 'x', email: 'a@comfy.org' } }, null]
+    })
+
+    expect(result).toEqual({ known: true, staff: false })
+  })
+
+  it('closes the database even when it answers nothing', async () => {
+    // A leaked connection blocks a later Firebase `versionchange`.
+    const { closed } = await classify({ stores: [] })
+
+    expect(closed).toBe(1)
+  })
+
+  it('never returns the address itself', async () => {
+    // The privacy claim, pinned at the boundary it is made about.
+    const { result } = await classify({ entries: [authRecord('u1', 'someone@comfy.org')] })
+
+    expect(JSON.stringify(result)).not.toContain('comfy.org')
   })
 })
 
@@ -127,7 +254,7 @@ describe('initStaffFlagTargeting', () => {
 
 describe('refreshStaffFlagTargeting', () => {
   it('stores the classification for the next launch', async () => {
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
 
     expect(storedFile()).toMatchObject({ staff: true })
   })
@@ -135,14 +262,14 @@ describe('refreshStaffFlagTargeting', () => {
   it('stores only a boolean — never the address it classified', async () => {
     // The whole privacy argument: an address is classified in page context and discarded, so
     // there is no path by which one could reach disk or PostHog.
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
 
     expect(fs.readFileSync(persistFilePath(), 'utf-8')).not.toContain('someone@comfy.org')
     expect(fs.readFileSync(persistFilePath(), 'utf-8')).not.toContain('comfy.org')
   })
 
   it('never hands telemetry anything but a boolean', async () => {
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
 
     for (const [arg] of setFlagEvaluationStaff.mock.calls) {
       expect(typeof arg).toBe('boolean')
@@ -152,7 +279,7 @@ describe('refreshStaffFlagTargeting', () => {
   it('carries a staff classification into the next launch', async () => {
     // The behaviour the whole design exists to produce, end to end across a restart: sign in on
     // one launch, be targeted on the next.
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
 
     expect(nextLaunchBinding()).toBe(true)
   })
@@ -163,49 +290,49 @@ describe('refreshStaffFlagTargeting', () => {
     initStaffFlagTargeting()
     expect(setFlagEvaluationStaff).toHaveBeenLastCalledWith(false)
 
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
 
     expect(storedFile()).toMatchObject({ staff: true })
   })
 
   it('stores false for a non-staff account', async () => {
-    await refreshStaffFlagTargeting(stubContents('someone@example.com'))
+    await refreshStaffFlagTargeting(stubContents(false))
 
     expect(storedFile()).toMatchObject({ staff: false })
     expect(nextLaunchBinding()).toBe(false)
   })
 
   it('reclassifies to false on sign-out, so a machine that changes hands stops presenting as staff', async () => {
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
     expect(nextLaunchBinding()).toBe(true)
 
-    await refreshStaffFlagTargeting(stubContents(null))
+    await refreshStaffFlagTargeting(stubContents(false))
 
     expect(storedFile()).toMatchObject({ staff: false })
     expect(nextLaunchBinding()).toBe(false)
   })
 
   it('reclassifies on a switch to a non-staff account', async () => {
-    await refreshStaffFlagTargeting(stubContents('first@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
 
-    await refreshStaffFlagTargeting(stubContents('second@example.com'))
+    await refreshStaffFlagTargeting(stubContents(false))
 
     expect(nextLaunchBinding()).toBe(false)
   })
 
   it('does not rewrite the file when the classification is unchanged', async () => {
     // Every page load reaches here, so "no change" has to cost nothing.
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
     const firstWrite = fs.statSync(persistFilePath()).mtimeMs
 
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
-    await refreshStaffFlagTargeting(stubContents('another@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
+    await refreshStaffFlagTargeting(stubContents(true))
 
     expect(fs.statSync(persistFilePath()).mtimeMs).toBe(firstWrite)
   })
 
   it('binds the classification immediately as well as storing it', async () => {
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
 
     expect(setFlagEvaluationStaff).toHaveBeenLastCalledWith(true)
   })
@@ -213,16 +340,16 @@ describe('refreshStaffFlagTargeting', () => {
   it('survives a page-context read that throws, leaving the stored value alone', async () => {
     // Fire-and-forget from `attach.ts`; an escaping rejection would be unhandled. A page that
     // cannot be read must not revoke a grant.
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
 
     await expect(
-      refreshStaffFlagTargeting(stubContents(null, { throws: true }))
+      refreshStaffFlagTargeting(stubContents(false, { throws: true }))
     ).resolves.toBeUndefined()
     expect(nextLaunchBinding()).toBe(true)
   })
 
-  it('treats a signed-in account with a malformed email as not staff', async () => {
-    await refreshStaffFlagTargeting(stubContentsReturning({ known: true, email: 42 }))
+  it('treats a non-boolean verdict as not staff', async () => {
+    await refreshStaffFlagTargeting(stubContentsReturning({ known: true, staff: 'yes' }))
 
     expect(storedFile()).toMatchObject({ staff: false })
   })
@@ -235,7 +362,7 @@ describe('refreshStaffFlagTargeting', () => {
     // Absence of an auth record is not evidence of being signed out. A local install that was
     // never signed into must not clear a classification a signed-in view established — that
     // would be a wrong answer, not merely a racy one.
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    await refreshStaffFlagTargeting(stubContents(true))
     expect(nextLaunchBinding()).toBe(true)
 
     await refreshStaffFlagTargeting(make())
@@ -247,21 +374,39 @@ describe('refreshStaffFlagTargeting', () => {
     // The cache moves only after a successful write. Moving it first would record a write that
     // never landed, and the unchanged-classification check would then suppress every later
     // attempt — leaving the next launch reading the stale value even once the disk recovered.
-    fs.rmSync(testConfigDir, { recursive: true, force: true })
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    //
+    // The failure has to be REAL. Removing the config dir does not cause one: `writeFileSafe`
+    // recreates the parent (`mkdirSync(dirname, {recursive: true})`), so the write would
+    // succeed and this test would pass through the unchanged-classification path having proven
+    // nothing. Blocking the staging path with a directory makes the rename fail for real.
+    fs.mkdirSync(persistFilePath() + '.tmp', { recursive: true })
+    await refreshStaffFlagTargeting(stubContents(true))
+    expect(fs.existsSync(persistFilePath())).toBe(false)
 
-    fs.mkdirSync(testConfigDir, { recursive: true })
-    await refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
+    fs.rmSync(persistFilePath() + '.tmp', { recursive: true, force: true })
+    await refreshStaffFlagTargeting(stubContents(true))
 
     expect(storedFile()).toMatchObject({ staff: true })
     expect(nextLaunchBinding()).toBe(true)
   })
 
+  it('keeps writing after an unreadable stored file, rather than assuming not-staff', async () => {
+    // An unreadable file is UNKNOWN, not absent. Folding it into `false` would leave the cache
+    // disagreeing with a file that may hold `true`, and the unchanged-classification check would
+    // then suppress the write a genuine sign-out needs to make.
+    fs.writeFileSync(persistFilePath(), JSON.stringify({ staff: true }), 'utf-8')
+    fs.chmodSync(persistFilePath(), 0o000)
+    initStaffFlagTargeting()
+
+    await refreshStaffFlagTargeting(stubContents(false))
+
+    fs.chmodSync(persistFilePath(), 0o644)
+    expect(storedFile()).toMatchObject({ staff: false })
+  })
+
   it('survives an unwritable config dir', async () => {
     fs.rmSync(testConfigDir, { recursive: true, force: true })
 
-    await expect(
-      refreshStaffFlagTargeting(stubContents('someone@comfy.org'))
-    ).resolves.toBeUndefined()
+    await expect(refreshStaffFlagTargeting(stubContents(true))).resolves.toBeUndefined()
   })
 })
