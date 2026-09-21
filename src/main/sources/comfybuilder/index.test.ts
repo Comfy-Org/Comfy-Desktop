@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as ComfyBuilderModule from '../../comfybuilder'
+
 const acquireModelDownloadRootLock = vi.hoisted(() =>
   vi.fn<(modelsRoot: string) => (() => void) | null>(() => vi.fn())
 )
@@ -10,6 +12,9 @@ const cancelModelDownload = vi.hoisted(() => vi.fn(async () => {}))
 const releaseInstallTerminalForFsOp = vi.hoisted(() => vi.fn<(installationId: string) => void>())
 const startModelStaging = vi.hoisted(() => vi.fn())
 const abortModelStaging = vi.hoisted(() => vi.fn())
+const updateInstallation = vi.hoisted(() =>
+  vi.fn<(id: string, data: Record<string, unknown>) => Promise<void>>(async () => {})
+)
 
 vi.mock('electron', () => ({
   app: { getPath: () => '', isPackaged: false },
@@ -21,7 +26,8 @@ vi.mock('electron', () => ({
 }))
 
 // Stub the library so install() wiring can be asserted without real downloads.
-vi.mock('../../comfybuilder', () => ({
+vi.mock('../../comfybuilder', async (importOriginal) => ({
+  ...(await importOriginal<typeof ComfyBuilderModule>()),
   installArtifact: vi.fn(async () => {}),
   buildLaunchSpec: vi.fn(() => null),
   venvPython: vi.fn((installPath: string) =>
@@ -39,6 +45,7 @@ vi.mock('../../comfybuilder', () => ({
   }))
 }))
 vi.mock('../../devplatform/session', () => ({ getBuilderClient: vi.fn(() => ({})) }))
+vi.mock('../../installations', () => ({ update: updateInstallation }))
 vi.mock('../../lib/comfyDownloadManager', () => ({
   acquireModelDownloadRootLock,
   releaseParkedModelJobsUnder,
@@ -60,7 +67,13 @@ vi.mock('../../devplatform/builds', () => ({
 import fs, { promises as fsp } from 'fs'
 import os from 'os'
 import path from 'path'
-import { installArtifact, stageModels, resolveModelManifest, venvPython } from '../../comfybuilder'
+import {
+  buildLaunchSpec,
+  installArtifact,
+  stageModels,
+  resolveModelManifest,
+  venvPython
+} from '../../comfybuilder'
 import { listCompleteVersions, resolveHostArtifactForVersion } from '../../devplatform/builds'
 import {
   clearVersionCache,
@@ -245,6 +258,43 @@ describe('comfybuilder.install wiring', () => {
     } finally {
       rename.mockRestore()
     }
+  })
+
+  it.each([
+    ['No (an allowlist)', { mode: 'allowlist' }, false, '--cpu'],
+    ['Yes (an empty blocklist)', { mode: 'blocklist', list: [] }, true, '--enable-manager --cpu'],
+    ['nothing (no policy)', null, true, '--enable-manager --cpu']
+  ])(
+    'records the manager answer and matching launch args when the author said %s',
+    async (_name, customNodePolicy, expected, expectedArgs) => {
+      vi.mocked(resolveModelManifest).mockResolvedValueOnce({
+        models: [],
+        modelPolicy: null,
+        partnerNodePolicy: null,
+        customNodePolicy
+      } as never)
+      updateInstallation.mockClear()
+
+      await comfybuilder.install!(record({ launchArgs: '--enable-manager --cpu' }), fakeTools())
+
+      expect(updateInstallation).toHaveBeenCalledWith('i1', {
+        comfybuilderManagerAllowed: expected,
+        launchArgs: expectedArgs
+      })
+    }
+  )
+
+  it.each([
+    ['off', false, false],
+    ['on', true, true],
+    ['unrecorded (an install older than the field)', undefined, true]
+  ])('launches with the manager %s', (_name, recorded, expected) => {
+    vi.mocked(buildLaunchSpec).mockClear()
+    comfybuilder.getLaunchCommand!(record({ comfybuilderManagerAllowed: recorded }))
+    expect(buildLaunchSpec).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ managerAllowed: expected })
+    )
   })
 
   it('installs the archive, resolves the manifest, then stages models in the background', async () => {
@@ -763,7 +813,11 @@ describe('comfybuilder update-comfyui', () => {
       status: 'updating'
     })
     // The new version's models are unstaged until the background task finishes.
-    expect(tools.updates.at(-1)).toMatchObject({ status: 'installed', modelsStaged: false })
+    expect(tools.updates.at(-1)).toMatchObject({
+      status: 'installed',
+      modelsStaged: false,
+      comfybuilderManagerAllowed: true
+    })
     // A staging still running for the old version is stopped before the swap,
     // and the new version's models stage in the background afterwards.
     expect(abortModelStaging).toHaveBeenCalledWith('i1')

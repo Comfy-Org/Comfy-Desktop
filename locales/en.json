@@ -1143,6 +1143,7 @@
     "triggerPreUpdate": "Update",
     "triggerPostUpdate": "Updated",
     "triggerPostRestore": "Restored",
+    "labelRestoreIncomplete": "Restore did not complete",
     "environment": "Environment",
     "comfyuiVersion": "ComfyUI",
     "releaseTag": "Release",

@@ -34,7 +34,13 @@ vi.mock('../../settings', () => ({
 }))
 
 import fs from 'fs'
-import { isProtectedPackage, buildProtectedConstraints, protectedPackageDrift } from './restore'
+import {
+  isProtectedPackage,
+  buildProtectedConstraints,
+  protectedPackageDrift,
+  describePackageRevert
+} from './restore'
+import type { RestoreRevertOutcome } from './types'
 import { pipFreeze } from '../pip'
 import { getActivePythonPath } from '../pythonEnv'
 import type { InstallationRecord } from '../../installations'
@@ -235,5 +241,53 @@ describe('protectedPackageDrift', () => {
       torchsde: '0.2.5'
     })
     expect(drift).toEqual([])
+  })
+})
+
+describe('describePackageRevert', () => {
+  const outcome = (over: Partial<RestoreRevertOutcome> = {}): RestoreRevertOutcome => ({
+    reason: 'failures',
+    uninstalled: [],
+    keptPreexisting: [],
+    restoredFromBackup: false,
+    complete: true,
+    ...over
+  })
+
+  // The no-outcome path is where the phase threw before recording anything: it
+  // restores the file backup without checking the result and never uninstalls
+  // what the run already installed. It must not read as the most reassuring.
+  it('reports an unknown outcome when nothing was recorded', () => {
+    expect(describePackageRevert(undefined)).toBe(
+      'The state of the package changes is unknown — see the log for details.'
+    )
+  })
+
+  // Installs ran against these, so "nothing was applied" is not knowable.
+  it('does not claim nothing was applied when packages were kept', () => {
+    expect(describePackageRevert(outcome({ keptPreexisting: ['aiohttp'] }))).toBe(
+      'The package changes this restore made were reverted.'
+    )
+  })
+
+  // #1514: the old text asserted a revert unconditionally, alongside a revert
+  // that had just deleted 94 pre-existing packages.
+  it('says so when the revert did not complete, instead of claiming one', () => {
+    const text = describePackageRevert(outcome({ complete: false }))
+    expect(text).toContain('could not be reverted')
+    expect(text).not.toContain('where possible')
+  })
+
+  it('says nothing was applied when the revert had nothing to undo', () => {
+    expect(describePackageRevert(outcome())).toBe('No package changes were applied.')
+  })
+
+  it('claims a revert only when there was something to revert', () => {
+    expect(describePackageRevert(outcome({ uninstalled: ['brand-new'] }))).toBe(
+      'The package changes this restore made were reverted.'
+    )
+    expect(describePackageRevert(outcome({ restoredFromBackup: true }))).toBe(
+      'The package changes this restore made were reverted.'
+    )
   })
 })

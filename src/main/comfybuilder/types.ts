@@ -122,6 +122,9 @@ export interface ModelManifest {
   models: ModelDescriptor[]
   modelPolicy?: ModelPolicy | null
   partnerNodePolicy?: ModelPolicy | null
+  /** Which custom-node packs may be installed. An allowlist is how the build
+   *  wizard records "Custom nodes manager: No"; see `managerAllowedByPolicy`. */
+  customNodePolicy?: ModelPolicy | null
 }
 
 /** Per-model staging progress, surfaced to the UI while models download. */
