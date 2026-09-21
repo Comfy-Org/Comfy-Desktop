@@ -912,6 +912,7 @@ describe('core beta report placement', () => {
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
     launchHarness.duringResourceAcquire = null
+    launchHarness.waitForPort = null
     launchHarness.spawn = (_cmd: unknown, args: unknown) => {
       spawnArgs = args as string[]
       return fakeChild()
