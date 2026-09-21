@@ -183,6 +183,15 @@ describe('arm / peek / acknowledge', () => {
     expect(peekBetaActivationNotice('inst-1')).toEqual(['--enable-agent'])
   })
 
+  it('an empty shownArgs falls back to the queue, which is why the handler refuses one', () => {
+    // Documents the contract the IPC handler depends on: `[]` is indistinguishable from
+    // "the renderer named nothing", so the handler must reject a malformed array rather than
+    // filter it down to one — otherwise junk input retires the whole queue permanently.
+    armBetaActivationNotice('inst-1', ['--enable-assets', '--enable-agent'])
+    acknowledgeBetaActivationNotice('inst-1', [])
+    expect(announced()).toEqual(['--enable-assets', '--enable-agent'])
+  })
+
   it('acknowledging an install with nothing pending writes nothing', () => {
     acknowledgeBetaActivationNotice('inst-1')
     expect(announced()).toBeUndefined()
