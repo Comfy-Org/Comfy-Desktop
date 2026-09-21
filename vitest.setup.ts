@@ -1,4 +1,5 @@
-import { config } from '@vue/test-utils'
+import { afterEach } from 'vitest'
+import { config, enableAutoUnmount } from '@vue/test-utils'
 import { createAppI18n } from './src/renderer/src/lib/i18nFactory'
 
 const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
@@ -48,3 +49,16 @@ console.warn = (...args: unknown[]): void => {
   if (missingI18nFixtureKey.test(first)) return
   originalConsoleWarn(...args)
 }
+
+/**
+ * Unmount every component a test mounts when that test ends.
+ *
+ * A wrapper that is never unmounted stays live for the rest of the file, and
+ * so does any work it has in flight. `createDiskSpaceChecker`'s 300ms debounce
+ * is the worst of them - its only cleanup is `onUnmounted`, so an orphaned
+ * wrapper's timer fires into a later test (against that test's `window.api`
+ * stubs) or past the file's environment teardown, where touching `window`
+ * throws `window is not defined` and fails the run. Unmounting runs the
+ * components' own cleanup hooks, which is what cancels that work.
+ */
+enableAutoUnmount(afterEach)

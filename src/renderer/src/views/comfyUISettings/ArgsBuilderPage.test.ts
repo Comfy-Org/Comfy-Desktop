@@ -108,12 +108,21 @@ function activeSection(wrapper: VueWrapper) {
     .find((s) => s.find('.args-page-category-title').text() === 'Active')
 }
 
+// `emitArgsChanged` is a `useDebounceFn` with a 500ms bare `setTimeout` and no
+// scope-dispose cleanup, so unmounting does not cancel it. A test that changes
+// an arg and then ends leaves that timer armed; when it fires after this file's
+// happy-dom teardown, `emitTelemetryAction` hits a `window` that no longer
+// exists and the ReferenceError fails the whole run. Faking `setTimeout` means
+// `useRealTimers` below discards whatever is still pending - and faking only
+// `setTimeout` leaves `flushPromises` (which schedules on `setImmediate`) alone.
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   stubElectronApi()
 })
 
 afterEach(() => {
   while (wrappers.length) wrappers.pop()?.unmount()
+  vi.useRealTimers()
   delete (window as unknown as { api?: unknown }).api
   vi.restoreAllMocks()
 })

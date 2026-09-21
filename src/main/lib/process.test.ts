@@ -21,6 +21,41 @@ function closeServer(server: net.Server): Promise<void> {
   return new Promise((resolve) => server.close(() => resolve()))
 }
 
+function closeServers(servers: net.Server[]): Promise<void[]> {
+  return Promise.all(servers.map(closeServer))
+}
+
+/**
+ * Bind `count` consecutive ports, letting the OS pick the base.
+ *
+ * Hardcoding the base is a flake: the ephemeral range on Linux
+ * (32768-60999 by default) swallows the "high" ports a test is tempted to
+ * pick, so any transient outbound connection can already own one and the
+ * bind dies with EADDRINUSE. Port 0 hands back something the OS knows is
+ * free, and we keep holding it; the neighbours above it can still be taken,
+ * so a partial run is released and re-asked for rather than failing the test.
+ */
+async function listenConsecutive(
+  host: string,
+  count: number,
+  attempts = 50
+): Promise<{ servers: net.Server[]; basePort: number }> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const servers: net.Server[] = []
+    try {
+      const base = await listenOn(host)
+      servers.push(base.server)
+      for (let offset = 1; offset < count; offset++) {
+        servers.push((await listenOn(host, base.port + offset)).server)
+      }
+      return { servers, basePort: base.port }
+    } catch {
+      await closeServers(servers)
+    }
+  }
+  throw new Error(`could not bind ${count} consecutive ports on ${host}`)
+}
+
 describe('findAvailablePort', () => {
   it('finds an available port in the given range', async () => {
     const port = await findAvailablePort('127.0.0.1', 49200, 49300)
@@ -58,17 +93,13 @@ describe('findAvailablePort', () => {
   })
 
   it('skips a port that is actually in use', async () => {
-    const base = 49500
-    const server = net.createServer()
-    await new Promise<void>((resolve) => {
-      server.listen(base, '127.0.0.1', () => resolve())
-    })
+    const { server, port } = await listenOn('127.0.0.1')
 
     try {
-      const result = await findAvailablePort('127.0.0.1', base, base + 100)
-      expect(result).toBeGreaterThan(base)
+      const result = await findAvailablePort('127.0.0.1', port, port + 100)
+      expect(result).toBeGreaterThan(port)
     } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+      await closeServer(server)
     }
   })
 
@@ -78,17 +109,12 @@ describe('findAvailablePort', () => {
   // port. `findAvailablePort` must walk past *every* busy port in sequence,
   // not just the first one.
   it('skips multiple sequentially-busy ports', async () => {
-    const base = 49600
-    const { server: s1, port: p1 } = await listenOn('127.0.0.1', base)
-    let s2: net.Server | undefined
+    const { servers, basePort } = await listenConsecutive('127.0.0.1', 2)
     try {
-      const r1 = await listenOn('127.0.0.1', p1 + 1)
-      s2 = r1.server
-      const result = await findAvailablePort('127.0.0.1', p1, p1 + 100)
-      expect(result).toBeGreaterThanOrEqual(p1 + 2)
+      const result = await findAvailablePort('127.0.0.1', basePort, basePort + 100)
+      expect(result).toBeGreaterThanOrEqual(basePort + 2)
     } finally {
-      if (s2) await closeServer(s2)
-      await closeServer(s1)
+      await closeServers(servers)
     }
   })
 
