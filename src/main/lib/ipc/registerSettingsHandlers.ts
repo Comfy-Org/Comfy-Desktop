@@ -342,7 +342,7 @@ export function registerSettingsHandlers(): void {
   // during launch, when the host window may still be mid-attach or under the progress
   // takeover, and the title bar drains it once its own gate opens.
   ipcMain.handle('get-pending-beta-notice', (_event, installationId: unknown) => {
-    if (typeof installationId !== 'string' || installationId === '') return []
+    if (typeof installationId !== 'string' || installationId === '') return null
     return peekBetaActivationNotice(installationId)
   })
 

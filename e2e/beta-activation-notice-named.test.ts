@@ -18,7 +18,7 @@ import { expect, test, type ElectronApplication } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { WebContentsPage } from './support/cdpPages'
-import { opsFlagsGrantSeed, writeFakeComfyInstall } from './support/fakeComfyInstall'
+import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { captureHostWindow } from './support/windowCapture'
 
 // A real launch does not fit the default 45s budget.
@@ -26,7 +26,6 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
 const INSTALL_ID = 'inst-beta-notice-named'
 const INSTALL_NAME = 'Named Beta Fixture'
-const PORT = 49519
 const GRANT_ARG = '--enable-assets'
 const GRANT_MIN_CORE = '0.3.80'
 /** What the payload calls the feature. Deliberately not derivable from the arg token, so a
@@ -35,6 +34,7 @@ const FEATURE_NAME = 'Assets browser'
 
 let ctx: AppContext
 let installPath: string
+let port: number
 let previousPosthogHost: string | undefined
 
 /** See the companion spec: a closed port makes the flag fetch `unreachable`, which is the
@@ -50,7 +50,8 @@ test.beforeAll(async () => {
   process.env['POSTHOG_HOST'] = UNREACHABLE_POSTHOG_HOST
 
   installPath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-beta-notice-named-'))
-  await writeFakeComfyInstall({ installPath, port: PORT })
+  port = await reserveFreePort()
+  await writeFakeComfyInstall({ installPath, port })
 
   ctx = await launchApp({
     settings: {
@@ -67,7 +68,7 @@ test.beforeAll(async () => {
         sourceLabel: 'ComfyBuilder',
         installPath,
         status: 'installed',
-        launchArgs: `--port ${PORT}`,
+        launchArgs: `--port ${port}`,
         launchMode: 'window',
         browserPartition: 'unique',
         seen: true,
@@ -105,7 +106,7 @@ test('a payload-supplied feature name reaches the card @linux', async () => {
       (await ctx.app.evaluate(
         ({ webContents }, port) =>
           webContents.getAllWebContents().some((wc) => wc.getURL().includes(String(port))),
-        PORT
+        port
       )) === true,
     { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' }
   )
