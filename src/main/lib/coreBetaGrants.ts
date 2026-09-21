@@ -43,7 +43,13 @@ export type CoreBetaNotice = {
   /** Human name of the feature, e.g. `"Asset library"`. Supplied by the payload rather than
    *  mapped in Desktop because the allowlist is installed ahead of the features it names — a
    *  table here would have to ship before anyone knew what to call them. Absent means the
-   *  card falls back to its generic wording. */
+   *  card falls back to its generic wording.
+   *
+   *  NOT localized, and not localizable from here: it arrives as one string for every user,
+   *  in whatever language ops wrote it — English today. The card's SENTENCE is translated
+   *  around it. That asymmetry is why the notice templates treat this as an opaque token and
+   *  never as the word they agree with; see the placeholder contract in
+   *  `locales/drafts/README.md`. */
   readonly description?: string
 }
 

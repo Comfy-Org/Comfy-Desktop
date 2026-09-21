@@ -561,6 +561,16 @@ const betaNotice = useBetaActivationNotice({
     // Static keys rather than composed ones: `createAppI18n` disables missing-key warnings, so
     // a rename in en.json would otherwise degrade silently to a card titled with the literal
     // key. Written out, the four are greppable and fail visibly.
+    //
+    // The `{feature}` slot in the *Named variants is an OPAQUE PROPER NAME, supplied by the
+    // flag payload and not localized. In every template it modifies the constant head noun
+    // ("beta"), so what a gendered or case-marking language agrees with is that head noun and
+    // never the slotted name. A translation that promotes `{feature}` to the grammatical head
+    // — "{feature} est activé", "{feature} включён" — needs a gender Desktop does not have and
+    // cannot get. en and zh are the only shipping locales and zh has neither gender nor case,
+    // so nothing exercises this today; the contract is written down so a third locale cannot
+    // introduce the fragile form silently. Contract for translators:
+    // `locales/drafts/README.md`.
     const keys =
       direction === 'disabled'
         ? description
