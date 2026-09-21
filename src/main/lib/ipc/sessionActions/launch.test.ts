@@ -1365,30 +1365,59 @@ describe('core beta report placement', () => {
       ['--enable-assets'],
       ['--enable-assets']
     ])
-  })
-
-  it('tags a successful opted-out boot as Assets disabled', async () => {
-    launchHarness.betaEnabled = false
-    launchHarness.launchCommand = {
-      cmd: process.execPath,
-      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
-      cwd: installDir,
-      skipPortWait: false,
-      port: 48233
+    for (const { properties } of bootEvents) {
+      expect(properties).toMatchObject({ core_beta_opted_in: true, core_version: '0.3.81' })
     }
-    launchHarness.waitForPort = async () => {}
-
-    const res = await handleLaunch(ctxFor('harness-assets-disabled'))
-
-    expect(res.ok).toBe(true)
-    const bootEvents = events.filter((e) => e.event.startsWith('comfy.desktop.comfyui.boot_'))
-    expect(bootEvents.map((e) => e.event)).toEqual([
-      'comfy.desktop.comfyui.boot_started',
-      'comfy.desktop.comfyui.boot_completed'
-    ])
-    expect(bootEvents.every((e) => e.properties?.assets_enabled === false)).toBe(true)
-    expect(bootEvents.map((e) => e.properties?.core_beta_flags)).toEqual([[], []])
   })
+
+  it.each([
+    // description, opted in, manual flag, discovery fails, flag supported, expected cohort
+    ['opted out without a flag', false, false, false, true, false],
+    ['opted out with a manual flag', false, true, false, true, true],
+    ['discovery fails with a manual flag', true, true, true, true, true],
+    ['discovery fails without a flag', true, false, true, true, false],
+    ['schema removes an unsupported manual flag', false, true, false, false, false],
+    ['opted in without a grant', true, false, false, true, false]
+  ] as const)(
+    'tags boot arguments independently of grants: %s',
+    async (_description, optedIn, manualFlag, discoveryFails, supported, expected) => {
+      launchHarness.betaEnabled = optedIn
+      launchHarness.grants = []
+      launchHarness.schemaThrows = discoveryFails
+      launchHarness.schemaNames = supported ? ['enable-assets', 'listen'] : ['listen']
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: [
+          '-s',
+          path.join(installDir, 'ComfyUI', 'main.py'),
+          '--listen',
+          ...(manualFlag ? ['--enable-assets'] : [])
+        ],
+        cwd: installDir,
+        skipPortWait: false,
+        port: 48233
+      }
+      launchHarness.waitForPort = async () => {}
+
+      const res = await handleLaunch(ctxFor('harness-assets-cohort'))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs.includes('--enable-assets')).toBe(expected)
+      const bootEvents = events.filter((e) => e.event.startsWith('comfy.desktop.comfyui.boot_'))
+      expect(bootEvents.map((e) => e.event)).toEqual([
+        'comfy.desktop.comfyui.boot_started',
+        'comfy.desktop.comfyui.boot_completed'
+      ])
+      for (const { properties } of bootEvents) {
+        expect(properties).toMatchObject({
+          assets_enabled: expected,
+          core_beta_flags: [],
+          core_beta_opted_in: optedIn,
+          core_version: '0.3.81'
+        })
+      }
+    }
+  )
 
   it('keeps the applied Assets cohort on terminal boot failure', async () => {
     launchHarness.launchCommand = {
@@ -1417,6 +1446,9 @@ describe('core beta report placement', () => {
       ['--enable-assets'],
       ['--enable-assets']
     ])
+    for (const { properties } of bootEvents) {
+      expect(properties).toMatchObject({ core_beta_opted_in: true, core_version: '0.3.81' })
+    }
   })
 
   it('still filters user args, injecting nothing, when the beta setting cannot be resolved', async () => {

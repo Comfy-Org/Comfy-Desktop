@@ -790,15 +790,21 @@ async function runLaunch(
     }
   }
 
-  /** Applied launch state shared by every boot-lifecycle event. This is deliberately
-   *  derived from the post-schema grants rather than the opt-in toggle: an opted-in
-   *  launch on an older Core may still have Assets disabled. `app_version` is added
-   *  centrally by telemetry.ts. */
-  function bootCohort(): { core_beta_flags: string[]; assets_enabled: boolean } {
-    const coreBetaFlags = coreBeta.applied.map((grant) => grant.arg)
+  /** Launch-argument cohort, not confirmation that Core's Assets service initialized.
+   *  Manual/source arguments count even when opted out or schema discovery fails;
+   *  managed grants remain separate attribution. Called only after launchCmd exists.
+   *  `app_version` is added centrally by telemetry.ts. */
+  function bootCohort(): {
+    core_beta_flags: string[]
+    assets_enabled: boolean
+    core_beta_opted_in: boolean
+    core_version: string | null
+  } {
     return {
-      core_beta_flags: coreBetaFlags,
-      assets_enabled: coreBetaFlags.includes('--enable-assets')
+      core_beta_flags: coreBeta.applied.map((grant) => grant.arg),
+      assets_enabled: launchCmd.args?.includes('--enable-assets') === true,
+      core_beta_opted_in: coreBeta.optedIn,
+      core_version: coreSemver(inst)
     }
   }
 
