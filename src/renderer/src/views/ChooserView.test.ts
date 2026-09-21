@@ -895,6 +895,67 @@ describe('ChooserView', () => {
     expect(api.setSetting).not.toHaveBeenCalled()
   })
 
+  it.each([undefined, '', 'removed-workspace'])(
+    'persists the authenticated fallback for an unavailable saved scope (%s)',
+    async (savedWorkspaceId) => {
+      const api = installMockApiSignedIn(
+        [makeInstall({ id: 'a', name: 'Workspace A Instance', workspaceId: 'w1' })],
+        [],
+        { id: 'w1', name: 'Workspace A' }
+      )
+      api.getSetting.mockResolvedValue(savedWorkspaceId)
+      const wrapper = mountChooser()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Workspace A Instance')
+      expect(api.setSetting).toHaveBeenCalledWith('dashboardWorkspaceId', 'w1')
+      await wrapper.find('.chooser-tile-new').trigger('click')
+      expect(wrapper.emitted('show-new-install')).toEqual([['w1']])
+      wrapper.unmount()
+    }
+  )
+
+  it('preserves an explicit Personal selection while signed in', async () => {
+    const api = installMockApiSignedIn([makeInstall({ id: 'local', name: 'Local Instance' })], [], {
+      id: 'w1',
+      name: 'Workspace A'
+    })
+    api.getSetting.mockResolvedValue('personal')
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Local Instance')
+    expect(api.setSetting).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('preserves the saved workspace when the membership request fails', async () => {
+    const api = installMockApiSignedIn(
+      [makeInstall({ id: 'b', name: 'Workspace B Instance', workspaceId: 'w2' })],
+      [],
+      { id: 'w1', name: 'Workspace A' }
+    )
+    api.getSetting.mockResolvedValue('w2')
+    api.comfybuilder.listWorkspaces.mockRejectedValue(new Error('offline'))
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Workspace B Instance')
+    expect(api.setSetting).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('persists Personal when reopening signed out with a saved team workspace', async () => {
+    const api = installMockApi([makeInstall({ id: 'local', name: 'Local Instance' })])
+    api.getSetting.mockResolvedValue('w1')
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Local Instance')
+    expect(api.setSetting).toHaveBeenCalledWith('dashboardWorkspaceId', 'personal')
+    wrapper.unmount()
+  })
+
   it('switches between Personal and team workspaces without leaking other-workspace installs', async () => {
     const api = installMockApiSignedIn(
       [

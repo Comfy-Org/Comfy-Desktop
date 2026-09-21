@@ -105,10 +105,31 @@ async function initializeDashboardScope(): Promise<void> {
     window.api.getSetting(DASHBOARD_WORKSPACE_SETTING).catch(() => undefined),
     authStore.fetchStatus().catch(() => authStore.status)
   ])
-  selectedWorkspaceId.value =
-    authStore.isSignedIn && typeof persistedWorkspaceId === 'string' && persistedWorkspaceId.trim()
+  const savedWorkspaceId =
+    typeof persistedWorkspaceId === 'string' && persistedWorkspaceId.trim()
       ? persistedWorkspaceId
-      : workspaceContextId(authStore.status)
+      : undefined
+  if (authStore.isSignedIn && savedWorkspaceId && savedWorkspaceId !== PERSONAL_WORKSPACE_ID) {
+    await authStore.fetchWorkspaces()
+  }
+  // A failed catalog request does not establish that membership was removed.
+  const canRestoreSavedWorkspace =
+    authStore.isSignedIn &&
+    savedWorkspaceId &&
+    (savedWorkspaceId === PERSONAL_WORKSPACE_ID ||
+      authStore.workspacesError ||
+      authStore.workspaces.some((workspace) => workspace.id === savedWorkspaceId))
+  const resolvedWorkspaceId = canRestoreSavedWorkspace
+    ? savedWorkspaceId
+    : authStore.isSignedIn
+      ? workspaceContextId(authStore.status)
+      : PERSONAL_WORKSPACE_ID
+  if (resolvedWorkspaceId === persistedWorkspaceId) {
+    selectedWorkspaceId.value = resolvedWorkspaceId
+  } else {
+    // Menu-driven New Instance reads this setting instead of the local ref.
+    setSelectedWorkspace(resolvedWorkspaceId)
+  }
   dashboardScopeInitialized = true
 
   if (authStore.isSignedIn && authStore.status.workspaceId) {
