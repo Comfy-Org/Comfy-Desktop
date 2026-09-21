@@ -1493,7 +1493,11 @@ describe('TitleBarApp', () => {
       expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
 
       // And the card can be raised again once the popup frees up.
-      getPendingBetaNotice.mockResolvedValue(['--enable-something-else'])
+      getPendingBetaNotice.mockResolvedValue({
+        args: ['--enable-something-else'],
+        direction: 'enabled',
+        description: null
+      })
       bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
       await flushPromises()
       expect(betaCards().length).toBe(2)
