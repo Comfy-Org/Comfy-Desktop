@@ -253,6 +253,9 @@ export interface ComfyTitleBarBridge {
   /** Subscribe to "the host window has stopped moving", debounced in main across every
    *  `move`/`resize`. The cue to put a forgotten card back, once and not mid-drag. */
   onCoachmarkSettled(cb: (payload: { kind: CoachmarkKind }) => void): () => void
+  /** Subscribe to the popup being reconfigured for the OTHER card. `kind` is the owner that
+   *  was displaced. Not a hide, so the auto-hidden channel does not cover it. */
+  onCoachmarkDisplaced(cb: (payload: { kind: CoachmarkKind }) => void): () => void
   /** Tell main this title bar is mounted; main responds with the initial state. */
   ready(): void
 }
@@ -469,6 +472,12 @@ const bridge: ComfyTitleBarBridge = {
       cb({ kind: coachmarkKindOf(payload) })
     ipcRenderer.on('comfy-titlebar:coachmark-settled', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-settled', handler)
+  },
+  onCoachmarkDisplaced: (cb: (payload: { kind: CoachmarkKind }) => void) => {
+    const handler = (_e: unknown, payload?: { kind?: unknown }): void =>
+      cb({ kind: coachmarkKindOf(payload) })
+    ipcRenderer.on('comfy-titlebar:coachmark-displaced', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-displaced', handler)
   },
   ready: () => {
     ipcRenderer.send('comfy-window:title-bar-ready')

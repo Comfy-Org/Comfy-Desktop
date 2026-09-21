@@ -66,6 +66,7 @@ interface MockBridgeState {
   coachmarkActionCallbacks: ((payload: { kind: string }) => void)[]
   coachmarkAutoHiddenCallbacks: ((payload: { kind: string }) => void)[]
   coachmarkSettledCallbacks: ((payload: { kind: string }) => void)[]
+  coachmarkDisplacedCallbacks: ((payload: { kind: string }) => void)[]
   readyCalls: number
 }
 
@@ -106,6 +107,7 @@ function installMockBridge(
     coachmarkActionCallbacks: [],
     coachmarkAutoHiddenCallbacks: [],
     coachmarkSettledCallbacks: [],
+    coachmarkDisplacedCallbacks: [],
     readyCalls: 0
   }
   const installationId = opts.installationId === undefined ? 'test-id' : opts.installationId
@@ -242,6 +244,10 @@ function installMockBridge(
     },
     onCoachmarkSettled: (cb: (payload: { kind: string }) => void) => {
       state.coachmarkSettledCallbacks.push(cb)
+      return () => {}
+    },
+    onCoachmarkDisplaced: (cb: (payload: { kind: string }) => void) => {
+      state.coachmarkDisplacedCallbacks.push(cb)
       return () => {}
     },
     ready: () => {
@@ -1455,6 +1461,29 @@ describe('TitleBarApp', () => {
       // Exactly one re-show for the whole gesture.
       expect(betaCards().length).toBe(2)
       expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    // The other card TAKING the popup is not a hide, so `onCoachmarkAutoHidden` never fires
+    // for it. Without a displacement signal the composable keeps believing its card is up and
+    // refuses every later show — which is how a first-run beta notice ended up armed but
+    // permanently invisible behind the onboarding hint.
+    it('forgets a card the other one displaced, so it can be raised again', async () => {
+      const wrapper = await mountBar()
+      expect(betaCards().length).toBe(1)
+
+      // The hint takes the popup out from under the beta card.
+      bridgeState.coachmarkDisplacedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
+      await flushPromises()
+
+      // Displacement is not acknowledgement: main must still hold it.
+      expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
+
+      // And the card can be raised again once the popup frees up.
+      getPendingBetaNotice.mockResolvedValue(['--enable-something-else'])
+      bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
+      await flushPromises()
+      expect(betaCards().length).toBe(2)
       wrapper.unmount()
     })
 

@@ -297,6 +297,24 @@ export function openCoachmarkPopup(opts: {
     actionLabel: opts.actionLabel,
     token
   })
+  // One popup serves both cards, so configuring it for a NEW owner silently takes the screen
+  // away from the old one. That is NOT a hide, so `onHide` — and therefore the auto-hidden
+  // channel — never fires, and the displaced composable goes on believing its card is up and
+  // refuses every later show. This is the displacement that left a beta notice armed but
+  // invisible for the rest of a session once the onboarding hint landed on top of it.
+  //
+  // `pendingConfigToken` is null only before the FIRST configure, so this cannot fire on the
+  // initial claim — only on a genuine hand-over between owners.
+  if (entry.pendingConfigToken !== null && entry.kind !== kind) {
+    const previous = entry.kind
+    const parent = entry.view.parentWindow
+    if (parent && !parent.isDestroyed()) {
+      const tb = findTitleBarByParent?.(parent)
+      if (tb && !tb.isDestroyed()) {
+        tb.send('comfy-titlebar:coachmark-displaced', { kind: previous })
+      }
+    }
+  }
   entry.kind = kind
   entry.pendingConfigToken = token
   if (entry.view.rendererReady) {
