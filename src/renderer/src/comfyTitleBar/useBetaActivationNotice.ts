@@ -91,8 +91,10 @@ export function useBetaActivationNotice(
   const isShowing = ref(false)
   /** The install whose card is on screen, or `null`. Also the "a card is up" flag. */
   let shownForInstall: string | null = null
-  /** Identity of the card on screen: its args, joined. */
+  /** Identity of the card on screen (see `noticeKey`). */
   let shownKey: string | null = null
+  /** The args that card displayed, carried so retirement acknowledges exactly those. */
+  let shownArgs: readonly string[] = []
   /** Cards already retired in this renderer session, by that same identity.
    *
    *  Keyed on the NOTICE, not on the install or the renderer. Both of those suppress too much:
@@ -104,6 +106,19 @@ export function useBetaActivationNotice(
   const retiredKeys = new Set<string>()
   /** True while a show attempt is between its pending-read and its decision. */
   let showInFlight = false
+  /** A show attempt arrived while one was in flight. The in-flight read belongs to whatever
+   *  install was current when it started, so discarding the newcomer can strand the one that
+   *  replaced it — a retarget mid-read leaves the old result failing its id check and nobody
+   *  asking about the new install until some unrelated gate transition. Coalesced into a
+   *  single re-run instead. */
+  let retryQueued = false
+
+  /** Identity of a card: the install AND its args. Args alone would let one install's
+   *  dismissal suppress an identical card on another — reachable when an acknowledgement
+   *  failed to persist, since the announced list is what otherwise keeps them distinct. */
+  function noticeKey(installationId: string, args: readonly string[]): string {
+    return JSON.stringify([installationId, args])
+  }
 
   function gatePasses(): boolean {
     return (
@@ -141,7 +156,11 @@ export function useBetaActivationNotice(
   async function maybeShow(): Promise<void> {
     const installationId = opts.installationId()
     if (!opts.bridge || !installationId) return
-    if (shownForInstall !== null || showInFlight) return
+    if (shownForInstall !== null) return
+    if (showInFlight) {
+      retryQueued = true
+      return
+    }
     if (!gatePasses() || !opts.anchorRef.value) return
     // Claimed BEFORE the await: the gate watcher and the post-hint retry fire independently,
     // so two calls could otherwise both clear the guard and each raise a card.
@@ -151,6 +170,12 @@ export function useBetaActivationNotice(
     } finally {
       showInFlight = false
     }
+    // Re-run once for whoever was turned away. Bounded: the flag is only set by a call that
+    // was skipped, so a quiet re-run ends here.
+    if (retryQueued) {
+      retryQueued = false
+      await maybeShow()
+    }
   }
 
   /** The pending-read and the decision that follows it. Split out so `maybeShow` can hold an
@@ -159,7 +184,7 @@ export function useBetaActivationNotice(
     if (!opts.bridge) return
     const notice = await pendingNotice(installationId)
     if (!notice) return
-    const key = notice.args.join(',')
+    const key = noticeKey(installationId, notice.args)
     if (retiredKeys.has(key)) return
     // Re-check after the await; the host could have flipped state or the pill hint could have
     // claimed the popup while we were asking.
@@ -170,6 +195,7 @@ export function useBetaActivationNotice(
     const rect = anchor.getBoundingClientRect()
     shownForInstall = installationId
     shownKey = key
+    shownArgs = notice.args
     isShowing.value = true
     opts.bridge.showCoachmark({
       kind: 'beta-notice',
@@ -194,13 +220,15 @@ export function useBetaActivationNotice(
     isShowing.value = false
     const installationId = shownForInstall
     const key = shownKey
+    const args = shownArgs
     if (installationId === null || key === null) return
     retiredKeys.add(key)
     shownForInstall = null
     shownKey = null
+    shownArgs = []
     opts.bridge?.hideCoachmark()
     try {
-      await window.api.acknowledgeBetaNotice(installationId, key.split(','))
+      await window.api.acknowledgeBetaNotice(installationId, [...args])
     } catch {
       // Persistence failed; the next launch re-offers the notice.
     }
@@ -212,6 +240,7 @@ export function useBetaActivationNotice(
     // back rather than being silently spent.
     shownForInstall = null
     shownKey = null
+    shownArgs = []
   }
 
   async function openSettings(): Promise<void> {
