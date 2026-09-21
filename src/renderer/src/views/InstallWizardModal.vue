@@ -127,6 +127,13 @@ const workspaceBuilds = computed(() => {
     (build) => build.state === 'installable' || build.state === 'update-available'
   )
 })
+const managedBuildCatalogLoaded = computed(
+  () =>
+    managedWorkspaceId.value !== null &&
+    authStore.status.workspaceId === managedWorkspaceId.value &&
+    authStore.buildsLoaded &&
+    !authStore.buildsError
+)
 const workspaceBuildOptions = computed<BaseSelectOption[]>(() =>
   workspaceBuilds.value.map((build) => ({
     value: build.id,
@@ -631,7 +638,25 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     ) {
       await authStore.fetchWorkspaces()
     }
+    // The dashboard prefetches this catalog when its workspace selection
+    // changes. Use that result immediately: a catalog with no host-compatible
+    // release defaults to Public Builds without flashing the empty Managed tab.
+    if (managedBuildCatalogLoaded.value && workspaceBuilds.value.length === 0) {
+      workspaceInstallMode.value = 'public'
+    }
     await initializeInstallMode(gen, true)
+    // Direct entry points may not have visited the dashboard. In that case the
+    // managed initialization above performs the first fetch; apply the same
+    // default once its result is known.
+    if (
+      gen === modeGeneration &&
+      managedBuildMode.value &&
+      managedBuildCatalogLoaded.value &&
+      workspaceBuilds.value.length === 0
+    ) {
+      workspaceInstallMode.value = 'public'
+      await initializeInstallMode(gen)
+    }
   } finally {
     if (gen === modeGeneration) initializing.value = false
   }

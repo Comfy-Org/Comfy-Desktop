@@ -9,6 +9,7 @@ import BaseSelect from '../components/ui/BaseSelect.vue'
 import BrandVariantList from '../components/BrandVariantList.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { useModal } from '../composables/useModal'
+import { useAuthStore } from '../stores/authStore'
 
 function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
@@ -556,15 +557,59 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(wrapper.get('.workspace-build-online').text()).toBe('View builds online')
   })
 
-  it('shows an empty state when no compatible Builds can be installed', async () => {
-    signInToWorkspace([{ id: 'none', name: 'No Build Yet', state: 'no-build' }])
+  it('defaults to Public Builds when no managed Build is compatible with this machine', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'standalone', label: 'Standalone', fields: [] }
+    ])
+    signInToWorkspace([{ id: 'linux', name: 'Linux Build', state: 'platform-mismatch' }])
+    const wrapper = await openWorkspaceModal()
+
+    expect(
+      wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
+    ).toBe('true')
+    expect(
+      wrapper.get('[data-testid="workspace-install-source-managed"]').attributes('aria-checked')
+    ).toBe('false')
+    expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
+  })
+
+  it('defaults to Public Builds when the workspace has no managed Builds', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'standalone', label: 'Standalone', fields: [] }
+    ])
+    signInToWorkspace([])
     const wrapper = await openWorkspaceModal()
 
     expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
-    expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain(
-      'No compatible Builds are available to install.'
-    )
-    expect(wrapper.get('.config-continue').attributes('disabled')).toBeDefined()
+    expect(
+      wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
+    ).toBe('true')
+    expect(
+      wrapper.get('[data-testid="workspace-install-source-managed"]').attributes('aria-checked')
+    ).toBe('false')
+    expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
+  })
+
+  it('uses a prefetched empty managed catalog without loading it again', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'standalone', label: 'Standalone', fields: [] }
+    ])
+    signInToWorkspace([])
+    const wrapper = mountModal()
+    await flushPromises()
+    const authStore = useAuthStore()
+    authStore.builds = []
+    authStore.buildsLoaded = true
+
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w1' })
+    await flushPromises()
+
+    expect(window.api.comfybuilder.listBuilds).not.toHaveBeenCalled()
+    expect(
+      wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
+    ).toBe('true')
   })
 
   it('activates the selected workspace before loading its Builds', async () => {
