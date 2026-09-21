@@ -39,9 +39,14 @@ Development builds default off. Environment overrides:
 | `COMFY_CUSTOMER_IO_SITE_ID`              | Override the public in-app site ID             |
 
 The browser SDK is bundled as a script and executed in ComfyUI's browser context.
-It receives no Node access. Its local/session storage accesses are redirected at
-build time to private in-memory stores, leaving ComfyUI's authentication storage
-intact. Session identity is reset before switching accounts. Network failures do
+It receives no Node access. Its location and local/session storage accesses are
+redirected at build time to a private synthetic URL and in-memory stores. This
+applies before SDK initialization, so URL parameters cannot select an identity,
+trigger events, or add campaign/referrer metadata. The SDK's fallback route uses
+`/desktop/comfyui`, never the real workflow path. Native link handling owns
+navigation; SDK location assignments cannot replace the workflow. Browser
+persistence is disabled and ComfyUI's own URL and storage remain intact.
+Session identity is reset before switching accounts. Network failures do
 not block loading or using ComfyUI; another activation or an online event can retry.
 
 ## Verification
