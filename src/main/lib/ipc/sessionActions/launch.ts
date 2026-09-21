@@ -540,6 +540,11 @@ export function _cleanupFailedLaunchSetup(
   if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
   abort.abort()
   _clearLaunchingFailed(installationId)
+  // Every guarded setup failure lands here, including the spawn itself on the `skipPortWait`
+  // path — and that one rethrows past the `!launchResult.ok` cleanup rather than through it.
+  // Clearing at this chokepoint covers all of them; it is a delete, so paths that fail before
+  // the claim is armed pay nothing.
+  clearBetaActivationClaim(installationId)
 }
 
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
