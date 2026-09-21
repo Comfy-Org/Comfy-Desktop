@@ -44,27 +44,19 @@ describe('listWorkspaces', () => {
     ])
   })
 
-  it('returns [] when team-workspaces is off (404)', async () => {
-    stub(404, {})
-    expect(await listWorkspaces('tok', { apiBase: 'https://cloud/api' })).toEqual([])
-  })
-
-  it('throws on unauthorized', async () => {
-    stub(401, {})
-    await expect(listWorkspaces('tok', { apiBase: 'https://cloud/api' })).rejects.toThrow(
-      /authorized/i
-    )
-  })
-
-  it('returns [] on a null / non-object 200 body', async () => {
-    stub(200, null)
-    expect(await listWorkspaces('tok', { apiBase: 'https://cloud/api' })).toEqual([])
-  })
-
-  it.each(['nope', {}])('returns [] when workspaces is not an array', async (workspaces) => {
-    stub(200, { workspaces })
-    expect(await listWorkspaces('tok', { apiBase: 'https://cloud/api' })).toEqual([])
-  })
+  it.each([
+    { status: 404, body: {}, error: /HTTP 404/ },
+    { status: 401, body: {}, error: /authorized/i },
+    { status: 200, body: null, error: /invalid catalog/ },
+    { status: 200, body: { workspaces: 'nope' }, error: /invalid catalog/ },
+    { status: 200, body: { workspaces: {} }, error: /invalid catalog/ }
+  ])(
+    'rejects unavailable or malformed membership: $status $body',
+    async ({ status, body, error }) => {
+      stub(status, body)
+      await expect(listWorkspaces('tok', { apiBase: 'https://cloud/api' })).rejects.toThrow(error)
+    }
+  )
 })
 
 describe('listWorkspaceMembers', () => {

@@ -111,6 +111,23 @@ describe('useAuthStore', () => {
     await expect(store.fetchWorkspaces()).resolves.toEqual([])
     expect(store.workspacesError).toBe(true)
     expect(store.loadingWorkspaces).toBe(false)
+    expect(store.workspacesLoaded).toBe(false)
+  })
+
+  it('shares a pending workspace request and distinguishes a loaded empty catalog', async () => {
+    api.getAuthStatus.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+    const store = useAuthStore()
+    await store.whenReady()
+    const catalog = deferred<unknown[]>()
+    api.listWorkspaces.mockReturnValueOnce(catalog.promise)
+    const first = store.fetchWorkspaces()
+    const second = store.fetchWorkspaces()
+    expect(api.listWorkspaces).toHaveBeenCalledOnce()
+    expect(store.workspacesLoaded).toBe(false)
+    catalog.resolve([])
+    await Promise.all([first, second])
+    expect(store.workspacesLoaded).toBe(true)
+    expect(store.workspaces).toEqual([])
   })
 
   it('reconciles the cached active workspace name after loading the workspace list', async () => {
@@ -262,6 +279,7 @@ describe('useAuthStore', () => {
     authChangedCb?.({ signedIn: false })
     expect(store.isSignedIn).toBe(false)
     expect(store.workspaces).toEqual([])
+    expect(store.workspacesLoaded).toBe(false)
     expect(store.builds).toEqual([])
     expect(store.buildsLoaded).toBe(false)
   })

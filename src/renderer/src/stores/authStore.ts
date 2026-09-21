@@ -16,9 +16,14 @@ import type { Build } from '../devplatform/types'
  */
 export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
+  /** False until a status read or authoritative auth event succeeds. */
+  const statusLoaded = ref(false)
   const workspaces = ref<Workspace[]>([])
   const builds = ref<Build[]>([])
   const loadingWorkspaces = ref(false)
+  /** Distinguishes unknown membership from a successfully fetched empty catalog. */
+  const workspacesLoaded = ref(false)
+  let workspacesRequest: Promise<Workspace[]> | undefined
   const loadingBuilds = ref(false)
   /** Distinguishes a successfully loaded empty catalog from one not fetched yet. */
   const buildsLoaded = ref(false)
@@ -39,6 +44,8 @@ export const useAuthStore = defineStore('auth', () => {
   function advanceRevision(): void {
     revision += 1
     loadingWorkspaces.value = false
+    workspacesLoaded.value = false
+    workspacesRequest = undefined
     loadingBuilds.value = false
     workspacesError.value = false
     buildsError.value = false
@@ -57,6 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
    *  arrival triggered, and no watcher re-fires for an unchanged identity,
    *  leaving the UI showing a false empty workspace. */
   function applyAuthoritativeStatus(next: AuthStatus): void {
+    statusLoaded.value = true
     if (sameIdentity(status.value, next)) {
       status.value = next
       return
@@ -81,7 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchStatus(): Promise<AuthStatus> {
     const seen = revision
     const next = await comfybuilderApi.getAuthStatus()
-    if (revision === seen && next) status.value = next
+    if (revision === seen && next) applyAuthoritativeStatus(next)
     return next
   }
 
@@ -100,9 +108,19 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /** The workspaces the signed-in user belongs to (for the switcher). */
-  async function fetchWorkspaces(): Promise<Workspace[]> {
+  function fetchWorkspaces(): Promise<Workspace[]> {
+    // Scope initialization and the selector can request membership together.
+    const seen = revision
+    workspacesRequest ??= loadWorkspaces().finally(() => {
+      if (revision === seen) workspacesRequest = undefined
+    })
+    return workspacesRequest
+  }
+
+  async function loadWorkspaces(): Promise<Workspace[]> {
     if (!status.value.signedIn) {
       workspaces.value = []
+      workspacesLoaded.value = false
       return workspaces.value
     }
     const seen = revision
@@ -112,6 +130,7 @@ export const useAuthStore = defineStore('auth', () => {
       const next = await comfybuilderApi.listWorkspaces()
       if (revision === seen) {
         workspaces.value = next
+        workspacesLoaded.value = true
         const current = next.find((workspace) => workspace.id === status.value.workspaceId)
         status.value = { ...status.value, workspaceName: current?.name }
       }
@@ -139,7 +158,7 @@ export const useAuthStore = defineStore('auth', () => {
   // Hydrate from the persisted session once at creation: main only pushes
   // CHANGES, so the boot state has to be pulled. The revision guard keeps
   // this pull from overwriting anything newer.
-  void fetchStatus().catch(() => {})
+  const initialStatus = fetchStatus().catch(() => status.value)
 
   onScopeDispose(() => {
     unsubscribe?.()
@@ -175,9 +194,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     status,
+    statusLoaded,
     workspaces,
     builds,
     loadingWorkspaces,
+    workspacesLoaded,
     loadingBuilds,
     buildsLoaded,
     workspacesError,
@@ -185,6 +206,7 @@ export const useAuthStore = defineStore('auth', () => {
     isSignedIn,
     personalWorkspace,
     fetchStatus,
+    whenReady: () => initialStatus,
     signIn,
     signOut,
     fetchWorkspaces,

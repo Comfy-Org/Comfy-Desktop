@@ -432,12 +432,18 @@ export async function saveSnapshot(
  */
 function snapshotRepresentsCurrentState(
   snapshot: Snapshot,
-  current: Omit<Snapshot, 'createdAt' | 'trigger' | 'label' | 'version'>
+  current: Omit<Snapshot, 'createdAt' | 'trigger' | 'label' | 'version'>,
+  label?: string
 ): boolean {
   return (
     statesMatch(snapshot, current) &&
     (snapshot.updateChannel || 'stable') === (current.updateChannel || 'stable') &&
-    (snapshot.pythonVersion || '') === (current.pythonVersion || '')
+    (snapshot.pythonVersion || '') === (current.pythonVersion || '') &&
+    // The label is a note about how this state was reached, so a top whose
+    // caveat no longer applies is stale even when the state matches: a
+    // successful retry must not leave "Restore did not complete" on Latest.
+    // Repeated failures carry the same label and still collapse to one row.
+    (snapshot.label || null) === (label || null)
   )
 }
 
@@ -460,16 +466,22 @@ function snapshotRepresentsCurrentState(
  * Returns the filename representing the live state — either the newly written
  * snapshot (`saved: true`) or the existing matching top snapshot (`saved:
  * false`) — so the caller can refresh `installation.lastSnapshot`.
+ *
+ * `label` names the entry when one is genuinely written. Callers on a failed or
+ * cancelled restore pass one so the resulting row does not read as a completed
+ * restore: the trigger is still `post-restore` (that IS the state's provenance),
+ * but the label says the restore did not finish (#1514).
  */
 export async function ensureCurrentSnapshotOnTop(
   installPath: string,
-  installation: InstallationRecord
+  installation: InstallationRecord,
+  label?: string
 ): Promise<{ saved: boolean; filename?: string }> {
   return withLock(installPath, async () => {
     const current = await captureState(installPath, installation)
     const [top] = await listSnapshots(installPath)
 
-    if (top && snapshotRepresentsCurrentState(top.snapshot, current)) {
+    if (top && snapshotRepresentsCurrentState(top.snapshot, current, label)) {
       return { saved: false, filename: top.filename }
     }
 
@@ -483,7 +495,7 @@ export async function ensureCurrentSnapshotOnTop(
       : new Date()
     const filename = await writeSnapshot(
       installPath,
-      { ...current, trigger: 'post-restore', label: null },
+      { ...current, trigger: 'post-restore', label: label || null },
       writeAt
     )
     emitSnapshotCreated({
@@ -491,7 +503,7 @@ export async function ensureCurrentSnapshotOnTop(
       trigger: 'post-restore',
       customNodesCount: current.customNodes.length,
       pipPackagesCount: Object.keys(current.pipPackages).length,
-      hasLabel: false,
+      hasLabel: !!label,
       deduplicatedPrevious: false
     })
     return { saved: true, filename }

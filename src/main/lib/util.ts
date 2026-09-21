@@ -47,12 +47,14 @@ export function extractPort(args: string[], defaultPort = 8188): number {
   return port
 }
 
-export function parseArgs(str: string): string[] {
-  const args: string[] = []
+export function parseArgSpans(str: string): { value: string; start: number; end: number }[] {
+  const args: { value: string; start: number; end: number }[] = []
   let current = ''
   let inQuote: string | null = null
+  let start = -1
   for (let i = 0; i < str.length; i++) {
     const ch = str[i]!
+    if (start === -1 && !/\s/.test(ch)) start = i
     if (inQuote) {
       if (ch === inQuote) {
         inQuote = null
@@ -63,13 +65,18 @@ export function parseArgs(str: string): string[] {
       inQuote = ch
     } else if (/\s/.test(ch)) {
       if (current.length > 0) {
-        args.push(current)
+        args.push({ value: current, start, end: i })
         current = ''
       }
+      start = -1
     } else {
       current += ch
     }
   }
-  if (current.length > 0) args.push(current)
+  if (current.length > 0) args.push({ value: current, start, end: str.length })
   return args
+}
+
+export function parseArgs(str: string): string[] {
+  return parseArgSpans(str).map((arg) => arg.value)
 }
