@@ -44,7 +44,12 @@ interface UseBetaActivationNoticeOpts {
   isSuppressed: () => boolean
   /** Copy for the card main actually resolved. A callback rather than fixed strings because
    *  the wording depends on the notice: the PostHog payload may name the feature, and a
-   *  remote force-off reads the opposite way from an activation. i18n stays with the caller. */
+   *  remote force-off reads the opposite way from an activation. i18n stays with the caller.
+   *
+   *  Being a callback also keeps the copy lazy, which is load-bearing on its own: the title
+   *  bar's i18n instance starts in English and `syncLocale()` does not run until mount, so
+   *  anything read during setup is an English snapshot that never updates — wrong for a
+   *  non-English user, and permanently wrong for every later card in this renderer. */
   copyFor: (notice: BetaActivationNotice) => {
     title: string
     body: string
