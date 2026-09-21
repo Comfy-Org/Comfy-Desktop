@@ -323,18 +323,26 @@ async function restoreFromBackup(backupDir: string, sitePackages: string): Promi
  *  revert may uninstall it — so the list errs towards recognising more. */
 const DIST_METADATA_SUFFIXES = ['.dist-info', '.egg-info', '.egg-link']
 
+/** Suffixes whose entry name never carries a version, so the stem is the whole
+ *  distribution name. `.egg-link` points at a source tree and is always bare;
+ *  `.egg-info` and `.dist-info` may or may not be versioned. */
+const UNVERSIONED_METADATA_SUFFIXES = new Set(['.egg-link'])
+
 /**
  * Does this site-packages metadata stem belong to `normalizedName`?
  *
  * Asked this way round deliberately. Parsing a name back out of an entry is
  * ambiguous — `my-package.egg-link` and `my-package-1.0.egg-info` both split
  * at the first hyphen and yield `my` — whereas testing a known package against
- * an entry is exact. `{name}{suffix}` is the bare legacy form; anything after
- * the separator must start with a digit so a version matches but a longer
- * package name (`foo` must not match `foo-bar-1.0.dist-info`) does not.
+ * an entry is exact. `{name}{suffix}` is the bare legacy form; for the
+ * versioned forms anything after the separator must start with a digit, so a
+ * version matches but a longer package name (`foo` must not match
+ * `foo-bar-1.0.dist-info`) does not. An always-bare suffix takes the exact
+ * branch only, so `foo-2bar.egg-link` is `foo-2bar` and never `foo`.
  */
-function stemBelongsTo(stem: string, normalizedName: string): boolean {
+function stemBelongsTo(stem: string, normalizedName: string, versioned: boolean): boolean {
   if (stem === normalizedName) return true
+  if (!versioned) return false
   if (!stem.startsWith(`${normalizedName}_`)) return false
   return /^\d/.test(stem.slice(normalizedName.length + 1))
 }
@@ -362,14 +370,18 @@ export function preexistingOnDisk(sitePackages: string, packageNames: string[]):
     // environment. Treat every candidate as pre-existing.
     return [...packageNames]
   }
-  const stems: string[] = []
+  const stems: Array<{ stem: string; versioned: boolean }> = []
   for (const entry of entries) {
     const suffix = DIST_METADATA_SUFFIXES.find((s) => entry.endsWith(s))
-    if (suffix) stems.push(normalizeDistInfoName(entry.slice(0, -suffix.length)))
+    if (!suffix) continue
+    stems.push({
+      stem: normalizeDistInfoName(entry.slice(0, -suffix.length)),
+      versioned: !UNVERSIONED_METADATA_SUFFIXES.has(suffix)
+    })
   }
   return packageNames.filter((name) => {
     const normalized = normalizeDistInfoName(name)
-    return stems.some((stem) => stemBelongsTo(stem, normalized))
+    return stems.some(({ stem, versioned }) => stemBelongsTo(stem, normalized, versioned))
   })
 }
 
@@ -633,9 +645,15 @@ export async function restorePipPackages(
     uncapturedByBackup = backup.uncaptured
   }
 
+  // Whether any pip mutation actually started. A cancel between taking the
+  // backup and the first install leaves nothing to revert, so an uncaptured
+  // backup is not a failure to revert — it is a revert with no work to do.
+  let mutationAttempted = false
+
   try {
     // 4. Install missing + upgrade/downgrade changed packages
     if (toInstall.length > 0 && !signal?.aborted) {
+      mutationAttempted = true
       const totalOps = toInstall.length + toRemove.length
       sendProgress('restore', { percent: 20, status: `Installing ${toInstall.length} package(s)…` })
 
@@ -688,6 +706,7 @@ export async function restorePipPackages(
 
     // 5. Remove extra packages (present in current but absent from snapshot)
     if (toRemove.length > 0 && !signal?.aborted) {
+      mutationAttempted = true
       sendProgress('restore', {
         percent: 75,
         status: `Removing ${toRemove.length} extra package(s)…`
@@ -738,7 +757,7 @@ export async function restorePipPackages(
           keepBackup = true
         }
       }
-      if (uncapturedByBackup.length > 0) {
+      if (mutationAttempted && uncapturedByBackup.length > 0) {
         // Nothing was saved for these, so whatever the install did to them
         // stands. Claiming a complete revert here would be the same false
         // reassurance this change exists to remove.

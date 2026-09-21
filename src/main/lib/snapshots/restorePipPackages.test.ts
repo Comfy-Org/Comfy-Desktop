@@ -338,6 +338,21 @@ describe('restorePipPackages', () => {
       expect(result.revert!.restoredFromBackup).toBe(false)
     })
 
+    // Cancelling between taking the backup and the first pip call leaves
+    // nothing to revert, so an uncaptured backup is not a failure to revert.
+    it('does not blame an uncaptured backup when no pip work started', async () => {
+      fs.mkdirSync(path.join(sitePackagesPath, 'legacy_pkg.egg-info'), { recursive: true })
+      vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
+      const controller = new AbortController()
+      controller.abort()
+
+      const result = await run(snapshotWith({ 'legacy-pkg': '2.0.0' }), controller.signal)
+
+      expect(result.revert?.reason).toBe('cancelled')
+      expect(result.revert?.complete).toBe(true)
+      expect(output.join('')).not.toContain('No backup was captured')
+    })
+
     it('reports a clean revert when every step succeeded', async () => {
       installOnDisk('ghost-pkg', '9.9.9')
       vi.mocked(pipFreeze).mockResolvedValue({ 'ghost-pkg': '9.9.9' })
@@ -416,6 +431,15 @@ describe('preexistingOnDisk', () => {
       'my-package',
       'other-thing'
     ])
+  })
+
+  // `.egg-link` always names the distribution outright, so the version branch
+  // must not apply to it: `foo-2bar.egg-link` is `foo-2bar`, not `foo` at
+  // version `2bar`.
+  it('treats an always-bare .egg-link stem as the whole name', () => {
+    fs.writeFileSync(path.join(tmp, 'foo-2bar.egg-link'), '/src/foo-2bar\n')
+    expect(preexistingOnDisk(tmp, ['foo'])).toEqual([])
+    expect(preexistingOnDisk(tmp, ['foo-2bar'])).toEqual(['foo-2bar'])
   })
 
   // A longer distribution name must not be mistaken for a version of a
