@@ -175,6 +175,26 @@ export function armBetaActivationNotice(
   }
 }
 
+/** Drop this install's claim without announcing anything.
+ *
+ *  Arming happens just before the spawn, so a launch that then fails leaves a claim for a
+ *  Core that never started: the title bar would announce "a beta feature is on" once the
+ *  progress takeover closes, and because `claimedArgs` spans every install, the dead claim
+ *  would also silence the same arg for a DIFFERENT install that launches successfully.
+ *  `armBetaActivationNotice` already clears the entry on the NEXT launch of this install,
+ *  which repairs the state eventually. This closes the window in between, where the claim is
+ *  live and wrong: the failed launch's own progress takeover ends long before any relaunch.
+ *
+ *  Nothing is persisted here, so this only discards an unannounced claim; an arg already
+ *  written to the announced list stays announced. */
+export function clearBetaActivationClaim(installationId: string): void {
+  try {
+    pendingByInstallation.delete(installationId)
+  } catch (err) {
+    console.log('[beta-notice] clear failed:', err)
+  }
+}
+
 /** The card this install's title bar should raise, or `null`. Read-only: the pending entry
  *  survives until `acknowledgeBetaActivationNotice`, so a card that is shown but never retired
  *  (window closed, app quit) comes back on the next launch. */
