@@ -25,15 +25,30 @@ function closeServers(servers: net.Server[]): Promise<void[]> {
   return Promise.all(servers.map(closeServer))
 }
 
+/** Highest valid TCP port. Nothing above this can be bound or probed. */
+const MAX_PORT = 65535
+
+/** How far above a held run these tests let `findAvailablePort` search. */
+const SEARCH_SPAN = 100
+
 /**
- * Bind `count` consecutive ports, letting the OS pick the base.
+ * Bind `count` consecutive ports, letting the OS pick the base, and keep the
+ * whole `SEARCH_SPAN` window above it inside the valid port space.
  *
- * Hardcoding the base is a flake: the ephemeral range on Linux
- * (32768-60999 by default) swallows the "high" ports a test is tempted to
- * pick, so any transient outbound connection can already own one and the
- * bind dies with EADDRINUSE. Port 0 hands back something the OS knows is
- * free, and we keep holding it; the neighbours above it can still be taken,
- * so a partial run is released and re-asked for rather than failing the test.
+ * Hardcoding the base is a flake: the ephemeral range (32768-60999 on Linux,
+ * 49152-65535 on Windows and macOS) swallows the "high" ports a test is
+ * tempted to pick, so any transient outbound connection can already own one
+ * and the bind dies with EADDRINUSE. Port 0 hands back something the OS knows
+ * is free, and we keep holding it.
+ *
+ * Two ways an OS-assigned base is still unusable, both re-asked rather than
+ * failed. A neighbour above it may be taken. Or the base may sit so close to
+ * MAX_PORT that the search window runs off the end of the port space - on the
+ * ranges that reach 65535 (Windows, macOS) `listen(0)` really can return it,
+ * and `isPortListening` reports every out-of-range port as *unavailable*
+ * (`canBind` catches the throw and resolves false), so the search would walk
+ * to the end of the range and fail with "No available ports found" instead of
+ * landing.
  */
 async function listenConsecutive(
   host: string,
@@ -45,13 +60,16 @@ async function listenConsecutive(
     try {
       const base = await listenOn(host)
       servers.push(base.server)
-      for (let offset = 1; offset < count; offset++) {
-        servers.push((await listenOn(host, base.port + offset)).server)
+      if (base.port + SEARCH_SPAN <= MAX_PORT) {
+        for (let offset = 1; offset < count; offset++) {
+          servers.push((await listenOn(host, base.port + offset)).server)
+        }
+        return { servers, basePort: base.port }
       }
-      return { servers, basePort: base.port }
     } catch {
-      await closeServers(servers)
+      // Neighbour taken between the base bind and this one.
     }
+    await closeServers(servers)
   }
   throw new Error(`could not bind ${count} consecutive ports on ${host}`)
 }
@@ -93,13 +111,13 @@ describe('findAvailablePort', () => {
   })
 
   it('skips a port that is actually in use', async () => {
-    const { server, port } = await listenOn('127.0.0.1')
+    const { servers, basePort } = await listenConsecutive('127.0.0.1', 1)
 
     try {
-      const result = await findAvailablePort('127.0.0.1', port, port + 100)
-      expect(result).toBeGreaterThan(port)
+      const result = await findAvailablePort('127.0.0.1', basePort, basePort + SEARCH_SPAN)
+      expect(result).toBeGreaterThan(basePort)
     } finally {
-      await closeServer(server)
+      await closeServers(servers)
     }
   })
 
@@ -111,7 +129,7 @@ describe('findAvailablePort', () => {
   it('skips multiple sequentially-busy ports', async () => {
     const { servers, basePort } = await listenConsecutive('127.0.0.1', 2)
     try {
-      const result = await findAvailablePort('127.0.0.1', basePort, basePort + 100)
+      const result = await findAvailablePort('127.0.0.1', basePort, basePort + SEARCH_SPAN)
       expect(result).toBeGreaterThanOrEqual(basePort + 2)
     } finally {
       await closeServers(servers)
@@ -124,12 +142,12 @@ describe('findAvailablePort', () => {
   // probe must catch it via the connect leg (the listener is reachable on
   // loopback) regardless of the platform's specific bind semantics.
   it('skips a port occupied by a wildcard 0.0.0.0 listener', async () => {
-    const { server, port } = await listenOn('0.0.0.0')
+    const { servers, basePort } = await listenConsecutive('0.0.0.0', 1)
     try {
-      const result = await findAvailablePort('127.0.0.1', port, port + 100)
-      expect(result).toBeGreaterThan(port)
+      const result = await findAvailablePort('127.0.0.1', basePort, basePort + SEARCH_SPAN)
+      expect(result).toBeGreaterThan(basePort)
     } finally {
-      await closeServer(server)
+      await closeServers(servers)
     }
   })
 })
