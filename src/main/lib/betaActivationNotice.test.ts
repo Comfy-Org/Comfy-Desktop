@@ -360,7 +360,7 @@ describe('arm / peek / acknowledge', () => {
     // Documents the contract the IPC handler depends on: `[]` is indistinguishable from
     // "the renderer named nothing", so the handler must reject a malformed array rather than
     // filter it down to one — otherwise junk input retires the whole queue permanently.
-    armBetaActivationNotice('inst-1', ['--enable-assets', '--enable-agent'])
+    armBetaActivationNotice('inst-1', [grant('--enable-assets'), grant('--enable-agent')])
     acknowledgeBetaActivationNotice('inst-1', [])
     expect(announced()).toEqual(['--enable-assets', '--enable-agent'])
   })
