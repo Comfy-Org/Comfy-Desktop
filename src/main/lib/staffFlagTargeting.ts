@@ -405,12 +405,21 @@ async function classifyFromView(
  * longer holds up the ones behind it: `readClassificationFromPage` bounds every call, and
  * `classifyFromView` returns false on that timeout, so this loop moves on to the next view.
  *
- * First accepted answer wins. Where two views hold the same account and disagree — one store still
- * carrying a verified `@comfy.org` address, another the updated or unverified one — that makes the
- * verdict depend on iteration order. Raised in review and deferred deliberately, not overlooked:
- * whether to require agreement, or to define a freshness authority, is a question about what
- * `CLASSIFY_STAFF_JS` should say for an incomplete record, which is the cohort rule this module
- * inherited rather than something this abstraction can settle on its own.
+ * ACCEPTED DEBT, decided rather than overlooked. First accepted answer wins, so where two views
+ * hold the same account and disagree — one store still carrying a verified `@comfy.org` address,
+ * another the updated or unverified one — the verdict depends on iteration order. Raised in review
+ * and kept deliberately:
+ *
+ *   - The harm is bounded. This is cohort targeting, not authorization: the server evaluates the
+ *     condition, and a grant only ever adds an arg from `CORE_BETA_GRANTABLE_ARGS`. The wrong
+ *     tie-break costs a missed or spurious beta arg, never access to anything.
+ *   - It is already less order-dependent than what it replaces, where classification ran per view
+ *     on `dom-ready` with no UID check at all, so the last document to load decided — including a
+ *     view signed into a different account.
+ *   - Both alternatives introduce order-sensitivity of their own. Requiring agreement lets one
+ *     stale or incomplete copy veto a correct `true`; preferring `true` biases toward granting.
+ *     Choosing between them is really a decision about what `CLASSIFY_STAFF_JS` should return for
+ *     a record with no email or an unverified one — the cohort rule this module inherited.
  */
 async function classifyAgreedAccount(userId: string, generation: number): Promise<void> {
   for (const webContents of viewsReportingFirebaseUser(userId)) {
