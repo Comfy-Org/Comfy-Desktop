@@ -232,6 +232,31 @@ test('the card is anchored on the bell it points at @linux', async () => {
       const b = beak.getBoundingClientRect()
       return (b.left + b.right) / 2
     })()`)
+
+  /** Everything the offset is computed from, for the failure message.
+   *
+   *  A bare "expected <= 2, received 8" cannot say WHICH term is wrong, and this assertion
+   *  has already failed on a runner where it passes locally at the same window size. The
+   *  offset is `view.x + beak - bell`, so a failure is one of: the view not centred on the
+   *  bell, the card not centred in the view, or the beak not centred in the card. Each has a
+   *  different cause and a different fix, and one CI failure should be enough to tell them
+   *  apart instead of costing another round trip. */
+  const geometry = async (): Promise<string> => {
+    const card = await coachmarkPopup(ctx.app).evaluate<string>(`(() => {
+      const c = document.querySelector('.coachmark')
+      const b = document.querySelector('.coachmark-beak')
+      if (!c || !b) return 'card=<absent>'
+      const cr = c.getBoundingClientRect(), br = b.getBoundingClientRect()
+      return 'cardLeft=' + cr.left + ' cardWidth=' + cr.width +
+             ' beakInCard=' + ((br.left + br.right) / 2 - cr.left) +
+             ' beakInlineStyle=' + (b.style.left || '<none>') +
+             ' pageWidth=' + window.innerWidth
+    })()`)
+    return (
+      `bell=${bellCentre} viewX=${popup!.x} viewWidth=${popup!.width} ${card}` +
+      ` | viewCentreVsBell=${popup!.x + popup!.width / 2 - bellCentre}`
+    )
+  }
   expect(await beakCentre(), 'no beak found on the card').toBeGreaterThanOrEqual(0)
 
   // When nothing clamped it, the beak must land ON the bell. Asserted only in the unclamped
@@ -247,7 +272,9 @@ test('the card is anchored on the bell it points at @linux', async () => {
     await expect
       .poll(async () => Math.abs(popup!.x + (await beakCentre()) - bellCentre), {
         timeout: 10_000,
-        message: 'the beak must point at the bell, not merely sit in a view that is centred on it',
+        message:
+          'the beak must point at the bell, not merely sit in a view that is centred on it. ' +
+          (await geometry()),
       })
       .toBeLessThanOrEqual(2)
   }
