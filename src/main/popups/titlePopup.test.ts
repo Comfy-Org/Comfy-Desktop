@@ -368,7 +368,7 @@ describe('activateTitlePopupMenuItem', () => {
   }
 
   it.each([null, 'inst-1'] as const)(
-    'opens Performance Test in the current host when installationId is %s',
+    'opens Performance Test in a new host when installationId is %s',
     (installationId) => {
       const host = makeEntry({ installationId })
       comfyWindows.set(host.windowKey, host)
@@ -379,16 +379,13 @@ describe('activateTitlePopupMenuItem', () => {
 
       activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'performance-test', bindings)
 
-      expect(bindings.setActivePanel).toHaveBeenCalledExactlyOnceWith(
-        host.windowKey,
-        'performance-test'
-      )
-      expect(bindings.openChooserHostWindow).not.toHaveBeenCalled()
+      expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('performance-test')
+      expect(bindings.setActivePanel).not.toHaveBeenCalled()
     }
   )
 
   it.each([null, 'inst-1'] as const)(
-    'opens Benchmarks in the current host when installationId is %s',
+    'opens Benchmarks in a new host when installationId is %s',
     (installationId) => {
       const host = makeEntry({ installationId })
       comfyWindows.set(host.windowKey, host)
@@ -399,8 +396,8 @@ describe('activateTitlePopupMenuItem', () => {
 
       activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'benchmarks', bindings)
 
-      expect(bindings.setActivePanel).toHaveBeenCalledExactlyOnceWith(host.windowKey, 'benchmarks')
-      expect(bindings.openChooserHostWindow).not.toHaveBeenCalled()
+      expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('benchmarks')
+      expect(bindings.setActivePanel).not.toHaveBeenCalled()
     }
   )
 

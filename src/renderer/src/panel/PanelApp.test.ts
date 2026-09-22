@@ -907,6 +907,7 @@ describe('PanelApp', () => {
     )
     expect(wrapper.find('.performance-test__run').text()).toBe('Run')
     expect(wrapper.find('.performance-test__logs').text()).toBe('Instance logs will appear here.')
+    expect(wrapper.get('.performance-test__logs').classes()).toContain('scroll-visible')
     await logsToggle.trigger('click')
     expect(logsToggle.attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('.performance-test__logs').attributes('style')).toContain('display: none')

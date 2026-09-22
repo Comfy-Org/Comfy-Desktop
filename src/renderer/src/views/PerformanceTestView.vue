@@ -825,7 +825,7 @@ watch(performanceTestLogs, async () => {
             <div
               v-show="logsExpanded"
               ref="logsElement"
-              class="performance-test__logs"
+              class="performance-test__logs scroll-visible"
               aria-live="polite"
             >
               {{ performanceTestLogs || t('performanceTest.logsPlaceholder') }}

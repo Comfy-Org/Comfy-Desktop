@@ -1982,7 +1982,8 @@ export function activateTitlePopupMenuItem(
     bindings.openChooserHostWindow()
     releaseFocusToParent = false
   } else if (id === 'performance-test' || id === 'benchmarks') {
-    if (parentEntry) bindings.setActivePanel(entry.parentEntryId, id)
+    bindings.openChooserHostWindow(id)
+    releaseFocusToParent = false
   } else if (id === 'return-to-dashboard') {
     // Flip the install-backed host in place to chooser-host mode.
     // The same BrowserWindow stays alive; the file-menu popup is
