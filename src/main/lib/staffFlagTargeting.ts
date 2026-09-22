@@ -384,12 +384,23 @@ async function classifyFromView(
   if (answeredGeneration === generation) return false
   // A view with no Firebase store has NO OPINION and must stay silent. Absence of an auth record
   // is not evidence of being signed out, so only a view that can actually see auth state votes.
-  if (!read || read.known !== true) return false
+  if (!read || read.known !== true) {
+    // The page could not say: no Firebase store at this origin, an absent object store, more than
+    // one account, or a failed read. Distinct from "said no", which is a classification.
+    console.log('[staff-targeting] view abstained: no usable auth record in this page')
+    return false
+  }
   // Bound the raw string BEFORE normalizing: `normalizePostHogUserId` trims and only then applies
   // its 256-character limit, so a 257-character uid ending in whitespace would normalize down to
   // 256 and be accepted — defeating the page-side cap that exists to reject rather than truncate.
   if (typeof read.userId !== 'string' || read.userId.length > MAX_PAGE_USER_ID_CHARS) return false
-  if (normalizePostHogUserId(read.userId) !== userId) return false
+  if (normalizePostHogUserId(read.userId) !== userId) {
+    // The page holds a different account than the process agreed on, so its answer is not about
+    // the account being classified. Deliberately logs NO identifiers: which account is the thing
+    // this module keeps out of main-process logs, and the fact of the mismatch is what diagnoses.
+    console.log('[staff-targeting] view rejected: page classified a different account than agreed')
+    return false
+  }
   const isStaff = read.staff === true
   answeredGeneration = generation
   classifiedUserId = userId
@@ -446,7 +457,13 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
     applyClassification(false)
     return
   }
-  if (consensus.status !== 'signed_in') return
+  if (consensus.status !== 'signed_in') {
+    // The consensus itself moved somewhere unclassifiable. Silent otherwise, and indistinguishable
+    // from "classified, unchanged" — which is the ambiguity that made the first native failure
+    // uninterpretable. Logs the status only: an enum, never account data.
+    console.log('[staff-targeting] not classified: consensus resolved to', consensus.status)
+    return
+  }
   if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
     // Already classified this session — the common case, since a navigation takes the consensus
     // through `pending` and back. Bind the known answer FIRST, so the account keeps its
@@ -498,7 +515,13 @@ export async function refreshStaffFlagTargeting(webContents: WebContents): Promi
     applyClassification(false)
     return
   }
-  if (consensus.status !== 'signed_in') return
+  if (consensus.status !== 'signed_in') {
+    // A view finished loading and there is still no agreed account to classify. Distinct from the
+    // observer's line above: this says views are arriving and the consensus is not resolving,
+    // which is what a never-reporting sign-in surface looks like from here.
+    console.log('[staff-targeting] view offered but unused: consensus is', consensus.status)
+    return
+  }
   if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
     // Nothing to ask this view — but a page load is also the moment to retry a write that
     // `writeFileSafe` could not land, since the next launch reads whatever the disk holds.
