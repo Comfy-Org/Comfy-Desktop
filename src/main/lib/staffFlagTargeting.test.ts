@@ -64,30 +64,46 @@ const { initStaffFlagTargeting, refreshStaffFlagTargeting, CLASSIFY_STAFF_JS, _r
 const USER = 'uid-primary'
 const OTHER_USER = 'uid-other'
 
+/** How many times a stub view has actually been asked to classify.
+ *
+ *  Load-bearing, not bookkeeping. A test that expects a view to be CONSULTED and then asserts only
+ *  on the stored classification passes just as happily when the view is never read at all — the
+ *  short-circuit for an already-classified account makes exactly that happen. Counting the reads
+ *  is what separates "this abstained correctly" from "this was never asked". */
+let pageReads = 0
+
 /** A view that CAN classify — it reached an auth store and reached a verdict. */
 function stubContents(
   staff: boolean,
   opts: { throws?: boolean; userId?: string } = {}
 ): Electron.WebContents {
   return {
-    executeJavaScript: () =>
-      opts.throws
+    executeJavaScript: () => {
+      pageReads += 1
+      return opts.throws
         ? Promise.reject(new Error('page gone'))
         : Promise.resolve({ known: true, staff, userId: opts.userId ?? USER })
+    }
   } as unknown as Electron.WebContents
 }
 
 /** A view with NO auth store — it has no opinion about who is signed in. */
 function stubContentsWithoutAuthStore(): Electron.WebContents {
   return {
-    executeJavaScript: () => Promise.resolve({ known: false })
+    executeJavaScript: () => {
+      pageReads += 1
+      return Promise.resolve({ known: false })
+    }
   } as unknown as Electron.WebContents
 }
 
 /** A view whose read returns something unexpected entirely. */
 function stubContentsReturning(result: unknown): Electron.WebContents {
   return {
-    executeJavaScript: () => Promise.resolve(result)
+    executeJavaScript: () => {
+      pageReads += 1
+      return Promise.resolve(result)
+    }
   } as unknown as Electron.WebContents
 }
 
@@ -142,6 +158,7 @@ function nextLaunchBinding(): boolean {
 beforeEach(() => {
   testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'staff-targeting-'))
   setFlagEvaluationStaff.mockClear()
+  pageReads = 0
   _resetForTest()
   identity.reset()
 })
@@ -494,14 +511,20 @@ describe('classification driven by the identity consensus', () => {
     // verdict against the UID alone would make it immutable for the life of the process, which is
     // stricter than the per-view read this replaces: that ran on every `dom-ready` and would have
     // seen the change.
+    //
+    // Deliberately does NOT call `nextLaunchBinding()` part-way through: that resets the module,
+    // which clears the session cache and sends the second resolution down the first-classification
+    // path instead of the already-classified short-circuit this test exists to cover. An earlier
+    // version did, and passed with the revalidation removed.
     await consensusSignedIn([stubContents(true)])
-    expect(nextLaunchBinding()).toBe(true)
+    expect(storedFile()).toMatchObject({ staff: true })
     await consensusUnresolved('pending')
+    pageReads = 0
 
     await consensusSignedIn([stubContents(false)], USER)
 
+    expect(pageReads).toBeGreaterThan(0)
     expect(storedFile()).toMatchObject({ staff: false })
-    expect(nextLaunchBinding()).toBe(false)
   })
 
   it('binds the known answer before revalidating, so a returning account never flaps', async () => {
@@ -562,10 +585,27 @@ describe('what reading a single view got wrong', () => {
     // is about somebody else, so it is not a failure to retry but an answer to discard.
     await consensusSignedIn([stubContents(true)])
     expect(nextLaunchBinding()).toBe(true)
+    pageReads = 0
 
     await consensusSignedIn([stubContents(false, { userId: OTHER_USER })], USER)
 
+    // Without this the test passes when the view is never read at all, and the cross-check it is
+    // named for never runs.
+    expect(pageReads).toBeGreaterThan(0)
     expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('refuses an over-length uid that trimming would sneak under the limit', async () => {
+    // `normalizePostHogUserId` trims BEFORE applying its 256-character limit, so a 257-character
+    // uid whose last character is whitespace normalizes down to 256 and matches — defeating the
+    // page-side cap that exists to reject rather than truncate. The raw length is what is bounded.
+    const agreed = 'u'.repeat(256)
+    await consensusSignedIn(
+      [stubContentsReturning({ known: true, staff: true, userId: agreed + '\n' })],
+      agreed
+    )
+
+    expect(fs.existsSync(persistFilePath())).toBe(false)
   })
 
   it('refuses a uid too long for the gate consensus itself applies', async () => {
@@ -604,6 +644,114 @@ describe('what reading a single view got wrong', () => {
     expect(setFlagEvaluationStaff).not.toHaveBeenCalledWith(true)
     expect(fs.existsSync(persistFilePath())).toBe(false)
     expect(nextLaunchBinding()).toBe(false)
+  })
+})
+
+describe('one answer per consensus outcome', () => {
+  beforeEach(() => {
+    initStaffFlagTargeting()
+    setFlagEvaluationStaff.mockClear()
+  })
+
+  it('does not let a slower view overwrite a verdict already accepted for this outcome', async () => {
+    // A `dom-ready` retry runs with the CURRENT generation, so it can be in flight alongside the
+    // consensus observer's own read for the same one. Both would pass the generation check, and
+    // whichever settled last would win — making the verdict a function of page-read latency.
+    const slow: { release?: (value: unknown) => void } = {}
+    const slowView = {
+      executeJavaScript: () =>
+        new Promise((resolve) => {
+          slow.release = resolve
+        })
+    } as unknown as Electron.WebContents
+
+    identity.publish({ status: 'signed_in', userId: USER }, [slowView])
+    await settle()
+    // A second view answers first, for the same outcome. `true` rather than `false` so the
+    // accepted answer leaves a file — an absent file is what "not staff" already looks like, so
+    // asserting on it would not distinguish "not overwritten" from "never written".
+    await refreshStaffFlagTargeting(stubContents(true))
+    expect(storedFile()).toMatchObject({ staff: true })
+
+    slow.release?.({ known: true, staff: false, userId: USER })
+    await settle()
+
+    expect(storedFile()).toMatchObject({ staff: true })
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('still answers a later outcome, so the guard is per-outcome and not permanent', async () => {
+    await consensusSignedIn([stubContents(false)])
+    await consensusUnresolved('pending')
+
+    await consensusSignedIn([stubContents(true)], USER)
+
+    expect(storedFile()).toMatchObject({ staff: true })
+  })
+})
+
+describe('retrying a write that did not land', () => {
+  beforeEach(() => {
+    initStaffFlagTargeting()
+    setFlagEvaluationStaff.mockClear()
+  })
+
+  it('retries the revocation write, which has no other path back', async () => {
+    // The revocation is the write with no second chance: `publishConsensus` is change-only so a
+    // resolved `signed_out` is not re-delivered while it stands, and nothing else revisits it. A
+    // `writeFileSafe` that threw would leave `staff: true` on disk for every later launch —
+    // silently reversing the revocation.
+    await consensusSignedIn([stubContents(true)])
+    expect(storedFile()).toMatchObject({ staff: true })
+
+    fs.mkdirSync(persistFilePath() + '.tmp', { recursive: true })
+    await consensusSignedOut()
+    expect(storedFile()).toMatchObject({ staff: true })
+
+    fs.rmSync(persistFilePath() + '.tmp', { recursive: true, force: true })
+    await refreshStaffFlagTargeting(stubContents(true))
+
+    expect(storedFile()).toMatchObject({ staff: false })
+    expect(nextLaunchBinding()).toBe(false)
+  })
+
+  it('does not let a dom-ready view DECIDE a sign-out, only re-apply one', async () => {
+    // Re-applying a decision the consensus already took is a write retry. Taking one on a single
+    // view's say-so would be a decision, and one view says nothing about the others.
+    await consensusSignedIn([stubContents(true)])
+    await consensusUnresolved('unknown')
+    pageReads = 0
+
+    await refreshStaffFlagTargeting(stubContents(false))
+
+    expect(pageReads).toBe(0)
+    expect(nextLaunchBinding()).toBe(true)
+  })
+})
+
+describe('bounding a page that does not answer', () => {
+  beforeEach(() => {
+    initStaffFlagTargeting()
+    setFlagEvaluationStaff.mockClear()
+  })
+
+  it('gives up on a wedged view and asks the next one', async () => {
+    // `executeJavaScript` has no timeout, and the injected script only bounds `indexedDB.open` —
+    // `databases()` and `getAll` are unbounded, and a page can replace either with a promise that
+    // never settles. Without a main-process bound that one view blocks every view behind it.
+    vi.useFakeTimers()
+    try {
+      const wedged = {
+        executeJavaScript: () => new Promise(() => {})
+      } as unknown as Electron.WebContents
+
+      identity.publish({ status: 'signed_in', userId: USER }, [wedged, stubContents(true)])
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(storedFile()).toMatchObject({ staff: true })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -652,9 +800,12 @@ describe('outcomes that are the absence of an answer', () => {
     // would be a wrong answer, not merely a racy one.
     await consensusSignedIn([stubContents(true)])
     expect(nextLaunchBinding()).toBe(true)
+    pageReads = 0
 
     await consensusSignedIn([make()])
 
+    // The abstention has to be a decision the view took, not a read that never happened.
+    expect(pageReads).toBeGreaterThan(0)
     expect(nextLaunchBinding()).toBe(true)
   })
 

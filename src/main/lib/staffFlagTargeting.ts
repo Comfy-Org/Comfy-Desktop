@@ -140,7 +140,23 @@ let classifiedStaff: boolean | null = null
  *  be applied to whoever is signed in now. */
 let classificationGeneration = 0
 
+/** The generation whose classification has already been accepted. Two reads can be in flight for
+ *  one generation — a `dom-ready` retry alongside the consensus observer's own — and both would
+ *  pass the generation check, so the slower one would overwrite the faster one's verdict purely on
+ *  settle order. One accepted answer per consensus outcome; later arrivals for it are ignored. */
+let answeredGeneration: number | null = null
+
 let unobserveConsensus: (() => void) | null = null
+
+/** A page read that never settles must not keep a `WebContents` awaited forever, nor block the
+ *  views behind it. `CLASSIFY_STAFF_JS` bounds its own `indexedDB.open`, but `databases()` and
+ *  `getAll` are unbounded and a hostile page can replace either with a promise that never
+ *  resolves. `executeJavaScript` has no timeout of its own. */
+const PAGE_READ_TIMEOUT_MS = 10_000
+
+/** What `normalizePostHogUserId` will accept, applied to the raw string so trimming cannot sneak an
+ *  over-length uid under the limit. The page caps at one past this, so a longer uid is rejected. */
+const MAX_PAGE_USER_ID_CHARS = 256
 
 /**
  * Read the stored classification and bind it for this launch's flag evaluation.
@@ -315,6 +331,28 @@ function applyClassification(isStaff: boolean): void {
 }
 
 /**
+ * Run the classification script in a view, giving up if the page does not answer.
+ *
+ * The timeout bounds THIS await, not the page's work — `executeJavaScript` cannot be cancelled, so
+ * a wedged page keeps its own promise. What it does buy is that one such page no longer holds up
+ * every view behind it, and no read is awaited for the life of the session.
+ */
+async function readClassificationFromPage(webContents: WebContents): Promise<unknown> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      webContents.executeJavaScript(CLASSIFY_STAFF_JS),
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('page read timed out')), PAGE_READ_TIMEOUT_MS)
+        timer.unref?.()
+      })
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
  * Ask one view to classify `userId`, and accept its answer only if it agrees that is the account
  * it read.
  *
@@ -333,7 +371,7 @@ async function classifyFromView(
 ): Promise<boolean> {
   let read: { known?: unknown; staff?: unknown; userId?: unknown } | null
   try {
-    read = (await webContents.executeJavaScript(CLASSIFY_STAFF_JS)) as typeof read
+    read = (await readClassificationFromPage(webContents)) as typeof read
   } catch (err) {
     // A page that cannot be read must not revoke a grant.
     console.log('[staff-targeting] read skipped:', err)
@@ -341,11 +379,19 @@ async function classifyFromView(
   }
   // The account can be superseded while the read is in flight.
   if (generation !== classificationGeneration) return false
+  // Another read already answered for this outcome. Letting a second one through would make the
+  // verdict depend on which page happened to settle last.
+  if (answeredGeneration === generation) return false
   // A view with no Firebase store has NO OPINION and must stay silent. Absence of an auth record
   // is not evidence of being signed out, so only a view that can actually see auth state votes.
   if (!read || read.known !== true) return false
+  // Bound the raw string BEFORE normalizing: `normalizePostHogUserId` trims and only then applies
+  // its 256-character limit, so a 257-character uid ending in whitespace would normalize down to
+  // 256 and be accepted — defeating the page-side cap that exists to reject rather than truncate.
+  if (typeof read.userId !== 'string' || read.userId.length > MAX_PAGE_USER_ID_CHARS) return false
   if (normalizePostHogUserId(read.userId) !== userId) return false
   const isStaff = read.staff === true
+  answeredGeneration = generation
   classifiedUserId = userId
   classifiedStaff = isStaff
   applyClassification(isStaff)
@@ -428,8 +474,16 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
  */
 export async function refreshStaffFlagTargeting(webContents: WebContents): Promise<void> {
   const consensus = getFirebaseIdentityConsensus()
-  // A resolved sign-out is the observer's to act on: it is a fact about every view, and one view
-  // reaching dom-ready says nothing about the others.
+  // A resolved sign-out is the observer's to DECIDE — it is a fact about every view, and one view
+  // reaching dom-ready says nothing about the others. But re-applying a decision already taken is
+  // a write retry, not a decision, and the revocation write is the one with no other retry path:
+  // `publishConsensus` is change-only so `signed_out` is not re-delivered while it stands, and a
+  // `writeFileSafe` that threw would otherwise leave `staff: true` on disk for every later launch
+  // — silently reversing the revocation this module exists to make.
+  if (consensus.status === 'signed_out') {
+    applyClassification(false)
+    return
+  }
   if (consensus.status !== 'signed_in') return
   if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
     // Nothing to ask this view — but a page load is also the moment to retry a write that
@@ -446,6 +500,7 @@ export function _resetForTest(): void {
   classifiedUserId = null
   classifiedStaff = null
   classificationGeneration = 0
+  answeredGeneration = null
   unobserveConsensus?.()
   unobserveConsensus = null
 }

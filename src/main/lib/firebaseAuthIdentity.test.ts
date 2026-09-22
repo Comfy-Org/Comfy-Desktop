@@ -1353,6 +1353,46 @@ describe('firebaseAuthIdentity published consensus', () => {
     expect(viewsReportingFirebaseUser('F')).toEqual([reporter.asWebContents()])
   })
 
+  it('drops a main-verified view whose document has moved to another origin', () => {
+    // `reconcile()` prunes this map on exactly this condition, and pruning happens ONLY in there.
+    // Naming a view that has moved would send a caller's question to — and make it trust an answer
+    // from — a page at a different origin. Defence in depth: every origin change observed here
+    // also runs `reconcile()`, so this guards the window rather than a reproduced live bug.
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    bindMainVerifiedFirebaseUser('F', {}, reporter.asWebContents())
+    expect(viewsReportingFirebaseUser('F')).toEqual([reporter.asWebContents()])
+
+    // Moves the document's URL without a commit, so no prune runs in between.
+    reporter.navigate('https://elsewhere.example.com/page', true)
+
+    expect(viewsReportingFirebaseUser('F')).toEqual([])
+  })
+
+  it('stops dispatching an outcome a nested publish has superseded', () => {
+    // An observer can synchronously re-enter `reconcile()`. The nested dispatch delivers the newer
+    // outcome to everybody; resuming the outer loop afterwards would hand the observers it had not
+    // reached a value that disagrees with `getFirebaseIdentityConsensus()`.
+    const seen: string[] = []
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    const reentrant = observeFirebaseIdentityConsensus((consensus) => {
+      seen.push(`reentrant:${consensus.status}`)
+      if (consensus.status === 'signed_in') reporter.destroy()
+    })
+    const later = observeFirebaseIdentityConsensus((consensus) => {
+      seen.push(`later:${consensus.status}`)
+    })
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    expect(seen).not.toContain('later:signed_in')
+    expect(seen).toContain('later:unknown')
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'unknown' })
+    reentrant()
+    later()
+  })
+
   it('drops a destroyed view from the ones it names', () => {
     const holder = new FakeWebContents(cloudUrl)
     activate(holder)

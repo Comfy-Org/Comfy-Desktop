@@ -96,7 +96,10 @@ interface MainVerifiedAuthState {
  * account it is serving - not a coin flip on whichever view reported last.
  */
 export type FirebaseIdentityConsensus =
-  /** No contributor can say: every view is gone, untrusted, or wedged past its deadline. */
+  /** No contributor can say: every view is gone or untrusted. A view wedged past its deadline
+   *  does NOT reach here — `reconcile()` keeps the last outcome in that case, deliberately, since
+   *  an unresolved document is evidence of nothing. So `unknown` and "still wedged" are not
+   *  distinguishable from the outside, and neither is a reason to move a persisted fact. */
   | { status: 'unknown' }
   /** At least one contributor is mid-resolution. */
   | { status: 'pending' }
@@ -132,13 +135,20 @@ function sameConsensus(
  *
  * Change-only: `reconcile()` runs on every navigation event, and an observer that re-reads a page
  * on each one would be a poll with extra steps. The stored value is set BEFORE dispatch, so an
- * observer that ends up back inside `reconcile()` sees the new outcome and cannot re-dispatch it.
- * An observer that throws must not take the identity engine down with it.
+ * observer that ends up back inside `reconcile()` sees the new outcome and cannot re-dispatch the
+ * same one; and if it publishes a DIFFERENT one, this loop stops rather than handing a superseded
+ * value to the observers it had not reached yet. An observer that throws must not take the
+ * identity engine down with it.
  */
 function publishConsensus(next: FirebaseIdentityConsensus): void {
   if (sameConsensus(consensus, next)) return
   consensus = next
   for (const observe of [...consensusObservers]) {
+    // An observer can synchronously re-enter `reconcile()` and publish a different outcome, which
+    // completes its own dispatch before this loop resumes. Handing the rest of the observers a
+    // value that no longer matches `getFirebaseIdentityConsensus()` is worse than not calling
+    // them at all — the nested dispatch has already delivered the newer one to everybody.
+    if (!sameConsensus(consensus, next)) return
     try {
       observe(next)
     } catch (err) {
@@ -177,6 +187,11 @@ export function viewsReportingFirebaseUser(userId: string): WebContents[] {
   }
   for (const [webContents, state] of mainVerifiedStates) {
     if (webContents.isDestroyed() || state.userId !== userId) continue
+    // The same origin revalidation `reconcile()` applies to this map — it is what prunes the
+    // entry, and pruning only happens in there. Without it a view that has navigated elsewhere is
+    // still named as holding the account, and a caller would put its question to, and trust an
+    // answer from, a page at a different origin.
+    if (originOf(webContents.getURL()) !== state.origin) continue
     if (!views.includes(webContents)) views.push(webContents)
   }
   return views
