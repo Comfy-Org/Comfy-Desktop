@@ -784,6 +784,22 @@ describe('persisted-write logging', () => {
     log.mockRestore()
   })
 
+  it('reports what reached disk, not what was in memory', () => {
+    // `JSON.stringify` turns NaN into null. Logging the in-memory object would report a value
+    // the file does not contain, in the one place that exists to say what reached disk.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ maxCachedDownloads: 1 }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('maxCachedDownloads', Number.NaN as unknown as number)
+
+    const line = writeLines(log).find((l) => l.includes('maxCachedDownloads'))
+    expect(line).toBeDefined()
+    expect(line).toContain('-> null')
+    expect(line).not.toContain('NaN')
+    log.mockRestore()
+  })
+
   it('describes a string value by shape instead of printing it', () => {
     // These lines land in `app.log`, which users attach to support requests. A path or a
     // mirror host must not be disclosed just because it changed; the shape still answers

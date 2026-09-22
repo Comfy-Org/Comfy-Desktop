@@ -702,11 +702,16 @@ function sameValue(a: unknown, b: unknown): boolean {
  *  process-wide `.bak`-fallback counter that telemetry reports, it blocks the main thread on
  *  `Atomics.wait` while retrying a locked file, and it cannot tell "no previous value" from
  *  "previous file unparseable". Reading memory has none of those costs. */
-function logPersistedChanges(before: Record<string, unknown> | undefined, next: Settings): void {
+function logPersistedChanges(
+  before: Record<string, unknown> | undefined,
+  writtenPayload: string
+): void {
   try {
     if (!before) return
     const a = before
-    const b = next as Record<string, unknown>
+    const parsed: unknown = JSON.parse(writtenPayload)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
+    const b = parsed as Record<string, unknown>
     const changes: string[] = []
     for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
       if (sameValue(a[key], b[key])) continue
@@ -729,8 +734,14 @@ function logPersistedChanges(before: Record<string, unknown> | undefined, next: 
  *  the write lands: `writeFileSafe` can throw, and a line saying a value was written when it
  *  was not is worse than no line. */
 function save(settings: Settings, before?: Record<string, unknown>): void {
-  writeFileSafe(dataPath, JSON.stringify(settings, null, 2), { backup: true })
-  logPersistedChanges(before, settings)
+  // Serialised once, and the log reads back THAT payload rather than the in-memory object.
+  // `JSON.stringify` turns `NaN` and `Infinity` into `null` and drops `undefined`, so the two
+  // genuinely disagree: a renderer can set a key to `NaN` and the file gets `null`. Logging
+  // the object would report a value the file does not contain — which is the one thing a
+  // change log must never do, since its whole purpose is to say what reached disk.
+  const payload = JSON.stringify(settings, null, 2)
+  writeFileSafe(dataPath, payload, { backup: true })
+  logPersistedChanges(before, payload)
 }
 
 /** Sentinel values for `autoLaunchOnStartup`. Any string OTHER than these
