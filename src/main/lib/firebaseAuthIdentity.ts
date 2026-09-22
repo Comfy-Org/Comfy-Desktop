@@ -122,6 +122,21 @@ let epochTaintIsDurable = true
 export const PENDING_CONSENSUS_DEADLINE_MS = 60_000
 let pendingConsensusDeadline: ReturnType<typeof setTimeout> | null = null
 
+/**
+ * TEMPORARY DIAGNOSTIC — remove before any merge to main.
+ *
+ * Logs the HOST only, never the full URL (which can carry query parameters) and never a uid or an
+ * address. Which account is involved is exactly what this subsystem keeps out of main-process logs;
+ * everything these lines need to answer is answerable from origin + status + disposition.
+ */
+function diagHost(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return 'unparseable'
+  }
+}
+
 function sameConsensus(
   first: FirebaseIdentityConsensus,
   second: FirebaseIdentityConsensus
@@ -142,6 +157,10 @@ function sameConsensus(
  */
 function publishConsensus(next: FirebaseIdentityConsensus): void {
   if (sameConsensus(consensus, next)) return
+  // TEMPORARY DIAGNOSTIC. The reported failure was a `false` write with no visible cause: the
+  // classifier logs the effect, nothing logged the consensus moving under it. This is the line that
+  // says which outcome replaced which, and when.
+  console.log('[identity-diag] consensus', consensus.status, '->', next.status)
   consensus = next
   for (const observe of [...consensusObservers]) {
     // An observer can synchronously re-enter `reconcile()` and publish a different outcome, which
@@ -764,6 +783,16 @@ export function reportFirebaseAuthState(
   const trustedCloud = isTrustedCloudUrl(webContents.getURL())
   const trustedLocal =
     currentOrigin !== null && isLoopbackOrigin(currentOrigin) && reporter.localReportingAuthorized
+  // TEMPORARY DIAGNOSTIC. Answers the question the last build could not: WHICH view produced the
+  // `signed_out` that revoked a just-established classification, and on what origin. A loopback
+  // origin implicates the preload poller (which reports `signed_out` for a not-yet-ready store);
+  // a cloud origin exonerates it and points at the frontend's own auth sync instead.
+  const diagTrust = trustedCloud ? 'cloud' : trustedLocal ? 'local' : 'untrusted'
+  console.log(
+    '[identity-diag] report host=' + diagHost(webContents.getURL()),
+    'status=' + state.status,
+    'trust=' + diagTrust
+  )
   if (!trustedCloud && !trustedLocal) {
     const mainVerifiedState = mainVerifiedStates.get(webContents)
     if (
@@ -772,6 +801,9 @@ export function reportFirebaseAuthState(
       !mainVerifiedState.rendererMayReaffirm ||
       !isAcceptedFallbackFrame(webContents, reporter, frame)
     ) {
+      // Dropped before reconcile ever sees it — the path that makes a real session
+      // indistinguishable from no session at all.
+      console.log('[identity-diag] report DROPPED (untrusted, no main-verified fallback)')
       return
     }
     const userMismatch = state.status === 'signed_in' && state.userId !== mainVerifiedState.userId
