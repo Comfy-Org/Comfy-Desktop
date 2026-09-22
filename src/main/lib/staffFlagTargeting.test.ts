@@ -1058,17 +1058,37 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
     expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
   })
 
-  it('does NOT fall through to IndexedDB when localStorage is readable and empty', async () => {
-    // The rule Simon approved, and the one that keeps a signed-out account from coming back. After
-    // migration the IndexedDB copy is one the SDK deliberately removed; reading it on an empty
-    // localStorage would resurrect it. Absence still MEANS what it always meant here — the change
-    // is only which store is consulted.
+  it('abstains when localStorage is empty and IndexedDB holds a user', async () => {
+    // The ambiguous row, and it is not an edge case: on the frontend Desktop ships, VueFire settles
+    // the session in IndexedDB at boot and it moves to localStorage only later, when the auth
+    // store runs `setPersistence`. So EVERY boot passes through this state while signed in.
+    //
+    // It cannot be resolved by reading. Either the record is live (a frontend that persists to
+    // IndexedDB, or one mid-boot), or it is one the SDK already discarded. Guessing "signed out"
+    // is the expensive direction: that report is trusted and DELETES the loopback binding.
     const { result } = await classify({
       localStorage: [],
       entries: [authRecord('u1', 'someone@comfy.org')]
     })
 
+    expect(result).toEqual({ known: false })
+  })
+
+  it('reports no account when BOTH stores are empty, which is not ambiguous', async () => {
+    const { result } = await classify({ localStorage: [], entries: [] })
+
     expect(result).toEqual({ known: true, staff: false, userId: null })
+  })
+
+  it('never consults IndexedDB when localStorage holds a user', async () => {
+    // Authoritative in the direction that matters: a stale IndexedDB record cannot override the
+    // live one, so a signed-out account cannot come back.
+    const { result } = await classify({
+      localStorage: [localRecord('u1', 'someone@comfy.org')],
+      entries: [authRecord('u2', 'other@example.com')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
   })
 
   it('falls back to IndexedDB only when there is no localStorage at all', async () => {

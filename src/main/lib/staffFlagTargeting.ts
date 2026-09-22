@@ -292,9 +292,9 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     // failure that removal exists to prevent. The fallback below is for a frontend with NO
     // localStorage persistence, never for a localStorage that simply has nothing in it.
     // The BARE identifier, deliberately - not window.localStorage. Reading it off window couples
-    // this to a global the page has and other evaluation contexts may not, and the failure is
-    // SILENT: the ReferenceError is caught below, ls becomes null, and we fall through to the
-    // store the SDK drains - byte-identically to the bug this fixes.
+    // this to a global that exists in the page but not in every context a reader might evaluate it
+    // in, and the failure is silent: the ReferenceError is caught below, ls becomes null, and we
+    // fall through to the store the SDK drains - byte-identically to the bug this fixes.
     var ls = null;
     try {
       if (typeof localStorage !== 'undefined' && localStorage) {
@@ -305,6 +305,9 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     } catch (_) {
       ls = null;
     }
+    // null means the MECHANISM is unavailable. An empty array means it is readable and holds no
+    // user - a different thing, and the whole point of the rule below.
+    var lsUsers = null;
     if (ls) {
       var fromLocal = collect();
       for (var i = 0; i < ls.length; i++) {
@@ -314,7 +317,10 @@ export const CLASSIFY_STAFF_JS = `(async () => {
         if (typeof raw !== 'string') continue;
         try { fromLocal.add(JSON.parse(raw)); } catch (_) {}
       }
-      return verdict(fromLocal.users);
+      lsUsers = fromLocal.users;
+      // A user HERE is authoritative: localStorage is where the SDK settles the session, and any
+      // IndexedDB copy is the one it drained.
+      if (lsUsers.length > 0) return verdict(lsUsers);
     }
 
     if (!indexedDB.databases) return { known: false };
@@ -353,7 +359,6 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       allReq.onsuccess = function () { res(allReq.result); };
       allReq.onerror = function () { rej(allReq.error); };
     });
-    // Reached only on a frontend with no localStorage persistence at all.
     var fromIdb = collect();
     (all || []).forEach(function (e) {
       if (!e || typeof e !== 'object') return;
@@ -361,6 +366,18 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       if (e.fbase_key.indexOf(PREFIX) !== 0) return;
       fromIdb.add(e.value);
     });
+    if (lsUsers !== null) {
+      // localStorage was READABLE and held no user, and IndexedDB does. That is ambiguous and
+      // cannot be resolved by reading: it is either a frontend that persists to IndexedDB (the
+      // record is live), or one that is mid-boot before the session moves to localStorage, or a
+      // leftover the SDK has already discarded. ABSTAIN rather than guess - a wrong "signed out"
+      // here is accepted as a trusted report and DELETES the loopback binding, and a wrong
+      // "signed in" resurrects an account that signed out.
+      if (fromIdb.users.length > 0) return { known: false };
+      // Both stores empty is not ambiguous: nobody is signed in anywhere.
+      return verdict([]);
+    }
+    // No localStorage mechanism at all, so IndexedDB is the only persistence there is.
     return verdict(fromIdb.users);
   } catch (e) {
     return { known: false };
