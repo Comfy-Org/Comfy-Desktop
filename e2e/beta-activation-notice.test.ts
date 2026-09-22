@@ -179,10 +179,17 @@ test('a first beta activation raises a nonblocking notice over live ComfyUI @lin
 })
 
 test('the card is anchored on the bell it points at @linux', async () => {
-  // The beak is drawn at a fixed position within the card, so "points at the bell" is really
-  // "the popup is centred on the bell". Asserted numerically rather than by eye: a composited
-  // screenshot is evidence, not a guarantee, and this is the property that actually breaks
-  // when an anchor rect goes stale or the card clamps at a window edge.
+  // Asserted on the BEAK's own position in window coordinates, not the popup view's.
+  //
+  // This test used to compare the VIEW's centre against the bell, on the reasoning that the
+  // beak sits at a fixed position inside the card so centring the popup centres the beak. The
+  // middle step was false: the card is narrower than the view by a shadow gutter each side,
+  // and it was rendering flush-LEFT inside it rather than centred. So the view was centred on
+  // the bell — which this test checked, and which was never broken — while the card and its
+  // beak sat one gutter to the left, which is what a user sees. It shipped a real misalignment
+  // (-18px on Windows) under a green assertion for exactly that reason.
+  //
+  // Measuring the beak end to end is the only version that cannot pass while the card is off.
   const bellCentre = await ctx.titleBar.evaluate<number>(`(() => {
     const el = document.querySelector('.title-announcement-button')
     if (!el) return -1
@@ -208,16 +215,32 @@ test('the card is anchored on the bell it points at @linux', async () => {
   expect(popup!.x).toBeLessThanOrEqual(bellCentre)
   expect(popup!.right).toBeGreaterThanOrEqual(bellCentre)
 
-  // When nothing clamped it, the view is centred on the bell exactly. Asserting this only in
-  // the unclamped case keeps it honest on a layout where the bell sits too close to an edge
-  // for the card to centre — there the beak does the pointing, which `positionCoachmark`'s
-  // unit tests cover directly.
+  // Where the beak actually is: its centre inside the card, plus the card's offset inside the
+  // popup page, plus the page's own position in the window.
+  const beakInWindow = await coachmarkPopup(ctx.app).evaluate<number>(`(() => {
+    const card = document.querySelector('.coachmark')
+    const beak = document.querySelector('.coachmark-beak')
+    if (!card || !beak) return -1
+    const b = beak.getBoundingClientRect()
+    return (b.left + b.right) / 2
+  })()`)
+  expect(beakInWindow, 'no beak found on the card').toBeGreaterThanOrEqual(0)
+
+  // When nothing clamped it, the beak must land ON the bell. Asserted only in the unclamped
+  // case: with the bell too close to a window edge the card cannot centre, and the beak's
+  // edge margin deliberately wins over exact tracking — `positionCoachmark`'s unit tests
+  // cover that trade directly.
   const windowWidth = await ctx.app.evaluate(({ BrowserWindow }) => {
     const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.isVisible())
     return win ? win.getContentBounds().width : 0
   })
   const clamped = popup!.x <= 0 || popup!.right >= windowWidth
-  if (!clamped) expect(Math.abs(popup!.centre - bellCentre)).toBeLessThanOrEqual(2)
+  if (!clamped) {
+    expect(
+      Math.abs(popup!.x + beakInWindow - bellCentre),
+      'the beak must point at the bell, not merely sit in a view that is centred on it',
+    ).toBeLessThanOrEqual(2)
+  }
 })
 
 test('the notice does not block the canvas underneath it @linux', async () => {
