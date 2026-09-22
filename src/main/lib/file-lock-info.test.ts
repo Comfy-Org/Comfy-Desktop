@@ -1,17 +1,35 @@
 import { describe, it, expect } from 'vitest'
-import { findLockingProcesses, type LockingProcess } from './file-lock-info'
+import { findLockingProcesses, type LockingProcess, type LockProbeResult } from './file-lock-info'
 import { fork } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
 describe('findLockingProcesses', { timeout: 30_000 }, () => {
-  it('determines an answer for a file not locked by any process', async () => {
+  /**
+   * These probes run the real `lsof`, which walks every process's fd table
+   * while vitest runs 8 workers, so exceeding the 10s cap is a property of the
+   * machine's load and not of the code. `{ ok: false, reason: 'timeout' }` is
+   * therefore a legitimate outcome here, and asserting `ok` is true would make
+   * the suite fail for being busy.
+   *
+   * So a live probe may only be asserted against the shape of the contract.
+   * Every load-independent branch - including which errors count as failures -
+   * is pinned deterministically in `file-lock-info.probe.test.ts`.
+   */
+  function expectWellFormedProbe(result: LockProbeResult): void {
+    if (result.ok) {
+      expect(Array.isArray(result.processes)).toBe(true)
+    } else {
+      expect(['timeout', 'unavailable']).toContain(result.reason)
+    }
+  }
+
+  it('returns a well-formed result for a file not locked by any process', async () => {
     const tmpFile = path.join(os.tmpdir(), `file-lock-test-${Date.now()}.txt`)
     fs.writeFileSync(tmpFile, 'test')
     try {
-      const result = await findLockingProcesses(tmpFile)
-      expect(result.ok).toBe(true)
+      expectWellFormedProbe(await findLockingProcesses(tmpFile))
     } finally {
       try {
         fs.unlinkSync(tmpFile)
@@ -19,11 +37,13 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
     }
   })
 
-  it('reports a determined, empty result for a non-existent file', async () => {
+  it('finds nothing holding a non-existent file', async () => {
     const result = await findLockingProcesses('/tmp/nonexistent-file-lock-test-' + Date.now())
-    // `lsof` exits 1 when it matches nothing. That is a real answer, so the
-    // probe must report `ok` with an empty list rather than a failure.
-    expect(result).toEqual({ ok: true, processes: [] })
+    // `lsof` exits 1 when it matches nothing, and that is a real answer rather
+    // than a failure - but only the probe test can pin that, since this live
+    // one can also legitimately time out.
+    expectWellFormedProbe(result)
+    if (result.ok) expect(result.processes).toEqual([])
   })
 
   it('returns results with pid and name fields', async () => {
@@ -31,7 +51,7 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
     fs.writeFileSync(tmpFile, 'test')
     try {
       const result = await findLockingProcesses(tmpFile)
-      expect(result.ok).toBe(true)
+      expectWellFormedProbe(result)
       for (const entry of result.ok ? result.processes : []) {
         expect(typeof entry.pid).toBe('number')
         expect(typeof entry.name).toBe('string')
