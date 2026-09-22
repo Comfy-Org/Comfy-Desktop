@@ -80,20 +80,31 @@ describe('local Firebase auth monitor', () => {
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 
-  it('IGNORES an IndexedDB record when localStorage is readable and empty', async () => {
-    // The whole fix. The SDK deletes the key from non-primary persistences, so a record still in
-    // IndexedDB is one Firebase DISCARDED — honouring it resurrects a signed-out account. An empty
-    // localStorage is an answer, not a reason to look elsewhere.
+  it('ABSTAINS when localStorage is empty but IndexedDB holds a user', async () => {
+    // The boot window, and the reason the rule has three outcomes rather than two. Until the
+    // frontend's late setPersistence runs, the user lives in IndexedDB and localStorage is
+    // legitimately empty. Reporting signed_out here is what revokes the loopback binding and seals
+    // the install; reporting signed_in would resurrect a record that may genuinely be stale. The
+    // only answer that cannot be wrong is neither.
     installLocalStorage({})
     installIndexedDb([
-      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'stale-ghost' } }
+      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'user-in-idb' } }
     ])
+
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+  })
+
+  it('reports signed_out only when BOTH stores are empty', async () => {
+    // The other half of the same rule: a sign-out is a real answer, but only once the second store
+    // has been asked and agrees. Without this case the rule above could be satisfied by never
+    // reporting signed_out at all.
+    installLocalStorage({})
+    installIndexedDb([])
 
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
   })
 
-  it('skips a malformed localStorage entry without falling through to IndexedDB', async () => {
-    installLocalStorage({})
+  it('abstains on a malformed localStorage entry rather than trusting IndexedDB', async () => {
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
       value: {
@@ -102,10 +113,33 @@ describe('local Firebase auth monitor', () => {
       }
     })
     installIndexedDb([
-      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'stale-ghost' } }
+      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'maybe-stale' } }
     ])
 
-    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+  })
+
+  it('treats a THROWING getItem as the mechanism failing, not as an absent record', async () => {
+    // Enumeration succeeds, the value read throws. That is "I cannot read", which must not be
+    // rendered as "nothing is stored" — otherwise a storage failure becomes a definite verdict.
+    // CLASSIFY_STAFF_JS lets the same failure reach its outer catch and says nothing; this matches.
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        'firebase:authUser:api-key:[DEFAULT]': 'unreadable',
+        getItem: () => {
+          throw new Error('access denied')
+        }
+      }
+    })
+    installIndexedDb([
+      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'live-user' } }
+    ])
+
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({
+      status: 'signed_in',
+      userId: 'live-user'
+    })
   })
 
   it.each([
