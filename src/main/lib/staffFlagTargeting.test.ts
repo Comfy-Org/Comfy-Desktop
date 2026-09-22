@@ -255,16 +255,23 @@ async function classify(
   closed: number
 }> {
   const { idb, closed } = fakeIndexedDB(opts)
-  const run = new Function('indexedDB', 'setTimeout', 'window', `return ${CLASSIFY_STAFF_JS}`) as (
+  // Injected as a bare identifier, matching how the script reads it. Passing `undefined` models a
+  // context with no localStorage at all, which is what `typeof localStorage === 'undefined'` sees.
+  const run = new Function(
+    'indexedDB',
+    'setTimeout',
+    'localStorage',
+    `return ${CLASSIFY_STAFF_JS}`
+  ) as (
     i: unknown,
     t: unknown,
-    w: unknown
+    l: unknown
   ) => Promise<{ known?: boolean; staff?: boolean; userId?: string | null }>
-  const result = await run(idb, setTimeout, {
-    localStorage: fakeLocalStorage(opts.localStorage ?? null, {
-      throws: opts.localStorageThrows
-    })
-  })
+  const result = await run(
+    idb,
+    setTimeout,
+    fakeLocalStorage(opts.localStorage ?? null, { throws: opts.localStorageThrows }) ?? undefined
+  )
   return { result, closed: closed.count }
 }
 

@@ -291,11 +291,17 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     // through to it on an empty localStorage would resurrect a signed-out account - the exact
     // failure that removal exists to prevent. The fallback below is for a frontend with NO
     // localStorage persistence, never for a localStorage that simply has nothing in it.
+    // The BARE identifier, deliberately - not window.localStorage. Reading it off window couples
+    // this to a global the page has and other evaluation contexts may not, and the failure is
+    // SILENT: the ReferenceError is caught below, ls becomes null, and we fall through to the
+    // store the SDK drains - byte-identically to the bug this fixes.
     var ls = null;
     try {
-      ls = window.localStorage;
-      // Touch it: presence is not readability. Blocked site data throws here, not above.
-      if (ls) { void ls.length; }
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        // Touch it: presence is not readability. Blocked site data throws here, not above.
+        void localStorage.length;
+        ls = localStorage;
+      }
     } catch (_) {
       ls = null;
     }
