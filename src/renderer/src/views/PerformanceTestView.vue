@@ -553,6 +553,7 @@ watch(performanceTestLogs, async () => {
                   <Trash2 :size="18" aria-hidden="true" />
                 </button>
               </div>
+              <p class="performance-test__field-hint">{{ t('performanceTest.apiFormatHint') }}</p>
               <p v-if="workflowImportError" class="performance-test__workflow-error" role="alert">
                 {{ workflowImportError }}
               </p>
@@ -577,6 +578,7 @@ watch(performanceTestLogs, async () => {
                   />
                 </div>
               </div>
+              <p class="performance-test__field-hint">{{ t('performanceTest.warmupRunsHint') }}</p>
               <div class="performance-test__setting">
                 <label for="performance-test-measured-runs">
                   {{ t('performanceTest.measuredRuns') }}
@@ -1319,6 +1321,13 @@ watch(performanceTestLogs, async () => {
 
 .performance-test__results-placeholder {
   margin: 0;
+}
+
+.performance-test__field-hint {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .performance-test__account {
