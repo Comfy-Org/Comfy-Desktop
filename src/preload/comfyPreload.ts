@@ -104,7 +104,9 @@ const Telemetry: ComfyDesktop2TelemetryBridge = {
   reportFirebaseAuthState
 }
 
-startLocalFirebaseAuthMonitor(reportFirebaseAuthState)
+startLocalFirebaseAuthMonitor(reportFirebaseAuthState, (detail: string): void =>
+  sendTelemetry('telemetry:firebaseAuthDiag', detail)
+)
 
 const bridge = {
   isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
