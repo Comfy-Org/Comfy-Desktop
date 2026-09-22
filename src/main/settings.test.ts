@@ -752,6 +752,23 @@ describe('persisted-write logging', () => {
     log.mockRestore()
   })
 
+  it('logs a key the file gains for the first time', () => {
+    // The baseline is what was on DISK, not the defaults-merged view. Baselining from the
+    // merged object would hide every key a sparse file gains on its first real write — they
+    // are already present in a merged baseline — and "no line for key X" would stop meaning
+    // "X was not written", which is the only claim this log exists to support.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('telemetryEnabled', false)
+
+    // `installDir` is a default the sparse file above does not contain, so this write is the
+    // first time it reaches disk.
+    expect(writeLines(log).some((l) => l.includes('installDir'))).toBe(true)
+    log.mockRestore()
+  })
+
   it('describes a string value by shape instead of printing it', () => {
     // These lines land in `app.log`, which users attach to support requests. A path or a
     // mirror host must not be disclosed just because it changed; the shape still answers

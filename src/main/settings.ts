@@ -463,13 +463,19 @@ function load(): Settings {
  *  content is unknown, so saving anything derived from the stand-in would
  *  overwrite the user's intact, newer settings (the failure environment of
  *  issue #1367). */
-function loadOutcome(): { settings: Settings; unreadable: boolean } {
+function loadOutcome(): {
+  settings: Settings
+  unreadable: boolean
+  /** Exactly what was parsed from disk, before defaults are merged in — the baseline the
+   *  change log needs, so a key the file gains for the first time is reported as a change. */
+  persisted: Record<string, unknown>
+} {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
   let unreadable = false
   const read = readFileSafe(dataPath)
   if (read.kind === 'unreadable') {
-    return { settings: { ...defaults }, unreadable: true }
+    return { settings: { ...defaults }, unreadable: true, persisted: {} }
   }
   if (read.kind === 'data') {
     unreadable = read.primaryUnreadable === true
@@ -490,9 +496,6 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
   }
   const result: Settings = { ...defaults, ...(parsed || {}) }
   let changed = false
-  // Snapshot before the directory substitutions below, so the repair path attributes its
-  // own writes rather than logging nothing.
-  const repairBaseline = structuredClone(result)
 
   // Drop legacy keys that no longer back any setting. `maxCachedFiles` was the
   // user-editable predecessor of `maxCachedDownloads`; its old value is
@@ -634,8 +637,8 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
       changed = true
     }
   }
-  if (changed && !unreadable) save(result, repairBaseline)
-  return { settings: result, unreadable }
+  if (changed && !unreadable) save(result, parsed ?? {})
+  return { settings: result, unreadable, persisted: parsed ?? {} }
 }
 
 /** Describe a value for the log WITHOUT disclosing it.
@@ -684,15 +687,19 @@ function sameValue(a: unknown, b: unknown): boolean {
  *  the situation a log has to cover: the useful question is not "which of the writers I know
  *  about ran" but "who ran", and only a stack answers that.
  *
- *  The baseline comes from the caller's already-loaded object, NOT from re-reading the file.
+ *  The baseline is what was actually PARSED FROM DISK, not the defaults-merged view. Merging
+ *  first would hide the keys a sparse file gains on its first real write: they are already
+ *  present in a merged baseline, so nothing would be logged for them, and "no line for key X"
+ *  would stop meaning "X was not written" — which is the only claim this log exists to
+ *  support. It is still memory, not a re-read.
  *  Re-reading looked simpler and was wrong three ways: `readFileSafe` increments the
  *  process-wide `.bak`-fallback counter that telemetry reports, it blocks the main thread on
  *  `Atomics.wait` while retrying a locked file, and it cannot tell "no previous value" from
  *  "previous file unparseable". Reading memory has none of those costs. */
-function logPersistedChanges(before: Settings | undefined, next: Settings): void {
+function logPersistedChanges(before: Record<string, unknown> | undefined, next: Settings): void {
   try {
     if (!before) return
-    const a = before as Record<string, unknown>
+    const a = before
     const b = next as Record<string, unknown>
     const changes: string[] = []
     for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
@@ -715,7 +722,7 @@ function logPersistedChanges(before: Settings | undefined, next: Settings): void
 /** `before` is the caller's pre-mutation snapshot, used only for the change log. Logged AFTER
  *  the write lands: `writeFileSafe` can throw, and a line saying a value was written when it
  *  was not is worse than no line. */
-function save(settings: Settings, before?: Settings): void {
+function save(settings: Settings, before?: Record<string, unknown>): void {
   writeFileSafe(dataPath, JSON.stringify(settings, null, 2), { backup: true })
   logPersistedChanges(before, settings)
 }
@@ -750,7 +757,7 @@ export function set<K extends string>(
   key: K,
   value: K extends KnownSettingKey ? KnownSettings[K] | undefined : unknown
 ): void {
-  const { settings, unreadable } = loadOutcome()
+  const { settings, unreadable, persisted } = loadOutcome()
   if (unreadable) {
     // Fail closed (issue #1367): settings.json exists but can't be read right
     // now, so `settings` holds bare defaults or stale .bak content. Persisting
@@ -767,14 +774,12 @@ export function set<K extends string>(
     (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key)) ||
     (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key))
   ) {
-    const before = structuredClone(settings)
     delete settings[key]
-    save(settings, before)
+    save(settings, persisted)
     return
   }
-  const before = structuredClone(settings)
   settings[key] = value
-  save(settings, before)
+  save(settings, persisted)
 }
 
 export function getAll(): Settings {
@@ -791,14 +796,13 @@ export function getAll(): Settings {
  * beta by revoking consent, taking the diagnostics with them.
  */
 export function resolveBetaFeaturesEnabled(): boolean {
-  const { settings, unreadable } = loadOutcome()
+  const { settings, unreadable, persisted } = loadOutcome()
   const stored = settings.betaFeaturesEnabled
   if (typeof stored === 'boolean') return stored
   if (unreadable) return false
   const seeded = settings.telemetryEnabled === true
-  const before = structuredClone(settings)
   settings.betaFeaturesEnabled = seeded
-  save(settings, before)
+  save(settings, persisted)
   return seeded
 }
 
