@@ -81,21 +81,35 @@ describe('positionCoachmark beak tracking', () => {
     return placement.x + COACHMARK_SHADOW_GUTTER + placement.beakFraction * cardWidth
   }
 
-  it('reports where the card sits inside the view, so the renderer need not guess', () => {
-    // The renderer would otherwise centre the card against its OWN viewport width, and that
-    // width is sometimes still the pre-resize value — the page had not processed the new
-    // bounds yet. Centring against it puts the card one gutter off the anchor, taking the
-    // beak with it. Main knows the real geometry, so it sends the offset.
-    const placement = positionCoachmark({
-      anchor: { leftX: 500, rightX: 540, bottomY: 36 },
-      bubble,
-      parentBounds: { width: 1200, height: 800 }
-    })
-    expect(placement.cardLeftInView).toBe(COACHMARK_SHADOW_GUTTER)
-    // The card, placed at that offset, is centred on the anchor — which is what the beak
-    // fraction is computed against.
-    expect(placement.x + placement.cardLeftInView + cardWidth / 2).toBeCloseTo(520, 5)
-  })
+  it.each([
+    [200, { leftX: 500, rightX: 540 }],
+    [280, { leftX: 500, rightX: 540 }],
+    [280, { leftX: 1130, rightX: 1150 }]
+  ])(
+    'reports a card centre that lands on the anchor (card %s, clamped or not)',
+    (width, anchor) => {
+      // Asserted against the ANCHOR, not against the formula. An earlier version of this test
+      // compared `cardLeftInView` to the gutter and re-used the same width it fed in, so both
+      // sides reduced to the same constant and it could not fail for any input. This varies
+      // the card width and the anchor — including one that clamps at the right edge — and
+      // checks the property that actually matters.
+      const placement = positionCoachmark({
+        anchor: { ...anchor, bottomY: 36 },
+        bubble: { width, height: 90 },
+        parentBounds: { width: 1200, height: 800 }
+      })
+      const anchorCentre = (anchor.leftX + anchor.rightX) / 2
+      const cardCentreInWindow = placement.x + placement.cardCentreInView
+      const clamped = placement.x <= 0 || placement.x + placement.width >= 1200
+      if (clamped) {
+        // Clamped, the card cannot sit on the anchor — but it must still be centred in its
+        // own view, which is what the beak fraction is then measured against.
+        expect(placement.cardCentreInView).toBeCloseTo(placement.width / 2, 5)
+      } else {
+        expect(cardCentreInWindow).toBeCloseTo(anchorCentre, 5)
+      }
+    }
+  )
 
   it('centres the beak when the card is not clamped', () => {
     const placement = positionCoachmark({

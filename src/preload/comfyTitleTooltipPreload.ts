@@ -33,7 +33,9 @@ export interface ComfyTitleTooltipBridge {
   onConfig(cb: (config: TitleTooltipConfig) => void): () => void
   /** Beak position, pushed after main has measured the card and settled its final (possibly
    *  clamped) bounds. Separate from the config push because it is only knowable then. */
-  onBeak(cb: (payload: { beakFraction: number; cardLeftInView: number | null }) => void): () => void
+  onBeak(
+    cb: (payload: { beakFraction: number; cardCentreInView: number | null }) => void
+  ): () => void
   /** Coachmark dismiss button; no-op for the tooltip variant. `configToken` names the card
    *  the click landed on, so main can discard a click from a card it has since replaced. */
   dismissCoachmark(configToken: string): void
@@ -74,15 +76,18 @@ const bridge: ComfyTitleTooltipBridge = {
   },
   onBeak: (cb) => {
     const handler = (_event: IpcRendererEvent, data: unknown): void => {
-      const payload = data as { beakFraction?: unknown; cardLeftInView?: unknown } | undefined
+      const payload = data as { beakFraction?: unknown; cardCentreInView?: unknown } | undefined
       const raw = payload?.beakFraction
-      const left = payload?.cardLeftInView
+      const centre = payload?.cardCentreInView
       if (typeof raw === 'number' && Number.isFinite(raw)) {
         cb({
           beakFraction: raw,
           // `null` rather than a guess: an older main that does not send it must fall back to
           // CSS centring, not to a bogus offset.
-          cardLeftInView: typeof left === 'number' && Number.isFinite(left) ? left : null
+          // Non-negative as well as finite: a negative or NaN centre would place the card
+          // off its own view, and the renderer treats null as "fall back to CSS centring".
+          cardCentreInView:
+            typeof centre === 'number' && Number.isFinite(centre) && centre >= 0 ? centre : null
         })
       }
     }
