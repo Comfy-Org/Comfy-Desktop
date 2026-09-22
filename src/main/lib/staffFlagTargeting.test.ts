@@ -515,6 +515,10 @@ describe('classification driven by the identity consensus', () => {
 
     expect(setFlagEvaluationStaff).toHaveBeenCalledWith(true)
     await settle()
+    // The `true` assertion alone does not detect a flap — it still passes if the revalidation
+    // emits `false` and then `true`. The mock is cleared before the transition and the known
+    // answer is bound synchronously, so no `false` belongs anywhere in this window.
+    expect(setFlagEvaluationStaff).not.toHaveBeenCalledWith(false)
   })
 })
 
