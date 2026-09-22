@@ -158,13 +158,14 @@ export async function installAgentRequirements(
       )
     } else if (outcome.kind === 'failed') {
       sendOutput(`⚠ ${AGENT_REQUIREMENTS} failed: ${(outcome.error as Error).message}\n`)
-    } else if (timedOut) {
-      sendOutput(
-        `\n⚠ agent requirements install exceeded ${INSTALL_TIMEOUT_MS / 1000}s; starting ComfyUI without it\n`
-      )
     } else if (outcome.result.code !== 0) {
+      // The exit code decides, not the timer that was racing it: an install
+      // that finished inside the grace period succeeded, however close to the
+      // ceiling it landed, and must not be reported as skipped.
       sendOutput(
-        `\n${withOutputTail(`⚠ agent requirements install exited with code ${outcome.result.code}`, outcome.result.output)}\n`
+        timedOut
+          ? `\n⚠ agent requirements install exceeded ${INSTALL_TIMEOUT_MS / 1000}s; starting ComfyUI without it\n`
+          : `\n${withOutputTail(`⚠ agent requirements install exited with code ${outcome.result.code}`, outcome.result.output)}\n`
       )
     }
   } finally {

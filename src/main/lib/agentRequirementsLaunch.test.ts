@@ -273,6 +273,40 @@ describe('installAgentRequirements', () => {
     }
   })
 
+  it('reports success for an install that finishes inside the grace period', async () => {
+    // The ceiling can fire while uv is already on its way out with a zero exit.
+    // Reporting that from the timer rather than the exit code would tell the
+    // user the agent was skipped on a launch that actually installed it.
+    vi.useFakeTimers()
+    try {
+      mockInstall.mockImplementationOnce(
+        async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+          const uvSignal = args[6]!
+          return new Promise((resolve) => {
+            uvSignal.addEventListener(
+              'abort',
+              () => setTimeout(() => resolve({ code: 0, output: '' }), 1_000),
+              { once: true }
+            )
+          })
+        }
+      )
+      const sendOutput = vi.fn()
+
+      const pending = installAgentRequirements(plan, sendOutput)
+      await vi.advanceTimersByTimeAsync(120_000)
+      await vi.advanceTimersByTimeAsync(1_000)
+      await pending
+
+      const reported = sendOutput.mock.calls.join('')
+      expect(reported).not.toContain('without it')
+      expect(reported).not.toContain('uv did not stop')
+      expect(reported).not.toContain('exited with code')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not cancel the launch when the ceiling fires', async () => {
     // The deadline aborts a controller this module owns, never the launch's own
     // signal - the launch must proceed, not report itself cancelled.
