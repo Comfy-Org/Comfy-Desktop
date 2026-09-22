@@ -456,10 +456,11 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         comfyContents.executeJavaScript(getMcpSidebarContentScript()).catch(() => {})
       })()
     }
-    // Offer this view as a classifier for ops-flag person targeting. A RETRY path, not the
-    // trigger: the classification is driven by the identity consensus, which reclassifies as
-    // soon as any view reports a change. This covers the case where the consensus resolved while
-    // the views it asked could not answer, and is a no-op otherwise. Deliberately OUTSIDE the
+    // Offer this view as a classifier for ops-flag person targeting. A retry path where the
+    // consensus has agreed an account — it covers the case where the consensus resolved while the
+    // views it asked could not answer, and is a no-op once that account is classified. Where the
+    // consensus is `unknown` it is instead the ONLY trigger, because no consensus change will ever
+    // arrive to drive one; see `classifyWhileUnresolved`. Deliberately OUTSIDE the
     // `!isLocal` branch below: the grant these flags carry is consumed only by the local launch
     // path (`buildLaunchArgs`), since a cloud install spawns no Core — so binding on cloud views
     // alone would cover every surface except the one that can use the result. Fire-and-forget;

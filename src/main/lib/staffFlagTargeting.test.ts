@@ -75,10 +75,11 @@ let pageReads = 0
 /** A view that CAN classify — it reached an auth store and reached a verdict. */
 function stubContents(
   staff: boolean,
-  opts: { throws?: boolean; userId?: string; verified?: boolean } = {}
+  opts: { throws?: boolean; userId?: string; verified?: boolean; url?: string } = {}
 ): Electron.WebContents {
   return {
     isDestroyed: () => false,
+    getURL: () => opts.url ?? 'http://127.0.0.1:8188',
     executeJavaScript: () => {
       pageReads += 1
       return opts.throws
@@ -97,6 +98,7 @@ function stubContents(
 function stubContentsWithoutAuthStore(): Electron.WebContents {
   return {
     isDestroyed: () => false,
+    getURL: () => 'http://127.0.0.1:8188',
     executeJavaScript: () => {
       pageReads += 1
       return Promise.resolve({ known: false })
@@ -108,6 +110,7 @@ function stubContentsWithoutAuthStore(): Electron.WebContents {
 function stubContentsReturning(result: unknown): Electron.WebContents {
   return {
     isDestroyed: () => false,
+    getURL: () => 'http://127.0.0.1:8188',
     executeJavaScript: () => {
       pageReads += 1
       return Promise.resolve(result)
@@ -729,20 +732,25 @@ describe('retrying a write that did not land', () => {
     // view's say-so would be a decision, and one view says nothing about the others.
     //
     // With the unresolved path in place a view IS now read when nothing is agreed, so what proves
-    // the rule is the ABSENCE of an account rather than the absence of a read: a view that cannot
-    // identify anybody must leave the grant alone. Absence is not a sign-out.
+    // the rule is that the view could not name an account — not that it was never asked. The
+    // `pageReads` assertion is what keeps those apart: without it this passes even if the
+    // `unknown` branch does nothing at all, which is the behaviour this test predates.
     await consensusSignedIn([stubContents(true)])
     await consensusUnresolved('unknown')
+    pageReads = 0
 
     vi.useFakeTimers()
     try {
-      const refreshed = refreshStaffFlagTargeting(stubContentsWithoutAuthStore())
+      const refreshed = refreshStaffFlagTargeting(
+        stubContentsReturning({ known: true, staff: false, userId: null })
+      )
       await vi.advanceTimersByTimeAsync(30_000)
       await refreshed
     } finally {
       vi.useRealTimers()
     }
 
+    expect(pageReads).toBeGreaterThan(0)
     expect(nextLaunchBinding()).toBe(true)
   })
 })
@@ -973,6 +981,8 @@ describe('persisting the classification', () => {
   it('survives an unwritable config dir', async () => {
     fs.rmSync(testConfigDir, { recursive: true, force: true })
 
+    // Default consensus is `unknown`, so this now goes down the unresolved path and attempts a
+    // write, where before the change it returned immediately. Stated rather than incidental.
     await expect(refreshStaffFlagTargeting(stubContents(true))).resolves.toBeUndefined()
   })
 })
@@ -1009,7 +1019,10 @@ describe('classifying when the identity consensus cannot resolve', () => {
     expect(nextLaunchBinding()).toBe(true)
   })
 
-  it('reclassifies when a different verified account is present, because that is a replacement', async () => {
+  it('writes over a stored grant when a different verified account is present at launch', async () => {
+    // NB `nextLaunchBinding()` resets the module, so what this covers is a FRESH launch reading a
+    // stored `true` and then meeting a different account. Same-session replacement is the test
+    // below, and they are different paths.
     await consensusSignedIn([stubContents(true)])
     expect(nextLaunchBinding()).toBe(true)
     await consensusUnresolved('unknown')
@@ -1019,23 +1032,72 @@ describe('classifying when the identity consensus cannot resolve', () => {
     expect(storedFile()).toMatchObject({ staff: false })
   })
 
+  it('reclassifies within one session when the account changes, without a consensus event', async () => {
+    // The claim the docstring makes, tested against the thing that nearly made it false:
+    // `classificationGeneration` advances ONLY in `onIdentityConsensus`, and on this population the
+    // consensus never changes. Gating the skip on the generation would freeze the first answer for
+    // the life of the process and this would fail.
+    await consensusUnresolved('unknown')
+
+    await refreshStaffFlagTargeting(stubContents(true))
+    expect(storedFile()).toMatchObject({ staff: true })
+
+    await refreshStaffFlagTargeting(stubContents(false, { userId: 'somebody-else' }))
+
+    expect(storedFile()).toMatchObject({ staff: false })
+  })
+
+  it('does not re-read or rewrite for the account it has already classified', async () => {
+    await consensusUnresolved('unknown')
+    await refreshStaffFlagTargeting(stubContents(true))
+    const writesBefore = storedFile()
+    pageReads = 0
+
+    await refreshStaffFlagTargeting(stubContents(true))
+
+    expect(pageReads).toBe(1)
+    expect(storedFile()).toEqual(writesBefore)
+  })
+
+  it('will not classify from a view at an origin it does not trust', async () => {
+    // The unresolved path has no agreed account to cross-check a uid against, so the origin is the
+    // only thing left that bounds which page may answer.
+    await consensusUnresolved('unknown')
+
+    await refreshThroughRetries(stubContents(true, { url: 'https://example.com/whatever' }))
+
+    expect(fs.existsSync(persistFilePath())).toBe(false)
+    expect(pageReads).toBe(0)
+  })
+
   it.each([
+    // Every payload here classifies as NOT staff for a DIFFERENT account, so that accepting one
+    // would overwrite the established `true` and show up. A payload that would write `true` is
+    // invisible against a stored `true` and tests nothing — which is how the first version of this
+    // table passed with the guards deleted.
     [
       'the address is unverified, which is self-asserted and proves nothing',
-      { known: true, staff: true, userId: USER, verified: false }
+      { known: true, staff: false, userId: 'someone-else', verified: false }
     ],
     [
       'no account is stored, which is an absence rather than a different account',
       { known: true, staff: false, userId: null, verified: false }
     ],
     ['the store could not be read at all', { known: false }],
-    ['the page answers with something else entirely', { known: true, staff: true, verified: true }]
+    ['the page answers with something else entirely', { known: true, staff: false, verified: true }]
   ])('abstains when %s', async (_label, result) => {
+    // Established FIRST, deliberately. On a fresh config dir `cached` is already `false`, and
+    // `applyClassification` skips a write when the value is unchanged — so "no file" is what a
+    // correct abstention AND a wrongly-applied `false` both look like, and two of these rows would
+    // pass against an implementation with every guard deleted.
+    await consensusSignedIn([stubContents(true)])
+    expect(nextLaunchBinding()).toBe(true)
     await consensusUnresolved('unknown')
 
     await refreshThroughRetries(stubContentsReturning(result))
 
-    expect(fs.existsSync(persistFilePath())).toBe(false)
+    expect(storedFile()).toMatchObject({ staff: true })
+    expect(nextLaunchBinding()).toBe(true)
   })
 
   it('cannot revoke an established grant by failing to identify anybody', async () => {
@@ -1059,6 +1121,7 @@ describe('classifying when the identity consensus cannot resolve', () => {
     let reads = 0
     const populatesLate = {
       isDestroyed: () => false,
+      getURL: () => 'http://127.0.0.1:8188',
       executeJavaScript: () => {
         reads += 1
         return Promise.resolve(
@@ -1082,6 +1145,7 @@ describe('classifying when the identity consensus cannot resolve', () => {
     let reads = 0
     const neverIdentifies = {
       isDestroyed: () => false,
+      getURL: () => 'http://127.0.0.1:8188',
       executeJavaScript: () => {
         reads += 1
         return Promise.resolve({ known: false })

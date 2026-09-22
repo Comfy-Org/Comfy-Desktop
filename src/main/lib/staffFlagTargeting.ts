@@ -41,14 +41,21 @@
  *     answer only if the page agrees it classified that same UID.
  *   - **`signed_out`** — store `false`. Every contributor resolved and none is signed in, which
  *     is the one state that is real evidence of a sign-out.
- *   - **`pending` / `conflicted` / `unknown`** — hold. A view mid-resolution, two views disagreeing
- *     about which account is signed in, and no view able to say at all are all *absence* of an
- *     answer. Writing one anyway is how a wrong classification outlives the session that caused
+ *   - **`pending` / `conflicted`** — hold. A view mid-resolution and two views disagreeing about
+ *     which account is signed in are both *absence* of an answer, and something is still speaking
+ *     in each. Writing one anyway is how a wrong classification outlives the session that caused
  *     it, because whatever lands on disk is what the next boot is targeted on.
+ *   - **`unknown`** — the OBSERVER holds, but a view reaching `dom-ready` may classify it under
+ *     the positive-identification rule. See `classifyFromUnresolvedView`. This is the one outcome
+ *     that is terminal rather than unresolved-so-far: it means no view anywhere is trusted to
+ *     speak, so nothing is coming to change it, and an install can sit there for every launch of
+ *     its life. Holding there is not caution, it is never classifying that machine at all.
  *
- * `unknown` matters more than it looks: closing the last window leaves nobody to affirm the
- * account, and `firebaseAuthIdentity` rightly detaches telemetry there. Persisting `false` on the
- * same signal would revoke a staff grant for quitting the app.
+ * `unknown` still matters the way it always did: closing the last window leaves nobody to affirm
+ * the account, and `firebaseAuthIdentity` rightly detaches telemetry there. Persisting `false` on
+ * that signal would revoke a staff grant for quitting the app — which is why the observer still
+ * holds, and why the view-driven path writes only on a positive identification and never on an
+ * absence. Nothing calls `refreshStaffFlagTargeting` without a live view.
  *
  * ## What this is NOT
  *
@@ -104,6 +111,8 @@ import {
   type FirebaseIdentityConsensus
 } from './firebaseAuthIdentity'
 import { normalizePostHogUserId } from './opaqueIdentifier'
+import { isTrustedCloudUrl } from './trustedCloudUrl'
+import { isLoopbackOrigin } from './verifiedLocalFirebaseAuth'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
 import * as telemetry from './telemetry'
@@ -148,10 +157,6 @@ let answeredGeneration: number | null = null
 
 let unobserveConsensus: (() => void) | null = null
 
-/** A page read that never settles must not keep a `WebContents` awaited forever, nor block the
- *  views behind it. `CLASSIFY_STAFF_JS` bounds its own `indexedDB.open`, but `databases()` and
- *  `getAll` are unbounded and a hostile page can replace either with a promise that never
- *  resolves. `executeJavaScript` has no timeout of its own. */
 /** The shape `CLASSIFY_STAFF_JS` returns. Every field is `unknown` because it crosses the
  *  renderer boundary: the page could return anything at all. */
 type PageClassification = {
@@ -175,6 +180,39 @@ const UNRESOLVED_RETRY_DELAYS_MS = [0, 500, 1_000, 2_000, 4_000]
 /** Views with a retry loop already running, so repeated `dom-ready` events cannot stack them. */
 const unresolvedRetryViews = new Set<WebContents>()
 
+/** The last abstention announced, so the retry schedule does not repeat itself.
+ *
+ *  Every abstention here used to be silent, which is the exact defect that made the first
+ *  native failure of this feature uninterpretable: the log could say a classification did not
+ *  happen but never why. Logged per CHANGE of (generation, reason) rather than once per
+ *  generation, so a view that reports `no-usable-record` and then `unverified` shows both —
+ *  that sequence is the interesting one, and a flat once-per-generation rule would hide it. */
+let lastUnresolvedAbstention: { generation: number; reason: string } | null = null
+
+/** Reason enums only. Never an address, never a uid. */
+function noteUnresolvedAbstention(generation: number, reason: string): void {
+  if (
+    lastUnresolvedAbstention?.generation === generation &&
+    lastUnresolvedAbstention.reason === reason
+  )
+    return
+  lastUnresolvedAbstention = { generation, reason }
+  console.log('[staff-targeting] unresolved read abstained:', reason)
+}
+
+/** The origin of a URL, or `null` if it has none we can name. */
+function originOfUrl(url: string): string | null {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
+/** A page read that never settles must not keep a `WebContents` awaited forever, nor block the
+ *  views behind it. `CLASSIFY_STAFF_JS` bounds its own `indexedDB.open`, but `databases()` and
+ *  `getAll` are unbounded and a hostile page can replace either with a promise that never
+ *  resolves. `executeJavaScript` has no timeout of its own. */
 const PAGE_READ_TIMEOUT_MS = 10_000
 
 /** What `normalizePostHogUserId` will accept, applied to the raw string so trimming cannot sneak an
@@ -221,9 +259,11 @@ function readPersistedStaff(): boolean | null {
 /**
  * Page-context classification of the signed-in account.
  *
- * Returns a BOOLEAN and the UID it is about — never the address, which is compared in the page and
- * never crosses the IPC boundary, so the privacy claim above is structurally true rather than a
- * convention.
+ * Returns a BOOLEAN, the UID it is about, and whether the address was VERIFIED — never the address
+ * itself, which is compared in the page and never crosses the IPC boundary, so the privacy claim
+ * above is structurally true rather than a convention. `verified` exists so main can tell an
+ * unverified account from a verified non-staff one; both otherwise return
+ * `{ known: true, staff: false, userId }`, and only the second is evidence about a person.
  *
  * The UID is what lets main check that this page classified the account the process actually
  * agrees is signed in. Bounded to 257 characters here — one past what `normalizePostHogUserId`
@@ -517,12 +557,33 @@ function afterDelay(ms: number): Promise<void> {
  * push this module toward "not staff" by failing to answer — only by presenting a different
  * verified account, which is a genuine account change and should reclassify.
  *
+ * ACCEPTED DEBT, and wider here than on the agreed-account path. There the UID cross-check rejects
+ * a view holding a DIFFERENT account, so first-accepted-answer-wins is confined to two views that
+ * hold the SAME account and disagree. Here there is no agreed account to check against — that
+ * absence is the premise of this path — so two unauthorized local installs, open at once on
+ * different loopback origins with different verified accounts, are decided by whichever answers
+ * first, and window ordering can flip it between launches. Kept deliberately, on the same grounds
+ * as its sibling: the harm is one missed or spurious arg from `CORE_BETA_GRANTABLE_ARGS`, the
+ * server still evaluates the condition, and the next launch re-decides. Requiring agreement across
+ * views would mean reconstructing the consensus whose unavailability is the reason this path
+ * exists.
+ *
  * Returns whether a classification was applied.
  */
 async function classifyFromUnresolvedView(
   webContents: WebContents,
   generation: number
 ): Promise<boolean> {
+  // Re-checked per attempt rather than once per loop: a view can navigate between reads, and the
+  // agreed-account path re-validates origin for the same reason (`viewsReportingFirebaseUser`).
+  // Without this the script would run in whatever origin the view happens to hold, and read that
+  // origin's IndexedDB.
+  const url = webContents.getURL()
+  const origin = originOfUrl(url)
+  if (!isTrustedCloudUrl(url) && !(origin !== null && isLoopbackOrigin(origin))) {
+    noteUnresolvedAbstention(generation, 'untrusted-origin')
+    return false
+  }
   let read: PageClassification | null
   try {
     read = (await readClassificationFromPage(webContents)) as PageClassification | null
@@ -532,20 +593,38 @@ async function classifyFromUnresolvedView(
     return false
   }
   if (generation !== classificationGeneration) return false
-  if (answeredGeneration === generation) return false
-  if (!read || read.known !== true) return false
+  if (!read || read.known !== true) {
+    noteUnresolvedAbstention(generation, 'no-usable-record')
+    return false
+  }
   // The relaxation, bounded to one line. `verified` exists so this check is possible: an unverified
   // account and a verified non-staff one are otherwise the same read, and only the second is
   // evidence about a person. An unverified address is self-asserted and proves nothing, so it
   // cannot enter the cohort NOR displace an existing classification.
-  if (read.verified !== true) return false
-  if (typeof read.userId !== 'string' || read.userId.length > MAX_PAGE_USER_ID_CHARS) return false
+  if (read.verified !== true) {
+    noteUnresolvedAbstention(generation, 'unverified')
+    return false
+  }
+  if (typeof read.userId !== 'string' || read.userId.length > MAX_PAGE_USER_ID_CHARS) {
+    noteUnresolvedAbstention(generation, 'unusable-uid')
+    return false
+  }
+  // A uid that normalizes away is not an account. The empty store reaches this only in theory —
+  // its `{ userId: null }` return carries no `verified` field, so the check above rejects it
+  // first — but a whitespace-only uid does reach it.
   const userId = normalizePostHogUserId(read.userId)
-  // An empty store reports `userId: null` and a whitespace-only uid normalizes away; neither is an
-  // account, and treating either as one would let "nothing is stored" revoke a grant.
-  if (!userId) return false
+  if (!userId) {
+    noteUnresolvedAbstention(generation, 'unusable-uid')
+    return false
+  }
+  // Gated on the ACCOUNT, not on `answeredGeneration`. Gating on the generation looked
+  // equivalent and was not: `classificationGeneration` advances only in `onIdentityConsensus`,
+  // and on the population this path exists for the consensus never changes — so the first
+  // accepted answer would have frozen the classification for the life of the process, and the
+  // documented "a different verified account reclassifies" would have been false in-session.
+  // Re-reading the same account costs nothing and writes nothing.
+  if (classifiedUserId === userId && classifiedStaff !== null) return true
   const isStaff = read.staff === true
-  answeredGeneration = generation
   classifiedUserId = userId
   classifiedStaff = isStaff
   applyClassification(isStaff)
@@ -570,7 +649,6 @@ async function classifyWhileUnresolved(
       if (wait > 0) await afterDelay(wait)
       if (webContents.isDestroyed()) return
       if (generation !== classificationGeneration) return
-      if (answeredGeneration === generation) return
       // Re-read rather than trusting the status this loop started on: once anything can speak for
       // the identity, this path must get out of its way.
       if (getFirebaseIdentityConsensus().status !== 'unknown') return
@@ -584,10 +662,12 @@ async function classifyWhileUnresolved(
 /**
  * Offer a freshly loaded view as a classifier for the account already agreed on.
  *
- * A retry path, not an authority. The consensus observer above is what normally classifies; this
- * covers the case where it resolved while the views it asked could not answer — a page mid-load,
- * an `executeJavaScript` that threw — and a later view can. It is a no-op unless an account is
- * agreed and still unclassified, so the ordinary page load costs nothing.
+ * Two jobs, and only the first is a retry. Where an account IS agreed, this covers the case where
+ * the observer resolved while the views it asked could not answer — a page mid-load, an
+ * `executeJavaScript` that threw — and a later view can; that path is a no-op once the agreed
+ * account is classified. Where the consensus is `unknown` this is not a retry but the TRIGGER, and
+ * the only one: see `classifyWhileUnresolved`. On such an install an ordinary page load costs a
+ * bounded schedule of page reads rather than nothing.
  *
  * Called for LOCAL installs as well as cloud ones, which matters more than it looks: the grant
  * these flags carry is consumed only by the local launch path (`buildLaunchArgs`, launch.ts),
@@ -609,10 +689,17 @@ export async function refreshStaffFlagTargeting(webContents: WebContents): Promi
     applyClassification(false)
     return
   }
-  // `unknown` is the one unresolved outcome that is not going to change on its own: it means
-  // no view is trusted to speak, so no later report can move it. `pending` and `conflicted` are
-  // different - something IS still speaking, and guessing over it would be racing a better
-  // answer that is already on its way.
+  // `unknown` is the one unresolved outcome that is knowably terminal: it means no view is
+  // trusted to speak, so no later report can move it.
+  //
+  // `pending` and `conflicted` are excluded because something is USUALLY still speaking in each,
+  // and guessing over it would race a better answer already on its way. Known gap: `pending` is
+  // not reliably transient. `requestPendingIdentity` arms the expiry deadline only once a UID has
+  // been agreed, so on a launch that never agreed one, an active reporter that never reports
+  // leaves the consensus `pending` for the whole session. Such an install is as unreachable as the
+  // `unknown` one and this path does not cover it — a wedged `pending` is indistinguishable from a
+  // resolving one from here, and telling them apart needs an expiry signal the consensus does not
+  // publish.
   if (consensus.status === 'unknown') {
     await classifyWhileUnresolved(webContents, classificationGeneration)
     return
@@ -635,6 +722,7 @@ export function _resetForTest(): void {
   classificationGeneration = 0
   answeredGeneration = null
   unresolvedRetryViews.clear()
+  lastUnresolvedAbstention = null
   unobserveConsensus?.()
   unobserveConsensus = null
 }
