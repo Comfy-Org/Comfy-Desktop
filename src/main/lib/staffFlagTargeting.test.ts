@@ -246,7 +246,7 @@ describe('CLASSIFY_STAFF_JS', () => {
   ])('classifies %s', async (_label, email, expected) => {
     const { result } = await classify({ entries: [authRecord('u1', email as string | null)] })
 
-    expect(result).toEqual({ known: true, staff: expected, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: expected, userId: 'u1' })
   })
 
   it('refuses an unverified address, which proves nothing about domain ownership', async () => {
@@ -254,13 +254,13 @@ describe('CLASSIFY_STAFF_JS', () => {
     // self-asserted. Without this check anyone could sign up and enter the cohort.
     const { result } = await classify({ entries: [authRecord('u1', 'someone@comfy.org', false)] })
 
-    expect(result).toEqual({ known: true, staff: false, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: false, userId: 'u1' })
   })
 
   it('reports signed out, for no account, when no auth record exists', async () => {
     const { result } = await classify({ entries: [] })
 
-    expect(result).toEqual({ known: true, staff: false, userId: null })
+    expect(result).toMatchObject({ known: true, staff: false, userId: null })
   })
 
   it('declines to answer when two accounts are stored', async () => {
@@ -270,7 +270,7 @@ describe('CLASSIFY_STAFF_JS', () => {
       entries: [authRecord('u1', 'someone@comfy.org'), authRecord('u2', 'other@example.com')]
     })
 
-    expect(result).toEqual({ known: false })
+    expect(result).toMatchObject({ known: false })
   })
 
   it('still answers when one account is stored under duplicate keys', async () => {
@@ -278,7 +278,7 @@ describe('CLASSIFY_STAFF_JS', () => {
       entries: [authRecord('u1', 'someone@comfy.org'), authRecord('u1', 'someone@comfy.org')]
     })
 
-    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: true, userId: 'u1' })
   })
 
   it.each([['__proto__'], ['constructor'], ['toString']])(
@@ -291,7 +291,7 @@ describe('CLASSIFY_STAFF_JS', () => {
         entries: [authRecord('real', 'someone@comfy.org'), authRecord(uid, 'other@example.com')]
       })
 
-      expect(result).toEqual({ known: false })
+      expect(result).toMatchObject({ known: false })
     }
   )
 
@@ -304,7 +304,7 @@ describe('CLASSIFY_STAFF_JS', () => {
     // None of these is evidence of being signed out, so none may vote "not staff".
     const { result } = await classify(opts)
 
-    expect(result).toEqual({ known: false })
+    expect(result).toMatchObject({ known: false })
   })
 
   it('ignores entries that are not auth records', async () => {
@@ -312,7 +312,7 @@ describe('CLASSIFY_STAFF_JS', () => {
       entries: [{ fbase_key: 'something:else', value: { uid: 'x', email: 'a@comfy.org' } }, null]
     })
 
-    expect(result).toEqual({ known: true, staff: false, userId: null })
+    expect(result).toMatchObject({ known: true, staff: false, userId: null })
   })
 
   it('reports which account it classified, so main can check it is the agreed one', async () => {
@@ -339,7 +339,7 @@ describe('CLASSIFY_STAFF_JS', () => {
       await vi.advanceTimersByTimeAsync(5000)
       const { result } = await pending
 
-      expect(result).toEqual({ known: false })
+      expect(result).toMatchObject({ known: false })
     } finally {
       vi.useRealTimers()
     }
@@ -956,5 +956,34 @@ describe('persisting the classification', () => {
     fs.rmSync(testConfigDir, { recursive: true, force: true })
 
     await expect(refreshStaffFlagTargeting(stubContents(true))).resolves.toBeUndefined()
+  })
+})
+
+// DIAGNOSTIC (branch-only): reproducing the native-Windows overwrite locally.
+//
+// Observed on the box: `staff= true` at 20:00:28.053, then `staff= false` 2.733s later, and
+// `false` is what the next launch reads. The standing theory is that a spurious `signed_out`
+// consensus revoked it. These two tests check whether a SECOND mechanism can produce the same
+// trace with the consensus never leaving `signed_in`.
+describe('DIAGNOSTIC: can a signed_in revalidation overwrite an established true?', () => {
+  it('a record with a uid but no email classifies as a DEFINITE non-staff, not an abstention', async () => {
+    // The uid is present and matches, so this survives `classifyFromView`s cross-check. The
+    // absence of an email is rendered as `staff: false` rather than "I cannot tell".
+    const { result } = await classify({ entries: [authRecord('u1', null)] })
+
+    expect(result).toMatchObject({ known: true, staff: false, userId: 'u1' })
+  })
+
+  it('overwrites an established true when a navigation revalidates against such a record', async () => {
+    initStaffFlagTargeting()
+    await consensusSignedIn([stubContents(true)])
+    expect(storedFile()).toMatchObject({ staff: true })
+
+    // Every document load takes the consensus through `pending` and back — the documented
+    // cadence the revalidation path was built around.
+    await consensusUnresolved('pending')
+    await consensusSignedIn([stubContentsReturning({ known: true, staff: false, userId: USER })])
+
+    expect(storedFile()).toMatchObject({ staff: false })
   })
 })

@@ -285,19 +285,21 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       if (!uids[v.uid]) { uids[v.uid] = true; users.push(v); }
     });
     // No record at all is a real signed-out state and votes "not staff", for no account.
-    if (users.length === 0) return { known: true, staff: false, userId: null };
+    if (users.length === 0) return { known: true, staff: false, userId: null, why: 'no-record' };
     // Two accounts at once is unresolved, not a coin flip on iteration order.
-    if (users.length > 1) return { known: false };
+    if (users.length > 1) return { known: false, why: 'multi-account' };
     var user = users[0];
     // One past the 256 main will accept, so an over-length uid is REJECTED there rather than
     // truncated into a match with a different account.
     var userId = user.uid.slice(0, 257);
-    if (user.emailVerified !== true) return { known: true, staff: false, userId: userId };
+    if (user.emailVerified !== true) return { known: true, staff: false, userId: userId, why: 'unverified' };
     var email = typeof user.email === 'string' ? user.email : '';
+    var isStaffEmail = email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX;
     return {
       known: true,
-      staff: email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX,
-      userId: userId
+      staff: isStaffEmail,
+      userId: userId,
+      why: email === '' ? 'no-email-field' : (isStaffEmail ? 'domain-match' : 'domain-miss')
     };
   } catch (e) {
     return { known: false };
@@ -313,7 +315,7 @@ export const CLASSIFY_STAFF_JS = `(async () => {
  * this launch's flag fetch has long since gone out: a flag initialised later in the session (or
  * re-read in a test) should see the current answer, and it costs nothing.
  */
-function applyClassification(isStaff: boolean): void {
+function applyClassification(isStaff: boolean, reason: string): void {
   telemetry.setFlagEvaluationStaff(isStaff)
   if (isStaff === cached) return
   try {
@@ -324,7 +326,7 @@ function applyClassification(isStaff: boolean): void {
     // every later attempt at the same classification — so the next launch would read the stale
     // value even once the filesystem recovered.
     cached = isStaff
-    console.log('[staff-targeting] classified: staff=', isStaff, '→ next launch')
+    console.log('[staff-targeting] classified: staff=', isStaff, 'via', reason, '→ next launch')
   } catch (err) {
     console.log('[staff-targeting] store skipped:', err)
   }
@@ -369,7 +371,7 @@ async function classifyFromView(
   userId: string,
   generation: number
 ): Promise<boolean> {
-  let read: { known?: unknown; staff?: unknown; userId?: unknown } | null
+  let read: { known?: unknown; staff?: unknown; userId?: unknown; why?: unknown } | null
   try {
     read = (await readClassificationFromPage(webContents)) as typeof read
   } catch (err) {
@@ -402,10 +404,11 @@ async function classifyFromView(
     return false
   }
   const isStaff = read.staff === true
+  console.log('[staff-targeting] page verdict: staff=', isStaff, 'branch=', read.why)
   answeredGeneration = generation
   classifiedUserId = userId
   classifiedStaff = isStaff
-  applyClassification(isStaff)
+  applyClassification(isStaff, 'page-verdict')
   return true
 }
 
@@ -454,7 +457,7 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
     // server take a grant back normally.
     classifiedUserId = null
     classifiedStaff = false
-    applyClassification(false)
+    applyClassification(false, 'consensus-signed-out')
     return
   }
   if (consensus.status !== 'signed_in') {
@@ -468,7 +471,7 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
     // Already classified this session — the common case, since a navigation takes the consensus
     // through `pending` and back. Bind the known answer FIRST, so the account keeps its
     // classification with no gap and a write that exhausted `writeFileSafe`'s attempts is retried.
-    applyClassification(classifiedStaff)
+    applyClassification(classifiedStaff, 'consensus-rebind')
     // Then revalidate, because a UID is not a classification. `staff` is derived from `email` and
     // `emailVerified`, both of which can change while Firebase keeps reporting the same UID — an
     // address verified mid-session, or one that changes domain. Caching the verdict against the
@@ -512,7 +515,7 @@ export async function refreshStaffFlagTargeting(webContents: WebContents): Promi
   // `writeFileSafe` that threw would otherwise leave `staff: true` on disk for every later launch
   // — silently reversing the revocation this module exists to make.
   if (consensus.status === 'signed_out') {
-    applyClassification(false)
+    applyClassification(false, 'refresh-signed-out')
     return
   }
   if (consensus.status !== 'signed_in') {
@@ -525,7 +528,7 @@ export async function refreshStaffFlagTargeting(webContents: WebContents): Promi
   if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
     // Nothing to ask this view — but a page load is also the moment to retry a write that
     // `writeFileSafe` could not land, since the next launch reads whatever the disk holds.
-    applyClassification(classifiedStaff)
+    applyClassification(classifiedStaff, 'refresh-rebind')
     return
   }
   await classifyFromView(webContents, consensus.userId, classificationGeneration)
