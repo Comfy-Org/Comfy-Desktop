@@ -474,10 +474,10 @@ describe('classification driven by the identity consensus', () => {
     expect(nextLaunchBinding()).toBe(false)
   })
 
-  it('re-binds the agreed account across a pending outcome without reading a page again', async () => {
+  it('re-binds the agreed account across a pending outcome even when no view can answer', async () => {
     // The common shape, since every navigation takes the consensus through `pending` and back.
-    // Re-reading a page on each one would be a poll with extra steps, and the answer must not
-    // depend on that view still being readable by then.
+    // The account must keep its classification with no gap, and must not depend on a view still
+    // being readable by then.
     await consensusSignedIn([stubContents(true)])
     await consensusUnresolved('pending')
     setFlagEvaluationStaff.mockClear()
@@ -486,6 +486,35 @@ describe('classification driven by the identity consensus', () => {
 
     expect(setFlagEvaluationStaff).toHaveBeenLastCalledWith(true)
     expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('revalidates a returning account, because a UID is not a classification', async () => {
+    // `staff` comes from `email` and `emailVerified`, both mutable while Firebase keeps reporting
+    // the same UID — an address verified mid-session, or one that changes domain. Caching the
+    // verdict against the UID alone would make it immutable for the life of the process, which is
+    // stricter than the per-view read this replaces: that ran on every `dom-ready` and would have
+    // seen the change.
+    await consensusSignedIn([stubContents(true)])
+    expect(nextLaunchBinding()).toBe(true)
+    await consensusUnresolved('pending')
+
+    await consensusSignedIn([stubContents(false)], USER)
+
+    expect(storedFile()).toMatchObject({ staff: false })
+    expect(nextLaunchBinding()).toBe(false)
+  })
+
+  it('binds the known answer before revalidating, so a returning account never flaps', async () => {
+    // The revalidation is a page read and therefore asynchronous. If the known answer were not
+    // bound first, the account would spend that window unclassified.
+    await consensusSignedIn([stubContents(true)])
+    await consensusUnresolved('pending')
+    setFlagEvaluationStaff.mockClear()
+
+    identity.publish({ status: 'signed_in', userId: USER }, [stubContents(true)])
+
+    expect(setFlagEvaluationStaff).toHaveBeenCalledWith(true)
+    await settle()
   })
 })
 

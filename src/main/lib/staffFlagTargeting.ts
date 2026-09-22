@@ -389,9 +389,17 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
   if (consensus.status !== 'signed_in') return
   if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
     // Already classified this session — the common case, since a navigation takes the consensus
-    // through `pending` and back. Re-apply rather than re-read: it costs no page read, it re-binds
-    // the answer, and it is the retry for a write that exhausted `writeFileSafe`'s attempts.
+    // through `pending` and back. Bind the known answer FIRST, so the account keeps its
+    // classification with no gap and a write that exhausted `writeFileSafe`'s attempts is retried.
     applyClassification(classifiedStaff)
+    // Then revalidate, because a UID is not a classification. `staff` is derived from `email` and
+    // `emailVerified`, both of which can change while Firebase keeps reporting the same UID — an
+    // address verified mid-session, or one that changes domain. Caching the verdict against the
+    // UID alone would make it immutable for the life of the process, which is stricter than the
+    // behaviour this replaces: the per-view read ran on every `dom-ready` and would have seen the
+    // change. Every document load takes the consensus through `pending` and back, so this runs on
+    // that same cadence and costs the same one page read.
+    void classifyAgreedAccount(consensus.userId, classificationGeneration)
     return
   }
   classifiedUserId = consensus.userId
