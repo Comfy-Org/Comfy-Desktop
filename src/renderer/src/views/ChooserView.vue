@@ -534,7 +534,7 @@ const gridHandlers = {
   width: 100%;
   /* Content box holds exactly 4 tracks (4 x 280 + 3 x 16 = 1168px). */
   max-width: 1168px;
-  justify-self: start;
+  justify-self: center;
   /* Reserve the unfiltered row height so the cluster doesn't jump while typing
    * in search. Tile is 178px tall (280px at the golden-ratio aspect). */
   --tile-h: 178px;
@@ -576,12 +576,12 @@ const gridHandlers = {
   /* The grid's own row gap, so two stacked grids read as continuous rows. */
   gap: 16px;
   /* Snap each shelf to a whole number of 280px tracks (16px gaps) while
-   * keeping partial-width shelves aligned with the left edge. Thresholds are
+   * keeping partial-width shelves centered as a group. Thresholds are
    * `cols * 280 + (cols - 1) * 16` against the shelves' content box (the
    * container defined above). */
   width: 100%;
   max-width: 280px;
-  align-self: flex-start;
+  align-self: center;
   margin: 0;
 }
 @container (width >= 576px) {
@@ -604,8 +604,8 @@ const gridHandlers = {
   grid-row: 4;
   box-sizing: border-box;
   width: 100%;
-  max-width: calc(1168px + 8px);
-  padding-inline: 4px;
+  max-width: 1168px;
+  justify-self: center;
   container-type: inline-size;
 }
 .chooser-workspace-bar {

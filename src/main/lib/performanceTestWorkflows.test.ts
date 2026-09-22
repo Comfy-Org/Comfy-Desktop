@@ -361,7 +361,7 @@ describe('deletePerformanceTestWorkflow', () => {
     )
     const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
 
-    await deletePerformanceTestWorkflow(storedPath, userDataPath)
+    await expect(deletePerformanceTestWorkflow(storedPath, userDataPath)).resolves.toBe('deleted')
 
     await expect(fs.promises.stat(storedPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -391,7 +391,9 @@ describe('deletePerformanceTestWorkflow', () => {
       const outputPath = path.join(path.dirname(storedPath), outputName)
       await fs.promises.writeFile(outputPath, '{}')
 
-      await deletePerformanceTestWorkflow(storedPath, userDataPath)
+      await expect(deletePerformanceTestWorkflow(storedPath, userDataPath)).resolves.toBe(
+        'preserved'
+      )
 
       await expect(fs.promises.stat(storedPath)).resolves.toBeDefined()
       await expect(fs.promises.stat(outputPath)).resolves.toBeDefined()
@@ -451,6 +453,7 @@ describe('submitPerformanceTestWorkflow', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: 'prompt-1' })))
       .mockResolvedValueOnce(new Response('invalid workflow', { status: 400 }))
 
+    const acceptedPromptIds: string[] = []
     await expect(
       submitPerformanceTestWorkflow(
         storedPath,
@@ -458,10 +461,13 @@ describe('submitPerformanceTestWorkflow', () => {
         'http://127.0.0.1:8189',
         3,
         1,
-        fetchMock
+        fetchMock,
+        undefined,
+        (promptId) => acceptedPromptIds.push(promptId)
       )
     ).rejects.toThrow('Performance Test request 2 failed: 400')
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(acceptedPromptIds).toEqual(['prompt-1'])
   })
 
   it('rejects a successful response without a prompt ID', async () => {
@@ -532,6 +538,43 @@ describe('waitForPerformanceTestJobs', () => {
       [2, 3],
       [3, 3]
     ])
+  })
+
+  it('stops an in-flight polling delay when cancelled', async () => {
+    const abort = new AbortController()
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ jobs: [{ id: 'prompt-1', status: 'in_progress' }] }))
+    )
+
+    await expect(
+      waitForPerformanceTestJobs(
+        'http://127.0.0.1:8189',
+        ['prompt-1'],
+        fetchMock,
+        60_000,
+        () => abort.abort(),
+        abort.signal
+      )
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects when the polling deadline has expired', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+
+    await expect(
+      waitForPerformanceTestJobs(
+        'http://127.0.0.1:8189',
+        ['prompt-1'],
+        fetchMock,
+        0,
+        undefined,
+        undefined,
+        0
+      )
+    ).rejects.toThrow('Timed out waiting for performance test jobs')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

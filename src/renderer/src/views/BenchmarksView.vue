@@ -18,7 +18,10 @@ import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import CollapsibleSectionToggle from '../components/CollapsibleSectionToggle.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
-import { createBenchmarkComparisonSvg } from '../lib/benchmarkComparisonSvg'
+import {
+  createBenchmarkComparisonSvg,
+  MAX_BENCHMARK_COMPARISON_EXPORT_RUNS
+} from '../lib/benchmarkComparisonSvg'
 import { createResultsPng } from '../lib/performanceTestResultsSvg'
 import { useDialogs } from '../composables/useDialogs'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
@@ -68,6 +71,7 @@ const sortKey = ref('createdAt')
 const sortAscending = ref(false)
 const comparisonSortMetric = ref<ComparisonSortMetric>('manual')
 const comparisonSortAscending = ref(true)
+const UNMANAGED_WORKSPACE_FILTER = '__unmanaged__'
 
 const seriesColors = ['#55e0d1', '#a970ff', '#f6f31b', '#ff8a65', '#62a8ff']
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -87,6 +91,26 @@ function uniqueOptions(allLabel: string, values: Array<string | null>): BaseSele
   ]
 }
 
+function entityOptions(
+  allLabel: string,
+  entries: Array<{ value: string; label: string }>
+): BaseSelectOption[] {
+  const uniqueEntries = [...new Map(entries.map((entry) => [entry.value, entry])).values()]
+  const labelCounts = new Map<string, number>()
+  for (const entry of uniqueEntries) {
+    labelCounts.set(entry.label, (labelCounts.get(entry.label) ?? 0) + 1)
+  }
+  return [
+    { value: '', label: allLabel },
+    ...uniqueEntries
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map((entry) => ({
+        value: entry.value,
+        label: labelCounts.get(entry.label) === 1 ? entry.label : `${entry.label} (${entry.value})`
+      }))
+  ]
+}
+
 function workspaceName(benchmark: PerformanceTestBenchmark): string {
   return benchmark.workspace.name ?? t('benchmarks.unmanagedWorkspace')
 }
@@ -96,15 +120,21 @@ function hardwareName(benchmark: PerformanceTestBenchmark): string {
 }
 
 const workspaceOptions = computed(() =>
-  uniqueOptions(
+  entityOptions(
     t('benchmarks.allWorkspaces'),
-    benchmarks.value.map((benchmark) => workspaceName(benchmark))
+    benchmarks.value.map((benchmark) => ({
+      value: benchmark.workspace.id ?? UNMANAGED_WORKSPACE_FILTER,
+      label: workspaceName(benchmark)
+    }))
   )
 )
 const instanceOptions = computed(() =>
-  uniqueOptions(
+  entityOptions(
     t('benchmarks.allInstances'),
-    benchmarks.value.map((benchmark) => benchmark.instance.name)
+    benchmarks.value.map((benchmark) => ({
+      value: benchmark.instance.id,
+      label: benchmark.instance.name
+    }))
   )
 )
 const hardwareOptions = computed(() =>
@@ -255,8 +285,9 @@ const filteredBenchmarks = computed(() => {
         )
       return (
         matchesSearch &&
-        (!workspaceFilter.value || workspace === workspaceFilter.value) &&
-        (!instanceFilter.value || benchmark.instance.name === instanceFilter.value) &&
+        (!workspaceFilter.value ||
+          (benchmark.workspace.id ?? UNMANAGED_WORKSPACE_FILTER) === workspaceFilter.value) &&
+        (!instanceFilter.value || benchmark.instance.id === instanceFilter.value) &&
         (!hardwareFilter.value || hardware === hardwareFilter.value) &&
         (!workflowFilter.value || benchmark.workflowName === workflowFilter.value)
       )
@@ -264,7 +295,9 @@ const filteredBenchmarks = computed(() => {
     .sort((a, b) => {
       const aValue = fieldValue(a, sortKey.value)
       const bValue = fieldValue(b, sortKey.value)
-      if (aValue === undefined || aValue === null) return 1
+      if (aValue === undefined || aValue === null) {
+        return bValue === undefined || bValue === null ? 0 : 1
+      }
       if (bValue === undefined || bValue === null) return -1
       const order =
         typeof aValue === 'number' && typeof bValue === 'number'
@@ -457,6 +490,10 @@ function chartWidth(benchmark: PerformanceTestBenchmark): string {
 
 async function exportComparisonImage(): Promise<void> {
   if (selectedBenchmarks.value.length === 0) return
+  if (selectedBenchmarks.value.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS) {
+    exportResultsError.value = t('benchmarks.exportImageFailed')
+    return
+  }
   isExportingResults.value = true
   exportResultsError.value = null
   try {
@@ -877,6 +914,9 @@ onMounted(() => {
           class="benchmarks__card benchmarks__comparison"
           aria-labelledby="comparison-title"
         >
+          <span id="benchmark-reorder-instructions" class="benchmarks__visually-hidden">
+            {{ t('benchmarks.reorderComparisonHint') }}
+          </span>
           <div class="benchmarks__comparison-toolbar">
             <span v-if="exportResultsError" class="benchmarks__export-error">
               {{ exportResultsError }}
@@ -975,6 +1015,7 @@ onMounted(() => {
                             workflow: benchmark.workflowName
                           })
                         "
+                        aria-describedby="benchmark-reorder-instructions"
                         :title="t('benchmarks.reorderComparisonHint')"
                         @dragstart="startComparisonColumnDrag($event, benchmark.id)"
                         @dragend="endComparisonColumnDrag"
@@ -1569,6 +1610,18 @@ onMounted(() => {
 .benchmarks__export-error {
   color: var(--danger);
   font-size: 12px;
+}
+
+.benchmarks__visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .benchmarks__chart p {

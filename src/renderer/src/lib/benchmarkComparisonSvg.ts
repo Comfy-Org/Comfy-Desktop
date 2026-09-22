@@ -85,8 +85,15 @@ function formatDuration(value: number): string {
   return `${value.toFixed(2).replace(/\.?0+$/, '')} s`
 }
 
+export const MAX_BENCHMARK_COMPARISON_EXPORT_RUNS = 20
+
 /** Create a self-contained SVG containing the selected benchmark comparison. */
 export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData): string {
+  if (data.runs.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS) {
+    throw new Error(
+      `Benchmark comparison images support up to ${MAX_BENCHMARK_COMPARISON_EXPORT_RUNS} runs.`
+    )
+  }
   const margin = 56
   const metricColumnWidth = 170
   const runCount = Math.max(1, data.runs.length)

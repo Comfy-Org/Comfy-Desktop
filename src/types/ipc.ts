@@ -841,6 +841,52 @@ export interface PerformanceTestResultsSummary {
   systemInfo: SystemInfo
 }
 
+export interface AcceleratorInfo {
+  deviceType: string
+  deviceIndex: number | null
+  deviceName: string | null
+  backend: string | null
+}
+
+export interface AcceleratorSnapshot extends AcceleratorInfo {
+  devices: AcceleratorInfo[]
+  vramMb: number | null
+  ramMb: number | null
+  pytorchVersion: string | null
+  xformersVersion: string | null
+  cudaDeviceSet: number | null
+}
+
+export interface PerformanceTestDurationResult {
+  jobId: string
+  durationSeconds: number
+}
+
+export interface PerformanceTestStatistics {
+  fastest: PerformanceTestDurationResult
+  slowest: PerformanceTestDurationResult
+  averageDurationSeconds: number
+  medianDurationSeconds: number
+  measuredJobCount: number
+}
+
+export interface RunPerformanceTestWorkflowResult {
+  ok: boolean
+  submitted: number
+  preparationRuns: number
+  totalSubmitted: number
+  promptIds?: string[]
+  resultPath?: string
+  resultsSummaryPath?: string
+  failedRuns?: number
+  statistics?: PerformanceTestStatistics | null
+  hardware?: AcceleratorSnapshot | null
+  systemInfo?: SystemInfo
+  resultsSummary?: PerformanceTestResultsSummary
+  cancelled?: boolean
+  message?: string
+}
+
 export type PerformanceTestResultValue =
   | string
   | number
@@ -1191,7 +1237,9 @@ export interface ElectronApi {
     message?: string
     canceled?: boolean
   }>
-  deletePerformanceTestWorkflow(filePath: string): Promise<{ ok: boolean; message?: string }>
+  deletePerformanceTestWorkflow(
+    filePath: string
+  ): Promise<{ ok: boolean; status?: 'deleted' | 'preserved'; message?: string }>
   savePerformanceTestLogs(
     filePath: string,
     logs: string
@@ -1214,43 +1262,7 @@ export interface ElectronApi {
     filePath: string,
     measuredRuns: number,
     warmupRuns: number
-  ): Promise<{
-    ok: boolean
-    submitted: number
-    preparationRuns: number
-    totalSubmitted: number
-    promptIds?: string[]
-    resultPath?: string
-    resultsSummaryPath?: string
-    failedRuns?: number
-    statistics?: {
-      fastest: { jobId: string; durationSeconds: number }
-      slowest: { jobId: string; durationSeconds: number }
-      averageDurationSeconds: number
-      medianDurationSeconds: number
-      measuredJobCount: number
-    } | null
-    hardware?: {
-      deviceType: string
-      deviceIndex: number | null
-      deviceName: string | null
-      backend: string | null
-      devices: Array<{
-        deviceType: string
-        deviceIndex: number | null
-        deviceName: string | null
-        backend: string | null
-      }>
-      vramMb: number | null
-      ramMb: number | null
-      pytorchVersion: string | null
-      xformersVersion: string | null
-      cudaDeviceSet: number | null
-    } | null
-    systemInfo?: SystemInfo
-    resultsSummary?: PerformanceTestResultsSummary
-    message?: string
-  }>
+  ): Promise<RunPerformanceTestWorkflowResult>
   readPerformanceTestResultsSummary(filePath: string): Promise<PerformanceTestResultsSummary>
   exportResultsImage(
     png: ArrayBuffer,

@@ -1478,7 +1478,7 @@
     "stop": "Stop",
     "stopping": "Stopping...",
     "stopFailed": "Could not stop the instance.",
-    "measurementSettings": "3. Set measurements settings",
+    "measurementSettings": "3. Set measurement settings",
     "warmupRuns": "Warm-up runs",
     "measuredRuns": "Measured runs",
     "logsPlaceholder": "Instance logs will appear here.",

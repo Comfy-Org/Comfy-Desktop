@@ -38,22 +38,9 @@
 import * as telemetry from './telemetry'
 import { createModelUsageSummary } from './modelUsageSummary'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import type { AcceleratorInfo, AcceleratorSnapshot } from '../../types/ipc'
 
-export interface AcceleratorInfo {
-  deviceType: string
-  deviceIndex: number | null
-  deviceName: string | null
-  backend: string | null
-}
-
-export interface AcceleratorSnapshot extends AcceleratorInfo {
-  devices: AcceleratorInfo[]
-  vramMb: number | null
-  ramMb: number | null
-  pytorchVersion: string | null
-  xformersVersion: string | null
-  cudaDeviceSet: number | null
-}
+export type { AcceleratorInfo, AcceleratorSnapshot } from '../../types/ipc'
 
 const DEVICE_LINE = /^Device:\s*(.+)$/
 const VRAM_LINE = /^Total VRAM\s+(\d+)\s*MB,\s*total RAM\s+(\d+)\s*MB/i

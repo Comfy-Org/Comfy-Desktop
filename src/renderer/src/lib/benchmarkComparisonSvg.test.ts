@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createBenchmarkComparisonSvg,
+  MAX_BENCHMARK_COMPARISON_EXPORT_RUNS,
   type BenchmarkComparisonImageData
 } from './benchmarkComparisonSvg'
 
@@ -40,5 +41,17 @@ describe('createBenchmarkComparisonSvg', () => {
     )
 
     expect(longLabelStart).toBeGreaterThan(shortLabelStart)
+  })
+
+  it('rejects a comparison that would exceed the safe export run count', () => {
+    const data = comparisonData('workflow.json')
+    data.runs = Array.from(
+      { length: MAX_BENCHMARK_COMPARISON_EXPORT_RUNS + 1 },
+      () => data.runs[0]!
+    )
+
+    expect(() => createBenchmarkComparisonSvg(data)).toThrow(
+      `support up to ${MAX_BENCHMARK_COMPARISON_EXPORT_RUNS} runs`
+    )
   })
 })

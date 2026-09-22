@@ -7,6 +7,8 @@ export type {
   PerformanceTestBenchmark,
   PerformanceTestResultValue,
   PerformanceTestResultsSummary,
+  PerformanceTestStatistics,
+  RunPerformanceTestWorkflowResult,
   Source,
   SourceField,
   FieldOption,

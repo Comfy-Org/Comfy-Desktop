@@ -10,7 +10,11 @@ import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScop
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { ActionResult, PerformanceTestResultsSummary } from '../types/ipc'
+import type {
+  ActionResult,
+  PerformanceTestResultsSummary,
+  RunPerformanceTestWorkflowResult
+} from '../types/ipc'
 import {
   createResultsPng,
   createPerformanceTestResultsSvg,
@@ -57,8 +61,7 @@ const measuredRuns = ref('5')
 const logInstallationId = ref<string | null>(null)
 const performanceTestInstallationId = ref<string | null>(null)
 const logsElement = ref<HTMLElement | null>(null)
-type PerformanceTestRunResult = Awaited<ReturnType<typeof window.api.runPerformanceTestWorkflow>>
-const performanceTestResult = ref<PerformanceTestRunResult | null>(null)
+const performanceTestResult = ref<RunPerformanceTestWorkflowResult | null>(null)
 const progressSessionId = ref<string | null>(null)
 const completedProgressRuns = ref(0)
 const totalProgressRuns = ref(0)
@@ -130,6 +133,7 @@ const canStop = computed(() => {
   return Boolean(performanceTestInstallationId.value && !isStopping.value)
 })
 let activeLaunchPromise: Promise<ActionResult> | null = null
+let runToken = 0
 const unsubscribePerformanceTestProgress = window.api.onPerformanceTestProgress((progress) => {
   if (progress.sessionId !== progressSessionId.value) return
   completedProgressRuns.value = progress.completedRuns
@@ -189,8 +193,10 @@ async function deleteWorkflow(): Promise<void> {
   workflowImportError.value = null
   try {
     const result = await window.api.deletePerformanceTestWorkflow(filePath)
-    if (result.ok) {
+    if (result.ok && result.status === 'deleted') {
       if (workflowFilePath.value === filePath) workflowFilePath.value = null
+    } else if (result.ok && result.status === 'preserved') {
+      workflowImportError.value = result.message || t('performanceTest.deleteFailed')
     } else {
       workflowImportError.value = result.message || t('performanceTest.deleteFailed')
     }
@@ -220,6 +226,7 @@ async function runPerformanceTest(): Promise<void> {
   const warmups = Number(warmupRuns.value)
   const runs = Number(measuredRuns.value)
   const sessionId = performanceTestSessionId(installationId)
+  const token = ++runToken
   isLaunching.value = true
   performanceTestResult.value = null
   progressSessionId.value = sessionId
@@ -238,6 +245,7 @@ async function runPerformanceTest(): Promise<void> {
     activeLaunchPromise = launchPromise
     const result = await launchPromise
     activeLaunchPromise = null
+    if (token !== runToken) return
     if (!result.ok && !result.cancelled) {
       sessionStore.appendOutput(sessionId, result.message || t('performanceTest.launchFailed'))
     }
@@ -425,11 +433,12 @@ async function stopPerformanceTest(): Promise<void> {
   const installationId = performanceTestInstallationId.value
   if (!installationId || !canStop.value) return
   const sessionId = performanceTestSessionId(installationId)
+  runToken += 1
 
   isStopping.value = true
   try {
+    await window.api.cancelOperation(sessionId)
     if (activeLaunchPromise) {
-      await window.api.cancelOperation(sessionId)
       await activeLaunchPromise.catch(() => undefined)
     }
     await window.api.stopComfyUI(sessionId)
@@ -454,8 +463,12 @@ async function toggleLogs(): Promise<void> {
 }
 
 watch(performanceTestLogs, async () => {
+  const logs = logsElement.value
+  const shouldFollow = !logs || logs.scrollHeight - logs.scrollTop - logs.clientHeight <= 24
   await nextTick()
-  if (logsElement.value) logsElement.value.scrollTop = logsElement.value.scrollHeight
+  if (shouldFollow && logsElement.value) {
+    logsElement.value.scrollTop = logsElement.value.scrollHeight
+  }
 })
 </script>
 
@@ -780,7 +793,11 @@ watch(performanceTestLogs, async () => {
                   {{ t('performanceTest.openResultsFolder') }}
                 </button>
                 <button
-                  v-if="performanceTestResult?.statistics && performanceTestResult.systemInfo"
+                  v-if="
+                    performanceTestResult?.statistics &&
+                    performanceTestResult.systemInfo &&
+                    performanceTestResult.hardware
+                  "
                   class="secondary performance-test__export-results"
                   type="button"
                   :disabled="isExportingResults"

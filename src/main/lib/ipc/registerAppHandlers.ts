@@ -27,10 +27,11 @@ import {
   listSnapshots,
   diffSnapshots,
   buildInstallationDdContext,
+  _operationAborts,
   _runningSessions
 } from './shared'
 import si from 'systeminformation'
-import type { SystemInfo } from '../../../types/ipc'
+import type { RunPerformanceTestWorkflowResult, SystemInfo } from '../../../types/ipc'
 import type { FieldOption } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
@@ -179,8 +180,15 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle('delete-performance-test-workflow', async (_event, filePath: string) => {
     try {
-      await deletePerformanceTestWorkflow(filePath, app.getPath('userData'))
-      return { ok: true }
+      const status = await deletePerformanceTestWorkflow(filePath, app.getPath('userData'))
+      return {
+        ok: true,
+        status,
+        message:
+          status === 'preserved'
+            ? 'This workflow belongs to a completed test and was kept with its results.'
+            : undefined
+      }
     } catch (error) {
       return { ok: false, message: (error as Error)?.message || String(error) }
     }
@@ -298,11 +306,19 @@ export function registerAppHandlers(): void {
       filePath: string,
       measuredRuns: number,
       warmupRuns: number
-    ) => {
+    ): Promise<RunPerformanceTestWorkflowResult> => {
+      const acceptedPromptIds: string[] = []
+      const abort = new AbortController()
+      let ownsAbortSlot = false
       try {
         if (typeof sessionId !== 'string' || !sessionId.startsWith('performance-test:')) {
           throw new Error('Invalid performance test session.')
         }
+        if (_operationAborts.has(sessionId)) {
+          throw new Error('A performance test is already running for this instance.')
+        }
+        _operationAborts.set(sessionId, abort)
+        ownsAbortSlot = true
         const session = _runningSessions.get(sessionId)
         if (!session) throw new Error('The performance test instance is not running.')
         const sourceInstallationId =
@@ -327,18 +343,21 @@ export function registerAppHandlers(): void {
         }
         const workspace = { id: workspaceId, name: workspaceName }
         const sessionUrl = session.url || `http://127.0.0.1:${session.port}`
-        const promptIds = await submitPerformanceTestWorkflow(
+        await submitPerformanceTestWorkflow(
           filePath,
           app.getPath('userData'),
           sessionUrl,
           measuredRuns,
-          warmupRuns
+          warmupRuns,
+          fetch,
+          abort.signal,
+          (promptId) => acceptedPromptIds.push(promptId)
         )
         const preparationRuns = warmupRuns
-        const measuredPromptIds = promptIds.slice(warmupRuns)
+        const measuredPromptIds = acceptedPromptIds.slice(warmupRuns)
         const jobsResponse = await waitForPerformanceTestJobs(
           sessionUrl,
-          promptIds,
+          acceptedPromptIds,
           fetch,
           undefined,
           (completedRuns, totalRuns) => {
@@ -349,7 +368,8 @@ export function registerAppHandlers(): void {
                 totalRuns
               })
             }
-          }
+          },
+          abort.signal
         )
         const submittedPromptIds = new Set(measuredPromptIds)
         const successfulRuns = jobsResponse.jobs.filter(
@@ -389,7 +409,7 @@ export function registerAppHandlers(): void {
           submitted: measuredRuns,
           preparationRuns,
           totalSubmitted: measuredRuns + preparationRuns,
-          promptIds,
+          promptIds: acceptedPromptIds,
           resultPath,
           resultsSummaryPath,
           statistics,
@@ -399,12 +419,24 @@ export function registerAppHandlers(): void {
           failedRuns
         }
       } catch (error) {
+        const preparationRuns = Math.min(warmupRuns, acceptedPromptIds.length)
+        const submitted = Math.max(0, acceptedPromptIds.length - preparationRuns)
+        const detail = (error as Error)?.message || String(error)
         return {
           ok: false,
-          submitted: 0,
-          preparationRuns: 0,
-          totalSubmitted: 0,
-          message: (error as Error)?.message || String(error)
+          submitted,
+          preparationRuns,
+          totalSubmitted: acceptedPromptIds.length,
+          promptIds: acceptedPromptIds.length > 0 ? acceptedPromptIds : undefined,
+          cancelled: abort.signal.aborted,
+          message:
+            acceptedPromptIds.length > 0
+              ? `${detail} ${acceptedPromptIds.length} run(s) had already been accepted and were not retried.`
+              : detail
+        }
+      } finally {
+        if (ownsAbortSlot && _operationAborts.get(sessionId) === abort) {
+          _operationAborts.delete(sessionId)
         }
       }
     }

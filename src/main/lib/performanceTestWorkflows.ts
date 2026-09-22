@@ -1,15 +1,17 @@
 import fs from 'fs'
 import path from 'path'
-import type { AcceleratorSnapshot } from './hardwareTap'
 import type {
+  AcceleratorSnapshot,
   PerformanceTestBenchmark,
   PerformanceTestResultValue,
   PerformanceTestResultsSummary,
+  PerformanceTestStatistics,
   SystemInfo
 } from '../../types/ipc'
 
 const PERFORMANCE_TESTS_DIR = 'performance-tests'
 const PERFORMANCE_TEST_POLL_INTERVAL_MS = 1000
+const PERFORMANCE_TEST_TIMEOUT_MS = 4 * 60 * 60 * 1000
 
 const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled'])
 
@@ -23,19 +25,6 @@ export interface PerformanceTestJobsResponse {
   jobs: PerformanceTestJob[]
   pagination?: unknown
   [key: string]: unknown
-}
-
-export interface PerformanceTestDurationResult {
-  jobId: string
-  durationSeconds: number
-}
-
-export interface PerformanceTestStatistics {
-  fastest: PerformanceTestDurationResult
-  slowest: PerformanceTestDurationResult
-  averageDurationSeconds: number
-  medianDurationSeconds: number
-  measuredJobCount: number
 }
 
 function isDuration(value: unknown): value is number | null {
@@ -402,12 +391,12 @@ export async function storePerformanceTestWorkflow(
 export async function deletePerformanceTestWorkflow(
   filePath: string,
   userDataPath: string
-): Promise<void> {
+): Promise<'deleted' | 'preserved'> {
   const managedPath = resolveManagedWorkflowPath(filePath, userDataPath)
   for (const outputName of ['jobs.json', 'results.json', 'logs.txt']) {
     try {
       await fs.promises.access(path.join(managedPath.sessionDir, outputName))
-      return
+      return 'preserved'
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
@@ -416,6 +405,7 @@ export async function deletePerformanceTestWorkflow(
   await fs.promises.rmdir(managedPath.sessionDir).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== 'ENOTEMPTY') throw error
   })
+  return 'deleted'
 }
 
 /** Queue warm-up requests followed by each measured run. */
@@ -425,7 +415,9 @@ export async function submitPerformanceTestWorkflow(
   sessionUrl: string,
   measuredRuns: number,
   warmupRuns: number,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal,
+  onSubmitted?: (promptId: string) => void
 ): Promise<string[]> {
   if (!Number.isInteger(measuredRuns) || measuredRuns < 1 || measuredRuns > 100) {
     throw new Error('Measured runs must be an integer between 1 and 100.')
@@ -440,11 +432,13 @@ export async function submitPerformanceTestWorkflow(
   const totalRuns = measuredRuns + warmupRuns
 
   for (let run = 1; run <= totalRuns; run++) {
+    signal?.throwIfAborted()
     workflow = incrementWorkflowSeeds(workflow)
     const response = await fetchImpl(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: workflow })
+      body: JSON.stringify({ prompt: workflow }),
+      signal
     })
     if (!response.ok) {
       const detail = (await response.text()).trim()
@@ -460,9 +454,28 @@ export async function submitPerformanceTestWorkflow(
       throw new Error(`Performance Test request ${run} did not return a prompt ID.`)
     }
     promptIds.push(result.prompt_id)
+    onSubmitted?.(result.prompt_id)
   }
 
   return promptIds
+}
+
+function abortableDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, delayMs))
+  signal.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(done, delayMs)
+    signal.addEventListener('abort', aborted, { once: true })
+
+    function done(): void {
+      signal?.removeEventListener('abort', aborted)
+      resolve()
+    }
+    function aborted(): void {
+      clearTimeout(timeout)
+      reject(signal?.reason ?? new DOMException('The operation was aborted.', 'AbortError'))
+    }
+  })
 }
 
 /** Poll the jobs collection until every submitted prompt reaches a terminal state. */
@@ -471,47 +484,68 @@ export async function waitForPerformanceTestJobs(
   promptIds: string[],
   fetchImpl: typeof fetch = fetch,
   pollIntervalMs = PERFORMANCE_TEST_POLL_INTERVAL_MS,
-  onProgress?: (completedRuns: number, totalRuns: number) => void
+  onProgress?: (completedRuns: number, totalRuns: number) => void,
+  signal?: AbortSignal,
+  timeoutMs = PERFORMANCE_TEST_TIMEOUT_MS
 ): Promise<PerformanceTestJobsResponse> {
   const endpoint = new URL('/api/jobs', sessionUrl)
   endpoint.searchParams.set('limit', String(promptIds.length))
   const expectedPromptIds = new Set(promptIds)
+  const deadline = Date.now() + timeoutMs
+  const pollAbort = new AbortController()
+  const abortPolling = () => pollAbort.abort(signal?.reason)
+  signal?.addEventListener('abort', abortPolling, { once: true })
+  if (signal?.aborted) abortPolling()
+  const deadlineTimeout = setTimeout(
+    () => pollAbort.abort(new Error('Timed out waiting for performance test jobs.')),
+    timeoutMs
+  )
 
-  for (;;) {
-    const response = await fetchImpl(endpoint)
-    if (!response.ok) {
-      const detail = (await response.text()).trim()
-      throw new Error(
-        `Could not check performance test jobs: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`
+  try {
+    for (;;) {
+      pollAbort.signal.throwIfAborted()
+      if (Date.now() >= deadline) throw new Error('Timed out waiting for performance test jobs.')
+      const response = await fetchImpl(endpoint, { signal: pollAbort.signal })
+      if (!response.ok) {
+        const detail = (await response.text()).trim()
+        throw new Error(
+          `Could not check performance test jobs: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`
+        )
+      }
+
+      const result = (await response.json()) as Partial<PerformanceTestJobsResponse>
+      if (!Array.isArray(result.jobs)) {
+        throw new Error('The ComfyUI jobs response did not contain a jobs array.')
+      }
+
+      const jobs = result.jobs.filter(
+        (job): job is PerformanceTestJob =>
+          job !== null &&
+          typeof job === 'object' &&
+          typeof job.id === 'string' &&
+          typeof job.status === 'string' &&
+          expectedPromptIds.has(job.id)
+      )
+      const statuses = new Map(jobs.map((job) => [job.id, job.status]))
+      const completedRuns = [...expectedPromptIds].filter((id) => {
+        const status = statuses.get(id)
+        return status !== undefined && TERMINAL_JOB_STATUSES.has(status)
+      }).length
+      onProgress?.(completedRuns, expectedPromptIds.size)
+      const allTerminal = [...expectedPromptIds].every((id) => {
+        const status = statuses.get(id)
+        return status !== undefined && TERMINAL_JOB_STATUSES.has(status)
+      })
+      if (allTerminal) return { ...result, jobs } as PerformanceTestJobsResponse
+
+      await abortableDelay(
+        Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())),
+        pollAbort.signal
       )
     }
-
-    const result = (await response.json()) as Partial<PerformanceTestJobsResponse>
-    if (!Array.isArray(result.jobs)) {
-      throw new Error('The ComfyUI jobs response did not contain a jobs array.')
-    }
-
-    const jobs = result.jobs.filter(
-      (job): job is PerformanceTestJob =>
-        job !== null &&
-        typeof job === 'object' &&
-        typeof job.id === 'string' &&
-        typeof job.status === 'string' &&
-        expectedPromptIds.has(job.id)
-    )
-    const statuses = new Map(jobs.map((job) => [job.id, job.status]))
-    const completedRuns = [...expectedPromptIds].filter((id) => {
-      const status = statuses.get(id)
-      return status !== undefined && TERMINAL_JOB_STATUSES.has(status)
-    }).length
-    onProgress?.(completedRuns, expectedPromptIds.size)
-    const allTerminal = [...expectedPromptIds].every((id) => {
-      const status = statuses.get(id)
-      return status !== undefined && TERMINAL_JOB_STATUSES.has(status)
-    })
-    if (allTerminal) return { ...result, jobs } as PerformanceTestJobsResponse
-
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+  } finally {
+    clearTimeout(deadlineTimeout)
+    signal?.removeEventListener('abort', abortPolling)
   }
 }
 

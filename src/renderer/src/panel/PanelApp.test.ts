@@ -2,6 +2,7 @@
 // Keep the feedback iframe in the DOM without loading the external support site.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
+import type { RunPerformanceTestWorkflowResult } from '../types/ipc'
 
 const installWizardOpen = vi.hoisted(() => vi.fn())
 const createResultsPngMock = vi.hoisted(() =>
@@ -184,7 +185,7 @@ const messages = {
       stop: 'Stop',
       stopping: 'Stopping...',
       stopFailed: 'Could not stop the instance.',
-      measurementSettings: '3. Set measurements settings',
+      measurementSettings: '3. Set measurement settings',
       warmupRuns: 'Warm-up runs',
       measuredRuns: 'Measured runs',
       logsPlaceholder: 'Instance logs will appear here.',
@@ -510,7 +511,7 @@ function installMockApi(initial?: {
       ok: true,
       filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
     })),
-    deletePerformanceTestWorkflow: vi.fn(async () => ({ ok: true })),
+    deletePerformanceTestWorkflow: vi.fn(async () => ({ ok: true, status: 'deleted' as const })),
     listPerformanceTestBenchmarks: vi.fn(async () => ({ folderPath: '', benchmarks: [] })),
     onPerformanceTestProgress: vi.fn((cb) => {
       state.performanceTestProgressCallbacks.push(cb)
@@ -521,7 +522,12 @@ function installMockApi(initial?: {
       }
     }),
     runPerformanceTestWorkflow: vi.fn(
-      async (_sessionId: string, _filePath: string, measuredRuns: number, warmupRuns: number) => ({
+      async (
+        _sessionId: string,
+        _filePath: string,
+        measuredRuns: number,
+        warmupRuns: number
+      ): Promise<RunPerformanceTestWorkflowResult> => ({
         ok: true,
         submitted: measuredRuns,
         preparationRuns: warmupRuns,
@@ -843,7 +849,7 @@ describe('PanelApp', () => {
     ).toEqual([
       '1. Select an instance',
       '2. Drop a workflow in API format',
-      '3. Set measurements settings'
+      '3. Set measurement settings'
     ])
     const settings = wrapper.findAll('.performance-test__setting')
     expect(settings).toHaveLength(2)
@@ -1123,7 +1129,7 @@ describe('PanelApp', () => {
     expect(wrapper.get('.performance-test__logs').text()).toContain('ComfyUI is ready')
     expect(wrapper.get('.performance-test__stop').attributes('disabled')).toBe('')
     expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
-    expect(api.cancelOperation).not.toHaveBeenCalled()
+    expect(api.cancelOperation).toHaveBeenCalledWith('performance-test:workspace-install')
 
     await wrapper.get('.performance-test__delete-workflow').trigger('click')
     await flushPromises()
@@ -1422,13 +1428,7 @@ describe('PanelApp', () => {
         }
       }
     ).api
-    let resolvePerformanceTest!: (result: {
-      ok: boolean
-      submitted: number
-      preparationRuns: number
-      totalSubmitted: number
-      message: string
-    }) => void
+    let resolvePerformanceTest!: (result: RunPerformanceTestWorkflowResult) => void
     api.runPerformanceTestWorkflow.mockImplementationOnce(
       () => new Promise((resolve) => (resolvePerformanceTest = resolve))
     )
