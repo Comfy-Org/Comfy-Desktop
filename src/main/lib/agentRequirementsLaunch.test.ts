@@ -217,6 +217,62 @@ describe('installAgentRequirements', () => {
     }
   })
 
+  it('stops waiting for a uv that never exits after being killed', async () => {
+    // The ceiling only asks uv to stop: killProcTree sends SIGTERM and does not
+    // wait, and the helper settles on the child's exit, so a uv that ignores the
+    // signal would hold the launch open past the bound meant to prevent exactly
+    // that. The wait has to end on its own.
+    vi.useFakeTimers()
+    try {
+      mockInstall.mockImplementationOnce(
+        // Never settles, however it is signalled.
+        () => new Promise<never>(() => {})
+      )
+      const sendOutput = vi.fn()
+
+      const pending = installAgentRequirements(plan, sendOutput)
+      await vi.advanceTimersByTimeAsync(120_000)
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      await expect(pending).resolves.toBeUndefined()
+      expect(sendOutput.mock.calls.join('')).toContain('uv did not stop')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps waiting while uv is still within the grace period', async () => {
+    // The grace must not cut short a uv that is on its way out, or the warning
+    // would fire on every ordinary cancellation.
+    vi.useFakeTimers()
+    try {
+      mockInstall.mockImplementationOnce(
+        async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+          const uvSignal = args[6]!
+          return new Promise((resolve) => {
+            uvSignal.addEventListener(
+              'abort',
+              () => setTimeout(() => resolve({ code: 1, output: '' }), 2_000),
+              { once: true }
+            )
+          })
+        }
+      )
+      const sendOutput = vi.fn()
+
+      const pending = installAgentRequirements(plan, sendOutput)
+      await vi.advanceTimersByTimeAsync(120_000)
+      await vi.advanceTimersByTimeAsync(2_000)
+      await pending
+
+      const reported = sendOutput.mock.calls.join('')
+      expect(reported).toContain('starting ComfyUI without it')
+      expect(reported).not.toContain('uv did not stop')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not cancel the launch when the ceiling fires', async () => {
     // The deadline aborts a controller this module owns, never the launch's own
     // signal - the launch must proceed, not report itself cancelled.

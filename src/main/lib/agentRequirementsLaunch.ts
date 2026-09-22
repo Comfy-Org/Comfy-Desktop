@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
 import { installFilteredRequirementsDetailed } from './pip'
+import type { UvPipResult } from './pip'
 import { withOutputTail } from './logged-process'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
@@ -27,6 +28,26 @@ const AGENT_REQUIREMENTS = 'agent_requirements.txt'
  * too slow to finish inside it never gets the agent from this path.
  */
 const INSTALL_TIMEOUT_MS = 120_000
+
+/**
+ * Grace between asking uv to stop and the launch giving up on it.
+ *
+ * Killing is best-effort and not awaited: `killProcTree` sends SIGTERM to the
+ * process group on POSIX and swallows a failed `taskkill` on Windows, while the
+ * install settles only on the child's own exit. A uv that does not take the
+ * signal would therefore hold the launch open past the very ceiling that exists
+ * to stop that, so the wait is bounded here too and the launch proceeds either
+ * way. An abandoned uv may still be writing to the environment, which is worth
+ * one warning line and is strictly better than never starting.
+ */
+const KILL_GRACE_MS = 10_000
+
+/** Which way the bounded wait ended: uv exited, it threw, or the launch stopped
+ *  waiting for a uv that would not stop. */
+type InstallOutcome =
+  | { kind: 'settled'; result: UvPipResult }
+  | { kind: 'failed'; error: unknown }
+  | { kind: 'abandoned' }
 
 export interface AgentRequirementsInstall {
   reqPath: string
@@ -75,8 +96,9 @@ export function planAgentRequirementsInstall(
  *
  * `signal` is the launch's own, and stays untouched: uv is driven through a
  * controller owned here, so the deadline ends the wait without cancelling the
- * launch. Aborting it kills uv's process tree and resolves once it is reaped,
- * so nothing is left writing to the environment ComfyUI is about to boot from.
+ * launch. Because killing uv is best-effort, the wait is bounded twice over:
+ * the ceiling asks it to stop, and `KILL_GRACE_MS` later the launch stops
+ * waiting whether or not it did. Nothing downstream depends on which happened.
  */
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
@@ -86,42 +108,68 @@ export async function installAgentRequirements(
   sendOutput('\nInstalling agent requirements…\n')
   const uvAbort = new AbortController()
   const onLaunchAbort = (): void => uvAbort.abort()
+  let timedOut = false
+  let graceTimer: ReturnType<typeof setTimeout> | undefined
+  let abandon = (): void => {}
+  const abandoned = new Promise<InstallOutcome>((resolve) => {
+    abandon = () => resolve({ kind: 'abandoned' })
+  })
+  // Armed on whichever side raised the abort, so neither the ceiling nor a user
+  // cancel can be held open by a uv that never takes the signal.
+  uvAbort.signal.addEventListener(
+    'abort',
+    () => {
+      graceTimer = setTimeout(abandon, KILL_GRACE_MS)
+    },
+    { once: true }
+  )
   if (signal?.aborted) uvAbort.abort()
   else signal?.addEventListener('abort', onLaunchAbort, { once: true })
-  let timedOut = false
   const deadline = setTimeout(() => {
     timedOut = true
     uvAbort.abort()
   }, INSTALL_TIMEOUT_MS)
 
+  // Settled into a value rather than awaited directly: losing the race leaves
+  // this pending, and a later rejection with nothing awaiting it would surface
+  // as an unhandled rejection.
+  const install: Promise<InstallOutcome> = installFilteredRequirementsDetailed(
+    plan.reqPath,
+    plan.uvPath,
+    plan.pythonPath,
+    plan.installPath,
+    '.launch-agent-reqs.txt',
+    sendOutput,
+    uvAbort.signal,
+    settings.getMirrorConfig()
+  ).then(
+    (result) => ({ kind: 'settled', result }),
+    (error: unknown) => ({ kind: 'failed', error })
+  )
+
   try {
-    const result = await installFilteredRequirementsDetailed(
-      plan.reqPath,
-      plan.uvPath,
-      plan.pythonPath,
-      plan.installPath,
-      '.launch-agent-reqs.txt',
-      sendOutput,
-      uvAbort.signal,
-      settings.getMirrorConfig()
-    )
-    if (timedOut && !signal?.aborted) {
+    const outcome = await Promise.race([install, abandoned])
+    // A cancelled launch kills uv mid-install, so whatever it reports is the
+    // cancellation rather than a failure worth showing.
+    if (signal?.aborted) return
+    if (outcome.kind === 'abandoned') {
+      sendOutput(
+        `\n⚠ agent requirements install exceeded ${INSTALL_TIMEOUT_MS / 1000}s and uv did not stop; starting ComfyUI anyway\n`
+      )
+    } else if (outcome.kind === 'failed') {
+      sendOutput(`⚠ ${AGENT_REQUIREMENTS} failed: ${(outcome.error as Error).message}\n`)
+    } else if (timedOut) {
       sendOutput(
         `\n⚠ agent requirements install exceeded ${INSTALL_TIMEOUT_MS / 1000}s; starting ComfyUI without it\n`
       )
-    } else if (result.code !== 0 && !signal?.aborted) {
-      // A cancelled launch kills uv mid-install; that non-zero exit is the
-      // cancellation, not a failure worth showing.
+    } else if (outcome.result.code !== 0) {
       sendOutput(
-        `\n${withOutputTail(`⚠ agent requirements install exited with code ${result.code}`, result.output)}\n`
+        `\n${withOutputTail(`⚠ agent requirements install exited with code ${outcome.result.code}`, outcome.result.output)}\n`
       )
-    }
-  } catch (err) {
-    if (!signal?.aborted) {
-      sendOutput(`⚠ ${AGENT_REQUIREMENTS} failed: ${(err as Error).message}\n`)
     }
   } finally {
     clearTimeout(deadline)
+    if (graceTimer !== undefined) clearTimeout(graceTimer)
     signal?.removeEventListener('abort', onLaunchAbort)
   }
 }
