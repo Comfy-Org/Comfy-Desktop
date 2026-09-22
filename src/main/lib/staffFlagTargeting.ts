@@ -401,11 +401,16 @@ async function classifyFromView(
 /**
  * Ask each view consensus counts as holding `userId` until one agrees it read that account.
  *
- * Sequential, so the common single-view case costs one page read. The trade-off: `executeJavaScript`
- * has no timeout of its own, so a wedged renderer first in the list defers the classification
- * rather than falling through to the next view. That degrades to the eventual-consistency contract
- * this module already documents — the next resolution, or the next page load via
- * `refreshStaffFlagTargeting`, retries — and never to a wrong answer.
+ * Sequential, so the common single-view case costs one page read. A view that does not answer no
+ * longer holds up the ones behind it: `readClassificationFromPage` bounds every call, and
+ * `classifyFromView` returns false on that timeout, so this loop moves on to the next view.
+ *
+ * First accepted answer wins. Where two views hold the same account and disagree — one store still
+ * carrying a verified `@comfy.org` address, another the updated or unverified one — that makes the
+ * verdict depend on iteration order. Raised in review and deferred deliberately, not overlooked:
+ * whether to require agreement, or to define a freshness authority, is a question about what
+ * `CLASSIFY_STAFF_JS` should say for an incomplete record, which is the cohort rule this module
+ * inherited rather than something this abstraction can settle on its own.
  */
 async function classifyAgreedAccount(userId: string, generation: number): Promise<void> {
   for (const webContents of viewsReportingFirebaseUser(userId)) {

@@ -696,10 +696,11 @@ describe('retrying a write that did not land', () => {
     setFlagEvaluationStaff.mockClear()
   })
 
-  it('retries the revocation write, which has no other path back', async () => {
-    // The revocation is the write with no second chance: `publishConsensus` is change-only so a
-    // resolved `signed_out` is not re-delivered while it stands, and nothing else revisits it. A
-    // `writeFileSafe` that threw would leave `staff: true` on disk for every later launch —
+  it('retries the revocation write, which the consensus will not redeliver', async () => {
+    // `publishConsensus` is change-only, so an unchanged `signed_out` is never redelivered — the
+    // consensus will not bring this write back on its own. `refreshStaffFlagTargeting` re-applies
+    // it on each later `dom-ready`, which is the retry path this test drives; without that, a
+    // `writeFileSafe` that threw would leave `staff: true` on disk for every later launch,
     // silently reversing the revocation.
     await consensusSignedIn([stubContents(true)])
     expect(storedFile()).toMatchObject({ staff: true })
