@@ -97,6 +97,7 @@ import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 import { getCoreBetaGrantsAsync, selectCoreBetaGrantArgs } from '../../coreBetaGrants'
+import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
 import type { CoreBetaGrant } from '../../coreBetaGrants'
 import { coreRecordCurrent, coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
 import type { CoreCheckout } from '../../version'
@@ -565,6 +566,11 @@ export function _cleanupFailedLaunchSetup(
   if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
   abort.abort()
   _clearLaunchingFailed(installationId)
+  // Every guarded setup failure lands here, including the spawn itself on the `skipPortWait`
+  // path — and that one rethrows past the `!launchResult.ok` cleanup rather than through it.
+  // Clearing at this chokepoint covers all of them; it is a delete, so paths that fail before
+  // the claim is armed pay nothing.
+  clearBetaActivationClaim(installationId)
 }
 
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
@@ -805,6 +811,10 @@ async function runLaunch(
       writeLog: (text) => writeLog(logStream, text),
       sendOutput
     })
+    // Same latch, same reason: a grant is only worth announcing once it is provably on this
+    // launch's command line. Queued rather than shown — the host window may still be mid-attach
+    // or under the progress takeover, so the title bar drains this when its own gate opens.
+    armBetaActivationNotice(installationId, coreBeta.applied)
     try {
       emitCoreBetaTelemetry({
         appliedArgs: coreBeta.applied.map((grant) => grant.arg),
@@ -814,6 +824,24 @@ async function runLaunch(
       })
     } catch {
       // The telemetry layer normally contains SDK failures; also isolate unexpected sink throws.
+    }
+  }
+
+  /** Launch-argument cohort, not confirmation that Core's Assets service initialized.
+   *  Manual/source arguments count even when opted out or schema discovery fails;
+   *  managed grants remain separate attribution. Called only after launchCmd exists.
+   *  `app_version` is added centrally by telemetry.ts. */
+  function bootCohort(): {
+    core_beta_flags: string[]
+    assets_enabled: boolean
+    core_beta_opted_in: boolean
+    core_version: string | null
+  } {
+    return {
+      core_beta_flags: coreBeta.applied.map((grant) => grant.arg),
+      assets_enabled: launchCmd.args?.includes('--enable-assets') === true,
+      core_beta_opted_in: coreBeta.optedIn,
+      core_version: coreSemver(inst)
     }
   }
 
@@ -1542,6 +1570,7 @@ async function runLaunch(
       installation_id: installationId,
       boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
+      ...bootCohort(),
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries
     })
@@ -1689,6 +1718,10 @@ async function runLaunch(
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     abort.abort() // stop the template-models reader timer on launch failure
     _clearLaunchingFailed(sessionId)
+    // The grants were claimed just before the spawn, which has now failed or been cancelled.
+    // Drop the claim: nothing started, so there is nothing to announce — and leaving it would
+    // also silence the same arg for another install, since claims are global.
+    clearBetaActivationClaim(installationId)
     // Flush the hardware tap on terminal failure/cancel too: the exit handler
     // covers a process that exits, but a waitForPort timeout can return here
     // with the proc still alive, leaving a pending accelerator event unemitted.
@@ -1723,6 +1756,7 @@ async function runLaunch(
       installation_id: installationId,
       boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
+      ...bootCohort(),
       failed_phase: failedPhase,
       ...buildErrorFields(errorSource),
       error_tail: tail,
@@ -1768,6 +1802,7 @@ async function runLaunch(
     installation_id: installationId,
     boot_id: bootId,
     variant: (inst.variant as string | undefined) ?? null,
+    ...bootCohort(),
     boot_time_ms: bootTimeMs,
     port_retry_count: portRetries,
     reboot_retry_count: rebootRetries
@@ -1840,6 +1875,7 @@ async function runLaunch(
         assetsTap.flushSummary()
         _removeSession(sessionId)
         _clearLaunchingFailed(sessionId)
+        clearBetaActivationClaim(installationId)
         if (abort.signal.aborted) return { ok: false, cancelled: true }
         return { ok: false, message: (err as Error).message }
       }

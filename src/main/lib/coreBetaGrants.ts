@@ -33,14 +33,50 @@ export const CORE_BETA_GRANTABLE_ARGS = [
   '--enable-agent'
 ] as const
 
+/** How a grant's activation notice should be worded, when it is announced at all. Both fields
+ *  are optional and independent of whether the grant APPLIES — copy never gates a flag. */
+export type CoreBetaNotice = {
+  /** `true` when the payload asked for no card at all. Ops-controlled because not every
+   *  granted flag is user-visible: a diagnostic or an internal rollout has nothing to tell the
+   *  user, and a card for it is noise that trains people to dismiss the real ones. */
+  readonly silent?: true
+  /** Human name of the feature, e.g. `"Asset library"`. Supplied by the payload rather than
+   *  mapped in Desktop because the allowlist is installed ahead of the features it names — a
+   *  table here would have to ship before anyone knew what to call them. Absent means the
+   *  card falls back to its generic wording.
+   *
+   *  NOT localized, and not localizable from here: it arrives as one string for every user,
+   *  in whatever language ops wrote it — English today. The card's SENTENCE is translated
+   *  around it. That asymmetry is why the notice templates treat this as an opaque token and
+   *  never as the word they agree with; see the placeholder contract in
+   *  `locales/drafts/README.md`. */
+  readonly description?: string
+}
+
 export type CoreBetaGrant = {
   readonly arg: string
   readonly minCoreVersion: string
   readonly maxCoreVersion?: string
+  /** Notice wording for this grant. Absent when the payload said nothing about it. */
+  readonly notice?: CoreBetaNotice
 }
 
 const MAX_FLAGS = 32
 const CORE_BETA_ARG_RE = /^--[a-z][a-z0-9-]+$/
+
+/** Cap on a payload-supplied feature name. Bounds the card's HEIGHT: the bubble is a fixed
+ *  ~280px wide, so a long name wraps to more and more lines until the card covers what it is
+ *  annotating. (Width is handled in CSS — `overflow-wrap` breaks an unbroken token that would
+ *  otherwise overflow.) An over-long description is dropped rather than cut, so the card falls
+ *  back to wording that is at least correct. */
+const MAX_DESCRIPTION_LENGTH = 48
+
+/** A feature name is rendered verbatim in desktop chrome, beside an action that opens
+ *  Settings — so it is held to printable characters only. Newlines would reshape the card,
+ *  C0/C1 controls can do worse, and a bidi override (U+202E) can visually reverse the
+ *  sentence around it. The payload is hand-authored by operators, so this guards a typo as
+ *  much as anything else; a name that fails it falls back to the generic wording. */
+const PRINTABLE_DESCRIPTION = /^[^\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}]+$/u
 
 // Prevent a control payload copied between PostHog variants from enrolling users.
 const OFF_VARIANTS = new Set(['control', 'off', 'false', 'disabled'])
@@ -53,6 +89,42 @@ function isEnabled(value: FeatureFlagValue | undefined): boolean {
 function parseCoreVersion(value: unknown): string | null {
   if (typeof value !== 'string') return null
   return semver.valid(value.replace(/^v/, ''))
+}
+
+/**
+ * Read the optional notice wording off one payload entry.
+ *
+ * Every malformed shape degrades to "the payload said nothing", never to a refusal: this
+ * governs COPY, and losing a grant because someone typed the feature name wrong would be a
+ * far worse failure than showing the generic card. Returns `undefined` when nothing usable
+ * was supplied, so the field is simply absent on the grant.
+ */
+function parseCoreBetaNotice(candidate: object): CoreBetaNotice | undefined {
+  const notice: { silent?: true; description?: string } = {}
+
+  // Only the exact string `'silent'` suppresses. A boolean `true` is deliberately NOT accepted:
+  // `notice: true` reads as "yes, notify" at least as naturally as "yes, silent", and a
+  // payload that silences a rollout by accident is invisible until someone asks why nobody
+  // was told.
+  if ('notice' in candidate && (candidate as { notice?: unknown }).notice === 'silent') {
+    notice.silent = true
+  }
+
+  if ('description' in candidate) {
+    const raw = (candidate as { description?: unknown }).description
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim()
+      if (
+        trimmed.length > 0 &&
+        trimmed.length <= MAX_DESCRIPTION_LENGTH &&
+        PRINTABLE_DESCRIPTION.test(trimmed)
+      ) {
+        notice.description = trimmed
+      }
+    }
+  }
+
+  return notice.silent === undefined && notice.description === undefined ? undefined : notice
 }
 
 export function parseCoreBetaGrants(
@@ -84,11 +156,13 @@ export function parseCoreBetaGrants(
     }
 
     if (flags.some((flag) => flag.arg === candidate.arg)) continue
-    flags.push(
-      maxCoreVersion === undefined
-        ? { arg: candidate.arg, minCoreVersion }
-        : { arg: candidate.arg, minCoreVersion, maxCoreVersion }
-    )
+    const notice = parseCoreBetaNotice(candidate)
+    flags.push({
+      arg: candidate.arg,
+      minCoreVersion,
+      ...(maxCoreVersion === undefined ? {} : { maxCoreVersion }),
+      ...(notice === undefined ? {} : { notice })
+    })
   }
   // Naming a flag and its opposite is an operator mistake, not a precedence order. Applying
   // either one would pick a silent winner from payload order, so the whole payload grants

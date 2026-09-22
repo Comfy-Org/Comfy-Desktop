@@ -11,6 +11,13 @@ export type { FirstUseMode }
 import type { AuthStatus, Workspace } from '../main/cloud/types'
 export type { AuthStatus, Workspace }
 
+// One Core beta activation card, as main resolves it for the title bar. Re-exported from its
+// producer rather than restated here: this file's header forbids duplicating types, and an
+// independent copy would drift silently — `ipcMain.handle` is ungeneric and `ipcRenderer.invoke`
+// returns `Promise<any>`, so nothing would fail the build.
+import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
+export type { BetaActivationNotice }
+
 /** Every renderer-safe Build catalog state. */
 export type DevPlatformBuildState =
   | 'installable'
@@ -1373,7 +1380,15 @@ export interface ElectronApi {
    *  `comfy://open-settings?tab=global` deep link. Main reuses the
    *  same helper the hamburger Settings entry calls. `tab` lands the
    *  popup on that tab instead of its remembered one. */
-  openGlobalSettings(tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs'): void
+  openGlobalSettings(
+    tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
+    opts?: {
+      /** Field id to scroll to and flash once the tab renders (e.g.
+       *  `'betaFeaturesEnabled'`). A per-open command like `tab`, not state:
+       *  the rebroadcast snapshot carries none, so the flash does not repeat. */
+      highlightField?: string
+    }
+  ): void
   /** Open the instance-picker popup for the panel's host window with
    *  `installationId` seeded as the picker's right-pane selection.
    *  Used by chooser-card "Manage…" (and future per-install entry
@@ -1565,6 +1580,23 @@ export interface ElectronApi {
   getUniqueName(baseName: string): Promise<string>
   setSetting(key: string, value: unknown): Promise<void>
   getSetting(key: string): Promise<unknown>
+
+  // Core beta activation notice
+  /** The activation card this install owes the user, or `null`. Read repeatedly
+   *  without side effects — the pending set is only cleared by
+   *  `acknowledgeBetaNotice`, so a card that is shown but never retired comes
+   *  back on the next launch. `description` carries the feature name the
+   *  PostHog payload supplied, when it supplied one. */
+  getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
+  /** Retire this install's activation notice: the args are persisted as
+   *  announced and never raise a card again. Called when the user dismisses
+   *  the card or follows its settings link.
+   *
+   *  `shownArgs` names what the card actually displayed. Main retires exactly
+   *  those rather than whatever is queued at retire time — a relaunch can
+   *  re-arm while the sticky card floats, and the announced list is
+   *  append-only, so acknowledging the wrong set silences it forever. */
+  acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
 
   // Theme
   getResolvedTheme(): Promise<ResolvedTheme>

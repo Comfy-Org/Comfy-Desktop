@@ -195,6 +195,7 @@ export function _resetForTest(): void {
   firebaseConsensusPending = false
   installationIdProperty = null
   consentState = 'undecided'
+  flagEvaluationStaff = false
   pendingSessionStart = null
   pendingFirstLaunch = null
   pendingPersonSet = null
@@ -343,6 +344,56 @@ export function deriveAppChannel(appVersion: string): string {
 export type ConsentState = 'granted' | 'denied' | 'undecided'
 
 let consentState: ConsentState = 'undecided'
+
+/**
+ * Whether the signed-in account is Comfy staff, held ONLY to evaluate ops flags
+ * against a person condition (see `getOpsFlagResult`). `false` whenever no such
+ * account is known — a logged-out app, a non-staff account, or a launch before
+ * any signed-in account has been seen.
+ *
+ * A DERIVED BOOLEAN, never the address it came from. `staffFlagTargeting.ts`
+ * classifies the email and discards it; this module never sees one, so no
+ * address can reach PostHog by this path, be written to disk, or sit in memory
+ * waiting to. That is the whole privacy argument for the feature, and it holds
+ * structurally rather than by a gate somebody has to remember.
+ *
+ * It is not a person property, not an identify, and not in
+ * `defaultEventProperties`. The installation hash stays the evaluation key, so
+ * nothing here links the machine to the account in PostHog's person store —
+ * the separation `deviceId.ts` exists to maintain.
+ */
+let flagEvaluationStaff = false
+
+/**
+ * Bind whether ops-flag evaluation should present this install as staff.
+ *
+ * Takes the classification, not the input to it: the caller owns what counts as
+ * staff, and this module owns whether it may be sent.
+ */
+export function setFlagEvaluationStaff(isStaff: boolean): void {
+  flagEvaluationStaff = isStaff
+}
+
+/**
+ * Person properties for an ops-flag evaluation request.
+ *
+ * Empty unless consent is `'granted'` AND the account is staff. The flag FETCH
+ * itself bypasses the consent gate on purpose — ops flags are config pushed TO
+ * the client, and a user who declined telemetry still gets the override — but
+ * that argument covers the installation-stable key and nothing else. Whether a
+ * person is an employee is a fact ABOUT them, so it rides only on the consented
+ * path. This is the one place the two rules meet, and the asymmetry is
+ * deliberate: the request still goes out pre-consent, just without this.
+ *
+ * Non-staff send nothing rather than `comfy_staff: 'false'`. A condition of the
+ * form `comfy_staff = true` does not match a missing property, so the absent
+ * form is equivalent for targeting and puts nothing on the wire for the
+ * overwhelming majority of users.
+ */
+function opsFlagPersonProperties(): Record<string, string> {
+  if (consentState !== 'granted' || !flagEvaluationStaff) return {}
+  return { comfy_staff: 'true' }
+}
 
 const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'comfy.desktop.first_use.consent_decision'
@@ -503,6 +554,15 @@ export function setConsentState(state: ConsentState): void {
   if (previous !== 'granted') {
     tryFlushDeferred()
   }
+}
+
+/**
+ * The current consent state, for callers that must decide whether work is
+ * worth STARTING rather than whether a payload may ship. Every emit path
+ * enforces consent on its own; this is not a substitute for that gate.
+ */
+export function getConsentState(): ConsentState {
+  return consentState
 }
 
 /**
@@ -1598,11 +1658,30 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  * for operational flags, not A/B experiments or analytics. Those are server
  * config pushed *to* the client to protect service availability for everyone -
  * distinct from analytics data collected *from* the user, which
- * `loadFeatureFlagsImmediate` correctly gates on consent. The evaluation call
- * supplies only the installation-stable evaluation key and flag key; no person
- * properties are sent, and implicit `$feature_flag_called` capture is disabled
- * so an evaluation-only key never creates a PostHog person behind the capture
- * policy.
+ * `loadFeatureFlagsImmediate` correctly gates on consent. Implicit
+ * `$feature_flag_called` capture is disabled so an evaluation-only key never
+ * creates a PostHog person behind the capture policy.
+ *
+ * The evaluation call supplies the installation-stable evaluation key, the flag
+ * key, and — only once consent is `'granted'` and the account is staff —
+ * `comfy_staff`, via `opsFlagPersonProperties`. That property is
+ * request-scoped: the SDK puts it in the `/flags` POST body as
+ * `person_properties`, where the server evaluates release conditions against it
+ * and nothing is stored. The `distinct_id` remains the installation hash, so
+ * bucketing is unchanged and the machine is still not linked to any account in
+ * the person store.
+ *
+ * It exists because the installation hash CANNOT be resolved to a person: a
+ * condition on any person attribute can never match a machine-derived id, so
+ * staff targeting silently returned nothing for every install. Supplying a
+ * property on the request is what makes such a condition evaluable at all.
+ *
+ * This is the ONLY evaluation. An earlier design added a second, authenticated
+ * one once a cloud view resolved auth; it could not work, because the
+ * anonymous boot evaluation of a person-targeted flag answers an explicit
+ * `false` — not a miss — which `init` treats as authoritative and writes over
+ * the persisted grant. Keeping one authoritative evaluation is what lets the
+ * revocation contract in `opsFlag.ts` stand unchanged.
  *
  * Classifies every outcome as exactly one `OpsFlagFetchResult`:
  *   - `value` — the server answered. A disabled flag is a value of `false`,
@@ -1641,7 +1720,8 @@ export async function getOpsFlagResult(
   const startedAt = Date.now()
   try {
     const flagPromise = client.getFeatureFlagResult(key, distinctId, {
-      sendFeatureFlagEvents: false
+      sendFeatureFlagEvents: false,
+      personProperties: opsFlagPersonProperties()
     })
     const timeoutPromise = new Promise<typeof OPS_FLAG_DEADLINE>((resolve) => {
       timer = setTimeout(() => resolve(OPS_FLAG_DEADLINE), timeoutMs)

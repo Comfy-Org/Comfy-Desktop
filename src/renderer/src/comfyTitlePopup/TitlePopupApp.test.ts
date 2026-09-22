@@ -143,7 +143,14 @@ function installMockBridge(): MockBridgeState {
   return state
 }
 
-describe('TitlePopupApp', () => {
+// `vi.resetModules()` per test means every test re-imports the component, and
+// the first one pays Vite's transform of the whole graph inside its own budget
+// - about 1.2s idle here, ~3s when the machine is saturated (CI gives vitest's
+// 8 workers 4 cores). Against the 5s default that lands close enough to the
+// edge to time out, and a mount interrupted mid-flight then leaks its bridge
+// calls into the next test's counters. A wider budget absorbs the cold
+// transform; a genuinely hung test still fails, just later.
+describe('TitlePopupApp', { timeout: 20_000 }, () => {
   let bridgeState: MockBridgeState
 
   beforeEach(() => {
@@ -416,7 +423,7 @@ describe('TitlePopupApp', () => {
 // an App-level ref rather than from props main controls directly. Both the ref
 // initializer and the live push have to carry `telemetryGranted` or todo 16's
 // toggle reads `undefined` — which is not `false` to a strict entry rule.
-describe('TitlePopupApp global-settings telemetry grant', () => {
+describe('TitlePopupApp global-settings telemetry grant', { timeout: 20_000 }, () => {
   let bridgeState: MockBridgeState
 
   const globalSettingsViewStub = {

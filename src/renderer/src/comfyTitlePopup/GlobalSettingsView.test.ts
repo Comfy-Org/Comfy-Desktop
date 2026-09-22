@@ -205,6 +205,58 @@ describe('GlobalSettingsView', () => {
     expect(wrapper.find('.gs-tab.active').text()).toBe('Storage')
   })
 
+  describe('settings deep-link highlight', () => {
+    /** The row wrapper `DetailSection` renders for a field id — the only per-row anchor a
+     *  deep link has to aim at. */
+    const row = (id: string): HTMLElement | null =>
+      document.querySelector(`[data-field-id="${id}"]`)
+
+    it('flashes the field the snapshot names, on the tab it lives on', async () => {
+      // The beta activation notice's "Settings" link lands here: General tab, Privacy
+      // section, beta opt-in row. Landing on the tab alone leaves that row below the fold.
+      installMockBridge()
+      const wrapper = mountView(
+        makeSnapshot({ initialTab: 'general', highlightFieldId: 'betaFeaturesEnabled' })
+      )
+      await flushPromises()
+      expect(wrapper.find('.gs-tab.active').text()).toBe('General')
+      expect(row('betaFeaturesEnabled')?.classList.contains('gs-field-flash')).toBe(true)
+    })
+
+    it('flashes nothing when the snapshot names no field', async () => {
+      installMockBridge()
+      mountView(makeSnapshot({ initialTab: 'general' }))
+      await flushPromises()
+      expect(document.querySelector('.gs-field-flash')).toBeNull()
+    })
+
+    it('does not re-flash on a null-highlight rebroadcast', async () => {
+      // Same per-open rule as initialTab: a live data refresh must not pulse a row the user
+      // has already read and moved past.
+      installMockBridge()
+      const wrapper = mountView(
+        makeSnapshot({ initialTab: 'general', highlightFieldId: 'betaFeaturesEnabled' })
+      )
+      await flushPromises()
+      row('betaFeaturesEnabled')!.classList.remove('gs-field-flash')
+
+      await wrapper.setProps({
+        snapshot: makeSnapshot({ initialTab: null, highlightFieldId: null }) as never
+      })
+      await flushPromises()
+      expect(row('betaFeaturesEnabled')?.classList.contains('gs-field-flash')).toBe(false)
+    })
+
+    it('survives a field id that matches no row', async () => {
+      // Main forwards the id opaquely rather than validating it against a renderer-side
+      // list, so a stale or misspelled id has to be a no-op, not a throw.
+      installMockBridge()
+      mountView(makeSnapshot({ initialTab: 'general', highlightFieldId: 'noSuchField' }))
+      await flushPromises()
+      expect(document.querySelector('.gs-field-flash')).toBeNull()
+    })
+  })
+
   it('keeps the user-selected tab across a null-initialTab rebroadcast', async () => {
     // Live snapshot rebroadcasts (star count, settings changed) carry
     // initialTab null and must not yank the user back to the opener's tab.
