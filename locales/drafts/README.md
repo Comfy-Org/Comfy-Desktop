@@ -16,8 +16,9 @@ requires knowing which kind it is.
 
 ### `{feature}` — the beta-notice keys
 
-`titleBar.betaNoticeTitleNamed`, `betaNoticeBodyNamed`,
-`betaNoticeOffTitleNamed` and `betaNoticeOffBodyNamed` interpolate `{feature}`:
+`titleBar.betaNoticeTitleNamed`, `titleBar.betaNoticeBodyNamed`,
+`titleBar.betaNoticeOffTitleNamed` and `titleBar.betaNoticeOffBodyNamed`
+interpolate `{feature}`:
 the name of a beta feature, e.g. `Asset library`.
 
 It is an **opaque proper name**. It is supplied at runtime by a remote
