@@ -596,11 +596,20 @@ function reshowCoachmarksAfterMove(): void {
 /** The beta notice defers while the hint owns the popup, and nothing in the gate watcher
  *  changes when the hint goes away — so without this the deferred card waits for the next
  *  launch. Safe to call unconditionally: `maybeShow` re-checks the gate and main still holds
- *  the pending notice (deferring never acknowledges). */
+ *  the pending notice (deferring never acknowledges).
+ *
+ *  Deferred through nextTick AND a frame, exactly as the gate watcher below does and for the
+ *  same stated reason: nextTick flushes the DOM, the rAF the layout, so the trailing cluster's
+ *  position is final before `maybeShow` measures the bell. This path used to stop at nextTick,
+ *  which measured a bell that had not finished moving — the card was then centred on a stale
+ *  rect and its beak pointed beside the bell rather than at it. Measured on Windows at 17.8px
+ *  off with no overlap; Linux settles before the show, so it never appeared there. */
 function retryBetaNoticeAfterHint(): void {
   if (unmounted) return
   void nextTick().then(() => {
-    if (!unmounted) void betaNotice.maybeShow()
+    requestAnimationFrame(() => {
+      if (!unmounted) void betaNotice.maybeShow()
+    })
   })
 }
 

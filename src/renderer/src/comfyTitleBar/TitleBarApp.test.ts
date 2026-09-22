@@ -1608,6 +1608,50 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
+    it('waits for a frame before measuring the anchor on the retry path', async () => {
+      // The retry path fires the moment the host retargets, which is also when the trailing
+      // cluster is still settling: the pill resizes and the bell slides with it. Measuring
+      // between the DOM flush and the layout gives a rect the bell has already left, and the
+      // card is then centred on where the bell WAS — its beak pointing beside the bell rather
+      // than at it. Measured on real Windows at 17.8px off, with no overlap at all.
+      //
+      // So this pins the deferral itself, not the eventual show: nothing may be measured
+      // until a frame has been handed out. The gate watcher already defers this way and says
+      // why ("nextTick flushes the DOM, the rAF the layout"); this path had stopped at
+      // nextTick. Linux settles before the show, so no e2e on this runner can see it — the
+      // frame boundary is the only part that can be pinned here.
+      getPendingBetaNotice.mockImplementation(async (id: string) =>
+        id === 'inst-2' ? ['--enable-agent'] : []
+      )
+      const frames: FrameRequestCallback[] = []
+      const rafSpy = vi
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((cb: FrameRequestCallback) => {
+          frames.push(cb)
+          return frames.length
+        })
+      try {
+        const wrapper = await mountBar()
+        getPendingBetaNotice.mockClear()
+        frames.length = 0
+
+        bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-2'))
+        await flushPromises()
+
+        // The frame was requested, and NOTHING was measured while it was outstanding.
+        expect(frames.length).toBeGreaterThan(0)
+        expect(getPendingBetaNotice).not.toHaveBeenCalled()
+
+        // Hand out the frame: only now may the anchor be read.
+        frames.forEach((cb) => cb(0))
+        await flushPromises()
+        expect(getPendingBetaNotice).toHaveBeenCalledWith('inst-2')
+        wrapper.unmount()
+      } finally {
+        rafSpy.mockRestore()
+      }
+    })
+
     it('shows a SECOND, different notice for the same install after the first is retired', async () => {
       // The latch is keyed on the card, not the install. A user who updates Core without
       // restarting Desktop can have a later grant newly clear its version gate; main queues it
