@@ -101,12 +101,40 @@ const selectedWorkspaceModel = computed({
   set: dashboardScope.selectWorkspace
 })
 
-// Build versions drive the managed instances' Update status tags. Browsing
-// another dashboard scope must not switch the authenticated build catalog.
+/** Server workspace whose Builds belong to the selected dashboard scope. */
+const selectedManagedWorkspaceId = computed(() => {
+  if (!authStore.isSignedIn) return null
+  if (dashboardScope.selectedWorkspaceId !== PERSONAL_WORKSPACE_ID) {
+    return dashboardScope.selectedWorkspaceId
+  }
+  if (authStore.status.workspaceType === 'personal') return authStore.status.workspaceId ?? null
+  return authStore.personalWorkspace?.id ?? null
+})
+
+// Warm the selected workspace's Build catalog while the user is still on the
+// dashboard. New Instance can then choose its initial tab without waiting for
+// a network request. A generation guard prevents a slower previous selection
+// from fetching after the user has moved to another workspace.
+let buildPrefetchGeneration = 0
 watch(
-  [() => authStore.isSignedIn, () => authStore.status.workspaceId],
-  ([signedIn, workspaceId]) => {
-    if (signedIn && workspaceId) void authStore.fetchBuilds()
+  [() => authStore.isSignedIn, selectedManagedWorkspaceId],
+  async ([signedIn, workspaceId]) => {
+    const generation = ++buildPrefetchGeneration
+    if (!signedIn || !workspaceId) return
+    try {
+      if (authStore.status.workspaceId !== workspaceId) {
+        await authStore.switchWorkspace(workspaceId)
+      }
+      if (
+        generation !== buildPrefetchGeneration ||
+        selectedManagedWorkspaceId.value !== workspaceId
+      )
+        return
+      await authStore.fetchBuilds()
+    } catch {
+      // The wizard retains its normal authorization and retry UI when a
+      // background prefetch cannot complete.
+    }
   },
   { immediate: true }
 )
@@ -340,32 +368,34 @@ const gridHandlers = {
         </div>
       </div>
 
-      <div class="chooser-workspace-bar">
-        <div
-          class="chooser-workspace-controls"
-          :class="{ 'chooser-workspace-controls--no-refresh': !authStore.isSignedIn }"
-        >
-          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceModel" />
-          <button
-            v-if="authStore.isSignedIn"
-            type="button"
-            class="chooser-workspace-refresh"
-            :disabled="refreshingWorkspace"
-            :aria-label="t('devPlatform.workspace.refresh')"
-            :title="t('devPlatform.workspace.refresh')"
-            data-testid="chooser-workspace-refresh"
-            @click="refreshWorkspace"
+      <div class="chooser-workspace-viewport">
+        <div class="chooser-workspace-bar">
+          <div
+            class="chooser-workspace-controls"
+            :class="{ 'chooser-workspace-controls--no-refresh': !authStore.isSignedIn }"
           >
-            <RefreshCw
-              :size="13"
-              :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
-            />
-          </button>
-        </div>
-        <div class="chooser-workspace-divider" aria-hidden="true" />
-        <div class="chooser-workspace-count">
-          <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
-          <strong>{{ scopedInstallCount }}</strong>
+            <DevPlatformWorkspaceSelector v-model="selectedWorkspaceModel" />
+            <button
+              v-if="authStore.isSignedIn"
+              type="button"
+              class="chooser-workspace-refresh"
+              :disabled="refreshingWorkspace"
+              :aria-label="t('devPlatform.workspace.refresh')"
+              :title="t('devPlatform.workspace.refresh')"
+              data-testid="chooser-workspace-refresh"
+              @click="refreshWorkspace"
+            >
+              <RefreshCw
+                :size="13"
+                :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
+              />
+            </button>
+          </div>
+          <div class="chooser-workspace-divider" aria-hidden="true" />
+          <div class="chooser-workspace-count">
+            <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
+            <strong>{{ scopedInstallCount }}</strong>
+          </div>
         </div>
       </div>
 
@@ -630,13 +660,36 @@ const gridHandlers = {
   }
 }
 
-.chooser-workspace-bar {
+.chooser-workspace-viewport {
   grid-row: 4;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(1168px + 8px);
+  padding-inline: 4px;
+  container-type: inline-size;
+}
+.chooser-workspace-bar {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  max-width: 1168px;
+  max-width: 280px;
+  margin-inline: auto;
+}
+@container (width >= 576px) {
+  .chooser-workspace-bar {
+    max-width: 576px;
+  }
+}
+@container (width >= 872px) {
+  .chooser-workspace-bar {
+    max-width: 872px;
+  }
+}
+@container (width >= 1168px) {
+  .chooser-workspace-bar {
+    max-width: 1168px;
+  }
 }
 .chooser-workspace-divider {
   flex: 1 1 auto;
