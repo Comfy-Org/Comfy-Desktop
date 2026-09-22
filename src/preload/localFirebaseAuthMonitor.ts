@@ -18,19 +18,37 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   })
 }
 
-async function openExistingFirebaseDatabase(): Promise<IDBDatabase | null> {
-  const databases = await indexedDB.databases()
-  if (!databases.some(({ name }) => name === FIREBASE_DB)) return null
-  return requestResult(indexedDB.open(FIREBASE_DB))
+/**
+ * TEMPORARY DIAGNOSTIC — never for merge.
+ *
+ * What the store actually looked like, BEFORE it is collapsed into a status. The shipped reader maps
+ * three distinct observations onto `signed_out` (no database, no object store, zero records) and two
+ * onto `pending` (more than one account, and a failed read), so the log cannot tell apart the cases
+ * a fix has to treat differently. This names them; it changes nothing.
+ */
+export type LocalFirebaseObservation =
+  | 'records-one'
+  | 'records-many'
+  | 'empty'
+  | 'unreadable-no-db'
+  | 'unreadable-no-store'
+  | 'error'
+
+export interface LocalFirebaseRead {
+  state: ComfyDesktop2FirebaseAuthState
+  observation: LocalFirebaseObservation
 }
 
-export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2FirebaseAuthState> {
+export async function readLocalFirebaseAuthState(): Promise<LocalFirebaseRead> {
   try {
-    const database = await openExistingFirebaseDatabase()
-    if (!database) return { status: 'signed_out' }
+    const databases = await indexedDB.databases()
+    if (!databases.some(({ name }) => name === FIREBASE_DB)) {
+      return { state: { status: 'signed_out' }, observation: 'unreadable-no-db' }
+    }
+    const database = await requestResult(indexedDB.open(FIREBASE_DB))
     try {
       if (!database.objectStoreNames.contains(FIREBASE_STORE)) {
-        return { status: 'signed_out' }
+        return { state: { status: 'signed_out' }, observation: 'unreadable-no-store' }
       }
       const transaction = database.transaction(FIREBASE_STORE, 'readonly')
       const entries = (await requestResult(
@@ -39,10 +57,7 @@ export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2Firebas
       const userIds = new Set<string>()
       for (const entry of entries) {
         if (!entry || typeof entry !== 'object') continue
-        const candidate = entry as {
-          fbase_key?: unknown
-          value?: { uid?: unknown }
-        }
+        const candidate = entry as { fbase_key?: unknown; value?: { uid?: unknown } }
         if (
           typeof candidate.fbase_key === 'string' &&
           candidate.fbase_key.startsWith(FIREBASE_AUTH_KEY_PREFIX) &&
@@ -52,14 +67,18 @@ export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2Firebas
           userIds.add(candidate.value.uid)
         }
       }
-      if (userIds.size === 0) return { status: 'signed_out' }
-      if (userIds.size > 1) return { status: 'pending' }
-      return { status: 'signed_in', userId: [...userIds][0]! }
+      // Mapping preserved EXACTLY as shipped. Only the label is new.
+      if (userIds.size === 0) return { state: { status: 'signed_out' }, observation: 'empty' }
+      if (userIds.size > 1) return { state: { status: 'pending' }, observation: 'records-many' }
+      return {
+        state: { status: 'signed_in', userId: [...userIds][0]! },
+        observation: 'records-one'
+      }
     } finally {
       database.close()
     }
   } catch {
-    return { status: 'pending' }
+    return { state: { status: 'pending' }, observation: 'error' }
   }
 }
 
@@ -74,13 +93,20 @@ export function startLocalFirebaseAuthMonitor(
   const poll = async (): Promise<void> => {
     if (stopped || polling) return
     polling = true
-    const state = await readLocalFirebaseAuthState()
+    const read = await readLocalFirebaseAuthState()
     polling = false
     if (stopped) return
-    const serialized = JSON.stringify(state)
+    const serialized = JSON.stringify(read.state)
     if (serialized === lastState) return
     lastState = serialized
-    report(state)
+    // TEMPORARY DIAGNOSTIC: the observation rides the existing report payload because a
+    // console.log here reaches only the renderer console, which nothing forwards to the main log.
+    // Cast is deliberate and diagnostic-only: the extra field is not part of the bridge type, it
+    // survives at runtime, rides the existing IPC, and is read and logged on the MAIN side.
+    report({
+      ...read.state,
+      diagObservation: read.observation
+    } as unknown as ComfyDesktop2FirebaseAuthState)
   }
   report({ status: 'pending' })
   lastState = JSON.stringify({ status: 'pending' })

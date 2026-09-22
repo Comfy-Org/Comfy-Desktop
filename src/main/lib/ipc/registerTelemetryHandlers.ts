@@ -218,6 +218,13 @@ export function registerTelemetryHandlers(): void {
   ipcMain.on('telemetry:firebaseAuthState', (event, payload: unknown) => {
     const frame = firebaseAuthReporterFrame(event)
     if (!frame) return
+    // TEMPORARY DIAGNOSTIC: the preload's five-outcome label rides this payload because a
+    // console.log in the preload reaches only the renderer console, which nothing forwards.
+    // asFirebaseAuthState builds a fresh object and drops it, so read it here.
+    const diagObservation = (payload as { diagObservation?: unknown } | null)?.diagObservation
+    if (typeof diagObservation === 'string' && diagObservation.length <= 32) {
+      console.log('[identity-diag] observation=' + diagObservation)
+    }
     const state = asFirebaseAuthState(payload)
     if (!state) return
     reportFirebaseAuthState(

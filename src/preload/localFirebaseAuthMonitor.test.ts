@@ -39,8 +39,8 @@ describe('local Firebase auth monitor', () => {
     ])
 
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({
-      status: 'signed_in',
-      userId: 'firebase-user'
+      state: { status: 'signed_in', userId: 'firebase-user' },
+      observation: 'records-one'
     })
   })
 
@@ -50,12 +50,18 @@ describe('local Firebase auth monitor', () => {
       { fbase_key: 'firebase:authUser:b:[DEFAULT]', value: { uid: 'user-b' } }
     ])
 
-    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({
+      state: { status: 'pending' },
+      observation: 'records-many'
+    })
   })
 
   it('reports signed out without Firebase persistence', async () => {
     installIndexedDb(null)
 
-    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({
+      state: { status: 'signed_out' },
+      observation: 'unreadable-no-db'
+    })
   })
 })
