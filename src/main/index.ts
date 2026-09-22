@@ -118,6 +118,7 @@ import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaGrants } from './lib/coreBetaGrants'
+import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
 
 import {
@@ -1503,6 +1504,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         id_class: getIdClass()
       }
     })
+
+    // Bind the stored staff classification BEFORE any ops flag is fetched. The
+    // boot evaluation is the only authoritative one, so a property that arrives
+    // after it cannot affect this launch — see `staffFlagTargeting.ts`.
+    initStaffFlagTargeting()
 
     // This ops-flag path is separate from consent-gated experiments: the first-use
     // picker renders while consent is still `'undecided'`, so the

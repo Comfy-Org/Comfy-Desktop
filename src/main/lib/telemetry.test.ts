@@ -68,10 +68,17 @@ interface ExceptionCall {
   properties?: Record<string, unknown>
 }
 const exceptions: ExceptionCall[] = []
+/** Records the options verbatim, `personProperties` included: whether an email rides a flag
+ *  evaluation is a privacy-relevant property of the REQUEST, so the request is what tests
+ *  assert on rather than any value derived from it. */
+interface FlagEvaluationOptions {
+  sendFeatureFlagEvents?: boolean
+  personProperties?: Record<string, string>
+}
 const featureFlagResultCalls: Array<{
   key: string
   distinctId: string
-  options?: { sendFeatureFlagEvents?: boolean }
+  options?: FlagEvaluationOptions
 }> = []
 /** Constructor arguments the SDK actually received. An option the app "sets" but never passes
  *  through to `new PostHog(...)` has no effect at all, which is the failure this records. */
@@ -88,6 +95,13 @@ const posthogClientMock = vi.hoisted(() => ({
    *  test the settle functions instead, so an outcome can be staged AFTER the deadline has
    *  already answered — the only way to exercise the late-result path. */
   featureFlagBehavior: 'resolve' as 'resolve' | 'throw' | 'hang' | 'defer',
+  /** When set, computes the result from the request's own options — a stand-in for PostHog
+   *  evaluating a release condition against request-supplied `person_properties`. */
+  evaluateCondition: undefined as
+    | ((options?: {
+        personProperties?: Record<string, string>
+      }) => { enabled: boolean; variant?: string; payload?: unknown } | undefined)
+    | undefined,
   deferred: null as {
     resolve: (value: { enabled: boolean; variant?: string; payload?: unknown } | undefined) => void
     reject: (reason: unknown) => void
@@ -157,9 +171,14 @@ vi.mock('posthog-node', () => ({
     getFeatureFlagResult(
       key: string,
       distinctId: string,
-      options?: { sendFeatureFlagEvents?: boolean }
+      options?: FlagEvaluationOptions
     ): Promise<{ enabled: boolean; variant?: string; payload?: unknown } | undefined> {
       featureFlagResultCalls.push({ key, distinctId, options })
+      // Stands in for the server's own condition matching, so a test can assert that the
+      // supplied properties actually DECIDE the result rather than merely appear on the wire.
+      if (posthogClientMock.evaluateCondition) {
+        return Promise.resolve(posthogClientMock.evaluateCondition(options))
+      }
       if (posthogClientMock.featureFlagBehavior === 'throw') {
         return Promise.reject(new Error('flag evaluation failed'))
       }
@@ -288,6 +307,7 @@ afterEach(() => {
   posthogClientMock.autoFailNextIdentifies = 0
   posthogClientMock.featureFlagResult = undefined
   posthogClientMock.featureFlagBehavior = 'resolve'
+  posthogClientMock.evaluateCondition = undefined
   posthogClientMock.deferred = null
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
@@ -529,7 +549,9 @@ describe('telemetry anonymous flag reads', () => {
       {
         key: 'desktop_core_beta_features',
         distinctId: 'installation-id',
-        options: { sendFeatureFlagEvents: false }
+        // Empty rather than absent: the request is made pre-consent by design, and this is
+        // where an email would sit if one were ever attached without one.
+        options: { sendFeatureFlagEvents: false, personProperties: {} }
       }
     ])
   })
@@ -576,6 +598,184 @@ describe('telemetry anonymous flag reads', () => {
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 10)
     ).resolves.toEqual({ kind: 'unreachable' })
+  })
+})
+
+// The installation hash is machine-derived and PostHog cannot resolve it to a person, so a
+// release condition on any person attribute matches NOTHING however the flag is configured.
+// Supplying a property on the request is what makes such a condition evaluable — without
+// persisting a person, and without disturbing the distinct id the flag buckets on.
+describe('ops-flag person targeting', () => {
+  /** The `person_properties` on the most recent evaluation request. */
+  function lastPersonProperties(): unknown {
+    const call = featureFlagResultCalls.at(-1)
+    return (call?.options as { personProperties?: unknown } | undefined)?.personProperties
+  }
+
+  async function evaluate(): Promise<void> {
+    await telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+  }
+
+  it('attaches comfy_staff for a staff install once consent is granted', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(true)
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({ comfy_staff: 'true' })
+  })
+
+  it('leaves the distinct id the installation hash, so bucketing is unchanged', async () => {
+    // The property decides whether a CONDITION matches; it must never become the evaluation
+    // key, or a staff member would bucket differently from the install they are sitting at.
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(true)
+
+    await evaluate()
+
+    expect(featureFlagResultCalls.at(-1)?.distinctId).toBe('installation-id')
+  })
+
+  it('never captures an event for the evaluation, so no person is created', async () => {
+    // `$feature_flag_called` is the only thing on this path that would create a PostHog person
+    // and attach this property to the machine hash. Adding a property must not re-enable it.
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(true)
+
+    await evaluate()
+
+    expect(
+      (featureFlagResultCalls.at(-1)?.options as { sendFeatureFlagEvents?: boolean } | undefined)
+        ?.sendFeatureFlagEvents
+    ).toBe(false)
+    expect(captured.map((event) => event.event)).not.toContain('$feature_flag_called')
+  })
+
+  it('sends nothing for a non-staff install', async () => {
+    // Absent rather than `comfy_staff: 'false'`: a `comfy_staff = true` condition does not match
+    // a missing property, so nothing goes on the wire for the majority of users.
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(false)
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({})
+  })
+
+  it('sends nothing when consent is undecided', async () => {
+    // The flag FETCH bypasses consent on purpose (ops flags are config pushed to the client);
+    // whether someone is an employee is a fact about them and does not inherit that exemption.
+    setupTelemetry({ consent: null })
+    telemetry.setFlagEvaluationStaff(true)
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({})
+  })
+
+  it('sends nothing when consent is denied', async () => {
+    setupTelemetry({ consent: 'denied' })
+    telemetry.setFlagEvaluationStaff(true)
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({})
+  })
+
+  it('still evaluates the flag without consent, carrying no property', async () => {
+    // The request itself must survive the consent gate — a declined user still gets ops
+    // overrides. Only the property is withheld.
+    setupTelemetry({ consent: 'denied' })
+    telemetry.setFlagEvaluationStaff(true)
+    posthogClientMock.featureFlagResult = { enabled: true, variant: 'beta', payload: null }
+
+    await expect(
+      telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+    ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
+    expect(lastPersonProperties()).toEqual({})
+  })
+
+  it('stops sending once the install is reclassified, as on sign-out', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(true)
+    await evaluate()
+    expect(lastPersonProperties()).toEqual({ comfy_staff: 'true' })
+
+    telemetry.setFlagEvaluationStaff(false)
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({})
+  })
+
+  it('does not survive a reset, so no classification leaks between launches in-process', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(true)
+
+    setupTelemetry({ consent: 'granted' })
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual({})
+  })
+
+  // The bug in one test: with only a machine-derived distinct id, a person condition cannot
+  // match, so staff targeting returns nothing on every install. These are the before, the
+  // after, and the non-staff control, against a stand-in for the server's own matching.
+  describe('against a stand-in `comfy_staff = true` condition', () => {
+    /** Matches the way PostHog evaluates a release condition: against the properties supplied
+     *  on the request, with no stored person involved. */
+    function serveStaffOnlyFlag(): void {
+      posthogClientMock.evaluateCondition = (options) => {
+        if (options?.personProperties?.['comfy_staff'] !== 'true') return { enabled: false }
+        return { enabled: true, variant: 'beta', payload: { flags: [{ arg: '--enable-agent' }] } }
+      }
+    }
+
+    it('matches for a staff install', async () => {
+      setupTelemetry({ consent: 'granted' })
+      serveStaffOnlyFlag()
+      telemetry.setFlagEvaluationStaff(true)
+
+      await expect(
+        telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+      ).resolves.toEqual({
+        kind: 'value',
+        value: 'beta',
+        payload: { flags: [{ arg: '--enable-agent' }] }
+      })
+    })
+
+    it('does not match a non-staff install', async () => {
+      setupTelemetry({ consent: 'granted' })
+      serveStaffOnlyFlag()
+      telemetry.setFlagEvaluationStaff(false)
+
+      await expect(
+        telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+      ).resolves.toEqual({ kind: 'value', value: false, payload: undefined })
+    })
+
+    it('does not match on the installation hash alone — the bug this fixes', async () => {
+      // Exactly the pre-change behaviour: a real staff install sent only the machine hash, the
+      // condition could not match it, and the flag silently returned nothing.
+      setupTelemetry({ consent: 'granted' })
+      serveStaffOnlyFlag()
+
+      await expect(
+        telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+      ).resolves.toEqual({ kind: 'value', value: false, payload: undefined })
+    })
+
+    it('does not match a staff install that withheld consent', async () => {
+      // The privacy gate is load-bearing on the OUTCOME, not just the payload: without consent
+      // there is no property to match on, so a staff member who declined is not targeted.
+      setupTelemetry({ consent: 'denied' })
+      serveStaffOnlyFlag()
+      telemetry.setFlagEvaluationStaff(true)
+
+      await expect(
+        telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+      ).resolves.toEqual({ kind: 'value', value: false, payload: undefined })
+    })
   })
 })
 

@@ -246,7 +246,15 @@ onUnmounted(() => {
   display: block;
   width: max-content;
   max-width: 280px;
-  margin-top: 7px; /* room for the beak above the card */
+  /* `margin-top` for the beak; `auto` inline so the card CENTRES in the view.
+     Body's flex centring does not reach it: `#app` is `width: 100%`, so the flex item that
+     gets centred is a full-width box and the card inside it stays flush-left. Main sizes the
+     view as the card plus a shadow gutter each side and centres that VIEW on the bell, so a
+     flush-left card lands one gutter to the left — beak included, since the beak is pinned to
+     the card. Measured at −10px on Linux and −18px on Windows, each exactly its gutter.
+     `margin-inline: auto` fixes it without making `#app` a flex container, which changes what
+     `notifyRendered` measures and collapses the view. */
+  margin: 7px auto 0;
   padding: 12px 14px;
   border-radius: 10px;
   border: 1px solid;

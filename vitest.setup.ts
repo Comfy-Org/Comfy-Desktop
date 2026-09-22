@@ -1,4 +1,5 @@
-import { config } from '@vue/test-utils'
+import { afterEach } from 'vitest'
+import { config, enableAutoUnmount } from '@vue/test-utils'
 import { createAppI18n } from './src/renderer/src/lib/i18nFactory'
 
 const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
@@ -48,3 +49,22 @@ console.warn = (...args: unknown[]): void => {
   if (missingI18nFixtureKey.test(first)) return
   originalConsoleWarn(...args)
 }
+
+/**
+ * Unmount every component a test mounts when that test ends.
+ *
+ * 30 test files mount without ever unmounting, so those wrappers stay live for
+ * the rest of their file along with anything they have in flight. Two ways
+ * that has failed a run: `createDiskSpaceChecker`'s 300ms `setTimeout`, whose
+ * only cleanup is `onUnmounted`, firing into a later test; and a component
+ * re-rendering after the file's happy-dom teardown, where vue-i18n's `t()`
+ * reaches for a `window` that is gone and the ReferenceError fails the run
+ * even though every test passed.
+ *
+ * This runs BEFORE each file's own `afterEach` - see `sequence.hooks` in
+ * `vitest.config.ts`, which is pinned to 'list' for exactly that reason, so
+ * unmount hooks never observe an environment their file has already
+ * dismantled. Individual files must not call `enableAutoUnmount` themselves;
+ * @vue/test-utils throws on a second call.
+ */
+enableAutoUnmount(afterEach)
