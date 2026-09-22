@@ -456,13 +456,14 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         comfyContents.executeJavaScript(getMcpSidebarContentScript()).catch(() => {})
       })()
     }
-    // Classify the view's signed-in account for ops-flag person targeting, and
-    // store it for the NEXT launch. Deliberately OUTSIDE the `!isLocal` branch
-    // below: the grant these flags carry is consumed only by the local launch
-    // path (`buildLaunchArgs`), since a cloud install spawns no Core — so
-    // binding on cloud views alone would cover every surface except the one
-    // that can use the result. Fire-and-forget; only a boolean is stored, and
-    // sending it is consent-gated in telemetry.
+    // Offer this view as a classifier for ops-flag person targeting. A RETRY path, not the
+    // trigger: the classification is driven by the identity consensus, which reclassifies as
+    // soon as any view reports a change. This covers the case where the consensus resolved while
+    // the views it asked could not answer, and is a no-op otherwise. Deliberately OUTSIDE the
+    // `!isLocal` branch below: the grant these flags carry is consumed only by the local launch
+    // path (`buildLaunchArgs`), since a cloud install spawns no Core — so binding on cloud views
+    // alone would cover every surface except the one that can use the result. Fire-and-forget;
+    // only a boolean is stored, and sending it is consent-gated in telemetry.
     void refreshStaffFlagTargeting(comfyContents)
 
     // Cloud-only patches (popup-blocked toast suppression + post-signin
