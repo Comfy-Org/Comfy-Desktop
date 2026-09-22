@@ -139,7 +139,6 @@ import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
-import { useAuthStore } from '../stores/authStore'
 import { useOverlay } from '../composables/useOverlay'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
@@ -161,6 +160,11 @@ const messages = {
     },
     settings: {
       logs: 'Logs'
+    },
+    devPlatform: {
+      workspace: {
+        personalLabel: 'Personal'
+      }
     },
     performanceTest: {
       title: 'Performance Tests',
@@ -693,9 +697,8 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    const authStore = useAuthStore()
-    authStore.initializeWorkspaceContext('workspace-1')
-    authStore.selectedWorkspaceId = 'workspace-2'
+    const dashboardScope = useDashboardScopeStore()
+    dashboardScope.selectWorkspace('workspace-2')
 
     mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'performance-test' }))
     await flushPromises()
@@ -703,6 +706,48 @@ describe('PanelApp', () => {
     expect(
       wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
     ).toBe('Workspace Two')
+  })
+
+  it('shows only installed Personal instances on Performance Test while signed out', async () => {
+    mockState.comfybuilder.getAuthStatus.mockResolvedValue({ signedIn: false })
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'personal-installed',
+        name: 'Personal Installed',
+        status: 'installed'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'personal-failed',
+        name: 'Personal Failed',
+        status: 'failed'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'team-installed',
+        name: 'Team Installed',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ]
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('.performance-test__content').exists()).toBe(true)
+    expect(
+      wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
+    ).toBe('Personal')
+
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    expect(
+      Array.from(document.querySelectorAll('.ui-select-option-label')).map(
+        (option) => option.textContent
+      )
+    ).toEqual(['Personal Installed'])
   })
 
   it('renders the performance test body with scoped instance rows', async () => {
@@ -1236,6 +1281,9 @@ describe('PanelApp', () => {
   })
 
   it('starts a separate performance test process when the normal instance is running', async () => {
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
+    ])
     mockState.installations = [
       {
         ...SAMPLE_INSTALL,
@@ -1287,6 +1335,9 @@ describe('PanelApp', () => {
   })
 
   it('restarts an already-running performance test session before running', async () => {
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
+    ])
     mockState.installations = [
       {
         ...SAMPLE_INSTALL,
@@ -1348,6 +1399,9 @@ describe('PanelApp', () => {
   })
 
   it('allows a crashed performance test session to be stopped and cleared manually', async () => {
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
+    ])
     mockState.installations = [
       {
         ...SAMPLE_INSTALL,

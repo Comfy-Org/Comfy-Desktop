@@ -1,35 +1,23 @@
 import { computed, watch, type Ref } from 'vue'
-import { storeToRefs } from 'pinia'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import type { Installation } from '../types/ipc'
-import { PERSONAL_WORKSPACE_ID, workspaceContextId } from '../../../shared/workspaces'
+import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 
 /** Keeps install lists scoped to the workspace selected in the shared dashboard control. */
 export function useWorkspaceInstallScope(installations: Ref<Installation[]>) {
   const authStore = useAuthStore()
-  const { selectedWorkspaceId } = storeToRefs(authStore)
+  const dashboardScope = useDashboardScopeStore()
+  const selectedWorkspaceId = computed({
+    get: () => dashboardScope.selectedWorkspaceId,
+    set: dashboardScope.selectWorkspace
+  })
+  void dashboardScope.initialize()
 
   watch(
-    () => ({ signedIn: authStore.isSignedIn, workspaceId: authStore.status.workspaceId }),
-    (next, previous) => {
-      if (!next.signedIn) {
-        authStore.resetWorkspaceContext()
-        return
-      }
-
-      if (next.workspaceId && next.workspaceId !== previous?.workspaceId) {
-        void authStore.fetchBuilds()
-      }
-
-      authStore.initializeWorkspaceContext(workspaceContextId(authStore.status))
-
-      if (
-        previous &&
-        selectedWorkspaceId.value === workspaceContextId(previous) &&
-        workspaceContextId(authStore.status) !== selectedWorkspaceId.value
-      ) {
-        selectedWorkspaceId.value = workspaceContextId(authStore.status)
-      }
+    [() => authStore.isSignedIn, () => authStore.status.workspaceId],
+    ([signedIn, workspaceId]) => {
+      if (signedIn && workspaceId) void authStore.fetchBuilds()
     },
     { immediate: true }
   )

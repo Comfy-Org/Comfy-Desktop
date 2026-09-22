@@ -27,7 +27,11 @@ const { selectedWorkspaceId, scopedInstallations } = useWorkspaceInstallScope(
   toRef(installationStore, 'installations')
 )
 const performanceTestInstallations = computed(() =>
-  scopedInstallations.value.filter((installation) => installation.sourceCategory !== 'cloud')
+  scopedInstallations.value.filter(
+    (installation) =>
+      installation.sourceCategory !== 'cloud' &&
+      (authStore.isSignedIn || installation.status === 'installed')
+  )
 )
 const instanceOptions = computed<BaseSelectOption[]>(() =>
   performanceTestInstallations.value.map((installation) => ({
@@ -464,7 +468,7 @@ watch(performanceTestLogs, async () => {
           :description="t('performanceTest.description')"
           logo-test-id="performance-test-logo"
         />
-        <div v-if="authStore.isSignedIn" class="performance-test__content">
+        <div class="performance-test__content">
           <div class="performance-test__columns">
             <section class="performance-test__column">
               <h2>{{ t('performanceTest.selectInstance') }}</h2>
