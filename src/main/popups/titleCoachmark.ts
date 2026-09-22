@@ -91,6 +91,10 @@ export interface CoachmarkPlacement {
   width: number
   height: number
   beakFraction: number
+  /** The card's left offset within the view, in CSS px. Sent to the renderer so the card's
+   *  placement comes from the geometry main already computed rather than from the page's own
+   *  idea of its width. */
+  cardLeftInView: number
 }
 
 /** Compute popup bounds centering the card under the anchor, clamped to the parent, plus where
@@ -130,7 +134,13 @@ export function positionCoachmark(opts: {
   // the beak to the very corner the margin exists to keep it off.
   const beakMargin = Math.min(0.5, COACHMARK_BEAK_EDGE_MARGIN / cardWidth)
   const beakFraction = Math.min(1 - beakMargin, Math.max(beakMargin, rawFraction))
-  return { x, y, width: viewWidth, height: viewHeight, beakFraction }
+  // Where the card sits INSIDE the view. The renderer cannot safely work this out itself: it
+  // would have to centre against its own viewport, and that viewport is sometimes still the
+  // previous width when this runs — the page had not processed the resize yet. Centring
+  // against a stale width puts the card, and the beak pinned to it, one gutter off the anchor.
+  // Measured at 8px on a card whose page still thought it was 16px narrower than its view.
+  const cardLeftInView = (viewWidth - cardWidth) / 2
+  return { x, y, width: viewWidth, height: viewHeight, beakFraction, cardLeftInView }
 }
 
 let _coachmarkTokenSeq = 0
@@ -255,14 +265,17 @@ function repositionAndShow(
 ): void {
   if (!entry.pendingAnchor || entry.view.isDestroyed()) return
   const parentBounds = entry.view.parentWindow.getContentBounds()
-  const { beakFraction, ...bounds } = positionCoachmark({
+  const { beakFraction, cardLeftInView, ...bounds } = positionCoachmark({
     anchor: entry.pendingAnchor,
     bubble,
     parentBounds
   })
   entry.view.popup.setBounds(bounds)
   // Tell the card where to draw its beak now that the final, possibly clamped, x is known.
-  entry.view.popup.webContents.send('comfy-titletooltip:set-beak', { beakFraction })
+  entry.view.popup.webContents.send('comfy-titletooltip:set-beak', {
+    beakFraction,
+    cardLeftInView
+  })
   // Focus so the dismiss button is keyboard-reachable.
   entry.view.showOnTop({ focus: true })
 }

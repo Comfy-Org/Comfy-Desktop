@@ -81,6 +81,22 @@ describe('positionCoachmark beak tracking', () => {
     return placement.x + COACHMARK_SHADOW_GUTTER + placement.beakFraction * cardWidth
   }
 
+  it('reports where the card sits inside the view, so the renderer need not guess', () => {
+    // The renderer would otherwise centre the card against its OWN viewport width, and that
+    // width is sometimes still the pre-resize value — the page had not processed the new
+    // bounds yet. Centring against it puts the card one gutter off the anchor, taking the
+    // beak with it. Main knows the real geometry, so it sends the offset.
+    const placement = positionCoachmark({
+      anchor: { leftX: 500, rightX: 540, bottomY: 36 },
+      bubble,
+      parentBounds: { width: 1200, height: 800 }
+    })
+    expect(placement.cardLeftInView).toBe(COACHMARK_SHADOW_GUTTER)
+    // The card, placed at that offset, is centred on the anchor — which is what the beak
+    // fraction is computed against.
+    expect(placement.x + placement.cardLeftInView + cardWidth / 2).toBeCloseTo(520, 5)
+  })
+
   it('centres the beak when the card is not clamped', () => {
     const placement = positionCoachmark({
       anchor: { leftX: 500, rightX: 540, bottomY: 36 },

@@ -33,7 +33,9 @@ interface Bridge {
   dismissCoachmark?(configToken: string): void
   /** Beak position as a fraction of the card's width, pushed once main has measured the card
    *  and settled its final bounds. */
-  onBeak?(cb: (payload: { beakFraction: number }) => void): () => void
+  onBeak?(
+    cb: (payload: { beakFraction: number; cardLeftInView: number | null }) => void
+  ): () => void
   /** Coachmark secondary action — retires the card the same way dismiss does, and lets the
    *  owning feature run its follow-up (e.g. opening Settings). */
   actionCoachmark?(configToken: string): void
@@ -50,6 +52,15 @@ const cmActionLabel = ref<string>('')
 /** Defaults to centred, which is what a card with no clamp and a correct anchor resolves to
  *  anyway — so a missed push degrades to the old behaviour rather than to a detached beak. */
 const cmBeakFraction = ref<number>(0.5)
+/** The card's left offset inside the view, as MAIN computed it — `null` until it arrives, and
+ *  on an older main that never sends it, which falls back to the CSS centring below.
+ *
+ *  Placement comes from main rather than from centring here because this page's own width is
+ *  sometimes still the previous one: the view has been resized and the page has not processed
+ *  it yet. Centring against that stale width puts the card one gutter off the anchor, and the
+ *  beak is pinned to the card, so the whole thing points beside the bell. Measured at 8px,
+ *  intermittently, with the page reporting 300 inside a 316-wide view. */
+const cmCardLeft = ref<number | null>(null)
 const themeBg = ref<string>('#211927')
 const themeText = ref<string>('#ffffff')
 const themeBorder = ref<string>('#38303d')
@@ -110,8 +121,9 @@ onMounted(() => {
     if (cfg.theme.accent) themeAccent.value = cfg.theme.accent
     void measureAndAck()
   })
-  unsubBeak = bridge?.onBeak?.(({ beakFraction }) => {
+  unsubBeak = bridge?.onBeak?.(({ beakFraction, cardLeftInView }) => {
     cmBeakFraction.value = Math.min(1, Math.max(0, beakFraction))
+    cmCardLeft.value = cardLeftInView
   })
   bridge?.ready()
   // Re-measure if Inter loads mid-session (after the initial ack) so main can
@@ -155,7 +167,8 @@ onUnmounted(() => {
     :style="{
       background: themeBg,
       color: themeText,
-      borderColor: coachmarkBorder
+      borderColor: coachmarkBorder,
+      ...(cmCardLeft === null ? {} : { marginLeft: `${cmCardLeft}px`, marginRight: '0' })
     }"
   >
     <span
@@ -246,7 +259,9 @@ onUnmounted(() => {
   display: block;
   width: max-content;
   max-width: 280px;
-  /* `margin-top` for the beak; `auto` inline so the card CENTRES in the view.
+  /* `margin-top` for the beak; `auto` inline as the FALLBACK centring — main normally sends
+     an explicit left offset (`cmCardLeft`) which overrides this inline, because centring here
+     depends on the page's own width and that is sometimes still the pre-resize value.
      Body's flex centring does not reach it: `#app` is `width: 100%`, so the flex item that
      gets centred is a full-width box and the card inside it stays flush-left. Main sizes the
      view as the card plus a shadow gutter each side and centres that VIEW on the bell, so a

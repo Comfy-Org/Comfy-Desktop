@@ -33,7 +33,7 @@ export interface ComfyTitleTooltipBridge {
   onConfig(cb: (config: TitleTooltipConfig) => void): () => void
   /** Beak position, pushed after main has measured the card and settled its final (possibly
    *  clamped) bounds. Separate from the config push because it is only knowable then. */
-  onBeak(cb: (payload: { beakFraction: number }) => void): () => void
+  onBeak(cb: (payload: { beakFraction: number; cardLeftInView: number | null }) => void): () => void
   /** Coachmark dismiss button; no-op for the tooltip variant. `configToken` names the card
    *  the click landed on, so main can discard a click from a card it has since replaced. */
   dismissCoachmark(configToken: string): void
@@ -74,8 +74,17 @@ const bridge: ComfyTitleTooltipBridge = {
   },
   onBeak: (cb) => {
     const handler = (_event: IpcRendererEvent, data: unknown): void => {
-      const raw = (data as { beakFraction?: unknown } | undefined)?.beakFraction
-      if (typeof raw === 'number' && Number.isFinite(raw)) cb({ beakFraction: raw })
+      const payload = data as { beakFraction?: unknown; cardLeftInView?: unknown } | undefined
+      const raw = payload?.beakFraction
+      const left = payload?.cardLeftInView
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        cb({
+          beakFraction: raw,
+          // `null` rather than a guess: an older main that does not send it must fall back to
+          // CSS centring, not to a bogus offset.
+          cardLeftInView: typeof left === 'number' && Number.isFinite(left) ? left : null
+        })
+      }
     }
     ipcRenderer.on('comfy-titletooltip:set-beak', handler)
     return () => ipcRenderer.removeListener('comfy-titletooltip:set-beak', handler)
