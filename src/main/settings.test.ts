@@ -702,6 +702,58 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
   })
 })
 
+describe('persisted-write logging', () => {
+  it('names the key, the old and new value, and the caller', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', false)
+
+    const line = log.mock.calls
+      .map((c) => String(c[0]))
+      .find((l) => l.startsWith('Settings: writing'))
+    expect(line, 'no write line logged').toBeDefined()
+    expect(line).toContain('betaFeaturesEnabled: true -> false')
+    // The point of the log: a stack, so an UNKNOWN writer is named. A per-call-site tag would
+    // only ever name the sites someone already thought to annotate.
+    expect(line!.split('\n').length).toBeGreaterThan(1)
+    log.mockRestore()
+  })
+
+  it('stays silent about a key whose value does not change', () => {
+    // Scoped to the key under test rather than to "no output at all": a `set` can persist
+    // more than the caller asked for. `loadOutcome` repairs missing directories and saves
+    // before `set` saves again, so a first write on a sparse file materialises every default
+    // as a real change — truthfully logged, and nothing to do with the key being set.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', true)
+
+    const lines = log.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('Settings:'))
+    expect(lines.filter((l) => l.includes('betaFeaturesEnabled'))).toEqual([])
+    log.mockRestore()
+  })
+
+  it('reports a key being removed rather than going quiet', () => {
+    // `set(key, undefined)` deletes, and a deletion is exactly what makes a later seed re-run
+    // and write a value nobody chose. A log that only reported value changes would miss the
+    // step that causes the next write.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', undefined)
+
+    // Every line, not just the first: the repair save above is logged before this one.
+    const lines = log.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('Settings:'))
+    expect(lines.some((l) => l.includes('betaFeaturesEnabled: true -> <unset>'))).toBe(true)
+    log.mockRestore()
+  })
+})
+
 // The beta-features toggle is the gate for injecting core beta launch args.
 // It is deliberately NOT telemetry consent: gating on consent creates a trap
 // where a user hitting beta bugs escapes by disabling telemetry, killing the

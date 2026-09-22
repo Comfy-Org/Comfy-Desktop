@@ -328,8 +328,13 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('get-models-sections', () => buildModelsPayload())
   ipcMain.handle('get-media-sections', () => buildMediaSections())
 
-  ipcMain.handle('set-setting', (_event, key: string, value: unknown) => {
+  ipcMain.handle('set-setting', (event, key: string, value: unknown) => {
     recordIpcInvocation('set-setting', { key, value })
+    // The settings log's stack stops at this handler for anything a renderer asked for, so
+    // record WHICH renderer asked. Without it every renderer-driven write looks identical.
+    console.log(
+      `Settings: set-setting '${key}' requested by ${event.sender.getURL() || '<no url>'}`
+    )
     applySettingSet(key, value)
   })
 

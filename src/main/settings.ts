@@ -628,7 +628,53 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
   return { settings: result, unreadable }
 }
 
+/** One line per key whose persisted value actually changes, with the stack that caused it.
+ *
+ *  Written because a consent-adjacent flag changed itself on a QA box and nothing in the app
+ *  could say what wrote it. Every candidate was excluded by reading the code, which is exactly
+ *  the situation a log has to cover: the useful question is not "which of the writers I know
+ *  about ran" but "who ran", and only a stack answers that. A per-call-site tag would have
+ *  annotated the sites already ruled out and stayed silent on the one that matters.
+ *
+ *  At `save`, not at `set`, because `set` is not the only writer — the seed and the
+ *  directory-repair path both persist whole objects without going through it.
+ *
+ *  Diffed against what is on disk, so a save that changes nothing says nothing. Settings are
+ *  written on user actions rather than in loops, so the extra read is not a hot path. */
+function logPersistedChanges(next: Settings): void {
+  try {
+    const read = readFileSafe(dataPath)
+    let before: Record<string, unknown> = {}
+    if (read.kind === 'data') {
+      const parsed: unknown = JSON.parse(read.data)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        before = parsed as Record<string, unknown>
+      }
+    }
+    const brief = (v: unknown): string => {
+      if (v === undefined) return '<unset>'
+      const text = JSON.stringify(v) ?? String(v)
+      return text.length > 120 ? `${text.slice(0, 117)}...` : text
+    }
+    const keys = new Set([...Object.keys(before), ...Object.keys(next as object)])
+    const changes: string[] = []
+    for (const key of keys) {
+      const a = before[key]
+      const b = (next as Record<string, unknown>)[key]
+      if (JSON.stringify(a) === JSON.stringify(b)) continue
+      changes.push(`${key}: ${brief(a)} -> ${brief(b)}`)
+    }
+    if (changes.length === 0) return
+    // Frames 0-1 are this helper and `save`; the caller starts after them.
+    const stack = (new Error().stack ?? '').split('\n').slice(3, 9).join('\n')
+    console.log(`Settings: writing ${changes.join(', ')}\n${stack}`)
+  } catch {
+    // Diagnostics must never cost a write. A failure here is silent on purpose.
+  }
+}
+
 function save(settings: Settings): void {
+  logPersistedChanges(settings)
   writeFileSafe(dataPath, JSON.stringify(settings, null, 2), { backup: true })
 }
 
