@@ -6,12 +6,12 @@ import path from 'path'
 import os from 'os'
 
 describe('findLockingProcesses', { timeout: 30_000 }, () => {
-  it('returns an empty array for a file not locked by any process', async () => {
+  it('determines an answer for a file not locked by any process', async () => {
     const tmpFile = path.join(os.tmpdir(), `file-lock-test-${Date.now()}.txt`)
     fs.writeFileSync(tmpFile, 'test')
     try {
       const result = await findLockingProcesses(tmpFile)
-      expect(Array.isArray(result)).toBe(true)
+      expect(result.ok).toBe(true)
     } finally {
       try {
         fs.unlinkSync(tmpFile)
@@ -19,9 +19,11 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
     }
   })
 
-  it('returns an empty array for a non-existent file', async () => {
+  it('reports a determined, empty result for a non-existent file', async () => {
     const result = await findLockingProcesses('/tmp/nonexistent-file-lock-test-' + Date.now())
-    expect(result).toEqual([])
+    // `lsof` exits 1 when it matches nothing. That is a real answer, so the
+    // probe must report `ok` with an empty list rather than a failure.
+    expect(result).toEqual({ ok: true, processes: [] })
   })
 
   it('returns results with pid and name fields', async () => {
@@ -29,7 +31,8 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
     fs.writeFileSync(tmpFile, 'test')
     try {
       const result = await findLockingProcesses(tmpFile)
-      for (const entry of result) {
+      expect(result.ok).toBe(true)
+      for (const entry of result.ok ? result.processes : []) {
         expect(typeof entry.pid).toBe('number')
         expect(typeof entry.name).toBe('string')
       }
@@ -40,13 +43,12 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
     }
   })
 
-  // `findLockingProcesses` is best-effort by contract: it caps `lsof` at 10s
-  // and returns an empty list when that cap kills it, which is
-  // indistinguishable from "nothing holds this file". `lsof` walks every
-  // process's fd table, so on a saturated machine - vitest runs 8 workers, CI
-  // gives it 4 cores - it can and does blow past the cap. A single empty
-  // answer is therefore not evidence the lookup is broken, so re-ask while
-  // the child still holds the handle instead of failing the run on it.
+  // `findLockingProcesses` caps `lsof` at 10s and reports `ok: false` when
+  // that cap kills it. `lsof` walks every process's fd table, so on a
+  // saturated machine - vitest runs 8 workers, CI gives it 4 cores - it can
+  // and does blow past the cap. Neither a timed-out probe nor an empty one is
+  // evidence the lookup is broken, so re-ask while the child still holds the
+  // handle instead of failing the run on it.
   async function probeUntilHolderFound(
     filePath: string,
     pid: number,
@@ -54,11 +56,12 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
   ): Promise<LockingProcess[]> {
     let result: LockingProcess[] = []
     for (let attempt = 0; attempt < attempts; attempt++) {
-      // Back off first: an empty answer means the machine was too busy for
+      // Back off first: a miss usually means the machine was too busy for
       // `lsof` to finish inside the cap, and three full fd-table scans run
       // back to back add to exactly the load that caused it.
       if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, attempt * 1000))
-      result = await findLockingProcesses(filePath)
+      const probe = await findLockingProcesses(filePath)
+      result = probe.ok ? probe.processes : []
       if (result.some((entry) => entry.pid === pid)) break
     }
     return result

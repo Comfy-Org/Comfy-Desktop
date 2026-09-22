@@ -1342,6 +1342,7 @@
     "deleteInterruptedDetail": "此实例的上一次删除被中断。请打开它以继续或重试删除。",
     "deleteLocked": "文件无法删除，因为它正被另一个程序使用。请关闭可能正在打开此目录中文件的应用程序，然后重试。\n{path}",
     "deleteLockedBy": "文件无法删除，因为它正被以下程序使用：{processes}。请关闭这些应用程序后重试。\n{path}",
+    "deleteLockedUnidentified": "文件无法删除，因为它正被另一个程序使用，但 Comfy Desktop 无法确定是哪一个。请关闭可能正在打开此目录中文件的应用程序，然后重试。\n{path}",
     "cannotAdd": "无法添加",
     "dirNotExist": "目录不存在：{path}",
     "cannotOpenDir": "无法打开目录：{error}",

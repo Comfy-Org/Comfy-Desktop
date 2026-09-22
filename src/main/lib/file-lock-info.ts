@@ -1,22 +1,63 @@
-import { execFile } from 'child_process'
+import { execFile, type ExecFileException } from 'child_process'
 
 export interface LockingProcess {
   pid: number
   name: string
 }
 
+/** Why a probe never produced a list of holders. */
+export type LockProbeFailure =
+  /** The platform tool was still running when `TIMEOUT_MS` killed it. */
+  | 'timeout'
+  /** The platform tool could not be run at all (not installed, spawn failed). */
+  | 'unavailable'
+
+/**
+ * Outcome of one lock probe.
+ *
+ * `ok: true` means the holder set was determined, so an empty `processes`
+ * genuinely means nothing holds the file. `ok: false` means the probe never
+ * found out, which is NOT the same thing and must not be reported to the user
+ * as "nothing is using it".
+ */
+export type LockProbeResult =
+  | { ok: true; processes: LockingProcess[] }
+  | { ok: false; reason: LockProbeFailure }
+
 const TIMEOUT_MS = 10000
 
-// Best-effort: processes holding a lock on `filePath`; empty on failure/timeout.
-export function findLockingProcesses(filePath: string): Promise<LockingProcess[]> {
+/**
+ * Processes holding a lock on `filePath`.
+ *
+ * Still best-effort - it can fail to get an answer - but it reports that
+ * failure instead of folding it into an empty list.
+ */
+export function findLockingProcesses(filePath: string): Promise<LockProbeResult> {
   if (process.platform === 'win32') {
     return findLockingProcessesWindows(filePath)
   }
   return findLockingProcessesUnix(filePath)
 }
 
+/**
+ * Separate "the tool answered, and the answer is empty" from "we never got an
+ * answer". Returns `null` for the former.
+ *
+ * The distinction is not cosmetic: `lsof` exits 1 when it simply matches
+ * nothing, so the ordinary unlocked-file path arrives here as an error.
+ * Treating every error as a failure would make every successful delete claim
+ * the lock check broke. Only a kill (the `TIMEOUT_MS` cap, or an outside
+ * signal) or a spawn failure - which surfaces as a string `code` such as
+ * `ENOENT`, never an exit status - means we genuinely did not find out.
+ */
+function classifyProbeFailure(err: ExecFileException): LockProbeFailure | null {
+  if (err.killed === true || err.signal) return 'timeout'
+  if (typeof err.code === 'string') return 'unavailable'
+  return null
+}
+
 // Windows: query the built-in Restart Manager API via inline C# in PowerShell.
-function findLockingProcessesWindows(filePath: string): Promise<LockingProcess[]> {
+function findLockingProcessesWindows(filePath: string): Promise<LockProbeResult> {
   // Escape single quotes for PowerShell string embedding.
   const escaped = filePath.replace(/'/g, "''")
   const script = `
@@ -86,7 +127,10 @@ Add-Type -TypeDefinition $code
       ['-NoProfile', '-NonInteractive', '-Command', script],
       { timeout: TIMEOUT_MS, windowsHide: true },
       (err, stdout) => {
-        if (err || !stdout.trim()) return resolve([])
+        if (err) {
+          const failure = classifyProbeFailure(err)
+          if (failure) return resolve({ ok: false, reason: failure })
+        }
         const results: LockingProcess[] = []
         for (const line of stdout.trim().split('\n')) {
           const parts = line.trim().split('\t')
@@ -96,7 +140,7 @@ Add-Type -TypeDefinition $code
             if (pid > 0 && name) results.push({ pid, name })
           }
         }
-        resolve(results)
+        resolve({ ok: true, processes: results })
       }
     )
   })
@@ -104,14 +148,20 @@ Add-Type -TypeDefinition $code
 
 // Linux/macOS: `lsof -F pc` gives machine-readable "p<pid>" / "c<command>"
 // line pairs, avoiding the column-shift parsing issues of the default format.
-function findLockingProcessesUnix(filePath: string): Promise<LockingProcess[]> {
+function findLockingProcessesUnix(filePath: string): Promise<LockProbeResult> {
   return new Promise((resolve) => {
     execFile(
       'lsof',
       ['-F', 'pc', '--', filePath],
       { timeout: TIMEOUT_MS, windowsHide: true },
       (err, stdout) => {
-        if (err || !stdout.trim()) return resolve([])
+        if (err) {
+          const failure = classifyProbeFailure(err)
+          // A timeout kill can leave a partial scan in `stdout`. Reporting
+          // those names as the answer would just swap one half-truth for
+          // another, so drop them and say the probe did not finish.
+          if (failure) return resolve({ ok: false, reason: failure })
+        }
         const results: LockingProcess[] = []
         const seen = new Set<number>()
         let currentPid = 0
@@ -125,7 +175,7 @@ function findLockingProcessesUnix(filePath: string): Promise<LockingProcess[]> {
             }
           }
         }
-        resolve(results)
+        resolve({ ok: true, processes: results })
       }
     )
   })

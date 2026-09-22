@@ -122,15 +122,27 @@ export async function handleDelete(ctx: ActionContext): Promise<ActionResult> {
         const lockedPath = raw.path
         if (lockedPath) {
           findLockingProcesses(lockedPath)
-            .then((procs) => {
-              if (procs.length > 0 && !sender.isDestroyed()) {
-                const names = [...new Set(procs.map((p) => p.name))].join(', ')
-                const detail = i18n.t('errors.deleteLockedBy', {
-                  processes: names,
+            .then((probe) => {
+              if (sender.isDestroyed()) return
+              if (!probe.ok) {
+                // The probe never finished, so having no names is not evidence
+                // that nothing holds the file. Staying silent here would leave
+                // the generic message standing, which reads as though we looked
+                // and found nothing; say we could not tell instead.
+                console.warn(`Lock probe did not complete (${probe.reason}) for`, lockedPath)
+                const detail = i18n.t('errors.deleteLockedUnidentified', {
                   path: lockedPath
                 })
                 sender.send('error-detail', { installationId, message: detail })
+                return
               }
+              if (probe.processes.length === 0) return
+              const names = [...new Set(probe.processes.map((p) => p.name))].join(', ')
+              const detail = i18n.t('errors.deleteLockedBy', {
+                processes: names,
+                path: lockedPath
+              })
+              sender.send('error-detail', { installationId, message: detail })
             })
             .catch((err) => {
               console.error('Failed to identify locking processes:', err)

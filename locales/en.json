@@ -1342,6 +1342,7 @@
     "deleteInterruptedDetail": "A previous delete of this instance was interrupted. Open it to resume or retry the delete.",
     "deleteLocked": "A file could not be deleted because it is in use by another program. Close any applications that may have files open in this directory and try again.\n{path}",
     "deleteLockedBy": "A file could not be deleted because it is in use by: {processes}. Close these applications and try again.\n{path}",
+    "deleteLockedUnidentified": "A file could not be deleted because it is in use by another program, and Comfy Desktop could not identify which one. Close any applications that may have files open in this directory and try again.\n{path}",
     "cannotAdd": "Cannot Add",
     "dirNotExist": "Directory does not exist: {path}",
     "cannotOpenDir": "Could not open directory: {error}",
