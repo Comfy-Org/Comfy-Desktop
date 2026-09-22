@@ -21,6 +21,8 @@ import path from 'path'
 import {
   installArtifact,
   buildLaunchSpec,
+  launchArgsForManagerAnswer,
+  managerAllowedByPolicy,
   venvPython,
   resolveModelManifest,
   normalizeSha256
@@ -30,7 +32,7 @@ import type {
   ArtifactGpu,
   ArtifactOs,
   InstallProgress,
-  ModelDescriptor
+  ModelManifest
 } from '../../comfybuilder'
 import { getBuilderClient } from '../../devplatform/session'
 import {
@@ -48,6 +50,7 @@ import { renameWithLockRetry } from '../../lib/fsRetry'
 import { defaultDownloadCacheDir } from '../../lib/paths'
 import { releaseInstallTerminalForFsOp } from '../../lib/popoutWindows'
 import { t } from '../../lib/i18n'
+import * as installations from '../../installations'
 import type { InstallationRecord } from '../../installations'
 import type {
   SourcePlugin,
@@ -67,6 +70,27 @@ const READY_MARKER = '.comfybuilder-environment-ready'
 const ENTRY_SWAP_MARKER = '.comfybuilder-entry-swap'
 const ACTIVE_CODE_MARKER = '.comfybuilder-active-code'
 const ROLLBACK_FIELD = 'comfybuilderRollback'
+/** Record field: false when the installed release's author turned
+ *  ComfyUI-Manager off. Written once the release's environment has landed. */
+const MANAGER_ALLOWED_FIELD = 'comfybuilderManagerAllowed'
+
+/** The record fields that carry a release's manager answer: the answer itself
+ *  (launch reads it) and the stored launch args rewritten to match it (the
+ *  Startup Arguments field shows them). */
+function managerAnswerFields(
+  installation: InstallationRecord,
+  manifest: ModelManifest
+): Record<string, unknown> {
+  const allowed = managerAllowedByPolicy(manifest.customNodePolicy)
+  return {
+    [MANAGER_ALLOWED_FIELD]: allowed,
+    launchArgs: launchArgsForManagerAnswer(
+      (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS,
+      allowed,
+      installation[MANAGER_ALLOWED_FIELD] as boolean | undefined
+    )
+  }
+}
 const PRESERVED_COMFY_ENTRIES = new Set(['models', 'user'])
 
 interface EnvironmentRollback {
@@ -386,7 +410,8 @@ export function withAccelArgs(installation: InstallationRecord, launchArgs: stri
  * at. Shared by the first install and by an in-place version change, so the two
  * can't diverge on venv handling.
  *
- * Returns the build's declared models. Downloading them is NOT part of the
+ * Returns the build's manifest: its declared models and its runtime policies.
+ * Downloading the models is NOT part of the
  * environment transaction: the caller hands them to `startModelStaging`, which
  * runs in the background so the install is launchable as soon as the
  * environment is on disk. Resolving the manifest still happens inside the
@@ -404,7 +429,7 @@ async function installEnvironment(
     signal?: AbortSignal
   },
   onTransactionStarted?: () => Promise<void>
-): Promise<readonly ModelDescriptor[]> {
+): Promise<ModelManifest> {
   releaseInstallTerminalForFsOp(installation.id)
   const artifact = artifactFromRecord(installation)
   const client = getBuilderClient()
@@ -472,7 +497,7 @@ async function installEnvironment(
 
     await fs.rm(paths.previousVenv, { recursive: true, force: true }).catch(() => {})
     await fs.rm(paths.previousComfy, { recursive: true, force: true }).catch(() => {})
-    return manifest.models
+    return manifest
   } catch (err) {
     // Put the complete working environment back before surfacing the failure.
     if (hasExistingEnvironment) {
@@ -539,7 +564,10 @@ export const comfybuilder: SourcePlugin = {
       launchArgs: withAccelArgs(
         installation,
         (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS
-      )
+      ),
+      // Records written before this field existed have no answer; they keep
+      // launching with the manager flag, as they always did.
+      managerAllowed: installation[MANAGER_ALLOWED_FIELD] !== false
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
@@ -575,11 +603,14 @@ export const comfybuilder: SourcePlugin = {
   },
 
   async install(installation: InstallationRecord, tools: InstallTools): Promise<void> {
-    const models = await installEnvironment(installation, tools)
+    const manifest = await installEnvironment(installation, tools)
+    // Launch reads the author's manager answer off the record, so it has to be
+    // there before the install becomes launchable.
+    await installations.update(installation.id, managerAnswerFields(installation, manifest))
     // Models download in the background; the install is launchable as soon as
     // the environment is on disk. Completion is recorded as `modelsStaged`,
     // and an unfinished staging re-runs at the next launch.
-    startModelStaging(installation, models)
+    startModelStaging(installation, manifest.models)
   },
 
   // Launch / rename / open-folder / remove / delete never reach here — the
@@ -684,16 +715,23 @@ async function updateBuildVersion(
     }
 
     const updated = { ...installation, ...next } as InstallationRecord
-    const models = await installEnvironment(updated, tools, () =>
+    const manifest = await installEnvironment(updated, tools, () =>
       tools.update({ ...next, status: 'updating', [ROLLBACK_FIELD]: previous })
     )
     environmentReady = true
 
     // The new version's models are not staged yet; clear the flag so a launch
     // before the background task finishes knows to re-stage.
-    await tools.update({ status: 'installed', modelsStaged: false, [ROLLBACK_FIELD]: undefined })
+    // A new release can change the author's manager answer, so it is re-read
+    // from the release that just landed.
+    await tools.update({
+      status: 'installed',
+      modelsStaged: false,
+      ...managerAnswerFields(installation, manifest),
+      [ROLLBACK_FIELD]: undefined
+    })
     await finalizeEnvironmentTransaction(installation.installPath).catch(() => {})
-    startModelStaging(updated, models)
+    startModelStaging(updated, manifest.models)
     return { ok: true, navigate: 'detail' }
   } catch (err) {
     // Put the record back where it was. Leaving it pointed at a version whose

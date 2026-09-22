@@ -13,6 +13,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import type { InstallationRecord } from '../../installations'
+import type { RestoreResult } from '../../lib/snapshots'
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '' },
@@ -79,18 +80,25 @@ const snapshotsMock = vi.hoisted(() => ({
     failed: [],
     unreportable: []
   })),
-  restorePipPackages: vi.fn(async () => ({
-    installed: [],
-    removed: [],
-    changed: [],
-    protectedSkipped: [],
-    failed: [],
-    errors: []
-  })),
+  restorePipPackages: vi.fn(
+    async (): Promise<RestoreResult> => ({
+      installed: [],
+      removed: [],
+      changed: [],
+      protectedSkipped: [],
+      failed: [],
+      errors: []
+    })
+  ),
   repairNodeRequirements: vi.fn(async () => ({ changed: [], errors: [] })),
   protectedPackageDrift: vi.fn(async () => []),
+  describePackageRevert: vi.fn((revert?: unknown) => (revert ? 'REVERT_NOTE' : 'NO_OUTCOME_NOTE')),
   buildPostRestoreState: vi.fn(() => ({})),
-  ensureCurrentSnapshotOnTop: vi.fn(async () => ({ filename: null })),
+  ensureCurrentSnapshotOnTop: vi.fn(
+    async (_installPath: string, _installation: unknown, _label?: string) => ({
+      filename: null
+    })
+  ),
   getSnapshotCount: vi.fn(async () => 1),
   importSnapshots: vi.fn(async () => {}),
   releaseStagedSnapshotEnvelope: vi.fn(async () => {}),
@@ -186,6 +194,64 @@ describe('handleAction(snapshot-restore) staged-envelope commit gating', () => {
     expect(snapshotsMock.releaseStagedSnapshotEnvelope).not.toHaveBeenCalled()
     // The live state is still recorded on top so "Latest" reflects reality.
     expect(snapshotsMock.ensureCurrentSnapshotOnTop).toHaveBeenCalled()
+  })
+
+  // #1514: the failure dialog used to assert "package changes were reverted
+  // where possible" whatever the pip phase actually did, and the safety-net
+  // snapshot of the (possibly damaged) live state went in unlabelled, so the
+  // timeline read as a completed restore.
+  it('a failed package phase reports what the revert did, and labels the recorded state', async () => {
+    snapshotsMock.loadStagedSnapshotEnvelope.mockImplementation(async () => ({
+      snapshots: [{ ...stagedSnapshot, skipPipSync: false }]
+    }))
+    snapshotsMock.restorePipPackages.mockImplementationOnce(async () => ({
+      installed: [],
+      removed: [],
+      changed: [],
+      protectedSkipped: [],
+      failed: ['ghost-pkg'],
+      errors: ['Failed to remove ghost-pkg'],
+      revert: {
+        reason: 'failures',
+        uninstalled: [],
+        keptPreexisting: ['aiohttp'],
+        restoredFromBackup: false,
+        complete: true
+      }
+    }))
+
+    const result = await handleAction(
+      'snapshot-restore',
+      installation,
+      { restoreToken: 'tok-fail' },
+      makeTools()
+    )
+
+    expect(result.ok).toBe(false)
+    // The tail is derived from the recorded revert outcome...
+    expect(snapshotsMock.describePackageRevert).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'failures', keptPreexisting: ['aiohttp'] })
+    )
+    expect(result.message).toContain('REVERT_NOTE')
+    expect(result.message).not.toContain('reverted where possible')
+    // ...and the live state is recorded with a label saying the restore did
+    // not complete, so the row cannot read as a successful restore.
+    expect(snapshotsMock.ensureCurrentSnapshotOnTop).toHaveBeenCalledWith(
+      installation.installPath,
+      expect.anything(),
+      'snapshots.labelRestoreIncomplete'
+    )
+    // A failed restore still never commits the staged target to history.
+    expect(snapshotsMock.importSnapshots).not.toHaveBeenCalled()
+  })
+
+  it('does not label the post-restore snapshot of a restore that succeeded', async () => {
+    await handleAction('snapshot-restore', installation, { restoreToken: 'tok-ok' }, makeTools())
+
+    expect(snapshotsMock.ensureCurrentSnapshotOnTop).toHaveBeenCalled()
+    for (const call of snapshotsMock.ensureCurrentSnapshotOnTop.mock.calls) {
+      expect(call[2]).toBeUndefined()
+    }
   })
 
   it('exact mode: unknown protected drift fails the restore, keeps the staged envelope, and discloses why', async () => {

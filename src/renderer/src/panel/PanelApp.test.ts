@@ -74,7 +74,7 @@ vi.mock('../views/ChooserView.vue', () => ({
     name: 'ChooserView',
     emits: ['pick', 'show-new-install'],
     template:
-      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\', \'workspace-1\')">New</button></div>'
+      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\')">New</button></div>'
   }
 }))
 vi.mock('../views/InstallWizardModal.vue', () => ({
@@ -141,6 +141,7 @@ import PanelApp from './PanelApp.vue'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useAuthStore } from '../stores/authStore'
 import { useOverlay } from '../composables/useOverlay'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
 
 // Dispose panel scopes before happy-dom tears down document, including queued media prefetches.
@@ -251,6 +252,15 @@ type PanelTriggerPayload = {
 }
 
 interface MockApiState {
+  comfybuilder: {
+    getAuthStatus: ReturnType<typeof vi.fn>
+    signIn: ReturnType<typeof vi.fn>
+    signOut: ReturnType<typeof vi.fn>
+    onAuthChanged: ReturnType<typeof vi.fn>
+    listWorkspaces: ReturnType<typeof vi.fn>
+    listBuilds: ReturnType<typeof vi.fn>
+    switchWorkspace: ReturnType<typeof vi.fn>
+  }
   panelSwitchCallbacks: ((data: { panel: string; installationId?: string }) => void)[]
   panelTriggerOverlayCallbacks: ((data: PanelTriggerPayload) => void)[]
   appUpdatePromptRestartCallbacks: ((data: { version: string }) => void)[]
@@ -292,6 +302,20 @@ function installMockApi(initial?: {
 }): MockApiState {
   const installations: InstallationLike[] = initial?.installations ?? []
   const state: MockApiState = {
+    comfybuilder: {
+      getAuthStatus: vi.fn().mockResolvedValue({
+        signedIn: true,
+        workspaceId: 'workspace-1',
+        workspaceName: 'Workspace One',
+        workspaceType: 'team'
+      }),
+      signIn: vi.fn(async () => ({ signedIn: true })),
+      signOut: vi.fn(async () => ({ signedIn: false })),
+      onAuthChanged: vi.fn(() => () => {}),
+      listWorkspaces: vi.fn().mockResolvedValue([]),
+      listBuilds: vi.fn().mockResolvedValue([]),
+      switchWorkspace: vi.fn(async () => ({ signedIn: true }))
+    },
     panelSwitchCallbacks: [],
     panelTriggerOverlayCallbacks: [],
     appUpdatePromptRestartCallbacks: [],
@@ -374,23 +398,10 @@ function installMockApi(initial?: {
     }
   } as const
   const api = {
+    comfybuilder: state.comfybuilder,
     getLocaleMessages: vi.fn().mockResolvedValue(messages.en),
     getLocale: vi.fn().mockResolvedValue('en'),
     onLocaleChanged: vi.fn(() => () => {}),
-    comfybuilder: {
-      getAuthStatus: vi.fn(async () => ({
-        signedIn: true,
-        workspaceId: 'workspace-1',
-        workspaceName: 'Workspace One',
-        workspaceType: 'team'
-      })),
-      signIn: vi.fn(async () => ({ signedIn: true })),
-      signOut: vi.fn(async () => ({ signedIn: false })),
-      listWorkspaces: vi.fn(async () => []),
-      listBuilds: vi.fn(async () => []),
-      switchWorkspace: vi.fn(async () => ({ signedIn: true })),
-      onAuthChanged: vi.fn(() => () => {})
-    },
     onPanelSwitch: vi.fn((cb: (d: { panel: string; installationId?: string }) => void) => {
       state.panelSwitchCallbacks.push(cb)
       return () => {}
@@ -589,6 +600,7 @@ describe('PanelApp', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
+    installWizardOpen.mockClear()
     // useLauncherPrefs has module-level shared state + memoized load
     // promise — reset both so each test sees a fresh load against the
     // current mock settings (in particular `firstUseCompleted`).
@@ -1110,13 +1122,21 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
     expect(installWizardOpen).toHaveBeenCalledWith({
       entrypoint: 'chooser',
-      workspaceId: 'workspace-1'
+      workspaceId: 'personal'
     })
-    expect(mockState.getSetting).not.toHaveBeenCalledWith('dashboardWorkspaceId')
+    expect(mockState.getSetting).toHaveBeenCalledWith('dashboardWorkspaceId')
   })
 
   it('opens menu-driven New Instance in the persisted dashboard workspace', async () => {
     mockState.settings.dashboardWorkspaceId = 'workspace-saved'
+    mockState.comfybuilder.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'workspace-saved',
+      workspaceType: 'team'
+    })
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-saved', name: 'Saved', type: 'team', role: 'owner' }
+    ])
     mountPanel()
     await flushPromises()
     installWizardOpen.mockClear()
@@ -1127,6 +1147,73 @@ describe('PanelApp', () => {
     expect(installWizardOpen).toHaveBeenCalledWith({
       entrypoint: 'titlebar',
       workspaceId: 'workspace-saved'
+    })
+  })
+
+  it('uses the live dashboard selection for both entry points even when persistence fails', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    mockState.comfybuilder.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team'
+    })
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'One', type: 'team', role: 'owner' },
+      { id: 'w2', name: 'Two', type: 'team', role: 'owner' }
+    ])
+    const wrapper = mountPanel()
+    const scope = useDashboardScopeStore()
+    await scope.initialize()
+    await flushPromises()
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(window.api.setSetting).mockRejectedValueOnce(new Error('disk unavailable'))
+    scope.selectWorkspace('w2')
+    await flushPromises()
+    expect(mockState.settings.dashboardWorkspaceId).toBe('w1')
+
+    await wrapper.get('[data-testid="chooser-new-install"]').trigger('click')
+    await flushPromises()
+    expect(installWizardOpen).toHaveBeenLastCalledWith({ entrypoint: 'chooser', workspaceId: 'w2' })
+    await wrapper.findComponent({ name: 'InstallWizardModal' }).vm.$emit('close')
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+    await flushPromises()
+    expect(installWizardOpen).toHaveBeenLastCalledWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'w2'
+    })
+    expect(warning).toHaveBeenCalledOnce()
+    warning.mockRestore()
+  })
+
+  it('opens menu-driven New Instance in the saved scope while membership loads', async () => {
+    mockState.settings.dashboardWorkspaceId = 'w1'
+    mockState.comfybuilder.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team'
+    })
+    let resolveMembership!: (value: unknown[]) => void
+    mockState.comfybuilder.listWorkspaces.mockReturnValue(
+      new Promise((resolve) => {
+        resolveMembership = resolve
+      })
+    )
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+    await flushPromises()
+    expect(installWizardOpen).toHaveBeenCalledExactlyOnceWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'w1'
+    })
+    resolveMembership([{ id: 'w1', name: 'One', type: 'team', role: 'owner' }])
+    await flushPromises()
+    expect(installWizardOpen).toHaveBeenCalledExactlyOnceWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'w1'
     })
   })
 

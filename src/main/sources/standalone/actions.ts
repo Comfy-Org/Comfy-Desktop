@@ -350,12 +350,17 @@ export async function handleAction(
       // — no previous snapshot at all, or a partial rollback the previous snapshot
       // no longer matches. Best-effort: it must never turn a restore failure into
       // a different failure.
-      const ensureLiveStateOnTop = async (): Promise<void> => {
+      //
+      // `incomplete` labels the entry when one is genuinely written, so a
+      // restore that failed or was cancelled can never leave a row that reads
+      // as a completed restore (#1514).
+      const ensureLiveStateOnTop = async (opts?: { incomplete?: boolean }): Promise<void> => {
         try {
           const currentInstallation = (await installations.get(installation.id)) || installation
           const { filename } = await snapshots.ensureCurrentSnapshotOnTop(
             installation.installPath,
-            currentInstallation
+            currentInstallation,
+            opts?.incomplete ? t('snapshots.labelRestoreIncomplete') : undefined
           )
           if (filename) {
             const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
@@ -378,7 +383,7 @@ export async function handleAction(
 
       const cancelledResult = async (note?: string): Promise<ActionResult> => {
         const rolledBack = await revertSourceIfMoved()
-        await ensureLiveStateOnTop()
+        await ensureLiveStateOnTop({ incomplete: true })
         if (rolledBack) {
           sendOutput(`\nCancelled; ComfyUI source was rolled back.${note ? ` ${note}` : ''}\n`)
           return { ok: false, cancelled: true, message: MSG_CANCELLED }
@@ -410,7 +415,7 @@ export async function handleAction(
       // The source checkout itself failed (not cancelled): a failed checkout
       // doesn't move HEAD and nodes/pip were never touched, so just report it.
       if (comfyResult.error) {
-        await ensureLiveStateOnTop()
+        await ensureLiveStateOnTop({ incomplete: true })
         return { ok: false, message: `ComfyUI restore failed: ${comfyResult.error}` }
       }
 
@@ -467,16 +472,31 @@ export async function handleAction(
       if (pipError || pipResult.failed.length > 0 || signal?.aborted) {
         // Leave the op marker so recoverInterruptedComfyOp retries on next launch
         // if the in-process rollback failed; a successful rollback makes it a no-op.
+        // Describe what the pip phase's revert actually did rather than
+        // asserting one happened (#1514).
+        const packageNote = targetSnapshot.skipPipSync
+          ? 'The package sync was skipped for this snapshot.'
+          : snapshots.describePackageRevert(pipResult.revert)
         if (signal?.aborted) {
-          return await cancelledResult('Package changes were reverted where possible.')
+          // A cancel whose package revert did not complete is not a clean
+          // cancellation: the environment is part-applied, so it surfaces as a
+          // failure rather than something the UI quietly dismisses.
+          if (pipResult.revert?.complete === false) {
+            await revertSourceIfMoved()
+            await ensureLiveStateOnTop({ incomplete: true })
+            const message = `Snapshot restore cancelled, but the package changes could not be fully reverted. ${packageNote}`
+            sendOutput(`\n${message}\n`)
+            return { ok: false, message }
+          }
+          return await cancelledResult(packageNote)
         }
         const rolledBack = await revertSourceIfMoved()
         const headline = pipError
           ? `Snapshot package restore failed: ${pipError}`
           : 'Snapshot package restore failed.'
         const tail = rolledBack
-          ? 'ComfyUI source was rolled back to the pre-restore version; package changes were reverted where possible.'
-          : 'Package changes were reverted where possible, but ComfyUI source rollback failed.'
+          ? `ComfyUI source was rolled back to the pre-restore version. ${packageNote}`
+          : `${packageNote} ComfyUI source rollback failed.`
         // Surface which packages failed (the full pip output streams to the logs panel)
         // so the error explains WHY instead of a bare "restore failed". Cap the list so
         // a large restore can't produce a wall-of-text dialog.
@@ -486,7 +506,7 @@ export async function handleAction(
           shownErrors.length > 0
             ? `\n\n${shownErrors.join('\n')}${omittedErrors > 0 ? `\n…and ${omittedErrors} more. See logs for full output.` : ''}`
             : ''
-        await ensureLiveStateOnTop()
+        await ensureLiveStateOnTop({ incomplete: true })
         return { ok: false, message: `${headline}${pkgDetail}\n\n${tail}` }
       }
 
@@ -528,7 +548,7 @@ export async function handleAction(
           // marker is cleared, so nothing rolls back — the live state is
           // post-sync plus whatever repair installs finished. Record it on top
           // and report cancelled; the staged envelope stays for a retry.
-          await ensureLiveStateOnTop()
+          await ensureLiveStateOnTop({ incomplete: true })
           sendOutput('\nCancelled during requirements repair; completed changes stand.\n')
           return { ok: false, cancelled: true, message: MSG_CANCELLED }
         }
@@ -744,7 +764,7 @@ export async function handleAction(
       // release it (the retry target stays staged for a retry). Sampled AFTER
       // the last await above so a late abort cannot slip past a stale reading.
       if (signal?.aborted) {
-        await ensureLiveStateOnTop()
+        await ensureLiveStateOnTop({ incomplete: true })
         sendOutput('\nCancelled; completed changes stand.\n')
         return { ok: false, cancelled: true, message: MSG_CANCELLED }
       }
@@ -820,6 +840,12 @@ export async function handleAction(
         }
       }
 
+      // Node, PyTorch and protected-drift failures fall through to here and
+      // then return ok:false, so this snapshot needs the same caveat as the
+      // earlier exits — otherwise those failed restores still leave a row that
+      // reads as completed.
+      const incompleteLabel = totalFailures > 0 ? t('snapshots.labelRestoreIncomplete') : undefined
+
       try {
         if (stagedEnvelope) {
           // Make the newest snapshot reflect the real current state. On success the
@@ -830,7 +856,8 @@ export async function handleAction(
           if (!adaptedStateRecorded) {
             const { filename } = await snapshots.ensureCurrentSnapshotOnTop(
               installation.installPath,
-              updatedInstallation
+              updatedInstallation,
+              incompleteLabel
             )
             const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
             if (filename) await update({ lastSnapshot: filename, snapshotCount })
@@ -841,7 +868,8 @@ export async function handleAction(
           const filename = await snapshots.saveSnapshot(
             installation.installPath,
             updatedInstallation,
-            'post-restore'
+            'post-restore',
+            incompleteLabel
           )
           const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
           await update({ lastSnapshot: filename, snapshotCount })
