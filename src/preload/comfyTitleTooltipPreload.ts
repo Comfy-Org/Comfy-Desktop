@@ -1,3 +1,4 @@
+import type { CoachmarkBeakPayload } from '../types/ipc'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 
@@ -33,9 +34,7 @@ export interface ComfyTitleTooltipBridge {
   onConfig(cb: (config: TitleTooltipConfig) => void): () => void
   /** Beak position, pushed after main has measured the card and settled its final (possibly
    *  clamped) bounds. Separate from the config push because it is only knowable then. */
-  onBeak(
-    cb: (payload: { beakFraction: number; cardCentreInView: number | null }) => void
-  ): () => void
+  onBeak(cb: (payload: CoachmarkBeakPayload) => void): () => void
   /** Coachmark dismiss button; no-op for the tooltip variant. `configToken` names the card
    *  the click landed on, so main can discard a click from a card it has since replaced. */
   dismissCoachmark(configToken: string): void

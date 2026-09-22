@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CoachmarkBeakPayload } from '../../../types/ipc'
 import { nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 /**
@@ -33,9 +34,7 @@ interface Bridge {
   dismissCoachmark?(configToken: string): void
   /** Beak position as a fraction of the card's width, pushed once main has measured the card
    *  and settled its final bounds. */
-  onBeak?(
-    cb: (payload: { beakFraction: number; cardCentreInView: number | null }) => void
-  ): () => void
+  onBeak?(cb: (payload: CoachmarkBeakPayload) => void): () => void
   /** Coachmark secondary action — retires the card the same way dismiss does, and lets the
    *  owning feature run its follow-up (e.g. opening Settings). */
   actionCoachmark?(configToken: string): void

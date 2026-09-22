@@ -1,3 +1,4 @@
+import type { CoachmarkBeakPayload } from '../../types/ipc'
 import { ipcMain } from 'electron'
 import type { BrowserWindow, WebContents } from 'electron'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
@@ -280,10 +281,8 @@ function repositionAndShow(
   })
   entry.view.popup.setBounds(bounds)
   // Tell the card where to draw its beak now that the final, possibly clamped, x is known.
-  entry.view.popup.webContents.send('comfy-titletooltip:set-beak', {
-    beakFraction,
-    cardCentreInView
-  })
+  const beakPayload: CoachmarkBeakPayload = { beakFraction, cardCentreInView }
+  entry.view.popup.webContents.send('comfy-titletooltip:set-beak', beakPayload)
   // Focus so the dismiss button is keyboard-reachable.
   entry.view.showOnTop({ focus: true })
 }
