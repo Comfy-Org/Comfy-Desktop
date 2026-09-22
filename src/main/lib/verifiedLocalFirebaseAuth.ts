@@ -101,9 +101,7 @@ export function clearVerifiedLocalFirebaseUser(origin: string): boolean {
   // TEMPORARY DIAGNOSTIC — never for merge. `had` is what makes a real revocation distinguishable
   // from a no-op clear, which the file's absence afterwards cannot tell you.
   const had = Object.prototype.hasOwnProperty.call(bindings, normalizedOrigin)
-  console.log(
-    '[identity-diag] binding CLEAR origin=' + normalizedOrigin + ' had=' + String(had)
-  )
+  console.log('[identity-diag] binding CLEAR origin=' + normalizedOrigin + ' had=' + String(had))
   delete bindings[normalizedOrigin]
   return writeBindings(bindings)
 }
