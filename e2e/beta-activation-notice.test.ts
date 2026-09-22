@@ -269,14 +269,23 @@ test('the card is anchored on the bell it points at @linux', async () => {
   })
   const clamped = popup!.x <= 0 || popup!.right >= windowWidth
   if (!clamped) {
-    await expect
-      .poll(async () => Math.abs(popup!.x + (await beakCentre()) - bellCentre), {
-        timeout: 10_000,
-        message:
-          'the beak must point at the bell, not merely sit in a view that is centred on it. ' +
-          (await geometry()),
-      })
-      .toBeLessThanOrEqual(2)
+    // Sampled in a loop rather than through `expect.poll`, because poll's `message` is built
+    // ONCE while the options object is constructed — so a failure ten seconds later reports
+    // the geometry from before polling began. That is the opposite of what this diagnostic is
+    // for: the numbers we need are the ones from the sample that actually failed, and on an
+    // intermittent failure the two need not agree.
+    const deadline = Date.now() + 10_000
+    let offset = Math.abs(popup!.x + (await beakCentre()) - bellCentre)
+    let detail = await geometry()
+    while (offset > 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      offset = Math.abs(popup!.x + (await beakCentre()) - bellCentre)
+      detail = await geometry()
+    }
+    expect(
+      offset,
+      'the beak must point at the bell, not merely sit in a view that is centred on it. ' + detail,
+    ).toBeLessThanOrEqual(2)
   }
 })
 
