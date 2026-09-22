@@ -490,6 +490,9 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
   }
   const result: Settings = { ...defaults, ...(parsed || {}) }
   let changed = false
+  // Snapshot before the directory substitutions below, so the repair path attributes its
+  // own writes rather than logging nothing.
+  const repairBaseline = structuredClone(result)
 
   // Drop legacy keys that no longer back any setting. `maxCachedFiles` was the
   // user-editable predecessor of `maxCachedDownloads`; its old value is
@@ -631,58 +634,90 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
       changed = true
     }
   }
-  if (changed && !unreadable) save(result)
+  if (changed && !unreadable) save(result, repairBaseline)
   return { settings: result, unreadable }
+}
+
+/** Describe a value for the log WITHOUT disclosing it.
+ *
+ *  These lines land in `app.log`, which users attach to support requests. `appLog` runs
+ *  `scrubAll` over everything, but that is a best-effort telemetry scrubber for known
+ *  credential shapes — it is not a licence to write every setting a user has. Paths, mirror
+ *  hosts and anything else bespoke would go straight through it.
+ *
+ *  Booleans and numbers are logged exactly, because they cannot carry a secret and they are
+ *  what this log exists to explain — `betaFeaturesEnabled: true -> false` is the whole
+ *  question. Everything else is reduced to its shape, which still answers "did this key
+ *  change, and into what kind of thing", without printing the contents. */
+function describeForLog(v: unknown): string {
+  if (v === undefined) return '<unset>'
+  if (v === null) return 'null'
+  if (typeof v === 'boolean' || typeof v === 'number') return String(v)
+  if (typeof v === 'string') return `<string:${v.length}>`
+  if (Array.isArray(v)) return `<array:${v.length}>`
+  if (typeof v === 'object') return `<object:${Object.keys(v).length}>`
+  return `<${typeof v}>`
+}
+
+/** True when two persisted values differ, order-insensitively for objects.
+ *
+ *  Comparing serializations would make a key-order change read as a real edit, which would
+ *  put a spurious writer in the log — the opposite of useful when the log's whole job is
+ *  attributing a change to a caller. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== typeof b || a === null || b === null) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (typeof a !== 'object') return false
+  const ao = a as Record<string, unknown>
+  const bo = b as Record<string, unknown>
+  const ak = Object.keys(ao)
+  const bk = Object.keys(bo)
+  if (ak.length !== bk.length) return false
+  return ak.every((k) => Object.prototype.hasOwnProperty.call(bo, k) && sameValue(ao[k], bo[k]))
 }
 
 /** One line per key whose persisted value actually changes, with the stack that caused it.
  *
- *  Written because a consent-adjacent flag changed itself on a QA box and nothing in the app
- *  could say what wrote it. Every candidate was excluded by reading the code, which is exactly
+ *  Written because a consent-adjacent flag changed itself and nothing in the app could say
+ *  what wrote it. Every candidate writer was excluded by reading the code, which is exactly
  *  the situation a log has to cover: the useful question is not "which of the writers I know
- *  about ran" but "who ran", and only a stack answers that. A per-call-site tag would have
- *  annotated the sites already ruled out and stayed silent on the one that matters.
+ *  about ran" but "who ran", and only a stack answers that.
  *
- *  At `save`, not at `set`, because `set` is not the only writer — the seed and the
- *  directory-repair path both persist whole objects without going through it.
- *
- *  Diffed against what is on disk, so a save that changes nothing says nothing. Settings are
- *  written on user actions rather than in loops, so the extra read is not a hot path. */
-function logPersistedChanges(next: Settings): void {
+ *  The baseline comes from the caller's already-loaded object, NOT from re-reading the file.
+ *  Re-reading looked simpler and was wrong three ways: `readFileSafe` increments the
+ *  process-wide `.bak`-fallback counter that telemetry reports, it blocks the main thread on
+ *  `Atomics.wait` while retrying a locked file, and it cannot tell "no previous value" from
+ *  "previous file unparseable". Reading memory has none of those costs. */
+function logPersistedChanges(before: Settings | undefined, next: Settings): void {
   try {
-    const read = readFileSafe(dataPath)
-    let before: Record<string, unknown> = {}
-    if (read.kind === 'data') {
-      const parsed: unknown = JSON.parse(read.data)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        before = parsed as Record<string, unknown>
-      }
-    }
-    const brief = (v: unknown): string => {
-      if (v === undefined) return '<unset>'
-      const text = JSON.stringify(v) ?? String(v)
-      return text.length > 120 ? `${text.slice(0, 117)}...` : text
-    }
-    const keys = new Set([...Object.keys(before), ...Object.keys(next as object)])
+    if (!before) return
+    const a = before as Record<string, unknown>
+    const b = next as Record<string, unknown>
     const changes: string[] = []
-    for (const key of keys) {
-      const a = before[key]
-      const b = (next as Record<string, unknown>)[key]
-      if (JSON.stringify(a) === JSON.stringify(b)) continue
-      changes.push(`${key}: ${brief(a)} -> ${brief(b)}`)
+    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      if (sameValue(a[key], b[key])) continue
+      changes.push(`${JSON.stringify(key)}: ${describeForLog(a[key])} -> ${describeForLog(b[key])}`)
     }
     if (changes.length === 0) return
     // Frames 0-1 are this helper and `save`; the caller starts after them.
-    const stack = (new Error().stack ?? '').split('\n').slice(3, 9).join('\n')
-    console.log(`Settings: writing ${changes.join(', ')}\n${stack}`)
+    const stack = (new Error().stack ?? '')
+      .split('\n')
+      .slice(3, 9)
+      .map((line) => line.trim())
+      .join(' <- ')
+    console.log(`Settings: wrote ${changes.join(', ')} | via ${stack}`)
   } catch {
-    // Diagnostics must never cost a write. A failure here is silent on purpose.
+    // Diagnostics must never cost a write, and must never be the reason one is lost.
   }
 }
 
-function save(settings: Settings): void {
-  logPersistedChanges(settings)
+/** `before` is the caller's pre-mutation snapshot, used only for the change log. Logged AFTER
+ *  the write lands: `writeFileSafe` can throw, and a line saying a value was written when it
+ *  was not is worse than no line. */
+function save(settings: Settings, before?: Settings): void {
   writeFileSafe(dataPath, JSON.stringify(settings, null, 2), { backup: true })
+  logPersistedChanges(before, settings)
 }
 
 /** Sentinel values for `autoLaunchOnStartup`. Any string OTHER than these
@@ -732,12 +767,14 @@ export function set<K extends string>(
     (typeof value === 'string' && value.trim() === '' && EMPTY_STRING_MEANS_UNSET.has(key)) ||
     (DEFAULT_VALUE_MEANS_UNSET.has(key) && value === DEFAULT_VALUE_MEANS_UNSET.get(key))
   ) {
+    const before = structuredClone(settings)
     delete settings[key]
-    save(settings)
+    save(settings, before)
     return
   }
+  const before = structuredClone(settings)
   settings[key] = value
-  save(settings)
+  save(settings, before)
 }
 
 export function getAll(): Settings {
@@ -759,8 +796,9 @@ export function resolveBetaFeaturesEnabled(): boolean {
   if (typeof stored === 'boolean') return stored
   if (unreadable) return false
   const seeded = settings.telemetryEnabled === true
+  const before = structuredClone(settings)
   settings.betaFeaturesEnabled = seeded
-  save(settings)
+  save(settings, before)
   return seeded
 }
 

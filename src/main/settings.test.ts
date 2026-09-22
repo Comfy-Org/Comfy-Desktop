@@ -703,53 +703,98 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
 })
 
 describe('persisted-write logging', () => {
-  it('names the key, the old and new value, and the caller', () => {
+  const writeLines = (log: { mock: { calls: unknown[][] } }): string[] =>
+    log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.startsWith('Settings: wrote'))
+
+  it('names the key, the change, and the caller', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     settings.set('betaFeaturesEnabled', false)
 
-    const line = log.mock.calls
-      .map((c) => String(c[0]))
-      .find((l) => l.startsWith('Settings: writing'))
-    expect(line, 'no write line logged').toBeDefined()
-    expect(line).toContain('betaFeaturesEnabled: true -> false')
+    const line = writeLines(log).find((l) => l.includes('betaFeaturesEnabled'))
+    expect(line, 'no write line logged for the key').toBeDefined()
+    expect(line).toContain('"betaFeaturesEnabled": true -> false')
     // The point of the log: a stack, so an UNKNOWN writer is named. A per-call-site tag would
-    // only ever name the sites someone already thought to annotate.
-    expect(line!.split('\n').length).toBeGreaterThan(1)
+    // only ever name the sites someone already thought to annotate. Asserted on the frame
+    // marker rather than on line count, which the format guarantees either way.
+    expect(line).toMatch(/\| via .*settings\.ts/)
     log.mockRestore()
   })
 
   it('stays silent about a key whose value does not change', () => {
-    // Scoped to the key under test rather than to "no output at all": a `set` can persist
-    // more than the caller asked for. `loadOutcome` repairs missing directories and saves
-    // before `set` saves again, so a first write on a sparse file materialises every default
-    // as a real change — truthfully logged, and nothing to do with the key being set.
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     settings.set('betaFeaturesEnabled', true)
 
-    const lines = log.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('Settings:'))
-    expect(lines.filter((l) => l.includes('betaFeaturesEnabled'))).toEqual([])
+    expect(writeLines(log).filter((l) => l.includes('betaFeaturesEnabled'))).toEqual([])
     log.mockRestore()
   })
 
   it('reports a key being removed rather than going quiet', () => {
-    // `set(key, undefined)` deletes, and a deletion is exactly what makes a later seed re-run
-    // and write a value nobody chose. A log that only reported value changes would miss the
-    // step that causes the next write.
+    // `set(key, undefined)` deletes, and a deletion is what makes a later seed re-run and
+    // write a value nobody chose. A log that only reported value changes would catch the
+    // effect and miss the cause.
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     settings.set('betaFeaturesEnabled', undefined)
 
-    // Every line, not just the first: the repair save above is logged before this one.
-    const lines = log.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('Settings:'))
-    expect(lines.some((l) => l.includes('betaFeaturesEnabled: true -> <unset>'))).toBe(true)
+    expect(writeLines(log).some((l) => l.includes('"betaFeaturesEnabled": true -> <unset>'))).toBe(
+      true
+    )
+    log.mockRestore()
+  })
+
+  it('describes a string value by shape instead of printing it', () => {
+    // These lines land in `app.log`, which users attach to support requests. A path or a
+    // mirror host must not be disclosed just because it changed; the shape still answers
+    // "did this key change, and into what kind of thing".
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ pypiMirror: 'https://old.example' }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('pypiMirror', 'https://user:hunter2@secret.example/simple')
+
+    const line = writeLines(log).find((l) => l.includes('pypiMirror'))
+    expect(line).toBeDefined()
+    expect(line).toContain('<string:')
+    expect(line).not.toContain('hunter2')
+    expect(line).not.toContain('secret.example')
+    log.mockRestore()
+  })
+
+  it('does not log a write that never reached disk', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const realWrite = fs.writeFileSync.bind(fs) as typeof fs.writeFileSync
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(((
+      target: fs.PathOrFileDescriptor,
+      data: string | NodeJS.ArrayBufferView,
+      opts?: unknown
+    ) => {
+      if (String(target).startsWith(settingsPath)) throw new Error('fake ENOSPC')
+      return realWrite(target, data, opts as fs.WriteFileOptions)
+    }) as typeof fs.writeFileSync)
+
+    try {
+      settings.set('betaFeaturesEnabled', false)
+    } catch {
+      // The write failing is the point; whether it propagates is not what this pins.
+    } finally {
+      // Restored in a `finally`: a leaked write mock fails every later test in the file with
+      // this test's fake error, which is a confusing way to learn about a missing cleanup.
+      write.mockRestore()
+    }
+
+    expect(writeLines(log).filter((l) => l.includes('betaFeaturesEnabled'))).toEqual([])
     log.mockRestore()
   })
 })

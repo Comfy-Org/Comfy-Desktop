@@ -333,9 +333,18 @@ export function registerSettingsHandlers(): void {
     recordIpcInvocation('set-setting', { key, value })
     // The settings log's stack stops at this handler for anything a renderer asked for, so
     // record WHICH renderer asked. Without it every renderer-driven write looks identical.
-    console.log(
-      `Settings: set-setting '${key}' requested by ${event.sender.getURL() || '<no url>'}`
-    )
+    //
+    // Guarded: `getURL()` throws "Object has been destroyed" when the sender is torn down
+    // between `invoke` and dispatch — a popup closing right after a toggle does exactly that,
+    // and a diagnostic must never be the reason the write it describes is lost.
+    const origin = ((): string => {
+      try {
+        return event.sender.getURL() || '<no url>'
+      } catch {
+        return '<sender gone>'
+      }
+    })()
+    console.log(`Settings: set-setting ${JSON.stringify(key)} requested by ${origin}`)
     applySettingSet(key, value)
   })
 
