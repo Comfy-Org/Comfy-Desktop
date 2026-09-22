@@ -103,6 +103,11 @@ import {
   viewsReportingFirebaseUser,
   type FirebaseIdentityConsensus
 } from './firebaseAuthIdentity'
+import {
+  FIREBASE_AUTH_KEY_PREFIX,
+  FIREBASE_IDB_NAME,
+  FIREBASE_IDB_STORE
+} from '../../shared/firebaseAuthStorage'
 import { normalizePostHogUserId } from './opaqueIdentifier'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
@@ -234,13 +239,84 @@ export const CLASSIFY_STAFF_JS = `(async () => {
   var db = null;
   try {
     var SUFFIX = ${JSON.stringify(STAFF_EMAIL_SUFFIX)};
+    var PREFIX = ${JSON.stringify(FIREBASE_AUTH_KEY_PREFIX)};
+    var IDB_NAME = ${JSON.stringify(FIREBASE_IDB_NAME)};
+    var IDB_STORE = ${JSON.stringify(FIREBASE_IDB_STORE)};
     var OPEN_TIMEOUT_MS = 5000;
+    // The cohort rule, in ONE place. Both readers end here, so neither can introduce a shape the
+    // other does not produce - the storage changed, what absence MEANS did not.
+    var verdict = function (users) {
+      // No record at all is a real signed-out state and votes "not staff", for no account.
+      if (users.length === 0) return { known: true, staff: false, userId: null };
+      // Two accounts at once is unresolved, not a coin flip on iteration order.
+      if (users.length > 1) return { known: false };
+      var user = users[0];
+      // One past the 256 main will accept, so an over-length uid is REJECTED there rather than
+      // truncated into a match with a different account.
+      var userId = user.uid.slice(0, 257);
+      if (user.emailVerified !== true) return { known: true, staff: false, userId: userId };
+      var email = typeof user.email === 'string' ? user.email : '';
+      return {
+        known: true,
+        staff: email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX,
+        userId: userId
+      };
+    };
+    // Prototype-free. On a plain object the keys __proto__, constructor and toString are
+    // already truthy, so a record whose uid is one of them would be skipped and the
+    // "exactly one account" guard would pass on what is really a two-account state.
+    var collect = function () {
+      var seen = Object.create(null);
+      var users = [];
+      return {
+        users: users,
+        add: function (v) {
+          if (!v || typeof v !== 'object') return;
+          if (typeof v.uid !== 'string' || v.uid.length === 0) return;
+          if (!seen[v.uid]) { seen[v.uid] = true; users.push(v); }
+        }
+      };
+    };
+
+    // localStorage FIRST, and authoritative whenever it is readable - including when it holds no
+    // record at all. The Firebase SDK migrates the user into the first persistence in the
+    // frontend's hierarchy (localStorage) and then, quoting @firebase/auth
+    // dist/browser-cjs/index-919d47fb.js:2169:
+    //
+    //   "Attempt to clear the key in other persistences but ignore errors. This helps prevent
+    //    issues such as users getting stuck with a previous account after signing out and
+    //    refreshing the tab."
+    //
+    // So a record still in IndexedDB after migration is one the SDK DECIDED TO DISCARD. Falling
+    // through to it on an empty localStorage would resurrect a signed-out account - the exact
+    // failure that removal exists to prevent. The fallback below is for a frontend with NO
+    // localStorage persistence, never for a localStorage that simply has nothing in it.
+    var ls = null;
+    try {
+      ls = window.localStorage;
+      // Touch it: presence is not readability. Blocked site data throws here, not above.
+      if (ls) { void ls.length; }
+    } catch (_) {
+      ls = null;
+    }
+    if (ls) {
+      var fromLocal = collect();
+      for (var i = 0; i < ls.length; i++) {
+        var k = ls.key(i);
+        if (typeof k !== 'string' || k.indexOf(PREFIX) !== 0) continue;
+        var raw = ls.getItem(k);
+        if (typeof raw !== 'string') continue;
+        try { fromLocal.add(JSON.parse(raw)); } catch (_) {}
+      }
+      return verdict(fromLocal.users);
+    }
+
     if (!indexedDB.databases) return { known: false };
     var dbs = await indexedDB.databases();
-    if (!dbs.some(function (d) { return d && d.name === 'firebaseLocalStorageDb'; })) {
+    if (!dbs.some(function (d) { return d && d.name === IDB_NAME; })) {
       return { known: false };
     }
-    var req = indexedDB.open('firebaseLocalStorageDb');
+    var req = indexedDB.open(IDB_NAME);
     db = await new Promise(function (res, rej) {
       var settled = false;
       var finish = function (fn, v) { if (!settled) { settled = true; fn(v); } };
@@ -263,42 +339,23 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       req.onerror = function () { finish(rej, req.error); };
       setTimeout(function () { finish(rej, new Error('timeout')); }, OPEN_TIMEOUT_MS);
     });
-    if (!db.objectStoreNames.contains('firebaseLocalStorage')) return { known: false };
-    var store = db.transaction('firebaseLocalStorage', 'readonly')
-      .objectStore('firebaseLocalStorage');
+    if (!db.objectStoreNames.contains(IDB_STORE)) return { known: false };
+    var store = db.transaction(IDB_STORE, 'readonly')
+      .objectStore(IDB_STORE);
     var allReq = store.getAll();
     var all = await new Promise(function (res, rej) {
       allReq.onsuccess = function () { res(allReq.result); };
       allReq.onerror = function () { rej(allReq.error); };
     });
-    var users = [];
-    // Prototype-free. On a plain object the keys __proto__, constructor and toString are
-    // already truthy, so a record whose uid is one of them would be skipped and the
-    // "exactly one account" guard below would pass on what is really a two-account state.
-    var uids = Object.create(null);
+    // Reached only on a frontend with no localStorage persistence at all.
+    var fromIdb = collect();
     (all || []).forEach(function (e) {
       if (!e || typeof e !== 'object') return;
       if (typeof e.fbase_key !== 'string') return;
-      if (e.fbase_key.indexOf('firebase:authUser:') !== 0) return;
-      var v = e.value;
-      if (!v || typeof v.uid !== 'string' || v.uid.length === 0) return;
-      if (!uids[v.uid]) { uids[v.uid] = true; users.push(v); }
+      if (e.fbase_key.indexOf(PREFIX) !== 0) return;
+      fromIdb.add(e.value);
     });
-    // No record at all is a real signed-out state and votes "not staff", for no account.
-    if (users.length === 0) return { known: true, staff: false, userId: null };
-    // Two accounts at once is unresolved, not a coin flip on iteration order.
-    if (users.length > 1) return { known: false };
-    var user = users[0];
-    // One past the 256 main will accept, so an over-length uid is REJECTED there rather than
-    // truncated into a match with a different account.
-    var userId = user.uid.slice(0, 257);
-    if (user.emailVerified !== true) return { known: true, staff: false, userId: userId };
-    var email = typeof user.email === 'string' ? user.email : '';
-    return {
-      known: true,
-      staff: email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX,
-      userId: userId
-    };
+    return verdict(fromIdb.users);
   } catch (e) {
     return { known: false };
   } finally {
