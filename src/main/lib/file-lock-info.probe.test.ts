@@ -72,9 +72,23 @@ function noMatchError(): ExecFileException {
   })
 }
 
-describe('findLockingProcesses probe outcomes', () => {
+// `findLockingProcesses` dispatches on `process.platform`, so without pinning
+// it these lsof-shaped fixtures would route to the Restart Manager parser on a
+// Windows machine and every assertion here would fail for the wrong reason.
+describe('findLockingProcesses probe outcomes (unix)', () => {
+  let restore: () => void
+
   beforeEach(() => {
     mockedExecFile.mockReset()
+    restore = asPlatform('linux')
+  })
+
+  afterEach(() => restore())
+
+  it('runs lsof, not the Windows probe', () => {
+    mockProbe(null, '')
+    void findLockingProcesses('/some/path')
+    expect(mockedExecFile.mock.calls.at(-1)?.[0]).toBe('lsof')
   })
 
   it('reports a timeout as a failure, not as an empty result', async () => {
@@ -136,6 +150,22 @@ describe('findLockingProcesses probe outcomes', () => {
     })
   })
 
+  it('does not file a maxBuffer overflow under the timeout cap', async () => {
+    // It arrives `killed: true` like our own cap does, but the cause is a
+    // flood of output, and the reason is what the caller logs.
+    mockProbe(
+      Object.assign(new Error('stdout maxBuffer length exceeded'), {
+        killed: true,
+        code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+      }),
+      ''
+    )
+    expect(await findLockingProcesses('/some/path')).toEqual({
+      ok: false,
+      reason: 'unavailable'
+    })
+  })
+
   it('treats an unexplained exit status with no output as a failure', async () => {
     // `lsof` uses 1 for "matched nothing"; nothing else is a documented empty
     // answer, so assuming emptiness is the conflation this module removes.
@@ -165,6 +195,12 @@ describe('findLockingProcesses on Windows', () => {
   })
 
   afterEach(() => restore())
+
+  it('runs the Windows probe, not lsof', () => {
+    mockProbe(null, '')
+    void findLockingProcesses('C:\\some\\path')
+    expect(mockedExecFile.mock.calls.at(-1)?.[0]).toBe('powershell.exe')
+  })
 
   it('embeds the failure token literally in the script', () => {
     // The token is interpolated into the PowerShell source from the TS

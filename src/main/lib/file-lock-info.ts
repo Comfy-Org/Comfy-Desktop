@@ -15,10 +15,14 @@ export type LockProbeFailure =
 /**
  * Outcome of one lock probe.
  *
- * `ok: true` means the holder set was determined, so an empty `processes`
- * genuinely means nothing holds the file. `ok: false` means the probe never
- * found out, which is NOT the same thing and must not be reported to the user
- * as "nothing is using it".
+ * `ok: true` means the probe ran to completion and named who it found, so an
+ * empty `processes` means it looked and named nobody. That is as strong as the
+ * platform tools allow: `lsof` reports an unreadable `/proc` entry or a denied
+ * permission with the same exit status it uses for a clean no-match, so a
+ * determined-empty answer is "nothing it could see holds the file".
+ *
+ * `ok: false` means the probe never got that far, which is a different thing
+ * entirely and must not be reported to the user as "nothing is using it".
  */
 export type LockProbeResult =
   | { ok: true; processes: LockingProcess[] }
@@ -57,8 +61,13 @@ const WINDOWS_PROBE_FAILED = '__RM_QUERY_FAILED__'
  * does not, so each platform decides that for itself below.
  */
 function classifyCommonFailure(err: ExecFileException): LockProbeFailure | null {
-  if (err.killed === true || err.signal) return 'timeout'
+  // Order matters. A `maxBuffer` overflow also arrives `killed: true`, so
+  // checking the kill first would file it under the 10s cap and put a wrong
+  // reason in the caller's log. Our own timeout kill carries no string `code`,
+  // so letting that test win first costs it nothing. A signal from outside is
+  // genuinely indistinguishable from our own and stays 'timeout'.
   if (typeof err.code === 'string') return 'unavailable'
+  if (err.killed === true || err.signal) return 'timeout'
   return null
 }
 
@@ -157,7 +166,7 @@ Add-Type -TypeDefinition $code
     execFile(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-Command', script],
-      { timeout: TIMEOUT_MS, windowsHide: true },
+      { timeout: TIMEOUT_MS, killSignal: 'SIGKILL', windowsHide: true },
       (err, stdout) => {
         const failure = err ? classifyWindowsFailure(err) : null
         // A timeout kill can leave a partial scan behind. Reporting those
@@ -183,7 +192,7 @@ function findLockingProcessesUnix(filePath: string): Promise<LockProbeResult> {
     execFile(
       'lsof',
       ['-F', 'pc', '--', filePath],
-      { timeout: TIMEOUT_MS, windowsHide: true },
+      { timeout: TIMEOUT_MS, killSignal: 'SIGKILL', windowsHide: true },
       (err, stdout) => {
         const failure = err ? classifyUnixFailure(err) : null
         // A timeout kill can leave a partial scan in `stdout`. Reporting those
