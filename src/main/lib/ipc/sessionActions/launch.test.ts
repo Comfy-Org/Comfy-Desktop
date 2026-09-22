@@ -1399,7 +1399,7 @@ describe('core beta report placement', () => {
       }
       launchHarness.waitForPort = async () => {}
 
-      const res = await handleLaunch(ctxFor('harness-assets-cohort'))
+      const res = await handleLaunch(ctxFor(`harness-assets-cohort-${_description}`))
 
       expect(res.ok).toBe(true)
       expect(spawnArgs.includes('--enable-assets')).toBe(expected)
