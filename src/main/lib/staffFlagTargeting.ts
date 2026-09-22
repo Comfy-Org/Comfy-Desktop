@@ -152,6 +152,29 @@ let unobserveConsensus: (() => void) | null = null
  *  views behind it. `CLASSIFY_STAFF_JS` bounds its own `indexedDB.open`, but `databases()` and
  *  `getAll` are unbounded and a hostile page can replace either with a promise that never
  *  resolves. `executeJavaScript` has no timeout of its own. */
+/** The shape `CLASSIFY_STAFF_JS` returns. Every field is `unknown` because it crosses the
+ *  renderer boundary: the page could return anything at all. */
+type PageClassification = {
+  known?: unknown
+  staff?: unknown
+  userId?: unknown
+  verified?: unknown
+}
+
+/** How long the unresolved path keeps ASKING - deliberately NOT how long anything waits before
+ *  DECIDING. The auth monitor has a settle deadline that sounds similar and means the opposite
+ *  (how long an empty store must stay empty before it is believed); do not unify the two.
+ *  Here a view that cannot answer yet is simply asked again, and never answering is a no-op.
+ *
+ *  Needed because `dom-ready` routinely beats Firebase writing its IndexedDB record, and on
+ *  this path nothing else will ever retry: the consensus is `unknown` precisely because it has
+ *  no contributor left to change its mind, so no later event arrives. One read would make this
+ *  a coin flip on page timing. */
+const UNRESOLVED_RETRY_DELAYS_MS = [0, 500, 1_000, 2_000, 4_000]
+
+/** Views with a retry loop already running, so repeated `dom-ready` events cannot stack them. */
+const unresolvedRetryViews = new Set<WebContents>()
+
 const PAGE_READ_TIMEOUT_MS = 10_000
 
 /** What `normalizePostHogUserId` will accept, applied to the raw string so trimming cannot sneak an
@@ -292,12 +315,14 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     // One past the 256 main will accept, so an over-length uid is REJECTED there rather than
     // truncated into a match with a different account.
     var userId = user.uid.slice(0, 257);
-    if (user.emailVerified !== true) return { known: true, staff: false, userId: userId };
+    if (user.emailVerified !== true)
+      return { known: true, staff: false, userId: userId, verified: false };
     var email = typeof user.email === 'string' ? user.email : '';
     return {
       known: true,
       staff: email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX,
-      userId: userId
+      userId: userId,
+      verified: true
     };
   } catch (e) {
     return { known: false };
@@ -369,7 +394,7 @@ async function classifyFromView(
   userId: string,
   generation: number
 ): Promise<boolean> {
-  let read: { known?: unknown; staff?: unknown; userId?: unknown } | null
+  let read: PageClassification | null
   try {
     read = (await readClassificationFromPage(webContents)) as typeof read
   } catch (err) {
@@ -470,6 +495,92 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
   void classifyAgreedAccount(consensus.userId, classificationGeneration)
 }
 
+/** Resolve after `ms`, without holding the process open. */
+function afterDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    timer.unref?.()
+  })
+}
+
+/**
+ * Classify from a view when the identity consensus will NEVER resolve.
+ *
+ * The consensus reports `unknown` when no view is trusted to say who is signed in — which is the
+ * ORDINARY state for an install whose loopback authorization was never written or has been erased.
+ * Such a machine is signed in, works normally, and is invisible to every consensus consumer, so
+ * without this path it can never be classified at all, on any launch, forever.
+ *
+ * This deliberately reads a page whose identity reports the consensus refuses to trust, which is a
+ * real relaxation and is why it accepts only a POSITIVE identification: exactly one stored account,
+ * with a verified address. Empty, multiple, unverified or unreadable all abstain. The page cannot
+ * push this module toward "not staff" by failing to answer — only by presenting a different
+ * verified account, which is a genuine account change and should reclassify.
+ *
+ * Returns whether a classification was applied.
+ */
+async function classifyFromUnresolvedView(
+  webContents: WebContents,
+  generation: number
+): Promise<boolean> {
+  let read: PageClassification | null
+  try {
+    read = (await readClassificationFromPage(webContents)) as PageClassification | null
+  } catch (err) {
+    // A page that cannot be read must not revoke a grant.
+    console.log('[staff-targeting] unresolved read skipped:', err)
+    return false
+  }
+  if (generation !== classificationGeneration) return false
+  if (answeredGeneration === generation) return false
+  if (!read || read.known !== true) return false
+  // The relaxation, bounded to one line. `verified` exists so this check is possible: an unverified
+  // account and a verified non-staff one are otherwise the same read, and only the second is
+  // evidence about a person. An unverified address is self-asserted and proves nothing, so it
+  // cannot enter the cohort NOR displace an existing classification.
+  if (read.verified !== true) return false
+  if (typeof read.userId !== 'string' || read.userId.length > MAX_PAGE_USER_ID_CHARS) return false
+  const userId = normalizePostHogUserId(read.userId)
+  // An empty store reports `userId: null` and a whitespace-only uid normalizes away; neither is an
+  // account, and treating either as one would let "nothing is stored" revoke a grant.
+  if (!userId) return false
+  const isStaff = read.staff === true
+  answeredGeneration = generation
+  classifiedUserId = userId
+  classifiedStaff = isStaff
+  applyClassification(isStaff)
+  return true
+}
+
+/**
+ * Ask a view repeatedly while the consensus stays unresolved, then give up.
+ *
+ * Bounded and abandonable: it stops the moment the consensus resolves (the agreed-account path is
+ * strictly better evidence and takes over), the moment any view answers for this generation, or
+ * when the view goes away. Giving up leaves the stored classification exactly as it was.
+ */
+async function classifyWhileUnresolved(
+  webContents: WebContents,
+  generation: number
+): Promise<void> {
+  if (unresolvedRetryViews.has(webContents)) return
+  unresolvedRetryViews.add(webContents)
+  try {
+    for (const wait of UNRESOLVED_RETRY_DELAYS_MS) {
+      if (wait > 0) await afterDelay(wait)
+      if (webContents.isDestroyed()) return
+      if (generation !== classificationGeneration) return
+      if (answeredGeneration === generation) return
+      // Re-read rather than trusting the status this loop started on: once anything can speak for
+      // the identity, this path must get out of its way.
+      if (getFirebaseIdentityConsensus().status !== 'unknown') return
+      if (await classifyFromUnresolvedView(webContents, generation)) return
+    }
+  } finally {
+    unresolvedRetryViews.delete(webContents)
+  }
+}
+
 /**
  * Offer a freshly loaded view as a classifier for the account already agreed on.
  *
@@ -498,6 +609,14 @@ export async function refreshStaffFlagTargeting(webContents: WebContents): Promi
     applyClassification(false)
     return
   }
+  // `unknown` is the one unresolved outcome that is not going to change on its own: it means
+  // no view is trusted to speak, so no later report can move it. `pending` and `conflicted` are
+  // different - something IS still speaking, and guessing over it would be racing a better
+  // answer that is already on its way.
+  if (consensus.status === 'unknown') {
+    await classifyWhileUnresolved(webContents, classificationGeneration)
+    return
+  }
   if (consensus.status !== 'signed_in') return
   if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
     // Nothing to ask this view — but a page load is also the moment to retry a write that
@@ -515,6 +634,7 @@ export function _resetForTest(): void {
   classifiedStaff = null
   classificationGeneration = 0
   answeredGeneration = null
+  unresolvedRetryViews.clear()
   unobserveConsensus?.()
   unobserveConsensus = null
 }

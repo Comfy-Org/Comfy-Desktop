@@ -75,14 +75,20 @@ let pageReads = 0
 /** A view that CAN classify — it reached an auth store and reached a verdict. */
 function stubContents(
   staff: boolean,
-  opts: { throws?: boolean; userId?: string } = {}
+  opts: { throws?: boolean; userId?: string; verified?: boolean } = {}
 ): Electron.WebContents {
   return {
+    isDestroyed: () => false,
     executeJavaScript: () => {
       pageReads += 1
       return opts.throws
         ? Promise.reject(new Error('page gone'))
-        : Promise.resolve({ known: true, staff, userId: opts.userId ?? USER })
+        : Promise.resolve({
+            known: true,
+            staff,
+            userId: opts.userId ?? USER,
+            verified: opts.verified ?? true
+          })
     }
   } as unknown as Electron.WebContents
 }
@@ -90,6 +96,7 @@ function stubContents(
 /** A view with NO auth store — it has no opinion about who is signed in. */
 function stubContentsWithoutAuthStore(): Electron.WebContents {
   return {
+    isDestroyed: () => false,
     executeJavaScript: () => {
       pageReads += 1
       return Promise.resolve({ known: false })
@@ -100,6 +107,7 @@ function stubContentsWithoutAuthStore(): Electron.WebContents {
 /** A view whose read returns something unexpected entirely. */
 function stubContentsReturning(result: unknown): Electron.WebContents {
   return {
+    isDestroyed: () => false,
     executeJavaScript: () => {
       pageReads += 1
       return Promise.resolve(result)
@@ -246,7 +254,7 @@ describe('CLASSIFY_STAFF_JS', () => {
   ])('classifies %s', async (_label, email, expected) => {
     const { result } = await classify({ entries: [authRecord('u1', email as string | null)] })
 
-    expect(result).toEqual({ known: true, staff: expected, userId: 'u1' })
+    expect(result).toEqual({ known: true, staff: expected, userId: 'u1', verified: true })
   })
 
   it('refuses an unverified address, which proves nothing about domain ownership', async () => {
@@ -254,7 +262,7 @@ describe('CLASSIFY_STAFF_JS', () => {
     // self-asserted. Without this check anyone could sign up and enter the cohort.
     const { result } = await classify({ entries: [authRecord('u1', 'someone@comfy.org', false)] })
 
-    expect(result).toEqual({ known: true, staff: false, userId: 'u1' })
+    expect(result).toEqual({ known: true, staff: false, userId: 'u1', verified: false })
   })
 
   it('reports signed out, for no account, when no auth record exists', async () => {
@@ -278,7 +286,7 @@ describe('CLASSIFY_STAFF_JS', () => {
       entries: [authRecord('u1', 'someone@comfy.org'), authRecord('u1', 'someone@comfy.org')]
     })
 
-    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1', verified: true })
   })
 
   it.each([['__proto__'], ['constructor'], ['toString']])(
@@ -719,13 +727,22 @@ describe('retrying a write that did not land', () => {
   it('does not let a dom-ready view DECIDE a sign-out, only re-apply one', async () => {
     // Re-applying a decision the consensus already took is a write retry. Taking one on a single
     // view's say-so would be a decision, and one view says nothing about the others.
+    //
+    // With the unresolved path in place a view IS now read when nothing is agreed, so what proves
+    // the rule is the ABSENCE of an account rather than the absence of a read: a view that cannot
+    // identify anybody must leave the grant alone. Absence is not a sign-out.
     await consensusSignedIn([stubContents(true)])
     await consensusUnresolved('unknown')
-    pageReads = 0
 
-    await refreshStaffFlagTargeting(stubContents(false))
+    vi.useFakeTimers()
+    try {
+      const refreshed = refreshStaffFlagTargeting(stubContentsWithoutAuthStore())
+      await vi.advanceTimersByTimeAsync(30_000)
+      await refreshed
+    } finally {
+      vi.useRealTimers()
+    }
 
-    expect(pageReads).toBe(0)
     expect(nextLaunchBinding()).toBe(true)
   })
 })
@@ -856,10 +873,11 @@ describe('refreshStaffFlagTargeting', () => {
   })
 
   it.each([
-    ['nothing is agreed yet', 'unknown' as const],
     ['a contributor is still resolving', 'pending' as const],
     ['two views disagree', 'conflicted' as const]
   ])('declines to classify while %s', async (_label, status) => {
+    // Something is still speaking in both of these, so a better answer is already on its way and
+    // guessing over it would be racing it. Only `unknown` is terminal, and it has its own suite.
     await consensusUnresolved(status)
 
     await refreshStaffFlagTargeting(stubContents(true))
@@ -956,5 +974,150 @@ describe('persisting the classification', () => {
     fs.rmSync(testConfigDir, { recursive: true, force: true })
 
     await expect(refreshStaffFlagTargeting(stubContents(true))).resolves.toBeUndefined()
+  })
+})
+
+// The path that exists because a consensus can be permanently unresolved rather than merely
+// unresolved yet. An install whose loopback authorization was never written — or was erased — has
+// no view anybody trusts to say who is signed in, so `unknown` is its steady state and no later
+// event will change it. Without this the machine is signed in, works normally, and can never be
+// classified on any launch.
+describe('classifying when the identity consensus cannot resolve', () => {
+  beforeEach(() => {
+    initStaffFlagTargeting()
+    setFlagEvaluationStaff.mockClear()
+  })
+
+  /** Drive a view through the whole retry schedule, so an abstaining read is fully exhausted. */
+  async function refreshThroughRetries(view: Electron.WebContents): Promise<void> {
+    vi.useFakeTimers()
+    try {
+      const refreshed = refreshStaffFlagTargeting(view)
+      await vi.advanceTimersByTimeAsync(30_000)
+      await refreshed
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it('classifies a verified account, so an untrusted session is not invisible forever', async () => {
+    await consensusUnresolved('unknown')
+
+    await refreshStaffFlagTargeting(stubContents(true))
+
+    expect(storedFile()).toMatchObject({ staff: true })
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('reclassifies when a different verified account is present, because that is a replacement', async () => {
+    await consensusSignedIn([stubContents(true)])
+    expect(nextLaunchBinding()).toBe(true)
+    await consensusUnresolved('unknown')
+
+    await refreshStaffFlagTargeting(stubContents(false, { userId: 'somebody-else' }))
+
+    expect(storedFile()).toMatchObject({ staff: false })
+  })
+
+  it.each([
+    [
+      'the address is unverified, which is self-asserted and proves nothing',
+      { known: true, staff: true, userId: USER, verified: false }
+    ],
+    [
+      'no account is stored, which is an absence rather than a different account',
+      { known: true, staff: false, userId: null, verified: false }
+    ],
+    ['the store could not be read at all', { known: false }],
+    ['the page answers with something else entirely', { known: true, staff: true, verified: true }]
+  ])('abstains when %s', async (_label, result) => {
+    await consensusUnresolved('unknown')
+
+    await refreshThroughRetries(stubContentsReturning(result))
+
+    expect(fs.existsSync(persistFilePath())).toBe(false)
+  })
+
+  it('cannot revoke an established grant by failing to identify anybody', async () => {
+    // The asymmetry Simon approved: this path GRANTS, and revokes only on a positive
+    // identification of a different account. Absence must never take a grant away, or every
+    // launch that reads a page too early would revoke one.
+    await consensusSignedIn([stubContents(true)])
+    expect(nextLaunchBinding()).toBe(true)
+    await consensusUnresolved('unknown')
+
+    await refreshThroughRetries(stubContentsReturning({ known: true, staff: false, userId: null }))
+
+    expect(storedFile()).toMatchObject({ staff: true })
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('asks again, because dom-ready routinely beats Firebase writing its record', async () => {
+    // The whole reason this path retries. One read would make the classification a coin flip on
+    // page timing, and nothing else will ever try again: `unknown` means no contributor is left
+    // to change its mind, so no later consensus event arrives.
+    let reads = 0
+    const populatesLate = {
+      isDestroyed: () => false,
+      executeJavaScript: () => {
+        reads += 1
+        return Promise.resolve(
+          reads === 1
+            ? { known: true, staff: false, userId: null, verified: false }
+            : { known: true, staff: true, userId: USER, verified: true }
+        )
+      }
+    } as unknown as Electron.WebContents
+
+    await consensusUnresolved('unknown')
+    await refreshThroughRetries(populatesLate)
+
+    expect(reads).toBeGreaterThan(1)
+    expect(storedFile()).toMatchObject({ staff: true })
+  })
+
+  it('gets out of the way the moment the consensus resolves', async () => {
+    // The agreed-account path is strictly better evidence. Racing it would let a view answer for
+    // an account the process has since disagreed about.
+    let reads = 0
+    const neverIdentifies = {
+      isDestroyed: () => false,
+      executeJavaScript: () => {
+        reads += 1
+        return Promise.resolve({ known: false })
+      }
+    } as unknown as Electron.WebContents
+
+    await consensusUnresolved('unknown')
+    vi.useFakeTimers()
+    try {
+      const refreshed = refreshStaffFlagTargeting(neverIdentifies)
+      await vi.advanceTimersByTimeAsync(600)
+      const readsBefore = reads
+      identity.publish({ status: 'signed_in', userId: USER }, [stubContents(true)])
+      await vi.advanceTimersByTimeAsync(30_000)
+      await refreshed
+      expect(reads).toBe(readsBefore)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not stack a second retry loop when one view reaches dom-ready twice', async () => {
+    const view = stubContentsReturning({ known: false })
+    await consensusUnresolved('unknown')
+
+    vi.useFakeTimers()
+    try {
+      const first = refreshStaffFlagTargeting(view)
+      const second = refreshStaffFlagTargeting(view)
+      await vi.advanceTimersByTimeAsync(30_000)
+      await Promise.all([first, second])
+    } finally {
+      vi.useRealTimers()
+    }
+
+    // One schedule's worth of reads, not two interleaved schedules.
+    expect(pageReads).toBe(5)
   })
 })
