@@ -769,6 +769,21 @@ describe('persisted-write logging', () => {
     log.mockRestore()
   })
 
+  it('reports a stored null as null, not as absent', () => {
+    // `loadOutcome` strips `null`s the schema does not allow, so the baseline is taken before
+    // that. Otherwise a key stored as `null` reads as never-present and the line claims
+    // `<unset> -> value` — a log that restates the state it is attributing against.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: null }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', true)
+
+    const line = writeLines(log).find((l) => l.includes('betaFeaturesEnabled'))
+    expect(line).toContain('"betaFeaturesEnabled": null -> true')
+    log.mockRestore()
+  })
+
   it('describes a string value by shape instead of printing it', () => {
     // These lines land in `app.log`, which users attach to support requests. A path or a
     // mirror host must not be disclosed just because it changed; the shape still answers

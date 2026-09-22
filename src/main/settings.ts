@@ -487,6 +487,12 @@ function loadOutcome(): {
       console.warn('Settings: failed to parse settings JSON:', (err as Error).message)
     }
   }
+  // Captured BEFORE the normalisation below, which deletes `null`s that the schema does not
+  // allow. The change log's baseline has to be what the file literally held: a key stored as
+  // `null` would otherwise read as absent, and the line for it would claim `<unset> -> value`
+  // when the truth is `null -> value`. A log whose job is attribution should not quietly
+  // restate the state it is attributing against.
+  const persisted: Record<string, unknown> = { ...(parsed ?? {}) }
   if (parsed) {
     for (const key of KNOWN_SETTING_KEYS) {
       if (parsed[key] === null && !isNullableKnownSettingKey(key)) {
@@ -637,8 +643,8 @@ function loadOutcome(): {
       changed = true
     }
   }
-  if (changed && !unreadable) save(result, parsed ?? {})
-  return { settings: result, unreadable, persisted: parsed ?? {} }
+  if (changed && !unreadable) save(result, persisted)
+  return { settings: result, unreadable, persisted }
 }
 
 /** Describe a value for the log WITHOUT disclosing it.
