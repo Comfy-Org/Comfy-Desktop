@@ -87,8 +87,11 @@ export function buildElectronApi(): ElectronApi {
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
-    openGlobalSettings: (tab) =>
-      ipcRenderer.send('comfy-titlepopup:open-global-settings', tab ? { tab } : undefined),
+    openGlobalSettings: (tab, opts) =>
+      ipcRenderer.send(
+        'comfy-titlepopup:open-global-settings',
+        tab || opts?.highlightField ? { tab, highlightField: opts?.highlightField } : undefined
+      ),
     openInstancePicker: (opts) =>
       ipcRenderer.send('comfy-window:open-instance-picker-for-install', {
         installationId: opts?.installationId ?? null,
@@ -191,6 +194,10 @@ export function buildElectronApi(): ElectronApi {
     getMediaSections: () => ipcRenderer.invoke('get-media-sections'),
     setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
     getSetting: (key) => ipcRenderer.invoke('get-setting', key),
+    getPendingBetaNotice: (installationId) =>
+      ipcRenderer.invoke('get-pending-beta-notice', installationId),
+    acknowledgeBetaNotice: (installationId, shownArgs) =>
+      ipcRenderer.invoke('acknowledge-beta-notice', installationId, shownArgs),
 
     // Theme
     getResolvedTheme: () => ipcRenderer.invoke('get-resolved-theme'),

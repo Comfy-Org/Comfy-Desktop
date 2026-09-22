@@ -97,6 +97,7 @@ import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 import { getCoreBetaGrantsAsync, selectCoreBetaGrantArgs } from '../../coreBetaGrants'
+import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
 import type { CoreBetaGrant } from '../../coreBetaGrants'
 import { coreRecordCurrent, coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
 import type { CoreCheckout } from '../../version'
@@ -539,6 +540,11 @@ export function _cleanupFailedLaunchSetup(
   if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
   abort.abort()
   _clearLaunchingFailed(installationId)
+  // Every guarded setup failure lands here, including the spawn itself on the `skipPortWait`
+  // path — and that one rethrows past the `!launchResult.ok` cleanup rather than through it.
+  // Clearing at this chokepoint covers all of them; it is a delete, so paths that fail before
+  // the claim is armed pay nothing.
+  clearBetaActivationClaim(installationId)
 }
 
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
@@ -778,6 +784,10 @@ async function runLaunch(
       writeLog: (text) => writeLog(logStream, text),
       sendOutput
     })
+    // Same latch, same reason: a grant is only worth announcing once it is provably on this
+    // launch's command line. Queued rather than shown — the host window may still be mid-attach
+    // or under the progress takeover, so the title bar drains this when its own gate opens.
+    armBetaActivationNotice(installationId, coreBeta.applied)
     try {
       emitCoreBetaTelemetry({
         appliedArgs: coreBeta.applied.map((grant) => grant.arg),
@@ -1678,6 +1688,10 @@ async function runLaunch(
     if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
     abort.abort() // stop the template-models reader timer on launch failure
     _clearLaunchingFailed(installationId)
+    // The grants were claimed just before the spawn, which has now failed or been cancelled.
+    // Drop the claim: nothing started, so there is nothing to announce — and leaving it would
+    // also silence the same arg for another install, since claims are global.
+    clearBetaActivationClaim(installationId)
     // Flush the hardware tap on terminal failure/cancel too: the exit handler
     // covers a process that exits, but a waitForPort timeout can return here
     // with the proc still alive, leaving a pending accelerator event unemitted.
@@ -1829,6 +1843,7 @@ async function runLaunch(
         assetsTap.flushSummary()
         _removeSession(installationId)
         _clearLaunchingFailed(installationId)
+        clearBetaActivationClaim(installationId)
         if (abort.signal.aborted) return { ok: false, cancelled: true }
         return { ok: false, message: (err as Error).message }
       }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { findLockingProcesses } from './file-lock-info'
+import { findLockingProcesses, type LockingProcess } from './file-lock-info'
 import { fork } from 'child_process'
 import fs from 'fs'
 import path from 'path'
@@ -40,7 +40,33 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
     }
   })
 
-  it('detects a process holding a file open', async () => {
+  // `findLockingProcesses` is best-effort by contract: it caps `lsof` at 10s
+  // and returns an empty list when that cap kills it, which is
+  // indistinguishable from "nothing holds this file". `lsof` walks every
+  // process's fd table, so on a saturated machine - vitest runs 8 workers, CI
+  // gives it 4 cores - it can and does blow past the cap. A single empty
+  // answer is therefore not evidence the lookup is broken, so re-ask while
+  // the child still holds the handle instead of failing the run on it.
+  async function probeUntilHolderFound(
+    filePath: string,
+    pid: number,
+    attempts = 3
+  ): Promise<LockingProcess[]> {
+    let result: LockingProcess[] = []
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      // Back off first: an empty answer means the machine was too busy for
+      // `lsof` to finish inside the cap, and three full fd-table scans run
+      // back to back add to exactly the load that caused it.
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, attempt * 1000))
+      result = await findLockingProcesses(filePath)
+      if (result.some((entry) => entry.pid === pid)) break
+    }
+    return result
+  }
+
+  // Three 10s probes plus fork overhead have to fit inside the budget, or a
+  // timeout re-introduces exactly the flake the retry exists to remove.
+  it('detects a process holding a file open', { timeout: 60_000 }, async () => {
     // Windows' Restart Manager API doesn't detect arbitrary handles from console processes
     // like Node, so skip there; lsof works for all process types on Linux/macOS.
     if (process.platform === 'win32') return
@@ -65,7 +91,7 @@ describe('findLockingProcesses', { timeout: 30_000 }, () => {
     await new Promise((r) => setTimeout(r, 500))
 
     try {
-      const result = await findLockingProcesses(tmpFile)
+      const result = await probeUntilHolderFound(tmpFile, child.pid!)
       expect(result.length).toBeGreaterThanOrEqual(1)
       const pids = result.map((r) => r.pid)
       expect(pids).toContain(child.pid)

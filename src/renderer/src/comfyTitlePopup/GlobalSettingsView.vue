@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FileText, HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
@@ -33,6 +33,9 @@ interface Snapshot {
   /** Tab to land on; non-null only on the open push (rebroadcasts carry
    *  null so live data refreshes never retarget the user's tab). */
   initialTab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
+  /** Field id to scroll to and flash; same per-open semantics as
+   *  `initialTab`, so rebroadcasts (which carry null) never re-flash. */
+  highlightFieldId?: string | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -101,9 +104,61 @@ watch(
   () => props.snapshot,
   (snap) => {
     if (snap.initialTab) activeTab.value = snap.initialTab
+    if (snap.highlightFieldId) void flashField(snap.highlightFieldId)
   },
   { immediate: true }
 )
+
+/** How long the flashed row keeps its ring. Long enough to catch the eye after
+ *  the scroll settles, short enough that the row is back to normal before the
+ *  user reaches for it. */
+const HIGHLIGHT_MS = 2200
+let highlightTimer: ReturnType<typeof setTimeout> | null = null
+/** The element the live timer belongs to, so a second flash can strip the class off the first
+ *  rather than leaving it ringed — which matters under `prefers-reduced-motion`, where the
+ *  class holds a static ring instead of a finishing animation. */
+let highlightEl: HTMLElement | null = null
+
+function clearHighlight(): void {
+  if (highlightTimer !== null) clearTimeout(highlightTimer)
+  highlightTimer = null
+  highlightEl?.classList.remove('gs-field-flash')
+  highlightEl = null
+}
+
+onUnmounted(clearHighlight)
+
+/**
+ * Scroll a settings row into view and flash it.
+ *
+ * Deep links land on a tab, not a control, and the Privacy rows sit well below
+ * the fold on the General tab — so "we opened Settings for you" can still leave
+ * the user hunting. Queried from the document rather than a template ref
+ * because the rows are rendered by `SettingsSectionList` several components down,
+ * which exposes them only as `data-field-id`.
+ */
+async function flashField(fieldId: string): Promise<void> {
+  // Two ticks: the first flushes the tab switch this same watch may have just
+  // requested, the second the field list that tab renders.
+  await nextTick()
+  await nextTick()
+  const el = document.querySelector(`[data-field-id="${CSS.escape(fieldId)}"]`)
+  if (!(el instanceof HTMLElement)) return
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+  el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
+  clearHighlight()
+  // Re-added rather than toggled so a second flash of the same row restarts the
+  // animation instead of being swallowed as "class already present".
+  el.classList.remove('gs-field-flash')
+  void el.offsetWidth
+  el.classList.add('gs-field-flash')
+  highlightEl = el
+  highlightTimer = setTimeout(() => {
+    el.classList.remove('gs-field-flash')
+    highlightTimer = null
+    highlightEl = null
+  }, HIGHLIGHT_MS)
+}
 
 const tabs = computed(() => [
   { id: 'general' as const, label: props.snapshot.i18n.overview, icon: Settings2 },
@@ -583,5 +638,33 @@ onMounted(() => {
 .global-settings :deep(.ui-input-trailing button) {
   width: 26px;
   height: 26px;
+}
+
+/* Deep-link flash — a settings link (e.g. the beta activation notice) scrolls
+   its target row into view and adds this class for a couple of seconds. Ring +
+   tint only, no layout change, so nothing under the row shifts while it pulses.
+   `:deep` because the row is rendered by DetailSection, not this component. */
+.gs-pane :deep(.gs-field-flash) {
+  border-radius: 6px;
+  animation: gs-field-flash 2.2s ease-out;
+}
+@keyframes gs-field-flash {
+  0%,
+  55% {
+    box-shadow: 0 0 0 2px var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+    background: transparent;
+  }
+}
+/* Reduced motion still needs the row found — hold a static ring instead of
+   pulsing, and let the scroll jump rather than smooth-scroll. */
+@media (prefers-reduced-motion: reduce) {
+  .gs-pane :deep(.gs-field-flash) {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent);
+  }
 }
 </style>

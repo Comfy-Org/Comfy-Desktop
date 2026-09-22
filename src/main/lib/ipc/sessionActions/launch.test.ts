@@ -49,7 +49,7 @@ const launchHarness = vi.hoisted(() => ({
   /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
-  grants: [] as { arg: string; minCoreVersion: string }[],
+  grants: [] as { arg: string; minCoreVersion: string; notice?: CoreBetaNotice }[],
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -141,13 +141,21 @@ import {
   _cleanupFailedLaunchSetup
 } from './launch'
 import * as assetsTapModule from '../../assetsTap'
+import {
+  BETA_NOTICE_ANNOUNCED_ARGS_KEY,
+  _resetForTest as _resetBetaNotice,
+  acknowledgeBetaActivationNotice,
+  armBetaActivationNotice,
+  peekBetaActivationNotice
+} from '../../betaActivationNotice'
+import * as settingsModule from '../../../settings'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
-import type { CoreBetaGrant } from '../../coreBetaGrants'
+import type { CoreBetaGrant, CoreBetaNotice } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import {
   makeSendOutput,
@@ -295,6 +303,20 @@ describe('_cleanupFailedLaunchSetup', () => {
     expect(_getLaunchingInstallationIds()).not.toContain(INSTALL)
     expect(_operationAborts.has(INSTALL)).toBe(false)
     expect(abort.signal.aborted).toBe(true)
+  })
+
+  // Arming happens just before the spawn, and on the `skipPortWait` path a spawn failure
+  // rethrows out of `guardLaunchSetup` rather than reaching the `!launchResult.ok` cleanup.
+  // This is the chokepoint every guarded setup failure passes through, so the claim is
+  // dropped here: otherwise the title bar announces a beta feature for a Core that never ran.
+  it('drops a beta claim armed by a launch that then failed to spawn', () => {
+    _resetBetaNotice()
+    armBetaActivationNotice(INSTALL, [{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+    expect(peekBetaActivationNotice(INSTALL)?.args).toEqual(['--enable-assets'])
+
+    _cleanupFailedLaunchSetup(INSTALL, new AbortController())
+
+    expect(peekBetaActivationNotice(INSTALL)).toBeNull()
   })
 
   it('ends the log stream when one was opened', () => {
@@ -913,6 +935,11 @@ describe('core beta report placement', () => {
     launchHarness.grants = [HARNESS_GRANT]
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
+    // Both halves of the activation-notice state: the in-process pending queue and the
+    // persisted announced list, which the real settings module keeps in this run's temp
+    // app dir. Without the reset, the first test to launch spends the notice for the rest.
+    _resetBetaNotice()
+    settingsModule.set(BETA_NOTICE_ANNOUNCED_ARGS_KEY, [])
     launchHarness.spawn = (_cmd: unknown, args: unknown) => {
       spawnArgs = args as string[]
       return fakeChild()
@@ -965,6 +992,77 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain('[core-beta] --enable-assets')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.applied')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
+  })
+
+  it('arms the activation notice from the same latch that reports the grant', async () => {
+    const id = 'harness-arms-beta-notice'
+    expect(peekBetaActivationNotice(id)).toBeNull()
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(true)
+    expect(peekBetaActivationNotice(id)?.args).toEqual(['--enable-assets'])
+  })
+
+  it('arms nothing on a launch whose grants the args schema refused', async () => {
+    // A grant the running core cannot parse is dropped as `dropped_unsupported`, so the
+    // feature is NOT on and announcing it would be a lie. The schema is the gate the notice
+    // inherits by reading `applied` rather than the selected set.
+    launchHarness.schemaNames = ['listen', 'feature-flag']
+    const id = 'harness-schema-refused'
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
+    expect(peekBetaActivationNotice(id)).toBeNull()
+  })
+
+  it('arms nothing for an install that opted out of beta features', async () => {
+    launchHarness.betaEnabled = false
+    const id = 'harness-opted-out'
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(true)
+    expect(peekBetaActivationNotice(id)).toBeNull()
+  })
+
+  it('arms nothing when the payload asked for a silent grant', async () => {
+    // Copy control, not flag control: the arg still reaches the command line, the user just
+    // is not told about it.
+    launchHarness.grants = [{ ...HARNESS_GRANT, notice: { silent: true } }]
+    const id = 'harness-silent-grant'
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-assets')
+    expect(peekBetaActivationNotice(id)).toBeNull()
+  })
+
+  it('carries the payload feature name onto the pending card', async () => {
+    launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset library' } }]
+    const id = 'harness-named-grant'
+
+    await handleLaunch(ctxFor(id))
+
+    expect(peekBetaActivationNotice(id)).toEqual({
+      args: ['--enable-assets'],
+      direction: 'enabled',
+      description: 'Asset library'
+    })
+  })
+
+  it('stays silent on the NEXT launch once the notice has been acknowledged', async () => {
+    const id = 'harness-announces-once'
+    await handleLaunch(ctxFor(id))
+    acknowledgeBetaActivationNotice(id)
+    expect(settingsModule.get(BETA_NOTICE_ANNOUNCED_ARGS_KEY)).toEqual(['--enable-assets'])
+
+    await handleLaunch(ctxFor(id))
+
+    expect(peekBetaActivationNotice(id)).toBeNull()
   })
 
   /** The commit `harnessInstall`'s record names, i.e. what the version gate believes is running. */

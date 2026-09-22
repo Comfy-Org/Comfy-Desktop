@@ -21,8 +21,17 @@ export interface SeedOptions {
    *  `firstUseCompleted`) so a test isn't racing the first-use takeover. */
   settings?: Record<string, unknown>
   /** Runs after the isolated dirs are created but before launch. Use to drop
-   *  platform-specific files the main process inspects during early boot. */
+   *  platform-specific files the main process inspects during early boot.
+   *
+   *  NOT suitable for anything main reads through `configDir()`: that resolves to Electron's
+   *  `userData`, which on macOS ignores the HOME override entirely (see `appDataDir` below).
+   *  Use a `E2E_*_SEED` env hook for those, as `settings` and `opsFlags` do. */
   onSetup?: (paths: { homeDir: string; appDataDir: string }) => Promise<void>
+  /** Seed `<configDir>/ops-flags.json` — the persisted ops-flag cache that `coreBetaGrants`
+   *  falls back to when PostHog is unreachable. Env-delivered rather than written here for the
+   *  same reason `settings` is: main is the only process that knows where that file lives on
+   *  every platform. */
+  opsFlags?: Record<string, unknown>
   /** Launch against this exact profile dir instead of a fresh mkdtemp one,
    *  with the same semantics as `LIFECYCLE_REUSE_DIR` (persisted settings are
    *  folded into the seed; the dir survives cleanup). Lets a spec quit and
@@ -76,7 +85,8 @@ function formatSeedTimestamp(date: Date): string {
 
 function buildIsolatedEnv(
   homeDir: string,
-  settingsSeed?: Record<string, unknown>
+  settingsSeed?: Record<string, unknown>,
+  opsFlagsSeed?: Record<string, unknown>
 ): Record<string, string> {
   const inheritedEnv = Object.fromEntries(
     Object.entries(process.env).filter(
@@ -112,6 +122,8 @@ function buildIsolatedEnv(
     ...(settingsSeed ?? {})
   }
   env['E2E_SETTINGS_SEED'] = JSON.stringify(effectiveSeed)
+
+  if (opsFlagsSeed) env['E2E_OPS_FLAGS_SEED'] = JSON.stringify(opsFlagsSeed)
 
   return env
 }
@@ -234,6 +246,13 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   const args = ['.', `--remote-debugging-port=${cdpPort}`]
   if (process.platform === 'linux') {
     args.push('--no-sandbox')
+    // Ozone picks its backend from the session, and on a Wayland desktop it picks Wayland
+    // even with WAYLAND_DISPLAY unset — so a headless run under Xvfb dies at
+    // "Failed to initialize Wayland platform" before any test code runs. Setting
+    // E2E_OZONE_PLATFORM=x11 pins the backend for those runs. Unset elsewhere (CI included),
+    // so the default behaviour is unchanged.
+    const ozone = process.env['E2E_OZONE_PLATFORM']
+    if (ozone) args.push(`--ozone-platform=${ozone}`)
   }
 
   // A reused profile must keep its persisted settings: main overwrites
@@ -258,7 +277,11 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     // under the harness. Callers can still override explicitly.
     delete persistedSettings['telemetryEnabled']
   }
-  const env = buildIsolatedEnv(homeDir, { ...persistedSettings, ...(options?.settings ?? {}) })
+  const env = buildIsolatedEnv(
+    homeDir,
+    { ...persistedSettings, ...(options?.settings ?? {}) },
+    options?.opsFlags
+  )
   if (seedRecords.length > 0) {
     env['E2E_INSTALLATIONS_SEED'] = JSON.stringify(seedRecords)
   }

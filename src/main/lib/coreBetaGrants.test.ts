@@ -189,6 +189,100 @@ describe('parseCoreBetaGrants', () => {
   })
 })
 
+describe('parseCoreBetaGrants notice wording', () => {
+  /** The exact payload shape live in the prod acceptance-test flag. A flag object carrying
+   *  nothing but `arg` + `min_core_version` MUST keep granting — the notice fields are copy,
+   *  added after that payload was written, and cannot become required. */
+  it('grants a payload entry that says nothing about the notice', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-assets', min_core_version: '0.36.0' }]
+      })
+    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.36.0' }])
+  })
+
+  it('carries a silent request and a feature name onto the grant', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', min_core_version: '0.3.80', description: 'Asset library' },
+          { arg: '--enable-agent', min_core_version: '0.3.80', notice: 'silent' }
+        ]
+      })
+    ).toEqual([
+      {
+        arg: '--enable-assets',
+        minCoreVersion: '0.3.80',
+        notice: { description: 'Asset library' }
+      },
+      { arg: '--enable-agent', minCoreVersion: '0.3.80', notice: { silent: true } }
+    ])
+  })
+
+  it('only the exact string "silent" suppresses the card', () => {
+    // `notice: true` reads as "yes, notify" at least as naturally as "yes, silent", and a
+    // rollout silenced by accident is invisible until someone asks why nobody was told.
+    for (const notice of [true, 1, 'SILENT', 'quiet', null]) {
+      expect(
+        parseCoreBetaGrants(true, {
+          flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', notice }]
+        })
+      ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+    }
+  })
+
+  it('trims a description and drops a blank one', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description: '  Assets  ' }]
+      })
+    ).toEqual([
+      { arg: '--enable-assets', minCoreVersion: '0.3.80', notice: { description: 'Assets' } }
+    ])
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description: '   ' }]
+      })
+    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+  })
+
+  it('drops an over-long or non-string description instead of refusing the grant', () => {
+    // Copy never gates a flag: a name too long for the card, or the wrong type entirely, costs
+    // the card its wording and nothing else.
+    for (const description of ['x'.repeat(49), 42, { text: 'Assets' }, ['Assets']]) {
+      expect(
+        parseCoreBetaGrants(true, {
+          flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description }]
+        })
+      ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+    }
+  })
+
+  it.each([
+    ['a newline', 'Assets\nbrowser'],
+    ['a C0 control', 'Assets\u0007browser'],
+    ['a bidi override', 'Assets\u202Ebrowser'],
+    ['a zero-width joiner', 'Assets\u200Dbrowser']
+  ])('drops a description containing %s', (_label, description) => {
+    // The name is rendered verbatim in desktop chrome next to a Settings action, so anything
+    // that can reshape or reverse the sentence falls back to the generic wording.
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description }]
+      })
+    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+  })
+
+  it('keeps a description exactly at the limit', () => {
+    const description = 'x'.repeat(48)
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80', description }]
+      })
+    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80', notice: { description } }])
+  })
+})
+
 describe('selectCoreBetaGrantArgs', () => {
   const unboundedGrant = {
     arg: '--enable-assets',

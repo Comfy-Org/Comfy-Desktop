@@ -1,6 +1,7 @@
 // Re-export IPC types from the canonical shared location for renderer convenience.
 export type {
   Unsubscribe,
+  BetaActivationNotice,
   Installation,
   RunningInstance,
   Source,

@@ -273,9 +273,14 @@ function fieldOwnsLabel(field: DetailField): boolean {
         class="settings-v2-field-row"
         :class="{ 'is-paired': row.length > 1 }"
       >
+        <!-- `data-field-id` is the only per-row anchor a settings deep link has to aim at
+             (e.g. the beta activation notice pointing at the beta opt-in switch): the row is
+             rendered several components below whoever opened the popup, so there is no
+             template ref to hand out. -->
         <div
           v-for="field in row"
           :key="field.id"
+          :data-field-id="field.id"
           class="settings-v2-field"
           :class="{
             'is-boolean-row': field.editType === 'boolean',
