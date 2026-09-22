@@ -40,20 +40,48 @@ export function findLockingProcesses(filePath: string): Promise<LockProbeResult>
 }
 
 /**
+ * Printed by the Windows script when a Restart Manager call fails. The script
+ * reports "nobody holds this file" as empty output, so without a distinct
+ * token a failed API call is indistinguishable from a clean answer - and the
+ * process still exits 0, which puts it out of reach of any exit-code check.
+ */
+const WINDOWS_PROBE_FAILED = '__RM_QUERY_FAILED__'
+
+/**
  * Separate "the tool answered, and the answer is empty" from "we never got an
  * answer". Returns `null` for the former.
  *
- * The distinction is not cosmetic: `lsof` exits 1 when it simply matches
- * nothing, so the ordinary unlocked-file path arrives here as an error.
- * Treating every error as a failure would make every successful delete claim
- * the lock check broke. Only a kill (the `TIMEOUT_MS` cap, or an outside
- * signal) or a spawn failure - which surfaces as a string `code` such as
- * `ENOENT`, never an exit status - means we genuinely did not find out.
+ * A kill - the `TIMEOUT_MS` cap, or an outside signal - and a spawn failure,
+ * which surfaces as a string `code` such as `ENOENT` rather than an exit
+ * status, mean the same thing on both platforms. What an *exit status* means
+ * does not, so each platform decides that for itself below.
  */
-function classifyProbeFailure(err: ExecFileException): LockProbeFailure | null {
+function classifyCommonFailure(err: ExecFileException): LockProbeFailure | null {
   if (err.killed === true || err.signal) return 'timeout'
   if (typeof err.code === 'string') return 'unavailable'
   return null
+}
+
+/**
+ * `lsof` exits 1 when it simply matches nothing, so that one status is a real
+ * answer and the ordinary unlocked-file path arrives here as an error.
+ * Treating every error as a failure would make every successful delete claim
+ * the lock check broke. Any *other* status is unexplained, and guessing that
+ * it means "empty" is the very conflation this module exists to remove.
+ */
+function classifyUnixFailure(err: ExecFileException): LockProbeFailure | null {
+  const common = classifyCommonFailure(err)
+  if (common) return common
+  return err.code === 1 ? null : 'unavailable'
+}
+
+/**
+ * PowerShell has no "found nothing" exit status - a probe that ran reports
+ * emptiness in its output and exits 0 - so unlike `lsof` every nonzero exit
+ * here is a script that did not complete, whatever its code.
+ */
+function classifyWindowsFailure(err: ExecFileException): LockProbeFailure {
+  return classifyCommonFailure(err) ?? 'unavailable'
 }
 
 // Windows: query the built-in Restart Manager API via inline C# in PowerShell.
@@ -91,19 +119,23 @@ public static class RmUtil {
     [DllImport("rstrtmgr.dll", CharSet=CharSet.Unicode)] static extern int RmRegisterResources(uint h, uint nFiles, string[] rgFiles, uint nApps, RM_UNIQUE_PROCESS[] rgApps, uint nSvcs, string[] rgSvcs);
     [DllImport("rstrtmgr.dll")] static extern int RmGetList(uint h, out uint nProcInfoNeeded, ref uint nProcInfo, [In,Out] RM_PROCESS_INFO[] rgAffectedApps, ref uint lpdwRebootReasons);
 
+    // Empty output means "nobody holds it"; FAILED means the query broke. The
+    // two used to be the same empty string, which made a broken probe look
+    // like a clean file.
+    const string FAILED = "${WINDOWS_PROBE_FAILED}";
     public static string Query(string path) {
         uint handle;
-        if (RmStartSession(out handle, 0, Guid.NewGuid().ToString()) != 0) return "";
+        if (RmStartSession(out handle, 0, Guid.NewGuid().ToString()) != 0) return FAILED;
         try {
-            if (RmRegisterResources(handle, 1, new[]{path}, 0, null, 0, null) != 0) return "";
+            if (RmRegisterResources(handle, 1, new[]{path}, 0, null, 0, null) != 0) return FAILED;
             uint needed = 0, count = 0, reasons = 0;
             int rc = RmGetList(handle, out needed, ref count, null, ref reasons);
             if (rc == 234 && needed > 0) { count = needed; }
-            else if (rc != 0) return "";
+            else if (rc != 0) return FAILED;
             else return "";
             var info = new RM_PROCESS_INFO[count];
             rc = RmGetList(handle, out needed, ref count, info, ref reasons);
-            if (rc != 0) return "";
+            if (rc != 0) return FAILED;
             var results = new List<string>();
             for (int i = 0; i < count; i++) {
                 try {
@@ -127,20 +159,18 @@ Add-Type -TypeDefinition $code
       ['-NoProfile', '-NonInteractive', '-Command', script],
       { timeout: TIMEOUT_MS, windowsHide: true },
       (err, stdout) => {
-        if (err) {
-          const failure = classifyProbeFailure(err)
-          if (failure) return resolve({ ok: false, reason: failure })
+        const failure = err ? classifyWindowsFailure(err) : null
+        // A timeout kill can leave a partial scan behind. Reporting those
+        // names as the answer would swap one half-truth for another.
+        if (failure === 'timeout') return resolve({ ok: false, reason: failure })
+        // The script ran and told us its query broke - a case no exit status
+        // reaches, since PowerShell itself succeeded.
+        if (stdout.trim() === WINDOWS_PROBE_FAILED) {
+          return resolve({ ok: false, reason: 'unavailable' })
         }
-        const results: LockingProcess[] = []
-        for (const line of stdout.trim().split('\n')) {
-          const parts = line.trim().split('\t')
-          if (parts.length >= 2) {
-            const pid = parseInt(parts[0]!, 10)
-            const name = parts[1]!
-            if (pid > 0 && name) results.push({ pid, name })
-          }
-        }
-        resolve({ ok: true, processes: results })
+        const processes = parseRestartManagerOutput(stdout)
+        if (failure && processes.length === 0) return resolve({ ok: false, reason: failure })
+        resolve({ ok: true, processes })
       }
     )
   })
@@ -155,28 +185,50 @@ function findLockingProcessesUnix(filePath: string): Promise<LockProbeResult> {
       ['-F', 'pc', '--', filePath],
       { timeout: TIMEOUT_MS, windowsHide: true },
       (err, stdout) => {
-        if (err) {
-          const failure = classifyProbeFailure(err)
-          // A timeout kill can leave a partial scan in `stdout`. Reporting
-          // those names as the answer would just swap one half-truth for
-          // another, so drop them and say the probe did not finish.
-          if (failure) return resolve({ ok: false, reason: failure })
-        }
-        const results: LockingProcess[] = []
-        const seen = new Set<number>()
-        let currentPid = 0
-        for (const line of stdout.trim().split('\n')) {
-          if (line.startsWith('p')) {
-            currentPid = parseInt(line.slice(1), 10)
-          } else if (line.startsWith('c') && currentPid > 0) {
-            if (!seen.has(currentPid)) {
-              seen.add(currentPid)
-              results.push({ pid: currentPid, name: line.slice(1) })
-            }
-          }
-        }
-        resolve({ ok: true, processes: results })
+        const failure = err ? classifyUnixFailure(err) : null
+        // A timeout kill can leave a partial scan in `stdout`. Reporting those
+        // names as the answer would just swap one half-truth for another, so
+        // drop them and say the probe did not finish.
+        if (failure === 'timeout') return resolve({ ok: false, reason: failure })
+        const processes = parseLsofOutput(stdout)
+        // An unexplained exit that still named holders did find something real;
+        // only one with nothing to show means we never got an answer.
+        if (failure && processes.length === 0) return resolve({ ok: false, reason: failure })
+        resolve({ ok: true, processes })
       }
     )
   })
+}
+
+/** `pid\tname` rows, one per holder. */
+function parseRestartManagerOutput(stdout: string): LockingProcess[] {
+  const results: LockingProcess[] = []
+  for (const line of stdout.trim().split('\n')) {
+    const parts = line.trim().split('\t')
+    if (parts.length >= 2) {
+      const pid = parseInt(parts[0]!, 10)
+      const name = parts[1]!
+      if (pid > 0 && name) results.push({ pid, name })
+    }
+  }
+  return results
+}
+
+/** `lsof -F pc` output: "p<pid>" / "c<command>" line pairs, deduplicated by
+ *  pid so a process holding the file through several fds is named once. */
+function parseLsofOutput(stdout: string): LockingProcess[] {
+  const results: LockingProcess[] = []
+  const seen = new Set<number>()
+  let currentPid = 0
+  for (const line of stdout.trim().split('\n')) {
+    if (line.startsWith('p')) {
+      currentPid = parseInt(line.slice(1), 10)
+    } else if (line.startsWith('c') && currentPid > 0) {
+      if (!seen.has(currentPid)) {
+        seen.add(currentPid)
+        results.push({ pid: currentPid, name: line.slice(1) })
+      }
+    }
+  }
+  return results
 }

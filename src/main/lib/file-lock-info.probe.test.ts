@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFile, type ExecFileException } from 'child_process'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('child_process', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>
@@ -26,6 +26,24 @@ function mockProbe(err: ExecFileException | null, stdout: string): void {
     callback: (err: ExecFileException | null, stdout: string, stderr: string) => void
   ) => callback(err, stdout, '')) as never)
 }
+
+/** The args `execFile` was last called with. */
+function lastExecArgs(): string[] {
+  return (mockedExecFile.mock.calls.at(-1)?.[1] ?? []) as string[]
+}
+
+/**
+ * `findLockingProcesses` branches on `process.platform` at call time, so the
+ * Windows path is reachable from this host. Returns a restore function.
+ */
+function asPlatform(platform: string): () => void {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')!
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+  return () => Object.defineProperty(process, 'platform', original)
+}
+
+/** The token the Windows script prints when a Restart Manager call fails. */
+const RM_FAILED = '__RM_QUERY_FAILED__'
 
 /** How Node reports a child killed by the `timeout` option. */
 function timeoutError(): ExecFileException {
@@ -114,6 +132,94 @@ describe('findLockingProcesses probe outcomes', () => {
       processes: [
         { pid: 404, name: 'ComfyUI' },
         { pid: 505, name: 'node' }
+      ]
+    })
+  })
+
+  it('treats an unexplained exit status with no output as a failure', async () => {
+    // `lsof` uses 1 for "matched nothing"; nothing else is a documented empty
+    // answer, so assuming emptiness is the conflation this module removes.
+    mockProbe(Object.assign(new Error('Command failed: lsof'), { killed: false, code: 2 }), '')
+    expect(await findLockingProcesses('/some/path')).toEqual({ ok: false, reason: 'unavailable' })
+  })
+
+  it('still reports holders named by an unexplained exit status', async () => {
+    // It named a real process; the odd status does not make that untrue.
+    mockProbe(
+      Object.assign(new Error('Command failed: lsof'), { killed: false, code: 2 }),
+      'p707\ncblender\n'
+    )
+    expect(await findLockingProcesses('/some/path')).toEqual({
+      ok: true,
+      processes: [{ pid: 707, name: 'blender' }]
+    })
+  })
+})
+
+describe('findLockingProcesses on Windows', () => {
+  let restore: () => void
+
+  beforeEach(() => {
+    mockedExecFile.mockReset()
+    restore = asPlatform('win32')
+  })
+
+  afterEach(() => restore())
+
+  it('embeds the failure token literally in the script', () => {
+    // The token is interpolated into the PowerShell source from the TS
+    // constant. If that interpolation ever breaks, the script prints something
+    // the callback does not recognise and every failure silently reads as a
+    // clean answer again - on a platform no test here can otherwise reach.
+    mockProbe(null, '')
+    void findLockingProcesses('C:\\some\\path')
+    const script = lastExecArgs().at(-1) ?? ''
+    expect(script).toContain(`const string FAILED = "${RM_FAILED}"`)
+    expect(script).not.toContain('${')
+  })
+
+  it('reports a Restart Manager failure rather than a clean answer', async () => {
+    // PowerShell itself succeeded, so no exit status can catch this one.
+    mockProbe(null, `${RM_FAILED}\n`)
+    expect(await findLockingProcesses('C:\\some\\path')).toEqual({
+      ok: false,
+      reason: 'unavailable'
+    })
+  })
+
+  it('treats any nonzero exit as a failure, numeric included', async () => {
+    // Unlike `lsof`, PowerShell has no "found nothing" status - a probe that
+    // ran exits 0 and says so in its output.
+    mockProbe(Object.assign(new Error('script error'), { killed: false, code: 1 }), '')
+    expect(await findLockingProcesses('C:\\some\\path')).toEqual({
+      ok: false,
+      reason: 'unavailable'
+    })
+  })
+
+  it('reports a timeout as a timeout', async () => {
+    mockProbe(
+      Object.assign(new Error('timed out'), { killed: true, signal: 'SIGTERM' as const }),
+      ''
+    )
+    expect(await findLockingProcesses('C:\\some\\path')).toEqual({
+      ok: false,
+      reason: 'timeout'
+    })
+  })
+
+  it('reads empty output from a clean exit as a determined, empty answer', async () => {
+    mockProbe(null, '')
+    expect(await findLockingProcesses('C:\\some\\path')).toEqual({ ok: true, processes: [] })
+  })
+
+  it('parses holders from a successful probe', async () => {
+    mockProbe(null, '4321\tComfyUI\n8765\texplorer\n')
+    expect(await findLockingProcesses('C:\\some\\path')).toEqual({
+      ok: true,
+      processes: [
+        { pid: 4321, name: 'ComfyUI' },
+        { pid: 8765, name: 'explorer' }
       ]
     })
   })
