@@ -10,7 +10,9 @@
  *
  * The same payload may also carry ONE frontend grant (`frontend`), which pins the frontend
  * release Core serves. It is a separate, typed field rather than another allowlisted arg because
- * it selects which frontend CODE runs: see `parseCoreFrontendGrant` for what narrows it.
+ * it selects which frontend CODE runs: see `parseCoreFrontendGrant` for what narrows it. The build
+ * itself is fetched from PyPI into a Desktop-owned cache (`frontendCache.ts`) and handed to Core
+ * as `--front-end-root`.
  */
 import fs from 'fs'
 import path from 'path'
@@ -309,14 +311,11 @@ export function selectCoreBetaGrantArgs(
   return selected
 }
 
-/**
- * The only frontend repository a grant may select from. Hard-coded rather than payload-supplied:
- * the payload names a VERSION and nothing else, so the most a bad or compromised payload can do
- * is pick another published release of the same frontend Core already ships.
- */
-export const CORE_FRONTEND_GRANT_REPO = 'Comfy-Org/ComfyUI_frontend'
-
-export const FRONTEND_VERSION_ARG = '--front-end-version'
+/** How a granted frontend reaches Core: the cached build's directory, served with no network.
+ *  The payload names a VERSION and nothing else; the package is fixed (`FRONTEND_PACKAGE`), so the
+ *  most a bad or compromised payload can do is pick another PyPI release of the frontend Core
+ *  already ships. */
+export const FRONTEND_ROOT_ARG = '--front-end-root'
 
 /** A payload request to serve a specific frontend release instead of the one Core bundles. */
 export type CoreFrontendGrant = {
@@ -338,8 +337,8 @@ export type CoreBetaPayload = {
 const EXACT_FRONTEND_VERSION_RE = /^(?:0|[1-9]\d{0,5})\.(?:0|[1-9]\d{0,5})\.(?:0|[1-9]\d{0,5})$/
 
 /** The whole vocabulary of a frontend grant. Anything else refuses it, so a payload that tries
- *  to name a repo, owner or URL is rejected outright rather than applied with the field ignored:
- *  an operator who wrote `repo` believes a different repo will be served. */
+ *  to name a repo, package or URL is rejected outright rather than applied with the field
+ *  ignored: an operator who wrote `repo` believes a different source will be served. */
 const FRONTEND_GRANT_KEYS: ReadonlySet<string> = new Set([
   'version',
   'min_core_version',
@@ -349,10 +348,9 @@ const FRONTEND_GRANT_KEYS: ReadonlySet<string> = new Set([
 /**
  * Read the optional `frontend` grant off the payload.
  *
- * Only the version's FORMAT is checked here; Desktop cannot know whether that release exists.
- * Publish the release, with its `dist.zip` asset, before the payload names it. A missing one is
- * never cached, so every flagged launch re-lists the frontend's releases from GitHub and then
- * falls back to the bundled frontend, while telemetry still reports the grant as applied.
+ * Only the version's FORMAT is checked here. Whether that release is on PyPI is found out by the
+ * prefetch, and a missing one is never applied: those launches serve the bundled frontend and
+ * report the grant as `pending`, not applied.
  *
  * Independent of `flags`: a malformed frontend object drops only itself, and a malformed `flags`
  * list does not take the frontend grant with it. Every failure is a refusal (`null`), never a
@@ -422,17 +420,9 @@ export function readRequiredFrontendVersion(comfyuiDir: string): string | null {
   }
 }
 
-/** The `--front-end-version` value for a granted release. The `v` is load-bearing: Core only
- *  reuses an already-downloaded copy for a `v`-prefixed version. Without it every launch asks the
- *  GitHub API for the full release list (dozens of unauthenticated requests), which both delays
- *  startup and, offline or rate-limited, silently falls back to the bundled frontend. */
-export function frontendVersionSpec(version: string): string {
-  return `${CORE_FRONTEND_GRANT_REPO}@v${version}`
-}
-
-/** Launch-arg names that mean the user already chose a frontend. `--front-end-root` counts:
- *  Core lets it override `--front-end-version`, so a grant beside it would be reported as
- *  applied while serving nothing. */
+/** Launch-arg names that mean the user already chose a frontend. Both count: `--front-end-root`
+ *  is the arg the grant itself would add, and `--front-end-version` is the user asking Core to
+ *  fetch one of their choosing. */
 const USER_FRONTEND_ARG_NAMES: ReadonlySet<string> = new Set([
   'front-end-version',
   'front-end-root'
@@ -454,7 +444,7 @@ export function userChoosesFrontend(userArgs: readonly string[]): boolean {
  *   - the user's own frontend choice wins, always (`userChoosesFrontend`);
  *   - a FLOOR at the frontend this core pins. The grant must be strictly newer: an older frontend
  *     than the one Core was released against can call into a server it does not match, and an
- *     equal one is the bundled frontend fetched from GitHub for nothing. An unknown floor refuses,
+ *     equal one is the bundled frontend downloaded again for nothing. An unknown floor refuses,
  *     since then there is no telling which side of it the grant falls on.
  */
 export function selectCoreFrontendGrant(

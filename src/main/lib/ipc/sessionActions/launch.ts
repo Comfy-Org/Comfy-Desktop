@@ -97,8 +97,7 @@ import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
 import {
-  FRONTEND_VERSION_ARG,
-  frontendVersionSpec,
+  FRONTEND_ROOT_ARG,
   getCoreBetaGrantsAsync,
   getCoreFrontendGrantAsync,
   readRequiredFrontendVersion,
@@ -107,6 +106,7 @@ import {
 } from '../../coreBetaGrants'
 import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
 import type { CoreBetaGrant, CoreFrontendGrant } from '../../coreBetaGrants'
+import { cachedFrontendDir, prefetchFrontend } from '../../frontendCache'
 import { coreGateVersion, coreRecordCurrent, coreSemver } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
@@ -165,6 +165,9 @@ export interface CoreBetaLaunch {
    *  because it carries a value and is never announced: the activation notice keys on arg
    *  names, and a pinned frontend is a fix delivery, not a feature to tell the user about. */
   readonly frontend: CoreFrontendGrant | null
+  /** A frontend grant every gate passed but whose build is not cached yet, so this launch serves
+   *  the bundled frontend. The prefetch is what makes a later launch apply it. */
+  readonly frontendPending: CoreFrontendGrant | null
   readonly droppedUnsupported: readonly string[]
   readonly logRecords: readonly string[]
   readonly coreVersion: string | null
@@ -180,6 +183,7 @@ function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
   return {
     applied: [],
     frontend: null,
+    frontendPending: null,
     droppedUnsupported: [],
     logRecords: [],
     coreVersion: null,
@@ -196,15 +200,17 @@ function coreBetaLogRecord(grant: CoreBetaGrant, coreVersion: string): string {
 function coreFrontendLogRecord(
   grant: CoreFrontendGrant,
   coreVersion: string,
-  requiredFrontendVersion: string | null
+  requiredFrontendVersion: string | null,
+  applied: boolean
 ): string {
-  return `[core-beta] ${FRONTEND_VERSION_ARG} ${frontendVersionSpec(grant.version)} (core ${coreVersion} >= ${grant.minCoreVersion}, above required frontend ${requiredFrontendVersion ?? 'unknown'}, opted in)\n`
+  const how = applied ? `${FRONTEND_ROOT_ARG} (cached from PyPI)` : 'pending download'
+  return `[core-beta] frontend ${grant.version} ${how} (core ${coreVersion} >= ${grant.minCoreVersion}, above required frontend ${requiredFrontendVersion ?? 'unknown'}, opted in)\n`
 }
 
 /** Every managed arg name this launch applied, frontend included, for cohort attribution. */
 export function coreBetaAppliedArgs(beta: CoreBetaLaunch): string[] {
   const args = beta.applied.map((grant) => grant.arg)
-  if (beta.frontend !== null) args.push(FRONTEND_VERSION_ARG)
+  if (beta.frontend !== null) args.push(FRONTEND_ROOT_ARG)
   return args
 }
 
@@ -218,7 +224,9 @@ export function coreBetaAppliedArgs(beta: CoreBetaLaunch): string[] {
  * fixed: prefix, desktop feature flags, beta grants, frontend grant, user args.
  *
  * The frontend grant never displaces a user token: a user who chose a frontend already made the
- * grant withdraw itself in `selectCoreFrontendGrant`, so the two cannot both reach argv.
+ * grant withdraw itself in `selectCoreFrontendGrant`, so the two cannot both reach argv. It is
+ * applied only with `frontendDir` in hand, because Core refuses to start on a missing
+ * `--front-end-root`; without one it is reported as pending and this launch is unchanged.
  */
 export function buildLaunchArgs(input: {
   prefixArgs: readonly string[]
@@ -229,6 +237,9 @@ export function buildLaunchArgs(input: {
   frontendGrant: CoreFrontendGrant | null
   /** The frontend this core pins, the grant's floor. `null` when unknown, which refuses it. */
   requiredFrontendVersion: string | null
+  /** The cached build of `frontendGrant.version` (`cachedFrontendDir`), or `null` if not yet in
+   *  place. */
+  frontendDir: string | null
   coreVersion: string | null
   coreVersionExact: boolean
   coreVersionVerified: boolean
@@ -251,12 +262,14 @@ export function buildLaunchArgs(input: {
     userArgs,
     input.requiredFrontendVersion
   )
-  const frontend =
-    selectedFrontend !== null && schema.knownFlags.has(FRONTEND_VERSION_ARG.slice(2))
+  const supportedFrontend =
+    selectedFrontend !== null && schema.knownFlags.has(FRONTEND_ROOT_ARG.slice(2))
       ? selectedFrontend
       : null
-  const frontendArgs =
-    frontend === null ? [] : [FRONTEND_VERSION_ARG, frontendVersionSpec(frontend.version)]
+  const frontendDir = supportedFrontend === null ? null : input.frontendDir
+  const frontend = frontendDir === null ? null : supportedFrontend
+  const frontendPending = frontendDir === null ? supportedFrontend : null
+  const frontendArgs = frontendDir === null ? [] : [FRONTEND_ROOT_ARG, frontendDir]
   const supported = new Set(
     filterUnsupportedArgs(
       selected.map((grant) => grant.arg),
@@ -268,21 +281,31 @@ export function buildLaunchArgs(input: {
   const droppedUnsupported = selected
     .filter((grant) => !supported.has(grant.arg))
     .map((grant) => grant.arg)
-  if (selectedFrontend !== null && frontend === null) droppedUnsupported.push(FRONTEND_VERSION_ARG)
+  if (selectedFrontend !== null && supportedFrontend === null) {
+    droppedUnsupported.push(FRONTEND_ROOT_ARG)
+  }
   return {
     args: [...prefixArgs, ...desktopFlagArgs, ...betaArgs, ...frontendArgs, ...filtered],
     beta: {
       applied,
       frontend,
+      frontendPending,
       droppedUnsupported,
       logRecords:
         coreVersion === null
           ? []
           : [
               ...applied.map((grant) => coreBetaLogRecord(grant, coreVersion)),
-              ...(frontend === null
+              ...(supportedFrontend === null
                 ? []
-                : [coreFrontendLogRecord(frontend, coreVersion, input.requiredFrontendVersion)])
+                : [
+                    coreFrontendLogRecord(
+                      supportedFrontend,
+                      coreVersion,
+                      input.requiredFrontendVersion,
+                      frontend !== null
+                    )
+                  ])
             ],
       coreVersion,
       optedIn: input.betaEnabled
@@ -316,21 +339,25 @@ export function emitCoreBetaTelemetry(input: {
   appliedArgs: readonly string[]
   droppedUnsupported: readonly string[]
   /** The pinned frontend release when a frontend grant applied, else `null`. `appliedArgs` then
-   *  also names `--front-end-version`; this says which release it asked for.
-   *
-   *  This is the REQUEST, not what was served. Core falls back to its bundled frontend on any
-   *  fetch failure (offline, GitHub rate limit, a release without `dist.zip`) and only logs it,
-   *  so this over-counts exposure on exactly those launches. */
+   *  also names `--front-end-root`. This is what Core served: the arg is passed only for a build
+   *  already on disk, and Core serves `--front-end-root` without a fallback. */
   frontendVersion: string | null
+  /** A grant that passed every gate but is still downloading, so this launch did not apply it. */
+  frontendPendingVersion: string | null
   coreVersion: string | null
   optedIn: boolean
 }): void {
-  if (input.appliedArgs.length > 0 || input.droppedUnsupported.length > 0) {
+  if (
+    input.appliedArgs.length > 0 ||
+    input.droppedUnsupported.length > 0 ||
+    input.frontendPendingVersion !== null
+  ) {
     telemetry.emit('comfy.desktop.core_beta.applied', {
       args: [...input.appliedArgs],
       core_version: input.coreVersion,
       dropped_unsupported: [...input.droppedUnsupported],
-      frontend_version: input.frontendVersion
+      frontend_version: input.frontendVersion,
+      frontend_pending_version: input.frontendPendingVersion
     })
   }
   telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
@@ -881,6 +908,7 @@ async function runLaunch(
         appliedArgs: coreBetaAppliedArgs(coreBeta),
         droppedUnsupported: coreBeta.droppedUnsupported,
         frontendVersion: coreBeta.frontend?.version ?? null,
+        frontendPendingVersion: coreBeta.frontendPending?.version ?? null,
         coreVersion: coreBeta.coreVersion,
         optedIn: coreBeta.optedIn
       })
@@ -1113,6 +1141,10 @@ async function runLaunch(
             frontendGrant === null || !betaEnabled
               ? null
               : readRequiredFrontendVersion(path.dirname(mainPyAbs)),
+          frontendDir:
+            frontendGrant === null || !betaEnabled
+              ? null
+              : cachedFrontendDir(frontendGrant.version),
           coreVersion: gate.semver,
           coreVersionExact: gate.exact,
           coreVersionVerified: gate.verified,
@@ -1123,6 +1155,9 @@ async function runLaunch(
         })
         launchCmd.args = built.args
         coreBeta = built.beta
+        // Normally already under way from app start; this catches a grant that arrived after it.
+        if (coreBeta.frontendPending !== null)
+          void prefetchFrontend(coreBeta.frontendPending.version)
       } catch {
         // Discovery failed; launch the user's own args without injecting managed flags.
       }

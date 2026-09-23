@@ -22,7 +22,6 @@ import {
   CORE_BETA_GRANTABLE_ARGS,
   CORE_BETA_FEATURES_FLAG_KEY,
   _resetForTest,
-  frontendVersionSpec,
   getCoreBetaGrantsAsync,
   getCoreFrontendGrantAsync,
   initCoreBetaGrants,
@@ -610,6 +609,7 @@ describe('parseCoreFrontendGrant', () => {
   it.each([
     ['repo', { repo: 'evil/ComfyUI_frontend' }],
     ['owner', { owner: 'evil' }],
+    ['package', { package: 'evil-frontend-package' }],
     ['url', { url: 'https://example.com/dist.zip' }],
     ['arg', { arg: '--front-end-root' }],
     ['notice', { notice: 'silent' }]
@@ -653,14 +653,6 @@ describe('parseCoreFrontendGrant', () => {
       ).toBeNull()
     }
   )
-})
-
-describe('frontendVersionSpec', () => {
-  it('always names the hard-coded repo and a v-prefixed release', () => {
-    // The `v` is what lets Core reuse a copy it already downloaded instead of re-listing every
-    // release from the GitHub API on each launch.
-    expect(frontendVersionSpec('1.53.6')).toBe('Comfy-Org/ComfyUI_frontend@v1.53.6')
-  })
 })
 
 describe('parseRequiredFrontendVersion', () => {
