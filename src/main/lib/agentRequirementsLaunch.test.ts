@@ -188,7 +188,9 @@ describe('installAgentRequirements', () => {
       '.launch-agent-reqs.txt',
       sendOutput,
       expect.any(AbortSignal),
-      mirrors
+      mirrors,
+      undefined,
+      expect.any(Function)
     )
     expect(sendOutput.mock.calls.join('')).toContain('Installing agent requirements')
   })
@@ -564,6 +566,17 @@ describe('force-stopping an abandoned install', () => {
     installPath: dir
   })
 
+  /** Stand-in for the helper: delivers a handle, then never settles, which is
+   *  what a uv that ignored the SIGTERM looks like from here. */
+  const deliverThenHang = (pid: number): void => {
+    mockInstall.mockImplementationOnce(
+      (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+        args[9]?.({ pid } as never)
+        return new Promise<never>(() => {})
+      }
+    )
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     execCalls.length = 0
@@ -574,16 +587,13 @@ describe('force-stopping an abandoned install', () => {
     fs.rmSync(installDir, { recursive: true, force: true })
   })
 
-  it('hard-stops a uv that ignored the signal and clears what it left behind', async () => {
-    // The grace period expiring means uv did not take the shared helper's
-    // SIGTERM. Continuing the launch while it keeps writing to the environment
-    // ComfyUI is booting from is the case this covers.
+  it('kills the delivered process and nothing else, and clears its temp file', async () => {
     vi.useFakeTimers()
     const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
     try {
       const filtered = path.join(installDir, '.launch-agent-reqs.txt')
       fs.writeFileSync(filtered, 'comfyui-agent==1.0.0\n')
-      mockInstall.mockImplementationOnce(() => new Promise<never>(() => {}))
+      deliverThenHang(4242)
       const sendOutput = vi.fn()
 
       const pending = installAgentRequirements(planFor(installDir), sendOutput)
@@ -591,17 +601,14 @@ describe('force-stopping an abandoned install', () => {
       await vi.advanceTimersByTimeAsync(10_000)
       await expect(pending).resolves.toBeUndefined()
 
-      // Scoped to THIS install's own file, so a concurrent launch's uv is safe.
-      const discovery = execCalls.find((c) => c.cmd === 'pgrep' || c.cmd === 'powershell.exe')
-      expect(discovery).toBeDefined()
-      expect(JSON.stringify(discovery!.args)).toContain('launch-agent-reqs')
-      expect(JSON.stringify(discovery!.args)).toContain(path.basename(installDir))
-
       if (process.platform === 'win32') {
-        expect(execCalls.some((c) => c.cmd === 'taskkill' && c.args.includes('/F'))).toBe(true)
+        expect(execCalls).toEqual([{ cmd: 'taskkill', args: ['/F', '/T', '/PID', '4242'] }])
       } else {
         // Negated pid: the helper spawns detached, so the group is the tree.
         expect(kill).toHaveBeenCalledWith(-4242, 'SIGKILL')
+        expect(kill).toHaveBeenCalledTimes(1)
+        // Nothing is searched for: no process enumeration of any kind.
+        expect(execCalls).toEqual([])
       }
       expect(fs.existsSync(filtered)).toBe(false)
       expect(sendOutput.mock.calls.join('')).toContain('hard-stopped it')
@@ -611,11 +618,41 @@ describe('force-stopping an abandoned install', () => {
     }
   })
 
-  it('does not go looking for a process when the install exits normally', async () => {
-    mockInstall.mockResolvedValueOnce({ code: 0, output: '' })
+  it('kills nothing when the helper never delivered a handle', async () => {
+    vi.useFakeTimers()
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
+    try {
+      mockInstall.mockImplementationOnce(() => new Promise<never>(() => {}))
 
-    await installAgentRequirements(planFor(installDir), vi.fn())
+      const pending = installAgentRequirements(planFor(installDir), vi.fn())
+      await vi.advanceTimersByTimeAsync(120_000)
+      await vi.advanceTimersByTimeAsync(10_000)
+      await pending
 
-    expect(execCalls).toEqual([])
+      expect(kill).not.toHaveBeenCalled()
+      expect(execCalls).toEqual([])
+    } finally {
+      kill.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not touch the process when the install exits normally', async () => {
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
+    try {
+      mockInstall.mockImplementationOnce(
+        (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+          args[9]?.({ pid: 4242 } as never)
+          return Promise.resolve({ code: 0, output: '' })
+        }
+      )
+
+      await installAgentRequirements(planFor(installDir), vi.fn())
+
+      expect(kill).not.toHaveBeenCalled()
+      expect(execCalls).toEqual([])
+    } finally {
+      kill.mockRestore()
+    }
   })
 })

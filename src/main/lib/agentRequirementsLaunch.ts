@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
+import type { ChildProcess } from 'child_process'
 import * as settings from '../settings'
 import { installFilteredRequirementsDetailed } from './pip'
 import type { UvPipResult } from './pip'
@@ -99,83 +100,50 @@ function scanForStatus(onStatus: (status: AgentInstallStatus) => void): (text: s
   }
 }
 
-/** Run a short-lived helper command, resolving to its stdout or '' on any
- *  failure. Bounded, because every caller here is on the launch path. */
-function probe(cmd: string, args: string[]): Promise<string> {
+/** Run a short-lived helper command and resolve when it exits or the cap hits.
+ *  Bounded because this runs with the user waiting at the launcher. */
+function runBounded(cmd: string, args: string[]): Promise<void> {
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: FORCE_STOP_TIMEOUT_MS, windowsHide: true }, (_err, stdout) =>
-      resolve(typeof stdout === 'string' ? stdout : '')
-    )
+    execFile(cmd, args, { timeout: FORCE_STOP_TIMEOUT_MS, windowsHide: true }, () => resolve())
   })
 }
 
 /**
- * Find the uv this module started, by the requirements path only it passes.
+ * Hard-stop the uv this launch started, and clear what it left behind.
  *
- * The shared helper owns the spawn and exposes no handle, and it is out of
- * scope to change, so the process is identified from the outside. The marker is
- * the ABSOLUTE filtered path, not its basename: two installs launching at once
- * both have a `.launch-agent-reqs.txt`, and a basename match would let one
- * launch hard-stop the other's install.
+ * Reached only when the grace period expired, i.e. uv ignored the SIGTERM the
+ * shared helper sends. Without this the launch would continue while a live uv
+ * kept writing into the environment ComfyUI is booting from, and the helper's
+ * filtered copy would stay on disk, because it unlinks only once uv settles.
+ *
+ * `proc` is the handle the helper delivered for THIS install, so exactly that
+ * process tree is killed and nothing is searched for or guessed at. Every step
+ * is bounded and every failure swallowed: a force-stop must not become the
+ * open-ended wait the grace period exists to end.
  */
-async function findAgentInstallPids(filteredPath: string): Promise<number[]> {
-  if (process.platform === 'win32') {
-    // WQL LIKE, so single quotes are doubled; `_` and `%` stay wildcards, which
-    // can only widen the match within this path, never outside it. Name is
-    // constrained too, so a widened match still has to be a uv.
-    const marker = filteredPath.replace(/'/g, "''")
-    const stdout = await probe('powershell.exe', [
-      '-NoProfile',
-      '-Command',
-      `Get-CimInstance Win32_Process -Filter "Name LIKE 'uv%' AND CommandLine LIKE '%${marker}%'" | Select-Object -ExpandProperty ProcessId`
-    ])
-    return stdout
-      .split(/\r?\n/)
-      .map((line) => Number(line.trim()))
-      .filter((pid) => Number.isInteger(pid) && pid > 0)
-  }
-  // pgrep -f takes a regex, so the path's own punctuation is escaped.
-  const marker = filteredPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const stdout = await probe('pgrep', ['-f', marker])
-  return stdout
-    .split(/\r?\n/)
-    .map((line) => Number(line.trim()))
-    .filter((pid) => Number.isInteger(pid) && pid > 0)
-}
-
-/**
- * Hard-stop an abandoned install and clear what it left behind.
- *
- * Reached only when the grace period expired, i.e. uv ignored the shared
- * helper's SIGTERM. Without this the launch would continue while a live uv kept
- * writing into the environment ComfyUI is booting from, and the helper's
- * filtered copy would be left on disk, because it unlinks only once uv settles.
- *
- * Best-effort throughout: this runs while the user is waiting to launch, so
- * every step is bounded and every failure is swallowed.
- */
-async function forceStopAgentInstall(installPath: string): Promise<void> {
-  const filteredPath = path.join(installPath, FILTERED_REQS)
-  try {
-    for (const pid of await findAgentInstallPids(filteredPath)) {
-      if (process.platform === 'win32') {
-        await probe('taskkill', ['/F', '/T', '/PID', String(pid)])
-      } else {
-        // Negated pid: the helper spawns detached, so uv leads its own process
-        // group and the group is the tree. Falls back to the bare pid if the
-        // group is already gone.
+async function forceStopAgentInstall(
+  proc: ChildProcess | null,
+  installPath: string
+): Promise<void> {
+  const pid = proc?.pid
+  if (pid) {
+    if (process.platform === 'win32') {
+      await runBounded('taskkill', ['/F', '/T', '/PID', String(pid)])
+    } else {
+      // Negated pid: the helper spawns detached, so uv leads its own process
+      // group and the group is the tree. Falls back to the bare pid when the
+      // group is already gone.
+      try {
+        process.kill(-pid, 'SIGKILL')
+      } catch {
         try {
-          process.kill(-pid, 'SIGKILL')
-        } catch {
-          try {
-            process.kill(pid, 'SIGKILL')
-          } catch {}
-        }
+          process.kill(pid, 'SIGKILL')
+        } catch {}
       }
     }
-  } catch {}
+  }
   try {
-    await fs.promises.unlink(filteredPath)
+    await fs.promises.unlink(path.join(installPath, FILTERED_REQS))
   } catch {}
 }
 
@@ -281,6 +249,9 @@ export async function installAgentRequirements(
   // Settled into a value rather than awaited directly: losing the race leaves
   // this pending, and a later rejection with nothing awaiting it would surface
   // as an unhandled rejection.
+  // The helper hands back the process it spawned, so the abandon path below can
+  // stop exactly this install rather than looking for it.
+  let uvProc: ChildProcess | null = null
   const install: Promise<InstallOutcome> = installFilteredRequirementsDetailed(
     plan.reqPath,
     plan.uvPath,
@@ -289,7 +260,11 @@ export async function installAgentRequirements(
     FILTERED_REQS,
     stream,
     uvAbort.signal,
-    settings.getMirrorConfig()
+    settings.getMirrorConfig(),
+    undefined,
+    (proc) => {
+      uvProc = proc
+    }
   ).then(
     (result) => ({ kind: 'settled', result }),
     (error: unknown) => ({ kind: 'failed', error })
@@ -302,7 +277,7 @@ export async function installAgentRequirements(
     if (signal?.aborted) return
     if (outcome.kind === 'abandoned') {
       onStatus?.({ kind: 'failed' })
-      await forceStopAgentInstall(plan.installPath)
+      await forceStopAgentInstall(uvProc, plan.installPath)
       sendOutput(
         `\n⚠ agent requirements install exceeded ${INSTALL_TIMEOUT_MS / 1000}s and uv did not stop; hard-stopped it and starting ComfyUI anyway\n`
       )
