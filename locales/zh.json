@@ -1285,7 +1285,12 @@
       "database": "正在更新数据库…",
       "nodes": "正在加载自定义节点…"
     },
-    "viewLogs": "查看日志"
+    "viewLogs": "查看日志",
+    "agentRequirements": {
+      "downloading": "正在下载 {name}（{size}）",
+      "installing": "正在安装…",
+      "failed": "智能体依赖安装失败；继续启动 ComfyUI"
+    }
   },
   "devPlatform": {
     "signIn": {

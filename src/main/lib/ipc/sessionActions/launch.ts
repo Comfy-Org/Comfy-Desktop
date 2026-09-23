@@ -94,6 +94,7 @@ import {
   installAgentRequirements,
   planAgentRequirementsInstall
 } from '../../agentRequirementsLaunch'
+import type { AgentInstallStatus } from '../../agentRequirementsLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
@@ -276,6 +277,22 @@ export function emitCoreBetaTelemetry(input: {
     })
   }
   telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
+}
+
+/** Launch-row text for the agent install. uv already formats the size, so it is
+ *  passed through rather than re-rendered. */
+export function agentInstallStatusText(status: AgentInstallStatus): string {
+  switch (status.kind) {
+    case 'downloading':
+      return i18n.t('launch.agentRequirements.downloading', {
+        name: status.name,
+        size: status.size
+      })
+    case 'installing':
+      return i18n.t('launch.agentRequirements.installing')
+    case 'failed':
+      return i18n.t('launch.agentRequirements.failed')
+  }
 }
 
 export interface StorageLaunchState {
@@ -1036,7 +1053,12 @@ async function runLaunch(
     await installAgentRequirements(
       agentRequirements,
       makeSendOutput(sender, installationId),
-      abort.signal
+      abort.signal,
+      (status) =>
+        sendProgress('agentRequirements', {
+          percent: -1,
+          status: agentInstallStatusText(status)
+        })
     )
     if (abort.signal.aborted) return { ok: false, cancelled: true }
   }

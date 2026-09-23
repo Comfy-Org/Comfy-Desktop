@@ -13,7 +13,12 @@ vi.mock('./pip', () => ({
   installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' }))
 }))
 
-import { installAgentRequirements, planAgentRequirementsInstall } from './agentRequirementsLaunch'
+import {
+  agentInstallStatus,
+  installAgentRequirements,
+  planAgentRequirementsInstall
+} from './agentRequirementsLaunch'
+import type { AgentInstallStatus } from './agentRequirementsLaunch'
 import { installFilteredRequirementsDetailed } from './pip'
 import { getUvPath, getVenvPythonPath, getLegacyVenvUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
@@ -404,5 +409,127 @@ describe('installAgentRequirements', () => {
     await installAgentRequirements(plan, sendOutput, abort.signal)
 
     expect(sendOutput.mock.calls.join('')).not.toContain('exited with code')
+  })
+})
+
+describe('agentInstallStatus', () => {
+  it('reads the package and size out of uv download lines', () => {
+    // uv's real form has no space before the unit; the spaced form is accepted
+    // too rather than pinning the test to one version's formatting.
+    expect(agentInstallStatus('Downloading numpy (15.3MiB)')).toEqual({
+      kind: 'downloading',
+      name: 'numpy',
+      size: '15.3MiB'
+    })
+    expect(agentInstallStatus('Downloading comfy-agent (36.0 MiB)')).toEqual({
+      kind: 'downloading',
+      name: 'comfy-agent',
+      size: '36.0 MiB'
+    })
+  })
+
+  it("treats uv's own handover lines as the install phase", () => {
+    expect(agentInstallStatus('Prepared 2 packages in 838ms')).toEqual({ kind: 'installing' })
+    expect(agentInstallStatus('Installed 2 packages in 17ms')).toEqual({ kind: 'installing' })
+  })
+
+  it('leaves the status alone for anything it does not recognise', () => {
+    // Returning null is what keeps the row from flickering through uv's
+    // resolution counts and per-package acknowledgements.
+    for (const line of [
+      'Resolved 2 packages in 286ms',
+      ' Downloaded numpy',
+      'Using CPython 3.12.13 environment at: .venv',
+      'warning: some warning',
+      ''
+    ]) {
+      expect(agentInstallStatus(line)).toBeNull()
+    }
+  })
+})
+
+describe('installAgentRequirements status reporting', () => {
+  const plan = {
+    reqPath: '/inst/ComfyUI/agent_requirements.txt',
+    uvPath: '/inst/standalone-env/bin/uv',
+    pythonPath: '/inst/ComfyUI/.venv/bin/python3',
+    installPath: '/inst'
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("drives the row from uv's stream, across chunk boundaries", () => {
+    const seen: AgentInstallStatus[] = []
+    mockInstall.mockImplementationOnce(
+      async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+        const stream = args[5]
+        // A milestone split mid-line: the helper forwards raw chunks.
+        stream('Resolved 1 package in 12ms\nDownloading comfy-ag')
+        stream('ent (36.0 MiB)\n')
+        stream('Installed 1 package in 9ms\n')
+        return { code: 0, output: '' }
+      }
+    )
+
+    return installAgentRequirements(plan, vi.fn(), undefined, (s) => seen.push(s)).then(() => {
+      expect(seen).toEqual([
+        { kind: 'downloading', name: 'comfy-agent', size: '36.0 MiB' },
+        { kind: 'installing' }
+      ])
+    })
+  })
+
+  it('reports a failed install as a terminal row status', async () => {
+    const seen: AgentInstallStatus[] = []
+    mockInstall.mockResolvedValueOnce({ code: 1, output: '' })
+
+    await installAgentRequirements(plan, vi.fn(), undefined, (s) => seen.push(s))
+
+    expect(seen).toEqual([{ kind: 'failed' }])
+  })
+
+  it('reports a thrown install as a terminal row status', async () => {
+    const seen: AgentInstallStatus[] = []
+    mockInstall.mockRejectedValueOnce(new Error('EACCES'))
+
+    await installAgentRequirements(plan, vi.fn(), undefined, (s) => seen.push(s))
+
+    expect(seen).toEqual([{ kind: 'failed' }])
+  })
+
+  it('reports a timed-out install as a terminal row status', async () => {
+    vi.useFakeTimers()
+    try {
+      const seen: AgentInstallStatus[] = []
+      mockInstall.mockImplementationOnce(
+        async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+          const uvSignal = args[6]!
+          return new Promise((resolve) => {
+            uvSignal.addEventListener('abort', () => resolve({ code: 1, output: '' }), {
+              once: true
+            })
+          })
+        }
+      )
+
+      const pending = installAgentRequirements(plan, vi.fn(), undefined, (s) => seen.push(s))
+      await vi.advanceTimersByTimeAsync(120_000)
+      await pending
+
+      expect(seen).toEqual([{ kind: 'failed' }])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says nothing terminal when the install succeeds', async () => {
+    const seen: AgentInstallStatus[] = []
+    mockInstall.mockResolvedValueOnce({ code: 0, output: '' })
+
+    await installAgentRequirements(plan, vi.fn(), undefined, (s) => seen.push(s))
+
+    expect(seen).toEqual([])
   })
 })

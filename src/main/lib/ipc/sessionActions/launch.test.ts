@@ -185,6 +185,7 @@ import type * as HardwareTapModule from '../../hardwareTap'
 import type * as PipModule from '../../pip'
 import { getUvPath, getVenvPythonPath } from '../../pythonEnv'
 import { getLogDir } from '../../logRotation'
+import en from '../../../../../locales/en.json'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
 
@@ -1704,5 +1705,24 @@ describe('agent requirements at launch', () => {
 
     expect(res).toEqual({ ok: false, cancelled: true })
     expect(spawned).toBe(0)
+  })
+})
+
+describe('agent install status strings', () => {
+  // `t()` resolves nothing under vitest (i18n is never initialised and its
+  // locales dir does not exist in the source tree), so the lookup itself cannot
+  // be exercised here. What can break silently is the contract between the
+  // mapper's keys and the locale file, which is what this pins. Cross-locale
+  // parity is covered separately by the locale-coverage suite.
+  const strings = (en as { launch: { agentRequirements?: Record<string, string> } }).launch
+    .agentRequirements
+
+  it('defines every key the mapper asks for', () => {
+    expect(Object.keys(strings ?? {}).sort()).toEqual(['downloading', 'failed', 'installing'])
+  })
+
+  it('gives the download caption both placeholders the mapper passes', () => {
+    expect(strings?.downloading).toContain('{name}')
+    expect(strings?.downloading).toContain('{size}')
   })
 })

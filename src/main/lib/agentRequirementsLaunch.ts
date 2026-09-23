@@ -41,6 +41,55 @@ const INSTALL_TIMEOUT_MS = 120_000
  */
 const KILL_GRACE_MS = 10_000
 
+/**
+ * What the launch row should say while the install runs.
+ *
+ * Structured rather than translated here so the mapping stays testable and the
+ * locale lookup stays with the other launch strings. `failed` is terminal: the
+ * row keeps it once the step is done, rather than completing silently on a
+ * launch that is starting without the agent.
+ */
+export type AgentInstallStatus =
+  | { kind: 'downloading'; name: string; size: string }
+  | { kind: 'installing' }
+  | { kind: 'failed' }
+
+/** uv prints one of these per wheel before the bytes move: `Downloading numpy
+ *  (15.3MiB)`. The size is taken verbatim, since uv already formats it. */
+const UV_DOWNLOADING = /^\s*Downloading\s+(\S+)\s+\(([^)]+)\)\s*$/
+
+/** uv's own handover from fetching to installing. */
+const UV_INSTALLING = /^\s*(?:Prepared|Installed)\s+\d+\s+package/
+
+/**
+ * Map one line of uv's output to a status, or null to leave the row alone.
+ *
+ * Null is the common case and deliberately so: uv prints resolution counts,
+ * per-package `Downloaded` acknowledgements and warnings that would either
+ * flicker the row or say nothing a user can act on.
+ */
+export function agentInstallStatus(line: string): AgentInstallStatus | null {
+  const downloading = line.match(UV_DOWNLOADING)
+  if (downloading) return { kind: 'downloading', name: downloading[1]!, size: downloading[2]! }
+  if (UV_INSTALLING.test(line)) return { kind: 'installing' }
+  return null
+}
+
+/** Feed uv's stream through the line matcher. Buffers a partial tail, because
+ *  the helper forwards raw chunks and a milestone can straddle two of them. */
+function scanForStatus(onStatus: (status: AgentInstallStatus) => void): (text: string) => void {
+  let pending = ''
+  return (text: string): void => {
+    pending += text
+    const lines = pending.split(/\r?\n/)
+    pending = lines.pop() ?? ''
+    for (const line of lines) {
+      const status = agentInstallStatus(line)
+      if (status) onStatus(status)
+    }
+  }
+}
+
 /** Which way the bounded wait ended: uv exited, it threw, or the launch stopped
  *  waiting for a uv that would not stop. */
 type InstallOutcome =
@@ -102,9 +151,20 @@ export function planAgentRequirementsInstall(
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
   sendOutput: (text: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onStatus?: (status: AgentInstallStatus) => void
 ): Promise<void> {
   sendOutput('\nInstalling agent requirements…\n')
+  // uv's own output is the only progress signal available: the download is a
+  // single opaque stretch otherwise, and the row would sit on one caption for
+  // its whole duration.
+  const scan = onStatus ? scanForStatus(onStatus) : undefined
+  const stream = scan
+    ? (text: string): void => {
+        scan(text)
+        sendOutput(text)
+      }
+    : sendOutput
   const uvAbort = new AbortController()
   const onLaunchAbort = (): void => uvAbort.abort()
   let timedOut = false
@@ -138,7 +198,7 @@ export async function installAgentRequirements(
     plan.pythonPath,
     plan.installPath,
     '.launch-agent-reqs.txt',
-    sendOutput,
+    stream,
     uvAbort.signal,
     settings.getMirrorConfig()
   ).then(
@@ -152,12 +212,15 @@ export async function installAgentRequirements(
     // cancellation rather than a failure worth showing.
     if (signal?.aborted) return
     if (outcome.kind === 'abandoned') {
+      onStatus?.({ kind: 'failed' })
       sendOutput(
         `\n⚠ agent requirements install exceeded ${INSTALL_TIMEOUT_MS / 1000}s and uv did not stop; starting ComfyUI anyway\n`
       )
     } else if (outcome.kind === 'failed') {
+      onStatus?.({ kind: 'failed' })
       sendOutput(`⚠ ${AGENT_REQUIREMENTS} failed: ${(outcome.error as Error).message}\n`)
     } else if (outcome.result.code !== 0) {
+      onStatus?.({ kind: 'failed' })
       // The exit code decides, not the timer that was racing it: an install
       // that finished inside the grace period succeeded, however close to the
       // ceiling it landed, and must not be reported as skipped.
