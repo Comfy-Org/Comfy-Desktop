@@ -220,12 +220,23 @@ export const FETCH_TIER_JS = `(async () => {
             : undefined,
         });
       } catch (e) {
-        lastError = (e && e.name === 'TimeoutError') ? 'timeout' : 'network';
-        continue;
+        // Transient. Says NOTHING about this token, so do not advance: trying the next candidate
+        // during an outage would reach for a LEFTOVER record and revive a former account's tier,
+        // which is the outcome the candidate list exists to prevent. Retry on the next refresh.
+        return { error: (e && e.name === 'TimeoutError') ? 'timeout' : 'network' };
       }
-      if (!resp.ok) { lastError = 'http_' + resp.status; continue; }
+      if (!resp.ok) {
+        // Only an auth rejection means THIS TOKEN is not accepted. A 5xx is the server, not the
+        // credential, so it must not promote the next candidate either.
+        if (resp.status === 401 || resp.status === 403) {
+          lastError = 'http_' + resp.status;
+          continue;
+        }
+        return { error: 'http_' + resp.status };
+      }
       const data = await resp.json().catch(() => null);
-      if (!data || typeof data !== 'object') { lastError = 'bad_json'; continue; }
+      // Malformed body from an ACCEPTED token: the server answered, so the credential was fine.
+      if (!data || typeof data !== 'object') return { error: 'bad_json' };
       return { tier: data.subscription_tier || 'FREE' };
     }
     return { error: lastError || 'no_valid_token' };
@@ -250,7 +261,10 @@ export async function refreshCloudUserTier(webContents: WebContents): Promise<vo
       // LOGGED, because the silence was the expensive part. A native run spent two boots unable to
       // tell "no record found" from "the refresh never ran" - from outside the app they look
       // identical, and the empty-result path emitted nothing at all.
-      console.log('[user-tier] refresh: no auth record found in either store; cache left alone')
+      // Deliberately does NOT claim both stores were read: when localStorage is readable and empty
+      // the script returns without consulting IndexedDB at all, so "either store" would be false
+      // in the commonest case this line fires.
+      console.log('[user-tier] refresh: no usable auth record; cache left alone')
       return
     }
     if (result.error) {

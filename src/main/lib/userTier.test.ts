@@ -300,6 +300,63 @@ describe('FETCH_TIER_JS', () => {
     expect(result).toEqual({ error: 'http_403' })
   })
 
+  it('does NOT try the next candidate when the failure is transient', async () => {
+    // The trap: two records, the FIRST is the live user and the second a leftover still inside its
+    // hour. If a 5xx on the live token promoted the next candidate, the leftover would be accepted
+    // and the FORMER ACCOUNT'S tier persisted — during an outage, which is when it is least
+    // noticeable. A 5xx is the server, not the credential.
+    const tried: string[] = []
+    const { result } = await run({
+      localStorage: [
+        [PROD_KEY, JSON.stringify(record('tok-live'))],
+        ['firebase:authUser:oldkey:[DEFAULT]', JSON.stringify(record('tok-leftover'))]
+      ],
+      fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
+        tried.push(init?.headers?.['Authorization'] ?? '')
+        return Promise.resolve({ ok: false, status: 503 })
+      }) as unknown as typeof fetch
+    })
+
+    expect(tried).toEqual(['Bearer tok-live'])
+    expect(result).toEqual({ error: 'http_503' })
+  })
+
+  it('does NOT try the next candidate when the request throws', async () => {
+    // Same reasoning for a network failure or a timeout: it says nothing about the token.
+    const tried: string[] = []
+    const { result } = await run({
+      localStorage: [
+        [PROD_KEY, JSON.stringify(record('tok-live'))],
+        ['firebase:authUser:oldkey:[DEFAULT]', JSON.stringify(record('tok-leftover'))]
+      ],
+      fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
+        tried.push(init?.headers?.['Authorization'] ?? '')
+        return Promise.reject(Object.assign(new Error('boom'), { name: 'TypeError' }))
+      }) as unknown as typeof fetch
+    })
+
+    expect(tried).toEqual(['Bearer tok-live'])
+    expect(result).toEqual({ error: 'network' })
+  })
+
+  it('does NOT try the next candidate on a malformed body', async () => {
+    // The server answered, so the credential was accepted; the next token is not a remedy.
+    const tried: string[] = []
+    const { result } = await run({
+      localStorage: [
+        [PROD_KEY, JSON.stringify(record('tok-live'))],
+        ['firebase:authUser:oldkey:[DEFAULT]', JSON.stringify(record('tok-leftover'))]
+      ],
+      fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
+        tried.push(init?.headers?.['Authorization'] ?? '')
+        return Promise.resolve({ ok: true, json: () => Promise.resolve('not-an-object') })
+      }) as unknown as typeof fetch
+    })
+
+    expect(tried).toEqual(['Bearer tok-live'])
+    expect(result).toEqual({ error: 'bad_json' })
+  })
+
   it('stops after a bounded number of candidates', async () => {
     // The records are page-controlled, so the candidate list must not be.
     const tried: string[] = []
