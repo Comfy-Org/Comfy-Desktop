@@ -158,6 +158,92 @@ async function idbAuthKeyCount(): Promise<number | 'unavailable'> {
   }
 }
 
+/** TEMPORARY DIAGNOSTIC — never for merge. d151034c's entry taxonomy, which my reader rewrite
+ *  dropped, now applied to BOTH stores: `entriesTotal` is everything in the store,
+ *  `entriesKeyMatched` the `firebase:authUser:*` subset, `entriesUsable` those that parse to a uid.
+ *  The three separate "no record", "a record that does not match" and "a record we cannot read" —
+ *  which the status alone collapses into one answer. */
+interface DiagEntryCounts {
+  total: number
+  keyMatched: number
+  usable: number
+}
+
+function formatCounts(counts: DiagEntryCounts | 'unavailable'): string {
+  if (counts === 'unavailable') return 'unavailable'
+  return (
+    'entriesTotal=' +
+    String(counts.total) +
+    ' entriesKeyMatched=' +
+    String(counts.keyMatched) +
+    ' entriesUsable=' +
+    String(counts.usable)
+  )
+}
+
+function countLocalStorageEntries(): DiagEntryCounts | 'unavailable' {
+  try {
+    if (typeof localStorage === 'undefined') return 'unavailable'
+    const keys = Object.keys(localStorage)
+    let keyMatched = 0
+    let usable = 0
+    for (const key of keys) {
+      if (!key.startsWith(FIREBASE_AUTH_KEY_PREFIX)) continue
+      keyMatched += 1
+      try {
+        const raw = localStorage.getItem(key)
+        if (raw && uidFromRecord(JSON.parse(raw))) usable += 1
+      } catch {
+        // Counted in keyMatched but not usable, which is the distinction this exists to show.
+      }
+    }
+    return { total: keys.length, keyMatched, usable }
+  } catch {
+    return 'unavailable'
+  }
+}
+
+async function countIdbEntries(): Promise<DiagEntryCounts | 'unavailable'> {
+  try {
+    if (typeof indexedDB === 'undefined') return 'unavailable'
+    const databases = await indexedDB.databases()
+    if (!databases.some(({ name }) => name === FIREBASE_IDB_NAME)) {
+      return { total: 0, keyMatched: 0, usable: 0 }
+    }
+    const database = await requestResult(indexedDB.open(FIREBASE_IDB_NAME))
+    try {
+      if (!database.objectStoreNames.contains(FIREBASE_IDB_STORE)) {
+        return { total: 0, keyMatched: 0, usable: 0 }
+      }
+      const entries = (await requestResult(
+        database
+          .transaction(FIREBASE_IDB_STORE, 'readonly')
+          .objectStore(FIREBASE_IDB_STORE)
+          .getAll()
+      )) as unknown[]
+      let keyMatched = 0
+      let usable = 0
+      for (const entry of entries) {
+        if (!entry || typeof entry !== 'object') continue
+        const candidate = entry as { fbase_key?: unknown; value?: unknown }
+        if (
+          typeof candidate.fbase_key !== 'string' ||
+          !candidate.fbase_key.startsWith(FIREBASE_AUTH_KEY_PREFIX)
+        ) {
+          continue
+        }
+        keyMatched += 1
+        if (uidFromRecord(candidate.value)) usable += 1
+      }
+      return { total: entries.length, keyMatched, usable }
+    } finally {
+      database.close()
+    }
+  } catch {
+    return 'unavailable'
+  }
+}
+
 const BOOT_TRACE_INTERVAL_MS = 100
 const BOOT_TRACE_DURATION_MS = 5000
 
@@ -242,6 +328,8 @@ export function startLocalFirebaseAuthMonitor(
     // ls=0 signed_out is both stores agreeing. Emitted EVERY poll, not only on change, because the
     // change-only report is exactly what hid 55 seconds of this last time.
     diag('poll ls=' + String(localAuthKeyCount()) + ' -> ' + state.status)
+    diag('entries ls ' + formatCounts(countLocalStorageEntries()))
+    diag('entries idb ' + formatCounts(await countIdbEntries()))
     const serialized = JSON.stringify(state)
     if (serialized === lastState) return
     lastState = serialized

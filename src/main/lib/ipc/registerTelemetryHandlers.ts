@@ -219,7 +219,10 @@ export function registerTelemetryHandlers(): void {
   // instrument would then act on the very mechanism the sign-in run exists to observe.
   ipcMain.on('telemetry:firebaseAuthDiag', (_event, detail: unknown) => {
     if (typeof detail !== 'string' || detail.length > 300) return
-    console.log('[identity-diag] poll', detail)
+    // The prefix used to be '[identity-diag] poll', which produced 'poll poll ls=...' for the poll
+    // line AND mislabelled every boot-trace sample as a poll. Each detail names its own kind
+    // ('poll ls=', 'boot t=', 'entries ls'), so the channel prefix must not assume one.
+    console.log('[identity-diag]', detail)
   })
 
   // Auth consensus validates trusted Cloud and scoped, main-verified loopback
