@@ -1522,9 +1522,18 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     void initCoreBetaGrants({ distinctId: installationId })
     // A pinned frontend is downloaded in the background, never on a launch's critical path: a
     // launch before it lands serves the bundled frontend and the next one picks the build up.
-    void getCoreFrontendGrantAsync().then((grant) =>
-      syncFrontendCache(settings.resolveBetaFeaturesEnabled() ? (grant?.version ?? null) : null)
-    )
+    void getCoreFrontendGrantAsync()
+      .then((grant) => {
+        // A throw here (read-only or full profile) reads as beta off, as it does at launch.
+        let betaEnabled = false
+        try {
+          betaEnabled = settings.resolveBetaFeaturesEnabled()
+        } catch (err) {
+          console.warn('[core-beta] beta setting resolution failed:', err)
+        }
+        return syncFrontendCache(betaEnabled ? (grant?.version ?? null) : null)
+      })
+      .catch((err: unknown) => console.log('[core-beta] frontend cache upkeep failed:', err))
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and
     // free-tier offer UI. `userTier.ts` refreshes it on every cloud
