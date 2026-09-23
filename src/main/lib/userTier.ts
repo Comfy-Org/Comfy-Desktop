@@ -247,6 +247,10 @@ export async function refreshCloudUserTier(webContents: WebContents): Promise<vo
     const result = (await webContents.executeJavaScript(FETCH_TIER_JS)) as FetchResult | null
     if (!result) {
       // No signed-in record; don't overwrite a known-paid cache (may be transient during sign-in).
+      // LOGGED, because the silence was the expensive part. A native run spent two boots unable to
+      // tell "no record found" from "the refresh never ran" - from outside the app they look
+      // identical, and the empty-result path emitted nothing at all.
+      console.log('[user-tier] refresh: no auth record found in either store; cache left alone')
       return
     }
     if (result.error) {
