@@ -96,9 +96,17 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
-import { getCoreBetaGrantsAsync, selectCoreBetaGrantArgs } from '../../coreBetaGrants'
+import {
+  FRONTEND_VERSION_ARG,
+  frontendVersionSpec,
+  getCoreBetaGrantsAsync,
+  getCoreFrontendGrantAsync,
+  readRequiredFrontendVersion,
+  selectCoreBetaGrantArgs,
+  selectCoreFrontendGrant
+} from '../../coreBetaGrants'
 import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
-import type { CoreBetaGrant } from '../../coreBetaGrants'
+import type { CoreBetaGrant, CoreFrontendGrant } from '../../coreBetaGrants'
 import { coreRecordCurrent, coreSemver, coreSemverExact, coreSemverVerified } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
@@ -153,6 +161,10 @@ function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
  *  (final args, tap context, telemetry, log records) reads from this one value. */
 export interface CoreBetaLaunch {
   readonly applied: readonly CoreBetaGrant[]
+  /** The frontend grant that reached Core's command line, or `null`. Kept apart from `applied`
+   *  because it carries a value and is never announced: the activation notice keys on arg
+   *  names, and a pinned frontend is a fix delivery, not a feature to tell the user about. */
+  readonly frontend: CoreFrontendGrant | null
   readonly droppedUnsupported: readonly string[]
   readonly logRecords: readonly string[]
   readonly coreVersion: string | null
@@ -167,6 +179,7 @@ export interface CoreBetaLaunch {
 function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
   return {
     applied: [],
+    frontend: null,
     droppedUnsupported: [],
     logRecords: [],
     coreVersion: null,
@@ -180,6 +193,21 @@ function coreBetaLogRecord(grant: CoreBetaGrant, coreVersion: string): string {
   return `[core-beta] ${grant.arg} (core ${coreVersion} >= ${grant.minCoreVersion}, opted in)\n`
 }
 
+function coreFrontendLogRecord(
+  grant: CoreFrontendGrant,
+  coreVersion: string,
+  requiredFrontendVersion: string | null
+): string {
+  return `[core-beta] ${FRONTEND_VERSION_ARG} ${frontendVersionSpec(grant.version)} (core ${coreVersion} >= ${grant.minCoreVersion}, above required frontend ${requiredFrontendVersion ?? 'unknown'}, opted in)\n`
+}
+
+/** Every managed arg name this launch applied, frontend included, for cohort attribution. */
+export function coreBetaAppliedArgs(beta: CoreBetaLaunch): string[] {
+  const args = beta.applied.map((grant) => grant.arg)
+  if (beta.frontend !== null) args.push(FRONTEND_VERSION_ARG)
+  return args
+}
+
 /**
  * Assemble the spawn args and resolve this launch's Core beta grants.
  *
@@ -187,7 +215,10 @@ function coreBetaLogRecord(grant: CoreBetaGrant, coreVersion: string): string {
  * user token is the running core's args schema. Grants are selected against the UNFILTERED user
  * args — so a grant conflicting with a token this core cannot parse is still suppressed — then
  * passed through that same schema filter so a core predating a flag never sees it. Ordering is
- * fixed: prefix, desktop feature flags, beta grants, user args.
+ * fixed: prefix, desktop feature flags, beta grants, frontend grant, user args.
+ *
+ * The frontend grant never displaces a user token: a user who chose a frontend already made the
+ * grant withdraw itself in `selectCoreFrontendGrant`, so the two cannot both reach argv.
  */
 export function buildLaunchArgs(input: {
   prefixArgs: readonly string[]
@@ -195,6 +226,9 @@ export function buildLaunchArgs(input: {
   desktopFlagArgs: readonly string[]
   schema: ComfyArgsSchema
   betaFlags: readonly CoreBetaGrant[]
+  frontendGrant: CoreFrontendGrant | null
+  /** The frontend this core pins, the grant's floor. `null` when unknown, which refuses it. */
+  requiredFrontendVersion: string | null
   coreVersion: string | null
   coreVersionExact: boolean
   coreVersionVerified: boolean
@@ -203,17 +237,26 @@ export function buildLaunchArgs(input: {
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
-  const selected = selectCoreBetaGrantArgs(
-    input.betaFlags,
-    {
-      semver: coreVersion,
-      exact: input.coreVersionExact,
-      verified: input.coreVersionVerified,
-      current: input.coreVersionCurrent
-    },
+  const core = {
+    semver: coreVersion,
+    exact: input.coreVersionExact,
+    verified: input.coreVersionVerified,
+    current: input.coreVersionCurrent
+  }
+  const selected = selectCoreBetaGrantArgs(input.betaFlags, core, input.betaEnabled, userArgs)
+  const selectedFrontend = selectCoreFrontendGrant(
+    input.frontendGrant,
+    core,
     input.betaEnabled,
-    userArgs
+    userArgs,
+    input.requiredFrontendVersion
   )
+  const frontend =
+    selectedFrontend !== null && schema.knownFlags.has(FRONTEND_VERSION_ARG.slice(2))
+      ? selectedFrontend
+      : null
+  const frontendArgs =
+    frontend === null ? [] : [FRONTEND_VERSION_ARG, frontendVersionSpec(frontend.version)]
   const supported = new Set(
     filterUnsupportedArgs(
       selected.map((grant) => grant.arg),
@@ -222,15 +265,25 @@ export function buildLaunchArgs(input: {
   )
   const applied = selected.filter((grant) => supported.has(grant.arg))
   const betaArgs = applied.map((grant) => grant.arg)
+  const droppedUnsupported = selected
+    .filter((grant) => !supported.has(grant.arg))
+    .map((grant) => grant.arg)
+  if (selectedFrontend !== null && frontend === null) droppedUnsupported.push(FRONTEND_VERSION_ARG)
   return {
-    args: [...prefixArgs, ...desktopFlagArgs, ...betaArgs, ...filtered],
+    args: [...prefixArgs, ...desktopFlagArgs, ...betaArgs, ...frontendArgs, ...filtered],
     beta: {
       applied,
-      droppedUnsupported: selected
-        .filter((grant) => !supported.has(grant.arg))
-        .map((grant) => grant.arg),
+      frontend,
+      droppedUnsupported,
       logRecords:
-        coreVersion === null ? [] : applied.map((grant) => coreBetaLogRecord(grant, coreVersion)),
+        coreVersion === null
+          ? []
+          : [
+              ...applied.map((grant) => coreBetaLogRecord(grant, coreVersion)),
+              ...(frontend === null
+                ? []
+                : [coreFrontendLogRecord(frontend, coreVersion, input.requiredFrontendVersion)])
+            ],
       coreVersion,
       optedIn: input.betaEnabled
     }
@@ -262,6 +315,9 @@ export function emitCoreBetaRecords(
 export function emitCoreBetaTelemetry(input: {
   appliedArgs: readonly string[]
   droppedUnsupported: readonly string[]
+  /** The pinned frontend release when a frontend grant applied, else `null`. `appliedArgs` then
+   *  also names `--front-end-version`; this says which release it asked for. */
+  frontendVersion: string | null
   coreVersion: string | null
   optedIn: boolean
 }): void {
@@ -269,7 +325,8 @@ export function emitCoreBetaTelemetry(input: {
     telemetry.emit('comfy.desktop.core_beta.applied', {
       args: [...input.appliedArgs],
       core_version: input.coreVersion,
-      dropped_unsupported: [...input.droppedUnsupported]
+      dropped_unsupported: [...input.droppedUnsupported],
+      frontend_version: input.frontendVersion
     })
   }
   telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
@@ -773,7 +830,7 @@ async function runLaunch(
     tracker: LaunchProgressTracker
   }> {
     const logStream = await openLogStream(inst.installPath)
-    const coreBetaFlags = coreBeta.applied.map((grant) => grant.arg)
+    const coreBetaFlags = coreBetaAppliedArgs(coreBeta)
     try {
       const execTap = createExecutionTap({
         installationId,
@@ -817,8 +874,9 @@ async function runLaunch(
     armBetaActivationNotice(installationId, coreBeta.applied)
     try {
       emitCoreBetaTelemetry({
-        appliedArgs: coreBeta.applied.map((grant) => grant.arg),
+        appliedArgs: coreBetaAppliedArgs(coreBeta),
         droppedUnsupported: coreBeta.droppedUnsupported,
+        frontendVersion: coreBeta.frontend?.version ?? null,
         coreVersion: coreBeta.coreVersion,
         optedIn: coreBeta.optedIn
       })
@@ -838,7 +896,7 @@ async function runLaunch(
     core_version: string | null
   } {
     return {
-      core_beta_flags: coreBeta.applied.map((grant) => grant.arg),
+      core_beta_flags: coreBetaAppliedArgs(coreBeta),
       assets_enabled: launchCmd.args?.includes('--enable-assets') === true,
       core_beta_opted_in: coreBeta.optedIn,
       core_version: coreSemver(inst)
@@ -1033,12 +1091,17 @@ async function runLaunch(
           }
         }
 
+        const frontendGrant = await getCoreFrontendGrantAsync()
         const built = buildLaunchArgs({
           prefixArgs,
           userArgs,
           desktopFlagArgs,
           schema,
           betaFlags: await getCoreBetaGrantsAsync(),
+          frontendGrant,
+          // Only read when there is a grant to measure: it is a file read on every launch otherwise.
+          requiredFrontendVersion:
+            frontendGrant === null ? null : readRequiredFrontendVersion(path.dirname(mainPyAbs)),
           coreVersion: coreSemver(inst),
           coreVersionExact: coreSemverExact(inst),
           coreVersionVerified: coreSemverVerified(inst),
