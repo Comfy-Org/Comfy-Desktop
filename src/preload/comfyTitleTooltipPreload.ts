@@ -1,3 +1,4 @@
+import type { CoachmarkBeakPayload } from '../types/ipc'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 
@@ -33,7 +34,7 @@ export interface ComfyTitleTooltipBridge {
   onConfig(cb: (config: TitleTooltipConfig) => void): () => void
   /** Beak position, pushed after main has measured the card and settled its final (possibly
    *  clamped) bounds. Separate from the config push because it is only knowable then. */
-  onBeak(cb: (payload: { beakFraction: number }) => void): () => void
+  onBeak(cb: (payload: CoachmarkBeakPayload) => void): () => void
   /** Coachmark dismiss button; no-op for the tooltip variant. `configToken` names the card
    *  the click landed on, so main can discard a click from a card it has since replaced. */
   dismissCoachmark(configToken: string): void
@@ -74,8 +75,20 @@ const bridge: ComfyTitleTooltipBridge = {
   },
   onBeak: (cb) => {
     const handler = (_event: IpcRendererEvent, data: unknown): void => {
-      const raw = (data as { beakFraction?: unknown } | undefined)?.beakFraction
-      if (typeof raw === 'number' && Number.isFinite(raw)) cb({ beakFraction: raw })
+      const payload = data as { beakFraction?: unknown; cardCentreInView?: unknown } | undefined
+      const raw = payload?.beakFraction
+      const centre = payload?.cardCentreInView
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        cb({
+          beakFraction: raw,
+          // `null` rather than a guess: an older main that does not send it must fall back to
+          // CSS centring, not to a bogus offset.
+          // Non-negative as well as finite: a negative or NaN centre would place the card
+          // off its own view, and the renderer treats null as "fall back to CSS centring".
+          cardCentreInView:
+            typeof centre === 'number' && Number.isFinite(centre) && centre >= 0 ? centre : null
+        })
+      }
     }
     ipcRenderer.on('comfy-titletooltip:set-beak', handler)
     return () => ipcRenderer.removeListener('comfy-titletooltip:set-beak', handler)

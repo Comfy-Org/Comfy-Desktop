@@ -78,8 +78,42 @@ interface MainVerifiedAuthState {
   rendererMayReaffirm: boolean
 }
 
+/**
+ * The reconciled answer to "who is signed in, across every view this process hosts".
+ *
+ * `reconcile()` has always computed exactly these outcomes; until now it only expressed them as
+ * side effects on telemetry, so nothing else could be driven from them. Anything that needs to
+ * know the account should read this rather than interrogating one view's page, which is a single
+ * sample of a state several views contribute to.
+ *
+ * `unknown` is deliberately NOT folded into `signed_out`. Telemetry treats "no contributor left"
+ * as a reason to stop attributing events to a user, which is right for an in-memory binding; but
+ * for anything PERSISTED the two are opposites. Closing the last window is not evidence that
+ * anybody signed out, and a consumer that writes on `signed_out` must not be handed `unknown`.
+ *
+ * `conflicted` is likewise its own outcome rather than a resolution. Two views signed into two
+ * accounts is a real disagreement, and the honest answer is that this process does not know which
+ * account it is serving - not a coin flip on whichever view reported last.
+ */
+export type FirebaseIdentityConsensus =
+  /** No contributor can say: every view is gone or untrusted. A view wedged past its deadline
+   *  does NOT reach here — `reconcile()` keeps the last outcome in that case, deliberately, since
+   *  an unresolved document is evidence of nothing. So `unknown` and "still wedged" are not
+   *  distinguishable from the outside, and neither is a reason to move a persisted fact. */
+  | { status: 'unknown' }
+  /** At least one contributor is mid-resolution. */
+  | { status: 'pending' }
+  /** Every contributor resolved, and none is signed in. */
+  | { status: 'signed_out' }
+  /** Contributors resolved to different accounts, or to a mix of signed in and signed out. */
+  | { status: 'conflicted' }
+  /** Every contributor resolved to this one account. */
+  | { status: 'signed_in'; userId: string }
+
 const reporters = new Map<WebContents, Reporter>()
 const mainVerifiedStates = new Map<WebContents, MainVerifiedAuthState>()
+let consensus: FirebaseIdentityConsensus = { status: 'unknown' }
+const consensusObservers = new Set<(consensus: FirebaseIdentityConsensus) => void>()
 let requestedUserId: string | null = null
 let anonymousEpochIsUnmergeable = false
 let persistedEpochStateLoaded = false
@@ -87,6 +121,81 @@ let epochTaintIsDurable = true
 /** A document that never resolves auth must not quarantine telemetry forever. */
 export const PENDING_CONSENSUS_DEADLINE_MS = 60_000
 let pendingConsensusDeadline: ReturnType<typeof setTimeout> | null = null
+
+function sameConsensus(
+  first: FirebaseIdentityConsensus,
+  second: FirebaseIdentityConsensus
+): boolean {
+  if (first.status !== second.status) return false
+  return first.status !== 'signed_in' || first.userId === (second as { userId: string }).userId
+}
+
+/**
+ * Record the reconciled outcome and hand it to observers.
+ *
+ * Change-only: `reconcile()` runs on every navigation event, and an observer that re-reads a page
+ * on each one would be a poll with extra steps. The stored value is set BEFORE dispatch, so an
+ * observer that ends up back inside `reconcile()` sees the new outcome and cannot re-dispatch the
+ * same one; and if it publishes a DIFFERENT one, this loop stops rather than handing a superseded
+ * value to the observers it had not reached yet. An observer that throws must not take the
+ * identity engine down with it.
+ */
+function publishConsensus(next: FirebaseIdentityConsensus): void {
+  if (sameConsensus(consensus, next)) return
+  consensus = next
+  for (const observe of [...consensusObservers]) {
+    // An observer can synchronously re-enter `reconcile()` and publish a different outcome, which
+    // completes its own dispatch before this loop resumes. Handing the rest of the observers a
+    // value that no longer matches `getFirebaseIdentityConsensus()` is worse than not calling
+    // them at all — the nested dispatch has already delivered the newer one to everybody.
+    if (!sameConsensus(consensus, next)) return
+    try {
+      observe(next)
+    } catch (err) {
+      console.log('[firebase-identity] consensus observer failed:', err)
+    }
+  }
+}
+
+/** The current reconciled identity outcome across every contributing view. */
+export function getFirebaseIdentityConsensus(): FirebaseIdentityConsensus {
+  return consensus
+}
+
+/** Observe reconciled identity outcomes. Fires on change only; returns an unsubscribe. */
+export function observeFirebaseIdentityConsensus(
+  observe: (consensus: FirebaseIdentityConsensus) => void
+): () => void {
+  consensusObservers.add(observe)
+  return () => consensusObservers.delete(observe)
+}
+
+/**
+ * The live views this process counts as signed into `userId`.
+ *
+ * For a consumer that needs to ask a PAGE something about the agreed account - which view it may
+ * put the question to. Includes views bound by a main-verified sign-in whose reporter has not
+ * reported yet, since those are views this process already believes hold that account.
+ */
+export function viewsReportingFirebaseUser(userId: string): WebContents[] {
+  const views: WebContents[] = []
+  for (const [webContents, reporter] of reporters) {
+    if (webContents.isDestroyed() || !reporter.active) continue
+    if (reporter.state.status === 'signed_in' && reporter.state.userId === userId) {
+      views.push(webContents)
+    }
+  }
+  for (const [webContents, state] of mainVerifiedStates) {
+    if (webContents.isDestroyed() || state.userId !== userId) continue
+    // The same origin revalidation `reconcile()` applies to this map — it is what prunes the
+    // entry, and pruning only happens in there. Without it a view that has navigated elsewhere is
+    // still named as holding the account, and a caller would put its question to, and trust an
+    // answer from, a page at a different origin.
+    if (originOf(webContents.getURL()) !== state.origin) continue
+    if (!views.includes(webContents)) views.push(webContents)
+  }
+  return views
+}
 
 function originOf(url: string): string | null {
   try {
@@ -361,11 +470,16 @@ function reconcile(): void {
     // nothing: keep the current identity until a real report resolves it.
     if (expiredPendingContributors > 0) return
     requestAnonymousIdentity()
+    // Not `signed_out`: no view can say. Telemetry detaches here because an
+    // in-memory binding with nobody left to affirm it should stop claiming
+    // events; a consumer that PERSISTS the account must hold instead.
+    publishConsensus({ status: 'unknown' })
     return
   }
 
   if (states.some((state) => state.status === 'pending')) {
     requestPendingIdentity()
+    publishConsensus({ status: 'pending' })
     return
   }
 
@@ -379,6 +493,7 @@ function reconcile(): void {
     // binding even when this process has not bound a UID yet.
     detachToAnonymousIdentity()
     clearUnmergeableEpoch()
+    publishConsensus({ status: 'signed_out' })
     return
   }
 
@@ -386,14 +501,19 @@ function reconcile(): void {
   const hasConflict = signedIn.length !== states.length || userIds.size !== 1
   if (hasConflict) {
     requestConflictedIdentity()
+    publishConsensus({ status: 'conflicted' })
     return
   }
 
   const userId = signedIn[0]!.userId
+  // Publishing before this would announce an account the process has not adopted: the epoch is
+  // still tainted, telemetry is held anonymous, and a retry is expected. Hold the previous
+  // outcome until the bind can actually take effect.
   if (!clearUnmergeableEpoch()) return
 
   clearPendingConsensusDeadline()
   requestedUserId = userId
+  publishConsensus({ status: 'signed_in', userId })
   const confirmedMainStates = mainCandidates.filter(({ webContents, state, contributes }) => {
     if (state.userId !== userId) return false
     if (contributes) return true
@@ -722,6 +842,8 @@ export function _resetForTest(): void {
   }
   reporters.clear()
   mainVerifiedStates.clear()
+  consensus = { status: 'unknown' }
+  consensusObservers.clear()
   clearPendingConsensusDeadline()
   requestedUserId = null
   anonymousEpochIsUnmergeable = false

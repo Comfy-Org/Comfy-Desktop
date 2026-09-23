@@ -1507,7 +1507,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
     // Bind the stored staff classification BEFORE any ops flag is fetched. The
     // boot evaluation is the only authoritative one, so a property that arrives
-    // after it cannot affect this launch — see `staffFlagTargeting.ts`.
+    // after it cannot affect this launch — see `staffFlagTargeting.ts`. Also
+    // subscribes to the identity consensus, which is what reclassifies for the
+    // NEXT launch; this runs before any view exists, so no outcome is missed.
     initStaffFlagTargeting()
 
     // This ops-flag path is separate from consent-gated experiments: the first-use

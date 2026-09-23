@@ -9,27 +9,60 @@
  *
  * ## What is stored, and what is not
  *
- * A single boolean, in `<configDir>/staff-targeting.json`. The address is compared inside the
- * page (`CLASSIFY_STAFF_JS`) and only the derived boolean crosses the IPC boundary, so it is
- * never persisted, never handed to `telemetry.ts`, and never present in main-process memory at
- * all. The privacy claim is therefore structural rather than procedural: no module downstream of
- * the page script is ever given an address, so none can leak one.
+ * A single boolean, in `<configDir>/staff-targeting.json`. The ADDRESS is compared inside the
+ * page (`CLASSIFY_STAFF_JS`) and never crosses the IPC boundary at all, so it is never persisted,
+ * never handed to `telemetry.ts`, and never present in main-process memory. The privacy claim is
+ * therefore structural rather than procedural: no module downstream of the page script is ever
+ * given an address, so none can leak one.
+ *
+ * Besides the boolean the page returns the UID it classified, which main compares against the
+ * agreed account and discards. That is not a new class of data at this boundary: the same UID,
+ * from the same store, already crosses it continuously on the identity-consensus path
+ * (`reportFirebaseAuthState`). It is bounded in the page and re-checked by
+ * `normalizePostHogUserId`, the same gate consensus applies, so nothing unbounded lands in
+ * main-process memory or a crash dump — and no address is involved either way.
  *
  * The cost of that is deliberate and worth naming: the `@comfy.org` test lives in the CLIENT
  * (`STAFF_EMAIL_SUFFIX`), so changing which cohort is targeted needs a Desktop release rather
  * than a PostHog config edit. Sending the raw email instead would keep that flexibility, at the
  * price of a plaintext address at rest for every logged-in user.
  *
+ * ## Which account gets classified
+ *
+ * The one the whole process agrees on — `firebaseAuthIdentity.ts`'s consensus — not whichever
+ * view loaded a document most recently. A view is a single sample of a state several views
+ * contribute to, and reading one directly gets three things wrong at once: it cannot see a
+ * sign-out that never navigates, it has no way to reconcile two views signed into two accounts,
+ * and it will happily classify an account this process does not believe is signed in.
+ *
+ * So the outcome drives the classification:
+ *
+ *   - **`signed_in`** — ask a view the consensus counts as holding that account, and accept its
+ *     answer only if the page agrees it classified that same UID.
+ *   - **`signed_out`** — store `false`. Every contributor resolved and none is signed in, which
+ *     is the one state that is real evidence of a sign-out.
+ *   - **`pending` / `conflicted` / `unknown`** — hold. A view mid-resolution, two views disagreeing
+ *     about which account is signed in, and no view able to say at all are all *absence* of an
+ *     answer. Writing one anyway is how a wrong classification outlives the session that caused
+ *     it, because whatever lands on disk is what the next boot is targeted on.
+ *
+ * `unknown` matters more than it looks: closing the last window leaves nobody to affirm the
+ * account, and `firebaseAuthIdentity` rightly detaches telemetry there. Persisting `false` on the
+ * same signal would revoke a staff grant for quitting the app.
+ *
  * ## What this is NOT
  *
- * NOT an authorization boundary. The classification comes from the page's own main world, so
- * page-level code — a custom-node extension, or XSS on a hosted frontend — can forge a
- * `firebase:authUser:*` record or patch the IndexedDB API and self-classify as staff. What that
- * buys is bounded: the property only makes a person CONDITION evaluable, the server still
- * decides, and `coreBetaGrants` will only ever add args already on its own allowlist. Nothing
- * here should ever gate access, entitlement, or anything a user could want to forge their way
- * into. Closing it properly means cross-checking against main's own Firebase identity
- * (`firebaseAuthIdentity.ts`), which is a larger change than this one.
+ * Still NOT an authorization boundary, and the consensus does not make it one. Both the
+ * classification and the reports that consensus reconciles come from pages, reading the same
+ * IndexedDB, so page-level code — a custom-node extension, or XSS on a hosted frontend — that can
+ * forge a `firebase:authUser:*` record can forge both halves and self-classify as staff. What the
+ * cross-check removes is *non-hostile* wrongness: the last document to load deciding, a stale
+ * second record deciding, and a classification landing while two views disagree.
+ *
+ * What a forgery buys is unchanged and bounded: the property only makes a person CONDITION
+ * evaluable, the server still decides, and `coreBetaGrants` will only ever add args already on its
+ * own allowlist. Nothing here should ever gate access, entitlement, or anything a user could want
+ * to forge their way into.
  *
  * ## Why the boolean is persisted rather than resolved at boot
  *
@@ -38,7 +71,7 @@
  * learns a UID and no email at all — `flowShared.ts` attaches an email only on a fresh
  * desktop-driven sign-in. That is long after the boot flag fetch has answered.
  *
- * So the classification is made whenever a view resolves auth, and read back at the NEXT boot,
+ * So the classification is made whenever the consensus resolves, and read back at the NEXT boot,
  * before the flag fetch. `userTier.ts` solves the same problem the same way. The consequence is
  * that a staff member's first launch after signing in is not targeted; the one after it is.
  *
@@ -64,6 +97,13 @@
  */
 import path from 'path'
 import type { WebContents } from 'electron'
+import {
+  getFirebaseIdentityConsensus,
+  observeFirebaseIdentityConsensus,
+  viewsReportingFirebaseUser,
+  type FirebaseIdentityConsensus
+} from './firebaseAuthIdentity'
+import { normalizePostHogUserId } from './opaqueIdentifier'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
 import * as telemetry from './telemetry'
@@ -86,6 +126,38 @@ function persistFilePath(): string {
  *  exists but could not be read — and an unknown value never suppresses a write. */
 let cached: boolean | null = null
 
+/** The account the in-memory classification belongs to, so returning to an account already
+ *  classified this session costs no page read. `null` when the classification belongs to no
+ *  account (a resolved sign-out) or when none has been made. */
+let classifiedUserId: string | null = null
+
+/** The classification held for `classifiedUserId`. `null` means the account is agreed but not yet
+ *  classified — a page read is in flight, or every attempt at one failed. */
+let classifiedStaff: boolean | null = null
+
+/** Bumped on every consensus change. A page read is asynchronous and the account can be superseded
+ *  while one is in flight; without this an answer about the account signed out a moment ago would
+ *  be applied to whoever is signed in now. */
+let classificationGeneration = 0
+
+/** The generation whose classification has already been accepted. Two reads can be in flight for
+ *  one generation — a `dom-ready` retry alongside the consensus observer's own — and both would
+ *  pass the generation check, so the slower one would overwrite the faster one's verdict purely on
+ *  settle order. One accepted answer per consensus outcome; later arrivals for it are ignored. */
+let answeredGeneration: number | null = null
+
+let unobserveConsensus: (() => void) | null = null
+
+/** A page read that never settles must not keep a `WebContents` awaited forever, nor block the
+ *  views behind it. `CLASSIFY_STAFF_JS` bounds its own `indexedDB.open`, but `databases()` and
+ *  `getAll` are unbounded and a hostile page can replace either with a promise that never
+ *  resolves. `executeJavaScript` has no timeout of its own. */
+const PAGE_READ_TIMEOUT_MS = 10_000
+
+/** What `normalizePostHogUserId` will accept, applied to the raw string so trimming cannot sneak an
+ *  over-length uid under the limit. The page caps at one past this, so a longer uid is rejected. */
+const MAX_PAGE_USER_ID_CHARS = 256
+
 /**
  * Read the stored classification and bind it for this launch's flag evaluation.
  *
@@ -103,6 +175,9 @@ let cached: boolean | null = null
 export function initStaffFlagTargeting(): void {
   cached = readPersistedStaff()
   telemetry.setFlagEvaluationStaff(cached === true)
+  // Subscribed here rather than at module load so the wiring is explicit and ordered: this runs
+  // before any view exists, so no outcome can be missed, and a second call cannot double-subscribe.
+  unobserveConsensus ??= observeFirebaseIdentityConsensus(onIdentityConsensus)
   console.log('[staff-targeting] init: persisted=', cached)
 }
 
@@ -123,9 +198,15 @@ function readPersistedStaff(): boolean | null {
 /**
  * Page-context classification of the signed-in account.
  *
- * Returns only a BOOLEAN. The address is compared in the page and never crosses the IPC
- * boundary, so the privacy claim above is structurally true rather than a convention — and no
- * unbounded page-controlled string reaches main-process memory or a crash dump.
+ * Returns a BOOLEAN and the UID it is about — never the address, which is compared in the page and
+ * never crosses the IPC boundary, so the privacy claim above is structurally true rather than a
+ * convention.
+ *
+ * The UID is what lets main check that this page classified the account the process actually
+ * agrees is signed in. Bounded to 257 characters here — one past what `normalizePostHogUserId`
+ * will accept — so an over-length UID is REJECTED in main rather than silently truncated into a
+ * collision with a different account, and no unbounded page-controlled string reaches
+ * main-process memory or a crash dump. `null` when no account is stored.
  *
  * Three guards, each answering a way the naive read gets the cohort wrong:
  *
@@ -203,14 +284,21 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       if (!v || typeof v.uid !== 'string' || v.uid.length === 0) return;
       if (!uids[v.uid]) { uids[v.uid] = true; users.push(v); }
     });
-    // No record at all is a real signed-out state and votes "not staff".
-    if (users.length === 0) return { known: true, staff: false };
+    // No record at all is a real signed-out state and votes "not staff", for no account.
+    if (users.length === 0) return { known: true, staff: false, userId: null };
     // Two accounts at once is unresolved, not a coin flip on iteration order.
     if (users.length > 1) return { known: false };
     var user = users[0];
-    if (user.emailVerified !== true) return { known: true, staff: false };
+    // One past the 256 main will accept, so an over-length uid is REJECTED there rather than
+    // truncated into a match with a different account.
+    var userId = user.uid.slice(0, 257);
+    if (user.emailVerified !== true) return { known: true, staff: false, userId: userId };
     var email = typeof user.email === 'string' ? user.email : '';
-    return { known: true, staff: email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX };
+    return {
+      known: true,
+      staff: email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX,
+      userId: userId
+    };
   } catch (e) {
     return { known: false };
   } finally {
@@ -219,7 +307,176 @@ export const CLASSIFY_STAFF_JS = `(async () => {
 })()`
 
 /**
- * Classify the view's signed-in account and store the result for the next launch.
+ * Bind a classification and carry it to the next launch.
+ *
+ * The one place a classification reaches telemetry or the disk. Bound immediately even though
+ * this launch's flag fetch has long since gone out: a flag initialised later in the session (or
+ * re-read in a test) should see the current answer, and it costs nothing.
+ */
+function applyClassification(isStaff: boolean): void {
+  telemetry.setFlagEvaluationStaff(isStaff)
+  if (isStaff === cached) return
+  try {
+    writeFileSafe(persistFilePath(), JSON.stringify({ staff: isStaff, ts: Date.now() }))
+    // AFTER the write, never before. `writeFileSafe` can exhaust its retries on a transient lock
+    // or an unavailable config dir, and the catch below swallows that. Moving `cached` first
+    // would record a write that never landed, and the equality check above would then suppress
+    // every later attempt at the same classification — so the next launch would read the stale
+    // value even once the filesystem recovered.
+    cached = isStaff
+    console.log('[staff-targeting] classified: staff=', isStaff, '→ next launch')
+  } catch (err) {
+    console.log('[staff-targeting] store skipped:', err)
+  }
+}
+
+/**
+ * Run the classification script in a view, giving up if the page does not answer.
+ *
+ * The timeout bounds THIS await, not the page's work — `executeJavaScript` cannot be cancelled, so
+ * a wedged page keeps its own promise. What it does buy is that one such page no longer holds up
+ * every view behind it, and no read is awaited for the life of the session.
+ */
+async function readClassificationFromPage(webContents: WebContents): Promise<unknown> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      webContents.executeJavaScript(CLASSIFY_STAFF_JS),
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('page read timed out')), PAGE_READ_TIMEOUT_MS)
+        timer.unref?.()
+      })
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
+ * Ask one view to classify `userId`, and accept its answer only if it agrees that is the account
+ * it read.
+ *
+ * The cross-check is the point. A view can be trusted to report auth state and still be the wrong
+ * one to ask: its store can hold a different account than the one consensus settled on (on Cloud
+ * the reporter is the frontend's own auth sync, a different source entirely from the IndexedDB
+ * this reads), or it can have changed underneath between the report and this read. Disagreement
+ * is not a failure to retry — it means this view is answering about somebody else.
+ *
+ * Returns whether a classification was applied, so a caller can move on to the next view.
+ */
+async function classifyFromView(
+  webContents: WebContents,
+  userId: string,
+  generation: number
+): Promise<boolean> {
+  let read: { known?: unknown; staff?: unknown; userId?: unknown } | null
+  try {
+    read = (await readClassificationFromPage(webContents)) as typeof read
+  } catch (err) {
+    // A page that cannot be read must not revoke a grant.
+    console.log('[staff-targeting] read skipped:', err)
+    return false
+  }
+  // The account can be superseded while the read is in flight.
+  if (generation !== classificationGeneration) return false
+  // Another read already answered for this outcome. Letting a second one through would make the
+  // verdict depend on which page happened to settle last.
+  if (answeredGeneration === generation) return false
+  // A view with no Firebase store has NO OPINION and must stay silent. Absence of an auth record
+  // is not evidence of being signed out, so only a view that can actually see auth state votes.
+  if (!read || read.known !== true) return false
+  // Bound the raw string BEFORE normalizing: `normalizePostHogUserId` trims and only then applies
+  // its 256-character limit, so a 257-character uid ending in whitespace would normalize down to
+  // 256 and be accepted — defeating the page-side cap that exists to reject rather than truncate.
+  if (typeof read.userId !== 'string' || read.userId.length > MAX_PAGE_USER_ID_CHARS) return false
+  if (normalizePostHogUserId(read.userId) !== userId) return false
+  const isStaff = read.staff === true
+  answeredGeneration = generation
+  classifiedUserId = userId
+  classifiedStaff = isStaff
+  applyClassification(isStaff)
+  return true
+}
+
+/**
+ * Ask each view consensus counts as holding `userId` until one agrees it read that account.
+ *
+ * Sequential, so the common single-view case costs one page read. A view that does not answer no
+ * longer holds up the ones behind it: `readClassificationFromPage` bounds every call, and
+ * `classifyFromView` returns false on that timeout, so this loop moves on to the next view.
+ *
+ * ACCEPTED DEBT, decided rather than overlooked. First accepted answer wins, so where two views
+ * hold the same account and disagree — one store still carrying a verified `@comfy.org` address,
+ * another the updated or unverified one — the verdict depends on iteration order. Raised in review
+ * and kept deliberately:
+ *
+ *   - The harm is bounded. This is cohort targeting, not authorization: the server evaluates the
+ *     condition, and a grant only ever adds an arg from `CORE_BETA_GRANTABLE_ARGS`. The wrong
+ *     tie-break costs a missed or spurious beta arg, never access to anything.
+ *   - It is already less order-dependent than what it replaces, where classification ran per view
+ *     on `dom-ready` with no UID check at all, so the last document to load decided — including a
+ *     view signed into a different account.
+ *   - Both alternatives introduce order-sensitivity of their own. Requiring agreement lets one
+ *     stale or incomplete copy veto a correct `true`; preferring `true` biases toward granting.
+ *     Choosing between them is really a decision about what `CLASSIFY_STAFF_JS` should return for
+ *     a record with no email or an unverified one — the cohort rule this module inherited.
+ */
+async function classifyAgreedAccount(userId: string, generation: number): Promise<void> {
+  for (const webContents of viewsReportingFirebaseUser(userId)) {
+    if (generation !== classificationGeneration) return
+    if (await classifyFromView(webContents, userId, generation)) return
+  }
+}
+
+/**
+ * Drive the classification from the reconciled identity rather than from a page load.
+ *
+ * See the module note on which outcomes may write and which must hold. The short version: only
+ * `signed_out` and `signed_in` are evidence; `pending`, `conflicted` and `unknown` are the absence
+ * of an answer, and a persisted fact must not move on those.
+ */
+function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
+  classificationGeneration += 1
+  if (consensus.status === 'signed_out') {
+    // Every contributor resolved and none is signed in. This is what lets a machine that changes
+    // hands stop presenting as staff — and, with the boot evaluation authoritative, what lets the
+    // server take a grant back normally.
+    classifiedUserId = null
+    classifiedStaff = false
+    applyClassification(false)
+    return
+  }
+  if (consensus.status !== 'signed_in') return
+  if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
+    // Already classified this session — the common case, since a navigation takes the consensus
+    // through `pending` and back. Bind the known answer FIRST, so the account keeps its
+    // classification with no gap and a write that exhausted `writeFileSafe`'s attempts is retried.
+    applyClassification(classifiedStaff)
+    // Then revalidate, because a UID is not a classification. `staff` is derived from `email` and
+    // `emailVerified`, both of which can change while Firebase keeps reporting the same UID — an
+    // address verified mid-session, or one that changes domain. Caching the verdict against the
+    // UID alone would make it immutable for the life of the process, which is stricter than the
+    // behaviour this replaces: the per-view read ran on every `dom-ready` and would have seen the
+    // change. Every document load takes the consensus through `pending` and back, so this runs on
+    // that same cadence and costs the same one page read.
+    void classifyAgreedAccount(consensus.userId, classificationGeneration)
+    return
+  }
+  classifiedUserId = consensus.userId
+  classifiedStaff = null
+  // A switch straight from one account to another with no resolved sign-out between them holds
+  // the outgoing account's classification for the duration of one page read. Held, not cleared:
+  // clearing would revoke a grant on a report that may yet turn out to be transient.
+  void classifyAgreedAccount(consensus.userId, classificationGeneration)
+}
+
+/**
+ * Offer a freshly loaded view as a classifier for the account already agreed on.
+ *
+ * A retry path, not an authority. The consensus observer above is what normally classifies; this
+ * covers the case where it resolved while the views it asked could not answer — a page mid-load,
+ * an `executeJavaScript` that threw — and a later view can. It is a no-op unless an account is
+ * agreed and still unclassified, so the ordinary page load costs nothing.
  *
  * Called for LOCAL installs as well as cloud ones, which matters more than it looks: the grant
  * these flags carry is consumed only by the local launch path (`buildLaunchArgs`, launch.ts),
@@ -228,50 +485,36 @@ export const CLASSIFY_STAFF_JS = `(async () => {
  *
  * Fire-and-forget. Every failure leaves the stored classification exactly as it was, so a page
  * that cannot be read cannot revoke a grant.
- *
- * A sign-out or a switch to a non-staff account stores `false`, so a machine that changes hands
- * stops presenting as staff on the next launch. Combined with the boot evaluation being
- * authoritative, that is also what lets the server take the grant back normally.
- *
- * KNOWN GAP, deliberate for now: this is driven by `dom-ready`, so an in-page sign-out that never
- * navigates is not seen until the next navigation, reload, or launch, and the classification can
- * stay `true` across that window. Reclassification is eventual, not immediate, and must not be
- * described as immediate. The preload's `startLocalFirebaseAuthMonitor` already polls this same
- * store on a 1s tick and would close the gap, but it reports a UID and no email, so wiring this
- * to it — or to the identity consensus in `firebaseAuthIdentity.ts`, which is what properly
- * reconciles several views — is a larger change than this one.
  */
 export async function refreshStaffFlagTargeting(webContents: WebContents): Promise<void> {
-  try {
-    const read = (await webContents.executeJavaScript(CLASSIFY_STAFF_JS)) as {
-      known?: unknown
-      staff?: unknown
-    } | null
-    // A view with no Firebase store has NO OPINION and must stay silent. Absence of an auth
-    // record is not evidence of being signed out, and treating it as such lets a local install
-    // that was never signed into clear a classification a signed-in view established — a wrong
-    // answer, not merely a racy one. Only a view that can actually see auth state votes.
-    if (!read || read.known !== true) return
-    const isStaff = read.staff === true
-    // Bound immediately even though this launch's flag fetch has long since gone out: a flag
-    // initialised later in the session (or re-read in a test) should see the current answer, and
-    // it costs nothing.
-    telemetry.setFlagEvaluationStaff(isStaff)
-    if (isStaff === cached) return
-    writeFileSafe(persistFilePath(), JSON.stringify({ staff: isStaff, ts: Date.now() }))
-    // AFTER the write, never before. `writeFileSafe` can exhaust its retries on a transient lock
-    // or an unavailable config dir, and the catch below swallows that. Moving `cached` first
-    // would record a write that never landed, and the equality check above would then suppress
-    // every later attempt at the same classification — so the next launch would read the stale
-    // value even once the filesystem recovered.
-    cached = isStaff
-    console.log('[staff-targeting] refresh: staff=', isStaff, '→ next launch')
-  } catch (err) {
-    console.log('[staff-targeting] refresh skipped:', err)
+  const consensus = getFirebaseIdentityConsensus()
+  // A resolved sign-out is the observer's to DECIDE — it is a fact about every view, and one view
+  // reaching dom-ready says nothing about the others. But re-applying a decision already taken is
+  // a write retry, not a decision, and the revocation write is the one with no other retry path:
+  // `publishConsensus` is change-only so `signed_out` is not re-delivered while it stands, and a
+  // `writeFileSafe` that threw would otherwise leave `staff: true` on disk for every later launch
+  // — silently reversing the revocation this module exists to make.
+  if (consensus.status === 'signed_out') {
+    applyClassification(false)
+    return
   }
+  if (consensus.status !== 'signed_in') return
+  if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
+    // Nothing to ask this view — but a page load is also the moment to retry a write that
+    // `writeFileSafe` could not land, since the next launch reads whatever the disk holds.
+    applyClassification(classifiedStaff)
+    return
+  }
+  await classifyFromView(webContents, consensus.userId, classificationGeneration)
 }
 
 /** @internal — exposed for tests. */
 export function _resetForTest(): void {
   cached = null
+  classifiedUserId = null
+  classifiedStaff = null
+  classificationGeneration = 0
+  answeredGeneration = null
+  unobserveConsensus?.()
+  unobserveConsensus = null
 }

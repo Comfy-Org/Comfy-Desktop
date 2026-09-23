@@ -1,3 +1,4 @@
+import type { CoachmarkBeakPayload } from '../../types/ipc'
 import { ipcMain } from 'electron'
 import type { BrowserWindow, WebContents } from 'electron'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
@@ -91,6 +92,11 @@ export interface CoachmarkPlacement {
   width: number
   height: number
   beakFraction: number
+  /** Where the card's midpoint belongs within the view, in CSS px. Sent so placement comes
+   *  from the geometry main already computed rather than from the page's own idea of its
+   *  width — and as a centre rather than an edge, so it holds whatever width the card
+   *  actually renders at. */
+  cardCentreInView: number
 }
 
 /** Compute popup bounds centering the card under the anchor, clamped to the parent, plus where
@@ -130,7 +136,20 @@ export function positionCoachmark(opts: {
   // the beak to the very corner the margin exists to keep it off.
   const beakMargin = Math.min(0.5, COACHMARK_BEAK_EDGE_MARGIN / cardWidth)
   const beakFraction = Math.min(1 - beakMargin, Math.max(beakMargin, rawFraction))
-  return { x, y, width: viewWidth, height: viewHeight, beakFraction }
+  // The card's CENTRE inside the view, which is the view's own midpoint.
+  //
+  // Sent because the renderer cannot derive it safely. Centring with auto margins measures the
+  // page's own width, and that width is sometimes still the pre-resize value — the page had
+  // not processed the new bounds yet. Measured at 8px off, on a page still reporting 300
+  // inside a 316-wide view.
+  //
+  // The CENTRE rather than the left edge, deliberately: a left offset is only correct while
+  // the card renders exactly as wide as `bubble.width` said it would, so it would trade a
+  // stale-viewport failure for a stale-width one — including on the fallback show, where the
+  // view is sized before any measurement exists. Pinning the centre is right for any rendered
+  // width, because the renderer offsets by half of whatever the card actually is.
+  const cardCentreInView = viewWidth / 2
+  return { x, y, width: viewWidth, height: viewHeight, beakFraction, cardCentreInView }
 }
 
 let _coachmarkTokenSeq = 0
@@ -255,14 +274,15 @@ function repositionAndShow(
 ): void {
   if (!entry.pendingAnchor || entry.view.isDestroyed()) return
   const parentBounds = entry.view.parentWindow.getContentBounds()
-  const { beakFraction, ...bounds } = positionCoachmark({
+  const { beakFraction, cardCentreInView, ...bounds } = positionCoachmark({
     anchor: entry.pendingAnchor,
     bubble,
     parentBounds
   })
   entry.view.popup.setBounds(bounds)
   // Tell the card where to draw its beak now that the final, possibly clamped, x is known.
-  entry.view.popup.webContents.send('comfy-titletooltip:set-beak', { beakFraction })
+  const beakPayload: CoachmarkBeakPayload = { beakFraction, cardCentreInView }
+  entry.view.popup.webContents.send('comfy-titletooltip:set-beak', beakPayload)
   // Focus so the dismiss button is keyboard-reachable.
   entry.view.showOnTop({ focus: true })
 }

@@ -18,6 +18,25 @@ export type { AuthStatus, Workspace }
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
+/** Payload of `comfy-titletooltip:set-beak`: where the coachmark card and its beak belong.
+ *
+ *  Declared here because three processes have to agree on it — main sends it, the preload
+ *  validates it, the renderer applies it — and an IPC boundary gives no compile error when
+ *  they drift. `ipcMain.send` is untyped and `ipcRenderer.on` hands back `unknown`, so
+ *  independent declarations would disagree silently and the card would land in the wrong
+ *  place with everything still building.
+ */
+export interface CoachmarkBeakPayload {
+  /** Where the beak sits along the card, 0..1 from its left edge. */
+  beakFraction: number
+  /** Where the card's midpoint belongs within its view, in CSS px.
+   *
+   *  A centre rather than an edge so it holds at whatever width the card actually renders,
+   *  and `null` when main did not send one — the renderer then falls back to CSS centring
+   *  rather than to a guess. */
+  cardCentreInView: number | null
+}
+
 /** Every renderer-safe Build catalog state. */
 export type DevPlatformBuildState =
   | 'installable'
