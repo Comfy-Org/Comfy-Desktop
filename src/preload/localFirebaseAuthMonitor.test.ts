@@ -32,6 +32,19 @@ function installThrowingLocalStorage(): void {
   })
 }
 
+/** Enumeration succeeds, the per-key value read throws — the mechanism failing mid-read. */
+function installThrowingGetItem(): void {
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      'firebase:authUser:api-key:[DEFAULT]': 'unreadable',
+      getItem: () => {
+        throw new Error('access denied')
+      }
+    }
+  })
+}
+
 function successfulRequest<T>(result: T): IDBRequest<T> {
   const request = { result } as IDBRequest<T>
   queueMicrotask(() => request.onsuccess?.(new Event('success')))
@@ -55,7 +68,14 @@ function installIndexedDb(entries: unknown[] | null): void {
 }
 
 afterEach(() => {
-  globalThis.indexedDB = originalIndexedDb
+  // defineProperty, not assignment: a test may have installed `indexedDB` as a throwing ACCESSOR,
+  // and assigning to an accessor without a setter does not replace it — it fails silently in sloppy
+  // mode and throws under modules. Either way the throwing getter would leak into every later test.
+  Object.defineProperty(globalThis, 'indexedDB', {
+    configurable: true,
+    writable: true,
+    value: originalIndexedDb
+  })
   if (originalLocalStorage) Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
   else Reflect.deleteProperty(globalThis, 'localStorage')
 })
@@ -119,28 +139,28 @@ describe('local Firebase auth monitor', () => {
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 
-  it('treats a THROWING getItem as the mechanism failing, not as an absent record', async () => {
-    // Enumeration succeeds, the per-key value read throws. That is "I cannot read", which must not
-    // be rendered as "nothing is stored" — otherwise a storage failure becomes a definite verdict
-    // for a signed-in user. CLASSIFY_STAFF_JS lets the same failure reach its outer catch and says
-    // nothing; this reader must not be the stricter of the pair.
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        'firebase:authUser:api-key:[DEFAULT]': 'unreadable',
-        getItem: () => {
-          throw new Error('access denied')
-        }
-      }
-    })
+  it('ABSTAINS on a mid-read throw even when IndexedDB holds a user', async () => {
+    // The distinction between `unreadable` and `unavailable`, and the reason they are separate
+    // kinds. A per-key throw means localStorage HOLDS Firebase keys we cannot read, so it is the
+    // store in use and IndexedDB is drained — a record there is the stale copy, and trusting it
+    // would assert a definite signed_in off exactly the kind of record this change exists to stop
+    // honouring. Contrast the it.each below, where localStorage is ABSENT: there IndexedDB is the
+    // only store and its record IS the answer, which is what keeps legacy frontends working.
+    installThrowingGetItem()
     installIndexedDb([
-      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'live-user' } }
+      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'possibly-stale' } }
     ])
 
-    await expect(readLocalFirebaseAuthState()).resolves.toEqual({
-      status: 'signed_in',
-      userId: 'live-user'
-    })
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+  })
+
+  it('rejects an over-long page-controlled uid rather than passing it over IPC', async () => {
+    // The record is entirely page-controlled. main's normalizePostHogUserId is the real validator,
+    // but an unbounded uid should not reach the bridge to be rejected there.
+    installLocalStorage({ 'firebase:authUser:api-key:[DEFAULT]': { uid: 'x'.repeat(258) } })
+    installIndexedDb([])
+
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
   })
 
   it.each([
@@ -156,6 +176,40 @@ describe('local Firebase auth monitor', () => {
       status: 'signed_in',
       userId: 'legacy-user'
     })
+  })
+
+  it.each([
+    ['localStorage is absent', removeLocalStorage],
+    ['localStorage access throws', installThrowingLocalStorage],
+    ['a per-key getItem throws', installThrowingGetItem]
+  ])(
+    'ABSTAINS rather than reporting signed_out when %s and IndexedDB is drained',
+    async (_label, breakStorage) => {
+      // Raised in review. An empty IndexedDB is not evidence of a sign-out: on a localStorage-primary
+      // frontend it is empty BECAUSE the SDK drained it, and here the store that would hold the user
+      // cannot be read at all. Reporting signed_out would be trusted, would revoke the loopback
+      // binding and would seal the install — on no evidence. A record there is evidence; its absence
+      // is not.
+      breakStorage()
+      installIndexedDb([])
+
+      await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+    }
+  )
+
+  it('ABSTAINS when localStorage is empty and the IndexedDB getter throws', async () => {
+    // A blocked/partitioned IndexedDB is not an empty one. Without this the reader reports a
+    // definite signed_out having consulted neither store — and it used to throw out of the whole
+    // function instead, skipping the report for the tick entirely.
+    installLocalStorage({})
+    Object.defineProperty(globalThis, 'indexedDB', {
+      configurable: true,
+      get() {
+        throw new Error('SecurityError')
+      }
+    })
+
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 
   it('legacy: reports the single persisted Firebase user', async () => {
@@ -183,10 +237,14 @@ describe('local Firebase auth monitor', () => {
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 
-  it('legacy: reports signed out without Firebase persistence', async () => {
+  it('legacy: abstains when localStorage is absent and no Firebase database exists', async () => {
+    // This asserted `signed_out` until review. With no localStorage at all, the absence of a
+    // Firebase database says nothing about whether anyone is signed in — and a signed_out here is
+    // trusted, revokes the loopback binding and seals the install. The complement of the it.each
+    // above: there the database exists and is drained, here it was never created.
     removeLocalStorage()
     installIndexedDb(null)
 
-    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 })
