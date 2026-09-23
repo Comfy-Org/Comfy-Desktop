@@ -44,6 +44,22 @@
  *     sign-out: the outcome either way is the absence of a grant, and abstaining cannot revoke a
  *     binding.
  *
+ * ## A SECOND deliberate asymmetry: a BLOCKED store
+ *
+ * When localStorage EXISTS but access throws, the two readers also differ, and this one was added
+ * after two independent reviewers found both readers treating a blocked store as an absent one:
+ *
+ *   - the monitor abstains outright and does not consult IndexedDB at all, because a stale record
+ *     there would become a definite `signed_in`, which is either believed or becomes a uid mismatch
+ *     that REVOKES the binding — the destructive path;
+ *   - `CLASSIFY_STAFF_JS` still reports a RECORD found in IndexedDB, because its worst case is a
+ *     grant withheld or granted from a stale address, never a revocation, and answering keeps a
+ *     frontend that persists to IndexedDB working with site data blocked.
+ *
+ * Both agree on the half that matters: the ABSENCE of a record in IndexedDB is never evidence of a
+ * sign-out when the store that would hold it could not be read. They differ only on whether a record
+ * found there may answer, and the difference is the cost of being wrong in each reader.
+ *
  * So "both readers apply one rule" is true of the three outcomes above and not of this corner. Said
  * explicitly because a docstring that was confidently wrong is what produced this change, and the
  * same trap one turn later would be worse, not smaller.
