@@ -6,11 +6,32 @@
  * injected into the page's main world, which cannot import anything). They cannot share the IO, so
  * they share the names and the rule instead — the part that drifted.
  *
- * ## The rule
+ * ## The rule — THREE outcomes, not two
  *
- * `localStorage` IS AUTHORITATIVE WHENEVER IT IS READABLE — INCLUDING WHEN IT HOLDS NO USER.
- * IndexedDB is consulted only when the localStorage MECHANISM is unavailable: no `localStorage`
- * object, or access throws. Never because it happened to be empty.
+ *     localStorage holds a record            -> AUTHORITATIVE. Any IndexedDB copy is the drained one.
+ *     both stores hold nothing               -> signed out. Unambiguous.
+ *     localStorage readable but EMPTY,
+ *       while IndexedDB holds a user         -> ABSTAIN: `pending` / `{known: false}`. Not a verdict.
+ *
+ * A fourth case is the MECHANISM being gone — no `localStorage` object, or access throws. IndexedDB
+ * then answers alone, because it is the only reader left. That is distinct from an empty store: "I
+ * cannot read" must never be rendered as "nothing is stored".
+ *
+ * ## One DELIBERATE asymmetry between the two readers
+ *
+ * Where the IndexedDB database exists, both readers answer identically. Where the MECHANISM or the
+ * database is ABSENT they differ, and that is intended rather than drift:
+ *
+ *   - the monitor treats a missing database as an empty one and reports `signed_out`, because it
+ *     must — a genuinely signed-out user has to reach that state or the identity consensus never
+ *     resolves, which is the whole job of that reader;
+ *   - `CLASSIFY_STAFF_JS` returns `{known: false}` instead, because it never needs to assert a
+ *     sign-out: the outcome either way is the absence of a grant, and abstaining cannot revoke a
+ *     binding.
+ *
+ * So "both readers apply one rule" is true of the three outcomes above and not of this corner. Said
+ * explicitly because a docstring that was confidently wrong is what produced this change, and the
+ * same trap one turn later would be worse, not smaller.
  *
  * ## Correction: the frontend's hierarchy is NOT localStorage-first
  *
@@ -45,21 +66,25 @@
  * Which store gets drained depends on which one won. Reading only IndexedDB is therefore wrong in
  * the steady state (empty for a signed-in user), which is the bug this branch fixes.
  *
- * ## KNOWN GAP in the rule above, not yet fixed here
+ * ## Why ABSTAIN, and not a guess in either direction
  *
- * Because at boot the user is in IndexedDB and localStorage is legitimately empty, "authoritative
- * even when empty" returns a definite signed-out for a signed-in user for the first seconds of every
- * page. That is not cosmetic: a trusted loopback `signed_out` runs
- * `revokeAcceptedLocalAuthorization`, which deletes the origin's binding, and `writeBindings`
- * (`verifiedLocalFirebaseAuth.ts`) `fs.rmSync`s the file when the map empties — so the install seals
- * itself for every later launch.
+ * An empty localStorage is genuinely ambiguous, and nothing in localStorage distinguishes the cases:
+ * a localStorage-primary frontend that is signed out looks identical to a session living in
+ * IndexedDB. Desktop's own sign-in produces the second one — `inject.ts` writes the record to
+ * IndexedDB ONLY and reloads, so on a first loopback sign-in localStorage has never held a Firebase
+ * key. That is not a timing window and does not depend on the frontend version.
  *
- * A three-outcome rule that ABSTAINS when localStorage is empty and IndexedDB holds a user is
- * proposed and awaiting a decision; it is deliberately NOT implemented here, so do not read this
- * section as describing the code below. Until it lands, the gap is real and documented rather than
- * discovered again. Note also that the mirror fallback (`localStorage || IndexedDB`) is NOT the
- * answer: a stale IndexedDB record can outlive a sign-out, so honouring it unconditionally would
- * resurrect the account the SDK deliberately deleted.
+ * Guessing signed-out is destructive, not merely wrong. A trusted loopback `signed_out` runs
+ * `revokeAcceptedLocalAuthorization`, which deletes the origin's binding — and `writeBindings`
+ * (`verifiedLocalFirebaseAuth.ts`) `fs.rmSync`s the file when the map empties. The install then has
+ * no trusted view, the consensus never resolves again, and nothing classifies on any later launch.
+ *
+ * Guessing signed-in is the mirror failure: a stale IndexedDB record can outlive a sign-out, so
+ * honouring it would resurrect the account the SDK deliberately deleted — in consumers that persist
+ * their answer to disk.
+ *
+ * `pending` asserts neither, and cannot revoke: only `signed_out` and a uid mismatch reach the
+ * revocation path.
  *
  * ## The verdict predicate, for both readers
  *

@@ -28,23 +28,28 @@ function uidFromRecord(value: unknown): string | null {
   return typeof uid === 'string' && uid.length > 0 ? uid : null
 }
 
+/** What localStorage can tell us. `unavailable` is the MECHANISM being gone — no `localStorage`, or
+ *  a read that threw — and is deliberately distinct from `empty`: "I cannot read" is not "nothing is
+ *  stored", and only the former lets IndexedDB answer on its own. */
+type LocalStorageRead =
+  | { kind: 'unavailable' }
+  | { kind: 'empty' }
+  | { kind: 'records'; userIds: Set<string> }
+
 /**
- * The authoritative read. `'unavailable'` means the MECHANISM is missing — no `localStorage`, or
- * access threw — and is the ONLY thing that licenses falling back to IndexedDB.
- *
- * An empty localStorage returns `signed_out`, deliberately. See the rule in
- * `shared/firebaseAuthStorage.ts`: the SDK deletes the key from non-primary persistences, so a
- * record still sitting in IndexedDB is one Firebase discarded, and honouring it would resurrect a
- * signed-out account.
+ * The first read. It reports what localStorage HAS and deliberately does not decide: an empty
+ * localStorage is ambiguous (see `shared/firebaseAuthStorage.ts`), because our own sign-in injection
+ * writes the record to IndexedDB only, and on the shipped frontend the user also lives there for the
+ * first seconds of a page. Only `readLocalFirebaseAuthState` turns this into a state.
  */
-function readFromLocalStorage(): ComfyDesktop2FirebaseAuthState | 'unavailable' {
+function readFromLocalStorage(): LocalStorageRead {
   let keys: string[]
   try {
-    if (typeof localStorage === 'undefined') return 'unavailable'
+    if (typeof localStorage === 'undefined') return { kind: 'unavailable' }
     keys = Object.keys(localStorage)
   } catch {
     // Blocked storage, or a partitioned context that throws on access.
-    return 'unavailable'
+    return { kind: 'unavailable' }
   }
   const userIds = new Set<string>()
   for (const key of keys) {
@@ -53,22 +58,21 @@ function readFromLocalStorage(): ComfyDesktop2FirebaseAuthState | 'unavailable' 
     try {
       raw = localStorage.getItem(key)
     } catch {
-      // Enumeration worked but this value read threw: that is the MECHANISM failing mid-read, not an
-      // absent record. Counting it absent would turn a read failure into a definite answer.
+      // Enumeration worked but this value read threw: the MECHANISM failing mid-read, not an absent
+      // record. Counting it absent would turn a read failure into a definite answer.
       // `CLASSIFY_STAFF_JS` lets the same failure reach its outer catch and says nothing — the two
       // readers are supposed to apply one rule, so this one must not be the stricter of the pair.
-      return 'unavailable'
+      return { kind: 'unavailable' }
     }
     if (!raw) continue
     try {
       const uid = uidFromRecord(JSON.parse(raw))
       if (uid) userIds.add(uid)
     } catch {
-      // A malformed entry is not evidence the mechanism is unavailable, so it must NOT fall through
-      // to the drained store. Skip it and let the remaining keys answer.
+      // A malformed entry is not a mechanism failure. Skip it; the remaining keys still answer.
     }
   }
-  return stateForUserIds(userIds)
+  return userIds.size === 0 ? { kind: 'empty' } : { kind: 'records', userIds }
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
@@ -114,17 +118,31 @@ async function readFromIndexedDb(): Promise<ComfyDesktop2FirebaseAuthState> {
 }
 
 export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2FirebaseAuthState> {
-  const authoritative = readFromLocalStorage()
-  if (authoritative !== 'unavailable') return authoritative
-  if (typeof indexedDB === 'undefined') return { status: 'pending' }
-  return readFromIndexedDb()
+  const local = readFromLocalStorage()
+  // A record in localStorage wins outright: it is the store the session settles in, and any copy
+  // left in IndexedDB is one the SDK discarded — so a signed-out account cannot come back.
+  if (local.kind === 'records') return stateForUserIds(local.userIds)
+
+  if (typeof indexedDB === 'undefined') {
+    // No second store to ask. An empty localStorage is then the whole truth; an unreadable one
+    // leaves us with nothing to say.
+    return local.kind === 'empty' ? { status: 'signed_out' } : { status: 'pending' }
+  }
+
+  const fromIdb = await readFromIndexedDb()
+  // Mechanism gone: IndexedDB is the only reader left, so it answers alone.
+  if (local.kind === 'unavailable') return fromIdb
+  // Readable but empty. If IndexedDB agrees there is no user, the sign-out is real. If it holds one,
+  // the stores disagree and we ABSTAIN: `signed_out` here is trusted, revokes the loopback binding
+  // and seals the install, and `signed_in` would honour a record that may genuinely be stale.
+  return fromIdb.status === 'signed_out' ? { status: 'signed_out' } : { status: 'pending' }
 }
 
 /** Report local Firebase persistence because the frontend's own sync is Cloud-only. */
 export function startLocalFirebaseAuthMonitor(
   report: (state: ComfyDesktop2FirebaseAuthState) => void
 ): (() => void) | null {
-  if (!isLoopbackPage() || typeof indexedDB === 'undefined') return null
+  if (!isLoopbackPage()) return null
   let lastState = ''
   let stopped = false
   let polling = false

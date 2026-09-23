@@ -80,20 +80,31 @@ describe('local Firebase auth monitor', () => {
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 
-  it('IGNORES an IndexedDB record when localStorage is readable and empty', async () => {
-    // The whole fix. The SDK deletes the key from non-primary persistences, so a record still in
-    // IndexedDB is one Firebase DISCARDED — honouring it resurrects a signed-out account. An empty
-    // localStorage is an answer, not a reason to look elsewhere.
+  it('ABSTAINS when localStorage is empty but IndexedDB holds a user', async () => {
+    // The ambiguous row, and the reason the rule has three outcomes. Our own sign-in writes the
+    // record to IndexedDB only and reloads, so on a first loopback sign-in localStorage has never
+    // held a key — this state is normal, not a stale leftover. Reporting signed_out here is trusted,
+    // revokes the loopback binding and seals the install; reporting signed_in would honour a record
+    // that may genuinely be stale. The only answer that cannot be wrong is neither.
     installLocalStorage({})
     installIndexedDb([
-      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'stale-ghost' } }
+      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'user-in-idb' } }
     ])
+
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+  })
+
+  it('reports signed_out only when BOTH stores are empty', async () => {
+    // The other half of the same rule: a sign-out is a real answer, but only once the second store
+    // has been asked and agrees. Without this case the rule above could be satisfied by never
+    // reporting signed_out at all.
+    installLocalStorage({})
+    installIndexedDb([])
 
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
   })
 
-  it('skips a malformed localStorage entry without falling through to IndexedDB', async () => {
-    installLocalStorage({})
+  it('abstains on a malformed localStorage entry rather than trusting IndexedDB', async () => {
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
       value: {
@@ -105,7 +116,7 @@ describe('local Firebase auth monitor', () => {
       { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'stale-ghost' } }
     ])
 
-    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 
   it('treats a THROWING getItem as the mechanism failing, not as an absent record', async () => {
