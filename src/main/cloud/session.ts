@@ -113,7 +113,7 @@ export class CloudSession {
     }
   }
 
-  /** The signed-in user's workspaces (empty when signed out or team-workspaces off). */
+  /** The signed-in user's workspaces; unavailable catalogs reject rather than imply removal. */
   async listWorkspaces(): Promise<Workspace[]> {
     const token = await this.getAccessToken()
     if (!token) return []

@@ -11,6 +11,32 @@ export type { FirstUseMode }
 import type { AuthStatus, Workspace } from '../main/cloud/types'
 export type { AuthStatus, Workspace }
 
+// One Core beta activation card, as main resolves it for the title bar. Re-exported from its
+// producer rather than restated here: this file's header forbids duplicating types, and an
+// independent copy would drift silently — `ipcMain.handle` is ungeneric and `ipcRenderer.invoke`
+// returns `Promise<any>`, so nothing would fail the build.
+import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
+export type { BetaActivationNotice }
+
+/** Payload of `comfy-titletooltip:set-beak`: where the coachmark card and its beak belong.
+ *
+ *  Declared here because three processes have to agree on it — main sends it, the preload
+ *  validates it, the renderer applies it — and an IPC boundary gives no compile error when
+ *  they drift. `ipcMain.send` is untyped and `ipcRenderer.on` hands back `unknown`, so
+ *  independent declarations would disagree silently and the card would land in the wrong
+ *  place with everything still building.
+ */
+export interface CoachmarkBeakPayload {
+  /** Where the beak sits along the card, 0..1 from its left edge. */
+  beakFraction: number
+  /** Where the card's midpoint belongs within its view, in CSS px.
+   *
+   *  A centre rather than an edge so it holds at whatever width the card actually renders,
+   *  and `null` when main did not send one — the renderer then falls back to CSS centring
+   *  rather than to a guess. */
+  cardCentreInView: number | null
+}
+
 /** Every renderer-safe Build catalog state. */
 export type DevPlatformBuildState =
   | 'installable'
@@ -797,6 +823,119 @@ export interface SystemInfo {
   }>
 }
 
+export interface PerformanceTestResultsSummary {
+  createdAt: string
+  instance: {
+    id: string
+    name: string
+  }
+  workspace: {
+    id: string | null
+    name: string | null
+  }
+  workflowName: string
+  fastestJobDurationSeconds: number | null
+  slowestJobDurationSeconds: number | null
+  averageJobDurationSeconds: number | null
+  medianJobDurationSeconds: number | null
+  measuredJobCount: number
+  failedRunCount: number
+  hardware: {
+    deviceType: string
+    deviceIndex: number | null
+    deviceName: string | null
+    backend: string | null
+    devices: Array<{
+      deviceType: string
+      deviceIndex: number | null
+      deviceName: string | null
+      backend: string | null
+    }>
+    vramMb: number | null
+    ramMb: number | null
+    pytorchVersion: string | null
+    xformersVersion: string | null
+    cudaDeviceSet: number | null
+  } | null
+  systemInfo: SystemInfo
+}
+
+export interface AcceleratorInfo {
+  deviceType: string
+  deviceIndex: number | null
+  deviceName: string | null
+  backend: string | null
+}
+
+export interface AcceleratorSnapshot extends AcceleratorInfo {
+  devices: AcceleratorInfo[]
+  vramMb: number | null
+  ramMb: number | null
+  pytorchVersion: string | null
+  xformersVersion: string | null
+  cudaDeviceSet: number | null
+}
+
+export interface PerformanceTestDurationResult {
+  jobId: string
+  durationSeconds: number
+}
+
+export interface PerformanceTestStatistics {
+  fastest: PerformanceTestDurationResult
+  slowest: PerformanceTestDurationResult
+  averageDurationSeconds: number
+  medianDurationSeconds: number
+  measuredJobCount: number
+}
+
+export interface RunPerformanceTestWorkflowResult {
+  ok: boolean
+  submitted: number
+  preparationRuns: number
+  totalSubmitted: number
+  promptIds?: string[]
+  resultPath?: string
+  resultsSummaryPath?: string
+  failedRuns?: number
+  statistics?: PerformanceTestStatistics | null
+  hardware?: AcceleratorSnapshot | null
+  systemInfo?: SystemInfo
+  resultsSummary?: PerformanceTestResultsSummary
+  cancelled?: boolean
+  message?: string
+}
+
+export type PerformanceTestResultValue =
+  | string
+  | number
+  | boolean
+  | null
+  | PerformanceTestResultValue[]
+  | { [key: string]: PerformanceTestResultValue }
+
+export interface PerformanceTestBenchmark {
+  id: string
+  createdAt: string | null
+  instance: {
+    id: string
+    name: string
+  }
+  workspace: {
+    id: string | null
+    name: string | null
+  }
+  workflowName: string
+  fastestJobDurationSeconds: number | null
+  slowestJobDurationSeconds: number | null
+  averageJobDurationSeconds: number | null
+  medianJobDurationSeconds: number | null
+  measuredJobCount: number
+  hardwareName: string | null
+  /** Complete results.json payload used to discover configurable table columns. */
+  result: Record<string, PerformanceTestResultValue>
+}
+
 export interface SnapshotDiffEntry {
   createdAt: string
   trigger: string
@@ -1111,6 +1250,44 @@ export interface ElectronApi {
 
   // File/URL
   browseFolder(defaultPath?: string): Promise<string | null>
+  importPerformanceTestWorkflow(filePath?: string): Promise<{
+    ok: boolean
+    filePath?: string
+    message?: string
+    canceled?: boolean
+  }>
+  deletePerformanceTestWorkflow(
+    filePath: string
+  ): Promise<{ ok: boolean; status?: 'deleted' | 'preserved'; message?: string }>
+  savePerformanceTestLogs(
+    filePath: string,
+    logs: string
+  ): Promise<{ ok: boolean; logsPath?: string; message?: string }>
+  listPerformanceTestBenchmarks(folderPath?: string): Promise<{
+    folderPath: string
+    benchmarks: PerformanceTestBenchmark[]
+  }>
+  deletePerformanceTestBenchmark(
+    folderPath: string,
+    sessionId: string
+  ): Promise<{ ok: boolean; message?: string }>
+  renamePerformanceTestBenchmark(
+    folderPath: string,
+    sessionId: string,
+    newSessionId: string
+  ): Promise<{ ok: boolean; sessionId?: string; message?: string }>
+  runPerformanceTestWorkflow(
+    sessionId: string,
+    filePath: string,
+    measuredRuns: number,
+    warmupRuns: number
+  ): Promise<RunPerformanceTestWorkflowResult>
+  readPerformanceTestResultsSummary(filePath: string): Promise<PerformanceTestResultsSummary>
+  exportResultsImage(
+    png: ArrayBuffer,
+    imageType: 'performance-test' | 'benchmark-comparison',
+    defaultPath?: string
+  ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
@@ -1234,7 +1411,15 @@ export interface ElectronApi {
    *  `comfy://open-settings?tab=global` deep link. Main reuses the
    *  same helper the hamburger Settings entry calls. `tab` lands the
    *  popup on that tab instead of its remembered one. */
-  openGlobalSettings(tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs'): void
+  openGlobalSettings(
+    tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
+    opts?: {
+      /** Field id to scroll to and flash once the tab renders (e.g.
+       *  `'betaFeaturesEnabled'`). A per-open command like `tab`, not state:
+       *  the rebroadcast snapshot carries none, so the flash does not repeat. */
+      highlightField?: string
+    }
+  ): void
   /** Open the instance-picker popup for the panel's host window with
    *  `installationId` seeded as the picker's right-pane selection.
    *  Used by chooser-card "Manage…" (and future per-install entry
@@ -1427,6 +1612,23 @@ export interface ElectronApi {
   setSetting(key: string, value: unknown): Promise<void>
   getSetting(key: string): Promise<unknown>
 
+  // Core beta activation notice
+  /** The activation card this install owes the user, or `null`. Read repeatedly
+   *  without side effects — the pending set is only cleared by
+   *  `acknowledgeBetaNotice`, so a card that is shown but never retired comes
+   *  back on the next launch. `description` carries the feature name the
+   *  PostHog payload supplied, when it supplied one. */
+  getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
+  /** Retire this install's activation notice: the args are persisted as
+   *  announced and never raise a card again. Called when the user dismisses
+   *  the card or follows its settings link.
+   *
+   *  `shownArgs` names what the card actually displayed. Main retires exactly
+   *  those rather than whatever is queued at retire time — a relaunch can
+   *  re-arm while the sticky card floats, and the announced list is
+   *  append-only, so acknowledging the wrong set silences it forever. */
+  acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
+
   // Theme
   getResolvedTheme(): Promise<ResolvedTheme>
 
@@ -1519,6 +1721,9 @@ export interface ElectronApi {
   // Event listeners (return unsubscribe functions)
   onInstallProgress(callback: (data: ProgressData) => void): Unsubscribe
   onComfyOutput(callback: (data: ComfyOutputData) => void): Unsubscribe
+  onPerformanceTestProgress(
+    callback: (data: { sessionId: string; completedRuns: number; totalRuns: number }) => void
+  ): Unsubscribe
   onComfyExited(callback: (data: ComfyExitedData) => void): Unsubscribe
   /** Crash broadcast to every renderer (unlike `onComfyExited`, which only
    *  reaches the launching window). Lets any open dashboard show the red

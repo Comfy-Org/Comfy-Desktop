@@ -96,7 +96,8 @@ async function findBestBackportTag(
  * are cached by (repoPath, commit).
  *
  * `baseTagVerified` reports whether the chosen tag is reachable from `commit`; the upgrade
- * heuristics and `fallbackTag` produce a label good enough to display but not to gate on.
+ * heuristics and `fallbackTag` produce a label good enough to display but not to gate on. When an
+ * unverified upgrade replaced the `git describe` tag, that tag is kept as `ancestorTag`.
  *
  * @param comfyuiDir         Path to the ComfyUI git working tree.
  * @param commit             The commit SHA to resolve.
@@ -204,6 +205,9 @@ export async function resolveLocalVersion(
   // Cache git-only data (no fallbackTag) so callers sharing (repoPath, commit)
   // don't poison each other.
   const result: ComfyVersion = { commit, baseTag, commitsAhead, baseTagVerified }
+  // An unverified upgrade displaces a tag that IS reachable. Keep it, so a gate can measure the
+  // release the install provably contains instead of refusing outright.
+  if (upgraded && !baseTagVerified && ancestorTag) result.ancestorTag = ancestorTag
   _cache.set(cacheKey, result)
 
   if (fallbackTag && !baseTag) {

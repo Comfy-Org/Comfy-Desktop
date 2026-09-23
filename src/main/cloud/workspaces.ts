@@ -41,11 +41,19 @@ interface WorkspaceMembersResponse {
   pagination?: { has_more?: boolean }
 }
 
-/**
- * List the signed-in user's workspaces. Returns `[]` when the team-workspaces
- * feature is off (the endpoint 404s), since the token's own workspace is then
- * the only one and is already active.
- */
+function isWorkspaceRow(value: unknown): value is WorkspaceRow {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Partial<WorkspaceRow>
+  return (
+    typeof row.id === 'string' &&
+    row.id.trim().length > 0 &&
+    typeof row.name === 'string' &&
+    typeof row.type === 'string' &&
+    typeof row.role === 'string'
+  )
+}
+
+/** Only a valid catalog establishes membership; unavailable catalogs must reject. */
 export async function listWorkspaces(
   accessToken: string,
   options: ListWorkspacesOptions = {}
@@ -55,16 +63,15 @@ export async function listWorkspaces(
     headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   })
-  if (res.status === 404) return []
   if (res.status === 401 || res.status === 403) throw new Error('Not authorized to list workspaces')
   if (!res.ok) throw new Error(`List workspaces failed: HTTP ${res.status}`)
   const body: unknown = await res.json().catch(() => null)
   const rows =
-    body && typeof body === 'object'
-      ? (body as { workspaces?: WorkspaceRow[] }).workspaces
-      : undefined
-  // A malformed payload (workspaces as an object/string) must not throw.
-  return (Array.isArray(rows) ? rows : []).map((w) => ({
+    body && typeof body === 'object' ? (body as { workspaces?: unknown }).workspaces : undefined
+  if (!Array.isArray(rows) || !rows.every(isWorkspaceRow)) {
+    throw new Error('List workspaces returned an invalid catalog')
+  }
+  return rows.map((w) => ({
     id: w.id,
     name: w.name,
     type: w.type,

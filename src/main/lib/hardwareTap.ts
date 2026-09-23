@@ -38,13 +38,9 @@
 import * as telemetry from './telemetry'
 import { createModelUsageSummary } from './modelUsageSummary'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import type { AcceleratorInfo, AcceleratorSnapshot } from '../../types/ipc'
 
-export interface AcceleratorInfo {
-  deviceType: string
-  deviceIndex: number | null
-  deviceName: string | null
-  backend: string | null
-}
+export type { AcceleratorInfo, AcceleratorSnapshot } from '../../types/ipc'
 
 const DEVICE_LINE = /^Device:\s*(.+)$/
 const VRAM_LINE = /^Total VRAM\s+(\d+)\s*MB,\s*total RAM\s+(\d+)\s*MB/i
@@ -118,6 +114,7 @@ export function createHardwareTap(opts: {
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
+  getAcceleratorInfo: () => AcceleratorSnapshot | null
   flushSummary: () => void
 } {
   const baseContext = {
@@ -211,6 +208,27 @@ export function createHardwareTap(opts: {
         comfyui_device_type: primary.deviceType,
         comfyui_gpu_count: devices.length
       })
+    }
+  }
+
+  function getAcceleratorInfo(): AcceleratorSnapshot | null {
+    if (devices.length === 0) return null
+    const primary = devices[0]!
+    const primaryName =
+      primary.deviceName ??
+      (primary.deviceType !== 'cpu' && primary.deviceType !== 'mps' ? directmlDeviceName : null)
+    return {
+      ...primary,
+      deviceName: primaryName,
+      devices: devices.map((device, index) => ({
+        ...device,
+        deviceName: index === 0 ? primaryName : device.deviceName
+      })),
+      vramMb,
+      ramMb,
+      pytorchVersion,
+      xformersVersion,
+      cudaDeviceSet
     }
   }
 
@@ -312,6 +330,7 @@ export function createHardwareTap(opts: {
       // Drop any incomplete lines from the previous (now-dead) process streams.
       lineBuffer.reset()
     },
+    getAcceleratorInfo,
     flushSummary(): void {
       // Process complete-but-unterminated final lines independently so a bad
       // stdout tail cannot suppress a valid stderr tail (or vice versa).

@@ -9,11 +9,7 @@ export interface ChooserHandoffOpts {
    *  routing in `usePanelOverlays`. */
   showProgress: (opts: ShowProgressOpts) => Promise<void>
   /** Surfaces the new-install flow as a takeover above the chooser body. */
-  switchPanel: (
-    panel: PanelKey,
-    entrypoint?: string,
-    newInstallOpts?: { workspaceId: string }
-  ) => Promise<void>
+  switchPanel: (panel: PanelKey, entrypoint?: string) => Promise<void>
 }
 
 /** Outcome of `performChooserLaunch()`. `'launched'` auto-swaps a takeover
@@ -38,7 +34,7 @@ export interface ChooserHandoffApi {
   /** Bound to ChooserView's `pick` emit. */
   handleChooserPick: (installation: Installation, opts?: { isRestart?: boolean }) => Promise<void>
   /** Bound to ChooserView's `show-new-install` empty-state CTA. */
-  handleChooserShowNewInstall: (workspaceId: string) => void
+  handleChooserShowNewInstall: () => void
   /** Picker variant of `performChooserLaunch` without
    *  `prepareChooserHostHandoff`, so the install-backed host isn't
    *  swapped out; launch lands in a fresh window. */
@@ -154,10 +150,10 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     return 'launched'
   }
 
-  function handleChooserShowNewInstall(workspaceId: string): void {
+  function handleChooserShowNewInstall(): void {
     // Empty-state CTA opens new-install as a takeover above the chooser
     // body, so dismissing it returns the user to the chooser.
-    void opts.switchPanel('new-install', 'chooser', { workspaceId })
+    void opts.switchPanel('new-install', 'chooser')
   }
 
   onUnmounted(() => {

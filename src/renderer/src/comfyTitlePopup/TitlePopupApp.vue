@@ -75,6 +75,8 @@ interface GlobalSettingsModelsDir {
 
 interface GlobalSettingsSnapshot {
   initialTab: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
+  /** Per-open command: a field row to scroll to and flash (settings deep links). */
+  highlightFieldId: string | null
   generalFields: Record<string, unknown>[]
   languageFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -173,6 +175,7 @@ const pickerSnapshot = ref<PickerSnapshot>({
 })
 const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
   initialTab: null,
+  highlightFieldId: null,
   generalFields: [],
   languageFields: [],
   telemetryFields: [],

@@ -117,6 +117,20 @@ describe('DevPlatformWorkspaceSelector', () => {
     expect(selector.text()).toContain('Team One')
   })
 
+  it('does not label an unknown selection with a different authenticated workspace name', async () => {
+    api.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId: 'w1',
+      workspaceName: 'Team One'
+    })
+    api.listWorkspaces.mockRejectedValue(new Error('offline'))
+    const wrapper = mountSelector('w2')
+    await flushPromises()
+    expect(wrapper.get('.workspace-selector__name').text()).toBe('Current workspace')
+    wrapper.unmount()
+  })
+
   it('shows the workspace type only for non-personal workspaces', async () => {
     const wrapper = mountSelector()
     await flushPromises()

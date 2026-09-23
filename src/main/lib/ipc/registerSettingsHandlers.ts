@@ -15,6 +15,7 @@ import * as mainTelemetry from '../telemetry'
 import { detectFirstUseState } from '../firstUseDetection'
 import * as updater from '../updater'
 import { globalSettingsEvents } from '../globalSettingsEvents'
+import { acknowledgeBetaActivationNotice, peekBetaActivationNotice } from '../betaActivationNotice'
 import { recordIpcInvocation } from '../e2eOverrides'
 import type { SettingsSection } from '../../../types/ipc'
 import { AUTO_LAUNCH_LAST, AUTO_LAUNCH_NONE } from '../../settings'
@@ -336,6 +337,34 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('get-setting', (_event, key: string) => {
     return settings.get(key)
   })
+
+  // Core beta activation notice. A PULL pair rather than a push: main arms the pending set
+  // during launch, when the host window may still be mid-attach or under the progress
+  // takeover, and the title bar drains it once its own gate opens.
+  ipcMain.handle('get-pending-beta-notice', (_event, installationId: unknown) => {
+    if (typeof installationId !== 'string' || installationId === '') return null
+    return peekBetaActivationNotice(installationId)
+  })
+
+  // Retire the card: persist its args as announced so it never shows again. Deliberately
+  // separate from the read, so a notice that is shown but never retired replays next launch.
+  ipcMain.handle(
+    'acknowledge-beta-notice',
+    (_event, installationId: unknown, shownArgs?: unknown) => {
+      // A persistent, append-only write driven from the renderer, so the id is checked rather
+      // than trusted: a non-string would silently fail to retire the real pending notice.
+      if (typeof installationId !== 'string' || installationId === '') return
+      recordIpcInvocation('acknowledge-beta-notice', { installationId })
+      // Malformed input is REFUSED, not filtered. Filtering `[123]` down to `[]` would read
+      // as "the renderer named nothing", and the fallback for that is to acknowledge the whole
+      // queue — so a junk array would permanently retire notices the user was never shown.
+      // Only an omitted value, or a non-empty array of strings, is accepted.
+      const isStringArray = (v: unknown): v is string[] =>
+        Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === 'string')
+      if (shownArgs !== undefined && !isStringArray(shownArgs)) return
+      acknowledgeBetaActivationNotice(installationId, shownArgs)
+    }
+  )
 
   ipcMain.handle('get-locale-messages', () => i18n.getMessages())
   ipcMain.handle('get-available-locales', () => i18n.getAvailableLocales())

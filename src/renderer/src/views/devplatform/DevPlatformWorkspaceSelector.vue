@@ -45,16 +45,16 @@ const currentWorkspaceName = computed(() => {
   }
   const current = store.workspaces.find((workspace) => workspace.id === currentWorkspaceId.value)
   if (current) return workspaceLabel(current)
-  if (
-    isPersonalWorkspace({
-      name: store.status.workspaceName,
-      type: store.status.workspaceType
-    })
-  ) {
-    return t('devPlatform.workspace.personalLabel')
+  // Cached auth metadata describes only the authenticated workspace, which
+  // may differ from the dashboard's selection (especially while offline).
+  if (store.status.workspaceId === currentWorkspaceId.value) {
+    if (
+      isPersonalWorkspace({ name: store.status.workspaceName, type: store.status.workspaceType })
+    ) {
+      return t('devPlatform.workspace.personalLabel')
+    }
+    if (store.status.workspaceName) return store.status.workspaceName
   }
-  if (store.status.workspaceType !== 'team') return t('devPlatform.workspace.personalLabel')
-  if (store.status.workspaceName) return store.status.workspaceName
   return t('devPlatform.workspace.currentFallback')
 })
 
