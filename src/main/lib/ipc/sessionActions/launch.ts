@@ -316,7 +316,11 @@ export function emitCoreBetaTelemetry(input: {
   appliedArgs: readonly string[]
   droppedUnsupported: readonly string[]
   /** The pinned frontend release when a frontend grant applied, else `null`. `appliedArgs` then
-   *  also names `--front-end-version`; this says which release it asked for. */
+   *  also names `--front-end-version`; this says which release it asked for.
+   *
+   *  This is the REQUEST, not what was served. Core falls back to its bundled frontend on any
+   *  fetch failure (offline, GitHub rate limit, a release without `dist.zip`) and only logs it,
+   *  so this over-counts exposure on exactly those launches. */
   frontendVersion: string | null
   coreVersion: string | null
   optedIn: boolean

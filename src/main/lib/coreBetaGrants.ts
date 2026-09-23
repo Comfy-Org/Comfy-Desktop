@@ -348,6 +348,11 @@ const FRONTEND_GRANT_KEYS: ReadonlySet<string> = new Set([
 /**
  * Read the optional `frontend` grant off the payload.
  *
+ * Only the version's FORMAT is checked here; Desktop cannot know whether that release exists.
+ * Publish the release, with its `dist.zip` asset, before the payload names it. A missing one is
+ * never cached, so every flagged launch re-lists the frontend's releases from GitHub and then
+ * falls back to the bundled frontend, while telemetry still reports the grant as applied.
+ *
  * Independent of `flags`: a malformed frontend object drops only itself, and a malformed `flags`
  * list does not take the frontend grant with it. Every failure is a refusal (`null`), never a
  * repaired value, because this one decides which code runs.
