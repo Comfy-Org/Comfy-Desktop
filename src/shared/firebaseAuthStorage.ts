@@ -124,9 +124,6 @@
  * iteration order. Zero is a real signed-out state.
  */
 
-/** Key prefix for a persisted Firebase user, in localStorage and in IndexedDB alike. The full key
- *  is `firebase:authUser:<apiKey>:[DEFAULT]`, so it embeds the project's apiKey — match on this
- *  prefix, and never log or persist a whole key. */
 /**
  * ## A THIRD reader, deliberately weaker: `userTier.ts`
  *
@@ -139,6 +136,9 @@
  * Stated here so it reads as a decision rather than as drift, and so nobody later "harmonises" it
  * into abstaining and silently stops the tier ever resolving.
  */
+/** Key prefix for a persisted Firebase user, in localStorage and in IndexedDB alike. The full key
+ *  is `firebase:authUser:<apiKey>:[DEFAULT]`, so it embeds the project's apiKey — match on this
+ *  prefix, and never log or persist a whole key. */
 export const FIREBASE_AUTH_KEY_PREFIX = 'firebase:authUser:'
 
 /** The legacy IndexedDB persistence. Read ONLY when localStorage is unavailable — see the rule. */

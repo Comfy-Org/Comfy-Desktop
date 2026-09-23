@@ -89,13 +89,15 @@ describe('FETCH_TIER_JS', () => {
   const PROD_KEY = 'firebase:authUser:apikey:[DEFAULT]'
   const record = (token: string) => ({ stsTokenManager: { accessToken: token } })
 
-  /** localStorage good enough for the script: length, key(i), getItem(k). */
+  /** localStorage for the script. `absent` models no object at all; `throws` models blocked site
+   *  data, where the object EXISTS and touching it raises — the distinction the reader turns on. */
   function fakeLocalStorage(
     entries: Array<[string, string]> | null,
     opts: { throws?: boolean } = {}
-  ) {
-    if (entries === null) return undefined
-    if (opts.throws) {
+  ): unknown {
+    // `throws` is checked FIRST: a previous version returned undefined on the null guard before
+    // ever reaching it, so the throwing Proxy was unreachable and its test passed vacuously.
+    if (opts.throws)
       return new Proxy(
         {},
         {
@@ -104,7 +106,7 @@ describe('FETCH_TIER_JS', () => {
           }
         }
       )
-    }
+    if (entries === null) return undefined
     return {
       get length() {
         return entries.length
@@ -114,117 +116,164 @@ describe('FETCH_TIER_JS', () => {
     }
   }
 
-  /** IndexedDB good enough for the script; handlers attach after open() as in a browser. */
-  function fakeIndexedDB(entries: unknown[] | null) {
-    return {
-      open: () => {
-        const req: Record<string, unknown> = {
-          result: {
-            transaction: () => ({
-              objectStore: () => ({
-                getAll: () => {
-                  const r: Record<string, unknown> = { result: entries ?? [] }
-                  queueMicrotask(() => (r['onsuccess'] as (() => void) | undefined)?.())
-                  return r
-                }
-              })
-            })
-          },
-          error: new Error('open failed')
-        }
-        queueMicrotask(() => {
-          const h = entries === null ? 'onerror' : 'onsuccess'
-          ;(req[h] as (() => void) | undefined)?.()
+  /** IndexedDB for the script, able to model a MISSING database and a STORE-LESS one — the two
+   *  states a versionless open would otherwise paper over by silently creating a database. */
+  function fakeIndexedDB(opts: {
+    entries?: unknown[]
+    databases?: { name: string }[]
+    stores?: string[]
+  }) {
+    const closed = { count: 0 }
+    const opened = { count: 0 }
+    const db = {
+      objectStoreNames: {
+        contains: (n: string) => (opts.stores ?? ['firebaseLocalStorage']).includes(n)
+      },
+      transaction: () => ({
+        objectStore: () => ({
+          getAll: () => {
+            const r: Record<string, unknown> = { result: opts.entries ?? [] }
+            queueMicrotask(() => (r['onsuccess'] as (() => void) | undefined)?.())
+            return r
+          }
         })
+      }),
+      close: () => {
+        closed.count += 1
+      }
+    }
+    const idb = {
+      databases: () => Promise.resolve(opts.databases ?? [{ name: 'firebaseLocalStorageDb' }]),
+      open: () => {
+        opened.count += 1
+        const req: Record<string, unknown> = { result: db, error: new Error('open failed') }
+        queueMicrotask(() => (req['onsuccess'] as (() => void) | undefined)?.())
         return req
       }
     }
+    return { idb, closed, opened }
   }
 
   async function run(opts: {
     localStorage?: Array<[string, string]> | null
     localStorageThrows?: boolean
-    idbEntries?: unknown[] | null
+    entries?: unknown[]
+    databases?: { name: string }[]
+    stores?: string[]
     fetchImpl?: typeof fetch
   }) {
     const calls: string[] = []
+    const { idb, closed, opened } = fakeIndexedDB(opts)
     const fetchStub =
       opts.fetchImpl ??
-      ((_url: string, init?: { headers?: Record<string, string> }) => {
+      (((_url: string, init?: { headers?: Record<string, string> }) => {
         calls.push(init?.headers?.['Authorization'] ?? '')
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ subscription_tier: 'PRO' })
         })
-      })
-    const fn = new Function('indexedDB', 'localStorage', 'fetch', `return ${FETCH_TIER_JS}`) as (
-      i: unknown,
-      l: unknown,
-      f: unknown
-    ) => Promise<unknown>
+      }) as unknown as typeof fetch)
+    const fn = new Function(
+      'indexedDB',
+      'localStorage',
+      'fetch',
+      'setTimeout',
+      'AbortSignal',
+      `return ${FETCH_TIER_JS}`
+    ) as (i: unknown, l: unknown, f: unknown, t: unknown, a: unknown) => Promise<unknown>
     const result = await fn(
-      fakeIndexedDB(opts.idbEntries ?? []),
+      idb,
       fakeLocalStorage(opts.localStorage ?? null, { throws: opts.localStorageThrows }),
-      fetchStub
+      fetchStub,
+      setTimeout,
+      undefined
     )
-    return { result, authHeaders: calls }
+    return { result, authHeaders: calls, closed: closed.count, opened: opened.count }
   }
 
   it('reads the token from localStorage, where the session settles', async () => {
     // The regression. Before this fix the script looked only in IndexedDB, which the SDK clears
     // once the auth store moves the record — so every signed-in cloud session read as signed out.
     const { result, authHeaders } = await run({
-      localStorage: [[PROD_KEY, JSON.stringify(record('tok-ls'))]],
-      idbEntries: []
+      localStorage: [[PROD_KEY, JSON.stringify(record('tok-ls'))]]
     })
 
     expect(result).toEqual({ tier: 'PRO' })
     expect(authHeaders).toEqual(['Bearer tok-ls'])
   })
 
-  it('falls back to IndexedDB when localStorage holds no record', async () => {
-    // Boot, before the migration completes — and any frontend that persists to IndexedDB.
+  it('returns null when localStorage is READABLE and holds no record', async () => {
+    // It does NOT fall through to IndexedDB. A record there is either the live user mid-boot or
+    // one the SDK discarded at sign-out, and nothing distinguishes them — a discarded token still
+    // inside its hour would fetch the former account's tier and persist it. The tier resolves on
+    // a later refresh instead.
     const { result, authHeaders } = await run({
       localStorage: [],
-      idbEntries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
+      entries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
+    })
+
+    expect(result).toBeNull()
+    expect(authHeaders).toEqual([])
+  })
+
+  it('falls back to IndexedDB only when localStorage is ABSENT', async () => {
+    // No localStorage object at all: the frontend cannot be using it, so IndexedDB is the store.
+    const { result, authHeaders } = await run({
+      localStorage: null,
+      entries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
     })
 
     expect(result).toEqual({ tier: 'PRO' })
     expect(authHeaders).toEqual(['Bearer tok-idb'])
   })
 
-  it('prefers localStorage over a stale IndexedDB copy', async () => {
-    // Both stores hold a record: the IndexedDB one is what the SDK left behind, so it must lose.
-    const { authHeaders } = await run({
-      localStorage: [[PROD_KEY, JSON.stringify(record('tok-live'))]],
-      idbEntries: [{ fbase_key: PROD_KEY, value: record('tok-stale') }]
-    })
-
-    expect(authHeaders).toEqual(['Bearer tok-live'])
-  })
-
-  it('still reaches IndexedDB when localStorage access throws', async () => {
-    // Blocked or partitioned storage. Unlike the consensus readers this one has no destructive
-    // path, so it tries the other store rather than abstaining.
+  it('falls back when localStorage EXISTS but access throws', async () => {
+    // Blocked or partitioned storage — the case whose test previously never ran, because the stub
+    // returned undefined before it reached the throwing branch.
     const { result } = await run({
       localStorageThrows: true,
-      idbEntries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
+      entries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
     })
 
     expect(result).toEqual({ tier: 'PRO' })
   })
 
+  it('does not create the database when none exists', async () => {
+    // A versionless open SILENTLY CREATES an empty version-1 database, and the transaction below
+    // then throws NotFoundError. The harm is the side effect, so that is what this asserts:
+    // `open()` must never be called when the database is not listed. Checking only the return
+    // value cannot see it — a created-then-empty database also yields null.
+    const { result, opened } = await run({ localStorage: null, databases: [] })
+
+    expect(opened).toBe(0)
+    expect(result).toBeNull()
+  })
+
+  it('gives up cleanly on a store-less database', async () => {
+    const { result } = await run({ localStorage: null, stores: [] })
+
+    expect(result).toBeNull()
+  })
+
+  it('closes the database connection it opened', async () => {
+    // An unclosed handle blocks a later Firebase versionchange.
+    const { closed } = await run({
+      localStorage: null,
+      entries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
+    })
+
+    expect(closed).toBe(1)
+  })
+
   it('tries a second record when the first token is stale, instead of giving up', async () => {
-    // THE CASE THAT MATTERS, and it is not hypothetical: a Firebase project switch leaves the old
-    // apiKey's record behind, and the key embeds the apiKey, so two firebase:authUser:* keys
-    // coexist. Taking whichever enumerated first would 401 forever while a valid token sat untried.
+    // Not hypothetical: a Firebase project switch leaves the old apiKey's record behind, and the
+    // key embeds the apiKey, so two records coexist. Enumeration order must not decide.
     const tried: string[] = []
     const { result } = await run({
       localStorage: [
         ['firebase:authUser:oldkey:[DEFAULT]', JSON.stringify(record('tok-stale'))],
         [PROD_KEY, JSON.stringify(record('tok-live'))]
       ],
-      idbEntries: [],
       fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
         const bearer = init?.headers?.['Authorization'] ?? ''
         tried.push(bearer)
@@ -241,46 +290,24 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('reports an error rather than null when every candidate is rejected', async () => {
-    // Distinct from "nobody is signed in": records exist and none was accepted. Returning null
-    // there would tell the caller there is no user, which is a different and wrong claim.
+    // Distinct from "nobody is signed in": records exist and none was accepted. null would tell
+    // the caller there is no user, which is a different and wrong claim.
     const { result } = await run({
       localStorage: [[PROD_KEY, JSON.stringify(record('tok-dead'))]],
-      idbEntries: [],
       fetchImpl: (() => Promise.resolve({ ok: false, status: 403 })) as unknown as typeof fetch
     })
 
     expect(result).toEqual({ error: 'http_403' })
   })
 
-  it('does not try the same token twice when both stores hold it', async () => {
-    // The usual mid-migration state: the record is in both stores. One call, not two.
-    const tried: string[] = []
-    await run({
-      localStorage: [[PROD_KEY, JSON.stringify(record('tok-same'))]],
-      idbEntries: [{ fbase_key: PROD_KEY, value: record('tok-same') }],
-      fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
-        tried.push(init?.headers?.['Authorization'] ?? '')
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ subscription_tier: 'PRO' })
-        })
-      }) as unknown as typeof fetch
-    })
-
-    expect(tried).toEqual(['Bearer tok-same'])
-  })
-
   it('stops after a bounded number of candidates', async () => {
-    // The records are page-controlled, so the candidate list must not be. Six distinct stale
-    // records, all rejected: the reader must try at most MAX_CANDIDATES of them rather than
-    // issuing one request per key a page chose to write.
+    // The records are page-controlled, so the candidate list must not be.
     const tried: string[] = []
     const { result } = await run({
       localStorage: Array.from({ length: 6 }, (_, i) => [
         `firebase:authUser:key${i}:[DEFAULT]`,
         JSON.stringify(record(`tok-${i}`))
       ]) as Array<[string, string]>,
-      idbEntries: [],
       fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
         tried.push(init?.headers?.['Authorization'] ?? '')
         return Promise.resolve({ ok: false, status: 401 })
@@ -292,15 +319,14 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('returns null when neither store holds a usable token', async () => {
-    const { result } = await run({ localStorage: [], idbEntries: [] })
+    const { result } = await run({ localStorage: null, entries: [] })
 
     expect(result).toBeNull()
   })
 
-  it('ignores a record with no access token in either store', async () => {
+  it('ignores a record with no access token', async () => {
     const { result } = await run({
-      localStorage: [[PROD_KEY, JSON.stringify({ stsTokenManager: {} })]],
-      idbEntries: [{ fbase_key: PROD_KEY, value: { stsTokenManager: { accessToken: '' } } }]
+      localStorage: [[PROD_KEY, JSON.stringify({ stsTokenManager: {} })]]
     })
 
     expect(result).toBeNull()
