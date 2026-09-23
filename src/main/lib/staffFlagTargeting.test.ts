@@ -306,6 +306,9 @@ async function classify(
       getItemThrows: opts.localStorageGetItemThrows
     }) ?? undefined
   )
+  // DIAG BRANCH ONLY. The instrumented script adds a `why` branch label to every verdict. Every
+  // assertion here is an exact `toEqual`, so strip it rather than weakening ~100 assertions.
+  if (result && typeof result === 'object') delete (result as { why?: unknown }).why
   return { result, closed: closed.count }
 }
 
