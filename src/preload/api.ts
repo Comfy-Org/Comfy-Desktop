@@ -28,6 +28,30 @@ export function buildElectronApi(): ElectronApi {
 
     // File/URL
     browseFolder: (defaultPath?) => ipcRenderer.invoke('browse-folder', defaultPath),
+    importPerformanceTestWorkflow: (filePath?) =>
+      ipcRenderer.invoke('import-performance-test-workflow', filePath),
+    deletePerformanceTestWorkflow: (filePath) =>
+      ipcRenderer.invoke('delete-performance-test-workflow', filePath),
+    savePerformanceTestLogs: (filePath, logs) =>
+      ipcRenderer.invoke('save-performance-test-logs', filePath, logs),
+    listPerformanceTestBenchmarks: (folderPath?) =>
+      ipcRenderer.invoke('list-performance-test-benchmarks', folderPath),
+    deletePerformanceTestBenchmark: (folderPath, sessionId) =>
+      ipcRenderer.invoke('delete-performance-test-benchmark', folderPath, sessionId),
+    renamePerformanceTestBenchmark: (folderPath, sessionId, newSessionId) =>
+      ipcRenderer.invoke('rename-performance-test-benchmark', folderPath, sessionId, newSessionId),
+    readPerformanceTestResultsSummary: (filePath) =>
+      ipcRenderer.invoke('read-performance-test-results-summary', filePath),
+    runPerformanceTestWorkflow: (sessionId, filePath, measuredRuns, warmupRuns) =>
+      ipcRenderer.invoke(
+        'run-performance-test-workflow',
+        sessionId,
+        filePath,
+        measuredRuns,
+        warmupRuns
+      ),
+    exportResultsImage: (png, imageType, defaultPath?) =>
+      ipcRenderer.invoke('export-results-image', png, imageType, defaultPath),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
@@ -281,6 +305,12 @@ export function buildElectronApi(): ElectronApi {
         callback(data as Parameters<typeof callback>[0])
       ipcRenderer.on('comfy-output', handler)
       return () => ipcRenderer.removeListener('comfy-output', handler)
+    },
+    onPerformanceTestProgress: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as Parameters<typeof callback>[0])
+      ipcRenderer.on('performance-test-progress', handler)
+      return () => ipcRenderer.removeListener('performance-test-progress', handler)
     },
     onComfyExited: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

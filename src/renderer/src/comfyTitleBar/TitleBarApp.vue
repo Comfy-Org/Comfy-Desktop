@@ -30,7 +30,14 @@ const { syncLocale } = useAppLocale(windowApiLocaleSource())
 // file isn't visible to tsconfig.web (only its .d.ts would be). Kept in
 // sync with the literal union in src/preload/comfyTitleBarPreload.ts and
 // the ComfyPanelKey export in src/main/index.ts.
-type ComfyPanelKey = 'comfy' | 'new-install' | 'track' | 'load-snapshot' | 'quick-install'
+type ComfyPanelKey =
+  | 'comfy'
+  | 'performance-test'
+  | 'benchmarks'
+  | 'new-install'
+  | 'track'
+  | 'load-snapshot'
+  | 'quick-install'
 
 /** Which feature owns the single sticky coachmark card. Same reason as `ComfyPanelKey` above:
  *  kept in sync with the `CoachmarkKind` union in src/preload/comfyTitleBarPreload.ts. */

@@ -20,6 +20,7 @@ import {
   activateWorkspace,
   clearTokens,
   getAuthStatus,
+  getCachedWorkspaceName,
   loadTokens,
   loadWorkspaceTokens,
   replaceWorkspaceTokens,
@@ -106,6 +107,7 @@ describe('workspace token vault', () => {
       workspaceId: 'w1',
       workspaceName: 'Workspace One'
     })
+    expect(getCachedWorkspaceName('w2')).toBe('Workspace Two')
   })
 
   it('rejects workspace names from a request belonging to another account', () => {

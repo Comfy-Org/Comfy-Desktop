@@ -28,7 +28,7 @@ import {
   selectCoreBetaGrantArgs
 } from './coreBetaGrants'
 import type { CoreVersionState } from './coreBetaGrants'
-import { coreRecordCurrent, coreSemverExact, coreSemverVerified } from './version'
+import { coreGateVersion, coreRecordCurrent } from './version'
 import type { ComfyVersion } from './version'
 import type { InstallationRecord } from '../installations'
 
@@ -421,12 +421,7 @@ describe('selectCoreBetaGrantArgs', () => {
     expect(
       selectCoreBetaGrantArgs(
         [unboundedGrant],
-        {
-          semver: '0.3.99',
-          exact: false,
-          verified: coreSemverVerified(mergeBaseFallback),
-          current: true
-        },
+        { ...coreGateVersion(mergeBaseFallback), current: true },
         true,
         []
       )
@@ -438,7 +433,7 @@ describe('selectCoreBetaGrantArgs', () => {
     expect(
       selectCoreBetaGrantArgs(
         [unboundedGrant],
-        { semver: '0.3.99', exact: true, verified: coreSemverVerified(legacy), current: true },
+        { ...coreGateVersion(legacy), current: true },
         true,
         []
       )
@@ -455,12 +450,7 @@ describe('selectCoreBetaGrantArgs', () => {
     expect(
       selectCoreBetaGrantArgs(
         [unboundedGrant],
-        {
-          semver: '0.3.99',
-          exact: false,
-          verified: coreSemverVerified(verifiedBase),
-          current: true
-        },
+        { ...coreGateVersion(verifiedBase), current: true },
         true,
         []
       )
@@ -483,9 +473,7 @@ describe('selectCoreBetaGrantArgs', () => {
       selectCoreBetaGrantArgs(
         [unboundedGrant],
         {
-          semver: '0.3.99',
-          exact: coreSemverExact(pulled),
-          verified: coreSemverVerified(pulled),
+          ...coreGateVersion(pulled),
           current: coreRecordCurrent(pulled, { kind: 'head', commit: PULLED_COMMIT })
         },
         true,
@@ -505,9 +493,7 @@ describe('selectCoreBetaGrantArgs', () => {
       selectCoreBetaGrantArgs(
         [unboundedGrant],
         {
-          semver: '0.3.99',
-          exact: coreSemverExact(atRecord),
-          verified: coreSemverVerified(atRecord),
+          ...coreGateVersion(atRecord),
           current: coreRecordCurrent(atRecord, { kind: 'head', commit: COMMIT })
         },
         true,
@@ -517,9 +503,11 @@ describe('selectCoreBetaGrantArgs', () => {
   })
 
   /** Derives exactness the way production does, so these cases pin the real `commitsAhead`
-   *  semantics rather than a hand-set boolean that could drift from `coreSemverExact`. */
+   *  semantics rather than a hand-set boolean that could drift from `coreGateVersion`. */
   function exactnessOf(commitsAhead: number | undefined): boolean {
-    return coreSemverExact(installWith({ commit: COMMIT, baseTag: 'v0.3.99', commitsAhead }))
+    return coreGateVersion(
+      installWith({ commit: COMMIT, baseTag: 'v0.3.99', commitsAhead, baseTagVerified: true })
+    ).exact
   }
 
   it('applies a max-bounded grant when the install sits exactly on its tag', () => {

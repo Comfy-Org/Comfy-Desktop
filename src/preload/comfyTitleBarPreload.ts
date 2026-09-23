@@ -3,7 +3,14 @@ import type { IpcRendererEvent } from 'electron'
 import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
 
-export type ComfyPanelKey = 'comfy' | 'new-install' | 'track' | 'load-snapshot' | 'quick-install'
+export type ComfyPanelKey =
+  | 'comfy'
+  | 'performance-test'
+  | 'benchmarks'
+  | 'new-install'
+  | 'track'
+  | 'load-snapshot'
+  | 'quick-install'
 
 /** Which feature owns a sticky coachmark card. One popup per window serves both, so every
  *  retirement is addressed with the kind that raised it. Mirrors `CoachmarkKind` in
