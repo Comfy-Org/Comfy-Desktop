@@ -245,21 +245,25 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     var OPEN_TIMEOUT_MS = 5000;
     // The cohort rule, in ONE place. Both readers end here, so neither can introduce a shape the
     // other does not produce - the storage changed, what absence MEANS did not.
-    var verdict = function (users) {
+    var verdict = function (users, ctx) {
       // No record at all is a real signed-out state and votes "not staff", for no account.
-      if (users.length === 0) return { known: true, staff: false, userId: null };
+      if (users.length === 0)
+        return { known: true, staff: false, userId: null, why: ctx || 'no-record' };
       // Two accounts at once is unresolved, not a coin flip on iteration order.
-      if (users.length > 1) return { known: false };
+      if (users.length > 1) return { known: false, why: 'multi-account' };
       var user = users[0];
       // One past the 256 main will accept, so an over-length uid is REJECTED there rather than
       // truncated into a match with a different account.
       var userId = user.uid.slice(0, 257);
-      if (user.emailVerified !== true) return { known: true, staff: false, userId: userId };
+      if (user.emailVerified !== true)
+        return { known: true, staff: false, userId: userId, why: 'unverified' };
       var email = typeof user.email === 'string' ? user.email : '';
+      var isStaffEmail = email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX;
       return {
         known: true,
-        staff: email.trim().toLowerCase().slice(-SUFFIX.length) === SUFFIX,
-        userId: userId
+        staff: isStaffEmail,
+        userId: userId,
+        why: email === '' ? 'no-email-field' : (isStaffEmail ? 'domain-match' : 'domain-miss')
       };
     };
     // Prototype-free. On a plain object the keys __proto__, constructor and toString are
@@ -357,22 +361,26 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     // moves the record INTO localStorage, and report an account that never went away.
     var concludeNoAccount = function () {
       var recheck = scanLocal();
-      if (recheck === null || recheck.conflicted()) return { known: false };
-      // The record arrived during the round-trip: it was there all along, in the other store.
-      if (recheck.users.length > 0) return verdict(recheck.users);
-      return verdict([]);
+      if (recheck === null) return { known: false, why: 'ls-unreadable-recheck' };
+      if (recheck.conflicted()) return { known: false, why: 'uid-conflict-recheck' };
+      // THE LABEL THE RE-RUN EXISTS TO SEE. The record arrived during the round-trip, so the
+      // stale-read conclusion was about to be wrong and the re-read caught it. Without this the
+      // fix is invisible in a log: its success looks identical to the bug never occurring.
+      if (recheck.users.length > 0) return verdict(recheck.users, 'reread-rescued');
+      return verdict([], 'no-record-confirmed');
     };
     var lsUsers = null;
     if (ls) {
       var fromLocal = scanLocal();
-      if (fromLocal === null || fromLocal.conflicted()) return { known: false };
+      if (fromLocal === null) return { known: false, why: 'ls-unreadable' };
+      if (fromLocal.conflicted()) return { known: false, why: 'uid-conflict-local' };
       lsUsers = fromLocal.users;
       // A user HERE is authoritative: localStorage is where the SDK settles the session, and any
       // IndexedDB copy is the one it drained.
       if (lsUsers.length > 0) return verdict(lsUsers);
     }
 
-    if (!indexedDB.databases) return { known: false };
+    if (!indexedDB.databases) return { known: false, why: 'databases-unavailable' };
     var dbs = await indexedDB.databases();
     if (!dbs.some(function (d) { return d && d.name === IDB_NAME; })) {
       // No Firebase database at all. If localStorage was READABLE and held no user, nobody is
@@ -420,7 +428,7 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       if (e.fbase_key.indexOf(PREFIX) !== 0) return;
       fromIdb.add(e.value);
     });
-    if (fromIdb.conflicted()) return { known: false };
+    if (fromIdb.conflicted()) return { known: false, why: 'uid-conflict-idb' };
     if (lsUsers !== null) {
       // localStorage was READABLE and held no user, and IndexedDB does. That is ambiguous and
       // cannot be resolved by reading: it is either a frontend that persists to IndexedDB (the
@@ -428,7 +436,7 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       // leftover the SDK has already discarded. ABSTAIN rather than guess - a wrong "signed out"
       // here is accepted as a trusted report and DELETES the loopback binding, and a wrong
       // "signed in" resurrects an account that signed out.
-      if (fromIdb.users.length > 0) return { known: false };
+      if (fromIdb.users.length > 0) return { known: false, why: 'stores-disagree' };
       // Both reads say nobody - but they were taken at different instants, so re-read before
       // concluding it. See concludeNoAccount below.
       return concludeNoAccount();
@@ -436,7 +444,7 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     // No localStorage mechanism at all, so IndexedDB is the only persistence there is.
     return verdict(fromIdb.users);
   } catch (e) {
-    return { known: false };
+    return { known: false, why: 'threw' };
   } finally {
     if (db) { try { db.close(); } catch (_) {} }
   }
@@ -449,7 +457,7 @@ export const CLASSIFY_STAFF_JS = `(async () => {
  * this launch's flag fetch has long since gone out: a flag initialised later in the session (or
  * re-read in a test) should see the current answer, and it costs nothing.
  */
-function applyClassification(isStaff: boolean): void {
+function applyClassification(isStaff: boolean, reason: string): void {
   telemetry.setFlagEvaluationStaff(isStaff)
   if (isStaff === cached) return
   try {
@@ -460,7 +468,7 @@ function applyClassification(isStaff: boolean): void {
     // every later attempt at the same classification — so the next launch would read the stale
     // value even once the filesystem recovered.
     cached = isStaff
-    console.log('[staff-targeting] classified: staff=', isStaff, '→ next launch')
+    console.log('[staff-targeting] classified: staff=', isStaff, 'via', reason, '→ next launch')
   } catch (err) {
     console.log('[staff-targeting] store skipped:', err)
   }
@@ -505,7 +513,7 @@ async function classifyFromView(
   userId: string,
   generation: number
 ): Promise<boolean> {
-  let read: { known?: unknown; staff?: unknown; userId?: unknown } | null
+  let read: { known?: unknown; staff?: unknown; userId?: unknown; why?: unknown } | null
   try {
     read = (await readClassificationFromPage(webContents)) as typeof read
   } catch (err) {
@@ -520,17 +528,24 @@ async function classifyFromView(
   if (answeredGeneration === generation) return false
   // A view with no Firebase store has NO OPINION and must stay silent. Absence of an auth record
   // is not evidence of being signed out, so only a view that can actually see auth state votes.
-  if (!read || read.known !== true) return false
+  if (!read || read.known !== true) {
+    console.log('[staff-targeting] view abstained: branch=', read?.why)
+    return false
+  }
   // Bound the raw string BEFORE normalizing: `normalizePostHogUserId` trims and only then applies
   // its 256-character limit, so a 257-character uid ending in whitespace would normalize down to
   // 256 and be accepted — defeating the page-side cap that exists to reject rather than truncate.
   if (typeof read.userId !== 'string' || read.userId.length > MAX_PAGE_USER_ID_CHARS) return false
-  if (normalizePostHogUserId(read.userId) !== userId) return false
+  if (normalizePostHogUserId(read.userId) !== userId) {
+    console.log('[staff-targeting] view rejected: page classified a different account than agreed')
+    return false
+  }
   const isStaff = read.staff === true
   answeredGeneration = generation
   classifiedUserId = userId
   classifiedStaff = isStaff
-  applyClassification(isStaff)
+  console.log('[staff-targeting] page verdict: staff=', isStaff, 'branch=', read.why)
+  applyClassification(isStaff, 'page-verdict')
   return true
 }
 
@@ -579,15 +594,18 @@ function onIdentityConsensus(consensus: FirebaseIdentityConsensus): void {
     // server take a grant back normally.
     classifiedUserId = null
     classifiedStaff = false
-    applyClassification(false)
+    applyClassification(false, 'consensus-signed-out')
     return
   }
-  if (consensus.status !== 'signed_in') return
+  if (consensus.status !== 'signed_in') {
+    console.log('[staff-targeting] not classified: consensus resolved to', consensus.status)
+    return
+  }
   if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
     // Already classified this session — the common case, since a navigation takes the consensus
     // through `pending` and back. Bind the known answer FIRST, so the account keeps its
     // classification with no gap and a write that exhausted `writeFileSafe`'s attempts is retried.
-    applyClassification(classifiedStaff)
+    applyClassification(classifiedStaff, 'consensus-rebind')
     // Then revalidate, because a UID is not a classification. `staff` is derived from `email` and
     // `emailVerified`, both of which can change while Firebase keeps reporting the same UID — an
     // address verified mid-session, or one that changes domain. Caching the verdict against the
@@ -631,14 +649,17 @@ export async function refreshStaffFlagTargeting(webContents: WebContents): Promi
   // `writeFileSafe` that threw would otherwise leave `staff: true` on disk for every later launch
   // — silently reversing the revocation this module exists to make.
   if (consensus.status === 'signed_out') {
-    applyClassification(false)
+    applyClassification(false, 'refresh-signed-out')
     return
   }
-  if (consensus.status !== 'signed_in') return
+  if (consensus.status !== 'signed_in') {
+    console.log('[staff-targeting] view offered but unused: consensus is', consensus.status)
+    return
+  }
   if (classifiedUserId === consensus.userId && classifiedStaff !== null) {
     // Nothing to ask this view — but a page load is also the moment to retry a write that
     // `writeFileSafe` could not land, since the next launch reads whatever the disk holds.
-    applyClassification(classifiedStaff)
+    applyClassification(classifiedStaff, 'refresh-rebind')
     return
   }
   await classifyFromView(webContents, consensus.userId, classificationGeneration)
