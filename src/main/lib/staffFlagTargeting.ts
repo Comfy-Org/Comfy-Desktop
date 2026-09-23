@@ -297,12 +297,14 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       };
     };
 
-    // localStorage FIRST, and authoritative whenever it is readable - including when it holds no
-    // record at all, ONCE THE SESSION HAS SETTLED THERE. Before that it has not: during boot the
-    // live user is in IndexedDB and an empty localStorage is ambiguous, which is why the reader
-    // ABSTAINS on that row instead of reading it as "no account". Collapsing the two would produce
-    // the definite sign-out that deletes the loopback binding.
-    // Authoritative-when-readable is therefore about where the session ENDS UP, not about the
+    // localStorage FIRST, and decisive when it CONTAINS a record: that is where the session
+    // settles, and once it has, the SDK clears the others.
+    // An empty but readable localStorage settles NOTHING. It does not end the read - IndexedDB is
+    // consulted next, and a record there means the stores disagree and the answer is {known:false}.
+    // That is deliberate: during boot the live user IS in IndexedDB, so reading an empty
+    // localStorage as "no account" would produce the definite sign-out that deletes the loopback
+    // binding.
+    // Decisive-when-it-holds-a-record is therefore about where the session ENDS UP, not about the
     // hierarchy order: on the released frontend
     // it is NOT, the hierarchy is IndexedDB-first and the session reaches localStorage only when the
     // auth store runs its later setPersistence. It is authoritative because it is where the session

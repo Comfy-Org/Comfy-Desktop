@@ -114,9 +114,11 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
  *  not merely "when localStorage holds no record": an UNREADABLE localStorage abstains before this,
  *  as does an unreadable or absent `indexedDB`.
  *
- *  The readable-and-empty case is every boot on the released frontend, whose hierarchy is
- *  IndexedDB-first and which keeps the live user here until the auth store's later
- *  `setPersistence`. See `shared/firebaseAuthStorage.ts`. */
+ *  The readable-and-empty case arises DURING boot on the released frontend, not at the first read
+ *  of one: localStorage still holds the previous session's record, so the first polls take the
+ *  localStorage path. The SDK's IndexedDB-first migration then drains localStorage, and this reader
+ *  answers until the auth store's later `setPersistence` moves the record back.
+ *  See `shared/firebaseAuthStorage.ts`. */
 async function readFromIndexedDb(): Promise<ComfyDesktop2FirebaseAuthState> {
   try {
     const databases = await indexedDB.databases()
