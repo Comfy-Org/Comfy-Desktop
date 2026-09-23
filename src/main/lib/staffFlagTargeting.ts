@@ -303,7 +303,8 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     // and the session reaches localStorage only when the auth store runs its later setPersistence.
     //
     // An empty but readable localStorage decides NOTHING, and the read continues. IndexedDB is
-    // consulted next, and what is found there is resolved by the rules below - a record means the
+    // consulted next WHERE IT CAN BE - an absent or throwing one abstains rather than answering,
+    // for the same reason. What is found there is resolved by the rules below - a record means the
     // stores disagree and the answer is {known:false}, because during boot the live user IS in
     // IndexedDB and reading an empty localStorage as "no account" would produce the definite
     // sign-out that deletes the loopback binding.
