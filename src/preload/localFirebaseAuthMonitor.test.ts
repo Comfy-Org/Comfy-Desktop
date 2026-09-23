@@ -108,6 +108,30 @@ describe('local Firebase auth monitor', () => {
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
   })
 
+  it('treats a THROWING getItem as the mechanism failing, not as an absent record', async () => {
+    // Enumeration succeeds, the per-key value read throws. That is "I cannot read", which must not
+    // be rendered as "nothing is stored" — otherwise a storage failure becomes a definite verdict
+    // for a signed-in user. CLASSIFY_STAFF_JS lets the same failure reach its outer catch and says
+    // nothing; this reader must not be the stricter of the pair.
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        'firebase:authUser:api-key:[DEFAULT]': 'unreadable',
+        getItem: () => {
+          throw new Error('access denied')
+        }
+      }
+    })
+    installIndexedDb([
+      { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'live-user' } }
+    ])
+
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({
+      status: 'signed_in',
+      userId: 'live-user'
+    })
+  })
+
   it.each([
     ['localStorage is absent', removeLocalStorage],
     ['localStorage access throws', installThrowingLocalStorage]

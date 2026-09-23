@@ -49,9 +49,18 @@ function readFromLocalStorage(): ComfyDesktop2FirebaseAuthState | 'unavailable' 
   const userIds = new Set<string>()
   for (const key of keys) {
     if (!key.startsWith(FIREBASE_AUTH_KEY_PREFIX)) continue
+    let raw: string | null
     try {
-      const raw = localStorage.getItem(key)
-      if (!raw) continue
+      raw = localStorage.getItem(key)
+    } catch {
+      // Enumeration worked but this value read threw: that is the MECHANISM failing mid-read, not an
+      // absent record. Counting it absent would turn a read failure into a definite answer.
+      // `CLASSIFY_STAFF_JS` lets the same failure reach its outer catch and says nothing — the two
+      // readers are supposed to apply one rule, so this one must not be the stricter of the pair.
+      return 'unavailable'
+    }
+    if (!raw) continue
+    try {
       const uid = uidFromRecord(JSON.parse(raw))
       if (uid) userIds.add(uid)
     } catch {
@@ -122,8 +131,15 @@ export function startLocalFirebaseAuthMonitor(
   const poll = async (): Promise<void> => {
     if (stopped || polling) return
     polling = true
-    const state = await readLocalFirebaseAuthState()
-    polling = false
+    let state: ComfyDesktop2FirebaseAuthState
+    try {
+      state = await readLocalFirebaseAuthState()
+    } finally {
+      // Without `finally`, one rejection leaves `polling` true for the life of the page and the
+      // monitor goes permanently silent — downstream indistinguishable from a user who never
+      // signed in.
+      polling = false
+    }
     if (stopped) return
     const serialized = JSON.stringify(state)
     if (serialized === lastState) return
