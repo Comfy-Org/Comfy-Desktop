@@ -22,9 +22,12 @@ function stateForUserIds(userIds: Set<string>): ComfyDesktop2FirebaseAuthState {
   return { status: 'signed_in', userId: [...userIds][0]! }
 }
 
-/** One over main's own limit, so an over-long uid is rejected HERE rather than crossing IPC to be
- *  rejected there. `normalizePostHogUserId` in main remains the real validator; this only bounds
- *  what a page can push through the bridge, since the record is entirely page-controlled. */
+/** Bounds what a page can push through the bridge, since the record is entirely page-controlled —
+ *  it is NOT the validator and does not reject every uid main will refuse. It is deliberately ONE
+ *  OVER main's 256: a 257-character uid passes here and is rejected there, so the decision stays
+ *  with `normalizePostHogUserId` rather than a page-side truncation quietly producing a 256-character
+ *  match. What this stops is the unbounded case — a megabyte of page-controlled string crossing IPC
+ *  into main-process memory and any crash dump taken from it. */
 const MAX_UID_CHARS = 257
 
 function uidFromRecord(value: unknown): string | null {

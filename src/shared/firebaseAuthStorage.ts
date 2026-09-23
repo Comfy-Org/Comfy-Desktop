@@ -9,7 +9,11 @@
  * ## The rule — THREE outcomes, not two
  *
  *     localStorage holds a record            -> AUTHORITATIVE. Any IndexedDB copy is the drained one.
- *     both stores hold nothing               -> signed out. Unambiguous.
+ *     both stores hold nothing               -> signed out — but the monitor reports it only once
+ *                                               that state has PERSISTED (a wall-clock settle), so
+ *                                               a transient both-empty during a persistence move is
+ *                                               not a sign-out. Unambiguous as a state, not instant
+ *                                               as a report.
  *     localStorage readable but EMPTY,
  *       while IndexedDB holds a user         -> ABSTAIN: `pending` / `{known: false}`. Not a verdict.
  *
