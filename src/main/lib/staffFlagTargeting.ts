@@ -298,28 +298,26 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     };
 
     // localStorage FIRST, and decisive when it CONTAINS a record: that is where the session
-    // settles, and once it has, the SDK clears the others.
-    // An empty but readable localStorage settles NOTHING. It does not end the read - IndexedDB is
-    // consulted next, and a record there means the stores disagree and the answer is {known:false}.
-    // That is deliberate: during boot the live user IS in IndexedDB, so reading an empty
-    // localStorage as "no account" would produce the definite sign-out that deletes the loopback
-    // binding.
-    // Decisive-when-it-holds-a-record is therefore about where the session ENDS UP, not about the
-    // hierarchy order: on the released frontend
-    // it is NOT, the hierarchy is IndexedDB-first and the session reaches localStorage only when the
-    // auth store runs its later setPersistence. It is authoritative because it is where the session
-    // SETTLES, and once the SDK has moved it there it clears the other persistences - quoting
-    // @firebase/auth
-    // dist/browser-cjs/index-919d47fb.js:2169:
+    // settles, and it is read before IndexedDB for that reason - NOT because it is first in the
+    // frontend's hierarchy. On the released frontend it is not: the hierarchy is IndexedDB-first
+    // and the session reaches localStorage only when the auth store runs its later setPersistence.
+    //
+    // An empty but readable localStorage decides NOTHING, and the read continues. IndexedDB is
+    // consulted next, and what is found there is resolved by the rules below - a record means the
+    // stores disagree and the answer is {known:false}, because during boot the live user IS in
+    // IndexedDB and reading an empty localStorage as "no account" would produce the definite
+    // sign-out that deletes the loopback binding.
+    //
+    // Once the session HAS settled in localStorage, the SDK clears the other persistences - quoting
+    // @firebase/auth dist/browser-cjs/index-919d47fb.js:2169:
     //
     //   "Attempt to clear the key in other persistences but ignore errors. This helps prevent
     //    issues such as users getting stuck with a previous account after signing out and
     //    refreshing the tab."
     //
-    // So a record still in IndexedDB after migration is one the SDK DECIDED TO DISCARD. Falling
-    // through to it on an empty localStorage would resurrect a signed-out account - the exact
-    // failure that removal exists to prevent. The fallback below is for a frontend with NO
-    // localStorage persistence, never for a localStorage that simply has nothing in it.
+    // So a record in IndexedDB can be one the SDK discarded - but it can equally be the live user
+    // mid-boot, and nothing in the record says which. That ambiguity is why an empty localStorage
+    // abstains on a record found there rather than answering from it, in either direction.
     // The BARE identifier, deliberately - not window.localStorage. Reading it off window couples
     // this to a global that exists in the page but not in every context a reader might evaluate it
     // in, and the failure is silent: the ReferenceError is caught below, ls becomes null, and we
