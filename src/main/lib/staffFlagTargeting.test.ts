@@ -1043,9 +1043,11 @@ describe('persisting the classification', () => {
   })
 })
 
-// The store the frontend's Firebase SDK actually keeps the session in. It migrates the user into
-// the first persistence of the frontend's hierarchy — localStorage — and REMOVES it from the
-// others, so reading IndexedDB finds a record the SDK decided to discard, or nothing at all.
+// The store the frontend's Firebase SDK SETTLES the session in. On the released frontend the
+// hierarchy is IndexedDB-first, so the user lives there through boot and only reaches localStorage
+// when the auth store runs its later `setPersistence`. Once it has, the SDK REMOVES the record from
+// the other persistences — so reading IndexedDB afterwards finds a copy the SDK decided to discard,
+// or nothing at all. Both stores are therefore authoritative, at different times.
 describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
   it('classifies a staff account held in localStorage', async () => {
     const { result } = await classify({

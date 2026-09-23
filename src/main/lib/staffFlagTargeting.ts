@@ -298,8 +298,11 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     };
 
     // localStorage FIRST, and authoritative whenever it is readable - including when it holds no
-    // record at all. The Firebase SDK migrates the user into the first persistence in the
-    // frontend's hierarchy (localStorage) and then, quoting @firebase/auth
+    // record at all. Not because it is first in the frontend's hierarchy: on the released frontend
+    // it is NOT, the hierarchy is IndexedDB-first and the session reaches localStorage only when the
+    // auth store runs its later setPersistence. It is authoritative because it is where the session
+    // SETTLES, and once the SDK has moved it there it clears the other persistences - quoting
+    // @firebase/auth
     // dist/browser-cjs/index-919d47fb.js:2169:
     //
     //   "Attempt to clear the key in other persistences but ignore errors. This helps prevent

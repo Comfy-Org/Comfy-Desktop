@@ -25,7 +25,9 @@ function removeLocalStorage(): void {
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: undefined })
 }
 
-/** Present but throwing — a blocked or partitioned context. Also counts as unavailable. */
+/** Present but throwing — a blocked or partitioned context. Classified `unreadable`, NOT
+ *  `unavailable`: the store exists and cannot be read, so IndexedDB does not get to answer and
+ *  these cases expect `pending`. */
 function installThrowingLocalStorage(): void {
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,

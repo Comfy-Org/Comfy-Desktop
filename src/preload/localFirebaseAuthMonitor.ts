@@ -109,8 +109,10 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   })
 }
 
-/** Legacy path, for frontends old enough to still persist here. Unreachable on any frontend that
- *  lists `browserLocalPersistence`, which every version since #3514 (2025-04) does. */
+/** The SECOND persistence reader, and a live path rather than a legacy one. `observe()` calls it
+ *  whenever localStorage holds no record — which includes every boot on the released frontend,
+ *  whose hierarchy is IndexedDB-first and which keeps the live user here until the auth store's
+ *  later `setPersistence`. See `shared/firebaseAuthStorage.ts`. */
 async function readFromIndexedDb(): Promise<ComfyDesktop2FirebaseAuthState> {
   try {
     const databases = await indexedDB.databases()
