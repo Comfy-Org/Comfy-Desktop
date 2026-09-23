@@ -173,9 +173,27 @@ describe('installAgentRequirements', () => {
 
     await expect(installAgentRequirements(plan, sendOutput)).resolves.toBeUndefined()
 
+    expect(sendOutput.mock.calls.join('')).toContain('exited with code 2')
+  })
+
+  it('does not reprint uv output it already streamed', async () => {
+    // The shared helper streams into the same sink it captures from, so
+    // appending the captured tail to the failure line put uv's error in the
+    // log twice - seen on a real Windows run of a failing install.
+    mockInstall.mockImplementationOnce(
+      async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
+        const stream = args[5]
+        stream('ERROR: No solution found for comfyui-agent\n')
+        return { code: 1, output: 'ERROR: No solution found for comfyui-agent\n' }
+      }
+    )
+    const sendOutput = vi.fn()
+
+    await installAgentRequirements(plan, sendOutput)
+
     const reported = sendOutput.mock.calls.join('')
-    expect(reported).toContain('exited with code 2')
-    expect(reported).toContain('No solution found')
+    expect(reported.match(/No solution found/g)).toHaveLength(1)
+    expect(reported).toContain('exited with code 1')
   })
 
   it('reports a thrown install and resolves so the launch continues', async () => {

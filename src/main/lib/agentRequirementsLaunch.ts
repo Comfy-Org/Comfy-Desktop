@@ -3,7 +3,6 @@ import path from 'path'
 import * as settings from '../settings'
 import { installFilteredRequirementsDetailed } from './pip'
 import type { UvPipResult } from './pip'
-import { withOutputTail } from './logged-process'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
 
@@ -162,10 +161,14 @@ export async function installAgentRequirements(
       // The exit code decides, not the timer that was racing it: an install
       // that finished inside the grace period succeeded, however close to the
       // ceiling it landed, and must not be reported as skipped.
+      //
+      // Only the code, never a tail of the captured output: uv streams into
+      // this same sink as it runs, so appending what it captured reprints the
+      // error a second time in the log.
       sendOutput(
         timedOut
           ? `\n⚠ agent requirements install exceeded ${INSTALL_TIMEOUT_MS / 1000}s; starting ComfyUI without it\n`
-          : `\n${withOutputTail(`⚠ agent requirements install exited with code ${outcome.result.code}`, outcome.result.output)}\n`
+          : `\n⚠ agent requirements install exited with code ${outcome.result.code}\n`
       )
     }
   } finally {
