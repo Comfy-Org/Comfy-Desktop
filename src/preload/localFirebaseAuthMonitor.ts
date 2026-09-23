@@ -279,6 +279,28 @@ function startBootTrace(diag: (detail: string) => void): () => void {
 const BOOT_FAST_POLL_MS = 25
 const BOOT_FAST_POLL_DURATION_MS = 10_000
 
+/**
+ * TEMPORARY DIAGNOSTIC — never for merge. INSTRUMENT, NOT PRODUCT.
+ *
+ * Widens the reader's own exposure window to a KNOWN quantity. The race is between our localStorage
+ * read and our IndexedDB read: the frontend's `setPersistence` deletes the record from IndexedDB and
+ * then writes it to localStorage, so a poll whose LS read predates that write and whose IDB read
+ * follows that delete composes two observations that were never simultaneously true.
+ *
+ * The natural gap is the IndexedDB round-trip, whose width we have never actually measured — the
+ * ~45ms we reasoned from came from two DIAG re-read lines emitted after the decision, not from this
+ * path. Sampling an unmeasured window more often cannot be reasoned about; setting it to 150ms can.
+ *
+ * Placed immediately before the IndexedDB read, NOT after the localStorage read, so the early-return
+ * paths that never touch IndexedDB are not delayed. A hit under this delay proves the re-read
+ * CORRECTS the race; it says nothing about how often the race occurs naturally.
+ */
+const DIAG_LS_IDB_DELAY_MS = 150
+
+function diagDelayBeforeIdbRead(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, DIAG_LS_IDB_DELAY_MS))
+}
+
 /** TEMPORARY DIAGNOSTIC — never for merge. The observation path deliberately holds no reference to
  *  the reporting path's diag callback: that separation is what makes "clear the settle timer from
  *  the report path" unexpressible. This module-level sink is the diagnostic-build concession that
@@ -287,6 +309,8 @@ let diagSink: (detail: string) => void = () => {}
 
 async function observe(): Promise<ComfyDesktop2FirebaseAuthState> {
   const local = readFromLocalStorage()
+  // TEMPORARY DIAGNOSTIC — never for merge. The instant the race is measured from.
+  const decisionStartedAt = Date.now()
   // A record in localStorage wins outright: it is the store the session settles in, and any copy
   // left in IndexedDB is one the SDK discarded — so a signed-out account cannot come back.
   if (local.kind === 'records') return stateForUserIds(local.userIds)
@@ -316,7 +340,16 @@ async function observe(): Promise<ComfyDesktop2FirebaseAuthState> {
     return local.kind === 'empty' ? { status: 'signed_out' } : { status: 'pending' }
   }
 
+  await diagDelayBeforeIdbRead()
   const fromIdb = await readFromIndexedDb()
+  // TEMPORARY DIAGNOSTIC — never for merge. THE MEASUREMENT WE HAVE INFERRED THREE TIMES AND NEVER
+  // TAKEN: the width of the reader's own exposure window, from the localStorage read to the
+  // IndexedDB read resolving. Every earlier figure came from the `entries` re-read lines, which are
+  // emitted AFTER the decision and measure a different pair of reads entirely.
+  //
+  // This INCLUDES the injected delay, so the natural window is recoverable by subtraction:
+  // natural ~= (decision gap) - DIAG_LS_IDB_DELAY_MS. That is the number nobody has ever had.
+  diagSink(`decision gap ms=${String(Date.now() - decisionStartedAt)}`)
   if (local.kind === 'unavailable') {
     // IndexedDB is the only reader left, but an EMPTY IndexedDB is not evidence of a sign-out. On a
     // localStorage-primary frontend it is empty precisely BECAUSE the SDK drained it, and here the
@@ -430,6 +463,9 @@ export function startLocalFirebaseAuthMonitor(
 ): (() => void) | null {
   if (!isLoopbackPage()) return null
   diagSink = diag
+  diag(
+    `DIAG DELAY ${String(DIAG_LS_IDB_DELAY_MS)}ms between LS and IDB reads (instrument, not product)`
+  )
   const stopBootTrace = startBootTrace(diag)
   let lastState = ''
   let stopped = false
