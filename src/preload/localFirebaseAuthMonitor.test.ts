@@ -82,23 +82,36 @@ beforeEach(() => {
   vi.spyOn(Date, 'now').mockImplementation(() => clock)
 })
 
-/** An IndexedDB double whose `getAll` runs `duringRead` before resolving — the only way to model the
- *  record moving between stores WHILE the await is in flight, which is the cold-boot mechanism. */
-function installIndexedDbMovingRecord(entries: unknown[], duringRead: () => void): void {
+/** The three shapes in which the IndexedDB read reports "nobody", each returning at a DIFFERENT
+ *  await, and all three falling through to the localStorage re-read. */
+type IdbShape = 'store-empty' | 'no-database' | 'database-without-store'
+
+/**
+ * An IndexedDB double that runs `duringFirstAwait` from `databases()` — the FIRST await on EVERY
+ * path, so the record can be modelled as moving stores whichever guard the read returns at.
+ *
+ * Hooking `getAll` instead only models `store-empty`: `no-database` returns at the `databases()`
+ * guard and `database-without-store` at the `objectStoreNames` check, so neither ever opens the
+ * store and a `getAll` hook silently never fires. A test built that way passes for the wrong reason
+ * and leaves two thirds of the re-read unexercised.
+ */
+function installIndexedDbMovingRecord(shape: IdbShape, duringFirstAwait: () => void): void {
   const database = {
     close: () => {},
-    objectStoreNames: { contains: () => true },
+    objectStoreNames: { contains: () => shape !== 'database-without-store' },
     transaction: () => ({
-      objectStore: () => ({
-        getAll: () => {
-          duringRead()
-          return successfulRequest(entries)
-        }
-      })
+      objectStore: () => ({ getAll: () => successfulRequest([]) })
     })
   } as unknown as IDBDatabase
+  let fired = false
   globalThis.indexedDB = {
-    databases: async () => [{ name: 'firebaseLocalStorageDb' }],
+    databases: async () => {
+      if (!fired) {
+        fired = true
+        duringFirstAwait()
+      }
+      return shape === 'no-database' ? [] : [{ name: 'firebaseLocalStorageDb' }]
+    },
     open: () => successfulRequest(database)
   } as unknown as IDBFactory
 }
@@ -353,24 +366,30 @@ describe('local Firebase auth monitor', () => {
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 
-  it('re-reads localStorage after the IndexedDB await, closing the read-time TOCTOU', async () => {
-    // The mechanism the cold boot actually hit, and it is NOT a both-empty state. localStorage is
-    // read synchronously, the IndexedDB read then takes tens of milliseconds, and setPersistence
-    // moves the record INTO localStorage during that window. Composing the two reads asserts "both
-    // empty" from instants that were never simultaneously true — a complete 100ms trace of that boot
-    // contained no both-empty sample, because there was none to sample.
-    //
-    // Asserts signed_in rather than pending: the re-read RESOLVES this, it does not merely defer it.
-    installLocalStorage({})
-    installIndexedDbMovingRecord([], () => {
-      installLocalStorage({ 'firebase:authUser:k:[DEFAULT]': { uid: 'moved-mid-read' } })
-    })
+  it.each(['store-empty', 'no-database', 'database-without-store'] as const)(
+    're-reads localStorage and rescues signed_in when IndexedDB reports nobody via %s',
+    async (shape) => {
+      // The mechanism the cold boot hit, and it is NOT a both-empty state. localStorage is read
+      // synchronously, the IndexedDB read then takes tens of milliseconds, and setPersistence moves
+      // the record INTO localStorage during that window. Composing the two reads asserts "both
+      // empty" from instants that were never simultaneously true.
+      //
+      // All THREE shapes matter because they return at three different awaits — the databases()
+      // guard, the objectStoreNames check, and the store read — and every one of them falls through
+      // to the re-read. Covering only the last would leave two thirds of it unexercised.
+      //
+      // Asserts signed_in rather than pending: the re-read RESOLVES this, it does not defer it.
+      installLocalStorage({})
+      installIndexedDbMovingRecord(shape, () => {
+        installLocalStorage({ 'firebase:authUser:k:[DEFAULT]': { uid: 'moved-mid-read' } })
+      })
 
-    await expect(readLocalFirebaseAuthState()).resolves.toEqual({
-      status: 'signed_in',
-      userId: 'moved-mid-read'
-    })
-  })
+      await expect(readLocalFirebaseAuthState()).resolves.toEqual({
+        status: 'signed_in',
+        userId: 'moved-mid-read'
+      })
+    }
+  )
 
   it('legacy: reports the single persisted Firebase user', async () => {
     removeLocalStorage()
