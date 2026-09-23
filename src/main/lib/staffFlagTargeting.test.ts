@@ -175,8 +175,11 @@ function fakeIndexedDB(opts: {
   stores?: string[]
   entries?: unknown[]
   openOutcome?: 'success' | 'error' | 'blocked' | 'never'
+  /** Fires while the IndexedDB read is in flight — the window the script awaits across. */
+  onIdbRead?: () => void
 }) {
   const closed = { count: 0 }
+  const idbReadFired = { done: false }
   const db = {
     objectStoreNames: {
       contains: (n: string) => (opts.stores ?? ['firebaseLocalStorage']).includes(n)
@@ -195,7 +198,17 @@ function fakeIndexedDB(opts: {
     }
   }
   const idb = {
-    databases: () => Promise.resolve(opts.databases ?? [{ name: 'firebaseLocalStorageDb' }]),
+    databases: () => {
+      // The FIRST await the script makes, and the only one on the missing-database path — so this
+      // is where "during the IndexedDB round-trip" has to be modelled if both conclusion paths are
+      // to be covered. Fires once: a second push would plant a duplicate record, which the
+      // contested-uid guard would reject for an unrelated reason.
+      if (!idbReadFired.done) {
+        idbReadFired.done = true
+        opts.onIdbRead?.()
+      }
+      return Promise.resolve(opts.databases ?? [{ name: 'firebaseLocalStorageDb' }])
+    },
     open: () => {
       const req: Record<string, unknown> = { result: db, error: new Error('open failed') }
       const outcome = opts.openOutcome ?? 'success'
@@ -255,12 +268,24 @@ async function classify(
     localStorage?: Array<[string, string]> | null
     localStorageThrows?: boolean
     localStorageGetItemThrows?: boolean
+    /** Entries that appear in localStorage WHILE the IndexedDB read is in flight, modelling the
+     *  frontend's `setPersistence` moving the record in mid-read. */
+    localStorageDuringAwait?: Array<[string, string]>
   }
 ): Promise<{
   result: { known?: boolean; staff?: boolean; userId?: string | null }
   closed: number
 }> {
-  const { idb, closed } = fakeIndexedDB(opts)
+  // One array, shared with the stub, so a push during the await is visible to the script's
+  // SECOND read and not its first — which is the whole point of the interleaving.
+  const lsEntries =
+    opts.localStorage === undefined || opts.localStorage === null ? null : [...opts.localStorage]
+  const { idb, closed } = fakeIndexedDB({
+    ...opts,
+    onIdbRead: () => {
+      if (lsEntries && opts.localStorageDuringAwait) lsEntries.push(...opts.localStorageDuringAwait)
+    }
+  })
   // Injected as a bare identifier, matching how the script reads it. Passing `undefined` models a
   // context with no localStorage at all, which is what `typeof localStorage === 'undefined'` sees.
   const run = new Function(
@@ -276,7 +301,7 @@ async function classify(
   const result = await run(
     idb,
     setTimeout,
-    fakeLocalStorage(opts.localStorage ?? null, {
+    fakeLocalStorage(lsEntries, {
       throws: opts.localStorageThrows,
       getItemThrows: opts.localStorageGetItemThrows
     }) ?? undefined
@@ -1170,6 +1195,41 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
     })
 
     expect(result).toEqual({ known: false })
+  })
+
+  it('re-reads localStorage before concluding nobody is signed in', async () => {
+    // THE COLD-BOOT FAILURE, as a unit test. localStorage is read synchronously and is empty;
+    // the IndexedDB read takes a round-trip; the frontend's `setPersistence` moves the record INTO
+    // localStorage during it; IndexedDB then also reads empty. Composing those two observations
+    // asserts "no account anywhere" from a pair that was never simultaneously true. Re-reading
+    // finds the record, so the account is classified rather than declared absent.
+    const { result } = await classify({
+      localStorage: [],
+      entries: [],
+      localStorageDuringAwait: [localRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('re-reads before concluding even when the database does not exist', async () => {
+    // The same straddle on the other conclusion path: `databases()` is awaited too, so a verdict
+    // of "no account" there rests on an equally stale read.
+    const { result } = await classify({
+      localStorage: [],
+      databases: [],
+      localStorageDuringAwait: [localRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('still reports no account when nothing arrives during the read', async () => {
+    // The control that stops the re-read becoming "never conclude anything": with no interleaving,
+    // both stores really are empty and the definite answer must survive.
+    const { result } = await classify({ localStorage: [], entries: [] })
+
+    expect(result).toEqual({ known: true, staff: false, userId: null })
   })
 
   it('never consults IndexedDB when localStorage holds a user', async () => {

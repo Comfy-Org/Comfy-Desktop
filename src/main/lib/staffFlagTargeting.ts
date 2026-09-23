@@ -326,9 +326,11 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     }
     // null means the MECHANISM is unavailable. An empty array means it is readable and holds no
     // user - a different thing, and the whole point of the rule below.
-    var lsUsers = null;
-    if (ls) {
-      var fromLocal = collect();
+    // Runs TWICE: once before the IndexedDB round-trip and once after, because a conclusion of
+    // "no account anywhere" must not be assembled from reads taken at different instants. Returns
+    // null when the mechanism failed part-way through.
+    var scanLocal = function () {
+      var acc = collect();
       for (var i = 0; i < ls.length; i++) {
         var k, raw;
         try {
@@ -342,12 +344,28 @@ export const CLASSIFY_STAFF_JS = `(async () => {
           // means the authoritative store EXISTS and we cannot finish reading it. Falling through
           // to IndexedDB here would answer from records the SDK drains - the bug this file fixes.
           // Deliberate and explicit, rather than left to the outer catch, so it can be tested.
-          return { known: false };
+          return null;
         }
         if (typeof raw !== 'string') continue;
-        try { fromLocal.add(JSON.parse(raw)); } catch (_) {}
+        try { acc.add(JSON.parse(raw)); } catch (_) {}
       }
-      if (fromLocal.conflicted()) return { known: false };
+      return acc;
+    };
+    // Every "nobody is signed in" conclusion below rests on THIS read, which is taken before the
+    // IndexedDB await. localStorage is synchronous, so re-reading costs one pass and delays
+    // nothing - and without it the two reads can straddle the frontend's setPersistence, which
+    // moves the record INTO localStorage, and report an account that never went away.
+    var concludeNoAccount = function () {
+      var recheck = scanLocal();
+      if (recheck === null || recheck.conflicted()) return { known: false };
+      // The record arrived during the round-trip: it was there all along, in the other store.
+      if (recheck.users.length > 0) return verdict(recheck.users);
+      return verdict([]);
+    };
+    var lsUsers = null;
+    if (ls) {
+      var fromLocal = scanLocal();
+      if (fromLocal === null || fromLocal.conflicted()) return { known: false };
       lsUsers = fromLocal.users;
       // A user HERE is authoritative: localStorage is where the SDK settles the session, and any
       // IndexedDB copy is the one it drained.
@@ -362,7 +380,7 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       // empty, which returns a definite "no account" a few lines below. Answering those two
       // differently made the verdict depend on whether the SDK had ever created the database.
       // With localStorage unavailable we have no evidence from either store and still abstain.
-      return lsUsers !== null ? verdict([]) : { known: false };
+      return lsUsers !== null ? concludeNoAccount() : { known: false };
     }
     var req = indexedDB.open(IDB_NAME);
     db = await new Promise(function (res, rej) {
@@ -411,8 +429,9 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       // here is accepted as a trusted report and DELETES the loopback binding, and a wrong
       // "signed in" resurrects an account that signed out.
       if (fromIdb.users.length > 0) return { known: false };
-      // Both stores empty is not ambiguous: nobody is signed in anywhere.
-      return verdict([]);
+      // Both reads say nobody - but they were taken at different instants, so re-read before
+      // concluding it. See concludeNoAccount below.
+      return concludeNoAccount();
     }
     // No localStorage mechanism at all, so IndexedDB is the only persistence there is.
     return verdict(fromIdb.users);
