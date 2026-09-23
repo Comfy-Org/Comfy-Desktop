@@ -14,8 +14,10 @@
  *       while IndexedDB holds a user         -> ABSTAIN: `pending` / `{known: false}`. Not a verdict.
  *
  * A fourth case is the MECHANISM being gone — no `localStorage` object, or access throws. IndexedDB
- * then answers alone, because it is the only reader left. That is distinct from an empty store: "I
- * cannot read" must never be rendered as "nothing is stored".
+ * then answers alone, because it is the only reader left — but only a RECORD there is evidence. An
+ * empty IndexedDB in that case means nothing: on a localStorage-primary frontend it is empty because
+ * the SDK drained it, and the store that would hold the user was never readable. So that combination
+ * abstains too. "I cannot read" must never be rendered as "nothing is stored".
  *
  * ## One DELIBERATE asymmetry between the two readers
  *
