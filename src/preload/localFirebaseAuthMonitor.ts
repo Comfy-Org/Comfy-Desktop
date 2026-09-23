@@ -127,6 +127,166 @@ async function readFromIndexedDb(): Promise<ComfyDesktop2FirebaseAuthState> {
   }
 }
 
+/** TEMPORARY DIAGNOSTIC — never for merge. Raw COUNTS from each store, deliberately NOT routed
+ *  through the decision logic: the point is to show what each store held at each instant, including
+ *  the states the rule collapses into one answer. Counts only — no uids, no keys. */
+function localAuthKeyCount(): number | 'unavailable' {
+  try {
+    if (typeof localStorage === 'undefined') return 'unavailable'
+    return Object.keys(localStorage).filter((key) => key.startsWith(FIREBASE_AUTH_KEY_PREFIX))
+      .length
+  } catch {
+    return 'unavailable'
+  }
+}
+
+/** TEMPORARY DIAGNOSTIC — never for merge. */
+async function idbAuthKeyCount(): Promise<number | 'unavailable'> {
+  try {
+    if (typeof indexedDB === 'undefined') return 'unavailable'
+    const databases = await indexedDB.databases()
+    if (!databases.some(({ name }) => name === FIREBASE_IDB_NAME)) return 0
+    const database = await requestResult(indexedDB.open(FIREBASE_IDB_NAME))
+    try {
+      if (!database.objectStoreNames.contains(FIREBASE_IDB_STORE)) return 0
+      const entries = (await requestResult(
+        database
+          .transaction(FIREBASE_IDB_STORE, 'readonly')
+          .objectStore(FIREBASE_IDB_STORE)
+          .getAll()
+      )) as unknown[]
+      return entries.filter((entry) => {
+        if (!entry || typeof entry !== 'object') return false
+        const key = (entry as { fbase_key?: unknown }).fbase_key
+        return typeof key === 'string' && key.startsWith(FIREBASE_AUTH_KEY_PREFIX)
+      }).length
+    } finally {
+      database.close()
+    }
+  } catch {
+    return 'unavailable'
+  }
+}
+
+/** TEMPORARY DIAGNOSTIC — never for merge. `entriesTotal` is everything in the store,
+ *  `entriesKeyMatched` the `firebase:authUser:*` subset, `entriesUsable` those that parse to a uid.
+ *  Separates "no record", "a record that does not match" and "a record we cannot read", which the
+ *  status alone collapses into one answer. */
+interface DiagEntryCounts {
+  total: number
+  keyMatched: number
+  usable: number
+}
+
+function formatCounts(counts: DiagEntryCounts | 'unavailable'): string {
+  if (counts === 'unavailable') return 'unavailable'
+  return (
+    'entriesTotal=' +
+    String(counts.total) +
+    ' entriesKeyMatched=' +
+    String(counts.keyMatched) +
+    ' entriesUsable=' +
+    String(counts.usable)
+  )
+}
+
+function countLocalStorageEntries(): DiagEntryCounts | 'unavailable' {
+  try {
+    if (typeof localStorage === 'undefined') return 'unavailable'
+    const keys = Object.keys(localStorage)
+    let keyMatched = 0
+    let usable = 0
+    for (const key of keys) {
+      if (!key.startsWith(FIREBASE_AUTH_KEY_PREFIX)) continue
+      keyMatched += 1
+      try {
+        const raw = localStorage.getItem(key)
+        if (raw && uidFromRecord(JSON.parse(raw))) usable += 1
+      } catch {
+        // Counted in keyMatched but not usable, which is the distinction this exists to show.
+      }
+    }
+    return { total: keys.length, keyMatched, usable }
+  } catch {
+    return 'unavailable'
+  }
+}
+
+async function countIdbEntries(): Promise<DiagEntryCounts | 'unavailable'> {
+  try {
+    if (typeof indexedDB === 'undefined') return 'unavailable'
+    const databases = await indexedDB.databases()
+    if (!databases.some(({ name }) => name === FIREBASE_IDB_NAME)) {
+      return { total: 0, keyMatched: 0, usable: 0 }
+    }
+    const database = await requestResult(indexedDB.open(FIREBASE_IDB_NAME))
+    try {
+      if (!database.objectStoreNames.contains(FIREBASE_IDB_STORE)) {
+        return { total: 0, keyMatched: 0, usable: 0 }
+      }
+      const entries = (await requestResult(
+        database
+          .transaction(FIREBASE_IDB_STORE, 'readonly')
+          .objectStore(FIREBASE_IDB_STORE)
+          .getAll()
+      )) as unknown[]
+      let keyMatched = 0
+      let usable = 0
+      for (const entry of entries) {
+        if (!entry || typeof entry !== 'object') continue
+        const candidate = entry as { fbase_key?: unknown; value?: unknown }
+        if (
+          typeof candidate.fbase_key !== 'string' ||
+          !candidate.fbase_key.startsWith(FIREBASE_AUTH_KEY_PREFIX)
+        ) {
+          continue
+        }
+        keyMatched += 1
+        if (uidFromRecord(candidate.value)) usable += 1
+      }
+      return { total: entries.length, keyMatched, usable }
+    } finally {
+      database.close()
+    }
+  } catch {
+    return 'unavailable'
+  }
+}
+
+const BOOT_TRACE_INTERVAL_MS = 100
+const BOOT_TRACE_DURATION_MS = 5000
+
+/**
+ * TEMPORARY DIAGNOSTIC — never for merge. Samples BOTH stores every 100ms for the first 5s of the
+ * page. Runs alongside the normal poll, stops itself, and never reports a state.
+ */
+function startBootTrace(diag: (detail: string) => void): () => void {
+  const started = Date.now()
+  let tracing = false
+  const tick = async (): Promise<void> => {
+    if (tracing) return
+    tracing = true
+    try {
+      const elapsed = Date.now() - started
+      const local = localAuthKeyCount()
+      const idb = await idbAuthKeyCount()
+      diag('boot t=' + String(elapsed) + 'ms ls=' + String(local) + ' idb=' + String(idb))
+    } finally {
+      tracing = false
+    }
+  }
+  void tick()
+  const interval = setInterval(() => void tick(), BOOT_TRACE_INTERVAL_MS)
+  const stopper = setTimeout(() => {
+    clearInterval(interval)
+    diag('boot trace ended after ' + String(BOOT_TRACE_DURATION_MS) + 'ms')
+  }, BOOT_TRACE_DURATION_MS)
+  return () => {
+    clearInterval(interval)
+    clearTimeout(stopper)
+  }
+}
+
 export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2FirebaseAuthState> {
   const local = readFromLocalStorage()
   // A record in localStorage wins outright: it is the store the session settles in, and any copy
@@ -175,9 +335,11 @@ export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2Firebas
 
 /** Report local Firebase persistence because the frontend's own sync is Cloud-only. */
 export function startLocalFirebaseAuthMonitor(
-  report: (state: ComfyDesktop2FirebaseAuthState) => void
+  report: (state: ComfyDesktop2FirebaseAuthState) => void,
+  diag: (detail: string) => void = () => {}
 ): (() => void) | null {
   if (!isLoopbackPage()) return null
+  const stopBootTrace = startBootTrace(diag)
   let lastState = ''
   let stopped = false
   let polling = false
@@ -198,6 +360,11 @@ export function startLocalFirebaseAuthMonitor(
       polling = false
     }
     if (stopped) return
+    // TEMPORARY DIAGNOSTIC — never for merge. Emitted EVERY poll, not only on change, because
+    // change-only reporting is what hid 55 seconds of this the first time.
+    diag('poll ls=' + String(localAuthKeyCount()) + ' -> ' + state.status)
+    diag('entries ls ' + formatCounts(countLocalStorageEntries()))
+    diag('entries idb ' + formatCounts(await countIdbEntries()))
     const serialized = JSON.stringify(state)
     if (serialized === lastState) return
     lastState = serialized
@@ -210,5 +377,6 @@ export function startLocalFirebaseAuthMonitor(
   return () => {
     stopped = true
     clearInterval(interval)
+    stopBootTrace()
   }
 }

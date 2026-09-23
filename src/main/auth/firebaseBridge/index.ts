@@ -147,6 +147,17 @@ export async function handleFirebasePopup(
       injectFirebaseSession(sessionInjection, startOrigin, user, apiKey),
       signal
     )
+    // TEMPORARY DIAGNOSTIC — never for merge. Logged BEFORE the early return so a failed injection
+    // is visible too. `route=` is the point: injectFirebaseSession has two callers and both flows
+    // show a "Copy link" card, so without the label a successful run cannot say which path it took.
+    // An origin carries no path or query, so this leaks no token and no uid.
+    console.log(
+      '[identity-diag] inject wrote record host=' +
+        startOrigin +
+        ' injected=' +
+        String(injected) +
+        ' route=firebase-bridge'
+    )
     if (!injected) return
     if (signal.aborted || !isActiveBridgeFlow(flow)) return
     // Do not report success until the session is installed in the initiating

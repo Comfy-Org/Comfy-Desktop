@@ -255,6 +255,15 @@ export async function signInViaDesktopLoginCode(
       user,
       firebaseConfig.apiKey
     )
+    // TEMPORARY DIAGNOSTIC — never for merge. The counterpart of the firebaseBridge line; the
+    // `route=` label is what distinguishes the two callers of injectFirebaseSession in a log.
+    console.log(
+      '[identity-diag] inject wrote record host=' +
+        sessionTargetOrigin +
+        ' injected=' +
+        String(injected) +
+        ' route=desktop-login-code'
+    )
     if (!injected) return 'handled'
     if (controller.signal.aborted) return 'handled'
     // Bind only after the session was successfully installed. The injected
