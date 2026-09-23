@@ -84,7 +84,7 @@ describe('agentTap', () => {
 
     it('exposes exactly the agent field allowlist', () => {
       expect([...ALLOWED_FIELD_NAMES].sort()).toEqual(
-        ['code', 'duration_ms', 'node_version', 'reason', 'version'].sort()
+        ['agent_version', 'code', 'duration_ms', 'node_version', 'reason'].sort()
       )
     })
 
@@ -101,13 +101,13 @@ describe('agentTap', () => {
 
   describe('accepted lines', () => {
     it('emits one namespaced event merging the trusted base context', () => {
-      ingestLine('[agent-event] agent_started duration_ms=812 version=0.4.2')
+      ingestLine('[agent-event] agent_started agent_version=0.4.2 duration_ms=812')
       expect(captured).toEqual([
         {
           event: 'comfy.desktop.comfyui.agent.agent_started',
           ctx: {
             duration_ms: 812,
-            version: '0.4.2',
+            agent_version: '0.4.2',
             installation_id: 'inst-1',
             variant: 'desktop',
             release: '1.0.47-rc.1',
@@ -133,6 +133,19 @@ describe('agentTap', () => {
     it.each([...REASONS])('accepts the reason %s', (reason) => {
       ingestLine(`[agent-event] agent_error reason=${reason}`)
       expect(captured[0]?.ctx['reason']).toBe(reason)
+    })
+
+    it.each([
+      ['a reason outside the closed set', 'model_said_hi'],
+      ['a path-bearing reason', '/home/user/x'],
+      ['a quoted reason', '"timeout"'],
+      ['a boolean reason', 'true'],
+      ['an integer reason', '137']
+    ])('forwards %s as unknown, keeping the line and never the raw value', (_label, raw) => {
+      ingestLine(`[agent-event] node_fetch_failed duration_ms=10 reason=${raw}`)
+      expect(captured).toHaveLength(1)
+      expect(captured[0]?.ctx).toMatchObject({ reason: 'unknown', duration_ms: 10 })
+      expect(JSON.stringify(captured[0]?.ctx)).not.toContain(raw.replace(/"/g, ''))
     })
 
     it('accepts an event carrying no fields at all', () => {
@@ -193,20 +206,23 @@ describe('agentTap', () => {
       expect(captured[0]?.ctx['code']).toBe(0)
     })
 
+    it('treats a bare version field as unknown and omits it', () => {
+      ingestLine('[agent-event] agent_started version=0.4.2')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]?.ctx).not.toHaveProperty('version')
+    })
+
     it.each([
-      ['a reason outside the closed set', 'agent_error reason=model_said_hi'],
-      ['a path-bearing reason', 'agent_error reason=/home/user/x'],
-      ['a path-bearing version', 'agent_started version=../../etc/passwd'],
-      ['a Windows path as a version', 'agent_started version=C:\\Users\\me'],
-      ['a version with free text', 'agent_started version=latest'],
-      ['an oversized version suffix', `agent_started version=1.0.0-${'a'.repeat(40)}`],
-      ['a bare integer version', 'agent_started version=1'],
+      ['a path-bearing version', 'agent_started agent_version=../../etc/passwd'],
+      ['a Windows path as a version', 'agent_started agent_version=C:\\Users\\me'],
+      ['a version with free text', 'agent_started agent_version=latest'],
+      ['an oversized version suffix', `agent_started agent_version=1.0.0-${'a'.repeat(40)}`],
+      ['a bare integer version', 'agent_started agent_version=1'],
       ['a non-integer code', 'agent_exited code=1.5'],
       ['a string code', 'agent_exited code=segfault'],
       ['a negative duration', 'node_fetched duration_ms=-5'],
       ['an unsafe integer', 'node_fetched duration_ms=9007199254740993'],
-      ['a boolean where a string belongs', 'agent_error reason=true'],
-      ['a quoted value', 'agent_error reason="timeout"'],
+      ['a quoted version', 'agent_started agent_version="1.0.0"'],
       ['a duplicate field', 'agent_exited code=0 code=1'],
       ['an uppercase key', 'agent_exited Code=1'],
       ['a prototype key', 'agent_exited constructor=1'],
@@ -217,7 +233,7 @@ describe('agentTap', () => {
     })
 
     it('rejects the whole line when only one of several fields is bad', () => {
-      ingestLine('[agent-event] node_fetch_failed duration_ms=10 reason=oops')
+      ingestLine('[agent-event] node_fetch_failed duration_ms=-10 reason=timeout')
       expect(captured).toEqual([])
     })
   })

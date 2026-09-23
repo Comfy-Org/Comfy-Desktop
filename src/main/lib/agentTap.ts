@@ -43,9 +43,9 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Values `reason` may take. Like every enum field in these taps, a value outside
- * the set rejects the whole line, uncounted: a newer core's new reason is
- * invisible here until this set learns it.
+ * Values `reason` may take. Any other value is forwarded as `unknown` rather
+ * than dropping the line, so a newer core's new failure reason still reports
+ * the failure. The replacement discards the raw value, so it never leaks.
  */
 export const REASONS: ReadonlySet<string> = new Set([
   'timeout',
@@ -67,7 +67,7 @@ export const REASONS: ReadonlySet<string> = new Set([
 export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'code',
   'duration_ms',
-  'version',
+  'agent_version',
   'node_version',
   'reason'
 ])
@@ -79,13 +79,18 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
  */
 const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+][0-9A-Za-z.]{1,16})?$/
 
+function normalizeFieldValue(key: string, value: TelemetryValue): TelemetryValue {
+  if (key === 'reason' && !(typeof value === 'string' && REASONS.has(value))) return 'unknown'
+  return value
+}
+
 function isAllowedFieldValue(key: string, value: unknown): value is TelemetryValue {
   if (key === 'code') return typeof value === 'number' && Number.isSafeInteger(value)
   if (key === 'duration_ms') {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
   }
   if (typeof value !== 'string') return false
-  if (key === 'version' || key === 'node_version') return VERSION.test(value)
+  if (key === 'agent_version' || key === 'node_version') return VERSION.test(value)
   if (key === 'reason') return REASONS.has(value)
   return false
 }
@@ -97,6 +102,7 @@ export function createAgentTap(opts: EventLogTapOptions): EventLogTap {
       eventPrefix: 'comfy.desktop.comfyui.agent.',
       allowedEvents: ALLOWED_EVENTS,
       allowedFieldNames: ALLOWED_FIELD_NAMES,
+      normalizeFieldValue,
       isAllowedFieldValue
     },
     opts

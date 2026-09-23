@@ -43,6 +43,11 @@ export interface EventLogTapSpec {
    * prototype chain. A Set's `.has()` is closed by construction.
    */
   allowedFieldNames: ReadonlySet<string>
+  /**
+   * Optional rewrite of a known field's coerced value, applied before
+   * `isAllowedFieldValue`. It may only narrow a value into the vocabulary.
+   */
+  normalizeFieldValue?: (key: string, value: TelemetryValue) => TelemetryValue
   /** Per-field type and value check, applied after logfmt coercion. */
   isAllowedFieldValue: (key: string, value: unknown) => value is TelemetryValue
 }
@@ -111,13 +116,14 @@ function parseFields(
       continue
     }
     if (Object.hasOwn(fields, key)) return null
-    const value: TelemetryValue = /^-?\d+$/.test(rawValue)
+    const coerced: TelemetryValue = /^-?\d+$/.test(rawValue)
       ? Number(rawValue)
       : rawValue === 'true'
         ? true
         : rawValue === 'false'
           ? false
           : rawValue
+    const value = spec.normalizeFieldValue ? spec.normalizeFieldValue(key, coerced) : coerced
     if (!spec.isAllowedFieldValue(key, value)) return null
     fields[key] = value
   }
