@@ -34,9 +34,21 @@ function uidFromRecord(value: unknown): string | null {
   return uid
 }
 
-/** What localStorage can tell us. `unavailable` is the MECHANISM being gone — no `localStorage`, or
- *  a read that threw — and is deliberately distinct from `empty`: "I cannot read" is not "nothing is
- *  stored", and only the former lets IndexedDB answer on its own. */
+/**
+ * What localStorage can tell us. Three failure states, not two, because "I cannot read" splits:
+ *
+ *   `unavailable`  there is NO `localStorage` object at all. The frontend cannot be using it, so
+ *                  IndexedDB is the only store and answers alone — this is what keeps legacy
+ *                  IndexedDB-primary frontends working.
+ *   `unreadable`   the object EXISTS but access threw, at enumeration or on a single key. The
+ *                  frontend may well be using it and we simply cannot see it, so nothing is
+ *                  asserted in either direction.
+ *   `empty`        readable, and holding no Firebase record. A real observation, not a failure.
+ *
+ * Collapsing `unreadable` into `unavailable` is the defect Codex and CodeRabbit both found: it hands
+ * the answer to a store that, on a localStorage-primary frontend, holds only what the SDK's
+ * best-effort cleanup failed to delete.
+ */
 type LocalStorageRead =
   | { kind: 'unavailable' }
   | { kind: 'unreadable' }
@@ -55,8 +67,13 @@ function readFromLocalStorage(): LocalStorageRead {
     if (typeof localStorage === 'undefined') return { kind: 'unavailable' }
     keys = Object.keys(localStorage)
   } catch {
-    // Blocked storage, or a partitioned context that throws on access.
-    return { kind: 'unavailable' }
+    // BLOCKED, NOT ABSENT. The object EXISTS — `typeof` said so one line above — and access threw:
+    // blocked site data, or a partitioned context. That is the same epistemic state as a per-key
+    // throw below, and must answer the same way. Calling it `unavailable` would let IndexedDB answer
+    // alone, and on a localStorage-primary frontend IndexedDB holds at most the copy the SDK's
+    // best-effort cleanup left behind — so a stale record would be reported as a DEFINITE signed_in,
+    // which is then either believed or becomes a uid mismatch that revokes the binding.
+    return { kind: 'unreadable' }
   }
   const userIds = new Set<string>()
   for (const key of keys) {
@@ -160,11 +177,15 @@ async function observe(): Promise<ComfyDesktop2FirebaseAuthState> {
 
   const fromIdb = await readFromIndexedDb()
   if (local.kind === 'unavailable') {
-    // IndexedDB is the only reader left, but an EMPTY IndexedDB is not evidence of a sign-out. On a
-    // localStorage-primary frontend it is empty precisely BECAUSE the SDK drained it, and here the
-    // store that would hold the user cannot be read at all. Reporting signed_out on that would be
-    // trusted, would revoke the loopback binding and would seal the install — on no evidence. A
-    // record here is evidence and is reported; the absence of one is not.
+    // There is no localStorage object at all, so the frontend cannot be using it and IndexedDB is
+    // the only store WE read. A record there is the answer and is reported — this is what keeps a
+    // legacy IndexedDB-primary frontend working.
+    //
+    // Its ABSENCE is still not a sign-out, and the reason is not the drained-store one that applies
+    // elsewhere: the SDK's persistence hierarchy also includes sessionStorage, which this reader
+    // never reads. So "IndexedDB is empty" does not mean "no store holds a user", and asserting a
+    // sign-out from it would be trusted, would revoke the loopback binding and would seal the
+    // install.
     return fromIdb.status === 'signed_out' ? { status: 'pending' } : fromIdb
   }
   // IndexedDB holds a user, or could not say. Either way the stores do not agree that there is

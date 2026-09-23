@@ -222,11 +222,11 @@ describe('local Firebase auth monitor', () => {
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
   })
 
-  it.each([
-    ['localStorage is absent', removeLocalStorage],
-    ['localStorage access throws', installThrowingLocalStorage]
-  ])('falls back to IndexedDB only when %s', async (_label, breakStorage) => {
-    breakStorage()
+  it('falls back to IndexedDB when there is NO localStorage object at all', async () => {
+    // The legacy IndexedDB-primary case. With no localStorage object the frontend cannot be using
+    // it, so a record in IndexedDB is the answer. This is the behaviour the fallback exists for and
+    // the one that must survive every tightening around it.
+    removeLocalStorage()
     installIndexedDb([
       { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'legacy-user' } }
     ])
@@ -236,6 +236,29 @@ describe('local Firebase auth monitor', () => {
       userId: 'legacy-user'
     })
   })
+
+  it.each([
+    ['access throws at enumeration', installThrowingLocalStorage],
+    ['a per-key getItem throws', installThrowingGetItem]
+  ])(
+    'does NOT report a stale IndexedDB record as signed_in when %s',
+    async (_label, breakStorage) => {
+      // Raised independently by two reviewers. A THROWING localStorage is not an ABSENT one: the
+      // object exists, so the frontend may well be using it and we simply cannot see it. On a
+      // localStorage-primary frontend IndexedDB holds at most what the SDK's best-effort cleanup
+      // failed to delete, so answering from it would report a STALE uid as a definite signed_in —
+      // which is then either believed, or becomes a uid mismatch that revokes the loopback binding
+      // and seals the install.
+      //
+      // Both throw sites must answer identically; they are the same epistemic state one line apart.
+      breakStorage()
+      installIndexedDb([
+        { fbase_key: 'firebase:authUser:api-key:[DEFAULT]', value: { uid: 'possibly-stale' } }
+      ])
+
+      await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+    }
+  )
 
   it.each([
     ['localStorage is absent', removeLocalStorage],

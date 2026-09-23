@@ -13,11 +13,24 @@
  *     localStorage readable but EMPTY,
  *       while IndexedDB holds a user         -> ABSTAIN: `pending` / `{known: false}`. Not a verdict.
  *
- * A fourth case is the MECHANISM being gone — no `localStorage` object, or access throws. IndexedDB
- * then answers alone, because it is the only reader left — but only a RECORD there is evidence. An
- * empty IndexedDB in that case means nothing: on a localStorage-primary frontend it is empty because
- * the SDK drained it, and the store that would hold the user was never readable. So that combination
- * abstains too. "I cannot read" must never be rendered as "nothing is stored".
+ * The remaining cases are the two ways localStorage stops answering, and they are NOT the same:
+ *
+ *     ABSENT — no `localStorage` object at all. The frontend cannot be using it, so IndexedDB is the
+ *       only store and answers alone. A RECORD there is the answer, which is what keeps a legacy
+ *       IndexedDB-primary frontend working. Its ABSENCE is still not a sign-out, because the SDK's
+ *       hierarchy also includes sessionStorage and neither reader reads it.
+ *
+ *     BLOCKED — the object EXISTS (`typeof` says so) and access threw, at enumeration or on a single
+ *       key: blocked site data, a partitioned context. The frontend may well be using it and we
+ *       simply cannot see it, so NOTHING is asserted in either direction. IndexedDB must not answer
+ *       here: on a localStorage-primary frontend it holds at most what the SDK's best-effort cleanup
+ *       failed to delete, so a record there would be reported as a definite sign-in from a STALE uid
+ *       — believed, or turned into a uid mismatch that revokes the loopback binding.
+ *
+ * An earlier version of this file grouped BLOCKED with ABSENT. Codex and CodeRabbit each found it
+ * independently, and they were right: `typeof` distinguishes them cleanly, so the information was
+ * there and was thrown away. "I cannot read" must never be rendered as "nothing is stored", and it
+ * must not be rendered as "there is nothing here to read from" either.
  *
  * ## One DELIBERATE asymmetry between the two readers
  *
