@@ -122,6 +122,16 @@ let epochTaintIsDurable = true
 export const PENDING_CONSENSUS_DEADLINE_MS = 60_000
 let pendingConsensusDeadline: ReturnType<typeof setTimeout> | null = null
 
+/** TEMPORARY DIAGNOSTIC — never for merge. HOST only: never a full URL (query strings), never a
+ *  uid, never an address. */
+function diagHost(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return 'unparseable'
+  }
+}
+
 function sameConsensus(
   first: FirebaseIdentityConsensus,
   second: FirebaseIdentityConsensus
@@ -142,6 +152,7 @@ function sameConsensus(
  */
 function publishConsensus(next: FirebaseIdentityConsensus): void {
   if (sameConsensus(consensus, next)) return
+  console.log('[identity-diag] consensus', consensus.status, '->', next.status)
   consensus = next
   for (const observe of [...consensusObservers]) {
     // An observer can synchronously re-enter `reconcile()` and publish a different outcome, which
@@ -382,8 +393,17 @@ export function bindMainVerifiedFirebaseUser(
     if (snapshot.state.status === 'signed_in' && snapshot.state.userId === normalizedUserId) return
     snapshot.state = { status: 'pending' }
   }
+  // TEMPORARY DIAGNOSTIC: which branch the bind took, and whether the loopback binding was written.
+  // The box shows verified-local-firebase-auth.json was never CREATED, and nothing today says why.
+  // Scheme + host only — never the uid, never a full URL.
   if (isLoopbackOrigin(origin)) {
-    if (!persistVerifiedLocalFirebaseUser(origin, normalizedUserId)) {
+    const persisted = persistVerifiedLocalFirebaseUser(origin, normalizedUserId)
+    console.log(
+      '[identity-diag] bind host=' + diagHost(source.getURL()),
+      'branch=loopback',
+      'persisted=' + persisted
+    )
+    if (!persisted) {
       return
     }
     reporter.localReportingAuthorized = true
@@ -393,11 +413,23 @@ export function bindMainVerifiedFirebaseUser(
     staleSnapshotUnlessAffirming(reporter.recoverableState)
     staleSnapshotUnlessAffirming(reporter.committedCandidate)
   } else if (isTrustedCloudUrl(source.getURL())) {
+    console.log(
+      '[identity-diag] bind host=' + diagHost(source.getURL()),
+      'branch=trusted-cloud',
+      'persisted=false (by design: not a loopback origin)'
+    )
     if (reporter.state.status !== 'signed_in' || reporter.state.userId !== normalizedUserId) {
       reporter.state = { status: 'pending' }
     }
     staleSnapshotUnlessAffirming(reporter.recoverableState)
     staleSnapshotUnlessAffirming(reporter.committedCandidate)
+  }
+  if (!isLoopbackOrigin(origin) && !isTrustedCloudUrl(source.getURL())) {
+    console.log(
+      '[identity-diag] bind host=' + diagHost(source.getURL()),
+      'branch=NEITHER',
+      'persisted=false — still sets a main-verified state'
+    )
   }
   mainVerifiedStates.set(source, {
     userId: normalizedUserId,
@@ -764,6 +796,14 @@ export function reportFirebaseAuthState(
   const trustedCloud = isTrustedCloudUrl(webContents.getURL())
   const trustedLocal =
     currentOrigin !== null && isLoopbackOrigin(currentOrigin) && reporter.localReportingAuthorized
+  // TEMPORARY DIAGNOSTIC: EVERY report, from EVERY host — cloud views included, not just loopback.
+  // The fallback can only fire for a view that bound, which on the observed box is the cloud one,
+  // so logging loopback alone would confirm an absence and miss the side where it can happen.
+  console.log(
+    '[identity-diag] report host=' + diagHost(webContents.getURL()),
+    'status=' + state.status,
+    'trust=' + (trustedCloud ? 'cloud' : trustedLocal ? 'local' : 'untrusted')
+  )
   if (!trustedCloud && !trustedLocal) {
     const mainVerifiedState = mainVerifiedStates.get(webContents)
     if (
@@ -772,8 +812,19 @@ export function reportFirebaseAuthState(
       !mainVerifiedState.rendererMayReaffirm ||
       !isAcceptedFallbackFrame(webContents, reporter, frame)
     ) {
+      console.log('[identity-diag] report DROPPED (untrusted, no main-verified fallback)')
       return
     }
+    // TEMPORARY DIAGNOSTIC: an untrusted report ACCEPTED through the main-verified fallback. Only
+    // reachable from the webContents that bound, while still at its bind origin — so on a box whose
+    // loopback view never bound this can only ever fire for the CLOUD view. That is the remaining
+    // candidate for the 20:00 signed_out, and this line is what would prove or kill it.
+    console.log(
+      '[identity-diag] fallback ACCEPTED host=' + diagHost(webContents.getURL()),
+      'status=' + state.status,
+      'mismatch=' +
+        String(state.status === 'signed_in' && state.userId !== mainVerifiedState.userId)
+    )
     const userMismatch = state.status === 'signed_in' && state.userId !== mainVerifiedState.userId
     mainVerifiedState.reportedState = userMismatch ? { status: 'pending' } : state
     if (userMismatch || state.status === 'signed_out') {

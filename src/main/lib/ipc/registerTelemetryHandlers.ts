@@ -213,11 +213,30 @@ export function registerTelemetryHandlers(): void {
     mainTelemetry.registerPersonProperties(props)
   })
 
+  // TEMPORARY DIAGNOSTIC — never for merge. A channel of its own, deliberately: putting the
+  // heartbeat on the report channel would re-enter reportFirebaseAuthState every few seconds, and
+  // on a box that HAS a loopback binding that re-runs revokeAcceptedLocalAuthorization — the
+  // instrument would then act on the very mechanism the sign-in run exists to observe.
+  ipcMain.on('telemetry:firebaseAuthDiag', (_event, detail: unknown) => {
+    if (typeof detail !== 'string' || detail.length > 300) return
+    // The prefix used to be '[identity-diag] poll', which produced 'poll poll ls=...' for the poll
+    // line AND mislabelled every boot-trace sample as a poll. Each detail names its own kind
+    // ('poll ls=', 'boot t=', 'entries ls'), so the channel prefix must not assume one.
+    console.log('[identity-diag]', detail)
+  })
+
   // Auth consensus validates trusted Cloud and scoped, main-verified loopback
   // reporters after this handler proves the message came from the main frame.
   ipcMain.on('telemetry:firebaseAuthState', (event, payload: unknown) => {
     const frame = firebaseAuthReporterFrame(event)
     if (!frame) return
+    // TEMPORARY DIAGNOSTIC: the preload's five-outcome label rides this payload because a
+    // console.log in the preload reaches only the renderer console, which nothing forwards.
+    // asFirebaseAuthState builds a fresh object and drops it, so read it here.
+    const diagObservation = (payload as { diagObservation?: unknown } | null)?.diagObservation
+    if (typeof diagObservation === 'string' && diagObservation.length <= 32) {
+      console.log('[identity-diag] observation=' + diagObservation)
+    }
     const state = asFirebaseAuthState(payload)
     if (!state) return
     reportFirebaseAuthState(
