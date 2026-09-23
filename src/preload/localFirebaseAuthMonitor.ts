@@ -127,7 +127,7 @@ async function readFromIndexedDb(): Promise<ComfyDesktop2FirebaseAuthState> {
   }
 }
 
-export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2FirebaseAuthState> {
+async function observe(): Promise<ComfyDesktop2FirebaseAuthState> {
   const local = readFromLocalStorage()
   // A record in localStorage wins outright: it is the store the session settles in, and any copy
   // left in IndexedDB is one the SDK discarded — so a signed-out account cannot come back.
@@ -167,10 +167,96 @@ export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2Firebas
     // record here is evidence and is reported; the absence of one is not.
     return fromIdb.status === 'signed_out' ? { status: 'pending' } : fromIdb
   }
-  // Readable but empty. If IndexedDB agrees there is no user, the sign-out is real. If it holds one,
-  // the stores disagree and we ABSTAIN: `signed_out` here is trusted, revokes the loopback binding
-  // and seals the install, and `signed_in` would honour a record that may genuinely be stale.
-  return fromIdb.status === 'signed_out' ? { status: 'signed_out' } : { status: 'pending' }
+  // IndexedDB holds a user, or could not say. Either way the stores do not agree that there is
+  // nobody, so ABSTAIN: `signed_out` here is trusted, revokes the loopback binding and seals the
+  // install, and `signed_in` would honour a record that may genuinely be stale.
+  if (fromIdb.status !== 'signed_out') return { status: 'pending' }
+
+  // BOTH READS SAY NOTHING — but they were taken at DIFFERENT INSTANTS. `local` is synchronous and
+  // was read before the IndexedDB round-trip, which takes tens of milliseconds, and the frontend's
+  // `setPersistence` moves the record INTO localStorage. Composing the two would assert "both empty"
+  // from observations that were never simultaneously true: exactly the cold-boot failure, where a
+  // complete 100ms trace of the whole boot contained no both-empty sample at all and the reader
+  // reported one anyway. Re-read localStorage — it is synchronous, so this costs one read and delays
+  // nothing. This is the PRIMARY fix for that failure; the settle below is the backstop for the
+  // genuinely narrow instant inside `setPersistence`, which is a different cause.
+  const recheck = readFromLocalStorage()
+  if (recheck.kind === 'records') return stateForUserIds(recheck.userIds)
+  if (recheck.kind !== 'empty') return { status: 'pending' }
+  return { status: 'signed_out' }
+}
+
+/**
+ * How long "no record in either store" must PERSIST before it is a sign-out.
+ *
+ * NOT A MEASURED VALUE, and there is nothing to measure it against: the window it guards has never
+ * been observed. An earlier ~8ms figure was inferred from two timestamps in a CURATED log excerpt
+ * and is withdrawn — the complete log showed no both-empty sample at all. 3000ms was chosen because
+ * the asymmetry is lopsided: being wrong toward "revokes three seconds later" costs nothing, being wrong
+ * toward "still seals the install" costs the install. Do not tune this down on the assumption it was
+ * derived from data.
+ *
+ * WALL-CLOCK, deliberately, not a count of polls. The poll runs at 1s only while the view is
+ * VISIBLE; install views are toggled with `setVisible(false)` and nothing sets
+ * `backgroundThrottling`, so a hidden view polls roughly once a minute and "three polls" would mean
+ * three minutes.
+ */
+const SIGNED_OUT_SETTLE_MS = 3000
+
+/**
+ * When the current run of "no record anywhere" was first observed, or null if the last observation
+ * found something. Lives HERE, in the observation path, and `poll()` holds no reference to it — so
+ * the tempting bug of clearing it from the reporting path is not expressible. That matters because
+ * an unsettled sign-out and the stores-disagree row both serialise to `pending`, so a transition
+ * between them emits NO report at all: a reset keyed on the reported state would never fire on
+ * exactly the transition that must clear it.
+ */
+let noRecordSince: number | null = null
+
+/** TEST ONLY. Module state has to be cleared between cases or they become order-dependent — the
+ *  same hazard as restoring a global by assignment. Named honestly rather than hidden behind
+ *  something clever. */
+export function resetSignedOutSettleForTests(): void {
+  noRecordSince = null
+}
+
+/**
+ * The one place a `signed_out` verdict can be produced, so the settle cannot be bypassed and
+ * "anything else clears the timer" is structural rather than repeated at each return.
+ *
+ * WHY: `PersistenceUserManager.setPersistence` (@firebase/auth 1.10.8) REMOVES from the old store
+ * and only then WRITES to the new one — `await this.removeCurrentUser()`, then
+ * `this.setCurrentUser(...)` — so for the duration of that write the user is in NEITHER store.
+ *
+ * THIS INSTANT HAS NEVER BEEN OBSERVED. The cold boot that prompted this work was a DIFFERENT bug —
+ * the reader composing two reads taken at different instants, fixed by the localStorage re-read in
+ * `observe()` — and a complete 100ms trace of that entire boot contained no both-empty sample. So
+ * this gate rests on reading the SDK, not on measurement, which is exactly why it is the backstop
+ * and not the primary fix.
+ *
+ * The boot migration is the OPPOSITE order (`create()` writes the new store before removing the
+ * others), so it never presents this state. One hazard, one gate.
+ */
+function settled(state: ComfyDesktop2FirebaseAuthState): ComfyDesktop2FirebaseAuthState {
+  if (state.status !== 'signed_out') {
+    noRecordSince = null
+    return state
+  }
+  const now = Date.now()
+  if (noRecordSince === null) {
+    noRecordSince = now
+    return { status: 'pending' }
+  }
+  // A clock stepped backwards yields a negative elapsed, which never satisfies this — pending, the
+  // safe direction. A suspend/resume yields a huge elapsed, which is correct: no polls ran while
+  // suspended, so the first poll afterwards is looking at a settled state.
+  return now - noRecordSince >= SIGNED_OUT_SETTLE_MS
+    ? { status: 'signed_out' }
+    : { status: 'pending' }
+}
+
+export async function readLocalFirebaseAuthState(): Promise<ComfyDesktop2FirebaseAuthState> {
+  return settled(await observe())
 }
 
 /** Report local Firebase persistence because the frontend's own sync is Cloud-only. */

@@ -1,5 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { readLocalFirebaseAuthState } from './localFirebaseAuthMonitor'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  readLocalFirebaseAuthState,
+  resetSignedOutSettleForTests
+} from './localFirebaseAuthMonitor'
 
 const originalIndexedDb = globalThis.indexedDB
 const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
@@ -67,7 +70,44 @@ function installIndexedDb(entries: unknown[] | null): void {
   } as unknown as IDBFactory
 }
 
+/** Only `Date.now` is faked. Faking timers wholesale would also fake `queueMicrotask`, which the
+ *  IndexedDB request doubles rely on to resolve — the settle needs a clock, not a scheduler. */
+let clock = 0
+function at(ms: number): void {
+  clock = ms
+}
+
+beforeEach(() => {
+  clock = 0
+  vi.spyOn(Date, 'now').mockImplementation(() => clock)
+})
+
+/** An IndexedDB double whose `getAll` runs `duringRead` before resolving — the only way to model the
+ *  record moving between stores WHILE the await is in flight, which is the cold-boot mechanism. */
+function installIndexedDbMovingRecord(entries: unknown[], duringRead: () => void): void {
+  const database = {
+    close: () => {},
+    objectStoreNames: { contains: () => true },
+    transaction: () => ({
+      objectStore: () => ({
+        getAll: () => {
+          duringRead()
+          return successfulRequest(entries)
+        }
+      })
+    })
+  } as unknown as IDBDatabase
+  globalThis.indexedDB = {
+    databases: async () => [{ name: 'firebaseLocalStorageDb' }],
+    open: () => successfulRequest(database)
+  } as unknown as IDBFactory
+}
+
 afterEach(() => {
+  vi.restoreAllMocks()
+  // Module-level settle state leaks between cases otherwise, and a leftover timestamp makes the
+  // next case order-dependent — the same hazard as restoring a global by assignment.
+  resetSignedOutSettleForTests()
   // defineProperty, not assignment: a test may have installed `indexedDB` as a throwing ACCESSOR,
   // and assigning to an accessor without a setter does not replace it — it fails silently in sloppy
   // mode and throws under modules. Either way the throwing getter would leak into every later test.
@@ -114,13 +154,16 @@ describe('local Firebase auth monitor', () => {
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
   })
 
-  it('reports signed_out only when BOTH stores are empty', async () => {
-    // The other half of the same rule: a sign-out is a real answer, but only once the second store
-    // has been asked and agrees. Without this case the rule above could be satisfied by never
-    // reporting signed_out at all.
+  it('reports signed_out when BOTH stores are empty, once it has SETTLED', async () => {
+    // A sign-out is a real answer, but only once the second store has been asked, agrees, and the
+    // state has persisted — see the setPersistence window in the module. Without this case the rule
+    // could be satisfied by never reporting signed_out at all.
     installLocalStorage({})
     installIndexedDb([])
 
+    at(0)
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+    at(3000)
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
   })
 
@@ -160,6 +203,9 @@ describe('local Firebase auth monitor', () => {
     installLocalStorage({ 'firebase:authUser:api-key:[DEFAULT]': { uid: 'x'.repeat(258) } })
     installIndexedDb([])
 
+    at(0)
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+    at(3000)
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
   })
 
@@ -210,6 +256,120 @@ describe('local Firebase auth monitor', () => {
     })
 
     await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+  })
+
+  it('NEVER reports signed_out across the setPersistence window (the cold-boot failure)', async () => {
+    // The regression test, shaped like the boot that failed: steady state, the migration into
+    // IndexedDB, the ~8ms window where setPersistence has removed from one store and not yet
+    // written the other, then the record back in localStorage. A definite signed_out anywhere in
+    // here is trusted, revokes the loopback binding and seals the install.
+    at(0)
+    installLocalStorage({ 'firebase:authUser:k:[DEFAULT]': { uid: 'u' } })
+    installIndexedDb([])
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({
+      status: 'signed_in',
+      userId: 'u'
+    })
+
+    at(905)
+    installLocalStorage({})
+    installIndexedDb([{ fbase_key: 'firebase:authUser:k:[DEFAULT]', value: { uid: 'u' } }])
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+
+    at(3100)
+    installIndexedDb([])
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+
+    at(3108)
+    installLocalStorage({ 'firebase:authUser:k:[DEFAULT]': { uid: 'u' } })
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({
+      status: 'signed_in',
+      userId: 'u'
+    })
+
+    // Long after, the window recurring must be judged from a FRESH sighting, not convicted by the
+    // timestamp the first one left behind.
+    at(9000)
+    installLocalStorage({})
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+  })
+
+  it('clears the settle timer on an observation that emits NO report', async () => {
+    // The load-bearing case, and the reason the timer lives in the observation path. An unsettled
+    // both-empty and the stores-disagree row BOTH serialise to `pending`, so the transition between
+    // them produces no state change and `poll()` emits nothing. A reset keyed on the reported state
+    // would never fire here — and this is exactly the transition the real cold boot makes, since the
+    // abstain row is the last thing before the window.
+    at(0)
+    installLocalStorage({})
+    installIndexedDb([])
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+
+    at(1000)
+    installIndexedDb([{ fbase_key: 'firebase:authUser:k:[DEFAULT]', value: { uid: 'u' } }])
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+
+    at(5000)
+    installIndexedDb([])
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+  })
+
+  it('settles on WALL-CLOCK, so one poll a minute later still reports signed_out', async () => {
+    // A hidden install view is toggled with setVisible(false) and nothing sets
+    // backgroundThrottling, so it polls roughly once a minute. A poll-count rule would need three
+    // minutes; elapsed time needs one poll.
+    installLocalStorage({})
+    installIndexedDb([])
+
+    at(0)
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+    at(60_000)
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
+  })
+
+  it('holds through irregular spacing and converts exactly AT the threshold', async () => {
+    installLocalStorage({})
+    installIndexedDb([])
+
+    at(0)
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+    for (const t of [50, 120, 900, 2999]) {
+      at(t)
+      await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+    }
+    // Two-sided on purpose: 2999 above kills a widened comparison or a shrunken constant, 3000
+    // here kills a strict `>` or a flipped one. A one-sided boundary lets a flip survive.
+    at(3000)
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'signed_out' })
+  })
+
+  it('treats a backwards clock as unsettled rather than convicting', async () => {
+    installLocalStorage({})
+    installIndexedDb([])
+
+    at(10_000)
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+    at(0)
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({ status: 'pending' })
+  })
+
+  it('re-reads localStorage after the IndexedDB await, closing the read-time TOCTOU', async () => {
+    // The mechanism the cold boot actually hit, and it is NOT a both-empty state. localStorage is
+    // read synchronously, the IndexedDB read then takes tens of milliseconds, and setPersistence
+    // moves the record INTO localStorage during that window. Composing the two reads asserts "both
+    // empty" from instants that were never simultaneously true — a complete 100ms trace of that boot
+    // contained no both-empty sample, because there was none to sample.
+    //
+    // Asserts signed_in rather than pending: the re-read RESOLVES this, it does not merely defer it.
+    installLocalStorage({})
+    installIndexedDbMovingRecord([], () => {
+      installLocalStorage({ 'firebase:authUser:k:[DEFAULT]': { uid: 'moved-mid-read' } })
+    })
+
+    await expect(readLocalFirebaseAuthState()).resolves.toEqual({
+      status: 'signed_in',
+      userId: 'moved-mid-read'
+    })
   })
 
   it('legacy: reports the single persisted Firebase user', async () => {
