@@ -182,7 +182,7 @@ export interface CoreVersionState {
   semver: string | null
   /** Whether the install sits exactly on that release tag (`coreSemverExact`). */
   exact: boolean
-  /** Whether that release was established by ancestry (`coreSemverVerified`). */
+  /** Whether that release was established by ancestry (`coreGateVersion`). */
   verified: boolean
   /** Whether the record those three came from still describes the live checkout
    *  (`coreRecordCurrent`). The other three are assertions about the RECORDED commit and stay

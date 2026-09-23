@@ -1,5 +1,6 @@
 import semver from 'semver'
 import type { InstallationRecord } from '../installations'
+import type { CoreVersionState } from './coreBetaGrants'
 
 /** Ground-truth version data for an installed ComfyUI, stored on the
  *  installation record as `comfyVersion`. */
@@ -21,6 +22,14 @@ export interface ComfyVersion {
    * must not — see {@link coreSemverVerified}.
    */
   baseTagVerified?: boolean
+  /**
+   * The `git describe` tag, recorded only when an unverified upgrade displaced it as `baseTag`.
+   * Reachable from `commit` by construction, so it is the release a version gate can trust when
+   * `baseTag` is not — see {@link coreVerifiedSemver}. Without it, every latest-channel install
+   * loses its grants whenever upstream publishes a patch tag on a release branch, because that
+   * tag is never an ancestor of master yet the resolver still upgrades the label to it.
+   */
+  ancestorTag?: string
 }
 
 /**
@@ -100,6 +109,33 @@ export function coreSemverExact(inst: InstallationRecord): boolean {
  */
 export function coreSemverVerified(inst: InstallationRecord): boolean {
   return inst.comfyVersion?.baseTagVerified === true
+}
+
+/**
+ * The newest release the install PROVABLY contains, as strict semver, or `null` when none was
+ * established. That is `baseTag` when {@link coreSemverVerified}, otherwise the `ancestorTag` an
+ * unverified upgrade displaced. Floors the install at a release it has rather than refusing it,
+ * so an upstream tag the checkout never reached cannot withdraw a grant the install still meets.
+ */
+export function coreVerifiedSemver(inst: InstallationRecord): string | null {
+  const cv = inst.comfyVersion
+  const raw = cv?.baseTagVerified === true ? cv.baseTag : cv?.ancestorTag
+  if (typeof raw !== 'string') return null
+  return semver.valid(raw.replace(/^v/, ''))
+}
+
+/**
+ * The record as the version gate reads it: {@link coreVerifiedSemver} as the version, falling back
+ * to the display label only so a refusal can name the base it refused. `exact` is a claim about
+ * `baseTag`, so it holds only when the gate is measuring `baseTag` itself.
+ */
+export function coreGateVersion(inst: InstallationRecord): Omit<CoreVersionState, 'current'> {
+  const verifiedSemver = coreVerifiedSemver(inst)
+  return {
+    semver: verifiedSemver ?? coreSemver(inst),
+    exact: coreSemverExact(inst) && coreSemverVerified(inst),
+    verified: verifiedSemver !== null
+  }
 }
 
 /**

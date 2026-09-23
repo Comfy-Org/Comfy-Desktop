@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import semver from 'semver'
+import { selectCoreBetaGrantArgs } from './coreBetaGrants'
 import {
+  coreGateVersion,
   coreRecordCurrent,
   coreSemver,
   coreSemverExact,
@@ -137,6 +139,74 @@ describe('coreSemverVerified', () => {
 
   it('is not verified for a legacy install carrying no comfyVersion', () => {
     expect(coreSemverVerified(record({ version: 'v0.3.80' }))).toBe(false)
+  })
+})
+
+describe('coreGateVersion', () => {
+  const commit = 'b0f4b7b294ce1b2c3d4e5f6a1b2c3d4e5f6a1b2c'
+  const grants = [{ arg: '--enable-assets', minCoreVersion: '0.36.0' }]
+  const select = (inst: InstallationRecord) =>
+    selectCoreBetaGrantArgs(grants, { ...coreGateVersion(inst), current: true }, true, [])
+
+  it('measures a verified base as itself', () => {
+    const inst = record({
+      comfyVersion: { commit, baseTag: 'v0.37.0', commitsAhead: 0, baseTagVerified: true }
+    })
+    expect(coreGateVersion(inst)).toEqual({ semver: '0.37.0', exact: true, verified: true })
+  })
+
+  it('floors an unverified upgrade at the ancestor it displaced, and still grants', () => {
+    // The QA install after v0.37.1 was published on a release branch: same checkout, relabelled.
+    const inst = record({
+      comfyVersion: {
+        commit,
+        baseTag: 'v0.37.1',
+        commitsAhead: 5,
+        baseTagVerified: false,
+        ancestorTag: 'v0.37.0'
+      }
+    })
+    expect(coreGateVersion(inst)).toEqual({ semver: '0.37.0', exact: false, verified: true })
+    expect(select(inst)).toEqual(grants)
+  })
+
+  it('never measures the unverified label, so it cannot satisfy a minimum the floor misses', () => {
+    // #1537's case: the label names a release the install does not contain in full.
+    const inst = record({
+      comfyVersion: {
+        commit,
+        baseTag: 'v0.37.1',
+        commitsAhead: 5,
+        baseTagVerified: false,
+        ancestorTag: 'v0.37.0'
+      }
+    })
+    const gated = [{ arg: '--enable-assets', minCoreVersion: '0.37.1' }]
+    expect(
+      selectCoreBetaGrantArgs(gated, { ...coreGateVersion(inst), current: true }, true, [])
+    ).toEqual([])
+  })
+
+  it('is not exact on an unverified label even when its distance reads 0', () => {
+    const inst = record({
+      comfyVersion: {
+        commit,
+        baseTag: 'v0.37.1',
+        commitsAhead: 0,
+        baseTagVerified: false,
+        ancestorTag: 'v0.37.0'
+      }
+    })
+    expect(coreGateVersion(inst).exact).toBe(false)
+  })
+
+  it('refuses an unverified label with no ancestor recorded', () => {
+    // Merge-base fallback on a record persisted before `ancestorTag` existed, or a fallbackTag.
+    const inst = record({
+      comfyVersion: { commit, baseTag: 'v0.37.1', commitsAhead: 5, baseTagVerified: false }
+    })
+    expect(coreGateVersion(inst)).toEqual({ semver: '0.37.1', exact: false, verified: false })
+    expect(select(inst)).toEqual([])
   })
 })
 

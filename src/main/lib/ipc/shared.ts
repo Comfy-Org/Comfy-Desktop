@@ -1386,7 +1386,9 @@ export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): 
       // install whose displayed version never changes. Re-resolving is the only thing that
       // can establish it, and the beta-grant gate refuses an unverified base.
       const versionChanged =
-        resolvedStr !== storedStr || resolved.baseTagVerified !== cv.baseTagVerified
+        resolvedStr !== storedStr ||
+        resolved.baseTagVerified !== cv.baseTagVerified ||
+        resolved.ancestorTag !== cv.ancestorTag
 
       const existing = inst.updateInfoByChannel as
         | Record<string, Record<string, unknown>>
