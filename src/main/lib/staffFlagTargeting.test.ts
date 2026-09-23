@@ -1258,17 +1258,33 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
     // evidence of a sign-out, because on a localStorage-primary frontend it is empty PRECISELY
     // because the SDK drained it.
     //
-    // This reader does not reach the destructive path the monitor does — `userId: null` is rejected
-    // by `classifyFromView`, so nothing is written and no binding is revoked. The test pins that
-    // outcome rather than the mechanism, because the protection currently lives downstream of this
-    // return value rather than in it.
+    // This test previously asserted `{ known: true, staff: false, userId: null }` — which IS
+    // asserting a sign-out, the exact thing its name says it does not do — and excused it on the
+    // grounds that `classifyFromView` rejects a null user id downstream. Two independent reviewers
+    // flagged the underlying behaviour. Being safe because a guard in another file happens to
+    // reject the value is not the same as not making the claim, and a future consumer reading
+    // `known: true` as "no account" would act on it.
     const { result } = await classify({
       localStorage: [],
       localStorageThrows: true,
       entries: []
     })
 
-    expect(result).toEqual({ known: true, staff: false, userId: null })
+    expect(result).toEqual({ known: false })
+  })
+
+  it('still answers from IndexedDB when localStorage is blocked but a record exists there', async () => {
+    // The control that keeps the rule above from becoming "a blocked store means never answer".
+    // A record IS evidence, wherever it is found; only its ABSENCE is uninformative when the store
+    // that would hold it could not be read. This is also what keeps a frontend that persists to
+    // IndexedDB working when site data is blocked.
+    const { result } = await classify({
+      localStorage: [],
+      localStorageThrows: true,
+      entries: [authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
   })
 
   it('leaves an established grant alone on that same unreadable-storage row', async () => {

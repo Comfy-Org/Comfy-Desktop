@@ -315,6 +315,13 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     // in, and the failure is silent: the ReferenceError is caught below, ls becomes null, and we
     // fall through to the store the SDK drains - byte-identically to the bug this fixes.
     var ls = null;
+    // ABSENT and BLOCKED both leave ls null, and they are NOT the same thing. Absent means
+    // IndexedDB is the only persistence there is, so it may answer alone. Blocked means the store
+    // that would hold the session EXISTS and could not be read - and on a localStorage-primary
+    // frontend IndexedDB is empty precisely because the SDK drained it, so its silence is not
+    // evidence of anything. A typeof check tells them apart: an absent global is undefined, a blocked
+    // one throws on access.
+    var lsBlocked = false;
     try {
       if (typeof localStorage !== 'undefined' && localStorage) {
         // Touch it: presence is not readability. Blocked site data throws here, not above.
@@ -323,6 +330,7 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       }
     } catch (_) {
       ls = null;
+      lsBlocked = true;
     }
     // null means the MECHANISM is unavailable. An empty array means it is readable and holds no
     // user - a different thing, and the whole point of the rule below.
@@ -433,7 +441,13 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       // concluding it. See concludeNoAccount below.
       return concludeNoAccount();
     }
-    // No localStorage mechanism at all, so IndexedDB is the only persistence there is.
+    if (lsBlocked) {
+      // The authoritative store exists and we could not read it. A RECORD in IndexedDB is still
+      // evidence and is reported, so a frontend that persists there keeps working; the ABSENCE of
+      // one is not, because we never got to ask the store that would hold it.
+      return fromIdb.users.length > 0 ? verdict(fromIdb.users) : { known: false };
+    }
+    // No localStorage mechanism AT ALL, so IndexedDB is the only persistence there is.
     return verdict(fromIdb.users);
   } catch (e) {
     return { known: false };
