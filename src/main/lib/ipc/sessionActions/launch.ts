@@ -1103,9 +1103,12 @@ async function runLaunch(
           schema,
           betaFlags: await getCoreBetaGrantsAsync(),
           frontendGrant,
-          // Only read when there is a grant to measure: it is a file read on every launch otherwise.
+          // Only read when the grant can apply: it is a file read on every launch otherwise. The
+          // flag serves the grant regardless of the beta toggle, so the toggle gates the read too.
           requiredFrontendVersion:
-            frontendGrant === null ? null : readRequiredFrontendVersion(path.dirname(mainPyAbs)),
+            frontendGrant === null || !betaEnabled
+              ? null
+              : readRequiredFrontendVersion(path.dirname(mainPyAbs)),
           coreVersion: coreSemver(inst),
           coreVersionExact: coreSemverExact(inst),
           coreVersionVerified: coreSemverVerified(inst),
