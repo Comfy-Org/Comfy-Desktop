@@ -1100,6 +1100,41 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
     expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
   })
 
+  it('does not assert a sign-out when localStorage is unreadable and IndexedDB is drained', async () => {
+    // The row a human reviewer found open on the monitor side. localStorage could not be read, so
+    // the store that would hold the session was never consulted; an empty IndexedDB is then not
+    // evidence of a sign-out, because on a localStorage-primary frontend it is empty PRECISELY
+    // because the SDK drained it.
+    //
+    // This reader does not reach the destructive path the monitor does — `userId: null` is rejected
+    // by `classifyFromView`, so nothing is written and no binding is revoked. The test pins that
+    // outcome rather than the mechanism, because the protection currently lives downstream of this
+    // return value rather than in it.
+    const { result } = await classify({
+      localStorage: [],
+      localStorageThrows: true,
+      entries: []
+    })
+
+    expect(result).toEqual({ known: true, staff: false, userId: null })
+  })
+
+  it('leaves an established grant alone on that same unreadable-storage row', async () => {
+    // The outcome that actually matters: whatever the read returns, a storage failure must not
+    // take a grant away. NB this describe is otherwise script-level, so the module needs its
+    // observer subscribed before a consensus can classify anything.
+    initStaffFlagTargeting()
+    await consensusSignedIn([stubContents(true)])
+    expect(nextLaunchBinding()).toBe(true)
+
+    await refreshStaffFlagTargeting(
+      stubContentsReturning({ known: true, staff: false, userId: null })
+    )
+
+    expect(storedFile()).toMatchObject({ staff: true })
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
   it('falls back to IndexedDB when localStorage throws, which is not the same as empty', async () => {
     // Blocked site data is "I cannot read", not "nothing is stored". Treating it as authoritative
     // would let a storage permission decide the cohort.
