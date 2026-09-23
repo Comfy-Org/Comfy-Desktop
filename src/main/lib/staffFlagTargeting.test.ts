@@ -281,6 +281,11 @@ async function classify(
       getItemThrows: opts.localStorageGetItemThrows
     }) ?? undefined
   )
+  // DIAG BRANCH ONLY. The instrumented script adds a `why` branch label to every verdict, which
+  // production reads and logs. Every assertion here is an exact `toEqual`, so strip it rather than
+  // loosening ~90 assertions to `objectContaining` - a weaker suite is not an acceptable price for
+  // a diagnostic field. This line does not exist on the PR branch.
+  if (result && typeof result === 'object') delete (result as { why?: unknown }).why
   return { result, closed: closed.count }
 }
 
