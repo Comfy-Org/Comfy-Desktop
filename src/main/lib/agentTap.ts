@@ -73,11 +73,13 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Dotted numeric version with an optional `v` and a short pre-release or build
- * suffix, e.g. `0.4.2`, `v22.11.0`, `1.2.0-rc.1`. At least one dot, so a bare
- * integer (which logfmt coercion turns into a number anyway) never qualifies.
+ * Dotted numeric version with an optional `v` and a bounded pre-release or
+ * build suffix, e.g. `0.4.2`, `v22.11.0`, `1.2.0-rc.1+build.5`, PEP 440
+ * `1.2.3rc1`, or a Node nightly `v23.0.0-nightly20240814a4b1ad2b68`. At least
+ * one dot, so a bare integer (which logfmt coercion turns into a number
+ * anyway) never qualifies.
  */
-const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+][0-9A-Za-z.]{1,16})?$/
+const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+.]?[0-9A-Za-z][0-9A-Za-z.+-]{0,39})?$/
 
 function normalizeFieldValue(key: string, value: TelemetryValue): TelemetryValue {
   if (key === 'reason' && !(typeof value === 'string' && REASONS.has(value))) return 'unknown'

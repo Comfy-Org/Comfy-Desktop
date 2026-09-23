@@ -28,7 +28,11 @@ import type { TelemetryValue } from './telemetry'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 export interface EventLogTapSpec {
-  /** Anchored grammar capturing the event name (group 1) and logfmt tail (group 2). */
+  /**
+   * Anchored grammar capturing the event name (group 1) and logfmt tail
+   * (group 2). The tail must be empty or start with the single space that
+   * separates it from the event name; the parser strips exactly one.
+   */
   linePattern: RegExp
   /** Namespace for the forwarded events. */
   eventPrefix: string

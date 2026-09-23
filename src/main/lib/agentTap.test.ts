@@ -122,13 +122,19 @@ describe('agentTap', () => {
       expect(captured[0]?.ctx).toMatchObject({ code: -1073741819, duration_ms: 0 })
     })
 
-    it.each(['0.4.2', 'v22.11.0', '1.2.0-rc.1', '1.2.3+build.7', '22.11'])(
-      'accepts the version string %s',
-      (version) => {
-        ingestLine(`[agent-event] node_found node_version=${version}`)
-        expect(captured[0]?.ctx['node_version']).toBe(version)
-      }
-    )
+    it.each([
+      '0.4.2',
+      'v22.11.0',
+      '1.2.0-rc.1',
+      '1.2.3+build.7',
+      '1.2.0-rc.1+build.5',
+      '22.11',
+      '1.2.3rc1',
+      'v23.0.0-nightly20240814a4b1ad2b68'
+    ])('accepts the version string %s', (version) => {
+      ingestLine(`[agent-event] node_found node_version=${version}`)
+      expect(captured[0]?.ctx['node_version']).toBe(version)
+    })
 
     it.each([...REASONS])('accepts the reason %s', (reason) => {
       ingestLine(`[agent-event] agent_error reason=${reason}`)
@@ -216,7 +222,7 @@ describe('agentTap', () => {
       ['a path-bearing version', 'agent_started agent_version=../../etc/passwd'],
       ['a Windows path as a version', 'agent_started agent_version=C:\\Users\\me'],
       ['a version with free text', 'agent_started agent_version=latest'],
-      ['an oversized version suffix', `agent_started agent_version=1.0.0-${'a'.repeat(40)}`],
+      ['an oversized version suffix', `agent_started agent_version=1.0.0-${'a'.repeat(41)}`],
       ['a bare integer version', 'agent_started agent_version=1'],
       ['a non-integer code', 'agent_exited code=1.5'],
       ['a string code', 'agent_exited code=segfault'],
@@ -303,6 +309,8 @@ describe('agentTap consent gating', () => {
   afterEach(() => {
     telemetry._resetForTest()
     sdkCaptures.length = 0
+    delete process.env['POSTHOG_API_KEY']
+    delete process.env['POSTHOG_ENABLED']
   })
 
   function agentCaptures(): string[] {
