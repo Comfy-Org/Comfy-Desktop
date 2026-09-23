@@ -50,12 +50,20 @@ function readBindings(): Record<string, string> {
 function writeBindings(bindings: Record<string, string>): boolean {
   try {
     if (Object.keys(bindings).length === 0) {
+      // TEMPORARY DIAGNOSTIC — never for merge. This is the branch that destroys its own evidence:
+      // an empty map REMOVES the file rather than writing `{}`, so afterwards "never written" and
+      // "written then revoked" are the same observation on disk. Three diagnostic chains died here.
+      console.log('[identity-diag] bindings file REMOVED (map empty) - the revoke path')
       fs.rmSync(verifiedLocalFirebaseAuthPath(), { force: true })
     } else {
+      console.log('[identity-diag] bindings file written origins=' + Object.keys(bindings).length)
       writeFileSafe(verifiedLocalFirebaseAuthPath(), JSON.stringify(bindings))
     }
     return true
-  } catch {
+  } catch (err) {
+    console.log(
+      '[identity-diag] bindings write FAILED name=' + (err instanceof Error ? err.name : 'unknown')
+    )
     return false
   }
 }
@@ -68,7 +76,17 @@ export function readVerifiedLocalFirebaseUser(origin: string): string | null {
 export function persistVerifiedLocalFirebaseUser(origin: string, userId: string): boolean {
   const normalizedOrigin = normalizeLoopbackOrigin(origin)
   const normalizedUserId = normalizePostHogUserId(userId)
-  if (!normalizedOrigin || !normalizedUserId) return false
+  if (!normalizedOrigin || !normalizedUserId) {
+    // TEMPORARY DIAGNOSTIC — never for merge. Host only, never the uid.
+    console.log(
+      '[identity-diag] binding persist REJECTED origin=' +
+        (normalizedOrigin ? 'ok' : 'bad') +
+        ' uid=' +
+        (normalizedUserId ? 'ok' : 'bad')
+    )
+    return false
+  }
+  console.log('[identity-diag] binding persist origin=' + normalizedOrigin)
   const entries = Object.entries(readBindings()).filter(
     ([candidate]) => candidate !== normalizedOrigin
   )
@@ -80,6 +98,10 @@ export function clearVerifiedLocalFirebaseUser(origin: string): boolean {
   const normalizedOrigin = normalizeLoopbackOrigin(origin)
   if (!normalizedOrigin) return false
   const bindings = readBindings()
+  // TEMPORARY DIAGNOSTIC — never for merge. `had` is what makes a real revocation distinguishable
+  // from a no-op clear, which the file's absence afterwards cannot tell you.
+  const had = Object.prototype.hasOwnProperty.call(bindings, normalizedOrigin)
+  console.log('[identity-diag] binding CLEAR origin=' + normalizedOrigin + ' had=' + String(had))
   delete bindings[normalizedOrigin]
   return writeBindings(bindings)
 }

@@ -160,6 +160,19 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   const comfyContents = entry.comfyView.webContents
   const comfyWindow = entry.window
   const titleBarView = entry.titleBarView
+  // TEMPORARY DIAGNOSTIC: which views exist and which are local, so the run shows the surface
+  // layout at sign-in rather than leaving it to be inferred from report hosts.
+  console.log(
+    '[identity-diag] attach host=' +
+      (() => {
+        try {
+          return new URL(comfyUrl).host
+        } catch {
+          return 'unparseable'
+        }
+      })(),
+    'isLocal=' + String(isLocal)
+  )
   activateFirebaseAuthReporter(comfyContents)
 
   // Seed entry install state. The secondary index is the source of
