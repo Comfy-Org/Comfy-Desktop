@@ -265,17 +265,10 @@ describe('agentTap', () => {
       expect(captured[0]?.ctx['code']).toBe(3)
     })
 
-    it('parses a trailing unterminated line once its stream ends', () => {
-      const tap = createAgentTap(baseOpts)
-      tap.ingest('[agent-event] agent_exited code=0', 'stderr')
-      expect(captured).toEqual([])
-      tap.endStream('stderr')
-      expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.comfyui.agent.agent_exited'])
-    })
-
-    it('does not parse a partial line on flushSummary while the stream is open', () => {
+    it('never forwards an unterminated line on flushSummary', () => {
       const tap = createAgentTap(baseOpts)
       tap.ingest('[agent-event] agent_exited code=1', 'stdout')
+      tap.ingest('[agent-event] agent_exited code=0', 'stderr')
       tap.flushSummary()
       expect(captured).toEqual([])
     })
@@ -288,18 +281,11 @@ describe('agentTap', () => {
       expect(captured.map((c) => c.ctx['code'])).toEqual([12])
     })
 
-    it('ends only the stream that reached end-of-file', () => {
-      const tap = createAgentTap(baseOpts)
-      tap.ingest('[agent-event] agent_exited code=1', 'stdout')
-      tap.endStream('stderr')
-      expect(captured).toEqual([])
-    })
-
     it('drops a partial line from a dead process on beginBoot', () => {
       const tap = createAgentTap(baseOpts)
       tap.ingest('[agent-event] agent_exited code=0', 'stdout')
       tap.beginBoot()
-      tap.endStream('stdout')
+      tap.flushSummary()
       expect(captured).toEqual([])
     })
   })

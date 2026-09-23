@@ -503,7 +503,7 @@ describe('createAssetsTapSafe', () => {
   })
 
   it('hands back the constructed tap when construction succeeds', () => {
-    const real = { ingest: vi.fn(), endStream: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
+    const real = { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
     vi.spyOn(assetsTapModule, 'createAssetsTap').mockReturnValue(real)
     expect(createAssetsTapSafe(BASE)).toBe(real)
   })
@@ -530,7 +530,6 @@ describe('createAssetsTapSafe', () => {
         '[assets-event] scanner.stat_failed error_type=OSError site=discovery\n',
         'stderr'
       )
-      inert.endStream('stdout')
       inert.flushSummary()
     }).not.toThrow()
   })
@@ -577,7 +576,7 @@ describe('createAgentTapSafe', () => {
 
 describe('attachLaunchStreams assets tap wiring', () => {
   function fakeTap() {
-    return { ingest: vi.fn(), endStream: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
+    return { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
   }
 
   function harness(assetsTap = fakeTap(), agentTap = fakeTap()) {
@@ -633,19 +632,6 @@ describe('attachLaunchStreams assets tap wiring', () => {
       'stdout'
     )
     expect(h.agentTap.ingest).toHaveBeenCalledWith('[agent-event] agent_exited code=1\n', 'stderr')
-  })
-
-  it('ends each event-log tap stream only when that stream ends', () => {
-    const h = harness()
-    h.stdout.emit('end')
-    for (const tap of [h.assetsTap, h.agentTap]) {
-      expect(tap.endStream).toHaveBeenCalledTimes(1)
-      expect(tap.endStream).toHaveBeenCalledWith('stdout')
-    }
-    h.stderr.emit('end')
-    for (const tap of [h.assetsTap, h.agentTap]) {
-      expect(tap.endStream).toHaveBeenLastCalledWith('stderr')
-    }
   })
 
   it('leaves the hardware and execution taps receiving both streams unchanged', () => {
@@ -1535,7 +1521,7 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.opt_state')
   })
 
-  it('reports once and drains both assets tails before a port-conflict retry without resetting caps', async () => {
+  it('reports once and drops both unterminated assets tails before a port-conflict retry without resetting caps', async () => {
     // The only test that proves the latch: the report site lives INSIDE the recursing
     // `tryLaunch`, so an unlatched report fires once per attempt.
     const children: FakeChild[] = []
@@ -1549,12 +1535,13 @@ describe('core beta report placement', () => {
     }
     launchHarness.spawn = () => {
       if (children.length === 1) {
+        // The killed attempt's unterminated lines may be cut short, so they are never parsed.
         expect(
           events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled')
-        ).toHaveLength(1)
+        ).toHaveLength(0)
         expect(
           events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed')
-        ).toHaveLength(1)
+        ).toHaveLength(0)
       }
       const child = fakeChild()
       children.push(child)
@@ -1576,9 +1563,6 @@ describe('core beta report placement', () => {
         'data',
         Buffer.from('[assets-event] scanner.stat_failed error_type=OSError site=discovery')
       )
-      // A real exit ends both pipes before `close`; that end is what completes the tails.
-      first.stdout.emit('end')
-      first.stderr.emit('end')
       first.emit('close', 1, null)
       return new Promise<void>(() => {})
     }
