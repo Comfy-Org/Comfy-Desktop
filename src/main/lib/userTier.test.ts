@@ -214,6 +214,83 @@ describe('FETCH_TIER_JS', () => {
     expect(result).toEqual({ tier: 'PRO' })
   })
 
+  it('tries a second record when the first token is stale, instead of giving up', async () => {
+    // THE CASE THAT MATTERS, and it is not hypothetical: a Firebase project switch leaves the old
+    // apiKey's record behind, and the key embeds the apiKey, so two firebase:authUser:* keys
+    // coexist. Taking whichever enumerated first would 401 forever while a valid token sat untried.
+    const tried: string[] = []
+    const { result } = await run({
+      localStorage: [
+        ['firebase:authUser:oldkey:[DEFAULT]', JSON.stringify(record('tok-stale'))],
+        [PROD_KEY, JSON.stringify(record('tok-live'))]
+      ],
+      idbEntries: [],
+      fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
+        const bearer = init?.headers?.['Authorization'] ?? ''
+        tried.push(bearer)
+        if (bearer === 'Bearer tok-stale') return Promise.resolve({ ok: false, status: 401 })
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ subscription_tier: 'CREATOR' })
+        })
+      }) as unknown as typeof fetch
+    })
+
+    expect(result).toEqual({ tier: 'CREATOR' })
+    expect(tried).toEqual(['Bearer tok-stale', 'Bearer tok-live'])
+  })
+
+  it('reports an error rather than null when every candidate is rejected', async () => {
+    // Distinct from "nobody is signed in": records exist and none was accepted. Returning null
+    // there would tell the caller there is no user, which is a different and wrong claim.
+    const { result } = await run({
+      localStorage: [[PROD_KEY, JSON.stringify(record('tok-dead'))]],
+      idbEntries: [],
+      fetchImpl: (() => Promise.resolve({ ok: false, status: 403 })) as unknown as typeof fetch
+    })
+
+    expect(result).toEqual({ error: 'http_403' })
+  })
+
+  it('does not try the same token twice when both stores hold it', async () => {
+    // The usual mid-migration state: the record is in both stores. One call, not two.
+    const tried: string[] = []
+    await run({
+      localStorage: [[PROD_KEY, JSON.stringify(record('tok-same'))]],
+      idbEntries: [{ fbase_key: PROD_KEY, value: record('tok-same') }],
+      fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
+        tried.push(init?.headers?.['Authorization'] ?? '')
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ subscription_tier: 'PRO' })
+        })
+      }) as unknown as typeof fetch
+    })
+
+    expect(tried).toEqual(['Bearer tok-same'])
+  })
+
+  it('stops after a bounded number of candidates', async () => {
+    // The records are page-controlled, so the candidate list must not be. Six distinct stale
+    // records, all rejected: the reader must try at most MAX_CANDIDATES of them rather than
+    // issuing one request per key a page chose to write.
+    const tried: string[] = []
+    const { result } = await run({
+      localStorage: Array.from({ length: 6 }, (_, i) => [
+        `firebase:authUser:key${i}:[DEFAULT]`,
+        JSON.stringify(record(`tok-${i}`))
+      ]) as Array<[string, string]>,
+      idbEntries: [],
+      fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
+        tried.push(init?.headers?.['Authorization'] ?? '')
+        return Promise.resolve({ ok: false, status: 401 })
+      }) as unknown as typeof fetch
+    })
+
+    expect(tried).toHaveLength(4)
+    expect(result).toEqual({ error: 'http_401' })
+  })
+
   it('returns null when neither store holds a usable token', async () => {
     const { result } = await run({ localStorage: [], idbEntries: [] })
 

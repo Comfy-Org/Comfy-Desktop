@@ -119,8 +119,18 @@ export const FETCH_TIER_JS = `(async () => {
     const t = mgr.accessToken;
     return typeof t === 'string' && t.length > 0 ? t : null;
   };
+  // More than one firebase:authUser:* record can exist - a project switch leaves the old apiKey's
+  // key behind, and the key embeds the apiKey. Taking whichever enumerates first is not a choice:
+  // a stale record can 401 forever while a valid token sits untried, or, if the stale one is still
+  // valid, fetch the FORMER ACCOUNT'S tier and persist it. So collect the candidates and let the
+  // API arbitrate - the active token is the one /customers/me accepts. Bounded because the records
+  // are page-controlled.
+  const MAX_CANDIDATES = 4;
   try {
-    let token = null;
+    const tokens = [];
+    const addToken = (t) => {
+      if (t && tokens.indexOf(t) === -1 && tokens.length < MAX_CANDIDATES) tokens.push(t);
+    };
     // localStorage FIRST, because that is where the session SETTLES. The frontend's SDK starts
     // IndexedDB-first and the auth store then moves the record to localStorage, clearing the
     // others - so reading IndexedDB alone finds a copy the SDK discarded, or nothing at all, and
@@ -129,12 +139,12 @@ export const FETCH_TIER_JS = `(async () => {
     try {
       if (typeof localStorage !== 'undefined' && localStorage) {
         void localStorage.length;
-        for (let i = 0; i < localStorage.length && !token; i++) {
+        for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
           if (typeof k !== 'string' || k.indexOf(PREFIX) !== 0) continue;
           const raw = localStorage.getItem(k);
           if (typeof raw !== 'string') continue;
-          try { token = tokenOf(JSON.parse(raw)); } catch (_) {}
+          try { addToken(tokenOf(JSON.parse(raw))); } catch (_) {}
         }
       }
     } catch (_) {
@@ -142,7 +152,7 @@ export const FETCH_TIER_JS = `(async () => {
       // path - a wrong answer leaves the cached tier alone - so it simply tries the other store.
     }
 
-    if (!token) {
+    if (tokens.length === 0) {
       const dbReq = indexedDB.open(IDB_NAME);
       const db = await new Promise((res, rej) => {
         dbReq.onsuccess = () => res(dbReq.result);
@@ -155,22 +165,25 @@ export const FETCH_TIER_JS = `(async () => {
         allReq.onsuccess = () => res(allReq.result);
         allReq.onerror = () => rej(allReq.error);
       });
-      const userEntry = (all || []).find(e =>
-        e && typeof e === 'object' &&
-        typeof e.fbase_key === 'string' &&
-        e.fbase_key.indexOf(PREFIX) === 0
-      );
-      token = tokenOf(userEntry && userEntry.value);
+      (all || []).forEach((e) => {
+        if (!e || typeof e !== 'object') return;
+        if (typeof e.fbase_key !== 'string' || e.fbase_key.indexOf(PREFIX) !== 0) return;
+        addToken(tokenOf(e.value));
+      });
     }
-    if (!token) return null;
-    const resp = await fetch('https://api.comfy.org/customers/me', {
-      headers: { 'Authorization': 'Bearer ' + token },
-      credentials: 'omit',
-    });
-    if (!resp.ok) return { error: 'http_' + resp.status };
-    const data = await resp.json().catch(() => null);
-    if (!data || typeof data !== 'object') return { error: 'bad_json' };
-    return { tier: data.subscription_tier || 'FREE' };
+    if (tokens.length === 0) return null;
+    let lastError = null;
+    for (const candidate of tokens) {
+      const resp = await fetch('https://api.comfy.org/customers/me', {
+        headers: { 'Authorization': 'Bearer ' + candidate },
+        credentials: 'omit',
+      });
+      if (!resp.ok) { lastError = 'http_' + resp.status; continue; }
+      const data = await resp.json().catch(() => null);
+      if (!data || typeof data !== 'object') { lastError = 'bad_json'; continue; }
+      return { tier: data.subscription_tier || 'FREE' };
+    }
+    return { error: lastError || 'no_valid_token' };
   } catch (e) {
     return { error: (e && e.message) ? String(e.message) : 'unknown' };
   }
