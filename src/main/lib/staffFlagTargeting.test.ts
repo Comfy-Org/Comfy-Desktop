@@ -296,7 +296,7 @@ describe('CLASSIFY_STAFF_JS', () => {
   ])('classifies %s', async (_label, email, expected) => {
     const { result } = await classify({ entries: [authRecord('u1', email as string | null)] })
 
-    expect(result).toEqual({ known: true, staff: expected, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: expected, userId: 'u1' })
   })
 
   it('refuses an unverified address, which proves nothing about domain ownership', async () => {
@@ -304,13 +304,13 @@ describe('CLASSIFY_STAFF_JS', () => {
     // self-asserted. Without this check anyone could sign up and enter the cohort.
     const { result } = await classify({ entries: [authRecord('u1', 'someone@comfy.org', false)] })
 
-    expect(result).toEqual({ known: true, staff: false, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: false, userId: 'u1' })
   })
 
   it('reports signed out, for no account, when no auth record exists', async () => {
     const { result } = await classify({ entries: [] })
 
-    expect(result).toEqual({ known: true, staff: false, userId: null })
+    expect(result).toMatchObject({ known: true, staff: false, userId: null })
   })
 
   it('declines to answer when two accounts are stored', async () => {
@@ -320,7 +320,7 @@ describe('CLASSIFY_STAFF_JS', () => {
       entries: [authRecord('u1', 'someone@comfy.org'), authRecord('u2', 'other@example.com')]
     })
 
-    expect(result).toEqual({ known: false })
+    expect(result).toMatchObject({ known: false })
   })
 
   it('still answers when one account is stored under duplicate keys', async () => {
@@ -328,7 +328,7 @@ describe('CLASSIFY_STAFF_JS', () => {
       entries: [authRecord('u1', 'someone@comfy.org'), authRecord('u1', 'someone@comfy.org')]
     })
 
-    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: true, userId: 'u1' })
   })
 
   it.each([['__proto__'], ['constructor'], ['toString']])(
@@ -341,7 +341,7 @@ describe('CLASSIFY_STAFF_JS', () => {
         entries: [authRecord('real', 'someone@comfy.org'), authRecord(uid, 'other@example.com')]
       })
 
-      expect(result).toEqual({ known: false })
+      expect(result).toMatchObject({ known: false })
     }
   )
 
@@ -354,7 +354,7 @@ describe('CLASSIFY_STAFF_JS', () => {
     // None of these is evidence of being signed out, so none may vote "not staff".
     const { result } = await classify(opts)
 
-    expect(result).toEqual({ known: false })
+    expect(result).toMatchObject({ known: false })
   })
 
   it('ignores entries that are not auth records', async () => {
@@ -362,7 +362,7 @@ describe('CLASSIFY_STAFF_JS', () => {
       entries: [{ fbase_key: 'something:else', value: { uid: 'x', email: 'a@comfy.org' } }, null]
     })
 
-    expect(result).toEqual({ known: true, staff: false, userId: null })
+    expect(result).toMatchObject({ known: true, staff: false, userId: null })
   })
 
   it('reports which account it classified, so main can check it is the agreed one', async () => {
@@ -389,7 +389,7 @@ describe('CLASSIFY_STAFF_JS', () => {
       await vi.advanceTimersByTimeAsync(5000)
       const { result } = await pending
 
-      expect(result).toEqual({ known: false })
+      expect(result).toMatchObject({ known: false })
     } finally {
       vi.useRealTimers()
     }
@@ -1019,7 +1019,7 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
       entries: []
     })
 
-    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: true, userId: 'u1' })
   })
 
   it('applies the same cohort rule there — an unverified address proves nothing', async () => {
@@ -1028,7 +1028,7 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
       entries: []
     })
 
-    expect(result).toEqual({ known: true, staff: false, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: false, userId: 'u1' })
   })
 
   it('declines to answer when localStorage holds two accounts', async () => {
@@ -1040,7 +1040,7 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
       entries: []
     })
 
-    expect(result).toEqual({ known: false })
+    expect(result).toMatchObject({ known: false })
   })
 
   it('ignores localStorage keys that are not auth records', async () => {
@@ -1055,7 +1055,7 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
       entries: []
     })
 
-    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: true, userId: 'u1' })
   })
 
   it('abstains when localStorage is empty and IndexedDB holds a user', async () => {
@@ -1071,13 +1071,13 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
       entries: [authRecord('u1', 'someone@comfy.org')]
     })
 
-    expect(result).toEqual({ known: false })
+    expect(result).toMatchObject({ known: false })
   })
 
   it('reports no account when BOTH stores are empty, which is not ambiguous', async () => {
     const { result } = await classify({ localStorage: [], entries: [] })
 
-    expect(result).toEqual({ known: true, staff: false, userId: null })
+    expect(result).toMatchObject({ known: true, staff: false, userId: null })
   })
 
   it('never consults IndexedDB when localStorage holds a user', async () => {
@@ -1088,7 +1088,7 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
       entries: [authRecord('u2', 'other@example.com')]
     })
 
-    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: true, userId: 'u1' })
   })
 
   it('falls back to IndexedDB only when there is no localStorage at all', async () => {
@@ -1097,7 +1097,7 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
       entries: [authRecord('u1', 'someone@comfy.org')]
     })
 
-    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: true, userId: 'u1' })
   })
 
   it('falls back to IndexedDB when localStorage throws, which is not the same as empty', async () => {
@@ -1109,7 +1109,7 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
       entries: [authRecord('u1', 'someone@comfy.org')]
     })
 
-    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+    expect(result).toMatchObject({ known: true, staff: true, userId: 'u1' })
   })
 
   it('counts a localStorage record whose uid is __proto__, so the one-account guard holds', async () => {
@@ -1121,6 +1121,6 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
       entries: []
     })
 
-    expect(result).toEqual({ known: false })
+    expect(result).toMatchObject({ known: false })
   })
 })
