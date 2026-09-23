@@ -1533,7 +1533,7 @@ async function runLaunch(
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected.
     hwTap.beginBoot()
-    // Drain the previous attempt's unterminated records before resetting its buffers.
+    // Emit the previous attempt's summary before resetting its buffers.
     assetsTap.flushSummary()
     assetsTap.beginBoot()
     agentTap.flushSummary()

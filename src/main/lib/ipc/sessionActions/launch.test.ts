@@ -1521,7 +1521,7 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.opt_state')
   })
 
-  it('reports once and drains both assets tails before a port-conflict retry without resetting caps', async () => {
+  it('reports once and drops both unterminated assets tails before a port-conflict retry without resetting caps', async () => {
     // The only test that proves the latch: the report site lives INSIDE the recursing
     // `tryLaunch`, so an unlatched report fires once per attempt.
     const children: FakeChild[] = []
@@ -1535,12 +1535,13 @@ describe('core beta report placement', () => {
     }
     launchHarness.spawn = () => {
       if (children.length === 1) {
+        // The killed attempt's unterminated lines may be cut short, so they are never parsed.
         expect(
           events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled')
-        ).toHaveLength(1)
+        ).toHaveLength(0)
         expect(
           events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed')
-        ).toHaveLength(1)
+        ).toHaveLength(0)
       }
       const child = fakeChild()
       children.push(child)

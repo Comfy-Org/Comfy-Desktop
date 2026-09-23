@@ -265,12 +265,20 @@ describe('agentTap', () => {
       expect(captured[0]?.ctx['code']).toBe(3)
     })
 
-    it('flushes a trailing unterminated line on flushSummary', () => {
+    it('never forwards an unterminated line on flushSummary', () => {
       const tap = createAgentTap(baseOpts)
+      tap.ingest('[agent-event] agent_exited code=1', 'stdout')
       tap.ingest('[agent-event] agent_exited code=0', 'stderr')
-      expect(captured).toEqual([])
       tap.flushSummary()
-      expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.comfyui.agent.agent_exited'])
+      expect(captured).toEqual([])
+    })
+
+    it('forwards a value split across chunks whole after a mid-line flushSummary', () => {
+      const tap = createAgentTap(baseOpts)
+      tap.ingest('[agent-event] agent_exited code=1', 'stdout')
+      tap.flushSummary()
+      tap.ingest('2\n', 'stdout')
+      expect(captured.map((c) => c.ctx['code'])).toEqual([12])
     })
 
     it('drops a partial line from a dead process on beginBoot', () => {

@@ -221,19 +221,18 @@ export function createEventLogTap(spec: EventLogTapSpec, opts: EventLogTapOption
     beginBoot(): void {
       lineBuffer.reset()
     },
+    /**
+     * Never parses an unterminated line. Callers flush while the process may
+     * still be running (a `waitForPort` timeout, app quit), and a line cut at
+     * a chunk boundary can still match the grammar with a truncated value
+     * (`code=12` read as `code=1`). Nor is stream end proof of completeness:
+     * a normal exit flushes whole newline-terminated lines, so an unterminated
+     * tail only survives a kill or crash, which is when it may be cut short.
+     * Partial lines stay buffered until a newline completes them or
+     * `beginBoot` drops them.
+     */
     flushSummary(): void {
       try {
-        // Process complete-but-unterminated final lines so a trailing record
-        // isn't dropped when the process exits without a newline.
-        for (const source of ['stdout', 'stderr'] as const) {
-          const pending = lineBuffer.takePending(source)
-          // Per-source isolation: a throwing stdout tail must not skip stderr's.
-          try {
-            if (pending.trim()) handleLine(pending)
-          } catch {
-            // ignore - telemetry side effect, not user-visible
-          }
-        }
         if (unknownEventsDropped > 0 && withinRateCap(UNKNOWN_EVENTS_DROPPED)) {
           const count = unknownEventsDropped
           unknownEventsDropped = 0
