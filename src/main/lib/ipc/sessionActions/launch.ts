@@ -1037,6 +1037,21 @@ async function runLaunch(
         // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
         // an install whose label is unverified they name the lower ancestry-proven release.
         const gate = coreGateVersion(inst)
+        // TEMPORARY DIAGNOSTIC — never for merge. #1569's whole point is that the gate compares the
+        // ANCESTRY-VERIFIED release, not the display label, so the two are deliberately not the same
+        // value and `CoreVersionState` no longer carries the label at all. This is the one place
+        // both are still in scope, so it is the only place the divergence can be shown — which is
+        // what a run needs in order to see the fix working rather than merely not failing.
+        //
+        // `label` is the record's display string; `semver` is what the grant is decided against. On
+        // a latest-channel install past an unverified tag they differ, and that difference IS the
+        // bug #1569 fixes. No uid, no path — a tag, a count and three booleans.
+        console.log(
+          `[core-beta] gate semver=${String(gate.semver)}` +
+            ` label=${String(inst.comfyVersion?.baseTag)}+${String(inst.comfyVersion?.commitsAhead)}` +
+            ` labelVerified=${String(inst.comfyVersion?.baseTagVerified)}` +
+            ` verified=${String(gate.verified)} exact=${String(gate.exact)}`
+        )
         const built = buildLaunchArgs({
           prefixArgs,
           userArgs,
