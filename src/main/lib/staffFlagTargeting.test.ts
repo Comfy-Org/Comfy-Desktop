@@ -221,7 +221,7 @@ function authRecord(uid: string, email: string | null, emailVerified = true): un
  *  blocked site data, where touching the object raises rather than returning nothing. */
 function fakeLocalStorage(
   entries: Array<[string, string]> | null,
-  opts: { throws?: boolean } = {}
+  opts: { throws?: boolean; getItemThrows?: boolean } = {}
 ): unknown {
   if (entries === null) return null
   if (opts.throws) {
@@ -239,7 +239,12 @@ function fakeLocalStorage(
       return entries.length
     },
     key: (i: number) => entries[i]?.[0] ?? null,
-    getItem: (k: string) => entries.find(([key]) => key === k)?.[1] ?? null
+    getItem: (k: string) => {
+      // Enumeration succeeded and this one value read fails: the mechanism dying part-way
+      // through, which is NOT the same as localStorage being absent.
+      if (opts.getItemThrows) throw new Error('site data blocked mid-read')
+      return entries.find(([key]) => key === k)?.[1] ?? null
+    }
   }
 }
 
@@ -249,6 +254,7 @@ async function classify(
      *  Existing cases pass nothing and therefore keep exercising the fallback unchanged. */
     localStorage?: Array<[string, string]> | null
     localStorageThrows?: boolean
+    localStorageGetItemThrows?: boolean
   }
 ): Promise<{
   result: { known?: boolean; staff?: boolean; userId?: string | null }
@@ -270,7 +276,10 @@ async function classify(
   const result = await run(
     idb,
     setTimeout,
-    fakeLocalStorage(opts.localStorage ?? null, { throws: opts.localStorageThrows }) ?? undefined
+    fakeLocalStorage(opts.localStorage ?? null, {
+      throws: opts.localStorageThrows,
+      getItemThrows: opts.localStorageGetItemThrows
+    }) ?? undefined
   )
   return { result, closed: closed.count }
 }
@@ -1078,6 +1087,89 @@ describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
     const { result } = await classify({ localStorage: [], entries: [] })
 
     expect(result).toEqual({ known: true, staff: false, userId: null })
+  })
+
+  it('answers a MISSING database the same as an empty one when localStorage is readable', async () => {
+    // Same world as the test above - nobody signed in anywhere - reached by a machine where the
+    // SDK never created the database. It used to return `{known:false}` from the `databases()`
+    // guard while the empty-database case returned a definite "no account", so the verdict
+    // depended on whether Firebase had ever run here. The two must agree.
+    const { result } = await classify({ localStorage: [], databases: [] })
+
+    expect(result).toEqual({ known: true, staff: false, userId: null })
+  })
+
+  it('still declines when the database is missing AND localStorage is unavailable', async () => {
+    // The negative control for the test above: with no readable localStorage there is no evidence
+    // from either store, so the answer must stay an abstention rather than become "no account".
+    const { result } = await classify({ databases: [] })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('declines when a localStorage value read throws part-way through enumeration', async () => {
+    // The authoritative store EXISTS and cannot be finished. IndexedDB here holds a record that
+    // would classify as staff, so a fall-through would be visible as `staff: true` - which is
+    // exactly the bug this file fixes, reached through a different door.
+    const { result } = await classify({
+      localStorage: [localRecord('u1', 'someone@comfy.org')],
+      localStorageGetItemThrows: true,
+      entries: [authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('declines when two localStorage keys claim one uid with DIFFERENT addresses', async () => {
+    // Two keys, one account, and they disagree about the field the cohort rule reads. Both match
+    // the Firebase prefix, so a page-origin script can plant the second one carrying the genuine
+    // uid and a forged verified address; de-duplicating by uid and keeping whichever enumerated
+    // first would let key order decide staff membership, and main's uid cross-check would pass
+    // because the uid is real.
+    const { result } = await classify({
+      localStorage: [
+        [
+          'firebase:authUser:apikey:[DEFAULT]',
+          JSON.stringify({ uid: 'u1', email: 'someone@example.com', emailVerified: true })
+        ],
+        [
+          'firebase:authUser:apikey:[FORGED]',
+          JSON.stringify({ uid: 'u1', email: 'someone@comfy.org', emailVerified: true })
+        ]
+      ],
+      entries: []
+    })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('still answers when two localStorage keys claim one uid and AGREE', async () => {
+    // The control that keeps the rule above from being a blanket "two keys means abstain": a
+    // duplicate that says the same thing is not a conflict and must not suppress a real verdict.
+    const { result } = await classify({
+      localStorage: [
+        [
+          'firebase:authUser:apikey:[DEFAULT]',
+          JSON.stringify({ uid: 'u1', email: 'someone@comfy.org', emailVerified: true })
+        ],
+        [
+          'firebase:authUser:apikey:[OTHER]',
+          JSON.stringify({ uid: 'u1', email: '  Someone@COMFY.org ', emailVerified: true })
+        ]
+      ],
+      entries: []
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('declines when two IndexedDB records claim one uid with different addresses', async () => {
+    // The same conflict on the fallback path, which has always de-duplicated by uid.
+    const { result } = await classify({
+      entries: [authRecord('u1', 'someone@example.com'), authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: false })
   })
 
   it('never consults IndexedDB when localStorage holds a user', async () => {

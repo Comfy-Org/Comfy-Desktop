@@ -265,15 +265,34 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     // Prototype-free. On a plain object the keys __proto__, constructor and toString are
     // already truthy, so a record whose uid is one of them would be skipped and the
     // "exactly one account" guard would pass on what is really a two-account state.
+    // The fields the verdict actually reads, normalised the same way it normalises them. Two
+    // records for one account are only interchangeable if these agree.
+    var identity = function (v) {
+      var email = typeof v.email === 'string' ? v.email.trim().toLowerCase() : '';
+      return (v.emailVerified === true ? '1' : '0') + '\u0000' + email;
+    };
     var collect = function () {
       var seen = Object.create(null);
       var users = [];
+      var conflict = false;
       return {
         users: users,
+        // A uid claimed twice by records that DISAGREE. Keeping the first silently let a second
+        // key decide the cohort by enumeration order: a page-origin script could plant a record
+        // carrying the genuine uid and a forged verified @comfy.org address, collapse to one
+        // user, pass the "exactly one account" guard, and pass main's uid cross-check because the
+        // uid is real. There is no basis for preferring either record, so we do not pick one.
+        conflicted: function () { return conflict; },
         add: function (v) {
           if (!v || typeof v !== 'object') return;
           if (typeof v.uid !== 'string' || v.uid.length === 0) return;
-          if (!seen[v.uid]) { seen[v.uid] = true; users.push(v); }
+          var prev = seen[v.uid];
+          if (prev) {
+            if (identity(prev) !== identity(v)) conflict = true;
+            return;
+          }
+          seen[v.uid] = v;
+          users.push(v);
         }
       };
     };
@@ -311,12 +330,24 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     if (ls) {
       var fromLocal = collect();
       for (var i = 0; i < ls.length; i++) {
-        var k = ls.key(i);
-        if (typeof k !== 'string' || k.indexOf(PREFIX) !== 0) continue;
-        var raw = ls.getItem(k);
+        var k, raw;
+        try {
+          k = ls.key(i);
+          if (typeof k !== 'string' || k.indexOf(PREFIX) !== 0) continue;
+          raw = ls.getItem(k);
+        } catch (_) {
+          // The MECHANISM failing part-way through, after the initial touch succeeded. This is a
+          // different thing from localStorage being absent, and it must not be treated as one:
+          // absent means IndexedDB is the only store there is and may answer alone, whereas this
+          // means the authoritative store EXISTS and we cannot finish reading it. Falling through
+          // to IndexedDB here would answer from records the SDK drains - the bug this file fixes.
+          // Deliberate and explicit, rather than left to the outer catch, so it can be tested.
+          return { known: false };
+        }
         if (typeof raw !== 'string') continue;
         try { fromLocal.add(JSON.parse(raw)); } catch (_) {}
       }
+      if (fromLocal.conflicted()) return { known: false };
       lsUsers = fromLocal.users;
       // A user HERE is authoritative: localStorage is where the SDK settles the session, and any
       // IndexedDB copy is the one it drained.
@@ -326,7 +357,12 @@ export const CLASSIFY_STAFF_JS = `(async () => {
     if (!indexedDB.databases) return { known: false };
     var dbs = await indexedDB.databases();
     if (!dbs.some(function (d) { return d && d.name === IDB_NAME; })) {
-      return { known: false };
+      // No Firebase database at all. If localStorage was READABLE and held no user, nobody is
+      // signed in in either store - the identical situation to a database that exists and is
+      // empty, which returns a definite "no account" a few lines below. Answering those two
+      // differently made the verdict depend on whether the SDK had ever created the database.
+      // With localStorage unavailable we have no evidence from either store and still abstain.
+      return lsUsers !== null ? verdict([]) : { known: false };
     }
     var req = indexedDB.open(IDB_NAME);
     db = await new Promise(function (res, rej) {
@@ -366,6 +402,7 @@ export const CLASSIFY_STAFF_JS = `(async () => {
       if (e.fbase_key.indexOf(PREFIX) !== 0) return;
       fromIdb.add(e.value);
     });
+    if (fromIdb.conflicted()) return { known: false };
     if (lsUsers !== null) {
       // localStorage was READABLE and held no user, and IndexedDB does. That is ambiguous and
       // cannot be resolved by reading: it is either a frontend that persists to IndexedDB (the
