@@ -511,7 +511,7 @@ function createEventLogTapSafe(name: string, create: () => EventLogTap): EventLo
     return create()
   } catch (err) {
     console.error(`Failed to create ${name} telemetry tap; continuing without it:`, err)
-    return { ingest: () => {}, beginBoot: () => {}, flushSummary: () => {} }
+    return { ingest: () => {}, endStream: () => {}, beginBoot: () => {}, flushSummary: () => {} }
   }
 }
 
@@ -560,6 +560,16 @@ export function attachLaunchStreams(
     assetsTap.ingest(text, 'stderr')
     agentTap.ingest(text, 'stderr')
     tracker.ingest(clean)
+  })
+  // End-of-file is the only proof that an unterminated final line is whole;
+  // a `killProcessTree` destroys the streams instead, so no `end` fires.
+  proc.stdout?.on('end', () => {
+    assetsTap.endStream('stdout')
+    agentTap.endStream('stdout')
+  })
+  proc.stderr?.on('end', () => {
+    assetsTap.endStream('stderr')
+    agentTap.endStream('stderr')
   })
   return { getStderr: () => stderrBuf }
 }
@@ -1533,7 +1543,7 @@ async function runLaunch(
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected.
     hwTap.beginBoot()
-    // Drain the previous attempt's unterminated records before resetting its buffers.
+    // Emit the previous attempt's summary before resetting its buffers.
     assetsTap.flushSummary()
     assetsTap.beginBoot()
     agentTap.flushSummary()

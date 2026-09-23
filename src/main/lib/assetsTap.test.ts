@@ -597,13 +597,23 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ phase: 'fast' })
     })
 
-    it('flushes a trailing unterminated line on flushSummary', () => {
+    it('parses a trailing unterminated line once its stream ends', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_started phase=full', 'stdout')
       expect(captured).toHaveLength(0)
-      tap.flushSummary()
+      tap.endStream('stdout')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toMatchObject({ phase: 'full' })
+    })
+
+    it('does not parse a partial line on flushSummary while the stream is open', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed count=1', 'stdout')
+      tap.flushSummary()
+      expect(captured).toHaveLength(0)
+      tap.ingest('2\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ count: 12 })
     })
 
     it('drops an oversized unterminated line and keeps the stream working', () => {
@@ -633,7 +643,7 @@ describe('assetsTap', () => {
     it('does not flush an invented event from an oversized ordinary line suffix', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(`${'ordinary'.repeat(3_000)}${forgedRetainedSuffix()}`, 'stderr')
-      tap.flushSummary()
+      tap.endStream('stderr')
       expect(captured).toHaveLength(0)
     })
 
@@ -673,16 +683,16 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(1)
     })
 
-    it('contains malformed buffered logfmt hit by flushSummary', () => {
+    it('contains malformed buffered logfmt hit by endStream', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_started phase=', 'stdout')
-      expect(() => tap.flushSummary()).not.toThrow()
+      expect(() => tap.endStream('stdout')).not.toThrow()
       expect(captured).toHaveLength(0)
       tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
       expect(captured).toHaveLength(1)
     })
 
-    it('contains a telemetry.emit failure, in ingest and in flushSummary', () => {
+    it('contains a telemetry.emit failure, in ingest and in endStream', () => {
       let calls = 0
       vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
         calls++
@@ -695,7 +705,7 @@ describe('assetsTap', () => {
       ).not.toThrow()
 
       tap.ingest('[assets-event] seeder.scan_started phase=enrich', 'stdout')
-      expect(() => tap.flushSummary()).not.toThrow()
+      expect(() => tap.endStream('stdout')).not.toThrow()
 
       expect(captured).toHaveLength(0)
       tap.ingest(taggedLine('seeder.scan_started', { phase: 'full' }), 'stdout')
@@ -742,12 +752,13 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ count: 3 })
     })
 
-    it('flushes the stderr tail even when the stdout tail throws', () => {
+    it('parses the stderr tail even when the stdout tail throws', () => {
       withExplodingPhaseLookup()
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_started phase=fast', 'stdout')
       tap.ingest('[assets-event] seeder.scan_completed count=3', 'stderr')
-      expect(() => tap.flushSummary()).not.toThrow()
+      expect(() => tap.endStream('stdout')).not.toThrow()
+      tap.endStream('stderr')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toMatchObject({ count: 3 })
     })

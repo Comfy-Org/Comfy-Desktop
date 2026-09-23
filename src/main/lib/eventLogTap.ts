@@ -65,6 +65,11 @@ export interface EventLogTapOptions {
 
 export interface EventLogTap {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
+  /**
+   * The source stream reached end-of-file, so its unterminated final line is
+   * complete. The only place a partial line is ever parsed.
+   */
+  endStream: (source: 'stdout' | 'stderr') => void
   beginBoot: () => void
   flushSummary: () => void
 }
@@ -221,19 +226,24 @@ export function createEventLogTap(spec: EventLogTapSpec, opts: EventLogTapOption
     beginBoot(): void {
       lineBuffer.reset()
     },
+    endStream(source: 'stdout' | 'stderr'): void {
+      try {
+        const pending = lineBuffer.takePending(source)
+        if (pending.trim()) handleLine(pending)
+      } catch {
+        // ignore - telemetry side effect, not user-visible
+      }
+    },
+    /**
+     * Deliberately leaves pending partial lines buffered: callers flush while
+     * the process may still be running (a `waitForPort` timeout, app quit),
+     * and a line cut at a chunk boundary can still match the grammar with a
+     * truncated value (`code=12` read as `code=1`). Only `endStream` proves a
+     * partial line complete; a killed process's destroyed streams never end,
+     * so its partial line is dropped by the next `beginBoot`.
+     */
     flushSummary(): void {
       try {
-        // Process complete-but-unterminated final lines so a trailing record
-        // isn't dropped when the process exits without a newline.
-        for (const source of ['stdout', 'stderr'] as const) {
-          const pending = lineBuffer.takePending(source)
-          // Per-source isolation: a throwing stdout tail must not skip stderr's.
-          try {
-            if (pending.trim()) handleLine(pending)
-          } catch {
-            // ignore - telemetry side effect, not user-visible
-          }
-        }
         if (unknownEventsDropped > 0 && withinRateCap(UNKNOWN_EVENTS_DROPPED)) {
           const count = unknownEventsDropped
           unknownEventsDropped = 0

@@ -503,7 +503,7 @@ describe('createAssetsTapSafe', () => {
   })
 
   it('hands back the constructed tap when construction succeeds', () => {
-    const real = { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
+    const real = { ingest: vi.fn(), endStream: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
     vi.spyOn(assetsTapModule, 'createAssetsTap').mockReturnValue(real)
     expect(createAssetsTapSafe(BASE)).toBe(real)
   })
@@ -530,6 +530,7 @@ describe('createAssetsTapSafe', () => {
         '[assets-event] scanner.stat_failed error_type=OSError site=discovery\n',
         'stderr'
       )
+      inert.endStream('stdout')
       inert.flushSummary()
     }).not.toThrow()
   })
@@ -576,7 +577,7 @@ describe('createAgentTapSafe', () => {
 
 describe('attachLaunchStreams assets tap wiring', () => {
   function fakeTap() {
-    return { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
+    return { ingest: vi.fn(), endStream: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
   }
 
   function harness(assetsTap = fakeTap(), agentTap = fakeTap()) {
@@ -632,6 +633,19 @@ describe('attachLaunchStreams assets tap wiring', () => {
       'stdout'
     )
     expect(h.agentTap.ingest).toHaveBeenCalledWith('[agent-event] agent_exited code=1\n', 'stderr')
+  })
+
+  it('ends each event-log tap stream only when that stream ends', () => {
+    const h = harness()
+    h.stdout.emit('end')
+    for (const tap of [h.assetsTap, h.agentTap]) {
+      expect(tap.endStream).toHaveBeenCalledTimes(1)
+      expect(tap.endStream).toHaveBeenCalledWith('stdout')
+    }
+    h.stderr.emit('end')
+    for (const tap of [h.assetsTap, h.agentTap]) {
+      expect(tap.endStream).toHaveBeenLastCalledWith('stderr')
+    }
   })
 
   it('leaves the hardware and execution taps receiving both streams unchanged', () => {
@@ -1562,6 +1576,9 @@ describe('core beta report placement', () => {
         'data',
         Buffer.from('[assets-event] scanner.stat_failed error_type=OSError site=discovery')
       )
+      // A real exit ends both pipes before `close`; that end is what completes the tails.
+      first.stdout.emit('end')
+      first.stderr.emit('end')
       first.emit('close', 1, null)
       return new Promise<void>(() => {})
     }
