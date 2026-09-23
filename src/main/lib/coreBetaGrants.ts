@@ -188,7 +188,7 @@ export interface CoreVersionState {
   semver: string | null
   /** Whether the install sits exactly on that release tag (`coreSemverExact`). */
   exact: boolean
-  /** Whether that release was established by ancestry (`coreSemverVerified`). */
+  /** Whether that release was established by ancestry (`coreGateVersion`). */
   verified: boolean
   /** Whether the record those three came from still describes the live checkout
    *  (`coreRecordCurrent`). The other three are assertions about the RECORDED commit and stay
@@ -249,8 +249,8 @@ function inCoreWindow(
 ): boolean {
   if (!semver.gte(version, minCoreVersion)) return false
   if (maxCoreVersion === undefined) return true
-  // An upper bound only means anything on an exact tag match. `coreSemver` resolves from
-  // `baseTag`, so a latest-channel install 40 commits past v0.3.99 still measures as 0.3.99
+  // An upper bound only means anything on an exact tag match. The gate version is a tag, so
+  // a latest-channel install 40 commits past v0.3.99 still measures as 0.3.99
   // and would slip under a `<0.4.0` ceiling it is well past. Under-reporting like that is
   // what `exact` guards; over-reporting is `verified`'s job, in `gatedCoreVersion`.
   return exact && semver.lt(version, maxCoreVersion)
@@ -266,12 +266,13 @@ function inCoreWindow(
 // Core's precedence between them is unspecified — and the tie is always broken the same way,
 // with the user's own argument winning and the grant yielding.
 //
-// Both bounds are measured against `baseTag`, so the whole payload is refused unless that tag was
-// established by ancestry. `resolveLocalVersion` also reaches for a tag on paths that do NOT
-// prove the install contains it — the merge-base fallback runs only because the tag is not an
-// ancestor — and such a label can satisfy a minimum the running code does not meet. Core's args
-// schema absorbs the common case, since an install without the feature does not know the flag,
-// but not a minimum raised to require a later FIX to a flag it already has.
+// Both bounds are measured against a tag established by ancestry (`coreGateVersion`), and the
+// whole payload is refused when there is none. `resolveLocalVersion` also reaches for a display
+// tag on paths that do NOT prove the install contains it — the merge-base fallback runs only
+// because the tag is not an ancestor — and such a label can satisfy a minimum the running code
+// does not meet. The gate measures the `git describe` tag that label displaced instead. Core's
+// args schema absorbs the common case, since an install without the feature does not know the
+// flag, but not a minimum raised to require a later FIX to a flag it already has.
 //
 // Every bound is also measured against a PERSISTED record that a `git pull` outdates without
 // touching, so the payload is refused outright when the live checkout disagrees with it. The args

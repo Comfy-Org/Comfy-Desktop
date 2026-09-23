@@ -1384,9 +1384,13 @@ export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): 
       // `formatComfyVersion` ignores `baseTagVerified`, so without the second term a record
       // written before that field existed would keep its fail-closed absence forever on an
       // install whose displayed version never changes. Re-resolving is the only thing that
-      // can establish it, and the beta-grant gate refuses an unverified base.
+      // can establish it, and the beta-grant gate refuses an unverified base. `ancestorTag` is
+      // the same case one field over: it is what the gate measures when the label is
+      // unverified, and a record written before it existed changes in no other field.
       const versionChanged =
-        resolvedStr !== storedStr || resolved.baseTagVerified !== cv.baseTagVerified
+        resolvedStr !== storedStr ||
+        resolved.baseTagVerified !== cv.baseTagVerified ||
+        resolved.ancestorTag !== cv.ancestorTag
 
       const existing = inst.updateInfoByChannel as
         | Record<string, Record<string, unknown>>
