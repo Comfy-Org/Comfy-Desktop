@@ -15,7 +15,11 @@ import type { TelemetryValue } from './telemetry'
 import { createEventLogTap } from './eventLogTap'
 import type { EventLogTap, EventLogTapOptions } from './eventLogTap'
 
-/** Same logfmt grammar as the assets tap, with single-segment event names. */
+/**
+ * Same logfmt grammar as the assets tap, with single-segment event names. The
+ * grammar and the vocabulary below are a CROSS-REPO CONTRACT with the core-side
+ * emitter: adding an event, field or reason is a reviewed change on both sides.
+ */
 export const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
 
 /**
@@ -38,7 +42,11 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'agent_error'
 ])
 
-/** Values `reason` may take. Anything else rejects the whole line. */
+/**
+ * Values `reason` may take. Like every enum field in these taps, a value outside
+ * the set rejects the whole line, uncounted: a newer core's new reason is
+ * invisible here until this set learns it.
+ */
 export const REASONS: ReadonlySet<string> = new Set([
   'timeout',
   'not_found',
