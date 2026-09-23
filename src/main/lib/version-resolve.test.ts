@@ -219,8 +219,9 @@ describe('resolveLocalVersion', () => {
       if (ref === 'v0.37.1~1') return 'v0.37.0'
       return undefined
     })
-    mockedCountCommitsAhead.mockImplementation(async (_repo, base, _commit) => {
-      if (base === 'v0.37.0') return 5
+    mockedCountCommitsAhead.mockImplementation(async (_repo, base, target) => {
+      if (base === 'v0.37.0' && target === 'v0.37.1') return 3
+      if (base === 'v0.37.0' && target === 'b0f4b7b2') return 5
       return undefined
     })
     mockedIsAncestorOf.mockImplementation(async (_repo, ancestor, descendant) => {

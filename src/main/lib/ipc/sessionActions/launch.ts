@@ -1033,6 +1033,9 @@ async function runLaunch(
           }
         }
 
+        // The gate's version, not the display label: the `[core-beta]` log line and the
+        // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
+        // an install whose label is unverified they name the lower ancestry-proven release.
         const gate = coreGateVersion(inst)
         const built = buildLaunchArgs({
           prefixArgs,
