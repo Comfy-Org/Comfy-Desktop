@@ -109,10 +109,14 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   })
 }
 
-/** The SECOND persistence reader, and a live path rather than a legacy one. `observe()` calls it
- *  whenever localStorage holds no record — which includes every boot on the released frontend,
- *  whose hierarchy is IndexedDB-first and which keeps the live user here until the auth store's
- *  later `setPersistence`. See `shared/firebaseAuthStorage.ts`. */
+/** The SECOND persistence reader, and a live path rather than a legacy one. `observe()` reaches it
+ *  when localStorage is READABLE AND EMPTY, or genuinely absent, and `indexedDB` itself is present —
+ *  not merely "when localStorage holds no record": an UNREADABLE localStorage abstains before this,
+ *  as does an unreadable or absent `indexedDB`.
+ *
+ *  The readable-and-empty case is every boot on the released frontend, whose hierarchy is
+ *  IndexedDB-first and which keeps the live user here until the auth store's later
+ *  `setPersistence`. See `shared/firebaseAuthStorage.ts`. */
 async function readFromIndexedDb(): Promise<ComfyDesktop2FirebaseAuthState> {
   try {
     const databases = await indexedDB.databases()

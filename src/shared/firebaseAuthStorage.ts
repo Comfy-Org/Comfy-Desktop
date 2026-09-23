@@ -129,6 +129,9 @@
  *  prefix, and never log or persist a whole key. */
 export const FIREBASE_AUTH_KEY_PREFIX = 'firebase:authUser:'
 
-/** The legacy IndexedDB persistence. Read ONLY when localStorage is unavailable — see the rule. */
+/** The other Firebase persistence — not a legacy one. It holds the live user through boot on the
+ *  released frontend, and is read whenever localStorage is readable and EMPTY as well as when the
+ *  mechanism is absent. "Read only when localStorage is unavailable" was this file's own earlier
+ *  wording and is withdrawn: see the rule above. */
 export const FIREBASE_IDB_NAME = 'firebaseLocalStorageDb'
 export const FIREBASE_IDB_STORE = 'firebaseLocalStorage'
