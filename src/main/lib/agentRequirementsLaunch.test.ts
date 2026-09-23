@@ -13,6 +13,26 @@ vi.mock('./pip', () => ({
   installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' }))
 }))
 
+/** Observes the force-stop path: process discovery and, on Windows, the kill. */
+const execCalls: { cmd: string; args: string[] }[] = []
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof ChildProcessModule>()
+  const execFile = vi.fn(
+    (
+      cmd: string,
+      args: string[],
+      _opts: unknown,
+      cb: (e: unknown, o: string, s: string) => void
+    ) => {
+      execCalls.push({ cmd, args })
+      const discovery = cmd === 'pgrep' || cmd === 'powershell.exe'
+      cb(null, discovery ? '4242\n' : '', '')
+      return {}
+    }
+  )
+  return { ...actual, execFile, default: { ...actual, execFile } }
+})
+
 import {
   agentInstallStatus,
   installAgentRequirements,
@@ -22,6 +42,7 @@ import type { AgentInstallStatus } from './agentRequirementsLaunch'
 import { installFilteredRequirementsDetailed } from './pip'
 import { getUvPath, getVenvPythonPath, getLegacyVenvUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
+import type * as ChildProcessModule from 'child_process'
 
 const mockInstall = vi.mocked(installFilteredRequirementsDetailed)
 
@@ -531,5 +552,70 @@ describe('installAgentRequirements status reporting', () => {
     await installAgentRequirements(plan, vi.fn(), undefined, (s) => seen.push(s))
 
     expect(seen).toEqual([])
+  })
+})
+
+describe('force-stopping an abandoned install', () => {
+  let installDir = ''
+  const planFor = (dir: string) => ({
+    reqPath: path.join(dir, 'ComfyUI', 'agent_requirements.txt'),
+    uvPath: path.join(dir, 'standalone-env', 'bin', 'uv'),
+    pythonPath: path.join(dir, 'ComfyUI', '.venv', 'bin', 'python3'),
+    installPath: dir
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    execCalls.length = 0
+    installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-force-stop-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(installDir, { recursive: true, force: true })
+  })
+
+  it('hard-stops a uv that ignored the signal and clears what it left behind', async () => {
+    // The grace period expiring means uv did not take the shared helper's
+    // SIGTERM. Continuing the launch while it keeps writing to the environment
+    // ComfyUI is booting from is the case this covers.
+    vi.useFakeTimers()
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
+    try {
+      const filtered = path.join(installDir, '.launch-agent-reqs.txt')
+      fs.writeFileSync(filtered, 'comfyui-agent==1.0.0\n')
+      mockInstall.mockImplementationOnce(() => new Promise<never>(() => {}))
+      const sendOutput = vi.fn()
+
+      const pending = installAgentRequirements(planFor(installDir), sendOutput)
+      await vi.advanceTimersByTimeAsync(120_000)
+      await vi.advanceTimersByTimeAsync(10_000)
+      await expect(pending).resolves.toBeUndefined()
+
+      // Scoped to THIS install's own file, so a concurrent launch's uv is safe.
+      const discovery = execCalls.find((c) => c.cmd === 'pgrep' || c.cmd === 'powershell.exe')
+      expect(discovery).toBeDefined()
+      expect(JSON.stringify(discovery!.args)).toContain('launch-agent-reqs')
+      expect(JSON.stringify(discovery!.args)).toContain(path.basename(installDir))
+
+      if (process.platform === 'win32') {
+        expect(execCalls.some((c) => c.cmd === 'taskkill' && c.args.includes('/F'))).toBe(true)
+      } else {
+        // Negated pid: the helper spawns detached, so the group is the tree.
+        expect(kill).toHaveBeenCalledWith(-4242, 'SIGKILL')
+      }
+      expect(fs.existsSync(filtered)).toBe(false)
+      expect(sendOutput.mock.calls.join('')).toContain('hard-stopped it')
+    } finally {
+      kill.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not go looking for a process when the install exits normally', async () => {
+    mockInstall.mockResolvedValueOnce({ code: 0, output: '' })
+
+    await installAgentRequirements(planFor(installDir), vi.fn())
+
+    expect(execCalls).toEqual([])
   })
 })
