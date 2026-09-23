@@ -23,13 +23,11 @@ const ANNOUNCEMENT_ID = 'comfy_router'
 const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_router'
 const PRIMARY_CTA_URL = `https://comfy.org/platform/router${UTM}`
 
-// Router hero. These objects are not uploaded yet: until the launch clip lands
-// at media.comfy.org/website/router/, both 404 and the modal shows the
-// .announce-media gradient fallback. Do not ship before the asset is live.
-// media.comfy.org caches for an hour, so bump the `_v1` suffix rather than
-// re-uploading a key. Poster paints immediately; the video muted-autoplays + loops.
-const HERO_VIDEO_URL = 'https://media.comfy.org/website/router/hero_v1.mp4'
-const HERO_POSTER_URL = 'https://media.comfy.org/website/router/hero-poster_v1.webp'
+// Router launch hero on media.comfy.org. media.comfy.org caches for an hour, so
+// bump the version in the filename rather than re-uploading a key. Poster paints
+// immediately; the video muted-autoplays + loops.
+const HERO_VIDEO_URL = 'https://media.comfy.org/website/router/router-animatic-v019.mp4'
+const HERO_POSTER_URL = 'https://media.comfy.org/website/router/router-animatic-v019-poster.webp'
 
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
