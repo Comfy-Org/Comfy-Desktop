@@ -9,6 +9,11 @@
 import { app, type WebContents } from 'electron'
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import {
+  FIREBASE_AUTH_KEY_PREFIX,
+  FIREBASE_IDB_NAME,
+  FIREBASE_IDB_STORE
+} from '../../shared/firebaseAuthStorage'
 import * as telemetry from './telemetry'
 import type { CloudUserTier } from '../../types/ipc'
 
@@ -103,28 +108,61 @@ async function setTier(rawTierName: string | null | undefined): Promise<void> {
  * Returns `{tier}` on success, `{error}` on recoverable failure, or `null` if no signed-in user.
  * Runs in the cloud page's isolated context so main never handles a raw Firebase token.
  */
-const FETCH_TIER_JS = `(async () => {
+export const FETCH_TIER_JS = `(async () => {
+  const PREFIX = ${JSON.stringify(FIREBASE_AUTH_KEY_PREFIX)};
+  const IDB_NAME = ${JSON.stringify(FIREBASE_IDB_NAME)};
+  const IDB_STORE = ${JSON.stringify(FIREBASE_IDB_STORE)};
+  const tokenOf = (rec) => {
+    if (!rec || typeof rec !== 'object') return null;
+    const mgr = rec.stsTokenManager;
+    if (!mgr || typeof mgr !== 'object') return null;
+    const t = mgr.accessToken;
+    return typeof t === 'string' && t.length > 0 ? t : null;
+  };
   try {
-    const dbReq = indexedDB.open('firebaseLocalStorageDb');
-    const db = await new Promise((res, rej) => {
-      dbReq.onsuccess = () => res(dbReq.result);
-      dbReq.onerror = () => rej(dbReq.error);
-    });
-    const tx = db.transaction('firebaseLocalStorage', 'readonly');
-    const store = tx.objectStore('firebaseLocalStorage');
-    const allReq = store.getAll();
-    const all = await new Promise((res, rej) => {
-      allReq.onsuccess = () => res(allReq.result);
-      allReq.onerror = () => rej(allReq.error);
-    });
-    const userEntry = (all || []).find(e =>
-      e && typeof e === 'object' &&
-      typeof e.fbase_key === 'string' &&
-      e.fbase_key.indexOf('firebase:authUser:') === 0
-    );
-    if (!userEntry || !userEntry.value || !userEntry.value.stsTokenManager) return null;
-    const token = userEntry.value.stsTokenManager.accessToken;
-    if (typeof token !== 'string' || token.length === 0) return null;
+    let token = null;
+    // localStorage FIRST, because that is where the session SETTLES. The frontend's SDK starts
+    // IndexedDB-first and the auth store then moves the record to localStorage, clearing the
+    // others - so reading IndexedDB alone finds a copy the SDK discarded, or nothing at all, and
+    // this reader reported "no signed-in user" for every signed-in cloud session. Same root cause
+    // as the auth-consensus readers; see shared/firebaseAuthStorage.ts.
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        void localStorage.length;
+        for (let i = 0; i < localStorage.length && !token; i++) {
+          const k = localStorage.key(i);
+          if (typeof k !== 'string' || k.indexOf(PREFIX) !== 0) continue;
+          const raw = localStorage.getItem(k);
+          if (typeof raw !== 'string') continue;
+          try { token = tokenOf(JSON.parse(raw)); } catch (_) {}
+        }
+      }
+    } catch (_) {
+      // Blocked or partitioned storage. Unlike the consensus readers this one has no destructive
+      // path - a wrong answer leaves the cached tier alone - so it simply tries the other store.
+    }
+
+    if (!token) {
+      const dbReq = indexedDB.open(IDB_NAME);
+      const db = await new Promise((res, rej) => {
+        dbReq.onsuccess = () => res(dbReq.result);
+        dbReq.onerror = () => rej(dbReq.error);
+      });
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const store = tx.objectStore(IDB_STORE);
+      const allReq = store.getAll();
+      const all = await new Promise((res, rej) => {
+        allReq.onsuccess = () => res(allReq.result);
+        allReq.onerror = () => rej(allReq.error);
+      });
+      const userEntry = (all || []).find(e =>
+        e && typeof e === 'object' &&
+        typeof e.fbase_key === 'string' &&
+        e.fbase_key.indexOf(PREFIX) === 0
+      );
+      token = tokenOf(userEntry && userEntry.value);
+    }
+    if (!token) return null;
     const resp = await fetch('https://api.comfy.org/customers/me', {
       headers: { 'Authorization': 'Bearer ' + token },
       credentials: 'omit',

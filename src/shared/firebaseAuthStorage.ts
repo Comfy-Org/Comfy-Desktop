@@ -127,6 +127,18 @@
 /** Key prefix for a persisted Firebase user, in localStorage and in IndexedDB alike. The full key
  *  is `firebase:authUser:<apiKey>:[DEFAULT]`, so it embeds the project's apiKey — match on this
  *  prefix, and never log or persist a whole key. */
+/**
+ * ## A THIRD reader, deliberately weaker: `userTier.ts`
+ *
+ * `FETCH_TIER_JS` needs the record's ACCESS TOKEN rather than a verdict about who is signed in, and
+ * it has NO destructive path — an anomaly leaves the cached tier alone, and a stale token simply
+ * fails `/customers/me`. So it reads localStorage first for the same reason as everyone else, and
+ * then falls back to IndexedDB WITHOUT the abstain-and-settle machinery above: there is no binding
+ * to revoke and no sign-out to assert, so the costs the rules protect against do not exist there.
+ *
+ * Stated here so it reads as a decision rather than as drift, and so nobody later "harmonises" it
+ * into abstaining and silently stops the tier ever resolving.
+ */
 export const FIREBASE_AUTH_KEY_PREFIX = 'firebase:authUser:'
 
 /** The legacy IndexedDB persistence. Read ONLY when localStorage is unavailable — see the rule. */
