@@ -237,7 +237,12 @@ export const FETCH_TIER_JS = `(async () => {
       const data = await resp.json().catch(() => null);
       // Malformed body from an ACCEPTED token: the server answered, so the credential was fine.
       if (!data || typeof data !== 'object') return { error: 'bad_json' };
-      return { tier: data.subscription_tier || 'FREE' };
+      // Pass the field THROUGH, defaulting nowhere. setTier already maps null/missing/unknown to
+      // 'free', so defaulting here was redundant - and it destroyed the only evidence of whether
+      // the API actually said anything. An account with no subscription_tier logged 'raw= FREE',
+      // indistinguishable from the API returning FREE, which made the log assert an observation it
+      // had not made.
+      return { tier: data.subscription_tier ?? null };
     }
     return { error: lastError || 'no_valid_token' };
   } catch (e) {
@@ -248,7 +253,8 @@ export const FETCH_TIER_JS = `(async () => {
 })()`
 
 interface FetchResult {
-  tier?: string
+  /** The API's `subscription_tier` verbatim: `null` when the field is absent, never defaulted here. */
+  tier?: string | null
   error?: string
 }
 
@@ -273,7 +279,12 @@ export async function refreshCloudUserTier(webContents: WebContents): Promise<vo
     }
     await setTier(result.tier ?? null)
 
-    console.log('[user-tier] refresh: raw=', result.tier, '→ cached=', cached)
+    console.log(
+      '[user-tier] refresh: raw=',
+      result.tier === null || result.tier === undefined ? '(absent)' : result.tier,
+      '→ cached=',
+      cached
+    )
   } catch (err) {
     console.log('[user-tier] executeJavaScript failed:', err)
   }

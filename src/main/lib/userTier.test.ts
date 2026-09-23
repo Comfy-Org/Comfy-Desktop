@@ -375,6 +375,38 @@ describe('FETCH_TIER_JS', () => {
     expect(result).toEqual({ error: 'http_401' })
   })
 
+  it('reports an ABSENT subscription_tier as absent, not as FREE', async () => {
+    // The real shape for at least one live account: /customers/me answers 200 with no
+    // `subscription_tier` field at all. Defaulting it to 'FREE' inside the page script made the
+    // log print `raw= FREE`, indistinguishable from the API actually saying FREE — so the log
+    // asserted an observation it had never made. `setTier` already maps null/missing to 'free',
+    // so the field is passed through verbatim and the defaulting happens in exactly one place.
+    const { result } = await run({
+      localStorage: [[PROD_KEY, JSON.stringify(record('tok-ls'))]],
+      fetchImpl: (() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ is_admin: false })
+        })) as unknown as typeof fetch
+    })
+
+    expect(result).toEqual({ tier: null })
+  })
+
+  it('passes a real subscription_tier through unchanged', async () => {
+    // The control for the above: a present field must not be flattened either.
+    const { result } = await run({
+      localStorage: [[PROD_KEY, JSON.stringify(record('tok-ls'))]],
+      fetchImpl: (() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ subscription_tier: 'FREE' })
+        })) as unknown as typeof fetch
+    })
+
+    expect(result).toEqual({ tier: 'FREE' })
+  })
+
   it('returns null when neither store holds a usable token', async () => {
     const { result } = await run({ localStorage: null, entries: [] })
 
