@@ -129,6 +129,7 @@ vi.mock('../../hardwareTap', async (importOriginal) => {
 
 import {
   attachLaunchStreams,
+  createAgentTapSafe,
   createAssetsTapSafe,
   buildLaunchArgs,
   desktopFeatureFlags,
@@ -143,6 +144,7 @@ import {
   _resolvePortConflictPolicy
 } from './launch'
 import * as assetsTapModule from '../../assetsTap'
+import * as agentTapModule from '../../agentTap'
 import {
   BETA_NOTICE_ANNOUNCED_ARGS_KEY,
   _resetForTest as _resetBetaNotice,
@@ -533,12 +535,51 @@ describe('createAssetsTapSafe', () => {
   })
 })
 
+describe('createAgentTapSafe', () => {
+  const BASE = {
+    installationId: 'agent-tap-base',
+    variant: 'nvidia',
+    release: '0.3.68',
+    coreBetaFlags: []
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('forwards the base context to the agent tap', () => {
+    const create = vi.spyOn(agentTapModule, 'createAgentTap')
+    createAgentTapSafe(BASE)
+    expect(create).toHaveBeenCalledWith(BASE)
+  })
+
+  it('substitutes an inert tap when construction throws, letting no exception escape', () => {
+    vi.spyOn(agentTapModule, 'createAgentTap').mockImplementation(() => {
+      throw new Error('agent tap construction exploded')
+    })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    let tap: ReturnType<typeof createAgentTapSafe> | null = null
+    expect(() => {
+      tap = createAgentTapSafe(BASE)
+    }).not.toThrow()
+    expect(consoleError).toHaveBeenCalled()
+
+    const inert = tap as unknown as ReturnType<typeof createAgentTapSafe>
+    expect(() => {
+      inert.beginBoot()
+      inert.ingest('[agent-event] agent_started duration_ms=12\n', 'stdout')
+      inert.flushSummary()
+    }).not.toThrow()
+  })
+})
+
 describe('attachLaunchStreams assets tap wiring', () => {
   function fakeTap() {
     return { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
   }
 
-  function harness(assetsTap = fakeTap()) {
+  function harness(assetsTap = fakeTap(), agentTap = fakeTap()) {
     const stdout = new EventEmitter()
     const stderr = new EventEmitter()
     const proc = { stdout, stderr } as unknown as ChildProcess
@@ -555,9 +596,10 @@ describe('attachLaunchStreams assets tap wiring', () => {
       execTap as unknown as ReturnType<typeof createExecutionTap>,
       hwTap as unknown as ReturnType<typeof createHardwareTap>,
       assetsTap,
+      agentTap,
       tracker
     )
-    return { stdout, stderr, execTap, hwTap, assetsTap, getStderr }
+    return { stdout, stderr, execTap, hwTap, assetsTap, agentTap, getStderr }
   }
 
   it('feeds stdout chunks to the assets tap tagged as stdout', () => {
@@ -579,6 +621,17 @@ describe('attachLaunchStreams assets tap wiring', () => {
       '[assets-event] scanner.stat_failed error_type=OSError site=discovery\n',
       'stderr'
     )
+  })
+
+  it('feeds both streams to the agent tap with their source tags', () => {
+    const h = harness()
+    h.stdout.emit('data', Buffer.from('[agent-event] agent_started duration_ms=12\n'))
+    h.stderr.emit('data', Buffer.from('[agent-event] agent_exited code=1\n'))
+    expect(h.agentTap.ingest).toHaveBeenCalledWith(
+      '[agent-event] agent_started duration_ms=12\n',
+      'stdout'
+    )
+    expect(h.agentTap.ingest).toHaveBeenCalledWith('[agent-event] agent_exited code=1\n', 'stderr')
   })
 
   it('leaves the hardware and execution taps receiving both streams unchanged', () => {
