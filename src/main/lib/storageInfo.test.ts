@@ -171,13 +171,18 @@ describe('classifyPaths - Windows', () => {
     expect(map.get('\\\\dav.example\\DavWWWRoot\\models')!.fsType).toBe('webdav')
   })
 
-  it.each(['\\\\.\\PHYSICALDRIVE0\\x', '\\\\tsclient\\C\\models', '\\\\VBoxSvr\\models\\x'])(
-    'does not call %s an SMB share',
-    async (p) => {
-      const map = await classifyPaths([p])
-      expect(map.get(p)!.fsType).toBeNull()
-    }
-  )
+  it.each([
+    '\\\\.\\PHYSICALDRIVE0\\x',
+    '\\\\tsclient\\C\\models',
+    '\\\\VBoxSvr\\models\\x',
+    '\\\\wsl$\\Ubuntu\\models',
+    '\\\\wsl.localhost\\Ubuntu\\models',
+    '\\\\vmware-host\\Shared Folders\\models',
+    '\\\\?\\UNC\\server'
+  ])('does not call %s an SMB share', async (p) => {
+    const map = await classifyPaths([p])
+    expect(map.get(p)!.fsType).toBeNull()
+  })
 
   it('classifies a USB SSD as other_ssd and external', async () => {
     mockDiskLayout = [

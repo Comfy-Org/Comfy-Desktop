@@ -136,10 +136,10 @@ const REASONS: ReadonlySet<string> = new Set([
 /**
  * Core validates `errno_name` against its own interpreter's
  * `errno.errorcode`, which differs by platform (Windows adds Winsock names:
- * `WSAECONNRESET`, but also `WSASYSNOTREADY` and `WSABASEERR`), so this checks
- * the shape rather than one platform's list.
+ * `WSAECONNRESET`, but also `WSASYSNOTREADY` and `WSAHOST_NOT_FOUND`), so this
+ * checks the shape rather than one platform's list.
  */
-const ERRNO_NAME = /^(?:E[A-Z0-9]{1,23}|WSA[A-Z0-9]{1,24}|none)$/
+const ERRNO_NAME = /^(?:E[A-Z0-9]{1,23}|WSA[A-Z0-9_]{1,24}|none)$/
 /** Sentinel core sends when an exception carries no Windows error code. */
 const NO_WINERROR = -1
 const MAX_WINERROR = 0xffff
@@ -166,12 +166,17 @@ const INTEGER_FIELDS: ReadonlySet<string> = new Set([
 /** Cheap first-pass filter: core's field names are lowercase words only. */
 const FIELD_NAME = /^[a-z_]+$/
 
+/** C0/C1 controls, DEL and the Unicode line/paragraph separators. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/
+
 function isSafeString(value: unknown): value is string {
   return (
     typeof value === 'string' &&
     value.length > 0 &&
     value.length <= MAX_STRING_LENGTH &&
-    !FORBIDDEN_STRING_CHARS.some((char) => value.includes(char))
+    !FORBIDDEN_STRING_CHARS.some((char) => value.includes(char)) &&
+    !CONTROL_CHARS.test(value)
   )
 }
 

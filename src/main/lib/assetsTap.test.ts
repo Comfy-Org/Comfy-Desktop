@@ -510,6 +510,20 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
     })
 
+    it('rejects a string value carrying a control or line-separator character', () => {
+      const tap = createAssetsTap(baseOpts)
+      for (const value of [
+        'Value\tError',
+        'Value\u0000Error',
+        'Value\u2028Error',
+        'Value\u0085Error'
+      ]) {
+        tap.ingest(taggedLine('seeder.scan_failed', { error_type: value }), 'stdout')
+      }
+      tap.ingest(taggedLine('scanner.stat_failed', { errno_name: 'E\u2029IO' }), 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
     it('rejects an oversized string value', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_failed', { error_type: 'E'.repeat(65) }), 'stdout')
@@ -601,6 +615,7 @@ describe('assetsTap', () => {
     it.each([
       ['errno_name', 'WSAECONNRESET'],
       ['errno_name', 'WSASYSNOTREADY'],
+      ['errno_name', 'WSAHOST_NOT_FOUND'],
       ['errno_name', 'none'],
       ['winerror', 0],
       ['winerror', 65535],

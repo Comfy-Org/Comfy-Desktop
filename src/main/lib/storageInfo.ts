@@ -413,16 +413,25 @@ const UNRESOLVED: DriveInfo = {
 /**
  * Protocol behind a UNC path, inferred from its shape since no volume row
  * describes it. The WebDAV redirector's UNC forms carry `@` in the host
- * (`\\host@SSL@443\...`) or use the `DavWWWRoot` share. RDP drive redirection
- * and hypervisor shared folders use fixed host names and are not SMB, so they
- * stay unknown, as do `\\.\` and `\\?\` device paths. Any other share is
- * assumed SMB, by far the common case, though the shape alone cannot rule out
- * another network provider.
+ * (`\\host@SSL@443\...`) or use the `DavWWWRoot` share. WSL, RDP drive
+ * redirection and hypervisor shared folders use fixed host names and are not
+ * SMB, so they stay unknown, as do `\\.\` device paths and a path with no host
+ * or share. Any other share is assumed SMB, by far the common case, though the
+ * shape alone cannot rule out another network provider.
  */
-const NON_SMB_UNC_HOSTS: ReadonlySet<string> = new Set(['.', '?', 'tsclient', 'vboxsvr', 'vboxsrv'])
+const NON_SMB_UNC_HOSTS: ReadonlySet<string> = new Set([
+  '.',
+  'wsl$',
+  'wsl.localhost',
+  'tsclient',
+  'vboxsvr',
+  'vboxsrv',
+  'vmware-host',
+  'mac'
+])
 
 function uncFsType(host: string, share: string): string | null {
-  if (NON_SMB_UNC_HOSTS.has(host.toLowerCase())) return null
+  if (host === '' || share === '' || NON_SMB_UNC_HOSTS.has(host.toLowerCase())) return null
   return host.includes('@') || share.toLowerCase() === 'davwwwroot' ? 'webdav' : 'smb'
 }
 
