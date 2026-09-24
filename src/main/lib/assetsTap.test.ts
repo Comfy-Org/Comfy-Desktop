@@ -35,7 +35,11 @@ const CORE_EVENTS = [
   'scanner.fast_scan_failed',
   'scanner.temp_sync_failed',
   'scanner.mark_missing_failed',
-  'scanner.stat_failed'
+  'scanner.stat_failed',
+  'scanner.invalid_mtime',
+  'scanner.watch_stat_failed',
+  'scanner.watch_spec_failed',
+  'scanner.watch_seed_failed'
 ]
 
 const COUNTER_FIELDS = [
@@ -270,6 +274,26 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ error_type: 'PermissionError', site: 'discovery' })
     })
 
+    it('accepts scanner.invalid_mtime carrying a batch count', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('scanner.invalid_mtime', { count: 5 }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe('comfy.desktop.comfyui.assets.scanner.invalid_mtime')
+      expect(captured[0]!.ctx).toMatchObject({ count: 5 })
+    })
+
+    it.each([
+      'scanner.watch_stat_failed',
+      'scanner.watch_spec_failed',
+      'scanner.watch_seed_failed'
+    ])('accepts %s carrying error_type', (event) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine(event, { error_type: 'PermissionError' }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe(`comfy.desktop.comfyui.assets.${event}`)
+      expect(captured[0]!.ctx).toMatchObject({ error_type: 'PermissionError' })
+    })
+
     it('accepts an event carrying no fields at all', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] scanner.hash_discarded_modified\n', 'stdout')
@@ -436,6 +460,15 @@ describe('assetsTap', () => {
       ]) {
         tap.ingest(taggedLine('seeder.scan_failed', { error_type: value }), 'stdout')
       }
+      expect(captured).toHaveLength(0)
+    })
+
+    // The line buffer splits on LF and CRLF, so only a lone CR can reach a
+    // value through ingest; LF is rejected too, for parity with core.
+    it('rejects a value carrying a lone carriage return', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_failed error_type=Value\rError\n', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_failed error_type=\rValueError\n', 'stdout')
       expect(captured).toHaveLength(0)
     })
 

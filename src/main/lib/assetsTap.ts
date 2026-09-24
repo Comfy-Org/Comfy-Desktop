@@ -60,7 +60,11 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'scanner.fast_scan_failed',
   'scanner.temp_sync_failed',
   'scanner.mark_missing_failed',
-  'scanner.stat_failed'
+  'scanner.stat_failed',
+  'scanner.invalid_mtime',
+  'scanner.watch_stat_failed',
+  'scanner.watch_spec_failed',
+  'scanner.watch_seed_failed'
 ])
 
 /**
@@ -70,7 +74,7 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
 const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
 
 const MAX_STRING_LENGTH = 64
-const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"']
+const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"', '\n', '\r']
 const ROOTS: ReadonlySet<string> = new Set(['models', 'input', 'output', 'user', 'temp'])
 const PHASES: ReadonlySet<string> = new Set(['fast', 'enrich', 'full'])
 const STAGES: ReadonlySet<string> = new Set([
