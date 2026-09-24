@@ -12,6 +12,7 @@ const store = vi.hoisted(() => ({ dir: '' }))
 vi.mock('./paths', () => ({ configDir: () => store.dir }))
 
 import { _backgroundFetchesForTest, resolveCoreCommitState } from './coreBetaAncestry'
+import { commitPresence } from './git'
 import { selectCoreBetaGrantArgs } from './coreBetaGrants'
 import type { CoreBetaGrant, CoreVersionState } from './coreBetaGrants'
 
@@ -278,5 +279,15 @@ describe('a failed fetch on a real shallow clone', () => {
     expect(lines.filter((l) => l.includes('from origin: failed'))).toHaveLength(1)
     expect(lines.some((l) => l.includes('skipped, failed at'))).toBe(true)
     fs.rmSync(shallowRoot, { recursive: true, force: true })
+  })
+})
+
+describe('commitPresence against real git', () => {
+  it('tells a present commit, a missing one, and a failed lookup apart', async () => {
+    expect(await commitPresence(clone, sha.head!)).toBe('present')
+    expect(await commitPresence(clone, '0123456789abcdef0123456789abcdef01234567')).toBe('absent')
+    expect(await commitPresence(os.tmpdir(), sha.head!), 'not a repository is not "absent"').toBe(
+      'unknown'
+    )
   })
 })

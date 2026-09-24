@@ -8,13 +8,17 @@ const git = vi.hoisted(() => ({
   fetchCommitSha: vi.fn<(repo: string, sha: string) => Promise<boolean>>(),
   revParseRef: vi.fn<(repo: string, ref: string) => Promise<string | undefined>>(),
   gitDir: '',
-  configDir: ''
+  configDir: '',
+  presence: undefined as undefined | 'present' | 'absent' | 'unknown'
 }))
 vi.mock('./git', () => ({
   findMergeBase: (...args: [string, string, string]) => git.findMergeBase(...args),
   fetchCommitSha: (...args: [string, string]) => git.fetchCommitSha(...args),
   resolveGitDir: () => git.gitDir,
-  revParseRef: (...args: [string, string]) => git.revParseRef(...args)
+  revParseRef: (...args: [string, string]) => git.revParseRef(...args),
+  // A definite miss unless the rev-parse mock resolves it; `presence` overrides per test.
+  commitPresence: async (repo: string, sha: string) =>
+    git.presence ?? ((await git.revParseRef(repo, `${sha}^{commit}`)) ? 'present' : 'absent')
 }))
 vi.mock('./paths', () => ({ configDir: () => git.configDir }))
 vi.mock('./telemetry', () => ({ getOpsFlagResult: vi.fn() }))
@@ -34,6 +38,7 @@ beforeEach(() => {
   git.findMergeBase.mockReset()
   git.fetchCommitSha.mockReset()
   // Default: HEAD resolves (the repository is readable) and no other SHA exists locally.
+  git.presence = undefined
   git.revParseRef.mockReset()
   git.revParseRef.mockImplementation(async (_repo, ref) =>
     ref === `${HEAD}^{commit}` ? HEAD : undefined
@@ -390,6 +395,73 @@ describe('resolveCoreCommitState', () => {
 
       expect(state.ancestry.get(LOWER), 'still a full clone when LOWER was checked').toBe(false)
       expect(state.ancestry.has(UPPER), 'shallow by the time UPPER was checked').toBe(false)
+    })
+  })
+
+  describe('review follow-ups', () => {
+    beforeEach(() => {
+      git.findMergeBase.mockResolvedValue(undefined)
+    })
+
+    it('does not read a failed presence lookup as absence on a full clone', async () => {
+      git.presence = 'unknown'
+
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+      expect(state.ancestry.has(UPPER), 'unknown must not become "not contained"').toBe(false)
+    })
+
+    it('returns when the budget runs out even if a git call never finishes', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      git.findMergeBase.mockImplementation(() => new Promise(() => {}))
+
+      const pending = resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER])
+      await vi.advanceTimersByTimeAsync(10_000)
+      const state = await pending
+
+      expect(state.ancestry.size).toBe(0)
+      vi.useRealTimers()
+    })
+
+    it('returns as soon as the launch is aborted, mid git call', async () => {
+      const abort = new AbortController()
+      git.findMergeBase.mockImplementation(() => {
+        abort.abort()
+        return new Promise(() => {})
+      })
+
+      const state = await resolveCoreCommitState(
+        REPO,
+        { kind: 'head', commit: HEAD },
+        [LOWER],
+        abort.signal
+      )
+
+      expect(state.ancestry.size).toBe(0)
+    })
+
+    it('spends the fetch budget only on fetches that start', async () => {
+      makeShallow()
+      const recent = Date.now()
+      fs.writeFileSync(
+        path.join(git.configDir, 'core-beta-fetch-failures.json'),
+        JSON.stringify({
+          [REPO]: { head: HEAD, failed: { [shaOf(1)]: recent, [shaOf(2)]: recent } }
+        })
+      )
+      git.fetchCommitSha.mockResolvedValue(true)
+
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [
+        shaOf(1),
+        shaOf(2),
+        shaOf(3)
+      ])
+      await _backgroundFetchesForTest()
+
+      expect(
+        git.fetchCommitSha,
+        'the two skips must not use up the budget'
+      ).toHaveBeenCalledExactlyOnceWith(REPO, shaOf(3))
     })
   })
 })

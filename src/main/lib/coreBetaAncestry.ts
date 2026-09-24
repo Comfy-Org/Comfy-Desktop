@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { fetchCommitSha, findMergeBase, resolveGitDir, revParseRef } from './git'
+import { commitPresence, fetchCommitSha, findMergeBase, resolveGitDir, revParseRef } from './git'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
 import { NO_CORE_COMMITS } from './coreBetaGrants'
@@ -57,14 +57,18 @@ export function _backgroundFetchesForTest(): Promise<unknown> {
 }
 
 /** Fetch `sha` in the background for the NEXT launch to use: this one never waits on the network. */
-function scheduleFetch(repoPath: string, sha: string, head: string): void {
+function scheduleFetch(repoPath: string, sha: string, head: string): boolean {
   const label = `[core-beta] fetch ${sha.slice(0, 12)}`
   const key = `${repoPath}\0${sha}`
-  if (inFlight.has(key)) return console.log(`${label}: already in progress`)
+  if (inFlight.has(key)) {
+    console.log(`${label}: already in progress`)
+    return false
+  }
   const entry = readFailures()[repoPath]
   const failedAt = entry?.head === head ? entry.failed[sha] : undefined
   if (typeof failedAt === 'number' && Date.now() - failedAt < FAILED_FETCH_TTL_MS) {
-    return console.log(`${label}: skipped, failed at ${new Date(failedAt).toISOString()}`)
+    console.log(`${label}: skipped, failed at ${new Date(failedAt).toISOString()}`)
+    return false
   }
   inFlight.add(key)
   console.log(`${label}: started in the background; unresolved for this launch`)
@@ -76,6 +80,7 @@ function scheduleFetch(repoPath: string, sha: string, head: string): void {
     inFlight.delete(key)
   }
   fetchChains.set(repoPath, (fetchChains.get(repoPath) ?? Promise.resolve()).then(run))
+  return true
 }
 
 type Relation = boolean | null
@@ -86,20 +91,24 @@ async function commitAncestry(
   sha: string,
   head: string,
   complete: boolean,
-  mayFetch: () => boolean
+  budget: { fetches: number; stopped: boolean }
 ): Promise<Relation> {
   const base = await findMergeBase(repoPath, sha, head)
   if (base !== undefined) return base.toLowerCase() === sha
   // Absence counts only once the repository has been shown readable, by resolving HEAD itself.
   if ((await revParseRef(repoPath, `${head}^{commit}`))?.toLowerCase() !== head) return null
-  if ((await revParseRef(repoPath, `${sha}^{commit}`)) !== undefined) return null
+  if ((await commitPresence(repoPath, sha)) !== 'absent') return null
   // A complete clone holds every ancestor of HEAD, so a commit it lacks is not one of them.
   if (complete) {
     console.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
     return false
   }
-  if (mayFetch()) scheduleFetch(repoPath, sha, head)
-  else console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
+  if (budget.stopped) return null
+  if (budget.fetches >= MAX_FETCHES) {
+    console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
+  } else if (scheduleFetch(repoPath, sha, head)) {
+    budget.fetches += 1
+  }
   return null
 }
 
@@ -164,41 +173,64 @@ export async function resolveCoreCommitState(
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
   const ancestry = new Map<string, boolean>()
   const deadline = Date.now() + RESOLVE_BUDGET_MS
-  let fetches = 0
-  for (const [index, raw] of shas.entries()) {
-    if (signal?.aborted || Date.now() > deadline) break
-    // Re-validated here, not only at parse time: the SHA reaches `git fetch` as an argument.
-    const sha = raw.toLowerCase()
-    if (!FULL_SHA_RE.test(sha)) continue
-    // Re-read per SHA: a background fetch from an earlier launch can rewrite the boundaries.
-    const grafts = readShallowGrafts(repoPath)
-    let related: Relation = null
-    if (index < MAX_RESOLVED_SHAS) {
-      try {
-        related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, () => {
-          fetches += 1
-          return fetches <= MAX_FETCHES
-        })
-      } catch (err) {
-        console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+  const budget = { fetches: 0, stopped: false }
+  const work = (async () => {
+    for (const [index, raw] of shas.entries()) {
+      if (budget.stopped || signal?.aborted || Date.now() > deadline) return
+      // Re-validated here, not only at parse time: the SHA reaches `git fetch` as an argument.
+      const sha = raw.toLowerCase()
+      if (!FULL_SHA_RE.test(sha)) continue
+      // Re-read per SHA: a background fetch from an earlier launch can rewrite the boundaries.
+      const grafts = readShallowGrafts(repoPath)
+      let related: Relation = null
+      if (index < MAX_RESOLVED_SHAS) {
+        try {
+          related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
+        } catch (err) {
+          console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+        }
+        if (related === false && grafts?.length !== 0) {
+          const provable =
+            grafts !== null &&
+            (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
+          if (!provable) related = null
+        }
       }
-      if (related === false && grafts?.length !== 0) {
-        const provable =
-          grafts !== null &&
-          (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
-        if (!provable) related = null
-      }
+      // A launch that has moved on takes no late answers: the map it was handed must not change.
+      if (budget.stopped) return
+      console.log(
+        `[core-beta] ancestry ${sha.slice(0, 12)}: ${
+          related === null
+            ? 'unresolved (not provable on this checkout, so entries that need it do not match)'
+            : related
+              ? 'contained'
+              : 'not contained'
+        }`
+      )
+      if (related !== null) ancestry.set(sha, related)
     }
-    console.log(
-      `[core-beta] ancestry ${sha.slice(0, 12)}: ${
-        related === null
-          ? 'unresolved (not provable on this checkout, so entries that need it do not match)'
-          : related
-            ? 'contained'
-            : 'not contained'
-      }`
-    )
-    if (related !== null) ancestry.set(sha, related)
+  })()
+
+  // The budget and a cancelled launch interrupt a git call in progress, not only the gap between
+  // two: each call carries its own timeout, which alone could hold the launch past the budget.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: (() => void) | undefined
+  const interrupted = new Promise<'interrupted'>((resolve) => {
+    timer = setTimeout(() => resolve('interrupted'), Math.max(0, deadline - Date.now()))
+    onAbort = () => resolve('interrupted')
+    signal?.addEventListener('abort', onAbort, { once: true })
+    // The work above starts synchronously, so it may already have aborted before this listener.
+    if (signal?.aborted) onAbort()
+  })
+  try {
+    const outcome = await Promise.race([work.then(() => 'done' as const), interrupted])
+    if (outcome === 'interrupted') {
+      console.log('[core-beta] ancestry: stopped early; SHAs not reached stay unresolved')
+    }
+  } finally {
+    budget.stopped = true
+    clearTimeout(timer)
+    if (onAbort) signal?.removeEventListener('abort', onAbort)
   }
   return { head, ancestry }
 }

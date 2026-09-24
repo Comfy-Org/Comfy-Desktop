@@ -985,6 +985,38 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
   })
 }
 
+/** Exit code `git_operations.py has-commit` uses for a definite miss. */
+const HAS_COMMIT_ABSENT = 3
+
+/**
+ * Whether `sha` names a commit in the local object store. `'absent'` only on a definite miss;
+ * `'unknown'` when the lookup itself failed (timeout, spawn error, unreadable repo), which
+ * `revParseRef` would fold into the same `undefined` as a miss.
+ */
+export function commitPresence(
+  repoPath: string,
+  sha: string
+): Promise<'present' | 'absent' | 'unknown'> {
+  if (isPygit2Configured()) {
+    return runPygit2(['has-commit', repoPath, sha]).then(({ exitCode }) =>
+      exitCode === 0 ? 'present' : exitCode === HAS_COMMIT_ABSENT ? 'absent' : 'unknown'
+    )
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['rev-parse', '--verify', '--quiet', '--end-of-options', `${sha}^{commit}`],
+      { cwd: repoPath, windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      (error) => {
+        if (!error) return resolve('present')
+        // `--verify --quiet` exits 1 for "not a valid object name" and 128 for real failures.
+        const miss = error.code === 1 && !error.killed && error.signal == null
+        resolve(miss ? 'absent' : 'unknown')
+      }
+    )
+  })
+}
+
 /**
  * Fetch all tags from the remote, unshallowing if needed so that
  * cherry-pick-aware version resolution has the full commit graph.
