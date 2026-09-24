@@ -14,8 +14,10 @@
  * process's stdout can emit a tagged line, so the tap carries its own closed
  * contract: an event allowlist, a field-name allowlist, per-field type and
  * value checks, and rejection of any key colliding with the trusted base
- * context. Ordinary unknown fields are omitted for version skew. Invalid
- * known values and malformed or spoofing keys drop the whole line silently:
+ * context. Ordinary unknown fields are omitted for version skew, as is a
+ * `reason` or `site` value outside its enum that still has an enum value's
+ * shape. Other invalid known values and malformed or spoofing keys drop the
+ * whole line silently:
  * reporting the rejection would put the untrusted content back into a signal
  * we forward.
  *
@@ -60,7 +62,15 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'scanner.fast_scan_failed',
   'scanner.temp_sync_failed',
   'scanner.mark_missing_failed',
-  'scanner.stat_failed'
+  'scanner.stat_failed',
+  'scanner.invalid_mtime',
+  'scanner.watch_stat_failed',
+  'scanner.watch_spec_failed',
+  'scanner.watch_seed_failed',
+  'scanner.failure_bucket',
+  'scanner.root_unreachable',
+  'scanner.walk_failed',
+  'scanner.metadata_failed'
 ])
 
 /**
@@ -68,9 +78,11 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
  * `ALLOWED_EVENTS` so a crafted log line cannot forge it.
  */
 const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
+/** Same contract as above, for `reason` / `site` values the build doesn't know. */
+const UNKNOWN_ENUM_VALUES_OMITTED = 'unknown_enum_values_omitted'
 
 const MAX_STRING_LENGTH = 64
-const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"']
+const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"', '\n', '\r']
 const ROOTS: ReadonlySet<string> = new Set(['models', 'input', 'output', 'user', 'temp'])
 const PHASES: ReadonlySet<string> = new Set(['fast', 'enrich', 'full'])
 const STAGES: ReadonlySet<string> = new Set([
@@ -80,7 +92,81 @@ const STAGES: ReadonlySet<string> = new Set([
   'enrich',
   'finalize'
 ])
-const STAT_SITES: ReadonlySet<string> = new Set(['discovery', 'enrich'])
+const SITES: ReadonlySet<string> = new Set([
+  'discovery',
+  'enrich',
+  'reference',
+  'seed_observation',
+  'walk_root',
+  'walk_dir',
+  'hash',
+  'metadata',
+  'batch_insert',
+  'watch_stat',
+  'watch_spec',
+  'watch_seed'
+])
+/** Mirror of ComfyUI `app/assets/failures.py` `REASONS`. */
+const REASONS: ReadonlySet<string> = new Set([
+  'permission_denied',
+  'vanished',
+  'locked',
+  'cloud_placeholder',
+  'network_unavailable',
+  'device_unavailable',
+  'io_error',
+  'encoding',
+  'name_too_long',
+  'path_loop',
+  'too_large',
+  'no_space',
+  'read_only',
+  'fd_exhausted',
+  'oom',
+  'timeout',
+  'corrupt',
+  'unsupported_format',
+  'db_busy',
+  'db_locked',
+  'db_corrupt',
+  'db_full',
+  'db_io',
+  'db_readonly',
+  'db_cantopen',
+  'db_constraint',
+  'dependency_missing',
+  'other'
+])
+/**
+ * Enums a newer core is expected to grow. A well-shaped value this build does
+ * not know omits just that field, so a new failure reason cannot silently drop
+ * the failure events (and their Datadog alerting copies) that carry it.
+ */
+const EXTENSIBLE_ENUMS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['reason', REASONS],
+  ['site', SITES]
+])
+const ENUM_VALUE = /^[a-z][a-z0-9_]*$/
+/**
+ * Core validates `errno_name` against its own interpreter's
+ * `errno.errorcode`, which differs by platform (Windows adds Winsock names:
+ * `WSAECONNRESET`, but also `WSASYSNOTREADY` and `WSAHOST_NOT_FOUND`), so this
+ * checks the shape rather than one platform's list.
+ */
+// The underscore is deliberately Winsock-only: no POSIX E-name carries one.
+const ERRNO_NAME = /^(?:E[A-Z0-9]{1,23}|WSA[A-Z0-9_]{1,24}|none)$/
+/** Sentinel core sends when an exception carries no Windows error code. */
+const NO_WINERROR = -1
+const MAX_WINERROR = 0xffff
+const EXC_FP = /^[0-9a-f]{12}$/
+/** Dotted identifier: a builtin, `module.qualname`, `ext` or `none`. */
+const DOTTED_NAME = /^[A-Za-z_][A-Za-z0-9_.]{0,63}$/
+/**
+ * Fields whose value is a string even when every character is a digit: an
+ * `exc_fp` like `012345678901` must not be coerced to a number and then
+ * rejected for its type.
+ */
+const DIGIT_STRING_FIELDS: ReadonlySet<string> = new Set(['exc_fp'])
 const INTEGER_FIELDS: ReadonlySet<string> = new Set([
   'elapsed_ms',
   'created',
@@ -95,12 +181,17 @@ const INTEGER_FIELDS: ReadonlySet<string> = new Set([
 /** Cheap first-pass filter: core's field names are lowercase words only. */
 const FIELD_NAME = /^[a-z_]+$/
 
+/** C0/C1 controls, DEL and the Unicode line/paragraph separators. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/
+
 function isSafeString(value: unknown): value is string {
   return (
     typeof value === 'string' &&
     value.length > 0 &&
     value.length <= MAX_STRING_LENGTH &&
-    !FORBIDDEN_STRING_CHARS.some((char) => value.includes(char))
+    !FORBIDDEN_STRING_CHARS.some((char) => value.includes(char)) &&
+    !CONTROL_CHARS.test(value)
   )
 }
 
@@ -128,7 +219,14 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'permission_denied',
   'count',
   'error_type',
-  'hashing_enabled'
+  'hashing_enabled',
+  'reason',
+  'errno_name',
+  'winerror',
+  'exc_fp',
+  'exc_class',
+  'exc_site',
+  'exc_line'
 ])
 
 /**
@@ -140,25 +238,41 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
 function isAllowedFieldValue(key: string, value: unknown): value is TelemetryValue {
   if (INTEGER_FIELDS.has(key)) return typeof value === 'number' && Number.isSafeInteger(value)
   if (key === 'hashing_enabled') return typeof value === 'boolean'
-  if (key === 'error_type') return isSafeString(value)
-  if (typeof value !== 'string') return false
+  if (key === 'winerror') {
+    return (
+      typeof value === 'number' &&
+      Number.isInteger(value) &&
+      (value === NO_WINERROR || (value >= 0 && value <= MAX_WINERROR))
+    )
+  }
+  if (key === 'exc_line')
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+  if (!isSafeString(value)) return false
+  if (key === 'error_type') return true
   if (key === 'root') return ROOTS.has(value)
   if (key === 'phase') return PHASES.has(value)
   if (key === 'stage') return STAGES.has(value)
-  if (key === 'site') return STAT_SITES.has(value)
+  if (key === 'site') return SITES.has(value)
+  if (key === 'reason') return REASONS.has(value)
+  if (key === 'errno_name') return ERRNO_NAME.test(value)
+  if (key === 'exc_fp') return EXC_FP.test(value)
+  if (key === 'exc_class' || key === 'exc_site') return DOTTED_NAME.test(value)
   return false
 }
 
 /**
  * Parse the logfmt tail into forwardable fields, omitting ordinary unknown
- * fields. Invalid known values and malformed, duplicate or spoofing keys
- * reject the whole line.
+ * fields and unknown-but-well-shaped extensible enum values. Other invalid
+ * known values and malformed, duplicate or spoofing keys reject the whole line.
  */
 function parseFields(
   tail: string,
   baseKeys: ReadonlySet<string>
-): Record<string, TelemetryValue> | null {
+): { fields: Record<string, TelemetryValue>; omittedEnumValues: number } | null {
   const fields: Record<string, TelemetryValue> = {}
+  let omittedEnumValues = 0
+  // Separate from `fields`, which omits some keys, so a repeat is still caught.
+  const seenKeys = new Set<string>()
   const pairs = tail ? tail.slice(1).split(' ') : []
   for (const pair of pairs) {
     const separatorIndex = pair.indexOf('=')
@@ -176,21 +290,42 @@ function parseFields(
       // rejecting the line would delete an existing metric instead.
       continue
     }
-    if (Object.hasOwn(fields, key)) return null
-    const value: TelemetryValue = /^-?\d+$/.test(rawValue)
-      ? Number(rawValue)
-      : rawValue === 'true'
-        ? true
-        : rawValue === 'false'
-          ? false
-          : rawValue
+    if (seenKeys.has(key)) return null
+    seenKeys.add(key)
+    const value: TelemetryValue = DIGIT_STRING_FIELDS.has(key)
+      ? rawValue
+      : /^-?\d+$/.test(rawValue)
+        ? Number(rawValue)
+        : rawValue === 'true'
+          ? true
+          : rawValue === 'false'
+            ? false
+            : rawValue
+    const enumValues = EXTENSIBLE_ENUMS.get(key)
+    if (
+      enumValues &&
+      typeof value === 'string' &&
+      !enumValues.has(value) &&
+      isSafeString(value) &&
+      ENUM_VALUE.test(value)
+    ) {
+      omittedEnumValues++
+      continue
+    }
     if (!isAllowedFieldValue(key, value)) return null
     fields[key] = value
   }
-  return fields
+  return { fields, omittedEnumValues }
 }
 
-/** Per-event budget on top of the telemetry module's own rate limit. */
+/**
+ * Per-event budget on top of the telemetry module's own rate limit.
+ *
+ * `scanner.failure_bucket` shares it even though core sends up to 50 per scan,
+ * so its buckets are hour-sampled: the first failing scan in a window spends
+ * most of the budget, and a classification that first appears after the
+ * budget is spent is dropped until the next window.
+ */
 const PER_EVENT_HOURLY_CAP = 60
 const RATE_WINDOW_MS = 60 * 60_000
 
@@ -219,6 +354,7 @@ export function createAssetsTap(opts: {
   const rateBuckets = new Map<string, { windowStart: number; count: number }>()
 
   let unknownEventsDropped = 0
+  let unknownEnumValuesOmitted = 0
 
   function withinRateCap(event: string): boolean {
     const now = Date.now()
@@ -246,8 +382,12 @@ export function createAssetsTap(opts: {
       unknownEventsDropped++
       return
     }
-    const fields = parseFields(tail, baseKeys)
-    if (!fields) return
+    const parsed = parseFields(tail, baseKeys)
+    if (!parsed) return
+    const { fields } = parsed
+    // Counted like unknown events, and for the same reason: it says this build
+    // is behind core's vocabulary without naming the untrusted value.
+    unknownEnumValuesOmitted += parsed.omittedEnumValues
     if (!withinRateCap(event)) return
     try {
       // Base context merged LAST so parsed fields can never override it.
@@ -303,6 +443,14 @@ export function createAssetsTap(opts: {
           const count = unknownEventsDropped
           unknownEventsDropped = 0
           telemetry.emit(`${EVENT_PREFIX}${UNKNOWN_EVENTS_DROPPED}`, {
+            count,
+            ...baseContext
+          })
+        }
+        if (unknownEnumValuesOmitted > 0 && withinRateCap(UNKNOWN_ENUM_VALUES_OMITTED)) {
+          const count = unknownEnumValuesOmitted
+          unknownEnumValuesOmitted = 0
+          telemetry.emit(`${EVENT_PREFIX}${UNKNOWN_ENUM_VALUES_OMITTED}`, {
             count,
             ...baseContext
           })

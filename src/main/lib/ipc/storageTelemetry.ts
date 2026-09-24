@@ -181,6 +181,10 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
       models_storage_classes: models.map((m) => m?.storageClass ?? 'unknown'),
       models_buses: models.map((m) => m?.bus ?? 'unknown'),
       models_external: models.map((m) => m?.external ?? null),
+      // Closed allowlist from storageInfo, one per included dir (so bounded by
+      // MAX_MODEL_DIRS). A mapped SMB drive reports the server's fs here, so
+      // read transport from `models_buses` ('network'), not from this.
+      models_fs_types: models.map((m) => m?.fsType ?? null),
       models_drive_models: models.map((m) => scrubOrNull(m?.driveModel ?? null)),
       models_pcie_max_gens: models.map((m) => m?.pcieMaxGen ?? null),
       models_drive_keys: modelKeys,

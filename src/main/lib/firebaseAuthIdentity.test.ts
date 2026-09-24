@@ -47,9 +47,13 @@ import {
   activateFirebaseAuthReporter,
   bindMainVerifiedFirebaseUser,
   deactivateFirebaseAuthReporter,
+  getFirebaseIdentityConsensus,
+  observeFirebaseIdentityConsensus,
   PENDING_CONSENSUS_DEADLINE_MS,
   reportFirebaseAuthState as recordFirebaseAuthState,
-  trackFirebaseAuthReporter
+  trackFirebaseAuthReporter,
+  viewsReportingFirebaseUser,
+  type FirebaseIdentityConsensus
 } from './firebaseAuthIdentity'
 
 class FakeWebContents extends EventEmitter {
@@ -1155,5 +1159,248 @@ describe('firebaseAuthIdentity consensus', () => {
     reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F2' })
     expect(telemetry.discardUnmergeableAnonymousEpoch).toHaveBeenCalledTimes(2)
     expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F2')
+  })
+})
+
+// The reconciled outcome, published rather than only spent on telemetry side effects. Anything
+// that needs to know WHICH ACCOUNT this process is serving reads it from here; `staffFlagTargeting`
+// is the first such consumer, and its own suite covers what it does with each outcome.
+describe('firebaseAuthIdentity published consensus', () => {
+  let published: FirebaseIdentityConsensus[] = []
+  let unobserve: () => void = () => {}
+
+  beforeEach(() => {
+    _resetForTest()
+    vi.clearAllMocks()
+    telemetry.discardUnmergeableAnonymousEpoch.mockReturnValue(true)
+    telemetry.hasUnmergeableAnonymousEpoch.mockReturnValue(false)
+    telemetry.isFirebaseConsensusPending.mockReturnValue(true)
+    telemetry.markAnonymousEpochUnmergeable.mockReturnValue(true)
+    verifiedLocalUsers.clear()
+    verifiedLocalPersistence.succeeds = true
+    published = []
+    unobserve = observeFirebaseIdentityConsensus((consensus) => published.push(consensus))
+  })
+
+  afterEach(() => {
+    unobserve()
+  })
+
+  it('starts out unable to say', () => {
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'unknown' })
+  })
+
+  it('publishes the agreed account once every reporter affirms it', () => {
+    const first = new FakeWebContents(cloudUrl)
+    const second = new FakeWebContents(cloudUrl)
+    activate(first)
+    activate(second)
+
+    reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F' })
+    expect(published.at(-1)).toEqual({ status: 'pending' })
+
+    reportFirebaseAuthState(second.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    expect(published.at(-1)).toEqual({ status: 'signed_in', userId: 'F' })
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_in', userId: 'F' })
+  })
+
+  it('publishes a resolved sign-out, which is evidence rather than absence', () => {
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_out' })
+
+    expect(published.at(-1)).toEqual({ status: 'signed_out' })
+  })
+
+  it('publishes a conflict rather than picking one of two accounts', () => {
+    const first = new FakeWebContents(cloudUrl)
+    const second = new FakeWebContents(cloudUrl)
+    activate(first)
+    activate(second)
+
+    reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F1' })
+    reportFirebaseAuthState(second.asWebContents(), { status: 'signed_in', userId: 'F2' })
+
+    expect(published.at(-1)).toEqual({ status: 'conflicted' })
+  })
+
+  it('publishes a conflict when one view is signed in and another is signed out', () => {
+    const first = new FakeWebContents(cloudUrl)
+    const second = new FakeWebContents(cloudUrl)
+    activate(first)
+    activate(second)
+
+    reportFirebaseAuthState(first.asWebContents(), { status: 'signed_in', userId: 'F' })
+    reportFirebaseAuthState(second.asWebContents(), { status: 'signed_out' })
+
+    expect(published.at(-1)).toEqual({ status: 'conflicted' })
+  })
+
+  it('publishes unknown, NOT signed out, when the last contributor goes away', () => {
+    // The distinction the split exists for. Telemetry detaches on both — an in-memory binding
+    // with nobody left to affirm it should stop claiming events — but a consumer that PERSISTS
+    // the account must not read "every window closed" as "somebody signed out".
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+    expect(published.at(-1)).toEqual({ status: 'signed_in', userId: 'F' })
+
+    reporter.destroy()
+
+    expect(published.at(-1)).toEqual({ status: 'unknown' })
+    expect(telemetry.applyFirebaseAnonymousConsensus).toHaveBeenCalled()
+  })
+
+  it('stays unknown for a local view that was never signed into', () => {
+    // Its reports are untrusted until a main-verified sign-in scopes them, so it contributes
+    // nothing at all. "No auth store here" is not a vote that nobody is signed in — contrast the
+    // cloud view below, whose identical report IS a resolved sign-out.
+    const local = new FakeWebContents('http://127.0.0.1:8188/')
+    activate(local)
+
+    reportFirebaseAuthState(local.asWebContents(), { status: 'signed_out' })
+
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'unknown' })
+    expect(published).toEqual([])
+
+    const cloud = new FakeWebContents(cloudUrl)
+    activate(cloud)
+    reportFirebaseAuthState(cloud.asWebContents(), { status: 'signed_out' })
+
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_out' })
+  })
+
+  it('publishes on change only', () => {
+    // `reconcile()` runs on every navigation event. An observer that re-read a page on each one
+    // would be a poll with extra steps.
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+    const afterFirst = published.length
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    expect(published).toHaveLength(afterFirst)
+  })
+
+  it('holds the last outcome when a tainted epoch defers the bind', () => {
+    // Publishing here would announce an account the process has not adopted: telemetry is held
+    // anonymous and a retry is expected.
+    telemetry.markAnonymousEpochUnmergeable.mockReturnValue(true)
+    telemetry.hasUnmergeableAnonymousEpoch.mockReturnValue(true)
+    telemetry.discardUnmergeableAnonymousEpoch.mockReturnValue(false)
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    expect(published.at(-1)).toEqual({ status: 'pending' })
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'pending' })
+  })
+
+  it('stops delivering once unsubscribed', () => {
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    unobserve()
+    published = []
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    expect(published).toEqual([])
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'signed_in', userId: 'F' })
+  })
+
+  it('keeps reconciling when an observer throws', () => {
+    // An observer is a consumer, not a participant. One that fails must not take the identity
+    // engine down with it.
+    const failing = observeFirebaseIdentityConsensus(() => {
+      throw new Error('observer exploded')
+    })
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+
+    expect(() =>
+      reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+    ).not.toThrow()
+    expect(telemetry.applyFirebaseUserConsensus).toHaveBeenCalledWith('F')
+    failing()
+  })
+
+  it('names the views that hold the agreed account', () => {
+    const holder = new FakeWebContents(cloudUrl)
+    const other = new FakeWebContents(cloudUrl)
+    activate(holder)
+    activate(other)
+    reportFirebaseAuthState(holder.asWebContents(), { status: 'signed_in', userId: 'F' })
+    reportFirebaseAuthState(other.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    expect(viewsReportingFirebaseUser('F')).toEqual([holder.asWebContents(), other.asWebContents()])
+    expect(viewsReportingFirebaseUser('OTHER')).toEqual([])
+  })
+
+  it('names a main-verified view before its reporter has reported', () => {
+    // This process already believes that view holds the account, so it is a legitimate one to
+    // put a question to.
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+
+    bindMainVerifiedFirebaseUser('F', {}, reporter.asWebContents())
+
+    expect(published.at(-1)).toEqual({ status: 'pending' })
+    expect(viewsReportingFirebaseUser('F')).toEqual([reporter.asWebContents()])
+  })
+
+  it('drops a main-verified view whose document has moved to another origin', () => {
+    // `reconcile()` prunes this map on exactly this condition, and pruning happens ONLY in there.
+    // Naming a view that has moved would send a caller's question to — and make it trust an answer
+    // from — a page at a different origin. Defence in depth: every origin change observed here
+    // also runs `reconcile()`, so this guards the window rather than a reproduced live bug.
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    bindMainVerifiedFirebaseUser('F', {}, reporter.asWebContents())
+    expect(viewsReportingFirebaseUser('F')).toEqual([reporter.asWebContents()])
+
+    // Moves the document's URL without a commit, so no prune runs in between.
+    reporter.navigate('https://elsewhere.example.com/page', true)
+
+    expect(viewsReportingFirebaseUser('F')).toEqual([])
+  })
+
+  it('stops dispatching an outcome a nested publish has superseded', () => {
+    // An observer can synchronously re-enter `reconcile()`. The nested dispatch delivers the newer
+    // outcome to everybody; resuming the outer loop afterwards would hand the observers it had not
+    // reached a value that disagrees with `getFirebaseIdentityConsensus()`.
+    const seen: string[] = []
+    const reporter = new FakeWebContents(cloudUrl)
+    activate(reporter)
+    const reentrant = observeFirebaseIdentityConsensus((consensus) => {
+      seen.push(`reentrant:${consensus.status}`)
+      if (consensus.status === 'signed_in') reporter.destroy()
+    })
+    const later = observeFirebaseIdentityConsensus((consensus) => {
+      seen.push(`later:${consensus.status}`)
+    })
+
+    reportFirebaseAuthState(reporter.asWebContents(), { status: 'signed_in', userId: 'F' })
+
+    expect(seen).not.toContain('later:signed_in')
+    expect(seen).toContain('later:unknown')
+    expect(getFirebaseIdentityConsensus()).toEqual({ status: 'unknown' })
+    reentrant()
+    later()
+  })
+
+  it('drops a destroyed view from the ones it names', () => {
+    const holder = new FakeWebContents(cloudUrl)
+    activate(holder)
+    reportFirebaseAuthState(holder.asWebContents(), { status: 'signed_in', userId: 'F' })
+    expect(viewsReportingFirebaseUser('F')).toHaveLength(1)
+
+    holder.destroy()
+
+    expect(viewsReportingFirebaseUser('F')).toEqual([])
   })
 })

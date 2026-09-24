@@ -224,6 +224,26 @@ describe('emitStorageTelemetry', () => {
     }
   })
 
+  it('reports one fs type per model dir, null where the dir did not resolve', async () => {
+    const SMB_SHARE = drive({
+      storageClass: 'network',
+      bus: 'network',
+      fsType: 'smb',
+      driveKey: 'net:\\\\nas\\models'
+    })
+    stubClassification({
+      [INSTALL_PATH]: NVME,
+      [BUILTIN_MODELS]: drive({}),
+      [SHARED_MODELS]: SMB_SHARE
+    })
+
+    await emitStorageTelemetry('inst-1')
+
+    const props = capture.mock.calls[0]![1]
+    expect(props.models_fs_types).toEqual([null, 'smb'])
+    expect(props.models_buses).toEqual(['unknown', 'network'])
+  })
+
   it('null same-drive verdicts when a drive is unresolved, without faking a match', async () => {
     stubClassification({
       [INSTALL_PATH]: NVME,
@@ -312,6 +332,7 @@ describe('emitStorageTelemetry', () => {
     expect(props.models_dirs_count).toBe(20)
     expect(props.models_dirs_truncated).toBe(true)
     expect(props.models_storage_classes).toHaveLength(16)
+    expect(props.models_fs_types).toHaveLength(16)
     expect(props.models_all_same_drive_as_install).toBeNull()
     expect(props.any_models_on_hdd).toBeNull()
     expect(props.any_models_external).toBeNull()

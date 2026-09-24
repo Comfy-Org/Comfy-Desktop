@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n'
 import ArgsBuilderPage from './ArgsBuilderPage.vue'
 import { en } from '../../lib/i18nMessages'
 import type { ComfyArgDef } from '../../types/ipc'
+import { TELEMETRY_ACTION_EVENT_NAME } from '../../lib/telemetry'
 
 // Pins the deselectable "Choose one" contract: the exclusive group renders as
 // a compact BaseSelect with a synthetic "None" option so it can clear, the
@@ -108,14 +109,28 @@ function activeSection(wrapper: VueWrapper) {
     .find((s) => s.find('.args-page-category-title').text() === 'Active')
 }
 
+// `emitArgsChanged` debounces on a 500ms `setTimeout`. The page now flushes it
+// on unmount, so a test that changes an arg and then ends no longer leaves a
+// timer armed to fire into a torn-down `window`. Fake timers stay because the
+// debounce still has to be driven deliberately rather than waited out, and
+// because `useRealTimers` below is the backstop if any path ever re-arms one.
+// Faking only `setTimeout` leaves `flushPromises` (which schedules on
+// `setImmediate`) alone.
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   stubElectronApi()
 })
 
 afterEach(() => {
-  while (wrappers.length) wrappers.pop()?.unmount()
-  delete (window as unknown as { api?: unknown }).api
-  vi.restoreAllMocks()
+  // `finally`, or one throwing unmount leaves fake timers installed for every
+  // remaining test in the file.
+  try {
+    while (wrappers.length) wrappers.pop()?.unmount()
+  } finally {
+    vi.useRealTimers()
+    delete (window as unknown as { api?: unknown }).api
+    vi.restoreAllMocks()
+  }
 })
 
 describe('ArgsBuilderPage — exclusive group dropdown', () => {
@@ -295,5 +310,137 @@ describe('ArgsBuilderPage — raw-args validation', () => {
     await wrapper.find('.args-raw-input').trigger('focusout')
     await flushPromises()
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(true)
+  })
+})
+
+// Faking `setTimeout` for the whole file means the 500ms debounce never
+// elapses on its own, which would leave `comfy.desktop.args.changed` - emitted
+// from this component and nowhere else - with no coverage in the suite. Drive
+// it deliberately instead, which also pins the debounce itself.
+describe('ArgsBuilderPage — args.changed telemetry', () => {
+  function captureTelemetry(): { events: string[]; stop: () => void } {
+    const events: string[] = []
+    const listener = (e: Event): void => {
+      events.push((e as CustomEvent<{ actionName: string }>).detail.actionName)
+    }
+    window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, listener)
+    return { events, stop: () => window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, listener) }
+  }
+
+  type ArgsChangedContext = { arg_key?: string; value_kind?: string }
+
+  function captureArgsChanged(): { contexts: ArgsChangedContext[]; stop: () => void } {
+    const contexts: ArgsChangedContext[] = []
+    const listener = (e: Event): void => {
+      const detail = (e as CustomEvent<{ actionName: string; context?: ArgsChangedContext }>).detail
+      if (detail.actionName === 'comfy.desktop.args.changed') contexts.push(detail.context ?? {})
+    }
+    window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, listener)
+    return {
+      contexts,
+      stop: () => window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, listener)
+    }
+  }
+
+  it('emits args.changed once the 500ms debounce elapses', async () => {
+    const wrapper = await mountPage()
+    const { events, stop } = captureTelemetry()
+    try {
+      await wrapper.find('button[role="switch"]').trigger('click')
+      await flushPromises()
+      // Still debouncing: nothing emitted yet.
+      expect(events).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(500)
+      expect(events).toEqual(['comfy.desktop.args.changed'])
+    } finally {
+      stop()
+    }
+  })
+
+  it('coalesces a burst of edits into a single emission', async () => {
+    const wrapper = await mountPage()
+    const { events, stop } = captureTelemetry()
+    try {
+      const switches = wrapper.findAll('button[role="switch"]')
+      for (const toggle of switches.slice(0, 3)) {
+        await toggle.trigger('click')
+        await vi.advanceTimersByTimeAsync(100)
+      }
+      await vi.advanceTimersByTimeAsync(500)
+      expect(events).toEqual(['comfy.desktop.args.changed'])
+    } finally {
+      stop()
+    }
+  })
+
+  // The debounced call is telemetry only - args themselves commit
+  // synchronously through `update` on every mutation - so nothing the user set
+  // is at stake here. What is at stake is whether the last edit before leaving
+  // the page gets counted, and dropping it would bias `args.changed` against
+  // exactly the change-then-navigate-away case.
+  it('flushes a pending args.changed when the page unmounts mid-debounce', async () => {
+    const wrapper = await mountPage()
+    const { contexts, stop } = captureArgsChanged()
+    try {
+      await wrapper.find('button[role="switch"]').trigger('click')
+      await flushPromises()
+      expect(contexts).toEqual([])
+
+      // Leave well inside the 500ms window.
+      await vi.advanceTimersByTimeAsync(100)
+      wrapper.unmount()
+      expect(contexts).toHaveLength(1)
+      // The only plain switch in SCHEMA; the exclusive group renders as a select.
+      expect(contexts[0]?.arg_key).toBe('port')
+    } finally {
+      stop()
+    }
+  })
+
+  it('does not emit a second args.changed after the flush', async () => {
+    const wrapper = await mountPage()
+    const { contexts, stop } = captureArgsChanged()
+    try {
+      await wrapper.find('button[role="switch"]').trigger('click')
+      await flushPromises()
+      wrapper.unmount()
+      expect(contexts).toHaveLength(1)
+
+      // The timer the unmount flushed must not also fire on its own.
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(contexts).toHaveLength(1)
+    } finally {
+      stop()
+    }
+  })
+
+  it('emits nothing on unmount when no edit is pending', async () => {
+    const wrapper = await mountPage()
+    const { contexts, stop } = captureArgsChanged()
+    try {
+      wrapper.unmount()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(contexts).toEqual([])
+    } finally {
+      stop()
+    }
+  })
+
+  it('flushes the last edit of a burst, not the first', async () => {
+    const wrapper = await mountPage()
+    const { contexts, stop } = captureArgsChanged()
+    try {
+      await wrapper.find('button[role="switch"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(100)
+      await pickOption(wrapper, '--cpu')
+      await vi.advanceTimersByTimeAsync(100)
+
+      wrapper.unmount()
+      expect(contexts).toHaveLength(1)
+      expect(contexts[0]?.arg_key).toBe('cpu')
+    } finally {
+      stop()
+    }
   })
 })

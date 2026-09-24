@@ -431,4 +431,28 @@ describe('executionTap', () => {
     const summary = captured.find((c) => c.event === 'comfy.desktop.execution.session_summary')
     expect(summary!.ctx['core_beta_flags']).toEqual([])
   })
+  it('stamps the Core commit and version label onto every emitted event', () => {
+    const tap = createExecutionTap({
+      installationId: 'inst-1',
+      coreCommit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+      coreVersionLabel: 'v0.37.0+15'
+    })
+    tap.ingest('got prompt\nPrompt executed in 1.0 seconds\n', 'stdout')
+    tap.flushSummary()
+
+    expect(captured.length).toBeGreaterThan(0)
+    for (const { ctx } of captured) {
+      expect(ctx['core_commit']).toBe('61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4')
+      expect(ctx['core_version_label']).toBe('v0.37.0+15')
+    }
+  })
+
+  it('reports a null Core commit and label when the launch could not name them', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest('got prompt\nPrompt executed in 1.0 seconds\n', 'stdout')
+    tap.flushSummary()
+
+    const summary = captured.find((c) => c.event === 'comfy.desktop.execution.session_summary')
+    expect(summary!.ctx).toMatchObject({ core_commit: null, core_version_label: null })
+  })
 })

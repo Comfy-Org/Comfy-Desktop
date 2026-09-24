@@ -159,6 +159,29 @@ describe('classifyPaths - Windows', () => {
     expect(unc.storageClass).toBe('network')
     expect(unc.bus).toBe('network')
     expect(unc.driveKey).toBe('net:\\\\nas\\models')
+    expect(unc.fsType).toBe('smb')
+  })
+
+  it('reports the WebDAV redirector\u2019s UNC forms as webdav, not smb', async () => {
+    const map = await classifyPaths([
+      '\\\\dav.example@SSL@443\\models\\sdxl',
+      '\\\\dav.example\\DavWWWRoot\\models'
+    ])
+    expect(map.get('\\\\dav.example@SSL@443\\models\\sdxl')!.fsType).toBe('webdav')
+    expect(map.get('\\\\dav.example\\DavWWWRoot\\models')!.fsType).toBe('webdav')
+  })
+
+  it.each([
+    '\\\\.\\PHYSICALDRIVE0\\x',
+    '\\\\tsclient\\C\\models',
+    '\\\\VBoxSvr\\models\\x',
+    '\\\\wsl$\\Ubuntu\\models',
+    '\\\\wsl.localhost\\Ubuntu\\models',
+    '\\\\vmware-host\\Shared Folders\\models',
+    '\\\\?\\UNC\\server'
+  ])('does not call %s an SMB share', async (p) => {
+    const map = await classifyPaths([p])
+    expect(map.get(p)!.fsType).toBeNull()
   })
 
   it('classifies a USB SSD as other_ssd and external', async () => {
@@ -216,6 +239,7 @@ describe('classifyPaths - Windows', () => {
     const unc = map.get('\\\\?\\UNC\\nas\\models\\x')!
     expect(unc.storageClass).toBe('network')
     expect(unc.driveKey).toBe('net:\\\\nas\\models')
+    expect(unc.fsType).toBe('smb')
   })
 
   it('nulls malformed model/vendor strings that look like paths, devices or UUIDs', async () => {

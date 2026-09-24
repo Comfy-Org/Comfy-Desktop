@@ -177,6 +177,11 @@ export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[])
   persistVault(vault)
 }
 
+/** Return a cached workspace name by durable id without changing the active workspace. */
+export function getCachedWorkspaceName(workspaceId: string): string | null {
+  return loadVault()?.workspaceNames?.[workspaceId] ?? null
+}
+
 /** Activate a cached workspace. Returns null when it has never been authorized. */
 export function activateWorkspace(workspaceId: string): AuthTokens | null {
   const vault = loadVault()

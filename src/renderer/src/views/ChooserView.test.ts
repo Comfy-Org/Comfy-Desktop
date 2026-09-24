@@ -832,6 +832,29 @@ describe('ChooserView', () => {
     expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
   })
 
+  it('prefetches Builds when the selected workspace changes', async () => {
+    const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Workspace A' })
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
+      { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
+    ])
+    api.comfybuilder.switchWorkspace.mockImplementation(async (workspaceId: string) => ({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId
+    }))
+    const wrapper = mountChooser()
+    await flushPromises()
+    api.comfybuilder.listBuilds.mockClear()
+
+    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    await wrapper.get('[data-testid="devplatform-workspace-w2"]').trigger('click')
+    await flushPromises()
+
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
+  })
+
   it('refreshes workspace membership and Builds', async () => {
     const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
     const wrapper = mountChooser()

@@ -16,7 +16,10 @@
  * rather than racing it to the default, and a fallback that survives both a rejection and an
  * unrecognised payload. See `cloudFreeRuns.ts` and `coreBetaGrants.ts` for the current callers.
  */
+import { app } from 'electron'
+import fs from 'fs'
 import path from 'path'
+import { inspect } from 'util'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
 import * as mainTelemetry from './telemetry'
@@ -42,7 +45,45 @@ interface PersistedFileRead {
   primaryUnreadable: boolean
 }
 
+/** E2E-only: write `E2E_OPS_FLAGS_SEED` into `ops-flags.json` before the first read.
+ *
+ *  The harness cannot place this file itself. It isolates a run by overriding `HOME`, but
+ *  `configDir()` resolves to Electron's `userData` off Linux, and on macOS Application Support
+ *  ignores that override — so a file the harness writes under its temp home is never read, and
+ *  seeding the real path would write into the developer's own profile. `settings.json` has the
+ *  same problem and solves it exactly this way; this mirrors `maybeSeedFromEnv` in
+ *  `settings.ts`, including the packaged-build guard and dropping the var so the payload cannot
+ *  reach spawned children. Runs at most once per process. */
+let e2eSeedApplied = false
+function maybeSeedFromEnv(): void {
+  if (e2eSeedApplied) return
+  e2eSeedApplied = true
+  // Env gate first: it is a plain string read, whereas `app` is only a real object inside the
+  // Electron runtime. Unit tests import this module outside it, so touching `app` on the
+  // common path would make every persisted-read test depend on mocking electron.
+  if (process.env['E2E'] !== '1') return
+  const seed = process.env['E2E_OPS_FLAGS_SEED']
+  if (!seed) return
+  delete process.env['E2E_OPS_FLAGS_SEED']
+  try {
+    // Inside the try with everything else: `readPersistedFile`'s whole contract is to degrade
+    // to "no cache", and a partially-mocked `app` throwing here would take that down with it.
+    // Hard guard: never run in production builds.
+    if (app.isPackaged) return
+    JSON.parse(seed) // validate before writing
+    const filePath = persistFilePath()
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    // Backup first, then primary — the same ordering `writePersistedResult` relies on, so a
+    // seeded run cannot be served a stale `.bak` from a previous one.
+    writeFileSafe(filePath + '.bak', seed)
+    writeFileSafe(filePath, seed)
+  } catch (err) {
+    console.warn('OpsFlag: failed to apply E2E_OPS_FLAGS_SEED:', (err as Error).message)
+  }
+}
+
 function readPersistedFile(): PersistedFileRead {
+  maybeSeedFromEnv()
   const outcome = readFileSafe(persistFilePath())
   if (outcome.kind === 'unreadable') return { entries: {}, primaryUnreadable: true }
   if (outcome.kind !== 'data') return { entries: {}, primaryUnreadable: false }
@@ -238,7 +279,9 @@ export function makeOpsFlag<T>(opts: {
               `[${logLabel}] init: fetched=`,
               result.kind === 'value' ? result.value : result.kind,
               '→ cached=',
-              cached
+              // One line at full depth: the default inspect folds nested payloads to `[Array]`
+              // and wraps across lines that a `[label]` grep then misses.
+              inspect(cached, { depth: null, breakLength: Infinity, compact: true })
             )
         })
         .catch((err) => {
