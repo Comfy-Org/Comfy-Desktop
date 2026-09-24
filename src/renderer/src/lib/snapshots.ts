@@ -31,6 +31,15 @@ export async function shareLatestSnapshot(
   return { ok: true }
 }
 
+/** Labels older builds wrote as internal sentinels rather than user-facing
+ *  names. They must never be rendered as a snapshot's name. */
+const LEGACY_SENTINEL_LABELS = new Set(['before-update', 'after-update', 'after-restore'])
+
+/** True when a snapshot's label is meant to be shown to the user. */
+export function isDisplayableLabel(label: string | null | undefined): boolean {
+  return !!label && !LEGACY_SENTINEL_LABELS.has(label)
+}
+
 /** Localised trigger label (requires the `t` function from `useI18n`). */
 export function triggerLabel(trigger: string, t: (key: string) => string): string {
   switch (trigger) {

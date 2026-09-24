@@ -10,9 +10,11 @@
  */
 import { computed } from 'vue'
 
-const { name } = defineProps<{
+const { name, neutral } = defineProps<{
   /** Subject the colour is derived from; only its first character is rendered. */
   name: string
+  /** Render an unlabelled neutral square instead of a workspace identity. */
+  neutral?: boolean
 }>()
 
 const letter = computed(() => name?.charAt(0)?.toUpperCase() || '?')
@@ -44,8 +46,13 @@ const gradient = computed(() => {
 
 <template>
   <!-- Decorative: the subject's name is always rendered beside this avatar. -->
-  <span class="dp-avatar" :style="{ background: gradient }" aria-hidden="true">
-    {{ letter }}
+  <span
+    class="dp-avatar"
+    :class="{ 'dp-avatar--neutral': neutral }"
+    :style="neutral ? undefined : { background: gradient }"
+    aria-hidden="true"
+  >
+    {{ neutral ? '' : letter }}
   </span>
 </template>
 
@@ -68,5 +75,9 @@ const gradient = computed(() => {
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   user-select: none;
+}
+.dp-avatar--neutral {
+  background: var(--neutral-400);
+  text-shadow: none;
 }
 </style>

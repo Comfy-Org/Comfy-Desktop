@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { listWorkspaces } from './workspaces'
+import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
 function stub(status: number, body: unknown): void {
   vi.stubGlobal(
@@ -44,25 +44,72 @@ describe('listWorkspaces', () => {
     ])
   })
 
-  it('returns [] when team-workspaces is off (404)', async () => {
-    stub(404, {})
-    expect(await listWorkspaces('tok', { apiBase: 'https://cloud/api' })).toEqual([])
-  })
+  it.each([
+    { status: 404, body: {}, error: /HTTP 404/ },
+    { status: 401, body: {}, error: /authorized/i },
+    { status: 200, body: null, error: /invalid catalog/ },
+    { status: 200, body: { workspaces: 'nope' }, error: /invalid catalog/ },
+    { status: 200, body: { workspaces: {} }, error: /invalid catalog/ }
+  ])(
+    'rejects unavailable or malformed membership: $status $body',
+    async ({ status, body, error }) => {
+      stub(status, body)
+      await expect(listWorkspaces('tok', { apiBase: 'https://cloud/api' })).rejects.toThrow(error)
+    }
+  )
+})
 
-  it('throws on unauthorized', async () => {
-    stub(401, {})
-    await expect(listWorkspaces('tok', { apiBase: 'https://cloud/api' })).rejects.toThrow(
-      /authorized/i
+describe('listWorkspaceMembers', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('loads every page and maps member fields', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      const secondPage = String(input).includes('offset=1')
+      return new Response(
+        JSON.stringify(
+          secondPage
+            ? {
+                members: [{ id: 'user-2', email: 'two@example.com' }],
+                pagination: { has_more: false }
+              }
+            : {
+                members: [
+                  {
+                    id: 'user-1',
+                    name: 'One',
+                    role: 'owner',
+                    joined_at: 't',
+                    is_original_owner: true
+                  }
+                ],
+                pagination: { has_more: true }
+              }
+        ),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(listWorkspaceMembers('tok', { apiBase: 'https://cloud/api' })).resolves.toEqual([
+      { id: 'user-1', name: 'One', role: 'owner', joinedAt: 't', isOriginalOwner: true },
+      { id: 'user-2', email: 'two@example.com' }
+    ])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      'https://cloud/api/workspace/members?offset=0&limit=100'
+    )
+    expect(fetchMock.mock.calls[1]![0]).toBe(
+      'https://cloud/api/workspace/members?offset=1&limit=100'
+    )
+    expect((fetchMock.mock.calls[0]![1]?.headers as Record<string, string>).Authorization).toBe(
+      'Bearer tok'
     )
   })
 
-  it('returns [] on a null / non-object 200 body', async () => {
-    stub(200, null)
-    expect(await listWorkspaces('tok', { apiBase: 'https://cloud/api' })).toEqual([])
-  })
-
-  it.each(['nope', {}])('returns [] when workspaces is not an array', async (workspaces) => {
-    stub(200, { workspaces })
-    expect(await listWorkspaces('tok', { apiBase: 'https://cloud/api' })).toEqual([])
+  it('throws on unauthorized', async () => {
+    stub(403, {})
+    await expect(listWorkspaceMembers('tok', { apiBase: 'https://cloud/api' })).rejects.toThrow(
+      /authorized/i
+    )
   })
 })

@@ -2,32 +2,54 @@ import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import type { AuthStatus, ElectronApi, Workspace } from '../../../types/ipc'
-import type { Distribution } from '../devplatform/types'
+import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
+import type { Build } from '../devplatform/types'
 
 /**
  * Dev-platform session store: the renderer's single source of auth + workspace
- * + distribution state.
+ * + build state.
  *
- * It only ever holds renderer-safe data (AuthStatus / Workspace / distribution
+ * It only ever holds renderer-safe data (AuthStatus / Workspace / build
  * display rows); tokens live in the main process. Every mutation goes through
  * `window.api.comfybuilder`, and `onAuthChanged` keeps the store in lockstep
  * with a sign-in / switch / sign-out that originated anywhere.
  */
 export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
+  /** False until a status read or authoritative auth event succeeds. */
+  const statusLoaded = ref(false)
   const workspaces = ref<Workspace[]>([])
-  const distributions = ref<Distribution[]>([])
+  const builds = ref<Build[]>([])
+  /** Workspace currently selected in workspace-scoped renderer surfaces. */
+  const selectedWorkspaceId = ref(PERSONAL_WORKSPACE_ID)
   const loadingWorkspaces = ref(false)
-  const loadingDistributions = ref(false)
+  /** Distinguishes unknown membership from a successfully fetched empty catalog. */
+  const workspacesLoaded = ref(false)
+  let workspacesRequest: Promise<Workspace[]> | undefined
+  const loadingBuilds = ref(false)
+  /** Distinguishes a successfully loaded empty catalog from one not fetched yet. */
+  const buildsLoaded = ref(false)
   // Load-failure flags so the UI can tell a transient error apart from an empty
   // workspace (both otherwise leave the arrays empty).
   const workspacesError = ref(false)
-  const distributionsError = ref(false)
+  const buildsError = ref(false)
   const comfybuilderApi = (window as Window & { api: ElectronApi }).api.comfybuilder
 
   /** Bumped on every authoritative status change (push, sign-in, switch,
    *  sign-out) so a slower in-flight pull can never overwrite a newer status. */
   let revision = 0
+  let workspaceContextInitialized = false
+
+  function initializeWorkspaceContext(workspaceId?: string): void {
+    if (workspaceContextInitialized) return
+    selectedWorkspaceId.value = workspaceId ?? PERSONAL_WORKSPACE_ID
+    workspaceContextInitialized = true
+  }
+
+  function resetWorkspaceContext(): void {
+    selectedWorkspaceId.value = PERSONAL_WORKSPACE_ID
+    workspaceContextInitialized = false
+  }
 
   /** Advance the revision on an authoritative status change. Every in-flight
    *  fetch becomes stale, and a stale fetch's guarded `finally` refuses to
@@ -36,9 +58,11 @@ export const useAuthStore = defineStore('auth', () => {
   function advanceRevision(): void {
     revision += 1
     loadingWorkspaces.value = false
-    loadingDistributions.value = false
+    workspacesLoaded.value = false
+    workspacesRequest = undefined
+    loadingBuilds.value = false
     workspacesError.value = false
-    distributionsError.value = false
+    buildsError.value = false
   }
 
   /** The session identity the scoped caches are keyed on. */
@@ -54,27 +78,34 @@ export const useAuthStore = defineStore('auth', () => {
    *  arrival triggered, and no watcher re-fires for an unchanged identity,
    *  leaving the UI showing a false empty workspace. */
   function applyAuthoritativeStatus(next: AuthStatus): void {
+    statusLoaded.value = true
     if (sameIdentity(status.value, next)) {
       status.value = next
       return
     }
     advanceRevision()
     status.value = next
-    if (!next.signedIn) resetScopedState()
-    else distributions.value = []
+    if (!next.signedIn) {
+      resetScopedState()
+      resetWorkspaceContext()
+    } else {
+      builds.value = []
+      buildsLoaded.value = false
+    }
   }
 
-  /** Drop workspace-scoped caches: the list and the distributions both belong
+  /** Drop workspace-scoped caches: the list and the builds both belong
    *  to the token's single workspace, so a switch/sign-out invalidates them. */
   function resetScopedState(): void {
     workspaces.value = []
-    distributions.value = []
+    builds.value = []
+    buildsLoaded.value = false
   }
 
   async function fetchStatus(): Promise<AuthStatus> {
     const seen = revision
     const next = await comfybuilderApi.getAuthStatus()
-    if (revision === seen && next) status.value = next
+    if (revision === seen && next) applyAuthoritativeStatus(next)
     return next
   }
 
@@ -87,15 +118,25 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function signOut(): Promise<AuthStatus> {
-    await comfybuilderApi.signOut()
-    applyAuthoritativeStatus({ signedIn: false })
+    const next = await comfybuilderApi.signOut()
+    applyAuthoritativeStatus(next)
     return status.value
   }
 
   /** The workspaces the signed-in user belongs to (for the switcher). */
-  async function fetchWorkspaces(): Promise<Workspace[]> {
+  function fetchWorkspaces(): Promise<Workspace[]> {
+    // Scope initialization and the selector can request membership together.
+    const seen = revision
+    workspacesRequest ??= loadWorkspaces().finally(() => {
+      if (revision === seen) workspacesRequest = undefined
+    })
+    return workspacesRequest
+  }
+
+  async function loadWorkspaces(): Promise<Workspace[]> {
     if (!status.value.signedIn) {
       workspaces.value = []
+      workspacesLoaded.value = false
       return workspaces.value
     }
     const seen = revision
@@ -103,7 +144,12 @@ export const useAuthStore = defineStore('auth', () => {
     if (revision === seen) workspacesError.value = false
     try {
       const next = await comfybuilderApi.listWorkspaces()
-      if (revision === seen) workspaces.value = next
+      if (revision === seen) {
+        workspaces.value = next
+        workspacesLoaded.value = true
+        const current = next.find((workspace) => workspace.id === status.value.workspaceId)
+        status.value = { ...status.value, workspaceName: current?.name }
+      }
       return workspaces.value
     } catch {
       if (revision === seen) workspacesError.value = true
@@ -113,9 +159,8 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Switch the active workspace (re-runs the browser handoff pre-selecting it).
-   *  The new status also arrives via `onAuthChanged`; the scoped caches are
-   *  dropped so the distribution grid re-fetches for the new workspace. */
+  /** Activate the workspace for remote operations. Main uses cached credentials
+   *  when available and opens browser auth only when authorization is needed. */
   async function switchWorkspace(workspaceId: string): Promise<AuthStatus> {
     const next = await comfybuilderApi.switchWorkspace(workspaceId)
     applyAuthoritativeStatus(next)
@@ -129,49 +174,62 @@ export const useAuthStore = defineStore('auth', () => {
   // Hydrate from the persisted session once at creation: main only pushes
   // CHANGES, so the boot state has to be pulled. The revision guard keeps
   // this pull from overwriting anything newer.
-  void fetchStatus().catch(() => {})
+  const initialStatus = fetchStatus().catch(() => status.value)
 
   onScopeDispose(() => {
     unsubscribe?.()
   })
 
   const isSignedIn = computed(() => status.value.signedIn)
+  const personalWorkspace = computed(() => workspaces.value.find(isPersonalWorkspace) ?? null)
 
-  /** The distributions published to the signed-in workspace, as display rows. */
-  async function fetchDistributions(): Promise<Distribution[]> {
+  /** The builds published to the signed-in workspace, as display rows. */
+  async function fetchBuilds(): Promise<Build[]> {
     if (!isSignedIn.value) {
-      distributions.value = []
-      return distributions.value
+      builds.value = []
+      buildsLoaded.value = false
+      return builds.value
     }
     const seen = revision
-    loadingDistributions.value = true
-    if (revision === seen) distributionsError.value = false
+    loadingBuilds.value = true
+    if (revision === seen) buildsError.value = false
     try {
-      const next = await comfybuilderApi.listDistributions()
-      if (revision === seen) distributions.value = next
-      return distributions.value
+      const next = await comfybuilderApi.listBuilds()
+      if (revision === seen) {
+        builds.value = next
+        buildsLoaded.value = true
+      }
+      return builds.value
     } catch {
-      if (revision === seen) distributionsError.value = true
-      return distributions.value
+      if (revision === seen) buildsError.value = true
+      return builds.value
     } finally {
-      if (revision === seen) loadingDistributions.value = false
+      if (revision === seen) loadingBuilds.value = false
     }
   }
 
   return {
     status,
+    statusLoaded,
     workspaces,
-    distributions,
+    builds,
+    selectedWorkspaceId,
     loadingWorkspaces,
-    loadingDistributions,
+    workspacesLoaded,
+    loadingBuilds,
+    buildsLoaded,
     workspacesError,
-    distributionsError,
+    buildsError,
     isSignedIn,
+    personalWorkspace,
+    initializeWorkspaceContext,
+    resetWorkspaceContext,
     fetchStatus,
+    whenReady: () => initialStatus,
     signIn,
     signOut,
     fetchWorkspaces,
     switchWorkspace,
-    fetchDistributions
+    fetchBuilds
   }
 })

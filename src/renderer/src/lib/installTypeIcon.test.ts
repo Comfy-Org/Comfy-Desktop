@@ -53,7 +53,7 @@ describe('installTypeMetaForInstall', () => {
     expect(meta.labelKey).toBe('installType.legacyDesktop')
   })
 
-  it('gives a distribution install the distribution glyph, not the local one', () => {
+  it('gives a build install the build glyph, not the local one', () => {
     // It reports `local` like any standalone install, but what it IS matters
     // more than where it runs — and the tile, the picker row and the title bar
     // all read this, so they can't drift apart.
@@ -61,16 +61,16 @@ describe('installTypeMetaForInstall', () => {
       sourceId: 'comfybuilder',
       sourceCategory: 'local'
     })
-    expect(bySource.key).toBe('distribution')
+    expect(bySource.key).toBe('build')
     expect(bySource.icon).toBe(Package)
-    expect(bySource.labelKey).toBe('installType.distribution')
+    expect(bySource.labelKey).toBe('installType.build')
 
     const byLink = installTypeMetaForInstall({
       sourceId: 'standalone',
       sourceCategory: 'local',
       distributionId: 'd1'
     })
-    expect(byLink.key).toBe('distribution')
+    expect(byLink.key).toBe('build')
   })
 
   it('does not treat an empty distributionId as a link', () => {

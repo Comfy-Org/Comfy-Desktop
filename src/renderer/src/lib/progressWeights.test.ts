@@ -66,7 +66,7 @@ describe('getPhaseWeights', () => {
     expect(w.extract).toBe(0.3)
   })
 
-  it('uses the curated table for a comfybuilder distribution install', () => {
+  it('uses the curated table for a comfybuilder build install', () => {
     const w = getPhaseWeights(steps('download', 'extract', 'models'))
     expect(sum(w)).toBeCloseTo(1.0, 5)
     // Archive download dominates; models must not steal its share via equal split.

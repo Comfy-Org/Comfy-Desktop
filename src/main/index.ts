@@ -1,5 +1,15 @@
-import { app, Menu, ipcMain, net, dialog, crashReporter, nativeTheme, powerMonitor } from 'electron'
-import type { BrowserWindow, WebContentsView } from 'electron'
+import {
+  app,
+  Menu,
+  ipcMain,
+  net,
+  dialog,
+  crashReporter,
+  nativeTheme,
+  powerMonitor,
+  BrowserWindow
+} from 'electron'
+import type { WebContentsView } from 'electron'
 import type { Tray } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -108,6 +118,8 @@ import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
+import { initCoreBetaGrants } from './lib/coreBetaGrants'
+import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
 
 import {
@@ -1494,11 +1506,20 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       }
     })
 
+    // Bind the stored staff classification BEFORE any ops flag is fetched. The
+    // boot evaluation is the only authoritative one, so a property that arrives
+    // after it cannot affect this launch — see `staffFlagTargeting.ts`. Also
+    // subscribes to the identity consensus, which is what reclassifies for the
+    // NEXT launch; this runs before any view exists, so no outcome is missed.
+    initStaffFlagTargeting()
+
     // This ops-flag path is separate from consent-gated experiments: the first-use
     // picker renders while consent is still `'undecided'`, so the
     // experiments cache would never have a value to give it. See
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
+
+    void initCoreBetaGrants({ distinctId: installationId })
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and
     // free-tier offer UI. `userTier.ts` refreshes it on every cloud
@@ -1751,6 +1772,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
           // Guard: another op already running for this install.
           if (_operationAborts.has(installationId)) {
+            // A duplicate picker request must not replace the original
+            // operation's live progress with a false failure state.
+            const activeOperation = _activeOperationStatus.get(installationId)
+            if (activeOperation && !activeOperation.done) return
+
             _activeOperationStatus.set(installationId, {
               status: '',
               percent: -1,
@@ -2222,10 +2248,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // while the bounded check runs; if it commits to installing, the app quits
     // here and the installer relaunches it — so we skip opening the normal UI.
     const updateSplash = updater.hasPendingStartupUpdate() ? showUpdateInstallSplash() : undefined
-    // Timestamp the splash so the install can keep it up for a readable minimum
-    // (the bounded check usually resolves instantly, which would otherwise flash
-    // the splash by before the app quits to install).
-    const updateSplashShownAt = updateSplash ? Date.now() : undefined
     // Track whether the install actually started quitting the app. Quit intent
     // (`quitReason`) alone isn't proof — `restartAndInstall` can return without
     // quitting if the staged installer is gone — so key the backstop off a real
@@ -2235,7 +2257,40 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       updateInstallQuitStarted = true
     }
     app.once('before-quit', onUpdateInstallQuit)
-    const installingUpdate = await updater.applyPendingUpdateOnStartup(updateSplashShownAt)
+    // Guarded so an unexpected throw still lands in the normal-boot path below;
+    // the splash handoff there is what keeps the app alive.
+    let installingUpdate = false
+    try {
+      installingUpdate = await updater.applyPendingUpdateOnStartup(
+        updateSplash ? { onInstallCommitted: () => updateSplash.showInstallCountdown() } : undefined
+      )
+    } catch (err) {
+      console.error('applyPendingUpdateOnStartup failed:', err)
+    }
+    // Open the normal UI and only then take the splash down. The order matters:
+    // while the splash is the only window, destroying it before another window
+    // exists fires `window-all-closed`, which quits the app. That quit killed
+    // any in-flight background re-download of an invalid staged installer,
+    // leaving a partial file that re-triggered the same splash on every boot.
+    const openSurfaceAndDismissSplash = async (): Promise<void> => {
+      try {
+        await openStartupSurface()
+      } catch (err) {
+        console.error('openStartupSurface failed after update splash:', err)
+      } finally {
+        // Destroying the splash while it is the only window fires
+        // `window-all-closed` and quits the app, so if the surface handoff
+        // failed and no other window exists, keep the splash up: a stalled
+        // splash beats a silent exit that would also kill any in-flight
+        // background re-download.
+        const otherWindowExists = BrowserWindow.getAllWindows().some(
+          (w) => w !== updateSplash?.window && !w.isDestroyed()
+        )
+        if (updateSplash && !updateSplash.window.isDestroyed() && otherWindowExists) {
+          updateSplash.window.destroy()
+        }
+      }
+    }
     if (installingUpdate) {
       // Safety net: a successful install quits the app within a tick (firing
       // before-quit). If that didn't happen the install didn't proceed — recover
@@ -2246,21 +2301,24 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         if (updateInstallQuitStarted) return
         app.removeListener('before-quit', onUpdateInstallQuit)
         clearQuitReason()
-        if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
-        mainTelemetry.emit('comfy.desktop.app_update.startup_install_backstop_recovered', {})
-        void openStartupSurface()
-        hostReentryGate.open()
+        updater.recordStartupInstallBackstopRecovered()
+        void openSurfaceAndDismissSplash().then(() => {
+          hostReentryGate.open()
+        })
       }, STARTUP_INSTALL_QUIT_BACKSTOP_MS)
     } else {
       app.removeListener('before-quit', onUpdateInstallQuit)
-      if (updateSplash && !updateSplash.isDestroyed()) updateSplash.destroy()
       // The install-less chooser host is the primary surface. Each
       // install gets its own ComfyUI window via openComfyWindow()
       // when launched, and the chooser host is the entry-point for
       // picking / creating installs. When the user last left an instance
       // window (and the reopen setting is on), restore that instance
       // in-place on top of the freshly-opened chooser host.
-      void openStartupSurface()
+      if (updateSplash) {
+        await openSurfaceAndDismissSplash()
+      } else {
+        void openStartupSurface()
+      }
       // Startup recovery (awaited inside `ipc.register()` above) has settled
       // and we've committed to opening the normal UI, so OS-driven reentry
       // (second-instance / dock activate) can open windows directly again.
@@ -2365,6 +2423,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         tray = null
       }
     }
+    updater.recordProcessExit()
     if (_stopPeriodicReleaseChecks) {
       _stopPeriodicReleaseChecks()
       _stopPeriodicReleaseChecks = null

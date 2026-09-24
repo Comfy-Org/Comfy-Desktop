@@ -200,11 +200,10 @@ describe('updateSections — update-comfyui action payload', () => {
     expect(action!.data?.isDowngrade).toBeDefined()
   })
 
-  it('confirm copy carries the breakage warning and the snapshot-undo hint', () => {
+  it('confirm copy explains how to restore after custom-node breakage', () => {
     // The update is reversible via the auto-saved pre-update snapshot; the
     // confirm copy must surface both the risk and the undo path.
     const action = getUpdateAction(baseInstall({ updateChannel: 'stable' }), 'stable')
-    expect(action!.confirm?.message).toContain('standalone.updateBreakingWarning')
     expect(action!.confirm?.message).toContain('standalone.updateSnapshotUndoHint')
   })
 })

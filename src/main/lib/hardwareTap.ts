@@ -16,6 +16,8 @@
  *     requested loads, dynamic-VRAM prepares, and multi-GPU deepclones. Its
  *     aligned arrays preserve model class, trigger, target device, count, and
  *     UTC observation date without emitting one event per tuple.
+ *   - `comfy.desktop.comfyui.asset_scan_error` forwards typed scanner failures
+ *     without file paths or exception messages.
  *
  * Log strings parsed (current ComfyUI main branch):
  *   - "Device: cuda:0 NVIDIA GeForce RTX 4090 : native"   (model_management.py)
@@ -35,14 +37,10 @@
  */
 import * as telemetry from './telemetry'
 import { createModelUsageSummary } from './modelUsageSummary'
-import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import type { AcceleratorInfo, AcceleratorSnapshot } from '../../types/ipc'
 
-export interface AcceleratorInfo {
-  deviceType: string
-  deviceIndex: number | null
-  deviceName: string | null
-  backend: string | null
-}
+export type { AcceleratorInfo, AcceleratorSnapshot } from '../../types/ipc'
 
 const DEVICE_LINE = /^Device:\s*(.+)$/
 const VRAM_LINE = /^Total VRAM\s+(\d+)\s*MB,\s*total RAM\s+(\d+)\s*MB/i
@@ -53,6 +51,8 @@ const CUDA_DEVICE_LINE = /^Set cuda device to:\s*(\d+)/i
 // separate line that precedes a nameless `Device: privateuseone` line, so it's
 // the only way to recover the model for those vendors.
 const DIRECTML_LINE = /^Using directml with device:\s*(.+)$/i
+const ASSET_SCAN_ERROR_LINE =
+  /^Asset scan error: phase=(reference_stat|discovery_stat|enrichment_stat|hashing) error_type=(permission_denied|os_error)$/
 
 /** Emit one array-backed delta instead of an event for every model tuple. */
 const MODEL_USAGE_FLUSH_INTERVAL_MS = 60 * 60_000
@@ -108,15 +108,20 @@ export function createHardwareTap(opts: {
   installationId: string
   variant?: string | null
   release?: string | null
+  /** Core beta args Desktop injected for this launch (exact dashed tokens), so
+   *  every event can be split by beta cohort. */
+  coreBetaFlags?: readonly string[]
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
+  getAcceleratorInfo: () => AcceleratorSnapshot | null
   flushSummary: () => void
 } {
   const baseContext = {
     installation_id: opts.installationId,
     variant: opts.variant ?? null,
-    release: opts.release ?? null
+    release: opts.release ?? null,
+    core_beta_flags: [...(opts.coreBetaFlags ?? [])]
   }
 
   // Accelerator accumulation: fields trickle in over several lines. ComfyUI
@@ -132,6 +137,7 @@ export function createHardwareTap(opts: {
   let cudaDeviceSet: number | null = null
   let directmlDeviceName: string | null = null
   const devices: AcceleratorInfo[] = []
+  const emittedAssetScanErrors = new Set<string>()
   const modelUsage = createModelUsageSummary()
   let modelUsageFlushTimer: ReturnType<typeof setInterval> | null = null
 
@@ -205,11 +211,48 @@ export function createHardwareTap(opts: {
     }
   }
 
+  function getAcceleratorInfo(): AcceleratorSnapshot | null {
+    if (devices.length === 0) return null
+    const primary = devices[0]!
+    const primaryName =
+      primary.deviceName ??
+      (primary.deviceType !== 'cpu' && primary.deviceType !== 'mps' ? directmlDeviceName : null)
+    return {
+      ...primary,
+      deviceName: primaryName,
+      devices: devices.map((device, index) => ({
+        ...device,
+        deviceName: index === 0 ? primaryName : device.deviceName
+      })),
+      vramMb,
+      ramMb,
+      pytorchVersion,
+      xformersVersion,
+      cudaDeviceSet
+    }
+  }
+
   function handleLine(line: string): void {
     // Strip a leading `[LEVEL] ` tag (ComfyUI Desktop's bundled build) so the
     // anchored parsers below match both the prefixed and bare log formats.
     const trimmed = stripLogLevelPrefix(stripAnsi(line).trim())
     if (trimmed.length === 0) return
+
+    const scanError = trimmed.match(ASSET_SCAN_ERROR_LINE)
+    if (scanError) {
+      const scanPhase = scanError[1]!
+      const errorType = scanError[2]!
+      const key = `${scanPhase}:${errorType}`
+      if (!emittedAssetScanErrors.has(key)) {
+        emittedAssetScanErrors.add(key)
+        telemetry.emit('comfy.desktop.comfyui.asset_scan_error', {
+          ...baseContext,
+          scan_phase: scanPhase,
+          error_type: errorType
+        })
+      }
+      return
+    }
 
     if (!acceleratorEmitted) {
       const vram = parseVramLine(trimmed)
@@ -252,36 +295,19 @@ export function createHardwareTap(opts: {
     if (modelUsage.recordLine(trimmed)) ensureModelUsageFlushTimer()
   }
 
-  // Separate per-stream buffers: stdout and stderr arrive as independent
-  // chunk streams, so a single shared buffer could splice unrelated partial
-  // lines together. Each buffer is capped so a long burst without a newline
-  // can't grow unbounded.
-  const MAX_PENDING_CHARS = 16_384
-  const pendingBySource: Record<'stdout' | 'stderr', string> = {
-    stdout: '',
-    stderr: ''
-  }
-
-  function appendChunk(source: 'stdout' | 'stderr', chunk: string): string[] {
-    // Split first so a large chunk's complete lines (e.g. `Device:`) are never
-    // lost; cap only the unterminated tail we carry over, which is the sole
-    // unbounded-growth risk.
-    const lines = (pendingBySource[source] + chunk).split(/\r?\n/)
-    const tail = lines.pop() ?? ''
-    pendingBySource[source] =
-      tail.length > MAX_PENDING_CHARS ? tail.slice(-MAX_PENDING_CHARS) : tail
-    return lines
-  }
+  const lineBuffer = createStreamLineBuffer()
 
   return {
     ingest(chunk: string, source: 'stdout' | 'stderr'): void {
       // Hard guarantee: this runs inside the launch stdout/stderr handler,
       // right before the boot-progress tracker. A throw here must never break
       // log streaming or boot detection. Telemetry must never break the app.
-      try {
-        for (const line of appendChunk(source, chunk)) handleLine(line)
-      } catch {
-        // ignore - telemetry side effect, not user-visible
+      for (const line of lineBuffer.append(source, chunk)) {
+        try {
+          handleLine(line)
+        } catch {
+          // Isolate malformed lines and unexpected telemetry sink failures.
+        }
       }
     },
     /**
@@ -300,28 +326,35 @@ export function createHardwareTap(opts: {
       cudaDeviceSet = null
       directmlDeviceName = null
       devices.length = 0
+      emittedAssetScanErrors.clear()
       // Drop any incomplete lines from the previous (now-dead) process streams.
-      pendingBySource.stdout = ''
-      pendingBySource.stderr = ''
+      lineBuffer.reset()
     },
+    getAcceleratorInfo,
     flushSummary(): void {
-      try {
-        // Process complete-but-unterminated final lines so a trailing `Device:`
-        // line isn't dropped when the process exits without a newline.
-        for (const source of ['stdout', 'stderr'] as const) {
-          const pending = pendingBySource[source]
+      // Process complete-but-unterminated final lines independently so a bad
+      // stdout tail cannot suppress a valid stderr tail (or vice versa).
+      for (const source of ['stdout', 'stderr'] as const) {
+        try {
+          const pending = lineBuffer.takePending(source)
           if (pending.trim()) handleLine(pending)
-          pendingBySource[source] = ''
+        } catch {
+          // ignore - telemetry side effect, not user-visible
         }
-        // Processing a trailing model line can arm the timer, so clear it only
-        // after every pending line has passed through the parser.
-        if (modelUsageFlushTimer) {
-          clearInterval(modelUsageFlushTimer)
-          modelUsageFlushTimer = null
-        }
-        // Emit the accelerator event if the process exited right after its
-        // `Device:` lines with no following line to close the run.
+      }
+      // Processing a trailing model line can arm the timer. Every parser call
+      // above is contained, so cleanup is always reached.
+      if (modelUsageFlushTimer) {
+        clearInterval(modelUsageFlushTimer)
+        modelUsageFlushTimer = null
+      }
+      // Terminal summaries are independent: one failing must not suppress the other.
+      try {
         emitAccelerator()
+      } catch {
+        // ignore - telemetry side effect, not user-visible
+      }
+      try {
         emitModelUsage()
       } catch {
         // ignore - telemetry side effect, not user-visible

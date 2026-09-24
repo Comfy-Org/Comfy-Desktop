@@ -255,7 +255,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     let resumeValidator: { kind: 'etag' | 'last-modified'; value: string } | null = null
     if (existingMeta && sha256 && existingMeta.sha256 && existingMeta.sha256 !== sha256) {
       // The staged pair was written for DIFFERENT expected content (e.g. a
-      // superseded distribution version re-using the destination). Splicing
+      // superseded Build version re-using the destination). Splicing
       // onto those bytes could only ever fail verification - restart clean.
       removeStagedArtifacts(finalPath)
       existingMeta = null

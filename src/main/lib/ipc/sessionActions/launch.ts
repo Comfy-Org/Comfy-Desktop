@@ -61,6 +61,7 @@ import { lastNLines, stripAnsi } from '../../stderrTail'
 import { decodeExitCode } from '../../exitCodeInfo'
 import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
+import { createAssetsTap } from '../../assetsTap'
 import { createExecutionTap } from '../../executionTap'
 import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
@@ -72,6 +73,7 @@ import {
   awaitTemplateDownloadSettled
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
+import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
 import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
@@ -94,6 +96,13 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
+import { getCoreBetaGrantsAsync, selectCoreBetaGrantArgs } from '../../coreBetaGrants'
+import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
+import type { CoreBetaGrant } from '../../coreBetaGrants'
+import { coreGateVersion, coreRecordCurrent, coreSemver } from '../../version'
+import type { CoreCheckout } from '../../version'
+import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
+import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
 // --list-feature-flags registry so we never inject unrecognized keys.
@@ -113,6 +122,157 @@ export function desktopFeatureFlags(
     flags.enable_telemetry = 'true'
   }
   return flags
+}
+
+/** Establish what the launching checkout is, failing closed at every step, because each step
+ *  has an absence meaning "we could not look" alongside the one meaning "there is nothing here".
+ *  Exactly one state is the latter: no `.git` entry at all, i.e. the standalone/archive install
+ *  with nothing to contradict the record. A `.git` that cannot be stat-ed, one that yields no
+ *  git directory (a worktree/submodule pointer missing its `gitdir:` line), and a git directory
+ *  whose HEAD would not read are all git-managed checkouts we failed to inspect.
+ *  {@link coreRecordCurrent} grants on `not-git` and refuses `unreadable`, so collapsing any of
+ *  the three into it — as a bare `readGitHead` call does, and as a bare `resolveGitDir(…) ===
+ *  null` test does one layer below that — is what made the gate fail open. */
+function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
+  switch (gitDirPresence(comfyuiDir)) {
+    case 'absent':
+      return { kind: 'not-git' }
+    case 'indeterminate':
+      return { kind: 'unreadable' }
+    case 'present': {
+      if (resolveGitDir(comfyuiDir) === null) return { kind: 'unreadable' }
+      const head = readGitHead(comfyuiDir)
+      return head === null ? { kind: 'unreadable' } : { kind: 'head', commit: head }
+    }
+  }
+}
+
+/** The single post-filter view of this launch's Core beta grants: what survived
+ *  BOTH the version/toggle selection and the running core's args schema, plus
+ *  what selection granted that the schema then refused. Every downstream signal
+ *  (final args, tap context, telemetry, log records) reads from this one value. */
+export interface CoreBetaLaunch {
+  readonly applied: readonly CoreBetaGrant[]
+  readonly droppedUnsupported: readonly string[]
+  readonly logRecords: readonly string[]
+  readonly coreVersion: string | null
+  /** The beta toggle as resolved for THIS launch. Carried on the DTO rather than re-read at
+   *  the report site so `opt_state` still tells the truth on the paths that never reach arg
+   *  assembly — schema discovery failing must not make an opted-in user report as opted out. */
+  readonly optedIn: boolean
+}
+
+/** No grants resolved: either the install opted out, or the launch never reached arg assembly
+ *  (schema discovery unavailable). `optedIn` is still the real toggle in both cases. */
+function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
+  return {
+    applied: [],
+    droppedUnsupported: [],
+    logRecords: [],
+    coreVersion: null,
+    optedIn
+  }
+}
+
+/** Newline-terminated because `writeLog` and `sendOutput` forward text verbatim:
+ *  without it the first child-process line joins the record. */
+function coreBetaLogRecord(grant: CoreBetaGrant, coreVersion: string): string {
+  return `[core-beta] ${grant.arg} (core ${coreVersion} >= ${grant.minCoreVersion}, opted in)\n`
+}
+
+/**
+ * Assemble the spawn args and resolve this launch's Core beta grants.
+ *
+ * User args pass through untouched: grants are additive, so the only thing that ever removes a
+ * user token is the running core's args schema. Grants are selected against the UNFILTERED user
+ * args — so a grant conflicting with a token this core cannot parse is still suppressed — then
+ * passed through that same schema filter so a core predating a flag never sees it. Ordering is
+ * fixed: prefix, desktop feature flags, beta grants, user args.
+ */
+export function buildLaunchArgs(input: {
+  prefixArgs: readonly string[]
+  userArgs: readonly string[]
+  desktopFlagArgs: readonly string[]
+  schema: ComfyArgsSchema
+  betaFlags: readonly CoreBetaGrant[]
+  coreVersion: string | null
+  coreVersionExact: boolean
+  coreVersionVerified: boolean
+  coreVersionCurrent: boolean
+  betaEnabled: boolean
+}): { args: string[]; beta: CoreBetaLaunch } {
+  const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
+  const filtered = filterUnsupportedArgs([...userArgs], schema)
+  const selected = selectCoreBetaGrantArgs(
+    input.betaFlags,
+    {
+      semver: coreVersion,
+      exact: input.coreVersionExact,
+      verified: input.coreVersionVerified,
+      current: input.coreVersionCurrent
+    },
+    input.betaEnabled,
+    userArgs
+  )
+  const supported = new Set(
+    filterUnsupportedArgs(
+      selected.map((grant) => grant.arg),
+      schema
+    )
+  )
+  const applied = selected.filter((grant) => supported.has(grant.arg))
+  const betaArgs = applied.map((grant) => grant.arg)
+  return {
+    args: [...prefixArgs, ...desktopFlagArgs, ...betaArgs, ...filtered],
+    beta: {
+      applied,
+      droppedUnsupported: selected
+        .filter((grant) => !supported.has(grant.arg))
+        .map((grant) => grant.arg),
+      logRecords:
+        coreVersion === null ? [] : applied.map((grant) => coreBetaLogRecord(grant, coreVersion)),
+      coreVersion,
+      optedIn: input.betaEnabled
+    }
+  }
+}
+
+/** Put each record in the on-disk log (bug reports) and the user-visible output. */
+export function emitCoreBetaRecords(
+  records: readonly string[],
+  sinks: { writeLog: (text: string) => void; sendOutput: (text: string) => void }
+): void {
+  for (const record of records) {
+    try {
+      sinks.writeLog(record)
+    } catch {
+      // Reporting must not affect launch; still attempt the independent renderer sink.
+    }
+    try {
+      sinks.sendOutput(record)
+    } catch {
+      // Reporting must not affect launch.
+    }
+  }
+}
+
+/** `opt_state` reports every launch's toggle so opt-in/out is countable; `applied`
+ *  reports the grants that reached core and the ones its schema refused. Delivery
+ *  is the telemetry module's consent gate to decide, never a branch here. */
+export function emitCoreBetaTelemetry(input: {
+  appliedArgs: readonly string[]
+  droppedUnsupported: readonly string[]
+  coreVersion: string | null
+  optedIn: boolean
+}): void {
+  if (input.appliedArgs.length > 0 || input.droppedUnsupported.length > 0) {
+    telemetry.emit('comfy.desktop.core_beta.applied', {
+      args: [...input.appliedArgs],
+      core_version: input.coreVersion,
+      dropped_unsupported: [...input.droppedUnsupported]
+    })
+  }
+  telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
 }
 
 export interface StorageLaunchState {
@@ -302,8 +462,91 @@ async function openLogStream(installPath: string): Promise<WriteStream> {
   return fs.createWriteStream(path.join(logDir, 'comfyui.log'), { flags: 'w' })
 }
 
-function writeLog(stream: WriteStream, text: string): void {
+export function writeLog(stream: WriteStream, text: string): void {
   if (!stream.writableEnded) stream.write(stripAnsi(text))
+}
+
+export function _resolveLaunchMode(
+  inst: InstallationRecord,
+  actionData?: Record<string, unknown>
+): string {
+  if (actionData?.launchModeOverride === 'console') return 'console'
+  return (inst.launchMode as string | undefined) || 'window'
+}
+
+export function _resolvePortConflictPolicy(
+  inst: InstallationRecord,
+  defaults: Record<string, unknown>,
+  actionData?: Record<string, unknown>
+): { mode: string; portIsExplicit: boolean } {
+  const autoPortOnConflict = actionData?.autoPortOnConflict === true
+  return {
+    mode: autoPortOnConflict
+      ? 'auto'
+      : (inst.portConflict as string | undefined) ||
+        (defaults.portConflict as string | undefined) ||
+        'auto',
+    portIsExplicit:
+      actionData?.portOverride != null ||
+      (!autoPortOnConflict && /(?:^|\s)--port(?:\s|=|$)/.test(String(inst.launchArgs ?? '')))
+  }
+}
+
+/** Builds the assets tap, substituting an inert one if construction throws.
+ *  Deliberately stricter than the neighbouring `createHardwareTap`, whose
+ *  construction failures propagate and abort the launch: this tap is pure
+ *  diagnostics for an off-by-default subsystem and must never cost a user their
+ *  launch. Same shape, so downstream lifecycle sites need no null checks. */
+export function createAssetsTapSafe(base: {
+  installationId: string
+  variant: string | null
+  release: string | null
+  coreBetaFlags: string[]
+}): ReturnType<typeof createAssetsTap> {
+  try {
+    return createAssetsTap(base)
+  } catch (err) {
+    console.error('Failed to create assets telemetry tap; continuing without it:', err)
+    return { ingest: () => {}, beginBoot: () => {}, flushSummary: () => {} }
+  }
+}
+
+/** Pipe a spawned process's output to the log file, renderer, telemetry taps,
+ *  and the launch tracker (ANSI-stripped); returns a bounded stderr tail for
+ *  crash diagnostics. */
+export function attachLaunchStreams(
+  proc: ChildProcess,
+  logStream: WriteStream,
+  sendOutput: (text: string) => void,
+  execTap: ReturnType<typeof createExecutionTap>,
+  hwTap: ReturnType<typeof createHardwareTap>,
+  assetsTap: ReturnType<typeof createAssetsTap>,
+  tracker: LaunchProgressTracker
+): { getStderr: () => string } {
+  let stderrBuf = ''
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString('utf-8')
+    writeLog(logStream, text)
+    sendOutput(text)
+    execTap.ingest(text, 'stdout')
+    hwTap.ingest(text, 'stdout')
+    assetsTap.ingest(text, 'stdout')
+    tracker.ingest(stripAnsi(text))
+  })
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString('utf-8')
+    // Strip ANSI once for both the tail buffer and the launch tracker.
+    const clean = stripAnsi(text)
+    stderrBuf += clean
+    if (stderrBuf.length > 16 * 1024) stderrBuf = stderrBuf.slice(-(16 * 1024))
+    writeLog(logStream, text)
+    sendOutput(text)
+    execTap.ingest(text, 'stderr')
+    hwTap.ingest(text, 'stderr')
+    assetsTap.ingest(text, 'stderr')
+    tracker.ingest(clean)
+  })
+  return { getStderr: () => stderrBuf }
 }
 
 /** Failure cleanup for a throw after launch resources were acquired (launching
@@ -323,11 +566,17 @@ export function _cleanupFailedLaunchSetup(
   if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
   abort.abort()
   _clearLaunchingFailed(installationId)
+  // Every guarded setup failure lands here, including the spawn itself on the `skipPortWait`
+  // path — and that one rethrows past the `!launchResult.ok` cleanup rather than through it.
+  // Clearing at this chokepoint covers all of them; it is a delete, so paths that fail before
+  // the claim is armed pay nothing.
+  clearBetaActivationClaim(installationId)
 }
 
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   const { installationId } = ctx
-  if (_runningSessions.has(installationId)) {
+  const sessionId = ctx.sessionId ?? installationId
+  if (_runningSessions.has(sessionId)) {
     return { ok: false, message: i18n.t('errors.alreadyRunning') }
   }
   // No `_hasActiveLaunch` here: this guard, `_beginLaunch`, and runLaunch's
@@ -335,36 +584,57 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   // launch can never slip between them. Checking it would instead reject a
   // legitimate restart relaunch during the post-registration window (session
   // up, handler still draining post-launch work like the template gate).
-  if (_operationAborts.has(installationId)) {
+  if (_operationAborts.has(sessionId)) {
     return { ok: false, message: 'Another operation is already running for this installation.' }
   }
   // Track the launch for its ENTIRE handler lifetime so `cancelLaunching` can
   // abort it at any point - including the pre-spawn prep that runs before the
   // launching marker exists. The finally is the single teardown-complete
   // signal: `cancelLaunching` awaits it before letting a restart relaunch.
-  const launch = _beginLaunch(installationId)
+  const launch = _beginLaunch(sessionId)
   try {
     return await runLaunch(ctx, launch.abort)
   } finally {
-    if (_operationAborts.get(installationId) === launch.abort)
-      _operationAborts.delete(installationId)
-    _endLaunch(installationId, launch)
+    if (_operationAborts.get(sessionId) === launch.abort) _operationAborts.delete(sessionId)
+    _endLaunch(sessionId, launch)
   }
 }
 
 async function runLaunch(
-  { event, installationId, inst: instArg, actionData }: ActionContext,
+  { event, installationId, sessionId: runtimeSessionId, inst: instArg, actionData }: ActionContext,
   abort: AbortController
 ): Promise<ActionResult> {
   let inst = instArg
+  const sessionId = runtimeSessionId ?? installationId
   // Synthetic repair steps that ran during launch prep, prepended to the launch
   // progress in display order (e.g. a source rollback, then a PyTorch restore).
   const preLaunchPhases: PreLaunchPhase[] = []
+  // Resolved ONCE here, independent of the schema block below: arg assembly can be skipped
+  // entirely (schema discovery unavailable) and `opt_state` must still report the real toggle.
+  //
+  // Isolated in its own try because resolving WRITES the default back on first read, so a
+  // read-only or full profile throws on what looks like a pure read. Failing to resolve costs
+  // this launch its beta grants (fail closed) and nothing else: the launch continues into arg
+  // assembly, so user args are still filtered against the running core's schema — which is what
+  // keeps flags an older core cannot parse from reaching it.
+  let betaEnabled = false
+  try {
+    betaEnabled = settings.resolveBetaFeaturesEnabled()
+  } catch (err) {
+    console.warn('[core-beta] beta setting resolution failed:', err)
+  }
+  // Resolved during arg assembly below, then read by the taps, the launch log
+  // records and the beta telemetry - all after assembly, never before.
+  let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
+  // LAUNCH-SCOPED on purpose. `tryLaunch` recurses on reboot and port retries, re-entering
+  // past the report site, so an unlatched report fires once per attempt; a module-global
+  // latch would instead silence every launch after the first in the process lifetime.
+  let coreBetaReported = false
   // Claim the operation slot for the whole launch, prep included, so no other
   // operation can start against this install while the launch is preparing.
-  _operationAborts.set(installationId, abort)
+  _operationAborts.set(sessionId, abort)
   // Drop retained crash detail so the lifecycle view doesn't resurface it.
-  clearCrash(installationId)
+  clearCrash(sessionId)
   // The startup model-download pass (migrate legacy final-path partials,
   // hydrate staged `.part` downloads) runs to completion before ComfyUI can
   // scan the model dirs, so a truncated file cannot masquerade as a loadable
@@ -417,7 +687,19 @@ async function runLaunch(
   }
 
   const sender = event.sender
-  const sendProgress = makeSendProgress(sender, installationId)
+  const sendProgress = makeSendProgress(sender, sessionId)
+
+  // A build install whose background model staging never finished (crash,
+  // abort, staging failure, or a record written before `modelsStaged` existed)
+  // resumes its downloads now. Fire-and-forget: launch is not gated on models;
+  // already-staged files are skipped by hash.
+  if (
+    inst.sourceId === 'comfybuilder' &&
+    inst.status === 'installed' &&
+    inst.modelsStaged !== true
+  ) {
+    restageBuildModelsIfNeeded(inst)
+  }
 
   /** Show template model-download phase for first launch if needed. */
   const showTemplatePhase =
@@ -458,7 +740,7 @@ async function runLaunch(
       // with `boot_failed`); a healthy boot discards them — `boot_started`
       // is already ~258k/14d and per-phase emits on every boot would be pure
       // volume. See `bootPhaseBuffer`.
-      onPhaseEnter: (phase) => recordBootPhase(installationId, phase)
+      onPhaseEnter: (phase) => recordBootPhase(sessionId, phase)
     })
     launchTracker.start()
     return launchTracker
@@ -474,7 +756,7 @@ async function runLaunch(
     try {
       return await step()
     } catch (err) {
-      _cleanupFailedLaunchSetup(installationId, abort, opts)
+      _cleanupFailedLaunchSetup(sessionId, abort, opts)
       throw err
     }
   }
@@ -487,25 +769,79 @@ async function runLaunch(
     logStream: WriteStream
     execTap: ReturnType<typeof createExecutionTap>
     hwTap: ReturnType<typeof createHardwareTap>
+    assetsTap: ReturnType<typeof createAssetsTap>
     tracker: LaunchProgressTracker
   }> {
     const logStream = await openLogStream(inst.installPath)
+    const coreBetaFlags = coreBeta.applied.map((grant) => grant.arg)
     try {
       const execTap = createExecutionTap({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
       })
       const hwTap = createHardwareTap({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
-        release: (inst.release as string | undefined) ?? null
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
+      })
+      const assetsTap = createAssetsTapSafe({
+        installationId,
+        variant: (inst.variant as string | undefined) ?? null,
+        release: (inst.release as string | undefined) ?? null,
+        coreBetaFlags
       })
       const tracker = await armLaunchTracker()
-      return { logStream, execTap, hwTap, tracker }
+      return { logStream, execTap, hwTap, assetsTap, tracker }
     } catch (err) {
       logStream.end()
       throw err
+    }
+  }
+
+  // Called once per launch from each spawn path, as soon as that path has both
+  // destinations: the log records go to the on-disk log and the renderer, the
+  // events to telemetry.
+  function reportCoreBetaLaunch(logStream: WriteStream, sendOutput: (text: string) => void): void {
+    if (coreBetaReported) return
+    coreBetaReported = true
+    emitCoreBetaRecords(coreBeta.logRecords, {
+      writeLog: (text) => writeLog(logStream, text),
+      sendOutput
+    })
+    // Same latch, same reason: a grant is only worth announcing once it is provably on this
+    // launch's command line. Queued rather than shown — the host window may still be mid-attach
+    // or under the progress takeover, so the title bar drains this when its own gate opens.
+    armBetaActivationNotice(installationId, coreBeta.applied)
+    try {
+      emitCoreBetaTelemetry({
+        appliedArgs: coreBeta.applied.map((grant) => grant.arg),
+        droppedUnsupported: coreBeta.droppedUnsupported,
+        coreVersion: coreBeta.coreVersion,
+        optedIn: coreBeta.optedIn
+      })
+    } catch {
+      // The telemetry layer normally contains SDK failures; also isolate unexpected sink throws.
+    }
+  }
+
+  /** Launch-argument cohort, not confirmation that Core's Assets service initialized.
+   *  Manual/source arguments count even when opted out or schema discovery fails;
+   *  managed grants remain separate attribution. Called only after launchCmd exists.
+   *  `app_version` is added centrally by telemetry.ts. */
+  function bootCohort(): {
+    core_beta_flags: string[]
+    assets_enabled: boolean
+    core_beta_opted_in: boolean
+    core_version: string | null
+  } {
+    return {
+      core_beta_flags: coreBeta.applied.map((grant) => grant.arg),
+      assets_enabled: launchCmd.args?.includes('--enable-assets') === true,
+      core_beta_opted_in: coreBeta.optedIn,
+      core_version: coreSemver(inst)
     }
   }
 
@@ -628,7 +964,7 @@ async function runLaunch(
           inst,
           {
             sendProgress,
-            sendOutput: makeSendOutput(event.sender, installationId),
+            sendOutput: makeSendOutput(event.sender, sessionId),
             update: updateFn,
             signal: abort.signal
           },
@@ -662,6 +998,13 @@ async function runLaunch(
       const mainPyRel = launchCmd.args[sIdx + 1]!
       const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
       const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
+      const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
+      const userArgs = launchCmd.args.slice(sIdx + 2)
+      // Take ownership of the array before anything downstream mutates it in place:
+      // `applyStorageLaunchArgs` pushes onto `launchCmd.args`, and when discovery fails there is
+      // no `built.args` to replace it, so those pushes would otherwise reach the array the
+      // source handed us. Same values either way — this is about aliasing, not content.
+      launchCmd.args = [...launchCmd.args]
       try {
         const schema = await getComfyArgsSchema(
           launchCmd.cmd,
@@ -670,10 +1013,6 @@ async function runLaunch(
           installationId,
           revision
         )
-        const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
-        const userArgs = launchCmd.args.slice(sIdx + 2)
-        const filtered = filterUnsupportedArgs(userArgs, schema)
-
         // Skip when the discovery flag is absent (avoids a pointless python spawn).
         const desktopFlagArgs: string[] = []
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
@@ -694,9 +1033,28 @@ async function runLaunch(
           }
         }
 
-        launchCmd.args = [...prefixArgs, ...desktopFlagArgs, ...filtered]
+        // The gate's version, not the display label: the `[core-beta]` log line and the
+        // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
+        // an install whose label is unverified they name the lower ancestry-proven release.
+        const gate = coreGateVersion(inst)
+        const built = buildLaunchArgs({
+          prefixArgs,
+          userArgs,
+          desktopFlagArgs,
+          schema,
+          betaFlags: await getCoreBetaGrantsAsync(),
+          coreVersion: gate.semver,
+          coreVersionExact: gate.exact,
+          coreVersionVerified: gate.verified,
+          // Read here rather than reused from `revision` above: that one falls back to the
+          // record when HEAD is unreadable, which is the very disagreement being checked for.
+          coreVersionCurrent: coreRecordCurrent(inst, resolveCoreCheckout(path.dirname(mainPyAbs))),
+          betaEnabled
+        })
+        launchCmd.args = built.args
+        coreBeta = built.beta
       } catch {
-        // Schema not available — pass args as-is.
+        // Discovery failed; launch the user's own args without injecting managed flags.
       }
     }
   }
@@ -718,41 +1076,6 @@ async function runLaunch(
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd)
-
-  /** Pipe a spawned process's output to the log file, renderer, execution tap,
-   *  and the launch tracker (ANSI-stripped); returns a bounded stderr tail for
-   *  crash diagnostics. */
-  function attachLaunchStreams(
-    proc: ChildProcess,
-    logStream: WriteStream,
-    sendOutput: (text: string) => void,
-    execTap: ReturnType<typeof createExecutionTap>,
-    hwTap: ReturnType<typeof createHardwareTap>,
-    tracker: LaunchProgressTracker
-  ): { getStderr: () => string } {
-    let stderrBuf = ''
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString('utf-8')
-      writeLog(logStream, text)
-      sendOutput(text)
-      execTap.ingest(text, 'stdout')
-      hwTap.ingest(text, 'stdout')
-      tracker.ingest(stripAnsi(text))
-    })
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString('utf-8')
-      // Strip ANSI once for both the tail buffer and the launch tracker.
-      const clean = stripAnsi(text)
-      stderrBuf += clean
-      if (stderrBuf.length > 16 * 1024) stderrBuf = stderrBuf.slice(-(16 * 1024))
-      writeLog(logStream, text)
-      sendOutput(text)
-      execTap.ingest(text, 'stderr')
-      hwTap.ingest(text, 'stderr')
-      tracker.ingest(clean)
-    })
-    return { getStderr: () => stderrBuf }
-  }
 
   /** Gates the `template-models` reader: the bar derives "prior steps done" from
    *  the active phase index, so the reader stays silent through the real phases
@@ -892,17 +1215,19 @@ async function runLaunch(
         }
       })
     } catch (_err) {
-      if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       if (abort.signal.aborted) return { ok: false, cancelled: true }
       return { ok: false, message: i18n.t('errors.cannotConnect', { url: displayUrl }) }
     }
 
-    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
-    const mode = (inst.launchMode as string | undefined) || 'window'
+    if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+    const mode = _resolveLaunchMode(inst, actionData)
     _addSession(
-      installationId,
+      sessionId,
       { proc: null, port: launchCmd.port!, url: launchCmd.url, mode, installationName: inst.name },
-      Date.now() - launchStartedAt
+      Date.now() - launchStartedAt,
+      undefined,
+      installationId
     )
     if (_onLaunch) {
       _onLaunch({
@@ -918,41 +1243,44 @@ async function runLaunch(
 
   // Local process launch
   if (!fs.existsSync(launchCmd.cmd!)) {
-    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+    if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
   // Skip port logic entirely
   if (launchCmd.skipPortWait) {
-    const sendOutput = makeSendOutput(sender, installationId)
+    const sendOutput = makeSendOutput(sender, sessionId)
     const launchEnv = buildLaunchEnv(inst)
 
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
     // the handler settles.
-    const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(() => {
-      _markLaunching(installationId, inst.name)
+    const { logStream, execTap, hwTap, assetsTap, tracker } = await guardLaunchSetup(() => {
+      _markLaunching(sessionId, inst.name)
       return acquireLaunchResources()
     })
-
     // Last pre-spawn cancellation point on this path: a launch cancelled
     // during the awaits above must never spawn.
     if (abort.signal.aborted) {
       logStream.end()
-      _clearLaunchingFailed(installationId)
+      _clearLaunchingFailed(sessionId)
       return { ok: false, cancelled: true }
     }
+    // Past the final gate: this launch is going to spawn, so the grants it applied are now
+    // real. Reporting before the gate attributes grants to launches that never started.
+    reportCoreBetaLaunch(logStream, sendOutput)
 
     const { proc, getStderr } = await guardLaunchSetup(
       async () => {
         hwTap.beginBoot()
+        assetsTap.beginBoot()
         const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
           showWindow: launchCmd.showWindow
         })
         try {
           return {
             proc: p,
-            ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker)
+            ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, assetsTap, tracker)
           }
         } catch (err) {
           // Stream wiring failed: kill and WAIT for the child so the settled
@@ -964,39 +1292,44 @@ async function runLaunch(
       { logStream }
     )
 
-    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
-    const mode = (inst.launchMode as string | undefined) || 'window'
+    if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+    const mode = _resolveLaunchMode(inst, actionData)
     _addSession(
-      installationId,
+      sessionId,
       {
         proc,
         port: 0,
         mode,
         installationName: inst.name,
+        getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
           hwTap.flushSummary()
+          assetsTap.flushSummary()
         }
       },
-      Date.now() - launchStartedAt
+      Date.now() - launchStartedAt,
+      undefined,
+      installationId
     )
 
     onProcessTerminated(proc, async (code, signal) => {
       logStream.end()
-      const crashed = _runningSessions.has(installationId) && isCrashedExit(code, signal)
+      const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
       // lifecycle UI. PII scrubbing happens on the telemetry path
       // (`scrubTelemetryContext` in renderer bootstrap), not here.
       const lastStderr = lastNLines(getStderr(), 100)
       execTap.flushSummary()
       hwTap.flushSummary()
+      assetsTap.flushSummary()
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
-      _removeSession(installationId)
+      _removeSession(sessionId)
       const exitedPayload = {
-        installationId,
+        installationId: sessionId,
         crashed,
         exitCode: code ?? undefined,
         signal: signal ?? undefined,
@@ -1021,7 +1354,7 @@ async function runLaunch(
       if (!sender.isDestroyed()) {
         sender.send('comfy-exited', exitedPayload)
       }
-      if (_onComfyExited) _onComfyExited({ installationId, crashed })
+      if (_onComfyExited) _onComfyExited({ installationId: sessionId, crashed })
     })
 
     if (_onLaunch) {
@@ -1035,13 +1368,11 @@ async function runLaunch(
   }
 
   const defaults = source.getDefaults ? source.getDefaults() : {}
-  const portConflictMode =
-    (inst.portConflict as string | undefined) ||
-    (defaults.portConflict as string | undefined) ||
-    'auto'
-  const userArgs = ((inst.launchArgs as string | undefined) || '').trim()
-  const portIsExplicit =
-    actionData?.portOverride != null || /(?:^|\s)--port(?:\s|=|$)/.test(userArgs)
+  const { mode: portConflictMode, portIsExplicit } = _resolvePortConflictPolicy(
+    inst,
+    defaults,
+    actionData
+  )
 
   // isPortListening (bind test) is the primary check; findPidsByPort's lsof
   // only sees same-user processes on Linux.
@@ -1101,7 +1432,7 @@ async function runLaunch(
           })
         }
       }
-      if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return {
         ok: false,
         message,
@@ -1131,7 +1462,7 @@ async function runLaunch(
       })
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {
-      if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return {
         ok: false,
         message: i18n.t('errors.portConflictLauncher', {
@@ -1151,16 +1482,16 @@ async function runLaunch(
   // throw here has nothing to clean up yet.
   const sessionPath = createSessionPath()
   const launchEnv = buildLaunchEnv(inst, sessionPath)
-  const sendOutput = makeSendOutput(sender, installationId)
+  const sendOutput = makeSendOutput(sender, sessionId)
 
   // Port reservation and launching marker sit INSIDE the guard: even the
   // marker's renderer broadcast can throw, and every throw after either
   // exists must tear them back down before the handler settles. Pre-armed
   // tracker so the synchronous relaunch loop can reuse the single instance.
-  const { logStream, execTap, hwTap, tracker } = await guardLaunchSetup(
+  const { logStream, execTap, hwTap, assetsTap, tracker } = await guardLaunchSetup(
     () => {
       _reservePort(launchCmd.port!, inst.name)
-      _markLaunching(installationId, inst.name)
+      _markLaunching(sessionId, inst.name)
       return acquireLaunchResources()
     },
     { port: launchCmd.port! }
@@ -1170,11 +1501,17 @@ async function runLaunch(
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected.
     hwTap.beginBoot()
+    // Drain the previous attempt's unterminated records before resetting its buffers.
+    assetsTap.flushSummary()
+    assetsTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
     })
     try {
-      return { proc: p, ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, tracker) }
+      return {
+        proc: p,
+        ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, assetsTap, tracker)
+      }
     } catch (err) {
       // Stream wiring failed: kill and WAIT for the child so cleanup can't
       // outlive a live process.
@@ -1213,6 +1550,9 @@ async function runLaunch(
     if (abort.signal.aborted) {
       return { ok: false, message: 'Launch cancelled', cancelled: true }
     }
+    // Past the final gate, so this attempt will spawn. Latched: retries re-enter here, and the
+    // grants belong to the launch, not to each attempt at it.
+    reportCoreBetaLaunch(logStream, sendOutput)
     const cmdLine = [launchCmd.cmd!, ...launchCmd.args!]
       .map((a, ci, ca) => {
         if (ci > 0 && SENSITIVE_ARG_RE.test(ca[ci - 1]!)) return '"***"'
@@ -1221,9 +1561,9 @@ async function runLaunch(
       .join(' ')
     sendProgress('launch', { percent: -1, status: i18n.t('launch.starting') })
     if (!sender.isDestroyed()) {
-      sender.send('comfy-output', { installationId, text: `> ${cmdLine}\n\n` })
+      sender.send('comfy-output', { installationId: sessionId, text: `> ${cmdLine}\n\n` })
     }
-    appendLog(installationId, `> ${cmdLine}\n\n`)
+    appendLog(sessionId, `> ${cmdLine}\n\n`)
     // Explicit boot-attempt event. `installation_started` already fires
     // on successful boot with `boot_time_ms`, and `comfyui.exited` carries
     // `crashed=true` on failure — but boot success rate needed inferred
@@ -1234,6 +1574,7 @@ async function runLaunch(
       installation_id: installationId,
       boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
+      ...bootCohort(),
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries
     })
@@ -1241,7 +1582,7 @@ async function runLaunch(
     // reboot retry this resets so the buffer reflects the attempt that
     // actually fails (or succeeds). The tracker's `onPhaseEnter` feeds it;
     // it is flushed only on the terminal failure path below.
-    startBootPhases(installationId, (inst.variant as string | undefined) ?? null)
+    startBootPhases(sessionId, (inst.variant as string | undefined) ?? null)
     // Re-arm per-attempt phase observation: the UI tracker's index is
     // monotonic across retries, so without this the respawned boot's re-hit
     // milestones would never reach the fresh buffer above.
@@ -1378,18 +1719,23 @@ async function runLaunch(
     logStream.end()
     _releasePort(launchCmd.port!)
     // Ownership-guarded: never evict a slot a newer operation already claimed.
-    if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
+    if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     abort.abort() // stop the template-models reader timer on launch failure
-    _clearLaunchingFailed(installationId)
+    _clearLaunchingFailed(sessionId)
+    // The grants were claimed just before the spawn, which has now failed or been cancelled.
+    // Drop the claim: nothing started, so there is nothing to announce — and leaving it would
+    // also silence the same arg for another install, since claims are global.
+    clearBetaActivationClaim(installationId)
     // Flush the hardware tap on terminal failure/cancel too: the exit handler
     // covers a process that exits, but a waitForPort timeout can return here
     // with the proc still alive, leaving a pending accelerator event unemitted.
     // flushSummary is idempotent, so a later exit re-flush is harmless.
     hwTap.flushSummary()
+    assetsTap.flushSummary()
     if (launchResult.cancelled) {
       // User-initiated cancel is not a boot failure — discard the buffer so a
       // later relaunch starts clean and we don't emit phantom boot_phase rows.
-      clearBootPhases(installationId)
+      clearBootPhases(sessionId)
       return { ok: false, cancelled: true }
     }
     execTap.flushSummary()
@@ -1399,7 +1745,7 @@ async function runLaunch(
     // emit the paired boot_failed. `failed_phase` is the last phase the boot
     // reached (null if it never entered one). The error is bucketed; the
     // retry counters surface how many times we re-spawned before giving up.
-    const failedPhase = flushBootPhasesOnFailure(installationId)
+    const failedPhase = flushBootPhasesOnFailure(sessionId)
     // Standard error schema derived from the failure message + the stderr
     // tail (a Python traceback in the tail yields a real `error_class` /
     // `error_message`; otherwise the launch message drives it). `error_tail`
@@ -1414,6 +1760,7 @@ async function runLaunch(
       installation_id: installationId,
       boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
+      ...bootCohort(),
       failed_phase: failedPhase,
       ...buildErrorFields(errorSource),
       error_tail: tail,
@@ -1427,27 +1774,30 @@ async function runLaunch(
   }
   // Healthy boot — discard buffered phase timings (no boot_phase on success;
   // healthy timing is covered by instance_started.boot_time_ms).
-  clearBootPhases(installationId)
+  clearBootPhases(sessionId)
   let { proc } = launchResult
 
   _pendingPorts.delete(launchCmd.port!)
-  if (_operationAborts.get(installationId) === abort) _operationAborts.delete(installationId)
-  const mode = (inst.launchMode as string | undefined) || 'window'
+  if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+  const mode = _resolveLaunchMode(inst, actionData)
   const bootTimeMs = Date.now() - launchStartedAt
   _addSession(
-    installationId,
+    sessionId,
     {
       proc,
       port: launchCmd.port!,
       mode,
       installationName: inst.name,
+      getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()
         hwTap.flushSummary()
+        assetsTap.flushSummary()
       }
     },
     bootTimeMs,
-    { portRetries, rebootRetries }
+    { portRetries, rebootRetries },
+    installationId
   )
   // Paired success terminal for boot_started: server up + session registered.
   // Same boot_id as this launch's boot_started(s), so the boot-success rate is
@@ -1456,6 +1806,7 @@ async function runLaunch(
     installation_id: installationId,
     boot_id: bootId,
     variant: (inst.variant as string | undefined) ?? null,
+    ...bootCohort(),
     boot_time_ms: bootTimeMs,
     port_retry_count: portRetries,
     reboot_retry_count: rebootRetries
@@ -1465,7 +1816,7 @@ async function runLaunch(
   if (!sender.isDestroyed()) {
     // Raw bootStderr — telemetry forwarders scrub it before it leaves the box.
     const bootStderr = lastNLines(launchResult.getStderr(), 50)
-    sender.send('comfy-boot-log', { installationId, bootStderr })
+    sender.send('comfy-boot-log', { installationId: sessionId, bootStderr })
   }
 
   // Capture snapshot in background after successful launch
@@ -1492,12 +1843,12 @@ async function runLaunch(
     if (newFolders.length > 0) {
       sendOutput(`\n--- Restarting: new model folders detected (${newFolders.join(', ')}) ---\n\n`)
       if (_onModelFolderRelaunch) {
-        await Promise.resolve(_onModelFolderRelaunch({ installationId })).catch(() => {})
+        await Promise.resolve(_onModelFolderRelaunch({ installationId: sessionId })).catch(() => {})
       }
       await killProcessTree(proc)
       const respawned = await spawnComfy()
       proc = respawned.proc
-      const session = _runningSessions.get(installationId)
+      const session = _runningSessions.get(sessionId)
       if (session) session.proc = proc
       writePortLock(launchCmd.port!, { pid: proc.pid!, installationName: inst.name })
       const relaunchEarlyExit = new Promise<void>((_resolve, reject) => {
@@ -1525,8 +1876,10 @@ async function runLaunch(
         // flushSummary is idempotent.
         execTap.flushSummary()
         hwTap.flushSummary()
-        _removeSession(installationId)
-        _clearLaunchingFailed(installationId)
+        assetsTap.flushSummary()
+        _removeSession(sessionId)
+        _clearLaunchingFailed(sessionId)
+        clearBetaActivationClaim(installationId)
         if (abort.signal.aborted) return { ok: false, cancelled: true }
         return { ok: false, message: (err as Error).message }
       }
@@ -1576,11 +1929,11 @@ async function runLaunch(
         const spawned = await spawnComfy()
         proc = spawned.proc
         currentGetStderr = spawned.getStderr
-        const session = _runningSessions.get(installationId)
+        const session = _runningSessions.get(sessionId)
         if (session) session.proc = proc
         writePortLock(launchCmd.port!, { pid: proc.pid!, installationName: inst.name })
         attachExitHandler(proc)
-        if (_onComfyRestarted) _onComfyRestarted({ installationId, process: proc })
+        if (_onComfyRestarted) _onComfyRestarted({ installationId: sessionId, process: proc })
         if (manageModelFolders) {
           rebootModelCheckAbort = new AbortController()
           const checkSignal = rebootModelCheckAbort.signal
@@ -1590,7 +1943,7 @@ async function runLaunch(
           })
             .then(async () => {
               if (checkSignal.aborted) return
-              const currentSession = _runningSessions.get(installationId)
+              const currentSession = _runningSessions.get(sessionId)
               if (!currentSession || currentSession.proc !== proc) return
               const currentExtras = discoverExtraModelFolders(inst.installPath)
               const newFolders = currentExtras.filter((f) => !knownExtras.has(f))
@@ -1610,7 +1963,9 @@ async function runLaunch(
                 )
                 pendingModelFolderRelaunch = true
                 if (_onModelFolderRelaunch) {
-                  await Promise.resolve(_onModelFolderRelaunch({ installationId })).catch(() => {})
+                  await Promise.resolve(
+                    _onModelFolderRelaunch({ installationId: sessionId })
+                  ).catch(() => {})
                 }
                 killProcessTree(proc)
               }
@@ -1634,18 +1989,19 @@ async function runLaunch(
         return
       }
       logStream.end()
-      const crashed = _runningSessions.has(installationId) && isCrashedExit(code, signal)
+      const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
       execTap.flushSummary()
       hwTap.flushSummary()
+      assetsTap.flushSummary()
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
-      _removeSession(installationId)
+      _removeSession(sessionId)
       const exitedPayload = {
-        installationId,
+        installationId: sessionId,
         crashed,
         exitCode: code ?? undefined,
         signal: signal ?? undefined,
@@ -1670,7 +2026,7 @@ async function runLaunch(
       if (!sender.isDestroyed()) {
         sender.send('comfy-exited', exitedPayload)
       }
-      if (_onComfyExited) _onComfyExited({ installationId, crashed })
+      if (_onComfyExited) _onComfyExited({ installationId: sessionId, crashed })
     })
   }
   attachExitHandler(proc)

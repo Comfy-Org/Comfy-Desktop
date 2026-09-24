@@ -159,6 +159,43 @@ describe('createHardwareTap', () => {
     })
   })
 
+  it('forwards a typed asset scanner error without its raw path', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1', release: 'v0.4.0' })
+    tap.ingest(
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied path=/private/user/models/locked.safetensors\n',
+      'stderr'
+    )
+    expect(captured).toHaveLength(0)
+
+    tap.ingest(
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied\n',
+      'stderr'
+    )
+    tap.ingest(
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied\n',
+      'stderr'
+    )
+
+    const errors = captured.filter(
+      (entry) => entry.event === 'comfy.desktop.comfyui.asset_scan_error'
+    )
+    expect(errors).toEqual([
+      {
+        event: 'comfy.desktop.comfyui.asset_scan_error',
+        ctx: {
+          installation_id: 'inst-1',
+          variant: null,
+          release: 'v0.4.0',
+          core_beta_flags: [],
+          scan_phase: 'discovery_stat',
+          error_type: 'permission_denied'
+        }
+      }
+    ])
+    expect(JSON.stringify(errors)).not.toContain('private')
+    expect(JSON.stringify(errors)).not.toContain('locked.safetensors')
+  })
+
   it('restores every model log signal in one array-backed delta', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-18T12:00:00Z'))
@@ -253,6 +290,67 @@ describe('createHardwareTap', () => {
     })
   })
 
+  it('continues parsing later complete lines when one telemetry sink throws', () => {
+    vi.mocked(telemetry.emit).mockImplementationOnce(() => {
+      throw new Error('sink failed')
+    })
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+
+    tap.ingest(
+      'Asset scan error: phase=discovery_stat error_type=os_error\n' +
+        'Asset scan error: phase=hashing error_type=permission_denied\n',
+      'stderr'
+    )
+
+    expect(captured).toContainEqual({
+      event: 'comfy.desktop.comfyui.asset_scan_error',
+      ctx: expect.objectContaining({ scan_phase: 'hashing', error_type: 'permission_denied' })
+    })
+  })
+
+  it('processes the second pending stream and clears the timer after the first throws', () => {
+    vi.useFakeTimers()
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load Existing\n', 'stdout')
+    expect(vi.getTimerCount()).toBe(1)
+    tap.ingest('Asset scan error: phase=discovery_stat error_type=os_error', 'stdout')
+    tap.ingest('Asset scan error: phase=hashing error_type=permission_denied', 'stderr')
+    vi.mocked(telemetry.emit).mockImplementationOnce(() => {
+      throw new Error('stdout sink failed')
+    })
+
+    tap.flushSummary()
+
+    expect(vi.getTimerCount()).toBe(0)
+    expect(captured).toContainEqual({
+      event: 'comfy.desktop.comfyui.asset_scan_error',
+      ctx: expect.objectContaining({ scan_phase: 'hashing', error_type: 'permission_denied' })
+    })
+  })
+
+  it('attempts the model summary even when the accelerator summary throws', () => {
+    vi.useFakeTimers()
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Requested to load Existing\n', 'stdout')
+    tap.ingest('Requested to load Pending', 'stdout')
+    tap.ingest('Device: cuda:0 NVIDIA RTX 4090 : native', 'stderr')
+    vi.mocked(telemetry.emit).mockImplementationOnce(() => {
+      throw new Error('accelerator sink failed')
+    })
+
+    tap.flushSummary()
+    vi.advanceTimersByTime(60 * 60_000)
+
+    const summaries = captured.filter(
+      (entry) => entry.event === 'comfy.desktop.comfyui.model_usage_summary'
+    )
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]?.ctx).toMatchObject({
+      model_classes: ['Existing', 'Pending'],
+      model_load_counts: [1, 1]
+    })
+  })
+
   it('detects a complete Device line even in an oversized chunk', () => {
     // A single large stdout chunk: complete metadata + Device lines, then a
     // huge unterminated tail. The buffer cap must only trim the tail, never
@@ -282,6 +380,33 @@ describe('createHardwareTap', () => {
       comfyui_gpu_vram_gb: 24,
       comfyui_device_type: 'cuda',
       comfyui_gpu_count: 1
+    })
+  })
+
+  it('exposes the same accelerator details parsed for telemetry', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
+    tap.ingest('pytorch version: 2.10.0+cu130\n', 'stdout')
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+
+    expect(tap.getAcceleratorInfo()).toEqual({
+      deviceType: 'cuda',
+      deviceIndex: 0,
+      deviceName: 'NVIDIA GeForce RTX 4090',
+      backend: 'native',
+      devices: [
+        {
+          deviceType: 'cuda',
+          deviceIndex: 0,
+          deviceName: 'NVIDIA GeForce RTX 4090',
+          backend: 'native'
+        }
+      ],
+      vramMb: 24576,
+      ramMb: 65461,
+      pytorchVersion: '2.10.0+cu130',
+      xformersVersion: null,
+      cudaDeviceSet: null
     })
   })
 
@@ -392,5 +517,27 @@ describe('createHardwareTap', () => {
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(1)
     expect(accel[0]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4090', vram_mb: 24576 })
+  })
+
+  it('stamps the launch-injected core beta flags onto every emitted event', () => {
+    const tap = createHardwareTap({
+      installationId: 'inst-1',
+      coreBetaFlags: ['--enable-assets']
+    })
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    tap.ingest('Using xformers attention\n', 'stdout')
+
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel).toHaveLength(1)
+    expect(accel[0]!.ctx['core_beta_flags']).toEqual(['--enable-assets'])
+  })
+
+  it('reports an empty core beta list when the launch injected nothing', () => {
+    const tap = createHardwareTap({ installationId: 'inst-1' })
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    tap.ingest('Using xformers attention\n', 'stdout')
+
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel[0]!.ctx['core_beta_flags']).toEqual([])
   })
 })

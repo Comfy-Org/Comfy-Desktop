@@ -1,8 +1,14 @@
 // Re-export IPC types from the canonical shared location for renderer convenience.
 export type {
   Unsubscribe,
+  BetaActivationNotice,
   Installation,
   RunningInstance,
+  PerformanceTestBenchmark,
+  PerformanceTestResultValue,
+  PerformanceTestResultsSummary,
+  PerformanceTestStatistics,
+  RunPerformanceTestWorkflowResult,
   Source,
   SourceField,
   FieldOption,
@@ -64,6 +70,7 @@ export type {
   AppUpdateState,
   AppUpdateDownloadProgress,
   CloudUserTier,
+  InstallBuildResult,
   ElectronApi
 } from '../../../types/ipc'
 export { REQUIRES_STOPPED } from '../../../types/ipc'

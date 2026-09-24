@@ -235,6 +235,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Minimize')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Reboot')
+    expect(body.classList('.brand-progress__footer-bar')).not.toContain('is-centered')
   })
 
   it('shows the Cloud showcase only during install operations', async () => {

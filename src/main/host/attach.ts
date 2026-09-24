@@ -10,6 +10,7 @@ import { _operationAborts, sourceMap } from '../lib/ipc/shared'
 import { readableSymbolColor } from '../lib/theme'
 import * as mainTelemetry from '../lib/telemetry'
 import { refreshCloudUserTier } from '../lib/userTier'
+import { refreshStaffFlagTargeting } from '../lib/staffFlagTargeting'
 import { noteCloudEntered } from '../lib/cloudEntry'
 import { noteCanvasRendered } from '../lib/canvasEntry'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
@@ -26,6 +27,7 @@ import {
 } from '../installations'
 import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
 import { abortTemplateDownload } from '../sources/standalone/templateDownloadTask'
+import { abortModelStaging } from '../sources/comfybuilder/modelStagingTask'
 import {
   dropInstallationIndex,
   indexInstallationId,
@@ -454,6 +456,16 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         comfyContents.executeJavaScript(getMcpSidebarContentScript()).catch(() => {})
       })()
     }
+    // Offer this view as a classifier for ops-flag person targeting. A RETRY path, not the
+    // trigger: the classification is driven by the identity consensus, which reclassifies as
+    // soon as any view reports a change. This covers the case where the consensus resolved while
+    // the views it asked could not answer, and is a no-op otherwise. Deliberately OUTSIDE the
+    // `!isLocal` branch below: the grant these flags carry is consumed only by the local launch
+    // path (`buildLaunchArgs`), since a cloud install spawns no Core — so binding on cloud views
+    // alone would cover every surface except the one that can use the result. Fire-and-forget;
+    // only a boolean is stored, and sending it is consent-gated in telemetry.
+    void refreshStaffFlagTargeting(comfyContents)
+
     // Cloud-only patches (popup-blocked toast suppression + post-signin
     // flicker hide). Skipped for local installs — they don't load cloud
     // frontend, never see the toast or the redirect flash.
@@ -698,6 +710,11 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       // Cancel deletes staged bytes. During app quit the release defers
       // entirely to the quit path, which parks every active transfer itself.
       abortTemplateDownload(id)
+      // Same teardown for a build install's background model staging. This is
+      // also the safety net ahead of a delete: deleting an install closes its
+      // window, and a task still writing into the tree must stop before the
+      // tree is removed.
+      abortModelStaging(id)
       // Detach the relaunch will-navigate blocker before clearing the
       // map slot — without `comfyContents.off(...)`, a re-attach would
       // inherit a still-active blocker that preventDefaults every

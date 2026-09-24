@@ -62,7 +62,7 @@ describe('resolveModelManifest', () => {
       listVersions: vi.fn(async () => [{ id: 'ver-1', version: 1, status: 'complete' }])
     })
     await expect(resolveModelManifest(c, 'd1', '99')).rejects.toThrow(
-      'No complete distribution version 99'
+      'No complete build version 99'
     )
     expect(
       (c as unknown as { fetchModelManifest: ReturnType<typeof vi.fn> }).fetchModelManifest

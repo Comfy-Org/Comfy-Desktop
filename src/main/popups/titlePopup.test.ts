@@ -38,6 +38,7 @@ vi.mock('../lib/ipc/registerSettingsHandlers', async () => ({
 }))
 
 import {
+  _test_buildGlobalSettingsSnapshot,
   _test_deleteTitlePopupEntry,
   _test_setTitlePopupEntry,
   activateTitlePopupMenuItem,
@@ -56,6 +57,7 @@ import {
 } from './titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
 import { applySettingSet } from '../lib/ipc/registerSettingsHandlers'
+import * as settings from '../settings'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -165,10 +167,14 @@ describe('buildTitlePopupMenuItems', () => {
     expect(ids).toContain('load-snapshot')
   })
 
-  it('chooser host includes New Window, Settings, Send Feedback, Close Window, and Quit Desktop', () => {
+  it('chooser host includes Performance Test, Benchmarks, Settings, and window actions', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
     const ids = items.map((i) => i.id ?? null)
     expect(ids).toContain('new-window')
+    expect(ids).toContain('performance-test')
+    expect(items.find((item) => item.id === 'performance-test')?.label).toBe('Performance Tests')
+    expect(ids).toContain('benchmarks')
+    expect(items.find((item) => item.id === 'benchmarks')?.label).toBe('Benchmarks')
     expect(ids).toContain('settings')
     expect(ids).toContain('feedback')
     expect(ids).toContain('exit-window')
@@ -186,6 +192,8 @@ describe('buildTitlePopupMenuItems', () => {
       'track',
       'load-snapshot',
       'sign-in',
+      'performance-test',
+      'benchmarks',
       'settings',
       'feedback',
       'exit-window',
@@ -205,6 +213,8 @@ describe('buildTitlePopupMenuItems', () => {
       'track',
       'load-snapshot',
       'sign-in',
+      'performance-test',
+      'benchmarks',
       'settings',
       'feedback',
       'exit-window',
@@ -225,6 +235,8 @@ describe('buildTitlePopupMenuItems', () => {
       'new-install',
       'track',
       'load-snapshot',
+      'performance-test',
+      'benchmarks',
       'settings',
       'feedback',
       'exit-window',
@@ -241,6 +253,8 @@ describe('buildTitlePopupMenuItems', () => {
       'track',
       'load-snapshot',
       'sign-in',
+      'performance-test',
+      'benchmarks',
       'settings',
       'feedback',
       'reset-zoom',
@@ -294,19 +308,28 @@ describe('buildTitlePopupMenuItems', () => {
     expect(ids[ids.length - 1]).toBe('close-all-windows')
   })
 
-  it('separates Log in from Desktop Settings while signed out', () => {
+  it('separates Log in from the Performance Test and Benchmarks group', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
     const signInIdx = items.findIndex((i) => i.id === 'sign-in')
     expect(items[signInIdx + 1]?.kind).toBe('separator')
-    expect(items[signInIdx + 2]?.id).toBe('settings')
+    expect(items[signInIdx + 2]?.id).toBe('performance-test')
+    expect(items[signInIdx + 3]?.id).toBe('benchmarks')
   })
 
-  it('does not leave a doubled separator above Desktop Settings once signed in', () => {
+  it('does not leave a doubled separator above Performance Test once signed in', () => {
     devPlatformMocks.isSignedInToCloud.mockReturnValue(true)
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    const performanceTestsIdx = items.findIndex((i) => i.id === 'performance-test')
+    expect(items[performanceTestsIdx - 1]?.kind).toBe('separator')
+    expect(items[performanceTestsIdx - 2]?.kind).not.toBe('separator')
+  })
+
+  it('groups Performance Test and Benchmarks above a separator and Desktop Settings', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
     const settingsIdx = items.findIndex((i) => i.id === 'settings')
     expect(items[settingsIdx - 1]?.kind).toBe('separator')
-    expect(items[settingsIdx - 2]?.kind).not.toBe('separator')
+    expect(items[settingsIdx - 2]?.id).toBe('benchmarks')
+    expect(items[settingsIdx - 3]?.id).toBe('performance-test')
   })
 
   it('separators bracket the install-creation block on both hosts', () => {
@@ -343,6 +366,40 @@ describe('activateTitlePopupMenuItem', () => {
       view: { isOpen: false, pendingShowTimer: null, hide: vi.fn() }
     } as unknown as Parameters<typeof activateTitlePopupMenuItem>[0]
   }
+
+  it.each([null, 'inst-1'] as const)(
+    'opens Performance Test in a new host when installationId is %s',
+    (installationId) => {
+      const host = makeEntry({ installationId })
+      comfyWindows.set(host.windowKey, host)
+      const bindings = {
+        openChooserHostWindow: vi.fn(),
+        setActivePanel: vi.fn()
+      } as unknown as TitlePopupHostBindings
+
+      activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'performance-test', bindings)
+
+      expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('performance-test')
+      expect(bindings.setActivePanel).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([null, 'inst-1'] as const)(
+    'opens Benchmarks in a new host when installationId is %s',
+    (installationId) => {
+      const host = makeEntry({ installationId })
+      comfyWindows.set(host.windowKey, host)
+      const bindings = {
+        openChooserHostWindow: vi.fn(),
+        setActivePanel: vi.fn()
+      } as unknown as TitlePopupHostBindings
+
+      activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'benchmarks', bindings)
+
+      expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('benchmarks')
+      expect(bindings.setActivePanel).not.toHaveBeenCalled()
+    }
+  )
 
   it('routes Reset Zoom through resetComfyZoom with the host installation id', () => {
     const host = makeEntry({ installationId: 'inst-1', zoomLevel: 3 })
@@ -651,6 +708,50 @@ describe('buildInstancePickerSnapshot', () => {
   })
 })
 
+describe('title popup renderer readiness', () => {
+  type IpcListener = (event: Electron.IpcMainEvent) => void
+  let ready: IpcListener
+
+  beforeAll(async () => {
+    const { ipcMain } = await import('electron')
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.on)
+      .mock.calls.find(([channel]) => channel === 'comfy-titlepopup:ready')
+    if (!call) throw new Error('IPC listener not registered: comfy-titlepopup:ready')
+    ready = call[1] as IpcListener
+  })
+
+  afterAll(() => {
+    _test_deleteTitlePopupEntry(404)
+  })
+
+  it('replays the last config when the cached popup renderer reloads', () => {
+    const config = {
+      kind: 'menu' as const,
+      items: [{ id: 'settings', label: 'Desktop Settings' }],
+      theme: { bg: '#111111', text: '#eeeeee' }
+    }
+    const send = vi.fn()
+    const entry = {
+      view: {
+        rendererReady: false,
+        popup: { webContents: { isDestroyed: () => false, send } }
+      },
+      pendingConfig: null,
+      lastConfigJson: JSON.stringify(config),
+      lastSyncedConfigJson: JSON.stringify(config)
+    } as unknown as TitlePopupEntry
+    _test_setTitlePopupEntry(404, entry)
+
+    ready({ sender: { id: 404 } } as Electron.IpcMainEvent)
+
+    expect(entry.view.rendererReady).toBe(true)
+    expect(entry.lastSyncedConfigJson).toBeNull()
+    expect(send).toHaveBeenCalledExactlyOnceWith('comfy-titlepopup:set-config', config)
+  })
+})
+
 describe('global settings IPC handlers', () => {
   type IpcHandler = (
     event: Electron.IpcMainInvokeEvent,
@@ -753,5 +854,37 @@ describe('global settings IPC handlers', () => {
   it('rejects an unknown sender setting models directories', () => {
     expect(setModelsDirs(eventFor(999), { dirs: ['/a'] })).toEqual({ ok: false })
     expect(applySettingSet).not.toHaveBeenCalled()
+  })
+})
+
+// `telemetryGranted` is a TOP-LEVEL snapshot property, not a settings field:
+// todo 16's toggle needs the raw consent state to decide whether opting in is
+// even offered, and a `DetailField` can only carry the beta value itself.
+describe('buildGlobalSettingsSnapshot telemetry grant', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function snapshotWithConsent(consent: unknown): { telemetryGranted: boolean } {
+    const actualGet = settings.get
+    vi.spyOn(settings, 'get').mockImplementation(((key: string) =>
+      key === 'telemetryEnabled' ? consent : actualGet(key)) as typeof settings.get)
+    // Stubbed so building a snapshot never seeds (and persists) the real store.
+    vi.spyOn(settings, 'resolveBetaFeaturesEnabled').mockReturnValue(false)
+    return _test_buildGlobalSettingsSnapshot()
+  }
+
+  it('grants only on an explicit opt-in', () => {
+    expect(snapshotWithConsent(true).telemetryGranted).toBe(true)
+  })
+
+  // Strictly `=== true`: the telemetry FIELD coerces undefined to enabled via
+  // `!== false`, and reusing that here would report a grant nobody gave.
+  it('does not grant when consent was never recorded', () => {
+    expect(snapshotWithConsent(undefined).telemetryGranted).toBe(false)
+  })
+
+  it('does not grant on an explicit opt-out', () => {
+    expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
   })
 })

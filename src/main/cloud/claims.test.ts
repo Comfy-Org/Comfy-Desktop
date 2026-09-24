@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { statusFromAccessToken, workspaceIdOf } from './claims'
+import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
 
 function jwt(payload: Record<string, unknown>): string {
   const b64 = (o: unknown): string => Buffer.from(JSON.stringify(o)).toString('base64url')
@@ -34,5 +34,10 @@ describe('claims', () => {
   it('workspaceIdOf reads the scope', () => {
     expect(workspaceIdOf(jwt({ workspace_id: 'w-42' }))).toBe('w-42')
     expect(workspaceIdOf('garbage')).toBeNull()
+  })
+
+  it('subjectOf reads the account identity', () => {
+    expect(subjectOf(jwt({ sub: 'user-7' }))).toBe('user-7')
+    expect(subjectOf('garbage')).toBeNull()
   })
 })

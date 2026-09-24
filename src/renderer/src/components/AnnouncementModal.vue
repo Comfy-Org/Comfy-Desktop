@@ -5,32 +5,35 @@ import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 /**
- * One-off announcement modal (MiniMax license launch). Deliberately mirrors
- * `WhyTryCloudModal.vue`'s layout and styling so it feels native.
+ * One-off announcement modal (currently the Comfy Router launch).
+ * Deliberately mirrors `WhyTryCloudModal.vue`'s layout and styling so it feels
+ * native. Swapping to the next announcement means changing ANNOUNCEMENT_ID, the
+ * URLs, the hero media and the i18n namespace below, plus a new seen-flag in
+ * settings so previously-dismissed users still get the bell.
  *
- * DRAFT COPY: strings live in `announcement.minimax.*` (locales/en.json) for nav to finalize.
+ * Strings live in `announcement.comfyRouter.*` (locales/en.json).
  */
 
 // Announcement id, carried in telemetry so this component can be reused for a
 // future announcement by swapping the id + copy.
-const ANNOUNCEMENT_ID = 'minimax_license'
+const ANNOUNCEMENT_ID = 'comfy_router'
 
-// CTA destinations. The UTM tags clicks as Desktop-origin so they're
+// CTA destination. The UTM tags clicks as Desktop-origin so they're
 // attributable in analytics.
-const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=minimax_h3_license'
-const REQUEST_LICENSE_URL = `https://comfy.org/minimax/license${UTM}`
-const LEARN_MORE_URL = `https://blog.comfy.org/p/2ec77c32-7dd6-4a99-b763-fffe1580b842${UTM}`
+const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_router'
+const PRIMARY_CTA_URL = `https://comfy.org/platform/router${UTM}`
 
-// Hero video (from nav's MiniMax license LP, ComfyUI_frontend#16118) hosted on
-// media.comfy.org. Poster paints immediately; the video muted-autoplays + loops.
-const HERO_VIDEO_URL = 'https://media.comfy.org/website/minimax-license/hero.mp4'
-const HERO_POSTER_URL = 'https://media.comfy.org/website/minimax-license/hero-poster.jpg'
+// Router launch hero on media.comfy.org. media.comfy.org caches for an hour, so
+// bump the version in the filename rather than re-uploading a key. Poster paints
+// immediately; the video muted-autoplays + loops.
+const HERO_VIDEO_URL = 'https://media.comfy.org/website/router/router-animatic-v019.mp4'
+const HERO_POSTER_URL = 'https://media.comfy.org/website/router/router-animatic-v019-poster.webp'
 
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
 
 const highlights = computed<string[]>(() => {
-  const raw = tm('announcement.minimax.highlights')
+  const raw = tm('announcement.comfyRouter.highlights')
   return Array.isArray(raw) ? (raw as unknown as string[]) : []
 })
 
@@ -95,7 +98,7 @@ onUnmounted(() => {
         class="announce-overlay"
         role="dialog"
         aria-modal="true"
-        :aria-label="$t('announcement.minimax.title')"
+        :aria-label="$t('announcement.comfyRouter.title')"
         tabindex="-1"
         @mousedown="onOverlayMouseDown"
         @click="onOverlayClick"
@@ -120,7 +123,7 @@ onUnmounted(() => {
                 muted
                 loop
                 playsinline
-                :aria-label="$t('announcement.minimax.imageAlt')"
+                :aria-label="$t('announcement.comfyRouter.imageAlt')"
               >
                 <source :src="HERO_VIDEO_URL" type="video/mp4" />
               </video>
@@ -128,7 +131,9 @@ onUnmounted(() => {
                 class="announce-sound"
                 type="button"
                 :aria-label="
-                  isMuted ? $t('announcement.minimax.unmute') : $t('announcement.minimax.mute')
+                  isMuted
+                    ? $t('announcement.comfyRouter.unmute')
+                    : $t('announcement.comfyRouter.mute')
                 "
                 :aria-pressed="!isMuted"
                 data-testid="announcement-sound-toggle"
@@ -141,9 +146,9 @@ onUnmounted(() => {
             <div class="announce-body">
               <div class="announce-body-main">
                 <header class="announce-header">
-                  <h2 class="announce-title">{{ $t('announcement.minimax.title') }}</h2>
+                  <h2 class="announce-title">{{ $t('announcement.comfyRouter.title') }}</h2>
                 </header>
-                <p class="announce-lead">{{ $t('announcement.minimax.lead') }}</p>
+                <p class="announce-lead">{{ $t('announcement.comfyRouter.lead') }}</p>
                 <ul v-if="highlights.length" class="announce-list">
                   <li v-for="h in highlights" :key="h">
                     <Check :size="16" class="announce-check" />
@@ -153,20 +158,12 @@ onUnmounted(() => {
               </div>
               <footer class="announce-footer">
                 <button
-                  class="brand-ghost"
-                  type="button"
-                  data-testid="announcement-learn-more"
-                  @click="openCta('learn_more', LEARN_MORE_URL)"
-                >
-                  {{ $t('announcement.minimax.learnMoreCta') }}
-                </button>
-                <button
                   class="brand-primary"
                   type="button"
-                  data-testid="announcement-request-license"
-                  @click="openCta('request_license', REQUEST_LICENSE_URL)"
+                  data-testid="announcement-primary-cta"
+                  @click="openCta('learn_more', PRIMARY_CTA_URL)"
                 >
-                  {{ $t('announcement.minimax.requestLicenseCta') }}
+                  {{ $t('announcement.comfyRouter.primaryCta') }}
                 </button>
               </footer>
             </div>
@@ -245,12 +242,17 @@ onUnmounted(() => {
   grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   width: 100%;
   height: 100%;
+  /* The 916/445 card ratio assumes two columns. Whenever the grid stacks, the
+     16:9 media is taller than the whole card on its own, so scroll here rather
+     than let .announce-content clip the copy and the CTAs. */
+  overflow-y: auto;
 }
 
 .announce-media-wrap {
   position: relative;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 16 / 9;
+  align-self: center;
 }
 .announce-media {
   width: 100%;
@@ -364,5 +366,33 @@ onUnmounted(() => {
   gap: 16px;
   padding-top: clamp(1rem, 1.5vw, 1.5rem);
   border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
+}
+.announce-fine {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: color-mix(in oklab, var(--neutral-300) 65%, transparent);
+  font-family: var(--font-sans);
+}
+
+/* One column, which the grid drops to below 720px of card width. Drop the
+   two-column card ratio, and let the media take what the copy and CTAs leave
+   rather than 16:9, which on its own is taller than the whole card. */
+@media (width < 800px) {
+  .announce-content {
+    height: 100%;
+    aspect-ratio: auto;
+  }
+  .announce-grid {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .announce-media-wrap {
+    aspect-ratio: auto;
+    align-self: stretch;
+    min-height: 0;
+  }
+  .announce-body {
+    overflow: visible;
+  }
 }
 </style>

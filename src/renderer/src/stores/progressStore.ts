@@ -257,6 +257,12 @@ export const useProgressStore = defineStore('progress', () => {
     rop.unsubProgress = window.api.onInstallProgress((data: ProgressData) => {
       if (data.installationId !== installationId) return
 
+      if (data.cancelRequested) {
+        rop.cancelRequested = true
+        rop.flatStatus = t('progress.cancelling')
+        return
+      }
+
       if (data.phase === 'steps' && data.steps) {
         rop.steps = data.steps
         rop.activePhase = null

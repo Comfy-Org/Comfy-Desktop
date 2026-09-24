@@ -78,7 +78,6 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 | `dashboard-delete-flow.test.ts` | `@lifecycle` | Yes (light) | Really deletes the seeded install directory. |
 | `deep-links.test.ts` | platform | n/a | Replays the internal `panel-trigger-overlay` IPC directly into the panel and asserts downstream IPC dispatch; never exercises real OS/app `comfy://` handling. |
 | `devhooks-smoke.test.ts` | platform | n/a | Exists to test the dev-hooks bridge itself. |
-| `dismiss-error.test.ts` | platform | n/a | Injects the error into the renderer store at runtime (`__e2eRenderer.seedErrorInstance`). |
 | `downloads-shelf.test.ts` | platform | n/a | Injects downloads-tray state via `seedDownloads`. |
 | `dropdowns.test.ts` | platform | n/a | UI regression tests. |
 | `hardware-acceleration.test.ts` | `@windows` | n/a | On NVIDIA systems, launches Desktop with hardware acceleration enabled and disabled, then compares per-process dedicated GPU memory. |

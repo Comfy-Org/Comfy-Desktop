@@ -350,6 +350,11 @@ watch(
 
 function handleSettingsShowProgress(opts: ShowProgressOpts): void {
   if (!opts.actionId) return
+  const existingOperation =
+    props.snapshot.installOperationStatus?.[opts.installationId] ??
+    localOperationStatus.value.get(opts.installationId)
+  if (existingOperation && !existingOperation.done) return
+
   // opts.actionData may be a Vue reactive proxy, which can't cross the
   // contextBridge structured-clone boundary; deep-clone to a plain object.
   const rawActionData = opts.actionData

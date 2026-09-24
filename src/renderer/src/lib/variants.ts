@@ -12,7 +12,7 @@ export const variantImages: Record<string, string> = {
 export const variantOrder: string[] = ['amd', 'nvidia', 'intel-xpu', 'cpu', 'mps']
 
 export function stripVariantPrefix(variantId: string): string {
-  return variantId.replace(/^(win|mac|linux)-/, '')
+  return variantId.replace(/^(?:beta-)?(win|mac|linux)-/, '')
 }
 
 export function getVariantImage(option: FieldOption): string | null {

@@ -92,6 +92,9 @@ export function createExecutionTap(opts: {
   installationId: string
   variant?: string | null
   release?: string | null
+  /** Core beta args Desktop injected for this launch (exact dashed tokens), so
+   *  every event can be split by beta cohort. */
+  coreBetaFlags?: readonly string[]
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   flushSummary: () => void
@@ -117,6 +120,7 @@ export function createExecutionTap(opts: {
     installation_id: state.installationId,
     variant: state.variant,
     release: state.release,
+    core_beta_flags: [...(opts.coreBetaFlags ?? [])],
     // The tap tails a locally-spawned ComfyUI process, so every event it
     // emits is local execution by construction. Cloud executions never pass
     // through here — the cloud frontend/backend report those directly.

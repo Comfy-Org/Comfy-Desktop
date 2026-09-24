@@ -68,11 +68,16 @@
  *
  * ## Provider split
  *
- *   PostHog gets everything. Datadog only mirrors the failure / reliability
- *   allow-list in `src/shared/datadogMirroredEvents.ts`. Datadog is for
- *   alerting, not analysis - adding a name to the allow-list is a
+ *   PostHog gets every *event*. Datadog only mirrors the failure /
+ *   reliability allow-list in `src/shared/datadogMirroredEvents.ts`. Datadog
+ *   is for alerting, not analysis - adding a name to the allow-list is a
  *   deliberate ops decision ("I want a monitor on this"). PostHog
  *   dashboards + ad-hoc HogQL are the source of truth for everything else.
+ *
+ *   *Exceptions* invert that split: Datadog is the sink, unconditionally and
+ *   independently of the allow-list (which governs Actions only), and the
+ *   PostHog copy is opt-in behind `POSTHOG_EXCEPTIONS` because both sinks
+ *   carry the same scrubbed error and PostHog bills per event.
  *
  * ## A/B experiments
  *
@@ -110,10 +115,16 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 // PostHog's `FeatureFlagValue` lives in `@posthog/core` and is not
 // re-exported by `posthog-node`. Inlining the shape we actually use.
 export type FeatureFlagValue = string | boolean
+
+/** Every outcome of an ops-flag fetch, classified. See `getOpsFlagResult`. */
+export type OpsFlagFetchResult =
+  | { kind: 'value'; value: FeatureFlagValue; payload: unknown }
+  | { kind: 'unreachable' }
 import {
   DEFAULT_POSTHOG_API_KEY,
   DEFAULT_POSTHOG_HOST,
-  isPostHogFlagDisabled as isFlagDisabled
+  isPostHogFlagDisabled as isFlagDisabled,
+  isPostHogFlagEnabled as isFlagEnabled
 } from '../../shared/posthogConfig'
 import { isDatadogMirroredEvent } from '../../shared/datadogMirroredEvents'
 import { bucketError as sharedBucketError } from '../../shared/errorBucket'
@@ -184,6 +195,7 @@ export function _resetForTest(): void {
   firebaseConsensusPending = false
   installationIdProperty = null
   consentState = 'undecided'
+  flagEvaluationStaff = false
   pendingSessionStart = null
   pendingFirstLaunch = null
   pendingPersonSet = null
@@ -223,7 +235,7 @@ let bootstrapTimeMs: number = Date.now()
 let initialized = false
 /** When `true`, all PostHog write paths (capture, identify,
  *  captureException, person-property updates) short-circuit. Set in
- *  `initTelemetry` based on `isPackaged`. Read paths (`getOpsFlag`,
+ *  `initTelemetry` based on `isPackaged`. Read paths (`getOpsFlagResult`,
  *  `loadFeatureFlagsImmediate`, `shutdown`) deliberately ignore this
  *  so devs can still resolve feature flags in `pnpm dev`. */
 let suppressEmit = false
@@ -292,7 +304,7 @@ export function asDeployment(value: unknown): Deployment | null {
  * `unknown` rather than silently being misclassified). Mirrors the
  * renderer's `deriveAppChannel` so both surfaces agree.
  */
-function deriveAppChannel(appVersion: string): string {
+export function deriveAppChannel(appVersion: string): string {
   if (!appVersion) return 'unknown'
   const v = appVersion.toLowerCase()
   if (v.includes('-beta')) return 'beta'
@@ -332,6 +344,56 @@ function deriveAppChannel(appVersion: string): string {
 export type ConsentState = 'granted' | 'denied' | 'undecided'
 
 let consentState: ConsentState = 'undecided'
+
+/**
+ * Whether the signed-in account is Comfy staff, held ONLY to evaluate ops flags
+ * against a person condition (see `getOpsFlagResult`). `false` whenever no such
+ * account is known — a logged-out app, a non-staff account, or a launch before
+ * any signed-in account has been seen.
+ *
+ * A DERIVED BOOLEAN, never the address it came from. `staffFlagTargeting.ts`
+ * classifies the email and discards it; this module never sees one, so no
+ * address can reach PostHog by this path, be written to disk, or sit in memory
+ * waiting to. That is the whole privacy argument for the feature, and it holds
+ * structurally rather than by a gate somebody has to remember.
+ *
+ * It is not a person property, not an identify, and not in
+ * `defaultEventProperties`. The installation hash stays the evaluation key, so
+ * nothing here links the machine to the account in PostHog's person store —
+ * the separation `deviceId.ts` exists to maintain.
+ */
+let flagEvaluationStaff = false
+
+/**
+ * Bind whether ops-flag evaluation should present this install as staff.
+ *
+ * Takes the classification, not the input to it: the caller owns what counts as
+ * staff, and this module owns whether it may be sent.
+ */
+export function setFlagEvaluationStaff(isStaff: boolean): void {
+  flagEvaluationStaff = isStaff
+}
+
+/**
+ * Person properties for an ops-flag evaluation request.
+ *
+ * Empty unless consent is `'granted'` AND the account is staff. The flag FETCH
+ * itself bypasses the consent gate on purpose — ops flags are config pushed TO
+ * the client, and a user who declined telemetry still gets the override — but
+ * that argument covers the installation-stable key and nothing else. Whether a
+ * person is an employee is a fact ABOUT them, so it rides only on the consented
+ * path. This is the one place the two rules meet, and the asymmetry is
+ * deliberate: the request still goes out pre-consent, just without this.
+ *
+ * Non-staff send nothing rather than `comfy_staff: 'false'`. A condition of the
+ * form `comfy_staff = true` does not match a missing property, so the absent
+ * form is equivalent for targeting and puts nothing on the wire for the
+ * overwhelming majority of users.
+ */
+function opsFlagPersonProperties(): Record<string, string> {
+  if (consentState !== 'granted' || !flagEvaluationStaff) return {}
+  return { comfy_staff: 'true' }
+}
 
 const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'comfy.desktop.first_use.consent_decision'
@@ -495,6 +557,15 @@ export function setConsentState(state: ConsentState): void {
 }
 
 /**
+ * The current consent state, for callers that must decide whether work is
+ * worth STARTING rather than whether a payload may ship. Every emit path
+ * enforces consent on its own; this is not a substitute for that gate.
+ */
+export function getConsentState(): ConsentState {
+  return consentState
+}
+
+/**
  * Legacy two-state adapter. This maps false to denied; callers that need the
  * pre-decision state must use `setConsentState('undecided')`.
  */
@@ -551,7 +622,7 @@ export function initTelemetry(opts: InitOptions): void {
   // FLAG READS are NOT suppressed: a dev working on a feature gated by
   // a PostHog flag (e.g. `free_tier_workflow_submission_enabled`) needs to actually
   // see the flag's resolved value at boot. Previously the entire
-  // PostHog client was skipped in dev, which made `getOpsFlag` /
+  // PostHog client was skipped in dev, which made `getOpsFlagResult` /
   // `loadFeatureFlagsImmediate` return defaults and stranded any
   // operational-flag or experiment testing. Now the client is
   // always created so reads work; only the emission paths
@@ -567,6 +638,21 @@ export function initTelemetry(opts: InitOptions): void {
       host: cfg.host,
       flushAt: 20,
       flushInterval: 10_000,
+      // Bound on the SDK's own `/flags` POST, raised from its 3000 ms default. A cold POST
+      // measured ~2572 ms and is always cold at boot, so the default leaves ~430 ms of headroom:
+      // on a slower link or a loaded machine the SDK gives up first, `getFeatureFlagResult`
+      // yields nothing, and the late continuation in `getOpsFlagResult` never fires — so a
+      // revocation is silently held forever, the exact failure late persistence exists to end.
+      //
+      // This does NOT slow boot. The launch decision is governed by the 2000 ms race inside
+      // `getOpsFlagResult`, which is unchanged; the app never waits longer to start. All a
+      // longer flag timeout buys is keeping the ALREADY-ABANDONED background fetch alive long
+      // enough for a slow cold answer to be captured and persisted for the NEXT launch.
+      //
+      // Not to be confused with `requestTimeout`, a separate option that only reaches
+      // `FeatureFlagsPoller` — built solely when `personalApiKey` is set, which Desktop never
+      // sets. Setting it here would configure a path this app does not take.
+      featureFlagsRequestTimeoutMs: 10_000,
       // GeoIP: posthog-node runs in the desktop main process ON the user's
       // machine, so the request IP is the real user IP and PostHog can derive
       // the user's location. We opt IN to country-level cohorts (the IP is no
@@ -1393,6 +1479,17 @@ function captureExceptionWrite(
   return true
 }
 
+/**
+ * Datadog is the alerting surface for exceptions; PostHog's copy is opt-in.
+ *
+ * Off by default because the two sinks carry the same scrubbed error and
+ * PostHog is billed per event. Set `POSTHOG_EXCEPTIONS=1` to restore it for
+ * an investigation that wants the error alongside product events.
+ */
+function isPostHogExceptionCaptureEnabled(): boolean {
+  return isFlagEnabled(process.env['POSTHOG_EXCEPTIONS'])
+}
+
 function deliverException(error: unknown, properties: TelemetryContext, forward: boolean): boolean {
   try {
     // Same default merge as capture() so exception events stay filterable by
@@ -1407,14 +1504,16 @@ function deliverException(error: unknown, properties: TelemetryContext, forward:
         safeErrorRecord[scrubAll(key).slice(0, 128)] = scrubAll(value).slice(0, ERROR_MESSAGE_MAX)
       }
     }
-    client!.captureException(
-      safeError,
-      distinctId!,
-      normalizeExceptionContext(
-        enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
-      ) as TelemetryContext
-    )
-    if (forward) forwardExceptionToRenderer(properties)
+    if (isPostHogExceptionCaptureEnabled()) {
+      client!.captureException(
+        safeError,
+        distinctId!,
+        normalizeExceptionContext(
+          enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+        ) as TelemetryContext
+      )
+    }
+    if (forward) forwardExceptionToRenderer(properties, safeError)
     return true
   } catch {
     // ignore
@@ -1458,47 +1557,189 @@ export async function loadFeatureFlagsImmediate(
   }
 }
 
+/** Taken from the SDK rather than restated, so the in-band and late mappings cannot drift. */
+type PostHogFeatureFlagResult = NonNullable<Awaited<ReturnType<PostHog['getFeatureFlagResult']>>>
+
+function toOpsFlagValue(
+  result: PostHogFeatureFlagResult
+): Extract<OpsFlagFetchResult, { kind: 'value' }> {
+  return {
+    kind: 'value',
+    value: result.enabled ? (result.variant ?? true) : false,
+    payload: result.payload
+  }
+}
+
 /**
- * Fetch a single OPERATIONAL feature flag value with a hard timeout.
+ * How an abandoned ops-flag fetch eventually settled.
  *
- * Bypasses the telemetry consent gate by design: this entry point is
- * reserved for operational flags, not A/B experiments or analytics. Those
- * are server-config pushed *to* the client to protect service
- * availability for everyone - distinct from analytics data collected
- * *from* the user, which `loadFeatureFlagsImmediate` correctly gates on
- * consent. The evaluation call supplies only the installation-stable
- * evaluation key and flag key; no person properties are sent.
- *
- * Returns `undefined` when:
- *   - the PostHog client is not yet initialised
- *   - the network call times out or errors
- *   - the flag is missing on the server
- * Callers must choose a safe fallback so a fetch miss never accidentally
- * degrades the product.
+ * `no_result` is deliberately not called "missing": a fetch the SDK timed out on and a key the
+ * server genuinely has no result for arrive as the same falsy value, so this field cannot tell
+ * them apart on its own. `duration_ms` is what does — a `no_result` near the SDK's own `/flags`
+ * ceiling is a timeout, a fast one is a deleted or absent key. That indistinguishability is what
+ * let the sticky-grant bug live unnoticed, and what would otherwise hide the ceiling in the field.
  */
-export async function getOpsFlag(
+type LateOpsFlagOutcome = 'value' | 'no_result' | 'rejected'
+
+/** One name with fields rather than three names, so the outcomes stay comparable in one query. */
+const OPS_FLAG_LATE_RESULT_EVENT = 'comfy.desktop.ops_flag.late_result'
+
+interface AbandonedOpsFlagFetch {
+  key: string
+  /** Stamped before the fetch starts, not when the deadline expires. The number worth reporting is
+   *  how long the WHOLE fetch ran, since that is what compares against the SDK's own ceiling;
+   *  measured from the deadline it would read ~0 and say nothing. */
+  startedAt: number
+  flagPromise: ReturnType<PostHog['getFeatureFlagResult']>
+  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void
+}
+
+/** Observe a fetch the deadline already abandoned: report how it settled, and hand an explicit
+ *  value back so it still reaches the caller that persists it.
+ *
+ *  Detached on purpose: `getOpsFlagResult` has answered `unreachable` and its caller has moved
+ *  on, so nothing awaits this. Every step is therefore contained individually — without that, a
+ *  rejection of an abandoned fetch (or a throwing callback, or a throwing report) surfaces as an
+ *  unhandled rejection.
+ *
+ *  Reporting does NOT widen what may be persisted. `onLateResult` still fires for a TRUTHY
+ *  resolution only. A falsy resolution means the server returned no result for the key, which is
+ *  `unreachable` and must not be handed back as a value: routing it through would make deleting a
+ *  flag revoke it. The report is the only thing a late miss or rejection now produces. */
+function observeAbandonedOpsFlagFetch(abandoned: AbandonedOpsFlagFetch): void {
+  const report = (outcome: LateOpsFlagOutcome, extra: TelemetryContext = {}): void => {
+    try {
+      // `capture`, not the client this module already holds: ops-flag READS bypass the consent
+      // gate by design, but emission derived from one must not.
+      capture(OPS_FLAG_LATE_RESULT_EVENT, {
+        flag_key: abandoned.key,
+        outcome,
+        duration_ms: Date.now() - abandoned.startedAt,
+        ...extra
+      })
+    } catch {
+      // Diagnostics must never cost the caller the value it is still owed.
+    }
+  }
+
+  void abandoned.flagPromise
+    .then(
+      (late) => {
+        if (!late) {
+          report('no_result')
+          return
+        }
+        report('value')
+        try {
+          abandoned.onLateResult?.(toOpsFlagValue(late))
+        } catch {
+          // The caller owns its own persist failures (see `persistLate` in opsFlag.ts); this is
+          // the backstop that keeps one escaping from becoming an unhandled rejection.
+        }
+      },
+      // Two-argument `then` rather than a trailing `.catch`: a single catch would also swallow a
+      // throw from the success branch and bill it as a REJECTED fetch, blaming the network for a
+      // local bug and emitting a second event for one settlement.
+      (err: unknown) => report('rejected', { error_bucket: sharedBucketError(err) })
+    )
+    .catch(() => {})
+}
+
+/** Separates "the deadline won" from "the fetch answered with no result for the key". Both classify
+ *  `unreachable`, but only the first leaves a fetch in flight worth observing — reporting an
+ *  in-band miss as a late one would invent a timeout that never happened, and drop a ~0 ms sample
+ *  into the one field that distinguishes a real timeout from a deleted key. */
+const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
+
+/**
+ * Fetch a single OPERATIONAL feature flag together with its matched payload.
+ *
+ * Bypasses the telemetry consent gate by design: this entry point is reserved
+ * for operational flags, not A/B experiments or analytics. Those are server
+ * config pushed *to* the client to protect service availability for everyone -
+ * distinct from analytics data collected *from* the user, which
+ * `loadFeatureFlagsImmediate` correctly gates on consent. Implicit
+ * `$feature_flag_called` capture is disabled so an evaluation-only key never
+ * creates a PostHog person behind the capture policy.
+ *
+ * The evaluation call supplies the installation-stable evaluation key, the flag
+ * key, and — only once consent is `'granted'` and the account is staff —
+ * `comfy_staff`, via `opsFlagPersonProperties`. That property is
+ * request-scoped: the SDK puts it in the `/flags` POST body as
+ * `person_properties`, where the server evaluates release conditions against it
+ * and nothing is stored. The `distinct_id` remains the installation hash, so
+ * bucketing is unchanged and the machine is still not linked to any account in
+ * the person store.
+ *
+ * It exists because the installation hash CANNOT be resolved to a person: a
+ * condition on any person attribute can never match a machine-derived id, so
+ * staff targeting silently returned nothing for every install. Supplying a
+ * property on the request is what makes such a condition evaluable at all.
+ *
+ * This is the ONLY evaluation. An earlier design added a second, authenticated
+ * one once a cloud view resolved auth; it could not work, because the
+ * anonymous boot evaluation of a person-targeted flag answers an explicit
+ * `false` — not a miss — which `init` treats as authoritative and writes over
+ * the persisted grant. Keeping one authoritative evaluation is what lets the
+ * revocation contract in `opsFlag.ts` stand unchanged.
+ *
+ * Classifies every outcome as exactly one `OpsFlagFetchResult`:
+ *   - `value` — the server answered. A disabled flag is a value of `false`,
+ *     NOT a miss, which is what makes disabling the supported way to revoke a
+ *     treatment a client has already persisted.
+ *   - `unreachable` — the client is not initialised, the call timed out or
+ *     threw, or the server returned no result for the key. The treatment is
+ *     unknown FOR THIS LAUNCH rather than withdrawn, so callers hold what they
+ *     had instead of degrading the product on a bad network. A DELETED flag key
+ *     lands here too, which is why deleting a flag does not revoke it — see the
+ *     `persist` option on `makeOpsFlag` (opsFlag.ts), the wrapper every caller
+ *     uses.
+ *
+ * A timeout no longer LOSES the answer, only defers it. A cold `/flags` POST
+ * measured ~2572 ms on Windows and is always cold at boot, so a 2000 ms deadline
+ * lost every launch and an abandoned explicit `false` never reached disk — a
+ * grant could not be withdrawn at all. `onLateResult` reports an explicit value
+ * that arrives after the deadline, so the caller can persist it for the NEXT
+ * launch. The returned classification is unaffected: this launch was already
+ * answered `unreachable` and acts on that.
+ *
+ * Deletion is still not revocation. Only a TRUTHY resolution reaches
+ * `onLateResult`; a late miss (deleted/archived/absent key) and a late rejection
+ * are both `unreachable`, which callers must never persist. All three are
+ * REPORTED (`comfy.desktop.ops_flag.late_result`) — reporting an outcome and
+ * persisting it are deliberately different things, and only the value is both.
+ */
+export async function getOpsFlagResult(
   key: string,
   distinctId: string,
-  timeoutMs: number
-): Promise<FeatureFlagValue | undefined> {
-  if (!client) return undefined
+  timeoutMs: number,
+  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void
+): Promise<OpsFlagFetchResult> {
+  if (!client) return { kind: 'unreachable' }
   let timer: ReturnType<typeof setTimeout> | undefined
+  const startedAt = Date.now()
   try {
-    // No `personProperties` - ops flags are global, not user-keyed.
-    // We record explicit experiment exposures elsewhere. Disabling the SDK's
-    // implicit `$feature_flag_called` write also prevents this evaluation-only
-    // key from creating a PostHog person behind the capture policy.
-    const flagPromise = client.getFeatureFlag(key, distinctId, {
-      sendFeatureFlagEvents: false
+    const flagPromise = client.getFeatureFlagResult(key, distinctId, {
+      sendFeatureFlagEvents: false,
+      personProperties: opsFlagPersonProperties()
     })
-    const timeoutPromise = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), timeoutMs)
+    const timeoutPromise = new Promise<typeof OPS_FLAG_DEADLINE>((resolve) => {
+      timer = setTimeout(() => resolve(OPS_FLAG_DEADLINE), timeoutMs)
     })
     const result = await Promise.race([flagPromise, timeoutPromise])
-    if (typeof result === 'string' || typeof result === 'boolean') return result
-    return undefined
+    if (result === OPS_FLAG_DEADLINE) {
+      // The timer won and `flagPromise` is still in flight. Observed unconditionally, not only
+      // when a caller registered for late values: a flag that never persists can still hit the
+      // SDK's ceiling, and a timeout nobody can see is the state this reporting exists to end.
+      observeAbandonedOpsFlagFetch({ key, startedAt, flagPromise, onLateResult })
+      return { kind: 'unreachable' }
+    }
+    // The fetch itself answered, with no result for the key. `unreachable` exactly as a timeout
+    // is, but nothing was abandoned — so there is nothing to observe and nothing to report.
+    if (!result) return { kind: 'unreachable' }
+    return toOpsFlagValue(result)
   } catch {
-    return undefined
+    return { kind: 'unreachable' }
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }
@@ -1597,8 +1838,15 @@ export function forwardToRenderer(event: string, context: TelemetryContext = {})
   }
 }
 
-/** Forward an accepted exception to the renderer-only Datadog SDK without diagnostics. */
-export function forwardExceptionToRenderer(context: TelemetryContext = {}): void {
+/**
+ * Forward an accepted exception to the renderer-only Datadog SDK.
+ *
+ * `error` carries the scrubbed message and stack; context keys stay
+ * allow-listed, so free-form diagnostics still never reach Datadog. Omit it
+ * and the renderer gets a bare notice, as it did before Datadog became the
+ * primary exception sink.
+ */
+export function forwardExceptionToRenderer(context: TelemetryContext = {}, error?: Error): void {
   const allowedKeys = [
     'origin',
     'source',
@@ -1607,18 +1855,24 @@ export function forwardExceptionToRenderer(context: TelemetryContext = {}): void
     'reason',
     'exitCode',
     'exit_code',
-    'type'
+    'type',
+    // Datadog is the alerting surface, and a monitor that cannot tell one
+    // failure mode from another is not an alert. This is the frontend's
+    // stable slug, not free-form text.
+    'error_type'
   ]
   const safeContext: TelemetryContext = {}
   for (const key of allowedKeys) {
     const value = context[key]
     if (!Array.isArray(value)) safeContext[key] = value
   }
+  // `error` is already scrubbed and length-capped by `deliverException`.
   const payload = {
     source: String(
       safeContext['source'] ?? safeContext['forwarded_source'] ?? 'captured-exception'
     ),
-    message: 'Desktop application exception',
+    message: error?.message || 'Desktop application exception',
+    ...(error?.stack ? { stack: error.stack } : {}),
     context: safeContext,
     skipPostHog: true
   }

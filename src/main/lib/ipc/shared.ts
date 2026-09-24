@@ -24,6 +24,7 @@ import {
   tryConfigurePygit2Fallback
 } from '../git'
 import { ensureRemoteUrl } from '../github-mirror'
+import { runPool } from '../../sources/standalone/templateDownloadCore'
 import * as settings from '../../settings'
 import { defaultInstallDir, sanitizeDirName, allocateUniqueDir } from '../paths'
 import { download } from '../download'
@@ -35,6 +36,7 @@ import { _broadcastToRenderer } from './broadcast'
 import { appendLog } from '../logsBroadcast'
 import { flushOperationOutput } from '../appLog'
 import { stripAnsi } from '../stderrTail'
+import type { AcceleratorSnapshot } from '../hardwareTap'
 import {
   spawnProcess,
   waitForPort,
@@ -54,6 +56,7 @@ import {
 } from '../process'
 import {
   detectGPU,
+  detectGPUCached,
   validateHardware,
   checkNvidiaDriver,
   checkAmdDriver,
@@ -177,6 +180,7 @@ export {
   removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
   detectGPU,
+  detectGPUCached,
   validateHardware,
   checkNvidiaDriver,
   checkAmdDriver,
@@ -274,9 +278,12 @@ export interface SessionInfo {
   url?: string
   mode: string
   installationName: string
+  sourceInstallationId?: string
   startedAt: number
   /** Synchronously queue final telemetry before app-level shutdown drains the SDK. */
   flushTelemetry?: () => void
+  /** Latest accelerator details parsed from this session's ComfyUI startup logs. */
+  getAcceleratorInfo?: () => AcceleratorSnapshot | null
 }
 
 export interface LaunchCallbackInfo {
@@ -348,7 +355,6 @@ export let _onComfyRestarted: RestartCallback | null = null
 export let _onModelFolderRelaunch: ModelFolderRelaunchCallback | null = null
 export let _onLocaleChanged: LocaleCallback | null = null
 export let _onThemeChanged: ThemeChangedCallback | null = null
-let _gpuPromise: Promise<GpuInfo | null> | null = null
 
 export const _operationAborts = new Map<string, AbortController>()
 export const _runningSessions = new Map<string, SessionInfo>()
@@ -517,14 +523,6 @@ export function setCallbacks(callbacks: RegisterCallbacks): void {
   _onModelFolderRelaunch = callbacks.onModelFolderRelaunch ?? null
   _onLocaleChanged = callbacks.onLocaleChanged ?? null
   _onThemeChanged = callbacks.onThemeChanged ?? null
-}
-
-export function setGpuPromise(p: Promise<GpuInfo | null> | null): void {
-  _gpuPromise = p
-}
-
-export function getGpuPromise(): Promise<GpuInfo | null> | null {
-  return _gpuPromise
 }
 
 export async function syncOemSeedBestEffort(): Promise<void> {
@@ -727,7 +725,13 @@ export function openPath(targetPath: string): Promise<string> {
   return shell.openPath(targetPath)
 }
 
+// Memoized: the version cannot change mid-session, and the unpackaged-dev
+// fallback below is a SYNCHRONOUS git spawn that would otherwise block the
+// main thread on every telemetry event and IPC call that stamps a version.
+let _appVersion: string | null = null
+
 export function getAppVersion(): string {
+  if (_appVersion !== null) return _appVersion
   let version = app.getVersion()
   if (!app.isPackaged) {
     try {
@@ -739,7 +743,8 @@ export function getAppVersion(): string {
         }).trim() || version
     } catch {}
   }
-  return version.replace(/^v/, '')
+  _appVersion = version.replace(/^v/, '')
+  return _appVersion
 }
 
 export async function findDuplicatePath(installPath: string): Promise<InstallationRecord | null> {
@@ -1050,13 +1055,23 @@ export {
 
 export function _addSession(
   installationId: string,
-  { proc, port, url, mode, installationName, flushTelemetry }: Omit<SessionInfo, 'startedAt'>,
+  {
+    proc,
+    port,
+    url,
+    mode,
+    installationName,
+    flushTelemetry,
+    getAcceleratorInfo
+  }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
    *  renderer's `instance_started` telemetry can carry them without a
    *  separate `server_ready` event. Omitted for the remote / skip-port paths
    *  (no spawn retry there). */
-  retries?: { portRetries: number; rebootRetries: number }
+  retries?: { portRetries: number; rebootRetries: number },
+  /** Durable installation identity when the runtime session uses an isolated key. */
+  sourceInstallationId: string = installationId
 ): void {
   _runningSessions.set(installationId, {
     proc,
@@ -1064,7 +1079,9 @@ export function _addSession(
     url,
     mode,
     installationName,
+    sourceInstallationId,
     flushTelemetry,
+    getAcceleratorInfo,
     startedAt: Date.now()
   })
   // Clear the launching marker first so subscribers never double-count this id across the
@@ -1086,7 +1103,7 @@ export function _addSession(
   // callback could fire. Fire-and-forget; never blocks the launch.
   if (_onInstanceStarted) {
     _onInstanceStarted({
-      installationId,
+      installationId: sourceInstallationId,
       bootTimeMs,
       portRetries: retries?.portRetries ?? 0,
       rebootRetries: retries?.rebootRetries ?? 0
@@ -1094,7 +1111,7 @@ export function _addSession(
   }
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
   installations
-    .markLaunched(installationId, (inst) => sourceMap[inst.sourceId]?.category)
+    .markLaunched(sourceInstallationId, (inst) => sourceMap[inst.sourceId]?.category)
     .then(() => _broadcastToRenderer('installations-changed', {}))
     .catch((err) => {
       console.error('Failed to mark installation launched:', err)
@@ -1123,6 +1140,14 @@ export function _getPublicSessions(): Record<string, unknown>[] {
     installationName: s.installationName,
     startedAt: s.startedAt
   }))
+}
+
+export function hasRunningSessionForInstallation(installationId: string): boolean {
+  return Array.from(
+    _runningSessions,
+    ([sessionId, session]) =>
+      sessionId === installationId || session.sourceInstallationId === installationId
+  ).some(Boolean)
 }
 
 /**
@@ -1260,11 +1285,26 @@ export async function buildInstallationDdContext(installationId: string) {
   return result
 }
 
+// Git queries run through a bundled-Python (pygit2) subprocess per call, and
+// on Windows every process launch blocks the main thread in CreateProcess for
+// tens of milliseconds. A user with many installs would otherwise trigger a
+// burst of dozens of concurrent spawns at boot that freezes every window for
+// seconds, so the background version pass is capped to a small pool - it is a
+// ratchet with a 10-minute TTL, not latency-sensitive.
+const GIT_RESOLVE_CONCURRENCY = 1
+
 export async function _fetchAndResolveLatestTags(
   installs: Array<{ comfyuiDir: string }>
 ): Promise<Map<string, LatestTagOverride>> {
   const mirrorEnabled = settings.get('useChineseMirrors') === true
-  await Promise.all(installs.map(({ comfyuiDir }) => ensureRemoteUrl(comfyuiDir, mirrorEnabled)))
+  await runPool(installs, GIT_RESOLVE_CONCURRENCY, async ({ comfyuiDir }) => {
+    try {
+      await ensureRemoteUrl(comfyuiDir, mirrorEnabled)
+    } catch {
+      // Best-effort: a repo whose remote cannot be reconciled still resolves
+      // against whatever tags it already has locally.
+    }
+  })
 
   const originGroups = new Map<string, string[]>()
   for (const { comfyuiDir } of installs) {
@@ -1276,17 +1316,20 @@ export async function _fetchAndResolveLatestTags(
   }
 
   const result = new Map<string, LatestTagOverride>()
-  await Promise.all(
-    [...originGroups.entries()].map(async ([origin, dirs]) => {
-      await Promise.all(dirs.map((d) => fetchTags(d)))
+  await runPool([...originGroups.entries()], GIT_RESOLVE_CONCURRENCY, async ([origin, dirs]) => {
+    try {
+      for (const d of dirs) await fetchTags(d)
       const representative = dirs[0]!
       const tagName = await findLatestVersionTag(representative)
       if (!tagName) return
       const sha = await revParseRef(representative, tagName)
       if (!sha) return
       result.set(origin, { name: tagName, sha })
-    })
-  )
+    } catch {
+      // Best-effort (e.g. offline): installs on this origin keep their
+      // stored versions; the TTL retries later.
+    }
+  })
   return result
 }
 
@@ -1321,56 +1364,63 @@ export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): 
   clearVersionCache()
 
   const updates: { id: string; version: string }[] = []
-  await Promise.all(
-    candidates.map(async ({ inst, cv, comfyuiDir }) => {
-      const origin = readGitRemoteUrl(comfyuiDir)
-      const override = origin ? tagOverrides.get(origin) : undefined
-      try {
-        // Read actual HEAD; it may differ from cv.commit after external changes (manual pull, checkout).
-        const actualHead = readGitHead(comfyuiDir) || cv.commit
+  await runPool(candidates, GIT_RESOLVE_CONCURRENCY, async ({ inst, cv, comfyuiDir }) => {
+    const origin = readGitRemoteUrl(comfyuiDir)
+    const override = origin ? tagOverrides.get(origin) : undefined
+    try {
+      // Read actual HEAD; it may differ from cv.commit after external changes (manual pull, checkout).
+      const actualHead = readGitHead(comfyuiDir) || cv.commit
 
-        const resolved = await resolveLocalVersion(comfyuiDir, actualHead, undefined, override)
+      const resolved = await resolveLocalVersion(comfyuiDir, actualHead, undefined, override)
 
-        // Downgrade ratchet: tag-resolution can transiently fail and return a bare `{ commit }`.
-        // Persisting it would clobber a populated `{ commit, baseTag, commitsAhead }` for the
-        // same commit, so bail; a genuinely-new commit still writes through.
-        if (cv?.baseTag && !resolved.baseTag && resolved.commit === cv.commit) {
-          return
-        }
-        const resolvedStr = formatComfyVersion(resolved, 'short')
-        const storedStr = formatComfyVersion(cv, 'short')
-        const versionChanged = resolvedStr !== storedStr
-
-        const existing = inst.updateInfoByChannel as
-          | Record<string, Record<string, unknown>>
-          | undefined
-        let reconciledChannels: Record<string, Record<string, unknown>> | undefined
-        if (existing) {
-          let changed = false
-          const reconciled: Record<string, Record<string, unknown>> = {}
-          for (const [ch, info] of Object.entries(existing)) {
-            if (info?.installedTag && info.installedTag !== resolvedStr) {
-              reconciled[ch] = { ...info, installedTag: resolvedStr }
-              changed = true
-            } else {
-              reconciled[ch] = info
-            }
-          }
-          if (changed) reconciledChannels = reconciled
-        }
-
-        if (versionChanged || reconciledChannels) {
-          const patch: Record<string, unknown> = {}
-          if (versionChanged) patch.comfyVersion = resolved
-          if (reconciledChannels) patch.updateInfoByChannel = reconciledChannels
-          await installations.update(inst.id, patch)
-          updates.push({ id: inst.id, version: resolvedStr })
-        }
-      } catch {
-        // ignore — keep stored version
+      // Downgrade ratchet: tag-resolution can transiently fail and return a bare `{ commit }`.
+      // Persisting it would clobber a populated `{ commit, baseTag, commitsAhead }` for the
+      // same commit, so bail; a genuinely-new commit still writes through.
+      if (cv?.baseTag && !resolved.baseTag && resolved.commit === cv.commit) {
+        return
       }
-    })
-  )
+      const resolvedStr = formatComfyVersion(resolved, 'short')
+      const storedStr = formatComfyVersion(cv, 'short')
+      // `formatComfyVersion` ignores `baseTagVerified`, so without the second term a record
+      // written before that field existed would keep its fail-closed absence forever on an
+      // install whose displayed version never changes. Re-resolving is the only thing that
+      // can establish it, and the beta-grant gate refuses an unverified base. `ancestorTag` is
+      // the same case one field over: it is what the gate measures when the label is
+      // unverified, and a record written before it existed changes in no other field.
+      const versionChanged =
+        resolvedStr !== storedStr ||
+        resolved.baseTagVerified !== cv.baseTagVerified ||
+        resolved.ancestorTag !== cv.ancestorTag
+
+      const existing = inst.updateInfoByChannel as
+        | Record<string, Record<string, unknown>>
+        | undefined
+      let reconciledChannels: Record<string, Record<string, unknown>> | undefined
+      if (existing) {
+        let changed = false
+        const reconciled: Record<string, Record<string, unknown>> = {}
+        for (const [ch, info] of Object.entries(existing)) {
+          if (info?.installedTag && info.installedTag !== resolvedStr) {
+            reconciled[ch] = { ...info, installedTag: resolvedStr }
+            changed = true
+          } else {
+            reconciled[ch] = info
+          }
+        }
+        if (changed) reconciledChannels = reconciled
+      }
+
+      if (versionChanged || reconciledChannels) {
+        const patch: Record<string, unknown> = {}
+        if (versionChanged) patch.comfyVersion = resolved
+        if (reconciledChannels) patch.updateInfoByChannel = reconciledChannels
+        await installations.update(inst.id, patch)
+        updates.push({ id: inst.id, version: resolvedStr })
+      }
+    } catch {
+      // ignore - keep stored version
+    }
+  })
   if (updates.length > 0) {
     _broadcastToRenderer('installations-versions-updated', { updates })
   }

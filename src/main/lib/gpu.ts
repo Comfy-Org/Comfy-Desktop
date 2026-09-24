@@ -64,6 +64,22 @@ async function detectGPU(): Promise<GpuInfo | null> {
   return { id, label: GPU_LABELS[id], model: null }
 }
 
+let cachedGpuPromise: Promise<GpuInfo | null> | null = null
+
+/** Memoized `detectGPU()`. The GPU vendor cannot change mid-session, so the
+ *  first successful detection is shared by every caller (wizard field options,
+ *  system info, install-time artifact resolution). A null result is not
+ *  cached: a transient probe failure (e.g. WMI hiccup) retries on the next
+ *  call instead of pinning the host to the CPU fallback for the whole session. */
+async function detectGPUCached(): Promise<GpuInfo | null> {
+  if (!cachedGpuPromise) {
+    cachedGpuPromise = detectGPU().catch(() => null)
+  }
+  const gpu = await cachedGpuPromise
+  if (gpu === null) cachedGpuPromise = null
+  return gpu
+}
+
 async function detectWindowsGPU(): Promise<GpuId | null> {
   const wmiResult = await queryWmiVendorIds()
   if (wmiResult) return wmiResult
@@ -565,4 +581,4 @@ async function validateHardware(): Promise<HardwareValidation> {
   return { supported: true }
 }
 
-export { detectGPU, checkNvidiaDriver, checkAmdDriver, validateHardware }
+export { detectGPU, detectGPUCached, checkNvidiaDriver, checkAmdDriver, validateHardware }

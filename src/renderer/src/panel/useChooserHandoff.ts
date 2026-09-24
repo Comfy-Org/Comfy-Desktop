@@ -151,7 +151,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
   }
 
   function handleChooserShowNewInstall(): void {
-    // Empty-state CTA — opens new-install as a takeover above the chooser
+    // Empty-state CTA opens new-install as a takeover above the chooser
     // body, so dismissing it returns the user to the chooser.
     void opts.switchPanel('new-install', 'chooser')
   }

@@ -8,8 +8,13 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { execFile, spawn } from 'child_process'
 import { EventEmitter } from 'events'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import {
   countCommitsAhead,
+  gitDirPresence,
+  resolveGitDir,
   findNearestTag,
   findLatestVersionTag,
   lsRemoteLatestTag,
@@ -89,6 +94,7 @@ describe('countCommitsAhead', () => {
       cb(null, '21\n', '')
     })
     expect(await countCommitsAhead('/repo', 'v0.14.2')).toBe(21)
+    expect(mockedExecFile.mock.calls[0]![2]).toMatchObject({ timeout: 5000 })
   })
 
   it('returns 0 when on the tag exactly', async () => {
@@ -437,6 +443,71 @@ describe('gitFetchAndCheckout (system git)', () => {
     const result = await gitFetchAndCheckout('/repo', 'abc123', () => {}, controller.signal)
     expect(result.exitCode).toBe(1)
     expect(mockedSpawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('gitDirPresence', () => {
+  let repoDir = ''
+
+  beforeEach(() => {
+    repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-dir-presence-'))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    fs.rmSync(repoDir, { recursive: true, force: true })
+  })
+
+  const dotGit = (): string => path.join(repoDir, '.git')
+
+  it('reports absent when there is no .git entry', () => {
+    expect(gitDirPresence(repoDir)).toBe('absent')
+  })
+
+  it('reports present for a .git directory', () => {
+    fs.mkdirSync(dotGit())
+    expect(gitDirPresence(repoDir)).toBe('present')
+  })
+
+  it('reports present for a .git pointer file, resolvable or not', () => {
+    fs.writeFileSync(dotGit(), 'gitdir: ../.git/worktrees/wt\n')
+    expect(gitDirPresence(repoDir)).toBe('present')
+
+    // Presence is about the entry, not about what it points at: a pointer file with no
+    // `gitdir:` line is still a git-managed checkout, just a broken one. Callers distinguish
+    // the two by then asking `resolveGitDir`, which is null only for this second shape.
+    fs.writeFileSync(dotGit(), 'not a pointer at all\n')
+    expect(gitDirPresence(repoDir)).toBe('present')
+    expect(resolveGitDir(repoDir)).toBeNull()
+  })
+
+  it('reports present for a dangling .git symlink that stat would call absent', () => {
+    try {
+      fs.symlinkSync(path.join(repoDir, 'missing-git-dir'), dotGit())
+    } catch {
+      return // Windows without Developer Mode cannot create a symlink at all.
+    }
+    // The whole reason this probe uses lstat: stat follows the link and raises ENOENT, which
+    // would classify a broken checkout as one that was never a checkout.
+    expect(() => fs.statSync(dotGit())).toThrow(/ENOENT/)
+    expect(gitDirPresence(repoDir)).toBe('present')
+  })
+
+  it('reports indeterminate when the lstat itself fails', () => {
+    // EACCES/EPERM/ELOOP on the entry: it may well exist, we just cannot see it. Injected at
+    // the syscall because no filesystem state produces it on every platform CI runs on — a
+    // chmod-ed parent is a no-op for root, and Windows has no equivalent.
+    vi.spyOn(fs, 'lstatSync').mockImplementation(() => {
+      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+    })
+    expect(gitDirPresence(repoDir)).toBe('indeterminate')
+  })
+
+  it('reports absent only for ENOENT', () => {
+    vi.spyOn(fs, 'lstatSync').mockImplementation(() => {
+      throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' })
+    })
+    expect(gitDirPresence(repoDir)).toBe('absent')
   })
 })
 
@@ -1031,7 +1102,7 @@ describe('pygit2 circuit breaker', () => {
   })
 
   it('disables pygit2 after 3 consecutive launch failures', async () => {
-    // Each call simulates a timeout (killed=true ⇒ launch failure)
+    // Each call simulates a timeout (killed=true -> launch failure)
     const timeoutErr = new Error('timeout') as Error & { killed: boolean }
     timeoutErr.killed = true
     mockExecFile((_cmd, _args, _opts, cb) => {
@@ -1045,13 +1116,13 @@ describe('pygit2 circuit breaker', () => {
     expect(isPygit2Configured()).toBe(true)
 
     expect(await countCommitsAhead('/repo', 'v0.1.0')).toBeUndefined()
-    // 3rd consecutive launch failure ⇒ disabled
+    // 3rd consecutive launch failure -> disabled
     expect(isPygit2Configured()).toBe(false)
     expect(getPygit2Status().status).toBe('disabled')
   })
 
   it('does not count normal non-zero exits as launch failures', async () => {
-    // exit code 1 with no killed/signal ⇒ helper ran fine, just returned non-zero
+    // exit code 1 with no killed/signal -> helper ran fine, just returned non-zero
     const exitErr = new Error('exit 1') as Error & { code: number }
     exitErr.code = 1
     mockExecFile((_cmd, _args, _opts, cb) => {
@@ -1098,7 +1169,7 @@ describe('pygit2 circuit breaker', () => {
     for (let i = 0; i < 3; i++) await countCommitsAhead('/repo', 'v0.1.0')
     expect(isPygit2Configured()).toBe(false)
 
-    // After disable, calls take the system-git branch — the Python path
+    // After disable, calls take the system-git branch - the Python path
     // should no longer appear in execFile invocations.
     mockedExecFile.mockClear()
     mockExecFile((_cmd, _args, _opts, cb) => {

@@ -408,4 +408,27 @@ describe('executionTap', () => {
     expect(msg).not.toContain(apiKey)
     expect(msg).toContain('[' + 'REDACTED' + ']')
   })
+
+  it('stamps the launch-injected core beta flags onto every emitted event', () => {
+    const tap = createExecutionTap({
+      installationId: 'inst-1',
+      coreBetaFlags: ['--enable-assets']
+    })
+    tap.ingest('got prompt\nPrompt executed in 1.0 seconds\n', 'stdout')
+    tap.flushSummary()
+
+    expect(captured.length).toBeGreaterThan(0)
+    for (const { ctx } of captured) {
+      expect(ctx['core_beta_flags']).toEqual(['--enable-assets'])
+    }
+  })
+
+  it('reports an empty core beta list when the launch injected nothing', () => {
+    const tap = createExecutionTap({ installationId: 'inst-1' })
+    tap.ingest('got prompt\nPrompt executed in 1.0 seconds\n', 'stdout')
+    tap.flushSummary()
+
+    const summary = captured.find((c) => c.event === 'comfy.desktop.execution.session_summary')
+    expect(summary!.ctx['core_beta_flags']).toEqual([])
+  })
 })

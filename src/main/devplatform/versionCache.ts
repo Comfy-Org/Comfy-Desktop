@@ -1,8 +1,8 @@
 /**
- * Published-version cache, keyed by distribution id.
+ * Published-version cache, keyed by the persisted Builder catalog id.
  *
  * `SourcePlugin.getDetailSections` is synchronous, so the manage view can't
- * fetch a distribution's version list while building the Update tab. This holds
+ * fetch a build's version list while building the Update tab. This holds
  * what the last catalog read saw, the way `lib/release-cache` does for
  * standalone channels.
  *
@@ -21,13 +21,13 @@ const cache = new Map<string, CachedVersions>()
 let generation = 0
 
 export function setCachedVersions(
-  distributionId: string,
+  buildId: string,
   versions: number[],
   expectedGeneration: number = generation
 ): void {
   if (expectedGeneration !== generation) return
   const sorted = [...new Set(versions)].sort((a, b) => b - a)
-  cache.set(distributionId, { versions: sorted, fetchedAt: Date.now() })
+  cache.set(buildId, { versions: sorted, fetchedAt: Date.now() })
 }
 
 /** Capture before an async catalog read so stale responses cannot repopulate
@@ -38,19 +38,16 @@ export function getVersionCacheGeneration(): number {
 
 /** Cached versions, or null when nothing has read the catalog yet. Callers
  *  render a "check for updates" affordance rather than an empty picker. */
-export function getCachedVersions(distributionId: string): CachedVersions | null {
-  return cache.get(distributionId) ?? null
+export function getCachedVersions(buildId: string): CachedVersions | null {
+  return cache.get(buildId) ?? null
 }
 
 /** Latest published version when it is newer than the installed version. */
-export function getAvailableUpdate(
-  distributionId: string,
-  installedVersion: string
-): number | undefined {
+export function getAvailableUpdate(buildId: string, installedVersion: string): number | undefined {
   if (installedVersion === '') return undefined
   const current = Number(installedVersion)
   if (!Number.isFinite(current)) return undefined
-  const latest = getCachedVersions(distributionId)?.versions[0]
+  const latest = getCachedVersions(buildId)?.versions[0]
   return latest !== undefined && latest > current ? latest : undefined
 }
 

@@ -4,6 +4,7 @@ import { execFile } from 'child_process'
 import { homedir } from 'os'
 
 import { scanCustomNodes } from './nodes'
+import { parsePipFreeze, uvEnv } from './pip'
 import type { Snapshot } from './snapshots'
 import * as i18n from './i18n'
 
@@ -115,7 +116,10 @@ export async function pipFreezeDirect(pythonPath: string): Promise<Record<string
     execFile(
       pythonPath,
       ['-m', 'pip', 'freeze', '--local'],
-      { windowsHide: true, timeout: 60_000, maxBuffer: 10 * 1024 * 1024 },
+      // Same colour-free environment as the uv calls: pip colourises through
+      // rich when colour is forced, and this capture feeds the same
+      // snapshot/restore pipeline.
+      { windowsHide: true, timeout: 60_000, maxBuffer: 10 * 1024 * 1024, env: uvEnv() },
       (err, stdout, stderr) => {
         if (err) {
           const detail = stderr ? stderr.slice(0, 500) : err.message
@@ -126,26 +130,7 @@ export async function pipFreezeDirect(pythonPath: string): Promise<Record<string
     )
   })
 
-  const packages: Record<string, string> = {}
-  for (const line of output.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) continue
-    if (trimmed.startsWith('-e ')) {
-      const eggMatch = trimmed.match(/#egg=(.+)/)
-      if (eggMatch) packages[eggMatch[1]!] = trimmed
-      continue
-    }
-    const atMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\s*@\s*(.+)$/)
-    if (atMatch) {
-      packages[atMatch[1]!] = atMatch[2]!.trim()
-      continue
-    }
-    const eqIdx = trimmed.indexOf('==')
-    if (eqIdx > 0) {
-      packages[trimmed.slice(0, eqIdx)] = trimmed.slice(eqIdx + 2)
-    }
-  }
-  return packages
+  return parsePipFreeze(output)
 }
 
 // Build a Snapshot from the Legacy Desktop install's on-disk state for the

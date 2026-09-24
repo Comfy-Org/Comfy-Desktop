@@ -85,7 +85,8 @@ vi.mock('../../../lib/pip', () => ({
   installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' }))
 }))
 
-import { handleReleaseUpdate, handleCopyChangePytorch } from './copy'
+import { handleCopy, handleReleaseUpdate, handleCopyChangePytorch } from './copy'
+import { comfybuilder } from '../../../sources/comfybuilder'
 import { standalone } from '../../../sources/standalone'
 import * as settingsMock from '../../../settings'
 
@@ -118,6 +119,88 @@ function seedSource(srcRoot: string): void {
   fs.mkdirSync(path.join(srcComfyUI, 'output'), { recursive: true })
   fs.writeFileSync(path.join(srcComfyUI, 'output', OUTPUT_FILE), OUTPUT_BODY)
 }
+
+describe('handleCopy (ComfyBuilder install)', () => {
+  let tmpRoot: string
+  let srcRoot: string
+  let src: InstallationRecord
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-copy-'))
+    srcRoot = path.join(tmpRoot, 'source')
+    fs.mkdirSync(path.join(srcRoot, 'ComfyUI'), { recursive: true })
+    fs.mkdirSync(path.join(srcRoot, 'venv', 'base'), { recursive: true })
+    fs.mkdirSync(path.join(srcRoot, 'venv', 'bin'), { recursive: true })
+    fs.writeFileSync(path.join(srcRoot, 'ComfyUI', 'main.py'), '# build entrypoint\n')
+    fs.writeFileSync(path.join(srcRoot, 'venv', 'base', 'python.exe'), 'python stub\n')
+    fs.writeFileSync(path.join(srcRoot, 'venv', 'python.exe'), 'legacy python stub\n')
+    fs.writeFileSync(path.join(srcRoot, 'venv', 'bin', 'python3'), 'python stub\n')
+
+    src = {
+      id: 'builder-source',
+      name: 'Studio Build',
+      createdAt: new Date(0).toISOString(),
+      sourceId: 'comfybuilder',
+      installPath: srcRoot,
+      workspaceId: 'workspace-1',
+      distributionId: 'build-1',
+      distributionName: 'Studio Build',
+      version: '7',
+      artifactId: 'artifact-7',
+      artifactOs: 'windows',
+      artifactGpu: 'nvidia',
+      artifactAccelVariant: 'cu128',
+      artifactSha256: 'abc123',
+      browserPartition: 'unique',
+      useSharedModels: false,
+      status: 'installed',
+      seen: true
+    }
+    installationsStore.set(src.id, src)
+  })
+
+  afterEach(() => {
+    installationsStore.clear()
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
+  })
+
+  it('creates an independently launchable managed copy with the same Build identity', async () => {
+    const result = await handleCopy({
+      event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent,
+      installationId: src.id,
+      inst: src,
+      actionData: { name: 'Studio Build Copy' }
+    })
+
+    expect(result.ok, `copy failed: ${result.message ?? ''}`).toBe(true)
+    const copy = installationsStore.get(result.newInstallationId!)
+    expect(copy).toMatchObject({
+      name: 'Studio Build Copy',
+      sourceId: 'comfybuilder',
+      workspaceId: 'workspace-1',
+      distributionId: 'build-1',
+      distributionName: 'Studio Build',
+      version: '7',
+      artifactId: 'artifact-7',
+      artifactOs: 'windows',
+      artifactGpu: 'nvidia',
+      artifactAccelVariant: 'cu128',
+      artifactSha256: 'abc123',
+      browserPartition: 'unique',
+      useSharedModels: false,
+      status: 'installed',
+      seen: false,
+      copiedFrom: 'builder-source',
+      copiedFromName: 'Studio Build',
+      copyReason: 'copy'
+    })
+    expect(copy!.id).not.toBe(src.id)
+    expect(copy!.installPath).not.toBe(src.installPath)
+    expect(fs.existsSync(path.join(copy!.installPath, 'ComfyUI', 'main.py'))).toBe(true)
+    expect(comfybuilder.getLaunchCommand(copy!)).toMatchObject({ cwd: copy!.installPath })
+    expect(installationsStore.get(src.id)).toBe(src)
+  })
+})
 
 describe('handleReleaseUpdate (release-update success path)', () => {
   let tmpRoot: string

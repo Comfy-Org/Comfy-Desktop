@@ -209,6 +209,10 @@ export interface GlobalSettingsSnapshot {
    *  at open; live rebroadcasts carry null so a data refresh can never
    *  retarget a tab the user has since navigated away from. */
   initialTab: GlobalSettingsTab | null
+  /** Field id to scroll to and flash once the tab renders. Same per-open
+   *  semantics as `initialTab`: non-null only on the snapshot pushed at open,
+   *  so a live rebroadcast can never re-flash a row the user has moved past. */
+  highlightFieldId: string | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -221,6 +225,10 @@ export interface GlobalSettingsSnapshot {
   installLocationFields: Record<string, unknown>[]
   modelsDirs: GlobalSettingsModelsDir[]
   modelsSystemDefault: string
+  /** Whether telemetry consent was explicitly granted. Top-level rather than
+   *  a `DetailField` because it gates OTHER fields (opting into beta features
+   *  requires consent) instead of being edited itself. */
+  telemetryGranted: boolean
   appUpdate: {
     state: Record<string, unknown>
     progress: Record<string, unknown> | null
@@ -749,6 +757,9 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //   Load Snapshot
   //   ── separator ──
   //   (Log in — while signed out, followed by its own separator)
+  //   Performance Test
+  //   Benchmarks
+  //   ── separator ──
   //   Desktop Settings
   //   Send Beta Feedback
   //   (Reset Zoom — on install-backed hosts when zoom level != 0)
@@ -797,6 +808,13 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     )
   }
   items.push(
+    {
+      id: 'performance-test',
+      label: 'Performance Tests',
+      labelKey: 'fileMenu.performanceTest'
+    },
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' },
+    { kind: 'separator' },
     {
       id: 'settings',
       label: 'Desktop Settings',
@@ -1399,11 +1417,16 @@ type OpenTitlePopupOpts = {
  *  A non-null global-settings `initialTab` is a per-open command, not
  *  state: the renderer may have navigated off that tab since the last
  *  identical push, so the snapshot must be re-sent for the view's
- *  tab-retarget watch to fire. */
+ *  tab-retarget watch to fire. `highlightFieldId` is the same kind of
+ *  command — a re-open asking for the same flash on an already-open popup
+ *  must still reach the view. */
 export function requiresPerOpenConfigSync(
-  opts: Pick<OpenTitlePopupOpts, 'kind'> & { snapshot?: { initialTab?: unknown } }
+  opts: Pick<OpenTitlePopupOpts, 'kind'> & {
+    snapshot?: { initialTab?: unknown; highlightFieldId?: unknown }
+  }
 ): boolean {
-  return opts.kind === POPUP_KIND.globalSettings && opts.snapshot?.initialTab != null
+  if (opts.kind !== POPUP_KIND.globalSettings) return false
+  return opts.snapshot?.initialTab != null || opts.snapshot?.highlightFieldId != null
 }
 
 function openTitlePopup(opts: OpenTitlePopupOpts): void {
@@ -1731,7 +1754,8 @@ function openGlobalSettingsForHost(
   parentEntryId: number,
   bindings: TitlePopupHostBindings,
   titleBarSender: Electron.WebContents,
-  initialTab: GlobalSettingsTab | null = null
+  initialTab: GlobalSettingsTab | null = null,
+  highlightFieldId: string | null = null
 ): void {
   if (parentEntry.window.isDestroyed()) return
   // Open instantly off the cached snapshot — like the instance picker — so the
@@ -1741,7 +1765,7 @@ function openGlobalSettingsForHost(
     parent: parentEntry.window,
     parentEntryId,
     kind: 'global-settings',
-    snapshot: buildGlobalSettingsSnapshot(undefined, initialTab),
+    snapshot: buildGlobalSettingsSnapshot(undefined, initialTab, highlightFieldId),
     anchor: { x: 0, y: TITLEBAR_HEIGHT },
     theme: parentEntry.lastTheme,
     titleBarSender
@@ -1957,6 +1981,9 @@ export function activateTitlePopupMenuItem(
   if (id === 'new-window') {
     bindings.openChooserHostWindow()
     releaseFocusToParent = false
+  } else if (id === 'performance-test' || id === 'benchmarks') {
+    bindings.openChooserHostWindow(id)
+    releaseFocusToParent = false
   } else if (id === 'return-to-dashboard') {
     // Flip the install-backed host in place to chooser-host mode.
     // The same BrowserWindow stays alive; the file-menu popup is
@@ -2128,7 +2155,8 @@ function findSettingsFields(
 
 function buildGlobalSettingsSnapshot(
   installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[],
-  initialTab: GlobalSettingsTab | null = null
+  initialTab: GlobalSettingsTab | null = null,
+  highlightFieldId: string | null = null
 ): GlobalSettingsSnapshot {
   const settingsSections = buildSettingsSections(installs)
   const mediaSections = buildMediaSections()
@@ -2155,6 +2183,7 @@ function buildGlobalSettingsSnapshot(
   const githubStarsLoading = githubStars == null && !githubStarsFetchAttempted
   return {
     initialTab,
+    highlightFieldId,
     languageFields,
     generalFields,
     telemetryFields,
@@ -2168,6 +2197,10 @@ function buildGlobalSettingsSnapshot(
       isPrimary: i === 0
     })),
     modelsSystemDefault: modelsDefault,
+    // Strict `=== true`: an absent consent key means the user was never asked,
+    // which must not read as a grant. (The telemetry FIELD above deliberately
+    // coerces the same absence the other way, to default-on collection.)
+    telemetryGranted: settings.get('telemetryEnabled') === true,
     appUpdate: {
       state: appUpdateState,
       progress: lastAppUpdateProgress,
@@ -2263,8 +2296,16 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     const entry = titlePopupsByWebContents.get(event.sender.id)
     if (!entry) return
     entry.view.rendererReady = true
-    if (entry.pendingConfig && !entry.view.popup.webContents.isDestroyed()) {
-      const flushed = entry.pendingConfig
+    // A ready signal means this is a freshly-mounted renderer. In development,
+    // Vite can reload the cached popup WebContentsView while main still holds
+    // the prior sync marker; replay that config so the default empty menu state
+    // cannot be mistaken for an already-synchronised renderer on the next open.
+    entry.lastSyncedConfigJson = null
+    const queuedConfig =
+      entry.pendingConfig ??
+      (entry.lastConfigJson ? (JSON.parse(entry.lastConfigJson) as TitlePopupConfig) : null)
+    if (queuedConfig && !entry.view.popup.webContents.isDestroyed()) {
+      const flushed = queuedConfig
       entry.lastConfigJson = JSON.stringify(flushed)
       entry.view.popup.webContents.send('comfy-titlepopup:set-config', flushed)
       entry.pendingConfig = null
@@ -2973,37 +3014,47 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   // Panel renderer → open the Global Settings popup for the sender's
   // host window. Used by the panel-side file-menu "Settings" item and
   // the `comfy://open-settings?tab=global` deep link.
-  ipcMain.on('comfy-titlepopup:open-global-settings', (event, payload?: { tab?: unknown }) => {
-    recordIpcInvocation('comfy-titlepopup:open-global-settings')
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isDestroyed()) return
-    let parentEntryId: number | undefined
-    let parentEntry: ComfyWindowEntry | undefined
-    for (const [id, e] of comfyWindows) {
-      if (e.window === win) {
-        parentEntryId = id
-        parentEntry = e
-        break
+  ipcMain.on(
+    'comfy-titlepopup:open-global-settings',
+    (event, payload?: { tab?: unknown; highlightField?: unknown }) => {
+      recordIpcInvocation('comfy-titlepopup:open-global-settings')
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win || win.isDestroyed()) return
+      let parentEntryId: number | undefined
+      let parentEntry: ComfyWindowEntry | undefined
+      for (const [id, e] of comfyWindows) {
+        if (e.window === win) {
+          parentEntryId = id
+          parentEntry = e
+          break
+        }
       }
+      if (parentEntryId === undefined || !parentEntry) return
+      const rawTab = payload?.tab
+      const initialTab: GlobalSettingsTab | null =
+        rawTab === 'general' ||
+        rawTab === 'updates' ||
+        rawTab === 'storage' ||
+        rawTab === 'advanced' ||
+        rawTab === 'logs'
+          ? rawTab
+          : null
+      // Field ids are renderer-side identifiers, so this is forwarded as an opaque string
+      // rather than validated against a list main would have to keep in sync. A id matching
+      // no row simply finds nothing to flash.
+      const rawHighlight = payload?.highlightField
+      const highlightFieldId =
+        typeof rawHighlight === 'string' && rawHighlight ? rawHighlight : null
+      openGlobalSettingsForHost(
+        parentEntry,
+        parentEntryId,
+        bindings,
+        parentEntry.titleBarView.webContents,
+        initialTab,
+        highlightFieldId
+      )
     }
-    if (parentEntryId === undefined || !parentEntry) return
-    const rawTab = payload?.tab
-    const initialTab: GlobalSettingsTab | null =
-      rawTab === 'general' ||
-      rawTab === 'updates' ||
-      rawTab === 'storage' ||
-      rawTab === 'advanced' ||
-      rawTab === 'logs'
-        ? rawTab
-        : null
-    openGlobalSettingsForHost(
-      parentEntry,
-      parentEntryId,
-      bindings,
-      parentEntry.titleBarView.webContents,
-      initialTab
-    )
-  })
+  )
 
   // ---- Global-settings popup IPC ----
   /** Resolve the popup entry for a settings IPC sender, or null if the sender
@@ -3223,6 +3274,12 @@ export function _test_setTitlePopupEntry(webContentsId: number, entry: TitlePopu
 
 export function _test_deleteTitlePopupEntry(webContentsId: number): void {
   titlePopupsByWebContents.delete(webContentsId)
+}
+
+/** Test seam: the snapshot builder, whose top-level properties have no other
+ *  reachable assertion point (the push path needs a live popup). */
+export function _test_buildGlobalSettingsSnapshot(): GlobalSettingsSnapshot {
+  return buildGlobalSettingsSnapshot()
 }
 
 /**

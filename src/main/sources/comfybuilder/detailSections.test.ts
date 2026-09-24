@@ -72,7 +72,7 @@ const updateActions = (inst: InstallationRecord): Record<string, unknown>[] =>
 beforeEach(() => clearVersionCache())
 
 describe('comfybuilder.getDetailSections', () => {
-  it('surfaces the tabs a distribution install should have', () => {
+  it('surfaces the tabs a build install should have', () => {
     const tabs = tabsOf(sectionsFor(record()))
     expect(tabs).toContain('status')
     expect(tabs).toContain('settings')
@@ -87,7 +87,7 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('declares NO storage section, because a reduced one shows shared models', () => {
-    // Shared models are off for distributions at MVP — each carries its own
+    // Shared models are off for builds at MVP - each carries its own
     // allowed list. Declaring a storage section with the toggles omitted does
     // NOT achieve that: StoragePane reads an absent `useSharedModels` as
     // enabled (`f ? f.value !== false : true`) and renders the global
@@ -103,23 +103,42 @@ describe('comfybuilder.getDetailSections', () => {
     expect(args?.editable).toBe(true)
   })
 
-  it('labels the distribution version apart from the ComfyUI version', () => {
+  it('labels the build version apart from the ComfyUI version', () => {
     // A bare "7" in a slot every other install fills with "v0.28.2" reads as a
     // ComfyUI version and is not one.
     const status = sectionsFor(record()).find((s) => s.tab === 'status')
     const ids = fieldIds(status)
-    expect(ids).toContain('distribution-version')
+    expect(ids).toContain('build-version')
     expect(ids).toContain('comfyui-version')
-    const distField = (status?.fields ?? []).find((f) => f.key === 'distribution-version')
-    expect(distField?.value).toBe('v7')
+    const buildField = (status?.fields ?? []).find((f) => f.key === 'build-version')
+    expect(buildField?.value).toBe('v7')
   })
 
-  it('pins launch/rename/open-folder/remove/delete, all session-dispatched ids', () => {
+  it('pins all session-dispatched Build actions', () => {
     const pinned = sectionsFor(record()).find((s) => s.pinBottom === true)
     const ids = (pinned?.actions ?? []).map((a) => a.id)
     expect(ids).toEqual(
-      expect.arrayContaining(['launch', 'rename', 'open-folder', 'remove', 'delete'])
+      expect.arrayContaining(['launch', 'rename', 'copy', 'open-folder', 'remove', 'delete'])
     )
+  })
+
+  it('declares the duplicate prompt and disables it until the Build is installed', () => {
+    const actions = sectionsFor(record()).find((s) => s.pinBottom === true)?.actions ?? []
+    const copy = actions.find((action) => action.id === 'copy')
+    expect(copy).toMatchObject({
+      enabled: true,
+      showProgress: true,
+      cancellable: true,
+      prompt: {
+        defaultValue: 'Studio Render Pipeline',
+        uniquifyDefault: true,
+        field: 'name'
+      }
+    })
+
+    const unavailableActions =
+      sectionsFor(record({ status: 'failed' })).find((s) => s.pinBottom === true)?.actions ?? []
+    expect(unavailableActions.find((action) => action.id === 'copy')?.enabled).toBe(false)
   })
 
   it('renders the update tab as a version-stats table, like a local install', () => {
@@ -156,7 +175,11 @@ describe('comfybuilder.getDetailSections', () => {
     expect(update).toBeDefined()
     expect(update?.data).toEqual({ version: 9 })
     expect(update?.showProgress).toBe(true)
-    expect(update?.confirm).toBeDefined()
+    expect(update?.confirm).toEqual({
+      title: 'comfybuilder.updateConfirmTitle',
+      message: 'comfybuilder.updateConfirmMessage\n\ncomfybuilder.updateConfirmInfo',
+      confirmLabel: 'comfybuilder.updateNow'
+    })
 
     setCachedVersions('d1', [7, 3])
     expect(
@@ -205,7 +228,7 @@ describe('comfybuilder.getDetailSections', () => {
     expect(getCachedVersions('d1')?.versions).toEqual([5, 2])
   })
 
-  it('drops the update tab for a record with no distribution link', () => {
+  it('drops the update tab for a record with no build link', () => {
     const tabs = tabsOf(sectionsFor(record({ distributionId: undefined })))
     expect(tabs).not.toContain('update')
     // The rest of the manage view still stands.

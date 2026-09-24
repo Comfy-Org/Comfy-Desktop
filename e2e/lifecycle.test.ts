@@ -457,10 +457,9 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // variant picked, no path issues).
   await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')
 
-  // Open Advanced so the release BaseSelect + variant rows are
-  // interactive. The body is CSS-hidden when collapsed; the BaseSelect
-  // trigger does not register clicks while hidden.
-  expect(await ctx.panel.click('.config-advanced__summary')).toBe(true)
+  // The Advanced body renders permanently open in the takeover, so the
+  // release BaseSelect + variant rows are interactive without a
+  // disclosure click.
   await ctx.panel.waitForSelector('#source-fields button[role="combobox"]', {
     timeout: 5_000,
   })
@@ -474,11 +473,11 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   // sorted newest-first with the newest marked recommended.
   // The select stays disabled until its stable-tag options resolve.
   await ctx.panel.waitForSelector(
-    '#source-fields button[role="combobox"][aria-label="ComfyUI Version"]:not([disabled])',
+    '#source-fields button[role="combobox"][aria-label="ComfyUI version"]:not([disabled])',
     { timeout: 60_000 },
   )
   expect(
-    await ctx.panel.click('#source-fields button[role="combobox"][aria-label="ComfyUI Version"]'),
+    await ctx.panel.click('#source-fields button[role="combobox"][aria-label="ComfyUI version"]'),
   ).toBe(true)
   await ctx.panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
   expect(
@@ -838,6 +837,30 @@ function expectTorchFamilyUnchanged(message: string): void {
   const { cudaAvailable: _base, ...baseline } = _installedTorchSignature!
   const { cudaAvailable: _cur, ...current } = queryTorchSignature()
   expect(current, message).toEqual(baseline)
+}
+
+/** Untrack an install through the REAL production surface: the Manage
+ *  drawer's Settings footer More menu -> Untrack (`remove` action) ->
+ *  in-drawer BaseAlert confirm. The dashboard kebab no longer carries an
+ *  Untrack item; the drawer's pin-bottom action list is its UI home. A
+ *  successful untrack removes the install, which closes the drawer. */
+async function untrackViaManageDrawer(installationId: string): Promise<void> {
+  await ctx.panel.evaluate<boolean>(
+    `(() => {
+      window.api.openInstancePicker({
+        installationId: ${JSON.stringify(installationId)},
+        initialTab: 'settings',
+      })
+      return true
+    })()`,
+  )
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
+  await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 30_000 })
+  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('remove')), { timeout: 30_000 })
+  expect(await popup.click(byTestId(TID.pinBottomAction('remove')))).toBe(true)
+  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
+  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 }
 
 /** Stop the running install and land back on the dashboard through the
@@ -2717,15 +2740,16 @@ test('cleans up the copy install before the original delete test runs @sec-copy 
 })
 
 // ---------------------------------------------------------------------------
-// Dashboard kebab "Copy Installation" / "Untrack" — both route through
-// `opts.onManage(inst, { autoAction })` so the picker opens in
-// expanded mode with the autoAction seed and `ComfyUISettingsContent`
-// fires the action through the full `useComfyUISettings.runAction`
-// chain (prompt → disk-check → showProgress for copy; confirm → inline
-// runAction for remove).
+// Dashboard kebab "Copy Installation" + Manage drawer "Untrack". Copy
+// routes through `opts.onManage(inst, { autoAction })` so the picker
+// opens in expanded mode with the autoAction seed and
+// `ComfyUISettingsContent` fires the action through the full
+// `useComfyUISettings.runAction` chain (prompt → disk-check →
+// showProgress). Untrack lives only in the drawer's pin-bottom More
+// menu (confirm → inline runAction('remove')).
 //
 // One fresh ~500MB kebab-driven copy is the target for both tests
-// (kebab Copy on the original → kebab Untrack on the new copy) so the
+// (kebab Copy on the original → drawer Untrack on the new copy) so the
 // registry-only Untrack semantics can be validated without breaking
 // the original-install state the final Delete test depends on. The
 // kebab-copy's on-disk tree is then `fs.rm`'d manually to reclaim the
@@ -2797,7 +2821,7 @@ test('dashboard kebab "Copy Installation" creates a real ~500MB copy @sec-copy @
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('dashboard kebab "Untrack" removes the install from the registry without touching disk @sec-copy @lifecycle', async () => {
+test('Manage drawer "Untrack" removes the install from the registry without touching disk @sec-copy @lifecycle', async () => {
   test.setTimeout(60_000)
   expect(_kebabCopyInstallId, 'no kebab-copy install id to untrack').toBeTruthy()
   expect(_kebabCopyInstallPath, 'no kebab-copy install path captured').toBeTruthy()
@@ -2808,18 +2832,9 @@ test('dashboard kebab "Untrack" removes the install from the registry without to
   await expectChooserVisible(ctx.panel)
   await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_kebabCopyInstallId)), { timeout: 10_000 })
 
-  // Click the kebab on the kebab-copy tile (NOT the original — the
-  // original needs to survive for the final Delete test).
-  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_kebabCopyInstallId)))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('untrack')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('untrack')))).toBe(true)
-
-  // The Untrack item confirms in the dashboard's own renderer:
-  // `useInstallContextMenu` runs `modal.confirm(...)` — a simple confirm,
-  // which ModalDialog routes through BaseAlert in panel.html — then
-  // dispatches `runAction('remove')` directly. No picker is involved.
-  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
-  expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
+  // Untrack the kebab-copy (NOT the original — the original needs to
+  // survive for the final Delete test) through its Manage drawer.
+  await untrackViaManageDrawer(_kebabCopyInstallId)
 
   // Poll the registry until the kebab-copy id is gone.
   await expect
@@ -2831,6 +2846,10 @@ test('dashboard kebab "Untrack" removes the install from the registry without to
       { timeout: 30_000, intervals: [250, 500] },
     )
     .toBe(false)
+
+  // Removing the install closes its picker drawer; make sure the popup is
+  // gone before the next test drives the dashboard.
+  await closeTitlePopupIfOpen(ctx.app)
 
   // Critical Untrack semantics: registry entry gone, disk preserved.
   // (Delete is the destructive counterpart — this is the difference.)
@@ -2855,11 +2874,23 @@ test('cleans up the untracked kebab-copy on disk before the final Delete test ru
   // runs so the harness home temp dir doesn't carry a stale copy.
   // Same `fs.rm` semantics the main-side delete handler uses; run from
   // the test process directly (the path lives on the harness home temp
-  // dir and is readable by both processes).
-  rmSync(_kebabCopyInstallPath, { recursive: true, force: true })
-
+  // dir and is readable by both processes). Windows can hold transient
+  // handles on the tree right after the Manage-drawer untrack (drawer
+  // probe processes draining), so retry the delete inside the poll
+  // instead of failing on the first EPERM; a handle held for the full
+  // 60s would still fail and surface a real leak.
   await expect
-    .poll(() => existsSync(_kebabCopyInstallPath), { timeout: 60_000, intervals: [500, 1_000] })
+    .poll(
+      () => {
+        try {
+          rmSync(_kebabCopyInstallPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+        } catch {
+          // transient EPERM/EBUSY while a handle drains; poll again
+        }
+        return existsSync(_kebabCopyInstallPath)
+      },
+      { timeout: 60_000, intervals: [500, 1_000] },
+    )
     .toBe(false)
 })
 
@@ -2982,7 +3013,8 @@ test('creates a Remote Connection record pointed at the running local server thr
   await expectTakeoverOpen(ctx.panel)
   await waitForConfigContinueEnabled('Continue never enabled after the wizard opened (standalone pre-fill)')
 
-  expect(await ctx.panel.click('.config-advanced__summary')).toBe(true)
+  // The Advanced body (source method row included) renders permanently
+  // open in the takeover; no disclosure click needed.
   await ctx.panel.waitForVisible('.config-method-row', { timeout: 10_000 })
   expect(
     await ctx.panel.clickByText('.config-method-row button', 'Remote Connection'),
@@ -3198,18 +3230,14 @@ test('cleans up the remote connection: window closed, record untracked, local in
     })
     .toBe(true)
 
-  // Untrack the remote record through the real dashboard kebab so the
-  // delete section below sees the same single-local-install registry it
-  // always has (`installs[0]` must stay the standalone install). The
-  // remaining window is the comfy host with a hidden install-backed
-  // panel, so spawn a fresh dashboard window for the kebab flow.
+  // Untrack the remote record through its Manage drawer so the delete
+  // section below sees the same single-local-install registry it always
+  // has (`installs[0]` must stay the standalone install). The remaining
+  // window is the comfy host with a hidden install-backed panel, so
+  // spawn a fresh dashboard window to anchor the drawer flow.
   await openDashboardWindowViaPickerHome()
-  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_remoteInstallId)), { timeout: 15_000 })
-  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_remoteInstallId)))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('untrack')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('untrack')))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
-  expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await ctx.panel.waitForVisible(byTestId(TID.dashboardTile(_remoteInstallId)), { timeout: 15_000 })
+  await untrackViaManageDrawer(_remoteInstallId)
   await expect
     .poll(async () => {
       const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
@@ -3225,10 +3253,21 @@ test('cleans up the remote connection: window closed, record untracked, local in
   await waitForWebContents(ctx.app, 'panel.html')
 
   // Remove only this run's unique output root from the shared directory.
+  // Retry inside the poll: the download machinery may still be draining
+  // a transient handle on the files it just wrote.
   if (_remoteOutputRoot) {
-    rmSync(_remoteOutputRoot, { recursive: true, force: true })
     await expect
-      .poll(() => existsSync(_remoteOutputRoot), { timeout: 15_000, intervals: [250, 500] })
+      .poll(
+        () => {
+          try {
+            rmSync(_remoteOutputRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+          } catch {
+            // transient EPERM/EBUSY while a handle drains; poll again
+          }
+          return existsSync(_remoteOutputRoot)
+        },
+        { timeout: 15_000, intervals: [250, 500] },
+      )
       .toBe(false)
     _remoteOutputRoot = ''
   }

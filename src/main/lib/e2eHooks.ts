@@ -107,9 +107,9 @@ export interface E2EHelpers {
   /** Run the REAL comfybuilder model-staging (resolve manifest -> download ->
    *  verify -> place) against `installPath`, isolated from the archive/auth path.
    *  Resolves to the staged `type/filename` list, or a typed error on failure. */
-  stageDistributionModels(opts: {
+  stageBuildModels(opts: {
     installPath: string
-    distributionId: string
+    buildId: string
     version: string
   }): Promise<{ staged: string[] } | { error: string; kind?: string }>
 }
@@ -177,8 +177,8 @@ export function registerE2EHooks(): void {
       ensurePanelView(entry.windowKey, entry, 'comfy-lifecycle')
       return true
     },
-    async stageDistributionModels({ installPath, distributionId, version }) {
-      const manifest = await resolveModelManifest(getBuilderClient(), distributionId, version)
+    async stageBuildModels({ installPath, buildId, version }) {
+      const manifest = await resolveModelManifest(getBuilderClient(), buildId, version)
       try {
         const dm = await import('./comfyDownloadManager')
         // Same root-lock discipline as the production install path: staging

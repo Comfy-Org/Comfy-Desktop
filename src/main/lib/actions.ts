@@ -55,6 +55,27 @@ export function launchAction(enabled: boolean, disabledMessage?: string): Action
   }
 }
 
+export function copyAction(currentName: string, enabled: boolean): ActionDef {
+  return {
+    id: 'copy',
+    label: t('actions.copyInstallation'),
+    style: 'default',
+    enabled,
+    showProgress: true,
+    progressTitle: t('actions.copyingInstallation'),
+    cancellable: true,
+    prompt: {
+      title: t('actions.copyInstallationTitle'),
+      message: t('actions.copyInstallationMessage'),
+      defaultValue: currentName,
+      uniquifyDefault: true,
+      confirmLabel: t('actions.copyInstallationConfirm'),
+      required: true,
+      field: 'name'
+    }
+  }
+}
+
 export function renameAction(currentName: string): ActionDef {
   return {
     id: 'rename',

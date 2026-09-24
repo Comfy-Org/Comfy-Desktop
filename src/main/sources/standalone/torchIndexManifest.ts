@@ -37,7 +37,7 @@ import { writeFileSafe } from '../../lib/safe-file'
 import { fetchJSON } from '../../lib/fetch'
 import { compareVersions, detectNvidiaDriverVersion } from '../../lib/gpu'
 import { R2_BASE_URL } from '../../lib/r2Mirror'
-import { stripPlatform } from './envPaths'
+import { isArm64Variant, variantAccel } from './envPaths'
 import {
   isDevVersion,
   makeAmdIndexStackId,
@@ -689,9 +689,16 @@ function nightlyFresh(def: TorchIndexStackDef): boolean {
  * nightly entry is still young enough to install. Newest first. An entry
  * whose kernel range misses every detected GPU is annotated with
  * `capWarning`, never dropped.
+ *
+ * Native Windows ARM64 bundles get no index stacks: no index this app trusts
+ * publishes `win_arm64` wheels (pytorch.org and AMD's index are x64-only),
+ * so every tuple here would fail at pip time. Their only switchable stacks
+ * are their own bundles. Lift this once the manifest grows an architecture
+ * dimension and a kind that serves NVIDIA's `cu134` ARM64 wheels.
  */
 export function indexStacksForVariant(variant: string): TorchStackEntry[] {
-  const accel = stripPlatform(variant)
+  if (isArm64Variant(variant)) return []
+  const accel = variantAccel(variant)
   return (
     activeDefs()
       .filter((def) => def.accel === accel)

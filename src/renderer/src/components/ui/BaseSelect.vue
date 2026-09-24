@@ -17,13 +17,19 @@ interface Props {
   options: BaseSelectOption[]
   ariaLabel?: string
   placeholder?: string
+  loading?: boolean
+  loadingLabel?: string
   disabled?: boolean
+  compact?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   ariaLabel: undefined,
   placeholder: '',
-  disabled: false
+  loading: false,
+  loadingLabel: '',
+  disabled: false,
+  compact: false
 })
 
 const emit = defineEmits<{
@@ -38,7 +44,11 @@ const popoverStyle = ref<Record<string, string>>({})
 
 const selectedOption = computed(() => props.options.find((o) => o.value === props.modelValue))
 
-const triggerLabel = computed(() => selectedOption.value?.label ?? props.placeholder)
+const triggerLabel = computed(() =>
+  props.loading && props.loadingLabel
+    ? props.loadingLabel
+    : (selectedOption.value?.label ?? props.placeholder)
+)
 
 const listboxId = `ui-listbox-${Math.random().toString(36).slice(2, 9)}`
 const POPOVER_GAP = 2
@@ -225,12 +235,14 @@ onBeforeUnmount(() => {
     ref="triggerRef"
     type="button"
     class="ui-select-trigger"
+    :class="{ 'ui-select-trigger--compact': compact }"
     role="combobox"
     :aria-expanded="open"
     :aria-controls="listboxId"
     aria-haspopup="listbox"
     :aria-label="ariaLabel"
-    :data-placeholder="!selectedOption ? '' : undefined"
+    :aria-busy="loading || undefined"
+    :data-placeholder="!selectedOption && !loading ? '' : undefined"
     :disabled="disabled"
     @click="toggle"
     @keydown="onTriggerKeydown"
@@ -246,6 +258,7 @@ onBeforeUnmount(() => {
         :id="listboxId"
         ref="listboxRef"
         class="ui-select-listbox"
+        :class="{ 'ui-select-listbox--compact': compact }"
         role="listbox"
         tabindex="-1"
         :style="popoverStyle"
@@ -338,6 +351,10 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
   opacity: 0.6;
 }
+
+.ui-select-trigger--compact {
+  font-size: var(--takeover-fs-caption);
+}
 </style>
 
 <style>
@@ -367,6 +384,11 @@ onBeforeUnmount(() => {
   font-size: 14px;
   cursor: pointer;
   user-select: none;
+}
+
+.ui-select-listbox--compact .ui-select-option {
+  padding: 6px 8px;
+  font-size: var(--takeover-fs-caption);
 }
 
 .ui-select-option[data-active] {

@@ -51,10 +51,31 @@ export interface KnownSettings {
   useChineseMirrors?: boolean
   chineseMirrorsPrompted?: boolean
   telemetryEnabled?: boolean
+  /** Opt-in to desktop-managed beta features (currently: core beta launch
+   *  args). Deliberately separate from `telemetryEnabled` — gating beta on
+   *  consent would let a user escape a buggy beta by turning telemetry off,
+   *  destroying the diagnostics at the moment they matter most. Seeded ONCE
+   *  from the telemetry choice by `resolveBetaFeaturesEnabled` when absent,
+   *  and independent of it from then on. */
+  betaFeaturesEnabled?: boolean
   /** `true` once the first-use takeover is finished. Mid-flow cancel does NOT
    *  flip this, so the takeover replays from step 1 next launch. */
   firstUseCompleted?: boolean
   minimaxAnnouncementSeen?: boolean
+  /** Seen-flag for the Comfy Cloud nodes announcement. Deliberately a NEW key
+   *  rather than a reset of minimaxAnnouncementSeen: everyone who dismissed the
+   *  previous announcement must still get the bell for this one. */
+  cloudNodesAnnouncementSeen?: boolean
+  /** Seen-flag for the Comfy Router announcement. New key again, same reasoning
+   *  as cloudNodesAnnouncementSeen: everyone who dismissed the previous
+   *  announcement must still get the bell for this one. */
+  comfyRouterAnnouncementSeen?: boolean
+  /** Core beta grants the activation notice has already announced, as the arg
+   *  tokens themselves (`['--enable-assets']`). A list rather than a boolean so
+   *  a beta feature granted later still gets its own heads-up; append-only, so
+   *  a grant revoked and later re-granted stays silent the second time. Written
+   *  when the user retires the card, never when it is merely shown. */
+  betaNoticeAnnouncedArgs?: string[]
   /** When true, hide the Cloud tile (and the Try-Cloud CTA) from the
    *  Dashboard / Instance Picker. Local-only users who never use Cloud
    *  can opt out of seeing it without us removing the feature. Default
@@ -69,6 +90,9 @@ export interface KnownSettings {
    *  install (the user ticked "Don't show this again"). Only ever set once the
    *  user already has ≥1 local install. Default false — show the step. */
   skipTemplatePickerStep?: boolean
+  /** Stable dashboard workspace scope. Used by New Instance entry points that
+   *  originate outside the dashboard renderer, such as the title menu. */
+  dashboardWorkspaceId?: string
   /** Version of a Desktop update whose installer finished downloading in a
    *  previous session and is staged on disk. Gates the bounded startup
    *  install check so boots without a staged update aren't delayed. Cleared
@@ -79,6 +103,19 @@ export interface KnownSettings {
    *  the same version on the next boot — the user can still install it manually
    *  via the update pill. Cleared once that version is actually running. */
   lastStartupUpdateAttemptVersion?: string
+  /** Staged version whose startup install was skipped because the update never
+   *  reached the ready state (installer still re-downloading, corrupt, or the
+   *  check failed), plus how many consecutive boots did so. After a few strikes
+   *  the stale staged marker is cleared so boots stop showing the update splash
+   *  for an install that never becomes ready. Both cleared when the version
+   *  installs, when the counter's version is no longer newer than the running
+   *  build, or when a different version gets staged. */
+  startupInstallNotReadyVersion?: string
+  startupInstallNotReadyCount?: number
+  /** Opaque, locally-generated correlation id for the staged updater attempt.
+   *  Contains no device or user material and may span process launches. */
+  pendingDesktopUpdateAttemptId?: string
+  pendingDesktopUpdateAttemptVersion?: string
   /** Windows-only gate (default on) for applying a staged Desktop update on the
    *  next launch instead of letting electron-updater install it on quit. Ignored
    *  on macOS/Linux, whose updaters don't have the shutdown install-corruption
@@ -243,8 +280,12 @@ const SETTINGS_SCHEMA = {
   // Consent gate, not a durable trackable setting: once disabled we can't emit a
   // fresh `false` without violating the consent gate, so the value would go stale.
   telemetryEnabled: { nullable: false, telemetry: { policy: 'omit' } },
+  betaFeaturesEnabled: { nullable: false, telemetry: { policy: 'omit' } },
   firstUseCompleted: { nullable: false, telemetry: { policy: 'omit' } },
   minimaxAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  comfyRouterAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  betaNoticeAnnouncedArgs: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
@@ -256,8 +297,13 @@ const SETTINGS_SCHEMA = {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
+  dashboardWorkspaceId: { nullable: false, telemetry: { policy: 'omit' } },
   pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
   lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  startupInstallNotReadyVersion: { nullable: true, telemetry: { policy: 'omit' } },
+  startupInstallNotReadyCount: { nullable: true, telemetry: { policy: 'omit' } },
+  pendingDesktopUpdateAttemptId: { nullable: true, telemetry: { policy: 'omit' } },
+  pendingDesktopUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
   installUpdatesOnStartup: {
     // Windows-only, default-on. Off-Windows the gate is inert, so report `null`
     // ("not applicable") to keep it distinct from an explicit opt-out. Exact
@@ -655,6 +701,26 @@ export function set<K extends string>(
 
 export function getAll(): Settings {
   return load()
+}
+
+/**
+ * The beta-features opt-in, seeding itself on first read.
+ *
+ * Absence means "never asked": installs predating the toggle inherit their
+ * telemetry choice once, and that seed is written back immediately so the two
+ * settings are independent from the very next read. Consent is deliberately
+ * NOT a live fallback — a user hitting beta bugs would otherwise leave the
+ * beta by revoking consent, taking the diagnostics with them.
+ */
+export function resolveBetaFeaturesEnabled(): boolean {
+  const { settings, unreadable } = loadOutcome()
+  const stored = settings.betaFeaturesEnabled
+  if (typeof stored === 'boolean') return stored
+  if (unreadable) return false
+  const seeded = settings.telemetryEnabled === true
+  settings.betaFeaturesEnabled = seeded
+  save(settings)
+  return seeded
 }
 
 function camelToSnake(s: string): string {

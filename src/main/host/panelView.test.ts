@@ -129,6 +129,30 @@ describe('setActivePanel', () => {
     expect(fixture.titleBarWc.sent).toHaveLength(0)
   })
 
+  it.each(['performance-test', 'benchmarks'] as const)(
+    'reasserts an already-active %s page so a stale dashboard renderer can recover',
+    (panel) => {
+      const fixture = makeEntry({ activePanel: panel })
+      const panelWc = makeWc()
+      fixture.entry.panelView = {
+        webContents: panelWc
+      } as unknown as ComfyWindowEntry['panelView']
+      comfyWindows.set(fixture.entry.windowKey, fixture.entry)
+
+      setActivePanel(fixture.entry.windowKey, panel)
+
+      expect(fixture.layoutCalls).toBe(1)
+      expect(panelWc.sent).toContainEqual({
+        channel: 'panel-switch',
+        args: [{ panel, installationId: '' }]
+      })
+      expect(fixture.titleBarWc.sent).toContainEqual({
+        channel: 'comfy-titlebar:panel-changed',
+        args: [panel]
+      })
+    }
+  )
+
   it('no-ops when the windowKey does not resolve to an entry', () => {
     expect(() => setActivePanel(999_999, 'feedback')).not.toThrow()
   })

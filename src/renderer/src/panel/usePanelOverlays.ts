@@ -10,6 +10,7 @@ import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 
 /**
  * Panel body modes available in the WebContentsView.
@@ -20,6 +21,8 @@ export type PanelKey =
   | 'comfy'
   | 'comfy-lifecycle'
   | 'chooser'
+  | 'performance-test'
+  | 'benchmarks'
   | 'feedback'
   | 'new-install'
   | 'track'
@@ -44,6 +47,8 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
   'comfy-lifecycle',
   'chooser',
+  'performance-test',
+  'benchmarks',
   'feedback',
   'new-install',
   'track',
@@ -196,6 +201,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     firstUseRef
   } = opts
   const progressStore = useProgressStore()
+  const dashboardScope = useDashboardScopeStore()
   const { current: currentOverlay, openOverlay, closeOverlay } = useOverlay()
 
   /**
@@ -355,6 +361,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     // there is no main-side rollback to fire, just a wizard to dismiss.
     const ok = await openOverlay({ kind: 'takeover', component, cancelCopyKey: 'discard-setup' })
     if (!ok) return
+    const openedOverlay = currentOverlay.value
     emitTelemetryAction('comfy.desktop.install.flow.opened', {
       flow: FLOW_TELEMETRY_NAMES[component],
       entrypoint
@@ -369,8 +376,11 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       const cameFromLocalBranch = opts.firstUseChain
         ? opts.firstUseChain.consumeCameFromLocalBranch() === true
         : false
+      await dashboardScope.initialize()
+      if (currentOverlay.value !== openedOverlay) return
       await newInstallRef.value?.open({
         entrypoint,
+        workspaceId: dashboardScope.selectedWorkspaceId,
         ...(cameFromLocalBranch ? { cameFromLocalBranch } : {})
       })
     } else if (component === 'track') trackRef.value?.open()
