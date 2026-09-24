@@ -101,7 +101,6 @@ describe('resolveCoreCommitState', () => {
 
     const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
 
-    // Absent, not `false`: an upper bound must not read "could not look" as "not reached".
     expect(state.ancestry.has(UPPER)).toBe(false)
     expect(git.findMergeBase).toHaveBeenCalledTimes(1)
   })
@@ -172,8 +171,6 @@ describe('resolveCoreCommitState', () => {
 
     const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER, UPPER])
 
-    // A truncated graph can yield a different merge-base even when HEAD contains the SHA, so
-    // "not contained" is unproven there; "contained" still rests on a local path.
     expect([...state.ancestry]).toEqual([[LOWER, true]])
   })
 })

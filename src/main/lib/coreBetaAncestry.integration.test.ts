@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'child_process'
 import fs from 'fs'
@@ -14,8 +13,6 @@ import { resolveCoreCommitState } from './coreBetaAncestry'
 import { selectCoreBetaGrantArgs } from './coreBetaGrants'
 import type { CoreBetaGrant, CoreVersionState } from './coreBetaGrants'
 
-/** Real system git, no pygit2: the merge-base and fetch semantics the resolver leans on are
- *  exactly what a mock would have to assume. */
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, {
     cwd,
@@ -44,9 +41,6 @@ let upstream = ''
 let clone = ''
 const sha: Record<string, string> = {}
 
-// upstream master:  base -> known-good -> head -> ahead
-//          release:  base -> backport
-// `clone` is taken at `head`, so it has never seen `ahead`.
 beforeAll(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-ancestry-'))
   upstream = path.join(root, 'upstream')
@@ -81,7 +75,6 @@ describe('resolveCoreCommitState against a real repository', () => {
     ])
 
     expect(state.ancestry.get(sha.knownGood!)).toBe(true)
-    // A commit is its own ancestor, so a range whose upper bound IS HEAD excludes it.
     expect(state.ancestry.get(sha.head!)).toBe(true)
   })
 
@@ -148,7 +141,6 @@ describe('resolveCoreCommitState against a real repository', () => {
       shallowHead
     ])
 
-    // knownGood IS an ancestor upstream, but the depth-1 graph cannot show it: unresolved, not false.
     expect(state.ancestry.has(sha.knownGood!)).toBe(false)
     expect(state.ancestry.get(shallowHead)).toBe(true)
   })

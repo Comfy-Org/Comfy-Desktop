@@ -65,7 +65,6 @@ describe('parseCoreBetaGrants', () => {
         minCoreVersion: '0.3.81',
         maxCoreVersion: '0.4.0'
       },
-      // Kept, not deduplicated: entries for one arg OR at selection time.
       { arg: '--enable-assets', minCoreVersion: '0.3.90' }
     ])
   })
@@ -665,8 +664,6 @@ describe('selectCoreBetaGrantArgs commit ranges', () => {
   it.each([
     ['provably lacks the upper bound', { [SHA_A]: true, [SHA_B]: false }, [closedGrant]],
     ['already contains the upper bound', { [SHA_A]: true, [SHA_B]: true }, []],
-    // The fail-closed case the tri-state exists for: not KNOWING HEAD is before the upper
-    // bound must not read as being before it.
     ['could not relate the upper bound', { [SHA_A]: true }, []],
     ['lacks the lower bound', { [SHA_A]: false, [SHA_B]: false }, []]
   ])('with a closed upper bound, grants only when HEAD %s', (_label, ancestry, expected) => {
@@ -728,7 +725,6 @@ describe('selectCoreBetaGrantArgs commit ranges', () => {
   ] satisfies [string, CoreVersionState][])(
     'measures a commit entry against HEAD even when %s',
     (_label, core) => {
-      // Those refusals guard the version RECORD; a commit entry never reads it.
       expect(
         selectCoreBetaGrantArgs(
           [closedGrant],

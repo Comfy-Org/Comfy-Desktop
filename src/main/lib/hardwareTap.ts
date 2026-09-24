@@ -111,11 +111,8 @@ export function createHardwareTap(opts: {
   /** Core beta args Desktop injected for this launch (exact dashed tokens), so
    *  every event can be split by beta cohort. */
   coreBetaFlags?: readonly string[]
-  /** The Core commit this launch runs, so events attribute to a commit rather than to a
-   *  release label a latest-channel install shares with every commit past it. */
   coreCommit?: string | null
-  /** Human-readable RECORDED Core version, e.g. `v0.3.99+15`. May lag `coreCommit` when the
-   *  checkout moved after the record was written. For display only: order by `coreCommit`. */
+  /** Display form of the RECORDED version; may lag `coreCommit`, which is what to order by. */
   coreVersionLabel?: string | null
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void

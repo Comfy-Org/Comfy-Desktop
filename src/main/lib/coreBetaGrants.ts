@@ -59,25 +59,18 @@ type CoreBetaGrantBase = {
   readonly notice?: CoreBetaNotice
 }
 
-/** A grant bounded by Core release versions: `min_core_version` / `max_core_version`. */
 export type CoreBetaVersionGrant = CoreBetaGrantBase & {
   readonly minCoreVersion: string
   readonly maxCoreVersion?: string
 }
 
-/** One lineage's window as `[lower, upper]`: full, lowercase commit SHAs, with `upper` `null`
- *  for an open end. Matches a checkout whose HEAD contains `lower` and does not contain `upper`. */
 export type CoreCommitRange = readonly [lower: string, upper: string | null]
 
-/** A grant bounded by commit ancestry: `commit_ranges`. The ranges are alternatives, one per
- *  lineage — a fix backported to a release branch has a different SHA there than on master, so
- *  the same grant names both and matches a checkout inside EITHER. */
+/** Ranges OR, one per lineage: a backported fix has a different SHA on each branch. */
 export type CoreBetaCommitGrant = CoreBetaGrantBase & {
   readonly commitRanges: readonly CoreCommitRange[]
 }
 
-/** One payload entry. Entries are independent: an arg is granted when ANY entry for it matches,
- *  whatever kind each one is. */
 export type CoreBetaGrant = CoreBetaVersionGrant | CoreBetaCommitGrant
 
 export function isCommitGrant(grant: CoreBetaGrant): grant is CoreBetaCommitGrant {
@@ -87,12 +80,9 @@ export function isCommitGrant(grant: CoreBetaGrant): grant is CoreBetaCommitGran
 const MAX_FLAGS = 32
 const CORE_BETA_ARG_RE = /^--[a-z][a-z0-9-]+$/
 
-/** Cap on one entry's lineages. The launch path separately caps how many SHAs it relates and
- *  fetches in total, which is what bounds the cost of a whole payload. */
 const MAX_COMMIT_RANGES = 8
 
-/** Whole-token and full-length. An abbreviated SHA is ambiguous in principle and resolves
- *  differently as the repository grows, and a gate must name exactly one commit. */
+// Full SHAs only: an abbreviation can become ambiguous as the repository grows.
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i
 
 /** Cap on a payload-supplied feature name. Bounds the card's HEIGHT: the bubble is a fixed
@@ -127,9 +117,7 @@ function parseCommitSha(value: unknown): string | null {
   return value.toLowerCase()
 }
 
-/** Every range must parse or the entry is dropped, mirroring a malformed `max_core_version`:
- *  quietly ignoring one bad lineage would leave the others granting on less than the operator
- *  wrote. */
+/** Any bad range drops the entry, as a bad `max_core_version` does, rather than granting on less. */
 function parseCommitRanges(value: unknown): CoreCommitRange[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_COMMIT_RANGES) return null
   const ranges: CoreCommitRange[] = []
@@ -202,8 +190,7 @@ export function parseCoreBetaGrants(
 
     const notice = parseCoreBetaNotice(candidate)
 
-    // An entry is ONE kind. Both bound fields together would leave it unclear whether they AND or
-    // OR, and that is exactly the question separate entries already answer (they OR).
+    // One kind per entry: combined bounds leave AND-vs-OR unclear, and separate entries already OR.
     if ('commit_ranges' in candidate) {
       if ('min_core_version' in candidate || 'max_core_version' in candidate) continue
       const commitRanges = parseCommitRanges(candidate.commit_ranges)
@@ -227,7 +214,7 @@ export function parseCoreBetaGrants(
       maxCoreVersion = parsedMaxCoreVersion
     }
 
-    // Several entries may name the same arg; selection grants it when ANY of them matches.
+    // No dedup by arg: selection grants an arg when ANY of its entries matches.
     flags.push({
       arg: candidate.arg,
       minCoreVersion,
@@ -275,22 +262,15 @@ function oppositeArg(arg: string): string | null {
   return null
 }
 
-/** What the launching checkout's HEAD was established to contain, for commit-bound grants.
- *  Resolved by the launch path — ancestry needs the repository and possibly the network — and
- *  handed in as facts, so selection stays pure. */
+/** Ancestry facts the launch path resolves (repository, maybe network), so selection stays pure. */
 export interface CoreCommitState {
-  /** The live checkout's HEAD, or `null` when there is none to measure (not a git install, or
-   *  one whose HEAD would not read). */
   head: string | null
-  /** Per SHA named in the payload: `true` when HEAD provably contains it, `false` when HEAD
-   *  provably does not. A SHA whose relation could not be established is ABSENT, and absence
-   *  satisfies neither bound — see {@link commitRangeMatches}. */
+  /** Proven relations only: an unresolved SHA is absent, and absence satisfies neither bound. */
   ancestry: ReadonlyMap<string, boolean>
 }
 
 export const NO_CORE_COMMITS: CoreCommitState = { head: null, ancestry: new Map() }
 
-/** The distinct SHAs the launch must relate to HEAD before selecting. */
 export function commitGrantShas(flags: readonly CoreBetaGrant[]): string[] {
   const shas = new Set<string>()
   for (const flag of flags) {
@@ -303,9 +283,7 @@ export function commitGrantShas(flags: readonly CoreBetaGrant[]): string[] {
   return [...shas]
 }
 
-// Both bounds fail closed. The lower bound needs a proven `true`; the upper needs a proven
-// `false`, NOT merely the absence of a `true` — an unresolvable upper SHA is exactly the case
-// where the checkout may already be past it.
+// The upper bound needs a proven `false`: an unresolved upper SHA is exactly when HEAD may be past it.
 function commitRangeMatches(
   [lower, upper]: CoreCommitRange,
   ancestry: ReadonlyMap<string, boolean>
@@ -318,7 +296,6 @@ function formatCommitRange([lower, upper]: CoreCommitRange): string {
   return `${lower.slice(0, 12)}..${upper === null ? '' : upper.slice(0, 12)}`
 }
 
-/** Whether the version-bound entries may be measured at all, logging the refusal when not. */
 function versionGateOpen(core: CoreVersionState, hasVersionGrants: boolean): boolean {
   const version = core.semver
   if (version === null) return false

@@ -761,7 +761,6 @@ describe('buildLaunchArgs core beta injection', () => {
     const head = 'e'.repeat(40)
     const lower = 'a'.repeat(40)
     const commitGrant: CoreBetaGrant = { arg: '--enable-assets', commitRanges: [[lower, null]] }
-    // No usable version at all: a commit-bound grant is measured against HEAD, not the record.
     const built = build({
       schema: schemaOf('enable-assets'),
       betaFlags: [commitGrant],
@@ -1094,7 +1093,6 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
   })
 
-  /** Turn the harness's ComfyUI dir into a real git checkout with one commit, and return it. */
   function gitInitComfyUI(): string {
     const cwd = path.join(installDir, 'ComfyUI')
     const env = {
@@ -1113,8 +1111,6 @@ describe('core beta report placement', () => {
 
   it('grants a commit-bound entry the live HEAD falls inside', async () => {
     const head = gitInitComfyUI()
-    // The record names a different commit, so the checkout contradicts it and every VERSION
-    // entry is refused. The commit entry reads HEAD itself and is unaffected.
     launchHarness.grants = [{ arg: '--enable-assets', commitRanges: [[head, null]] }]
 
     const res = await handleLaunch(ctxFor('harness-commit-grant'))
@@ -1129,7 +1125,6 @@ describe('core beta report placement', () => {
   it('attributes the beta and boot events to the live HEAD, not the recorded commit', async () => {
     const head = gitInitComfyUI()
     launchHarness.grants = [{ arg: '--enable-assets', commitRanges: [[head, null]] }]
-    // The port-waiting path, which is the one that emits the boot events.
     launchHarness.launchCommand = {
       cmd: process.execPath,
       args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
@@ -1904,7 +1899,6 @@ describe('launchedCoreCommit', () => {
   })
 
   it('names nothing for a git checkout whose HEAD would not read', () => {
-    // The record is what may have gone stale; reporting it would attribute to the wrong commit.
     expect(launchedCoreCommit(inst, { kind: 'unreadable' })).toBeNull()
   })
 })

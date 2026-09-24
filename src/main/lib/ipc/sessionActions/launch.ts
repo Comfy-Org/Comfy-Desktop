@@ -154,9 +154,7 @@ function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
   }
 }
 
-/** The Core commit a launch runs, for telemetry attribution: the live HEAD when there is one,
- *  and the record's commit on a `not-git` install, where nothing can contradict it. `null` for
- *  a git checkout that could not be read — the record may be what went stale. */
+/** `null`, not the record, for an unreadable git checkout: the record may be what went stale. */
 export function launchedCoreCommit(
   inst: InstallationRecord,
   checkout: CoreCheckout
@@ -233,7 +231,6 @@ export function buildLaunchArgs(input: {
   coreVersionExact: boolean
   coreVersionVerified: boolean
   coreVersionCurrent: boolean
-  /** Ancestry facts for the commit-bound grants; see {@link resolveCoreCommitState}. */
   coreCommits: CoreCommitState
   betaEnabled: boolean
 }): { args: string[]; beta: CoreBetaLaunch } {
@@ -668,12 +665,7 @@ async function runLaunch(
   // Resolved during arg assembly below, then read by the taps, the launch log
   // records and the beta telemetry - all after assembly, never before.
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
-  // Which Core commit this launch runs, for telemetry. The release label alone cannot tell two
-  // latest-channel commits past the same tag apart; the SHA can. Set once the checkout is read
-  // during arg assembly below; `null` on a launch that never gets that far.
   let coreCommit: string | null = null
-  // Guarded like `launchedCoreCommit`: a legacy record can lack `commit`, and formatting one
-  // would throw here and cost the launch for the sake of a telemetry label.
   const coreVersionLabel =
     typeof (inst.comfyVersion?.commit as unknown) === 'string'
       ? formatComfyVersion(inst.comfyVersion, 'short')
@@ -1101,8 +1093,7 @@ async function runLaunch(
         }
 
         const betaFlags = await getCoreBetaGrantsAsync()
-        // Resolved only for an opted-in launch: the checks can reach the network, and an
-        // opted-out launch grants nothing whatever they would say.
+        // Opted-out launches skip it: the checks can reach the network and could grant nothing.
         const coreCommits = betaEnabled
           ? await resolveCoreCommitState(
               comfyuiDir,
