@@ -769,7 +769,9 @@ describe('buildLaunchArgs core beta injection', () => {
     })
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets'])
-    expect(built.beta.applied).toEqual([commitGrant])
+    expect(built.beta.applied, 'a commit grant reads HEAD, so needs no usable version').toEqual([
+      commitGrant
+    ])
     expect(built.beta.logRecords).toEqual([
       '[core-beta] --enable-assets (core eeeeeeeeeeee in a granted commit range, opted in)\n'
     ])
@@ -1116,7 +1118,10 @@ describe('core beta report placement', () => {
     const res = await handleLaunch(ctxFor('harness-commit-grant'))
 
     expect(res.ok).toBe(true)
-    expect(spawnArgs).toContain('--enable-assets')
+    expect(
+      spawnArgs,
+      'the record contradicts the checkout, which refuses version entries but not commit entries'
+    ).toContain('--enable-assets')
     expect(sent.join('')).toContain(
       `[core-beta] --enable-assets (core ${head.slice(0, 12)} in a granted commit range`
     )
@@ -1899,6 +1904,9 @@ describe('launchedCoreCommit', () => {
   })
 
   it('names nothing for a git checkout whose HEAD would not read', () => {
-    expect(launchedCoreCommit(inst, { kind: 'unreadable' })).toBeNull()
+    expect(
+      launchedCoreCommit(inst, { kind: 'unreadable' }),
+      'the record may be what went stale'
+    ).toBeNull()
   })
 })

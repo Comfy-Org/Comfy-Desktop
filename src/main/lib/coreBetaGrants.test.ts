@@ -664,7 +664,7 @@ describe('selectCoreBetaGrantArgs commit ranges', () => {
   it.each([
     ['provably lacks the upper bound', { [SHA_A]: true, [SHA_B]: false }, [closedGrant]],
     ['already contains the upper bound', { [SHA_A]: true, [SHA_B]: true }, []],
-    ['could not relate the upper bound', { [SHA_A]: true }, []],
+    ['could not relate the upper bound (unknown is not "before it")', { [SHA_A]: true }, []],
     ['lacks the lower bound', { [SHA_A]: false, [SHA_B]: false }, []]
   ])('with a closed upper bound, grants only when HEAD %s', (_label, ancestry, expected) => {
     expect(selectCoreBetaGrantArgs([closedGrant], version(), true, [], facts(ancestry))).toEqual(
@@ -732,7 +732,8 @@ describe('selectCoreBetaGrantArgs commit ranges', () => {
           true,
           [],
           facts({ [SHA_A]: true, [SHA_B]: false })
-        )
+        ),
+        'the version refusals guard the RECORD, which a commit entry never reads'
       ).toEqual([closedGrant])
     }
   )

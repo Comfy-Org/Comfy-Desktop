@@ -101,7 +101,10 @@ describe('resolveCoreCommitState', () => {
 
     const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
 
-    expect(state.ancestry.has(UPPER)).toBe(false)
+    expect(
+      state.ancestry.has(UPPER),
+      'absent, not false: "could not look" must not read as "not reached"'
+    ).toBe(false)
     expect(git.findMergeBase).toHaveBeenCalledTimes(1)
   })
 
@@ -171,6 +174,9 @@ describe('resolveCoreCommitState', () => {
 
     const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER, UPPER])
 
-    expect([...state.ancestry]).toEqual([[LOWER, true]])
+    expect(
+      [...state.ancestry],
+      'a truncated graph proves containment but never non-containment'
+    ).toEqual([[LOWER, true]])
   })
 })

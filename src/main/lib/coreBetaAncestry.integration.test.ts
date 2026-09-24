@@ -75,7 +75,10 @@ describe('resolveCoreCommitState against a real repository', () => {
     ])
 
     expect(state.ancestry.get(sha.knownGood!)).toBe(true)
-    expect(state.ancestry.get(sha.head!)).toBe(true)
+    expect(
+      state.ancestry.get(sha.head!),
+      'a commit is its own ancestor, so an upper bound AT HEAD excludes it'
+    ).toBe(true)
   })
 
   it('fetches an upper bound the clone has never seen and proves HEAD has not reached it', async () => {
@@ -141,7 +144,10 @@ describe('resolveCoreCommitState against a real repository', () => {
       shallowHead
     ])
 
-    expect(state.ancestry.has(sha.knownGood!)).toBe(false)
+    expect(
+      state.ancestry.has(sha.knownGood!),
+      'an ancestor the depth-1 graph cannot show is unresolved, not false'
+    ).toBe(false)
     expect(state.ancestry.get(shallowHead)).toBe(true)
   })
 })
