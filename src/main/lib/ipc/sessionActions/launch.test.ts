@@ -1213,6 +1213,16 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain(RECORD)
   })
 
+  it('launches without a log file when the log directory cannot be created', async () => {
+    // A plain file where the directory should be: `mkdirSync(..., { recursive: true })` throws ENOTDIR.
+    fs.writeFileSync(path.join(installDir, 'logs'), '')
+
+    const res = await handleLaunch(ctxFor('harness-logdir-blocked'))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(res.ok, 'a log directory problem must not fail the launch').toBe(true)
+  })
+
   it('launches without a log file, rather than crashing, when comfyui.log cannot be opened', async () => {
     const logs = path.join(installDir, 'logs')
     fs.mkdirSync(logs, { recursive: true })

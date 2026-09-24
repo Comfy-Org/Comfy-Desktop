@@ -506,7 +506,12 @@ async function describeExitCode(code: number | null): Promise<string> {
 
 async function openLogStream(installPath: string): Promise<WriteStream> {
   const logDir = getLogDir(installPath)
-  fs.mkdirSync(logDir, { recursive: true })
+  try {
+    fs.mkdirSync(logDir, { recursive: true })
+  } catch (err) {
+    // Same rule as the stream below: the open then fails into its listener and the launch runs on.
+    console.warn('[launch] log directory unavailable:', err)
+  }
   await rotateLogFiles(logDir, 'comfyui.log')
   const stream = fs.createWriteStream(path.join(logDir, 'comfyui.log'), { flags: 'w' })
   // Attached at creation: the file opens asynchronously, and a stream error with no listener is an
