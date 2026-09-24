@@ -135,10 +135,11 @@ const REASONS: ReadonlySet<string> = new Set([
 ])
 /**
  * Core validates `errno_name` against its own interpreter's
- * `errno.errorcode`, which differs by platform (Windows adds `WSAE*` names), so
- * this checks the shape rather than one platform's list.
+ * `errno.errorcode`, which differs by platform (Windows adds Winsock names:
+ * `WSAECONNRESET`, but also `WSASYSNOTREADY` and `WSABASEERR`), so this checks
+ * the shape rather than one platform's list.
  */
-const ERRNO_NAME = /^(?:(?:WSA)?E[A-Z0-9]{1,23}|none)$/
+const ERRNO_NAME = /^(?:E[A-Z0-9]{1,23}|WSA[A-Z0-9]{1,24}|none)$/
 /** Sentinel core sends when an exception carries no Windows error code. */
 const NO_WINERROR = -1
 const MAX_WINERROR = 0xffff

@@ -600,6 +600,7 @@ describe('assetsTap', () => {
 
     it.each([
       ['errno_name', 'WSAECONNRESET'],
+      ['errno_name', 'WSASYSNOTREADY'],
       ['errno_name', 'none'],
       ['winerror', 0],
       ['winerror', 65535],
@@ -654,25 +655,26 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx.exc_fp).toBe('012345678901')
     })
 
-    it.each(CORE_EVENTS.filter((event) => event.endsWith('_failed')))(
-      'accepts the full classification on %s',
-      (event) => {
-        const fields = {
-          error_type: 'OSError',
-          reason: 'io_error',
-          errno_name: 'EIO',
-          winerror: -1,
-          exc_fp: 'a1b2c3d4e5f6',
-          exc_class: 'OSError',
-          exc_site: 'assets.scanner.enrich_asset',
-          exc_line: 12
-        }
-        const tap = createAssetsTap(baseOpts)
-        tap.ingest(taggedLine(event, fields), 'stdout')
-        expect(captured).toHaveLength(1)
-        expect(captured[0]!.ctx).toMatchObject(fields)
+    // Every event core sends through its failure classifier.
+    it.each([
+      ...CORE_EVENTS.filter((event) => event.endsWith('_failed')),
+      'scanner.root_unreachable'
+    ])('accepts the full classification on %s', (event) => {
+      const fields = {
+        error_type: 'OSError',
+        reason: 'io_error',
+        errno_name: 'EIO',
+        winerror: -1,
+        exc_fp: 'a1b2c3d4e5f6',
+        exc_class: 'OSError',
+        exc_site: 'assets.scanner.enrich_asset',
+        exc_line: 12
       }
-    )
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine(event, fields), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject(fields)
+    })
 
     it('handles numeric-looking exception names according to their parsed type', () => {
       const tap = createAssetsTap(baseOpts)

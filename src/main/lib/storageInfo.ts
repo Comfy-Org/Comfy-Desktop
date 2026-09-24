@@ -411,13 +411,18 @@ const UNRESOLVED: DriveInfo = {
 }
 
 /**
- * Protocol behind a UNC path. The WebDAV redirector's UNC forms carry `@` in
- * the host (`\\host@SSL@443\...`) or use the `DavWWWRoot` share; every other
- * share goes through the SMB redirector. `\\.\` and `\\?\` device paths are
- * not shares at all, so they stay unknown.
+ * Protocol behind a UNC path, inferred from its shape since no volume row
+ * describes it. The WebDAV redirector's UNC forms carry `@` in the host
+ * (`\\host@SSL@443\...`) or use the `DavWWWRoot` share. RDP drive redirection
+ * and hypervisor shared folders use fixed host names and are not SMB, so they
+ * stay unknown, as do `\\.\` and `\\?\` device paths. Any other share is
+ * assumed SMB, by far the common case, though the shape alone cannot rule out
+ * another network provider.
  */
+const NON_SMB_UNC_HOSTS: ReadonlySet<string> = new Set(['.', '?', 'tsclient', 'vboxsvr', 'vboxsrv'])
+
 function uncFsType(host: string, share: string): string | null {
-  if (host === '.' || host === '?') return null
+  if (NON_SMB_UNC_HOSTS.has(host.toLowerCase())) return null
   return host.includes('@') || share.toLowerCase() === 'davwwwroot' ? 'webdav' : 'smb'
 }
 
