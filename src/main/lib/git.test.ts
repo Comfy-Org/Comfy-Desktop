@@ -23,6 +23,7 @@ import {
   findMergeBase,
   revParseRef,
   commitPresence,
+  findMergeBaseOrNone,
   fetchTags,
   configurePygit2,
   isGitAvailable,
@@ -238,6 +239,26 @@ describe('revParseRef', () => {
       cb(new Error('bad ref'), '', '')
     })
     expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
+  })
+})
+
+describe('findMergeBaseOrNone', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it.each([
+    ['exit 1, no merge base', { code: 1 }, null],
+    ['exit 128, a bad ref', { code: 128 }, undefined],
+    ['a timeout', { code: 1, killed: true }, undefined]
+  ])('reads %s as %s', async (_label, props, expected) => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(Object.assign(new Error('git'), props), '', ''))
+    expect(await findMergeBaseOrNone('/repo', 'a', 'b')).toBe(expected)
+  })
+
+  it('returns the merge base on success', async () => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(null, 'abc\n', ''))
+    expect(await findMergeBaseOrNone('/repo', 'a', 'b')).toBe('abc')
   })
 })
 
@@ -805,6 +826,19 @@ describe('pygit2 fallback', () => {
         cb(errWithCode, '', '')
       })
       expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
+    })
+  })
+
+  describe('findMergeBaseOrNone', () => {
+    it.each([
+      [5, null],
+      [1, undefined]
+    ])('maps helper exit %s to %s', async (code, expected) => {
+      mockExecFile((_cmd, _args, _opts, cb) =>
+        cb(Object.assign(new Error('exit'), { code }), '', '')
+      )
+      expect(await findMergeBaseOrNone('/repo', 'a', 'b')).toBe(expected)
+      expect(expectPygit2Call()).toEqual(['merge-base', '/repo', 'a', 'b'])
     })
   })
 

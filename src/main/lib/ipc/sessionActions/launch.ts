@@ -1110,7 +1110,7 @@ async function runLaunch(
           ? await resolveCoreCommitState(
               comfyuiDir,
               checkout,
-              commitGrantShas(betaFlags),
+              commitGrantShas(betaFlags, userArgs),
               abort.signal
             )
           : NO_CORE_COMMITS

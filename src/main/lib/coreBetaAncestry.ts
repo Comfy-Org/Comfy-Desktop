@@ -1,6 +1,13 @@
 import fs from 'fs'
 import path from 'path'
-import { commitPresence, fetchCommitSha, findMergeBase, resolveGitDir, revParseRef } from './git'
+import {
+  commitPresence,
+  fetchCommitSha,
+  findMergeBase,
+  findMergeBaseOrNone,
+  resolveGitDir,
+  revParseRef
+} from './git'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
 import { NO_CORE_COMMITS } from './coreBetaGrants'
@@ -93,8 +100,16 @@ async function commitAncestry(
   complete: boolean,
   budget: { fetches: number; stopped: boolean }
 ): Promise<Relation> {
-  const base = await findMergeBase(repoPath, sha, head)
-  if (base !== undefined) return base.toLowerCase() === sha
+  const base = await findMergeBaseOrNone(repoPath, sha, head)
+  if (typeof base === 'string') return base.toLowerCase() === sha
+  // Both commits resolved and share nothing: on a complete graph HEAD cannot contain `sha`. A shallow
+  // graph may just be cut short, and the graft rule cannot hold without a common ancestor.
+  if (base === null && complete) {
+    console.log(
+      `[core-beta] ancestry ${sha.slice(0, 12)}: no common ancestor with HEAD in a full clone`
+    )
+    return false
+  }
   // Absence counts only once the repository has been shown readable, by resolving HEAD itself.
   if ((await revParseRef(repoPath, `${head}^{commit}`))?.toLowerCase() !== head) return null
   if ((await commitPresence(repoPath, sha)) !== 'absent') return null
@@ -182,19 +197,23 @@ export async function resolveCoreCommitState(
       if (!FULL_SHA_RE.test(sha)) continue
       // Re-read per SHA: a background fetch from an earlier launch can rewrite the boundaries.
       const grafts = readShallowGrafts(repoPath)
+      if (index >= MAX_RESOLVED_SHAS) {
+        console.log(
+          `[core-beta] ancestry ${sha.slice(0, 12)}: not checked (the payload names more than ${MAX_RESOLVED_SHAS} commits), so entries that need it do not match`
+        )
+        continue
+      }
       let related: Relation = null
-      if (index < MAX_RESOLVED_SHAS) {
-        try {
-          related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
-        } catch (err) {
-          console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
-        }
-        if (related === false && grafts?.length !== 0) {
-          const provable =
-            grafts !== null &&
-            (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
-          if (!provable) related = null
-        }
+      try {
+        related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
+      } catch (err) {
+        console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+      }
+      if (related === false && grafts?.length !== 0) {
+        const provable =
+          grafts !== null &&
+          (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
+        if (!provable) related = null
       }
       // A launch that has moved on takes no late answers: the map it was handed must not change.
       if (budget.stopped) return
@@ -222,6 +241,8 @@ export async function resolveCoreCommitState(
     // The work above starts synchronously, so it may already have aborted before this listener.
     if (signal?.aborted) onAbort()
   })
+  // Abandoned when interrupted, so it must never be left with an unhandled rejection.
+  void work.catch((err: unknown) => console.warn('[core-beta] ancestry resolution failed:', err))
   try {
     const outcome = await Promise.race([work.then(() => 'done' as const), interrupted])
     if (outcome === 'interrupted') {

@@ -271,10 +271,18 @@ export interface CoreCommitState {
 
 export const NO_CORE_COMMITS: CoreCommitState = { head: null, ancestry: new Map() }
 
-export function commitGrantShas(flags: readonly CoreBetaGrant[]): string[] {
+/** SHAs to relate for this launch. Entries whose arg the user's own args already decide (the arg or
+ *  its opposite) are skipped: selection would withhold them whatever their ancestry. */
+export function commitGrantShas(
+  flags: readonly CoreBetaGrant[],
+  userArgs: readonly string[] = []
+): string[] {
+  const user = new Set(userArgs)
   const shas = new Set<string>()
   for (const flag of flags) {
     if (!isCommitGrant(flag)) continue
+    const opposite = oppositeArg(flag.arg)
+    if (user.has(flag.arg) || (opposite !== null && user.has(opposite))) continue
     for (const [lower, upper] of flag.commitRanges) {
       shas.add(lower)
       if (upper !== null) shas.add(upper)
@@ -448,7 +456,7 @@ function reportWithheld(
     else if (opposite !== null && user.has(opposite)) reason = `the launch args contain ${opposite}`
     else if (opposite !== null && granted.has(opposite))
       reason = `conflicts with granted ${opposite}`
-    else reason = (shortfalls.get(arg) ?? []).join('; ')
+    else reason = (shortfalls.get(arg) ?? []).join('; ') || 'no entry matched'
     withheld.push(`[core-beta] ${arg} withheld: ${reason}`)
   }
 }

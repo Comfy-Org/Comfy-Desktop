@@ -9,10 +9,13 @@ const git = vi.hoisted(() => ({
   revParseRef: vi.fn<(repo: string, ref: string) => Promise<string | undefined>>(),
   gitDir: '',
   configDir: '',
-  presence: undefined as undefined | 'present' | 'absent' | 'unknown'
+  presence: undefined as undefined | 'present' | 'absent' | 'unknown',
+  noCommonAncestor: false
 }))
 vi.mock('./git', () => ({
   findMergeBase: (...args: [string, string, string]) => git.findMergeBase(...args),
+  findMergeBaseOrNone: async (...args: [string, string, string]) =>
+    git.noCommonAncestor ? null : git.findMergeBase(...args),
   fetchCommitSha: (...args: [string, string]) => git.fetchCommitSha(...args),
   resolveGitDir: () => git.gitDir,
   revParseRef: (...args: [string, string]) => git.revParseRef(...args),
@@ -39,6 +42,7 @@ beforeEach(() => {
   git.fetchCommitSha.mockReset()
   // Default: HEAD resolves (the repository is readable) and no other SHA exists locally.
   git.presence = undefined
+  git.noCommonAncestor = false
   git.revParseRef.mockReset()
   git.revParseRef.mockImplementation(async (_repo, ref) =>
     ref === `${HEAD}^{commit}` ? HEAD : undefined
@@ -462,6 +466,41 @@ describe('resolveCoreCommitState', () => {
         git.fetchCommitSha,
         'the two skips must not use up the budget'
       ).toHaveBeenCalledExactlyOnceWith(REPO, shaOf(3))
+    })
+  })
+
+  describe('human review follow-ups', () => {
+    it('proves "not contained" for a commit with no common ancestor on a full clone', async () => {
+      git.noCommonAncestor = true
+      // Present, so only the no-common-ancestor answer (not the absence rule) can prove it.
+      git.presence = 'present'
+
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+      expect(state.ancestry.get(UPPER)).toBe(false)
+      expect(git.fetchCommitSha).not.toHaveBeenCalled()
+    })
+
+    it('leaves no-common-ancestor unresolved on a shallow clone, whose graph may be cut short', async () => {
+      makeShallow()
+      git.noCommonAncestor = true
+      git.revParseRef.mockImplementation(async (_repo, ref) => ref.slice(0, 40))
+
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+      expect(state.ancestry.has(UPPER)).toBe(false)
+    })
+
+    it('says a SHA past the resolution cap was not checked, rather than unprovable', async () => {
+      git.findMergeBase.mockResolvedValue(OLDER)
+      const shas = Array.from({ length: 17 }, (_, i) => shaOf(i + 1))
+
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, shas)
+
+      const lines = vi.mocked(console.log).mock.calls.map((c) => String(c[0]))
+      expect(lines).toContain(
+        `[core-beta] ancestry ${shaOf(17).slice(0, 12)}: not checked (the payload names more than 16 commits), so entries that need it do not match`
+      )
     })
   })
 })

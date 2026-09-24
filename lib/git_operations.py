@@ -234,6 +234,8 @@ def cmd_rev_parse(repo_path, ref):
 
 
 HAS_COMMIT_ABSENT = 3
+# `merge-base` found both commits and they share no ancestor: an answer, unlike exit 1.
+MERGE_BASE_NONE = 5
 
 
 def cmd_has_commit(repo_path, sha):
@@ -382,7 +384,7 @@ def cmd_merge_base(repo_path, ref1, ref2):
 
     if base_oid is None:
         print("Error: no common ancestor found", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(MERGE_BASE_NONE)
 
     print(str(base_oid))
 

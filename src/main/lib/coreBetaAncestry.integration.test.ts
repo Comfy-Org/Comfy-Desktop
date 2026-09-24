@@ -113,6 +113,15 @@ describe('resolveCoreCommitState against a real repository', () => {
     expect(state.ancestry.get(sha.backport!)).toBe(false)
   })
 
+  it('proves a commit with no common ancestor is not contained on a full clone', async () => {
+    const emptyTree = git(clone, 'hash-object', '-t', 'tree', '/dev/null')
+    const orphan = git(clone, 'commit-tree', emptyTree, '-m', 'orphan')
+
+    const state = await resolveCoreCommitState(clone, { kind: 'head', commit: sha.head! }, [orphan])
+
+    expect(state.ancestry.get(orphan)).toBe(false)
+  })
+
   it('reads a SHA no remote has as not contained on a full clone', async () => {
     const missing = '0123456789abcdef0123456789abcdef01234567'
 

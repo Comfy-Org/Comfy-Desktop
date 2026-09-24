@@ -960,6 +960,15 @@ describe('selectCoreBetaGrantArgs withheld reasons', () => {
 })
 
 describe('commitGrantShas', () => {
+  it('skips entries whose arg, or its opposite, is already in the user args', () => {
+    const flags: CoreBetaGrant[] = [
+      { arg: '--enable-assets', commitRanges: [[SHA_A, null]] },
+      { arg: '--enable-asset-hashing', commitRanges: [[SHA_B, null]] }
+    ]
+    expect(commitGrantShas(flags, ['--disable-assets'])).toEqual([SHA_B])
+    expect(commitGrantShas(flags, ['--enable-asset-hashing'])).toEqual([SHA_A])
+  })
+
   it('lists each SHA the commit entries name once, skipping version entries and open bounds', () => {
     expect(
       commitGrantShas([
