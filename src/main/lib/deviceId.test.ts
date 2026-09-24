@@ -30,6 +30,15 @@ vi.mock('systeminformation', () => ({
 
 const SALT = 'comfy-installation-id-v1'
 
+const MACHINE_ID_PATHS = ['/etc/machine-id', '/var/lib/dbus/machine-id']
+// Contents served for the Linux machine-id locations; null = file absent.
+let mockMachineIdFile: string | null = null
+const originalPlatform = process.platform
+
+function setPlatform(value: NodeJS.Platform): void {
+  Object.defineProperty(process, 'platform', { value, configurable: true })
+}
+
 function expectedIdFor(machineId: string): string {
   return createHash('sha256').update(`${machineId}:${SALT}`).digest('hex')
 }
@@ -42,12 +51,24 @@ describe('deviceId', () => {
   beforeEach(async () => {
     testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'deviceid-test-'))
     mockSystemUuid = 'aabbccdd-eeff-0011-2233-445566778899'
+    mockMachineIdFile = null
+    setPlatform('linux')
+    const realReadFileSync = fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, options) => {
+      if (typeof file === 'string' && MACHINE_ID_PATHS.includes(file)) {
+        if (mockMachineIdFile === null) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+        return mockMachineIdFile
+      }
+      return realReadFileSync(file, options)
+    }) as typeof fs.readFileSync)
     vi.resetModules()
     mod = await import('./deviceId')
     mod._resetForTest()
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
+    setPlatform(originalPlatform)
     try {
       fs.rmSync(testUserData, { recursive: true, force: true })
     } catch {
@@ -149,6 +170,132 @@ describe('deviceId', () => {
       const { legacyId } = await mod.initDeviceId()
       expect(legacyId).toBeNull()
       expect(mod.getIdClass()).toBe('random_fallback')
+    })
+  })
+
+  describe('initDeviceId — no machine id, persisted id present', () => {
+    function deviceIdFile(): string {
+      return path.join(testUserData, 'device-id.txt')
+    }
+
+    it('keeps the persisted id across launches instead of rotating it', async () => {
+      mockSystemUuid = ''
+      await mod.initDeviceId()
+      const first = mod.getDeviceId()
+      expect(first).toMatch(/^[0-9a-f]{64}$/)
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(first)
+
+      for (let boot = 0; boot < 3; boot++) {
+        vi.resetModules()
+        mod = await import('./deviceId')
+        const { legacyId } = await mod.initDeviceId()
+        expect(legacyId).toBeNull()
+        expect(mod.getDeviceId()).toBe(first)
+        expect(mod.getIdClass()).toBe('random_fallback')
+      }
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(first)
+    })
+
+    it('keeps a machine-derived id when the hardware lookup fails on a later launch', async () => {
+      const machineDerived = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
+      fs.writeFileSync(deviceIdFile(), machineDerived)
+      setPlatform('win32')
+      mockSystemUuid = undefined
+
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(machineDerived)
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(machineDerived)
+    })
+
+    it('replaces unrecognised content with a new random id', async () => {
+      fs.writeFileSync(deviceIdFile(), 'not-an-installation-id')
+      mockSystemUuid = ''
+
+      await mod.initDeviceId()
+      const id = mod.getDeviceId()
+      expect(id).toMatch(/^[0-9a-f]{64}$/)
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(id)
+    })
+
+    it('still migrates a legacy UUID, then keeps the replacement', async () => {
+      const legacyUuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+      fs.writeFileSync(deviceIdFile(), legacyUuid)
+      mockSystemUuid = ''
+
+      const { legacyId } = await mod.initDeviceId()
+      expect(legacyId).toBe(legacyUuid)
+      const replacement = mod.getDeviceId()
+      expect(replacement).toMatch(/^[0-9a-f]{64}$/)
+
+      vi.resetModules()
+      mod = await import('./deviceId')
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(replacement)
+    })
+  })
+
+  describe('initDeviceId — Linux machine-id fallback', () => {
+    const machineId = '0123456789abcdef0123456789abcdef'
+
+    it('hashes /etc/machine-id when the SMBIOS UUID is unreadable', async () => {
+      mockSystemUuid = ''
+      mockMachineIdFile = `${machineId}\n`
+
+      await mod.initDeviceId()
+      expect(mod.getIdClass()).toBe('machine_derived')
+      expect(mod.getDeviceId()).toBe(expectedIdFor(machineId))
+      expect(mod.getDeviceId()).not.toContain(machineId)
+    })
+
+    it('is stable across launches', async () => {
+      mockSystemUuid = ''
+      mockMachineIdFile = machineId
+      await mod.initDeviceId()
+      const first = mod.getDeviceId()
+
+      vi.resetModules()
+      mod = await import('./deviceId')
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(first)
+    })
+
+    it('replaces a previously rotated random id with the machine-id hash', async () => {
+      fs.writeFileSync(path.join(testUserData, 'device-id.txt'), 'b'.repeat(64))
+      mockSystemUuid = ''
+      mockMachineIdFile = machineId
+
+      const { legacyId } = await mod.initDeviceId()
+      expect(legacyId).toBeNull()
+      expect(mod.getDeviceId()).toBe(expectedIdFor(machineId))
+    })
+
+    it('prefers the SMBIOS UUID when it is readable', async () => {
+      mockMachineIdFile = machineId
+
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(expectedIdFor('aabbccdd-eeff-0011-2233-445566778899'))
+    })
+
+    it.each([
+      ['empty', ''],
+      ['uninitialized', 'uninitialized'],
+      ['all zeros', '0'.repeat(32)]
+    ])('ignores an %s machine-id', async (_label, contents) => {
+      mockSystemUuid = ''
+      mockMachineIdFile = contents
+
+      await mod.initDeviceId()
+      expect(mod.getIdClass()).toBe('random_fallback')
+    })
+
+    it.each<NodeJS.Platform>(['win32', 'darwin'])('is not consulted on %s', async (platform) => {
+      setPlatform(platform)
+      mockSystemUuid = undefined
+      mockMachineIdFile = machineId
+
+      await mod.initDeviceId()
+      expect(mod.getIdClass()).toBe('random_fallback')
+      expect(mod.getDeviceId()).not.toBe(expectedIdFor(machineId))
     })
   })
 
