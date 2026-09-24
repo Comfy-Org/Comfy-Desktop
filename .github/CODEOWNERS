@@ -1,3 +1,16 @@
+# Repository default
+*                                                @benceruleanlu @deepme987
+
+# Auto-update, code-signing, and packaging
+/src/main/lib/updater.ts                          @benceruleanlu @deepme987
+/src/main/sources/standalone/updateOrchestrator.ts @benceruleanlu @deepme987
+/src/main/sources/standalone/updateSections.ts     @benceruleanlu @deepme987
+/lib/update_comfyui.py                            @benceruleanlu @deepme987
+/electron-builder.yml                            @benceruleanlu @deepme987
+
+# Desktop login and token sign-in
+/src/main/auth/                                  @benceruleanlu @deepme987
+
 # Agent instructions
 **/AGENTS.md                                      @benceruleanlu @deepme987 @Kosinkadink
 # Root-anchored rule so the top-level AGENTS.md has an explicit DRI (a bare
