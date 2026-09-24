@@ -15,7 +15,7 @@ vi.mock('./git', () => ({
 }))
 vi.mock('./telemetry', () => ({ getOpsFlagResult: vi.fn() }))
 
-import { resolveCoreCommitState } from './coreBetaAncestry'
+import { _resetForTest, resolveCoreCommitState } from './coreBetaAncestry'
 import { NO_CORE_COMMITS } from './coreBetaGrants'
 
 const REPO = '/installs/comfy/ComfyUI'
@@ -25,6 +25,7 @@ const UPPER = 'b'.repeat(40)
 const OLDER = 'f'.repeat(40)
 
 beforeEach(() => {
+  _resetForTest()
   git.gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-gitdir-'))
   git.findMergeBase.mockReset()
   git.fetchCommitSha.mockReset()
@@ -228,6 +229,45 @@ describe('resolveCoreCommitState', () => {
       graph([])
 
       expect((await resolve()).ancestry.get(LOWER)).toBe(true)
+    })
+  })
+
+  describe('a failed fetch', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('is logged with its outcome and not retried by the next launch', async () => {
+      git.findMergeBase.mockResolvedValue(undefined)
+      git.fetchCommitSha.mockResolvedValue(false)
+      const log = vi.mocked(console.log)
+
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+      expect(
+        git.fetchCommitSha,
+        'the second launch reuses the recorded failure'
+      ).toHaveBeenCalledTimes(1)
+      const lines = log.mock.calls.map((call) => String(call[0]))
+      expect(
+        lines.some((l) => /^\[core-beta\] fetch bbbbbbbbbbbb from origin: failed in \d+ms$/.test(l))
+      ).toBe(true)
+      expect(
+        lines.some((l) => l.startsWith('[core-beta] fetch bbbbbbbbbbbb: skipped, failed at '))
+      ).toBe(true)
+    })
+
+    it('is retried once the back-off has passed', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      git.findMergeBase.mockResolvedValue(undefined)
+      git.fetchCommitSha.mockResolvedValue(false)
+
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+      vi.setSystemTime(Date.now() + 10 * 60 * 1000 + 1)
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+      expect(git.fetchCommitSha).toHaveBeenCalledTimes(2)
     })
   })
 })

@@ -9,8 +9,17 @@ const FULL_SHA_RE = /^[0-9a-f]{40}$/
 
 const MAX_RESOLVED_SHAS = 16
 
-// Bounds launch delay: each fetch can run to its full timeout, and a failed one repeats every launch.
+// Bounds launch delay: each fetch can run to its full timeout.
 const MAX_FETCHES = 2
+
+// A failed fetch is not retried for this long, so a flag naming an unreachable SHA costs the fetch
+// timeout once rather than on every launch; a later Desktop start retries straight away.
+const FAILED_FETCH_BACKOFF_MS = 10 * 60 * 1000
+const failedFetches = new Map<string, number>()
+
+export function _resetForTest(): void {
+  failedFetches.clear()
+}
 
 type Relation = boolean | null
 
@@ -26,8 +35,29 @@ async function commitAncestry(
     return base === undefined ? null : base.toLowerCase() === sha
   }
   const first = await relate()
-  if (first !== null || !mayFetch()) return { related: first, fetched: false }
-  if (!(await fetchCommitSha(repoPath, sha))) return { related: null, fetched: true }
+  if (first !== null) return { related: first, fetched: false }
+  const key = `${repoPath}\0${sha}`
+  const failedAt = failedFetches.get(key)
+  if (failedAt !== undefined && Date.now() - failedAt < FAILED_FETCH_BACKOFF_MS) {
+    console.log(
+      `[core-beta] fetch ${sha.slice(0, 12)}: skipped, failed at ${new Date(failedAt).toISOString()}`
+    )
+    return { related: null, fetched: false }
+  }
+  if (!mayFetch()) {
+    console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
+    return { related: null, fetched: false }
+  }
+  const started = Date.now()
+  const ok = await fetchCommitSha(repoPath, sha)
+  console.log(
+    `[core-beta] fetch ${sha.slice(0, 12)} from origin: ${ok ? 'ok' : 'failed'} in ${Date.now() - started}ms`
+  )
+  if (!ok) {
+    failedFetches.set(key, Date.now())
+    return { related: null, fetched: true }
+  }
+  failedFetches.delete(key)
   return { related: await relate(), fetched: true }
 }
 
