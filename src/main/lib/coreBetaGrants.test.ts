@@ -820,4 +820,22 @@ describe('core beta grants fetch', () => {
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }
     ])
   })
+  it('logs the cached commit ranges in full, on one line', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    getOpsFlagResult.mockResolvedValue({
+      kind: 'value',
+      value: true,
+      payload: { flags: [{ arg: '--enable-assets', commit_ranges: [[SHA_A, null]] }] }
+    })
+
+    await initCoreBetaGrants({ distinctId: 'device-id' })
+
+    const init = log.mock.calls.find((call) => String(call[0]).startsWith('[core-beta] init:'))
+    const rendered = init!.map(String).join(' ')
+    expect(rendered, 'the SHA must survive inspection instead of folding to [Array]').toContain(
+      SHA_A
+    )
+    expect(rendered, 'one line, so a [core-beta] grep catches all of it').not.toContain('\n')
+    log.mockRestore()
+  })
 })

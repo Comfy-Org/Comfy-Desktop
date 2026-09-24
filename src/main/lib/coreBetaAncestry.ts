@@ -70,7 +70,11 @@ export async function resolveCoreCommitState(
     }
     console.log(
       `[core-beta] ancestry ${sha.slice(0, 12)}: ${
-        related === null ? 'unresolved' : related ? 'contained' : 'not contained'
+        related === null
+          ? 'unresolved (not provable on this checkout, so entries that need it do not match)'
+          : related
+            ? 'contained'
+            : 'not contained'
       }`
     )
     if (related !== null) ancestry.set(sha, related)
