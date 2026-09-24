@@ -64,7 +64,11 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'scanner.invalid_mtime',
   'scanner.watch_stat_failed',
   'scanner.watch_spec_failed',
-  'scanner.watch_seed_failed'
+  'scanner.watch_seed_failed',
+  'scanner.failure_bucket',
+  'scanner.root_unreachable',
+  'scanner.walk_failed',
+  'scanner.metadata_failed'
 ])
 
 /**
@@ -84,7 +88,69 @@ const STAGES: ReadonlySet<string> = new Set([
   'enrich',
   'finalize'
 ])
-const STAT_SITES: ReadonlySet<string> = new Set(['discovery', 'enrich'])
+const SITES: ReadonlySet<string> = new Set([
+  'discovery',
+  'enrich',
+  'reference',
+  'seed_observation',
+  'walk_root',
+  'walk_dir',
+  'hash',
+  'metadata',
+  'batch_insert',
+  'watch_stat',
+  'watch_spec',
+  'watch_seed'
+])
+/** Mirror of ComfyUI `app/assets/failures.py` `REASONS`. */
+const REASONS: ReadonlySet<string> = new Set([
+  'permission_denied',
+  'vanished',
+  'locked',
+  'cloud_placeholder',
+  'network_unavailable',
+  'device_unavailable',
+  'io_error',
+  'encoding',
+  'name_too_long',
+  'path_loop',
+  'too_large',
+  'no_space',
+  'read_only',
+  'fd_exhausted',
+  'oom',
+  'timeout',
+  'corrupt',
+  'unsupported_format',
+  'db_busy',
+  'db_locked',
+  'db_corrupt',
+  'db_full',
+  'db_io',
+  'db_readonly',
+  'db_cantopen',
+  'db_constraint',
+  'dependency_missing',
+  'other'
+])
+/**
+ * Core validates `errno_name` against its own interpreter's
+ * `errno.errorcode`, which differs by platform (Windows adds `WSAE*` names), so
+ * this checks the shape rather than one platform's list.
+ */
+const ERRNO_NAME = /^(?:(?:WSA)?E[A-Z0-9]{1,23}|none)$/
+/** Sentinel core sends when an exception carries no Windows error code. */
+const NO_WINERROR = -1
+const MAX_WINERROR = 0xffff
+const EXC_FP = /^[0-9a-f]{12}$/
+/** Dotted identifier: a builtin, `module.qualname`, `ext` or `none`. */
+const DOTTED_NAME = /^[A-Za-z_][A-Za-z0-9_.]{0,63}$/
+/**
+ * Fields whose value is a string even when every character is a digit: an
+ * `exc_fp` like `012345678901` must not be coerced to a number and then
+ * rejected for its type.
+ */
+const DIGIT_STRING_FIELDS: ReadonlySet<string> = new Set(['exc_fp'])
 const INTEGER_FIELDS: ReadonlySet<string> = new Set([
   'elapsed_ms',
   'created',
@@ -132,7 +198,14 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'permission_denied',
   'count',
   'error_type',
-  'hashing_enabled'
+  'hashing_enabled',
+  'reason',
+  'errno_name',
+  'winerror',
+  'exc_fp',
+  'exc_class',
+  'exc_site',
+  'exc_line'
 ])
 
 /**
@@ -144,12 +217,25 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
 function isAllowedFieldValue(key: string, value: unknown): value is TelemetryValue {
   if (INTEGER_FIELDS.has(key)) return typeof value === 'number' && Number.isSafeInteger(value)
   if (key === 'hashing_enabled') return typeof value === 'boolean'
-  if (key === 'error_type') return isSafeString(value)
-  if (typeof value !== 'string') return false
+  if (key === 'winerror') {
+    return (
+      typeof value === 'number' &&
+      Number.isInteger(value) &&
+      (value === NO_WINERROR || (value >= 0 && value <= MAX_WINERROR))
+    )
+  }
+  if (key === 'exc_line')
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+  if (!isSafeString(value)) return false
+  if (key === 'error_type') return true
   if (key === 'root') return ROOTS.has(value)
   if (key === 'phase') return PHASES.has(value)
   if (key === 'stage') return STAGES.has(value)
-  if (key === 'site') return STAT_SITES.has(value)
+  if (key === 'site') return SITES.has(value)
+  if (key === 'reason') return REASONS.has(value)
+  if (key === 'errno_name') return ERRNO_NAME.test(value)
+  if (key === 'exc_fp') return EXC_FP.test(value)
+  if (key === 'exc_class' || key === 'exc_site') return DOTTED_NAME.test(value)
   return false
 }
 
@@ -181,13 +267,15 @@ function parseFields(
       continue
     }
     if (Object.hasOwn(fields, key)) return null
-    const value: TelemetryValue = /^-?\d+$/.test(rawValue)
-      ? Number(rawValue)
-      : rawValue === 'true'
-        ? true
-        : rawValue === 'false'
-          ? false
-          : rawValue
+    const value: TelemetryValue = DIGIT_STRING_FIELDS.has(key)
+      ? rawValue
+      : /^-?\d+$/.test(rawValue)
+        ? Number(rawValue)
+        : rawValue === 'true'
+          ? true
+          : rawValue === 'false'
+            ? false
+            : rawValue
     if (!isAllowedFieldValue(key, value)) return null
     fields[key] = value
   }
