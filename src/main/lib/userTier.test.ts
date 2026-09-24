@@ -372,6 +372,49 @@ describe('FETCH_TIER_JS', () => {
     })
 
     expect(tried).toHaveLength(4)
+    // `truncated` rides alongside the error: six records existed, four were tried. Without it this is
+    // indistinguishable from an install where all four of its only four records were rejected.
+    expect(result).toEqual({ error: 'http_401', truncated: true })
+  })
+
+  it('does NOT claim truncation when the cap was not actually hit', async () => {
+    // The control for the test above. Exactly MAX_CANDIDATES records, every one tried and rejected —
+    // same error, same tried-count, and `truncated` must be absent. Without this, a `truncated` that
+    // was always set would pass the previous test and mean nothing.
+    const tried: string[] = []
+    const { result } = await run({
+      localStorage: Array.from({ length: 4 }, (_, i) => [
+        `firebase:authUser:key${i}:[DEFAULT]`,
+        JSON.stringify(record(`tok-${i}`))
+      ]) as Array<[string, string]>,
+      fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
+        tried.push(init?.headers?.['Authorization'] ?? '')
+        return Promise.resolve({ ok: false, status: 401 })
+      }) as unknown as typeof fetch
+    })
+
+    expect(tried).toHaveLength(4)
+    expect(result).toEqual({ error: 'http_401' })
+  })
+
+  it('does not mark truncation when a DUPLICATE token is dropped rather than a distinct one', async () => {
+    // `addToken` de-duplicates before it checks the cap, so five records holding four DISTINCT tokens
+    // fill the list exactly and drop only a repeat. Nothing was missed, so nothing should be claimed.
+    const tried: string[] = []
+    const ls: Array<[string, string]> = Array.from({ length: 4 }, (_, i) => [
+      `firebase:authUser:key${i}:[DEFAULT]`,
+      JSON.stringify(record(`tok-${i}`))
+    ]) as Array<[string, string]>
+    ls.push(['firebase:authUser:dupe:[DEFAULT]', JSON.stringify(record('tok-0'))])
+    const { result } = await run({
+      localStorage: ls,
+      fetchImpl: ((_u: string, init?: { headers?: Record<string, string> }) => {
+        tried.push(init?.headers?.['Authorization'] ?? '')
+        return Promise.resolve({ ok: false, status: 401 })
+      }) as unknown as typeof fetch
+    })
+
+    expect(tried).toHaveLength(4)
     expect(result).toEqual({ error: 'http_401' })
   })
 

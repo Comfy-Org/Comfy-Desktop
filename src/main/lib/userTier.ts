@@ -125,8 +125,14 @@ export const FETCH_TIER_JS = `(async () => {
     return typeof t === 'string' && t.length > 0 ? t : null;
   };
   const tokens = [];
+  // Set when the cap actually dropped a distinct token. Without it a truncated candidate list and a
+  // genuine sign-out both return 'no_valid_token', so "we did not look at all of them" would read
+  // downstream as "nobody is signed in" - the cap is right, but it must not be invisible.
+  let truncated = false;
   const addToken = (t) => {
-    if (t && tokens.indexOf(t) === -1 && tokens.length < MAX_CANDIDATES) tokens.push(t);
+    if (!t || tokens.indexOf(t) !== -1) return;
+    if (tokens.length >= MAX_CANDIDATES) { truncated = true; return; }
+    tokens.push(t);
   };
   try {
     // localStorage FIRST, because that is where the session SETTLES. The SDK starts
@@ -244,8 +250,21 @@ export const FETCH_TIER_JS = `(async () => {
       // had not made.
       return { tier: data.subscription_tier ?? null };
     }
-    return { error: lastError || 'no_valid_token' };
+    // truncated rides ALONGSIDE the error rather than replacing it. The first attempt at this made
+    // it a separate 'no_valid_token_truncated' value, which is unreachable: falling through this loop
+    // requires the 401/403 continue, so lastError is always set unless tokens was EMPTY - and an
+    // empty list cannot have been truncated. The case that actually occurs is every candidate
+    // REJECTED while more existed, which returns http_401 and is otherwise indistinguishable from
+    // having seen them all.
+    const err = lastError || 'no_valid_token';
+    return truncated ? { error: err, truncated: true } : { error: err };
   } catch (e) {
+    // The ONLY error path not drawn from a fixed vocabulary, and it reaches the main-process launch
+    // log via '[user-tier] refresh skipped:', which QA uploads bundle. Every reachable throw here is
+    // bounded - DOMException from IndexedDB, plus the explicit 'blocked' / 'created' / 'timeout' -
+    // and the one genuinely page-controlled source, JSON.parse(raw) on a page-written record, is
+    // swallowed by its own inner catch and never arrives here. That containment is what keeps this
+    // safe: if that inner catch is ever removed or widened, a page could choose this string.
     return { error: (e && e.message) ? String(e.message) : 'unknown' };
   } finally {
     if (db) { try { db.close(); } catch (_) {} }
@@ -256,6 +275,9 @@ interface FetchResult {
   /** The API's `subscription_tier` verbatim: `null` when the field is absent, never defaulted here. */
   tier?: string | null
   error?: string
+  /** Set only when the candidate cap dropped a distinct token, so "every candidate was rejected"
+   *  can be told apart from "we did not look at all of them". */
+  truncated?: boolean
 }
 
 /** Fire-and-forget tier refresh against a cloud webContents. Errors never throw; leave cache alone. */
@@ -274,7 +296,13 @@ export async function refreshCloudUserTier(webContents: WebContents): Promise<vo
       return
     }
     if (result.error) {
-      console.log('[user-tier] refresh skipped:', result.error)
+      // The truncation marker is appended rather than folded into the error, so an existing reader
+      // grepping for a known error value still matches.
+      console.log(
+        '[user-tier] refresh skipped:',
+        result.error,
+        result.truncated === true ? '(candidate list truncated — more records than the cap)' : ''
+      )
       return
     }
     await setTier(result.tier ?? null)
