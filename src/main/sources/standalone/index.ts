@@ -67,7 +67,8 @@ function buildVariantOption(
   return {
     value: vendorId,
     label: getVariantLabel(vendorId),
-    description: `ComfyUI ${displayVersion ?? release.comfyui_version}  ·  Python ${release.python_version}  ·  ${sizeMB} MB`,
+    // `||`, not `??`: an empty version string falls back to the bundle's too.
+    description: `ComfyUI ${displayVersion || release.comfyui_version}  ·  Python ${release.python_version}  ·  ${sizeMB} MB`,
     data: {
       variantId: vendorId,
       manifest: {
@@ -532,19 +533,17 @@ export const standalone: SourcePlugin = {
           if (!release) return null
           // Stable: advertise the upstream tag the user lands on after the
           // post-install auto-update (picked tag wins; otherwise channel
-          // head). Latest: the install fast-forwards to master HEAD, which is
-          // not a release and can sit on a different lineage from the newest
-          // stable tag (a patch cut on a release branch never lands on
-          // master), so no version number describes it before install. Name
-          // the branch instead; the description is a fixed-format,
-          // non-localized string, so "master" is a literal. Both fall back to
-          // the bundled version when upstream is unreachable (the tag lookup
-          // failed), since the post-install update is then skipped too.
-          const upstreamReachable = releaseData.latestStableTag != null
+          // head), falling back to the bundled version when the tag is
+          // unresolvable (offline, etc.). Latest: the install fast-forwards to
+          // master HEAD, which is not a release and can sit on a different
+          // lineage from the newest stable tag (a patch cut on a release
+          // branch never lands on master), so no version number describes it
+          // before install. Name the branch instead. The description is a
+          // fixed-format, non-localized string, so "master" is a literal.
           const stableTag = pickedComfyTag ?? releaseData.latestStableTag ?? null
           const displayVersion = isStable
             ? (stableTag?.replace(/^v/, '') ?? null)
-            : isLatest && upstreamReachable
+            : isLatest
               ? 'master'
               : null
           return buildVariantOption(vendorId, release, displayVersion, gpu)

@@ -657,15 +657,17 @@ describe('standalone.getFieldOptions variant version display', () => {
     expect(card.description).not.toContain('0.20.1')
   })
 
-  it('variant card falls back to the bundled version on "Latest on GitHub" when upstream is unreachable', async () => {
+  it('variant card still names the master branch on "Latest on GitHub" when the stable tag is unresolved', async () => {
     const { vendorId } = setupVersionGap()
+    // The latest install resolves master HEAD on its own, so a failed (or
+    // cached-null) stable-tag lookup says nothing about where it lands.
     mockedGetLatestStableTag.mockResolvedValue(null)
     const release = await getReleaseOption('latest')
 
     const variants = await standalone.getFieldOptions!('variant', { release }, {})
     const card = variants.find((o) => o.value === vendorId)!
-    expect(card.description).toContain('ComfyUI 0.20.1')
-    expect(card.description).not.toContain('master')
+    expect(card.description).toMatch(/^ComfyUI master {2}·/)
+    expect(card.description).not.toContain('0.20.1')
   })
 
   it('variant card shows the picked stable version when one is chosen', async () => {
