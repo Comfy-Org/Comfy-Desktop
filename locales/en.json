@@ -749,6 +749,19 @@
       "imageAlt": "Comfy Cloud nodes announcement",
       "unmute": "Unmute video",
       "mute": "Mute video"
+    },
+    "comfyRouter": {
+      "title": "Introducing Comfy Router",
+      "lead": "One API for the latest frontier media models",
+      "highlights": [
+        "Call the latest image, video, 3D, and audio models from your own scripts, tools, and apps using the Comfy credits you already have.",
+        "Add new models without setting up a separate account or integration for every provider.",
+        "When a model has multiple providers, choose based on price or availability and switch without rewriting your integration."
+      ],
+      "primaryCta": "Learn About Comfy Router",
+      "imageAlt": "Comfy Router announcement",
+      "unmute": "Unmute video",
+      "mute": "Mute video"
     }
   },
   "tray": {

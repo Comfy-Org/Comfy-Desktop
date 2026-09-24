@@ -111,6 +111,9 @@ export function createHardwareTap(opts: {
   /** Core beta args Desktop injected for this launch (exact dashed tokens), so
    *  every event can be split by beta cohort. */
   coreBetaFlags?: readonly string[]
+  coreCommit?: string | null
+  /** Display form of the RECORDED version; may lag `coreCommit`, which is what to order by. */
+  coreVersionLabel?: string | null
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
@@ -121,7 +124,9 @@ export function createHardwareTap(opts: {
     installation_id: opts.installationId,
     variant: opts.variant ?? null,
     release: opts.release ?? null,
-    core_beta_flags: [...(opts.coreBetaFlags ?? [])]
+    core_beta_flags: [...(opts.coreBetaFlags ?? [])],
+    core_commit: opts.coreCommit ?? null,
+    core_version_label: opts.coreVersionLabel ?? null
   }
 
   // Accelerator accumulation: fields trickle in over several lines. ComfyUI

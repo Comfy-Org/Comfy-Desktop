@@ -187,6 +187,8 @@ describe('createHardwareTap', () => {
           variant: null,
           release: 'v0.4.0',
           core_beta_flags: [],
+          core_commit: null,
+          core_version_label: null,
           scan_phase: 'discovery_stat',
           error_type: 'permission_denied'
         }
@@ -539,5 +541,20 @@ describe('createHardwareTap', () => {
 
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel[0]!.ctx['core_beta_flags']).toEqual([])
+  })
+  it('stamps the Core commit and version label onto every emitted event', () => {
+    const tap = createHardwareTap({
+      installationId: 'inst-1',
+      coreCommit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+      coreVersionLabel: 'v0.37.0+15'
+    })
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
+    tap.ingest('Using xformers attention\n', 'stdout')
+
+    const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
+    expect(accel[0]!.ctx).toMatchObject({
+      core_commit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+      core_version_label: 'v0.37.0+15'
+    })
   })
 })

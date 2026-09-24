@@ -16,6 +16,7 @@ Subcommands:
   cherry-pick-count  <repo_path> <ref1> <ref2>
   merge-base         <repo_path> <ref1> <ref2>
   is-ancestor        <repo_path> <ancestor> <descendant>
+  has-commit         <repo_path> <sha>
   fetch-tags         <repo_path>
   fetch-commit       <repo_path> <sha>
   clone              <url> <dest>
@@ -232,6 +233,31 @@ def cmd_rev_parse(repo_path, ref):
     print(str(oid))
 
 
+HAS_COMMIT_ABSENT = 3
+# `merge-base` found both commits and they share no ancestor: an answer, unlike exit 1.
+MERGE_BASE_NONE = 5
+
+
+def cmd_has_commit(repo_path, sha):
+    """Exit 0 when <sha> names a commit in the object store, HAS_COMMIT_ABSENT when it does not.
+
+    A distinct code because every failure path here (an unopenable repo, a crash) exits 1, and a
+    caller must never mistake "could not look" for "not there".
+    """
+    repo = open_repo(repo_path)
+    try:
+        obj = repo.get(sha)
+    except ValueError:
+        sys.exit(HAS_COMMIT_ABSENT)
+    if obj is None:
+        sys.exit(HAS_COMMIT_ABSENT)
+    try:
+        obj.peel(pygit2.Commit)
+    except (KeyError, ValueError, pygit2.InvalidSpecError):
+        sys.exit(HAS_COMMIT_ABSENT)
+    sys.exit(0)
+
+
 def cmd_describe_tags(repo_path, commit="HEAD"):
     """Find the nearest ancestor tag (like git describe --tags --abbrev=0).
 
@@ -358,7 +384,7 @@ def cmd_merge_base(repo_path, ref1, ref2):
 
     if base_oid is None:
         print("Error: no common ancestor found", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(MERGE_BASE_NONE)
 
     print(str(base_oid))
 
@@ -834,6 +860,7 @@ Subcommands:
   cherry-pick-count  <repo_path> <ref1> <ref2>
   merge-base         <repo_path> <ref1> <ref2>
   is-ancestor        <repo_path> <ancestor> <descendant>
+  has-commit         <repo_path> <sha>
   fetch-tags         <repo_path>
   fetch-commit       <repo_path> <sha>
   clone              <url> <dest>
@@ -898,6 +925,12 @@ if __name__ == "__main__":
                 print("Usage: git_operations.py merge-base <repo_path> <ref1> <ref2>", file=sys.stderr)
                 sys.exit(1)
             cmd_merge_base(sys.argv[2], sys.argv[3], sys.argv[4])
+
+        elif subcmd == "has-commit":
+            if len(sys.argv) < 4:
+                print("Usage: git_operations.py has-commit <repo_path> <sha>", file=sys.stderr)
+                sys.exit(1)
+            cmd_has_commit(sys.argv[2], sys.argv[3])
 
         elif subcmd == "is-ancestor":
             if len(sys.argv) < 5:

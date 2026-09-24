@@ -1,0 +1,267 @@
+import fs from 'fs'
+import path from 'path'
+import {
+  commitPresence,
+  fetchCommitSha,
+  findMergeBase,
+  findMergeBaseOrNone,
+  resolveGitDir,
+  revParseRef
+} from './git'
+import { configDir } from './paths'
+import { readFileSafe, writeFileSafe } from './safe-file'
+import { NO_CORE_COMMITS } from './coreBetaGrants'
+import type { CoreCommitState } from './coreBetaGrants'
+import type { CoreCheckout } from './version'
+
+const FULL_SHA_RE = /^[0-9a-f]{40}$/
+
+const MAX_RESOLVED_SHAS = 16
+
+// All git work for one launch, which runs before spawn; SHAs not reached in time stay unresolved.
+const RESOLVE_BUDGET_MS = 10_000
+
+// Background fetches one launch may start.
+const MAX_FETCHES = 2
+
+// A failed fetch is not retried for this long on the same HEAD, across Desktop restarts, so a flag
+// naming an unreachable SHA costs one attempt a day rather than one per launch.
+const FAILED_FETCH_TTL_MS = 24 * 60 * 60 * 1000
+
+type FailureStore = Record<string, { head: string; failed: Record<string, number> }>
+
+const failuresPath = (): string => path.join(configDir(), 'core-beta-fetch-failures.json')
+
+function readFailures(): FailureStore {
+  const outcome = readFileSafe(failuresPath())
+  if (outcome.kind !== 'data') return {}
+  try {
+    const parsed: unknown = JSON.parse(outcome.data)
+    return parsed && typeof parsed === 'object' ? (parsed as FailureStore) : {}
+  } catch {
+    return {}
+  }
+}
+
+function recordFailure(repoPath: string, head: string, sha: string): void {
+  try {
+    const store = readFailures()
+    const entry = store[repoPath]?.head === head ? store[repoPath]! : { head, failed: {} }
+    entry.failed[sha] = Date.now()
+    store[repoPath] = entry
+    writeFileSafe(failuresPath(), JSON.stringify(store))
+  } catch (err) {
+    console.warn('[core-beta] could not record a failed fetch:', err)
+  }
+}
+
+// Chained per repository: concurrent fetches into one repository contend for its locks.
+const fetchChains = new Map<string, Promise<void>>()
+const inFlight = new Set<string>()
+
+export function _backgroundFetchesForTest(): Promise<unknown> {
+  return Promise.all(fetchChains.values())
+}
+
+/** Fetch `sha` in the background for the NEXT launch to use: this one never waits on the network. */
+function scheduleFetch(repoPath: string, sha: string, head: string): boolean {
+  const label = `[core-beta] fetch ${sha.slice(0, 12)}`
+  const key = `${repoPath}\0${sha}`
+  if (inFlight.has(key)) {
+    console.log(`${label}: already in progress`)
+    return false
+  }
+  const entry = readFailures()[repoPath]
+  const failedAt = entry?.head === head ? entry.failed[sha] : undefined
+  if (typeof failedAt === 'number' && Date.now() - failedAt < FAILED_FETCH_TTL_MS) {
+    console.log(`${label}: skipped, failed at ${new Date(failedAt).toISOString()}`)
+    return false
+  }
+  inFlight.add(key)
+  console.log(`${label}: started in the background; unresolved for this launch`)
+  const run = async (): Promise<void> => {
+    const started = Date.now()
+    const ok = await fetchCommitSha(repoPath, sha).catch(() => false)
+    console.log(`${label} from origin: ${ok ? 'ok' : 'failed'} in ${Date.now() - started}ms`)
+    if (!ok) recordFailure(repoPath, head, sha)
+    inFlight.delete(key)
+  }
+  fetchChains.set(repoPath, (fetchChains.get(repoPath) ?? Promise.resolve()).then(run))
+  return true
+}
+
+type Relation = boolean | null
+
+// Not `isAncestorOf`: it answers `false` for "could not look", which would fail an upper bound open.
+async function commitAncestry(
+  repoPath: string,
+  sha: string,
+  head: string,
+  complete: boolean,
+  budget: { fetches: number; stopped: boolean }
+): Promise<Relation> {
+  const base = await findMergeBaseOrNone(repoPath, sha, head)
+  if (typeof base === 'string') return base.toLowerCase() === sha
+  // Both commits resolved and share nothing: on a complete graph HEAD cannot contain `sha`. A shallow
+  // graph may just be cut short, and the graft rule cannot hold without a common ancestor.
+  if (base === null && complete) {
+    console.log(
+      `[core-beta] ancestry ${sha.slice(0, 12)}: no common ancestor with HEAD in a full clone`
+    )
+    return false
+  }
+  // Absence counts only once the repository has been shown readable, by resolving HEAD itself.
+  if ((await revParseRef(repoPath, `${head}^{commit}`))?.toLowerCase() !== head) return null
+  if ((await commitPresence(repoPath, sha)) !== 'absent') return null
+  // A complete clone holds every ancestor of HEAD, so a commit it lacks is not one of them.
+  if (complete) {
+    console.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
+    return false
+  }
+  if (budget.stopped) return null
+  if (budget.fetches >= MAX_FETCHES) {
+    console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
+  } else if (scheduleFetch(repoPath, sha, head)) {
+    budget.fetches += 1
+  }
+  return null
+}
+
+/** More boundaries than this and a shallow "not contained" is left unproven rather than paid for. */
+const MAX_SHALLOW_GRAFTS = 8
+
+/** The shallow clone's graft commits: `[]` for a complete clone, `null` when that could not be
+ *  established, which callers must treat as "shallow, boundaries unknown". */
+function readShallowGrafts(repoPath: string): string[] | null {
+  const gitDir = resolveGitDir(repoPath)
+  if (gitDir === null) return null
+  try {
+    // `shallow` is shared by all worktrees, so a linked worktree's lives in the common dir.
+    const commondir = path.join(gitDir, 'commondir')
+    const common = fs.existsSync(commondir)
+      ? path.resolve(gitDir, fs.readFileSync(commondir, 'utf-8').trim())
+      : gitDir
+    const file = path.join(common, 'shallow')
+    try {
+      fs.statSync(file)
+    } catch (err) {
+      // Only a proven absence means a complete clone; any other failure is "could not look".
+      return (err as NodeJS.ErrnoException).code === 'ENOENT' ? [] : null
+    }
+    const grafts = fs
+      .readFileSync(file, 'utf-8')
+      .split(/\r?\n/)
+      .map((line) => line.trim().toLowerCase())
+      .filter((line) => line.length > 0)
+    return grafts.every((graft) => FULL_SHA_RE.test(graft)) ? grafts : null
+  } catch {
+    return null
+  }
+}
+
+// On a truncated graph a merge-base other than `sha` does not by itself prove HEAD lacks `sha`: the
+// real path to it may run below a graft. It does once every graft is a proper ancestor of `sha`: a
+// path crossing graft `g` would make `sha` an ancestor of `g`, so the local graph is complete between
+// HEAD and anything newer than all the boundaries.
+async function notContainedHoldsOnShallow(
+  repoPath: string,
+  sha: string,
+  grafts: readonly string[]
+): Promise<boolean> {
+  if (grafts.length > MAX_SHALLOW_GRAFTS) return false
+  for (const graft of grafts) {
+    if (graft === sha) return false
+    // `findMergeBase`, not `findMergeBaseOrNone`: here "no common ancestor" and "could not look" both
+    // mean the graft is not proven an ancestor, and both must fail.
+    const base = await findMergeBase(repoPath, graft, sha)
+    if (base?.toLowerCase() !== graft) return false
+  }
+  return true
+}
+
+export async function resolveCoreCommitState(
+  repoPath: string,
+  checkout: CoreCheckout,
+  shas: readonly string[],
+  signal?: AbortSignal
+): Promise<CoreCommitState> {
+  if (shas.length === 0 || checkout.kind !== 'head') return NO_CORE_COMMITS
+  const head = checkout.commit.toLowerCase()
+  if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
+  const ancestry = new Map<string, boolean>()
+  const deadline = Date.now() + RESOLVE_BUDGET_MS
+  const budget = { fetches: 0, stopped: false }
+  const work = (async () => {
+    for (const [index, raw] of shas.entries()) {
+      if (budget.stopped || signal?.aborted || Date.now() > deadline) return
+      // Re-validated here, not only at parse time: the SHA reaches `git fetch` as an argument.
+      const sha = raw.toLowerCase()
+      if (!FULL_SHA_RE.test(sha)) continue
+      if (index >= MAX_RESOLVED_SHAS) {
+        console.log(
+          `[core-beta] ancestry ${sha.slice(0, 12)}: not checked (the payload names more than ${MAX_RESOLVED_SHAS} commits), so entries that need it do not match`
+        )
+        continue
+      }
+      // Re-read per SHA: a background fetch from an earlier launch can rewrite the boundaries.
+      const grafts = readShallowGrafts(repoPath)
+      let related: Relation = null
+      try {
+        related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
+      } catch (err) {
+        console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+      }
+      if (related === false && grafts?.length !== 0) {
+        const provable =
+          grafts !== null &&
+          (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
+        if (!provable) related = null
+      }
+      // A launch that has moved on takes no late answers: the map it was handed must not change.
+      if (budget.stopped) return
+      console.log(
+        `[core-beta] ancestry ${sha.slice(0, 12)}: ${
+          related === null
+            ? 'unresolved (not provable on this checkout, so entries that need it do not match)'
+            : related
+              ? 'contained'
+              : 'not contained'
+        }`
+      )
+      if (related !== null) ancestry.set(sha, related)
+    }
+  })()
+
+  // The budget and a cancelled launch interrupt a git call in progress, not only the gap between
+  // two: each call carries its own timeout, which alone could hold the launch past the budget.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: (() => void) | undefined
+  const interrupted = new Promise<'interrupted'>((resolve) => {
+    timer = setTimeout(() => resolve('interrupted'), Math.max(0, deadline - Date.now()))
+    onAbort = () => resolve('interrupted')
+    signal?.addEventListener('abort', onAbort, { once: true })
+    // The work above starts synchronously, so it may already have aborted before this listener.
+    if (signal?.aborted) onAbort()
+  })
+  // Abandoned when interrupted, so it must never be left with an unhandled rejection.
+  void work.catch((err: unknown) => console.warn('[core-beta] ancestry resolution failed:', err))
+  try {
+    // Cannot reject: a failure inside `work` is logged above and leaves the map partial, which is
+    // the fail-closed answer. A beta lookup must never fail the launch.
+    const outcome = await Promise.race([
+      work.then(
+        () => 'done' as const,
+        () => 'done' as const
+      ),
+      interrupted
+    ])
+    if (outcome === 'interrupted') {
+      console.log('[core-beta] ancestry: stopped early; SHAs not reached stay unresolved')
+    }
+  } finally {
+    budget.stopped = true
+    clearTimeout(timer)
+    if (onAbort) signal?.removeEventListener('abort', onAbort)
+  }
+  return { head, ancestry }
+}

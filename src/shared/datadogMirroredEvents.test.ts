@@ -30,7 +30,7 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.not.a.real.event')).toBe(false)
   })
 
-  // The eight scan-pipeline failures from assetsTap's ALLOWED_EVENTS (prefix
+  // The fourteen scan-pipeline failures from assetsTap's ALLOWED_EVENTS (prefix
   // plus bare event name, verified against assetsTap.ts's own
   // `${EVENT_PREFIX}${event}` construction).
   const ASSETS_ERROR_EVENTS = [
@@ -40,12 +40,18 @@ describe('isDatadogMirroredEvent', () => {
     'comfy.desktop.comfyui.assets.scanner.temp_sync_failed',
     'comfy.desktop.comfyui.assets.scanner.mark_missing_failed',
     'comfy.desktop.comfyui.assets.scanner.stat_failed',
+    'comfy.desktop.comfyui.assets.scanner.watch_stat_failed',
+    'comfy.desktop.comfyui.assets.scanner.watch_spec_failed',
+    'comfy.desktop.comfyui.assets.scanner.watch_seed_failed',
+    'comfy.desktop.comfyui.assets.scanner.root_unreachable',
+    'comfy.desktop.comfyui.assets.scanner.walk_failed',
+    'comfy.desktop.comfyui.assets.scanner.metadata_failed',
     'comfy.desktop.comfyui.assets.seeder.batch_insert_failed',
     'comfy.desktop.comfyui.assets.seeder.scan_failed'
   ]
 
-  it('defines exactly eight assets error events', () => {
-    expect(ASSETS_ERROR_EVENTS).toHaveLength(8)
+  it('defines exactly fourteen assets error events', () => {
+    expect(ASSETS_ERROR_EVENTS).toHaveLength(14)
   })
 
   it.each(ASSETS_ERROR_EVENTS)('mirrors the assets error event %s', (name) => {
@@ -57,6 +63,20 @@ describe('isDatadogMirroredEvent', () => {
   // boot_started / install.dispatched above.
   it('does not mirror seeder.scan_started (volume guard)', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.assets.seeder.scan_started')).toBe(false)
+  })
+
+  // failure_bucket is a per-scan triage aggregate of failures, not a
+  // per-failure alerting signal, so it stays PostHog-only.
+  it('does not mirror scanner.failure_bucket', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.comfyui.assets.scanner.failure_bucket')).toBe(
+      false
+    )
+  })
+
+  // invalid_mtime counts files skipped for a pre-epoch mtime: a property of the
+  // user's files rather than a scanner fault, so it stays PostHog-only.
+  it('does not mirror scanner.invalid_mtime', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.comfyui.assets.scanner.invalid_mtime')).toBe(false)
   })
 })
 

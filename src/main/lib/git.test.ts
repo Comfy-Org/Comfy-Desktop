@@ -22,6 +22,8 @@ import {
   isAncestorOf,
   findMergeBase,
   revParseRef,
+  commitPresence,
+  findMergeBaseOrNone,
   fetchTags,
   configurePygit2,
   isGitAvailable,
@@ -237,6 +239,60 @@ describe('revParseRef', () => {
       cb(new Error('bad ref'), '', '')
     })
     expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
+  })
+})
+
+describe('findMergeBaseOrNone', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it.each([
+    ['exit 1, no merge base', { code: 1 }, null],
+    ['exit 128, a bad ref', { code: 128 }, undefined],
+    ['a timeout', { code: 1, killed: true }, undefined]
+  ])('reads %s as %s', async (_label, props, expected) => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(Object.assign(new Error('git'), props), '', ''))
+    expect(await findMergeBaseOrNone('/repo', 'a', 'b')).toBe(expected)
+  })
+
+  it('returns the merge base on success', async () => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(null, 'abc\n', ''))
+    expect(await findMergeBaseOrNone('/repo', 'a', 'b')).toBe('abc')
+  })
+})
+
+describe('commitPresence', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  const failWith = (props: Record<string, unknown>) =>
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(Object.assign(new Error('git failed'), props), '', '')
+    })
+
+  it('asks git to verify the SHA as a commit, quietly, with options ended', async () => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(null, 'x\n', ''))
+    expect(await commitPresence('/repo', 'a'.repeat(40))).toBe('present')
+    expect(mockedExecFile.mock.calls[0]![1]).toEqual([
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      '--end-of-options',
+      `${'a'.repeat(40)}^{commit}`
+    ])
+  })
+
+  it.each([
+    ['exit 1, a definite miss', { code: 1 }, 'absent'],
+    ['exit 128, a real failure', { code: 128 }, 'unknown'],
+    ['a timeout', { code: 1, killed: true }, 'unknown'],
+    ['a signal', { code: 1, signal: 'SIGTERM' }, 'unknown'],
+    ['a spawn error', { code: 'ENOENT' }, 'unknown']
+  ])('reads %s as %s', async (_label, props, expected) => {
+    failWith(props)
+    expect(await commitPresence('/repo', 'a'.repeat(40))).toBe(expected)
   })
 })
 
@@ -770,6 +826,33 @@ describe('pygit2 fallback', () => {
         cb(errWithCode, '', '')
       })
       expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
+    })
+  })
+
+  describe('findMergeBaseOrNone', () => {
+    it.each([
+      [5, null],
+      [1, undefined]
+    ])('maps helper exit %s to %s', async (code, expected) => {
+      mockExecFile((_cmd, _args, _opts, cb) =>
+        cb(Object.assign(new Error('exit'), { code }), '', '')
+      )
+      expect(await findMergeBaseOrNone('/repo', 'a', 'b')).toBe(expected)
+      expect(expectPygit2Call()).toEqual(['merge-base', '/repo', 'a', 'b'])
+    })
+  })
+
+  describe('commitPresence', () => {
+    it.each([
+      [0, 'present'],
+      [3, 'absent'],
+      [1, 'unknown']
+    ])('maps helper exit %s to %s', async (code, expected) => {
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(code === 0 ? null : Object.assign(new Error('exit'), { code }), '', '')
+      })
+      expect(await commitPresence('/repo', 'a'.repeat(40))).toBe(expected)
+      expect(expectPygit2Call()).toEqual(['has-commit', '/repo', 'a'.repeat(40)])
     })
   })
 

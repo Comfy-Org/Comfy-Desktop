@@ -19,6 +19,7 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import { inspect } from 'util'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
 import * as mainTelemetry from './telemetry'
@@ -278,7 +279,9 @@ export function makeOpsFlag<T>(opts: {
               `[${logLabel}] init: fetched=`,
               result.kind === 'value' ? result.value : result.kind,
               '→ cached=',
-              cached
+              // One line at full depth: the default inspect folds nested payloads to `[Array]`
+              // and wraps across lines that a `[label]` grep then misses.
+              inspect(cached, { depth: null, breakLength: Infinity, compact: true })
             )
         })
         .catch((err) => {

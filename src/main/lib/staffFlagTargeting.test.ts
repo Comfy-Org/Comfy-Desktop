@@ -175,8 +175,11 @@ function fakeIndexedDB(opts: {
   stores?: string[]
   entries?: unknown[]
   openOutcome?: 'success' | 'error' | 'blocked' | 'never'
+  /** Fires while the IndexedDB read is in flight — the window the script awaits across. */
+  onIdbRead?: () => void
 }) {
   const closed = { count: 0 }
+  const idbReadFired = { done: false }
   const db = {
     objectStoreNames: {
       contains: (n: string) => (opts.stores ?? ['firebaseLocalStorage']).includes(n)
@@ -195,7 +198,17 @@ function fakeIndexedDB(opts: {
     }
   }
   const idb = {
-    databases: () => Promise.resolve(opts.databases ?? [{ name: 'firebaseLocalStorageDb' }]),
+    databases: () => {
+      // The FIRST await the script makes, and the only one on the missing-database path — so this
+      // is where "during the IndexedDB round-trip" has to be modelled if both conclusion paths are
+      // to be covered. Fires once: a second push would plant a duplicate record, which the
+      // contested-uid guard would reject for an unrelated reason.
+      if (!idbReadFired.done) {
+        idbReadFired.done = true
+        opts.onIdbRead?.()
+      }
+      return Promise.resolve(opts.databases ?? [{ name: 'firebaseLocalStorageDb' }])
+    },
     open: () => {
       const req: Record<string, unknown> = { result: db, error: new Error('open failed') }
       const outcome = opts.openOutcome ?? 'success'
@@ -217,17 +230,88 @@ function authRecord(uid: string, email: string | null, emailVerified = true): un
 }
 
 /** Run the REAL injected script against a stubbed IndexedDB. */
-async function classify(opts: Parameters<typeof fakeIndexedDB>[0]): Promise<{
+/** A `localStorage` good enough for the script: length, key(i), getItem(k). `throws` models
+ *  blocked site data, where touching the object raises rather than returning nothing. */
+function fakeLocalStorage(
+  entries: Array<[string, string]> | null,
+  opts: { throws?: boolean; getItemThrows?: boolean } = {}
+): unknown {
+  if (entries === null) return null
+  if (opts.throws) {
+    return new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('site data blocked')
+        }
+      }
+    )
+  }
+  return {
+    get length() {
+      return entries.length
+    },
+    key: (i: number) => entries[i]?.[0] ?? null,
+    getItem: (k: string) => {
+      // Enumeration succeeded and this one value read fails: the mechanism dying part-way
+      // through, which is NOT the same as localStorage being absent.
+      if (opts.getItemThrows) throw new Error('site data blocked mid-read')
+      return entries.find(([key]) => key === k)?.[1] ?? null
+    }
+  }
+}
+
+async function classify(
+  opts: Parameters<typeof fakeIndexedDB>[0] & {
+    /** `null` (the default) means NO localStorage persistence, so the IndexedDB fallback runs.
+     *  Existing cases pass nothing and therefore keep exercising the fallback unchanged. */
+    localStorage?: Array<[string, string]> | null
+    localStorageThrows?: boolean
+    localStorageGetItemThrows?: boolean
+    /** Entries that appear in localStorage WHILE the IndexedDB read is in flight, modelling the
+     *  frontend's `setPersistence` moving the record in mid-read. */
+    localStorageDuringAwait?: Array<[string, string]>
+  }
+): Promise<{
   result: { known?: boolean; staff?: boolean; userId?: string | null }
   closed: number
 }> {
-  const { idb, closed } = fakeIndexedDB(opts)
-  const run = new Function('indexedDB', 'setTimeout', `return ${CLASSIFY_STAFF_JS}`) as (
+  // One array, shared with the stub, so a push during the await is visible to the script's
+  // SECOND read and not its first — which is the whole point of the interleaving.
+  const lsEntries =
+    opts.localStorage === undefined || opts.localStorage === null ? null : [...opts.localStorage]
+  const { idb, closed } = fakeIndexedDB({
+    ...opts,
+    onIdbRead: () => {
+      if (lsEntries && opts.localStorageDuringAwait) lsEntries.push(...opts.localStorageDuringAwait)
+    }
+  })
+  // Injected as a bare identifier, matching how the script reads it. Passing `undefined` models a
+  // context with no localStorage at all, which is what `typeof localStorage === 'undefined'` sees.
+  const run = new Function(
+    'indexedDB',
+    'setTimeout',
+    'localStorage',
+    `return ${CLASSIFY_STAFF_JS}`
+  ) as (
     i: unknown,
-    t: unknown
+    t: unknown,
+    l: unknown
   ) => Promise<{ known?: boolean; staff?: boolean; userId?: string | null }>
-  const result = await run(idb, setTimeout)
+  const result = await run(
+    idb,
+    setTimeout,
+    fakeLocalStorage(lsEntries, {
+      throws: opts.localStorageThrows,
+      getItemThrows: opts.localStorageGetItemThrows
+    }) ?? undefined
+  )
   return { result, closed: closed.count }
+}
+
+/** A stored Firebase user, as localStorage holds it: a JSON string under a prefixed key. */
+function localRecord(uid: string, email: string | null, emailVerified = true): [string, string] {
+  return [`firebase:authUser:apikey:${uid}`, JSON.stringify({ uid, email, emailVerified })]
 }
 
 // The cohort rule lives in the injected script, so it is tested there rather than through a
@@ -956,5 +1040,292 @@ describe('persisting the classification', () => {
     fs.rmSync(testConfigDir, { recursive: true, force: true })
 
     await expect(refreshStaffFlagTargeting(stubContents(true))).resolves.toBeUndefined()
+  })
+})
+
+// The store the frontend's Firebase SDK SETTLES the session in. On the released frontend the
+// hierarchy is IndexedDB-first, so the user lives there through boot and only reaches localStorage
+// when the auth store runs its later `setPersistence`. Once it has, the SDK REMOVES the record from
+// the other persistences — so reading IndexedDB afterwards finds a copy the SDK decided to discard,
+// or nothing at all. Both stores are therefore authoritative, at different times.
+describe('CLASSIFY_STAFF_JS reads localStorage first', () => {
+  it('classifies a staff account held in localStorage', async () => {
+    const { result } = await classify({
+      localStorage: [localRecord('u1', 'someone@comfy.org')],
+      entries: []
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('applies the same cohort rule there — an unverified address proves nothing', async () => {
+    const { result } = await classify({
+      localStorage: [localRecord('u1', 'someone@comfy.org', false)],
+      entries: []
+    })
+
+    expect(result).toEqual({ known: true, staff: false, userId: 'u1' })
+  })
+
+  it('declines to answer when localStorage holds two accounts', async () => {
+    const { result } = await classify({
+      localStorage: [
+        localRecord('u1', 'someone@comfy.org'),
+        localRecord('u2', 'other@example.com')
+      ],
+      entries: []
+    })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('ignores localStorage keys that are not auth records', async () => {
+    const { result } = await classify({
+      localStorage: [
+        ['Comfy.Settings', '{"foo":1}'],
+        // A prefixed key whose value is not parseable. Distinct from the good record's key:
+        // localStorage is a map, so two entries cannot share one.
+        ['firebase:authUser:apikey:unparseable', 'not json at all'],
+        localRecord('u1', 'someone@comfy.org')
+      ],
+      entries: []
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('abstains when localStorage is empty and IndexedDB holds a user', async () => {
+    // The ambiguous row, and it is not an edge case: on the frontend Desktop ships, VueFire settles
+    // the session in IndexedDB at boot and it moves to localStorage only later, when the auth
+    // store runs `setPersistence`. So EVERY boot passes through this state while signed in.
+    //
+    // It cannot be resolved by reading. Either the record is live (a frontend that persists to
+    // IndexedDB, or one mid-boot), or it is one the SDK already discarded. Guessing "signed out"
+    // is the expensive direction: that report is trusted and DELETES the loopback binding.
+    const { result } = await classify({
+      localStorage: [],
+      entries: [authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('reports no account when BOTH stores are empty, which is not ambiguous', async () => {
+    const { result } = await classify({ localStorage: [], entries: [] })
+
+    expect(result).toEqual({ known: true, staff: false, userId: null })
+  })
+
+  it('answers a MISSING database the same as an empty one when localStorage is readable', async () => {
+    // Same world as the test above - nobody signed in anywhere - reached by a machine where the
+    // SDK never created the database. It used to return `{known:false}` from the `databases()`
+    // guard while the empty-database case returned a definite "no account", so the verdict
+    // depended on whether Firebase had ever run here. The two must agree.
+    const { result } = await classify({ localStorage: [], databases: [] })
+
+    expect(result).toEqual({ known: true, staff: false, userId: null })
+  })
+
+  it('still declines when the database is missing AND localStorage is unavailable', async () => {
+    // The negative control for the test above: with no readable localStorage there is no evidence
+    // from either store, so the answer must stay an abstention rather than become "no account".
+    const { result } = await classify({ databases: [] })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('declines when a localStorage value read throws part-way through enumeration', async () => {
+    // The authoritative store EXISTS and cannot be finished. IndexedDB here holds a record that
+    // would classify as staff, so a fall-through would be visible as `staff: true` - which is
+    // exactly the bug this file fixes, reached through a different door.
+    const { result } = await classify({
+      localStorage: [localRecord('u1', 'someone@comfy.org')],
+      localStorageGetItemThrows: true,
+      entries: [authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('declines when two localStorage keys claim one uid with DIFFERENT addresses', async () => {
+    // Two keys, one account, and they disagree about the field the cohort rule reads. Both match
+    // the Firebase prefix, so a page-origin script can plant the second one carrying the genuine
+    // uid and a forged verified address; de-duplicating by uid and keeping whichever enumerated
+    // first would let key order decide staff membership, and main's uid cross-check would pass
+    // because the uid is real.
+    const { result } = await classify({
+      localStorage: [
+        [
+          'firebase:authUser:apikey:[DEFAULT]',
+          JSON.stringify({ uid: 'u1', email: 'someone@example.com', emailVerified: true })
+        ],
+        [
+          'firebase:authUser:apikey:[FORGED]',
+          JSON.stringify({ uid: 'u1', email: 'someone@comfy.org', emailVerified: true })
+        ]
+      ],
+      entries: []
+    })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('still answers when two localStorage keys claim one uid and AGREE', async () => {
+    // The control that keeps the rule above from being a blanket "two keys means abstain": a
+    // duplicate that says the same thing is not a conflict and must not suppress a real verdict.
+    const { result } = await classify({
+      localStorage: [
+        [
+          'firebase:authUser:apikey:[DEFAULT]',
+          JSON.stringify({ uid: 'u1', email: 'someone@comfy.org', emailVerified: true })
+        ],
+        [
+          'firebase:authUser:apikey:[OTHER]',
+          JSON.stringify({ uid: 'u1', email: '  Someone@COMFY.org ', emailVerified: true })
+        ]
+      ],
+      entries: []
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('declines when two IndexedDB records claim one uid with different addresses', async () => {
+    // The same conflict on the fallback path, which has always de-duplicated by uid.
+    const { result } = await classify({
+      entries: [authRecord('u1', 'someone@example.com'), authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('re-reads localStorage before concluding nobody is signed in', async () => {
+    // THE COLD-BOOT FAILURE, as a unit test. localStorage is read synchronously and is empty;
+    // the IndexedDB read takes a round-trip; the frontend's `setPersistence` moves the record INTO
+    // localStorage during it; IndexedDB then also reads empty. Composing those two observations
+    // asserts "no account anywhere" from a pair that was never simultaneously true. Re-reading
+    // finds the record, so the account is classified rather than declared absent.
+    const { result } = await classify({
+      localStorage: [],
+      entries: [],
+      localStorageDuringAwait: [localRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('re-reads before concluding even when the database does not exist', async () => {
+    // The same straddle on the other conclusion path: `databases()` is awaited too, so a verdict
+    // of "no account" there rests on an equally stale read.
+    const { result } = await classify({
+      localStorage: [],
+      databases: [],
+      localStorageDuringAwait: [localRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('still reports no account when nothing arrives during the read', async () => {
+    // The control that stops the re-read becoming "never conclude anything": with no interleaving,
+    // both stores really are empty and the definite answer must survive.
+    const { result } = await classify({ localStorage: [], entries: [] })
+
+    expect(result).toEqual({ known: true, staff: false, userId: null })
+  })
+
+  it('never consults IndexedDB when localStorage holds a user', async () => {
+    // Authoritative in the direction that matters: a stale IndexedDB record cannot override the
+    // live one, so a signed-out account cannot come back.
+    const { result } = await classify({
+      localStorage: [localRecord('u1', 'someone@comfy.org')],
+      entries: [authRecord('u2', 'other@example.com')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('falls back to IndexedDB only when there is no localStorage at all', async () => {
+    const { result } = await classify({
+      localStorage: null,
+      entries: [authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('does not assert a sign-out when localStorage is unreadable and IndexedDB is drained', async () => {
+    // The row a human reviewer found open on the monitor side. localStorage could not be read, so
+    // the store that would hold the session was never consulted; an empty IndexedDB is then not
+    // evidence of a sign-out, because on a localStorage-primary frontend it is empty PRECISELY
+    // because the SDK drained it.
+    //
+    // This test previously asserted `{ known: true, staff: false, userId: null }` — which IS
+    // asserting a sign-out, the exact thing its name says it does not do — and excused it on the
+    // grounds that `classifyFromView` rejects a null user id downstream. Two independent reviewers
+    // flagged the underlying behaviour. Being safe because a guard in another file happens to
+    // reject the value is not the same as not making the claim, and a future consumer reading
+    // `known: true` as "no account" would act on it.
+    const { result } = await classify({
+      localStorage: [],
+      localStorageThrows: true,
+      entries: []
+    })
+
+    expect(result).toEqual({ known: false })
+  })
+
+  it('still answers from IndexedDB when localStorage is blocked but a record exists there', async () => {
+    // The control that keeps the rule above from becoming "a blocked store means never answer".
+    // A record IS evidence, wherever it is found; only its ABSENCE is uninformative when the store
+    // that would hold it could not be read. This is also what keeps a frontend that persists to
+    // IndexedDB working when site data is blocked.
+    const { result } = await classify({
+      localStorage: [],
+      localStorageThrows: true,
+      entries: [authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('leaves an established grant alone on that same unreadable-storage row', async () => {
+    // The outcome that actually matters: whatever the read returns, a storage failure must not
+    // take a grant away. NB this describe is otherwise script-level, so the module needs its
+    // observer subscribed before a consensus can classify anything.
+    initStaffFlagTargeting()
+    await consensusSignedIn([stubContents(true)])
+    expect(nextLaunchBinding()).toBe(true)
+
+    await refreshStaffFlagTargeting(
+      stubContentsReturning({ known: true, staff: false, userId: null })
+    )
+
+    expect(storedFile()).toMatchObject({ staff: true })
+    expect(nextLaunchBinding()).toBe(true)
+  })
+
+  it('falls back to IndexedDB when localStorage throws, which is not the same as empty', async () => {
+    // Blocked site data is "I cannot read", not "nothing is stored". Treating it as authoritative
+    // would let a storage permission decide the cohort.
+    const { result } = await classify({
+      localStorage: [],
+      localStorageThrows: true,
+      entries: [authRecord('u1', 'someone@comfy.org')]
+    })
+
+    expect(result).toEqual({ known: true, staff: true, userId: 'u1' })
+  })
+
+  it('counts a localStorage record whose uid is __proto__, so the one-account guard holds', async () => {
+    const { result } = await classify({
+      localStorage: [
+        localRecord('real', 'someone@comfy.org'),
+        localRecord('__proto__', 'other@example.com')
+      ],
+      entries: []
+    })
+
+    expect(result).toEqual({ known: false })
   })
 })
