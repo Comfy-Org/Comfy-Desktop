@@ -168,15 +168,66 @@ describe('resolveCoreCommitState', () => {
     expect(state.ancestry.has(UPPER)).toBe(false)
   })
 
-  it('trusts only a proven containment in a shallow clone', async () => {
-    fs.writeFileSync(path.join(git.gitDir, 'shallow'), `${OLDER}\n`)
-    git.findMergeBase.mockImplementation(async (_repo, sha) => (sha === LOWER ? LOWER : OLDER))
+  describe('in a shallow clone', () => {
+    const GRAFT = 'c'.repeat(40)
+    const OTHER_GRAFT = 'd'.repeat(40)
 
-    const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER, UPPER])
+    /** HEAD contains LOWER; UPPER is not reachable from HEAD (merge-base OLDER). `graftsBelowUpper`
+     *  names the grafts the local graph shows to be ancestors of UPPER. */
+    function graph(graftsBelowUpper: readonly string[]): void {
+      git.findMergeBase.mockImplementation(async (_repo, a, b) => {
+        if (b === UPPER && graftsBelowUpper.includes(a)) return a
+        if (b === UPPER) return OLDER
+        return a === LOWER ? LOWER : OLDER
+      })
+    }
 
-    expect(
-      [...state.ancestry],
-      'a truncated graph proves containment but never non-containment'
-    ).toEqual([[LOWER, true]])
+    const shallowFile = (...lines: string[]): void =>
+      fs.writeFileSync(path.join(git.gitDir, 'shallow'), lines.map((l) => `${l}\n`).join(''))
+
+    const resolve = () =>
+      resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER, UPPER])
+
+    it('trusts "not contained" when every graft is an ancestor of the SHA', async () => {
+      shallowFile(GRAFT, OTHER_GRAFT)
+      graph([GRAFT, OTHER_GRAFT])
+
+      expect([...(await resolve()).ancestry]).toEqual([
+        [LOWER, true],
+        [UPPER, false]
+      ])
+    })
+
+    it('leaves "not contained" unresolved when any graft is not an ancestor of the SHA', async () => {
+      shallowFile(GRAFT, OTHER_GRAFT)
+      graph([GRAFT])
+
+      expect(
+        [...(await resolve()).ancestry],
+        'a path below the unrelated graft could still reach the SHA'
+      ).toEqual([[LOWER, true]])
+    })
+
+    it('leaves "not contained" unresolved when the shallow file cannot be parsed', async () => {
+      shallowFile('not-a-sha')
+      graph([GRAFT])
+
+      expect([...(await resolve()).ancestry]).toEqual([[LOWER, true]])
+    })
+
+    it('leaves "not contained" unresolved past the graft cap rather than walking them all', async () => {
+      const grafts = Array.from({ length: 9 }, (_, i) => shaOf(100 + i))
+      shallowFile(...grafts)
+      graph(grafts)
+
+      expect([...(await resolve()).ancestry]).toEqual([[LOWER, true]])
+    })
+
+    it('trusts "contained" regardless of the grafts', async () => {
+      shallowFile(GRAFT)
+      graph([])
+
+      expect((await resolve()).ancestry.get(LOWER)).toBe(true)
+    })
   })
 })

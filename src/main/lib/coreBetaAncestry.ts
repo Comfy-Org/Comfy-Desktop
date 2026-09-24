@@ -31,15 +31,44 @@ async function commitAncestry(
   return { related: await relate(), fetched: true }
 }
 
-// A truncated graph can give a merge-base other than `sha` even when HEAD contains it: trust only `true`.
-function isShallow(repoPath: string): boolean {
+/** More boundaries than this and a shallow "not contained" is left unproven rather than paid for. */
+const MAX_SHALLOW_GRAFTS = 8
+
+/** The shallow clone's graft commits: `[]` for a complete clone, `null` when that could not be
+ *  established, which callers must treat as "shallow, boundaries unknown". */
+function readShallowGrafts(repoPath: string): string[] | null {
   const gitDir = resolveGitDir(repoPath)
-  if (gitDir === null) return true
+  if (gitDir === null) return null
+  const file = path.join(gitDir, 'shallow')
   try {
-    return fs.existsSync(path.join(gitDir, 'shallow'))
+    if (!fs.existsSync(file)) return []
+    const grafts = fs
+      .readFileSync(file, 'utf-8')
+      .split(/\r?\n/)
+      .map((line) => line.trim().toLowerCase())
+      .filter((line) => line.length > 0)
+    return grafts.every((graft) => FULL_SHA_RE.test(graft)) ? grafts : null
   } catch {
-    return true
+    return null
   }
+}
+
+// On a truncated graph a merge-base other than `sha` does not by itself prove HEAD lacks `sha`: the
+// real path to it may run below a graft. It does once every graft is a proper ancestor of `sha`: a
+// path crossing graft `g` would make `sha` an ancestor of `g`, so the local graph is complete between
+// HEAD and anything newer than all the boundaries.
+async function notContainedHoldsOnShallow(
+  repoPath: string,
+  sha: string,
+  grafts: readonly string[]
+): Promise<boolean> {
+  if (grafts.length > MAX_SHALLOW_GRAFTS) return false
+  for (const graft of grafts) {
+    if (graft === sha) return false
+    const base = await findMergeBase(repoPath, graft, sha)
+    if (base?.toLowerCase() !== graft) return false
+  }
+  return true
 }
 
 /** Sequential on purpose: concurrent fetches into one repository contend for its locks. */
@@ -52,7 +81,7 @@ export async function resolveCoreCommitState(
   if (shas.length === 0 || checkout.kind !== 'head') return NO_CORE_COMMITS
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
-  const shallow = isShallow(repoPath)
+  const grafts = readShallowGrafts(repoPath)
   const ancestry = new Map<string, boolean>()
   let fetches = 0
   for (const [index, sha] of shas.entries()) {
@@ -66,7 +95,12 @@ export async function resolveCoreCommitState(
       } catch (err) {
         console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
       }
-      if (related === false && shallow) related = null
+      if (related === false && grafts?.length !== 0) {
+        const provable =
+          grafts !== null &&
+          (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
+        if (!provable) related = null
+      }
     }
     console.log(
       `[core-beta] ancestry ${sha.slice(0, 12)}: ${

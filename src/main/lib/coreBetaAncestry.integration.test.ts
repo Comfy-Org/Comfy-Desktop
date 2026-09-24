@@ -123,7 +123,7 @@ describe('resolveCoreCommitState against a real repository', () => {
     expect(selectCoreBetaGrantArgs([grant], NO_VERSION, true, [], after)).toEqual([])
   })
 
-  it('never proves non-containment in a shallow clone, even of a commit HEAD contains', async () => {
+  it('leaves an ancestor the depth-1 graph cannot show unresolved', async () => {
     const shallow = path.join(root, 'shallow')
     git(
       root,
@@ -149,5 +149,78 @@ describe('resolveCoreCommitState against a real repository', () => {
       'an ancestor the depth-1 graph cannot show is unresolved, not false'
     ).toBe(false)
     expect(state.ancestry.get(shallowHead)).toBe(true)
+  })
+})
+
+// master:  base -> m1 -> m2 -> M(merge of m2 + s1) -> y
+// side:    base -> s1 -> x1
+// `shallow` is a depth-2 clone at M, so its grafts are m2 and s1.
+describe('resolveCoreCommitState against a real shallow clone', () => {
+  let shallowRoot = ''
+  let shallow = ''
+  const s: Record<string, string> = {}
+
+  beforeAll(() => {
+    shallowRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-shallow-'))
+    const up = path.join(shallowRoot, 'upstream')
+    shallow = path.join(shallowRoot, 'shallow')
+    fs.mkdirSync(up)
+    git(up, 'init', '-q', '-b', 'master')
+    git(up, 'config', 'uploadpack.allowAnySHA1InWant', 'true')
+    s.base = commit(up, 'base')
+    git(up, 'checkout', '-q', '-b', 'side')
+    s.s1 = commit(up, 's1')
+    git(up, 'checkout', '-q', 'master')
+    s.m1 = commit(up, 'm1')
+    s.m2 = commit(up, 'm2')
+    git(up, 'merge', '-q', '--no-ff', '-m', 'merge side', 'side')
+    s.merge = git(up, 'rev-parse', 'HEAD')
+    git(
+      shallowRoot,
+      'clone',
+      '-q',
+      '--depth',
+      '2',
+      '--single-branch',
+      '-b',
+      'master',
+      `file://${up}`,
+      shallow
+    )
+    s.y = commit(up, 'y')
+    git(up, 'checkout', '-q', 'side')
+    s.x1 = commit(up, 'x1')
+    git(up, 'checkout', '-q', 'master')
+  })
+
+  afterAll(() => {
+    fs.rmSync(shallowRoot, { recursive: true, force: true })
+  })
+
+  it('is set up with grafts at m2 and s1', () => {
+    const grafts = fs
+      .readFileSync(path.join(shallow, '.git', 'shallow'), 'utf-8')
+      .trim()
+      .split('\n')
+    expect(grafts.sort()).toEqual([s.m2, s.s1].sort())
+  })
+
+  it('trusts "not contained" for a commit newer than every graft', async () => {
+    const state = await resolveCoreCommitState(shallow, { kind: 'head', commit: s.merge! }, [s.y!])
+
+    expect(
+      state.ancestry.get(s.y!),
+      'both grafts are ancestors of y, so the local graph is complete'
+    ).toBe(false)
+  })
+
+  it('leaves "not contained" unresolved when a graft is not an ancestor of the commit', async () => {
+    const state = await resolveCoreCommitState(shallow, { kind: 'head', commit: s.merge! }, [s.x1!])
+
+    expect(
+      git(shallow, 'merge-base', s.x1!, s.merge!),
+      'a merge-base exists, so only the graft check keeps this from reading as false'
+    ).toBe(s.s1)
+    expect(state.ancestry.has(s.x1!), 'graft m2 is not an ancestor of x1').toBe(false)
   })
 })
