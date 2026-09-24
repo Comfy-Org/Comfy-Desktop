@@ -36,6 +36,9 @@ import { configDir } from './paths'
  *      invalidates every previously-issued installation_id at once.
  *      Useful as a nuclear option for invalidating property-level joins
  *      after an incident; this does not change PostHog person identity.
+ *      Exception: an install with no machine id keeps its persisted id
+ *      (see `initDeviceId`), so a bump does not reach it. Such ids are
+ *      random, so no other product can compute them to join against.
  *   2. Future namespace alignment — if another Comfy product later ships
  *      telemetry with this same constant, analytics can join their events by
  *      property without treating the machine hash as a person identity.
@@ -292,7 +295,8 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
     // Existing differs from what we'd compute. Three cases:
     //   (a) existing is a legacy UUID -> first local migration.
     //   (b) existing is a 64-char hex (different hash) -> salt rotated or
-    //       cross-machine copy. Update silently.
+    //       cross-machine copy. Update silently. Only reachable with a
+    //       machine id; without one, a 64-char hex was reused above.
     //   (c) existing is garbage -> overwrite.
     const isLegacy = existing != null && isLegacyUuid(existing) && !isMigrationCompleted()
 
