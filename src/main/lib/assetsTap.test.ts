@@ -704,6 +704,29 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(61)
     })
 
+    // Pins the accepted limitation documented on PER_EVENT_HOURLY_CAP: a
+    // later scan's new classification waits for the next window.
+    it('hour-samples failure_bucket, so the first failing scan wins', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-09-03T10:00:00Z'))
+      const tap = createAssetsTap(baseOpts)
+      const bucket = (reason: string, exc_line: number): string =>
+        taggedLine('scanner.failure_bucket', { count: 1, exc_line, reason, site: 'hash' })
+      for (const scan of [0, 1]) {
+        for (let line = 0; line < 50; line++)
+          tap.ingest(bucket('locked', scan * 50 + line), 'stdout')
+      }
+      expect(captured).toHaveLength(60)
+
+      vi.advanceTimersByTime(30 * 60_000)
+      tap.ingest(bucket('no_space', 0), 'stdout')
+      expect(captured.some((c) => c.ctx.reason === 'no_space')).toBe(false)
+
+      vi.advanceTimersByTime(30 * 60_000)
+      tap.ingest(bucket('no_space', 0), 'stdout')
+      expect(captured.at(-1)!.ctx.reason).toBe('no_space')
+    })
+
     it('keeps the caps independent per event name', () => {
       const tap = createAssetsTap(baseOpts)
       for (let i = 0; i < 70; i++) {

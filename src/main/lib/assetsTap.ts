@@ -283,7 +283,14 @@ function parseFields(
   return fields
 }
 
-/** Per-event budget on top of the telemetry module's own rate limit. */
+/**
+ * Per-event budget on top of the telemetry module's own rate limit.
+ *
+ * `scanner.failure_bucket` shares it even though core sends up to 50 per scan,
+ * so its buckets are hour-sampled: the first failing scan in a window spends
+ * most of the budget, and a classification that first appears after the
+ * budget is spent is dropped until the next window.
+ */
 const PER_EVENT_HOURLY_CAP = 60
 const RATE_WINDOW_MS = 60 * 60_000
 
