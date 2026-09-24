@@ -294,9 +294,11 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
 
     // Existing differs from what we'd compute. Three cases:
     //   (a) existing is a legacy UUID -> first local migration.
-    //   (b) existing is a 64-char hex (different hash) -> salt rotated or
-    //       cross-machine copy. Update silently. Only reachable with a
-    //       machine id; without one, a 64-char hex was reused above.
+    //   (b) existing is a 64-char hex (different hash) -> a random id
+    //       persisted by an earlier launch without a machine id (the common
+    //       Linux case), salt rotated, or cross-machine copy. Update
+    //       silently. Only reachable with a machine id; without one, a
+    //       64-char hex was reused above.
     //   (c) existing is garbage -> overwrite.
     const isLegacy = existing != null && isLegacyUuid(existing) && !isMigrationCompleted()
 
