@@ -1940,6 +1940,14 @@ describe('launchedCoreCommit', () => {
     expect(launchedCoreCommit({} as InstallationRecord, { kind: 'not-git' })).toBeNull()
   })
 
+  it.each([
+    ['a short ref', 'abc123'],
+    ['a symbolic ref', 'ref: refs/heads/master'],
+    ['oversized garbage', 'f'.repeat(4096)]
+  ])('names nothing for a HEAD holding %s rather than a full SHA', (_label, commit) => {
+    expect(launchedCoreCommit(inst, { kind: 'head', commit })).toBeNull()
+  })
+
   it('names nothing for a git checkout whose HEAD would not read', () => {
     expect(
       launchedCoreCommit(inst, { kind: 'unreadable' }),

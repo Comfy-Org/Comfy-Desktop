@@ -11,6 +11,9 @@ const FULL_SHA_RE = /^[0-9a-f]{40}$/
 
 const MAX_RESOLVED_SHAS = 16
 
+// All git work for one launch, which runs before spawn; SHAs not reached in time stay unresolved.
+const RESOLVE_BUDGET_MS = 10_000
+
 // Background fetches one launch may start.
 const MAX_FETCHES = 2
 
@@ -108,9 +111,19 @@ const MAX_SHALLOW_GRAFTS = 8
 function readShallowGrafts(repoPath: string): string[] | null {
   const gitDir = resolveGitDir(repoPath)
   if (gitDir === null) return null
-  const file = path.join(gitDir, 'shallow')
   try {
-    if (!fs.existsSync(file)) return []
+    // `shallow` is shared by all worktrees, so a linked worktree's lives in the common dir.
+    const commondir = path.join(gitDir, 'commondir')
+    const common = fs.existsSync(commondir)
+      ? path.resolve(gitDir, fs.readFileSync(commondir, 'utf-8').trim())
+      : gitDir
+    const file = path.join(common, 'shallow')
+    try {
+      fs.statSync(file)
+    } catch (err) {
+      // Only a proven absence means a complete clone; any other failure is "could not look".
+      return (err as NodeJS.ErrnoException).code === 'ENOENT' ? [] : null
+    }
     const grafts = fs
       .readFileSync(file, 'utf-8')
       .split(/\r?\n/)
@@ -149,11 +162,16 @@ export async function resolveCoreCommitState(
   if (shas.length === 0 || checkout.kind !== 'head') return NO_CORE_COMMITS
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
-  const grafts = readShallowGrafts(repoPath)
   const ancestry = new Map<string, boolean>()
+  const deadline = Date.now() + RESOLVE_BUDGET_MS
   let fetches = 0
-  for (const [index, sha] of shas.entries()) {
-    if (signal?.aborted) break
+  for (const [index, raw] of shas.entries()) {
+    if (signal?.aborted || Date.now() > deadline) break
+    // Re-validated here, not only at parse time: the SHA reaches `git fetch` as an argument.
+    const sha = raw.toLowerCase()
+    if (!FULL_SHA_RE.test(sha)) continue
+    // Re-read per SHA: a background fetch from an earlier launch can rewrite the boundaries.
+    const grafts = readShallowGrafts(repoPath)
     let related: Relation = null
     if (index < MAX_RESOLVED_SHAS) {
       try {

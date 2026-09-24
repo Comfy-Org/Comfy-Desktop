@@ -155,18 +155,22 @@ function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
 }
 
 /** `null`, not the record, for an unreadable git checkout: the record may be what went stale. */
+function fullSha(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const sha = value.trim().toLowerCase()
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : null
+}
+
 export function launchedCoreCommit(
   inst: InstallationRecord,
   checkout: CoreCheckout
 ): string | null {
   switch (checkout.kind) {
     case 'head':
-      return checkout.commit.toLowerCase()
-    case 'not-git': {
+      return fullSha(checkout.commit)
+    case 'not-git':
       // Typed as a string, but legacy records predate the field; see `coreRecordCurrent`.
-      const recorded: unknown = inst.comfyVersion?.commit
-      return typeof recorded === 'string' ? recorded.toLowerCase() : null
-    }
+      return fullSha(inst.comfyVersion?.commit)
     case 'unreadable':
       return null
   }
@@ -672,7 +676,9 @@ async function runLaunch(
   // records and the beta telemetry - all after assembly, never before.
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
   let coreCommit: string | null = null
-  const coreVersionLabel =
+  // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
+  // label must describe the same record as the `core_version` sent beside it.
+  const coreVersionLabel = (): string | null =>
     typeof (inst.comfyVersion?.commit as unknown) === 'string'
       ? formatComfyVersion(inst.comfyVersion, 'short')
       : null
@@ -831,7 +837,7 @@ async function runLaunch(
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags,
         coreCommit,
-        coreVersionLabel
+        coreVersionLabel: coreVersionLabel()
       })
       const hwTap = createHardwareTap({
         installationId,
@@ -839,7 +845,7 @@ async function runLaunch(
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags,
         coreCommit,
-        coreVersionLabel
+        coreVersionLabel: coreVersionLabel()
       })
       const assetsTap = createAssetsTapSafe({
         installationId,
@@ -875,7 +881,7 @@ async function runLaunch(
         droppedUnsupported: coreBeta.droppedUnsupported,
         coreVersion: coreBeta.coreVersion,
         coreCommit,
-        coreVersionLabel,
+        coreVersionLabel: coreVersionLabel(),
         optedIn: coreBeta.optedIn
       })
     } catch {
@@ -901,7 +907,7 @@ async function runLaunch(
       core_beta_opted_in: coreBeta.optedIn,
       core_version: coreSemver(inst),
       core_commit: coreCommit,
-      core_version_label: coreVersionLabel
+      core_version_label: coreVersionLabel()
     }
   }
 

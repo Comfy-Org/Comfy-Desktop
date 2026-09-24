@@ -314,4 +314,82 @@ describe('resolveCoreCommitState', () => {
       expect((await resolve()).ancestry.get(LOWER)).toBe(true)
     })
   })
+
+  describe('defensive input and repository handling', () => {
+    beforeEach(() => {
+      git.findMergeBase.mockResolvedValue(undefined)
+    })
+
+    it('reads the shallow marker from the common dir of a linked worktree', async () => {
+      const common = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-common-'))
+      fs.writeFileSync(path.join(common, 'shallow'), `${'c'.repeat(40)}\n`)
+      fs.writeFileSync(path.join(git.gitDir, 'commondir'), common)
+      git.fetchCommitSha.mockResolvedValue(false)
+
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+      expect(
+        state.ancestry.has(UPPER),
+        'a shallow worktree must not read as a full clone, whose absence would prove "not contained"'
+      ).toBe(false)
+      fs.rmSync(common, { recursive: true, force: true })
+    })
+
+    it('treats a shallow marker it cannot stat as unknown, not as a full clone', async () => {
+      const notADir = path.join(git.gitDir, 'plain-file')
+      fs.writeFileSync(notADir, '')
+      fs.writeFileSync(path.join(git.gitDir, 'commondir'), notADir)
+      git.fetchCommitSha.mockResolvedValue(false)
+
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+      expect(state.ancestry.has(UPPER), 'ENOTDIR is "could not look", not absence').toBe(false)
+    })
+
+    it('normalizes SHA case and never hands git anything but a full SHA', async () => {
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [
+        UPPER.toUpperCase(),
+        '--upload-pack=touch /tmp/pwned',
+        'abc123'
+      ])
+
+      expect([...state.ancestry]).toEqual([[UPPER, false]])
+      for (const call of [...git.findMergeBase.mock.calls, ...git.revParseRef.mock.calls]) {
+        expect(call.slice(1).join(' ')).not.toContain('--')
+      }
+      expect(git.fetchCommitSha).not.toHaveBeenCalled()
+    })
+
+    it('stops relating SHAs once the launch budget is spent', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      git.findMergeBase.mockImplementation(async () => {
+        vi.setSystemTime(Date.now() + 11_000)
+        return OLDER
+      })
+
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [
+        LOWER,
+        UPPER
+      ])
+
+      expect([...state.ancestry.keys()], 'the second SHA is left unresolved').toEqual([LOWER])
+      vi.useRealTimers()
+    })
+
+    it('re-reads the shallow boundaries for each SHA', async () => {
+      git.findMergeBase.mockImplementation(async (_repo, sha) => {
+        if (sha === LOWER) makeShallow()
+        return undefined
+      })
+      git.fetchCommitSha.mockResolvedValue(false)
+
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [
+        LOWER,
+        UPPER
+      ])
+
+      expect(state.ancestry.get(LOWER), 'still a full clone when LOWER was checked').toBe(false)
+      expect(state.ancestry.has(UPPER), 'shallow by the time UPPER was checked').toBe(false)
+    })
+  })
 })
