@@ -236,6 +236,7 @@ export function buildLaunchArgs(input: {
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
+  const withheld: string[] = []
   const selected = selectCoreBetaGrantArgs(
     input.betaFlags,
     {
@@ -246,7 +247,8 @@ export function buildLaunchArgs(input: {
     },
     input.betaEnabled,
     userArgs,
-    input.coreCommits
+    input.coreCommits,
+    withheld
   )
   const supported = new Set(
     filterUnsupportedArgs(
@@ -263,9 +265,13 @@ export function buildLaunchArgs(input: {
       droppedUnsupported: selected
         .filter((grant) => !supported.has(grant.arg))
         .map((grant) => grant.arg),
-      logRecords: applied.map((grant) =>
-        coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)
-      ),
+      logRecords: [
+        ...applied.map((grant) => coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)),
+        ...withheld.map((line) => `${line}\n`),
+        ...selected
+          .filter((grant) => !supported.has(grant.arg))
+          .map((grant) => `[core-beta] ${grant.arg} withheld: not supported by this core\n`)
+      ],
       coreVersion,
       optedIn: input.betaEnabled
     }

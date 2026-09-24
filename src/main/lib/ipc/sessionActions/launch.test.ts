@@ -705,7 +705,9 @@ describe('buildLaunchArgs core beta injection', () => {
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
     expect(built.beta.applied).toEqual([])
-    expect(built.beta.logRecords).toEqual([])
+    expect(built.beta.logRecords).toEqual([
+      '[core-beta] --enable-assets withheld: entry 1: core version unknown\n'
+    ])
   })
 
   it("injects nothing when the install's base tag was not established by ancestry", () => {
@@ -713,7 +715,9 @@ describe('buildLaunchArgs core beta injection', () => {
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
     expect(built.beta.applied).toEqual([])
-    expect(built.beta.logRecords).toEqual([])
+    expect(built.beta.logRecords).toEqual([
+      '[core-beta] --enable-assets withheld: entry 1: no ancestry-proven release (base 0.3.81)\n'
+    ])
     // Refusing the version claim is not the core refusing the arg; telemetry must not conflate them.
     expect(built.beta.droppedUnsupported).toEqual([])
   })
@@ -723,7 +727,9 @@ describe('buildLaunchArgs core beta injection', () => {
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
     expect(built.beta.applied).toEqual([])
-    expect(built.beta.logRecords).toEqual([])
+    expect(built.beta.logRecords).toEqual([
+      '[core-beta] --enable-assets withheld: entry 1: checkout does not confirm the record\n'
+    ])
     expect(built.beta.droppedUnsupported).toEqual([])
   })
 
@@ -733,7 +739,9 @@ describe('buildLaunchArgs core beta injection', () => {
 
     expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
     expect(built.beta.applied).toEqual([])
-    expect(built.beta.logRecords).toEqual([])
+    expect(built.beta.logRecords).toEqual([
+      '[core-beta] --enable-assets withheld: not supported by this core\n'
+    ])
     expect(built.beta.droppedUnsupported).toEqual(['--enable-assets'])
   })
 
@@ -1169,6 +1177,20 @@ describe('core beta report placement', () => {
     })
   })
 
+  it('reports a commit-bound grant withheld because HEAD is past its upper bound', async () => {
+    const head = gitInitComfyUI()
+    launchHarness.grants = [{ arg: '--enable-assets', commitRanges: [[head, head]] }]
+
+    const res = await handleLaunch(ctxFor('harness-commit-past-upper'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
+    const short = head.slice(0, 12)
+    expect(sent.join('')).toContain(
+      `[core-beta] --enable-assets withheld: entry 1: commit range ${short}..${short}: HEAD past upper ${short}\n`
+    )
+  })
+
   it('withholds a commit-bound entry on a not-git install', async () => {
     launchHarness.grants = [{ arg: '--enable-assets', commitRanges: [['a'.repeat(40), null]] }]
 
@@ -1297,7 +1319,10 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).not.toContain('--enable-assets')
-    expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
+    expect(sent.join(''), 'no grant record').not.toContain('[core-beta] --enable-assets (')
+    expect(sent.join(''), 'the refusal is reported with its reason').toContain(
+      '[core-beta] --enable-assets withheld: entry 1: checkout does not confirm the record'
+    )
   })
 
   it('applies grants when the live checkout is still at the recorded commit', async () => {
@@ -1332,7 +1357,10 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).not.toContain('--enable-assets')
-    expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
+    expect(sent.join(''), 'no grant record').not.toContain('[core-beta] --enable-assets (')
+    expect(sent.join(''), 'the refusal is reported with its reason').toContain(
+      '[core-beta] --enable-assets withheld: entry 1: checkout does not confirm the record'
+    )
   })
 
   it('withholds grants when .git is a pointer file the git dir cannot be resolved from', async () => {
@@ -1348,7 +1376,10 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).not.toContain('--enable-assets')
-    expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
+    expect(sent.join(''), 'no grant record').not.toContain('[core-beta] --enable-assets (')
+    expect(sent.join(''), 'the refusal is reported with its reason').toContain(
+      '[core-beta] --enable-assets withheld: entry 1: checkout does not confirm the record'
+    )
   })
 
   it('withholds grants when .git is a dangling symlink', async () => {
@@ -1369,7 +1400,10 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).not.toContain('--enable-assets')
-    expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
+    expect(sent.join(''), 'no grant record').not.toContain('[core-beta] --enable-assets (')
+    expect(sent.join(''), 'the refusal is reported with its reason').toContain(
+      '[core-beta] --enable-assets withheld: entry 1: checkout does not confirm the record'
+    )
   })
 
   it('withholds grants when the .git entry cannot be stat-ed at all', async () => {
@@ -1390,7 +1424,10 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).not.toContain('--enable-assets')
-    expect(sent.join('')).not.toContain('[core-beta] --enable-assets')
+    expect(sent.join(''), 'no grant record').not.toContain('[core-beta] --enable-assets (')
+    expect(sent.join(''), 'the refusal is reported with its reason').toContain(
+      '[core-beta] --enable-assets withheld: entry 1: checkout does not confirm the record'
+    )
   })
 
   it('continues a skip-port launch when renderer reporting throws', async () => {

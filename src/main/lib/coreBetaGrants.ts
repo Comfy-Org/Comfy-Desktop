@@ -296,6 +296,32 @@ function formatCommitRange([lower, upper]: CoreCommitRange): string {
   return `${lower.slice(0, 12)}..${upper === null ? '' : upper.slice(0, 12)}`
 }
 
+function rangeShortfall(
+  [lower, upper]: CoreCommitRange,
+  ancestry: ReadonlyMap<string, boolean>
+): string {
+  const lowerState = ancestry.get(lower)
+  if (lowerState !== true) {
+    return `lower ${lower.slice(0, 12)} ${lowerState === false ? 'not contained' : 'unresolved'}`
+  }
+  // Reached only when this range failed, so a matched lower bound implies a failed upper one.
+  return ancestry.get(upper!) === true
+    ? `HEAD past upper ${upper!.slice(0, 12)}`
+    : `upper ${upper!.slice(0, 12)} unresolved`
+}
+
+/** Why a commit entry does not match, or `null` when it does. */
+function commitShortfall(flag: CoreBetaCommitGrant, commits: CoreCommitState): string | null {
+  if (flag.commitRanges.some((range) => commitRangeMatches(range, commits.ancestry))) return null
+  if (commits.head === null) return 'no readable git HEAD to measure'
+  return flag.commitRanges
+    .map(
+      (range) =>
+        `commit range ${formatCommitRange(range)}: ${rangeShortfall(range, commits.ancestry)}`
+    )
+    .join(' | ')
+}
+
 function versionGateOpen(core: CoreVersionState, hasVersionGrants: boolean): boolean {
   const version = core.semver
   if (version === null) return false
@@ -346,12 +372,16 @@ function versionGateOpen(core: CoreVersionState, hasVersionGrants: boolean): boo
 // Commit entries need neither refusal: they are measured against the live HEAD, never the record,
 // and their upper bound holds on any checkout — including a latest-channel one, where a version
 // ceiling cannot (see `exact` below).
+//
+// Every arg the payload names but does not get is reported through `withheld`, one line per arg
+// with the reason for each entry that failed, so a refusal is as visible as a grant.
 export function selectCoreBetaGrantArgs(
   flags: readonly CoreBetaGrant[],
   core: CoreVersionState,
   betaEnabled: boolean,
   userArgs: readonly string[],
-  commits: CoreCommitState = NO_CORE_COMMITS
+  commits: CoreCommitState = NO_CORE_COMMITS,
+  withheld?: string[]
 ): CoreBetaGrant[] {
   if (betaEnabled !== true) return []
   const version = core.semver
@@ -361,48 +391,94 @@ export function selectCoreBetaGrantArgs(
   )
   const presentArgs = new Set(userArgs)
   const selected: CoreBetaGrant[] = []
-  for (const flag of flags) {
+  const shortfalls = new Map<string, string[]>()
+  for (const [index, flag] of flags.entries()) {
     const { arg } = flag
-    let matched: boolean
+    let shortfall: string | null
     if (isCommitGrant(flag)) {
       const ranges = flag.commitRanges.map(formatCommitRange).join(' | ')
       const head = commits.head === null ? 'none' : commits.head.slice(0, 12)
-      console.log(`[core-beta] commits ${arg}: ${ranges} head=${head}`)
-      if (presentArgs.has(arg)) continue
-      matched = flag.commitRanges.some((range) => commitRangeMatches(range, commits.ancestry))
+      shortfall = commitShortfall(flag, commits)
+      console.log(
+        `[core-beta] commits ${arg}: ${ranges} head=${head} in-range=${shortfall === null ? 'yes' : 'no'}`
+      )
     } else {
-      if (!versionOpen || version === null) continue
-      const { minCoreVersion, maxCoreVersion } = flag
-      const window =
-        maxCoreVersion === undefined
-          ? `>=${minCoreVersion}`
-          : `>=${minCoreVersion} <${maxCoreVersion}`
-      console.log(`[core-beta] window ${arg}: ${window} version=${version} exact=${core.exact}`)
-      if (presentArgs.has(arg)) continue
-      matched = versionGrantMatches(flag, version, core.exact)
+      if (versionOpen && version !== null) {
+        const { minCoreVersion, maxCoreVersion } = flag
+        const window =
+          maxCoreVersion === undefined
+            ? `>=${minCoreVersion}`
+            : `>=${minCoreVersion} <${maxCoreVersion}`
+        console.log(`[core-beta] window ${arg}: ${window} version=${version} exact=${core.exact}`)
+      }
+      shortfall = versionShortfall(flag, core, versionOpen)
     }
+    if (presentArgs.has(arg)) continue
     const opposite = oppositeArg(arg)
     if (opposite !== null && presentArgs.has(opposite)) continue
-    if (!matched) continue
+    if (shortfall !== null) {
+      const entries = shortfalls.get(arg) ?? []
+      entries.push(`entry ${index + 1}: ${shortfall}`)
+      shortfalls.set(arg, entries)
+      continue
+    }
     // Selected grants join the conflict set so the checks above hold between two grants too, not
     // just against the user's args. Redundant after `parseCoreBetaGrants`, load-bearing without it.
     presentArgs.add(arg)
     selected.push(flag)
   }
+  if (withheld) reportWithheld(flags, userArgs, selected, shortfalls, withheld)
   return selected
 }
 
-function versionGrantMatches(flag: CoreBetaVersionGrant, version: string, exact: boolean): boolean {
-  if (!semver.gte(version, flag.minCoreVersion)) return false
+function reportWithheld(
+  flags: readonly CoreBetaGrant[],
+  userArgs: readonly string[],
+  selected: readonly CoreBetaGrant[],
+  shortfalls: ReadonlyMap<string, readonly string[]>,
+  withheld: string[]
+): void {
+  const user = new Set(userArgs)
+  const granted = new Set(selected.map((flag) => flag.arg))
+  for (const arg of new Set(flags.map((flag) => flag.arg))) {
+    if (granted.has(arg)) continue
+    const opposite = oppositeArg(arg)
+    let reason: string
+    if (user.has(arg)) reason = 'already in the launch args'
+    else if (opposite !== null && user.has(opposite)) reason = `the launch args contain ${opposite}`
+    else if (opposite !== null && granted.has(opposite))
+      reason = `conflicts with granted ${opposite}`
+    else reason = (shortfalls.get(arg) ?? []).join('; ')
+    withheld.push(`[core-beta] ${arg} withheld: ${reason}`)
+  }
+}
+
+/** Why a version entry does not match, or `null` when it does. */
+function versionShortfall(
+  flag: CoreBetaVersionGrant,
+  core: CoreVersionState,
+  versionOpen: boolean
+): string | null {
+  const version = core.semver
+  if (version === null) return 'core version unknown'
+  if (!versionOpen) {
+    return core.current
+      ? `no ancestry-proven release (base ${version})`
+      : 'checkout does not confirm the record'
+  }
+  if (!semver.gte(version, flag.minCoreVersion))
+    return `version ${version} < min ${flag.minCoreVersion}`
   if (flag.maxCoreVersion !== undefined) {
     // An upper bound only means anything on an exact tag match. The gate version is a tag, so
     // a latest-channel install 40 commits past v0.3.99 still measures as 0.3.99
     // and would slip under a `<0.4.0` ceiling it is well past. Under-reporting like that is
     // what `exact` guards; over-reporting is `verified`'s job, above.
-    if (!exact) return false
-    if (!semver.lt(version, flag.maxCoreVersion)) return false
+    if (!core.exact) return `max ${flag.maxCoreVersion} needs an exact release tag`
+    if (!semver.lt(version, flag.maxCoreVersion)) {
+      return `version ${version} >= max ${flag.maxCoreVersion}`
+    }
   }
-  return true
+  return null
 }
 
 // Grants persist across launches, so revoking one is an ops SEQUENCE, not a deletion: serving

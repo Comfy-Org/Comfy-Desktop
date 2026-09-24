@@ -672,6 +672,32 @@ describe('selectCoreBetaGrantArgs commit ranges', () => {
     )
   })
 
+  it('logs whether HEAD fell inside the ranges, so a refusal is visible', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    selectCoreBetaGrantArgs(
+      [closedGrant],
+      version(),
+      true,
+      [],
+      facts({ [SHA_A]: true, [SHA_B]: true })
+    )
+    selectCoreBetaGrantArgs(
+      [closedGrant],
+      version(),
+      true,
+      [],
+      facts({ [SHA_A]: true, [SHA_B]: false })
+    )
+
+    const lines = log.mock.calls.map((call) => String(call[0])).filter((l) => l.includes('commits'))
+    expect(lines).toEqual([
+      expect.stringMatching(/ in-range=no$/),
+      expect.stringMatching(/ in-range=yes$/)
+    ])
+    log.mockRestore()
+  })
+
   it('grants when ANY lineage matches', () => {
     const backported: CoreBetaGrant = {
       arg: '--enable-assets',
@@ -774,6 +800,162 @@ describe('selectCoreBetaGrantArgs commit ranges', () => {
       const floor: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.90' }
       expect(selectCoreBetaGrantArgs([floor, later], version('0.3.81'), true, [])).toEqual([later])
     })
+  })
+})
+
+describe('selectCoreBetaGrantArgs withheld reasons', () => {
+  const HEAD = 'e'.repeat(40)
+  const at: CoreVersionState = { semver: '0.3.81', exact: true, verified: true, current: true }
+
+  function withheldFor(
+    flags: CoreBetaGrant[],
+    ancestry: Record<string, boolean> = {},
+    opts: { core?: CoreVersionState; userArgs?: string[]; head?: string | null } = {}
+  ): string[] {
+    const lines: string[] = []
+    selectCoreBetaGrantArgs(
+      flags,
+      opts.core ?? at,
+      true,
+      opts.userArgs ?? [],
+      {
+        head: opts.head === undefined ? HEAD : opts.head,
+        ancestry: new Map(Object.entries(ancestry))
+      },
+      lines
+    )
+    return lines
+  }
+
+  const commitEntry = (lower: string, upper: string | null): CoreBetaGrant => ({
+    arg: '--enable-assets',
+    commitRanges: [[lower, upper]]
+  })
+
+  it.each([
+    [
+      'HEAD is past the upper bound',
+      { [SHA_A]: true, [SHA_B]: true },
+      'HEAD past upper bbbbbbbbbbbb'
+    ],
+    ['the lower bound is not contained', { [SHA_A]: false }, 'lower aaaaaaaaaaaa not contained'],
+    ['the lower bound is unresolved', {}, 'lower aaaaaaaaaaaa unresolved'],
+    ['the upper bound is unresolved', { [SHA_A]: true }, 'upper bbbbbbbbbbbb unresolved']
+  ])('names the failed bound when %s', (_label, ancestry, reason) => {
+    expect(withheldFor([commitEntry(SHA_A, SHA_B)], ancestry)).toEqual([
+      `[core-beta] --enable-assets withheld: entry 1: commit range aaaaaaaaaaaa..bbbbbbbbbbbb: ${reason}`
+    ])
+  })
+
+  it('says there was no HEAD to measure on a checkout without one', () => {
+    expect(withheldFor([commitEntry(SHA_A, null)], {}, { head: null })).toEqual([
+      '[core-beta] --enable-assets withheld: entry 1: no readable git HEAD to measure'
+    ])
+  })
+
+  it('reports every lineage of a multi-range entry', () => {
+    const entry: CoreBetaGrant = {
+      arg: '--enable-assets',
+      commitRanges: [
+        [SHA_A, null],
+        [SHA_C, SHA_D]
+      ]
+    }
+    expect(withheldFor([entry], { [SHA_A]: false, [SHA_C]: true, [SHA_D]: true })).toEqual([
+      '[core-beta] --enable-assets withheld: entry 1: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa not contained | commit range cccccccccccc..dddddddddddd: HEAD past upper dddddddddddd'
+    ])
+  })
+
+  it.each([
+    [
+      'below the minimum',
+      { arg: '--enable-assets', minCoreVersion: '0.3.90' },
+      at,
+      'version 0.3.81 < min 0.3.90'
+    ],
+    [
+      'at or past the maximum',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80', maxCoreVersion: '0.3.81' },
+      at,
+      'version 0.3.81 >= max 0.3.81'
+    ],
+    [
+      'bounded above on an inexact tag',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80', maxCoreVersion: '0.4.0' },
+      { ...at, exact: false },
+      'max 0.4.0 needs an exact release tag'
+    ],
+    [
+      'on an unknown core version',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { ...at, semver: null },
+      'core version unknown'
+    ],
+    [
+      'on an unverified base',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { ...at, verified: false },
+      'no ancestry-proven release (base 0.3.81)'
+    ],
+    [
+      'on a record the checkout does not confirm',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { ...at, current: false },
+      'checkout does not confirm the record'
+    ]
+  ] satisfies [string, CoreBetaGrant, CoreVersionState, string][])(
+    'names the version shortfall when %s',
+    (_label, entry, core, reason) => {
+      expect(withheldFor([entry], {}, { core })).toEqual([
+        `[core-beta] --enable-assets withheld: entry 1: ${reason}`
+      ])
+    }
+  )
+
+  it('lists each failed entry for an arg on one line', () => {
+    expect(
+      withheldFor(
+        [{ arg: '--enable-assets', minCoreVersion: '0.3.90' }, commitEntry(SHA_A, null)],
+        {
+          [SHA_A]: false
+        }
+      )
+    ).toEqual([
+      '[core-beta] --enable-assets withheld: entry 1: version 0.3.81 < min 0.3.90; entry 2: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa not contained'
+    ])
+  })
+
+  it.each([
+    [['--enable-assets'], 'already in the launch args'],
+    [['--disable-assets'], 'the launch args contain --disable-assets']
+  ])('says the user args won when they contain %s', (userArgs, reason) => {
+    expect(withheldFor([commitEntry(SHA_A, null)], { [SHA_A]: true }, { userArgs })).toEqual([
+      `[core-beta] --enable-assets withheld: ${reason}`
+    ])
+  })
+
+  it('says a grant yielded to its granted opposite', () => {
+    const disable: CoreBetaGrant = { arg: '--disable-assets', minCoreVersion: '0.3.80' }
+    expect(withheldFor([commitEntry(SHA_A, null), disable], { [SHA_A]: true })).toEqual([
+      '[core-beta] --disable-assets withheld: conflicts with granted --enable-assets'
+    ])
+  })
+
+  it('reports nothing for a granted arg, even when an earlier entry for it failed', () => {
+    expect(
+      withheldFor(
+        [{ arg: '--enable-assets', minCoreVersion: '0.3.90' }, commitEntry(SHA_A, null)],
+        {
+          [SHA_A]: true
+        }
+      )
+    ).toEqual([])
+  })
+
+  it('reports nothing when beta features are off', () => {
+    const lines: string[] = []
+    selectCoreBetaGrantArgs([commitEntry(SHA_A, null)], at, false, [], NO_CORE_COMMITS, lines)
+    expect(lines).toEqual([])
   })
 })
 
