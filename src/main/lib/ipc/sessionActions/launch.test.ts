@@ -1213,6 +1213,20 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain(RECORD)
   })
 
+  it('stops writing to a log stream that has errored', () => {
+    const stream = fs.createWriteStream(path.join(installDir, 'destroyed.log'))
+    stream.on('error', () => {})
+    stream.destroy(new Error('disk gone'))
+    const write = vi.spyOn(stream, 'write')
+
+    writeLog(stream, 'a line of ComfyUI output\n')
+
+    expect(
+      write,
+      'each write to a destroyed stream would raise another error'
+    ).not.toHaveBeenCalled()
+  })
+
   it('launches without a log file when the log directory cannot be created', async () => {
     // A plain file where the directory should be: `mkdirSync(..., { recursive: true })` throws ENOTDIR.
     fs.writeFileSync(path.join(installDir, 'logs'), '')

@@ -522,7 +522,8 @@ async function openLogStream(installPath: string): Promise<WriteStream> {
 }
 
 export function writeLog(stream: WriteStream, text: string): void {
-  if (!stream.writableEnded) stream.write(stripAnsi(text))
+  // `destroyed` too: a stream that errored is not `writableEnded`, and each write would warn again.
+  if (!stream.writableEnded && !stream.destroyed) stream.write(stripAnsi(text))
 }
 
 export function _resolveLaunchMode(
