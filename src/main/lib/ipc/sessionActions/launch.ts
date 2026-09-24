@@ -96,12 +96,19 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import type { WriteStream } from 'fs'
-import { getCoreBetaGrantsAsync, selectCoreBetaGrantArgs } from '../../coreBetaGrants'
+import {
+  NO_CORE_COMMITS,
+  commitGrantShas,
+  getCoreBetaGrantsAsync,
+  isCommitGrant,
+  selectCoreBetaGrantArgs
+} from '../../coreBetaGrants'
 import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
-import type { CoreBetaGrant } from '../../coreBetaGrants'
+import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import { coreGateVersion, coreRecordCurrent, coreSemver } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
+import { resolveCoreCommitState } from '../../coreBetaAncestry'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -176,7 +183,14 @@ function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
 
 /** Newline-terminated because `writeLog` and `sendOutput` forward text verbatim:
  *  without it the first child-process line joins the record. */
-function coreBetaLogRecord(grant: CoreBetaGrant, coreVersion: string): string {
+function coreBetaLogRecord(
+  grant: CoreBetaGrant,
+  coreVersion: string | null,
+  coreHead: string | null
+): string {
+  if (isCommitGrant(grant)) {
+    return `[core-beta] ${grant.arg} (core ${coreHead?.slice(0, 12)} in a granted commit range, opted in)\n`
+  }
   return `[core-beta] ${grant.arg} (core ${coreVersion} >= ${grant.minCoreVersion}, opted in)\n`
 }
 
@@ -199,6 +213,8 @@ export function buildLaunchArgs(input: {
   coreVersionExact: boolean
   coreVersionVerified: boolean
   coreVersionCurrent: boolean
+  /** Ancestry facts for the commit-bound grants; see {@link resolveCoreCommitState}. */
+  coreCommits: CoreCommitState
   betaEnabled: boolean
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
@@ -212,7 +228,8 @@ export function buildLaunchArgs(input: {
       current: input.coreVersionCurrent
     },
     input.betaEnabled,
-    userArgs
+    userArgs,
+    input.coreCommits
   )
   const supported = new Set(
     filterUnsupportedArgs(
@@ -229,8 +246,9 @@ export function buildLaunchArgs(input: {
       droppedUnsupported: selected
         .filter((grant) => !supported.has(grant.arg))
         .map((grant) => grant.arg),
-      logRecords:
-        coreVersion === null ? [] : applied.map((grant) => coreBetaLogRecord(grant, coreVersion)),
+      logRecords: applied.map((grant) =>
+        coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)
+      ),
       coreVersion,
       optedIn: input.betaEnabled
     }
@@ -1033,6 +1051,21 @@ async function runLaunch(
           }
         }
 
+        const betaFlags = await getCoreBetaGrantsAsync()
+        const comfyuiDir = path.dirname(mainPyAbs)
+        // Read here rather than reused from `revision` above: that one falls back to the
+        // record when HEAD is unreadable, which is the very disagreement being checked for.
+        const checkout = resolveCoreCheckout(comfyuiDir)
+        // Resolved only for an opted-in launch: the checks can reach the network, and an
+        // opted-out launch grants nothing whatever they would say.
+        const coreCommits = betaEnabled
+          ? await resolveCoreCommitState(
+              comfyuiDir,
+              checkout,
+              commitGrantShas(betaFlags),
+              abort.signal
+            )
+          : NO_CORE_COMMITS
         // The gate's version, not the display label: the `[core-beta]` log line and the
         // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
         // an install whose label is unverified they name the lower ancestry-proven release.
@@ -1042,13 +1075,12 @@ async function runLaunch(
           userArgs,
           desktopFlagArgs,
           schema,
-          betaFlags: await getCoreBetaGrantsAsync(),
+          betaFlags,
           coreVersion: gate.semver,
           coreVersionExact: gate.exact,
           coreVersionVerified: gate.verified,
-          // Read here rather than reused from `revision` above: that one falls back to the
-          // record when HEAD is unreadable, which is the very disagreement being checked for.
-          coreVersionCurrent: coreRecordCurrent(inst, resolveCoreCheckout(path.dirname(mainPyAbs))),
+          coreVersionCurrent: coreRecordCurrent(inst, checkout),
+          coreCommits,
           betaEnabled
         })
         launchCmd.args = built.args

@@ -1,7 +1,7 @@
 /**
  * PostHog-controlled Core beta grants selected for each launch.
- * Payload entries name allowlisted dashed args and strict Core version windows;
- * launch code applies eligible grants only when beta features are enabled.
+ * Payload entries name allowlisted dashed args and either a strict Core version window or a set
+ * of commit ranges; launch code applies eligible grants only when beta features are enabled.
  *
  * This system may only ADD args. It has no authority over the user's own launch arguments and
  * never removes or overrides one — several of these flags are first-class, user-settable
@@ -53,16 +53,47 @@ export type CoreBetaNotice = {
   readonly description?: string
 }
 
-export type CoreBetaGrant = {
+type CoreBetaGrantBase = {
   readonly arg: string
-  readonly minCoreVersion: string
-  readonly maxCoreVersion?: string
   /** Notice wording for this grant. Absent when the payload said nothing about it. */
   readonly notice?: CoreBetaNotice
 }
 
+/** A grant bounded by Core release versions: `min_core_version` / `max_core_version`. */
+export type CoreBetaVersionGrant = CoreBetaGrantBase & {
+  readonly minCoreVersion: string
+  readonly maxCoreVersion?: string
+}
+
+/** One lineage's window as `[lower, upper]`: full, lowercase commit SHAs, with `upper` `null`
+ *  for an open end. Matches a checkout whose HEAD contains `lower` and does not contain `upper`. */
+export type CoreCommitRange = readonly [lower: string, upper: string | null]
+
+/** A grant bounded by commit ancestry: `commit_ranges`. The ranges are alternatives, one per
+ *  lineage — a fix backported to a release branch has a different SHA there than on master, so
+ *  the same grant names both and matches a checkout inside EITHER. */
+export type CoreBetaCommitGrant = CoreBetaGrantBase & {
+  readonly commitRanges: readonly CoreCommitRange[]
+}
+
+/** One payload entry. Entries are independent: an arg is granted when ANY entry for it matches,
+ *  whatever kind each one is. */
+export type CoreBetaGrant = CoreBetaVersionGrant | CoreBetaCommitGrant
+
+export function isCommitGrant(grant: CoreBetaGrant): grant is CoreBetaCommitGrant {
+  return 'commitRanges' in grant
+}
+
 const MAX_FLAGS = 32
 const CORE_BETA_ARG_RE = /^--[a-z][a-z0-9-]+$/
+
+/** Cap on one entry's lineages. The launch path separately caps how many SHAs it relates and
+ *  fetches in total, which is what bounds the cost of a whole payload. */
+const MAX_COMMIT_RANGES = 8
+
+/** Whole-token and full-length. An abbreviated SHA is ambiguous in principle and resolves
+ *  differently as the repository grows, and a gate must name exactly one commit. */
+const FULL_SHA_RE = /^[0-9a-f]{40}$/i
 
 /** Cap on a payload-supplied feature name. Bounds the card's HEIGHT: the bubble is a fixed
  *  ~280px wide, so a long name wraps to more and more lines until the card covers what it is
@@ -89,6 +120,31 @@ function isEnabled(value: FeatureFlagValue | undefined): boolean {
 function parseCoreVersion(value: unknown): string | null {
   if (typeof value !== 'string') return null
   return semver.valid(value.replace(/^v/, ''))
+}
+
+function parseCommitSha(value: unknown): string | null {
+  if (typeof value !== 'string' || !FULL_SHA_RE.test(value)) return null
+  return value.toLowerCase()
+}
+
+/** Every range must parse or the entry is dropped, mirroring a malformed `max_core_version`:
+ *  quietly ignoring one bad lineage would leave the others granting on less than the operator
+ *  wrote. */
+function parseCommitRanges(value: unknown): CoreCommitRange[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_COMMIT_RANGES) return null
+  const ranges: CoreCommitRange[] = []
+  for (const range of value) {
+    if (!Array.isArray(range) || range.length !== 2) return null
+    const lower = parseCommitSha(range[0])
+    if (lower === null) return null
+    let upper: string | null = null
+    if (range[1] !== null) {
+      upper = parseCommitSha(range[1])
+      if (upper === null) return null
+    }
+    ranges.push([lower, upper])
+  }
+  return ranges
 }
 
 /**
@@ -144,6 +200,22 @@ export function parseCoreBetaGrants(
     if (!('arg' in candidate) || typeof candidate.arg !== 'string') continue
     if (!CORE_BETA_ARG_RE.test(candidate.arg) || !allowed.has(candidate.arg)) continue
 
+    const notice = parseCoreBetaNotice(candidate)
+
+    // An entry is ONE kind. Both bound fields together would leave it unclear whether they AND or
+    // OR, and that is exactly the question separate entries already answer (they OR).
+    if ('commit_ranges' in candidate) {
+      if ('min_core_version' in candidate || 'max_core_version' in candidate) continue
+      const commitRanges = parseCommitRanges(candidate.commit_ranges)
+      if (commitRanges === null) continue
+      flags.push({
+        arg: candidate.arg,
+        commitRanges,
+        ...(notice === undefined ? {} : { notice })
+      })
+      continue
+    }
+
     const minCoreVersion =
       'min_core_version' in candidate ? parseCoreVersion(candidate.min_core_version) : null
     if (minCoreVersion === null) continue
@@ -155,8 +227,7 @@ export function parseCoreBetaGrants(
       maxCoreVersion = parsedMaxCoreVersion
     }
 
-    if (flags.some((flag) => flag.arg === candidate.arg)) continue
-    const notice = parseCoreBetaNotice(candidate)
+    // Several entries may name the same arg; selection grants it when ANY of them matches.
     flags.push({
       arg: candidate.arg,
       minCoreVersion,
@@ -204,6 +275,69 @@ function oppositeArg(arg: string): string | null {
   return null
 }
 
+/** What the launching checkout's HEAD was established to contain, for commit-bound grants.
+ *  Resolved by the launch path — ancestry needs the repository and possibly the network — and
+ *  handed in as facts, so selection stays pure. */
+export interface CoreCommitState {
+  /** The live checkout's HEAD, or `null` when there is none to measure (not a git install, or
+   *  one whose HEAD would not read). */
+  head: string | null
+  /** Per SHA named in the payload: `true` when HEAD provably contains it, `false` when HEAD
+   *  provably does not. A SHA whose relation could not be established is ABSENT, and absence
+   *  satisfies neither bound — see {@link commitRangeMatches}. */
+  ancestry: ReadonlyMap<string, boolean>
+}
+
+export const NO_CORE_COMMITS: CoreCommitState = { head: null, ancestry: new Map() }
+
+/** The distinct SHAs the launch must relate to HEAD before selecting. */
+export function commitGrantShas(flags: readonly CoreBetaGrant[]): string[] {
+  const shas = new Set<string>()
+  for (const flag of flags) {
+    if (!isCommitGrant(flag)) continue
+    for (const [lower, upper] of flag.commitRanges) {
+      shas.add(lower)
+      if (upper !== null) shas.add(upper)
+    }
+  }
+  return [...shas]
+}
+
+// Both bounds fail closed. The lower bound needs a proven `true`; the upper needs a proven
+// `false`, NOT merely the absence of a `true` — an unresolvable upper SHA is exactly the case
+// where the checkout may already be past it.
+function commitRangeMatches(
+  [lower, upper]: CoreCommitRange,
+  ancestry: ReadonlyMap<string, boolean>
+): boolean {
+  if (ancestry.get(lower) !== true) return false
+  return upper === null || ancestry.get(upper) === false
+}
+
+function formatCommitRange([lower, upper]: CoreCommitRange): string {
+  return `${lower.slice(0, 12)}..${upper === null ? '' : upper.slice(0, 12)}`
+}
+
+/** Whether the version-bound entries may be measured at all, logging the refusal when not. */
+function versionGateOpen(core: CoreVersionState, hasVersionGrants: boolean): boolean {
+  const version = core.semver
+  if (version === null) return false
+  if (!core.current) {
+    // Before `verified`, which once the checkout has moved is a true statement about the wrong
+    // commit — reporting that instead would name the less useful of the two faults.
+    if (hasVersionGrants)
+      console.log(`[core-beta] refused: base ${version} from a record the checkout contradicts`)
+    return false
+  }
+  if (!core.verified) {
+    // Echoed for the same reason as the per-flag windows below: this refusal drops grants an
+    // operator can see in the payload, so it must not be silent.
+    if (hasVersionGrants) console.log(`[core-beta] refused: base ${version} not verified`)
+    return false
+  }
+  return true
+}
+
 // The version window is min-INCLUSIVE and max-EXCLUSIVE (`>=min <max`). The payload field names
 // `min_core_version`/`max_core_version` don't say which way either bound closes, so the boundary
 // is settled here and echoed in the selection log rather than by renaming the wire format.
@@ -214,68 +348,84 @@ function oppositeArg(arg: string): string | null {
 // Core's precedence between them is unspecified — and the tie is always broken the same way,
 // with the user's own argument winning and the grant yielding.
 //
-// Both bounds are measured against a tag established by ancestry (`coreGateVersion`), and the
-// whole payload is refused when there is none. `resolveLocalVersion` also reaches for a display
+// Entries OR: an arg is granted by the first entry for it that matches, and later entries for the
+// same arg are then skipped exactly as a user-supplied copy would be. The returned list therefore
+// never names an arg twice.
+//
+// Both version bounds are measured against a tag established by ancestry (`coreGateVersion`), and
+// version entries are refused when there is none. `resolveLocalVersion` also reaches for a display
 // tag on paths that do NOT prove the install contains it — the merge-base fallback runs only
 // because the tag is not an ancestor — and such a label can satisfy a minimum the running code
 // does not meet. The gate measures the `git describe` tag that label displaced instead. Core's
 // args schema absorbs the common case, since an install without the feature does not know the
 // flag, but not a minimum raised to require a later FIX to a flag it already has.
 //
-// Every bound is also measured against a PERSISTED record that a `git pull` outdates without
-// touching, so the payload is refused outright when the live checkout disagrees with it. The args
-// schema is asymmetric here and cannot stand in for that check: an older core does not know the
-// granted flag and drops it, but a newer one still parses it, which leaves the MAXIMUM bound
-// resting on nothing but the stale record.
+// Every version bound is also measured against a PERSISTED record that a `git pull` outdates
+// without touching, so version entries are refused outright when the live checkout disagrees with
+// it. The args schema is asymmetric here and cannot stand in for that check: an older core does
+// not know the granted flag and drops it, but a newer one still parses it, which leaves the
+// MAXIMUM bound resting on nothing but the stale record.
+//
+// Commit entries need neither refusal: they are measured against the live HEAD, never the record,
+// and their upper bound holds on any checkout — including a latest-channel one, where a version
+// ceiling cannot (see `exact` below).
 export function selectCoreBetaGrantArgs(
   flags: readonly CoreBetaGrant[],
   core: CoreVersionState,
   betaEnabled: boolean,
-  userArgs: readonly string[]
+  userArgs: readonly string[],
+  commits: CoreCommitState = NO_CORE_COMMITS
 ): CoreBetaGrant[] {
+  if (betaEnabled !== true) return []
   const version = core.semver
-  if (version === null || betaEnabled !== true) return []
-  if (!core.current) {
-    // Before `verified`, which once the checkout has moved is a true statement about the wrong
-    // commit — reporting that instead would name the less useful of the two faults.
-    if (flags.length > 0)
-      console.log(`[core-beta] refused: base ${version} from a record the checkout contradicts`)
-    return []
-  }
-  if (!core.verified) {
-    // Echoed for the same reason as the per-flag windows below: this refusal drops grants an
-    // operator can see in the payload, so it must not be silent.
-    if (flags.length > 0) console.log(`[core-beta] refused: base ${version} not verified`)
-    return []
-  }
+  const versionOpen = versionGateOpen(
+    core,
+    flags.some((flag) => !isCommitGrant(flag))
+  )
   const presentArgs = new Set(userArgs)
   const selected: CoreBetaGrant[] = []
   for (const flag of flags) {
-    const { arg, minCoreVersion, maxCoreVersion } = flag
-    const window =
-      maxCoreVersion === undefined
-        ? `>=${minCoreVersion}`
-        : `>=${minCoreVersion} <${maxCoreVersion}`
-    console.log(`[core-beta] window ${arg}: ${window} version=${version} exact=${core.exact}`)
-
-    if (presentArgs.has(arg)) continue
+    const { arg } = flag
+    let matched: boolean
+    if (isCommitGrant(flag)) {
+      const ranges = flag.commitRanges.map(formatCommitRange).join(' | ')
+      const head = commits.head === null ? 'none' : commits.head.slice(0, 12)
+      console.log(`[core-beta] commits ${arg}: ${ranges} head=${head}`)
+      if (presentArgs.has(arg)) continue
+      matched = flag.commitRanges.some((range) => commitRangeMatches(range, commits.ancestry))
+    } else {
+      if (!versionOpen || version === null) continue
+      const { minCoreVersion, maxCoreVersion } = flag
+      const window =
+        maxCoreVersion === undefined
+          ? `>=${minCoreVersion}`
+          : `>=${minCoreVersion} <${maxCoreVersion}`
+      console.log(`[core-beta] window ${arg}: ${window} version=${version} exact=${core.exact}`)
+      if (presentArgs.has(arg)) continue
+      matched = versionGrantMatches(flag, version, core.exact)
+    }
     const opposite = oppositeArg(arg)
     if (opposite !== null && presentArgs.has(opposite)) continue
-    if (!semver.gte(version, minCoreVersion)) continue
-    if (maxCoreVersion !== undefined) {
-      // An upper bound only means anything on an exact tag match. The gate version is a tag, so
-      // a latest-channel install 40 commits past v0.3.99 still measures as 0.3.99
-      // and would slip under a `<0.4.0` ceiling it is well past. Under-reporting like that is
-      // what `exact` guards; over-reporting is `verified`'s job, above.
-      if (!core.exact) continue
-      if (!semver.lt(version, maxCoreVersion)) continue
-    }
+    if (!matched) continue
     // Selected grants join the conflict set so the checks above hold between two grants too, not
     // just against the user's args. Redundant after `parseCoreBetaGrants`, load-bearing without it.
     presentArgs.add(arg)
     selected.push(flag)
   }
   return selected
+}
+
+function versionGrantMatches(flag: CoreBetaVersionGrant, version: string, exact: boolean): boolean {
+  if (!semver.gte(version, flag.minCoreVersion)) return false
+  if (flag.maxCoreVersion !== undefined) {
+    // An upper bound only means anything on an exact tag match. The gate version is a tag, so
+    // a latest-channel install 40 commits past v0.3.99 still measures as 0.3.99
+    // and would slip under a `<0.4.0` ceiling it is well past. Under-reporting like that is
+    // what `exact` guards; over-reporting is `verified`'s job, above.
+    if (!exact) return false
+    if (!semver.lt(version, flag.maxCoreVersion)) return false
+  }
+  return true
 }
 
 // Grants persist across launches, so revoking one is an ops SEQUENCE, not a deletion: serving

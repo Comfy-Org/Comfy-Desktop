@@ -10,7 +10,7 @@ Each `comfy.desktop.comfyui.boot_started`, `boot_completed`, and `boot_failed` e
 
 - `assets_enabled`: whether the final launch arguments contain `--enable-assets`, including
   manual/source arguments.
-- `core_beta_flags`: managed Core beta arguments applied after version and schema checks.
+- `core_beta_flags`: managed Core beta arguments applied after version or commit-range and schema checks.
   Excludes manual arguments.
 - `core_beta_opted_in`: resolved beta setting at launch; false if reading the setting failed.
 - `core_version`: recorded Core release label from `coreSemver(inst)`, or null if unavailable.

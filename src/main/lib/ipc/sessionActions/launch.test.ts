@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -49,7 +50,7 @@ const launchHarness = vi.hoisted(() => ({
   /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
-  grants: [] as { arg: string; minCoreVersion: string; notice?: CoreBetaNotice }[],
+  grants: [] as CoreBetaGrant[],
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -157,7 +158,8 @@ import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
-import type { CoreBetaGrant, CoreBetaNotice } from '../../coreBetaGrants'
+import { NO_CORE_COMMITS } from '../../coreBetaGrants'
+import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import {
   makeSendOutput,
@@ -644,6 +646,7 @@ const build = (over: {
   coreVersionExact?: boolean
   coreVersionVerified?: boolean
   coreVersionCurrent?: boolean
+  coreCommits?: CoreCommitState
   betaEnabled?: boolean
 }): ReturnType<typeof buildLaunchArgs> =>
   buildLaunchArgs({
@@ -656,6 +659,7 @@ const build = (over: {
     coreVersionExact: over.coreVersionExact ?? true,
     coreVersionVerified: over.coreVersionVerified ?? true,
     coreVersionCurrent: over.coreVersionCurrent ?? true,
+    coreCommits: over.coreCommits ?? NO_CORE_COMMITS,
     betaEnabled: over.betaEnabled ?? true
   })
 
@@ -749,6 +753,25 @@ describe('buildLaunchArgs core beta injection', () => {
 
     expect(built.beta.logRecords).toEqual([
       '[core-beta] --enable-assets (core 0.3.81 >= 0.3.80, opted in)\n'
+    ])
+  })
+
+  it('names the matched HEAD in the record of a commit-bound grant', () => {
+    const head = 'e'.repeat(40)
+    const lower = 'a'.repeat(40)
+    const commitGrant: CoreBetaGrant = { arg: '--enable-assets', commitRanges: [[lower, null]] }
+    // No usable version at all: a commit-bound grant is measured against HEAD, not the record.
+    const built = build({
+      schema: schemaOf('enable-assets'),
+      betaFlags: [commitGrant],
+      coreVersion: null,
+      coreCommits: { head, ancestry: new Map([[lower, true]]) }
+    })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets'])
+    expect(built.beta.applied).toEqual([commitGrant])
+    expect(built.beta.logRecords).toEqual([
+      '[core-beta] --enable-assets (core eeeeeeeeeeee in a granted commit range, opted in)\n'
     ])
   })
 
@@ -1068,6 +1091,60 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain('[core-beta] --enable-assets')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.applied')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
+  })
+
+  /** Turn the harness's ComfyUI dir into a real git checkout with one commit, and return it. */
+  function gitInitComfyUI(): string {
+    const cwd = path.join(installDir, 'ComfyUI')
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 't',
+      GIT_AUTHOR_EMAIL: 't@example.com',
+      GIT_COMMITTER_NAME: 't',
+      GIT_COMMITTER_EMAIL: 't@example.com',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: os.devNull
+    }
+    execFileSync('git', ['init', '-q'], { cwd, env })
+    execFileSync('git', ['commit', '--allow-empty', '-q', '-m', 'c'], { cwd, env })
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd, env, encoding: 'utf-8' }).trim()
+  }
+
+  it('grants a commit-bound entry the live HEAD falls inside', async () => {
+    const head = gitInitComfyUI()
+    // The record names a different commit, so the checkout contradicts it and every VERSION
+    // entry is refused. The commit entry reads HEAD itself and is unaffected.
+    launchHarness.grants = [{ arg: '--enable-assets', commitRanges: [[head, null]] }]
+
+    const res = await handleLaunch(ctxFor('harness-commit-grant'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-assets')
+    expect(sent.join('')).toContain(
+      `[core-beta] --enable-assets (core ${head.slice(0, 12)} in a granted commit range`
+    )
+  })
+
+  it('withholds a commit-bound entry on a not-git install', async () => {
+    launchHarness.grants = [{ arg: '--enable-assets', commitRanges: [['a'.repeat(40), null]] }]
+
+    const res = await handleLaunch(ctxFor('harness-commit-grant-not-git'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
+  })
+
+  it('still grants through a version entry for the same arg on a not-git install', async () => {
+    launchHarness.grants = [
+      { arg: '--enable-assets', commitRanges: [['a'.repeat(40), null]] },
+      HARNESS_GRANT
+    ]
+
+    const res = await handleLaunch(ctxFor('harness-mixed-not-git'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs.filter((arg) => arg === '--enable-assets')).toHaveLength(1)
+    expect(sent.join('')).toContain(RECORD)
   })
 
   it('arms the activation notice from the same latch that reports the grant', async () => {
