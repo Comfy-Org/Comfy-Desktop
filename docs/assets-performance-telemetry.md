@@ -10,11 +10,17 @@ Each `comfy.desktop.comfyui.boot_started`, `boot_completed`, and `boot_failed` e
 
 - `assets_enabled`: whether the final launch arguments contain `--enable-assets`, including
   manual/source arguments.
-- `core_beta_flags`: managed Core beta arguments applied after version or commit-range and schema checks.
-  Excludes manual arguments.
+- `core_beta_flags`: managed Core beta arguments applied after version or commit-range and
+  schema checks. Excludes manual arguments.
 - `core_beta_opted_in`: resolved beta setting at launch; false if reading the setting failed.
 - `core_version`: recorded Core release label from `coreSemver(inst)`, or null if unavailable.
   Not proof of the live checkout's version.
+- `core_commit`: full SHA of the Core commit launched: the live checkout's HEAD, or the recorded
+  commit on an install with no git checkout. Null when a git checkout could not be read. This is
+  the identifier to group or order by; two latest-channel installs past the same tag share a
+  `core_version` but not a `core_commit`.
+- `core_version_label`: display form of the recorded version, e.g. `v0.37.0+15`. For reading,
+  not for sorting or gating.
 - `app_version`: Desktop version, attached centrally by `src/main/lib/telemetry.ts`.
 - `boot_id`: per-launch join key shared by the lifecycle events. Retries reuse the same key.
 

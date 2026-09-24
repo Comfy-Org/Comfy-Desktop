@@ -137,6 +137,7 @@ import {
   emitCoreBetaTelemetry,
   handleLaunch,
   isCrashedExit,
+  launchedCoreCommit,
   onProcessTerminated,
   writeLog,
   _cleanupFailedLaunchSetup,
@@ -1125,6 +1126,49 @@ describe('core beta report placement', () => {
     )
   })
 
+  it('attributes the beta and boot events to the live HEAD, not the recorded commit', async () => {
+    const head = gitInitComfyUI()
+    launchHarness.grants = [{ arg: '--enable-assets', commitRanges: [[head, null]] }]
+    // The port-waiting path, which is the one that emits the boot events.
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48233
+    }
+    launchHarness.waitForPort = async () => {}
+
+    await handleLaunch(ctxFor('harness-commit-attribution'))
+
+    const applied = events.find((e) => e.event === 'comfy.desktop.core_beta.applied')
+    expect(applied?.properties).toMatchObject({ core_commit: head, core_version_label: 'v0.3.81' })
+    const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
+    expect(boot?.properties).toMatchObject({ core_commit: head, core_version_label: 'v0.3.81' })
+  })
+
+  it('launches a legacy record whose version carries no commit', async () => {
+    const ctx = ctxFor('harness-legacy-record')
+    ctx.inst = {
+      ...ctx.inst,
+      comfyVersion: { baseTag: 'v0.3.81' }
+    } as unknown as InstallationRecord
+
+    const res = await handleLaunch(ctx)
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs.length).toBeGreaterThan(0)
+  })
+
+  it("attributes a not-git install's events to its recorded commit", async () => {
+    await handleLaunch(ctxFor('harness-record-attribution'))
+
+    const applied = events.find((e) => e.event === 'comfy.desktop.core_beta.applied')
+    expect(applied?.properties).toMatchObject({
+      core_commit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'
+    })
+  })
+
   it('withholds a commit-bound entry on a not-git install', async () => {
     launchHarness.grants = [{ arg: '--enable-assets', commitRanges: [['a'.repeat(40), null]] }]
 
@@ -1745,6 +1789,7 @@ describe('core beta report placement', () => {
 })
 
 describe('emitCoreBetaTelemetry', () => {
+  const COMMIT = '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'
   let captured: Array<{ event: string; ctx: Record<string, unknown> }>
 
   beforeEach(() => {
@@ -1764,6 +1809,8 @@ describe('emitCoreBetaTelemetry', () => {
       appliedArgs: ['--enable-assets'],
       droppedUnsupported: [],
       coreVersion: '0.3.81',
+      coreCommit: COMMIT,
+      coreVersionLabel: 'v0.3.81+15',
       optedIn: true
     })
 
@@ -1771,6 +1818,8 @@ describe('emitCoreBetaTelemetry', () => {
     expect(applied!.ctx).toEqual({
       args: ['--enable-assets'],
       core_version: '0.3.81',
+      core_commit: COMMIT,
+      core_version_label: 'v0.3.81+15',
       dropped_unsupported: []
     })
   })
@@ -1780,6 +1829,8 @@ describe('emitCoreBetaTelemetry', () => {
       appliedArgs: [],
       droppedUnsupported: ['--enable-assets'],
       coreVersion: '0.3.81',
+      coreCommit: COMMIT,
+      coreVersionLabel: 'v0.3.81+15',
       optedIn: true
     })
 
@@ -1792,6 +1843,8 @@ describe('emitCoreBetaTelemetry', () => {
       appliedArgs: [],
       droppedUnsupported: [],
       coreVersion: null,
+      coreCommit: null,
+      coreVersionLabel: null,
       optedIn: false
     })
 
@@ -1804,6 +1857,8 @@ describe('emitCoreBetaTelemetry', () => {
       appliedArgs: ['--enable-assets'],
       droppedUnsupported: [],
       coreVersion: '0.3.81',
+      coreCommit: COMMIT,
+      coreVersionLabel: 'v0.3.81+15',
       optedIn: true
     })
 
@@ -1822,6 +1877,8 @@ describe('emitCoreBetaTelemetry', () => {
       appliedArgs: ['--enable-assets'],
       droppedUnsupported: [],
       coreVersion: '0.3.81',
+      coreCommit: COMMIT,
+      coreVersionLabel: 'v0.3.81+15',
       optedIn: true
     })
 
@@ -1829,5 +1886,25 @@ describe('emitCoreBetaTelemetry', () => {
       'comfy.desktop.core_beta.applied',
       'comfy.desktop.core_beta.opt_state'
     ])
+  })
+})
+
+describe('launchedCoreCommit', () => {
+  const RECORDED = '61E5E3B5A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4'
+  const LIVE = 'AB'.repeat(20)
+  const inst = { comfyVersion: { commit: RECORDED } } as unknown as InstallationRecord
+
+  it('names the live HEAD over the record', () => {
+    expect(launchedCoreCommit(inst, { kind: 'head', commit: LIVE })).toBe(LIVE.toLowerCase())
+  })
+
+  it("falls back to the record's commit on a not-git install", () => {
+    expect(launchedCoreCommit(inst, { kind: 'not-git' })).toBe(RECORDED.toLowerCase())
+    expect(launchedCoreCommit({} as InstallationRecord, { kind: 'not-git' })).toBeNull()
+  })
+
+  it('names nothing for a git checkout whose HEAD would not read', () => {
+    // The record is what may have gone stale; reporting it would attribute to the wrong commit.
+    expect(launchedCoreCommit(inst, { kind: 'unreadable' })).toBeNull()
   })
 })

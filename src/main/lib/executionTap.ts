@@ -95,6 +95,12 @@ export function createExecutionTap(opts: {
   /** Core beta args Desktop injected for this launch (exact dashed tokens), so
    *  every event can be split by beta cohort. */
   coreBetaFlags?: readonly string[]
+  /** The Core commit this launch runs, so events attribute to a commit rather than to a
+   *  release label a latest-channel install shares with every commit past it. */
+  coreCommit?: string | null
+  /** Human-readable RECORDED Core version, e.g. `v0.3.99+15`. May lag `coreCommit` when the
+   *  checkout moved after the record was written. For display only: order by `coreCommit`. */
+  coreVersionLabel?: string | null
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   flushSummary: () => void
@@ -121,6 +127,8 @@ export function createExecutionTap(opts: {
     variant: state.variant,
     release: state.release,
     core_beta_flags: [...(opts.coreBetaFlags ?? [])],
+    core_commit: opts.coreCommit ?? null,
+    core_version_label: opts.coreVersionLabel ?? null,
     // The tap tails a locally-spawned ComfyUI process, so every event it
     // emits is local execution by construction. Cloud executions never pass
     // through here — the cloud frontend/backend report those directly.

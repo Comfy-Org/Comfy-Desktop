@@ -105,7 +105,7 @@ import {
 } from '../../coreBetaGrants'
 import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
-import { coreGateVersion, coreRecordCurrent, coreSemver } from '../../version'
+import { coreGateVersion, coreRecordCurrent, coreSemver, formatComfyVersion } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
@@ -151,6 +151,26 @@ function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
       const head = readGitHead(comfyuiDir)
       return head === null ? { kind: 'unreadable' } : { kind: 'head', commit: head }
     }
+  }
+}
+
+/** The Core commit a launch runs, for telemetry attribution: the live HEAD when there is one,
+ *  and the record's commit on a `not-git` install, where nothing can contradict it. `null` for
+ *  a git checkout that could not be read — the record may be what went stale. */
+export function launchedCoreCommit(
+  inst: InstallationRecord,
+  checkout: CoreCheckout
+): string | null {
+  switch (checkout.kind) {
+    case 'head':
+      return checkout.commit.toLowerCase()
+    case 'not-git': {
+      // Typed as a string, but legacy records predate the field; see `coreRecordCurrent`.
+      const recorded: unknown = inst.comfyVersion?.commit
+      return typeof recorded === 'string' ? recorded.toLowerCase() : null
+    }
+    case 'unreadable':
+      return null
   }
 }
 
@@ -281,12 +301,16 @@ export function emitCoreBetaTelemetry(input: {
   appliedArgs: readonly string[]
   droppedUnsupported: readonly string[]
   coreVersion: string | null
+  coreCommit: string | null
+  coreVersionLabel: string | null
   optedIn: boolean
 }): void {
   if (input.appliedArgs.length > 0 || input.droppedUnsupported.length > 0) {
     telemetry.emit('comfy.desktop.core_beta.applied', {
       args: [...input.appliedArgs],
       core_version: input.coreVersion,
+      core_commit: input.coreCommit,
+      core_version_label: input.coreVersionLabel,
       dropped_unsupported: [...input.droppedUnsupported]
     })
   }
@@ -644,6 +668,16 @@ async function runLaunch(
   // Resolved during arg assembly below, then read by the taps, the launch log
   // records and the beta telemetry - all after assembly, never before.
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
+  // Which Core commit this launch runs, for telemetry. The release label alone cannot tell two
+  // latest-channel commits past the same tag apart; the SHA can. Set once the checkout is read
+  // during arg assembly below; `null` on a launch that never gets that far.
+  let coreCommit: string | null = null
+  // Guarded like `launchedCoreCommit`: a legacy record can lack `commit`, and formatting one
+  // would throw here and cost the launch for the sake of a telemetry label.
+  const coreVersionLabel =
+    typeof (inst.comfyVersion?.commit as unknown) === 'string'
+      ? formatComfyVersion(inst.comfyVersion, 'short')
+      : null
   // LAUNCH-SCOPED on purpose. `tryLaunch` recurses on reboot and port retries, re-entering
   // past the report site, so an unlatched report fires once per attempt; a module-global
   // latch would instead silence every launch after the first in the process lifetime.
@@ -797,13 +831,17 @@ async function runLaunch(
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
         release: (inst.release as string | undefined) ?? null,
-        coreBetaFlags
+        coreBetaFlags,
+        coreCommit,
+        coreVersionLabel
       })
       const hwTap = createHardwareTap({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
         release: (inst.release as string | undefined) ?? null,
-        coreBetaFlags
+        coreBetaFlags,
+        coreCommit,
+        coreVersionLabel
       })
       const assetsTap = createAssetsTapSafe({
         installationId,
@@ -838,6 +876,8 @@ async function runLaunch(
         appliedArgs: coreBeta.applied.map((grant) => grant.arg),
         droppedUnsupported: coreBeta.droppedUnsupported,
         coreVersion: coreBeta.coreVersion,
+        coreCommit,
+        coreVersionLabel,
         optedIn: coreBeta.optedIn
       })
     } catch {
@@ -854,12 +894,16 @@ async function runLaunch(
     assets_enabled: boolean
     core_beta_opted_in: boolean
     core_version: string | null
+    core_commit: string | null
+    core_version_label: string | null
   } {
     return {
       core_beta_flags: coreBeta.applied.map((grant) => grant.arg),
       assets_enabled: launchCmd.args?.includes('--enable-assets') === true,
       core_beta_opted_in: coreBeta.optedIn,
-      core_version: coreSemver(inst)
+      core_version: coreSemver(inst),
+      core_commit: coreCommit,
+      core_version_label: coreVersionLabel
     }
   }
 
@@ -1018,6 +1062,11 @@ async function runLaunch(
       const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
       const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
       const userArgs = launchCmd.args.slice(sIdx + 2)
+      const comfyuiDir = path.dirname(mainPyAbs)
+      // Read here rather than reused from `revision` above: that one falls back to the
+      // record when HEAD is unreadable, which is the very disagreement being checked for.
+      const checkout = resolveCoreCheckout(comfyuiDir)
+      coreCommit = launchedCoreCommit(inst, checkout)
       // Take ownership of the array before anything downstream mutates it in place:
       // `applyStorageLaunchArgs` pushes onto `launchCmd.args`, and when discovery fails there is
       // no `built.args` to replace it, so those pushes would otherwise reach the array the
@@ -1052,10 +1101,6 @@ async function runLaunch(
         }
 
         const betaFlags = await getCoreBetaGrantsAsync()
-        const comfyuiDir = path.dirname(mainPyAbs)
-        // Read here rather than reused from `revision` above: that one falls back to the
-        // record when HEAD is unreadable, which is the very disagreement being checked for.
-        const checkout = resolveCoreCheckout(comfyuiDir)
         // Resolved only for an opted-in launch: the checks can reach the network, and an
         // opted-out launch grants nothing whatever they would say.
         const coreCommits = betaEnabled
