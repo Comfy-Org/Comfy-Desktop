@@ -14,8 +14,10 @@
  * process's stdout can emit a tagged line, so the tap carries its own closed
  * contract: an event allowlist, a field-name allowlist, per-field type and
  * value checks, and rejection of any key colliding with the trusted base
- * context. Ordinary unknown fields are omitted for version skew. Invalid
- * known values and malformed or spoofing keys drop the whole line silently:
+ * context. Ordinary unknown fields are omitted for version skew, as is a
+ * `reason` or `site` value outside its enum that still has an enum value's
+ * shape. Other invalid known values and malformed or spoofing keys drop the
+ * whole line silently:
  * reporting the rejection would put the untrusted content back into a signal
  * we forward.
  *
@@ -134,6 +136,16 @@ const REASONS: ReadonlySet<string> = new Set([
   'other'
 ])
 /**
+ * Enums a newer core is expected to grow. A well-shaped value this build does
+ * not know omits just that field, so a new failure reason cannot silently drop
+ * the failure events (and their Datadog alerting copies) that carry it.
+ */
+const EXTENSIBLE_ENUMS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['reason', REASONS],
+  ['site', SITES]
+])
+const ENUM_VALUE = /^[a-z][a-z0-9_]*$/
+/**
  * Core validates `errno_name` against its own interpreter's
  * `errno.errorcode`, which differs by platform (Windows adds Winsock names:
  * `WSAECONNRESET`, but also `WSASYSNOTREADY` and `WSAHOST_NOT_FOUND`), so this
@@ -247,14 +259,16 @@ function isAllowedFieldValue(key: string, value: unknown): value is TelemetryVal
 
 /**
  * Parse the logfmt tail into forwardable fields, omitting ordinary unknown
- * fields. Invalid known values and malformed, duplicate or spoofing keys
- * reject the whole line.
+ * fields and unknown-but-well-shaped extensible enum values. Other invalid
+ * known values and malformed, duplicate or spoofing keys reject the whole line.
  */
 function parseFields(
   tail: string,
   baseKeys: ReadonlySet<string>
 ): Record<string, TelemetryValue> | null {
   const fields: Record<string, TelemetryValue> = {}
+  // Separate from `fields`, which omits some keys, so a repeat is still caught.
+  const seenKeys = new Set<string>()
   const pairs = tail ? tail.slice(1).split(' ') : []
   for (const pair of pairs) {
     const separatorIndex = pair.indexOf('=')
@@ -272,7 +286,8 @@ function parseFields(
       // rejecting the line would delete an existing metric instead.
       continue
     }
-    if (Object.hasOwn(fields, key)) return null
+    if (seenKeys.has(key)) return null
+    seenKeys.add(key)
     const value: TelemetryValue = DIGIT_STRING_FIELDS.has(key)
       ? rawValue
       : /^-?\d+$/.test(rawValue)
@@ -282,6 +297,16 @@ function parseFields(
           : rawValue === 'false'
             ? false
             : rawValue
+    const enumValues = EXTENSIBLE_ENUMS.get(key)
+    if (
+      enumValues &&
+      typeof value === 'string' &&
+      !enumValues.has(value) &&
+      isSafeString(value) &&
+      ENUM_VALUE.test(value)
+    ) {
+      continue
+    }
     if (!isAllowedFieldValue(key, value)) return null
     fields[key] = value
   }

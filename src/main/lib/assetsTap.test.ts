@@ -603,12 +603,33 @@ describe('assetsTap', () => {
       ['root', 'cache'],
       ['phase', 'none'],
       ['stage', 'scan'],
-      ['site', 'finalize'],
-      ['reason', 'disk_on_fire'],
-      ['reason', 'Other']
+      ['reason', 'Other'],
+      ['reason', 'no-space'],
+      ['site', `w${'x'.repeat(64)}`]
     ])('rejects invalid enum value $1 for $0', (field, value) => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { [field]: value }), 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
+    // A newer core may add a reason or a call site; the event must survive it.
+    it.each([
+      ['site', 'finalize'],
+      ['reason', 'disk_on_fire']
+    ])('omits the unknown %s value %s but keeps the event', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('scanner.stat_failed', { error_type: 'OSError', [field]: value }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ error_type: 'OSError' })
+      expect(captured[0]!.ctx).not.toHaveProperty(field)
+    })
+
+    it('still rejects a repeated extensible enum field whose first value was omitted', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] scanner.stat_failed site=future site=hash\n', 'stdout')
       expect(captured).toHaveLength(0)
     })
 
