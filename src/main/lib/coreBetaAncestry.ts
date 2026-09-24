@@ -1,6 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import { fetchCommitSha, findMergeBase, resolveGitDir } from './git'
+import { fetchCommitSha, findMergeBase, resolveGitDir, revParseRef } from './git'
+import { configDir } from './paths'
+import { readFileSafe, writeFileSafe } from './safe-file'
 import { NO_CORE_COMMITS } from './coreBetaGrants'
 import type { CoreCommitState } from './coreBetaGrants'
 import type { CoreCheckout } from './version'
@@ -9,16 +11,68 @@ const FULL_SHA_RE = /^[0-9a-f]{40}$/
 
 const MAX_RESOLVED_SHAS = 16
 
-// Bounds launch delay: each fetch can run to its full timeout.
+// Background fetches one launch may start.
 const MAX_FETCHES = 2
 
-// A failed fetch is not retried for this long, so a flag naming an unreachable SHA costs the fetch
-// timeout once rather than on every launch; a later Desktop start retries straight away.
-const FAILED_FETCH_BACKOFF_MS = 10 * 60 * 1000
-const failedFetches = new Map<string, number>()
+// A failed fetch is not retried for this long on the same HEAD, across Desktop restarts, so a flag
+// naming an unreachable SHA costs one attempt a day rather than one per launch.
+const FAILED_FETCH_TTL_MS = 24 * 60 * 60 * 1000
 
-export function _resetForTest(): void {
-  failedFetches.clear()
+type FailureStore = Record<string, { head: string; failed: Record<string, number> }>
+
+const failuresPath = (): string => path.join(configDir(), 'core-beta-fetch-failures.json')
+
+function readFailures(): FailureStore {
+  const outcome = readFileSafe(failuresPath())
+  if (outcome.kind !== 'data') return {}
+  try {
+    const parsed: unknown = JSON.parse(outcome.data)
+    return parsed && typeof parsed === 'object' ? (parsed as FailureStore) : {}
+  } catch {
+    return {}
+  }
+}
+
+function recordFailure(repoPath: string, head: string, sha: string): void {
+  try {
+    const store = readFailures()
+    const entry = store[repoPath]?.head === head ? store[repoPath]! : { head, failed: {} }
+    entry.failed[sha] = Date.now()
+    store[repoPath] = entry
+    writeFileSafe(failuresPath(), JSON.stringify(store))
+  } catch (err) {
+    console.warn('[core-beta] could not record a failed fetch:', err)
+  }
+}
+
+// Chained per repository: concurrent fetches into one repository contend for its locks.
+const fetchChains = new Map<string, Promise<void>>()
+const inFlight = new Set<string>()
+
+export function _backgroundFetchesForTest(): Promise<unknown> {
+  return Promise.all(fetchChains.values())
+}
+
+/** Fetch `sha` in the background for the NEXT launch to use: this one never waits on the network. */
+function scheduleFetch(repoPath: string, sha: string, head: string): void {
+  const label = `[core-beta] fetch ${sha.slice(0, 12)}`
+  const key = `${repoPath}\0${sha}`
+  if (inFlight.has(key)) return console.log(`${label}: already in progress`)
+  const entry = readFailures()[repoPath]
+  const failedAt = entry?.head === head ? entry.failed[sha] : undefined
+  if (typeof failedAt === 'number' && Date.now() - failedAt < FAILED_FETCH_TTL_MS) {
+    return console.log(`${label}: skipped, failed at ${new Date(failedAt).toISOString()}`)
+  }
+  inFlight.add(key)
+  console.log(`${label}: started in the background; unresolved for this launch`)
+  const run = async (): Promise<void> => {
+    const started = Date.now()
+    const ok = await fetchCommitSha(repoPath, sha).catch(() => false)
+    console.log(`${label} from origin: ${ok ? 'ok' : 'failed'} in ${Date.now() - started}ms`)
+    if (!ok) recordFailure(repoPath, head, sha)
+    inFlight.delete(key)
+  }
+  fetchChains.set(repoPath, (fetchChains.get(repoPath) ?? Promise.resolve()).then(run))
 }
 
 type Relation = boolean | null
@@ -28,37 +82,22 @@ async function commitAncestry(
   repoPath: string,
   sha: string,
   head: string,
+  complete: boolean,
   mayFetch: () => boolean
-): Promise<{ related: Relation; fetched: boolean }> {
-  const relate = async (): Promise<Relation> => {
-    const base = await findMergeBase(repoPath, sha, head)
-    return base === undefined ? null : base.toLowerCase() === sha
+): Promise<Relation> {
+  const base = await findMergeBase(repoPath, sha, head)
+  if (base !== undefined) return base.toLowerCase() === sha
+  // Absence counts only once the repository has been shown readable, by resolving HEAD itself.
+  if ((await revParseRef(repoPath, `${head}^{commit}`))?.toLowerCase() !== head) return null
+  if ((await revParseRef(repoPath, `${sha}^{commit}`)) !== undefined) return null
+  // A complete clone holds every ancestor of HEAD, so a commit it lacks is not one of them.
+  if (complete) {
+    console.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
+    return false
   }
-  const first = await relate()
-  if (first !== null) return { related: first, fetched: false }
-  const key = `${repoPath}\0${sha}`
-  const failedAt = failedFetches.get(key)
-  if (failedAt !== undefined && Date.now() - failedAt < FAILED_FETCH_BACKOFF_MS) {
-    console.log(
-      `[core-beta] fetch ${sha.slice(0, 12)}: skipped, failed at ${new Date(failedAt).toISOString()}`
-    )
-    return { related: null, fetched: false }
-  }
-  if (!mayFetch()) {
-    console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
-    return { related: null, fetched: false }
-  }
-  const started = Date.now()
-  const ok = await fetchCommitSha(repoPath, sha)
-  console.log(
-    `[core-beta] fetch ${sha.slice(0, 12)} from origin: ${ok ? 'ok' : 'failed'} in ${Date.now() - started}ms`
-  )
-  if (!ok) {
-    failedFetches.set(key, Date.now())
-    return { related: null, fetched: true }
-  }
-  failedFetches.delete(key)
-  return { related: await relate(), fetched: true }
+  if (mayFetch()) scheduleFetch(repoPath, sha, head)
+  else console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
+  return null
 }
 
 /** More boundaries than this and a shallow "not contained" is left unproven rather than paid for. */
@@ -101,7 +140,6 @@ async function notContainedHoldsOnShallow(
   return true
 }
 
-/** Sequential on purpose: concurrent fetches into one repository contend for its locks. */
 export async function resolveCoreCommitState(
   repoPath: string,
   checkout: CoreCheckout,
@@ -119,9 +157,10 @@ export async function resolveCoreCommitState(
     let related: Relation = null
     if (index < MAX_RESOLVED_SHAS) {
       try {
-        const result = await commitAncestry(repoPath, sha, head, () => fetches < MAX_FETCHES)
-        if (result.fetched) fetches += 1
-        related = result.related
+        related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, () => {
+          fetches += 1
+          return fetches <= MAX_FETCHES
+        })
       } catch (err) {
         console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
       }

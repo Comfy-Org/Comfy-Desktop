@@ -6,16 +6,20 @@ import path from 'path'
 const git = vi.hoisted(() => ({
   findMergeBase: vi.fn<(repo: string, a: string, b: string) => Promise<string | undefined>>(),
   fetchCommitSha: vi.fn<(repo: string, sha: string) => Promise<boolean>>(),
-  gitDir: ''
+  revParseRef: vi.fn<(repo: string, ref: string) => Promise<string | undefined>>(),
+  gitDir: '',
+  configDir: ''
 }))
 vi.mock('./git', () => ({
   findMergeBase: (...args: [string, string, string]) => git.findMergeBase(...args),
   fetchCommitSha: (...args: [string, string]) => git.fetchCommitSha(...args),
-  resolveGitDir: () => git.gitDir
+  resolveGitDir: () => git.gitDir,
+  revParseRef: (...args: [string, string]) => git.revParseRef(...args)
 }))
+vi.mock('./paths', () => ({ configDir: () => git.configDir }))
 vi.mock('./telemetry', () => ({ getOpsFlagResult: vi.fn() }))
 
-import { _resetForTest, resolveCoreCommitState } from './coreBetaAncestry'
+import { _backgroundFetchesForTest, resolveCoreCommitState } from './coreBetaAncestry'
 import { NO_CORE_COMMITS } from './coreBetaGrants'
 
 const REPO = '/installs/comfy/ComfyUI'
@@ -25,17 +29,27 @@ const UPPER = 'b'.repeat(40)
 const OLDER = 'f'.repeat(40)
 
 beforeEach(() => {
-  _resetForTest()
   git.gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-gitdir-'))
+  git.configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-config-'))
   git.findMergeBase.mockReset()
   git.fetchCommitSha.mockReset()
+  // Default: HEAD resolves (the repository is readable) and no other SHA exists locally.
+  git.revParseRef.mockReset()
+  git.revParseRef.mockImplementation(async (_repo, ref) =>
+    ref === `${HEAD}^{commit}` ? HEAD : undefined
+  )
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
 
-afterEach(() => {
+afterEach(async () => {
+  await _backgroundFetchesForTest()
   fs.rmSync(git.gitDir, { recursive: true, force: true })
+  fs.rmSync(git.configDir, { recursive: true, force: true })
 })
+
+const makeShallow = (): void =>
+  fs.writeFileSync(path.join(git.gitDir, 'shallow'), `${'c'.repeat(40)}\n`)
 
 const shaOf = (n: number): string => n.toString(16).padStart(40, '0')
 
@@ -82,41 +96,121 @@ describe('resolveCoreCommitState', () => {
     expect(state.ancestry.get(LOWER)).toBe(true)
   })
 
-  it('fetches a SHA the checkout lacks and asks again', async () => {
-    let fetched = false
-    git.findMergeBase.mockImplementation(async () => (fetched ? OLDER : undefined))
-    git.fetchCommitSha.mockImplementation(async () => {
-      fetched = true
-      return true
+  describe('a SHA the checkout lacks', () => {
+    beforeEach(() => {
+      git.findMergeBase.mockResolvedValue(undefined)
     })
 
-    const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+    it('is not contained on a full clone, with no fetch', async () => {
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
 
-    expect(git.fetchCommitSha).toHaveBeenCalledExactlyOnceWith(REPO, UPPER)
-    expect(state.ancestry.get(UPPER)).toBe(false)
-  })
+      expect(state.ancestry.get(UPPER), 'a full clone holds every ancestor of HEAD').toBe(false)
+      expect(git.fetchCommitSha).not.toHaveBeenCalled()
+    })
 
-  it('leaves a SHA unresolved when the fetch fails', async () => {
-    git.findMergeBase.mockResolvedValue(undefined)
-    git.fetchCommitSha.mockResolvedValue(false)
+    it('stays unresolved when HEAD itself does not resolve, so absence proves nothing', async () => {
+      git.revParseRef.mockResolvedValue(undefined)
 
-    const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
 
-    expect(
-      state.ancestry.has(UPPER),
-      'absent, not false: "could not look" must not read as "not reached"'
-    ).toBe(false)
-    expect(git.findMergeBase).toHaveBeenCalledTimes(1)
-  })
+      expect(state.ancestry.has(UPPER)).toBe(false)
+      expect(git.fetchCommitSha).not.toHaveBeenCalled()
+    })
 
-  it('leaves a SHA unresolved when it is still unrelated after a successful fetch', async () => {
-    git.findMergeBase.mockResolvedValue(undefined)
-    git.fetchCommitSha.mockResolvedValue(true)
+    it('stays unresolved, with no fetch, when it is present but unrelated', async () => {
+      git.revParseRef.mockImplementation(async (_repo, ref) => ref.slice(0, 40))
 
-    const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
 
-    expect(state.ancestry.has(UPPER)).toBe(false)
-    expect(git.findMergeBase).toHaveBeenCalledTimes(2)
+      expect(state.ancestry.has(UPPER)).toBe(false)
+      expect(git.fetchCommitSha).not.toHaveBeenCalled()
+    })
+
+    it('is fetched in the background on a shallow clone, and is unresolved for this launch', async () => {
+      makeShallow()
+      let release!: (ok: boolean) => void
+      git.fetchCommitSha.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+      expect(state.ancestry.has(UPPER), 'the launch did not wait for the fetch').toBe(false)
+      expect(git.fetchCommitSha).toHaveBeenCalledExactlyOnceWith(REPO, UPPER)
+      release(true)
+    })
+
+    it('starts at most two background fetches in one launch', async () => {
+      makeShallow()
+      git.fetchCommitSha.mockResolvedValue(true)
+
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [
+        shaOf(1),
+        shaOf(2),
+        shaOf(3),
+        shaOf(4)
+      ])
+      await _backgroundFetchesForTest()
+
+      expect(git.fetchCommitSha).toHaveBeenCalledTimes(2)
+    })
+
+    describe('after a failed fetch', () => {
+      beforeEach(async () => {
+        makeShallow()
+        git.fetchCommitSha.mockResolvedValue(false)
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+        await _backgroundFetchesForTest()
+        git.fetchCommitSha.mockClear()
+      })
+
+      afterEach(() => {
+        vi.useRealTimers()
+      })
+
+      it('logs the outcome and skips the fetch on later launches', async () => {
+        const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+        expect(
+          lines.some((l) =>
+            /^\[core-beta\] fetch bbbbbbbbbbbb from origin: failed in \d+ms$/.test(l)
+          )
+        ).toBe(true)
+
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+        expect(git.fetchCommitSha).not.toHaveBeenCalled()
+        const after = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+        expect(
+          after.some((l) => l.startsWith('[core-beta] fetch bbbbbbbbbbbb: skipped, failed at '))
+        ).toBe(true)
+      })
+
+      it('remembers the failure on disk, across a process restart', async () => {
+        const stored = JSON.parse(
+          fs.readFileSync(path.join(git.configDir, 'core-beta-fetch-failures.json'), 'utf-8')
+        ) as Record<string, { head: string; failed: Record<string, number> }>
+        expect(stored[REPO]?.head).toBe(HEAD)
+        expect(Object.keys(stored[REPO]!.failed)).toEqual([UPPER])
+      })
+
+      it('retries once the HEAD has changed', async () => {
+        const moved = '9'.repeat(40)
+        git.revParseRef.mockImplementation(async (_repo, ref) =>
+          ref === `${moved}^{commit}` ? moved : undefined
+        )
+
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: moved }, [UPPER])
+
+        expect(git.fetchCommitSha).toHaveBeenCalledOnce()
+      })
+
+      it('retries after a day', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(Date.now() + 24 * 60 * 60 * 1000 + 1)
+
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+
+        expect(git.fetchCommitSha).toHaveBeenCalledOnce()
+      })
+    })
   })
 
   it('contains a throw to the one SHA and still relates the rest', async () => {
@@ -128,17 +222,6 @@ describe('resolveCoreCommitState', () => {
     const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER, UPPER])
 
     expect([...state.ancestry]).toEqual([[UPPER, false]])
-  })
-
-  it('attempts at most two fetches in one launch, however many SHAs are missing', async () => {
-    git.findMergeBase.mockResolvedValue(undefined)
-    git.fetchCommitSha.mockResolvedValue(false)
-    const shas = [shaOf(1), shaOf(2), shaOf(3), shaOf(4)]
-
-    const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, shas)
-
-    expect(git.fetchCommitSha).toHaveBeenCalledTimes(2)
-    expect(state.ancestry.size).toBe(0)
   })
 
   it('relates at most sixteen SHAs and leaves the rest unresolved', async () => {
@@ -229,45 +312,6 @@ describe('resolveCoreCommitState', () => {
       graph([])
 
       expect((await resolve()).ancestry.get(LOWER)).toBe(true)
-    })
-  })
-
-  describe('a failed fetch', () => {
-    afterEach(() => {
-      vi.useRealTimers()
-    })
-
-    it('is logged with its outcome and not retried by the next launch', async () => {
-      git.findMergeBase.mockResolvedValue(undefined)
-      git.fetchCommitSha.mockResolvedValue(false)
-      const log = vi.mocked(console.log)
-
-      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
-      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
-
-      expect(
-        git.fetchCommitSha,
-        'the second launch reuses the recorded failure'
-      ).toHaveBeenCalledTimes(1)
-      const lines = log.mock.calls.map((call) => String(call[0]))
-      expect(
-        lines.some((l) => /^\[core-beta\] fetch bbbbbbbbbbbb from origin: failed in \d+ms$/.test(l))
-      ).toBe(true)
-      expect(
-        lines.some((l) => l.startsWith('[core-beta] fetch bbbbbbbbbbbb: skipped, failed at '))
-      ).toBe(true)
-    })
-
-    it('is retried once the back-off has passed', async () => {
-      vi.useFakeTimers({ toFake: ['Date'] })
-      git.findMergeBase.mockResolvedValue(undefined)
-      git.fetchCommitSha.mockResolvedValue(false)
-
-      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
-      vi.setSystemTime(Date.now() + 10 * 60 * 1000 + 1)
-      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
-
-      expect(git.fetchCommitSha).toHaveBeenCalledTimes(2)
     })
   })
 })

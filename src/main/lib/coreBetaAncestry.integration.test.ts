@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
@@ -8,8 +8,10 @@ vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '' },
   ipcMain: { handle: vi.fn() }
 }))
+const store = vi.hoisted(() => ({ dir: '' }))
+vi.mock('./paths', () => ({ configDir: () => store.dir }))
 
-import { resolveCoreCommitState } from './coreBetaAncestry'
+import { _backgroundFetchesForTest, resolveCoreCommitState } from './coreBetaAncestry'
 import { selectCoreBetaGrantArgs } from './coreBetaGrants'
 import type { CoreBetaGrant, CoreVersionState } from './coreBetaGrants'
 
@@ -64,7 +66,13 @@ afterAll(() => {
 })
 
 beforeEach(() => {
+  store.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-store-'))
   vi.spyOn(console, 'log').mockImplementation(() => {})
+})
+
+afterEach(async () => {
+  await _backgroundFetchesForTest()
+  fs.rmSync(store.dir, { recursive: true, force: true })
 })
 
 describe('resolveCoreCommitState against a real repository', () => {
@@ -81,14 +89,19 @@ describe('resolveCoreCommitState against a real repository', () => {
     ).toBe(true)
   })
 
-  it('fetches an upper bound the clone has never seen and proves HEAD has not reached it', async () => {
+  it('proves HEAD has not reached an upper bound a full clone has never seen, without fetching', async () => {
     expect(() => git(clone, 'cat-file', '-e', `${sha.ahead}^{commit}`)).toThrow()
 
     const state = await resolveCoreCommitState(clone, { kind: 'head', commit: sha.head! }, [
       sha.ahead!
     ])
+    await _backgroundFetchesForTest()
 
     expect(state.ancestry.get(sha.ahead!)).toBe(false)
+    expect(
+      () => git(clone, 'cat-file', '-e', `${sha.ahead}^{commit}`),
+      'still absent afterwards: nothing was fetched'
+    ).toThrow()
   })
 
   it('proves a commit on another lineage is not contained', async () => {
@@ -99,14 +112,14 @@ describe('resolveCoreCommitState against a real repository', () => {
     expect(state.ancestry.get(sha.backport!)).toBe(false)
   })
 
-  it('leaves a SHA no remote has unresolved', async () => {
+  it('reads a SHA no remote has as not contained on a full clone', async () => {
     const missing = '0123456789abcdef0123456789abcdef01234567'
 
     const state = await resolveCoreCommitState(clone, { kind: 'head', commit: sha.head! }, [
       missing
     ])
 
-    expect(state.ancestry.has(missing)).toBe(false)
+    expect(state.ancestry.get(missing)).toBe(false)
   })
 
   it('grants a known-good..upper range end to end, and withholds it once HEAD passes the upper bound', async () => {
@@ -119,6 +132,7 @@ describe('resolveCoreCommitState against a real repository', () => {
     const before = await resolveCoreCommitState(clone, { kind: 'head', commit: sha.head! }, shas)
     expect(selectCoreBetaGrantArgs([grant], NO_VERSION, true, [], before)).toEqual([grant])
 
+    git(clone, 'fetch', '-q', 'origin', 'master')
     const after = await resolveCoreCommitState(clone, { kind: 'head', commit: sha.ahead! }, shas)
     expect(selectCoreBetaGrantArgs([grant], NO_VERSION, true, [], after)).toEqual([])
   })
@@ -205,8 +219,18 @@ describe('resolveCoreCommitState against a real shallow clone', () => {
     expect(grafts.sort()).toEqual([s.m2, s.s1].sort())
   })
 
+  /** First launch starts the fetch and cannot use it; the next launch finds the object local. */
+  async function secondLaunch(target: string) {
+    const first = await resolveCoreCommitState(shallow, { kind: 'head', commit: s.merge! }, [
+      target
+    ])
+    expect(first.ancestry.has(target), 'the first launch does not wait for the fetch').toBe(false)
+    await _backgroundFetchesForTest()
+    return resolveCoreCommitState(shallow, { kind: 'head', commit: s.merge! }, [target])
+  }
+
   it('trusts "not contained" for a commit newer than every graft', async () => {
-    const state = await resolveCoreCommitState(shallow, { kind: 'head', commit: s.merge! }, [s.y!])
+    const state = await secondLaunch(s.y!)
 
     expect(
       state.ancestry.get(s.y!),
@@ -215,12 +239,44 @@ describe('resolveCoreCommitState against a real shallow clone', () => {
   })
 
   it('leaves "not contained" unresolved when a graft is not an ancestor of the commit', async () => {
-    const state = await resolveCoreCommitState(shallow, { kind: 'head', commit: s.merge! }, [s.x1!])
+    const state = await secondLaunch(s.x1!)
 
     expect(
       git(shallow, 'merge-base', s.x1!, s.merge!),
       'a merge-base exists, so only the graft check keeps this from reading as false'
     ).toBe(s.s1)
     expect(state.ancestry.has(s.x1!), 'graft m2 is not an ancestor of x1').toBe(false)
+  })
+})
+
+describe('a failed fetch on a real shallow clone', () => {
+  it('is recorded on disk and not retried by the next launch', async () => {
+    const shallowRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-nofetch-'))
+    const shallow = path.join(shallowRoot, 'shallow')
+    git(
+      shallowRoot,
+      'clone',
+      '-q',
+      '--depth',
+      '1',
+      '--single-branch',
+      '-b',
+      'master',
+      `file://${upstream}`,
+      shallow
+    )
+    git(shallow, 'remote', 'set-url', 'origin', path.join(shallowRoot, 'gone'))
+    const head = git(shallow, 'rev-parse', 'HEAD')
+    const missing = '0123456789abcdef0123456789abcdef01234567'
+    const log = vi.mocked(console.log)
+
+    await resolveCoreCommitState(shallow, { kind: 'head', commit: head }, [missing])
+    await _backgroundFetchesForTest()
+    await resolveCoreCommitState(shallow, { kind: 'head', commit: head }, [missing])
+
+    const lines = log.mock.calls.map((call) => String(call[0]))
+    expect(lines.filter((l) => l.includes('from origin: failed'))).toHaveLength(1)
+    expect(lines.some((l) => l.includes('skipped, failed at'))).toBe(true)
+    fs.rmSync(shallowRoot, { recursive: true, force: true })
   })
 })
