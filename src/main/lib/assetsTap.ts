@@ -78,6 +78,8 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
  * `ALLOWED_EVENTS` so a crafted log line cannot forge it.
  */
 const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
+/** Same contract as above, for `reason` / `site` values the build doesn't know. */
+const UNKNOWN_ENUM_VALUES_OMITTED = 'unknown_enum_values_omitted'
 
 const MAX_STRING_LENGTH = 64
 const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"', '\n', '\r']
@@ -151,6 +153,7 @@ const ENUM_VALUE = /^[a-z][a-z0-9_]*$/
  * `WSAECONNRESET`, but also `WSASYSNOTREADY` and `WSAHOST_NOT_FOUND`), so this
  * checks the shape rather than one platform's list.
  */
+// The underscore is deliberately Winsock-only: no POSIX E-name carries one.
 const ERRNO_NAME = /^(?:E[A-Z0-9]{1,23}|WSA[A-Z0-9_]{1,24}|none)$/
 /** Sentinel core sends when an exception carries no Windows error code. */
 const NO_WINERROR = -1
@@ -265,8 +268,9 @@ function isAllowedFieldValue(key: string, value: unknown): value is TelemetryVal
 function parseFields(
   tail: string,
   baseKeys: ReadonlySet<string>
-): Record<string, TelemetryValue> | null {
+): { fields: Record<string, TelemetryValue>; omittedEnumValues: number } | null {
   const fields: Record<string, TelemetryValue> = {}
+  let omittedEnumValues = 0
   // Separate from `fields`, which omits some keys, so a repeat is still caught.
   const seenKeys = new Set<string>()
   const pairs = tail ? tail.slice(1).split(' ') : []
@@ -305,12 +309,13 @@ function parseFields(
       isSafeString(value) &&
       ENUM_VALUE.test(value)
     ) {
+      omittedEnumValues++
       continue
     }
     if (!isAllowedFieldValue(key, value)) return null
     fields[key] = value
   }
-  return fields
+  return { fields, omittedEnumValues }
 }
 
 /**
@@ -349,6 +354,7 @@ export function createAssetsTap(opts: {
   const rateBuckets = new Map<string, { windowStart: number; count: number }>()
 
   let unknownEventsDropped = 0
+  let unknownEnumValuesOmitted = 0
 
   function withinRateCap(event: string): boolean {
     const now = Date.now()
@@ -376,8 +382,12 @@ export function createAssetsTap(opts: {
       unknownEventsDropped++
       return
     }
-    const fields = parseFields(tail, baseKeys)
-    if (!fields) return
+    const parsed = parseFields(tail, baseKeys)
+    if (!parsed) return
+    const { fields } = parsed
+    // Counted like unknown events, and for the same reason: it says this build
+    // is behind core's vocabulary without naming the untrusted value.
+    unknownEnumValuesOmitted += parsed.omittedEnumValues
     if (!withinRateCap(event)) return
     try {
       // Base context merged LAST so parsed fields can never override it.
@@ -433,6 +443,14 @@ export function createAssetsTap(opts: {
           const count = unknownEventsDropped
           unknownEventsDropped = 0
           telemetry.emit(`${EVENT_PREFIX}${UNKNOWN_EVENTS_DROPPED}`, {
+            count,
+            ...baseContext
+          })
+        }
+        if (unknownEnumValuesOmitted > 0 && withinRateCap(UNKNOWN_ENUM_VALUES_OMITTED)) {
+          const count = unknownEnumValuesOmitted
+          unknownEnumValuesOmitted = 0
+          telemetry.emit(`${EVENT_PREFIX}${UNKNOWN_ENUM_VALUES_OMITTED}`, {
             count,
             ...baseContext
           })

@@ -386,6 +386,38 @@ describe('assetsTap', () => {
       expect(JSON.stringify(captured[0]!.ctx)).not.toContain('scan_exploded')
     })
 
+    it('reports omitted enum values as a bare count, never the values', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('scanner.stat_failed', { reason: 'quantum_flux', site: 'warp_core' }),
+        'stdout'
+      )
+      tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
+      // A line rejected for another reason contributes nothing.
+      tap.ingest(taggedLine('scanner.hash_failed', { reason: 'new_one', root: 'cache' }), 'stdout')
+      expect(captured).toHaveLength(2)
+
+      tap.flushSummary()
+      expect(captured).toHaveLength(3)
+      expect(captured[2]!.event).toBe('comfy.desktop.comfyui.assets.unknown_enum_values_omitted')
+      expect(captured[2]!.ctx).toMatchObject({ count: 3 })
+      const serialized = JSON.stringify(captured[2]!.ctx)
+      for (const value of ['quantum_flux', 'warp_core', 'new_one']) {
+        expect(serialized).not.toContain(value)
+      }
+
+      tap.flushSummary()
+      expect(captured).toHaveLength(3)
+    })
+
+    it('cannot forge the omitted-enum counter with a crafted line', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('unknown_enum_values_omitted', { count: 999 }), 'stdout')
+      tap.flushSummary()
+      expect(captured.map((c) => c.ctx.count)).toEqual([1])
+      expect(captured[0]!.event).toBe('comfy.desktop.comfyui.assets.unknown_events_dropped')
+    })
+
     it('cannot have its dropped-event counter forged by a crafted line', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('unknown_events_dropped', { count: 999 }), 'stdout')
