@@ -21,18 +21,21 @@ vi.mock('electron', () => ({
 }))
 
 let mockSystemUuid: string | undefined = 'aabbccdd-eeff-0011-2233-445566778899'
+let mockSystemError: Error | null = null
 
 vi.mock('systeminformation', () => ({
   default: {
-    system: () => Promise.resolve({ uuid: mockSystemUuid })
+    system: () =>
+      mockSystemError ? Promise.reject(mockSystemError) : Promise.resolve({ uuid: mockSystemUuid })
   }
 }))
 
 const SALT = 'comfy-installation-id-v1'
 
-const MACHINE_ID_PATHS = ['/etc/machine-id', '/var/lib/dbus/machine-id']
-// Contents served for the Linux machine-id locations; null = file absent.
-let mockMachineIdFile: string | null = null
+const ETC_MACHINE_ID = '/etc/machine-id'
+const DBUS_MACHINE_ID = '/var/lib/dbus/machine-id'
+// Contents served for the Linux machine-id locations; absent key = no file.
+let mockMachineIdFiles: Record<string, string> = {}
 const originalPlatform = process.platform
 
 function setPlatform(value: NodeJS.Platform): void {
@@ -51,13 +54,15 @@ describe('deviceId', () => {
   beforeEach(async () => {
     testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'deviceid-test-'))
     mockSystemUuid = 'aabbccdd-eeff-0011-2233-445566778899'
-    mockMachineIdFile = null
+    mockSystemError = null
+    mockMachineIdFiles = {}
     setPlatform('linux')
     const realReadFileSync = fs.readFileSync
     vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, options) => {
-      if (typeof file === 'string' && MACHINE_ID_PATHS.includes(file)) {
-        if (mockMachineIdFile === null) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
-        return mockMachineIdFile
+      if (file === ETC_MACHINE_ID || file === DBUS_MACHINE_ID) {
+        const contents = mockMachineIdFiles[file]
+        if (contents === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+        return contents
       }
       return realReadFileSync(file, options)
     }) as typeof fs.readFileSync)
@@ -239,7 +244,7 @@ describe('deviceId', () => {
 
     it('hashes /etc/machine-id when the SMBIOS UUID is unreadable', async () => {
       mockSystemUuid = ''
-      mockMachineIdFile = `${machineId}\n`
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: `${machineId}\n` }
 
       await mod.initDeviceId()
       expect(mod.getIdClass()).toBe('machine_derived')
@@ -249,7 +254,7 @@ describe('deviceId', () => {
 
     it('is stable across launches', async () => {
       mockSystemUuid = ''
-      mockMachineIdFile = machineId
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: machineId }
       await mod.initDeviceId()
       const first = mod.getDeviceId()
 
@@ -262,7 +267,7 @@ describe('deviceId', () => {
     it('replaces a previously rotated random id with the machine-id hash', async () => {
       fs.writeFileSync(path.join(testUserData, 'device-id.txt'), 'b'.repeat(64))
       mockSystemUuid = ''
-      mockMachineIdFile = machineId
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: machineId }
 
       const { legacyId } = await mod.initDeviceId()
       expect(legacyId).toBeNull()
@@ -270,10 +275,36 @@ describe('deviceId', () => {
     })
 
     it('prefers the SMBIOS UUID when it is readable', async () => {
-      mockMachineIdFile = machineId
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: machineId }
 
       await mod.initDeviceId()
       expect(mod.getDeviceId()).toBe(expectedIdFor('aabbccdd-eeff-0011-2233-445566778899'))
+    })
+
+    it('falls back to the D-Bus machine-id when /etc/machine-id is absent', async () => {
+      mockSystemUuid = ''
+      mockMachineIdFiles = { [DBUS_MACHINE_ID]: machineId }
+
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(expectedIdFor(machineId))
+    })
+
+    it('prefers /etc/machine-id over the D-Bus copy', async () => {
+      mockSystemUuid = ''
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: machineId, [DBUS_MACHINE_ID]: 'f'.repeat(32) }
+
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(expectedIdFor(machineId))
+    })
+
+    it('does not switch sources when the hardware lookup fails for one launch', async () => {
+      const smbiosDerived = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
+      fs.writeFileSync(path.join(testUserData, 'device-id.txt'), smbiosDerived)
+      mockSystemError = new Error('dmidecode failed')
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: machineId }
+
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(smbiosDerived)
     })
 
     it.each([
@@ -282,7 +313,7 @@ describe('deviceId', () => {
       ['all zeros', '0'.repeat(32)]
     ])('ignores an %s machine-id', async (_label, contents) => {
       mockSystemUuid = ''
-      mockMachineIdFile = contents
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: contents }
 
       await mod.initDeviceId()
       expect(mod.getIdClass()).toBe('random_fallback')
@@ -291,7 +322,7 @@ describe('deviceId', () => {
     it.each<NodeJS.Platform>(['win32', 'darwin'])('is not consulted on %s', async (platform) => {
       setPlatform(platform)
       mockSystemUuid = undefined
-      mockMachineIdFile = machineId
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: machineId }
 
       await mod.initDeviceId()
       expect(mod.getIdClass()).toBe('random_fallback')

@@ -12,7 +12,9 @@
  *
  * On Linux the SMBIOS product UUID is usually root-only, so a normal user
  * gets no hardware id. There the machine id falls back to `/etc/machine-id`
- * (world-readable, stable per OS install), hashed the same way. When no
+ * (world-readable, stable per OS install), hashed the same way. Cloned
+ * images that share a machine-id share an installation id, as cloned VMs
+ * sharing an SMBIOS UUID already do. When no
  * machine id is available at all, a previously persisted installation id is
  * reused rather than replaced, so the id stays stable across launches.
  *
@@ -154,14 +156,17 @@ async function deriveMachineId(): Promise<{ machineId: string; idClass: IdClass 
       if (uuid.length === 36 && uuid !== '-' && uuid !== '00000000-0000-0000-0000-000000000000') {
         return { machineId: uuid, idClass: 'machine_derived' }
       }
+      // The lookup answered without a usable UUID, which is the steady state
+      // for a non-root Linux user. A timeout or throw is not: it can be a
+      // one-off, and switching sources for one launch would change the id.
+      const linuxMachineId = readLinuxMachineId()
+      if (linuxMachineId) return { machineId: linuxMachineId, idClass: 'machine_derived' }
     }
   } catch {
     // fall through to fallback
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }
-  const linuxMachineId = readLinuxMachineId()
-  if (linuxMachineId) return { machineId: linuxMachineId, idClass: 'machine_derived' }
   // Fallback: random UUID, flagged so dashboards can quarantine.
   return { machineId: randomUUID(), idClass: 'random_fallback' }
 }
@@ -258,7 +263,8 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
 
     // Without a machine id, keep a persisted installation id instead of
     // replacing it with a fresh random one on every launch. Legacy UUIDs and
-    // unreadable content still get a new id.
+    // unreadable content still get a new id. The class stays
+    // `random_fallback`: this launch cannot vouch for where the id came from.
     const newId =
       idClass === 'random_fallback' && existing != null && INSTALLATION_ID_RE.test(existing)
         ? existing
