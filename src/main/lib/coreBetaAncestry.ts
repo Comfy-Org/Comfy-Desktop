@@ -171,6 +171,8 @@ async function notContainedHoldsOnShallow(
   if (grafts.length > MAX_SHALLOW_GRAFTS) return false
   for (const graft of grafts) {
     if (graft === sha) return false
+    // `findMergeBase`, not `findMergeBaseOrNone`: here "no common ancestor" and "could not look" both
+    // mean the graft is not proven an ancestor, and both must fail.
     const base = await findMergeBase(repoPath, graft, sha)
     if (base?.toLowerCase() !== graft) return false
   }
@@ -195,14 +197,14 @@ export async function resolveCoreCommitState(
       // Re-validated here, not only at parse time: the SHA reaches `git fetch` as an argument.
       const sha = raw.toLowerCase()
       if (!FULL_SHA_RE.test(sha)) continue
-      // Re-read per SHA: a background fetch from an earlier launch can rewrite the boundaries.
-      const grafts = readShallowGrafts(repoPath)
       if (index >= MAX_RESOLVED_SHAS) {
         console.log(
           `[core-beta] ancestry ${sha.slice(0, 12)}: not checked (the payload names more than ${MAX_RESOLVED_SHAS} commits), so entries that need it do not match`
         )
         continue
       }
+      // Re-read per SHA: a background fetch from an earlier launch can rewrite the boundaries.
+      const grafts = readShallowGrafts(repoPath)
       let related: Relation = null
       try {
         related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
@@ -244,7 +246,15 @@ export async function resolveCoreCommitState(
   // Abandoned when interrupted, so it must never be left with an unhandled rejection.
   void work.catch((err: unknown) => console.warn('[core-beta] ancestry resolution failed:', err))
   try {
-    const outcome = await Promise.race([work.then(() => 'done' as const), interrupted])
+    // Cannot reject: a failure inside `work` is logged above and leaves the map partial, which is
+    // the fail-closed answer. A beta lookup must never fail the launch.
+    const outcome = await Promise.race([
+      work.then(
+        () => 'done' as const,
+        () => 'done' as const
+      ),
+      interrupted
+    ])
     if (outcome === 'interrupted') {
       console.log('[core-beta] ancestry: stopped early; SHAs not reached stay unresolved')
     }

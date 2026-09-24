@@ -508,7 +508,12 @@ async function openLogStream(installPath: string): Promise<WriteStream> {
   const logDir = getLogDir(installPath)
   fs.mkdirSync(logDir, { recursive: true })
   await rotateLogFiles(logDir, 'comfyui.log')
-  return fs.createWriteStream(path.join(logDir, 'comfyui.log'), { flags: 'w' })
+  const stream = fs.createWriteStream(path.join(logDir, 'comfyui.log'), { flags: 'w' })
+  // Attached at creation: the file opens asynchronously, and a stream error with no listener is an
+  // uncaught exception in the main process. A log that cannot be opened or written costs the
+  // launch its log file, never the launch itself.
+  stream.on('error', (err) => console.warn('[launch] comfyui.log unavailable:', err))
+  return stream
 }
 
 export function writeLog(stream: WriteStream, text: string): void {

@@ -10,14 +10,18 @@ const git = vi.hoisted(() => ({
   gitDir: '',
   configDir: '',
   presence: undefined as undefined | 'present' | 'absent' | 'unknown',
-  noCommonAncestor: false
+  noCommonAncestor: false,
+  gitDirReads: 0
 }))
 vi.mock('./git', () => ({
   findMergeBase: (...args: [string, string, string]) => git.findMergeBase(...args),
   findMergeBaseOrNone: async (...args: [string, string, string]) =>
     git.noCommonAncestor ? null : git.findMergeBase(...args),
   fetchCommitSha: (...args: [string, string]) => git.fetchCommitSha(...args),
-  resolveGitDir: () => git.gitDir,
+  resolveGitDir: () => {
+    git.gitDirReads += 1
+    return git.gitDir
+  },
   revParseRef: (...args: [string, string]) => git.revParseRef(...args),
   // A definite miss unless the rev-parse mock resolves it; `presence` overrides per test.
   commitPresence: async (repo: string, sha: string) =>
@@ -43,6 +47,7 @@ beforeEach(() => {
   // Default: HEAD resolves (the repository is readable) and no other SHA exists locally.
   git.presence = undefined
   git.noCommonAncestor = false
+  git.gitDirReads = 0
   git.revParseRef.mockReset()
   git.revParseRef.mockImplementation(async (_repo, ref) =>
     ref === `${HEAD}^{commit}` ? HEAD : undefined
@@ -501,6 +506,34 @@ describe('resolveCoreCommitState', () => {
       expect(lines).toContain(
         `[core-beta] ancestry ${shaOf(17).slice(0, 12)}: not checked (the payload names more than 16 commits), so entries that need it do not match`
       )
+    })
+  })
+
+  describe('second human review', () => {
+    it('resolves fail-closed, never rejects, when resolution throws mid-race', async () => {
+      git.findMergeBase.mockResolvedValue(OLDER)
+      vi.mocked(console.log).mockImplementation((line: unknown) => {
+        if (String(line).includes('ancestry')) throw new Error('logger exploded')
+      })
+
+      const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER])
+
+      expect(
+        state.ancestry.size,
+        'a failed lookup leaves the map partial, and the launch goes on'
+      ).toBe(0)
+    })
+
+    it('does not read the repository for SHAs past the resolution cap', async () => {
+      git.findMergeBase.mockResolvedValue(OLDER)
+      const shas = Array.from({ length: 20 }, (_, i) => shaOf(i + 1))
+
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, shas)
+
+      expect(
+        git.gitDirReads,
+        'one shallow-marker read per checked SHA, none for skipped ones'
+      ).toBe(16)
     })
   })
 })

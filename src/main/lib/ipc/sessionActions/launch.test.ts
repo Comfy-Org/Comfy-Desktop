@@ -1213,6 +1213,21 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain(RECORD)
   })
 
+  it('launches without a log file, rather than crashing, when comfyui.log cannot be opened', async () => {
+    const logs = path.join(installDir, 'logs')
+    fs.mkdirSync(logs, { recursive: true })
+    fs.chmodSync(logs, 0o500)
+    try {
+      const res = await handleLaunch(ctxFor('harness-log-unopenable'))
+      // Let the asynchronous open fail while the directory is still read-only. (As root it stays
+      // writable, and the launch simply has its log.)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(res.ok, 'a log file problem must not fail the launch').toBe(true)
+    } finally {
+      fs.chmodSync(logs, 0o700)
+    }
+  })
+
   it('arms the activation notice from the same latch that reports the grant', async () => {
     const id = 'harness-arms-beta-notice'
     expect(peekBetaActivationNotice(id)).toBeNull()
