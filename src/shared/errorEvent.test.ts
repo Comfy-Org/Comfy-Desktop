@@ -141,7 +141,18 @@ describe('errorEvent', () => {
     it('scrubs PII from the message', () => {
       const fields = buildErrorFields("FileNotFoundError: No such file 'C:\\Users\\alice\\wf.json'")
       expect(fields.error_message).not.toContain('alice')
-      expect(fields.error_message).toContain('[REDACTED]')
+      expect(fields.error_message).toContain('<path>')
+    })
+
+    it('keeps a path under a root relative and groups it with a redacted one', () => {
+      const pathRoots = [{ path: '/opt/Comfy/ComfyUI', token: '<comfyui>' }]
+      const inside = buildErrorFields('OSError: bad file /opt/Comfy/ComfyUI/models/a.ckpt', {
+        pathRoots
+      })
+      const outside = buildErrorFields('OSError: bad file /mnt/elsewhere/a.ckpt')
+      expect(inside.error_message).toBe('OSError: bad file <comfyui>/models/a.ckpt')
+      expect(outside.error_message).toBe('OSError: bad file <path>')
+      expect(inside.error_signature).toBe(outside.error_signature)
     })
 
     it('caps the message length', () => {
@@ -175,7 +186,7 @@ describe('errorEvent', () => {
     it('scrubs user paths in the tail', () => {
       const tail = errorTail('boom at C:\\Users\\carol\\thing.py')
       expect(tail).not.toContain('carol')
-      expect(tail).toContain('[REDACTED]')
+      expect(tail).toContain('<path>')
     })
 
     it('bounds the tail to maxChars', () => {

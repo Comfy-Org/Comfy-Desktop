@@ -91,6 +91,7 @@ import {
 import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
+import { installPathRoots } from '../../pathRoots'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
@@ -848,7 +849,8 @@ async function runLaunch(
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags,
         coreCommit,
-        coreVersionLabel: coreVersionLabel()
+        coreVersionLabel: coreVersionLabel(),
+        pathRoots: installPathRoots(inst.installPath)
       })
       const hwTap = createHardwareTap({
         installationId,
@@ -1843,7 +1845,8 @@ async function runLaunch(
     // carries the last ~40 lines of stderr — where the fatal error prints —
     // scrubbed and capped, so the failure is diagnosable without depending on
     // the separate, unreliable `boot_log` event.
-    const tail = errorTail(launchResult.stderr)
+    const pathRoots = installPathRoots(inst.installPath)
+    const tail = errorTail(launchResult.stderr, { pathRoots })
     const errorSource = tail
       ? `${launchResult.message}\n${launchResult.stderr}`
       : launchResult.message
@@ -1853,7 +1856,7 @@ async function runLaunch(
       variant: (inst.variant as string | undefined) ?? null,
       ...bootCohort(),
       failed_phase: failedPhase,
-      ...buildErrorFields(errorSource),
+      ...buildErrorFields(errorSource, { pathRoots }),
       error_tail: tail,
       exit_code: launchResult.exitCode ?? null,
       signal: launchResult.signal ?? null,

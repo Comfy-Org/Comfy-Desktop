@@ -1334,7 +1334,7 @@ describe('telemetry.trackedStep', () => {
     ).rejects.toThrow()
     expect(captured[1]!.event).toBe('migrate.flow.error')
     const msg = captured[1]!.properties?.error_message as string
-    expect(msg).toContain('[REDACTED]')
+    expect(msg).toContain('<path>')
     expect(msg).not.toContain('Administrator')
   })
 

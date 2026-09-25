@@ -33,7 +33,8 @@
  * event at once.
  */
 import { bucketError, type ErrorBucket } from './errorBucket'
-import { scrubAll } from './piiScrub'
+import { scrubAll, scrubPaths } from './piiScrub'
+import type { PathRoot } from './piiScrub'
 
 /** Human-readable message cap (~2 KB). */
 export const ERROR_MESSAGE_MAX = 2048
@@ -270,6 +271,9 @@ export function extractErrorClass(input: unknown): string {
 export function normalizeSignature(message: string): string {
   return (
     message
+      // A path under a known root is forwarded as `<token>/rest`; drop the
+      // token so it groups with the same path redacted whole.
+      .replace(/<(?:comfyui|install)>(?=\/)/g, '')
       .toLowerCase()
       // Quoted strings collapse first so their contents don't leak into the
       // other rules (e.g. a quoted path or number).
@@ -298,13 +302,14 @@ export function normalizeSignature(message: string): string {
 /**
  * Build the standard `{ error_class, error_message, error_bucket,
  * error_signature }` fields from any error input (an `Error`, a string, or
- * unknown). PII is scrubbed from `error_message`; `error_bucket` runs on the
- * RAW text (its regexes want the un-redacted string), while the wire-bound
+ * unknown). Paths and PII are scrubbed from `error_message` (a path under
+ * `pathRoots` stays readable relative to its token, any other path is
+ * redacted); `error_bucket` runs on the RAW text (its regexes want the un-redacted string), while the wire-bound
  * message is scrubbed and capped.
  */
 export function buildErrorFields(
   input: unknown,
-  opts: { messageCap?: number; errorClass?: string } = {}
+  opts: { messageCap?: number; errorClass?: string; pathRoots?: readonly PathRoot[] } = {}
 ): ErrorFields {
   const raw = messageOf(input)
   const messageCap = opts.messageCap ?? ERROR_MESSAGE_MAX
@@ -316,7 +321,7 @@ export function buildErrorFields(
   // signal, not the node-load noise that precedes it. Fall back to the raw
   // text for plain errors that have no traceback shape.
   const primary = findExceptionLine(raw) ?? raw
-  const scrubbedMessage = scrubAll(primary).slice(0, messageCap)
+  const scrubbedMessage = scrubAll(scrubPaths(primary, opts.pathRoots)).slice(0, messageCap)
   return {
     error_class: errorClass,
     error_message: scrubbedMessage,
@@ -328,18 +333,18 @@ export function buildErrorFields(
 }
 
 /**
- * The last N lines of stderr, PII-scrubbed and length-capped, for
+ * The last N lines of stderr, path- and PII-scrubbed and length-capped, for
  * process-boot failures. Prefers the TAIL (where tracebacks and the fatal
  * error print) over the head (dominated by node-load noise). Returns `null`
  * for empty input so the field is explicitly absent rather than `''`.
  */
 export function errorTail(
   stderr: string | null | undefined,
-  opts: { maxChars?: number } = {}
+  opts: { maxChars?: number; pathRoots?: readonly PathRoot[] } = {}
 ): string | null {
   if (!stderr) return null
   const maxChars = opts.maxChars ?? ERROR_TAIL_MAX
-  const scrubbed = scrubAll(stderr)
+  const scrubbed = scrubAll(scrubPaths(stderr, opts.pathRoots))
   const bounded = scrubbed.length > maxChars ? scrubbed.slice(-maxChars) : scrubbed
   const trimmed = bounded.trim()
   return trimmed.length > 0 ? trimmed : null

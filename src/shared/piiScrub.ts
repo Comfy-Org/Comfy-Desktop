@@ -12,6 +12,11 @@
  * and the renderer-side `scrubTelemetryContext` safety net — applies
  * identical rules. Adding a pattern here updates every call site at once.
  *
+ * Error text (messages, tracebacks, stderr tails) additionally goes through
+ * `scrubPaths` first, via `buildErrorFields` / `errorTail` and the execution
+ * tap: a path inside the installation stays readable relative to a token, and
+ * every other absolute path is redacted.
+ *
  * Not applied to logs displayed locally to the user (e.g. the crashed-state
  * lifecycle view or the console modal) — those need to be readable for
  * debugging and never leave the user's machine.
@@ -74,6 +79,97 @@ export function scrubAll(value: string): string {
   // Credentials embedded in URLs can resemble email addresses, so redact
   // secrets before the broader email/path PII pass.
   return scrubPII(scrubSecrets(value))
+}
+
+/**
+ * A directory whose paths may be forwarded relative to a stable token, e.g.
+ * the ComfyUI install as `<comfyui>`. Everything under no root is redacted.
+ */
+export interface PathRoot {
+  path: string
+  token: string
+}
+
+/** Characters that never appear inside a path as it is printed in a log. */
+const PATH_STOP = `\\s"'<>|?*:`
+/**
+ * Space-separated words that are still part of the path: up to three plain
+ * words (`Program Files (x86)`) followed by one that holds a separator.
+ */
+const PATH_CONTINUATION = `(?:(?: [^${PATH_STOP}\\\\/]+){0,3} [^${PATH_STOP}\\\\/]+[\\\\/][^${PATH_STOP}]*)*`
+
+/**
+ * Absolute path candidates, first match wins:
+ * 1. a quoted string whose content starts like a path (spaces included);
+ * 2. a `file://` URL;
+ * 3. a Windows drive path, optionally with the `\\?\` long-path prefix;
+ * 4. a UNC path;
+ * 5. a POSIX or home-relative path. The lookbehind keeps URLs (`https://h/p`),
+ *    fractions (`1/2`), relative paths and our own `<token>/rest` output out.
+ */
+const PATH_CANDIDATE = new RegExp(
+  [
+    `(["'])((?:file:\\/\\/|(?:\\\\\\\\\\?\\\\)?[A-Za-z]:[\\\\/]|\\\\\\\\|\\/|~[\\\\/])[^"'\\r\\n]*)\\1`,
+    `file:\\/\\/[^\\s"'<>|]*`,
+    `(?<![A-Za-z0-9])(?:\\\\\\\\\\?\\\\)?[A-Za-z]:[\\\\/][^${PATH_STOP}]*${PATH_CONTINUATION}`,
+    `(?<![\\w\\\\/])\\\\\\\\[^${PATH_STOP}\\\\/]+[\\\\/][^${PATH_STOP}]*${PATH_CONTINUATION}`,
+    `(?<![\\w.:/\\\\~>-])~?\\/[^${PATH_STOP}\\\\/][^${PATH_STOP}]*${PATH_CONTINUATION}`
+  ].join('|'),
+  'g'
+)
+
+/** Forward slashes, one at a time, no long-path or `file://` prefix, no trailing slash. */
+function normalizePath(value: string): string {
+  let normalized = value.replace(/^file:\/\/(?:localhost)?/i, '').replace(/[\\/]+/g, '/')
+  normalized = normalized.replace(/^\/\?\//, '')
+  // `file:///C:/x` leaves `/C:/x`.
+  if (/^\/[A-Za-z]:\//.test(normalized)) normalized = normalized.slice(1)
+  // A UNC path keeps its double leading slash.
+  if (/^[\\/]{2}[^\\/?]/.test(value)) normalized = `/${normalized}`
+  return normalized.length > 1 ? normalized.replace(/\/$/, '') : normalized
+}
+
+/** Drive and UNC paths compare case-insensitively, as Windows resolves them. */
+function isWindowsShaped(normalized: string): boolean {
+  return /^[A-Za-z]:\//.test(normalized) || normalized.startsWith('//')
+}
+
+function rewritePath(candidate: string, roots: readonly PathRoot[]): string {
+  const normalized = normalizePath(candidate)
+  for (const root of roots) {
+    const rootPath = normalizePath(root.path)
+    if (rootPath.length < 2) continue
+    const fold = isWindowsShaped(rootPath)
+    const subject = fold ? normalized.toLowerCase() : normalized
+    const prefix = fold ? rootPath.toLowerCase() : rootPath
+    if (subject === prefix || subject.startsWith(`${prefix}/`)) {
+      return `${root.token}${normalized.slice(rootPath.length)}`
+    }
+  }
+  return '<path>'
+}
+
+/**
+ * Rewrite every absolute path in `text`: a path under one of `roots` becomes
+ * that root's token plus the rest of the path (`<comfyui>/custom_nodes/x.py`),
+ * and any other path, whether on another drive, a UNC share, a home directory or
+ * a `file://` URL, becomes `<path>`. With no roots, every absolute path is
+ * redacted.
+ *
+ * Run it BEFORE `scrubAll`: that pass rewrites the username inside a root,
+ * after which the root no longer matches. The output is stable under a second
+ * pass with any roots, so layered forwarders may each apply it.
+ */
+export function scrubPaths(text: string, roots: readonly PathRoot[] = []): string {
+  // Longest first, so `<comfyui>` wins over the `<install>` that contains it.
+  const ordered = [...roots].sort(
+    (left, right) => normalizePath(right.path).length - normalizePath(left.path).length
+  )
+  return text.replace(PATH_CANDIDATE, (match: string, quote?: string, quoted?: string) =>
+    quote !== undefined && quoted !== undefined
+      ? `${quote}${rewritePath(quoted, ordered)}${quote}`
+      : rewritePath(match, ordered)
+  )
 }
 
 export type SafeTelemetryValue = boolean | number | string | null

@@ -271,7 +271,28 @@ describe('executionTap', () => {
     expect(errs.length).toBe(1)
     const message = String(errs[0]!.ctx.error_message)
     expect(message).not.toContain('alice')
-    expect(message).toContain('[REDACTED]')
+    expect(message).toContain('<path>')
+  })
+
+  it('keeps install-relative paths and redacts the rest in the message and traceback', () => {
+    const tap = createExecutionTap({
+      installationId: 'inst-1',
+      pathRoots: [{ path: 'D:\\Comfy\\ComfyUI', token: '<comfyui>' }]
+    })
+    tap.ingest(
+      [
+        'Traceback (most recent call last):',
+        '  File "D:\\Comfy\\ComfyUI\\custom_nodes\\pack\\nodes.py", line 10, in foo',
+        "FileNotFoundError: [Errno 2] No such file: 'E:\\models\\secret.safetensors'",
+        '',
+        'next-line'
+      ].join('\n'),
+      'stderr'
+    )
+    const err = captured.find((c) => c.event === 'comfy.desktop.execution.error')!
+    expect(err.ctx.error_traceback).toContain('File "<comfyui>/custom_nodes/pack/nodes.py"')
+    expect(err.ctx.error_message).toBe("FileNotFoundError: [Errno 2] No such file: '<path>'")
+    expect(JSON.stringify(err.ctx)).not.toContain('secret')
   })
 
   it('flushSummary drains a pending traceback so errors are not lost on exit', () => {
