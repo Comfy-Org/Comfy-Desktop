@@ -86,6 +86,7 @@ function handleClick(item: ContextMenuItem): void {
         >
           <button
             class="context-menu-item-action"
+            :class="{ disabled: item.disabled }"
             :aria-disabled="item.disabled || undefined"
             :title="item.disabled ? item.title : undefined"
             :data-testid="TID.contextMenuItem(item.id)"
