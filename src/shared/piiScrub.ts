@@ -12,10 +12,12 @@
  * and the renderer-side `scrubTelemetryContext` safety net — applies
  * identical rules. Adding a pattern here updates every call site at once.
  *
- * Error text (messages, tracebacks, stderr tails) additionally goes through
- * `scrubPaths` first, via `buildErrorFields` / `errorTail` and the execution
- * tap: a path inside the installation stays readable relative to a token, and
- * every other absolute path is redacted.
+ * ComfyUI's error text additionally goes through `scrubPaths` first: via
+ * `buildErrorFields` / `errorTail`, the execution tap's traceback, and the
+ * exit event's stderr tail. A path inside the installation stays readable
+ * relative to a token, and every other absolute path is redacted. Desktop's own
+ * exception forwarders (`forwardDatadogError`, `captureException`) do not use
+ * it: their frames are Desktop's bundle, handled by the username pass.
  *
  * Not applied to logs displayed locally to the user (e.g. the crashed-state
  * lifecycle view or the console modal) — those need to be readable for
@@ -90,48 +92,75 @@ export interface PathRoot {
   token: string
 }
 
-/** Characters that never appear inside a path as it is printed in a log. */
-const PATH_STOP = `\\s"'<>|?*:`
 /**
- * Space-separated words that are still part of the path: up to three plain
- * words (`Program Files (x86)`) followed by one that holds a separator.
+ * The body of an unquoted path: everything up to a line end, a double quote or
+ * `<>|`. Spaces are included, because a path's directories and file name may
+ * hold them and nothing marks where such a path ends; any prose after an
+ * outside path is redacted with it. A colon is included unless a digit or
+ * whitespace follows, which keeps `file.py:12: Warning` and `path: message`
+ * apart while still covering `A:/x:B:/y` lists and stream names.
  */
-const PATH_CONTINUATION = `(?:(?: [^${PATH_STOP}\\\\/]+){0,3} [^${PATH_STOP}\\\\/]+[\\\\/][^${PATH_STOP}]*)*`
+const PATH_BODY = `(?:[^\\r\\n"<>|:]|:(?=[^\\d\\s]))*`
+/** How a path may start once any quote is removed. */
+const PATH_START = `(?:file:\\/\\/|(?:\\\\\\\\\\?\\\\)?[A-Za-z]:[\\\\/]|[\\\\/]{2}|~?\\/)`
+/** One path segment name: no separator, no whitespace, no delimiter. */
+const SEGMENT = `[^\\s"<>|:\\\\/]`
 
 /**
  * Absolute path candidates, first match wins:
- * 1. a quoted string whose content starts like a path (spaces included);
- * 2. a `file://` URL;
- * 3. a Windows drive path, optionally with the `\\?\` long-path prefix;
- * 4. a UNC path;
- * 5. a POSIX or home-relative path. The lookbehind keeps URLs (`https://h/p`),
+ * 1-2. a quoted string whose content starts like a path, the other quote
+ *    character included (`"C:\Users\Sean O'Brien\x.py"`);
+ * 3. a `file://` URL;
+ * 4. a Windows drive path, optionally with the `\\?\` long-path prefix;
+ * 5. a UNC path, including `\\?\UNC\...`;
+ * 6. a forward-slash UNC path (`//server/share`), not a URL's `scheme://`;
+ * 7. a POSIX or home-relative path. The lookbehind keeps URLs (`https://h/p`),
  *    fractions (`1/2`), relative paths and our own `<token>/rest` output out.
  */
 const PATH_CANDIDATE = new RegExp(
   [
-    `(["'])((?:file:\\/\\/|(?:\\\\\\\\\\?\\\\)?[A-Za-z]:[\\\\/]|\\\\\\\\|\\/|~[\\\\/])[^"'\\r\\n]*)\\1`,
-    `file:\\/\\/[^\\s"'<>|]*`,
-    `(?<![A-Za-z0-9])(?:\\\\\\\\\\?\\\\)?[A-Za-z]:[\\\\/][^${PATH_STOP}]*${PATH_CONTINUATION}`,
-    `(?<![\\w\\\\/])\\\\\\\\[^${PATH_STOP}\\\\/]+[\\\\/][^${PATH_STOP}]*${PATH_CONTINUATION}`,
-    `(?<![\\w.:/\\\\~>-])~?\\/[^${PATH_STOP}\\\\/][^${PATH_STOP}]*${PATH_CONTINUATION}`
+    `"(${PATH_START}[^"\\r\\n]*)"`,
+    `'(${PATH_START}[^'\\r\\n]*)'`,
+    `file:\\/\\/${PATH_BODY}`,
+    `(?<![A-Za-z0-9])(?:\\\\\\\\\\?\\\\)?[A-Za-z]:[\\\\/]${PATH_BODY}`,
+    `(?<![\\w\\\\/])\\\\\\\\${SEGMENT}+[\\\\/]${PATH_BODY}`,
+    `(?<![\\w:/\\\\])\\/\\/${SEGMENT}+\\/${PATH_BODY}`,
+    `(?<![\\w.:/\\\\~>-])~?\\/${SEGMENT}${PATH_BODY}`
   ].join('|'),
   'g'
 )
 
-/** Forward slashes, one at a time, no long-path or `file://` prefix, no trailing slash. */
+/**
+ * Trailing text an unquoted match gives back: whitespace, and punctuation that
+ * closes the surrounding sentence or bracket rather than the path.
+ */
+const TRAILING = /[\s)\]},;.'`]+$/
+
+/**
+ * Forward slashes, one at a time, no long-path or `file://` prefix, `.` and
+ * `..` resolved, no trailing slash. A UNC path keeps its double leading slash.
+ */
 function normalizePath(value: string): string {
-  let normalized = value.replace(/^file:\/\/(?:localhost)?/i, '').replace(/[\\/]+/g, '/')
-  normalized = normalized.replace(/^\/\?\//, '')
+  const unc = /^(?:[\\/]{2}(?:\?[\\/]UNC[\\/])?)(?![\\/?])/i.test(value)
+  let flat = value
+    .replace(/^file:\/\/(?:localhost)?/i, '')
+    .replace(/^[\\/]{2}\?[\\/](?:UNC[\\/])?/i, unc ? '//' : '')
+    .replace(/[\\/]+/g, '/')
   // `file:///C:/x` leaves `/C:/x`.
-  if (/^\/[A-Za-z]:\//.test(normalized)) normalized = normalized.slice(1)
-  // A UNC path keeps its double leading slash.
-  if (/^[\\/]{2}[^\\/?]/.test(value)) normalized = `/${normalized}`
-  return normalized.length > 1 ? normalized.replace(/\/$/, '') : normalized
+  if (/^\/[A-Za-z]:\//.test(flat)) flat = flat.slice(1)
+  const lead = unc ? '//' : flat.startsWith('/') ? '/' : ''
+  const resolved: string[] = []
+  for (const segment of flat.split('/')) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') resolved.pop()
+    else resolved.push(segment)
+  }
+  return lead + resolved.join('/')
 }
 
 /** Drive and UNC paths compare case-insensitively, as Windows resolves them. */
 function isWindowsShaped(normalized: string): boolean {
-  return /^[A-Za-z]:\//.test(normalized) || normalized.startsWith('//')
+  return /^[A-Za-z]:(?:\/|$)/.test(normalized) || normalized.startsWith('//')
 }
 
 function rewritePath(candidate: string, roots: readonly PathRoot[]): string {
@@ -165,10 +194,14 @@ export function scrubPaths(text: string, roots: readonly PathRoot[] = []): strin
   const ordered = [...roots].sort(
     (left, right) => normalizePath(right.path).length - normalizePath(left.path).length
   )
-  return text.replace(PATH_CANDIDATE, (match: string, quote?: string, quoted?: string) =>
-    quote !== undefined && quoted !== undefined
-      ? `${quote}${rewritePath(quoted, ordered)}${quote}`
-      : rewritePath(match, ordered)
+  return text.replace(
+    PATH_CANDIDATE,
+    (match: string, doubleQuoted?: string, singleQuoted?: string) => {
+      if (doubleQuoted !== undefined) return `"${rewritePath(doubleQuoted, ordered)}"`
+      if (singleQuoted !== undefined) return `'${rewritePath(singleQuoted, ordered)}'`
+      const trailing = TRAILING.exec(match)?.[0] ?? ''
+      return rewritePath(match.slice(0, match.length - trailing.length), ordered) + trailing
+    }
   )
 }
 

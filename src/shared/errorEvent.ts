@@ -272,8 +272,10 @@ export function normalizeSignature(message: string): string {
   return (
     message
       // A path under a known root is forwarded as `<token>/rest`; drop the
-      // token so it groups with the same path redacted whole.
+      // token so it groups with the same path redacted whole, and treat a bare
+      // root as the path it is.
       .replace(/<(?:comfyui|install)>(?=\/)/g, '')
+      .replace(/<(?:comfyui|install)>/g, '<path>')
       .toLowerCase()
       // Quoted strings collapse first so their contents don't leak into the
       // other rules (e.g. a quoted path or number).

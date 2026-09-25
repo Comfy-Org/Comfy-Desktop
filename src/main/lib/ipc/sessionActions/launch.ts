@@ -92,6 +92,7 @@ import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { installPathRoots } from '../../pathRoots'
+import { scrubPaths } from '../../../../shared/piiScrub'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
@@ -1431,12 +1432,13 @@ async function runLaunch(
         ...crashDiagnosis
       }
       // Emit from main so it survives the Desktop 2 panel teardown on exit.
-      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
+      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is path-
+      // scrubbed here and PII-scrubbed centrally.
       telemetry.emit('comfy.desktop.comfyui.exited', {
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null
+        last_stderr: lastStderr ? scrubPaths(lastStderr, installPathRoots(inst.installPath)) : null
       })
       if (crashed) {
         recordCrash(exitedPayload)
@@ -2104,12 +2106,13 @@ async function runLaunch(
         ...crashDiagnosis
       }
       // Emit from main so it survives the Desktop 2 panel teardown on exit.
-      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
+      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is path-
+      // scrubbed here and PII-scrubbed centrally.
       telemetry.emit('comfy.desktop.comfyui.exited', {
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null
+        last_stderr: lastStderr ? scrubPaths(lastStderr, installPathRoots(inst.installPath)) : null
       })
       if (crashed) {
         recordCrash(exitedPayload)

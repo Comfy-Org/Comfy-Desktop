@@ -77,11 +77,29 @@ describe('scrubPaths', () => {
       ['a mount', 'reading /mnt/data/models/a.pt'],
       ['a home-relative path', 'config at ~/secret/x.yaml'],
       ['a sibling of the root', 'at /home/alice/Comfy2/x.py'],
-      ['a macOS path with spaces', 'db /Users/bob/Library/Application Support/x.db']
+      ['a macOS path with spaces', 'db /Users/bob/Library/Application Support/x.db'],
+      ['a file name with spaces', 'Loading E:\\models\\Acme Client Secret Project v2.safetensors'],
+      ['an apostrophe in a quoted path', '  File "C:\\Users\\Sean O\'Brien\\Secret\\x.py", line 1'],
+      ['every entry of a path list', 'LD_LIBRARY_PATH=/usr/lib:/mnt/clientx/secret/lib'],
+      ['a forward-slash UNC share', 'open //nas/share/secret/a.pt failed'],
+      ['a long-path UNC share', 'open \\\\?\\UNC\\nas\\share\\secret\\a.pt'],
+      ['an NTFS stream name', 'E:\\models\\file:secret.safetensors'],
+      ['a root escaped with ..', 'at /home/alice/Comfy/ComfyUI/../../secret/x.py']
     ])('redacts %s', (_label, input) => {
       const scrubbed = scrubPaths(input, [...WINDOWS_ROOTS, ...POSIX_ROOTS])
       expect(scrubbed).toContain('<path>')
-      for (const leak of ['bob', 'alice', 'models', 'nas', 'Thing', 'secret', 'Stuff', 'Comfy2']) {
+      for (const leak of [
+        'bob',
+        'Brien',
+        'models',
+        'nas',
+        'Thing',
+        'secret',
+        'Secret',
+        'Stuff',
+        'Comfy2',
+        'clientx'
+      ]) {
         expect(scrubbed).not.toContain(leak)
       }
     })
@@ -92,9 +110,15 @@ describe('scrubPaths', () => {
       )
     })
 
-    it('keeps the words that follow a path', () => {
-      expect(scrubPaths('Loading E:\\x.ckpt took 3s')).toBe('Loading <path> took 3s')
+    it('keeps a line number and message after a colon, and closing punctuation', () => {
       expect(scrubPaths('/a/b.py:12: UserWarning: hi')).toBe('<path>:12: UserWarning: hi')
+      expect(scrubPaths('open E:\\x.ckpt: denied')).toBe('open <path>: denied')
+      expect(scrubPaths('at fn (/Users/bob/x.js:3:9)')).toBe('at fn (<path>:3:9)')
+      expect(scrubPaths('[/Users/bob/x.py]')).toBe('[<path>]')
+    })
+
+    it('redacts the prose after an unquoted outside path, since it may be the file name', () => {
+      expect(scrubPaths('Loading E:\\x.ckpt took 3s')).toBe('Loading <path>')
     })
   })
 
@@ -112,10 +136,10 @@ describe('scrubPaths', () => {
 
   it('is stable under a second pass, with or without roots', () => {
     const once = scrubPaths(
-      '  File "/home/alice/Comfy/ComfyUI/a.py", line 1\nat /tmp/x',
+      '  File "/home/alice/Comfy/ComfyUI/a.py", line 1\nat /tmp/x\nat /home/alice/Comfy/ComfyUI/b c.py',
       POSIX_ROOTS
     )
-    expect(once).toBe('  File "<comfyui>/a.py", line 1\nat <path>')
+    expect(once).toBe('  File "<comfyui>/a.py", line 1\nat <path>\nat <comfyui>/b c.py')
     expect(scrubPaths(once)).toBe(once)
     expect(scrubPaths(once, POSIX_ROOTS)).toBe(once)
   })
