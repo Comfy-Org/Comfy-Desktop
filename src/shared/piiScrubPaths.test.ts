@@ -84,7 +84,20 @@ describe('scrubPaths', () => {
       ['a forward-slash UNC share', 'open //nas/share/secret/a.pt failed'],
       ['a long-path UNC share', 'open \\\\?\\UNC\\nas\\share\\secret\\a.pt'],
       ['an NTFS stream name', 'E:\\models\\file:secret.safetensors'],
-      ['a root escaped with ..', 'at /home/alice/Comfy/ComfyUI/../../secret/x.py']
+      ['a root escaped with ..', 'at /home/alice/Comfy/ComfyUI/../../secret/x.py'],
+      ['an apostrophe in a single-quoted path', "cannot open '/home/bob/Sean O'Brien/secret.ckpt'"],
+      ['a path after a colon', 'PYTHONPATH=.:/mnt/clientx/secret/lib'],
+      ['a redirect target', 'cmd 2>/srv/secret/err.log'],
+      ['a root-relative Windows path', 'open \\Users\\bob\\secret.txt'],
+      [
+        'a second path after an in-root one',
+        'copy /home/alice/Comfy/ComfyUI/a.ckpt to /mnt/secret/b.ckpt'
+      ],
+      ['an in-root path list entry', 'PATH=/home/alice/Comfy/ComfyUI/bin:/mnt/clientx/secret/bin'],
+      [
+        'a drive path after an in-root one',
+        'D:\\AI Stuff\\Comfy\\ComfyUI\\a.ckpt;E:\\secret\\b.ckpt'
+      ]
     ])('redacts %s', (_label, input) => {
       const scrubbed = scrubPaths(input, [...WINDOWS_ROOTS, ...POSIX_ROOTS])
       expect(scrubbed).toContain('<path>')
@@ -132,6 +145,38 @@ describe('scrubPaths', () => {
     ])('leaves %s alone', (input) => {
       expect(scrubPaths(input, POSIX_ROOTS)).toBe(input)
     })
+  })
+
+  it('keeps the in-root half of a two-path message readable', () => {
+    expect(scrubPaths('copy /home/alice/Comfy/ComfyUI/a.ckpt to /mnt/x/b.ckpt', POSIX_ROOTS)).toBe(
+      'copy <comfyui>/a.ckpt to <path>'
+    )
+    expect(scrubPaths('PATH=/home/alice/Comfy/ComfyUI/bin:/usr/bin', POSIX_ROOTS)).toBe(
+      'PATH=<comfyui>/bin:<path>'
+    )
+  })
+
+  it('handles thousands of paths on one line without recursing per path', () => {
+    expect(scrubPaths(' /a/b'.repeat(20_000))).toBe(' <path>'.repeat(20_000))
+  })
+
+  it('never treats a whole volume as a root', () => {
+    const roots = [
+      { path: 'C:\\', token: '<install>' },
+      { path: '\\\\nas\\share', token: '<install>' },
+      { path: '/', token: '<install>' }
+    ]
+    expect(scrubPaths('C:\\Users\\alice\\x.py', roots)).toBe('<path>')
+    expect(scrubPaths('\\\\nas\\share\\x.py', roots)).toBe('<path>')
+    expect(scrubPaths('/etc/x', roots)).toBe('<path>')
+  })
+
+  it('does not climb above a drive or share with ..', () => {
+    const roots = [{ path: '\\\\nas\\install\\Comfy', token: '<install>' }]
+    expect(scrubPaths('\\\\nas\\other\\..\\install\\Comfy\\x.py', roots)).toBe('<path>')
+    expect(scrubPaths('C:\\..\\Comfy\\x.py', [{ path: 'C:\\Comfy', token: '<install>' }])).toBe(
+      '<install>/x.py'
+    )
   })
 
   it('is stable under a second pass, with or without roots', () => {

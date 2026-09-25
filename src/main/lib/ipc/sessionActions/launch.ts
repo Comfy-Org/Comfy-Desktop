@@ -93,6 +93,7 @@ import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { installPathRoots } from '../../pathRoots'
 import { scrubPaths } from '../../../../shared/piiScrub'
+import type { PathRoot } from '../../../../shared/piiScrub'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
@@ -830,6 +831,11 @@ async function runLaunch(
     }
   }
 
+  // Resolved once per launch: it touches the filesystem, and the exit handlers
+  // run exactly when the install's drive or share may have gone away.
+  let pathRootsMemo: PathRoot[] | undefined
+  const launchPathRoots = (): PathRoot[] => (pathRootsMemo ??= installPathRoots(inst.installPath))
+
   // Log stream + telemetry taps + progress tracker, grouped so a throw partway
   // through closes the already-opened log stream. The tracker is armed once -
   // a pre-launch repair may have armed it already; re-arming would re-emit
@@ -851,7 +857,7 @@ async function runLaunch(
         coreBetaFlags,
         coreCommit,
         coreVersionLabel: coreVersionLabel(),
-        pathRoots: installPathRoots(inst.installPath)
+        pathRoots: launchPathRoots()
       })
       const hwTap = createHardwareTap({
         installationId,
@@ -1438,7 +1444,7 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ? scrubPaths(lastStderr, installPathRoots(inst.installPath)) : null
+        last_stderr: lastStderr ? scrubPaths(lastStderr, launchPathRoots()) : null
       })
       if (crashed) {
         recordCrash(exitedPayload)
@@ -1847,7 +1853,7 @@ async function runLaunch(
     // carries the last ~40 lines of stderr — where the fatal error prints —
     // scrubbed and capped, so the failure is diagnosable without depending on
     // the separate, unreliable `boot_log` event.
-    const pathRoots = installPathRoots(inst.installPath)
+    const pathRoots = launchPathRoots()
     const tail = errorTail(launchResult.stderr, { pathRoots })
     const errorSource = tail
       ? `${launchResult.message}\n${launchResult.stderr}`
@@ -2112,7 +2118,7 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ? scrubPaths(lastStderr, installPathRoots(inst.installPath)) : null
+        last_stderr: lastStderr ? scrubPaths(lastStderr, launchPathRoots()) : null
       })
       if (crashed) {
         recordCrash(exitedPayload)

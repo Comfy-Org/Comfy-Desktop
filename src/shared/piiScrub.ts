@@ -105,6 +105,8 @@ const PATH_BODY = `(?:[^\\r\\n"<>|:]|:(?=[^\\d\\s]))*`
 const PATH_START = `(?:file:\\/\\/|(?:\\\\\\\\\\?\\\\)?[A-Za-z]:[\\\\/]|[\\\\/]{2}|~?\\/)`
 /** One path segment name: no separator, no whitespace, no delimiter. */
 const SEGMENT = `[^\\s"<>|:\\\\/]`
+/** Our own output, which a second pass must leave alone. */
+const NOT_AFTER_TOKEN = '(?<!<(?:comfyui|install|path)>)'
 
 /**
  * Absolute path candidates, first match wins:
@@ -114,18 +116,22 @@ const SEGMENT = `[^\\s"<>|:\\\\/]`
  * 4. a Windows drive path, optionally with the `\\?\` long-path prefix;
  * 5. a UNC path, including `\\?\UNC\...`;
  * 6. a forward-slash UNC path (`//server/share`), not a URL's `scheme://`;
- * 7. a POSIX or home-relative path. The lookbehind keeps URLs (`https://h/p`),
- *    fractions (`1/2`), relative paths and our own `<token>/rest` output out.
+ * 7. a Windows root-relative path (`\\Users\\x\\y`), at least two segments deep;
+ * 8. a POSIX or home-relative path. The lookbehinds keep URLs (`https://h/p`),
+ *    fractions (`1/2`), relative paths and our own `<token>/rest` output out,
+ *    while still catching `PATH=.:/mnt/x`, `cwd:/x` and `2>/x`.
  */
 const PATH_CANDIDATE = new RegExp(
   [
     `"(${PATH_START}[^"\\r\\n]*)"`,
-    `'(${PATH_START}[^'\\r\\n]*)'`,
+    // An apostrophe followed by a word character is inside the path (`O'Brien`).
+    `'(${PATH_START}(?:[^'\\r\\n]|'(?=\\w))*)'`,
     `file:\\/\\/${PATH_BODY}`,
     `(?<![A-Za-z0-9])(?:\\\\\\\\\\?\\\\)?[A-Za-z]:[\\\\/]${PATH_BODY}`,
     `(?<![\\w\\\\/])\\\\\\\\${SEGMENT}+[\\\\/]${PATH_BODY}`,
     `(?<![\\w:/\\\\])\\/\\/${SEGMENT}+\\/${PATH_BODY}`,
-    `(?<![\\w.:/\\\\~>-])~?\\/${SEGMENT}${PATH_BODY}`
+    `(?<![\\w\\\\/])\\\\${SEGMENT}+\\\\${SEGMENT}${PATH_BODY}`,
+    `(?<![\\w.\\\\/~])${NOT_AFTER_TOKEN}~?\\/${SEGMENT}${PATH_BODY}`
   ].join('|'),
   'g'
 )
@@ -134,7 +140,15 @@ const PATH_CANDIDATE = new RegExp(
  * Trailing text an unquoted match gives back: whitespace, and punctuation that
  * closes the surrounding sentence or bracket rather than the path.
  */
-const TRAILING = /[\s)\]},;.'`]+$/
+const TRAILING = /[\s)\]},;:=.'`]+$/
+
+/**
+ * Where an unquoted match holds a second path: a delimiter followed by a path
+ * start. A drive letter's own colon (`C:\x`) is not a delimiter, and a colon
+ * never introduces a `//` or `file://`, which is a URL scheme.
+ */
+const SECOND_PATH =
+  /[\s;,=](?=file:\/\/|[\\/]{2}|(?:\\\\\?\\)?[A-Za-z]:[\\/]|~?\/[^\s\\/]|\\[^\s\\/])|(?<!(?:^|[\\/\s])[A-Za-z]):(?=(?:\\\\\?\\)?[A-Za-z]:[\\/]|~?\/[^\s\\/]|\\[^\s\\/])/g
 
 /**
  * Forward slashes, one at a time, no long-path or `file://` prefix, `.` and
@@ -150,12 +164,26 @@ function normalizePath(value: string): string {
   if (/^\/[A-Za-z]:\//.test(flat)) flat = flat.slice(1)
   const lead = unc ? '//' : flat.startsWith('/') ? '/' : ''
   const resolved: string[] = []
+  // `..` never climbs above a drive or a UNC share, as Windows clamps it there.
+  let floor = unc ? 2 : 0
   for (const segment of flat.split('/')) {
     if (segment === '' || segment === '.') continue
-    if (segment === '..') resolved.pop()
-    else resolved.push(segment)
+    if (segment === '..') {
+      if (resolved.length > floor) resolved.pop()
+      continue
+    }
+    if (resolved.length === 0 && /^[A-Za-z]:$/.test(segment)) floor = 1
+    resolved.push(segment)
   }
   return lead + resolved.join('/')
+}
+
+/**
+ * A root that is a whole volume (`/`, `C:`, `//server/share`) would make every
+ * path on it look like part of the installation, so it is never a root.
+ */
+function isVolumeRoot(normalized: string): boolean {
+  return /^(?:\/|[A-Za-z]:|\/\/[^/]+(?:\/[^/]+)?)?$/.test(normalized)
 }
 
 /** Drive and UNC paths compare case-insensitively, as Windows resolves them. */
@@ -167,7 +195,7 @@ function rewritePath(candidate: string, roots: readonly PathRoot[]): string {
   const normalized = normalizePath(candidate)
   for (const root of roots) {
     const rootPath = normalizePath(root.path)
-    if (rootPath.length < 2) continue
+    if (isVolumeRoot(rootPath)) continue
     const fold = isWindowsShaped(rootPath)
     const subject = fold ? normalized.toLowerCase() : normalized
     const prefix = fold ? rootPath.toLowerCase() : rootPath
@@ -176,6 +204,36 @@ function rewritePath(candidate: string, roots: readonly PathRoot[]): string {
     }
   }
   return '<path>'
+}
+
+/**
+ * An unquoted match runs to the end of its segment, so it can hold prose and a
+ * second path (`copy <a> to <b>`, `<a>:<b>`). The first path is rewritten up to
+ * the second, which is scrubbed on its own: an install-relative first path must
+ * not carry an outside second one through verbatim.
+ */
+function rewriteUnquoted(match: string, roots: readonly PathRoot[]): string {
+  let out = ''
+  // Each piece starts a path; every piece after the first starts with the
+  // one-character delimiter that separated it. A loop, not recursion, so a line
+  // of thousands of paths neither overflows the stack nor rescans its tail.
+  let start = 0
+  while (start < match.length) {
+    // From one past the piece's start, so its first character is never a
+    // split point, while the lookbehind still sees it.
+    SECOND_PATH.lastIndex = start + 1
+    const split = SECOND_PATH.exec(match)
+    const end = split ? split.index : match.length
+    let piece = match.slice(start, end)
+    if (start > 0) {
+      out += piece[0]
+      piece = piece.slice(1)
+    }
+    const trailing = TRAILING.exec(piece)?.[0] ?? ''
+    out += rewritePath(piece.slice(0, piece.length - trailing.length), roots) + trailing
+    start = end
+  }
+  return out
 }
 
 /**
@@ -199,8 +257,7 @@ export function scrubPaths(text: string, roots: readonly PathRoot[] = []): strin
     (match: string, doubleQuoted?: string, singleQuoted?: string) => {
       if (doubleQuoted !== undefined) return `"${rewritePath(doubleQuoted, ordered)}"`
       if (singleQuoted !== undefined) return `'${rewritePath(singleQuoted, ordered)}'`
-      const trailing = TRAILING.exec(match)?.[0] ?? ''
-      return rewritePath(match.slice(0, match.length - trailing.length), ordered) + trailing
+      return rewriteUnquoted(match, ordered)
     }
   )
 }

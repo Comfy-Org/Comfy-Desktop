@@ -155,6 +155,15 @@ describe('errorEvent', () => {
       expect(inside.error_signature).toBe(outside.error_signature)
     })
 
+    it('groups an in-root path with spaces with the same path redacted whole', () => {
+      const pathRoots = [{ path: '/opt/Comfy/ComfyUI', token: '<comfyui>' }]
+      const inside = buildErrorFields('OSError: bad file /opt/Comfy/ComfyUI/models/my lora.ckpt', {
+        pathRoots
+      })
+      const outside = buildErrorFields('OSError: bad file /mnt/elsewhere/my lora.ckpt')
+      expect(inside.error_signature).toBe(outside.error_signature)
+    })
+
     it('caps the message length', () => {
       const long = 'x'.repeat(ERROR_MESSAGE_MAX + 500)
       const fields = buildErrorFields(long)

@@ -271,11 +271,13 @@ export function extractErrorClass(input: unknown): string {
 export function normalizeSignature(message: string): string {
   return (
     message
-      // A path under a known root is forwarded as `<token>/rest`; drop the
-      // token so it groups with the same path redacted whole, and treat a bare
-      // root as the path it is.
-      .replace(/<(?:comfyui|install)>(?=\/)/g, '')
-      .replace(/<(?:comfyui|install)>/g, '<path>')
+      // A path under a known root is forwarded as `<token>/rest`, spaces and
+      // all; collapse it the way `scrubPaths` collapses an outside path, so both
+      // group under the same signature.
+      .replace(
+        /<(?:comfyui|install)>(?:[^\r\n"'<>|:]|:(?=[^\d\s]))*/g,
+        (match) => `<path>${/\s*$/.exec(match)?.[0] ?? ''}`
+      )
       .toLowerCase()
       // Quoted strings collapse first so their contents don't leak into the
       // other rules (e.g. a quoted path or number).
