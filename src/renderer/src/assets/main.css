@@ -3223,6 +3223,9 @@ input[type='checkbox']:checked::after {
   cursor: pointer;
   white-space: nowrap;
 }
+.context-menu-item-action:hover {
+  background: none;
+}
 .context-menu-item-info {
   margin-left: auto;
   padding: 8px 14px 8px 12px;
