@@ -1,7 +1,10 @@
 /**
  * The assets view of `coreEventTap`, kept so the assets contract's exports and
- * its suite keep their names: the generic tap parses `[assets-event]` lines
- * against `ASSETS_CONTRACT` exactly as the assets-only tap did.
+ * its suite keep their names. The generic tap validates `[assets-event]` lines
+ * against `ASSETS_CONTRACT` with the assets-only tap's rules. Its admission
+ * differs in two ways: novelty-first admission lets a new failure
+ * classification past a spent cap, and open-tier values past 64 distinct per
+ * session become `overflow`.
  */
 import { ASSETS_CONTRACT } from './coreEventContracts'
 

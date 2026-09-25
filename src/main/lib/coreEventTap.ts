@@ -56,7 +56,9 @@ export const ASSETS_EVENT_LINE =
 
 /**
  * The core-wide grammar, also a CROSS-REPO CONTRACT with ComfyUI
- * `comfy/diagnostics/events.py`, pinned by `__fixtures__/core-event-lines.txt`.
+ * `comfy/diagnostics/events.py`. `__fixtures__/core-event-lines.txt` is a
+ * byte-identical copy of that repo's
+ * `tests-unit/diagnostics_test/fixtures/core_event_lines.txt`.
  * It differs from the assets grammar in three ways: the tag, an event that is
  * exactly `<ns>.<event>`, and field names that may hold digits (`p95_ms`).
  */
@@ -99,8 +101,9 @@ const OVERFLOW_VALUE = 'overflow'
 const RATE_WINDOW_MS = 60 * 60_000
 /**
  * Novelty keys remembered per event per window. The first line with a new key
- * passes even after the cap is spent, but only this many times, so a core
- * spraying distinct fingerprints cannot use novelty to bypass the cap.
+ * passes even after the cap is spent, but only this many times, so one event
+ * forwards at most `hourlyCap + MAX_NOVEL_KEYS_PER_WINDOW - 1` lines per window
+ * (the window's first line always takes a novelty slot or a cap slot).
  */
 const MAX_NOVEL_KEYS_PER_WINDOW = 64
 /** Each tap-emitted counter spends its own budget, like an event. */

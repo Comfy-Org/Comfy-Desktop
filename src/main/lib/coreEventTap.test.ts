@@ -16,7 +16,7 @@ const { createCoreEventTap, COMFY_EVENT_LINE } = await import('./coreEventTap')
 const { COMFY_EVENT_CONTRACTS } = await import('./coreEventContracts')
 const telemetry = await import('./telemetry')
 
-// Provisional until the core side's fixture lands; then a byte-identical copy.
+// A byte-identical copy of ComfyUI's `tests-unit/diagnostics_test/fixtures/core_event_lines.txt`.
 const FIXTURE_PATH = path.resolve('src/main/lib/__fixtures__/core-event-lines.txt')
 
 type LogfmtValue = boolean | number | string
@@ -86,12 +86,19 @@ describe('coreEventTap', () => {
     const raw = fs.readFileSync(FIXTURE_PATH, 'utf8')
     const lines = raw.split('\n').filter((line) => line.length > 0)
 
-    it('holds newline-terminated lines with no CRLF', () => {
+    it('holds three newline-terminated lines with no CRLF', () => {
+      expect(lines).toHaveLength(3)
       expect(raw.endsWith('\n')).toBe(true)
       expect(raw).not.toContain('\r')
     })
 
-    it.each(lines)('forwards every field of %s', (line) => {
+    // Desktop-side lines for the fields and events core has not shipped yet.
+    const desktopLines = [
+      '[comfy-event] perf.timing count=42 max_ms=3120 op=server.http p50_ms=12 p95_ms=2400 route_family=queue scan_state=fast slow_count=7 t_window_ms=40000',
+      '[comfy-event] startup.db_init_failed errno_name=none exc_class=sqlite3.OperationalError exc_fp=0a1b2c3d4e5f exc_line=512 exc_site=app.database.db.init_db reason=db_locked winerror=-1'
+    ]
+
+    it.each([...lines, ...desktopLines])('forwards every field of %s', (line) => {
       const tap = createCoreEventTap(baseOpts)
       tap.ingest(`${line}\n`, 'stdout')
       tap.flushSummary()
@@ -304,7 +311,7 @@ describe('coreEventTap', () => {
       expect(captured).toHaveLength(62)
     })
 
-    it('bounds novelty so distinct keys cannot bypass the cap', () => {
+    it('holds distinct keys that arrive first to the cap', () => {
       const tap = createCoreEventTap(baseOpts)
       for (let i = 0; i < 200; i++) {
         tap.ingest(timing({ op: `startup.mark_${i}` }), 'stdout')
@@ -313,6 +320,15 @@ describe('coreEventTap', () => {
       expect(captured).toHaveLength(120)
       tap.ingest(timing({ op: 'startup.brand_new' }), 'stdout')
       expect(captured).toHaveLength(120)
+    })
+
+    it('overshoots the cap by at most 63 novel keys after repeats spend it', () => {
+      const tap = createCoreEventTap(baseOpts)
+      for (let i = 0; i < 130; i++) tap.ingest(timing({ op: 'startup.db' }), 'stdout')
+      for (let i = 0; i < 100; i++) {
+        tap.ingest(timing({ op: `startup.mark_${i}` }), 'stdout')
+      }
+      expect(captured).toHaveLength(120 + 63)
     })
   })
 

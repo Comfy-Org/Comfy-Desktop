@@ -560,7 +560,8 @@ export function _resolvePortConflictPolicy(
 /** Builds the core event tap, substituting an inert one if construction throws.
  *  Deliberately stricter than the neighbouring `createHardwareTap`, whose
  *  construction failures propagate and abort the launch: this tap is pure
- *  diagnostics and must never cost a user their launch. Same shape, so downstream lifecycle sites need no null checks. */
+ *  diagnostics and must never cost a user their launch. Same shape, so downstream
+ *  lifecycle sites need no null checks. */
 export function createCoreEventTapSafe(base: {
   installationId: string
   variant: string | null
