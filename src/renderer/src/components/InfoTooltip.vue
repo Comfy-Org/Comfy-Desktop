@@ -13,9 +13,8 @@ const props = withDefaults(
     linkUrl?: string
     linkLabel?: string
     icon?: 'help' | 'info'
-    embedded?: boolean
   }>(),
-  { side: 'top', delayMs: 100, icon: 'help', embedded: false }
+  { side: 'top', delayMs: 100, linkUrl: undefined, linkLabel: undefined, icon: 'help' }
 )
 
 function openLink(): void {
@@ -32,8 +31,8 @@ function openLink(): void {
   >
     <span
       class="info-tooltip-trigger"
-      :tabindex="props.embedded ? undefined : 0"
-      :role="props.embedded ? undefined : 'button'"
+      tabindex="0"
+      role="button"
       :aria-label="props.text"
       :data-icon="props.icon"
     >

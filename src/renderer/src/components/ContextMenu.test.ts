@@ -39,9 +39,13 @@ describe('ContextMenu', () => {
       `[data-testid="${TID.contextMenuItem('promote-to-workspace')}"]`
     )
     expect(item?.textContent?.trim()).toBe('Create Build')
-    const info = item?.querySelector('.info-tooltip-trigger') as HTMLElement
+    const row = item?.parentElement
+    const info = row?.querySelector('.info-tooltip-trigger') as HTMLElement
+    expect(row?.classList.contains('context-menu-item')).toBe(true)
+    expect(row?.contains(item)).toBe(true)
+    expect(row?.contains(info)).toBe(true)
     expect(info.dataset.icon).toBe('info')
-    expect(info.getAttribute('tabindex')).toBeNull()
+    expect(info.getAttribute('tabindex')).toBe('0')
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
 
     info.parentElement?.dispatchEvent(new Event('mouseenter'))

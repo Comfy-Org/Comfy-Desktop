@@ -108,6 +108,7 @@ onBeforeUnmount(() => {
         :data-side="resolvedSide"
         :style="bubbleStyle"
         :role="interactive ? 'dialog' : 'tooltip'"
+        :aria-label="interactive ? text : undefined"
         @mouseenter="onEnter"
         @mouseleave="onLeave"
         @focusin="onEnter"

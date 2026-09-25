@@ -3204,27 +3204,35 @@ input[type='checkbox']:checked::after {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 8px 14px;
   font-size: 13px;
   color: var(--neutral-100);
   background: none;
-  border: none;
   border-radius: 6px;
-  text-align: left;
-  cursor: pointer;
-  white-space: nowrap;
   transition:
     background-color 100ms ease,
     opacity 100ms ease;
 }
+.context-menu-item-action {
+  flex: 1;
+  padding: 8px 0 8px 14px;
+  color: inherit;
+  font: inherit;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
 .context-menu-item-info {
   margin-left: auto;
-  padding-left: 12px;
+  padding: 8px 14px 8px 12px;
 }
 .context-menu-item:hover:not(.disabled),
-.context-menu-item:focus-visible:not(.disabled) {
+.context-menu-item:focus-within:not(.disabled) {
   background: var(--brand-surface-bg-hover);
   color: var(--text);
+}
+.context-menu-item-action:focus-visible {
   outline: none;
 }
 /* Disabled via the `.disabled` class + `aria-disabled` (not the native
@@ -3232,14 +3240,16 @@ input[type='checkbox']:checked::after {
    suppresses on natively-disabled buttons — still surfaces the reason. */
 .context-menu-item.disabled {
   color: var(--text-muted);
-  cursor: default;
   opacity: 0.5;
+}
+.context-menu-item.disabled .context-menu-item-action {
+  cursor: default;
 }
 .context-menu-item.is-danger {
   color: var(--danger);
 }
 .context-menu-item.is-danger:hover:not(.disabled),
-.context-menu-item.is-danger:focus-visible:not(.disabled) {
+.context-menu-item.is-danger:focus-within:not(.disabled) {
   color: var(--danger-hover);
 }
 .context-menu-separator {

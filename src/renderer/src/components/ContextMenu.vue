@@ -55,7 +55,7 @@ function clampToViewport(): void {
 
 function onOutsideClick(e: MouseEvent): void {
   const target = e.target as Element
-  if (menuRef.value?.contains(target) || target.closest('.tooltip-bubble')) return
+  if (menuRef.value?.contains(target) || target.closest('.tooltip-bubble--interactive')) return
   emit('close')
 }
 
@@ -80,15 +80,19 @@ function handleClick(item: ContextMenuItem): void {
     >
       <template v-for="(item, i) in items" :key="item.id">
         <div v-if="item.separator && i > 0" class="context-menu-separator" />
-        <button
+        <div
           class="context-menu-item"
           :class="{ disabled: item.disabled, 'is-danger': item.style === 'danger' }"
-          :aria-disabled="item.disabled || undefined"
-          :title="item.disabled ? item.title : undefined"
-          :data-testid="TID.contextMenuItem(item.id)"
-          @click="handleClick(item)"
         >
-          <span>{{ item.label }}</span>
+          <button
+            class="context-menu-item-action"
+            :aria-disabled="item.disabled || undefined"
+            :title="item.disabled ? item.title : undefined"
+            :data-testid="TID.contextMenuItem(item.id)"
+            @click="handleClick(item)"
+          >
+            {{ item.label }}
+          </button>
           <InfoTooltip
             v-if="item.hint"
             class="context-menu-item-info"
@@ -96,11 +100,10 @@ function handleClick(item: ContextMenuItem): void {
             :link-url="item.hintUrl"
             :link-label="item.hintLinkLabel"
             icon="info"
-            embedded
             side="right"
             @click.stop
           />
-        </button>
+        </div>
       </template>
     </div>
   </Teleport>
