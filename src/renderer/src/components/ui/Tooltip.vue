@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue'
+import { computed, onBeforeUnmount, ref, useId, useSlots } from 'vue'
 import { useTooltip, type TooltipAlign, type TooltipSide } from '../../composables/useTooltip'
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
   align?: TooltipAlign
   delayMs?: number
   disabled?: boolean
+  interactive?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -15,8 +16,11 @@ const props = withDefaults(defineProps<Props>(), {
   side: 'top',
   align: 'center',
   delayMs: 100,
-  disabled: false
+  disabled: false,
+  interactive: false
 })
+
+const slots = useSlots()
 
 const triggerRef = ref<HTMLElement | null>(null)
 const bubbleRef = ref<HTMLElement | null>(null)
@@ -28,15 +32,21 @@ const { visible, show, hide, bubbleStyle, resolvedSide, arrowStyle } = useToolti
   {
     side: () => props.side,
     align: () => props.align,
-    canShow: () => !props.disabled && !!props.text
+    canShow: () => !props.disabled && (!!props.text || !!slots.content)
   }
 )
 
 const describedBy = computed(() => (visible.value ? bubbleId : undefined))
 
 let openTimer: ReturnType<typeof setTimeout> | null = null
+let closeTimer: ReturnType<typeof setTimeout> | null = null
 
 function onEnter(): void {
+  if (closeTimer) {
+    clearTimeout(closeTimer)
+    closeTimer = null
+  }
+  if (visible.value) return
   if (openTimer) clearTimeout(openTimer)
   if (props.delayMs <= 0) {
     show()
@@ -53,7 +63,14 @@ function onLeave(): void {
     clearTimeout(openTimer)
     openTimer = null
   }
-  hide()
+  if (!props.interactive) {
+    hide()
+    return
+  }
+  closeTimer = setTimeout(() => {
+    hide()
+    closeTimer = null
+  }, 100)
 }
 
 function onKeydown(e: KeyboardEvent): void {
@@ -62,6 +79,11 @@ function onKeydown(e: KeyboardEvent): void {
     hide()
   }
 }
+
+onBeforeUnmount(() => {
+  if (openTimer) clearTimeout(openTimer)
+  if (closeTimer) clearTimeout(closeTimer)
+})
 </script>
 
 <template>
@@ -82,11 +104,17 @@ function onKeydown(e: KeyboardEvent): void {
         :id="bubbleId"
         ref="bubbleRef"
         class="tooltip-bubble"
+        :class="{ 'tooltip-bubble--interactive': interactive }"
         :data-side="resolvedSide"
         :style="bubbleStyle"
-        role="tooltip"
+        :role="interactive ? 'dialog' : 'tooltip'"
+        @mouseenter="onEnter"
+        @mouseleave="onLeave"
+        @focusin="onEnter"
+        @focusout="onLeave"
+        @keydown="onKeydown"
       >
-        {{ text }}
+        <slot name="content">{{ text }}</slot>
         <span class="tooltip-arrow" :style="arrowStyle" aria-hidden="true">
           <span class="tooltip-arrow__fill" />
         </span>
@@ -118,6 +146,9 @@ function onKeydown(e: KeyboardEvent): void {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   white-space: normal;
   text-align: left;
+}
+.tooltip-bubble--interactive {
+  pointer-events: auto;
 }
 
 .tooltip-arrow {

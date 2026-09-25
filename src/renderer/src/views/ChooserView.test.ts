@@ -77,9 +77,11 @@ const messages = {
         loadError: "Couldn't load workspaces. Retry",
         refresh: 'Refresh workspaces',
         promoteToWorkspace: 'Create Build',
+        promoteToWorkspaceHint: 'Create a Build from this instance in Comfy Developer Platform.',
+        readMore: 'Read more',
         promoting: 'Creating...',
         promoteFailedTitle: 'Could not create build',
-        promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
+        promoteFailedMessage: 'Could not create a draft in Comfy Developer Platform.'
       },
       build: { version: 'Build v{version}' }
     }
@@ -727,9 +729,19 @@ describe('ChooserView', () => {
     const menu = wrapper
       .findAllComponents({ name: 'ContextMenu' })
       .find((candidate) => candidate.props('open') === true)!
-    const items = menu.props('items') as { id: string; label: string; disabled?: boolean }[]
+    const items = menu.props('items') as {
+      id: string
+      label: string
+      hint?: string
+      hintUrl?: string
+      hintLinkLabel?: string
+      disabled?: boolean
+    }[]
     expect(items.find(({ id }) => id === 'promote-to-workspace')).toMatchObject({
       label: 'Create Build',
+      hint: 'Create a Build from this instance in Comfy Developer Platform.',
+      hintUrl: 'https://platform.comfy.org/profile/deploy',
+      hintLinkLabel: 'Read more',
       disabled: false
     })
   })

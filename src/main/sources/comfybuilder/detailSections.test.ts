@@ -23,7 +23,7 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
     id: 'i1',
     name: 'Studio Render Pipeline',
     sourceId: 'comfybuilder',
-    sourceLabel: 'Comfy Builder',
+    sourceLabel: 'Comfy Developer Platform',
     installPath: '/installs/studio',
     status: 'installed',
     distributionId: 'd1',

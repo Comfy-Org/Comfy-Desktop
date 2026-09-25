@@ -3201,7 +3201,8 @@ input[type='checkbox']:checked::after {
   box-shadow: var(--modal-surface-shadow);
 }
 .context-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
   padding: 8px 14px;
   font-size: 13px;
@@ -3216,11 +3217,15 @@ input[type='checkbox']:checked::after {
     background-color 100ms ease,
     opacity 100ms ease;
 }
+.context-menu-item-info {
+  margin-left: auto;
+  padding-left: 12px;
+}
 .context-menu-item:hover:not(.disabled),
 .context-menu-item:focus-visible:not(.disabled) {
   background: var(--brand-surface-bg-hover);
-  outline: none;
   color: var(--text);
+  outline: none;
 }
 /* Disabled via the `.disabled` class + `aria-disabled` (not the native
    `disabled` attribute) so the hover title tooltip — which Chromium

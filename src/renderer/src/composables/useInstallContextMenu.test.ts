@@ -71,9 +71,11 @@ const messages = {
     devPlatform: {
       workspace: {
         promoteToWorkspace: 'Create Build',
+        promoteToWorkspaceHint: 'Create a Build from this instance in Comfy Developer Platform.',
+        readMore: 'Read more',
         promoting: 'Creating...',
         promoteFailedTitle: 'Could not create build',
-        promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
+        promoteFailedMessage: 'Could not create a draft in Comfy Developer Platform.'
       }
     },
     progress: { working: 'Working...' },
@@ -530,9 +532,12 @@ describe('useInstallContextMenu - promote to workspace', () => {
 
   it('shows the item only when the dashboard eligibility gate accepts the install', () => {
     const eligible = mountHarness(makeInstall(), undefined, () => true)
-    expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')?.label).toBe(
-      'Create Build'
-    )
+    expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
+      label: 'Create Build',
+      hint: 'Create a Build from this instance in Comfy Developer Platform.',
+      hintUrl: 'https://platform.comfy.org/profile/deploy',
+      hintLinkLabel: 'Read more'
+    })
 
     const ineligible = mountHarness(makeInstall(), undefined, () => false)
     expect(findItem(ineligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toBeUndefined()

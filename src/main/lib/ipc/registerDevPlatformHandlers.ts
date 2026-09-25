@@ -285,7 +285,7 @@ export function registerDevPlatformHandlers(): void {
         const envelope = buildExportEnvelope(inst.name, [{ filename, snapshot }])
         const draft = await getBuilderClient().createBuildDraft(envelope)
         if (draft.workspaceId !== workspaceId) {
-          throw new Error('Comfy Builder created the draft in a different workspace.')
+          throw new Error('Comfy Developer Platform created the draft in a different workspace.')
         }
         const latest = await installations.get(installationId)
         if (

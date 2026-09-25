@@ -1328,9 +1328,11 @@
       "loadError": "Couldn't load workspaces. Retry",
       "refresh": "Refresh workspaces",
       "promoteToWorkspace": "Create Build",
+      "promoteToWorkspaceHint": "Create a Build from this instance in Comfy Developer Platform.",
+      "readMore": "Read more",
       "promoting": "Creating...",
       "promoteFailedTitle": "Could not create build",
-      "promoteFailedMessage": "Could not create a draft in Comfy Builder."
+      "promoteFailedMessage": "Could not create a draft in Comfy Developer Platform."
     },
     "build": {
       "version": "Build v{version}",

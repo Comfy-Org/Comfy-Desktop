@@ -263,7 +263,7 @@ describe('buildTitlePopupMenuItems', () => {
     ])
   })
 
-  // Login is the precondition for the account-scoped Comfy Builder rollout, so
+  // Login is the precondition for the account-scoped Comfy Developer Platform rollout, so
   // it is never gated on that rollout — only on whether you are already in.
   it('omits Log in once the user is signed in', () => {
     devPlatformMocks.isSignedInToCloud.mockReturnValue(true)

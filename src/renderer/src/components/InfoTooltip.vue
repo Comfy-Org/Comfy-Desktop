@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleHelp } from 'lucide-vue-next'
+import { CircleHelp, Info } from 'lucide-vue-next'
 import Tooltip from './ui/Tooltip.vue'
 import type { TooltipSide } from '../composables/useTooltip'
 
@@ -10,16 +10,44 @@ const props = withDefaults(
     text: string
     side?: TooltipSide
     delayMs?: number
+    linkUrl?: string
+    linkLabel?: string
+    icon?: 'help' | 'info'
+    embedded?: boolean
   }>(),
-  { side: 'top', delayMs: 100 }
+  { side: 'top', delayMs: 100, icon: 'help', embedded: false }
 )
+
+function openLink(): void {
+  if (props.linkUrl) void window.api.openExternal(props.linkUrl)
+}
 </script>
 
 <template>
-  <Tooltip :text="props.text" :side="props.side" :delay-ms="props.delayMs">
-    <span class="info-tooltip-trigger" tabindex="0" role="button" :aria-label="props.text">
-      <CircleHelp :size="14" class="info-tooltip-icon" />
+  <Tooltip
+    :text="props.text"
+    :side="props.side"
+    :delay-ms="props.delayMs"
+    :interactive="!!props.linkUrl"
+  >
+    <span
+      class="info-tooltip-trigger"
+      :tabindex="props.embedded ? undefined : 0"
+      :role="props.embedded ? undefined : 'button'"
+      :aria-label="props.text"
+      :data-icon="props.icon"
+    >
+      <Info v-if="props.icon === 'info'" :size="14" class="info-tooltip-icon" />
+      <CircleHelp v-else :size="14" class="info-tooltip-icon" />
     </span>
+    <template v-if="props.linkUrl" #content>
+      <span class="info-tooltip-content">
+        <span>{{ props.text }}</span>
+        <a class="info-tooltip-link" :href="props.linkUrl" @click.prevent.stop="openLink">
+          {{ props.linkLabel }}
+        </a>
+      </span>
+    </template>
   </Tooltip>
 </template>
 
@@ -45,5 +73,24 @@ const props = withDefaults(
 .info-tooltip-trigger:focus-visible .info-tooltip-icon {
   opacity: 1;
   color: var(--accent);
+}
+
+.info-tooltip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.info-tooltip-link {
+  width: fit-content;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.info-tooltip-link:hover,
+.info-tooltip-link:focus-visible {
+  color: var(--accent-hover);
+  text-decoration: underline;
 }
 </style>

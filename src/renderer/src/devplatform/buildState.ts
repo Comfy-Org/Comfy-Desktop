@@ -1,4 +1,4 @@
-/** Shared identification of installations created from Comfy Builder. */
+/** Shared identification of installations created from Comfy Developer Platform. */
 import type { Installation } from '../types/ipc'
 
 /** The rule itself, over the two raw fields - so callers holding only a subset
