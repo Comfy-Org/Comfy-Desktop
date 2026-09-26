@@ -329,8 +329,22 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('get-models-sections', () => buildModelsPayload())
   ipcMain.handle('get-media-sections', () => buildMediaSections())
 
-  ipcMain.handle('set-setting', (_event, key: string, value: unknown) => {
+  ipcMain.handle('set-setting', (event, key: string, value: unknown) => {
     recordIpcInvocation('set-setting', { key, value })
+    // The settings log's stack stops at this handler for anything a renderer asked for, so
+    // record WHICH renderer asked. Without it every renderer-driven write looks identical.
+    //
+    // Guarded: `getURL()` throws "Object has been destroyed" when the sender is torn down
+    // between `invoke` and dispatch — a popup closing right after a toggle does exactly that,
+    // and a diagnostic must never be the reason the write it describes is lost.
+    const origin = ((): string => {
+      try {
+        return event.sender.getURL() || '<no url>'
+      } catch {
+        return '<sender gone>'
+      }
+    })()
+    console.log(`Settings: set-setting ${JSON.stringify(key)} requested by ${origin}`)
     applySettingSet(key, value)
   })
 
