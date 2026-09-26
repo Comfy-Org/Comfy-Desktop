@@ -122,6 +122,19 @@ export function readInstalledDists(sitePackages: string): Map<string, string | n
   return dists
 }
 
+/** True when `sitePackages` is readable but holds no distribution metadata:
+ *  the drift check cannot tell a gutted venv from a misread path, so it
+ *  reports no drift and the caller should say so. */
+export function isSitePackagesEmpty(sitePackages: string | null): boolean {
+  if (!sitePackages) return false
+  try {
+    fs.readdirSync(sitePackages)
+  } catch {
+    return false
+  }
+  return readInstalledDists(sitePackages).size === 0
+}
+
 /** Requirement lines from `reqText` that `installed` does not satisfy. */
 export function findUnsatisfiedRequirements(
   reqText: string,

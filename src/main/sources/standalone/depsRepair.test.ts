@@ -14,7 +14,13 @@ vi.mock('../../settings', () => ({
   get: () => undefined
 }))
 
-import { MAX_FAILED_ATTEMPTS, pendingDrift, repairDeps, type DepsRepairTools } from './depsRepair'
+import {
+  MAX_FAILED_ATTEMPTS,
+  pendingDrift,
+  repairDeps,
+  warnIfSitePackagesEmpty,
+  type DepsRepairTools
+} from './depsRepair'
 import type { InstallationRecord } from '../../installations'
 
 let tmpDir: string
@@ -459,5 +465,27 @@ describe('repairDeps', () => {
 
     fs.rmSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'), { recursive: true })
     expect(pendingDrift(updated)!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'sqlalchemy'])
+  })
+})
+
+describe('warnIfSitePackagesEmpty', () => {
+  it('warns and reports telemetry for a readable but empty site-packages', () => {
+    const { inst } = managedInstall([], REQS)
+    const output: string[] = []
+    expect(pendingDrift(inst)).toBeNull()
+    expect(warnIfSitePackagesEmpty(inst, (s) => output.push(s))).toBe(true)
+    expect(output.join('')).toContain('no installed Python packages found')
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'site_packages_empty', adopted: false })
+    )
+  })
+
+  it('stays quiet for a populated or missing site-packages', () => {
+    const { inst } = managedInstall(SYNCED, REQS)
+    expect(warnIfSitePackagesEmpty(inst)).toBe(false)
+    const missing = { ...inst, installPath: path.join(tmpDir, 'nowhere') } as InstallationRecord
+    expect(warnIfSitePackagesEmpty(missing)).toBe(false)
+    expect(emit).not.toHaveBeenCalled()
   })
 })
