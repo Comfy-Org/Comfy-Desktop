@@ -45,6 +45,39 @@ module.exports = async ({ appDir, platform, arch }) => {
   const fs = await import('node:fs')
   const path = await import('node:path')
 
+  // The `from` path todesktop will actually copy this target's bootstrap-python
+  // from, read out of the same config that packaging uses. Resolution order
+  // matches todesktop's own: per-target, then per-platform, then the base list.
+  // Deriving it here is what keeps the verification below pointed at the tree
+  // that ships — hardcoding a path let #1484 move Windows to
+  // `todesktop-targets/` while this hook went on verifying the old location.
+  function resolveBootstrapFrom() {
+    const config = JSON.parse(fs.readFileSync(path.join(appDir, 'todesktop.json'), 'utf-8'))
+    const candidates = [
+      config.targetOverrides?.[platform]?.[arch]?.extraResources,
+      config.platformOverrides?.[platform]?.extraResources,
+      config.extraResources,
+    ]
+    for (const list of candidates) {
+      const entry = list?.find((resource) => resource.to === 'bootstrap-python')
+      if (entry) return entry.from
+    }
+    return null
+  }
+
+  function moveInto(source, dest) {
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    try {
+      fs.renameSync(source, dest)
+    } catch (err) {
+      // Cross-device rename fails on todesktop's builders when tmp and the
+      // build tree are on different mounts.
+      if (err.code !== 'EXDEV') throw err
+      fs.cpSync(source, dest, { recursive: true })
+      fs.rmSync(source, { recursive: true, force: true })
+    }
+  }
+
   const key = `${platform}-${arch}`
   const bootstrapPlatform = PLATFORM_MAP[key]
   if (!bootstrapPlatform) {
@@ -52,8 +85,14 @@ module.exports = async ({ appDir, platform, arch }) => {
     return
   }
 
-  console.log(`[todesktop:beforeBuild] Fetching bootstrap python for ${bootstrapPlatform}`)
-  const script = path.join(appDir, 'scripts', 'fetch-bootstrap-python.mjs')
+  const from = resolveBootstrapFrom()
+  if (!from) {
+    throw new Error(
+      `[todesktop:beforeBuild] todesktop.json declares no bootstrap-python resource for ${key}. ` +
+      `Refusing to build — the installer would ship without a git backend.`
+    )
+  }
+
   // todesktop layout:
   //   <workingDir>/app-wrapper/app/         <- this is `appDir` (electron-builder appDirectory)
   //   <workingDir>/app-wrapper/extraResources/  <- where extraResources.from is staged from
@@ -63,34 +102,49 @@ module.exports = async ({ appDir, platform, arch }) => {
   // to `appDir`) but electron-builder still warned `file source doesn't exist
   // from=app-wrapper/extraResources/...` — and the dmg shipped without bootstrap-python.
   // Going up one level from `appDir` puts the archive where todesktop actually reads it.
-  const outDir = path.join(appDir, '..', 'extraResources', 'bootstrap-python')
-  // fetch-bootstrap-python.mjs now exits non-zero on failure, which bubbles
-  // up here via execSync. Don't wrap in try/catch — a failed fetch must fail
-  // the build (see 0.6.4 post-mortem: a swallowed fetch error shipped an
-  // installer with no bootstrap-python, stranding new installs).
-  execSync(
-    `node "${script}" --platform ${bootstrapPlatform} --output-dir "${outDir}"`,
-    { stdio: 'inherit', cwd: appDir }
-  )
+  const destDir = path.join(appDir, '..', 'extraResources', from)
 
-  // Defense-in-depth: even if the fetch script returns success, verify the
-  // expected binaries exist before handing control back to todesktop. A
-  // divergence between the fetch script's success criteria and what the app
-  // looks for at runtime would otherwise reproduce the same silent failure.
-  const expectedPython = path.join(outDir, bootstrapPlatform, PYTHON_BINARY[bootstrapPlatform])
+  // CI stages and uploads these directories, so the usual case is "already
+  // here" and the fetch is a repair path for an upload that arrived short.
+  if (fs.existsSync(destDir)) {
+    console.log(`[todesktop:beforeBuild] Found staged bootstrap python at ${destDir}`)
+  } else {
+    console.log(`[todesktop:beforeBuild] Fetching bootstrap python for ${bootstrapPlatform}`)
+    const script = path.join(appDir, 'scripts', 'fetch-bootstrap-python.mjs')
+    // The fetch script writes <output-dir>/<platform>, but the shipped path is
+    // named by todesktop.json, so fetch into a scratch dir and move it over.
+    const scratch = path.join(appDir, '..', 'extraResources', '.bootstrap-fetch')
+    // fetch-bootstrap-python.mjs now exits non-zero on failure, which bubbles
+    // up here via execSync. Don't wrap in try/catch — a failed fetch must fail
+    // the build (see 0.6.4 post-mortem: a swallowed fetch error shipped an
+    // installer with no bootstrap-python, stranding new installs).
+    execSync(
+      `node "${script}" --platform ${bootstrapPlatform} --output-dir "${scratch}"`,
+      { stdio: 'inherit', cwd: appDir }
+    )
+    moveInto(path.join(scratch, bootstrapPlatform), destDir)
+    fs.rmSync(scratch, { recursive: true, force: true })
+  }
+
+  // Defense-in-depth: whether the directory was staged by CI or fetched just
+  // now, verify the expected binaries before handing control back to
+  // todesktop. This is the check that has to sit on the shipped path — an
+  // upload that dropped the tree, or a fetch whose success criteria drifted
+  // from what the app looks for at runtime, both look fine without it.
+  const expectedPython = path.join(destDir, PYTHON_BINARY[bootstrapPlatform])
   if (!fs.existsSync(expectedPython)) {
     throw new Error(
-      `[todesktop:beforeBuild] fetch script returned success but ${expectedPython} is missing. ` +
-      `Refusing to build — the installer would not provide a git backend and "Latest Stable" ` +
-      `installs would silently strand on the bundled ComfyUI version.`
+      `[todesktop:beforeBuild] ${expectedPython} is missing. Refusing to build — the ` +
+      `installer would not provide a git backend and "Latest Stable" installs would ` +
+      `silently strand on the bundled ComfyUI version.`
     )
   }
-  const expectedUv = path.join(outDir, bootstrapPlatform, UV_BINARY[bootstrapPlatform])
+  const expectedUv = path.join(destDir, UV_BINARY[bootstrapPlatform])
   if (!fs.existsSync(expectedUv)) {
     throw new Error(
-      `[todesktop:beforeBuild] fetch script returned success but ${expectedUv} is missing. ` +
-      `Refusing to build — the bootstrap archive predates bootstrap-v2 (no bundled uv). ` +
-      `Bump the default tag in fetch-bootstrap-python.mjs or publish the v2 archives.`
+      `[todesktop:beforeBuild] ${expectedUv} is missing. Refusing to build — the bootstrap ` +
+      `tree predates bootstrap-v2 (no bundled uv), or the upload arrived incomplete. Bump ` +
+      `the default tag in fetch-bootstrap-python.mjs or publish the v2 archives.`
     )
   }
   console.log(`[todesktop:beforeBuild] Verified ${expectedPython} and ${expectedUv}`)
