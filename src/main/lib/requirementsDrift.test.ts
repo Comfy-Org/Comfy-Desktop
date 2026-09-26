@@ -13,6 +13,7 @@ import {
   envRootForPython,
   findUnsatisfiedRequirements,
   normalizeDistName,
+  comfyuiDirForLaunch,
   parseRequirementLine,
   readInstalledDists,
   unmanagedRequirementsWarning
@@ -296,5 +297,34 @@ describe('unmanagedRequirementsWarning', () => {
     const venv = path.join(tmpDir, '.venv')
     makeSitePackages(venv, ['blake3-1.0.dist-info'])
     expect(unmanagedRequirementsWarning(path.join(venv, 'bin', 'python3'), comfy)).toBeNull()
+  })
+
+  it('includes manager_requirements.txt in the command when present', () => {
+    const comfy = makeComfy('blake3\n', 'comfyui_manager==4.2.2\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, ['x-1.dist-info'])
+    const python = path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', 'python3')
+    expect(unmanagedRequirementsWarning(python, comfy)).toContain(
+      `-m pip install -r "${path.join(comfy, 'requirements.txt')}" -r "${path.join(comfy, 'manager_requirements.txt')}"`
+    )
+  })
+})
+
+describe('comfyuiDirForLaunch', () => {
+  it('resolves a git launch (relative main.py in the checkout)', () => {
+    const cwd = path.join('/g', 'ComfyUI')
+    expect(comfyuiDirForLaunch({ cwd, args: ['-s', 'main.py', '--port', '1'] })).toBe(cwd)
+  })
+
+  it('resolves a portable launch (root cwd, absolute ComfyUI/main.py)', () => {
+    const root = path.join('/p', 'ComfyUI_windows_portable')
+    expect(
+      comfyuiDirForLaunch({ cwd: root, args: ['-s', path.join(root, 'ComfyUI', 'main.py')] })
+    ).toBe(path.join(root, 'ComfyUI'))
+  })
+
+  it('returns null without a main.py argument', () => {
+    expect(comfyuiDirForLaunch({ cwd: '/x', args: ['main.py'] })).toBeNull()
+    expect(comfyuiDirForLaunch({ args: ['-s', 'main.py'] })).toBeNull()
   })
 })
