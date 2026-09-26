@@ -230,6 +230,7 @@ describe('buildLaunchPhases — extensibility', () => {
     expect(buildLaunchPhases({}, { preLaunchPhases: ['torchRepair'] })[0]!.phase).toBe(
       'torchRepair'
     )
+    expect(buildLaunchPhases({}, { preLaunchPhases: ['depsRepair'] })[0]!.phase).toBe('depsRepair')
   })
 
   it('injects multiple pre-launch phases in the given order (rollback, then torch)', () => {

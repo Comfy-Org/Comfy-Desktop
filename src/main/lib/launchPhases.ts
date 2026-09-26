@@ -91,12 +91,14 @@ export const DEFAULT_LAUNCH_PHASES: readonly LaunchPhaseDef[] = [
  *
  *   - `repair`      interrupted-op source rollback was performed
  *   - `torchRepair` GPU PyTorch was restored after the v1.13.0 `--upgrade` bug
+ *   - `depsRepair`  requirements the venv no longer satisfied were installed
  */
-export type PreLaunchPhase = 'repair' | 'torchRepair'
+export type PreLaunchPhase = 'repair' | 'torchRepair' | 'depsRepair'
 
 const PRE_LAUNCH_PHASES: Record<PreLaunchPhase, LaunchPhaseDef> = {
   repair: { phase: 'repair', match: NEVER, weight: 0.1, streaming: true },
-  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true }
+  torchRepair: { phase: 'torchRepair', match: NEVER, weight: 0.1, streaming: true },
+  depsRepair: { phase: 'depsRepair', match: NEVER, weight: 0.1, streaming: true }
 }
 
 /** Starter-template model download, shown as the LAST launch step. Synthetic +
