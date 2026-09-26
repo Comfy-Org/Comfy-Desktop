@@ -27,6 +27,8 @@ export interface ParsedRequirement {
   name: string
   /** Minimum acceptable version from `==` / `>=` / `~=`, or null for presence-only. */
   minVersion: string | null
+  /** The version specifiers as written (`>=2.0.0`, `==0.5.5`, `` for none). */
+  specifier: string
 }
 
 export interface UnsatisfiedRequirement extends ParsedRequirement {
@@ -59,11 +61,12 @@ export function parseRequirementLine(raw: string): ParsedRequirement | null {
       if (!spec) return null
       const [, op, version] = spec
       if ((op === '==' || op === '>=' || op === '~=') && !version!.includes('*')) {
-        minVersion = version!
+        // Several floors on one line: the highest binds.
+        if (!minVersion || (compareReleases(version!, minVersion) ?? 0) > 0) minVersion = version!
       }
     }
   }
-  return { line, name: normalizeDistName(m[1]!), minVersion }
+  return { line, name: normalizeDistName(m[1]!), minVersion, specifier: specs }
 }
 
 function releaseParts(version: string): number[] | null {
@@ -144,6 +147,8 @@ export interface RequirementsDrift {
   /** Hash of the requirement files' contents; keys the repair give-up marker. */
   reqsHash: string
   unsatisfied: UnsatisfiedRequirement[]
+  /** Every requirement this check evaluated, satisfied or not. */
+  requirements: ParsedRequirement[]
 }
 
 /**
@@ -171,14 +176,19 @@ export function detectRequirementsDrift(
   for (const text of texts) hash.update(text).update('\0')
   const seen = new Set<string>()
   const unsatisfied: UnsatisfiedRequirement[] = []
+  const requirements: ParsedRequirement[] = []
   for (const text of texts) {
+    for (const raw of text.split(/\r?\n/)) {
+      const req = parseRequirementLine(raw)
+      if (req) requirements.push(req)
+    }
     for (const req of findUnsatisfiedRequirements(text, installed)) {
       if (seen.has(req.name)) continue
       seen.add(req.name)
       unsatisfied.push(req)
     }
   }
-  return { reqsHash: hash.digest('hex'), unsatisfied }
+  return { reqsHash: hash.digest('hex'), unsatisfied, requirements }
 }
 
 /** Short human-readable summary, e.g. `sqlalchemy (missing), comfy-aimdo 0.4.1 < 0.5.5`. */
@@ -188,6 +198,13 @@ export function describeUnsatisfied(unsatisfied: UnsatisfiedRequirement[]): stri
       r.reason === 'missing' ? `${r.name} (missing)` : `${r.name} ${r.installed} < ${r.minVersion}`
     )
     .join(', ')
+}
+
+/** Quote a path for the platform's usual shell: single quotes on POSIX (inert
+ *  to `$`, backticks and backslashes), double quotes on Windows, where `"` cannot
+ *  appear in a path. */
+export function shellQuote(p: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? `"${p}"` : `'${p.replace(/'/g, `'\\''`)}'`
 }
 
 /** The environment root of a venv or embedded interpreter, from its python path. */
@@ -213,10 +230,10 @@ export function unmanagedRequirementsWarning(
     fs.existsSync(f)
   )
   const command = [
-    `"${pythonPath}"`,
+    shellQuote(pythonPath),
     ...(opts.isolated ? ['-s'] : []),
     '-m pip install',
-    ...files.map((f) => `-r "${f}"`)
+    ...files.map((f) => `-r ${shellQuote(f)}`)
   ].join(' ')
   return (
     `\nWARNING: this Python environment does not satisfy ComfyUI's requirements: ` +
