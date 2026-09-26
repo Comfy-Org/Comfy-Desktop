@@ -597,11 +597,9 @@ describe('asset download retries', () => {
 
   it('re-downloads a URL that completed earlier and keeps a single copy when identical', async () => {
     // The same output event can be delivered again after the download has
-    // already finished (a replay across a reconnect, a second view of the
-    // session, or a re-run of a cached workflow re-serving the same URL).
-    // No time-based suppression: the repeat downloads again, and the
-    // content-identity check discards it in favor of the existing file so
-    // no "repeat (1).png" appears. A changed file (covered below) is kept.
+    // finished (a replay across a reconnect, a re-run re-serving the URL).
+    // The repeat downloads again and the content-identity check discards it
+    // in favor of the existing file, so no "repeat (1).png" appears.
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     const url = 'https://remote.example/api/view?filename=repeat.png'
     const h = makeAssetHarness()
