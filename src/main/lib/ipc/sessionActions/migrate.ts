@@ -164,11 +164,11 @@ function removeDestroyedListenerSafe(sender: Electron.WebContents, listener: () 
 // Ask the originating renderer to surface an in-app prompt and resolve to the
 // chosen button index. Rejects (so the caller can fall back to cancel) if the
 // window never ACKs, is destroyed, can't deliver prompts, or the operation
-// aborts mid-prompt.
-function requestAdoptPromptButton(
+// aborts mid-prompt. Also used by launch to confirm an adopted-venv repair.
+export function requestAdoptPromptButton(
   sender: Electron.WebContents,
   signal: AbortSignal,
-  spec: PromptSpec
+  spec: Omit<PromptSpec, 'buttons'> & { buttons: Array<{ label: string }> }
 ): Promise<number> {
   ensureAdoptPromptHandlers()
   const promptId = randomUUID()

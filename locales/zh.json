@@ -491,6 +491,7 @@
       "launchStart": "正在启动 ComfyUI…",
       "repair": "正在修复安装…",
       "torchRepair": "正在恢复 GPU PyTorch…",
+      "depsRepair": "正在安装缺失的 Python 包…",
       "securityScan": "正在进行安全扫描…",
       "mountLibraries": "正在加载库…",
       "gpu": "正在初始化 GPU…",
@@ -1144,7 +1145,11 @@
     "snapshotDiffNodes": "自定义节点：",
     "snapshotDiffPackages": "Pip 包：",
     "snapshotDiffNoChanges": "没有差异——环境与此快照匹配。",
-    "snapshotNoFile": "未指定快照文件。"
+    "snapshotNoFile": "未指定快照文件。",
+    "depsRepairPromptTitle": "安装缺失的 Python 包？",
+    "depsRepairPromptMessage": "此安装的 Python 环境缺少当前 ComfyUI 版本所需的包，ComfyUI 可能无法启动。现在将它们安装到该环境中吗？",
+    "depsRepairInstall": "安装",
+    "depsRepairSkip": "跳过"
   },
   "snapshots": {
     "empty": "还没有快照。ComfyUI 启动时会自动捕获快照。",

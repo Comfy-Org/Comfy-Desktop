@@ -169,6 +169,7 @@ PostHog receives `$exception`.
 - `comfy.desktop.torch_repair.failed`
 - `comfy.desktop.torch_repair.recovery_failed`
 - `comfy.desktop.torch_repair.succeeded`
+- `comfy.desktop.deps_repair`
 
 ### Desktop adoption
 

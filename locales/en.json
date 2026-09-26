@@ -491,6 +491,7 @@
       "launchStart": "Starting ComfyUI…",
       "repair": "Repairing installation…",
       "torchRepair": "Restoring GPU PyTorch…",
+      "depsRepair": "Installing missing Python packages…",
       "securityScan": "Running security scan…",
       "mountLibraries": "Loading libraries…",
       "gpu": "Initializing GPU…",
@@ -1144,7 +1145,11 @@
     "snapshotDiffNodes": "Custom Nodes:",
     "snapshotDiffPackages": "Pip Packages:",
     "snapshotDiffNoChanges": "No differences — environment matches this snapshot.",
-    "snapshotNoFile": "No snapshot file specified."
+    "snapshotNoFile": "No snapshot file specified.",
+    "depsRepairPromptTitle": "Install missing Python packages?",
+    "depsRepairPromptMessage": "This install's Python environment is missing packages that this version of ComfyUI needs, so ComfyUI may fail to start. Install them into the environment now?",
+    "depsRepairInstall": "Install",
+    "depsRepairSkip": "Skip"
   },
   "snapshots": {
     "empty": "No snapshots yet. Snapshots are captured automatically when ComfyUI starts.",
