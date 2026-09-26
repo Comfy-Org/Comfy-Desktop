@@ -117,6 +117,26 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
   return { ...actual, getCoreBetaGrantsAsync: async () => launchHarness.grants }
 })
 
+/** Stands in for the uv subprocess the agent-requirements step drives, so a launch
+ *  under test installs nothing and a test can choose the outcome. */
+const pipHarness = vi.hoisted(() => ({
+  calls: [] as unknown[][],
+  result: { code: 0, output: '' },
+  duringInstall: null as null | (() => void)
+}))
+
+vi.mock('../../pip', async (importOriginal) => {
+  const actual = await importOriginal<typeof PipModule>()
+  return {
+    ...actual,
+    installFilteredRequirementsDetailed: async (...args: unknown[]) => {
+      pipHarness.calls.push(args)
+      pipHarness.duringInstall?.()
+      return pipHarness.result
+    }
+  }
+})
+
 vi.mock('../../hardwareTap', async (importOriginal) => {
   const actual = await importOriginal<typeof HardwareTapModule>()
   return {
@@ -176,6 +196,10 @@ import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as HardwareTapModule from '../../hardwareTap'
+import type * as PipModule from '../../pip'
+import { getUvPath, getVenvPythonPath } from '../../pythonEnv'
+import { getLogDir } from '../../logRotation'
+import en from '../../../../../locales/en.json'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
 
@@ -1962,6 +1986,231 @@ describe('emitCoreBetaTelemetry', () => {
       'comfy.desktop.core_beta.applied',
       'comfy.desktop.core_beta.opt_state'
     ])
+  })
+})
+
+describe('agent requirements at launch', () => {
+  const AGENT_GRANT: CoreBetaGrant = { arg: '--enable-agent', minCoreVersion: '0.3.80' }
+  let installDir = ''
+  let sent: string[] = []
+  let progress: { phase: string; steps?: { phase: string }[] }[] = []
+  let spawnArgs: string[] = []
+  let spawned = 0
+
+  /** Create a file (and its parents) the way the real install layout has it. */
+  const touch = (target: string): void => {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, '')
+  }
+
+  const agentReqPath = (): string => path.join(installDir, 'ComfyUI', 'agent_requirements.txt')
+
+  const harnessInstall = (): InstallationRecord =>
+    ({
+      id: 'agent-reqs-inst',
+      name: 'Agent Harness',
+      sourceId: 'harness-source',
+      installPath: installDir,
+      version: '0.3.81',
+      comfyVersion: {
+        commit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+        baseTag: 'v0.3.81',
+        commitsAhead: 0,
+        baseTagVerified: true
+      }
+    }) as unknown as InstallationRecord
+
+  const ctxFor = (installationId: string): ActionContext => ({
+    event: {
+      sender: {
+        isDestroyed: () => false,
+        send: (channel: string, payload: { text?: string; phase?: string }) => {
+          if (typeof payload?.text === 'string') sent.push(payload.text)
+          if (channel === 'install-progress' && typeof payload?.phase === 'string') {
+            progress.push(payload as { phase: string; steps?: { phase: string }[] })
+          }
+        }
+      }
+    } as unknown as Electron.IpcMainInvokeEvent,
+    installationId,
+    inst: harnessInstall(),
+    actionData: {}
+  })
+
+  beforeEach(() => {
+    installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-reqs-launch-'))
+    fs.mkdirSync(path.join(installDir, 'ComfyUI'), { recursive: true })
+    // The managed pair the shared uv helper targets, plus the file Core ships.
+    touch(getUvPath(installDir))
+    touch(getVenvPythonPath(installDir))
+    fs.writeFileSync(agentReqPath(), 'comfyui-agent==1.0.0\n')
+    sent = []
+    progress = []
+    spawnArgs = []
+    spawned = 0
+    pipHarness.calls = []
+    pipHarness.result = { code: 0, output: '' }
+    pipHarness.duringInstall = null
+    launchHarness.schemaThrows = false
+    launchHarness.registryThrows = false
+    launchHarness.betaEnabled = true
+    launchHarness.betaEnabledThrows = false
+    launchHarness.schemaNames = ['enable-agent', 'listen', 'feature-flag']
+    launchHarness.grants = []
+    launchHarness.duringResourceAcquire = null
+    launchHarness.spawn = (_cmd: unknown, args: unknown) => {
+      spawned += 1
+      spawnArgs = args as string[]
+      const proc = new EventEmitter() as FakeChild
+      proc.stdout = new EventEmitter()
+      proc.stderr = new EventEmitter()
+      proc.pid = 4243
+      proc.killed = false
+      proc.kill = () => true
+      return proc
+    }
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--enable-agent', '--listen'],
+      cwd: installDir,
+      skipPortWait: true
+    }
+    vi.spyOn(telemetry, 'emit').mockImplementation((() => {}) as unknown as typeof telemetry.emit)
+  })
+
+  afterEach(async () => {
+    // The launch log stream opens asynchronously after the spawn: removing the
+    // install dir first fails that open with an ENOENT nothing is listening for.
+    // The file appears exactly when the open lands, so waiting on it is the
+    // teardown's own gate rather than a guess at how long the open takes.
+    if (spawned > 0) {
+      const logFile = path.join(getLogDir(installDir), 'comfyui.log')
+      await vi.waitFor(() => expect(fs.existsSync(logFile)).toBe(true))
+    }
+    vi.restoreAllMocks()
+    fs.rmSync(installDir, { recursive: true, force: true })
+  })
+
+  it('installs the requirements when the user typed the flag by hand', async () => {
+    const res = await handleLaunch(ctxFor('agent-reqs-hand-typed'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toHaveLength(1)
+    expect(pipHarness.calls[0]![0]).toBe(agentReqPath())
+    expect(pipHarness.calls[0]![1]).toBe(getUvPath(installDir))
+    expect(pipHarness.calls[0]![2]).toBe(getVenvPythonPath(installDir))
+    expect(spawnArgs).toContain('--enable-agent')
+  })
+
+  it('installs the requirements when a beta grant added the flag', async () => {
+    // The grant is the only source of the flag here: the install's own args have none.
+    launchHarness.grants = [AGENT_GRANT]
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: true
+    }
+
+    const res = await handleLaunch(ctxFor('agent-reqs-granted'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toHaveLength(1)
+    expect(spawnArgs).toContain('--enable-agent')
+  })
+
+  it('installs nothing when the flag never reaches the final args', async () => {
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: true
+    }
+
+    const res = await handleLaunch(ctxFor('agent-reqs-flag-absent'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toEqual([])
+  })
+
+  it('installs nothing when the running core cannot parse the flag', async () => {
+    // A core predating `--enable-agent` has it filtered out of the final args,
+    // so there is nothing to install for and nothing reaches the spawn either.
+    launchHarness.schemaNames = ['listen', 'feature-flag']
+
+    const res = await handleLaunch(ctxFor('agent-reqs-unsupported-core'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toEqual([])
+    expect(spawnArgs).not.toContain('--enable-agent')
+  })
+
+  it('installs nothing when core ships no agent requirements file', async () => {
+    fs.rmSync(agentReqPath())
+
+    const res = await handleLaunch(ctxFor('agent-reqs-file-absent'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toEqual([])
+    expect(spawnArgs).toContain('--enable-agent')
+  })
+
+  it('installs nothing for an install with no Desktop-managed Python environment', async () => {
+    fs.rmSync(getUvPath(installDir))
+
+    const res = await handleLaunch(ctxFor('agent-reqs-unmanaged-env'))
+
+    expect(res.ok).toBe(true)
+    expect(pipHarness.calls).toEqual([])
+    expect(spawnArgs).toContain('--enable-agent')
+  })
+
+  it('launches with the flag still set when the install fails', async () => {
+    pipHarness.result = { code: 1, output: 'No solution found\n' }
+
+    const res = await handleLaunch(ctxFor('agent-reqs-install-failed'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-agent')
+    expect(sent.join('')).toContain('exited with code 1')
+  })
+
+  it('publishes the install as a step the renderer can show', async () => {
+    // The renderer drops progress for a phase absent from the steps payload, so
+    // the payload is what makes the step visible at all.
+    await handleLaunch(ctxFor('agent-reqs-step-published'))
+
+    const lastSteps = progress.filter((p) => p.phase === 'steps').at(-1)
+    expect(lastSteps?.steps?.map((s) => s.phase)).toContain('agentRequirements')
+    expect(progress.some((p) => p.phase === 'agentRequirements')).toBe(true)
+  })
+
+  it('cancels the launch without spawning when it is aborted mid-install', async () => {
+    pipHarness.duringInstall = () => _operationAborts.get('agent-reqs-cancelled')?.abort()
+
+    const res = await handleLaunch(ctxFor('agent-reqs-cancelled'))
+
+    expect(res).toEqual({ ok: false, cancelled: true })
+    expect(spawned).toBe(0)
+  })
+})
+
+describe('agent install status strings', () => {
+  // `t()` resolves nothing under vitest (i18n is never initialised and its
+  // locales dir does not exist in the source tree), so the lookup itself cannot
+  // be exercised here. What can break silently is the contract between the
+  // mapper's keys and the locale file, which is what this pins. Cross-locale
+  // parity is covered separately by the locale-coverage suite.
+  const strings = (en as { launch: { agentRequirements?: Record<string, string> } }).launch
+    .agentRequirements
+
+  it('defines every key the mapper asks for', () => {
+    expect(Object.keys(strings ?? {}).sort()).toEqual(['downloading', 'failed', 'installing'])
+  })
+
+  it('gives the download caption both placeholders the mapper passes', () => {
+    expect(strings?.downloading).toContain('{name}')
+    expect(strings?.downloading).toContain('{size}')
   })
 })
 

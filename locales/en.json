@@ -491,6 +491,7 @@
       "launchStart": "Starting ComfyUI…",
       "repair": "Repairing installation…",
       "torchRepair": "Restoring GPU PyTorch…",
+      "agentRequirements": "Installing agent requirements…",
       "securityScan": "Running security scan…",
       "mountLibraries": "Loading libraries…",
       "gpu": "Initializing GPU…",
@@ -1307,7 +1308,12 @@
       "database": "Updating database…",
       "nodes": "Loading custom nodes…"
     },
-    "viewLogs": "View logs"
+    "viewLogs": "View logs",
+    "agentRequirements": {
+      "downloading": "Downloading {name} ({size})",
+      "installing": "Installing…",
+      "failed": "Agent install failed; continuing without it"
+    }
   },
   "devPlatform": {
     "signIn": {

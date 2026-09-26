@@ -65,7 +65,7 @@ import { createAssetsTap } from '../../assetsTap'
 import { createExecutionTap } from '../../executionTap'
 import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
-import { buildLaunchPhases } from '../../launchPhases'
+import { buildLaunchPhases, AGENT_REQUIREMENTS_PHASE } from '../../launchPhases'
 import {
   getTemplateDownloadState,
   summarizeTemplateState,
@@ -90,6 +90,11 @@ import {
 } from '../../bootPhaseBuffer'
 import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
+import {
+  installAgentRequirements,
+  planAgentRequirementsInstall
+} from '../../agentRequirementsLaunch'
+import type { AgentInstallStatus } from '../../agentRequirementsLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
@@ -322,6 +327,22 @@ export function emitCoreBetaTelemetry(input: {
     })
   }
   telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
+}
+
+/** Launch-row text for the agent install. uv already formats the size, so it is
+ *  passed through rather than re-rendered. */
+export function agentInstallStatusText(status: AgentInstallStatus): string {
+  switch (status.kind) {
+    case 'downloading':
+      return i18n.t('launch.agentRequirements.downloading', {
+        name: status.name,
+        size: status.size
+      })
+    case 'installing':
+      return i18n.t('launch.agentRequirements.installing')
+    case 'failed':
+      return i18n.t('launch.agentRequirements.failed')
+  }
 }
 
 export interface StorageLaunchState {
@@ -1163,6 +1184,33 @@ async function runLaunch(
   })
   if (!managerReconcile.ok) {
     return { ok: false, message: i18n.t('errors.managerConfigWriteFailed') }
+  }
+
+  // The agent flag is final here (only path args are appended after this), so
+  // this is the first point that knows the agent is actually starting - whether
+  // the user typed the flag or a beta grant added it, and whether the running
+  // core can parse it at all. The package is tens of megabytes, so it gets its
+  // own launch step. Bounded and fail-open: a failure or a timeout is reported
+  // in the launch output and the flag is kept, leaving core to print its install
+  // hint and disable the agent itself.
+  //
+  // The step is added through `addLatePhase` rather than `preLaunchPhases`
+  // because a torch repair may already have armed the tracker, freezing that list.
+  const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
+  if (agentRequirements) {
+    const tracker = await armLaunchTracker()
+    tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
+    await installAgentRequirements(
+      agentRequirements,
+      makeSendOutput(sender, installationId),
+      abort.signal,
+      (status) =>
+        sendProgress('agentRequirements', {
+          percent: -1,
+          status: agentInstallStatusText(status)
+        })
+    )
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
   }
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
