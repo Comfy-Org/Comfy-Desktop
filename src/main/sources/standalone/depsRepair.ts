@@ -8,6 +8,7 @@ import { buildProtectedConstraints } from '../../lib/snapshots/restore'
 import {
   detectRequirementsDrift,
   describeUnsatisfied,
+  isSitePackagesEmpty,
   normalizeDistName,
   type RequirementsDrift,
   type UnsatisfiedRequirement
@@ -59,6 +60,7 @@ export type DepsRepairOutcome =
   | 'failed'
   | 'still_unsatisfied'
   | 'cancelled'
+  | 'site_packages_empty'
 
 export interface DepsRepairTools {
   sendOutput?: (text: string) => void
@@ -81,6 +83,29 @@ export function detectInstallDrift(installation: InstallationRecord): Requiremen
     path.join(installation.installPath, 'ComfyUI'),
     findSitePackages(getActiveVenvDir(installation))
   )
+}
+
+/**
+ * The drift check reports nothing for a readable but empty site-packages, since
+ * it can't tell a gutted venv from a misread path. Don't repair that, but make
+ * it visible: a launch-log warning and a telemetry outcome. True when warned.
+ */
+export function warnIfSitePackagesEmpty(
+  installation: InstallationRecord,
+  sendOutput?: (text: string) => void
+): boolean {
+  const sitePackages = findSitePackages(getActiveVenvDir(installation))
+  if (!isSitePackagesEmpty(sitePackages)) return false
+  sendOutput?.(
+    `\nWARNING: no installed Python packages found in ${sitePackages}; ` +
+      `skipped the requirements check. ComfyUI may fail to start.\n`
+  )
+  telemetry.emit('comfy.desktop.deps_repair', {
+    outcome: 'site_packages_empty',
+    adopted: installation.adopted === true,
+    variant: (installation.variant as string | undefined) ?? null
+  })
+  return true
 }
 
 /** Drift that a repair should act on: unsatisfied, and not already given up on. */

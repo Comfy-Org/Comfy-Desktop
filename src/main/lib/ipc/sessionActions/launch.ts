@@ -1094,8 +1094,10 @@ async function runLaunch(
     // Managed installs repair automatically; adopted installs ask first.
     // Non-fatal: a failed or skipped repair launches exactly as before.
     try {
-      const { pendingDrift, repairDeps } = await import('../../../sources/standalone/depsRepair')
+      const { pendingDrift, repairDeps, warnIfSitePackagesEmpty } =
+        await import('../../../sources/standalone/depsRepair')
       const drift = pendingDrift(inst)
+      if (!drift) warnIfSitePackagesEmpty(inst, makeSendOutput(event.sender, sessionId))
       if (drift) {
         if (!preLaunchPhases.includes('depsRepair')) preLaunchPhases.push('depsRepair')
         await armLaunchTracker()
