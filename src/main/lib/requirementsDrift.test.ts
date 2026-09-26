@@ -14,6 +14,7 @@ import {
   findUnsatisfiedRequirements,
   normalizeDistName,
   comfyuiDirForLaunch,
+  shellQuote,
   parseRequirementLine,
   readInstalledDists,
   unmanagedRequirementsWarning
@@ -57,7 +58,8 @@ describe('parseRequirementLine', () => {
     expect(parseRequirementLine('comfy-aimdo==0.5.5')).toEqual({
       line: 'comfy-aimdo==0.5.5',
       name: 'comfy-aimdo',
-      minVersion: '0.5.5'
+      minVersion: '0.5.5',
+      specifier: '==0.5.5'
     })
     expect(parseRequirementLine('SQLAlchemy>=2.0.0')?.minVersion).toBe('2.0.0')
     expect(parseRequirementLine('pydantic~=2.0')?.minVersion).toBe('2.0')
@@ -68,7 +70,8 @@ describe('parseRequirementLine', () => {
     expect(parseRequirementLine('blake3')).toEqual({
       line: 'blake3',
       name: 'blake3',
-      minVersion: null
+      minVersion: null,
+      specifier: ''
     })
     expect(parseRequirementLine('av<18')?.minVersion).toBeNull()
   })
@@ -77,7 +80,8 @@ describe('parseRequirementLine', () => {
     expect(parseRequirementLine('uvicorn[standard]>=0.20  # server')).toEqual({
       line: 'uvicorn[standard]>=0.20',
       name: 'uvicorn',
-      minVersion: '0.20'
+      minVersion: '0.20',
+      specifier: '>=0.20'
     })
   })
 
@@ -95,6 +99,11 @@ describe('parseRequirementLine', () => {
     ]) {
       expect(parseRequirementLine(line)).toBeNull()
     }
+  })
+
+  it('takes the highest of several floors on one line', () => {
+    expect(parseRequirementLine('pkg>=1.4.2,~=1.4')?.minVersion).toBe('1.4.2')
+    expect(parseRequirementLine('pkg~=1.4,>=1.4.2')?.minVersion).toBe('1.4.2')
   })
 
   it('ignores wildcard pins as a floor', () => {
@@ -163,7 +172,13 @@ describe('findUnsatisfiedRequirements', () => {
   it('flags a missing package', () => {
     const out = findUnsatisfiedRequirements('sqlalchemy>=2.0.0\n', installedOf({}))
     expect(out).toEqual([
-      { line: 'sqlalchemy>=2.0.0', name: 'sqlalchemy', minVersion: '2.0.0', reason: 'missing' }
+      {
+        line: 'sqlalchemy>=2.0.0',
+        name: 'sqlalchemy',
+        minVersion: '2.0.0',
+        specifier: '>=2.0.0',
+        reason: 'missing'
+      }
     ])
   })
 
@@ -177,6 +192,7 @@ describe('findUnsatisfiedRequirements', () => {
         line: 'comfy-aimdo==0.5.5',
         name: 'comfy-aimdo',
         minVersion: '0.5.5',
+        specifier: '==0.5.5',
         reason: 'outdated',
         installed: '0.4.1'
       }
@@ -273,7 +289,7 @@ describe('unmanagedRequirementsWarning', () => {
     expect(warning).toContain('sqlalchemy (missing)')
     expect(warning).not.toContain('filelock')
     expect(warning).toContain(
-      `"${python}" -m pip install -r "${path.join(comfy, 'requirements.txt')}"`
+      `${shellQuote(python)} -m pip install -r ${shellQuote(path.join(comfy, 'requirements.txt'))}`
     )
   })
 
@@ -305,7 +321,7 @@ describe('unmanagedRequirementsWarning', () => {
     makeSitePackages(venv, ['x-1.dist-info'])
     const python = path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', 'python3')
     expect(unmanagedRequirementsWarning(python, comfy)).toContain(
-      `-m pip install -r "${path.join(comfy, 'requirements.txt')}" -r "${path.join(comfy, 'manager_requirements.txt')}"`
+      `-m pip install -r ${shellQuote(path.join(comfy, 'requirements.txt'))} -r ${shellQuote(path.join(comfy, 'manager_requirements.txt'))}`
     )
   })
 })
@@ -326,5 +342,16 @@ describe('comfyuiDirForLaunch', () => {
   it('returns null without a main.py argument', () => {
     expect(comfyuiDirForLaunch({ cwd: '/x', args: ['main.py'] })).toBeNull()
     expect(comfyuiDirForLaunch({ args: ['-s', 'main.py'] })).toBeNull()
+  })
+})
+
+describe('shellQuote', () => {
+  it('single-quotes on POSIX so $, backticks and backslashes stay literal', () => {
+    expect(shellQuote('/a/$(rm -rf x)/`id`/b\\c', 'linux')).toBe("'/a/$(rm -rf x)/`id`/b\\c'")
+    expect(shellQuote("/it's/here", 'darwin')).toBe("'/it'\\''s/here'")
+  })
+
+  it('double-quotes on Windows', () => {
+    expect(shellQuote('C:\\Program Files\\py.exe', 'win32')).toBe('"C:\\Program Files\\py.exe"')
   })
 })

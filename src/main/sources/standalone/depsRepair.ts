@@ -1,4 +1,5 @@
 import fs from 'fs'
+import { randomUUID } from 'crypto'
 import path from 'path'
 import { findSitePackages } from './envPaths'
 import { getActivePythonPath, getActiveUvPath, getActiveVenvDir } from '../../lib/pythonEnv'
@@ -7,6 +8,7 @@ import { buildProtectedConstraints } from '../../lib/snapshots/restore'
 import {
   detectRequirementsDrift,
   describeUnsatisfied,
+  normalizeDistName,
   type RequirementsDrift,
   type UnsatisfiedRequirement
 } from '../../lib/requirementsDrift'
@@ -38,8 +40,20 @@ export interface DepsRepairGaveUp {
   at: number
 }
 
+/** Consecutive failed installs for one set of requirement files. A failure is
+ *  usually transient (offline, index outage) and retries next launch, but a
+ *  deterministic one (an unresolvable conflict) would otherwise re-run uv on
+ *  every launch; after MAX_FAILED_ATTEMPTS it waits for the files to change. */
+export interface DepsRepairFailures {
+  reqsHash: string
+  count: number
+}
+
+export const MAX_FAILED_ATTEMPTS = 3
+
 export type DepsRepairOutcome =
   | 'repaired'
+  | 'unverified'
   | 'declined'
   | 'no_uv'
   | 'failed'
@@ -81,6 +95,8 @@ export function pendingDrift(installation: InstallationRecord): RequirementsDrif
   ) {
     return null
   }
+  const failures = installation.depsRepairFailures as DepsRepairFailures | null | undefined
+  if (failures?.reqsHash === drift.reqsHash && failures.count >= MAX_FAILED_ATTEMPTS) return null
   return drift
 }
 
@@ -135,15 +151,32 @@ export async function repairDeps(
   // Pin the installed torch stack (and the rest of the protected set) so a
   // requirement's transitive dependencies can never swap it - uv would pull a
   // default-index CPU torch on Windows. A conflict fails the install instead.
+  // A protected package that is itself unsatisfied is left unpinned, or it
+  // would conflict with its own requirement. The requirement files' bounds go
+  // in too, so installing the subset can't pull another requirement out of range.
   let constraints: string[]
   try {
-    constraints = buildProtectedConstraints(await freeze(uvPath, pythonPath))
+    const unsatisfiedNames = new Set(drift.unsatisfied.map((r) => r.name))
+    constraints = [
+      ...buildProtectedConstraints(await freeze(uvPath, pythonPath)).filter(
+        (pin) => !unsatisfiedNames.has(normalizeDistName(pin.split('==')[0]!))
+      ),
+      ...drift.requirements
+        .filter((r) => r.specifier)
+        // `==` relaxed to `>=`: a newer install the user chose stays put.
+        .map((r) => `${r.name}${r.specifier.replace(/(^|,)\s*==(?!=)/g, '$1>=')}`)
+    ]
   } catch (err) {
     tools.sendOutput?.(`Could not read the installed packages: ${(err as Error).message}\n`)
     report('failed', { ...buildErrorFields(err) })
     return 'failed'
   }
-  const constraintPath = path.join(installation.installPath, '.deps-repair-constraints.txt')
+  // Unique per run: a second launch of the same install must not unlink this
+  // file out from under the first one's uv.
+  const constraintPath = path.join(
+    installation.installPath,
+    `.deps-repair-constraints-${randomUUID()}.txt`
+  )
 
   tools.sendOutput?.('Installing the missing Python packages…\n')
   const mirrors = settings.getMirrorConfig()
@@ -173,19 +206,35 @@ export async function repairDeps(
   if (tools.signal?.aborted) return 'cancelled'
 
   if (result.code !== 0) {
-    // Not given up: a failed install (offline, index outage) retries next launch.
+    const prior = installation.depsRepairFailures as DepsRepairFailures | null | undefined
+    const count = (prior?.reqsHash === drift.reqsHash ? prior.count : 0) + 1
+    await tools.update({
+      depsRepairFailures: { reqsHash: drift.reqsHash, count } satisfies DepsRepairFailures
+    })
     const message = withOutputTail(`uv pip install exited with code ${result.code}`, result.output)
-    tools.sendOutput?.(`Installing the missing packages failed (will retry on next launch).\n`)
-    report('failed', { uv_exit: result.code, ...buildErrorFields(message) })
+    tools.sendOutput?.(
+      count < MAX_FAILED_ATTEMPTS
+        ? `Installing the missing packages failed (will retry on next launch).\n`
+        : `Installing the missing packages failed ${count} times; not retrying until ComfyUI's requirements change.\n`
+    )
+    report('failed', { uv_exit: result.code, attempts: count, ...buildErrorFields(message) })
     return 'failed'
   }
+  if (installation.depsRepairFailures) await tools.update({ depsRepairFailures: null })
 
   // Loop guard: uv succeeded, so if the same requirements still read as
   // unsatisfied (e.g. a metadata-name mismatch this check can't see through),
   // re-running uv each launch would never converge. Stop until the
   // requirements change or other packages drift.
   const after = detect(installation)
-  if (after && after.unsatisfied.length > 0) {
+  if (!after) {
+    // uv succeeded but the environment can't be read back: don't claim a
+    // repair nobody verified, and leave any give-up marker as it was.
+    tools.sendOutput?.('Installed, but could not verify the environment afterwards.\n')
+    report('unverified')
+    return 'unverified'
+  }
+  if (after.unsatisfied.length > 0) {
     await tools.update({
       depsRepairGaveUp: {
         reqsHash: drift.reqsHash,
