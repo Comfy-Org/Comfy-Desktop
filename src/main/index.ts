@@ -117,7 +117,8 @@ import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
 import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
-import { initCoreBetaGrants } from './lib/coreBetaGrants'
+import { getCoreFrontendGrantAsync, initCoreBetaGrants } from './lib/coreBetaGrants'
+import { syncFrontendCache } from './lib/frontendCache'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
 
@@ -1519,6 +1520,20 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     void initCloudFreeRuns({ distinctId: installationId })
 
     void initCoreBetaGrants({ distinctId: installationId })
+    // A pinned frontend is downloaded in the background, never on a launch's critical path: a
+    // launch before it lands serves the bundled frontend and the next one picks the build up.
+    void getCoreFrontendGrantAsync()
+      .then((grant) => {
+        // A throw here (read-only or full profile) reads as beta off, as it does at launch.
+        let betaEnabled = false
+        try {
+          betaEnabled = settings.resolveBetaFeaturesEnabled()
+        } catch (err) {
+          console.warn('[core-beta] beta setting resolution failed:', err)
+        }
+        return syncFrontendCache(betaEnabled ? (grant?.version ?? null) : null)
+      })
+      .catch((err: unknown) => console.log('[core-beta] frontend cache upkeep failed:', err))
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and
     // free-tier offer UI. `userTier.ts` refreshes it on every cloud

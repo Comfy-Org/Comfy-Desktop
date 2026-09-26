@@ -7,7 +7,15 @@
  * never removes or overrides one — several of these flags are first-class, user-settable
  * options in Desktop's launch-args UI, so a grant is an addition on top of what the user asked
  * for, never a substitute for it.
+ *
+ * The same payload may also carry ONE frontend grant (`frontend`), which pins the frontend
+ * release Core serves. It is a separate, typed field rather than another allowlisted arg because
+ * it selects which frontend CODE runs: see `parseCoreFrontendGrant` for what narrows it. The build
+ * itself is fetched from PyPI into a Desktop-owned cache (`frontendCache.ts`) and handed to Core
+ * as `--front-end-root`.
  */
+import fs from 'fs'
+import path from 'path'
 import semver from 'semver'
 import { makeOpsFlag } from './opsFlag'
 import type { FeatureFlagValue } from './telemetry'
@@ -330,20 +338,21 @@ function commitShortfall(flag: CoreBetaCommitGrant, commits: CoreCommitState): s
     .join(' | ')
 }
 
-function versionGateOpen(core: CoreVersionState, hasVersionGrants: boolean): boolean {
+/** `logPrefix` is `null` when there is nothing to refuse, so an empty payload stays quiet. */
+function versionGateOpen(core: CoreVersionState, logPrefix: string | null): boolean {
   const version = core.semver
   if (version === null) return false
   if (!core.current) {
     // Before `verified`, which once the checkout has moved is a true statement about the wrong
     // commit — reporting that instead would name the less useful of the two faults.
-    if (hasVersionGrants)
-      console.log(`[core-beta] refused: base ${version} from a record the checkout contradicts`)
+    if (logPrefix !== null)
+      console.log(`${logPrefix} refused: base ${version} from a record the checkout contradicts`)
     return false
   }
   if (!core.verified) {
     // Echoed for the same reason as the per-flag windows below: this refusal drops grants an
     // operator can see in the payload, so it must not be silent.
-    if (hasVersionGrants) console.log(`[core-beta] refused: base ${version} not verified`)
+    if (logPrefix !== null) console.log(`${logPrefix} refused: base ${version} not verified`)
     return false
   }
   return true
@@ -395,7 +404,7 @@ export function selectCoreBetaGrantArgs(
   const version = core.semver
   const versionOpen = versionGateOpen(
     core,
-    flags.some((flag) => !isCommitGrant(flag))
+    flags.some((flag) => !isCommitGrant(flag)) ? '[core-beta]' : null
   )
   const presentArgs = new Set(userArgs)
   const selected: CoreBetaGrant[] = []
@@ -463,7 +472,7 @@ function reportWithheld(
 
 /** Why a version entry does not match, or `null` when it does. */
 function versionShortfall(
-  flag: CoreBetaVersionGrant,
+  flag: { readonly minCoreVersion: string; readonly maxCoreVersion?: string },
   core: CoreVersionState,
   versionOpen: boolean
 ): string | null {
@@ -489,6 +498,173 @@ function versionShortfall(
   return null
 }
 
+/** How a granted frontend reaches Core: the cached build's directory, served with no network.
+ *  The payload names a VERSION and nothing else; the package is fixed (`FRONTEND_PACKAGE`), so the
+ *  most a bad or compromised payload can do is pick another PyPI release of the frontend Core
+ *  already ships. */
+export const FRONTEND_ROOT_ARG = '--front-end-root'
+
+/** A payload request to serve a specific frontend release instead of the one Core bundles. */
+export type CoreFrontendGrant = {
+  /** Exact `MAJOR.MINOR.PATCH`, no `v`. */
+  readonly version: string
+  readonly minCoreVersion: string
+  readonly maxCoreVersion?: string
+}
+
+/** Everything one `desktop_core_beta_features` payload grants. */
+export type CoreBetaPayload = {
+  readonly flags: CoreBetaGrant[]
+  readonly frontend: CoreFrontendGrant | null
+}
+
+/** Exact release only: no ranges, tags, `latest`/`prerelease`, `v` prefix or prerelease suffix.
+ *  Core's own version pattern accepts all of those, so this is the narrowing. Leading zeros are
+ *  refused so one release has exactly one spelling. */
+const EXACT_FRONTEND_VERSION_RE = /^(?:0|[1-9]\d{0,5})\.(?:0|[1-9]\d{0,5})\.(?:0|[1-9]\d{0,5})$/
+
+/** The whole vocabulary of a frontend grant. Anything else refuses it, so a payload that tries
+ *  to name a repo, package or URL is rejected outright rather than applied with the field
+ *  ignored: an operator who wrote `repo` believes a different source will be served. */
+const FRONTEND_GRANT_KEYS: ReadonlySet<string> = new Set([
+  'version',
+  'min_core_version',
+  'max_core_version'
+])
+
+/**
+ * Read the optional `frontend` grant off the payload.
+ *
+ * Only the version's FORMAT is checked here. Whether that release is on PyPI is found out by the
+ * prefetch, and a missing one is never applied: those launches serve the bundled frontend and
+ * report the grant as `pending`, not applied.
+ *
+ * Independent of `flags`: a malformed frontend object drops only itself, and a malformed `flags`
+ * list does not take the frontend grant with it. Every failure is a refusal (`null`), never a
+ * repaired value, because this one decides which code runs.
+ */
+export function parseCoreFrontendGrant(
+  value: FeatureFlagValue | undefined,
+  payload: unknown
+): CoreFrontendGrant | null {
+  if (!isEnabled(value) || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null
+  }
+  const candidate = 'frontend' in payload ? payload.frontend : undefined
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+  if (Object.keys(candidate).some((key) => !FRONTEND_GRANT_KEYS.has(key))) return null
+
+  if (!('version' in candidate) || typeof candidate.version !== 'string') return null
+  if (!EXACT_FRONTEND_VERSION_RE.test(candidate.version)) return null
+
+  const minCoreVersion =
+    'min_core_version' in candidate ? parseCoreVersion(candidate.min_core_version) : null
+  if (minCoreVersion === null) return null
+
+  let maxCoreVersion: string | undefined
+  if ('max_core_version' in candidate) {
+    const parsed = parseCoreVersion(candidate.max_core_version)
+    if (parsed === null) return null
+    maxCoreVersion = parsed
+  }
+  return {
+    version: candidate.version,
+    minCoreVersion,
+    ...(maxCoreVersion === undefined ? {} : { maxCoreVersion })
+  }
+}
+
+export function parseCoreBetaPayload(
+  value: FeatureFlagValue | undefined,
+  payload: unknown
+): CoreBetaPayload {
+  return {
+    flags: parseCoreBetaGrants(value, payload),
+    frontend: parseCoreFrontendGrant(value, payload)
+  }
+}
+
+/** Matches the exact pin ComfyUI's `requirements.txt` carries, e.g.
+ *  `comfyui-frontend-package==1.52.7`. A range or a missing line is `null`, not a guess. */
+const REQUIRED_FRONTEND_RE =
+  /^[ \t]*comfyui[-_]frontend[-_]package[ \t]*==[ \t]*(\d+\.\d+\.\d+)[ \t]*(?:#.*)?$/im
+
+/** The frontend version this core pins, from the text of its `requirements.txt`. */
+export function parseRequiredFrontendVersion(requirements: string): string | null {
+  const match = REQUIRED_FRONTEND_RE.exec(requirements)
+  return match === null ? null : semver.valid(match[1]!)
+}
+
+/** `parseRequiredFrontendVersion` over the live checkout's `requirements.txt`. Read from the
+ *  checkout Core is about to run, not a record, so a `git pull` that raised the pin is seen. */
+export function readRequiredFrontendVersion(comfyuiDir: string): string | null {
+  try {
+    return parseRequiredFrontendVersion(
+      fs.readFileSync(path.join(comfyuiDir, 'requirements.txt'), 'utf-8')
+    )
+  } catch {
+    return null
+  }
+}
+
+/** Launch-arg names that mean the user already chose a frontend. Both count: `--front-end-root`
+ *  is the arg the grant itself would add, and `--front-end-version` is the user asking Core to
+ *  fetch one of their choosing. */
+const USER_FRONTEND_ARG_NAMES: ReadonlySet<string> = new Set([
+  'front-end-version',
+  'front-end-root'
+])
+
+/** Whether the user's own args pick a frontend. Name-matched the way `filterUnsupportedArgs`
+ *  reads a token, so `--front-end-version=x` and `--front-end-version x` both count. */
+export function userChoosesFrontend(userArgs: readonly string[]): boolean {
+  return userArgs.some(
+    (arg) => arg.startsWith('--') && USER_FRONTEND_ARG_NAMES.has(arg.slice(2).replace(/=.*$/, ''))
+  )
+}
+
+/**
+ * The frontend grant to apply on this launch, or `null`.
+ *
+ * Same gates as a version-bounded arg grant (beta toggle, `current`, `verified`, the core window),
+ * then two of its own:
+ *   - the user's own frontend choice wins, always (`userChoosesFrontend`);
+ *   - a FLOOR at the frontend this core pins. The grant must be strictly newer: an older frontend
+ *     than the one Core was released against can call into a server it does not match, and an
+ *     equal one is the bundled frontend downloaded again for nothing. An unknown floor refuses,
+ *     since then there is no telling which side of it the grant falls on.
+ * Every refusal after the shared gate is logged with its reason, as `withheld` does for args.
+ */
+export function selectCoreFrontendGrant(
+  grant: CoreFrontendGrant | null,
+  core: CoreVersionState,
+  betaEnabled: boolean,
+  userArgs: readonly string[],
+  requiredFrontendVersion: string | null
+): CoreFrontendGrant | null {
+  if (grant === null || betaEnabled !== true) return null
+  const version = core.semver
+  if (version === null || !versionGateOpen(core, '[core-beta] frontend')) return null
+  const { minCoreVersion, maxCoreVersion } = grant
+  const window =
+    maxCoreVersion === undefined ? `>=${minCoreVersion}` : `>=${minCoreVersion} <${maxCoreVersion}`
+  console.log(
+    `[core-beta] window frontend ${grant.version}: ${window} version=${version} exact=${core.exact} required=${requiredFrontendVersion ?? 'unknown'}`
+  )
+  const withheld = (reason: string): null => {
+    console.log(`[core-beta] frontend ${grant.version} withheld: ${reason}`)
+    return null
+  }
+  if (userChoosesFrontend(userArgs)) return withheld('the launch args choose a frontend')
+  const shortfall = versionShortfall(grant, core, true)
+  if (shortfall !== null) return withheld(shortfall)
+  if (requiredFrontendVersion === null) return withheld('required frontend unknown')
+  if (!semver.gt(grant.version, requiredFrontendVersion)) {
+    return withheld(`not newer than required frontend ${requiredFrontendVersion}`)
+  }
+  return grant
+}
+
 // Grants persist across launches, so revoking one is an ops SEQUENCE, not a deletion: serving
 // `false` on this key is what takes a grant back. Deleting or archiving the key instead reads as
 // `unreachable` — indistinguishable from an offline launch — and HOLDS every grant already on
@@ -499,16 +675,22 @@ function versionShortfall(
 // outruns the boot deadline used to lose the revocation on every launch and hold the grant
 // forever. It now persists the late `false` and picks it up on the next launch, so expect a
 // retraction to take one extra restart rather than never arriving.
-const flag = makeOpsFlag<CoreBetaGrant[]>({
+const flag = makeOpsFlag<CoreBetaPayload>({
   key: CORE_BETA_FEATURES_FLAG_KEY,
-  fallback: [],
-  parse: parseCoreBetaGrants,
+  fallback: { flags: [], frontend: null },
+  parse: parseCoreBetaPayload,
   logLabel: 'core-beta',
   persist: true
 })
 
 export const initCoreBetaGrants = flag.init
 
-export const getCoreBetaGrantsAsync = flag.get
+export async function getCoreBetaGrantsAsync(): Promise<CoreBetaGrant[]> {
+  return (await flag.get()).flags
+}
+
+export async function getCoreFrontendGrantAsync(): Promise<CoreFrontendGrant | null> {
+  return (await flag.get()).frontend
+}
 
 export const _resetForTest = flag._resetForTest

@@ -51,6 +51,10 @@ const launchHarness = vi.hoisted(() => ({
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
   grants: [] as CoreBetaGrant[],
+  frontend: null as null | { version: string; minCoreVersion: string },
+  /** What `cachedFrontendDir` answers: the cached build's directory, or `null` if not there. */
+  frontendDir: null as null | string,
+  prefetched: [] as string[],
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -114,8 +118,20 @@ vi.mock('../../comfy-args', async (importOriginal) => {
 
 vi.mock('../../coreBetaGrants', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaGrantsModule>()
-  return { ...actual, getCoreBetaGrantsAsync: async () => launchHarness.grants }
+  return {
+    ...actual,
+    getCoreBetaGrantsAsync: async () => launchHarness.grants,
+    getCoreFrontendGrantAsync: async () => launchHarness.frontend
+  }
 })
+
+vi.mock('../../frontendCache', () => ({
+  cachedFrontendDir: () => launchHarness.frontendDir,
+  prefetchFrontend: async (version: string) => {
+    launchHarness.prefetched.push(version)
+    return null
+  }
+}))
 
 vi.mock('../../hardwareTap', async (importOriginal) => {
   const actual = await importOriginal<typeof HardwareTapModule>()
@@ -132,6 +148,7 @@ import {
   attachLaunchStreams,
   createAssetsTapSafe,
   buildLaunchArgs,
+  coreBetaAppliedArgs,
   desktopFeatureFlags,
   emitCoreBetaRecords,
   emitCoreBetaTelemetry,
@@ -160,7 +177,7 @@ import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
-import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
+import type { CoreBetaGrant, CoreCommitState, CoreFrontendGrant } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import {
   makeSendOutput,
@@ -638,11 +655,15 @@ const schemaOf = (...names: string[]): ComfyArgsSchema => ({
 const ASSETS_GRANT: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.80' }
 const PREFIX = ['/opt/py', '-s', 'ComfyUI/main.py']
 const DESKTOP_FLAGS = ['--feature-flag', 'show_signin_button=true']
+const FRONTEND_DIR = '/cache/frontend-cache/1.53.6'
 
 const build = (over: {
   userArgs?: string[]
   schema: ComfyArgsSchema
   betaFlags?: CoreBetaGrant[]
+  frontendGrant?: CoreFrontendGrant | null
+  requiredFrontendVersion?: string | null
+  frontendDir?: string | null
   coreVersion?: string | null
   coreVersionExact?: boolean
   coreVersionVerified?: boolean
@@ -656,6 +677,10 @@ const build = (over: {
     desktopFlagArgs: DESKTOP_FLAGS,
     schema: over.schema,
     betaFlags: over.betaFlags ?? [ASSETS_GRANT],
+    frontendGrant: over.frontendGrant ?? null,
+    requiredFrontendVersion:
+      over.requiredFrontendVersion === undefined ? '1.52.7' : over.requiredFrontendVersion,
+    frontendDir: over.frontendDir === undefined ? FRONTEND_DIR : over.frontendDir,
     coreVersion: over.coreVersion === undefined ? '0.3.81' : over.coreVersion,
     coreVersionExact: over.coreVersionExact ?? true,
     coreVersionVerified: over.coreVersionVerified ?? true,
@@ -923,6 +948,123 @@ describe('buildLaunchArgs core beta injection', () => {
   })
 })
 
+describe('buildLaunchArgs frontend grant', () => {
+  const FRONTEND_GRANT: CoreFrontendGrant = { version: '1.53.6', minCoreVersion: '0.3.80' }
+  const withFrontend = (over: Parameters<typeof build>[0]): ReturnType<typeof build> =>
+    build({ betaFlags: [], frontendGrant: FRONTEND_GRANT, ...over })
+
+  it('serves the cached build after the arg grants and before the user args', () => {
+    const built = build({
+      userArgs: ['--listen'],
+      schema: schemaOf('enable-assets', 'front-end-root', 'listen'),
+      frontendGrant: FRONTEND_GRANT
+    })
+
+    expect(built.args).toEqual([
+      ...PREFIX,
+      ...DESKTOP_FLAGS,
+      '--enable-assets',
+      '--front-end-root',
+      FRONTEND_DIR,
+      '--listen'
+    ])
+    expect(built.beta.frontend).toEqual(FRONTEND_GRANT)
+    expect(built.beta.frontendPending).toBeNull()
+    expect(built.beta.applied).toEqual([ASSETS_GRANT])
+    expect(coreBetaAppliedArgs(built.beta)).toEqual(['--enable-assets', '--front-end-root'])
+  })
+
+  it('records the pinned release, the core floor and the frontend floor it cleared', () => {
+    const built = withFrontend({ schema: schemaOf('front-end-root') })
+
+    expect(built.beta.logRecords).toEqual([
+      '[core-beta] frontend 1.53.6 --front-end-root (cached from PyPI) (core 0.3.81 >= 0.3.80, above required frontend 1.52.7, opted in)\n'
+    ])
+  })
+
+  // Core exits on a `--front-end-root` that does not exist, so an uncached build must never
+  // reach argv: the launch goes ahead on the bundled frontend and says the grant is pending.
+  it('leaves the launch unchanged and reports the grant pending until the build is cached', () => {
+    const built = withFrontend({ schema: schemaOf('front-end-root'), frontendDir: null })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
+    expect(built.beta.frontend).toBeNull()
+    expect(built.beta.frontendPending).toEqual(FRONTEND_GRANT)
+    expect(built.beta.droppedUnsupported).toEqual([])
+    expect(coreBetaAppliedArgs(built.beta)).toEqual([])
+    expect(built.beta.logRecords).toEqual([
+      '[core-beta] frontend 1.53.6 pending download (core 0.3.81 >= 0.3.80, above required frontend 1.52.7, opted in)\n'
+    ])
+  })
+
+  it.each([
+    ['--front-end-version', 'Comfy-Org/ComfyUI_frontend@1.50.0'],
+    ['--front-end-version=Comfy-Org/ComfyUI_frontend@latest'],
+    ['--front-end-root', '/tmp/my-frontend'],
+    ['--front-end-root=/tmp/my-frontend']
+  ])("yields to the user's own frontend choice %s", (...userArgs) => {
+    const built = withFrontend({
+      userArgs,
+      schema: schemaOf('front-end-version', 'front-end-root')
+    })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, ...userArgs])
+    expect(built.args).not.toContain(FRONTEND_DIR)
+    expect(built.beta.frontend).toBeNull()
+    expect(built.beta.frontendPending).toBeNull()
+    // Withheld for the user, not refused by the core.
+    expect(built.beta.droppedUnsupported).toEqual([])
+  })
+
+  it('injects nothing when the beta toggle is off', () => {
+    const built = withFrontend({ schema: schemaOf('front-end-root'), betaEnabled: false })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
+    expect(built.beta.frontend).toBeNull()
+    expect(built.beta.frontendPending).toBeNull()
+    expect(built.beta.logRecords).toEqual([])
+  })
+
+  it.each([
+    ['unverified', { coreVersionVerified: false }],
+    ['from a record the checkout contradicts', { coreVersionCurrent: false }],
+    ['unparseable', { coreVersion: null }],
+    ['below the grant floor', { coreVersion: '0.3.79' }]
+  ])('injects nothing when the core version is %s', (_label, over) => {
+    const built = withFrontend({ schema: schemaOf('front-end-root'), ...over })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
+    expect(built.beta.frontend).toBeNull()
+    expect(built.beta.frontendPending).toBeNull()
+    expect(built.beta.droppedUnsupported).toEqual([])
+  })
+
+  it.each([
+    ['the frontend Core pins', '1.53.6'],
+    ['newer than the grant', '1.54.0'],
+    ['unknown', null]
+  ])('injects nothing when the required frontend is %s', (_label, requiredFrontendVersion) => {
+    const built = withFrontend({ schema: schemaOf('front-end-root'), requiredFrontendVersion })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS])
+    expect(built.beta.frontend).toBeNull()
+    expect(built.beta.frontendPending).toBeNull()
+  })
+
+  it('reports the grant as dropped when the running core cannot parse --front-end-root', () => {
+    const built = withFrontend({ schema: schemaOf('listen'), userArgs: ['--listen'] })
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
+    expect(built.beta.frontend).toBeNull()
+    expect(built.beta.frontendPending).toBeNull()
+    expect(built.beta.logRecords).toEqual([
+      '[core-beta] frontend 1.53.6 withheld: --front-end-root not supported by this core\n'
+    ])
+    expect(built.beta.droppedUnsupported).toEqual(['--front-end-root'])
+    expect(coreBetaAppliedArgs(built.beta)).toEqual([])
+  })
+})
+
 const RECORD = '[core-beta] --enable-assets (core 0.3.81 >= 0.3.80, opted in)\n'
 const CHILD_LINE = 'Total VRAM 24576 MB, total RAM 64000 MB\n'
 
@@ -1042,6 +1184,9 @@ describe('core beta report placement', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
+    launchHarness.frontend = null
+    launchHarness.frontendDir = null
+    launchHarness.prefetched = []
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
     // Both halves of the activation-notice state: the in-process pending queue and the
@@ -1469,6 +1614,67 @@ describe('core beta report placement', () => {
     )
   })
 
+  it('serves the cached frontend on the spawned command line, floored at the live requirements.txt', async () => {
+    launchHarness.grants = []
+    launchHarness.frontend = { version: '1.53.6', minCoreVersion: '0.3.80' }
+    launchHarness.frontendDir = '/cache/frontend-cache/1.53.6'
+    launchHarness.schemaNames = ['listen', 'front-end-root']
+    fs.writeFileSync(
+      path.join(installDir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.52.7\ntorch\n'
+    )
+
+    const res = await handleLaunch(ctxFor('harness-frontend-grant'))
+
+    expect(res.ok).toBe(true)
+    const at = spawnArgs.indexOf('--front-end-root')
+    expect(spawnArgs[at + 1]).toBe('/cache/frontend-cache/1.53.6')
+    expect(sent.join('')).toContain('[core-beta] frontend 1.53.6 --front-end-root')
+    expect(launchHarness.prefetched).toEqual([])
+    const applied = events.find((e) => e.event === 'comfy.desktop.core_beta.applied')
+    expect(applied!.properties).toMatchObject({
+      args: ['--front-end-root'],
+      frontend_version: '1.53.6',
+      frontend_pending_version: null
+    })
+  })
+
+  it('launches on the bundled frontend and fetches the build when it is not cached yet', async () => {
+    launchHarness.grants = []
+    launchHarness.frontend = { version: '1.53.6', minCoreVersion: '0.3.80' }
+    launchHarness.schemaNames = ['listen', 'front-end-root']
+    fs.writeFileSync(
+      path.join(installDir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.52.7\ntorch\n'
+    )
+
+    const res = await handleLaunch(ctxFor('harness-frontend-grant-pending'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--front-end-root')
+    expect(launchHarness.prefetched).toEqual(['1.53.6'])
+    const applied = events.find((e) => e.event === 'comfy.desktop.core_beta.applied')
+    expect(applied!.properties).toMatchObject({
+      args: [],
+      frontend_version: null,
+      frontend_pending_version: '1.53.6'
+    })
+  })
+
+  it('withholds the frontend grant when the live checkout has no readable pin', async () => {
+    launchHarness.grants = []
+    launchHarness.frontend = { version: '1.53.6', minCoreVersion: '0.3.80' }
+    launchHarness.frontendDir = '/cache/frontend-cache/1.53.6'
+    launchHarness.schemaNames = ['listen', 'front-end-root']
+
+    const res = await handleLaunch(ctxFor('harness-frontend-grant-no-floor'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--front-end-root')
+    expect(launchHarness.prefetched).toEqual([])
+    expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.applied')
+  })
+
   it('continues a skip-port launch when renderer reporting throws', async () => {
     const ctx = ctxFor('harness-skip-port-report-throws')
     const send = ctx.event.sender.send.bind(ctx.event.sender)
@@ -1884,6 +2090,8 @@ describe('emitCoreBetaTelemetry', () => {
     emitCoreBetaTelemetry({
       appliedArgs: ['--enable-assets'],
       droppedUnsupported: [],
+      frontendVersion: null,
+      frontendPendingVersion: null,
       coreVersion: '0.3.81',
       coreCommit: COMMIT,
       coreVersionLabel: 'v0.3.81+15',
@@ -1896,7 +2104,53 @@ describe('emitCoreBetaTelemetry', () => {
       core_version: '0.3.81',
       core_commit: COMMIT,
       core_version_label: 'v0.3.81+15',
-      dropped_unsupported: []
+      dropped_unsupported: [],
+      frontend_version: null,
+      frontend_pending_version: null
+    })
+  })
+
+  it('names the pinned frontend release when a frontend grant applied', () => {
+    emitCoreBetaTelemetry({
+      appliedArgs: ['--front-end-root'],
+      droppedUnsupported: [],
+      frontendVersion: '1.53.6',
+      frontendPendingVersion: null,
+      coreVersion: '0.3.81',
+      coreCommit: COMMIT,
+      coreVersionLabel: 'v0.3.81+15',
+      optedIn: true
+    })
+
+    const applied = captured.find((c) => c.event === 'comfy.desktop.core_beta.applied')
+    expect(applied!.ctx).toEqual({
+      args: ['--front-end-root'],
+      core_version: '0.3.81',
+      core_commit: COMMIT,
+      core_version_label: 'v0.3.81+15',
+      dropped_unsupported: [],
+      frontend_version: '1.53.6',
+      frontend_pending_version: null
+    })
+  })
+
+  it('reports a frontend grant still downloading even though nothing was applied', () => {
+    emitCoreBetaTelemetry({
+      appliedArgs: [],
+      droppedUnsupported: [],
+      frontendVersion: null,
+      frontendPendingVersion: '1.53.6',
+      coreVersion: '0.3.81',
+      coreCommit: COMMIT,
+      coreVersionLabel: 'v0.3.81+15',
+      optedIn: true
+    })
+
+    const applied = captured.find((c) => c.event === 'comfy.desktop.core_beta.applied')
+    expect(applied!.ctx).toMatchObject({
+      args: [],
+      frontend_version: null,
+      frontend_pending_version: '1.53.6'
     })
   })
 
@@ -1904,6 +2158,8 @@ describe('emitCoreBetaTelemetry', () => {
     emitCoreBetaTelemetry({
       appliedArgs: [],
       droppedUnsupported: ['--enable-assets'],
+      frontendVersion: null,
+      frontendPendingVersion: null,
       coreVersion: '0.3.81',
       coreCommit: COMMIT,
       coreVersionLabel: 'v0.3.81+15',
@@ -1918,6 +2174,8 @@ describe('emitCoreBetaTelemetry', () => {
     emitCoreBetaTelemetry({
       appliedArgs: [],
       droppedUnsupported: [],
+      frontendVersion: null,
+      frontendPendingVersion: null,
       coreVersion: null,
       coreCommit: null,
       coreVersionLabel: null,
@@ -1932,6 +2190,8 @@ describe('emitCoreBetaTelemetry', () => {
     emitCoreBetaTelemetry({
       appliedArgs: ['--enable-assets'],
       droppedUnsupported: [],
+      frontendVersion: null,
+      frontendPendingVersion: null,
       coreVersion: '0.3.81',
       coreCommit: COMMIT,
       coreVersionLabel: 'v0.3.81+15',
@@ -1952,6 +2212,8 @@ describe('emitCoreBetaTelemetry', () => {
     emitCoreBetaTelemetry({
       appliedArgs: ['--enable-assets'],
       droppedUnsupported: [],
+      frontendVersion: null,
+      frontendPendingVersion: null,
       coreVersion: '0.3.81',
       coreCommit: COMMIT,
       coreVersionLabel: 'v0.3.81+15',

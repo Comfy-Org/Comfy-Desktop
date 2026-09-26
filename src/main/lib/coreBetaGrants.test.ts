@@ -25,9 +25,15 @@ import {
   _resetForTest,
   commitGrantShas,
   getCoreBetaGrantsAsync,
+  getCoreFrontendGrantAsync,
   initCoreBetaGrants,
   parseCoreBetaGrants,
-  selectCoreBetaGrantArgs
+  parseCoreFrontendGrant,
+  parseRequiredFrontendVersion,
+  readRequiredFrontendVersion,
+  selectCoreBetaGrantArgs,
+  selectCoreFrontendGrant,
+  userChoosesFrontend
 } from './coreBetaGrants'
 import type { CoreBetaGrant, CoreCommitState, CoreVersionState } from './coreBetaGrants'
 import { coreGateVersion, coreRecordCurrent } from './version'
@@ -986,6 +992,225 @@ describe('commitGrantShas', () => {
   })
 })
 
+describe('parseCoreFrontendGrant', () => {
+  const frontendPayload = (frontend: unknown): unknown => ({ flags: [], frontend })
+
+  it('accepts an exact version with normalized core bounds', () => {
+    expect(
+      parseCoreFrontendGrant(
+        true,
+        frontendPayload({
+          version: '1.53.6',
+          min_core_version: 'v0.36.0',
+          max_core_version: '0.38.0'
+        })
+      )
+    ).toEqual({ version: '1.53.6', minCoreVersion: '0.36.0', maxCoreVersion: '0.38.0' })
+  })
+
+  it('reads the frontend grant independently of the arg grants', () => {
+    const payload = {
+      flags: 'not-a-list',
+      frontend: { version: '1.53.6', min_core_version: '0.36.0' }
+    }
+    expect(parseCoreBetaGrants(true, payload)).toEqual([])
+    expect(parseCoreFrontendGrant(true, payload)).toEqual({
+      version: '1.53.6',
+      minCoreVersion: '0.36.0'
+    })
+    // And the other way round: a bad frontend object costs the arg grants nothing.
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }],
+        frontend: { version: 'latest', min_core_version: '0.36.0' }
+      })
+    ).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.3.80' }])
+  })
+
+  it.each([
+    ['latest'],
+    ['prerelease'],
+    ['v1.53.6'],
+    ['1.53'],
+    ['1.53.6.1'],
+    ['1.53.6-rc.1'],
+    ['1.53.6+build'],
+    ['^1.53.6'],
+    ['>=1.53.6'],
+    ['1.53.x'],
+    ['01.53.6'],
+    [' 1.53.6'],
+    ['1.53.6\n'],
+    ['1.53.6@latest'],
+    ['evil/repo@1.53.6'],
+    ['Comfy-Org/ComfyUI_frontend@1.53.6'],
+    ['1.53.6 --front-end-root /tmp'],
+    ['1234567.0.0'],
+    [''],
+    [1.53],
+    [null],
+    [['1.53.6']]
+  ])('refuses version %j', (version) => {
+    expect(
+      parseCoreFrontendGrant(true, frontendPayload({ version, min_core_version: '0.36.0' }))
+    ).toBeNull()
+  })
+
+  it.each([
+    ['repo', { repo: 'evil/ComfyUI_frontend' }],
+    ['owner', { owner: 'evil' }],
+    ['package', { package: 'evil-frontend-package' }],
+    ['url', { url: 'https://example.com/dist.zip' }],
+    ['arg', { arg: '--front-end-root' }],
+    ['notice', { notice: 'silent' }]
+  ])('refuses the whole grant when it also names %s', (_label, extra) => {
+    expect(
+      parseCoreFrontendGrant(
+        true,
+        frontendPayload({ version: '1.53.6', min_core_version: '0.36.0', ...extra })
+      )
+    ).toBeNull()
+  })
+
+  it.each([
+    ['a missing min_core_version', { version: '1.53.6' }],
+    ['an invalid min_core_version', { version: '1.53.6', min_core_version: 'soon' }],
+    [
+      'an invalid max_core_version',
+      { version: '1.53.6', min_core_version: '0.36.0', max_core_version: null }
+    ]
+  ])('refuses %s', (_label, frontend) => {
+    expect(parseCoreFrontendGrant(true, frontendPayload(frontend))).toBeNull()
+  })
+
+  it.each([
+    ['absent', { flags: [] }],
+    ['a string', { frontend: '1.53.6' }],
+    ['an array', { frontend: [{ version: '1.53.6', min_core_version: '0.36.0' }] }],
+    ['null', { frontend: null }]
+  ])('grants no frontend when the field is %s', (_label, payload) => {
+    expect(parseCoreFrontendGrant(true, payload)).toBeNull()
+  })
+
+  it.each([[false], ['control'], ['off'], [undefined]])(
+    'grants no frontend when the flag value is %j',
+    (value) => {
+      expect(
+        parseCoreFrontendGrant(
+          value,
+          frontendPayload({ version: '1.53.6', min_core_version: '0.36.0' })
+        )
+      ).toBeNull()
+    }
+  )
+})
+
+describe('parseRequiredFrontendVersion', () => {
+  it.each([
+    ['comfyui-frontend-package==1.52.7\ncomfyui-workflow-templates==0.11.68\n', '1.52.7'],
+    ['torch\ncomfyui-frontend-package == 1.52.7  # pinned\n', '1.52.7'],
+    ['comfyui_frontend_package==1.52.7\r\n', '1.52.7'],
+    ['comfyui-frontend-package>=1.52.7\n', null],
+    ['# comfyui-frontend-package==1.52.7\n', null],
+    ['comfyui-frontend-package==1.52\n', null],
+    ['torch\n', null],
+    ['', null]
+  ])('reads %j as %j', (text, expected) => {
+    expect(parseRequiredFrontendVersion(text)).toBe(expected)
+  })
+
+  it('reads the pin from a checkout on disk, and null when there is no file', () => {
+    fs.writeFileSync(
+      path.join(testConfigDir, 'requirements.txt'),
+      'comfyui-frontend-package==1.52.7\n'
+    )
+    expect(readRequiredFrontendVersion(testConfigDir)).toBe('1.52.7')
+    expect(readRequiredFrontendVersion(path.join(testConfigDir, 'missing'))).toBeNull()
+  })
+})
+
+describe('userChoosesFrontend', () => {
+  it.each([
+    [['--front-end-version', 'Comfy-Org/ComfyUI_frontend@1.50.0'], true],
+    [['--front-end-version=Comfy-Org/ComfyUI_frontend@latest'], true],
+    [['--front-end-root', '/tmp/fe'], true],
+    [['--front-end-root=/tmp/fe'], true],
+    [['--listen', '--port', '8188'], false],
+    [['--front-end-versions'], false],
+    [['front-end-version'], false],
+    [[], false]
+  ])('reads %j as %s', (userArgs, expected) => {
+    expect(userChoosesFrontend(userArgs)).toBe(expected)
+  })
+})
+
+describe('selectCoreFrontendGrant', () => {
+  const grant = { version: '1.53.6', minCoreVersion: '0.36.0' }
+  const bounded = { ...grant, maxCoreVersion: '0.38.0' }
+  const REQUIRED = '1.52.7'
+  function at(semver: string | null, over: Partial<CoreVersionState> = {}): CoreVersionState {
+    return { semver, exact: true, verified: true, current: true, ...over }
+  }
+
+  it('selects a newer frontend on a verified core inside the window', () => {
+    expect(selectCoreFrontendGrant(grant, at('0.37.1'), true, [], REQUIRED)).toEqual(grant)
+  })
+
+  it('selects nothing without a grant', () => {
+    expect(selectCoreFrontendGrant(null, at('0.37.1'), true, [], REQUIRED)).toBeNull()
+  })
+
+  it('selects nothing when the beta toggle is off', () => {
+    expect(selectCoreFrontendGrant(grant, at('0.37.1'), false, [], REQUIRED)).toBeNull()
+  })
+
+  it.each([
+    ['unverified', { verified: false }],
+    ['from a superseded record', { current: false }]
+  ])('refuses a core version that is %s', (_label, over) => {
+    expect(selectCoreFrontendGrant(grant, at('0.37.1', over), true, [], REQUIRED)).toBeNull()
+  })
+
+  it('refuses an unknown core version', () => {
+    expect(selectCoreFrontendGrant(grant, at(null), true, [], REQUIRED)).toBeNull()
+  })
+
+  it.each([
+    ['below the minimum', '0.35.9', {}, null],
+    ['at the minimum', '0.36.0', {}, bounded],
+    ['at the exclusive maximum', '0.38.0', {}, null],
+    ['under the maximum but not on an exact tag', '0.37.1', { exact: false }, null]
+  ])('honours the core window for a core %s', (_label, version, over, expected) => {
+    expect(selectCoreFrontendGrant(bounded, at(version, over), true, [], REQUIRED)).toEqual(
+      expected
+    )
+  })
+
+  it.each([
+    ['older than', '1.53.7', null],
+    ['equal to', '1.53.6', null],
+    ['newer than', '1.52.7', grant],
+    ['unknown for', null, null]
+  ])('floors at the frontend Core pins: required %s the grant', (_label, required, expected) => {
+    expect(selectCoreFrontendGrant(grant, at('0.37.1'), true, [], required)).toEqual(expected)
+  })
+
+  it("yields to the user's own frontend choice", () => {
+    expect(
+      selectCoreFrontendGrant(
+        grant,
+        at('0.37.1'),
+        true,
+        ['--front-end-version', 'Comfy-Org/ComfyUI_frontend@1.40.0'],
+        REQUIRED
+      )
+    ).toBeNull()
+    expect(
+      selectCoreFrontendGrant(grant, at('0.37.1'), true, ['--front-end-root=/x'], REQUIRED)
+    ).toBeNull()
+  })
+})
+
 describe('core beta grants fetch', () => {
   it('reads its own PostHog key once at boot', async () => {
     getOpsFlagResult.mockResolvedValue({
@@ -1010,7 +1235,25 @@ describe('core beta grants fetch', () => {
     await expect(getCoreBetaGrantsAsync()).resolves.toEqual([
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }
     ])
+    await expect(getCoreFrontendGrantAsync()).resolves.toBeNull()
   })
+
+  it('serves the frontend grant from the same flag and payload', async () => {
+    getOpsFlagResult.mockResolvedValue({
+      kind: 'value',
+      value: true,
+      payload: { flags: [], frontend: { version: '1.53.6', min_core_version: '0.36.0' } }
+    })
+    await initCoreBetaGrants({ distinctId: 'device-id' })
+
+    expect(getOpsFlagResult).toHaveBeenCalledOnce()
+    await expect(getCoreBetaGrantsAsync()).resolves.toEqual([])
+    await expect(getCoreFrontendGrantAsync()).resolves.toEqual({
+      version: '1.53.6',
+      minCoreVersion: '0.36.0'
+    })
+  })
+
   it('logs the cached commit ranges in full, on one line', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     getOpsFlagResult.mockResolvedValue({
