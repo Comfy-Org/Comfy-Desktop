@@ -1790,6 +1790,45 @@ describe('core beta report placement', () => {
     }
   )
 
+  it('path-scrubs the stderr tail on the exited event', async () => {
+    const children: FakeChild[] = []
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48235
+    }
+    launchHarness.spawn = () => {
+      const child = fakeChild()
+      children.push(child)
+      return child
+    }
+    launchHarness.waitForPort = async () => {}
+
+    const res = await handleLaunch(ctxFor('harness-exited-scrub'))
+    expect(res.ok).toBe(true)
+
+    const child = children[0]!
+    child.stderr.emit(
+      'data',
+      Buffer.from(
+        `  File "${path.join(installDir, 'ComfyUI', 'nodes.py')}", line 1\n` +
+          "OSError: cannot open '/mnt/private-share/model.safetensors'\n"
+      )
+    )
+    child.emit('close', 1, null)
+    await vi.waitFor(() =>
+      expect(events.some((e) => e.event === 'comfy.desktop.comfyui.exited')).toBe(true)
+    )
+
+    const exited = events.find((e) => e.event === 'comfy.desktop.comfyui.exited')
+    const stderr = String(exited?.properties?.last_stderr)
+    expect(stderr).toContain('File "<comfyui>/nodes.py", line 1')
+    expect(stderr).toContain("'<path>'")
+    expect(stderr).not.toContain('private-share')
+  })
+
   it('keeps the applied Assets cohort on terminal boot failure', async () => {
     launchHarness.launchCommand = {
       cmd: process.execPath,

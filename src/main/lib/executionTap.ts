@@ -27,7 +27,8 @@ import * as installationsApi from '../installations'
 import * as telemetry from './telemetry'
 import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
 import { buildErrorFields } from '../../shared/errorEvent'
-import { scrubAll } from '../../shared/piiScrub'
+import { scrubAll, scrubPaths } from '../../shared/piiScrub'
+import type { PathRoot } from '../../shared/piiScrub'
 
 /**
  * Traceback collection state. We collect until a blank line follows an
@@ -98,10 +99,13 @@ export function createExecutionTap(opts: {
   coreCommit?: string | null
   /** Display form of the RECORDED version; may lag `coreCommit`, which is what to order by. */
   coreVersionLabel?: string | null
+  /** Roots whose paths error text keeps readable; every other path is redacted. */
+  pathRoots?: readonly PathRoot[]
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   flushSummary: () => void
 } {
+  const pathRoots = opts.pathRoots ?? []
   const state: TapState = {
     installationId: opts.installationId,
     variant: opts.variant ?? null,
@@ -193,8 +197,10 @@ export function createExecutionTap(opts: {
     // message / bucket / signature).
     telemetry.emit('comfy.desktop.execution.error', {
       ...baseContext,
-      ...buildErrorFields(exceptionLine),
-      error_traceback: scrubAll(state.tracebackBuffer.join('\n')).slice(-MAX_TRACEBACK_CHARS),
+      ...buildErrorFields(exceptionLine, { pathRoots }),
+      error_traceback: scrubAll(scrubPaths(state.tracebackBuffer.join('\n'), pathRoots)).slice(
+        -MAX_TRACEBACK_CHARS
+      ),
       error_count: state.errorCount,
       wall_clock_ms: wallMs
     })
@@ -221,7 +227,7 @@ export function createExecutionTap(opts: {
     const wallMs = consumePromptStart()
     telemetry.emit('comfy.desktop.execution.error', {
       ...baseContext,
-      ...buildErrorFields(block, { errorClass: 'validation_failed' }),
+      ...buildErrorFields(block, { errorClass: 'validation_failed', pathRoots }),
       error_bucket: 'validation',
       error_count: state.errorCount,
       node_id: nodeId,

@@ -91,6 +91,9 @@ import {
 import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
+import { installPathRoots } from '../../pathRoots'
+import { scrubPaths } from '../../../../shared/piiScrub'
+import type { PathRoot } from '../../../../shared/piiScrub'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
@@ -828,6 +831,11 @@ async function runLaunch(
     }
   }
 
+  // Resolved once per launch: it touches the filesystem, and the exit handlers
+  // run exactly when the install's drive or share may have gone away.
+  let pathRootsMemo: PathRoot[] | undefined
+  const launchPathRoots = (): PathRoot[] => (pathRootsMemo ??= installPathRoots(inst.installPath))
+
   // Log stream + telemetry taps + progress tracker, grouped so a throw partway
   // through closes the already-opened log stream. The tracker is armed once -
   // a pre-launch repair may have armed it already; re-arming would re-emit
@@ -848,7 +856,8 @@ async function runLaunch(
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags,
         coreCommit,
-        coreVersionLabel: coreVersionLabel()
+        coreVersionLabel: coreVersionLabel(),
+        pathRoots: launchPathRoots()
       })
       const hwTap = createHardwareTap({
         installationId,
@@ -1429,12 +1438,13 @@ async function runLaunch(
         ...crashDiagnosis
       }
       // Emit from main so it survives the Desktop 2 panel teardown on exit.
-      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
+      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is path-
+      // scrubbed here and PII-scrubbed centrally.
       telemetry.emit('comfy.desktop.comfyui.exited', {
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null
+        last_stderr: lastStderr ? scrubPaths(lastStderr, launchPathRoots()) : null
       })
       if (crashed) {
         recordCrash(exitedPayload)
@@ -1843,7 +1853,8 @@ async function runLaunch(
     // carries the last ~40 lines of stderr — where the fatal error prints —
     // scrubbed and capped, so the failure is diagnosable without depending on
     // the separate, unreliable `boot_log` event.
-    const tail = errorTail(launchResult.stderr)
+    const pathRoots = launchPathRoots()
+    const tail = errorTail(launchResult.stderr, { pathRoots })
     const errorSource = tail
       ? `${launchResult.message}\n${launchResult.stderr}`
       : launchResult.message
@@ -1853,7 +1864,7 @@ async function runLaunch(
       variant: (inst.variant as string | undefined) ?? null,
       ...bootCohort(),
       failed_phase: failedPhase,
-      ...buildErrorFields(errorSource),
+      ...buildErrorFields(errorSource, { pathRoots }),
       error_tail: tail,
       exit_code: launchResult.exitCode ?? null,
       signal: launchResult.signal ?? null,
@@ -2101,12 +2112,13 @@ async function runLaunch(
         ...crashDiagnosis
       }
       // Emit from main so it survives the Desktop 2 panel teardown on exit.
-      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
+      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is path-
+      // scrubbed here and PII-scrubbed centrally.
       telemetry.emit('comfy.desktop.comfyui.exited', {
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null
+        last_stderr: lastStderr ? scrubPaths(lastStderr, launchPathRoots()) : null
       })
       if (crashed) {
         recordCrash(exitedPayload)
