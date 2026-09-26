@@ -11,17 +11,25 @@
  * Injected with `insertCSS` + `executeJavaScript`, like
  * `injectMacPasskeyWarning`. The URL is string-baked via `JSON.stringify`
  * so a hostile URL can't break the Cloud page. Copy stays in-page; only
- * "Open again" reaches main (see `OPEN_LINK_SENTINEL`).
+ * "Open again" and "Start over" reach main (see the sentinels below).
  */
 
 export const COPY_LINK_BANNER_ID = 'comfy-copy-login-banner'
 
 /**
- * Open-again → main, so it can `shell.openExternal` (page JS can't). The
- * only page→main channel — copy stays in-page so a remote page can't
- * drive a no-gesture clipboard write — and it re-opens only our own URL.
+ * Open-again → main, so it can `shell.openExternal` (page JS can't). Copy
+ * stays in-page so a remote page can't drive a no-gesture clipboard write —
+ * and this sentinel re-opens only our own URL.
  */
 export const OPEN_LINK_SENTINEL = '__comfyOpenLoginLink'
+
+/**
+ * Start-over → main, so it can replace the in-flight sign-in attempt (page
+ * JS can't). Carries no data: main re-enters its own flow with its own
+ * URLs, so a hostile page can at worst restart our sign-in (and the
+ * console listener one-shots it per card).
+ */
+export const START_OVER_SENTINEL = '__comfyStartOverLogin'
 
 export interface CopyLinkBannerLabels {
   message: string
@@ -29,6 +37,8 @@ export interface CopyLinkBannerLabels {
   copied: string
   openAgain: string
   dismiss: string
+  /** Omitted → the card renders without a Start over button. */
+  startOver?: string
 }
 
 // Values mirror the Comfy Desktop brand tokens defined in
@@ -65,7 +75,8 @@ export const COPY_LINK_BANNER_CSS =
   `#${COPY_LINK_BANNER_ID} button.ccl-done:hover{background:#f2ff59;border-color:#f2ff59;color:#100c13;}` +
   `#${COPY_LINK_BANNER_ID} button.ccl-close{border:none;background:transparent;color:#8a8688;` +
   `padding:4px 6px;font-size:16px;line-height:1;}` +
-  `#${COPY_LINK_BANNER_ID} button.ccl-close:hover{background:transparent;color:#c2bfb9;}`
+  `#${COPY_LINK_BANNER_ID} button.ccl-close:hover{background:transparent;color:#c2bfb9;}` +
+  `#${COPY_LINK_BANNER_ID} button:disabled{opacity:.55;cursor:default;pointer-events:none;}`
 
 /**
  * Build the page-context IIFE that renders the card. Every interpolated
@@ -83,6 +94,13 @@ export function buildCopyLinkBannerScript(url: string, labels: CopyLinkBannerLab
     openAgain: JSON.stringify(labels.openAgain),
     dismiss: JSON.stringify(labels.dismiss)
   }
+  // One-shot in-page: disabled after click so a double-click can't mint two
+  // replacement codes (main's console listener is the real guard).
+  const startOverBtn =
+    labels.startOver === undefined
+      ? ''
+      : `var restart=makeBtn('',ICON_RESTART,${JSON.stringify(labels.startOver)});` +
+        `restart.addEventListener('click',function(){try{restart.disabled=true;console.info(${JSON.stringify(START_OVER_SENTINEL)});}catch(e){}});`
   return `(function(){try{
     var URL=${u}, ID=${id};
     var existing=document.getElementById(ID);
@@ -95,6 +113,7 @@ export function buildCopyLinkBannerScript(url: string, labels: CopyLinkBannerLab
     var ICON_COPY=svg('<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>');
     var ICON_TICK=svg('<path d="M20 6 9 17l-5-5"/>');
     var ICON_OPEN=svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>');
+    var ICON_RESTART=svg('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>');
     function makeBtn(cls,icon,text){
       var b=document.createElement('button');if(cls)b.className=cls;
       var i=document.createElement('span');i.className='ccl-ico';i.innerHTML=icon;
@@ -113,8 +132,9 @@ export function buildCopyLinkBannerScript(url: string, labels: CopyLinkBannerLab
       else{fallbackCopy(text);flash();}
     });
     open.addEventListener('click',function(){try{console.info(${openToken});}catch(e){}});
+    ${startOverBtn}
     close.addEventListener('click',function(){try{if(bar.__cclObs)bar.__cclObs.disconnect();bar.remove();}catch(e){}});
-    bar.appendChild(msg);bar.appendChild(copy);bar.appendChild(open);bar.appendChild(close);
+    bar.appendChild(msg);bar.appendChild(copy);bar.appendChild(open);${startOverBtn ? 'bar.appendChild(restart);' : ''}bar.appendChild(close);
     document.body.appendChild(bar);
     var obs=new MutationObserver(function(){if(!document.getElementById(ID)&&bar.__cclUrl){document.body.appendChild(bar);}});
     obs.observe(document.body,{childList:true});bar.__cclObs=obs;
