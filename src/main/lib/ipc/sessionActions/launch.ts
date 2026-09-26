@@ -96,6 +96,7 @@ import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
 import {
+  comfyuiDirForLaunch,
   describeUnsatisfied,
   unmanagedRequirementsWarning,
   type UnsatisfiedRequirement
@@ -1063,6 +1064,10 @@ async function runLaunch(
         // a cheap sync check; arming only when a repair will actually run.
         if (getTorchVendorMismatch(inst)) {
           preLaunchPhases.push('torchRepair')
+          // The tracker's steps are fixed once armed, so register the
+          // dependency repair below now if it will run too.
+          const { pendingDrift } = await import('../../../sources/standalone/depsRepair')
+          if (pendingDrift(inst)) preLaunchPhases.push('depsRepair')
           await armLaunchTracker()
         }
         const repaired = await maybeRepairTorch(
@@ -1092,7 +1097,7 @@ async function runLaunch(
       const { pendingDrift, repairDeps } = await import('../../../sources/standalone/depsRepair')
       const drift = pendingDrift(inst)
       if (drift) {
-        preLaunchPhases.push('depsRepair')
+        if (!preLaunchPhases.includes('depsRepair')) preLaunchPhases.push('depsRepair')
         await armLaunchTracker()
         sendProgress('depsRepair', { percent: -1 })
         await repairDeps(inst, drift, {
@@ -1126,8 +1131,12 @@ async function runLaunch(
   // Git and portable installs run a venv the user owns: never modify it, but
   // say which requirements it's missing and how to install them, so an import
   // crash at boot isn't the first sign.
-  if ((inst.sourceId === 'git' || inst.sourceId === 'portable') && launchCmd.cmd && launchCmd.cwd) {
-    const warning = unmanagedRequirementsWarning(launchCmd.cmd, launchCmd.cwd, {
+  const unmanagedComfyDir =
+    (inst.sourceId === 'git' || inst.sourceId === 'portable') && launchCmd.cmd
+      ? comfyuiDirForLaunch(launchCmd)
+      : null
+  if (unmanagedComfyDir && launchCmd.cmd) {
+    const warning = unmanagedRequirementsWarning(launchCmd.cmd, unmanagedComfyDir, {
       isolated: inst.sourceId === 'portable'
     })
     if (warning) {

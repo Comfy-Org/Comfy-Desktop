@@ -2,7 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { findSitePackages } from './envPaths'
 import { getActivePythonPath, getActiveUvPath, getActiveVenvDir } from '../../lib/pythonEnv'
-import { runUvPipDetailed, getPipIndexArgs } from '../../lib/pip'
+import { runUvPipDetailed, getPipIndexArgs, pipFreeze } from '../../lib/pip'
+import { buildProtectedConstraints } from '../../lib/snapshots/restore'
 import {
   detectRequirementsDrift,
   describeUnsatisfied,
@@ -28,10 +29,12 @@ import type { InstallationRecord } from '../../installations'
  */
 
 /** Persisted on the record when a repair ran but the venv still didn't satisfy
- *  the same requirements, so the launch doesn't re-run uv every time. Keyed by
- *  the requirement files' hash: new requirements get a fresh attempt. */
+ *  the same requirements, so the launch doesn't re-run uv every time. Scoped to
+ *  the requirement files' hash AND the packages left unsatisfied: new
+ *  requirements, or drift in any other package, get a fresh attempt. */
 export interface DepsRepairGaveUp {
   reqsHash: string
+  packages: string[]
   at: number
 }
 
@@ -54,6 +57,7 @@ export interface DepsRepairTools {
 
 export interface DepsRepairDeps {
   runUvPip: typeof runUvPipDetailed
+  freeze: typeof pipFreeze
   detect: (installation: InstallationRecord) => RequirementsDrift | null
 }
 
@@ -69,8 +73,14 @@ export function detectInstallDrift(installation: InstallationRecord): Requiremen
 export function pendingDrift(installation: InstallationRecord): RequirementsDrift | null {
   const drift = detectInstallDrift(installation)
   if (!drift || drift.unsatisfied.length === 0) return null
-  const gaveUp = installation.depsRepairGaveUp as DepsRepairGaveUp | undefined
-  if (gaveUp?.reqsHash === drift.reqsHash) return null
+  const gaveUp = installation.depsRepairGaveUp as DepsRepairGaveUp | null | undefined
+  if (
+    gaveUp?.reqsHash === drift.reqsHash &&
+    Array.isArray(gaveUp.packages) &&
+    drift.unsatisfied.every((r) => gaveUp.packages.includes(r.name))
+  ) {
+    return null
+  }
   return drift
 }
 
@@ -81,6 +91,7 @@ export async function repairDeps(
   deps: Partial<DepsRepairDeps> = {}
 ): Promise<DepsRepairOutcome> {
   const runUv = deps.runUvPip ?? runUvPipDetailed
+  const freeze = deps.freeze ?? pipFreeze
   const detect = deps.detect ?? detectInstallDrift
   const adopted = installation.adopted === true
   const summary = describeUnsatisfied(drift.unsatisfied)
@@ -121,22 +132,44 @@ export async function repairDeps(
     }
   }
 
+  // Pin the installed torch stack (and the rest of the protected set) so a
+  // requirement's transitive dependencies can never swap it - uv would pull a
+  // default-index CPU torch on Windows. A conflict fails the install instead.
+  let constraints: string[]
+  try {
+    constraints = buildProtectedConstraints(await freeze(uvPath, pythonPath))
+  } catch (err) {
+    tools.sendOutput?.(`Could not read the installed packages: ${(err as Error).message}\n`)
+    report('failed', { ...buildErrorFields(err) })
+    return 'failed'
+  }
+  const constraintPath = path.join(installation.installPath, '.deps-repair-constraints.txt')
+
   tools.sendOutput?.('Installing the missing Python packages…\n')
   const mirrors = settings.getMirrorConfig()
-  const result = await runUv(
-    uvPath,
-    [
-      'pip',
-      'install',
-      ...drift.unsatisfied.map((r) => r.line),
-      '--python',
-      pythonPath,
-      ...getPipIndexArgs(mirrors.pypiMirror, mirrors.useChineseMirrors)
-    ],
-    installation.installPath,
-    tools.sendOutput ?? (() => {}),
-    tools.signal
-  )
+  let result: Awaited<ReturnType<typeof runUv>>
+  try {
+    if (constraints.length > 0) {
+      await fs.promises.writeFile(constraintPath, constraints.join('\n'), 'utf-8')
+    }
+    result = await runUv(
+      uvPath,
+      [
+        'pip',
+        'install',
+        ...drift.unsatisfied.map((r) => r.line),
+        '--python',
+        pythonPath,
+        ...(constraints.length > 0 ? ['--constraint', constraintPath] : []),
+        ...getPipIndexArgs(mirrors.pypiMirror, mirrors.useChineseMirrors)
+      ],
+      installation.installPath,
+      tools.sendOutput ?? (() => {}),
+      tools.signal
+    )
+  } finally {
+    await fs.promises.unlink(constraintPath).catch(() => {})
+  }
   if (tools.signal?.aborted) return 'cancelled'
 
   if (result.code !== 0) {
@@ -149,11 +182,16 @@ export async function repairDeps(
 
   // Loop guard: uv succeeded, so if the same requirements still read as
   // unsatisfied (e.g. a metadata-name mismatch this check can't see through),
-  // re-running uv each launch would never converge. Stop until they change.
+  // re-running uv each launch would never converge. Stop until the
+  // requirements change or other packages drift.
   const after = detect(installation)
   if (after && after.unsatisfied.length > 0) {
     await tools.update({
-      depsRepairGaveUp: { reqsHash: drift.reqsHash, at: Date.now() } satisfies DepsRepairGaveUp
+      depsRepairGaveUp: {
+        reqsHash: drift.reqsHash,
+        packages: after.unsatisfied.map((r) => r.name),
+        at: Date.now()
+      } satisfies DepsRepairGaveUp
     })
     tools.sendOutput?.(
       `Still not satisfied after install: ${describeUnsatisfied(after.unsatisfied)}\n`

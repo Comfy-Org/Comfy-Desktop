@@ -124,6 +124,8 @@ function fakeUv(site: string, installs: string[], code = 0) {
   })
 }
 
+const noFreeze = vi.fn(async () => ({}) as Record<string, string>)
+
 const REQS = 'blake3\nsqlalchemy>=2.0.0\ncomfy-aimdo==0.5.5\ntorch\nnumpy>=1.25.0\n'
 const SYNCED = [
   'blake3-1.0.dist-info',
@@ -156,7 +158,10 @@ describe('pendingDrift', () => {
   it('stays quiet once given up on the same requirements, and retries when they change', () => {
     const { inst } = managedInstall([...SYNCED.slice(1)], REQS)
     const drift = pendingDrift(inst)!
-    const gaveUp = { ...inst, depsRepairGaveUp: { reqsHash: drift.reqsHash, at: 1 } }
+    const gaveUp = {
+      ...inst,
+      depsRepairGaveUp: { reqsHash: drift.reqsHash, packages: ['blake3'], at: 1 }
+    }
     expect(pendingDrift(gaveUp as InstallationRecord)).toBeNull()
     writeReqs(inst.installPath, REQS + 'alembic\n')
     expect(pendingDrift(gaveUp as InstallationRecord)).not.toBeNull()
@@ -177,7 +182,9 @@ describe('repairDeps', () => {
     ])
     const t = tools()
 
-    await expect(repairDeps(inst, drift, t, { runUvPip: uv })).resolves.toBe('repaired')
+    await expect(repairDeps(inst, drift, t, { freeze: noFreeze, runUvPip: uv })).resolves.toBe(
+      'repaired'
+    )
 
     expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
     const args = uv.mock.calls[0]![1] as string[]
@@ -211,7 +218,9 @@ describe('repairDeps', () => {
     const uv = fakeUv(site, ['SQLAlchemy-2.0.36.dist-info'])
     const t = tools()
 
-    await expect(repairDeps(inst, drift, t, { runUvPip: uv })).resolves.toBe('repaired')
+    await expect(repairDeps(inst, drift, t, { freeze: noFreeze, runUvPip: uv })).resolves.toBe(
+      'repaired'
+    )
 
     expect(t.confirmAdoptedRepair).toHaveBeenCalledWith(drift.unsatisfied)
     expect(uv.mock.calls[0]![0]).toBe(
@@ -231,9 +240,9 @@ describe('repairDeps', () => {
     const uv = vi.fn()
     const t = tools({ confirmAdoptedRepair: vi.fn(async () => false) })
 
-    await expect(repairDeps(inst, pendingDrift(inst)!, t, { runUvPip: uv })).resolves.toBe(
-      'declined'
-    )
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
+    ).resolves.toBe('declined')
 
     expect(uv).not.toHaveBeenCalled()
     expect(t.update).not.toHaveBeenCalled()
@@ -250,9 +259,9 @@ describe('repairDeps', () => {
       confirmAdoptedRepair: vi.fn(async () => Promise.reject(new Error('adopt-prompt-unavailable')))
     })
 
-    await expect(repairDeps(inst, pendingDrift(inst)!, t, { runUvPip: uv })).resolves.toBe(
-      'declined'
-    )
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
+    ).resolves.toBe('declined')
     expect(uv).not.toHaveBeenCalled()
   })
 
@@ -261,9 +270,9 @@ describe('repairDeps', () => {
     const output: string[] = []
     const t = tools({ sendOutput: (s) => output.push(s) })
 
-    await expect(repairDeps(inst, pendingDrift(inst)!, t, { runUvPip: vi.fn() })).resolves.toBe(
-      'no_uv'
-    )
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: vi.fn() })
+    ).resolves.toBe('no_uv')
 
     expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
     expect(output.join('')).toContain('Copy & Update')
@@ -275,7 +284,9 @@ describe('repairDeps', () => {
     const uv = fakeUv(site, [], 2)
     const t = tools()
 
-    await expect(repairDeps(inst, pendingDrift(inst)!, t, { runUvPip: uv })).resolves.toBe('failed')
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
+    ).resolves.toBe('failed')
 
     expect(t.update).not.toHaveBeenCalled()
     expect(emit).toHaveBeenCalledWith(
@@ -291,10 +302,12 @@ describe('repairDeps', () => {
     const uv = fakeUv(site, []) // exits 0 but nothing shows up in site-packages
     const t = tools()
 
-    await expect(repairDeps(inst, drift, t, { runUvPip: uv })).resolves.toBe('still_unsatisfied')
+    await expect(repairDeps(inst, drift, t, { freeze: noFreeze, runUvPip: uv })).resolves.toBe(
+      'still_unsatisfied'
+    )
 
     expect(t.update).toHaveBeenCalledWith({
-      depsRepairGaveUp: { reqsHash: drift.reqsHash, at: expect.any(Number) }
+      depsRepairGaveUp: { reqsHash: drift.reqsHash, packages: ['blake3'], at: expect.any(Number) }
     })
     const updated = { ...inst, ...(t.update.mock.calls[0]![0] as object) } as InstallationRecord
     expect(pendingDrift(updated)).toBeNull()
@@ -309,7 +322,10 @@ describe('repairDeps', () => {
     } as InstallationRecord
     const t = tools()
 
-    await repairDeps(withOldGiveUp, drift, t, { runUvPip: fakeUv(site, ['blake3-1.0.dist-info']) })
+    await repairDeps(withOldGiveUp, drift, t, {
+      freeze: noFreeze,
+      runUvPip: fakeUv(site, ['blake3-1.0.dist-info'])
+    })
 
     expect(t.update).toHaveBeenCalledWith({ depsRepairGaveUp: null })
   })
@@ -323,11 +339,62 @@ describe('repairDeps', () => {
     })
     const t = tools({ signal: abort.signal })
 
-    await expect(repairDeps(inst, pendingDrift(inst)!, t, { runUvPip: uv })).resolves.toBe(
-      'cancelled'
-    )
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
+    ).resolves.toBe('cancelled')
 
     expect(t.update).not.toHaveBeenCalled()
     expect(emit).not.toHaveBeenCalled()
+  })
+
+  it('pins the installed torch stack so transitive deps cannot swap it', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
+    const constraintPath = path.join(inst.installPath, '.deps-repair-constraints.txt')
+    let constraintText = ''
+    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
+      constraintText = fs.readFileSync(args[args.indexOf('--constraint') + 1]!, 'utf-8')
+      fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
+      return { code: 0, output: '' }
+    })
+    const freeze = vi.fn(async () => ({
+      torch: '2.10.0+cu128',
+      'nvidia-cublas-cu12': '12.8.4.1',
+      numpy: '2.1.0'
+    }))
+
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, tools(), { freeze, runUvPip: uv })
+    ).resolves.toBe('repaired')
+
+    const args = uv.mock.calls[0]![1]
+    expect(args[args.indexOf('--constraint') + 1]).toBe(constraintPath)
+    expect(constraintText.split('\n').sort()).toEqual([
+      'nvidia-cublas-cu12==12.8.4.1',
+      'torch==2.10.0+cu128'
+    ])
+    expect(fs.existsSync(constraintPath)).toBe(false)
+  })
+
+  it('fails without installing when the installed packages cannot be read', async () => {
+    const { inst } = managedInstall(SYNCED.slice(1), REQS)
+    const uv = vi.fn()
+    const freeze = vi.fn(async () => Promise.reject(new Error('uv pip freeze failed')))
+
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, tools(), { freeze, runUvPip: uv })
+    ).resolves.toBe('failed')
+    expect(uv).not.toHaveBeenCalled()
+  })
+
+  it('does not let a give-up suppress drift in other packages', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
+    const drift = pendingDrift(inst)!
+    const t = tools()
+    await repairDeps(inst, drift, t, { freeze: noFreeze, runUvPip: fakeUv(site, []) })
+    const updated = { ...inst, ...(t.update.mock.calls[0]![0] as object) } as InstallationRecord
+    expect(pendingDrift(updated)).toBeNull()
+
+    fs.rmSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'), { recursive: true })
+    expect(pendingDrift(updated)!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'sqlalchemy'])
   })
 })

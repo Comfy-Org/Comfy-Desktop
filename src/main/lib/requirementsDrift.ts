@@ -13,7 +13,9 @@ import { findSitePackages } from '../sources/standalone/envPaths'
  * `>=` / `~=` floor. A newer-than-pin install is never flagged (a user who
  * upgraded the frontend package keeps it), and anything this can't evaluate —
  * environment markers, URLs, options, unparseable versions — counts as
- * satisfied. The torch family is skipped: the torch repair owns it.
+ * satisfied. Upper bounds (`<`, `<=`, `!=`) are ignored on purpose: flagging a
+ * too-new install would make the repair downgrade it. The torch family is
+ * skipped: the torch repair owns it.
  */
 
 export const REQUIREMENTS_FILES = ['requirements.txt', 'manager_requirements.txt'] as const
@@ -207,11 +209,31 @@ export function unmanagedRequirementsWarning(
 ): string | null {
   const drift = detectRequirementsDrift(comfyuiDir, findSitePackages(envRootForPython(pythonPath)))
   if (!drift || drift.unsatisfied.length === 0) return null
-  const args = [opts.isolated ? '-s ' : '', '-m pip install -r'].join('')
-  const command = `"${pythonPath}" ${args} "${path.join(comfyuiDir, 'requirements.txt')}"`
+  const files = REQUIREMENTS_FILES.map((f) => path.join(comfyuiDir, f)).filter((f) =>
+    fs.existsSync(f)
+  )
+  const command = [
+    `"${pythonPath}"`,
+    ...(opts.isolated ? ['-s'] : []),
+    '-m pip install',
+    ...files.map((f) => `-r "${f}"`)
+  ].join(' ')
   return (
     `\nWARNING: this Python environment does not satisfy ComfyUI's requirements: ` +
     `${describeUnsatisfied(drift.unsatisfied)}\n` +
     `ComfyUI may fail to start. To install them, run:\n  ${command}\n`
   )
+}
+
+/**
+ * The ComfyUI checkout a launch command runs: the directory of the `main.py`
+ * that follows `-s`, resolved against `cwd`. Portable launches run from the
+ * portable root with an absolute `ComfyUI/main.py`, so `cwd` alone is wrong.
+ */
+export function comfyuiDirForLaunch(cmd: { args?: string[]; cwd?: string }): string | null {
+  const args = cmd.args ?? []
+  const sIdx = args.indexOf('-s')
+  const mainPy = sIdx !== -1 ? args[sIdx + 1] : undefined
+  if (!mainPy || !cmd.cwd) return null
+  return path.dirname(path.resolve(cmd.cwd, mainPy))
 }
