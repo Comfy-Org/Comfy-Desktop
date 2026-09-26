@@ -17,8 +17,14 @@ import type { InstallationRecord } from '../../installations'
  * tracking any binary.
  */
 export interface TemplateInputAsset {
+  /** Template-scoped identifier accepted by the privileged download bridge. */
+  assetId: string
   /** Bare on-disk filename, placed at `<inputDir>/<filename>`. */
   filename: string
+  mediaType: 'image' | 'video' | 'audio'
+  /** Host-generated public preview URL. Its existence is not guaranteed when
+   *  an installed template package and the live templates repo have drifted. */
+  previewUrl: string
   /** Source URL under the repo's `input/` dir. */
   url: string
 }
@@ -33,32 +39,37 @@ const LOAD_NODE_TYPES = new Set([
   'VHS_LoadVideo'
 ])
 
+type TemplateInputMediaType = TemplateInputAsset['mediaType']
+
 /** Media extensions we'll place in `input/`. Excludes model/script types so a
  *  crafted widget value can't pull an arbitrary payload through this path. */
-const ALLOWED_INPUT_EXTENSIONS = [
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.webp',
-  '.gif',
-  '.bmp',
-  '.mp4',
-  '.webm',
-  '.mov',
-  '.mp3',
-  '.wav',
-  '.flac',
-  '.ogg',
-  '.m4a'
-]
+const MEDIA_TYPE_BY_EXTENSION: Readonly<Record<string, TemplateInputMediaType>> = {
+  '.png': 'image',
+  '.jpg': 'image',
+  '.jpeg': 'image',
+  '.webp': 'image',
+  '.gif': 'image',
+  '.bmp': 'image',
+  '.mp4': 'video',
+  '.webm': 'video',
+  '.mov': 'video',
+  '.mp3': 'audio',
+  '.wav': 'audio',
+  '.flac': 'audio',
+  '.ogg': 'audio',
+  '.m4a': 'audio'
+}
+
+function mediaTypeForFilename(filename: string): TemplateInputMediaType | undefined {
+  return MEDIA_TYPE_BY_EXTENSION[path.extname(filename).toLowerCase()]
+}
 
 /** A template-declared input filename must be a bare name (no separator, no
  *  `..`) with an allowed media extension, so it can't escape the input dir or
  *  pull a non-media payload. */
 function isSafeInputAsset(name: string): boolean {
   if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) return false
-  const lower = name.toLowerCase()
-  return ALLOWED_INPUT_EXTENSIONS.some((ext) => lower.endsWith(ext))
+  return mediaTypeForFilename(name) !== undefined
 }
 
 /** Collect the first widget value (the filename) of every Load* node. */
@@ -79,38 +90,63 @@ function walkLoadNodes(nodes: unknown, out: string[]): void {
   }
 }
 
-/**
- * Extract the de-duplicated, validated set of sample input assets a template
- * needs. Scans every Load* node (including subgraph definitions), keeps only
- * bare media filenames, and points each at the repo's `input/` dir. Returns `[]`
- * for templates with no image/media input or when the JSON can't be resolved.
- */
-export async function resolveTemplateInputAssets(
-  installation: InstallationRecord,
-  templateId: string
-): Promise<TemplateInputAsset[]> {
-  const json = await loadTemplateJson(installation, templateId)
-  if (!json || typeof json !== 'object') return []
-
+function extractTemplateInputAssets(json: object): TemplateInputAsset[] {
   const doc = json as { nodes?: unknown; definitions?: { subgraphs?: unknown } }
-  const names: string[] = []
-  walkLoadNodes(doc.nodes, names)
+  const declarations: string[] = []
+  walkLoadNodes(doc.nodes, declarations)
   const subgraphs = doc.definitions?.subgraphs
   if (Array.isArray(subgraphs)) {
     for (const sg of subgraphs) {
-      if (sg && typeof sg === 'object') walkLoadNodes((sg as { nodes?: unknown }).nodes, names)
+      if (sg && typeof sg === 'object') {
+        walkLoadNodes((sg as { nodes?: unknown }).nodes, declarations)
+      }
     }
   }
 
   const seen = new Set<string>()
   const result: TemplateInputAsset[] = []
-  for (const raw of names) {
-    const filename = stripQueryParams(raw)
-    if (!isSafeInputAsset(filename) || seen.has(filename)) continue
+  for (const declaration of declarations) {
+    const filename = stripQueryParams(declaration)
+    const mediaType = mediaTypeForFilename(filename)
+    if (!isSafeInputAsset(filename) || !mediaType || seen.has(filename)) continue
     seen.add(filename)
-    result.push({ filename, url: `${TEMPLATE_INPUT_BASE}/${encodeURIComponent(filename)}` })
+    const url = `${TEMPLATE_INPUT_BASE}/${encodeURIComponent(filename)}`
+    result.push({
+      assetId: filename,
+      filename,
+      mediaType,
+      previewUrl: url,
+      url
+    })
   }
   return result
+}
+
+/**
+ * Resolve the de-duplicated, validated set of sample input assets a template
+ * declares. `null` means the workflow metadata could not be resolved; `[]`
+ * means it resolved successfully and declares no supported input media. The
+ * distinction matters to inspection UIs, which must not present an unknown
+ * requirement set as an empty one.
+ */
+export async function resolveTemplateInputAssetSnapshot(
+  installation: InstallationRecord,
+  templateId: string
+): Promise<TemplateInputAsset[] | null> {
+  const json = await loadTemplateJson(installation, templateId)
+  return json && typeof json === 'object' ? extractTemplateInputAssets(json) : null
+}
+
+/**
+ * Compatibility helper for the best-effort install path. A metadata failure
+ * remains “nothing to place” there; template-scoped inspection should use the
+ * nullable snapshot above instead.
+ */
+export async function resolveTemplateInputAssets(
+  installation: InstallationRecord,
+  templateId: string
+): Promise<TemplateInputAsset[]> {
+  return (await resolveTemplateInputAssetSnapshot(installation, templateId)) ?? []
 }
 
 /**
@@ -123,6 +159,45 @@ export function resolveInputDir(installation: InstallationRecord): string {
     return settings.get('inputDir') || settings.defaults.inputDir
   }
   return installation.inputDir || path.join(installation.installPath, 'ComfyUI', 'input')
+}
+
+export interface TemplateInputAssetAvailability {
+  filename: string
+  status: 'present' | 'missing' | 'unknown'
+}
+
+interface TemplateInputAssetAvailabilityDependencies {
+  access: (filePath: string) => Promise<void>
+}
+
+/** Resolve safe, exact filenames against the active installation. Only ENOENT
+ *  proves absence; permission and other filesystem failures remain unknown. */
+export async function resolveTemplateInputAssetAvailability(
+  installation: InstallationRecord,
+  filenames: readonly string[],
+  { access = fs.promises.access }: Partial<TemplateInputAssetAvailabilityDependencies> = {}
+): Promise<TemplateInputAssetAvailability[]> {
+  const inputDir = resolveInputDir(installation)
+  const seen = new Set<string>()
+  const result: TemplateInputAssetAvailability[] = []
+
+  for (const filename of filenames) {
+    if (!isSafeInputAsset(filename) || seen.has(filename)) continue
+    seen.add(filename)
+
+    try {
+      await access(path.join(inputDir, filename))
+      result.push({ filename, status: 'present' })
+    } catch (error) {
+      result.push({
+        filename,
+        status:
+          (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' ? 'missing' : 'unknown'
+      })
+    }
+  }
+
+  return result
 }
 
 export interface PlacedInputAsset {
