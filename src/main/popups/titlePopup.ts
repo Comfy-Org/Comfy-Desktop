@@ -785,7 +785,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //     instead of detaching, so the running ComfyUI stays alive).
   //   - "Log in" sits in its own group above Desktop Settings while
   //     signed out, and is the app's ONLY sign-in affordance. Deliberately
-  //     NOT behind the Comfy Builder rollout flag: that flag gates
+  //     NOT behind the Comfy Developer Platform rollout flag: that flag gates
   //     what a signed-in account may do, and gating login itself
   //     would put it behind a decision that cannot be made until the
   //     user has logged in.

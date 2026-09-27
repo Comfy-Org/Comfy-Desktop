@@ -1328,9 +1328,11 @@
       "loadError": "无法加载工作区，请重试",
       "refresh": "刷新工作区",
       "promoteToWorkspace": "创建构建",
+      "promoteToWorkspaceHint": "在 Comfy Developer Platform 中用此实例创建构建。",
+      "readMore": "了解更多",
       "promoting": "正在创建...",
       "promoteFailedTitle": "无法创建构建",
-      "promoteFailedMessage": "无法在 Comfy Builder 中创建草稿。"
+      "promoteFailedMessage": "无法在 Comfy Developer Platform 中创建草稿。"
     },
     "build": {
       "version": "构建 v{version}",
