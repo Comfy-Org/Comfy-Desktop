@@ -1478,7 +1478,7 @@ describe('PanelApp', () => {
     )
   })
 
-  it('allows a crashed performance test session to be stopped and cleared manually', async () => {
+  it('stops a crashed performance test without emitting completed for a late result', async () => {
     mockState.comfybuilder.listWorkspaces.mockResolvedValue([
       { id: 'workspace-1', name: 'Workspace One', type: 'team' }
     ])
@@ -1575,11 +1575,12 @@ describe('PanelApp', () => {
       }
     ])
     resolvePerformanceTest({
-      ok: false,
-      submitted: 0,
-      preparationRuns: 0,
-      totalSubmitted: 0,
-      message: 'The performance test instance exited.'
+      ok: true,
+      submitted: 5,
+      preparationRuns: 1,
+      totalSubmitted: 6,
+      failedRuns: 0,
+      resultPath: 'C:\\ComfyUI\\performance-tests\\late-result\\jobs.json'
     })
     await flushPromises()
     expect(
