@@ -117,6 +117,9 @@ PostHog receives `$exception`.
 - `comfy.desktop.model_download.started`
 - `comfy.desktop.model_download.result`
 - `comfy.desktop.node.installed`
+- `comfy.desktop.performance_test.started`
+- `comfy.desktop.performance_test.stopped`
+- `comfy.desktop.performance_test.completed`
 
 ### Snapshots and migration
 
