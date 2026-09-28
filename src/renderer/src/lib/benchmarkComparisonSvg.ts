@@ -1,4 +1,5 @@
 import comfyWordmarkSource from '../components/icons/ComfyWordmark.vue?raw'
+import { getRelativeSpeedKind, getRelativeSpeedOffset } from './relativeSpeed'
 
 export interface BenchmarkComparisonImageProperty {
   label: string
@@ -16,12 +17,25 @@ export interface BenchmarkComparisonImageRun {
   fastestDurationSeconds: number | null
   averageDurationSeconds: number | null
   slowestDurationSeconds: number | null
+  relativeSpeed?: {
+    durationSeconds: number | null
+    factor: number | null
+    isBaseline: boolean
+    status: string
+  }
 }
 
 export interface BenchmarkComparisonImageData {
   title: string
   metricTitle: string
   durationRangeTitle: string
+  durationRangeHint: string
+  relativeSpeed?: {
+    title: string
+    hint: string
+    slowerLabel: string
+    fasterLabel: string
+  }
   exportDateTime: string
   runs: BenchmarkComparisonImageRun[]
 }
@@ -123,7 +137,8 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
   const chartEnd = width - margin - chartEndpointLabelSpace
   const chartWidth = chartEnd - chartStart
   const chartRowHeight = Math.max(96, 52 + propertyLineCount * 19)
-  const height = chartY + 44 + data.runs.length * chartRowHeight + 80
+  const chartRowsOffset = 70
+  const height = chartY + chartRowsOffset + data.runs.length * chartRowHeight + 80
   const maximumDuration = Math.max(
     1,
     ...data.runs.flatMap((run) =>
@@ -165,9 +180,9 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
     ].join('')
   }).join('')
 
-  const chartRows = data.runs
+  const durationChartRows = data.runs
     .map((run, index) => {
-      const y = chartY + 44 + index * chartRowHeight
+      const y = chartY + chartRowsOffset + index * chartRowHeight
       const trackY = y + Math.max(42, (runPropertyLines[index]!.length * 19) / 2)
       const fastest = run.fastestDurationSeconds
       const average = run.averageDurationSeconds
@@ -198,6 +213,69 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
     })
     .join('')
 
+  const relativeCenterX = chartStart + chartWidth / 2
+  const relativeChartRows = data.runs
+    .map((run, index) => {
+      const y = chartY + chartRowsOffset + index * chartRowHeight
+      const trackY = y + Math.max(42, (runPropertyLines[index]!.length * 19) / 2)
+      const relative = run.relativeSpeed
+      const factor = relative?.factor ?? null
+      const factorX = relativeCenterX + getRelativeSpeedOffset(factor) * (chartWidth / 2)
+      const kind = getRelativeSpeedKind(factor, relative?.isBaseline ?? false)
+      const bar =
+        factor === null || kind === 'baseline' || kind === 'same'
+          ? ''
+          : `<line x1="${relativeCenterX}" y1="${trackY}" x2="${factorX}" y2="${trackY}" class="relative-bar relative-${kind}" />`
+      const baselineMarker =
+        kind === 'baseline'
+          ? `<line x1="${relativeCenterX}" y1="${trackY - 12}" x2="${relativeCenterX}" y2="${trackY + 12}" class="relative-baseline-marker" />`
+          : ''
+      const duration =
+        relative?.durationSeconds === null || relative?.durationSeconds === undefined
+          ? '—'
+          : formatDuration(relative.durationSeconds)
+      const result =
+        factor === null
+          ? relative?.status
+            ? `— ${relative.status}`
+            : '—'
+          : `${factor.toFixed(2)}× ${relative?.status ?? ''}`
+      return [
+        `<circle cx="${margin + 6}" cy="${y + 7}" r="6" fill="${escapeXml(run.color)}" />`,
+        propertyLines(run.properties, margin + 20, y + 12),
+        text(chartStart - 18, trackY + 4, duration, 'chart-point-label', 'end'),
+        `<line x1="${chartStart}" y1="${trackY}" x2="${chartEnd}" y2="${trackY}" class="chart-track" />`,
+        `<line x1="${relativeCenterX}" y1="${trackY - 16}" x2="${relativeCenterX}" y2="${trackY + 16}" class="relative-center" />`,
+        bar,
+        baselineMarker,
+        text(chartEnd + 12, trackY + 4, result, `relative-result relative-${kind}`)
+      ].join('')
+    })
+    .join('')
+
+  const chartTitle = data.relativeSpeed?.title ?? data.durationRangeTitle
+  const chartDescription = [
+    text(margin, chartY + 22, data.relativeSpeed?.hint ?? data.durationRangeHint, 'chart-hint'),
+    ...(data.relativeSpeed
+      ? [
+          text(
+            chartStart,
+            chartY + 48,
+            `← ${data.relativeSpeed.slowerLabel}`,
+            'relative-direction relative-slower'
+          ),
+          text(
+            chartEnd,
+            chartY + 48,
+            `${data.relativeSpeed.fasterLabel} →`,
+            'relative-direction relative-faster',
+            'end'
+          )
+        ]
+      : [])
+  ].join('')
+  const chartRows = data.relativeSpeed ? relativeChartRows : durationChartRows
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <style>
@@ -217,6 +295,18 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
     .chart-range { stroke-width: 3; }
     .chart-average { stroke: #121212; stroke-width: 2; }
     .chart-point-label { fill: #a3a3a3; font: 12px system-ui, sans-serif; }
+    .chart-hint { fill: #a3a3a3; font: 11px system-ui, sans-serif; }
+    .relative-center { stroke: #737373; stroke-width: 1; stroke-dasharray: 3 3; }
+    .relative-direction { font: 11px system-ui, sans-serif; }
+    .relative-bar { stroke-width: 14; stroke-linecap: round; }
+    .relative-bar.relative-faster { stroke: #54d890; }
+    .relative-bar.relative-slower { stroke: #ef6f69; }
+    .relative-faster { fill: #6ed8a0; }
+    .relative-slower { fill: #ef8a85; }
+    .relative-baseline-marker { stroke: #e5e86d; stroke-width: 3; }
+    .relative-result { fill: #f5f5f5; font: 600 12px system-ui, sans-serif; }
+    .relative-baseline.relative-result { fill: #e5e86d; }
+    .relative-missing { fill: #a3a3a3; }
     .footer-date { fill: #a3a3a3; font: 12px system-ui, sans-serif; }
   </style>
   <rect width="${width}" height="${height}" class="background" />
@@ -225,7 +315,8 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
   ${text(tableX + 14, tableY + headerHeight - 14, data.metricTitle, 'metric-label')}
   ${headers}
   ${metricRows}
-  ${text(margin, chartY, data.durationRangeTitle, 'section-title')}
+  ${text(margin, chartY, chartTitle, 'section-title')}
+  ${chartDescription}
   ${chartRows}
   <g role="img" aria-label="Comfy" transform="translate(${margin} ${height - 51}) scale(0.65)">
     <path d="${COMFY_WORDMARK_PATH}" fill="#F2FF59" />
