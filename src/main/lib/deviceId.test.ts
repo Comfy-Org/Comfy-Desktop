@@ -23,10 +23,16 @@ vi.mock('electron', () => ({
 let mockSystemUuid: string | undefined = 'aabbccdd-eeff-0011-2233-445566778899'
 let mockSystemError: Error | null = null
 
+let mockHardwareUuid = ''
+const siSystem = vi.fn(() =>
+  mockSystemError ? Promise.reject(mockSystemError) : Promise.resolve({ uuid: mockSystemUuid })
+)
+const siUuid = vi.fn(() => Promise.resolve({ os: '', hardware: mockHardwareUuid, macs: [] }))
+
 vi.mock('systeminformation', () => ({
   default: {
-    system: () =>
-      mockSystemError ? Promise.reject(mockSystemError) : Promise.resolve({ uuid: mockSystemUuid })
+    uuid: () => siUuid(),
+    system: () => siSystem()
   }
 }))
 
@@ -55,6 +61,9 @@ describe('deviceId', () => {
     testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'deviceid-test-'))
     mockSystemUuid = 'aabbccdd-eeff-0011-2233-445566778899'
     mockSystemError = null
+    mockHardwareUuid = ''
+    siSystem.mockClear()
+    siUuid.mockClear()
     mockMachineIdFiles = {}
     setPlatform('linux')
     const realReadFileSync = fs.readFileSync
@@ -327,6 +336,49 @@ describe('deviceId', () => {
       await mod.initDeviceId()
       expect(mod.getIdClass()).toBe('random_fallback')
       expect(mod.getDeviceId()).not.toBe(expectedIdFor(machineId))
+    })
+  })
+
+  describe('initDeviceId — Windows hardware lookup', () => {
+    beforeEach(() => {
+      setPlatform('win32')
+    })
+
+    it('reads the UUID through the single-query si.uuid(), not si.system()', async () => {
+      mockHardwareUuid = 'aabbccdd-eeff-0011-2233-445566778899'
+      await mod.initDeviceId()
+      expect(siUuid).toHaveBeenCalledTimes(1)
+      expect(siSystem).not.toHaveBeenCalled()
+      expect(mod.getIdClass()).toBe('machine_derived')
+    })
+
+    it('derives the same installation_id si.system() gave for that UUID', async () => {
+      // Existing Windows installs persisted the hash of si.system().uuid; the
+      // same hardware UUID must reproduce it exactly.
+      const uuid = 'aabbccdd-eeff-0011-2233-445566778899'
+      fs.writeFileSync(path.join(testUserData, 'device-id.txt'), expectedIdFor(uuid))
+      mockHardwareUuid = uuid
+      const { legacyId } = await mod.initDeviceId()
+      expect(legacyId).toBeNull()
+      expect(mod.getDeviceId()).toBe(expectedIdFor(uuid))
+    })
+
+    it('keeps the first random id when WMI never answers', async () => {
+      mockHardwareUuid = ''
+      await mod.initDeviceId()
+      const first = mod.getDeviceId()
+      for (let boot = 0; boot < 3; boot++) {
+        vi.resetModules()
+        mod = await import('./deviceId')
+        await mod.initDeviceId()
+        expect(mod.getDeviceId()).toBe(first)
+      }
+    })
+
+    it('falls back when WMI returns no UUID', async () => {
+      mockHardwareUuid = ''
+      await mod.initDeviceId()
+      expect(mod.getIdClass()).toBe('random_fallback')
     })
   })
 
