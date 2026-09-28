@@ -60,6 +60,7 @@ const isWorkflowImporting = ref(false)
 const isWorkflowDeleting = ref(false)
 const isLaunching = ref(false)
 const isStopping = ref(false)
+const isWorkflowLocked = computed(() => isLaunching.value || isStopping.value)
 const isExportingResults = ref(false)
 const exportResultsError = ref<string | null>(null)
 const logsExpanded = ref(true)
@@ -184,7 +185,7 @@ function secondsToMilliseconds(seconds: number | null | undefined): number | nul
 }
 
 async function importWorkflow(sourcePath?: string): Promise<void> {
-  if (isWorkflowImporting.value || isWorkflowDeleting.value || isLaunching.value) return
+  if (isWorkflowImporting.value || isWorkflowDeleting.value || isWorkflowLocked.value) return
   isWorkflowImporting.value = true
   workflowImportError.value = null
   try {
@@ -203,7 +204,7 @@ async function importWorkflow(sourcePath?: string): Promise<void> {
 
 async function deleteWorkflow(): Promise<void> {
   const filePath = workflowFilePath.value
-  if (!filePath || isWorkflowDeleting.value || isLaunching.value) return
+  if (!filePath || isWorkflowDeleting.value || isWorkflowLocked.value) return
   isWorkflowDeleting.value = true
   workflowImportError.value = null
   try {
@@ -239,6 +240,7 @@ async function runPerformanceTest(): Promise<void> {
     !installationId ||
     !filePath ||
     isLaunching.value ||
+    isStopping.value ||
     isWorkflowImporting.value ||
     isWorkflowDeleting.value
   )
@@ -614,15 +616,15 @@ watch(performanceTestLogs, async () => {
                   'performance-test__drop-zone--selected': workflowFilePath
                 }"
                 :aria-busy="isWorkflowImporting || isWorkflowDeleting"
-                @dragenter.prevent="isWorkflowDragging = !isLaunching"
-                @dragover.prevent="isWorkflowDragging = !isLaunching"
+                @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
+                @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
                 @dragleave.prevent="isWorkflowDragging = false"
                 @drop.prevent="dropWorkflow"
               >
                 <button
                   class="performance-test__drop-content"
                   type="button"
-                  :disabled="isLaunching"
+                  :disabled="isWorkflowLocked"
                   @click="importWorkflow()"
                 >
                   <span v-if="!workflowFilePath">
@@ -638,7 +640,7 @@ watch(performanceTestLogs, async () => {
                   </span>
                 </button>
                 <button
-                  v-if="workflowFilePath && !isLaunching"
+                  v-if="workflowFilePath && !isWorkflowLocked"
                   class="performance-test__delete-workflow"
                   type="button"
                   :aria-label="t('performanceTest.deleteWorkflow')"
