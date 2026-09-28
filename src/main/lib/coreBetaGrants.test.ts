@@ -128,8 +128,35 @@ describe('parseCoreBetaGrants', () => {
       '--enable-assets',
       '--enable-asset-hashing',
       '--disable-assets',
-      '--enable-agent'
+      '--enable-agent',
+      '--enable-assets-output-scanning',
+      '--disable-assets-output-scanning'
     ])
+  })
+
+  it('grants output scanning either way, but never both in one payload', () => {
+    const range = [['7897b4ee3527847a155bc0921a44f90489548019', null]]
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', commit_ranges: range },
+          { arg: '--disable-assets-output-scanning', commit_ranges: range }
+        ]
+      })
+    ).toEqual([
+      { arg: '--enable-assets', commitRanges: range },
+      { arg: '--disable-assets-output-scanning', commitRanges: range }
+    ])
+    // Naming both directions is an operator mistake: the whole payload grants nothing.
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', commit_ranges: range },
+          { arg: '--enable-assets-output-scanning', commit_ranges: range },
+          { arg: '--disable-assets-output-scanning', commit_ranges: range }
+        ]
+      })
+    ).toEqual([])
   })
 
   it('grants --disable-assets, the remote force-off for when assets go default-on', () => {

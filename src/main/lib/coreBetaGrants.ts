@@ -30,7 +30,9 @@ export const CORE_BETA_GRANTABLE_ARGS = [
   '--enable-assets',
   '--enable-asset-hashing',
   '--disable-assets',
-  '--enable-agent'
+  '--enable-agent',
+  '--enable-assets-output-scanning',
+  '--disable-assets-output-scanning'
 ] as const
 
 /** How a grant's activation notice should be worded, when it is announced at all. Both fields
