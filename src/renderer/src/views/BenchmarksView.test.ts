@@ -299,6 +299,22 @@ describe('BenchmarksView', () => {
     )
   })
 
+  it('closes property menus when clicking outside', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const pickers = wrapper.findAll('.benchmarks__columns-picker')
+
+    for (const picker of pickers) {
+      const details = picker.element as HTMLDetailsElement
+      details.open = true
+      await picker.get('input').trigger('pointerdown')
+      expect(details.open).toBe(true)
+
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      expect(details.open).toBe(false)
+    }
+  })
+
   it('reorders comparison columns by dragging a column title', async () => {
     const wrapper = mountView()
     await flushPromises()

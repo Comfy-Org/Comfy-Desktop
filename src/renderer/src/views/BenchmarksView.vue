@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ArrowUpDown,
   FolderOpen,
@@ -52,6 +52,8 @@ const editingSessionId = ref<string | null>(null)
 const renamingSessionId = ref<string | null>(null)
 const sessionNameDraft = ref('')
 const sessionNameInput = ref<HTMLInputElement | null>(null)
+const libraryColumnsPicker = ref<HTMLDetailsElement | null>(null)
+const comparisonColumnsPicker = ref<HTMLDetailsElement | null>(null)
 const searchQuery = ref('')
 const workspaceFilter = ref('')
 const instanceFilter = ref('')
@@ -77,6 +79,19 @@ const seriesColors = ['#55e0d1', '#a970ff', '#f6f31b', '#ff8a65', '#62a8ff']
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short'
+})
+
+function closeColumnPickersOnOutsideClick(event: PointerEvent): void {
+  const target = event.target
+  if (!(target instanceof Node)) return
+  for (const picker of [libraryColumnsPicker.value, comparisonColumnsPicker.value]) {
+    if (picker?.open && !picker.contains(target)) picker.open = false
+  }
+}
+
+document.addEventListener('pointerdown', closeColumnPickersOnOutsideClick, true)
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeColumnPickersOnOutsideClick, true)
 })
 
 function uniqueOptions(allLabel: string, values: Array<string | null>): BaseSelectOption[] {
@@ -757,7 +772,7 @@ onMounted(() => {
             :aria-label="t('benchmarks.allWorkflows')"
             compact
           />
-          <details class="benchmarks__columns-picker">
+          <details ref="libraryColumnsPicker" class="benchmarks__columns-picker">
             <summary class="secondary">
               <SlidersHorizontal :size="16" aria-hidden="true" />
               {{ t('benchmarks.columns') }}
@@ -960,7 +975,7 @@ onMounted(() => {
                   : t('benchmarks.exportResultsImage')
               }}
             </button>
-            <details class="benchmarks__columns-picker">
+            <details ref="comparisonColumnsPicker" class="benchmarks__columns-picker">
               <summary class="secondary">
                 <SlidersHorizontal :size="16" aria-hidden="true" />
                 {{ t('benchmarks.columns') }}
