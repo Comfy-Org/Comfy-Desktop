@@ -290,7 +290,7 @@ describe('renamePerformanceTestBenchmark', () => {
 })
 
 describe('storePerformanceTestWorkflow', () => {
-  it('copies an API-format workflow into the app user-data directory', async () => {
+  it('copies an API-format workflow into the benchmarks directory', async () => {
     const root = await makeTempDir()
     const sourcePath = path.join(root, 'performanceTest.json')
     const contents = JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
@@ -298,9 +298,7 @@ describe('storePerformanceTestWorkflow', () => {
 
     const storedPath = await storePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data'))
 
-    expect(path.dirname(path.dirname(storedPath))).toBe(
-      path.join(root, 'user-data', 'performance-tests')
-    )
+    expect(path.dirname(path.dirname(storedPath))).toBe(path.join(root, 'user-data', 'benchmarks'))
     expect(path.basename(path.dirname(storedPath))).toMatch(/^\d{14}$/)
     expect(path.basename(storedPath)).toBe('performanceTest.json')
     expect(await fs.promises.readFile(storedPath, 'utf8')).toBe(contents)

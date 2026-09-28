@@ -9,7 +9,7 @@ import type {
   SystemInfo
 } from '../../types/ipc'
 
-const PERFORMANCE_TESTS_DIR = 'performance-tests'
+const BENCHMARKS_DIR = 'benchmarks'
 const PERFORMANCE_TEST_POLL_INTERVAL_MS = 1000
 const PERFORMANCE_TEST_TIMEOUT_MS = 4 * 60 * 60 * 1000
 
@@ -259,9 +259,9 @@ function formatPerformanceTestSessionId(date: Date): string {
 
 function resolveManagedWorkflowPath(
   filePath: string,
-  userDataPath: string
+  storageRootPath: string
 ): { filePath: string; sessionDir: string } {
-  const performanceTestsDir = path.resolve(userDataPath, PERFORMANCE_TESTS_DIR)
+  const performanceTestsDir = path.resolve(storageRootPath, BENCHMARKS_DIR)
   const resolvedPath = path.resolve(filePath)
   const relativePath = path.relative(performanceTestsDir, resolvedPath)
   const parts = relativePath.split(path.sep)
@@ -278,9 +278,9 @@ function resolveManagedWorkflowPath(
 
 async function readPerformanceTestWorkflow(
   filePath: string,
-  userDataPath: string
+  storageRootPath: string
 ): Promise<object> {
-  const managedPath = resolveManagedWorkflowPath(filePath, userDataPath).filePath
+  const managedPath = resolveManagedWorkflowPath(filePath, storageRootPath).filePath
   const contents = await fs.promises.readFile(managedPath, 'utf8')
   let parsed: unknown
   try {
@@ -297,9 +297,9 @@ async function readPerformanceTestWorkflow(
 /** Read and validate the persisted data used by the results UI and image export. */
 export async function readPerformanceTestResultsSummary(
   filePath: string,
-  userDataPath: string
+  storageRootPath: string
 ): Promise<PerformanceTestResultsSummary> {
-  const managedPath = resolveManagedWorkflowPath(filePath, userDataPath).filePath
+  const managedPath = resolveManagedWorkflowPath(filePath, storageRootPath).filePath
   if (path.basename(managedPath).toLowerCase() !== 'results.json') {
     throw new Error('Select a performance test results.json file.')
   }
@@ -340,7 +340,7 @@ export async function readPerformanceTestResultsSummary(
 /** Validate and persist a user-selected API workflow outside any installation. */
 export async function storePerformanceTestWorkflow(
   sourcePath: string,
-  userDataPath: string
+  storageRootPath: string
 ): Promise<string> {
   if (path.extname(sourcePath).toLowerCase() !== '.json') {
     throw new Error('Select a .json workflow file.')
@@ -363,7 +363,7 @@ export async function storePerformanceTestWorkflow(
     throw new Error('The selected file is not a ComfyUI API-format workflow.')
   }
 
-  const performanceTestsDir = path.join(userDataPath, PERFORMANCE_TESTS_DIR)
+  const performanceTestsDir = path.join(storageRootPath, BENCHMARKS_DIR)
   await fs.promises.mkdir(performanceTestsDir, { recursive: true })
 
   for (let offsetSeconds = 0; ; offsetSeconds++) {
@@ -390,9 +390,9 @@ export async function storePerformanceTestWorkflow(
 /** Delete a workflow copy managed by the performance test page. */
 export async function deletePerformanceTestWorkflow(
   filePath: string,
-  userDataPath: string
+  storageRootPath: string
 ): Promise<'deleted' | 'preserved'> {
-  const managedPath = resolveManagedWorkflowPath(filePath, userDataPath)
+  const managedPath = resolveManagedWorkflowPath(filePath, storageRootPath)
   for (const outputName of ['jobs.json', 'results.json', 'logs.txt']) {
     try {
       await fs.promises.access(path.join(managedPath.sessionDir, outputName))
@@ -411,7 +411,7 @@ export async function deletePerformanceTestWorkflow(
 /** Queue warm-up requests followed by each measured run. */
 export async function submitPerformanceTestWorkflow(
   filePath: string,
-  userDataPath: string,
+  storageRootPath: string,
   sessionUrl: string,
   measuredRuns: number,
   warmupRuns: number,
@@ -426,7 +426,7 @@ export async function submitPerformanceTestWorkflow(
     throw new Error('Warm-up runs must be an integer between 1 and 5.')
   }
 
-  let workflow = await readPerformanceTestWorkflow(filePath, userDataPath)
+  let workflow = await readPerformanceTestWorkflow(filePath, storageRootPath)
   const endpoint = new URL('/prompt', sessionUrl)
   const promptIds: string[] = []
   const totalRuns = measuredRuns + warmupRuns
@@ -553,9 +553,9 @@ export async function waitForPerformanceTestJobs(
 export async function savePerformanceTestJobsResponse(
   response: PerformanceTestJobsResponse,
   workflowFilePath: string,
-  userDataPath: string
+  storageRootPath: string
 ): Promise<string> {
-  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
+  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, storageRootPath)
   const resultPath = path.join(sessionDir, 'jobs.json')
   await fs.promises.writeFile(resultPath, `${JSON.stringify(response, null, 2)}\n`, 'utf8')
   return resultPath
@@ -565,9 +565,9 @@ export async function savePerformanceTestJobsResponse(
 export async function savePerformanceTestLogs(
   logs: string,
   workflowFilePath: string,
-  userDataPath: string
+  storageRootPath: string
 ): Promise<string> {
-  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
+  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, storageRootPath)
   const logsPath = path.join(sessionDir, 'logs.txt')
   await fs.promises.writeFile(logsPath, logs, 'utf8')
   return logsPath
@@ -581,11 +581,11 @@ export async function savePerformanceTestResultsSummary(
   hardware: AcceleratorSnapshot | null,
   systemInfo: SystemInfo,
   workflowFilePath: string,
-  userDataPath: string,
+  storageRootPath: string,
   successfulRunCount: number,
   failedRunCount: number
 ): Promise<string> {
-  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
+  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, storageRootPath)
   const summary: PerformanceTestResultsSummary = {
     createdAt: new Date().toISOString(),
     instance,
