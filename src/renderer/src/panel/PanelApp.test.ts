@@ -1204,7 +1204,23 @@ describe('PanelApp', () => {
     expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
     expect(api.cancelOperation).toHaveBeenCalledWith('performance-test:workspace-install')
 
+    let resolveDelete!: (result: { ok: true; status: 'preserved'; message: string }) => void
+    api.deletePerformanceTestWorkflow.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDelete = resolve
+        })
+    )
+    const runActionCalls = api.runAction.mock.calls.length
     await wrapper.get('.performance-test__delete-workflow').trigger('click')
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBe('')
+    await wrapper.get('.performance-test__run').trigger('click')
+    expect(api.runAction).toHaveBeenCalledTimes(runActionCalls)
+    resolveDelete({
+      ok: true,
+      status: 'preserved',
+      message: 'This workflow belongs to a completed test and was kept with its results.'
+    })
     await flushPromises()
     expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(
       'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json'
@@ -1212,6 +1228,9 @@ describe('PanelApp', () => {
     expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
     expect(wrapper.get('.performance-test__drop-zone').text()).toContain(
       'Drop a workflow .json file here, or click to browse'
+    )
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+      'This workflow belongs to a completed test and was kept with its results.'
     )
 
     await wrapper.get('.performance-test__workspace-select button').trigger('click')
@@ -1360,7 +1379,7 @@ describe('PanelApp', () => {
     })
   })
 
-  it('starts a separate performance test process when the normal instance is running', async () => {
+  it('locks workflow changes while a separate performance test process runs', async () => {
     mockState.comfybuilder.listWorkspaces.mockResolvedValue([
       { id: 'workspace-1', name: 'Workspace One', type: 'team' }
     ])
@@ -1380,9 +1399,18 @@ describe('PanelApp', () => {
           getRunningInstances: ReturnType<typeof vi.fn>
           stopComfyUI: ReturnType<typeof vi.fn>
           runAction: ReturnType<typeof vi.fn>
+          importPerformanceTestWorkflow: ReturnType<typeof vi.fn>
+          deletePerformanceTestWorkflow: ReturnType<typeof vi.fn>
         }
       }
     ).api
+    let resolveLaunch!: (result: { ok: true }) => void
+    api.runAction.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLaunch = resolve
+        })
+    )
     api.getRunningInstances.mockResolvedValueOnce([
       {
         installationId: 'workspace-install',
@@ -1403,15 +1431,48 @@ describe('PanelApp', () => {
     const runButton = wrapper.get('.performance-test__run')
     expect(runButton.attributes('disabled')).toBeUndefined()
 
+    let resolveImport!: (result: { ok: true; filePath: string }) => void
+    api.importPerformanceTestWorkflow.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveImport = resolve
+        })
+    )
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    expect(runButton.attributes('disabled')).toBe('')
+    await runButton.trigger('click')
+    expect(api.runAction).not.toHaveBeenCalled()
+    resolveImport({
+      ok: true,
+      filePath: 'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json'
+    })
+    await flushPromises()
+    expect(runButton.attributes('disabled')).toBeUndefined()
+
     await runButton.trigger('click')
     await flushPromises()
 
+    const workflowImportCalls = api.importPerformanceTestWorkflow.mock.calls.length
+    expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBe('')
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await wrapper.get('.performance-test__drop-zone').trigger('drop', {
+      dataTransfer: {
+        files: [new File(['{}'], 'replacement.json', { type: 'application/json' })]
+      }
+    })
+    expect(api.importPerformanceTestWorkflow).toHaveBeenCalledTimes(workflowImportCalls)
+    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(false)
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
     expect(api.stopComfyUI).not.toHaveBeenCalledWith('workspace-install')
     expect(api.runAction).toHaveBeenCalledWith('workspace-install', 'launch', {
       launchModeOverride: 'console',
       autoPortOnConflict: true,
       sessionIdOverride: 'performance-test:workspace-install'
     })
+
+    resolveLaunch({ ok: true })
+    await flushPromises()
+    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(true)
   })
 
   it('restarts an already-running performance test session before running', async () => {

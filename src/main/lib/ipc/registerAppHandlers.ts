@@ -59,7 +59,6 @@ import {
 
 export function registerAppHandlers(): void {
   const benchmarksDir = defaultBenchmarksDir()
-  const benchmarksStorageRoot = path.dirname(benchmarksDir)
 
   // App version
   ipcMain.handle('get-app-version', () => getAppVersion())
@@ -174,7 +173,7 @@ export function registerAppHandlers(): void {
       sourcePath = filePaths[0]!
     }
     try {
-      const filePath = await storePerformanceTestWorkflow(sourcePath, benchmarksStorageRoot)
+      const filePath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
       return { ok: true, filePath }
     } catch (error) {
       return { ok: false, message: (error as Error)?.message || String(error) }
@@ -183,7 +182,7 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle('delete-performance-test-workflow', async (_event, filePath: string) => {
     try {
-      const status = await deletePerformanceTestWorkflow(filePath, benchmarksStorageRoot)
+      const status = await deletePerformanceTestWorkflow(filePath, benchmarksDir)
       return {
         ok: true,
         status,
@@ -200,7 +199,7 @@ export function registerAppHandlers(): void {
   ipcMain.handle('save-performance-test-logs', async (_event, filePath: string, logs: string) => {
     try {
       if (typeof logs !== 'string') throw new Error('Invalid performance test logs.')
-      const logsPath = await savePerformanceTestLogs(logs, filePath, benchmarksStorageRoot)
+      const logsPath = await savePerformanceTestLogs(logs, filePath, benchmarksDir)
       return { ok: true, logsPath }
     } catch (error) {
       return { ok: false, message: (error as Error)?.message || String(error) }
@@ -252,7 +251,7 @@ export function registerAppHandlers(): void {
   )
 
   ipcMain.handle('read-performance-test-results-summary', (_event, filePath: string) =>
-    readPerformanceTestResultsSummary(filePath, benchmarksStorageRoot)
+    readPerformanceTestResultsSummary(filePath, benchmarksDir)
   )
 
   ipcMain.handle(
@@ -347,7 +346,7 @@ export function registerAppHandlers(): void {
         const sessionUrl = session.url || `http://127.0.0.1:${session.port}`
         await submitPerformanceTestWorkflow(
           filePath,
-          benchmarksStorageRoot,
+          benchmarksDir,
           sessionUrl,
           measuredRuns,
           warmupRuns,
@@ -384,7 +383,7 @@ export function registerAppHandlers(): void {
         const resultPath = await savePerformanceTestJobsResponse(
           jobsResponse,
           filePath,
-          benchmarksStorageRoot
+          benchmarksDir
         )
         const hardware = session.getAcceleratorInfo?.() ?? null
         const systemInfo = await getSystemInfo()
@@ -398,13 +397,13 @@ export function registerAppHandlers(): void {
           hardware,
           systemInfo,
           filePath,
-          benchmarksStorageRoot,
+          benchmarksDir,
           successfulRuns,
           failedRuns
         )
         const resultsSummary = await readPerformanceTestResultsSummary(
           resultsSummaryPath,
-          benchmarksStorageRoot
+          benchmarksDir
         )
         return {
           ok: true,
