@@ -49,6 +49,7 @@ import {
   calculatePerformanceTestStatistics,
   deletePerformanceTestBenchmark,
   deletePerformanceTestWorkflow,
+  formatBenchmarkFileTimestamp,
   listPerformanceTestBenchmarks,
   renamePerformanceTestBenchmark,
   readPerformanceTestResultsSummary,
@@ -275,9 +276,9 @@ export function registerAppHandlers(): void {
       }
       const exportConfig =
         imageType === 'benchmark-comparison'
-          ? { title: 'Export benchmark comparison', prefix: 'benchmark-comparison' }
+          ? { title: 'Export benchmark comparison', prefix: 'comfy-benchmark-comparison' }
           : imageType === 'performance-test'
-            ? { title: 'Export performance test results', prefix: 'performance-test-results' }
+            ? { title: 'Export performance test results', prefix: 'comfy-benchmark' }
             : null
       if (!exportConfig) return { ok: false, message: 'Invalid results image type.' }
       const win = BrowserWindow.fromWebContents(_event.sender)
@@ -291,8 +292,10 @@ export function registerAppHandlers(): void {
       if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
 
       try {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23)
-        const filePath = path.join(filePaths[0]!, `${exportConfig.prefix}-${timestamp}.png`)
+        const filePath = path.join(
+          filePaths[0]!,
+          `${exportConfig.prefix}-${formatBenchmarkFileTimestamp()}.png`
+        )
         await fs.promises.writeFile(filePath, contents)
         return { ok: true, filePath }
       } catch (error) {

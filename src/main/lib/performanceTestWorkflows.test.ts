@@ -16,6 +16,7 @@ import {
   savePerformanceTestResultsSummary,
   storePerformanceTestWorkflow,
   runPerformanceTestWorkflow,
+  formatBenchmarkFileTimestamp,
   waitForPerformanceTestJobs
 } from './performanceTestWorkflows'
 
@@ -399,6 +400,14 @@ describe('deletePerformanceTestWorkflow', () => {
       await expect(fs.promises.stat(outputPath)).resolves.toBeDefined()
     }
   )
+})
+
+describe('formatBenchmarkFileTimestamp', () => {
+  it('formats a local date as zero-padded YYYY-MM-DD-HH-MM-SS', () => {
+    // Constructed in local time so the expectation is timezone-independent.
+    const date = new Date(2026, 8, 7, 3, 5, 9) // 2026-09-07 03:05:09 (month is 0-based)
+    expect(formatBenchmarkFileTimestamp(date)).toBe('2026-09-07-03-05-09')
+  })
 })
 
 describe('runPerformanceTestWorkflow', () => {

@@ -256,6 +256,19 @@ function formatPerformanceTestSessionId(date: Date): string {
     .join('')
 }
 
+/**
+ * Human-readable local timestamp for exported benchmark filenames:
+ * `YYYY-MM-DD-HH-MM-SS` (local time, zero-padded, filename-safe — no colons).
+ * ISO date order so exports sort chronologically by name.
+ */
+export function formatBenchmarkFileTimestamp(date: Date = new Date()): string {
+  const pad = (part: number): string => String(part).padStart(2, '0')
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`
+  )
+}
+
 function resolveManagedWorkflowPath(
   filePath: string,
   benchmarksDir: string
