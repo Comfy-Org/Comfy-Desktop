@@ -14,6 +14,7 @@ import {
   savePerformanceTestJobsResponse,
   savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
+  storePerformanceTestTemplate,
   storePerformanceTestWorkflow,
   submitPerformanceTestWorkflow,
   waitForPerformanceTestJobs
@@ -350,6 +351,50 @@ describe('storePerformanceTestWorkflow', () => {
   })
 })
 
+describe('storePerformanceTestTemplate', () => {
+  it('stores paired editor and API workflows in one managed session', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'benchmarks')
+    const editorWorkflow = { version: 0.4, nodes: [], links: [] }
+    const apiWorkflow = { '1': { class_type: 'KSampler', inputs: { seed: 7 } } }
+
+    const stored = await storePerformanceTestTemplate(
+      'image_z_image_turbo',
+      editorWorkflow,
+      apiWorkflow,
+      benchmarksDir
+    )
+
+    expect(path.dirname(stored.workflowFilePath)).toBe(path.dirname(stored.sourceWorkflowFilePath))
+    expect(path.basename(stored.workflowFilePath)).toBe('image_z_image_turbo.json')
+    expect(path.basename(stored.sourceWorkflowFilePath)).toBe('image_z_image_turbo.source.json')
+    await expect(fs.promises.readFile(stored.workflowFilePath, 'utf8')).resolves.toBe(
+      JSON.stringify(apiWorkflow)
+    )
+    await expect(fs.promises.readFile(stored.sourceWorkflowFilePath, 'utf8')).resolves.toBe(
+      JSON.stringify(editorWorkflow)
+    )
+  })
+
+  it('rejects unsafe IDs and invalid paired artifacts before creating a session', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'benchmarks')
+    const editorWorkflow = { nodes: [] }
+    const apiWorkflow = { '1': { class_type: 'KSampler', inputs: {} } }
+
+    await expect(
+      storePerformanceTestTemplate('../escape', editorWorkflow, apiWorkflow, benchmarksDir)
+    ).rejects.toThrow('Invalid performance test template ID')
+    await expect(
+      storePerformanceTestTemplate('safe', {}, apiWorkflow, benchmarksDir)
+    ).rejects.toThrow('editor workflow is invalid')
+    await expect(
+      storePerformanceTestTemplate('safe', editorWorkflow, { nodes: [] }, benchmarksDir)
+    ).rejects.toThrow('no valid API-format artifact')
+    await expect(fs.promises.stat(benchmarksDir)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
 describe('deletePerformanceTestWorkflow', () => {
   it('deletes a managed performance test workflow copy', async () => {
     const root = await makeTempDir()
@@ -364,6 +409,23 @@ describe('deletePerformanceTestWorkflow', () => {
     await expect(deletePerformanceTestWorkflow(storedPath, benchmarksDir)).resolves.toBe('deleted')
 
     await expect(fs.promises.stat(storedPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('deletes an uncompleted paired template session including its editor source', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'benchmarks')
+    const stored = await storePerformanceTestTemplate(
+      'image_z_image_turbo',
+      { nodes: [] },
+      { '1': { class_type: 'KSampler', inputs: {} } },
+      benchmarksDir
+    )
+    const sessionDir = path.dirname(stored.workflowFilePath)
+
+    await expect(
+      deletePerformanceTestWorkflow(stored.workflowFilePath, benchmarksDir)
+    ).resolves.toBe('deleted')
+    await expect(fs.promises.stat(sessionDir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('refuses to delete files outside the managed directory', async () => {

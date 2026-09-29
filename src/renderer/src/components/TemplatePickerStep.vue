@@ -26,6 +26,7 @@ const props = defineProps<{
   selectedValue: string | null
   diskSpace: DiskSpaceInfo | null
   diskSpaceLoading: boolean
+  compact?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -136,7 +137,7 @@ defineExpose({ shownDiskError })
 </script>
 
 <template>
-  <div class="tps">
+  <div :class="['tps', { 'tps--compact': compact }]">
     <div
       v-if="tabs.length > 1"
       class="tps__tabs"
@@ -257,6 +258,11 @@ defineExpose({ shownDiskError })
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: clamp(12px, 1.4vw, 20px);
   width: 100%;
+}
+
+.tps--compact .tps__grid {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 220px));
+  justify-content: center;
 }
 
 .tps__card {

@@ -39,6 +39,7 @@ function mountPicker(
     selectedValue: string | null
     diskSpace: DiskSpaceInfo | null
     diskSpaceLoading: boolean
+    compact: boolean
   }> = {}
 ) {
   return mount(TemplatePickerStep, {
@@ -60,6 +61,10 @@ describe('TemplatePickerStep', () => {
     expect(tabs).toHaveLength(2) // Video + Image
     expect(tabs[0]!.text()).toContain('Video')
     expect(tabs[1]!.text()).toContain('Image')
+  })
+
+  it('uses the bounded card grid when embedded in a compact picker', () => {
+    expect(mountPicker({ compact: true }).get('.tps').classes()).toContain('tps--compact')
   })
 
   it("shows only the active tab's templates and never the none sentinel", () => {

@@ -5,6 +5,8 @@ import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import CollapsibleSectionToggle from '../components/CollapsibleSectionToggle.vue'
+import TemplatePickerStep from '../components/TemplatePickerStep.vue'
+import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
 import { useAuthStore } from '../stores/authStore'
@@ -12,6 +14,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type {
   ActionResult,
+  FieldOption,
   PerformanceTestResultsSummary,
   RunPerformanceTestWorkflowResult
 } from '../types/ipc'
@@ -54,7 +57,14 @@ const instanceOptions = computed<BaseSelectOption[]>(() =>
 )
 const selectedInstallationId = ref<string | null>(null)
 const workflowFilePath = ref<string | null>(null)
+const workflowDisplayName = ref<string | null>(null)
+const pendingStarterWorkflowLabel = ref<string | null>(null)
+const starterWorkflowInstallationId = ref<string | null>(null)
 const workflowImportError = ref<string | null>(null)
+const starterWorkflowOptions = ref<FieldOption[]>([])
+const selectedStarterWorkflowId = ref<string | null>(null)
+const isStarterPickerOpen = ref(false)
+const isStarterPickerLoading = ref(false)
 const isWorkflowDragging = ref(false)
 const isWorkflowImporting = ref(false)
 const isWorkflowDeleting = ref(false)
@@ -124,7 +134,13 @@ const aggregateChart = computed(() => {
     width: maximum > 0 ? `${(aggregate.value / maximum) * 100}%` : '0%'
   }))
 })
-const workflowFileName = computed(() => workflowFilePath.value?.split(/[\\/]/).pop() ?? '')
+const workflowFileName = computed(
+  () =>
+    pendingStarterWorkflowLabel.value ??
+    workflowDisplayName.value ??
+    workflowFilePath.value?.split(/[\\/]/).pop() ??
+    ''
+)
 const performanceTestSessionId = (installationId: string): string =>
   `performance-test:${installationId}`
 const canRun = computed(() => {
@@ -155,6 +171,16 @@ onUnmounted(unsubscribePerformanceTestProgress)
 
 watch(selectedWorkspaceId, () => {
   selectedInstallationId.value = null
+})
+
+watch(selectedInstallationId, (installationId) => {
+  if (
+    starterWorkflowInstallationId.value &&
+    starterWorkflowInstallationId.value !== installationId &&
+    workflowFilePath.value
+  ) {
+    void deleteWorkflow()
+  }
 })
 
 function correctRunCount(
@@ -192,12 +218,79 @@ async function importWorkflow(sourcePath?: string): Promise<void> {
     const result = await window.api.importPerformanceTestWorkflow(sourcePath)
     if (result.ok && result.filePath) {
       workflowFilePath.value = result.filePath
+      workflowDisplayName.value = null
+      starterWorkflowInstallationId.value = null
+      selectedStarterWorkflowId.value = null
     } else if (!result.canceled) {
       workflowImportError.value = result.message || t('performanceTest.importFailed')
     }
   } catch (error) {
     workflowImportError.value = (error as Error)?.message || t('performanceTest.importFailed')
   } finally {
+    isWorkflowImporting.value = false
+  }
+}
+
+async function openStarterWorkflowPicker(): Promise<void> {
+  const installationId = selectedInstallationId.value
+  if (!installationId || isWorkflowLocked.value || isWorkflowImporting.value) return
+  isStarterPickerLoading.value = true
+  workflowImportError.value = null
+  try {
+    starterWorkflowOptions.value =
+      await window.api.getPerformanceTestStarterWorkflows(installationId)
+    if (starterWorkflowOptions.value.length === 0) {
+      workflowImportError.value = t('performanceTest.noStarterWorkflows')
+      return
+    }
+    const recommended = starterWorkflowOptions.value.find((option) => option.recommended)
+    selectedStarterWorkflowId.value =
+      starterWorkflowOptions.value.find(
+        (option) => option.value === selectedStarterWorkflowId.value
+      )?.value ??
+      recommended?.value ??
+      starterWorkflowOptions.value[0]!.value
+    isStarterPickerOpen.value = true
+  } catch (error) {
+    workflowImportError.value = (error as Error)?.message || t('performanceTest.importFailed')
+  } finally {
+    isStarterPickerLoading.value = false
+  }
+}
+
+async function prepareStarterWorkflow(): Promise<void> {
+  const installationId = selectedInstallationId.value
+  const templateId = selectedStarterWorkflowId.value
+  const option = starterWorkflowOptions.value.find(({ value }) => value === templateId)
+  if (!installationId || !templateId || !option || isWorkflowImporting.value) return
+
+  const previousPath = workflowFilePath.value
+  isStarterPickerOpen.value = false
+  isWorkflowImporting.value = true
+  workflowImportError.value = null
+  pendingStarterWorkflowLabel.value = option.label
+  try {
+    const result = await window.api.preparePerformanceTestStarterWorkflow(
+      installationId,
+      templateId
+    )
+    if (!result.ok || !result.filePath) {
+      throw new Error(result.message || t('performanceTest.importFailed'))
+    }
+    if (selectedInstallationId.value !== installationId) {
+      await window.api.deletePerformanceTestWorkflow(result.filePath).catch(() => {})
+      return
+    }
+    workflowFilePath.value = result.filePath
+    workflowDisplayName.value = result.templateLabel || option.label
+    starterWorkflowInstallationId.value = installationId
+    if (previousPath && previousPath !== result.filePath) {
+      await window.api.deletePerformanceTestWorkflow(previousPath).catch(() => {})
+    }
+  } catch (error) {
+    workflowImportError.value = (error as Error)?.message || t('performanceTest.importFailed')
+  } finally {
+    pendingStarterWorkflowLabel.value = null
     isWorkflowImporting.value = false
   }
 }
@@ -210,7 +303,12 @@ async function deleteWorkflow(): Promise<void> {
   try {
     const result = await window.api.deletePerformanceTestWorkflow(filePath)
     if (result.ok) {
-      if (workflowFilePath.value === filePath) workflowFilePath.value = null
+      if (workflowFilePath.value === filePath) {
+        workflowFilePath.value = null
+        workflowDisplayName.value = null
+        starterWorkflowInstallationId.value = null
+        selectedStarterWorkflowId.value = null
+      }
       if (result.status === 'preserved') {
         workflowImportError.value = result.message || t('performanceTest.deleteFailed')
       }
@@ -608,12 +706,33 @@ watch(performanceTestLogs, async () => {
             </section>
 
             <section class="performance-test__column">
-              <h2>{{ t('performanceTest.dropWorkflow') }}</h2>
+              <h2>{{ t('performanceTest.chooseWorkflow') }}</h2>
+              <button
+                class="performance-test__starter-workflow brand-secondary"
+                type="button"
+                :disabled="
+                  !selectedInstallationId ||
+                  isWorkflowLocked ||
+                  isWorkflowImporting ||
+                  isStarterPickerLoading
+                "
+                @click="openStarterWorkflowPicker"
+              >
+                {{
+                  isStarterPickerLoading
+                    ? t('performanceTest.loadingStarterWorkflows')
+                    : t('performanceTest.chooseStarterWorkflow')
+                }}
+              </button>
+              <div class="performance-test__workflow-divider">
+                <span>{{ t('performanceTest.orImportApiWorkflow') }}</span>
+              </div>
               <div
                 class="performance-test__drop-zone"
                 :class="{
                   'performance-test__drop-zone--dragging': isWorkflowDragging,
-                  'performance-test__drop-zone--selected': workflowFilePath
+                  'performance-test__drop-zone--selected':
+                    workflowFilePath || pendingStarterWorkflowLabel
                 }"
                 :aria-busy="isWorkflowImporting || isWorkflowDeleting"
                 @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
@@ -627,7 +746,7 @@ watch(performanceTestLogs, async () => {
                   :disabled="isWorkflowLocked"
                   @click="importWorkflow()"
                 >
-                  <span v-if="!workflowFilePath">
+                  <span v-if="!workflowFilePath && !pendingStarterWorkflowLabel">
                     {{
                       isWorkflowImporting
                         ? t('performanceTest.importingWorkflow')
@@ -636,7 +755,10 @@ watch(performanceTestLogs, async () => {
                   </span>
                   <span v-else class="performance-test__workflow-file">
                     <strong>{{ workflowFileName }}</strong>
-                    <code>{{ workflowFilePath }}</code>
+                    <code v-if="pendingStarterWorkflowLabel">
+                      {{ t('performanceTest.preparingStarterWorkflow') }}
+                    </code>
+                    <code v-else>{{ workflowFilePath }}</code>
                   </span>
                 </button>
                 <button
@@ -936,6 +1058,43 @@ watch(performanceTestLogs, async () => {
         <DevPlatformAccountChip />
       </div>
     </div>
+
+    <BaseModal
+      :open="isStarterPickerOpen"
+      size="xl"
+      :aria-label="t('performanceTest.starterWorkflowPickerTitle')"
+      content-class="performance-test__starter-modal"
+      @close="isStarterPickerOpen = false"
+    >
+      <template #header>
+        <div>
+          <h2>{{ t('performanceTest.starterWorkflowPickerTitle') }}</h2>
+          <p>{{ t('performanceTest.starterWorkflowPickerDescription') }}</p>
+        </div>
+      </template>
+      <TemplatePickerStep
+        :options="starterWorkflowOptions"
+        none-value="none"
+        :selected-value="selectedStarterWorkflowId"
+        :disk-space="null"
+        :disk-space-loading="false"
+        compact
+        @select="selectedStarterWorkflowId = $event.value"
+      />
+      <template #footer>
+        <button class="brand-secondary" type="button" @click="isStarterPickerOpen = false">
+          {{ t('common.cancel') }}
+        </button>
+        <button
+          class="brand-primary"
+          type="button"
+          :disabled="!selectedStarterWorkflowId"
+          @click="prepareStarterWorkflow"
+        >
+          {{ t('performanceTest.useStarterWorkflow') }}
+        </button>
+      </template>
+    </BaseModal>
   </BrandBackground>
 </template>
 
@@ -1063,6 +1222,39 @@ watch(performanceTestLogs, async () => {
 .performance-test__instance-select :deep(.ui-select-trigger) {
   height: 30px;
   padding: 4px 8px;
+}
+
+.performance-test__starter-workflow {
+  width: 100%;
+  min-height: 34px;
+}
+
+.performance-test__workflow-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.performance-test__workflow-divider::before,
+.performance-test__workflow-divider::after {
+  flex: 1;
+  height: 1px;
+  background: var(--chooser-surface-border);
+  content: '';
+}
+
+.performance-test__starter-modal h2 {
+  margin: 0;
+}
+
+.performance-test__starter-modal p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .performance-test__drop-zone,

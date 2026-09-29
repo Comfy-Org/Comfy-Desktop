@@ -1256,6 +1256,17 @@ export interface ElectronApi {
     message?: string
     canceled?: boolean
   }>
+  getPerformanceTestStarterWorkflows(installationId: string): Promise<FieldOption[]>
+  preparePerformanceTestStarterWorkflow(
+    installationId: string,
+    templateId: string
+  ): Promise<{
+    ok: boolean
+    filePath?: string
+    templateId?: string
+    templateLabel?: string
+    message?: string
+  }>
   deletePerformanceTestWorkflow(
     filePath: string
   ): Promise<{ ok: boolean; status?: 'deleted' | 'preserved'; message?: string }>

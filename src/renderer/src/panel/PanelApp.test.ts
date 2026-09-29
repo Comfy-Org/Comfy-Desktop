@@ -176,8 +176,17 @@ const messages = {
       instanceLabel: 'Instance',
       selectInstancePlaceholder: 'Select an instance',
       dropWorkflow: '2. Drop a workflow in API format',
+      chooseWorkflow: '2. Choose a workflow',
+      chooseStarterWorkflow: 'Choose a starter workflow',
+      loadingStarterWorkflows: 'Loading starter workflows...',
+      orImportApiWorkflow: 'or import an API workflow',
+      starterWorkflowPickerTitle: 'Choose a starter workflow',
+      starterWorkflowPickerDescription: 'Missing models will be downloaded automatically.',
+      useStarterWorkflow: 'Use workflow',
+      noStarterWorkflows: 'No benchmark-ready starter workflows are currently available.',
       dropWorkflowHint: 'Drop a workflow .json file here, or click to browse',
       importingWorkflow: 'Importing workflow...',
+      preparingStarterWorkflow: 'Preparing workflow and downloading required models...',
       importFailed: 'Could not import the workflow.',
       deleteWorkflow: 'Delete workflow',
       deleteFailed: 'Could not delete the workflow.',
@@ -510,6 +519,13 @@ function installMockApi(initial?: {
     importPerformanceTestWorkflow: vi.fn(async () => ({
       ok: true,
       filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
+    })),
+    getPerformanceTestStarterWorkflows: vi.fn(async () => []),
+    preparePerformanceTestStarterWorkflow: vi.fn(async () => ({
+      ok: true,
+      filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_turbo.json',
+      templateId: 'image_z_image_turbo',
+      templateLabel: 'Z-Image-Turbo: Text to Image'
     })),
     deletePerformanceTestWorkflow: vi.fn(async () => ({ ok: true, status: 'deleted' as const })),
     listPerformanceTestBenchmarks: vi.fn(async () => ({ folderPath: '', benchmarks: [] })),
@@ -865,11 +881,7 @@ describe('PanelApp', () => {
     expect(wrapper.findAll('.performance-test__column')).toHaveLength(3)
     expect(
       wrapper.findAll('.performance-test__column h2').map((heading) => heading.text())
-    ).toEqual([
-      '1. Select an instance',
-      '2. Drop a workflow in API format',
-      '3. Set measurement settings'
-    ])
+    ).toEqual(['1. Select an instance', '2. Choose a workflow', '3. Set measurement settings'])
     const settings = wrapper.findAll('.performance-test__setting')
     expect(settings).toHaveLength(2)
     expect(settings.map((setting) => setting.find('label').text())).toEqual([
@@ -1377,6 +1389,92 @@ describe('PanelApp', () => {
       entrypoint: 'titlebar',
       workspaceId: 'personal'
     })
+  })
+
+  it('selects a validated starter workflow and prepares its paired artifacts', async () => {
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
+    ])
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ]
+    const api = (
+      window as unknown as {
+        api: {
+          getPerformanceTestStarterWorkflows: ReturnType<typeof vi.fn>
+          preparePerformanceTestStarterWorkflow: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    api.getPerformanceTestStarterWorkflows.mockResolvedValueOnce([
+      {
+        value: 'image_z_image_turbo',
+        label: 'Z-Image-Turbo: Text to Image',
+        recommended: true,
+        data: {
+          modality: 'image',
+          name: 'Z-Image-Turbo',
+          task: 'Text to Image',
+          sizeBytes: 20_000_000_000
+        }
+      }
+    ])
+    let resolvePreparation!: (result: {
+      ok: boolean
+      filePath: string
+      templateId: string
+      templateLabel: string
+    }) => void
+    api.preparePerformanceTestStarterWorkflow.mockImplementationOnce(
+      () => new Promise((resolve) => (resolvePreparation = resolve))
+    )
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+
+    await wrapper.get('.performance-test__starter-workflow').trigger('click')
+    await flushPromises()
+    expect(api.getPerformanceTestStarterWorkflows).toHaveBeenCalledWith('workspace-install')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Z-Image-Turbo')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Missing models will be downloaded automatically.'
+    )
+    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
+      'Z-Image-Turbo: Text to Image'
+    )
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
+      'Preparing workflow and downloading required models...'
+    )
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+    expect(api.preparePerformanceTestStarterWorkflow).toHaveBeenCalledWith(
+      'workspace-install',
+      'image_z_image_turbo'
+    )
+    resolvePreparation({
+      ok: true,
+      filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_turbo.json',
+      templateId: 'image_z_image_turbo',
+      templateLabel: 'Z-Image-Turbo: Text to Image'
+    })
+    await flushPromises()
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
+      'Z-Image-Turbo: Text to Image'
+    )
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
   })
 
   it('locks workflow changes while a separate performance test process runs', async () => {

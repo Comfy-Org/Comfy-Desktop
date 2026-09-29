@@ -205,7 +205,7 @@ export function calculatePerformanceTestStatistics(
   }
 }
 
-function isApiWorkflow(value: unknown): value is object {
+export function isApiWorkflow(value: unknown): value is object {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const nodes = Object.values(value)
   return (
@@ -254,6 +254,22 @@ function formatPerformanceTestSessionId(date: Date): string {
   ]
     .map((part) => String(part).padStart(2, '0'))
     .join('')
+}
+
+async function createPerformanceTestSessionDir(benchmarksDir: string): Promise<string> {
+  await fs.promises.mkdir(benchmarksDir, { recursive: true })
+
+  for (let offsetSeconds = 0; ; offsetSeconds++) {
+    const sessionId = formatPerformanceTestSessionId(new Date(Date.now() + offsetSeconds * 1000))
+    const sessionDir = path.join(benchmarksDir, sessionId)
+    try {
+      await fs.promises.mkdir(sessionDir)
+      return sessionDir
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
+      throw error
+    }
+  }
 }
 
 function resolveManagedWorkflowPath(
@@ -362,26 +378,60 @@ export async function storePerformanceTestWorkflow(
     throw new Error('The selected file is not a ComfyUI API-format workflow.')
   }
 
-  await fs.promises.mkdir(benchmarksDir, { recursive: true })
+  const sessionDir = await createPerformanceTestSessionDir(benchmarksDir)
+  const destinationPath = path.join(sessionDir, sourceFileName)
+  try {
+    await fs.promises.writeFile(destinationPath, contents)
+    return destinationPath
+  } catch (error) {
+    await fs.promises.rm(sessionDir, { recursive: true, force: true })
+    throw error
+  }
+}
 
-  for (let offsetSeconds = 0; ; offsetSeconds++) {
-    const sessionId = formatPerformanceTestSessionId(new Date(Date.now() + offsetSeconds * 1000))
-    const sessionDir = path.join(benchmarksDir, sessionId)
-    try {
-      await fs.promises.mkdir(sessionDir)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
-      throw error
-    }
+export interface StoredPerformanceTestTemplate {
+  workflowFilePath: string
+  sourceWorkflowFilePath: string
+}
 
-    const destinationPath = path.join(sessionDir, sourceFileName)
-    try {
-      await fs.promises.writeFile(destinationPath, contents)
-      return destinationPath
-    } catch (error) {
-      await fs.promises.rm(sessionDir, { recursive: true, force: true })
-      throw error
-    }
+/**
+ * Persist a catalogue template's editor workflow beside its paired API prompt.
+ * The editor copy remains the source of model/input metadata; only the validated
+ * API copy is returned as the runnable performance-test workflow.
+ */
+export async function storePerformanceTestTemplate(
+  templateId: string,
+  editorWorkflow: unknown,
+  apiWorkflow: unknown,
+  benchmarksDir: string
+): Promise<StoredPerformanceTestTemplate> {
+  if (!/^[a-zA-Z0-9_.-]+$/.test(templateId) || templateId === '.' || templateId === '..') {
+    throw new Error('Invalid performance test template ID.')
+  }
+  if (
+    !editorWorkflow ||
+    typeof editorWorkflow !== 'object' ||
+    Array.isArray(editorWorkflow) ||
+    !Array.isArray((editorWorkflow as { nodes?: unknown }).nodes)
+  ) {
+    throw new Error('The catalogue editor workflow is invalid.')
+  }
+  if (!isApiWorkflow(apiWorkflow)) {
+    throw new Error('The catalogue workflow has no valid API-format artifact.')
+  }
+
+  const sessionDir = await createPerformanceTestSessionDir(benchmarksDir)
+  const workflowFilePath = path.join(sessionDir, `${templateId}.json`)
+  const sourceWorkflowFilePath = path.join(sessionDir, `${templateId}.source.json`)
+  try {
+    await Promise.all([
+      fs.promises.writeFile(workflowFilePath, JSON.stringify(apiWorkflow)),
+      fs.promises.writeFile(sourceWorkflowFilePath, JSON.stringify(editorWorkflow))
+    ])
+    return { workflowFilePath, sourceWorkflowFilePath }
+  } catch (error) {
+    await fs.promises.rm(sessionDir, { recursive: true, force: true })
+    throw error
   }
 }
 
@@ -399,10 +449,7 @@ export async function deletePerformanceTestWorkflow(
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
   }
-  await fs.promises.unlink(managedPath.filePath)
-  await fs.promises.rmdir(managedPath.sessionDir).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== 'ENOTEMPTY') throw error
-  })
+  await fs.promises.rm(managedPath.sessionDir, { recursive: true })
   return 'deleted'
 }
 

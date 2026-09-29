@@ -52,10 +52,16 @@ import {
   savePerformanceTestJobsResponse,
   savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
+  storePerformanceTestTemplate,
   storePerformanceTestWorkflow,
   submitPerformanceTestWorkflow,
   waitForPerformanceTestJobs
 } from '../performanceTestWorkflows'
+import {
+  getPerformanceTestStarterOptions,
+  loadPerformanceTestStarterArtifacts
+} from '../performanceTestStarterWorkflows'
+import { startTemplateDownloadTask } from '../../sources/standalone/templateDownloadTask'
 
 export function registerAppHandlers(): void {
   const benchmarksDir = defaultBenchmarksDir()
@@ -179,6 +185,72 @@ export function registerAppHandlers(): void {
       return { ok: false, message: (error as Error)?.message || String(error) }
     }
   })
+
+  ipcMain.handle(
+    'get-performance-test-starter-workflows',
+    async (_event, installationId: string) => {
+      const installation = await installations.get(installationId)
+      if (!installation || installation.status !== 'installed') return []
+      const source = sourceMap[installation.sourceId]
+      if (!source || source.category === 'cloud') return []
+      return getPerformanceTestStarterOptions()
+    }
+  )
+
+  ipcMain.handle(
+    'prepare-performance-test-starter-workflow',
+    async (_event, installationId: string, templateId: string) => {
+      let workflowFilePath: string | null = null
+      try {
+        const installation = await installations.get(installationId)
+        if (!installation || installation.status !== 'installed') {
+          throw new Error('Select an installed local instance first.')
+        }
+        const source = sourceMap[installation.sourceId]
+        if (!source || source.category === 'cloud') {
+          throw new Error('Starter workflows require a local instance.')
+        }
+
+        const artifacts = await loadPerformanceTestStarterArtifacts(templateId)
+        const stored = await storePerformanceTestTemplate(
+          templateId,
+          artifacts.editorWorkflow,
+          artifacts.apiWorkflow,
+          benchmarksDir
+        )
+        workflowFilePath = stored.workflowFilePath
+
+        const sessionId = path.basename(path.dirname(stored.workflowFilePath))
+        const downloadState = await startTemplateDownloadTask(
+          `performance-test:${sessionId}`,
+          installation,
+          templateId,
+          artifacts.template.sizeBytes,
+          { sendOutput: () => {} },
+          artifacts.editorWorkflow
+        )
+        if (downloadState.status !== 'done') {
+          throw new Error(
+            downloadState.error === 'insufficient-disk'
+              ? 'There is not enough disk space for this workflow’s models.'
+              : downloadState.error || 'Could not download every model required by this workflow.'
+          )
+        }
+
+        return {
+          ok: true,
+          filePath: stored.workflowFilePath,
+          templateId,
+          templateLabel: artifacts.template.title
+        }
+      } catch (error) {
+        if (workflowFilePath) {
+          await deletePerformanceTestWorkflow(workflowFilePath, benchmarksDir).catch(() => {})
+        }
+        return { ok: false, message: (error as Error)?.message || String(error) }
+      }
+    }
+  )
 
   ipcMain.handle('delete-performance-test-workflow', async (_event, filePath: string) => {
     try {

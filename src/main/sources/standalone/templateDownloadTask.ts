@@ -4,7 +4,7 @@ import { startManagedModelJob, type ModelJobOutcome } from '../../lib/comfyDownl
 import { getModelsBaseDir, resolveDownloadContextById } from '../../lib/modelDownloadPaths'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
-import { resolveTemplateModels } from './templateModels'
+import { resolveTemplateModels, resolveTemplateModelsFromJson } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
 import {
   isTerminal,
@@ -55,6 +55,7 @@ const MODEL_DOWNLOAD_RETRIES = 2
 // --- Process-global state (mirrors _operationAborts). Task = sole writer. ---
 const _templateDownloads = new Map<string, TemplateDownloadState>()
 const _templateAborts = new Map<string, AbortController>()
+const _templatePromises = new Map<string, Promise<TemplateDownloadState>>()
 /** Release functions for THIS install's leases on its currently-active
  *  managed model jobs, so an install-level abort can release the real
  *  transfers. Each entry is a caller-owned idempotent lease handle: releasing
@@ -180,9 +181,35 @@ export function startTemplateDownload(
   estimatedSizeBytes: number,
   opts: StartOpts
 ): void {
-  const installationId = installation.id
-  const existing = _templateDownloads.get(installationId)
-  if (existing && !isTerminal(existing.status)) return
+  const templateId = installation.bundledTemplateId
+  if (!templateId) return
+  void startTemplateDownloadTask(
+    installation.id,
+    installation,
+    templateId,
+    estimatedSizeBytes,
+    opts
+  )
+}
+
+/**
+ * Run the same input/model staging used by first-install templates under an
+ * independent task key. Performance tests use a separate key so their staging
+ * cannot enter the installation launch gate, while managed model jobs still
+ * resolve paths and deduplicate by the real installation id.
+ */
+export function startTemplateDownloadTask(
+  taskId: string,
+  installation: InstallationRecord,
+  templateId: string,
+  estimatedSizeBytes: number,
+  opts: StartOpts,
+  workflowJson?: unknown
+): Promise<TemplateDownloadState> {
+  const existing = _templateDownloads.get(taskId)
+  if (existing && !isTerminal(existing.status)) {
+    return _templatePromises.get(taskId) ?? Promise.resolve(existing)
+  }
 
   const state: TemplateDownloadState = {
     status: 'resolving',
@@ -191,25 +218,33 @@ export function startTemplateDownload(
     speedMBs: 0,
     etaSecs: -1
   }
-  _templateDownloads.set(installationId, state)
+  _templateDownloads.set(taskId, state)
   const abort = new AbortController()
   const jobLeases = new Set<() => void>()
-  _templateAborts.set(installationId, abort)
-  _templateJobLeases.set(installationId, jobLeases)
+  _templateAborts.set(taskId, abort)
+  _templateJobLeases.set(taskId, jobLeases)
 
   /** Tees every task log line to the main-process console as well, so the
    *  lifecycle shows in the `pnpm dev` terminal even if the renderer panel drops. */
   const log = (text: string): void => {
-    console.log(`[templateDownload:${installationId}] ${text.trimEnd()}`)
+    console.log(`[templateDownload:${taskId}] ${text.trimEnd()}`)
     opts.sendOutput(text)
   }
   const taskOpts: StartOpts = { sendOutput: log }
 
   log(
-    `[templates] Starting background download for "${installation.bundledTemplateId}" (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
+    `[templates] Starting background download for "${templateId}" (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
   )
 
-  void runTask(installation, state, abort.signal, taskOpts)
+  const promise = runTask(
+    taskId,
+    installation,
+    templateId,
+    state,
+    abort.signal,
+    taskOpts,
+    workflowJson
+  )
     .catch((err) => {
       if (!isTerminal(state.status)) {
         state.status = 'error'
@@ -223,12 +258,15 @@ export function startTemplateDownload(
       // or replaced these entries - never delete a successor's controller or
       // leases. Any lease still tracked here (add-after-abort races) is
       // released so a parked job is not pinned by a dead task.
-      if (_templateAborts.get(installationId) === abort) _templateAborts.delete(installationId)
-      if (_templateJobLeases.get(installationId) === jobLeases) {
+      if (_templateAborts.get(taskId) === abort) _templateAborts.delete(taskId)
+      if (_templateJobLeases.get(taskId) === jobLeases) {
         for (const release of [...jobLeases]) release()
-        _templateJobLeases.delete(installationId)
+        _templateJobLeases.delete(taskId)
       }
     })
+    .then(() => state)
+  _templatePromises.set(taskId, promise)
+  return promise
 }
 
 /** Thrown when the managed job reports 'cancelled' - never auto-retried. */
@@ -260,20 +298,24 @@ function raceCompletionWithAbort(
 }
 
 async function runTask(
+  taskId: string,
   installation: InstallationRecord,
+  templateId: string,
   state: TemplateDownloadState,
   signal: AbortSignal,
-  { sendOutput }: StartOpts
+  { sendOutput }: StartOpts,
+  workflowJson?: unknown
 ): Promise<void> {
-  const templateId = installation.bundledTemplateId as string
-  await downloadTemplateInputAssets(installation, templateId, sendOutput, signal)
+  await downloadTemplateInputAssets(installation, templateId, sendOutput, signal, workflowJson)
   if (signal.aborted) {
     state.status = 'cancelled'
     return
   }
 
   sendOutput(`[templates] Resolving model list for "${templateId}"...\n`)
-  const models = await resolveTemplateModels(installation, templateId)
+  const models = workflowJson
+    ? resolveTemplateModelsFromJson(workflowJson)
+    : await resolveTemplateModels(installation, templateId)
 
   if (signal.aborted) {
     state.status = 'cancelled'
@@ -322,7 +364,7 @@ async function runTask(
 
   state.status = 'downloading'
 
-  const activeJobLeases = _templateJobLeases.get(installation.id)
+  const activeJobLeases = _templateJobLeases.get(taskId)
 
   // Aggregate speed/ETA sampled from the per-file counters at most every
   // 500 ms (state.files is small - a handful of models per template).
