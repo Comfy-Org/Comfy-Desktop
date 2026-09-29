@@ -191,6 +191,7 @@ const messages = {
       logsPlaceholder: 'Instance logs will appear here.',
       results: 'Results',
       resultsPlaceholder: 'Performance test results will appear here.',
+      idlePlaceholder: 'Run a benchmark to see throughput and memory for this machine.',
       workflowFileName: 'Workflow file',
       fastestRun: 'Fastest run',
       slowestRun: 'Slowest run',
@@ -521,6 +522,14 @@ function installMockApi(initial?: {
         )
       }
     }),
+    onStandardBenchmarkDownloadProgress: vi.fn(() => () => {}),
+    standardBenchmarkModelsPresent: vi.fn(async () => false),
+    prepareStandardBenchmarkWorkflow: vi.fn(async () => ({ ok: true, filePath: '' })),
+    ensureStandardBenchmarkModels: vi.fn(async () => ({
+      ok: true,
+      present: true,
+      downloaded: false
+    })),
     runPerformanceTestWorkflow: vi.fn(
       async (
         _sessionId: string,
@@ -845,6 +854,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.findAll('.performance-test__source-option')[1]!.trigger('click')
 
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="performance-test-logo"]').exists()).toBe(true)
@@ -912,7 +922,7 @@ describe('PanelApp', () => {
       wrapper.findAll('.performance-test__content > section').map((section) => section.classes()[0])
     ).toEqual(['performance-test__results-section', 'performance-test__logs-section'])
     expect(wrapper.get('.performance-test__results').text()).toContain(
-      'Performance test results will appear here.'
+      'Run a benchmark to see throughput and memory for this machine.'
     )
     await resultsToggle.trigger('click')
     expect(resultsToggle.attributes('aria-expanded')).toBe('false')
@@ -937,7 +947,8 @@ describe('PanelApp', () => {
       'aria-label': 'Select an instance',
       'aria-expanded': 'false'
     })
-    expect(instanceSelect.text()).toBe('Select an instance')
+    // Auto-select pre-fills the first eligible instance so Run is actionable.
+    expect(instanceSelect.text()).toBe('Workspace Install')
     await instanceSelect.trigger('click')
     await flushPromises()
     expect(
@@ -1238,7 +1249,8 @@ describe('PanelApp', () => {
     await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
     await flushPromises()
 
-    expect(instanceSelect.text()).toBe('Select an instance')
+    // Switching workspace re-runs auto-select onto the new scope's first instance.
+    expect(instanceSelect.text()).toBe('Unmanaged Install')
     await instanceSelect.trigger('click')
     await flushPromises()
     expect(
@@ -1430,6 +1442,7 @@ describe('PanelApp', () => {
 
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.findAll('.performance-test__source-option')[1]!.trigger('click')
 
     await wrapper.get('.performance-test__drop-content').trigger('click')
     await wrapper.get('.performance-test__instance-select button').trigger('click')
@@ -1532,6 +1545,7 @@ describe('PanelApp', () => {
 
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.findAll('.performance-test__source-option')[1]!.trigger('click')
 
     await wrapper.get('.performance-test__drop-content').trigger('click')
     await wrapper.get('.performance-test__instance-select button').trigger('click')
@@ -1591,6 +1605,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.findAll('.performance-test__source-option')[1]!.trigger('click')
 
     await wrapper.get('.performance-test__drop-content').trigger('click')
     await wrapper.get('.performance-test__instance-select button').trigger('click')
