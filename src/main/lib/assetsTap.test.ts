@@ -753,6 +753,140 @@ describe('assetsTap', () => {
     })
   })
 
+  describe('typed-field naming conventions', () => {
+    it.each<[string, LogfmtValue]>([
+      ['cpu_ms', 1250],
+      ['cpu_ms', 0],
+      ['dir_count', 42],
+      ['read_bytes', 9_007_199_254_740_991],
+      ['cache_hit_pct', 0],
+      ['cache_hit_pct', 100],
+      ['watcher_enabled', true],
+      ['watcher_enabled', false],
+      ['is_network_drive', true],
+      ['has_symlinks', false]
+    ])('forwards the unlisted field %s=%s', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { phase: 'fast', [field]: value }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ phase: 'fast', [field]: value })
+    })
+
+    it.each<[string, LogfmtValue]>([
+      ['cpu_ms', true],
+      ['cpu_ms', -1],
+      ['cpu_ms', '12ms'],
+      ['dir_count', -3],
+      ['dir_count', false],
+      ['read_bytes', 9_007_199_254_740_992],
+      ['read_bytes', '1.5'],
+      ['cache_hit_pct', 101],
+      ['cache_hit_pct', -1],
+      ['cache_hit_pct', true],
+      ['watcher_enabled', 1],
+      ['watcher_enabled', 'yes'],
+      ['is_network_drive', 3],
+      ['has_symlinks', 'true_ish']
+    ])('omits %s=%s, a value of the wrong type or range, but keeps the event', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { phase: 'fast', [field]: value }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ phase: 'fast' })
+      expect(captured[0]!.ctx).not.toHaveProperty(field)
+    })
+
+    it('never forwards an unlisted string value, even under a convention name', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('seeder.scan_completed', {
+          model_dir_count: 'checkpoints',
+          is_path: 'models',
+          last_ms: 'none'
+        }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      for (const field of ['model_dir_count', 'is_path', 'last_ms']) {
+        expect(captured[0]!.ctx).not.toHaveProperty(field)
+      }
+    })
+
+    it('forwards at most eight convention fields per event', () => {
+      const fields = Object.fromEntries(
+        'abcdefghi'.split('').map((letter, index) => [`${letter}_count`, index])
+      )
+      const tap = createAssetsTap(baseOpts)
+      // taggedLine sorts keys, so `i_count` is the ninth field on the line.
+      tap.ingest(taggedLine('seeder.scan_completed', { ...fields, elapsed_ms: 5 }), 'stdout')
+      expect(captured).toHaveLength(1)
+      const ctx = captured[0]!.ctx
+      for (const letter of 'abcdefgh') expect(ctx).toHaveProperty(`${letter}_count`)
+      expect(ctx).not.toHaveProperty('i_count')
+      // Allowlisted fields don't spend the convention budget.
+      expect(ctx.elapsed_ms).toBe(5)
+    })
+
+    it('does not spend the cap on an omitted convention field', () => {
+      const fields = Object.fromEntries(
+        'abcdefgh'.split('').map((letter, index) => [`${letter}_count`, index])
+      )
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { ...fields, a_bad_count: -1 }), 'stdout')
+      expect(captured).toHaveLength(1)
+      for (const letter of 'abcdefgh') expect(captured[0]!.ctx).toHaveProperty(`${letter}_count`)
+      expect(captured[0]!.ctx).not.toHaveProperty('a_bad_count')
+    })
+
+    it('accepts a 48-character name and omits a 49-character one', () => {
+      const atLimit = `${'x'.repeat(42)}_bytes`
+      const overLimit = `${'x'.repeat(43)}_bytes`
+      expect(atLimit).toHaveLength(48)
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { [atLimit]: 1, [overLimit]: 2 }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx[atLimit]).toBe(1)
+      expect(captured[0]!.ctx).not.toHaveProperty(overLimit)
+    })
+
+    it('still rejects a repeated convention field', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed cpu_ms=1 cpu_ms=2\n', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_completed is_x=3 is_x=true\n', 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
+    it('leaves allowlisted fields that fit a convention on their own validators', () => {
+      const tap = createAssetsTap(baseOpts)
+      // A negative elapsed_ms passes its own (signed) validator...
+      tap.ingest(taggedLine('seeder.scan_completed', { elapsed_ms: -5 }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.elapsed_ms).toBe(-5)
+      // ...and a wrong-typed allowlisted value still rejects the line.
+      tap.ingest(taggedLine('seeder.scan_completed', { elapsed_ms: true }), 'stdout')
+      tap.ingest(taggedLine('assets.enabled', { hashing_enabled: 1 }), 'stdout')
+      expect(captured).toHaveLength(1)
+    })
+
+    it('still drops an unknown event that carries only convention fields', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_exploded', { cpu_ms: 1, is_x: true }), 'stdout')
+      expect(captured).toHaveLength(0)
+      tap.flushSummary()
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe('comfy.desktop.comfyui.assets.unknown_events_dropped')
+      expect(captured[0]!.ctx.count).toBe(1)
+    })
+
+    it('does not count omitted convention fields as unknown enum values', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { cpu_ms: true }), 'stdout')
+      tap.flushSummary()
+      expect(captured.map(({ event }) => event)).toEqual([
+        'comfy.desktop.comfyui.assets.seeder.scan_completed'
+      ])
+    })
+  })
+
   describe('per-event rate cap', () => {
     it('caps one event at 60 per hour and resets the window after an hour', () => {
       vi.useFakeTimers()

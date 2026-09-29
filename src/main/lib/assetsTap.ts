@@ -16,7 +16,11 @@
  * value checks, and rejection of any key colliding with the trusted base
  * context. Ordinary unknown fields are omitted for version skew, as is a
  * `reason` or `site` value outside its enum that still has an enum value's
- * shape. Other invalid known values and malformed or spoofing keys drop the
+ * shape. The one exception: an unknown field named by a typed convention
+ * (`*_ms`, `*_count`, `*_bytes`, `*_pct`, `*_enabled`, `is_*`, `has_*`) is
+ * forwarded when its value is a number or boolean of that convention's type
+ * (see `conventionFieldValue`), so core can add metrics without a Desktop
+ * release. Other invalid known values and malformed or spoofing keys drop the
  * whole line silently:
  * reporting the rejection would put the untrusted content back into a signal
  * we forward.
@@ -198,7 +202,10 @@ function isSafeString(value: unknown): value is string {
 /**
  * Mirror of the field names in ComfyUI `app/assets/event_log.py`. Adding a field
  * is a reviewed change on BOTH sides; the vocabulary deliberately holds no
- * file names, paths, asset ids or content hashes.
+ * file names, paths, asset ids or content hashes. Numeric and boolean metrics
+ * can skip that review by following a typed naming convention (see
+ * `fieldConvention` below); a name listed here keeps its own validator even
+ * when it also fits a convention, as `elapsed_ms` and `hashing_enabled` do.
  *
  * A Set, NOT an object literal: lookup keys here come straight from untrusted
  * logfmt, and `{}['constructor']` / `{}['__proto__']` resolve up the prototype
@@ -228,6 +235,48 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'exc_site',
   'exc_line'
 ])
+
+/**
+ * Typed-field conventions for names OUTSIDE `ALLOWED_FIELD_NAMES`. A number or
+ * boolean can't carry a path, a name or file content, so a field whose name
+ * declares one of these types is safe to forward without a reviewed allowlist
+ * entry. Strings stay strict: an unknown string-valued field is never
+ * forwarded, whatever its name. A value of the wrong type is omitted like any
+ * other unknown field, since the name is only a claim about the value.
+ */
+const MAX_CONVENTION_FIELD_NAME_LENGTH = 48
+/** Per event, so a runaway core cannot fan one event out into many properties. */
+const MAX_CONVENTION_FIELDS = 8
+const MAX_PCT = 100
+
+type FieldConvention = 'non_negative_integer' | 'percent' | 'boolean'
+
+function fieldConvention(key: string): FieldConvention | null {
+  if (key.length > MAX_CONVENTION_FIELD_NAME_LENGTH) return null
+  if (key.endsWith('_ms') || key.endsWith('_count') || key.endsWith('_bytes')) {
+    return 'non_negative_integer'
+  }
+  if (key.endsWith('_pct')) return 'percent'
+  if (key.endsWith('_enabled') || key.startsWith('is_') || key.startsWith('has_')) {
+    return 'boolean'
+  }
+  return null
+}
+
+function conventionFieldValue(convention: FieldConvention, value: TelemetryValue): boolean {
+  if (convention === 'boolean') return typeof value === 'boolean'
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return false
+  return convention === 'non_negative_integer' || value <= MAX_PCT
+}
+
+/** Same coercion core's logfmt values get for allowlisted fields. */
+function coerceValue(key: string, rawValue: string): TelemetryValue {
+  if (DIGIT_STRING_FIELDS.has(key)) return rawValue
+  if (/^-?\d+$/.test(rawValue)) return Number(rawValue)
+  if (rawValue === 'true') return true
+  if (rawValue === 'false') return false
+  return rawValue
+}
 
 /**
  * Mirror of each field validator in ComfyUI `app/assets/event_log.py`, plus
@@ -262,8 +311,10 @@ function isAllowedFieldValue(key: string, value: unknown): value is TelemetryVal
 
 /**
  * Parse the logfmt tail into forwardable fields, omitting ordinary unknown
- * fields and unknown-but-well-shaped extensible enum values. Other invalid
- * known values and malformed, duplicate or spoofing keys reject the whole line.
+ * fields, convention-named fields whose value doesn't match the convention (or
+ * past the per-event cap), and unknown-but-well-shaped extensible enum values.
+ * Other invalid known values and malformed, duplicate or spoofing keys reject
+ * the whole line.
  */
 function parseFields(
   tail: string,
@@ -271,6 +322,7 @@ function parseFields(
 ): { fields: Record<string, TelemetryValue>; omittedEnumValues: number } | null {
   const fields: Record<string, TelemetryValue> = {}
   let omittedEnumValues = 0
+  let conventionFields = 0
   // Separate from `fields`, which omits some keys, so a repeat is still caught.
   const seenKeys = new Set<string>()
   const pairs = tail ? tail.slice(1).split(' ') : []
@@ -288,19 +340,20 @@ function parseFields(
       if (Object.hasOwn(Object.prototype, key)) return null
       // Anything else is a newer core emitting a field this build predates;
       // rejecting the line would delete an existing metric instead.
+      const convention = fieldConvention(key)
+      if (!convention) continue
+      if (seenKeys.has(key)) return null
+      seenKeys.add(key)
+      const value = coerceValue(key, rawValue)
+      if (conventionFields >= MAX_CONVENTION_FIELDS) continue
+      if (!conventionFieldValue(convention, value)) continue
+      conventionFields++
+      fields[key] = value
       continue
     }
     if (seenKeys.has(key)) return null
     seenKeys.add(key)
-    const value: TelemetryValue = DIGIT_STRING_FIELDS.has(key)
-      ? rawValue
-      : /^-?\d+$/.test(rawValue)
-        ? Number(rawValue)
-        : rawValue === 'true'
-          ? true
-          : rawValue === 'false'
-            ? false
-            : rawValue
+    const value = coerceValue(key, rawValue)
     const enumValues = EXTENSIBLE_ENUMS.get(key)
     if (
       enumValues &&
