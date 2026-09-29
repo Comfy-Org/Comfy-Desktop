@@ -230,7 +230,11 @@ export function parseCoreBetaGrants(
   const grantedArgs = new Set(flags.map((flag) => flag.arg))
   for (const { arg } of flags) {
     const opposite = oppositeArg(arg)
-    if (opposite !== null && grantedArgs.has(opposite)) return []
+    if (opposite !== null && grantedArgs.has(opposite)) {
+      // Both tokens are allowlisted, so naming them leaks nothing from the payload.
+      console.log(`[core-beta] payload refused: it grants both ${arg} and ${opposite}`)
+      return []
+    }
   }
   return flags
 }
