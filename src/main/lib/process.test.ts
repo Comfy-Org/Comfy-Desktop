@@ -6,6 +6,7 @@ import {
   killPidTree,
   killProcessTree,
   spawnProcess,
+  waitForPortFree,
   waitForPort,
   waitForUrl
 } from './process'
@@ -277,6 +278,26 @@ describe('waitForUrl abort settlement', () => {
     await expect(
       waitForUrl('http://127.0.0.1:1/', { timeoutMs: 30000, signal: controller.signal })
     ).rejects.toThrow('Launch cancelled.')
+  })
+})
+
+describe('waitForPortFree', () => {
+  it('waits out a socket that is released a moment after its owner is gone', async () => {
+    const { server, port } = await listenOn('127.0.0.1')
+    setTimeout(() => server.close(), 150)
+    const started = Date.now()
+    expect(await waitForPortFree(port, '127.0.0.1', 2_000, 20)).toBe(true)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(100)
+    expect(await isPortListening(port)).toBe(false)
+  })
+
+  it('gives up at its bound when the port stays held', async () => {
+    const { server, port } = await listenOn('127.0.0.1')
+    try {
+      expect(await waitForPortFree(port, '127.0.0.1', 150, 20)).toBe(false)
+    } finally {
+      await closeServer(server)
+    }
   })
 })
 

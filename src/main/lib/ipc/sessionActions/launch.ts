@@ -15,6 +15,7 @@ import {
   setPortArg,
   findAvailablePort,
   isPortListening,
+  waitForPortFree,
   writePortLock,
   readPortLock,
   COMFY_BOOT_TIMEOUT_MS,
@@ -546,6 +547,23 @@ export function emitPriorProcessFound(installationId: string, prior: PriorProces
     busy_override: prior.busyOverride === true,
     lingering_count: prior.lingering ?? 0
   })
+}
+
+/** One log line saying what really happened to an earlier ComfyUI met at launch. */
+export function describePriorOutcome(prior: PriorProcessOutcome): string {
+  const what =
+    prior.action === 'terminated'
+      ? prior.exitedInTime
+        ? 'stopped, and it exited'
+        : 'stopped, but it did not exit'
+      : prior.action === 'waited'
+        ? 'it exited on its own'
+        : prior.action === 'busy_left'
+          ? 'left running: it is working on a prompt'
+          : 'left running: not proven to be ours'
+  const blocked = prior.blocked ? `; launch refused (${prior.blocked})` : ''
+  const lingering = prior.lingering ? `; ${prior.lingering} surviving subprocess(es) stopped` : ''
+  return `earlier ComfyUI (pid ${prior.pid}, port ${prior.port}, proof ${prior.proof}): ${what}${lingering}${blocked}`
 }
 
 export function _resolveLaunchMode(
@@ -1491,10 +1509,7 @@ async function runLaunch(
   }
   if (prior) {
     emitPriorProcessFound(installationId, prior)
-    appendLog(
-      sessionId,
-      `[launch] earlier ComfyUI (pid ${prior.pid}, port ${prior.port}): ${prior.action}\n`
-    )
+    appendLog(sessionId, `[launch] ${describePriorOutcome(prior)}\n`)
   }
   if (prior?.blocked) {
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
@@ -1508,16 +1523,22 @@ async function runLaunch(
         portConflict: { port: prior.port, pids: [prior.pid], isComfy: true, priorBusy: true }
       }
     }
+    // The recorded pid can be the venv launcher; on Windows the process holding the port (and
+    // the database) is its child. Name whoever listens on the port too.
+    const holders = await findPidsByPort(prior.port).catch(() => [] as number[])
     return {
       ok: false,
       message: i18n.t(
         prior.blocked === 'unverified'
           ? 'errors.priorProcessUnverified'
           : 'errors.priorProcessStuck',
-        { pid: prior.pid }
+        { pid: [...new Set([prior.pid, ...holders])].join(', ') }
       )
     }
   }
+  // A stopped process can own its listening socket for a few milliseconds more; without this the
+  // port check below sees the port busy and moves to the next one.
+  if (prior?.exitedInTime) await waitForPortFree(prior.port)
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
   if (actionData?.portOverride != null) {
@@ -1792,6 +1813,7 @@ async function runLaunch(
       ...bootCohort(),
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries,
+      port: launchCmd.port ?? null,
       port_bumped_from: portBumpedFrom
     })
     // Begin (re)buffering per-phase timings for THIS attempt. On a port /

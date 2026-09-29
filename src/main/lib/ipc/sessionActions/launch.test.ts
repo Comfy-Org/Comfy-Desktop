@@ -61,6 +61,8 @@ const launchHarness = vi.hoisted(() => ({
   nextPort: 48999,
   /** Ports the harness reports as held (by pid 31337); null = real probes. */
   busyPorts: null as null | number[],
+  /** Ports `waitForPortFree` was asked to wait on. */
+  portFreeWaits: [] as number[],
   /** The listeners `findPidsByPort` reports on a busy port. */
   busyPids: [31337] as number[],
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
@@ -100,6 +102,14 @@ vi.mock('../shared', async (importOriginal) => {
       return {}
     },
     findAvailablePort: async () => launchHarness.nextPort,
+    waitForPortFree: async (port: number) => {
+      launchHarness.portFreeWaits.push(port)
+      // The prior process's port frees up during the wait, as the socket teardown finishes.
+      if (launchHarness.busyPorts) {
+        launchHarness.busyPorts = launchHarness.busyPorts.filter((p) => p !== port)
+      }
+      return true
+    },
     isPortListening: (...args: Parameters<typeof actual.isPortListening>) =>
       launchHarness.busyPorts
         ? Promise.resolve(launchHarness.busyPorts.includes(args[0]))
@@ -185,6 +195,7 @@ import {
   launchedCoreCommit,
   onProcessTerminated,
   writeLog,
+  describePriorOutcome,
   _cleanupFailedLaunchSetup,
   _resolveLaunchMode,
   _resolvePortConflictPolicy
@@ -207,6 +218,7 @@ import type { ComfyArgsSchema } from '../../comfy-args'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
+import * as i18nModule from '../../i18n'
 import {
   makeSendOutput,
   _getLaunchingInstallationIds,
@@ -2112,6 +2124,7 @@ describe('prior ComfyUI process handling at launch', () => {
     // outcome.
     launchHarness.busyPorts = []
     launchHarness.busyPids = [31337]
+    launchHarness.portFreeWaits = []
     launchHarness.killExits = true
     launchHarness.waitForPort = async () => {}
     launchHarness.spawn = () => {
@@ -2191,6 +2204,39 @@ describe('prior ComfyUI process handling at launch', () => {
         lingering_count: 0
       }
     ])
+  })
+
+  it('waits for a stopped orphan to release its port instead of moving to the next one', async () => {
+    ownership.prior = terminated
+    // Still bound for a moment after the process exited (Windows socket teardown).
+    launchHarness.busyPorts = [PORT]
+
+    const res = await handleLaunch(ctxFor('prior-port-lingers'))
+
+    expect(launchHarness.portFreeWaits).toEqual([PORT])
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(PORT)
+    const [started] = eventsNamed('comfy.desktop.comfyui.boot_started')
+    expect(started).toMatchObject({ port: PORT, port_bumped_from: null })
+  })
+
+  it('does not wait on the port of a process that is still there', async () => {
+    ownership.prior = { ...terminated, action: 'left', exitedInTime: false }
+
+    await handleLaunch(ctxFor('prior-left-no-wait'))
+
+    expect(launchHarness.portFreeWaits).toEqual([])
+  })
+
+  it('names the process holding the port, not only the recorded launcher, when refusing', async () => {
+    ownership.prior = { ...terminated, pid: 11944, exitedInTime: false, blocked: 'stuck' }
+    launchHarness.busyPorts = [PORT]
+    launchHarness.busyPids = [17348]
+    const t = vi.spyOn(i18nModule, 't')
+
+    await handleLaunch(ctxFor('prior-stuck-holder'))
+
+    expect(t).toHaveBeenCalledWith('errors.priorProcessStuck', { pid: '11944, 17348' })
   })
 
   it('leaves a busy orphan alone and hands the choice to the user without spawning', async () => {
@@ -2347,6 +2393,37 @@ describe('prior ComfyUI process handling at launch', () => {
           lock_holder_same_install: null
         })
       ])
+    )
+  })
+})
+
+describe('describePriorOutcome', () => {
+  const base = {
+    proof: 'desktop_record' as const,
+    pid: 11944,
+    port: 8188,
+    ageMs: 1,
+    waitMs: 1,
+    blocked: null
+  }
+  it.each([
+    [{ action: 'terminated', exitedInTime: true }, 'stopped, and it exited'],
+    [
+      { action: 'terminated', exitedInTime: false, blocked: 'stuck' },
+      'stopped, but it did not exit; launch refused (stuck)'
+    ],
+    [
+      { action: 'left', exitedInTime: false, blocked: 'unverified' },
+      'left running: not proven to be ours; launch refused (unverified)'
+    ],
+    [{ action: 'waited', exitedInTime: true }, 'it exited on its own'],
+    [
+      { action: 'terminated', exitedInTime: true, lingering: 2 },
+      'stopped, and it exited; 2 surviving subprocess(es) stopped'
+    ]
+  ] as const)('%o', (outcome, text) => {
+    expect(describePriorOutcome({ ...base, ...outcome })).toBe(
+      `earlier ComfyUI (pid 11944, port 8188, proof desktop_record): ${text}`
     )
   })
 })

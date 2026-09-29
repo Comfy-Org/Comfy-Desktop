@@ -598,6 +598,26 @@ export async function isPortListening(port: number, host: string = '127.0.0.1'):
   return !(await canBind(port, host))
 }
 
+/**
+ * Wait until `port` on `host` can be bound again, up to `timeoutMs`. A process that has exited
+ * can still own its listening socket for a few milliseconds while the OS tears it down (measured
+ * on Windows: 2-12 ms after the exit code is set), so a port probe straight after a kill can see
+ * the dead process's port as busy. Resolves whether the port became free.
+ */
+export async function waitForPortFree(
+  port: number,
+  host: string = '127.0.0.1',
+  timeoutMs: number = 2_000,
+  intervalMs: number = 50
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    if (!(await isPortListening(port, host))) return true
+    if (Date.now() >= deadline) return false
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+}
+
 export async function findAvailablePort(
   host: string,
   startPort: number,
