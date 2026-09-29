@@ -15,6 +15,7 @@ vi.mock('electron', () => ({
 const { createAssetsTap, ASSETS_EVENT_LINE, ALLOWED_EVENTS, ALLOWED_FIELD_NAMES } =
   await import('./assetsTap')
 const telemetry = await import('./telemetry')
+const { DATADOG_GLOBAL_CONTEXT_KEYS } = await import('../../shared/datadogMirroredEvents')
 
 // Resolved against cwd (not import.meta.url, which happy-dom can mangle) — the
 // same idiom ProgressModal.test.ts uses for reading a source file.
@@ -489,21 +490,51 @@ describe('assetsTap', () => {
       expect([...ALLOWED_FIELD_NAMES].filter((key) => BASE_CONTEXT_KEYS.includes(key))).toEqual([])
     })
 
-    it('rejects a key colliding with a telemetry default property', () => {
+    it('omits a key colliding with a telemetry default property but keeps the event', () => {
       // Per-event fields win telemetry's merge over its defaults, and
       // `is_packaged` fits the `is_*` convention, so without this a forged
       // `is_packaged=false` would relabel a packaged build's event.
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { is_packaged: false }), 'stdout')
       for (const key of telemetry.DEFAULT_EVENT_PROPERTY_NAMES) {
-        tap.ingest(taggedLine('seeder.scan_completed', { [key]: 1 }), 'stdout')
+        if (key === 'installation_id') continue // base context: rejects the line
+        tap.ingest(taggedLine('seeder.scan_completed', { phase: 'fast', [key]: 1 }), 'stdout')
       }
-      expect(captured).toHaveLength(0)
+      expect(captured).toHaveLength(telemetry.DEFAULT_EVENT_PROPERTY_NAMES.size)
+      for (const { ctx } of captured) {
+        expect(ctx.is_packaged).toBeUndefined()
+        for (const key of telemetry.DEFAULT_EVENT_PROPERTY_NAMES) {
+          if (key !== 'installation_id') expect(ctx).not.toHaveProperty(key)
+        }
+      }
     })
 
-    it('keeps the field vocabulary disjoint from the telemetry defaults', () => {
+    it('omits a key colliding with Datadog global context but keeps the event', () => {
+      // Mirrored failure events reach datadogRum.addAction, where the action's
+      // context wins over the renderer's global cohort context.
+      const forged = {
+        telemetry_enabled: false,
+        has_launched_cloud: true,
+        has_legacy_install: true,
+        local_installation_count: 0
+      }
+      for (const key of Object.keys(forged)) expect(DATADOG_GLOBAL_CONTEXT_KEYS.has(key)).toBe(true)
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('scanner.walk_failed', { root: 'input', ...forged }), 'stdout')
+      tap.ingest(taggedLine('scanner.walk_failed', { renderer_role: 'panel' }), 'stdout')
+      expect(captured).toHaveLength(2)
+      expect(captured[0]!.ctx.root).toBe('input')
+      for (const { ctx } of captured) {
+        for (const key of DATADOG_GLOBAL_CONTEXT_KEYS) expect(ctx).not.toHaveProperty(key)
+      }
+    })
+
+    it('keeps the field vocabulary disjoint from the telemetry defaults and Datadog context', () => {
       expect(
-        [...ALLOWED_FIELD_NAMES].filter((key) => telemetry.DEFAULT_EVENT_PROPERTY_NAMES.has(key))
+        [...ALLOWED_FIELD_NAMES].filter(
+          (key) =>
+            telemetry.DEFAULT_EVENT_PROPERTY_NAMES.has(key) || DATADOG_GLOBAL_CONTEXT_KEYS.has(key)
+        )
       ).toEqual([])
     })
 
@@ -870,6 +901,9 @@ describe('assetsTap', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_completed cpu_ms=1 cpu_ms=2\n', 'stdout')
       tap.ingest('[assets-event] seeder.scan_completed is_x=3 is_x=true\n', 'stdout')
+      // Past the per-event cap too: the duplicate check runs before the cap.
+      const pastCap = 'abcdefghi'.split('').map((letter) => `${letter}_count=1`)
+      tap.ingest(`[assets-event] seeder.scan_completed ${pastCap.join(' ')} i_count=2\n`, 'stdout')
       expect(captured).toHaveLength(0)
     })
 
@@ -895,6 +929,45 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx.count).toBe(1)
     })
 
+    it('omits a -0 under a non-negative convention', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed dir_count=-0 phase=fast\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).not.toHaveProperty('dir_count')
+    })
+
+    it('counts fields past the per-event cap, never naming them', () => {
+      const fields = Object.fromEntries(
+        'abcdefghij'.split('').map((letter, index) => [`${letter}_count`, index])
+      )
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', fields), 'stdout')
+      // An invalid value past the cap is a mismatch, not an eviction.
+      tap.ingest(taggedLine('seeder.scan_completed', { ...fields, z_count: -1 }), 'stdout')
+      tap.flushSummary()
+      expect(captured.map(({ event }) => event)).toEqual([
+        'comfy.desktop.comfyui.assets.seeder.scan_completed',
+        'comfy.desktop.comfyui.assets.seeder.scan_completed',
+        'comfy.desktop.comfyui.assets.convention_fields_over_event_cap'
+      ])
+      expect(captured[2]!.ctx).toMatchObject({ count: 4 })
+      expect(JSON.stringify(captured[2]!.ctx)).not.toContain('i_count')
+
+      tap.flushSummary()
+      expect(captured).toHaveLength(3)
+    })
+
+    it('cannot forge the convention counters with a crafted line', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('convention_fields_over_event_cap', { count: 999 }), 'stdout')
+      tap.ingest(taggedLine('convention_names_over_session_cap', { count: 999 }), 'stdout')
+      tap.flushSummary()
+      expect(captured.map(({ event }) => event)).toEqual([
+        'comfy.desktop.comfyui.assets.unknown_events_dropped'
+      ])
+      expect(captured[0]!.ctx.count).toBe(2)
+    })
+
     it('does not count omitted convention fields as unknown enum values', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { cpu_ms: true }), 'stdout')
@@ -902,6 +975,94 @@ describe('assetsTap', () => {
       expect(captured.map(({ event }) => event)).toEqual([
         'comfy.desktop.comfyui.assets.seeder.scan_completed'
       ])
+    })
+  })
+
+  describe('distinct convention names per tap', () => {
+    /** `aa_count`, `ab_count`, ...: distinct, digit-free, sorted by index. */
+    const nameFor = (index: number): string =>
+      `${String.fromCharCode(97 + Math.floor(index / 26))}${String.fromCharCode(97 + (index % 26))}_count`
+    const lineWith = (from: number, to: number): string =>
+      taggedLine(
+        'seeder.scan_completed',
+        Object.fromEntries(Array.from({ length: to - from }, (_, i) => [nameFor(from + i), 1]))
+      )
+
+    it('forwards 32 distinct names, then omits and counts new ones', () => {
+      const tap = createAssetsTap(baseOpts)
+      for (let from = 0; from < 32; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
+      expect(captured).toHaveLength(4)
+      expect(captured[3]!.ctx[nameFor(31)]).toBe(1)
+
+      // Two new names and one already seen: only the seen one forwards.
+      tap.ingest(
+        taggedLine('seeder.scan_completed', {
+          [nameFor(32)]: 1,
+          [nameFor(33)]: 1,
+          [nameFor(0)]: 7
+        }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(5)
+      expect(captured[4]!.ctx[nameFor(0)]).toBe(7)
+      expect(captured[4]!.ctx).not.toHaveProperty(nameFor(32))
+      expect(captured[4]!.ctx).not.toHaveProperty(nameFor(33))
+
+      tap.flushSummary()
+      expect(captured[5]!.event).toBe(
+        'comfy.desktop.comfyui.assets.convention_names_over_session_cap'
+      )
+      expect(captured[5]!.ctx).toMatchObject({ count: 2 })
+      expect(JSON.stringify(captured[5]!.ctx)).not.toContain(nameFor(32))
+    })
+
+    it('admits only up to the budget within a single line', () => {
+      const tap = createAssetsTap(baseOpts)
+      for (let from = 0; from < 24; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
+      tap.ingest(lineWith(24, 30), 'stdout')
+      // Two slots left, four new names: the first two in line order win.
+      tap.ingest(lineWith(30, 34), 'stdout')
+      const last = captured[captured.length - 1]!.ctx
+      expect(Object.keys(last).filter((k) => k.endsWith('_count'))).toEqual([
+        nameFor(30),
+        nameFor(31)
+      ])
+    })
+
+    it('does not spend a per-event slot on a name refused by the session cap', () => {
+      const tap = createAssetsTap(baseOpts)
+      for (let from = 0; from < 32; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
+      // `a` sorts first: eight refused new names, then eight seen names.
+      const fresh = Object.fromEntries('abcdefgh'.split('').map((l) => [`a_${l}_count`, 1]))
+      const seen = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [nameFor(8 + i), 2]))
+      tap.ingest(taggedLine('seeder.scan_completed', { ...fresh, ...seen }), 'stdout')
+      const last = captured[captured.length - 1]!.ctx
+      for (const name of Object.keys(seen)) expect(last[name]).toBe(2)
+      for (const name of Object.keys(fresh)) expect(last).not.toHaveProperty(name)
+    })
+
+    it('does not spend the budget on a line that is rejected or rate-capped', () => {
+      const tap = createAssetsTap(baseOpts)
+      // Rejected lines: the names never reach telemetry.
+      for (let i = 0; i < 40; i++) {
+        tap.ingest(taggedLine('seeder.scan_completed', { [nameFor(i)]: 1, root: 'x' }), 'stdout')
+      }
+      // Spend scan_started's hourly budget, then offer new names on it.
+      for (let i = 0; i < 60; i++) tap.ingest(taggedLine('seeder.scan_started', {}), 'stdout')
+      tap.ingest(lineWith(40, 48).replace('scan_completed', 'scan_started'), 'stdout')
+      expect(captured).toHaveLength(60)
+      // All 32 slots are still free.
+      for (let from = 100; from < 132; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
+      expect(captured).toHaveLength(64)
+      expect(captured[63]!.ctx).toHaveProperty(nameFor(131))
+    })
+
+    it('keeps the budget across core restarts', () => {
+      const tap = createAssetsTap(baseOpts)
+      for (let from = 0; from < 32; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
+      tap.beginBoot()
+      tap.ingest(lineWith(32, 33), 'stdout')
+      expect(captured[captured.length - 1]!.ctx).not.toHaveProperty(nameFor(32))
     })
   })
 

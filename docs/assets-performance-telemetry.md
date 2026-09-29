@@ -38,6 +38,34 @@ The normal telemetry consent gate still applies. No paths, filenames, asset name
 metadata, or other user content are added. This follows the telemetry privacy rules documented in
 [`src/main/lib/telemetry.ts`](../src/main/lib/telemetry.ts).
 
+## Asset event-log fields
+
+Core's assets system writes `[assets-event] <event> key=value ...` lines, which Desktop forwards as
+`comfy.desktop.comfyui.assets.<event>` (`src/main/lib/assetsTap.ts`). Events and string fields are
+a closed vocabulary mirrored from Core's `app/assets/event_log.py`; adding one needs a change on
+both sides. Numeric and boolean metrics can skip the Desktop change by following a naming
+convention:
+
+| Field name                   | Value forwarded        |
+| ---------------------------- | ---------------------- |
+| `*_ms`, `*_count`, `*_bytes` | integer, 0 to 2^53 - 1 |
+| `*_pct`                      | integer, 0 to 100      |
+| `*_enabled`, `is_*`, `has_*` | `true` / `false`       |
+
+- Names use lowercase letters and underscores only (no digits) and are at most 48 characters.
+  Suffixes are checked before prefixes, so `is_cache_hit_pct` is a percentage.
+- Fractions are not forwarded; send an integer.
+- A value of the wrong type or range is omitted, and the rest of the event still forwards.
+- At most 8 convention fields per event and 32 distinct convention names per Desktop launch.
+  Fields past either cap are omitted and counted in
+  `comfy.desktop.comfyui.assets.convention_fields_over_event_cap` and
+  `convention_names_over_session_cap` (a bare `count`, never the names).
+- Names Desktop attaches to every event itself (such as `platform`, `is_packaged` or
+  `telemetry_enabled`) are never forwarded.
+
+The shared line fixture (`src/main/lib/__fixtures__/assets-event-lines.txt`, a byte-identical copy
+of Core's) gains a convention example when Core next changes its copy.
+
 ## PostHog queries
 
 Boot duration by Desktop version, recorded Core version, beta opt-in and Assets argument:

@@ -43,7 +43,8 @@ import { normalizeExceptionContext, scrubAll } from '../../../shared/piiScrub'
 import { ERROR_MESSAGE_MAX, ERROR_STACK_MAX } from '../../../shared/errorEvent'
 import {
   isDatadogMirroredEvent,
-  stripDatadogDroppedKeys
+  stripDatadogDroppedKeys,
+  type RendererCohortContextKey
 } from '../../../shared/datadogMirroredEvents'
 
 function serializeUnknownError(error: unknown): { message: string; stack?: string } {
@@ -306,7 +307,7 @@ async function registerCohortContext(opts: {
     .catch(() => null)
   const installSummary = await window.api.getInstallationsSummary().catch(() => null)
 
-  const cohort: Record<string, string | number | boolean | null> = {
+  const cohort: Record<RendererCohortContextKey, string | number | boolean | null> = {
     // `app_version` and `app_channel` are intentionally both registered:
     // `app_version` is also pushed as a PostHog person property in the
     // `getDeviceId` branch below, but person properties are joined at

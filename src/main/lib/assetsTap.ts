@@ -19,7 +19,7 @@
  * shape. The one exception: an unknown field named by a typed convention
  * (`*_ms`, `*_count`, `*_bytes`, `*_pct`, `*_enabled`, `is_*`, `has_*`) is
  * forwarded when its value is a number or boolean of that convention's type
- * (see `conventionFieldValue`), so core can add metrics without a Desktop
+ * (see the CONVENTION CONTRACT below), so core can add metrics without a Desktop
  * release. Other invalid known values and malformed or spoofing keys drop the
  * whole line silently:
  * reporting the rejection would put the untrusted content back into a signal
@@ -32,6 +32,7 @@
  */
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
+import { DATADOG_GLOBAL_CONTEXT_KEYS } from '../../shared/datadogMirroredEvents'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 /**
@@ -84,6 +85,10 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
 const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
 /** Same contract as above, for `reason` / `site` values the build doesn't know. */
 const UNKNOWN_ENUM_VALUES_OMITTED = 'unknown_enum_values_omitted'
+/** Same contract, for valid convention fields past the per-event cap. */
+const CONVENTION_FIELDS_OVER_EVENT_CAP = 'convention_fields_over_event_cap'
+/** Same contract, for valid convention fields with a name past the session cap. */
+const CONVENTION_NAMES_OVER_SESSION_CAP = 'convention_names_over_session_cap'
 
 const MAX_STRING_LENGTH = 64
 const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"', '\n', '\r']
@@ -243,10 +248,40 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
  * entry. Strings stay strict: an unknown string-valued field is never
  * forwarded, whatever its name. A value of the wrong type is omitted like any
  * other unknown field, since the name is only a claim about the value.
+ *
+ * CONVENTION CONTRACT, for core authors adding a field to `event_log.py`
+ * without a matching Desktop change:
+ *
+ * | Name                                 | Value forwarded              |
+ * | ------------------------------------ | ---------------------------- |
+ * | `*_ms`, `*_count`, `*_bytes`         | integer, 0 to 2^53 - 1       |
+ * | `*_pct`                              | integer, 0 to 100            |
+ * | `*_enabled`, `is_*`, `has_*`         | `true` / `false`             |
+ *
+ * - Names follow the line grammar (`[a-z_]+`, so no digits: `p95_ms` drops the
+ *   whole line) and are at most 48 characters.
+ * - Suffixes are checked before prefixes: `is_cache_hit_pct` is a percentage.
+ * - Fractions are not forwarded (`99.5` stays a string); send an integer.
+ * - A value that doesn't match is omitted and the rest of the line forwards.
+ *   The same name twice on one line drops the line.
+ * - At most 8 convention fields per event, in core's (sorted) field order;
+ *   the rest are omitted and counted.
+ * - At most 32 distinct convention names per tap (one Desktop launch); a new
+ *   name past that is omitted and counted, names already forwarded still are.
+ * - Names Desktop attaches to every event itself (base context, telemetry
+ *   defaults, Datadog global context) are never forwarded.
+ *
+ * The shared fixture has no convention line yet; one is added with core's
+ * matching change to its copy.
  */
 const MAX_CONVENTION_FIELD_NAME_LENGTH = 48
 /** Per event, so a runaway core cannot fan one event out into many properties. */
 const MAX_CONVENTION_FIELDS = 8
+/**
+ * Per tap, so crafted lines cannot mint unbounded analytics property names by
+ * rotating fresh names under the per-event cap.
+ */
+const MAX_DISTINCT_CONVENTION_NAMES = 32
 const MAX_PCT = 100
 
 type FieldConvention = 'non_negative_integer' | 'percent' | 'boolean'
@@ -265,7 +300,15 @@ function fieldConvention(key: string): FieldConvention | null {
 
 function conventionFieldValue(convention: FieldConvention, value: TelemetryValue): boolean {
   if (convention === 'boolean') return typeof value === 'boolean'
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return false
+  // `-0` coerces from a literal `-0` and is not `< 0`; it is still a negative.
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    Object.is(value, -0)
+  ) {
+    return false
+  }
   return convention === 'non_negative_integer' || value <= MAX_PCT
 }
 
@@ -309,20 +352,34 @@ function isAllowedFieldValue(key: string, value: unknown): value is TelemetryVal
   return false
 }
 
+interface ParsedFields {
+  fields: Record<string, TelemetryValue>
+  omittedEnumValues: number
+  /** Forwarded convention names not yet in the tap's session set. */
+  newConventionNames: string[]
+  conventionFieldsOverEventCap: number
+  conventionNamesOverSessionCap: number
+}
+
 /**
  * Parse the logfmt tail into forwardable fields, omitting ordinary unknown
- * fields, convention-named fields whose value doesn't match the convention (or
- * past the per-event cap), and unknown-but-well-shaped extensible enum values.
- * Other invalid known values and malformed, duplicate or spoofing keys reject
- * the whole line.
+ * fields, reserved names, convention-named fields whose value doesn't match
+ * the convention (or past the per-event or session name cap), and
+ * unknown-but-well-shaped extensible enum values. Other invalid known values
+ * and malformed, duplicate or spoofing keys reject the whole line.
  */
 function parseFields(
   tail: string,
-  baseKeys: ReadonlySet<string>
-): { fields: Record<string, TelemetryValue>; omittedEnumValues: number } | null {
+  baseKeys: ReadonlySet<string>,
+  reservedKeys: ReadonlySet<string>,
+  forwardedConventionNames: ReadonlySet<string>
+): ParsedFields | null {
   const fields: Record<string, TelemetryValue> = {}
   let omittedEnumValues = 0
   let conventionFields = 0
+  const newConventionNames: string[] = []
+  let conventionFieldsOverEventCap = 0
+  let conventionNamesOverSessionCap = 0
   // Separate from `fields`, which omits some keys, so a repeat is still caught.
   const seenKeys = new Set<string>()
   const pairs = tail ? tail.slice(1).split(' ') : []
@@ -331,14 +388,18 @@ function parseFields(
     const key = pair.slice(0, separatorIndex)
     const rawValue = pair.slice(separatorIndex + 1)
     if (!FIELD_NAME.test(key)) return null
-    // A field named like a base-context or telemetry default property would be
-    // a context-spoofing attempt. The merge order makes a base-context key
-    // ineffective, but a telemetry default would lose to it.
+    // A field named like a base-context property is a context-spoofing
+    // attempt. The merge order already makes it ineffective.
     if (baseKeys.has(key)) return null
     if (!ALLOWED_FIELD_NAMES.has(key)) {
       // Prototype keys clear the lowercase FIELD_NAME filter but are never a
       // plausible core field, so they stay whole-line rejects.
       if (Object.hasOwn(Object.prototype, key)) return null
+      // Names Desktop sets on every event itself lose nothing by being
+      // omitted, but forwarded they would win the merge: over a telemetry
+      // default in PostHog, and over the renderer's Datadog global context.
+      // Omitted rather than rejected, like any other unknown field.
+      if (reservedKeys.has(key)) continue
       // Anything else is a newer core emitting a field this build predates;
       // rejecting the line would delete an existing metric instead.
       const convention = fieldConvention(key)
@@ -347,9 +408,22 @@ function parseFields(
       if (seenKeys.has(key)) return null
       seenKeys.add(key)
       const value = coerceValue(key, rawValue)
-      if (conventionFields >= MAX_CONVENTION_FIELDS) continue
       if (!conventionFieldValue(convention, value)) continue
+      const isNewName = !forwardedConventionNames.has(key)
+      // Checked before the per-event cap so a refused name doesn't take a slot.
+      if (
+        isNewName &&
+        forwardedConventionNames.size + newConventionNames.length >= MAX_DISTINCT_CONVENTION_NAMES
+      ) {
+        conventionNamesOverSessionCap++
+        continue
+      }
+      if (conventionFields >= MAX_CONVENTION_FIELDS) {
+        conventionFieldsOverEventCap++
+        continue
+      }
       conventionFields++
+      if (isNewName) newConventionNames.push(key)
       fields[key] = value
       continue
     }
@@ -370,7 +444,13 @@ function parseFields(
     if (!isAllowedFieldValue(key, value)) return null
     fields[key] = value
   }
-  return { fields, omittedEnumValues }
+  return {
+    fields,
+    omittedEnumValues,
+    newConventionNames,
+    conventionFieldsOverEventCap,
+    conventionNamesOverSessionCap
+  }
 }
 
 /**
@@ -400,12 +480,17 @@ export function createAssetsTap(opts: {
     release: opts.release ?? null,
     core_beta_flags: [...(opts.coreBetaFlags ?? [])]
   }
-  // Telemetry's own defaults lose the merge to per-event fields, so they are
-  // trusted context too: a forged `is_packaged=false` fits the `is_*` convention.
-  const baseKeys: ReadonlySet<string> = new Set([
-    ...Object.keys(baseContext),
-    ...telemetry.DEFAULT_EVENT_PROPERTY_NAMES
+  const baseKeys: ReadonlySet<string> = new Set(Object.keys(baseContext))
+  // Telemetry's own defaults and the renderer's Datadog global context lose
+  // the merge to per-event fields: a forged `is_packaged=false` or
+  // `telemetry_enabled=false` fits a convention.
+  const reservedKeys: ReadonlySet<string> = new Set([
+    ...telemetry.DEFAULT_EVENT_PROPERTY_NAMES,
+    ...DATADOG_GLOBAL_CONTEXT_KEYS
   ])
+  // Convention names forwarded so far. Like the rate buckets, deliberately NOT
+  // reset by beginBoot: the cap bounds the property names one launch can mint.
+  const forwardedConventionNames = new Set<string>()
 
   // Fixed windows per event name, so one chatty event cannot starve the others.
   // Deliberately NOT reset by beginBoot: a tap is reused across core restarts
@@ -415,6 +500,8 @@ export function createAssetsTap(opts: {
 
   let unknownEventsDropped = 0
   let unknownEnumValuesOmitted = 0
+  let conventionFieldsOverEventCap = 0
+  let conventionNamesOverSessionCap = 0
 
   function withinRateCap(event: string): boolean {
     const now = Date.now()
@@ -442,13 +529,18 @@ export function createAssetsTap(opts: {
       unknownEventsDropped++
       return
     }
-    const parsed = parseFields(tail, baseKeys)
+    const parsed = parseFields(tail, baseKeys, reservedKeys, forwardedConventionNames)
     if (!parsed) return
     const { fields } = parsed
     // Counted like unknown events, and for the same reason: it says this build
     // is behind core's vocabulary without naming the untrusted value.
     unknownEnumValuesOmitted += parsed.omittedEnumValues
+    // Counted so a new metric evicting an old one is visible, still unnamed.
+    conventionFieldsOverEventCap += parsed.conventionFieldsOverEventCap
+    conventionNamesOverSessionCap += parsed.conventionNamesOverSessionCap
     if (!withinRateCap(event)) return
+    // Only names that are actually sent spend the session budget.
+    for (const name of parsed.newConventionNames) forwardedConventionNames.add(name)
     try {
       // Base context merged LAST so parsed fields can never override it.
       telemetry.emit(`${EVENT_PREFIX}${event}`, { ...fields, ...baseContext })
@@ -511,6 +603,22 @@ export function createAssetsTap(opts: {
           const count = unknownEnumValuesOmitted
           unknownEnumValuesOmitted = 0
           telemetry.emit(`${EVENT_PREFIX}${UNKNOWN_ENUM_VALUES_OMITTED}`, {
+            count,
+            ...baseContext
+          })
+        }
+        if (conventionFieldsOverEventCap > 0 && withinRateCap(CONVENTION_FIELDS_OVER_EVENT_CAP)) {
+          const count = conventionFieldsOverEventCap
+          conventionFieldsOverEventCap = 0
+          telemetry.emit(`${EVENT_PREFIX}${CONVENTION_FIELDS_OVER_EVENT_CAP}`, {
+            count,
+            ...baseContext
+          })
+        }
+        if (conventionNamesOverSessionCap > 0 && withinRateCap(CONVENTION_NAMES_OVER_SESSION_CAP)) {
+          const count = conventionNamesOverSessionCap
+          conventionNamesOverSessionCap = 0
+          telemetry.emit(`${EVENT_PREFIX}${CONVENTION_NAMES_OVER_SESSION_CAP}`, {
             count,
             ...baseContext
           })
