@@ -175,6 +175,7 @@ const messages = {
       workspaceLabel: 'Workspace',
       instanceLabel: 'Instance',
       selectInstancePlaceholder: 'Select an instance',
+      runOn: 'Run on',
       dropWorkflow: '2. Drop a workflow in API format',
       dropWorkflowHint: 'Drop a workflow .json file here, or click to browse',
       importingWorkflow: 'Importing workflow...',
@@ -860,26 +861,17 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="performance-test-logo"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
     expect(wrapper.find('.performance-test__account').exists()).toBe(true)
-    expect(wrapper.findAll('.performance-test__selection-row')).toHaveLength(2)
-    expect(
-      wrapper.findAll('.performance-test__selection-label').map((label) => label.text())
-    ).toEqual(['Workspace', 'Instance'])
-    expect(wrapper.findAll('.performance-test__selection-control button')).toHaveLength(2)
+    // Workspace + instance now share a single context bar (no columns/step headings).
+    expect(wrapper.find('.performance-test__context-bar').exists()).toBe(true)
+    expect(wrapper.get('.performance-test__context-label').text()).toBe('Run on')
     expect(wrapper.find('.performance-test__workspace-select .ui-select-trigger').exists()).toBe(
       false
     )
     expect(
       wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
     ).toBe('Workspace One')
-    expect(wrapper.find('.performance-test__columns').exists()).toBe(true)
-    expect(wrapper.findAll('.performance-test__column')).toHaveLength(3)
-    expect(
-      wrapper.findAll('.performance-test__column h2').map((heading) => heading.text())
-    ).toEqual([
-      '1. Select an instance',
-      '2. Drop a workflow in API format',
-      '3. Set measurement settings'
-    ])
+    // Measurement settings live behind the collapsed "Advanced" disclosure; expand it.
+    await wrapper.get('.performance-test__advanced button').trigger('click')
     const settings = wrapper.findAll('.performance-test__setting')
     expect(settings).toHaveLength(2)
     expect(settings.map((setting) => setting.find('label').text())).toEqual([
@@ -914,7 +906,8 @@ describe('PanelApp', () => {
     expect(measuredRunsInput.element).toHaveProperty('value', '5')
     const logsToggle = wrapper.get('.performance-test__logs-section button')
     expect(logsToggle.text()).toBe('Logs')
-    expect(logsToggle.attributes('aria-expanded')).toBe('true')
+    // Logs now start collapsed.
+    expect(logsToggle.attributes('aria-expanded')).toBe('false')
     const resultsToggle = wrapper.get('.performance-test__results-section button')
     expect(resultsToggle.text()).toBe('Results')
     expect(resultsToggle.attributes('aria-expanded')).toBe('true')
@@ -928,19 +921,23 @@ describe('PanelApp', () => {
     expect(resultsToggle.attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('.performance-test__results').attributes('style')).toContain('display: none')
     await resultsToggle.trigger('click')
-    expect(
-      wrapper.get('.performance-test__column:nth-child(3) .performance-test__run').exists()
-    ).toBe(true)
+    // Run is the single state-swapping button in the run-actions row.
+    expect(wrapper.find('.performance-test__run-actions .performance-test__run').exists()).toBe(
+      true
+    )
     expect(wrapper.find('.performance-test__drop-zone').text()).toBe(
       'Drop a workflow .json file here, or click to browse'
     )
     expect(wrapper.find('.performance-test__run').text()).toBe('Run')
     expect(wrapper.find('.performance-test__logs').text()).toBe('Instance logs will appear here.')
     expect(wrapper.get('.performance-test__logs').classes()).toContain('scroll-visible')
+    // Expand logs, then collapse again.
+    await logsToggle.trigger('click')
+    expect(logsToggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.performance-test__logs').attributes('style')).toBeUndefined()
     await logsToggle.trigger('click')
     expect(logsToggle.attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('.performance-test__logs').attributes('style')).toContain('display: none')
-    await logsToggle.trigger('click')
     const instanceSelect = wrapper.get('.performance-test__instance-select button')
     expect(instanceSelect.attributes()).toMatchObject({
       role: 'combobox',
@@ -1211,7 +1208,9 @@ describe('PanelApp', () => {
     })
     await flushPromises()
     expect(wrapper.get('.performance-test__logs').text()).toContain('ComfyUI is ready')
-    expect(wrapper.get('.performance-test__stop').attributes('disabled')).toBe('')
+    // The completed run auto-stopped: the button is back to Run, no Stop present.
+    expect(wrapper.find('.performance-test__stop').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__run').exists()).toBe(true)
     expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
     expect(api.cancelOperation).toHaveBeenCalledWith('performance-test:workspace-install')
 
@@ -1615,7 +1614,9 @@ describe('PanelApp', () => {
     const telemetryEvents = captureTelemetry()
     await wrapper.get('.performance-test__run').trigger('click')
     await flushPromises()
-    expect(wrapper.get('.performance-test__run').text()).toBe('Running...')
+    // Launching swaps the single button from Run to Stop.
+    expect(wrapper.find('.performance-test__run').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__stop').text()).toBe('Stop')
 
     mockState.performanceTestProgressCallbacks.forEach((callback) =>
       callback({ sessionId: 'different-session', completedRuns: 5, totalRuns: 6 })
