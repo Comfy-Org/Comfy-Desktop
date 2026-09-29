@@ -654,7 +654,19 @@ describe('commandLineIsInstall', () => {
     ['/opt/c/one/.venv/bin/python -s ComfyUI/main.py --port 8188', '/opt/c/one', true],
     ['/opt/c/one-two/.venv/bin/python -s ComfyUI/main.py', '/opt/c/one', false],
     ['/opt/c/one/.venv/bin/python -m pip list', '/opt/c/one', false],
-    ['/usr/bin/python -s /opt/c/one/ComfyUI/main.py', '/opt/c/one/', true]
+    ['/usr/bin/python -s /opt/c/one/ComfyUI/main.py', '/opt/c/one/', true],
+    [
+      '/usr/bin/python /elsewhere/main.py /opt/c/one/ComfyUI/user/comfyui.db.lock',
+      '/opt/c/one',
+      false
+    ],
+    ['/usr/bin/python -s ComfyUI/main.py --input-directory /opt/c/one/input', '/opt/c/one', false],
+    [
+      '"C:\\c\\one\\.venv\\Scripts\\python.exe" -s ComfyUI\\main.py --port 8188',
+      'C:\\c\\one',
+      true
+    ],
+    ['"C:\\Py\\python.exe" "C:\\c\\one\\ComfyUI\\main.py"', 'C:\\c\\one', true]
   ])('%s in %s → %s', (cmd, installPath, expected) => {
     expect(commandLineIsInstall(cmd, installPath)).toBe(expected)
   })

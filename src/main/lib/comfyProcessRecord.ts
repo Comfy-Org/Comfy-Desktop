@@ -562,10 +562,30 @@ function normalizePathForMatch(p: string): string {
     : slashed
 }
 
-/** Whether a command line runs ComfyUI's `main.py` from inside `installPath`. */
+/** Split a command line into arguments, honouring double and single quotes. */
+function splitCommandLine(commandLine: string): string[] {
+  const out: string[] = []
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(commandLine)) !== null) out.push(m[1] ?? m[2] ?? m[3]!)
+  return out
+}
+
+/**
+ * Whether a command line runs ComfyUI's `main.py` from inside `installPath`: either the `main.py`
+ * argument itself lies inside the install, or it is relative and the interpreter lies inside it
+ * (the install's own venv). Paths merely mentioned elsewhere in the arguments (an input
+ * directory, a lock file) do not count.
+ */
 export function commandLineIsInstall(commandLine: string, installPath: string): boolean {
-  const cmd = normalizePathForMatch(commandLine)
-  return cmd.includes('main.py') && cmd.includes(`${normalizePathForMatch(installPath)}/`)
+  const root = `${normalizePathForMatch(installPath)}/`
+  const args = splitCommandLine(commandLine).map(normalizePathForMatch)
+  const script = args.findIndex((a) => a === 'main.py' || a.endsWith('/main.py'))
+  if (script <= 0) return false
+  const mainPy = args[script]!
+  if (mainPy.startsWith(root)) return true
+  const relative = !mainPy.startsWith('/') && !/^[a-z]:\//.test(mainPy)
+  return relative && args[0]!.startsWith(root)
 }
 
 /**

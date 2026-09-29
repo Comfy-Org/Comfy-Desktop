@@ -2032,7 +2032,9 @@ async function runLaunch(
             lock_holder_pid: holder?.pid ?? null,
             lock_holder_source: holder?.source ?? 'unknown',
             lock_holder_same_install: holder?.sameInstall ?? null,
-            lock_holder_name: holder?.name ?? null
+            lock_holder_name: holder?.name ?? null,
+            lock_holder_runs_main_py: holder?.runsMainPy ?? null,
+            lock_holder_age_s: holder?.ageS ?? null
           })
         )
     } else {

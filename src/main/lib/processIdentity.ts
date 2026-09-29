@@ -330,3 +330,43 @@ export async function groupHasLiveMembers(pgid: number): Promise<boolean> {
     return !!m && Number(m[1]) === pgid && !m[2]!.startsWith('Z')
   })
 }
+
+/** Linux kernel clock ticks per second for `/proc/<pid>/stat` start times (USER_HZ, 100 on every
+ *  mainstream architecture). */
+const LINUX_CLK_TCK = 100
+
+let linuxBootEpochMs: number | null | undefined
+function readLinuxBootEpochMs(): number | null {
+  if (linuxBootEpochMs === undefined) {
+    try {
+      const m = /^btime\s+(\d+)$/m.exec(fs.readFileSync('/proc/stat', 'utf-8'))
+      linuxBootEpochMs = m ? Number(m[1]) * 1000 : null
+    } catch {
+      linuxBootEpochMs = null
+    }
+  }
+  return linuxBootEpochMs
+}
+
+/**
+ * Wall-clock start (epoch ms) of a start-time token from `readStartTimes`, for reporting only;
+ * proofs compare tokens, never these. Null when the token cannot be converted.
+ */
+export function startTokenToEpochMs(
+  token: string,
+  platform: NodeJS.Platform = process.platform,
+  linuxBootMs: number | null = platform === 'linux' ? readLinuxBootEpochMs() : null
+): number | null {
+  if (platform === 'win32') {
+    // FILETIME: 100 ns ticks since 1601-01-01 UTC.
+    if (!/^\d+$/.test(token)) return null
+    return Number(BigInt(token) / 10_000n) - 11_644_473_600_000
+  }
+  if (platform === 'linux') {
+    const ticks = /:(\d+)$/.exec(token)?.[1]
+    if (!ticks || linuxBootMs === null) return null
+    return linuxBootMs + (Number(ticks) * 1000) / LINUX_CLK_TCK
+  }
+  const ms = Date.parse(token)
+  return Number.isFinite(ms) ? ms : null
+}

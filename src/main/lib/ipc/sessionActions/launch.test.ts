@@ -2390,7 +2390,10 @@ describe('prior ComfyUI process handling at launch', () => {
           error_class: 'comfyui_db_locked',
           lock_holder_pid: null,
           lock_holder_source: 'unknown',
-          lock_holder_same_install: null
+          lock_holder_same_install: null,
+          lock_holder_name: null,
+          lock_holder_runs_main_py: null,
+          lock_holder_age_s: null
         })
       ])
     )

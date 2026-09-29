@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { findLockingProcesses } from './file-lock-info'
 import { holderIsInstall, listRecords } from './comfyProcessRecord'
-import { isPidAlive } from './processIdentity'
+import { commandLinesOf, isPidAlive, readStartTimes, startTokenToEpochMs } from './processIdentity'
 
 /**
  * ComfyUI's startup refusal when another process holds its database lock (`<db>.lock`, an OS
@@ -59,6 +59,16 @@ export interface DbLockHolder {
   sameInstall: boolean
   /** Executable name only (e.g. `python.exe`), never a path or command line. */
   name: string | null
+  /** Whether its command line runs a `main.py` — a ComfyUI, whoever started it. Only this
+   *  boolean leaves the machine, never the command line. Null when it could not be read. */
+  runsMainPy: boolean | null
+  /** How long it has been running, in seconds. Null when unknown. */
+  ageS: number | null
+}
+
+/** A command line whose script is `main.py` (quoted or not, any directory). */
+export function runsMainPy(commandLine: string): boolean {
+  return /(^|[\s"'\\/])main\.py(["'\s]|$)/i.test(commandLine)
 }
 
 /**
@@ -83,7 +93,14 @@ export async function identifyDbLockHolder(input: {
       isPidAlive(r.childPid)
   )
   if (recorded) {
-    return { pid: recorded.childPid, source: 'desktop_record', sameInstall: true, name: null }
+    return {
+      pid: recorded.childPid,
+      source: 'desktop_record',
+      sameInstall: true,
+      name: null,
+      runsMainPy: true,
+      ageS: Math.max(0, Math.round((Date.now() - recorded.spawnedAt) / 1000))
+    }
   }
 
   for (const db of databaseCandidates(input.cwd, input.args)) {
@@ -93,11 +110,16 @@ export async function identifyDbLockHolder(input: {
     if (!probe.ok) continue
     const holder = probe.processes.find((p) => p.pid !== process.pid)
     if (!holder) continue
+    const [ownLine] = await commandLinesOf(holder.pid).catch(() => [] as string[])
+    const started = (await readStartTimes([holder.pid]).catch(() => null))?.get(holder.pid)
+    const startedMs = started ? startTokenToEpochMs(started) : null
     return {
       pid: holder.pid,
       source: process.platform === 'win32' ? 'restart_manager' : 'lsof',
       sameInstall: await holderIsInstall(holder.pid, input.installPath).catch(() => false),
-      name: path.basename(holder.name.replace(/\\/g, '/')) || null
+      name: path.basename(holder.name.replace(/\\/g, '/')) || null,
+      runsMainPy: ownLine === undefined ? null : runsMainPy(ownLine),
+      ageS: startedMs === null ? null : Math.max(0, Math.round((Date.now() - startedMs) / 1000))
     }
   }
   return null
