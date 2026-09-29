@@ -376,3 +376,17 @@ export function startTokenToEpochMs(
 export function runsMainPy(commandLine: string): boolean {
   return /(^|[\s"'\\/])main\.py(["'\s]|$)/i.test(commandLine)
 }
+
+/** Linux: the exact argv of `pid` from `/proc/<pid>/cmdline` (NUL-separated, so paths with
+ *  spaces survive). Null elsewhere, or when it cannot be read. */
+export async function commandArgvOf(pid: number): Promise<string[] | null> {
+  if (process.platform !== 'linux' || !Number.isInteger(pid) || pid <= 0) return null
+  try {
+    const raw = await fs.promises.readFile(`/proc/${pid}/cmdline`, 'utf-8')
+    const argv = raw.split('\0')
+    if (argv[argv.length - 1] === '') argv.pop()
+    return argv.length > 0 ? argv : null
+  } catch {
+    return null
+  }
+}

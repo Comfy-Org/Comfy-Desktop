@@ -5,6 +5,7 @@ import type { ChildProcess } from 'child_process'
 import { stateDir } from './paths'
 import { killPidTree } from './process'
 import {
+  commandArgvOf,
   commandLinesOf,
   groupMembers,
   isPidAlive,
@@ -594,15 +595,10 @@ function splitCommandLine(commandLine: string): string[] {
   return out
 }
 
-/**
- * Whether a command line runs ComfyUI's `main.py` from inside `installPath`: either the `main.py`
- * argument itself lies inside the install, or it is relative and the interpreter lies inside it
- * (the install's own venv). Paths merely mentioned elsewhere in the arguments (an input
- * directory, a lock file) do not count.
- */
-export function commandLineIsInstall(commandLine: string, installPath: string): boolean {
-  const root = `${normalizePathForMatch(installPath)}/`
-  const args = splitCommandLine(commandLine).map(normalizePathForMatch)
+/** The argv rule: the `main.py` argument lies inside the install, or it is relative and the
+ *  interpreter (argv[0]) lies inside it (the install's own venv). */
+function argvIsInstall(argv: readonly string[], root: string): boolean {
+  const args = argv.map(normalizePathForMatch)
   const script = args.findIndex((a) => a === 'main.py' || a.endsWith('/main.py'))
   if (script <= 0) return false
   const mainPy = args[script]!
@@ -612,12 +608,50 @@ export function commandLineIsInstall(commandLine: string, installPath: string): 
 }
 
 /**
+ * The same rule on an unsplit command line, for sources that do not quote arguments (`ps` on
+ * macOS), where an install path containing a space cannot be split reliably. `main.py` inside
+ * the install: the text from the install root to the next `main.py` must not start a new
+ * absolute-path or flag argument. Relative `main.py`: the line starts with the install root (the
+ * interpreter) and names a `main.py` that is not an absolute path.
+ */
+function rawLineIsInstall(line: string, root: string): boolean {
+  const text = normalizePathForMatch(line)
+  for (let at = text.indexOf(root); at >= 0; at = text.indexOf(root, at + 1)) {
+    const next = text.indexOf('main.py', at)
+    if (next < 0) break
+    const between = text.slice(at, next)
+    if (!/\s[/-]/.test(between) && /(^|\/)$/.test(between)) return true
+  }
+  const unquoted = text.replace(/^["']/, '')
+  return unquoted.startsWith(root) && /\s(?![/"'])[^\s]*main\.py(\s|$)/.test(text)
+}
+
+/**
+ * Whether a command line runs ComfyUI's `main.py` from inside `installPath`: either the `main.py`
+ * argument itself lies inside the install, or it is relative and the interpreter lies inside it
+ * (the install's own venv). Paths merely mentioned elsewhere in the arguments (an input
+ * directory, a lock file) do not count. Pass the exact argv when it is available; a string is
+ * split on quotes (Windows quotes paths with spaces) and, failing that, matched unsplit.
+ */
+export function commandLineIsInstall(
+  commandLine: string | readonly string[],
+  installPath: string
+): boolean {
+  const root = `${normalizePathForMatch(installPath)}/`
+  if (typeof commandLine !== 'string') return argvIsInstall(commandLine, root)
+  return argvIsInstall(splitCommandLine(commandLine), root) || rawLineIsInstall(commandLine, root)
+}
+
+/**
  * Whether the process listening at `pid` is a ComfyUI of this install. Matches the command line
  * (or, on Windows, the venv launcher's command line) against the install path. This is
  * identification for choosing NOT to start a second instance; it is never grounds for a kill.
  */
 export async function holderIsInstall(pid: number, installPath: string): Promise<boolean> {
-  const lines = await commandLinesOf(pid)
+  // Linux gives the exact argv; elsewhere only a rendered command line exists.
+  const argv = await commandArgvOf(pid)
+  if (argv && commandLineIsInstall(argv, installPath)) return true
+  const lines = argv ? [] : await commandLinesOf(pid)
   if (lines.some((line) => commandLineIsInstall(line, installPath))) return true
   // Our own bookkeeping gives the same answer: the recorded child, a recorded survivor, or (POSIX)
   // any member of the recorded child's process group — a helper subprocess whose command line

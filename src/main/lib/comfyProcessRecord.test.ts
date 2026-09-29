@@ -12,6 +12,7 @@ vi.mock('./paths', () => ({ stateDir: () => dirs.state }))
 import {
   classifyRecord,
   commandLineIsInstall,
+  holderIsInstall,
   listRecords,
   markStopRequested,
   probeQueue,
@@ -715,9 +716,73 @@ describe('commandLineIsInstall', () => {
       'C:\\c\\one',
       true
     ],
-    ['"C:\\Py\\python.exe" "C:\\c\\one\\ComfyUI\\main.py"', 'C:\\c\\one', true]
+    ['"C:\\Py\\python.exe" "C:\\c\\one\\ComfyUI\\main.py"', 'C:\\c\\one', true],
+    // `ps -o args=` on macOS: nothing is quoted, and install paths can contain spaces.
+    [
+      '/Users/a/My ComfyUI/.venv/bin/python -s ComfyUI/main.py --port 8188',
+      '/Users/a/My ComfyUI',
+      true
+    ],
+    [
+      '/usr/bin/python3 -s /Users/a/My ComfyUI (1)/ComfyUI/main.py --listen',
+      '/Users/a/My ComfyUI (1)',
+      true
+    ],
+    [
+      '/usr/bin/python3 /elsewhere/main.py /Users/a/My ComfyUI/ComfyUI/user/comfyui.db.lock',
+      '/Users/a/My ComfyUI',
+      false
+    ],
+    [
+      '/usr/bin/python3 -s ComfyUI/main.py --input-directory /Users/a/My ComfyUI/input',
+      '/Users/a/My ComfyUI',
+      false
+    ],
+    ['/Users/a/My ComfyUI/.venv/bin/python -m pip list', '/Users/a/My ComfyUI', false]
   ])('%s in %s → %s', (cmd, installPath, expected) => {
     expect(commandLineIsInstall(cmd, installPath)).toBe(expected)
+  })
+})
+
+describe('commandLineIsInstall with an exact argv', () => {
+  it('matches spaced paths exactly and ignores mentions', () => {
+    const root = '/home/a/My ComfyUI'
+    expect(commandLineIsInstall([`${root}/.venv/bin/python`, '-s', 'ComfyUI/main.py'], root)).toBe(
+      true
+    )
+    expect(commandLineIsInstall(['/usr/bin/python3', `${root}/ComfyUI/main.py`], root)).toBe(true)
+    expect(
+      commandLineIsInstall(['/usr/bin/python3', '/x/main.py', `${root}/ComfyUI/user/a.lock`], root)
+    ).toBe(false)
+  })
+})
+
+describe.runIf(process.platform === 'linux')('holderIsInstall (real process, spaced path)', () => {
+  it.each([
+    ['relative main.py run by the install venv interpreter', true],
+    ['absolute main.py inside the install', false]
+  ])('%s', async (_name, relative) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'My ComfyUI ('))
+    const install = path.join(root, 'Install One')
+    fs.mkdirSync(path.join(install, 'ComfyUI'), { recursive: true })
+    fs.mkdirSync(path.join(install, '.venv', 'bin'), { recursive: true })
+    fs.writeFileSync(path.join(install, 'ComfyUI', 'main.py'), 'setTimeout(() => {}, 60000)\n')
+    const interpreter = path.join(install, '.venv', 'bin', 'python')
+    fs.symlinkSync(process.execPath, interpreter)
+    const child = relative
+      ? spawn(interpreter, [path.join('ComfyUI', 'main.py')], { cwd: install, stdio: 'ignore' })
+      : spawn(process.execPath, [path.join(install, 'ComfyUI', 'main.py')], { stdio: 'ignore' })
+    try {
+      await vi.waitFor(async () => {
+        const argv = await fs.promises.readFile(`/proc/${child.pid}/cmdline`, 'utf-8')
+        expect(argv).toContain('main.py')
+      })
+      expect(await holderIsInstall(child.pid!, install)).toBe(true)
+      expect(await holderIsInstall(child.pid!, path.join(root, 'Install Two'))).toBe(false)
+    } finally {
+      child.kill('SIGKILL')
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 
