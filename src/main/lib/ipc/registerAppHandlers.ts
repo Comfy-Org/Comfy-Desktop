@@ -42,7 +42,6 @@ import { getStableTags } from '../comfyui-releases'
 import { defaultBenchmarksDir } from '../paths'
 import { deriveGpuTier } from '../../../shared/gpuTier'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
-import { getFlagAsync, recordExposure } from '../experiments'
 import { createVramPeakAccumulator, fetchSystemStats } from '../systemStatsSampler'
 import { ensureBenchmarkModels, areBenchmarkModelsPresent } from '../benchmarkModels'
 import { findStandardBenchmark } from '../../../shared/benchmarks/standardBenchmarks'
@@ -474,23 +473,17 @@ export function registerAppHandlers(): void {
     }
   )
 
-  const STANDARD_SUITE_FLAG = 'benchmark_standard_suite'
-
   /** Bundled benchmark asset path. Assets ship inside the asar at the same
    *  relative location in dev (`out/main/../../assets`) and packaged. */
   const benchmarkAssetPath = (fileName: string): string =>
     path.join(__dirname, '..', '..', 'assets', 'benchmarks', fileName)
 
   // Copy a bundled standard-benchmark API workflow into a managed session dir so
-  // the existing runner can execute it unchanged. Flag-gated; the BYO path never
-  // reaches here. Feeds the runner our pinned API-format JSON, NOT the template's
-  // graph JSON (there is no graph→API converter in Desktop main).
+  // the existing runner can execute it unchanged. The BYO path never reaches
+  // here. Feeds the runner our pinned API-format JSON, which is flattened offline
+  // from the source template's graph (no graph→API converter in Desktop main yet).
   ipcMain.handle('prepare-standard-benchmark-workflow', async (_event, benchmarkId: string) => {
     try {
-      if ((await getFlagAsync(STANDARD_SUITE_FLAG)) !== true) {
-        return { ok: false, message: 'Standard benchmark suite is not enabled.' }
-      }
-      recordExposure(STANDARD_SUITE_FLAG, 'enabled', 'cache')
       const benchmark = findStandardBenchmark(benchmarkId)
       if (!benchmark) return { ok: false, message: 'Unknown benchmark.' }
       const filePath = await storePerformanceTestWorkflow(
@@ -523,9 +516,6 @@ export function registerAppHandlers(): void {
     'ensure-standard-benchmark-models',
     async (_event, installationId: string, benchmarkId: string) => {
       try {
-        if ((await getFlagAsync(STANDARD_SUITE_FLAG)) !== true) {
-          return { ok: false, present: false, downloaded: false, message: 'Not enabled.' }
-        }
         const benchmark = findStandardBenchmark(benchmarkId)
         if (!benchmark) {
           return { ok: false, present: false, downloaded: false, message: 'Unknown benchmark.' }

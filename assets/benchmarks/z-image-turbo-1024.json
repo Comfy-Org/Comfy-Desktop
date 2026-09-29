@@ -1,0 +1,80 @@
+{
+  "89": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "93": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": ["89", 0],
+      "shift": 3
+    }
+  },
+  "85": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    }
+  },
+  "90": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["85", 0],
+      "text": "Giant blue and purple big billboard on rooftop in san francisco city billboard says \"ComfyUI is built with love\" All kinds of buoildings in different shapes and colors. Some buildings have grafitti \"We\" \"Here\" \"Today\""
+    }
+  },
+  "87": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": ["90", 0]
+    }
+  },
+  "86": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    }
+  },
+  "91": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "92": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["93", 0],
+      "positive": ["90", 0],
+      "negative": ["87", 0],
+      "latent_image": ["91", 0],
+      "seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "denoise": 1
+    }
+  },
+  "88": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["92", 0],
+      "vae": ["86", 0]
+    }
+  },
+  "60": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["88", 0],
+      "filename_prefix": "z-image-turbo"
+    }
+  }
+}
