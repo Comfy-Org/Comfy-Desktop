@@ -124,6 +124,7 @@ describe('resolvePriorProcess', () => {
       return { killed: true, exited: true, waitMs: 30 }
     },
     now: () => clock,
+    wallNow: () => clock,
     sleep: async (ms) => {
       clock += ms
     },
@@ -347,6 +348,23 @@ describe('resolvePriorProcess', () => {
     expect(out).toMatchObject({ action: 'terminated', blocked: 'stuck' })
   })
 
+  it('dates the record by the wall clock but waits by the monotonic one', async () => {
+    const out = await resolvePriorProcess('inst-1', {}, deps({ wallNow: () => 3_601_000 }))
+    expect(out?.ageMs).toBe(3_600_000)
+  })
+
+  it('treats a pid that must never be signalled as not ours, and does not block', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        killPidTree: async () => ({ killed: false, reason: 'unsafe', exited: false, waitMs: 0 })
+      })
+    )
+    expect(out?.blocked).toBeNull()
+    expect(removed).toEqual([['inst-1', 222]])
+  })
+
   it('does not block when the proof lapsed at the moment of the kill', async () => {
     const out = await resolvePriorProcess(
       'inst-1',
@@ -384,6 +402,7 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
       return { killed: true, exited: true, waitMs: 5 }
     },
     now: () => 0,
+    wallNow: () => 0,
     sleep: async () => {},
     ...overrides
   })
@@ -530,7 +549,10 @@ describe('record store', () => {
   it.each([
     ['a numeric start token', { childStartTime: 12345 }],
     ['an out-of-range port', { port: 70000 }],
-    ['a zero port', { port: 0 }]
+    ['a zero port', { port: 0 }],
+    ['pid 1 as the child', { childPid: 1 }],
+    ['pid 0 as the owner', { desktopPid: 0 }],
+    ['pid 1 as a survivor', { lingering: [{ pid: 1, startTime: 'x' }] }]
   ])('rejects a record with %s', (_why, bad) => {
     writeRecord({ ...record(), ...bad } as unknown as ComfyProcessRecord)
     expect(readRecord('inst-1')).toBeNull()

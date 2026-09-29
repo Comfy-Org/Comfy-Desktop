@@ -2334,6 +2334,23 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(children).toHaveLength(0)
   })
 
+  it('does not offer the next port with an explicit --port when the holder is this install', async () => {
+    setArgs('--enable-assets', '--port', String(PORT))
+    launchHarness.launchCommand = { ...launchHarness.launchCommand!, port: PORT }
+    launchHarness.busyPorts = [PORT]
+    ownership.holderIsInstall = true
+
+    const res = await handleLaunch({
+      ...ctxFor('prior-explicit-port'),
+      inst: { ...install(), launchArgs: `--enable-assets --port ${PORT}` } as InstallationRecord
+    })
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.portConflictSameInstall')
+    expect(res.portConflict).toEqual({ port: PORT, pids: [31337], isComfy: true })
+    expect(children).toHaveLength(0)
+  })
+
   it.each([
     ['assets are off', [], {}, true],
     ['the holder is not this install', ['--enable-assets'], {}, false],
@@ -2384,6 +2401,8 @@ describe('prior ComfyUI process handling at launch', () => {
     const res = await handleLaunch(ctxFor('prior-db-locked'))
 
     expect(res.ok).toBe(false)
+    // The lock, not "Process exited with code 1".
+    expect(res.message).toBe('errors.comfyDbLocked')
     await vi.waitFor(() =>
       expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
         expect.objectContaining({

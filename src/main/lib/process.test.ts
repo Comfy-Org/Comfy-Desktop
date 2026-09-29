@@ -4,13 +4,15 @@ import {
   findAvailablePort,
   isPortListening,
   killPidTree,
+  isSafeToSignal,
   killProcessTree,
   spawnProcess,
   waitForPortFree,
   waitForPort,
   waitForUrl
 } from './process'
-import { isPidAlive, readStartTimes } from './processIdentity'
+import { isPidAlive, processGroupOf, readStartTimes } from './processIdentity'
+import { vi } from 'vitest'
 import net from 'net'
 
 function listenOn(host: string, port: number = 0): Promise<{ server: net.Server; port: number }> {
@@ -291,6 +293,19 @@ describe('waitForPortFree', () => {
     expect(await isPortListening(port)).toBe(false)
   })
 
+  it('keeps its bound when the wall clock stands still (monotonic deadline)', async () => {
+    const { server, port } = await listenOn('127.0.0.1')
+    const frozen = vi.spyOn(Date, 'now').mockReturnValue(0)
+    try {
+      const started = performance.now()
+      expect(await waitForPortFree(port, '127.0.0.1', 150, 20)).toBe(false)
+      expect(performance.now() - started).toBeLessThan(2_000)
+    } finally {
+      frozen.mockRestore()
+      await closeServer(server)
+    }
+  })
+
   it('gives up at its bound when the port stays held', async () => {
     const { server, port } = await listenOn('127.0.0.1')
     try {
@@ -357,4 +372,28 @@ describe.runIf(process.platform !== 'win32')('kills that wait for exit (real pro
       cleanup(proc.pid!)
     }
   })
+})
+
+describe('isSafeToSignal (never signal what a forged record names)', () => {
+  it.each([0, 1, -5, 1.5])('refuses pid %s', async (pid) => {
+    expect(await isSafeToSignal(pid)).toBe(false)
+  })
+
+  it('refuses this Desktop', async () => {
+    expect(await isSafeToSignal(process.pid)).toBe(false)
+  })
+
+  it.runIf(process.platform !== 'win32')('refuses our own process group', async () => {
+    const own = await processGroupOf(process.pid)
+    expect(own).not.toBeNull()
+    expect(await isSafeToSignal(own!)).toBe(false)
+  })
+
+  it.runIf(process.platform !== 'win32')(
+    'killPidTree refuses pid 1 before reading or signalling anything',
+    async () => {
+      const result = await killPidTree(1, 'whatever-token')
+      expect(result).toMatchObject({ killed: false, reason: 'unsafe' })
+    }
+  )
 })

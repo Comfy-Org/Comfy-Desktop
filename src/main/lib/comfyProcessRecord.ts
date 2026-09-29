@@ -77,7 +77,9 @@ function isRecord(value: unknown): value is ComfyProcessRecord {
     typeof r.installationId === 'string' &&
     typeof r.installPath === 'string' &&
     Number.isInteger(r.childPid) &&
+    r.childPid! > 1 &&
     Number.isInteger(r.desktopPid) &&
+    r.desktopPid! > 0 &&
     Number.isInteger(r.port) &&
     r.port! > 0 &&
     r.port! <= 65535 &&
@@ -86,7 +88,9 @@ function isRecord(value: unknown): value is ComfyProcessRecord {
     (r.childStartTime === null || typeof r.childStartTime === 'string') &&
     (r.lingering === undefined ||
       (Array.isArray(r.lingering) &&
-        r.lingering.every((m) => Number.isInteger(m?.pid) && typeof m?.startTime === 'string')))
+        r.lingering.every(
+          (m) => Number.isInteger(m?.pid) && m.pid > 1 && typeof m?.startTime === 'string'
+        )))
   )
 }
 
@@ -406,7 +410,10 @@ export interface PriorProcessDeps {
   isPidAlive: typeof isPidAlive
   probeQueue: typeof probeQueue
   killPidTree: typeof killPidTree
+  /** Monotonic clock for every wait and deadline. */
   now: () => number
+  /** Wall clock, only to date the record (`spawnedAt` is wall-clock). */
+  wallNow: () => number
   sleep: (ms: number) => Promise<void>
 }
 
@@ -418,7 +425,8 @@ const defaultDeps: PriorProcessDeps = {
   isPidAlive,
   probeQueue,
   killPidTree,
-  now: () => Date.now(),
+  now: () => performance.now(),
+  wallNow: () => Date.now(),
   sleep: (ms) => new Promise((r) => setTimeout(r, ms).unref())
 }
 
@@ -441,7 +449,7 @@ export async function resolvePriorProcess(
   const record = deps.readRecord(sessionKey)
   if (!record) return null
   const startedAt = deps.now()
-  const ageMs = Math.max(0, startedAt - record.spawnedAt)
+  const ageMs = Math.max(0, deps.wallNow() - record.spawnedAt)
   const survivors = await stopLingering(record, deps)
   if (survivors?.blocked) {
     return {
@@ -541,7 +549,8 @@ export async function resolvePriorProcess(
       // second ComfyUI beside it.
       return outcome('left', { blocked: 'unverified' })
     }
-    // The pid exited or was recycled since the proof: whatever runs there is not ours.
+    // The pid exited or was recycled since the proof, or the record asks for a pid that must
+    // never be signalled (a forged or corrupt record): whatever runs there is not ours.
     deps.removeRecordIf(sessionKey, record.childPid)
     return outcome('waited', { exitedInTime: !deps.isPidAlive(record.childPid) })
   }

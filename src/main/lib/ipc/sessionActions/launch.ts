@@ -1516,10 +1516,8 @@ async function runLaunch(
     if (prior.blocked === 'busy') {
       return {
         ok: false,
-        message: i18n.t('errors.priorProcessBusy', {
-          running: prior.queue?.running ?? 0,
-          pending: prior.queue?.pending ?? 0
-        }),
+        // No counts: the prompt stays on screen while the queue moves on.
+        message: i18n.t('errors.priorProcessBusy'),
         portConflict: { port: prior.port, pids: [prior.pid], isComfy: true, priorBusy: true }
       }
     }
@@ -1576,16 +1574,12 @@ async function runLaunch(
     // The holder may be ComfyUI for THIS install that the prior-process check could not prove
     // ours (a manual launch, another Desktop build, one left by an older Desktop). Bumping
     // would start a second ComfyUI on the same database, which with assets enabled dies on
-    // the database lock, so ask instead. Never grounds for stopping it automatically.
+    // the database lock, so ask instead — and in "ask" mode or with an explicit --port, do not
+    // offer the next port either, for the same reason. Never grounds for stopping it.
     // Callers that asked for a port bump explicitly (`autoPortOnConflict`) keep it.
     // Every listener is checked: lsof lists each one, and this install's may not come first.
     let sameInstallPid: number | null = null
-    if (
-      portConflictMode === 'auto' &&
-      !portIsExplicit &&
-      actionData?.autoPortOnConflict !== true &&
-      launchCmd.args!.includes('--enable-assets')
-    ) {
+    if (actionData?.autoPortOnConflict !== true && launchCmd.args!.includes('--enable-assets')) {
       for (const pid of new Set(existingPids)) {
         if (await holderIsInstall(pid, inst.installPath).catch(() => false)) {
           sameInstallPid = pid
@@ -1607,6 +1601,12 @@ async function runLaunch(
           blocked: null
         })
       const info = await getProcessInfo(sameInstallPid)
+      appendLog(
+        sessionId,
+        `[launch] port ${launchCmd.port} is held by a ComfyUI of this installation that this ` +
+          `Desktop cannot prove it started (pid ${sameInstallPid}): left running; asking ` +
+          `instead of starting a second copy on the same database\n`
+      )
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return {
         ok: false,
@@ -2039,6 +2039,10 @@ async function runLaunch(
         )
     } else {
       telemetry.emit('comfy.desktop.comfyui.boot_failed', bootFailed)
+    }
+    // "Process exited with code 1" hides the one thing the user can act on.
+    if (isDbLockFailure(launchResult.stderr)) {
+      return { ok: false, message: i18n.t('errors.comfyDbLocked') }
     }
     return { ok: false, message: launchResult.message }
   }
