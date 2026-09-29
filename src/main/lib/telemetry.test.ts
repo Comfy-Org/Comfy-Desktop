@@ -823,15 +823,17 @@ describe('ops-flag person targeting', () => {
 
     // What the property is for: a payload carrying args older builds reject, gated server-side.
     describe('against a stand-in `app_version semver_gte 1.1.4` condition', () => {
-      /** Release-only `major.minor.patch` comparison — enough for the versions below. A missing
-       *  value never matches, as in PostHog's own evaluation. */
+      /** `version >= min` for a release `min`, enough for the versions below. Like PostHog's
+       *  server (the `semver` crate), a prerelease sorts BELOW its release, and a missing value
+       *  never matches. */
       function isAtLeast(version: string | undefined, min: [number, number, number]): boolean {
         if (!version) return false
-        const [release = ''] = version.split('-')
+        const [release = '', ...prerelease] = version.split('-')
         const [major = 0, minor = 0, patch = 0] = release.split('.').map(Number)
         if (major !== min[0]) return major > min[0]
         if (minor !== min[1]) return minor > min[1]
-        return patch >= min[2]
+        if (patch !== min[2]) return patch > min[2]
+        return prerelease.length === 0
       }
 
       function serveVersionGatedFlag(): void {
@@ -856,8 +858,9 @@ describe('ops-flag person targeting', () => {
         ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
       })
 
-      it('does not match 1.1.3', async () => {
-        setupTelemetry({ consent: 'granted', appVersion: '1.1.3' })
+      it.each(['1.1.3', '1.1.4-rc.1'])('does not match %s', async (appVersion) => {
+        // An RC of the gated release is below it, so it needs its own `semver_gte 1.1.4-rc.0`.
+        setupTelemetry({ consent: 'granted', appVersion })
         serveVersionGatedFlag()
 
         await expect(
