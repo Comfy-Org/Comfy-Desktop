@@ -1381,7 +1381,7 @@
     "priorProcessBusyStop": "Stop it and launch",
     "priorProcessBusyConfirmMessage": "This stops the earlier ComfyUI and cancels the prompts it is working on.",
     "priorProcessStuck": "An earlier ComfyUI for this installation (PID {pid}) did not exit after being stopped. Launching now would fail because it still holds the installation's database. Try again in a moment, or end the process manually.",
-    "comfyDbLocked": "Another ComfyUI is using this installation's database, so this one could not start. Stop the other ComfyUI, or close the app that started it, then try again.",
+    "comfyDbLocked": "Another ComfyUI is using this installation's database, so this one could not start. Close the other ComfyUI, or the app that started it, then try again. If you can't find it, restarting your computer stops it. You don't need to change the database location, whatever ComfyUI's log below suggests.",
     "priorProcessUnverified": "An earlier ComfyUI for this installation (PID {pid}) is still running, and Comfy Desktop could not confirm it is safe to stop. Launching now would fail because it holds the installation's database. End the process, then try again.",
     "duplicateName": "An instance named \"{name}\" already exists. Please choose a different name.",
     "nameRequired": "Please enter a name.",

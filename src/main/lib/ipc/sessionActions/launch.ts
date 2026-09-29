@@ -99,7 +99,7 @@ import {
   trackSpawn,
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
-import { identifyDbLockHolder, isDbLockFailure } from '../../comfyDbLock'
+import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -547,6 +547,20 @@ export function emitPriorProcessFound(installationId: string, prior: PriorProces
     busy_override: prior.busyOverride === true,
     lingering_count: prior.lingering ?? 0
   })
+}
+
+/** The lock holder, for the log: what the probe found, or that it found nothing. */
+export function describeLockHolder(holder: DbLockHolder | null): string {
+  if (!holder) return 'holder not identified'
+  const parts = [
+    `holder pid ${holder.pid}`,
+    `source ${holder.source}`,
+    `same install ${holder.sameInstall}`
+  ]
+  if (holder.name) parts.push(`name ${holder.name}`)
+  if (holder.runsMainPy !== null) parts.push(`runs main.py ${holder.runsMainPy}`)
+  if (holder.ageS !== null) parts.push(`running ${holder.ageS}s`)
+  return parts.join(', ')
 }
 
 /** One log line saying what really happened to an earlier ComfyUI met at launch. */
@@ -2025,7 +2039,12 @@ async function runLaunch(
         args: launchCmd.args!
       })
         .catch(() => null)
-        .then((holder) =>
+        .then((holder) => {
+          appendLog(
+            sessionId,
+            `[launch] ComfyUI could not start: another process holds this installation's ` +
+              `database lock (${describeLockHolder(holder)})\n`
+          )
           telemetry.emit('comfy.desktop.comfyui.boot_failed', {
             ...bootFailed,
             error_class: 'comfyui_db_locked',
@@ -2036,7 +2055,7 @@ async function runLaunch(
             lock_holder_runs_main_py: holder?.runsMainPy ?? null,
             lock_holder_age_s: holder?.ageS ?? null
           })
-        )
+        })
     } else {
       telemetry.emit('comfy.desktop.comfyui.boot_failed', bootFailed)
     }

@@ -195,6 +195,7 @@ import {
   launchedCoreCommit,
   onProcessTerminated,
   writeLog,
+  describeLockHolder,
   describePriorOutcome,
   _cleanupFailedLaunchSetup,
   _resolveLaunchMode,
@@ -2447,5 +2448,26 @@ describe('describePriorOutcome', () => {
     expect(describePriorOutcome({ ...base, ...outcome })).toBe(
       `earlier ComfyUI (pid 11944, port 8188, proof desktop_record): ${text}`
     )
+  })
+})
+
+describe('describeLockHolder', () => {
+  it('names what the probe found', () => {
+    expect(
+      describeLockHolder({
+        pid: 13708,
+        source: 'restart_manager',
+        sameInstall: true,
+        name: 'python',
+        runsMainPy: true,
+        ageS: 192
+      })
+    ).toBe(
+      'holder pid 13708, source restart_manager, same install true, name python, runs main.py true, running 192s'
+    )
+  })
+
+  it('says so when nothing was found', () => {
+    expect(describeLockHolder(null)).toBe('holder not identified')
   })
 })
