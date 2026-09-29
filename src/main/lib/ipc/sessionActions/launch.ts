@@ -545,7 +545,8 @@ export function emitPriorProcessFound(installationId: string, prior: PriorProces
     wait_ms: prior.waitMs,
     exited_in_time: prior.exitedInTime,
     busy_override: prior.busyOverride === true,
-    lingering_count: prior.lingering ?? 0
+    lingering_count: prior.lingering ?? 0,
+    queue_unknown: prior.queueUnknown === true
   })
 }
 
@@ -573,7 +574,9 @@ export function describePriorOutcome(prior: PriorProcessOutcome): string {
       : prior.action === 'waited'
         ? 'it exited on its own'
         : prior.action === 'busy_left'
-          ? 'left running: it is working on a prompt'
+          ? prior.queueUnknown
+            ? 'left running: it did not answer whether it is working on a prompt'
+            : 'left running: it is working on a prompt'
           : 'left running: not proven to be ours'
   const blocked = prior.blocked ? `; launch refused (${prior.blocked})` : ''
   const lingering = prior.lingering ? `; ${prior.lingering} surviving subprocess(es) stopped` : ''
@@ -1531,7 +1534,9 @@ async function runLaunch(
       return {
         ok: false,
         // No counts: the prompt stays on screen while the queue moves on.
-        message: i18n.t('errors.priorProcessBusy'),
+        message: prior.queueUnknown
+          ? i18n.t('errors.priorProcessUnresponsive')
+          : i18n.t('errors.priorProcessBusy'),
         portConflict: { port: prior.port, pids: [prior.pid], isComfy: true, priorBusy: true }
       }
     }

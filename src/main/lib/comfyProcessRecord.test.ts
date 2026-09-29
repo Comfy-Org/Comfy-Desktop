@@ -22,6 +22,7 @@ import {
   takePriorSessionUnclean,
   trackSpawn,
   writeRecord,
+  QUEUE_PROBE_BUDGET_MS,
   type ComfyProcessRecord,
   type PriorProcessDeps
 } from './comfyProcessRecord'
@@ -190,9 +191,55 @@ describe('resolvePriorProcess', () => {
     expect(out).toMatchObject({ action: 'terminated', busyOverride: true })
   })
 
-  it('falls back to the proven-orphan rule when the queue cannot be read', async () => {
-    const out = await resolvePriorProcess('inst-1', {}, deps({ probeQueue: async () => null }))
+  it('keeps asking a slow orphan until it answers, then acts on the answer', async () => {
+    const timeouts: number[] = []
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          timeouts.push(timeoutMs!)
+          clock += timeoutMs!
+          return timeouts.length < 3 ? null : { running: 1, pending: 0 }
+        }
+      })
+    )
+    expect(timeouts).toEqual([1_000, 2_000, 4_000])
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', blocked: 'busy', queue: { running: 1 } })
+  })
+
+  it('stops a slow orphan that finally answers idle', async () => {
+    let calls = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          clock += timeoutMs!
+          return ++calls < 2 ? null : { running: 0, pending: 0 }
+        }
+      })
+    )
     expect(out?.action).toBe('terminated')
+  })
+
+  it('never stops an orphan that does not answer within the budget: the user decides', async () => {
+    const started = clock
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          clock += timeoutMs!
+          return null
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', blocked: 'busy', queueUnknown: true })
+    expect(out?.queue).toBeUndefined()
+    expect(clock - started).toBe(QUEUE_PROBE_BUDGET_MS)
   })
 
   it('never touches a child whose Desktop is still running', async () => {

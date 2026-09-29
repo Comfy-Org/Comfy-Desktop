@@ -1378,6 +1378,7 @@
     "portConflictSameInstall": "Port {port} is already in use by another ComfyUI running this installation ({process}). Starting a second copy on another port would fail, because both would use the same database. Stop the other copy first, or close the app that started it.",
     "priorProcessBusyTitle": "ComfyUI is still running a prompt",
     "priorProcessBusy": "A ComfyUI for this installation, left running by an earlier Comfy Desktop session, is still working on a prompt. Stopping it cancels that work. Keep it running, or stop it and launch.",
+    "priorProcessUnresponsive": "A ComfyUI for this installation, left running by an earlier Comfy Desktop session, is still running but did not answer when asked whether it is working on a prompt. Stopping it cancels anything it is doing. Keep it running, or stop it and launch.",
     "priorProcessBusyStop": "Stop it and launch",
     "priorProcessBusyConfirmMessage": "This stops the earlier ComfyUI and cancels the prompts it is working on.",
     "priorProcessStuck": "An earlier ComfyUI for this installation (PID {pid}) did not exit after being stopped. Launching now would fail because it still holds the installation's database. Try again in a moment, or end the process manually.",

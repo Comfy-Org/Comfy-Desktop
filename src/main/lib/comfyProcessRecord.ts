@@ -381,6 +381,8 @@ export interface PriorProcessOutcome {
    *  query failed), so it was neither stopped nor forgotten. */
   blocked: null | 'busy' | 'stuck' | 'unverified'
   queue?: QueueState
+  /** The orphan never answered `/queue`, so whether it is working is unknown. */
+  queueUnknown?: boolean
   /** The user chose to stop a busy process. */
   busyOverride?: boolean
   /** Descendants that had outlived the child in its process group, and were stopped. */
@@ -412,6 +414,34 @@ async function stopLingering(
       ? 'stuck'
       : null
   return { stopped, blocked }
+}
+
+/** Total time spent asking an orphan whether it is working before treating it as unknown. */
+export const QUEUE_PROBE_BUDGET_MS = 10_000
+
+/**
+ * `/queue`, retried: a server busy generating, or stalled in an asset scan, can take seconds to
+ * answer, and one short probe would read that as idle. Per-attempt timeouts and the pauses
+ * between them both grow, all inside `QUEUE_PROBE_BUDGET_MS`. Null means it never answered.
+ */
+async function probeQueuePatiently(
+  port: number,
+  deps: Pick<PriorProcessDeps, 'probeQueue' | 'now' | 'sleep'>
+): Promise<QueueState | null> {
+  const deadline = deps.now() + QUEUE_PROBE_BUDGET_MS
+  let timeoutMs = 1_000
+  let pauseMs = 250
+  for (;;) {
+    const remaining = deadline - deps.now()
+    if (remaining <= 0) return null
+    const queue = await deps.probeQueue(port, Math.min(timeoutMs, remaining))
+    if (queue) return queue
+    const left = deadline - deps.now()
+    if (left <= 0) return null
+    await deps.sleep(Math.min(pauseMs, left))
+    timeoutMs = Math.min(timeoutMs * 2, 4_000)
+    pauseMs = Math.min(pauseMs * 2, 2_000)
+  }
 }
 
 /** How long a process of ours that is already stopping gets to finish on its own. */
@@ -552,8 +582,11 @@ export async function resolvePriorProcess(
   if (verdict !== 'orphan') return outcome('left')
 
   if (!opts.stopBusy) {
-    const queue = await deps.probeQueue(record.port)
-    if (queue && (queue.running > 0 || queue.pending > 0)) {
+    const queue = await probeQueuePatiently(record.port, deps)
+    // No answer is not "idle": a ComfyUI generating, or stalled in an asset scan, can miss every
+    // probe. It is left running and the user decides, exactly as for a busy one.
+    if (!queue) return outcome('busy_left', { blocked: 'busy', queueUnknown: true })
+    if (queue.running > 0 || queue.pending > 0) {
       return outcome('busy_left', { blocked: 'busy', queue })
     }
   }

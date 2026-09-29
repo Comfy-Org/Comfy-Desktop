@@ -2202,7 +2202,8 @@ describe('prior ComfyUI process handling at launch', () => {
         wait_ms: 40,
         exited_in_time: true,
         busy_override: false,
-        lingering_count: 0
+        lingering_count: 0,
+        queue_unknown: false
       }
     ])
   })
@@ -2257,6 +2258,27 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(_operationAborts.has('prior-busy')).toBe(false)
     expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')[0]).toMatchObject({
       action: 'busy_left'
+    })
+  })
+
+  it('asks the user about an orphan that never answered, with its own message', async () => {
+    ownership.prior = {
+      ...terminated,
+      action: 'busy_left',
+      exitedInTime: false,
+      blocked: 'busy',
+      queueUnknown: true
+    }
+
+    const res = await handleLaunch(ctxFor('prior-unknown'))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.priorProcessUnresponsive')
+    expect(res.portConflict).toEqual({ port: PORT, pids: [777], isComfy: true, priorBusy: true })
+    expect(children).toHaveLength(0)
+    expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')[0]).toMatchObject({
+      action: 'busy_left',
+      queue_unknown: true
     })
   })
 
@@ -2440,6 +2462,10 @@ describe('describePriorOutcome', () => {
       'left running: not proven to be ours; launch refused (unverified)'
     ],
     [{ action: 'waited', exitedInTime: true }, 'it exited on its own'],
+    [
+      { action: 'busy_left', exitedInTime: false, blocked: 'busy', queueUnknown: true },
+      'left running: it did not answer whether it is working on a prompt; launch refused (busy)'
+    ],
     [
       { action: 'terminated', exitedInTime: true, lingering: 2 },
       'stopped, and it exited; 2 surviving subprocess(es) stopped'
