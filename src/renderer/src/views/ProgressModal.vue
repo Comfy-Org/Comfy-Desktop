@@ -534,12 +534,37 @@ function handleUseNextPort(nextPort: number): void {
   })
 }
 
+// An earlier ComfyUI of this install still running a prompt: stopping goes back through launch,
+// which re-proves the process is ours before stopping it (never a kill by port).
+async function handleStopBusyPrior(): Promise<void> {
+  if (resolvingConflict.value) return
+  const id = displayId.value
+  if (!id) return
+  const op = progressStore.operations.get(id)
+  if (!op) return
+  const confirmed = await modal.confirm({
+    title: t('errors.priorProcessBusyTitle'),
+    message: t('errors.priorProcessBusyConfirmMessage'),
+    confirmLabel: t('errors.priorProcessBusyStop'),
+    confirmStyle: 'danger'
+  })
+  if (!confirmed) return
+  resolvingConflict.value = true
+  startOperation({
+    installationId: id,
+    title: op.title,
+    apiCall: () => window.api.runAction(id, 'launch', { stopBusyPriorProcess: true }),
+    returnTo: op.returnTo
+  })
+}
+
 async function handleKillProcess(port: number): Promise<void> {
   if (resolvingConflict.value) return
   const id = displayId.value
   if (!id) return
   const op = progressStore.operations.get(id)
   if (!op) return
+  if (op.result?.portConflict?.priorBusy) return handleStopBusyPrior()
   const confirmed = await modal.confirm({
     title: t('errors.portConflictKillConfirmTitle'),
     message: t('errors.portConflictKillConfirmMessage'),
@@ -615,7 +640,11 @@ defineExpose({ startOperation, showOperation })
                 aria-live="polite"
               >
                 <X :size="20" />
-                <span>{{ $t('errors.portConflictTitle') }}</span>
+                <span>{{
+                  currentOp.result?.portConflict?.priorBusy
+                    ? $t('errors.priorProcessBusyTitle')
+                    : $t('errors.portConflictTitle')
+                }}</span>
               </div>
               <div
                 v-else
@@ -812,7 +841,11 @@ defineExpose({ startOperation, showOperation })
                 :data-testid="TID.progressPortConflictKill"
                 @click="handleKillProcess(currentOp.result.portConflict.port)"
               >
-                {{ $t('errors.portConflictKill') }}
+                {{
+                  currentOp.result.portConflict.priorBusy
+                    ? $t('errors.priorProcessBusyStop')
+                    : $t('errors.portConflictKill')
+                }}
               </button>
             </template>
           </div>

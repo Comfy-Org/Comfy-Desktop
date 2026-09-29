@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { findAvailablePort, isPortListening, waitForPort, waitForUrl } from './process'
+import type { ChildProcess } from 'child_process'
+import {
+  findAvailablePort,
+  isPortListening,
+  killPidTree,
+  killProcessTree,
+  spawnProcess,
+  waitForPort,
+  waitForUrl
+} from './process'
+import { isPidAlive, readStartTimes } from './processIdentity'
 import net from 'net'
 
 function listenOn(host: string, port: number = 0): Promise<{ server: net.Server; port: number }> {
@@ -267,5 +277,63 @@ describe('waitForUrl abort settlement', () => {
     await expect(
       waitForUrl('http://127.0.0.1:1/', { timeoutMs: 30000, signal: controller.signal })
     ).rejects.toThrow('Launch cancelled.')
+  })
+})
+
+describe.runIf(process.platform !== 'win32')('kills that wait for exit (real processes)', () => {
+  // A detached parent with a child of its own: the shape Desktop spawns ComfyUI in.
+  const TREE = `
+    const { spawn } = require('child_process')
+    const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' })
+    console.log(c.pid)
+    setTimeout(() => {}, 60000)
+  `
+
+  async function spawnTree(): Promise<{ proc: ChildProcess; grandchild: number }> {
+    const proc = spawnProcess(process.execPath, ['-e', TREE], process.cwd())
+    const grandchild = await new Promise<number>((resolve) => {
+      proc.stdout!.once('data', (d: Buffer) => resolve(Number(String(d).trim())))
+    })
+    return { proc, grandchild }
+  }
+
+  function cleanup(pid: number): void {
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {}
+  }
+
+  it('killProcessTree reports exited only once the whole group is gone', async () => {
+    const { proc, grandchild } = await spawnTree()
+    try {
+      const result = await killProcessTree(proc)
+      expect(result.exited).toBe(true)
+      expect(isPidAlive(grandchild)).toBe(false)
+    } finally {
+      cleanup(proc.pid!)
+    }
+  })
+
+  it('killPidTree stops an unowned tree when the start time still matches', async () => {
+    const { proc, grandchild } = await spawnTree()
+    try {
+      const start = (await readStartTimes([proc.pid!]))!.get(proc.pid!)!
+      const result = await killPidTree(proc.pid!, start)
+      expect(result).toMatchObject({ killed: true, exited: true })
+      expect(isPidAlive(grandchild)).toBe(false)
+    } finally {
+      cleanup(proc.pid!)
+    }
+  })
+
+  it('killPidTree never signals a pid whose start time no longer matches', async () => {
+    const { proc } = await spawnTree()
+    try {
+      const result = await killPidTree(proc.pid!, 'a-process-that-had-this-pid-before')
+      expect(result.killed).toBe(false)
+      expect(isPidAlive(proc.pid!)).toBe(true)
+    } finally {
+      cleanup(proc.pid!)
+    }
   })
 })

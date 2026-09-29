@@ -58,7 +58,11 @@ const launchHarness = vi.hoisted(() => ({
   /** Called in place of the real boot probe, once per spawn attempt. Resolving means "this
    *  attempt booted"; a never-settling promise lets the early-exit rejection win instead. */
   waitForPort: null as null | (() => Promise<void>),
-  nextPort: 48999
+  nextPort: 48999,
+  /** Ports the harness reports as held (by pid 31337); null = real probes. */
+  busyPorts: null as null | number[],
+  /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
+  killExits: true
 }))
 
 vi.mock('../shared', async (importOriginal) => {
@@ -94,11 +98,47 @@ vi.mock('../shared', async (importOriginal) => {
       return {}
     },
     findAvailablePort: async () => launchHarness.nextPort,
+    isPortListening: (...args: Parameters<typeof actual.isPortListening>) =>
+      launchHarness.busyPorts
+        ? Promise.resolve(launchHarness.busyPorts.includes(args[0]))
+        : actual.isPortListening(...args),
+    findPidsByPort: (...args: Parameters<typeof actual.findPidsByPort>) =>
+      launchHarness.busyPorts
+        ? Promise.resolve(launchHarness.busyPorts.includes(args[0]) ? [31337] : [])
+        : actual.findPidsByPort(...args),
+    getProcessInfo: (...args: Parameters<typeof actual.getProcessInfo>) =>
+      launchHarness.busyPorts
+        ? Promise.resolve({ name: 'python', commandLine: 'python -s ComfyUI/main.py' })
+        : actual.getProcessInfo(...args),
     // Never let a test reach the real one: the fake child's pid is invented, and killing it
     // would signal whatever real process happens to hold that pid.
-    killProcessTree: async () => {}
+    killProcessTree: async () => ({ exited: launchHarness.killExits, waitMs: 0 })
   }
 })
+
+/** The ownership record module, answered from here. Never the real one: records would land in
+ *  the real state dir under invented pids, and a later launch could then "prove" an unrelated
+ *  live process at one of those pids to be an orphan. */
+const ownership = vi.hoisted(() => ({
+  prior: null as null | Record<string, unknown>,
+  priorCalls: [] as Array<{ sessionKey: string; opts: unknown }>,
+  priorThrows: false,
+  holderIsInstall: false,
+  tracked: [] as Array<Record<string, unknown>>
+}))
+vi.mock('../../comfyProcessRecord', () => ({
+  resolvePriorProcess: async (sessionKey: string, opts: unknown) => {
+    ownership.priorCalls.push({ sessionKey, opts })
+    if (ownership.priorThrows) throw new Error('state dir unreadable')
+    return ownership.prior
+  },
+  holderIsInstall: async () => ownership.holderIsInstall,
+  trackSpawn: (_proc: unknown, info: Record<string, unknown>) => {
+    ownership.tracked.push(info)
+  },
+  markStopRequested: () => {},
+  listRecords: () => []
+}))
 
 vi.mock('../../comfy-args', async (importOriginal) => {
   const actual = await importOriginal<typeof ComfyArgsModule>()
@@ -1992,5 +2032,280 @@ describe('launchedCoreCommit', () => {
       launchedCoreCommit(inst, { kind: 'unreadable' }),
       'the record may be what went stale'
     ).toBeNull()
+  })
+})
+
+describe('prior ComfyUI process handling at launch', () => {
+  const PORT = 48300
+  let installDir = ''
+  let events: { event: string; properties?: Record<string, unknown> }[] = []
+  let children: FakeChild[] = []
+
+  const install = (): InstallationRecord =>
+    ({
+      id: 'prior-inst',
+      name: 'Prior',
+      sourceId: 'harness-source',
+      installPath: installDir,
+      version: '0.3.81',
+      comfyVersion: {
+        commit: '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+        baseTag: 'v0.3.81',
+        commitsAhead: 0,
+        baseTagVerified: true
+      }
+    }) as unknown as InstallationRecord
+
+  const ctxFor = (
+    installationId: string,
+    actionData: Record<string, unknown> = {}
+  ): ActionContext => ({
+    event: {
+      sender: { isDestroyed: () => false, send: () => {} }
+    } as unknown as Electron.IpcMainInvokeEvent,
+    installationId,
+    inst: install(),
+    actionData
+  })
+
+  function fakeChild(): FakeChild {
+    const proc = new EventEmitter() as FakeChild
+    proc.stdout = new EventEmitter()
+    proc.stderr = new EventEmitter()
+    proc.pid = 4343
+    proc.killed = false
+    proc.kill = () => true
+    return proc
+  }
+
+  const setArgs = (...extra: string[]): void => {
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen', ...extra],
+      cwd: installDir,
+      skipPortWait: false,
+      port: PORT
+    }
+  }
+
+  const eventsNamed = (name: string): Array<Record<string, unknown> | undefined> =>
+    events.filter((e) => e.event === name).map((e) => e.properties)
+
+  beforeEach(() => {
+    installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prior-process-launch-'))
+    fs.mkdirSync(path.join(installDir, 'ComfyUI'), { recursive: true })
+    events = []
+    children = []
+    launchHarness.schemaThrows = false
+    launchHarness.registryThrows = false
+    launchHarness.betaEnabled = false
+    launchHarness.betaEnabledThrows = false
+    launchHarness.schemaNames = ['enable-assets', 'listen', 'port']
+    launchHarness.grants = []
+    launchHarness.duringResourceAcquire = null
+    launchHarness.busyPorts = null
+    launchHarness.killExits = true
+    launchHarness.waitForPort = async () => {}
+    launchHarness.spawn = () => {
+      const child = fakeChild()
+      children.push(child)
+      return child
+    }
+    ownership.prior = null
+    ownership.priorCalls = []
+    ownership.priorThrows = false
+    ownership.holderIsInstall = false
+    ownership.tracked = []
+    setArgs('--enable-assets')
+    const record = ((event: string, properties?: Record<string, unknown>) => {
+      events.push({ event, properties })
+    }) as unknown
+    vi.spyOn(telemetry, 'emit').mockImplementation(record as typeof telemetry.emit)
+    vi.spyOn(telemetry, 'capture').mockImplementation(record as typeof telemetry.capture)
+  })
+
+  afterEach(() => {
+    for (const id of [..._runningSessions.keys()]) _runningSessions.delete(id)
+    _pendingPorts.clear()
+    launchHarness.busyPorts = null
+    launchHarness.killExits = true
+    vi.restoreAllMocks()
+    fs.rmSync(installDir, { recursive: true, force: true })
+  })
+
+  const terminated = {
+    action: 'terminated',
+    proof: 'desktop_record',
+    pid: 777,
+    port: PORT,
+    ageMs: 60_000,
+    waitMs: 40,
+    exitedInTime: true,
+    blocked: null
+  }
+
+  it('records every spawn under the session key, joined to the boot id', async () => {
+    const res = await handleLaunch(ctxFor('prior-records'))
+
+    expect(res.ok).toBe(true)
+    expect(ownership.priorCalls).toEqual([
+      { sessionKey: 'prior-records', opts: { stopBusy: false } }
+    ])
+    expect(ownership.tracked).toHaveLength(1)
+    const [started] = eventsNamed('comfy.desktop.comfyui.boot_started')
+    expect(ownership.tracked[0]).toMatchObject({
+      sessionKey: 'prior-records',
+      installationId: 'prior-records',
+      installPath: installDir,
+      port: PORT,
+      bootId: started?.boot_id
+    })
+    expect(started?.port_bumped_from).toBeNull()
+    expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toHaveLength(0)
+  })
+
+  it('reports a terminated orphan and launches on the port it freed', async () => {
+    ownership.prior = terminated
+
+    const res = await handleLaunch(ctxFor('prior-terminated'))
+
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(PORT)
+    expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([
+      {
+        installation_id: 'prior-terminated',
+        action: 'terminated',
+        proof: 'desktop_record',
+        age_ms: 60_000,
+        wait_ms: 40,
+        exited_in_time: true,
+        busy_override: false,
+        lingering_count: 0
+      }
+    ])
+  })
+
+  it('leaves a busy orphan alone and hands the choice to the user without spawning', async () => {
+    ownership.prior = {
+      ...terminated,
+      action: 'busy_left',
+      exitedInTime: false,
+      blocked: 'busy',
+      queue: { running: 1, pending: 2 }
+    }
+
+    const res = await handleLaunch(ctxFor('prior-busy'))
+
+    expect(res.ok).toBe(false)
+    expect(res.portConflict).toEqual({ port: PORT, pids: [777], isComfy: true, priorBusy: true })
+    expect(children).toHaveLength(0)
+    expect(_operationAborts.has('prior-busy')).toBe(false)
+    expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')[0]).toMatchObject({
+      action: 'busy_left'
+    })
+  })
+
+  it('passes the user choice to stop a busy orphan through to the check', async () => {
+    await handleLaunch(ctxFor('prior-stop-busy', { stopBusyPriorProcess: true }))
+
+    expect(ownership.priorCalls[0]?.opts).toEqual({ stopBusy: true })
+  })
+
+  it('refuses to launch beside an orphan that outlived the kill', async () => {
+    ownership.prior = { ...terminated, exitedInTime: false, blocked: 'stuck' }
+
+    const res = await handleLaunch(ctxFor('prior-stuck'))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.priorProcessStuck')
+    expect(res.portConflict).toBeUndefined()
+    expect(children).toHaveLength(0)
+  })
+
+  it('launches as before when the check itself fails', async () => {
+    ownership.priorThrows = true
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const res = await handleLaunch(ctxFor('prior-throws'))
+
+    expect(res.ok).toBe(true)
+    expect(children).toHaveLength(1)
+  })
+
+  it('does not bump past its own install when assets make a second copy fatal', async () => {
+    launchHarness.busyPorts = [PORT]
+    ownership.holderIsInstall = true
+
+    const res = await handleLaunch(ctxFor('prior-same-install'))
+
+    expect(res.ok).toBe(false)
+    expect(res.portConflict).toEqual({ port: PORT, pids: [31337], isComfy: true })
+    expect(res.message).toBe('errors.portConflictSameInstall')
+    expect(children).toHaveLength(0)
+    expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([
+      expect.objectContaining({ action: 'left', proof: 'none', age_ms: null })
+    ])
+  })
+
+  it.each([
+    ['assets are off', [], {}, true],
+    ['the holder is not this install', ['--enable-assets'], {}, false],
+    ['the caller asked for a bump', ['--enable-assets'], { autoPortOnConflict: true }, true]
+  ] as const)('bumps as before when %s', async (_why, extra, actionData, sameInstall) => {
+    setArgs(...extra)
+    launchHarness.busyPorts = [PORT]
+    ownership.holderIsInstall = sameInstall
+
+    const res = await handleLaunch(ctxFor('prior-bump', { ...actionData }))
+
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(launchHarness.nextPort)
+    const [started] = eventsNamed('comfy.desktop.comfyui.boot_started')
+    expect(started?.port_bumped_from).toBe(PORT)
+  })
+
+  it('does not retry on top of a failed boot whose process outlived the kill', async () => {
+    launchHarness.killExits = false
+    launchHarness.waitForPort = async () => {
+      const first = children[0]!
+      first.stderr.emit('data', Buffer.from('OSError: [Errno 98] Address already in use\n'))
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+
+    const res = await handleLaunch(ctxFor('prior-kill-timeout'))
+
+    expect(res.ok).toBe(false)
+    expect(children).toHaveLength(1)
+    expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toHaveLength(1)
+  })
+
+  it('classifies a database-lock boot failure regardless of the last traceback', async () => {
+    launchHarness.waitForPort = async () => {
+      const first = children[0]!
+      first.stderr.emit(
+        'data',
+        Buffer.from(
+          'Database is locked. Another ComfyUI process is already using this database.\n' +
+            'Traceback (most recent call last):\nImportError: custom node noise\n'
+        )
+      )
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+
+    const res = await handleLaunch(ctxFor('prior-db-locked'))
+
+    expect(res.ok).toBe(false)
+    await vi.waitFor(() =>
+      expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
+        expect.objectContaining({
+          error_class: 'comfyui_db_locked',
+          lock_holder_pid: null,
+          lock_holder_source: 'unknown',
+          lock_holder_same_install: null
+        })
+      ])
+    )
   })
 })

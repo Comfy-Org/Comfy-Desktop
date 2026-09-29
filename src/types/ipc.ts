@@ -512,6 +512,10 @@ export interface PortConflictInfo {
   pids?: number[]
   nextPort?: number
   isComfy?: boolean
+  /** The holder is this install's ComfyUI left running by an earlier Desktop, and it is still
+   *  running a prompt. "Stop" relaunches with `stopBusyPriorProcess`, which re-proves ownership
+   *  and stops it through the launch path rather than by port. */
+  priorBusy?: boolean
 }
 
 export interface AddResult {

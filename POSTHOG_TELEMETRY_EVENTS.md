@@ -93,6 +93,7 @@ PostHog receives `$exception`.
 - `comfy.desktop.comfyui.canvas_rendered`
 - `comfy.desktop.comfyui.exited`
 - `comfy.desktop.comfyui.model_usage_summary`
+- `comfy.desktop.comfyui.prior_process_found`
 - `comfy.desktop.comfyui.update.applied`
 
 ### Instances, actions, and navigation

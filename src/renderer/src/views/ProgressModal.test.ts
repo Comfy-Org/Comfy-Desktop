@@ -68,7 +68,10 @@ const messages = {
     errors: {
       portConflictTitle: 'Port already in use',
       portConflictUsePort: 'Use next available port',
-      portConflictKill: 'Stop process and retry'
+      portConflictKill: 'Stop process and retry',
+      priorProcessBusyTitle: 'ComfyUI is still running a prompt',
+      priorProcessBusyStop: 'Stop it and launch',
+      priorProcessBusyConfirmMessage: 'This stops the earlier ComfyUI.'
     }
   }
 }
@@ -447,6 +450,37 @@ describe('ProgressModal — brand branch state transitions', () => {
     const api = (window as unknown as { api: MockApi }).api
     expect(await body.click('.brand-progress__footer-bar button')).toBe(true)
     expect(api.returnToDashboard).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers to stop a busy earlier ComfyUI through launch, never by killing the port', async () => {
+    const api = installMockApi()
+    const portConflict: PortConflictInfo = {
+      port: 8188,
+      pids: [777],
+      isComfy: true,
+      priorBusy: true
+    }
+    const { body } = await mountWithOp('inst-1', {
+      title: 'Launching',
+      finished: true,
+      result: { ok: false, message: 'still working on a prompt', portConflict } as ActionResult
+    })
+
+    expect(body.selectorText('.brand-progress__banner')).toContain(
+      'ComfyUI is still running a prompt'
+    )
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and launch')
+    expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
+
+    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    await flushPromises()
+
+    expect(mockModal.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ confirmLabel: 'Stop it and launch', confirmStyle: 'danger' })
+    )
+    expect(api.killPortProcess).not.toHaveBeenCalled()
+    expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', { stopBusyPriorProcess: true })
   })
 
   it('renders Cancel (not Return to Dashboard) in flight for destroy ops', async () => {
