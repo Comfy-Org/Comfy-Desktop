@@ -42,6 +42,10 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('rename-performance-test-benchmark', folderPath, sessionId, newSessionId),
     readPerformanceTestResultsSummary: (filePath) =>
       ipcRenderer.invoke('read-performance-test-results-summary', filePath),
+    prepareStandardBenchmarkWorkflow: (benchmarkId) =>
+      ipcRenderer.invoke('prepare-standard-benchmark-workflow', benchmarkId),
+    ensureStandardBenchmarkModels: (installationId, benchmarkId) =>
+      ipcRenderer.invoke('ensure-standard-benchmark-models', installationId, benchmarkId),
     runPerformanceTestWorkflow: (sessionId, filePath, measuredRuns, warmupRuns) =>
       ipcRenderer.invoke(
         'run-performance-test-workflow',
@@ -311,6 +315,12 @@ export function buildElectronApi(): ElectronApi {
         callback(data as Parameters<typeof callback>[0])
       ipcRenderer.on('performance-test-progress', handler)
       return () => ipcRenderer.removeListener('performance-test-progress', handler)
+    },
+    onStandardBenchmarkDownloadProgress: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as Parameters<typeof callback>[0])
+      ipcRenderer.on('standard-benchmark-download-progress', handler)
+      return () => ipcRenderer.removeListener('standard-benchmark-download-progress', handler)
     },
     onComfyExited: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

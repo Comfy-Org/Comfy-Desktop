@@ -484,7 +484,11 @@ export async function waitForPerformanceTestJobs(
   pollIntervalMs = PERFORMANCE_TEST_POLL_INTERVAL_MS,
   onProgress?: (completedRuns: number, totalRuns: number) => void,
   signal?: AbortSignal,
-  timeoutMs = PERFORMANCE_TEST_TIMEOUT_MS
+  timeoutMs = PERFORMANCE_TEST_TIMEOUT_MS,
+  // Best-effort per-poll hook (e.g. sample `/system_stats` for peak VRAM). It
+  // shares the poll's abort signal; any thrown error is swallowed so a failed
+  // sample never aborts the run.
+  onSample?: (signal: AbortSignal) => Promise<void> | void
 ): Promise<PerformanceTestJobsResponse> {
   const endpoint = new URL('/api/jobs', sessionUrl)
   endpoint.searchParams.set('limit', String(promptIds.length))
@@ -530,6 +534,13 @@ export async function waitForPerformanceTestJobs(
         return status !== undefined && TERMINAL_JOB_STATUSES.has(status)
       }).length
       onProgress?.(completedRuns, expectedPromptIds.size)
+      if (onSample) {
+        try {
+          await onSample(pollAbort.signal)
+        } catch {
+          // Sampling is best-effort; never let it abort the run.
+        }
+      }
       const allTerminal = [...expectedPromptIds].every((id) => {
         const status = statuses.get(id)
         return status !== undefined && TERMINAL_JOB_STATUSES.has(status)

@@ -856,6 +856,13 @@ export interface PerformanceTestResultsSummary {
     pytorchVersion: string | null
     xformersVersion: string | null
     cudaDeviceSet: number | null
+    // Rich benchmark metrics (optional; older results.json omit them). Peak
+    // fields are sampled from `/system_stats` during the run; `driverVersion`
+    // comes from SystemInfo. See `AcceleratorSnapshot`.
+    peakVramMb?: number | null
+    vramTotalMb?: number | null
+    vramIsUnified?: boolean | null
+    driverVersion?: string | null
   } | null
   systemInfo: SystemInfo
 }
@@ -874,6 +881,15 @@ export interface AcceleratorSnapshot extends AcceleratorInfo {
   pytorchVersion: string | null
   xformersVersion: string | null
   cudaDeviceSet: number | null
+  /** Peak used memory during the run (MB), sampled from `/system_stats`. */
+  peakVramMb?: number | null
+  /** Device total memory (MB) reported by `/system_stats`; system RAM when
+   *  `vramIsUnified`. Falls back to `vramMb` when the endpoint is unavailable. */
+  vramTotalMb?: number | null
+  /** True when total is shared system memory (Apple `mps` or `cpu`). */
+  vramIsUnified?: boolean | null
+  /** GPU driver version from SystemInfo (nvidia/amd/intel), when known. */
+  driverVersion?: string | null
 }
 
 export interface PerformanceTestDurationResult {
@@ -1283,6 +1299,23 @@ export interface ElectronApi {
     warmupRuns: number
   ): Promise<RunPerformanceTestWorkflowResult>
   readPerformanceTestResultsSummary(filePath: string): Promise<PerformanceTestResultsSummary>
+  /**
+   * Copy a bundled standard-benchmark API workflow into a managed session dir
+   * (behind the `benchmark_standard_suite` flag) and return its path, ready to
+   * pass to `runPerformanceTestWorkflow`. The BYO path is unaffected.
+   */
+  prepareStandardBenchmarkWorkflow(
+    benchmarkId: string
+  ): Promise<{ ok: boolean; filePath?: string; message?: string }>
+  /**
+   * Ensure a standard benchmark's models are on disk, downloading any that are
+   * missing via the managed model-download flow. Emits
+   * `standard-benchmark-download-progress` while downloading.
+   */
+  ensureStandardBenchmarkModels(
+    installationId: string,
+    benchmarkId: string
+  ): Promise<{ ok: boolean; present: boolean; downloaded: boolean; message?: string }>
   exportResultsImage(
     png: ArrayBuffer,
     imageType: 'performance-test' | 'benchmark-comparison',
@@ -1723,6 +1756,14 @@ export interface ElectronApi {
   onComfyOutput(callback: (data: ComfyOutputData) => void): Unsubscribe
   onPerformanceTestProgress(
     callback: (data: { sessionId: string; completedRuns: number; totalRuns: number }) => void
+  ): Unsubscribe
+  onStandardBenchmarkDownloadProgress(
+    callback: (data: {
+      installationId: string
+      benchmarkId: string
+      receivedBytes: number
+      totalBytes: number
+    }) => void
   ): Unsubscribe
   onComfyExited(callback: (data: ComfyExitedData) => void): Unsubscribe
   /** Crash broadcast to every renderer (unlike `onComfyExited`, which only
