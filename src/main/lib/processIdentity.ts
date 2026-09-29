@@ -407,6 +407,13 @@ export function parseWinProcessRowsWithCommand(stdout: string): WinProcessRowWit
   return rows
 }
 
+/** Windows only: pid, parent and creation time of every process (no command lines: lighter).
+ *  Null when it could not be read (or not on Windows). */
+export async function windowsProcessRows(): Promise<WinProcessRow[] | null> {
+  if (process.platform !== 'win32') return null
+  return winRows()
+}
+
 /** Windows only: the whole process table with parent links, creation times and command lines,
  *  from one CIM query. Null when it could not be read (or not on Windows). */
 export async function windowsProcessTable(): Promise<WinProcessRowWithCommand[] | null> {

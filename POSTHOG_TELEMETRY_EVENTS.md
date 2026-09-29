@@ -99,6 +99,7 @@ PostHog receives `$exception`.
 Property notes for the process-ownership fields:
 
 - `session.started` → `prior_session_unclean`: a record of a ComfyUI child that was never asked to stop was left by a Desktop that is no longer running. It does not mean "Desktop crashed": a crash with no ComfyUI running, or after the child had already exited (including a self-restart through `os.execv`), leaves no such record.
+- `exited` → `pipes_held_after_exit`: the ComfyUI process exited but its output pipes were still open a second later, so something it started still holds them. On Windows that is the shape of a ComfyUI that restarted itself outside Desktop; on every platform it can also be an ordinary helper process. It is a signal, not proof of either.
 - `boot_failed` → `lock_holder_name`: the name the OS lock probe reports, not normalised. On Windows that is Restart Manager's application name (for example `python`); elsewhere it is `lsof`'s command name.
 
 ### Instances, actions, and navigation
