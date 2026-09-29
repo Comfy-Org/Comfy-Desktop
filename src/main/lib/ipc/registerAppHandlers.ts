@@ -56,8 +56,7 @@ import {
   savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
   storePerformanceTestWorkflow,
-  submitPerformanceTestWorkflow,
-  waitForPerformanceTestJobs
+  runPerformanceTestWorkflow
 } from '../performanceTestWorkflows'
 
 export function registerAppHandlers(): void {
@@ -347,7 +346,14 @@ export function registerAppHandlers(): void {
         }
         const workspace = { id: workspaceId, name: workspaceName }
         const sessionUrl = session.url || `http://127.0.0.1:${session.port}`
-        await submitPerformanceTestWorkflow(
+        // Sample `/system_stats` on each poll to capture peak VRAM (rich
+        // benchmark metrics). Best-effort: a missing endpoint leaves the peak
+        // null and the UI renders its "not measured" state.
+        const vramAccumulator = createVramPeakAccumulator()
+        // Runs execute serially (submit → wait → next) so ComfyUI reclaims each
+        // run's staged model memory before the next; batching them up front
+        // exhausts system RAM and OOMs the backend.
+        const { jobsResponse } = await runPerformanceTestWorkflow(
           filePath,
           benchmarksDir,
           sessionUrl,
@@ -355,19 +361,7 @@ export function registerAppHandlers(): void {
           warmupRuns,
           fetch,
           abort.signal,
-          (promptId) => acceptedPromptIds.push(promptId)
-        )
-        const preparationRuns = warmupRuns
-        const measuredPromptIds = acceptedPromptIds.slice(warmupRuns)
-        // Sample `/system_stats` on each poll to capture peak VRAM (rich
-        // benchmark metrics). Best-effort: a missing endpoint leaves the peak
-        // null and the UI renders its "not measured" state.
-        const vramAccumulator = createVramPeakAccumulator()
-        const jobsResponse = await waitForPerformanceTestJobs(
-          sessionUrl,
-          acceptedPromptIds,
-          fetch,
-          undefined,
+          (promptId) => acceptedPromptIds.push(promptId),
           (completedRuns, totalRuns) => {
             if (!_event.sender.isDestroyed()) {
               _event.sender.send('performance-test-progress', {
@@ -377,12 +371,12 @@ export function registerAppHandlers(): void {
               })
             }
           },
-          abort.signal,
-          undefined,
           async (sampleSignal) => {
             vramAccumulator.sample(await fetchSystemStats(sessionUrl, fetch, sampleSignal))
           }
         )
+        const preparationRuns = warmupRuns
+        const measuredPromptIds = acceptedPromptIds.slice(warmupRuns)
         const submittedPromptIds = new Set(measuredPromptIds)
         const successfulRuns = jobsResponse.jobs.filter(
           (job) => submittedPromptIds.has(job.id) && job.status === 'completed'

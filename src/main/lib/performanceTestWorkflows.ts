@@ -406,8 +406,51 @@ export async function deletePerformanceTestWorkflow(
   return 'deleted'
 }
 
-/** Queue warm-up requests followed by each measured run. */
-export async function submitPerformanceTestWorkflow(
+/** POST one workflow to `/prompt` and return its accepted prompt id. Throws a
+ *  run-numbered error when ComfyUI rejects the request or omits the id. */
+async function postPerformanceTestPrompt(
+  endpoint: URL,
+  workflow: object,
+  run: number,
+  fetchImpl: typeof fetch,
+  signal?: AbortSignal
+): Promise<string> {
+  const response = await fetchImpl(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: workflow }),
+    signal
+  })
+  if (!response.ok) {
+    const detail = (await response.text()).trim()
+    throw new Error(
+      `Performance Test request ${run} failed: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`
+    )
+  }
+  const result = (await response.json()) as { prompt_id?: unknown; error?: unknown }
+  if (result.error) {
+    throw new Error(`Performance Test request ${run} failed: ${String(result.error)}`)
+  }
+  if (typeof result.prompt_id !== 'string') {
+    throw new Error(`Performance Test request ${run} did not return a prompt ID.`)
+  }
+  return result.prompt_id
+}
+
+/**
+ * Run the warm-up then measured passes **serially**: submit one run, wait for it
+ * to reach a terminal state, then submit the next. This mirrors the one-at-a-time
+ * cadence of an interactive generation so ComfyUI reclaims each run's
+ * dynamically-staged model weights (~model size, pinned in system RAM) before the
+ * next begins. Submitting the whole batch up front instead pins that staging N
+ * times over with no idle gap to release it, which exhausts system RAM and OOMs
+ * the backend on memory-constrained machines even when a single run fits fine.
+ *
+ * Returns every accepted prompt id (warm-up first, then measured) and the combined
+ * terminal jobs response. A run that ends non-`completed` (e.g. it failed) is
+ * still terminal, so the loop records it and continues to the next run.
+ */
+export async function runPerformanceTestWorkflow(
   filePath: string,
   benchmarksDir: string,
   sessionUrl: string,
@@ -415,8 +458,12 @@ export async function submitPerformanceTestWorkflow(
   warmupRuns: number,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
-  onSubmitted?: (promptId: string) => void
-): Promise<string[]> {
+  onSubmitted?: (promptId: string) => void,
+  onProgress?: (completedRuns: number, totalRuns: number) => void,
+  onSample?: (signal: AbortSignal) => Promise<void> | void,
+  pollIntervalMs = PERFORMANCE_TEST_POLL_INTERVAL_MS,
+  timeoutMs = PERFORMANCE_TEST_TIMEOUT_MS
+): Promise<{ promptIds: string[]; jobsResponse: PerformanceTestJobsResponse }> {
   if (!Number.isInteger(measuredRuns) || measuredRuns < 1 || measuredRuns > 100) {
     throw new Error('Measured runs must be an integer between 1 and 100.')
   }
@@ -427,35 +474,37 @@ export async function submitPerformanceTestWorkflow(
   let workflow = await readPerformanceTestWorkflow(filePath, benchmarksDir)
   const endpoint = new URL('/prompt', sessionUrl)
   const promptIds: string[] = []
+  const jobs: PerformanceTestJob[] = []
   const totalRuns = measuredRuns + warmupRuns
+  const deadline = Date.now() + timeoutMs
+  let lastResponse: PerformanceTestJobsResponse = { jobs: [] }
 
   for (let run = 1; run <= totalRuns; run++) {
     signal?.throwIfAborted()
     workflow = incrementWorkflowSeeds(workflow)
-    const response = await fetchImpl(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: workflow }),
-      signal
-    })
-    if (!response.ok) {
-      const detail = (await response.text()).trim()
-      throw new Error(
-        `Performance Test request ${run} failed: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`
-      )
-    }
-    const result = (await response.json()) as { prompt_id?: unknown; error?: unknown }
-    if (result.error) {
-      throw new Error(`Performance Test request ${run} failed: ${String(result.error)}`)
-    }
-    if (typeof result.prompt_id !== 'string') {
-      throw new Error(`Performance Test request ${run} did not return a prompt ID.`)
-    }
-    promptIds.push(result.prompt_id)
-    onSubmitted?.(result.prompt_id)
+    const promptId = await postPerformanceTestPrompt(endpoint, workflow, run, fetchImpl, signal)
+    promptIds.push(promptId)
+    onSubmitted?.(promptId)
+
+    const completedBefore = run - 1
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) throw new Error('Timed out waiting for performance test jobs.')
+    // Wait for this run alone before submitting the next — the serialization barrier.
+    lastResponse = await waitForPerformanceTestJobs(
+      sessionUrl,
+      [promptId],
+      fetchImpl,
+      pollIntervalMs,
+      (completed) => onProgress?.(completedBefore + completed, totalRuns),
+      signal,
+      remaining,
+      onSample
+    )
+    const job = lastResponse.jobs.find((entry) => entry.id === promptId)
+    if (job) jobs.push(job)
   }
 
-  return promptIds
+  return { promptIds, jobsResponse: { ...lastResponse, jobs } }
 }
 
 function abortableDelay(delayMs: number, signal?: AbortSignal): Promise<void> {

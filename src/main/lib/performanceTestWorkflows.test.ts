@@ -15,7 +15,7 @@ import {
   savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
   storePerformanceTestWorkflow,
-  submitPerformanceTestWorkflow,
+  runPerformanceTestWorkflow,
   waitForPerformanceTestJobs
 } from './performanceTestWorkflows'
 
@@ -401,45 +401,93 @@ describe('deletePerformanceTestWorkflow', () => {
   )
 })
 
-describe('submitPerformanceTestWorkflow', () => {
-  it('posts warm-up requests before the measured runs with incremented seeds', async () => {
+describe('runPerformanceTestWorkflow', () => {
+  it('runs each pass serially — submit, wait for it to finish, then submit the next — with incremented seeds', async () => {
     const root = await makeTempDir()
     const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
     const sourcePath = path.join(root, 'performanceTest.json')
     const workflow = { '1': { class_type: 'KSampler', inputs: { seed: 1 } } }
     await fs.promises.writeFile(sourcePath, JSON.stringify(workflow))
     const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
-    let requestCount = 0
-    const fetchMock = vi.fn<typeof fetch>(async () => {
-      requestCount++
-      return new Response(JSON.stringify({ prompt_id: `prompt-${requestCount}` }))
+
+    // Ordered event log lets us prove the submit→wait→submit interleaving: a run
+    // is never submitted while a prior run is still pending.
+    const events: Array<{ kind: 'submit' | 'poll'; id: string; seed?: number }> = []
+    let submitted = 0
+    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
+      const requestUrl = String(url)
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (requestUrl.endsWith('/prompt') && method === 'POST') {
+        submitted++
+        const body = JSON.parse(String(init?.body)) as {
+          prompt: { '1': { inputs: { seed: number } } }
+        }
+        events.push({
+          kind: 'submit',
+          id: `prompt-${submitted}`,
+          seed: body.prompt['1'].inputs.seed
+        })
+        return new Response(JSON.stringify({ prompt_id: `prompt-${submitted}` }))
+      }
+      // /api/jobs poll: report the most-recently submitted prompt as completed so
+      // the per-run barrier resolves on the first poll.
+      const id = `prompt-${submitted}`
+      events.push({ kind: 'poll', id })
+      return new Response(JSON.stringify({ jobs: [{ id, status: 'completed' }] }))
     })
 
-    const promptIds = await submitPerformanceTestWorkflow(
+    const progress: Array<[number, number]> = []
+    const { promptIds, jobsResponse } = await runPerformanceTestWorkflow(
       storedPath,
       benchmarksDir,
       'http://127.0.0.1:8189/base',
       3,
       2,
-      fetchMock
+      fetchMock,
+      undefined,
+      undefined,
+      (completed, total) => progress.push([completed, total])
     )
 
     expect(promptIds).toEqual(['prompt-1', 'prompt-2', 'prompt-3', 'prompt-4', 'prompt-5'])
-    expect(fetchMock).toHaveBeenCalledTimes(5)
-    for (const [index, [requestUrl, requestInit]] of fetchMock.mock.calls.entries()) {
+    // Serialized: submit, poll-to-completion, submit, … — not five submits up front.
+    expect(events.map((e) => e.kind)).toEqual([
+      'submit',
+      'poll',
+      'submit',
+      'poll',
+      'submit',
+      'poll',
+      'submit',
+      'poll',
+      'submit',
+      'poll'
+    ])
+    // Warm-up (2) then measured (3), seeds advanced each run from the base seed 1.
+    expect(events.filter((e) => e.kind === 'submit').map((e) => e.seed)).toEqual([2, 3, 4, 5, 6])
+    // Every POST hits /prompt on the session origin.
+    for (const [requestUrl, requestInit] of fetchMock.mock.calls) {
+      if ((requestInit?.method ?? 'GET').toUpperCase() !== 'POST') continue
       expect(String(requestUrl)).toBe('http://127.0.0.1:8189/prompt')
       expect(requestInit).toMatchObject({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })
-      expect(JSON.parse(String(requestInit?.body))).toEqual({
-        prompt: { '1': { class_type: 'KSampler', inputs: { seed: index + 2 } } }
-      })
     }
+    // Progress climbs monotonically to the total across all runs.
+    expect(progress.at(-1)).toEqual([5, 5])
+    expect(jobsResponse.jobs.map((job) => job.id)).toEqual([
+      'prompt-1',
+      'prompt-2',
+      'prompt-3',
+      'prompt-4',
+      'prompt-5'
+    ])
+    // The stored workflow is never mutated on disk.
     expect(JSON.parse(await fs.promises.readFile(storedPath, 'utf8'))).toEqual(workflow)
   })
 
-  it('stops submitting when ComfyUI rejects a request', async () => {
+  it('stops at the run ComfyUI rejects, after earlier runs completed', async () => {
     const root = await makeTempDir()
     const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
     const sourcePath = path.join(root, 'performanceTest.json')
@@ -448,14 +496,23 @@ describe('submitPerformanceTestWorkflow', () => {
       JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
     )
     const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: 'prompt-1' })))
-      .mockResolvedValueOnce(new Response('invalid workflow', { status: 400 }))
+    let submitted = 0
+    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
+      const requestUrl = String(url)
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (requestUrl.endsWith('/prompt') && method === 'POST') {
+        submitted++
+        if (submitted === 2) return new Response('invalid workflow', { status: 400 })
+        return new Response(JSON.stringify({ prompt_id: `prompt-${submitted}` }))
+      }
+      return new Response(
+        JSON.stringify({ jobs: [{ id: `prompt-${submitted}`, status: 'completed' }] })
+      )
+    })
 
     const acceptedPromptIds: string[] = []
     await expect(
-      submitPerformanceTestWorkflow(
+      runPerformanceTestWorkflow(
         storedPath,
         benchmarksDir,
         'http://127.0.0.1:8189',
@@ -466,7 +523,7 @@ describe('submitPerformanceTestWorkflow', () => {
         (promptId) => acceptedPromptIds.push(promptId)
       )
     ).rejects.toThrow('Performance Test request 2 failed: 400')
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    // Run 1 completed (submit + poll) before run 2 was even submitted.
     expect(acceptedPromptIds).toEqual(['prompt-1'])
   })
 
@@ -482,7 +539,7 @@ describe('submitPerformanceTestWorkflow', () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}'))
 
     await expect(
-      submitPerformanceTestWorkflow(
+      runPerformanceTestWorkflow(
         storedPath,
         benchmarksDir,
         'http://127.0.0.1:8189',
