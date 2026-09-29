@@ -147,6 +147,17 @@ describe('parseCoreBetaGrants', () => {
       { arg: '--enable-assets', commitRanges: range },
       { arg: '--disable-assets-output-scanning', commitRanges: range }
     ])
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', commit_ranges: range },
+          { arg: '--enable-assets-output-scanning', commit_ranges: range }
+        ]
+      })
+    ).toEqual([
+      { arg: '--enable-assets', commitRanges: range },
+      { arg: '--enable-assets-output-scanning', commitRanges: range }
+    ])
     // Naming both directions is an operator mistake: the whole payload grants nothing.
     expect(
       parseCoreBetaGrants(true, {
