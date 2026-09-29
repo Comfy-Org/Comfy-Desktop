@@ -78,8 +78,12 @@ function isRecord(value: unknown): value is ComfyProcessRecord {
     typeof r.installPath === 'string' &&
     Number.isInteger(r.childPid) &&
     Number.isInteger(r.desktopPid) &&
-    typeof r.port === 'number' &&
+    Number.isInteger(r.port) &&
+    r.port! > 0 &&
+    r.port! <= 65535 &&
     typeof r.spawnedAt === 'number' &&
+    (r.desktopStartTime === null || typeof r.desktopStartTime === 'string') &&
+    (r.childStartTime === null || typeof r.childStartTime === 'string') &&
     (r.lingering === undefined ||
       (Array.isArray(r.lingering) &&
         r.lingering.every((m) => Number.isInteger(m?.pid) && typeof m?.startTime === 'string')))
@@ -105,7 +109,13 @@ export function listRecords(): ComfyProcessRecord[] {
   const out: ComfyProcessRecord[] = []
   for (const name of names) {
     if (!name.endsWith('.json')) continue
-    const record = readRecord(decodeURIComponent(name.slice(0, -'.json'.length)))
+    let key: string
+    try {
+      key = decodeURIComponent(name.slice(0, -'.json'.length))
+    } catch {
+      continue // not a name this module wrote
+    }
+    const record = readRecord(key)
     if (record) out.push(record)
   }
   return out
@@ -288,6 +298,7 @@ export interface QueueState {
 /** One short `GET /queue` on loopback. Null when it could not be answered: not listening, not
  *  ComfyUI, wedged, or too slow. */
 export function probeQueue(port: number, timeoutMs = 1_000): Promise<QueueState | null> {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return Promise.resolve(null)
   return new Promise((resolve) => {
     let settled = false
     const finish = (value: QueueState | null): void => {
@@ -364,16 +375,24 @@ export interface PriorProcessOutcome {
 async function stopLingering(
   record: ComfyProcessRecord,
   deps: PriorProcessDeps
-): Promise<{ stopped: number; allExited: boolean } | null> {
+): Promise<{ stopped: number; blocked: null | 'stuck' | 'unverified' } | null> {
   const listed = (record.lingering ?? []).filter((m) => deps.isPidAlive(m.pid))
   if (listed.length === 0) return null
   const times = await deps.readStartTimes(listed.map((m) => m.pid))
-  if (!times) return null
+  // Could not ask the OS: these may still be ours and still hold the lock. Keep the record.
+  if (!times) return { stopped: 0, blocked: 'unverified' }
   const proven = listed.filter((m) => times.get(m.pid) === m.startTime)
   const kills = await Promise.all(proven.map((m) => deps.killPidTree(m.pid, m.startTime)))
-  const killed = kills.filter((k) => k.killed)
-  if (killed.length === 0) return null
-  return { stopped: killed.length, allExited: killed.every((k) => k.exited) }
+  const stopped = kills.filter((k) => k.killed).length
+  // A pid that now names another process is simply not ours; every other outcome counts.
+  const relevant = kills.filter((k) => k.killed || k.reason === 'probe_failed')
+  if (relevant.length === 0) return null
+  const blocked = relevant.some((k) => !k.killed)
+    ? 'unverified'
+    : relevant.some((k) => !k.exited)
+      ? 'stuck'
+      : null
+  return { stopped, blocked }
 }
 
 /** How long a process of ours that is already stopping gets to finish on its own. */
@@ -424,16 +443,16 @@ export async function resolvePriorProcess(
   const startedAt = deps.now()
   const ageMs = Math.max(0, startedAt - record.spawnedAt)
   const survivors = await stopLingering(record, deps)
-  if (survivors && !survivors.allExited) {
+  if (survivors?.blocked) {
     return {
-      action: 'terminated',
+      action: survivors.blocked === 'stuck' ? 'terminated' : 'left',
       proof: 'desktop_record',
       pid: record.childPid,
       port: record.port,
       ageMs,
       waitMs: deps.now() - startedAt,
       exitedInTime: false,
-      blocked: 'stuck',
+      blocked: survivors.blocked,
       lingering: survivors.stopped
     }
   }
@@ -490,7 +509,9 @@ export async function resolvePriorProcess(
   // Already asked to stop (a quit whose kill was not awaited, or a relaunch racing the old
   // Desktop's teardown): give it the chance to finish before anything else.
   if (record.stopRequestedAt) {
-    const deadline = startedAt + PRIOR_STOP_WAIT_MS
+    // From now, not from `startedAt`: the survivor stop and the start-time query above can
+    // take seconds (PowerShell on Windows) and must not eat the child's grace period.
+    const deadline = deps.now() + PRIOR_STOP_WAIT_MS
     while (deps.isPidAlive(record.childPid) && deps.now() < deadline) await deps.sleep(100)
     if (!deps.isPidAlive(record.childPid)) {
       deps.removeRecordIf(sessionKey, record.childPid)
@@ -502,6 +523,8 @@ export async function resolvePriorProcess(
       deps.removeRecordIf(sessionKey, record.childPid)
       return outcome('waited', { exitedInTime: true })
     }
+    // Proven ours and still alive a moment ago; an OS query that fails now changes neither.
+    if (verdict === 'unproven') return outcome('left', { blocked: 'unverified' })
   }
   if (verdict !== 'orphan') return outcome('left')
 

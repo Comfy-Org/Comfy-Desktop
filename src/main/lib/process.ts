@@ -101,7 +101,9 @@ function waitUntil(
   goneOnTimeout?: () => Promise<boolean>
 ): Promise<KillResult> {
   return new Promise((resolve) => {
-    const deadline = startedAt + boundMs
+    // The bound is for waiting, measured from here: whatever ran before (a PowerShell snapshot
+    // can take longer than the bound itself) must not leave the poll a single sample.
+    const deadline = Date.now() + boundMs
     const poll = (): void => {
       if (gone()) return resolve({ exited: true, waitMs: Date.now() - startedAt })
       // Bounded: a member stuck in uninterruptible sleep (or persistently EPERM) would

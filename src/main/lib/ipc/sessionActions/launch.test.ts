@@ -61,6 +61,8 @@ const launchHarness = vi.hoisted(() => ({
   nextPort: 48999,
   /** Ports the harness reports as held (by pid 31337); null = real probes. */
   busyPorts: null as null | number[],
+  /** The listeners `findPidsByPort` reports on a busy port. */
+  busyPids: [31337] as number[],
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
   killExits: true
 }))
@@ -104,7 +106,7 @@ vi.mock('../shared', async (importOriginal) => {
         : actual.isPortListening(...args),
     findPidsByPort: (...args: Parameters<typeof actual.findPidsByPort>) =>
       launchHarness.busyPorts
-        ? Promise.resolve(launchHarness.busyPorts.includes(args[0]) ? [31337] : [])
+        ? Promise.resolve(launchHarness.busyPorts.includes(args[0]) ? launchHarness.busyPids : [])
         : actual.findPidsByPort(...args),
     getProcessInfo: (...args: Parameters<typeof actual.getProcessInfo>) =>
       launchHarness.busyPorts
@@ -123,7 +125,7 @@ const ownership = vi.hoisted(() => ({
   prior: null as null | Record<string, unknown>,
   priorCalls: [] as Array<{ sessionKey: string; opts: unknown }>,
   priorThrows: false,
-  holderIsInstall: false,
+  holderIsInstall: false as boolean | ((pid: number) => boolean),
   tracked: [] as Array<Record<string, unknown>>
 }))
 vi.mock('../../comfyProcessRecord', () => ({
@@ -132,7 +134,10 @@ vi.mock('../../comfyProcessRecord', () => ({
     if (ownership.priorThrows) throw new Error('state dir unreadable')
     return ownership.prior
   },
-  holderIsInstall: async () => ownership.holderIsInstall,
+  holderIsInstall: async (pid: number) =>
+    typeof ownership.holderIsInstall === 'function'
+      ? ownership.holderIsInstall(pid)
+      : ownership.holderIsInstall,
   trackSpawn: (_proc: unknown, info: Record<string, unknown>) => {
     ownership.tracked.push(info)
   },
@@ -2106,6 +2111,7 @@ describe('prior ComfyUI process handling at launch', () => {
     // Never the real probes here: whatever else holds a port on the machine would decide the
     // outcome.
     launchHarness.busyPorts = []
+    launchHarness.busyPids = [31337]
     launchHarness.killExits = true
     launchHarness.waitForPort = async () => {}
     launchHarness.spawn = () => {
@@ -2268,6 +2274,18 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([
       expect.objectContaining({ action: 'left', proof: 'none', age_ms: null })
     ])
+  })
+
+  it("finds this install's ComfyUI among several listeners on the port", async () => {
+    launchHarness.busyPorts = [PORT]
+    launchHarness.busyPids = [40001, 40002]
+    ownership.holderIsInstall = (pid) => pid === 40002
+
+    const res = await handleLaunch(ctxFor('prior-second-listener'))
+
+    expect(res.ok).toBe(false)
+    expect(res.portConflict).toEqual({ port: PORT, pids: [40001, 40002], isComfy: true })
+    expect(children).toHaveLength(0)
   })
 
   it.each([

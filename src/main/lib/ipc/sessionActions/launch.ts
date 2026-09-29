@@ -1557,33 +1557,41 @@ async function runLaunch(
     // would start a second ComfyUI on the same database, which with assets enabled dies on
     // the database lock, so ask instead. Never grounds for stopping it automatically.
     // Callers that asked for a port bump explicitly (`autoPortOnConflict`) keep it.
-    const sameInstallHolder =
+    // Every listener is checked: lsof lists each one, and this install's may not come first.
+    let sameInstallPid: number | null = null
+    if (
       portConflictMode === 'auto' &&
       !portIsExplicit &&
       actionData?.autoPortOnConflict !== true &&
-      launchCmd.args!.includes('--enable-assets') &&
-      existingPids.length > 0 &&
-      (await holderIsInstall(existingPids[0]!, inst.installPath).catch(() => false))
-    if (sameInstallHolder) {
+      launchCmd.args!.includes('--enable-assets')
+    ) {
+      for (const pid of new Set(existingPids)) {
+        if (await holderIsInstall(pid, inst.installPath).catch(() => false)) {
+          sameInstallPid = pid
+          break
+        }
+      }
+    }
+    if (sameInstallPid !== null) {
       // Already reported when the record check found it and left it.
       if (prior?.action !== 'left')
         emitPriorProcessFound(installationId, {
           action: 'left',
           proof: 'none',
-          pid: existingPids[0]!,
+          pid: sameInstallPid,
           port: launchCmd.port!,
           ageMs: null,
           waitMs: 0,
           exitedInTime: false,
           blocked: null
         })
-      const info = await getProcessInfo(existingPids[0]!)
+      const info = await getProcessInfo(sameInstallPid)
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return {
         ok: false,
         message: i18n.t('errors.portConflictSameInstall', {
           port: launchCmd.port!,
-          process: info ? info.name : `PID ${existingPids[0]}`
+          process: info ? info.name : `PID ${sameInstallPid}`
         }),
         // No `nextPort`: offering the next port would offer the failure this avoids.
         portConflict: { port: launchCmd.port, pids: existingPids, isComfy: true }

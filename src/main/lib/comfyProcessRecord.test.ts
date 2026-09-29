@@ -238,6 +238,44 @@ describe('resolvePriorProcess', () => {
     expect(out).toMatchObject({ action: 'waited', exitedInTime: true, waitMs: 500 })
   })
 
+  it('gives a stopping child its full grace period after slow checks', async () => {
+    let polls = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        readRecord: () => record({ stopRequestedAt: 9_000 }),
+        // A PowerShell-slow start-time query: 12 s, more than the whole grace period.
+        readStartTimes: async (pids) => {
+          clock += 12_000
+          return new Map(
+            pids.filter((p) => alive.has(p)).map((p) => [p, p === 222 ? 'child-start' : 'x'])
+          )
+        },
+        sleep: async (ms) => {
+          clock += ms
+          if (++polls === 50) alive.delete(222)
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'waited', exitedInTime: true })
+  })
+
+  it('blocks when a stopping orphan cannot be re-checked after its wait', async () => {
+    let queries = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        readRecord: () => record({ stopRequestedAt: 9_000 }),
+        readStartTimes: async () => (++queries === 1 ? new Map([[222, 'child-start']]) : null)
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'left', blocked: 'unverified' })
+  })
+
   it('terminates a stopping orphan that outlives the wait', async () => {
     const out = await resolvePriorProcess(
       'inst-1',
@@ -363,6 +401,40 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     expect(removed).toEqual([222])
   })
 
+  it('keeps the record and blocks when one survivor stops and another cannot be verified', async () => {
+    alive.add(556)
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        readRecord: () =>
+          record({
+            desktopPid: SELF.pid,
+            desktopStartTime: SELF.start,
+            lingering: [survivor, { pid: 556, startTime: 'other-start' }]
+          }),
+        readStartTimes: async () =>
+          new Map([
+            [555, 'survivor-start'],
+            [556, 'other-start']
+          ]),
+        killPidTree: async (pid) =>
+          pid === 555
+            ? { killed: true, exited: true, waitMs: 5 }
+            : { killed: false, reason: 'probe_failed', exited: false, waitMs: 5 }
+      })
+    )
+    expect(out).toMatchObject({ blocked: 'unverified', lingering: 1 })
+    expect(removed).toEqual([])
+  })
+
+  it('keeps the record and blocks when the survivors cannot be checked at all', async () => {
+    const out = await resolvePriorProcess('inst-1', {}, deps({ readStartTimes: async () => null }))
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ blocked: 'unverified' })
+    expect(removed).toEqual([])
+  })
+
   it('never stops a survivor pid that now names another process', async () => {
     const out = await resolvePriorProcess(
       'inst-1',
@@ -447,6 +519,21 @@ describe('record store', () => {
     writeRecord(r)
     expect(readRecord('performance-test:inst-1')).toEqual(r)
     expect(listRecords()).toEqual([r])
+  })
+
+  it('skips a file whose name is not one it wrote', () => {
+    writeRecord(record())
+    fs.writeFileSync(path.join(dirs.state, 'comfy-procs', '50%.json'), '{}')
+    expect(listRecords().map((r) => r.sessionKey)).toEqual(['inst-1'])
+  })
+
+  it.each([
+    ['a numeric start token', { childStartTime: 12345 }],
+    ['an out-of-range port', { port: 70000 }],
+    ['a zero port', { port: 0 }]
+  ])('rejects a record with %s', (_why, bad) => {
+    writeRecord({ ...record(), ...bad } as unknown as ComfyProcessRecord)
+    expect(readRecord('inst-1')).toBeNull()
   })
 
   it('reads a corrupt or foreign file as no record', () => {
@@ -585,6 +672,11 @@ describe('probeQueue', () => {
     await new Promise<void>((r) => server!.listen(0, '127.0.0.1', () => r()))
     return (server.address() as AddressInfo).port
   }
+
+  it('answers null for a port that cannot be probed, without throwing', async () => {
+    expect(await probeQueue(0)).toBeNull()
+    expect(await probeQueue(70000)).toBeNull()
+  })
 
   it('counts running and pending prompts', async () => {
     const port = await serve((req, res) => {
