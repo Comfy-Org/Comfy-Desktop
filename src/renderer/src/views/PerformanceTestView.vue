@@ -248,6 +248,19 @@ watch(selectedInstallationId, () => {
   if (standardSuiteEnabled.value) void refreshModelPresence()
 })
 
+// Auto-select the first eligible instance so Run is actionable without an extra
+// click (design principle: one obvious primary action). Re-selects when the list
+// populates async or the workspace changes (which resets the selection to null).
+watch(
+  performanceTestInstallations,
+  (installations) => {
+    if (!selectedInstallationId.value && installations.length > 0) {
+      selectedInstallationId.value = installations[0]!.id
+    }
+  },
+  { immediate: true }
+)
+
 function correctRunCount(
   value: string,
   minimum: number,
