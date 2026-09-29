@@ -535,10 +535,11 @@ export function createAssetsTap(opts: {
     // Counted like unknown events, and for the same reason: it says this build
     // is behind core's vocabulary without naming the untrusted value.
     unknownEnumValuesOmitted += parsed.omittedEnumValues
+    if (!withinRateCap(event)) return
     // Counted so a new metric evicting an old one is visible, still unnamed.
+    // After the rate cap: a line that is never sent omitted nothing from an event.
     conventionFieldsOverEventCap += parsed.conventionFieldsOverEventCap
     conventionNamesOverSessionCap += parsed.conventionNamesOverSessionCap
-    if (!withinRateCap(event)) return
     // Only names that are actually sent spend the session budget.
     for (const name of parsed.newConventionNames) forwardedConventionNames.add(name)
     try {

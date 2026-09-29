@@ -957,6 +957,17 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(3)
     })
 
+    it('does not count omissions on a rate-capped line', () => {
+      const fields = Object.fromEntries(
+        'abcdefghij'.split('').map((letter, index) => [`${letter}_count`, index])
+      )
+      const tap = createAssetsTap(baseOpts)
+      for (let i = 0; i < 60; i++) tap.ingest(taggedLine('seeder.scan_started', {}), 'stdout')
+      tap.ingest(taggedLine('seeder.scan_started', fields), 'stdout')
+      tap.flushSummary()
+      expect(captured).toHaveLength(60)
+    })
+
     it('cannot forge the convention counters with a crafted line', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('convention_fields_over_event_cap', { count: 999 }), 'stdout')
