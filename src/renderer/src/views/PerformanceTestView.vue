@@ -400,6 +400,68 @@ const vramPeak = computed(() => {
   })
 })
 
+// --- Core benchmark capture (ComfyUI core in-process collector, when present) --
+// Feature-detected: `coreBenchmark` is only set when core wrote a per-run capture
+// file. It supersedes the /system_stats sampler for peak VRAM and adds it/s + the
+// per-op timeline; when null the existing summary/hardware display stands.
+const coreBenchmark = computed(() => performanceTestResult.value?.coreBenchmark ?? null)
+
+/** Slowest ops (per-op timeline), sorted desc with bar widths relative to the max. */
+const coreNodeTimeline = computed(() => {
+  const nodes = coreBenchmark.value?.nodes ?? []
+  const timed = nodes.filter((node) => node.elapsedMs != null && node.elapsedMs >= 0)
+  if (timed.length === 0) return []
+  const maximum = Math.max(...timed.map((node) => node.elapsedMs ?? 0))
+  return [...timed]
+    .sort((a, b) => (b.elapsedMs ?? 0) - (a.elapsedMs ?? 0))
+    .slice(0, 12)
+    .map((node) => {
+      const ms = node.elapsedMs ?? 0
+      return {
+        label: node.classType || node.nodeId || '—',
+        ms,
+        width: maximum > 0 ? `${(ms / maximum) * 100}%` : '0%'
+      }
+    })
+})
+
+/** Compact inline SVG polyline of the VRAM-used series (memory over time). */
+const coreVramSparkline = computed(() => {
+  const series = coreBenchmark.value?.resources.series ?? []
+  const points = series
+    .map((sample, index) => ({ x: sample.tMs ?? index, y: sample.vramUsedMb }))
+    .filter((point): point is { x: number; y: number } => point.y != null)
+  if (points.length < 2) return null
+  const width = 240
+  const height = 44
+  const xs = points.map((point) => point.x)
+  const ys = points.map((point) => point.y)
+  const minX = Math.min(...xs)
+  const minY = Math.min(...ys)
+  const spanX = Math.max(...xs) - minX || 1
+  const spanY = Math.max(...ys) - minY || 1
+  const coords = points
+    .map((point) => {
+      const x = ((point.x - minX) / spanX) * width
+      const y = height - ((point.y - minY) / spanY) * height
+      return `${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
+  return { coords, width, height, sampleCount: points.length }
+})
+
+/** Backend-aware label for the core peak-memory row (VRAM vs unified/system). */
+const corePeakMemoryLabelKey = computed(() => {
+  const device = coreBenchmark.value?.device
+  if (!device) return 'performanceTest.corePeakVram'
+  if (device.vramIsUnified === true) return 'performanceTest.corePeakMemory'
+  return 'performanceTest.corePeakVram'
+})
+
+function formatMbAsGb(mb: number | null | undefined): string {
+  return mb != null ? `${(mb / 1024).toFixed(1)} GB` : t('performanceTest.peakNotMeasured')
+}
+
 const compareResult = computed<CompareResult | null>(() => {
   const summary = performanceTestResult.value?.resultsSummary
   const benchmark = resultBenchmark.value
@@ -1454,6 +1516,119 @@ watch(performanceTestLogs, async () => {
                 </div>
               </template>
 
+              <template v-if="coreBenchmark">
+                <h3>
+                  {{ t('performanceTest.coreBenchmarkTitle') }}
+                  <span class="performance-test__core-subtitle">
+                    {{
+                      t('performanceTest.coreBenchmarkSubtitle', {
+                        collector: coreBenchmark.collectorId ?? 'comfyui-core'
+                      })
+                    }}
+                  </span>
+                </h3>
+                <div class="performance-test__core">
+                  <section class="performance-test__system-group">
+                    <dl
+                      class="performance-test__result-list performance-test__result-list--compact"
+                    >
+                      <div>
+                        <dt>{{ t('performanceTest.coreItPerSecond') }}</dt>
+                        <dd>
+                          {{
+                            coreBenchmark.sampling.avgItPerS != null
+                              ? t('performanceTest.coreItPerSecondValue', {
+                                  value: coreBenchmark.sampling.avgItPerS.toFixed(2)
+                                })
+                              : t('performanceTest.peakNotMeasured')
+                          }}
+                        </dd>
+                      </div>
+                      <div v-if="coreBenchmark.sampling.stepCount != null">
+                        <dt>{{ t('performanceTest.coreSteps') }}</dt>
+                        <dd>{{ coreBenchmark.sampling.stepCount }}</dd>
+                      </div>
+                      <div>
+                        <dt>{{ t(corePeakMemoryLabelKey) }}</dt>
+                        <dd>{{ formatMbAsGb(coreBenchmark.resources.peak.vramUsedMb) }}</dd>
+                      </div>
+                      <div v-if="coreBenchmark.resources.peak.ramUsedMb != null">
+                        <dt>{{ t('performanceTest.corePeakRam') }}</dt>
+                        <dd>{{ formatMbAsGb(coreBenchmark.resources.peak.ramUsedMb) }}</dd>
+                      </div>
+                      <div v-if="coreBenchmark.resources.peak.powerW != null">
+                        <dt>{{ t('performanceTest.corePeakPower') }}</dt>
+                        <dd>
+                          {{
+                            t('performanceTest.corePowerWatts', {
+                              value: Math.round(coreBenchmark.resources.peak.powerW)
+                            })
+                          }}
+                        </dd>
+                      </div>
+                      <div v-if="coreBenchmark.durations.totalRunMs != null">
+                        <dt>{{ t('performanceTest.coreTotalRun') }}</dt>
+                        <dd>{{ (coreBenchmark.durations.totalRunMs / 1000).toFixed(2) }} s</dd>
+                      </div>
+                    </dl>
+                  </section>
+
+                  <section
+                    v-if="coreNodeTimeline.length > 0"
+                    class="performance-test__system-group"
+                  >
+                    <p class="performance-test__core-caption">
+                      {{ t('performanceTest.coreOpTimeline') }}
+                      <span>{{ t('performanceTest.coreOpTimelineCaption') }}</span>
+                    </p>
+                    <div
+                      class="performance-test__aggregate-chart performance-test__core-timeline"
+                      role="img"
+                      :aria-label="t('performanceTest.coreOpTimeline')"
+                    >
+                      <div
+                        v-for="node in coreNodeTimeline"
+                        :key="`${node.label}-${node.ms}`"
+                        class="performance-test__aggregate-bar"
+                      >
+                        <span :title="node.label">{{ node.label }}</span>
+                        <div aria-hidden="true">
+                          <i :style="{ width: node.width }" />
+                        </div>
+                        <span class="performance-test__core-op-ms"
+                          >{{ Math.round(node.ms) }} ms</span
+                        >
+                      </div>
+                    </div>
+                  </section>
+
+                  <section
+                    v-if="coreVramSparkline"
+                    class="performance-test__system-group performance-test__core-memory"
+                  >
+                    <p class="performance-test__core-caption">
+                      {{ t('performanceTest.coreMemorySeries') }}
+                      <span>
+                        {{
+                          t('performanceTest.coreMemorySeriesCaption', {
+                            count: coreVramSparkline.sampleCount,
+                            interval: coreBenchmark.resources.sampleIntervalMs ?? '—'
+                          })
+                        }}
+                      </span>
+                    </p>
+                    <svg
+                      class="performance-test__sparkline"
+                      :viewBox="`0 0 ${coreVramSparkline.width} ${coreVramSparkline.height}`"
+                      preserveAspectRatio="none"
+                      aria-hidden="true"
+                    >
+                      <polyline :points="coreVramSparkline.coords" />
+                    </svg>
+                  </section>
+                </div>
+              </template>
+
               <div v-if="resultsFolderPath" class="performance-test__results-actions">
                 <span v-if="exportResultsError" class="performance-test__export-error">
                   {{ exportResultsError }}
@@ -2137,6 +2312,75 @@ watch(performanceTestLogs, async () => {
 
 .performance-test__results-placeholder {
   margin: 0;
+}
+
+/* --- Core benchmark capture (ComfyUI core in-process collector) --- */
+.performance-test__core-subtitle {
+  margin-left: 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.performance-test__core {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 12px;
+}
+
+.performance-test__core-memory {
+  grid-column: 1 / -1;
+}
+
+.performance-test__core-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--neutral-200);
+  font-size: 12px;
+}
+
+.performance-test__core-caption span {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.performance-test__core-timeline {
+  margin-top: 0;
+}
+
+.performance-test__core-timeline .performance-test__aggregate-bar {
+  grid-template-columns: minmax(0, 140px) minmax(40px, 1fr) 56px;
+}
+
+.performance-test__core-timeline .performance-test__aggregate-bar span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.performance-test__core-op-ms {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.performance-test__sparkline {
+  width: 100%;
+  height: 44px;
+}
+
+.performance-test__sparkline polyline {
+  fill: none;
+  stroke: var(--comfy-yellow);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (max-width: 900px) {
+  .performance-test__core {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .performance-test__account {

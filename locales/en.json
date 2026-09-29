@@ -1579,7 +1579,22 @@
     "oomError": "Ran out of memory on this benchmark. Try a lower VRAM tier benchmark, or free up memory and rerun.",
     "launchError": "Couldn't start the instance. See Logs for details.",
     "noRunsError": "No runs completed. See Logs for details.",
-    "benchmarkModelDownloadFailed": "Couldn't download the benchmark models. See Logs for details."
+    "benchmarkModelDownloadFailed": "Couldn't download the benchmark models. See Logs for details.",
+    "coreBenchmarkTitle": "Core benchmark",
+    "coreBenchmarkSubtitle": "Captured in-process by ComfyUI ({collector})",
+    "coreItPerSecond": "Sampling speed",
+    "coreItPerSecondValue": "{value} it/s",
+    "coreSteps": "Sampler steps",
+    "corePeakVram": "Peak VRAM",
+    "corePeakMemory": "Peak memory",
+    "corePeakRam": "Peak RAM",
+    "corePeakPower": "Peak power",
+    "coreTotalRun": "Total run",
+    "coreOpTimeline": "Per-op timeline",
+    "coreOpTimelineCaption": "Slowest nodes by wall time (non-cached, execution order)",
+    "coreMemorySeries": "Memory over time",
+    "coreMemorySeriesCaption": "VRAM used across {count} samples ({interval} ms interval)",
+    "corePowerWatts": "{value} W"
   },
   "benchmarks": {
     "title": "Benchmarks",

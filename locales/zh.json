@@ -1579,7 +1579,22 @@
     "oomError": "Ran out of memory on this benchmark. Try a lower VRAM tier benchmark, or free up memory and rerun.",
     "launchError": "Couldn't start the instance. See Logs for details.",
     "noRunsError": "No runs completed. See Logs for details.",
-    "benchmarkModelDownloadFailed": "Couldn't download the benchmark models. See Logs for details."
+    "benchmarkModelDownloadFailed": "Couldn't download the benchmark models. See Logs for details.",
+    "coreBenchmarkTitle": "核心基准",
+    "coreBenchmarkSubtitle": "由 ComfyUI 进程内采集（{collector}）",
+    "coreItPerSecond": "采样速度",
+    "coreItPerSecondValue": "{value} it/s",
+    "coreSteps": "采样步数",
+    "corePeakVram": "峰值显存",
+    "corePeakMemory": "峰值内存",
+    "corePeakRam": "峰值内存 (RAM)",
+    "corePeakPower": "峰值功耗",
+    "coreTotalRun": "总运行时长",
+    "coreOpTimeline": "各节点耗时",
+    "coreOpTimelineCaption": "按墙钟时间排序的最慢节点（未缓存，执行顺序）",
+    "coreMemorySeries": "内存随时间变化",
+    "coreMemorySeriesCaption": "{count} 次采样中的显存使用（间隔 {interval} 毫秒）",
+    "corePowerWatts": "{value} W"
   },
   "benchmarks": {
     "title": "性能比较",
