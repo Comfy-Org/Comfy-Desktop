@@ -489,6 +489,24 @@ describe('assetsTap', () => {
       expect([...ALLOWED_FIELD_NAMES].filter((key) => BASE_CONTEXT_KEYS.includes(key))).toEqual([])
     })
 
+    it('rejects a key colliding with a telemetry default property', () => {
+      // Per-event fields win telemetry's merge over its defaults, and
+      // `is_packaged` fits the `is_*` convention, so without this a forged
+      // `is_packaged=false` would relabel a packaged build's event.
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { is_packaged: false }), 'stdout')
+      for (const key of telemetry.DEFAULT_EVENT_PROPERTY_NAMES) {
+        tap.ingest(taggedLine('seeder.scan_completed', { [key]: 1 }), 'stdout')
+      }
+      expect(captured).toHaveLength(0)
+    })
+
+    it('keeps the field vocabulary disjoint from the telemetry defaults', () => {
+      expect(
+        [...ALLOWED_FIELD_NAMES].filter((key) => telemetry.DEFAULT_EVENT_PROPERTY_NAMES.has(key))
+      ).toEqual([])
+    })
+
     it('rejects a base-context collision the field allowlist would otherwise admit', () => {
       // The two vocabularies are disjoint today, so the collision guard is only
       // reachable once they overlap. Simulate that future to prove the guard —

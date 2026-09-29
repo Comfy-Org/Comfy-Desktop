@@ -283,6 +283,21 @@ function canEmit(): boolean {
 let defaultEventProperties: Record<string, TelemetryValue> = {}
 
 /**
+ * Every key `defaultEventProperties` can hold. A caller forwarding untrusted
+ * field names must reject these, since per-call properties win the merge.
+ */
+export const DEFAULT_EVENT_PROPERTY_NAMES: ReadonlySet<string> = new Set([
+  'app_version',
+  'app_channel',
+  'app_env',
+  'is_packaged',
+  'platform',
+  'arch',
+  'client',
+  'installation_id'
+])
+
+/**
  * The `deployment` analytics axis: which backend ran the work. Paired with
  * the `client` default event property (desktop | web | cli) to identify the
  * product surface (MAR-51). Shared by every site that tags `deployment` so

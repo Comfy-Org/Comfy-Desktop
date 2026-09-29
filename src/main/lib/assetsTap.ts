@@ -331,8 +331,9 @@ function parseFields(
     const key = pair.slice(0, separatorIndex)
     const rawValue = pair.slice(separatorIndex + 1)
     if (!FIELD_NAME.test(key)) return null
-    // A field named like a base-context property would be a context-spoofing
-    // attempt, even though the merge order already makes it ineffective.
+    // A field named like a base-context or telemetry default property would be
+    // a context-spoofing attempt. The merge order makes a base-context key
+    // ineffective, but a telemetry default would lose to it.
     if (baseKeys.has(key)) return null
     if (!ALLOWED_FIELD_NAMES.has(key)) {
       // Prototype keys clear the lowercase FIELD_NAME filter but are never a
@@ -342,6 +343,7 @@ function parseFields(
       // rejecting the line would delete an existing metric instead.
       const convention = fieldConvention(key)
       if (!convention) continue
+      // A repeated convention key is malformed, like a repeated listed key.
       if (seenKeys.has(key)) return null
       seenKeys.add(key)
       const value = coerceValue(key, rawValue)
@@ -398,7 +400,12 @@ export function createAssetsTap(opts: {
     release: opts.release ?? null,
     core_beta_flags: [...(opts.coreBetaFlags ?? [])]
   }
-  const baseKeys: ReadonlySet<string> = new Set(Object.keys(baseContext))
+  // Telemetry's own defaults lose the merge to per-event fields, so they are
+  // trusted context too: a forged `is_packaged=false` fits the `is_*` convention.
+  const baseKeys: ReadonlySet<string> = new Set([
+    ...Object.keys(baseContext),
+    ...telemetry.DEFAULT_EVENT_PROPERTY_NAMES
+  ])
 
   // Fixed windows per event name, so one chatty event cannot starve the others.
   // Deliberately NOT reset by beginBoot: a tap is reused across core restarts

@@ -407,6 +407,14 @@ describe('telemetry default event properties', () => {
     })
   })
 
+  it('lists every default property in DEFAULT_EVENT_PROPERTY_NAMES', () => {
+    setupTelemetry({ bind: 'id' })
+    captured.length = 0
+    telemetry.capture('any.event')
+    const keys = Object.keys(captured[0]!.properties ?? {}).filter((key) => !key.startsWith('$'))
+    expect(new Set(keys)).toEqual(telemetry.DEFAULT_EVENT_PROPERTY_NAMES)
+  })
+
   it('derives stable channel for a clean semver and unknown for an unfamiliar suffix', () => {
     setupTelemetry({ appVersion: '1.0.0', appEnv: 'prod', bind: 'id' })
     captured.length = 0
