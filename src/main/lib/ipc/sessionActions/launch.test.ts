@@ -358,7 +358,7 @@ describe('onProcessTerminated', () => {
     proc.emit('close', 3, null)
 
     expect(callback).toHaveBeenCalledOnce()
-    expect(callback).toHaveBeenCalledWith(2, 'SIGTERM')
+    expect(callback).toHaveBeenCalledWith(2, 'SIGTERM', { pipesHeld: false })
   })
 
   it('handles rejected async termination callbacks', async () => {
@@ -391,7 +391,8 @@ describe('onProcessTerminated', () => {
       vi.runAllTimers()
 
       expect(callback).toHaveBeenCalledOnce()
-      expect(callback).toHaveBeenCalledWith(null, 'SIGKILL')
+      // Something still holds the pipes: reported, never acted on.
+      expect(callback).toHaveBeenCalledWith(null, 'SIGKILL', { pipesHeld: true })
     } finally {
       vi.useRealTimers()
     }

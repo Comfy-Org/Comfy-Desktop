@@ -11,6 +11,7 @@ vi.mock('./paths', () => ({ stateDir: () => dirs.state }))
 
 import {
   classifyRecord,
+  findWindowsSurvivors,
   commandLineIsInstall,
   holderIsInstall,
   listRecords,
@@ -557,6 +558,60 @@ describe.runIf(process.platform !== 'win32')('survivors of a real process group'
     })
     await new Promise((r) => child.once('exit', r))
     await vi.waitFor(() => expect(readRecord('inst-1')).toBeNull())
+  })
+})
+
+describe('findWindowsSurvivors (a ComfyUI that restarted itself with os.execv)', () => {
+  // Launcher L (pid 100) ran interpreter I (101). I execv'd: a new launcher N (200, parent I)
+  // and its interpreter (201) now run outside the job, and L and I are gone.
+  const known = [
+    { pid: 100, startTime: '1000' },
+    { pid: 101, startTime: '1100' }
+  ]
+  const row = (pid: number, ppid: number, created: string, commandLine: string) => ({
+    pid,
+    ppid,
+    created,
+    commandLine
+  })
+
+  it('finds the restarted copy and its interpreter through the dead interpreter', () => {
+    const rows = [
+      row(200, 101, '1500', '"C:\\c\\one\\.venv\\Scripts\\python.exe" "main.py" --port 8188'),
+      row(201, 200, '1600', 'C:\\Py\\python.exe main.py --port 8188')
+    ]
+    expect(findWindowsSurvivors(rows, known)).toEqual([
+      { pid: 200, startTime: '1500' },
+      { pid: 201, startTime: '1600' }
+    ])
+  })
+
+  it('ignores an older process whose recorded parent pid was reused', () => {
+    const rows = [row(300, 101, '900', 'C:\\Py\\python.exe main.py')]
+    expect(findWindowsSurvivors(rows, known)).toEqual([])
+  })
+
+  it('ignores what a custom node started that is not ComfyUI', () => {
+    const rows = [
+      row(400, 101, '1200', '"C:\\Program Files\\Browser\\browser.exe" http://127.0.0.1:8188'),
+      row(401, 101, '1300', 'ollama.exe serve')
+    ]
+    expect(findWindowsSurvivors(rows, known)).toEqual([])
+  })
+
+  it('keeps a known interpreter that is still running, by its creation time only', () => {
+    expect(
+      findWindowsSurvivors([row(101, 100, '1100', 'C:\\Py\\python.exe -s ComfyUI\\main.py')], known)
+    ).toEqual([{ pid: 101, startTime: '1100' }])
+    // Same pid, different creation time: a different process.
+    expect(
+      findWindowsSurvivors([row(101, 7, '9999', 'C:\\Py\\python.exe -s ComfyUI\\main.py')], known)
+    ).toEqual([])
+  })
+
+  it('never returns Desktop itself', () => {
+    const rows = [row(process.pid, 101, '1500', 'desktop.exe main.py')]
+    expect(findWindowsSurvivors(rows, known)).toEqual([])
   })
 })
 

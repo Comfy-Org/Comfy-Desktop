@@ -8,6 +8,7 @@ import {
   parseLinuxStat,
   parseLinuxStatPgid,
   parseWinProcessRows,
+  parseWinProcessRowsWithCommand,
   readStartTimes,
   startTokenToEpochMs
 } from './processIdentity'
@@ -150,5 +151,23 @@ describe.runIf(process.platform === 'linux')('startTokenToEpochMs (this process)
     const token = (await readStartTimes([process.pid]))!.get(process.pid)!
     const expected = Date.now() - process.uptime() * 1000
     expect(Math.abs(startTokenToEpochMs(token)! - expected)).toBeLessThan(2_000)
+  })
+})
+
+describe('parseWinProcessRowsWithCommand', () => {
+  it('keeps the command line whole, tabs and spaces included', () => {
+    expect(
+      parseWinProcessRowsWithCommand(
+        '200\t101\t1500\t"C:\\My Comfy\\python.exe" "main.py"\tx\r\n4\t0\t\t\r\njunk\r\n'
+      )
+    ).toEqual([
+      {
+        pid: 200,
+        ppid: 101,
+        created: '1500',
+        commandLine: '"C:\\My Comfy\\python.exe" "main.py"\tx'
+      },
+      { pid: 4, ppid: 0, created: '', commandLine: '' }
+    ])
   })
 })

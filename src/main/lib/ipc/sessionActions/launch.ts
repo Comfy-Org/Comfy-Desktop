@@ -426,17 +426,23 @@ const PROCESS_CLOSE_GRACE_MS = 1_000
 /** Prefer `close` so output pipes can drain, but do not hang on inherited pipes. */
 export function onProcessTerminated(
   proc: ChildProcess,
-  callback: (code: number | null, signal: NodeJS.Signals | null) => void | Promise<void>
+  callback: (
+    code: number | null,
+    signal: NodeJS.Signals | null,
+    /** `pipesHeld`: the process exited but its output pipes were still open at the grace
+     *  deadline — something it started still holds them. */
+    info: { pipesHeld: boolean }
+  ) => void | Promise<void>
 ): void {
   let finished = false
   let fallbackTimer: NodeJS.Timeout | undefined
 
-  const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
+  const finish = (code: number | null, signal: NodeJS.Signals | null, pipesHeld: boolean): void => {
     if (finished) return
     finished = true
     if (fallbackTimer) clearTimeout(fallbackTimer)
     try {
-      void Promise.resolve(callback(code, signal)).catch((err) => {
+      void Promise.resolve(callback(code, signal, { pipesHeld })).catch((err) => {
         console.error('Process termination callback failed:', err)
       })
     } catch (err) {
@@ -444,10 +450,10 @@ export function onProcessTerminated(
     }
   }
 
-  proc.once('close', finish)
+  proc.once('close', (code, signal) => finish(code, signal, false))
   proc.once('exit', (code, signal) => {
     if (finished) return
-    fallbackTimer = setTimeout(() => finish(code, signal), PROCESS_CLOSE_GRACE_MS)
+    fallbackTimer = setTimeout(() => finish(code, signal, true), PROCESS_CLOSE_GRACE_MS)
     fallbackTimer.unref()
   })
 }
@@ -1458,7 +1464,7 @@ async function runLaunch(
       installationId
     )
 
-    onProcessTerminated(proc, async (code, signal) => {
+    onProcessTerminated(proc, async (code, signal, { pipesHeld }) => {
       logStream.end()
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
@@ -1488,7 +1494,8 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null
+        last_stderr: lastStderr ?? null,
+        pipes_held_after_exit: pipesHeld
       })
       if (crashed) {
         recordCrash(exitedPayload)
@@ -2195,7 +2202,7 @@ async function runLaunch(
   let currentGetStderr = launchResult.getStderr
 
   function attachExitHandler(p: ChildProcess): void {
-    onProcessTerminated(p, async (code, signal) => {
+    onProcessTerminated(p, async (code, signal, { pipesHeld }) => {
       if (rebootModelCheckAbort) {
         rebootModelCheckAbort.abort()
         rebootModelCheckAbort = null
@@ -2315,7 +2322,8 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null
+        last_stderr: lastStderr ?? null,
+        pipes_held_after_exit: pipesHeld
       })
       if (crashed) {
         recordCrash(exitedPayload)

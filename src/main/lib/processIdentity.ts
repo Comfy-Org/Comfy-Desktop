@@ -390,3 +390,31 @@ export async function commandArgvOf(pid: number): Promise<string[] | null> {
     return null
   }
 }
+
+export interface WinProcessRowWithCommand extends WinProcessRow {
+  commandLine: string
+}
+
+/** Lines of `<pid>\t<ppid>\t<created>\t<command line>` → rows. The command line is last, so a
+ *  tab inside it cannot shift the other fields. */
+export function parseWinProcessRowsWithCommand(stdout: string): WinProcessRowWithCommand[] {
+  const rows: WinProcessRowWithCommand[] = []
+  for (const line of stdout.split(/\r?\n/)) {
+    const m = /^(\d+)\t(\d+)\t(\d*)\t(.*)$/.exec(line)
+    if (!m) continue
+    rows.push({ pid: Number(m[1]), ppid: Number(m[2]), created: m[3] ?? '', commandLine: m[4]! })
+  }
+  return rows
+}
+
+/** Windows only: the whole process table with parent links, creation times and command lines,
+ *  from one CIM query. Null when it could not be read (or not on Windows). */
+export async function windowsProcessTable(): Promise<WinProcessRowWithCommand[] | null> {
+  if (process.platform !== 'win32') return null
+  const stdout = await powershell(
+    'Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,CommandLine | ' +
+      'ForEach-Object { $c = if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { "" }; ' +
+      '"$($_.ProcessId)`t$($_.ParentProcessId)`t$c`t$($_.CommandLine)" }'
+  )
+  return stdout == null ? null : parseWinProcessRowsWithCommand(stdout)
+}
