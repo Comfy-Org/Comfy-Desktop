@@ -81,10 +81,19 @@ const isStopping = ref(false)
 const isWorkflowLocked = computed(() => isLaunching.value || isStopping.value)
 const isExportingResults = ref(false)
 const exportResultsError = ref<string | null>(null)
-const logsExpanded = ref(true)
+const logsExpanded = ref(false)
 const resultsExpanded = ref(true)
 const warmupRuns = ref('1')
 const measuredRuns = ref('5')
+// Advanced disclosure (design §2): collapsed by default; its label echoes the
+// live warm-up / measured counts so nothing a user needs to *see* is hidden.
+const advancedExpanded = ref(false)
+const advancedSummaryLabel = computed(() =>
+  t('performanceTest.advancedSummary', {
+    warmup: warmupRuns.value,
+    measured: measuredRuns.value
+  })
+)
 const logInstallationId = ref<string | null>(null)
 const performanceTestInstallationId = ref<string | null>(null)
 const logsElement = ref<HTMLElement | null>(null)
@@ -890,190 +899,174 @@ watch(performanceTestLogs, async () => {
           logo-test-id="performance-test-logo"
         />
         <div class="performance-test__content">
-          <div class="performance-test__columns">
-            <section class="performance-test__column">
-              <h2>{{ t('performanceTest.selectInstance') }}</h2>
-              <div class="performance-test__selection-row">
-                <span class="performance-test__selection-label">
-                  {{ t('performanceTest.workspaceLabel') }}
+          <div class="performance-test__context-bar">
+            <span class="performance-test__context-label">{{ t('performanceTest.runOn') }}</span>
+            <div class="performance-test__workspace-select">
+              <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
+            </div>
+            <div class="performance-test__instance-select">
+              <BaseSelect
+                :model-value="selectedInstallationId ?? ''"
+                :options="instanceOptions"
+                :placeholder="t('performanceTest.selectInstancePlaceholder')"
+                :aria-label="t('performanceTest.selectInstancePlaceholder')"
+                :disabled="instanceOptions.length === 0"
+                @update:model-value="selectedInstallationId = $event"
+              />
+            </div>
+          </div>
+
+          <div
+            v-if="standardSuiteEnabled"
+            class="performance-test__source-toggle"
+            role="radiogroup"
+            :aria-label="t('performanceTest.sourceLabel')"
+          >
+            <button
+              type="button"
+              role="radio"
+              :aria-checked="benchmarkSource === 'standard'"
+              class="performance-test__source-option"
+              :class="{
+                'performance-test__source-option--active': benchmarkSource === 'standard'
+              }"
+              :disabled="isWorkflowLocked"
+              @click="benchmarkSource = 'standard'"
+            >
+              {{ t('performanceTest.sourceStandard') }}
+            </button>
+            <button
+              type="button"
+              role="radio"
+              :aria-checked="benchmarkSource === 'custom'"
+              class="performance-test__source-option"
+              :class="{
+                'performance-test__source-option--active': benchmarkSource === 'custom'
+              }"
+              :disabled="isWorkflowLocked"
+              @click="benchmarkSource = 'custom'"
+            >
+              {{ t('performanceTest.sourceCustom') }}
+            </button>
+          </div>
+
+          <div
+            v-if="isStandardMode"
+            class="performance-test__benchmark-cards"
+            role="radiogroup"
+            :aria-label="t('performanceTest.chooseBenchmark')"
+          >
+            <ChoiceCard
+              v-for="benchmark in standardBenchmarks"
+              :key="benchmark.id"
+              selectable
+              :selected="selectedBenchmarkId === benchmark.id"
+              :tab-stop="selectedBenchmarkId === benchmark.id"
+              :disabled="isWorkflowLocked"
+              :label="benchmark.name"
+              :description="`${benchmark.measures} · ${benchmark.specLine}`"
+              @click="selectedBenchmarkId = benchmark.id"
+            >
+              <template #label-trailing>
+                <span
+                  v-if="modelsPresentById[benchmark.id]"
+                  class="performance-test__download-badge performance-test__download-badge--present"
+                  :title="
+                    t('performanceTest.downloadedWithSize', {
+                      size: formatGbFromBytes(benchmark.downloadBytes)
+                    })
+                  "
+                >
+                  {{ t('performanceTest.downloaded') }}
                 </span>
-                <div class="performance-test__selection-control performance-test__workspace-select">
-                  <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
-                </div>
-              </div>
-              <div class="performance-test__selection-row">
-                <span class="performance-test__selection-label">
-                  {{ t('performanceTest.instanceLabel') }}
+                <span
+                  v-else
+                  class="performance-test__download-badge"
+                  :title="t('performanceTest.downloadsOnFirstRun')"
+                >
+                  {{
+                    t('performanceTest.downloadPending', {
+                      size: formatGbFromBytes(benchmark.downloadBytes)
+                    })
+                  }}
+                  <Download :size="13" aria-hidden="true" />
                 </span>
-                <div class="performance-test__selection-control performance-test__instance-select">
-                  <BaseSelect
-                    :model-value="selectedInstallationId ?? ''"
-                    :options="instanceOptions"
-                    :placeholder="t('performanceTest.selectInstancePlaceholder')"
-                    :aria-label="t('performanceTest.selectInstancePlaceholder')"
-                    :disabled="instanceOptions.length === 0"
-                    @update:model-value="selectedInstallationId = $event"
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section class="performance-test__column">
-              <h2>
-                {{
-                  isStandardMode
-                    ? t('performanceTest.chooseBenchmark')
-                    : t('performanceTest.dropWorkflow')
-                }}
-              </h2>
-
-              <div
-                v-if="standardSuiteEnabled"
-                class="performance-test__source-toggle"
-                role="radiogroup"
-                :aria-label="t('performanceTest.sourceLabel')"
-              >
-                <button
-                  type="button"
-                  role="radio"
-                  :aria-checked="benchmarkSource === 'standard'"
-                  class="performance-test__source-option"
-                  :class="{
-                    'performance-test__source-option--active': benchmarkSource === 'standard'
-                  }"
-                  :disabled="isWorkflowLocked"
-                  @click="benchmarkSource = 'standard'"
-                >
-                  {{ t('performanceTest.sourceStandard') }}
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  :aria-checked="benchmarkSource === 'custom'"
-                  class="performance-test__source-option"
-                  :class="{
-                    'performance-test__source-option--active': benchmarkSource === 'custom'
-                  }"
-                  :disabled="isWorkflowLocked"
-                  @click="benchmarkSource = 'custom'"
-                >
-                  {{ t('performanceTest.sourceCustom') }}
-                </button>
-              </div>
-
-              <div
-                v-if="isStandardMode"
-                class="performance-test__benchmark-cards"
-                role="radiogroup"
-                :aria-label="t('performanceTest.chooseBenchmark')"
-              >
-                <ChoiceCard
-                  v-for="benchmark in standardBenchmarks"
-                  :key="benchmark.id"
-                  selectable
-                  :selected="selectedBenchmarkId === benchmark.id"
-                  :tab-stop="selectedBenchmarkId === benchmark.id"
-                  :disabled="isWorkflowLocked"
-                  :label="benchmark.name"
-                  :description="`${benchmark.measures} · ${benchmark.specLine}`"
-                  @click="selectedBenchmarkId = benchmark.id"
-                >
-                  <template #label-trailing>
-                    <span
-                      v-if="modelsPresentById[benchmark.id]"
-                      class="performance-test__download-badge performance-test__download-badge--present"
-                      :title="
-                        t('performanceTest.downloadedWithSize', {
-                          size: formatGbFromBytes(benchmark.downloadBytes)
-                        })
-                      "
-                    >
-                      {{ t('performanceTest.downloaded') }}
-                    </span>
-                    <span
-                      v-else
-                      class="performance-test__download-badge"
-                      :title="t('performanceTest.downloadsOnFirstRun')"
-                    >
-                      {{
-                        t('performanceTest.downloadPending', {
-                          size: formatGbFromBytes(benchmark.downloadBytes)
-                        })
-                      }}
-                      <Download :size="13" aria-hidden="true" />
-                    </span>
-                  </template>
-                  <template #desc-trailing>
-                    <span class="performance-test__tier-row">
-                      <span class="performance-test__tier-chip">
-                        {{ t('performanceTest.tierChip', { gb: benchmark.vramTierGb }) }}
-                      </span>
-                      <span
-                        v-if="benchmarkFit(benchmark)"
-                        class="performance-test__fit-note"
-                        :class="{
-                          'performance-test__fit-note--caution':
-                            benchmarkFit(benchmark)?.tone === 'caution'
-                        }"
-                      >
-                        {{ t(benchmarkFit(benchmark)!.key, benchmarkFit(benchmark)!.params ?? {}) }}
-                      </span>
-                    </span>
-                  </template>
-                </ChoiceCard>
-              </div>
-
-              <template v-else>
-                <div
-                  class="performance-test__drop-zone"
-                  :class="{
-                    'performance-test__drop-zone--dragging': isWorkflowDragging,
-                    'performance-test__drop-zone--selected': workflowFilePath
-                  }"
-                  :aria-busy="isWorkflowImporting || isWorkflowDeleting"
-                  @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
-                  @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
-                  @dragleave.prevent="isWorkflowDragging = false"
-                  @drop.prevent="dropWorkflow"
-                >
-                  <button
-                    class="performance-test__drop-content"
-                    type="button"
-                    :disabled="isWorkflowLocked"
-                    @click="importWorkflow()"
-                  >
-                    <span v-if="!workflowFilePath">
-                      {{
-                        isWorkflowImporting
-                          ? t('performanceTest.importingWorkflow')
-                          : t('performanceTest.dropWorkflowHint')
-                      }}
-                    </span>
-                    <span v-else class="performance-test__workflow-file">
-                      <strong>{{ workflowFileName }}</strong>
-                      <code>{{ workflowFilePath }}</code>
-                    </span>
-                  </button>
-                  <button
-                    v-if="workflowFilePath && !isWorkflowLocked"
-                    class="performance-test__delete-workflow"
-                    type="button"
-                    :aria-label="t('performanceTest.deleteWorkflow')"
-                    :title="t('performanceTest.deleteWorkflow')"
-                    :disabled="isWorkflowDeleting"
-                    @click="deleteWorkflow"
-                  >
-                    <Trash2 :size="18" aria-hidden="true" />
-                  </button>
-                </div>
-                <p v-if="workflowImportError" class="performance-test__workflow-error" role="alert">
-                  {{ workflowImportError }}
-                </p>
               </template>
-            </section>
+              <template #desc-trailing>
+                <span class="performance-test__tier-row">
+                  <span class="performance-test__tier-chip">
+                    {{ t('performanceTest.tierChip', { gb: benchmark.vramTierGb }) }}
+                  </span>
+                  <span
+                    v-if="benchmarkFit(benchmark)"
+                    class="performance-test__fit-note"
+                    :class="{
+                      'performance-test__fit-note--caution':
+                        benchmarkFit(benchmark)?.tone === 'caution'
+                    }"
+                  >
+                    {{ t(benchmarkFit(benchmark)!.key, benchmarkFit(benchmark)!.params ?? {}) }}
+                  </span>
+                </span>
+              </template>
+            </ChoiceCard>
+          </div>
 
-            <section class="performance-test__column">
-              <h2>{{ t('performanceTest.measurementSettings') }}</h2>
+          <template v-else>
+            <div
+              class="performance-test__drop-zone"
+              :class="{
+                'performance-test__drop-zone--dragging': isWorkflowDragging,
+                'performance-test__drop-zone--selected': workflowFilePath
+              }"
+              :aria-busy="isWorkflowImporting || isWorkflowDeleting"
+              @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
+              @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
+              @dragleave.prevent="isWorkflowDragging = false"
+              @drop.prevent="dropWorkflow"
+            >
+              <button
+                class="performance-test__drop-content"
+                type="button"
+                :disabled="isWorkflowLocked"
+                @click="importWorkflow()"
+              >
+                <span v-if="!workflowFilePath">
+                  {{
+                    isWorkflowImporting
+                      ? t('performanceTest.importingWorkflow')
+                      : t('performanceTest.dropWorkflowHint')
+                  }}
+                </span>
+                <span v-else class="performance-test__workflow-file">
+                  <strong>{{ workflowFileName }}</strong>
+                  <code>{{ workflowFilePath }}</code>
+                </span>
+              </button>
+              <button
+                v-if="workflowFilePath && !isWorkflowLocked"
+                class="performance-test__delete-workflow"
+                type="button"
+                :aria-label="t('performanceTest.deleteWorkflow')"
+                :title="t('performanceTest.deleteWorkflow')"
+                :disabled="isWorkflowDeleting"
+                @click="deleteWorkflow"
+              >
+                <Trash2 :size="18" aria-hidden="true" />
+              </button>
+            </div>
+            <p v-if="workflowImportError" class="performance-test__workflow-error" role="alert">
+              {{ workflowImportError }}
+            </p>
+          </template>
+
+          <div class="performance-test__advanced">
+            <CollapsibleSectionToggle
+              :expanded="advancedExpanded"
+              :label="advancedSummaryLabel"
+              @toggle="advancedExpanded = !advancedExpanded"
+            />
+            <div v-show="advancedExpanded" class="performance-test__advanced-body">
               <div class="performance-test__setting">
                 <label for="performance-test-warmup-runs">
                   {{ t('performanceTest.warmupRuns') }}
@@ -1108,31 +1101,31 @@ watch(performanceTestLogs, async () => {
                   />
                 </div>
               </div>
-              <div class="performance-test__run-actions">
-                <button
-                  class="danger-solid performance-test__stop"
-                  type="button"
-                  :disabled="!canStop"
-                  @click="stopPerformanceTestFromUser"
-                >
-                  {{ isStopping ? t('performanceTest.stopping') : t('performanceTest.stop') }}
-                </button>
-                <button
-                  class="brand-primary performance-test__run"
-                  type="button"
-                  :disabled="!canRun"
-                  @click="runPerformanceTest"
-                >
-                  {{
-                    isLaunching
-                      ? t('performanceTest.running')
-                      : isStandardMode
-                        ? t('performanceTest.runBenchmark')
-                        : t('performanceTest.run')
-                  }}
-                </button>
-              </div>
-            </section>
+              <p class="performance-test__advanced-note">
+                {{ t('performanceTest.advancedHelper') }}
+              </p>
+            </div>
+          </div>
+
+          <div class="performance-test__run-actions">
+            <button
+              v-if="isLaunching || isStopping"
+              class="danger-solid performance-test__stop"
+              type="button"
+              :disabled="!canStop"
+              @click="stopPerformanceTestFromUser"
+            >
+              {{ isStopping ? t('performanceTest.stopping') : t('performanceTest.stop') }}
+            </button>
+            <button
+              v-else
+              class="brand-primary performance-test__run"
+              type="button"
+              :disabled="!canRun"
+              @click="runPerformanceTest"
+            >
+              {{ isStandardMode ? t('performanceTest.runBenchmark') : t('performanceTest.run') }}
+            </button>
           </div>
 
           <section class="performance-test__results-section">
@@ -1544,13 +1537,26 @@ watch(performanceTestLogs, async () => {
   text-align: left;
 }
 
-.performance-test__columns {
-  display: grid;
-  grid-template-columns: minmax(240px, 3fr) repeat(2, minmax(0, 3.5fr));
-  gap: 24px;
+.performance-test__context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   width: 100%;
-  min-height: 0;
   flex: 0 0 auto;
+}
+
+.performance-test__context-label {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.performance-test__workspace-select,
+.performance-test__instance-select {
+  flex: 0 1 240px;
+  min-width: 0;
+  max-width: 280px;
 }
 
 .performance-test__content {
@@ -1560,22 +1566,6 @@ watch(performanceTestLogs, async () => {
   gap: 24px;
   width: 100%;
   min-height: 0;
-}
-
-.performance-test__column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-  min-height: 0;
-}
-
-.performance-test__column h2 {
-  margin: 0;
-  color: var(--neutral-200);
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.4;
 }
 
 .performance-test__setting {
@@ -1602,26 +1592,6 @@ watch(performanceTestLogs, async () => {
   padding: 4px 8px;
   border-radius: 6px;
   font-size: var(--takeover-fs-caption);
-}
-
-.performance-test__selection-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-}
-
-.performance-test__selection-label {
-  flex: 0 0 68px;
-  color: var(--neutral-200);
-  font-size: 13px;
-}
-
-.performance-test__selection-control {
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-  max-width: 320px;
 }
 
 .performance-test__workspace-select :deep(.workspace-selector) {
@@ -1682,8 +1652,8 @@ watch(performanceTestLogs, async () => {
 }
 
 .performance-test__benchmark-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -1892,16 +1862,36 @@ watch(performanceTestLogs, async () => {
   line-height: 1.4;
 }
 
+.performance-test__advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.performance-test__advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 340px;
+}
+
+.performance-test__advanced-note {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .performance-test__run-actions {
   display: flex;
   align-self: flex-end;
   gap: 8px;
-  margin-top: auto;
 }
 
 .performance-test__run,
 .performance-test__stop {
-  min-width: 96px;
+  min-width: 140px;
 }
 
 .performance-test__logs {
@@ -2149,8 +2139,8 @@ watch(performanceTestLogs, async () => {
   max-width: min(340px, 45%);
 }
 
-@media (max-width: 900px) {
-  .performance-test__columns {
+@media (max-width: 640px) {
+  .performance-test__headline-band {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2158,12 +2148,8 @@ watch(performanceTestLogs, async () => {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .performance-test__result-list--compact {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .performance-test__system-groups {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>
