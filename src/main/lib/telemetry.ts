@@ -394,8 +394,14 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
  *
  * `app_version` always (see `flagEvaluationAppVersion`). Builds from before it
  * was added send none, and a semver condition does not match a missing
- * property, so a `>=` gate fails closed for them — the direction a grant that
- * older builds would reject needs.
+ * property, so a `>=` gate evaluates closed for them — the direction a grant
+ * that older builds would reject needs. That covers the live evaluation only:
+ * `ops-flags.json` keeps the last answer without the version that earned it, so
+ * after a downgrade an `unreachable` launch still applies a grant a newer build
+ * persisted.
+ *
+ * The version is self-asserted, so a version gate is a compatibility gate, not
+ * a trust boundary: never gate anything a user could want withheld on it.
  *
  * `comfy_staff` only when consent is `'granted'` AND the account is staff. The flag FETCH
  * itself bypasses the consent gate on purpose — ops flags are config pushed TO

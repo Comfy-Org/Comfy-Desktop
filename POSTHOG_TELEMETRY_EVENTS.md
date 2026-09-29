@@ -272,11 +272,17 @@ in `src/main/lib/telemetry.ts`.
   e.g. `app_version semver_gte 1.1.4`.
 - Builds released before `app_version` was added send no version. A semver
   condition does not match a missing property, so a `semver_gte` gate excludes
-  them. That is the safe direction for a payload that older builds reject.
+  them. That is the safe direction for a payload that older builds reject. It
+  holds for the live evaluation only: `ops-flags.json` keeps the last answer, so
+  a build downgraded from one that received the payload still applies it on a
+  launch whose flag fetch does not complete.
+- `app_version` is reported by the client, so a version gate is a compatibility
+  gate, not access control.
 - PostHog's server compares versions by SemVer, so a prerelease sorts below its
   release: `1.1.4-rc.1` does not satisfy `semver_gte 1.1.4`. To include the
   release candidates of 1.1.4, gate on `semver_gte 1.1.4-rc.0`.
 - Unpackaged development builds send `git describe` output with the leading `v`
   removed (e.g. `1.1.1-5-gabc1234`). That compares as a prerelease of the last
-  tag, below the tag itself. Test version gates with a packaged build or a
+  tag, below the tag itself. With no reachable tag it is a bare commit id, not a
+  version. Test version gates with a packaged build or a
   hand-built `/flags` request.
