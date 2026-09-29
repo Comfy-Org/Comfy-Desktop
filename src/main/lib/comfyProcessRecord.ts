@@ -50,6 +50,8 @@ export interface ComfyProcessRecord {
    *  group id could not yet have been reused, so each entry is proven ours by the same
    *  pid + start-time rule as the child. */
   lingering?: LingeringProcess[]
+  /** The child itself has exited; the record is kept only for `lingering`. */
+  childExitedAt?: number
 }
 
 export interface LingeringProcess {
@@ -124,18 +126,35 @@ export function writeRecord(record: ComfyProcessRecord): void {
 }
 
 /** Delete the record only if it still describes `childPid`: a respawn may already have
- *  replaced it with the next child's. */
+ *  replaced it with the next child's. A record that cannot be read right now (a transient
+ *  sharing violation, say) is unknown, not absent, and stays; one that reads but is corrupt
+ *  proves nothing and goes. */
 export function removeRecordIf(sessionKey: string, childPid: number): void {
-  const current = readRecord(sessionKey)
-  if (current && current.childPid !== childPid) return
+  const file = recordPath(sessionKey)
+  let raw: string
   try {
-    fs.unlinkSync(recordPath(sessionKey))
+    raw = fs.readFileSync(file, 'utf-8')
+  } catch {
+    return
+  }
+  let parsed: unknown = null
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    // corrupt: fall through to delete
+  }
+  if (isRecord(parsed) && parsed.childPid !== childPid) return
+  try {
+    fs.unlinkSync(file)
   } catch {}
 }
 
+/** Stamp a stop request on a record THIS Desktop wrote. A record left by another Desktop is
+ *  never stamped: its child was not asked to stop, and the next launch must not wait for it as
+ *  if it were exiting. */
 export function markStopRequested(sessionKey: string): void {
   const current = readRecord(sessionKey)
-  if (!current || current.stopRequestedAt) return
+  if (!current || current.stopRequestedAt || current.desktopPid !== process.pid) return
   writeRecord({ ...current, stopRequestedAt: Date.now() })
 }
 
@@ -168,7 +187,11 @@ async function recordChildExit(sessionKey: string, childPid: number): Promise<vo
     removeRecordIf(sessionKey, childPid)
     return
   }
-  writeRecord({ ...current, lingering: [...(current.lingering ?? []), ...lingering] })
+  writeRecord({
+    ...current,
+    childExitedAt: Date.now(),
+    lingering: [...(current.lingering ?? []), ...lingering]
+  })
 }
 
 /**
@@ -324,7 +347,9 @@ export interface PriorProcessOutcome {
   /** The prior process was gone by the end of what we did. */
   exitedInTime: boolean
   /** Launching now would start a second ComfyUI on the same database. */
-  blocked: null | 'busy' | 'stuck'
+  /** `unverified`: a proven orphan could not be re-verified at the moment of the kill (the OS
+   *  query failed), so it was neither stopped nor forgotten. */
+  blocked: null | 'busy' | 'stuck' | 'unverified'
   queue?: QueueState
   /** The user chose to stop a busy process. */
   busyOverride?: boolean
@@ -429,12 +454,17 @@ export async function resolvePriorProcess(
       lingering: survivors.stopped
     }
   }
-  const classify = async (): Promise<RecordVerdict> =>
-    classifyRecord(record, {
+  const classify = async (): Promise<RecordVerdict> => {
+    const verdict = classifyRecord(record, {
       startTimes: await deps.readStartTimes([record.childPid, record.desktopPid]),
       selfPid: process.pid,
       selfStartTime: await deps.ownStartTime()
     })
+    // This Desktop spawned it, and a launch of the same session only runs when no session or
+    // operation of it is active: nothing here manages that child any more (a stop or cancel
+    // whose kill outlived its wait). It is ours, and it is in the way.
+    return verdict === 'owner_alive' && record.desktopPid === process.pid ? 'orphan' : verdict
+  }
   let verdict = await classify()
   if (verdict === 'stale') {
     deps.removeRecordIf(sessionKey, record.childPid)
@@ -483,7 +513,12 @@ export async function resolvePriorProcess(
   }
   const kill = await deps.killPidTree(record.childPid, record.childStartTime!)
   if (!kill.killed) {
-    // The proof no longer holds at the moment of the kill: the pid exited or was recycled.
+    if (kill.reason === 'probe_failed') {
+      // Proven a moment ago, unverifiable now: neither stop it nor forget it, and do not start a
+      // second ComfyUI beside it.
+      return outcome('left', { blocked: 'unverified' })
+    }
+    // The pid exited or was recycled since the proof: whatever runs there is not ours.
     deps.removeRecordIf(sessionKey, record.childPid)
     return outcome('waited', { exitedInTime: !deps.isPidAlive(record.childPid) })
   }
@@ -544,7 +579,8 @@ export function takePriorSessionUnclean(): boolean {
   let unclean = false
   for (const r of listRecords()) {
     if (r.desktopPid === process.pid || isPidAlive(r.desktopPid)) continue
-    if (!r.stopRequestedAt && !r.uncleanReported) {
+    // A child that exited on its own (record kept only for survivors) was not left by a crash.
+    if (!r.stopRequestedAt && !r.uncleanReported && !r.childExitedAt) {
       unclean = true
       if (anythingAlive(r, isPidAlive)) writeRecord({ ...r, uncleanReported: true })
     }

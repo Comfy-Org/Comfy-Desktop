@@ -1454,8 +1454,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const telemetrySetting = settings.get('telemetryEnabled') as boolean | undefined
     const initialConsent: mainTelemetry.ConsentState =
       telemetrySetting === true ? 'granted' : telemetrySetting === false ? 'denied' : 'undecided'
-    // initTelemetry first so the client exists before setConsentState's
-    // grant-transition flush has a chance to run.
     // A ComfyUI record left by a Desktop that died without stopping it: read before anything
     // can launch (and rewrite the records).
     let priorSessionUnclean = false
@@ -1464,6 +1462,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     } catch (err) {
       console.warn('[comfy-procs] startup scan failed:', err)
     }
+    // initTelemetry first so the client exists before setConsentState's
+    // grant-transition flush has a chance to run.
     mainTelemetry.initTelemetry({
       appVersion: APP_VERSION,
       appEnv: app.isPackaged ? 'prod-v2' : 'dev',

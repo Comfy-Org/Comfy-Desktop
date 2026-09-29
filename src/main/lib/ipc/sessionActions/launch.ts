@@ -1508,7 +1508,15 @@ async function runLaunch(
         portConflict: { port: prior.port, pids: [prior.pid], isComfy: true, priorBusy: true }
       }
     }
-    return { ok: false, message: i18n.t('errors.priorProcessStuck', { pid: prior.pid }) }
+    return {
+      ok: false,
+      message: i18n.t(
+        prior.blocked === 'unverified'
+          ? 'errors.priorProcessUnverified'
+          : 'errors.priorProcessStuck',
+        { pid: prior.pid }
+      )
+    }
   }
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
@@ -1557,16 +1565,18 @@ async function runLaunch(
       existingPids.length > 0 &&
       (await holderIsInstall(existingPids[0]!, inst.installPath).catch(() => false))
     if (sameInstallHolder) {
-      emitPriorProcessFound(installationId, {
-        action: 'left',
-        proof: 'none',
-        pid: existingPids[0]!,
-        port: launchCmd.port!,
-        ageMs: null,
-        waitMs: 0,
-        exitedInTime: false,
-        blocked: null
-      })
+      // Already reported when the record check found it and left it.
+      if (prior?.action !== 'left')
+        emitPriorProcessFound(installationId, {
+          action: 'left',
+          proof: 'none',
+          pid: existingPids[0]!,
+          port: launchCmd.port!,
+          ageMs: null,
+          waitMs: 0,
+          exitedInTime: false,
+          blocked: null
+        })
       const info = await getProcessInfo(existingPids[0]!)
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return {

@@ -293,3 +293,40 @@ export async function processGroupOf(pid: number): Promise<number | null> {
   const n = stdout == null ? NaN : Number(stdout.trim())
   return Number.isInteger(n) && n > 0 ? n : null
 }
+
+/**
+ * POSIX: whether process group `pgid` (leader included) has a member that is not a zombie.
+ * `kill(-pgid, 0)` also answers for a group of unreaped zombies, which hold no files, locks or
+ * ports; this tells the two apart. Asked only when a kill's wait runs out.
+ */
+export async function groupHasLiveMembers(pgid: number): Promise<boolean> {
+  if (process.platform === 'win32' || !Number.isInteger(pgid) || pgid <= 0) return false
+  if (process.platform === 'linux') {
+    let entries: string[]
+    try {
+      entries = fs.readdirSync('/proc')
+    } catch {
+      return true
+    }
+    for (const name of entries) {
+      if (!/^\d+$/.test(name)) continue
+      let stat: string
+      try {
+        stat = fs.readFileSync(`/proc/${name}/stat`, 'utf-8')
+      } catch {
+        continue
+      }
+      if (parseLinuxStatPgid(stat) !== pgid) continue
+      const state = stat.slice(stat.lastIndexOf(')') + 1).trim()[0]
+      if (state !== 'Z' && state !== 'X') return true
+    }
+    return false
+  }
+  const stdout = await run('ps', ['-A', '-o', 'pgid=,stat='])
+  // Unanswerable counts as alive: this may only turn "timed out" into "gone" on evidence.
+  if (stdout == null) return true
+  return stdout.split('\n').some((line) => {
+    const m = /^\s*(\d+)\s+(\S+)/.exec(line)
+    return !!m && Number(m[1]) === pgid && !m[2]!.startsWith('Z')
+  })
+}

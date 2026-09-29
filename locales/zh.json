@@ -1380,6 +1380,7 @@
     "priorProcessBusyStop": "停止并启动",
     "priorProcessBusyConfirmMessage": "这将停止之前的 ComfyUI，并取消它正在处理的提示词。",
     "priorProcessStuck": "此安装之前的 ComfyUI（PID {pid}）在停止后没有退出。现在启动会失败，因为它仍占用此安装的数据库。请稍后重试，或手动结束该进程。",
+    "priorProcessUnverified": "此安装之前的 ComfyUI（PID {pid}）仍在运行，且 Comfy Desktop 无法确认可以安全地停止它。现在启动会失败，因为它占用此安装的数据库。请结束该进程后重试。",
     "duplicateName": "名为“{name}”的实例已存在。请选择其他名称。",
     "nameRequired": "请输入名称。",
     "unknownSource": "此实例的来源类型无法识别。它可能由其他版本创建。请删除并重新安装。",

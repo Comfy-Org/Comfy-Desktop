@@ -2,6 +2,7 @@ import { spawn } from 'child_process'
 import { describe, expect, it } from 'vitest'
 import {
   descendantsOf,
+  groupHasLiveMembers,
   isPidAlive,
   parseDarwinPs,
   parseLinuxStat,
@@ -97,6 +98,26 @@ describe.runIf(process.platform !== 'win32')('readStartTimes (real processes)', 
       expect((await readStartTimes([pid]))?.has(pid)).toBe(false)
     } finally {
       child.kill('SIGKILL')
+    }
+  })
+})
+
+describe.runIf(process.platform !== 'win32')('groupHasLiveMembers (real processes)', () => {
+  it('sees a live group and stops seeing it once the group is gone', async () => {
+    const leader = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
+      stdio: 'ignore',
+      detached: true
+    })
+    try {
+      expect(await groupHasLiveMembers(leader.pid!)).toBe(true)
+      const exited = new Promise((r) => leader.once('exit', r))
+      process.kill(-leader.pid!, 'SIGKILL')
+      await exited
+      expect(await groupHasLiveMembers(leader.pid!)).toBe(false)
+    } finally {
+      try {
+        process.kill(-leader.pid!, 'SIGKILL')
+      } catch {}
     }
   })
 })

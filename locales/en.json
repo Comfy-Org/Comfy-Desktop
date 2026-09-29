@@ -1380,6 +1380,7 @@
     "priorProcessBusyStop": "Stop it and launch",
     "priorProcessBusyConfirmMessage": "This stops the earlier ComfyUI and cancels the prompts it is working on.",
     "priorProcessStuck": "An earlier ComfyUI for this installation (PID {pid}) did not exit after being stopped. Launching now would fail because it still holds the installation's database. Try again in a moment, or end the process manually.",
+    "priorProcessUnverified": "An earlier ComfyUI for this installation (PID {pid}) is still running, and Comfy Desktop could not confirm it is safe to stop. Launching now would fail because it holds the installation's database. End the process, then try again.",
     "duplicateName": "An instance named \"{name}\" already exists. Please choose a different name.",
     "nameRequired": "Please enter a name.",
     "unknownSource": "This instance has an unrecognized source type. It may have been created by a different version. Delete it and reinstall.",

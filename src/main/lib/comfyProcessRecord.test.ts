@@ -269,6 +269,46 @@ describe('resolvePriorProcess', () => {
     expect(removed).toEqual([])
   })
 
+  it('keeps the record and blocks when the orphan cannot be re-verified at the kill', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        killPidTree: async () => ({
+          killed: false,
+          reason: 'probe_failed',
+          exited: false,
+          waitMs: 15_000
+        })
+      })
+    )
+    expect(out).toMatchObject({ action: 'left', blocked: 'unverified' })
+    expect(removed).toEqual([])
+  })
+
+  it("stops this Desktop's own child when nothing manages it any more", async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({ readRecord: () => record({ desktopPid: SELF.pid, desktopStartTime: SELF.start }) })
+    )
+    expect(kills).toEqual([[222, 'child-start']])
+    expect(out).toMatchObject({ action: 'terminated', blocked: null })
+  })
+
+  it("blocks on this Desktop's own stop that outlived both waits", async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        readRecord: () =>
+          record({ desktopPid: SELF.pid, desktopStartTime: SELF.start, stopRequestedAt: 9_000 }),
+        killPidTree: async () => ({ killed: true, exited: false, waitMs: 5_000 })
+      })
+    )
+    expect(out).toMatchObject({ action: 'terminated', blocked: 'stuck' })
+  })
+
   it('does not block when the proof lapsed at the moment of the kill', async () => {
     const out = await resolvePriorProcess(
       'inst-1',
@@ -276,7 +316,7 @@ describe('resolvePriorProcess', () => {
       deps({
         killPidTree: async () => {
           alive.delete(222)
-          return { killed: false, exited: true, waitMs: 1 }
+          return { killed: false, reason: 'mismatch', exited: true, waitMs: 1 }
         }
       })
     )
@@ -346,14 +386,15 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
 
 describe.runIf(process.platform !== 'win32')('survivors of a real process group', () => {
   it('records a descendant that outlives the child, and the next launch stops only it', async () => {
-    // A detached leader (like Desktop's ComfyUI) that starts a long-lived child and exits.
+    // A detached leader (like Desktop's ComfyUI) that starts a long-lived child, then exits
+    // when its stdin closes — which the test does only after `trackSpawn` is listening.
     const leader = spawn(
       process.execPath,
       [
         '-e',
-        `const c = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { stdio: 'ignore' }); console.log(c.pid); setTimeout(() => process.exit(0), 300)`
+        `const c = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { stdio: 'ignore' }); console.log(c.pid); process.stdin.on('end', () => process.exit(0)); process.stdin.resume()`
       ],
-      { stdio: ['ignore', 'pipe', 'ignore'], detached: true }
+      { stdio: ['pipe', 'pipe', 'ignore'], detached: true }
     )
     const survivorPid = await new Promise<number>((r) =>
       leader.stdout!.once('data', (d: Buffer) => r(Number(String(d).trim())))
@@ -366,6 +407,7 @@ describe.runIf(process.platform !== 'win32')('survivors of a real process group'
         port: 1,
         bootId: 'b'
       })
+      leader.stdin!.end()
       await vi.waitFor(() => expect(readRecord('inst-1')?.lingering?.[0]?.pid).toBe(survivorPid), {
         timeout: 5_000
       })
@@ -415,6 +457,17 @@ describe('record store', () => {
     expect(listRecords()).toEqual([])
   })
 
+  it('leaves a record it cannot read right now, and drops one that is corrupt', () => {
+    const dir = path.join(dirs.state, 'comfy-procs')
+    fs.mkdirSync(path.join(dir, 'inst-1.json'), { recursive: true })
+    removeRecordIf('inst-1', 222)
+    expect(fs.existsSync(path.join(dir, 'inst-1.json'))).toBe(true)
+    fs.rmdirSync(path.join(dir, 'inst-1.json'))
+    fs.writeFileSync(path.join(dir, 'inst-1.json'), '{"v":1,')
+    removeRecordIf('inst-1', 222)
+    expect(fs.existsSync(path.join(dir, 'inst-1.json'))).toBe(false)
+  })
+
   it('only removes the record of the child it names', () => {
     writeRecord(record({ childPid: 333 }))
     removeRecordIf('inst-1', 222)
@@ -423,8 +476,13 @@ describe('record store', () => {
     expect(readRecord('inst-1')).toBeNull()
   })
 
-  it('stamps a stop request once', () => {
-    writeRecord(record())
+  it('stamps a stop request once, and only on a record this Desktop wrote', () => {
+    writeRecord(record({ sessionKey: 'foreign', desktopPid: 111 }))
+    markStopRequested('foreign')
+    expect(readRecord('foreign')?.stopRequestedAt).toBeUndefined()
+    fs.unlinkSync(path.join(dirs.state, 'comfy-procs', 'foreign.json'))
+
+    writeRecord(record({ desktopPid: process.pid }))
     markStopRequested('inst-1')
     const first = readRecord('inst-1')?.stopRequestedAt
     expect(first).toBeGreaterThan(0)
@@ -454,7 +512,8 @@ describe('record store', () => {
       const exited = new Promise((r) => child.once('exit', r))
       child.kill('SIGKILL')
       await exited
-      expect(readRecord('inst-1')).toBeNull()
+      // The exit bookkeeping looks for survivors first (asynchronous `ps` on macOS).
+      await vi.waitFor(() => expect(readRecord('inst-1')).toBeNull())
     }
   )
 })
@@ -480,6 +539,20 @@ describe('takePriorSessionUnclean', () => {
     writeRecord(record({ desktopPid: dead, childPid: dead }))
     expect(takePriorSessionUnclean()).toBe(true)
     expect(listRecords()).toEqual([])
+  })
+
+  it('does not count a child that exited on its own and left a survivor', async () => {
+    const dead = await deadPid()
+    writeRecord(
+      record({
+        desktopPid: dead,
+        childPid: dead,
+        childExitedAt: 1,
+        lingering: [{ pid: process.pid, startTime: 'x' }]
+      })
+    )
+    expect(takePriorSessionUnclean()).toBe(false)
+    expect(readRecord('inst-1')).not.toBeNull()
   })
 
   it('ignores records owned by a running Desktop', () => {

@@ -2103,7 +2103,9 @@ describe('prior ComfyUI process handling at launch', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'port']
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null
-    launchHarness.busyPorts = null
+    // Never the real probes here: whatever else holds a port on the machine would decide the
+    // outcome.
+    launchHarness.busyPorts = []
     launchHarness.killExits = true
     launchHarness.waitForPort = async () => {}
     launchHarness.spawn = () => {
@@ -2220,6 +2222,27 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(res.message).toBe('errors.priorProcessStuck')
     expect(res.portConflict).toBeUndefined()
     expect(children).toHaveLength(0)
+  })
+
+  it('refuses to launch beside an orphan it could not re-verify', async () => {
+    ownership.prior = { ...terminated, action: 'left', exitedInTime: false, blocked: 'unverified' }
+
+    const res = await handleLaunch(ctxFor('prior-unverified'))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.priorProcessUnverified')
+    expect(children).toHaveLength(0)
+  })
+
+  it('reports a left process once, even when it is also the port holder', async () => {
+    ownership.prior = { ...terminated, action: 'left', exitedInTime: false, blocked: null }
+    launchHarness.busyPorts = [PORT]
+    ownership.holderIsInstall = true
+
+    const res = await handleLaunch(ctxFor('prior-left-holder'))
+
+    expect(res.portConflict).toEqual({ port: PORT, pids: [31337], isComfy: true })
+    expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toHaveLength(1)
   })
 
   it('launches as before when the check itself fails', async () => {
