@@ -96,6 +96,11 @@ PostHog receives `$exception`.
 - `comfy.desktop.comfyui.prior_process_found`
 - `comfy.desktop.comfyui.update.applied`
 
+Property notes for the process-ownership fields:
+
+- `session.started` → `prior_session_unclean`: a record of a ComfyUI child that was never asked to stop was left by a Desktop that is no longer running. It does not mean "Desktop crashed": a crash with no ComfyUI running, or after the child had already exited (including a self-restart through `os.execv`), leaves no such record.
+- `boot_failed` → `lock_holder_name`: the name the OS lock probe reports, not normalised. On Windows that is Restart Manager's application name (for example `python`); elsewhere it is `lsof`'s command name.
+
 ### Instances, actions, and navigation
 
 - `comfy.desktop.action.invoked`

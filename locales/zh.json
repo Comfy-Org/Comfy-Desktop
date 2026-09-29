@@ -165,6 +165,7 @@
     "preparingTitle": "正在准备…",
     "launchingTitle": "正在启动 ComfyUI…",
     "stoppingTitle": "正在停止 ComfyUI…",
+    "launchFailedTitle": "ComfyUI 无法启动",
     "crashedTitle": "ComfyUI 意外退出",
     "crashedDesc": "ComfyUI 进程已退出。你可以在下方重新启动。",
     "crashedDescWithCode": "ComfyUI 进程已退出（退出代码 {code}）。你可以在下方重新启动。",

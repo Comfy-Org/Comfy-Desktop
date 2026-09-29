@@ -165,6 +165,7 @@
     "preparingTitle": "Preparing…",
     "launchingTitle": "Starting ComfyUI…",
     "stoppingTitle": "Stopping ComfyUI…",
+    "launchFailedTitle": "ComfyUI could not start",
     "crashedTitle": "ComfyUI exited unexpectedly",
     "crashedDesc": "The ComfyUI process exited. You can restart it below.",
     "crashedDescWithCode": "The ComfyUI process exited (exit code {code}). You can restart it below.",
