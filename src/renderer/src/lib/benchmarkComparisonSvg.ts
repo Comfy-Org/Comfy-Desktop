@@ -1,5 +1,9 @@
 import comfyWordmarkSource from '../components/icons/ComfyWordmark.vue?raw'
-import { getRelativeSpeedKind, getRelativeSpeedOffset } from './relativeSpeed'
+import {
+  getRelativeSpeedOffset,
+  getRelativeSpeedScale,
+  type RelativeSpeedKind
+} from './relativeSpeed'
 
 export interface BenchmarkComparisonImageProperty {
   label: string
@@ -20,7 +24,7 @@ export interface BenchmarkComparisonImageRun {
   relativeSpeed?: {
     durationSeconds: number | null
     factor: number | null
-    isBaseline: boolean
+    kind: RelativeSpeedKind
     status: string
   }
 }
@@ -180,75 +184,73 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
     ].join('')
   }).join('')
 
-  const durationChartRows = data.runs
-    .map((run, index) => {
-      const y = chartY + chartRowsOffset + index * chartRowHeight
-      const trackY = y + Math.max(42, (runPropertyLines[index]!.length * 19) / 2)
-      const fastest = run.fastestDurationSeconds
-      const average = run.averageDurationSeconds
-      const slowest = run.slowestDurationSeconds
-      const fastestX = fastest === null ? null : durationX(fastest)
-      const averageX = average === null ? null : durationX(average)
-      const slowestX = slowest === null ? null : durationX(slowest)
-      const range =
-        fastest !== null && slowest !== null && fastestX !== null && slowestX !== null
-          ? `<line x1="${fastestX}" y1="${trackY}" x2="${slowestX}" y2="${trackY}" stroke="${escapeXml(run.color)}" class="chart-range" />
+  const durationTrack = (run: BenchmarkComparisonImageRun, trackY: number): string => {
+    const fastest = run.fastestDurationSeconds
+    const average = run.averageDurationSeconds
+    const slowest = run.slowestDurationSeconds
+    const fastestX = fastest === null ? null : durationX(fastest)
+    const averageX = average === null ? null : durationX(average)
+    const slowestX = slowest === null ? null : durationX(slowest)
+    const range =
+      fastest !== null && slowest !== null && fastestX !== null && slowestX !== null
+        ? `<line x1="${fastestX}" y1="${trackY}" x2="${slowestX}" y2="${trackY}" stroke="${escapeXml(run.color)}" class="chart-range" />
              <circle cx="${fastestX}" cy="${trackY}" r="4" fill="${escapeXml(run.color)}" />
              <circle cx="${slowestX}" cy="${trackY}" r="4" fill="${escapeXml(run.color)}" />
              ${text(fastestX - 4, trackY + 4, formatDuration(fastest), 'chart-point-label', 'end')}
              ${text(slowestX + 4, trackY + 4, formatDuration(slowest), 'chart-point-label', 'start')}`
-          : ''
-      const averageMarker =
-        average === null || averageX === null
-          ? ''
-          : `<circle cx="${averageX}" cy="${trackY}" r="5" fill="${escapeXml(run.color)}" class="chart-average" />
+        : ''
+    const averageMarker =
+      average === null || averageX === null
+        ? ''
+        : `<circle cx="${averageX}" cy="${trackY}" r="5" fill="${escapeXml(run.color)}" class="chart-average" />
              ${text(averageX, trackY + 22, formatDuration(average), 'chart-point-label', 'middle')}`
-      return [
-        `<circle cx="${margin + 6}" cy="${y + 7}" r="6" fill="${escapeXml(run.color)}" />`,
-        propertyLines(run.properties, margin + 20, y + 12),
-        `<line x1="${margin + chartLabelWidth + chartLabelGap}" y1="${trackY}" x2="${width - margin}" y2="${trackY}" class="chart-track" />`,
-        range,
-        averageMarker
-      ].join('')
-    })
-    .join('')
+    return [
+      `<line x1="${margin + chartLabelWidth + chartLabelGap}" y1="${trackY}" x2="${width - margin}" y2="${trackY}" class="chart-track" />`,
+      range,
+      averageMarker
+    ].join('')
+  }
 
   const relativeCenterX = chartStart + chartWidth / 2
-  const relativeChartRows = data.runs
+  const relativeScale = getRelativeSpeedScale(
+    data.runs.map((run) => run.relativeSpeed?.factor ?? null)
+  )
+  const relativeTrack = (run: BenchmarkComparisonImageRun, trackY: number): string => {
+    const relative = run.relativeSpeed
+    const factor = relative?.factor ?? null
+    const durationSeconds = relative?.durationSeconds ?? null
+    const kind = relative?.kind ?? 'missing'
+    const factorX =
+      relativeCenterX + getRelativeSpeedOffset(factor, relativeScale) * (chartWidth / 2)
+    const bar =
+      kind === 'faster' || kind === 'slower'
+        ? `<line x1="${relativeCenterX}" y1="${trackY}" x2="${factorX}" y2="${trackY}" class="relative-bar relative-${kind}" />`
+        : ''
+    const baselineMarker =
+      kind === 'baseline'
+        ? `<line x1="${relativeCenterX}" y1="${trackY - 12}" x2="${relativeCenterX}" y2="${trackY + 12}" class="relative-baseline-marker" />`
+        : ''
+    const duration = durationSeconds === null ? '—' : formatDuration(durationSeconds)
+    const factorLabel = factor === null ? '—' : `${factor.toFixed(2)}×`
+    const result = relative?.status ? `${factorLabel} ${relative.status}` : factorLabel
+    return [
+      text(chartStart - 18, trackY + 4, duration, 'chart-point-label', 'end'),
+      `<line x1="${chartStart}" y1="${trackY}" x2="${chartEnd}" y2="${trackY}" class="chart-track" />`,
+      `<line x1="${relativeCenterX}" y1="${trackY - 16}" x2="${relativeCenterX}" y2="${trackY + 16}" class="relative-center" />`,
+      bar,
+      baselineMarker,
+      text(chartEnd + 12, trackY + 4, result, `relative-result relative-${kind}`)
+    ].join('')
+  }
+  const chartTrack = data.relativeSpeed ? relativeTrack : durationTrack
+  const chartRows = data.runs
     .map((run, index) => {
       const y = chartY + chartRowsOffset + index * chartRowHeight
       const trackY = y + Math.max(42, (runPropertyLines[index]!.length * 19) / 2)
-      const relative = run.relativeSpeed
-      const factor = relative?.factor ?? null
-      const factorX = relativeCenterX + getRelativeSpeedOffset(factor) * (chartWidth / 2)
-      const kind = getRelativeSpeedKind(factor, relative?.isBaseline ?? false)
-      const bar =
-        factor === null || kind === 'baseline' || kind === 'same'
-          ? ''
-          : `<line x1="${relativeCenterX}" y1="${trackY}" x2="${factorX}" y2="${trackY}" class="relative-bar relative-${kind}" />`
-      const baselineMarker =
-        kind === 'baseline'
-          ? `<line x1="${relativeCenterX}" y1="${trackY - 12}" x2="${relativeCenterX}" y2="${trackY + 12}" class="relative-baseline-marker" />`
-          : ''
-      const duration =
-        relative?.durationSeconds === null || relative?.durationSeconds === undefined
-          ? '—'
-          : formatDuration(relative.durationSeconds)
-      const result =
-        factor === null
-          ? relative?.status
-            ? `— ${relative.status}`
-            : '—'
-          : `${factor.toFixed(2)}× ${relative?.status ?? ''}`
       return [
         `<circle cx="${margin + 6}" cy="${y + 7}" r="6" fill="${escapeXml(run.color)}" />`,
         propertyLines(run.properties, margin + 20, y + 12),
-        text(chartStart - 18, trackY + 4, duration, 'chart-point-label', 'end'),
-        `<line x1="${chartStart}" y1="${trackY}" x2="${chartEnd}" y2="${trackY}" class="chart-track" />`,
-        `<line x1="${relativeCenterX}" y1="${trackY - 16}" x2="${relativeCenterX}" y2="${trackY + 16}" class="relative-center" />`,
-        bar,
-        baselineMarker,
-        text(chartEnd + 12, trackY + 4, result, `relative-result relative-${kind}`)
+        chartTrack(run, trackY)
       ].join('')
     })
     .join('')
@@ -274,7 +276,6 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
         ]
       : [])
   ].join('')
-  const chartRows = data.relativeSpeed ? relativeChartRows : durationChartRows
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">

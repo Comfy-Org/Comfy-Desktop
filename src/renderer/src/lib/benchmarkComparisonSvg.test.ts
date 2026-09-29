@@ -67,7 +67,7 @@ describe('createBenchmarkComparisonSvg', () => {
     data.runs[0]!.relativeSpeed = {
       durationSeconds: 2,
       factor: 1.5,
-      isBaseline: false,
+      kind: 'faster',
       status: 'Faster'
     }
 
@@ -95,7 +95,7 @@ describe('createBenchmarkComparisonSvg', () => {
         relativeSpeed: {
           durationSeconds: 2,
           factor: 1,
-          isBaseline: true,
+          kind: 'baseline',
           status: 'Baseline'
         }
       },
@@ -104,7 +104,7 @@ describe('createBenchmarkComparisonSvg', () => {
         relativeSpeed: {
           durationSeconds: 2,
           factor: 1,
-          isBaseline: false,
+          kind: 'same',
           status: 'Same speed'
         }
       },
@@ -113,7 +113,7 @@ describe('createBenchmarkComparisonSvg', () => {
         relativeSpeed: {
           durationSeconds: null,
           factor: null,
-          isBaseline: false,
+          kind: 'missing',
           status: 'Unavailable'
         }
       }
@@ -125,6 +125,30 @@ describe('createBenchmarkComparisonSvg', () => {
     expect(svg).toContain('1.00× Same speed')
     expect(svg).toContain('— Unavailable')
     expect(svg.match(/class="relative-baseline-marker"/g)).toHaveLength(1)
+  })
+
+  it('scales relative bars so a 4× run reaches the edge and a 2× run stops halfway', () => {
+    const data = comparisonData('workflow.json')
+    data.relativeSpeed = {
+      title: 'Relative speed',
+      hint: 'Baseline duration / run duration',
+      slowerLabel: 'Slower',
+      fasterLabel: 'Faster'
+    }
+    data.runs = [2, 4].map((factor) => ({
+      ...data.runs[0]!,
+      relativeSpeed: { durationSeconds: 1, factor, kind: 'faster' as const, status: 'Faster' }
+    }))
+
+    const svg = createBenchmarkComparisonSvg(data)
+    const track = svg.match(/<line x1="([^"]+)"[^>]+x2="([^"]+)"[^>]+class="chart-track"/)!
+    const [chartStart, chartEnd] = [Number(track[1]), Number(track[2])]
+    const barEnds = [
+      ...svg.matchAll(/<line x1="([^"]+)"[^>]+x2="([^"]+)"[^>]+class="relative-bar/g)
+    ].map((match) => Number(match[2]))
+
+    expect(barEnds[0]).toBeCloseTo(chartStart + ((chartEnd - chartStart) * 3) / 4)
+    expect(barEnds[1]).toBeCloseTo(chartEnd)
   })
 
   it('keeps shared export content aligned between visualizations', () => {

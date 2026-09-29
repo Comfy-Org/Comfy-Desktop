@@ -481,6 +481,32 @@ describe('BenchmarksView', () => {
     )
   })
 
+  it('defaults the baseline to the first displayed column until one is picked', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('.benchmarks__visualization-tabs button')[1]!.trigger('click')
+    const baselineColumnId = () =>
+      wrapper
+        .get('.benchmarks__matrix-column--baseline')
+        .attributes('data-testid')
+        ?.split('-')
+        .at(-1)
+    const sortSelect = wrapper
+      .findAllComponents(BaseSelect)
+      .find((select) => select.props('ariaLabel') === 'Sort comparison')
+
+    expect(baselineColumnId()).toBe('13')
+    sortSelect?.vm.$emit('update:modelValue', 'fastestJobDurationSeconds')
+    await wrapper.vm.$nextTick()
+    expect(baselineColumnId()).toBe('11')
+
+    await wrapper
+      .get('[data-testid="benchmark-comparison-column-title-12"] .benchmarks__matrix-title')
+      .trigger('click')
+    await wrapper.get('.benchmarks__sort-direction').trigger('click')
+    expect(baselineColumnId()).toBe('12')
+  })
+
   it('places endpoint labels immediately outside their data point markers', async () => {
     const edgeBenchmark = {
       ...benchmark('14', 'qwen_image_2.1_int8_bf16.json', 45.83),

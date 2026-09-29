@@ -27,6 +27,7 @@ import {
   calculateRelativeSpeedFactor,
   getRelativeSpeedKind,
   getRelativeSpeedOffset,
+  getRelativeSpeedScale,
   type RelativeSpeedKind
 } from '../lib/relativeSpeed'
 import { useDialogs } from '../composables/useDialogs'
@@ -365,14 +366,6 @@ const metricRows = computed<Array<{ key: MetricKey; label: string }>>(() => [
   { key: 'slowestJobDurationSeconds', label: t('benchmarks.slowest') },
   { key: 'measuredJobCount', label: t('benchmarks.measuredRuns') }
 ])
-const comparisonSortOptions = computed<BaseSelectOption[]>(() => [
-  { value: 'manual', label: t('benchmarks.manualSort') },
-  ...metricRows.value
-    .filter(
-      (metric): metric is { key: DurationKey; label: string } => metric.key !== 'measuredJobCount'
-    )
-    .map((metric) => ({ value: metric.key, label: metric.label }))
-])
 const comparisonMetricOptions = computed<BaseSelectOption[]>(() =>
   metricRows.value
     .filter(
@@ -380,10 +373,16 @@ const comparisonMetricOptions = computed<BaseSelectOption[]>(() =>
     )
     .map((metric) => ({ value: metric.key, label: metric.label }))
 )
+const comparisonSortOptions = computed<BaseSelectOption[]>(() => [
+  { value: 'manual', label: t('benchmarks.manualSort') },
+  ...comparisonMetricOptions.value
+])
+const isRelativeView = computed(() => comparisonVisualization.value === 'relative')
+// Without an explicit pick, the baseline is the first column as displayed (sorted or manual).
 const effectiveComparisonBaselineId = computed(() =>
   selectedIds.value.has(comparisonBaselineId.value)
     ? comparisonBaselineId.value
-    : (selectedOrderIds.value[0] ?? '')
+    : (selectedBenchmarks.value[0]?.id ?? '')
 )
 const comparisonBaseline = computed(
   () =>
@@ -407,6 +406,9 @@ const relativeSpeedResults = computed(() => {
   }
   return results
 })
+const relativeSpeedScale = computed(() =>
+  getRelativeSpeedScale([...relativeSpeedResults.value.values()].map((result) => result.factor))
+)
 const chartMaximum = computed(() => {
   const values = selectedBenchmarks.value.flatMap((benchmark) =>
     benchmark.slowestJobDurationSeconds === null ? [] : [benchmark.slowestJobDurationSeconds]
@@ -444,7 +446,18 @@ function toggleAllFiltered(): void {
 }
 
 function selectComparisonBaseline(id: string): void {
-  if (comparisonVisualization.value === 'relative') comparisonBaselineId.value = id
+  if (isRelativeView.value) comparisonBaselineId.value = id
+}
+
+function isBaselineColumn(id: string): boolean {
+  return isRelativeView.value && effectiveComparisonBaselineId.value === id
+}
+
+function selectBaselineLabel(benchmark: PerformanceTestBenchmark): string {
+  return t('benchmarks.selectBaseline', {
+    workflow: benchmark.workflowName,
+    session: benchmark.id
+  })
 }
 
 function moveComparisonColumn(id: string, offset: -1 | 1): void {
@@ -531,7 +544,7 @@ function relativeFactorLabel(factor: number | null): string {
 
 function relativeBarStyle(factor: number | null): Record<string, string> {
   if (factor === null) return { width: '0%' }
-  const width = `${Math.abs(getRelativeSpeedOffset(factor)) * 50}%`
+  const width = `${Math.abs(getRelativeSpeedOffset(factor, relativeSpeedScale.value)) * 50}%`
   return factor >= 1 ? { left: '50%', width } : { right: '50%', width }
 }
 
@@ -583,15 +596,14 @@ async function exportComparisonImage(): Promise<void> {
       metricTitle: t('benchmarks.metric'),
       durationRangeTitle: t('benchmarks.durationRange'),
       durationRangeHint: t('benchmarks.durationRangeHint'),
-      relativeSpeed:
-        comparisonVisualization.value === 'relative'
-          ? {
-              title: t('benchmarks.relativePerformance'),
-              hint: t('benchmarks.relativePerformanceHint'),
-              slowerLabel: t('benchmarks.slower'),
-              fasterLabel: t('benchmarks.faster')
-            }
-          : undefined,
+      relativeSpeed: isRelativeView.value
+        ? {
+            title: t('benchmarks.relativePerformance'),
+            hint: t('benchmarks.relativePerformanceHint'),
+            slowerLabel: t('benchmarks.slower'),
+            fasterLabel: t('benchmarks.faster')
+          }
+        : undefined,
       exportDateTime: new Intl.DateTimeFormat(undefined, {
         dateStyle: 'medium',
         timeStyle: 'short'
@@ -615,15 +627,14 @@ async function exportComparisonImage(): Promise<void> {
           fastestDurationSeconds: benchmark.fastestJobDurationSeconds,
           averageDurationSeconds: benchmark.averageJobDurationSeconds,
           slowestDurationSeconds: benchmark.slowestJobDurationSeconds,
-          relativeSpeed:
-            comparisonVisualization.value === 'relative'
-              ? {
-                  durationSeconds: metricValue(benchmark, comparisonMetric.value),
-                  factor: relative.factor,
-                  isBaseline: benchmark.id === effectiveComparisonBaselineId.value,
-                  status: t(`benchmarks.${relative.kind}`)
-                }
-              : undefined
+          relativeSpeed: isRelativeView.value
+            ? {
+                durationSeconds: metricValue(benchmark, comparisonMetric.value),
+                factor: relative.factor,
+                kind: relative.kind,
+                status: t(`benchmarks.${relative.kind}`)
+              }
+            : undefined
         }
       })
     })
@@ -1036,7 +1047,7 @@ onMounted(() => {
               </button>
               <button
                 type="button"
-                :aria-pressed="comparisonVisualization === 'relative'"
+                :aria-pressed="isRelativeView"
                 @click="comparisonVisualization = 'relative'"
               >
                 {{ t('benchmarks.speed') }}
@@ -1045,12 +1056,10 @@ onMounted(() => {
             <span v-if="exportResultsError" class="benchmarks__export-error">
               {{ exportResultsError }}
             </span>
-            <label
-              class="benchmarks__comparison-control benchmarks__comparison-control--metric"
-              :class="{
-                'benchmarks__comparison-control--hidden': comparisonVisualization !== 'relative'
-              }"
-              :aria-hidden="comparisonVisualization !== 'relative'"
+            <div
+              class="benchmarks__comparison-metric"
+              :class="{ 'benchmarks__comparison-metric--hidden': !isRelativeView }"
+              :aria-hidden="!isRelativeView"
             >
               <BaseSelect
                 v-model="comparisonMetric"
@@ -1058,7 +1067,7 @@ onMounted(() => {
                 :aria-label="t('benchmarks.metric')"
                 compact
               />
-            </label>
+            </div>
             <div class="benchmarks__comparison-sort">
               <BaseSelect
                 v-model="comparisonSortMetric"
@@ -1138,9 +1147,7 @@ onMounted(() => {
                         'benchmarks__matrix-column--dragging': draggedBenchmarkId === benchmark.id,
                         'benchmarks__matrix-column--drop-target':
                           dropTargetBenchmarkId === benchmark.id,
-                        'benchmarks__matrix-column--baseline':
-                          comparisonVisualization === 'relative' &&
-                          effectiveComparisonBaselineId === benchmark.id
+                        'benchmarks__matrix-column--baseline': isBaselineColumn(benchmark.id)
                       }"
                       :style="{ '--series-color': seriesColor(benchmark) }"
                       :data-testid="`benchmark-comparison-column-title-${benchmark.id}`"
@@ -1150,34 +1157,21 @@ onMounted(() => {
                     >
                       <span
                         class="benchmarks__matrix-title"
-                        :class="{
-                          'benchmarks__matrix-title--selectable':
-                            comparisonVisualization === 'relative'
-                        }"
+                        :class="{ 'benchmarks__matrix-title--selectable': isRelativeView }"
                         tabindex="0"
-                        :role="comparisonVisualization === 'relative' ? 'button' : undefined"
-                        :aria-pressed="
-                          comparisonVisualization === 'relative'
-                            ? effectiveComparisonBaselineId === benchmark.id
-                            : undefined
-                        "
+                        :role="isRelativeView ? 'button' : undefined"
+                        :aria-pressed="isRelativeView ? isBaselineColumn(benchmark.id) : undefined"
                         :aria-label="
-                          comparisonVisualization === 'relative'
-                            ? t('benchmarks.selectBaseline', {
-                                workflow: benchmark.workflowName,
-                                session: benchmark.id
-                              })
+                          isRelativeView
+                            ? selectBaselineLabel(benchmark)
                             : t('benchmarks.reorderComparisonColumn', {
                                 workflow: benchmark.workflowName
                               })
                         "
                         aria-describedby="benchmark-reorder-instructions"
                         :title="
-                          comparisonVisualization === 'relative'
-                            ? t('benchmarks.selectBaseline', {
-                                workflow: benchmark.workflowName,
-                                session: benchmark.id
-                              })
+                          isRelativeView
+                            ? selectBaselineLabel(benchmark)
                             : t('benchmarks.reorderComparisonHint')
                         "
                         @keydown.enter.prevent="selectComparisonBaseline(benchmark.id)"
@@ -1214,10 +1208,7 @@ onMounted(() => {
                         </span>
                       </span>
                       <small
-                        v-if="
-                          comparisonVisualization === 'relative' &&
-                          effectiveComparisonBaselineId === benchmark.id
-                        "
+                        v-if="isBaselineColumn(benchmark.id)"
                         class="benchmarks__baseline-badge"
                       >
                         {{ t('benchmarks.baseline') }}
@@ -1247,20 +1238,21 @@ onMounted(() => {
             <div class="benchmarks__chart">
               <h3>
                 {{
-                  comparisonVisualization === 'relative'
+                  isRelativeView
                     ? t('benchmarks.relativePerformance')
                     : t('benchmarks.durationRange')
                 }}
               </h3>
               <p>
                 {{
-                  comparisonVisualization === 'relative'
+                  isRelativeView
                     ? t('benchmarks.relativePerformanceHint')
                     : t('benchmarks.durationRangeHint')
                 }}
               </p>
+              <!-- Rendered in both views so rows keep their position when toggling. -->
               <div class="benchmarks__chart-axis" aria-hidden="true">
-                <template v-if="comparisonVisualization === 'relative'">
+                <template v-if="isRelativeView">
                   <span class="benchmarks__relative-direction--slower">
                     ← {{ t('benchmarks.slower') }}
                   </span>
@@ -1275,7 +1267,7 @@ onMounted(() => {
                   :key="benchmark.id"
                   class="benchmarks__chart-row"
                   :class="
-                    comparisonVisualization === 'relative'
+                    isRelativeView
                       ? [
                           'benchmarks__relative-row',
                           `benchmarks__relative-row--${relativeSpeedResult(benchmark).kind}`
@@ -1304,7 +1296,7 @@ onMounted(() => {
                       </template>
                     </span>
                   </div>
-                  <template v-if="comparisonVisualization === 'relative'">
+                  <template v-if="isRelativeView">
                     <strong class="benchmarks__relative-duration">
                       {{ formatDuration(metricValue(benchmark, comparisonMetric)) }}
                     </strong>
@@ -1376,6 +1368,11 @@ onMounted(() => {
 
 <style scoped>
 .benchmarks {
+  --benchmark-baseline: #e5e86d;
+  --benchmark-faster: #54d890;
+  --benchmark-faster-text: #6ed8a0;
+  --benchmark-slower: #ef6f69;
+  --benchmark-slower-text: #ef8a85;
   min-width: 0;
   min-height: 0;
 }
@@ -1814,24 +1811,18 @@ onMounted(() => {
   margin-bottom: 14px;
 }
 
-.benchmarks__comparison-control {
+.benchmarks__comparison-metric {
   display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.benchmarks__comparison-control--metric {
   width: 165px;
 }
 
-.benchmarks__comparison-control--hidden {
+/* Hidden rather than removed so the toolbar layout stays stable across views. */
+.benchmarks__comparison-metric--hidden {
   visibility: hidden;
   pointer-events: none;
 }
 
-.benchmarks__comparison-control :deep(.ui-select-trigger) {
+.benchmarks__comparison-metric :deep(.ui-select-trigger) {
   min-width: 0;
   flex: 1;
 }
@@ -1981,7 +1972,7 @@ onMounted(() => {
 }
 
 .benchmarks__matrix-column--baseline {
-  box-shadow: inset 0 3px #e5e86d;
+  box-shadow: inset 0 3px var(--benchmark-baseline);
 }
 
 .benchmarks__matrix-column--baseline .benchmarks__matrix-title {
@@ -1993,10 +1984,10 @@ onMounted(() => {
   top: 8px;
   right: 8px;
   padding: 2px 5px;
-  border: 1px solid color-mix(in srgb, #e5e86d 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--benchmark-baseline) 55%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, #e5e86d 12%, transparent);
-  color: #e5e86d;
+  background: color-mix(in srgb, var(--benchmark-baseline) 12%, transparent);
+  color: var(--benchmark-baseline);
   font-size: 9px;
   font-weight: 600;
 }
@@ -2016,10 +2007,10 @@ onMounted(() => {
   overflow-x: auto;
 }
 
+/* Reserve two lines so wrapping hints don't shift the rows when toggling views. */
 .benchmarks__chart p {
-  min-height: 28px;
+  min-height: 2lh;
   margin: 4px 0 18px;
-  white-space: nowrap;
 }
 
 .benchmarks__chart-axis,
@@ -2042,14 +2033,14 @@ onMounted(() => {
   grid-column: 3;
   grid-row: 1;
   justify-self: start;
-  color: #ef8a85;
+  color: var(--benchmark-slower-text);
 }
 
 .benchmarks__relative-direction--faster {
   grid-column: 3;
   grid-row: 1;
   justify-self: end;
-  color: #6ed8a0;
+  color: var(--benchmark-faster-text);
 }
 
 .benchmarks__chart-rows {
@@ -2094,15 +2085,15 @@ onMounted(() => {
 }
 
 .benchmarks__relative-row--faster .benchmarks__relative-bar {
-  background: #54d890;
+  background: var(--benchmark-faster);
 }
 
 .benchmarks__relative-row--slower .benchmarks__relative-bar {
-  background: #ef6f69;
+  background: var(--benchmark-slower);
 }
 
 .benchmarks__relative-row--baseline .benchmarks__relative-center {
-  border-color: #e5e86d;
+  border-color: var(--benchmark-baseline);
   border-left-style: solid;
   border-left-width: 3px;
 }
@@ -2123,15 +2114,15 @@ onMounted(() => {
 }
 
 .benchmarks__relative-row--faster .benchmarks__relative-result strong {
-  color: #6ed8a0;
+  color: var(--benchmark-faster-text);
 }
 
 .benchmarks__relative-row--slower .benchmarks__relative-result strong {
-  color: #ef8a85;
+  color: var(--benchmark-slower-text);
 }
 
 .benchmarks__relative-row--baseline .benchmarks__relative-result strong {
-  color: #e5e86d;
+  color: var(--benchmark-baseline);
 }
 
 .benchmarks__chart-label {

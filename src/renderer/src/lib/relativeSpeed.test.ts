@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   calculateRelativeSpeedFactor,
   getRelativeSpeedKind,
-  getRelativeSpeedOffset
+  getRelativeSpeedOffset,
+  getRelativeSpeedScale
 } from './relativeSpeed'
 
 describe('relative speed', () => {
@@ -24,8 +25,20 @@ describe('relative speed', () => {
   })
 
   it('clamps visualization offsets to the chart bounds', () => {
-    expect(getRelativeSpeedOffset(4)).toBe(1)
-    expect(getRelativeSpeedOffset(0.25)).toBe(-1)
-    expect(getRelativeSpeedOffset(1.5)).toBeCloseTo(Math.log2(1.5))
+    expect(getRelativeSpeedOffset(4, 1)).toBe(1)
+    expect(getRelativeSpeedOffset(0.25, 1)).toBe(-1)
+    expect(getRelativeSpeedOffset(1.5, 1)).toBeCloseTo(Math.log2(1.5))
+    expect(getRelativeSpeedOffset(null, 1)).toBe(0)
+  })
+
+  it('scales the axis to the largest factor so bigger gaps stay distinguishable', () => {
+    expect(getRelativeSpeedScale([1, 1.5, 0.75, null])).toBe(1)
+    expect(getRelativeSpeedScale([1, 4, 0.5])).toBe(2)
+    expect(getRelativeSpeedScale([1, 0.125])).toBe(3)
+
+    const scale = getRelativeSpeedScale([1, 2, 4])
+    expect(getRelativeSpeedOffset(4, scale)).toBe(1)
+    expect(getRelativeSpeedOffset(2, scale)).toBe(0.5)
+    expect(getRelativeSpeedOffset(0.5, scale)).toBe(-0.5)
   })
 })
