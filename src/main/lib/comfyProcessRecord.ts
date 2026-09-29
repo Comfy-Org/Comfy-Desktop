@@ -436,14 +436,12 @@ async function probeQueuePatiently(
   for (let attempt = 0; attempt < MAX_QUEUE_PROBES; attempt++) {
     const remaining = deadline - deps.now()
     if (remaining <= 0 || signal?.aborted) return null
-    const queue = await withinBudget(
-      deps.probeQueue(port, Math.min(timeoutMs, remaining)),
-      remaining
-    )
+    const attemptMs = Math.min(timeoutMs, remaining)
+    const queue = await withinBudget(deps.probeQueue(port, attemptMs), attemptMs, signal)
     if (queue) return queue
     const left = deadline - deps.now()
-    if (left <= 0 || signal?.aborted) return null
-    await deps.sleep(Math.min(pauseMs, left))
+    if (left <= 0 || signal?.aborted || attempt === MAX_QUEUE_PROBES - 1) return null
+    await abortable(deps.sleep(Math.min(pauseMs, left)), signal)
     timeoutMs = Math.min(timeoutMs * 2, 4_000)
     pauseMs = Math.min(pauseMs * 2, 2_000)
   }
@@ -452,15 +450,34 @@ async function probeQueuePatiently(
 
 const MAX_QUEUE_PROBES = 8
 
-/** The probe answers null once `ms` has passed, whatever the underlying probe does (the real
- *  one has its own hard timer; this keeps the budget from depending on that). */
-function withinBudget(probe: Promise<QueueState | null>, ms: number): Promise<QueueState | null> {
+/** The probe answers null once `ms` has passed, on a cancel, or if it throws — whatever the
+ *  underlying probe does (the real one has its own hard timer; this keeps the budget from
+ *  depending on that, and a late rejection from ever going unhandled). */
+function withinBudget(
+  probe: Promise<QueueState | null>,
+  ms: number,
+  signal?: AbortSignal
+): Promise<QueueState | null> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const expired = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), ms)
     timer.unref()
   })
-  return Promise.race([probe, expired]).finally(() => clearTimeout(timer))
+  return abortable(
+    Promise.race([probe.catch(() => null), expired]).finally(() => clearTimeout(timer)),
+    signal
+  ).then((v) => v ?? null)
+}
+
+/** Settles with `undefined` as soon as `signal` aborts, instead of waiting for `p`. */
+function abortable<T>(p: Promise<T>, signal?: AbortSignal): Promise<T | undefined> {
+  if (!signal) return p
+  if (signal.aborted) return Promise.resolve(undefined)
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => resolve(undefined)
+    signal.addEventListener('abort', onAbort, { once: true })
+    p.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
 }
 
 /** How long a process of ours that is already stopping gets to finish on its own. */
@@ -520,6 +537,8 @@ export async function resolvePriorProcess(
   if (!record) return null
   const startedAt = deps.now()
   const ageMs = Math.max(0, deps.wallNow() - record.spawnedAt)
+  // A cancelled launch never goes on to stop anything.
+  if (opts.signal?.aborted) return null
   const survivors = await stopLingering(record, deps)
   if (survivors?.blocked) {
     return {
@@ -607,7 +626,11 @@ export async function resolvePriorProcess(
   if (verdict !== 'orphan') return outcome('left')
 
   if (!opts.stopBusy) {
-    opts.onProbe?.()
+    try {
+      opts.onProbe?.()
+    } catch {
+      // Reporting progress must never change what happens to the earlier ComfyUI.
+    }
     const queue = await probeQueuePatiently(record.port, deps, opts.signal)
     if (opts.signal?.aborted) return outcome('left')
     // No answer is not "idle": a ComfyUI generating, or stalled in an asset scan, can miss every
@@ -617,6 +640,8 @@ export async function resolvePriorProcess(
       return outcome('busy_left', { blocked: 'busy', queue })
     }
   }
+  // Checked here too: the user's "stop it" choice skips the probe, but not a cancel.
+  if (opts.signal?.aborted) return outcome('left')
   const kill = await deps.killPidTree(record.childPid, record.childStartTime!)
   if (!kill.killed) {
     if (kill.reason === 'probe_failed') {

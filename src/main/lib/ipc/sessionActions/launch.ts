@@ -1527,7 +1527,8 @@ async function runLaunch(
     // Bookkeeping never costs a launch: no answer means today's behaviour.
     console.warn('[launch] prior-process check failed:', err)
   }
-  if (prior) {
+  // After a cancel, only a stop that really happened is reported; anything else was cut short.
+  if (prior && (!abort.signal.aborted || prior.action === 'terminated')) {
     emitPriorProcessFound(installationId, prior)
     appendLog(sessionId, `[launch] ${describePriorOutcome(prior)}\n`)
   }

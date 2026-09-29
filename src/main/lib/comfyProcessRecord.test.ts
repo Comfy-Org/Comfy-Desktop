@@ -224,14 +224,17 @@ describe('resolvePriorProcess', () => {
     expect(out?.action).toBe('terminated')
   })
 
-  it('ends the probe loop even under a clock that never moves', async () => {
+  it('ends the probe loop even under a clock that never moves, without a pause after the last try', async () => {
     let calls = 0
+    let sleeps = 0
     const out = await resolvePriorProcess(
       'inst-1',
       {},
       deps({
         now: () => clock,
-        sleep: async () => {},
+        sleep: async () => {
+          sleeps++
+        },
         probeQueue: async () => {
           calls++
           return null
@@ -239,7 +242,79 @@ describe('resolvePriorProcess', () => {
       })
     )
     expect(calls).toBe(8)
+    expect(sleeps).toBe(7)
     expect(out).toMatchObject({ action: 'busy_left', queueUnknown: true })
+  })
+
+  it('treats a probe that throws as no answer', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          clock += timeoutMs!
+          throw new Error('socket hang up')
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', queueUnknown: true })
+  })
+
+  it('gives each attempt only its own timeout, so a hung probe still gets retried', async () => {
+    let calls = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        now: () => 0,
+        probeQueue: (_port, _timeoutMs) => {
+          calls++
+          return calls === 1 ? new Promise(() => {}) : Promise.resolve({ running: 1, pending: 0 })
+        }
+      })
+    )
+    expect(calls).toBe(2)
+    expect(out).toMatchObject({ action: 'busy_left', queue: { running: 1 } })
+  })
+
+  it('returns promptly on a cancel during a probe that hangs', async () => {
+    const abort = new AbortController()
+    setTimeout(() => abort.abort(), 20)
+    const started = performance.now()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { signal: abort.signal },
+      deps({ now: () => 0, probeQueue: () => new Promise(() => {}) })
+    )
+    expect(performance.now() - started).toBeLessThan(500)
+    expect(kills).toEqual([])
+    expect(out?.action).toBe('left')
+  })
+
+  it('never stops anything after a cancel, even on the "stop it" path', async () => {
+    const abort = new AbortController()
+    abort.abort()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { stopBusy: true, signal: abort.signal },
+      deps()
+    )
+    expect(kills).toEqual([])
+    expect(out).toBeNull()
+  })
+
+  it('carries on when reporting progress throws', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {
+        onProbe: () => {
+          throw new Error('Object has been destroyed')
+        }
+      },
+      deps({ probeQueue: async () => ({ running: 1, pending: 0 }) })
+    )
+    expect(out).toMatchObject({ action: 'busy_left' })
   })
 
   it('does not wait past the budget on a probe that never settles', async () => {

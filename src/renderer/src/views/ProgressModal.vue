@@ -644,7 +644,8 @@ defineExpose({ startOperation, showOperation })
               >
                 <X :size="20" />
                 <span>{{
-                  currentOp.result?.portConflict?.priorUnknown
+                  currentOp.result?.portConflict?.priorBusy &&
+                  currentOp.result.portConflict.priorUnknown
                     ? $t('errors.priorProcessUnknownTitle')
                     : currentOp.result?.portConflict?.priorBusy
                       ? $t('errors.priorProcessBusyTitle')
