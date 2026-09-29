@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type {
   AcceleratorSnapshot,
+  CoreBenchmarkSummary,
   PerformanceTestBenchmark,
   PerformanceTestResultValue,
   PerformanceTestResultsSummary,
@@ -431,7 +432,11 @@ async function postPerformanceTestPrompt(
   const response = await fetchImpl(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: workflow }),
+    // `extra_data.benchmark` opts this run into ComfyUI core's in-process
+    // benchmark collector, which writes `<output_dir>/benchmarks/<prompt_id>.json`
+    // (it/s, per-op timeline, memory series + peak VRAM). Consumed post-run in
+    // `benchmarkCapture.ts`; harmless on cores that don't recognise the flag.
+    body: JSON.stringify({ prompt: workflow, extra_data: { benchmark: true } }),
     signal
   })
   if (!response.ok) {
@@ -654,7 +659,8 @@ export async function savePerformanceTestResultsSummary(
   workflowFilePath: string,
   benchmarksDir: string,
   successfulRunCount: number,
-  failedRunCount: number
+  failedRunCount: number,
+  coreBenchmark: CoreBenchmarkSummary | null = null
 ): Promise<string> {
   const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, benchmarksDir)
   const summary: PerformanceTestResultsSummary = {
@@ -669,7 +675,8 @@ export async function savePerformanceTestResultsSummary(
     measuredJobCount: successfulRunCount,
     failedRunCount,
     hardware,
-    systemInfo
+    systemInfo,
+    coreBenchmark
   }
   const summaryPath = path.join(sessionDir, 'results.json')
   await fs.promises.writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8')

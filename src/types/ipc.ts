@@ -865,6 +865,82 @@ export interface PerformanceTestResultsSummary {
     driverVersion?: string | null
   } | null
   systemInfo: SystemInfo
+  /** Rich per-run metrics from ComfyUI core's benchmark collector, when the run
+   *  produced a capture file. Null/absent => fell back to `/system_stats`. */
+  coreBenchmark?: CoreBenchmarkSummary | null
+}
+
+/**
+ * Rich per-run benchmark record produced by ComfyUI core's in-process collector
+ * (`capture_schema_version: 1`, `collector_id: "comfyui-core"`), written to
+ * `<comfyui_output_dir>/benchmarks/<prompt_id>.json`. This is the normalized,
+ * defensively-parsed view the Desktop UI consumes; see `benchmarkCapture.ts` for
+ * the mapping from the raw file. When core did not write the file (older core,
+ * flag unrecognized) this whole object is null and the UI falls back to the
+ * interim `/system_stats` sampler.
+ */
+export interface CoreBenchmarkSummary {
+  /** The prompt_id whose capture this is (file basename). */
+  promptId: string
+  captureSchemaVersion: number | null
+  collectorId: string | null
+  device: {
+    backend: string | null
+    gpuModel: string | null
+    driverVersion: string | null
+    vramIsUnified: boolean | null
+    pytorchVersion: string | null
+    comfyuiVersion: string | null
+    os: string | null
+    platform: string | null
+    arch: string | null
+    cpuModel: string | null
+    cpuCoresPhysical: number | null
+    cpuCoresLogical: number | null
+    totalVramMb: number | null
+    totalRamMb: number | null
+  }
+  durations: {
+    totalRunMs: number | null
+    samplerMs: number | null
+    nodeTotalMs: number | null
+  }
+  /** Per-op timeline in execution order (non-cached nodes only). */
+  nodes: CoreBenchmarkNode[]
+  sampling: {
+    stepCount: number | null
+    /** it/s per sampled step, index-aligned; null for 0ms steps. */
+    perStepItPerS: (number | null)[]
+    /** Headline it/s — un-defers the previously "not measured" P1 metric. */
+    avgItPerS: number | null
+  }
+  resources: {
+    sampleIntervalMs: number | null
+    series: CoreBenchmarkResourceSample[]
+    peak: {
+      /** Peak VRAM used during the run (MB) — supersedes the sampler's estimate. */
+      vramUsedMb: number | null
+      ramUsedMb: number | null
+      cpuPercent: number | null
+      vramUtilPercent: number | null
+      powerW: number | null
+    }
+  }
+}
+
+export interface CoreBenchmarkNode {
+  nodeId: string | null
+  classType: string | null
+  elapsedMs: number | null
+}
+
+export interface CoreBenchmarkResourceSample {
+  tMs: number | null
+  cpuPercent: number | null
+  ramUsedMb: number | null
+  vramUsedMb: number | null
+  vramUtilPercent: number | null
+  powerW: number | null
 }
 
 export interface AcceleratorInfo {
@@ -918,6 +994,9 @@ export interface RunPerformanceTestWorkflowResult {
   hardware?: AcceleratorSnapshot | null
   systemInfo?: SystemInfo
   resultsSummary?: PerformanceTestResultsSummary
+  /** Rich per-run metrics from ComfyUI core's benchmark collector, when present.
+   *  Null when no capture file was found (fell back to `/system_stats`). */
+  coreBenchmark?: CoreBenchmarkSummary | null
   cancelled?: boolean
   message?: string
 }

@@ -749,7 +749,8 @@ describe('savePerformanceTestResultsSummary', () => {
       measuredJobCount: 2,
       failedRunCount: 1,
       hardware,
-      systemInfo
+      systemInfo,
+      coreBenchmark: null
     })
     expect(Number.isFinite(Date.parse(savedSummary.createdAt))).toBe(true)
 

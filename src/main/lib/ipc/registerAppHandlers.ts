@@ -30,7 +30,11 @@ import {
   _runningSessions
 } from './shared'
 import si from 'systeminformation'
-import type { RunPerformanceTestWorkflowResult, SystemInfo } from '../../../types/ipc'
+import type {
+  CoreBenchmarkSummary,
+  RunPerformanceTestWorkflowResult,
+  SystemInfo
+} from '../../../types/ipc'
 import type { FieldOption } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
@@ -43,6 +47,7 @@ import { defaultBenchmarksDir } from '../paths'
 import { deriveGpuTier } from '../../../shared/gpuTier'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import { createVramPeakAccumulator, fetchSystemStats } from '../systemStatsSampler'
+import { readRepresentativeCoreBenchmark, resolveComfyOutputDir } from '../benchmarkCapture'
 import { ensureBenchmarkModels, areBenchmarkModelsPresent } from '../benchmarkModels'
 import { findStandardBenchmark } from '../../../shared/benchmarks/standardBenchmarks'
 import {
@@ -395,9 +400,27 @@ export function registerAppHandlers(): void {
         )
         const baseHardware = session.getAcceleratorInfo?.() ?? null
         const systemInfo = await getSystemInfo()
+        // Prefer ComfyUI core's per-run benchmark capture when it wrote one. Core
+        // records it/s, a per-op timeline, and an authoritative peak-VRAM that
+        // supersedes the interim /system_stats sampler. Feature-detected: a
+        // missing file (older core, unrecognized flag) leaves this null and the
+        // vramAccumulator path below stands unchanged.
+        let coreBenchmark: CoreBenchmarkSummary | null = null
+        try {
+          if (sourceInstallation) {
+            const sharedOutputDir =
+              (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
+            const outputDir = resolveComfyOutputDir(sourceInstallation, sharedOutputDir)
+            coreBenchmark = await readRepresentativeCoreBenchmark(outputDir, measuredPromptIds)
+          }
+        } catch {
+          // Best-effort: consuming the capture must never fail the run.
+          coreBenchmark = null
+        }
         // Fold peak-VRAM samples + the driver version (from SystemInfo) into the
         // persisted hardware snapshot. Only when we have a base snapshot from the
         // log tap; a null snapshot stays null and the UI degrades gracefully.
+        // Core capture (when present) wins over the /system_stats sampler.
         const vramPeak = vramAccumulator.snapshot()
         const driverVersion =
           systemInfo.nvidia_driver_version ??
@@ -408,10 +431,11 @@ export function registerAppHandlers(): void {
         const hardware = baseHardware
           ? {
               ...baseHardware,
-              peakVramMb: vramPeak.peakVramMb,
-              vramTotalMb: vramPeak.vramTotalMb ?? baseHardware.vramMb,
-              vramIsUnified: vramPeak.vramIsUnified,
-              driverVersion
+              peakVramMb: coreBenchmark?.resources.peak.vramUsedMb ?? vramPeak.peakVramMb,
+              vramTotalMb:
+                coreBenchmark?.device.totalVramMb ?? vramPeak.vramTotalMb ?? baseHardware.vramMb,
+              vramIsUnified: coreBenchmark?.device.vramIsUnified ?? vramPeak.vramIsUnified,
+              driverVersion: coreBenchmark?.device.driverVersion ?? driverVersion
             }
           : null
         const resultsSummaryPath = await savePerformanceTestResultsSummary(
@@ -426,7 +450,8 @@ export function registerAppHandlers(): void {
           filePath,
           benchmarksDir,
           successfulRuns,
-          failedRuns
+          failedRuns,
+          coreBenchmark
         )
         const resultsSummary = await readPerformanceTestResultsSummary(
           resultsSummaryPath,
@@ -444,6 +469,7 @@ export function registerAppHandlers(): void {
           hardware,
           systemInfo,
           resultsSummary,
+          coreBenchmark,
           failedRuns
         }
       } catch (error) {
