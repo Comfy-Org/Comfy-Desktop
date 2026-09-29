@@ -328,11 +328,16 @@ describe('BenchmarksView', () => {
       workflowLabelElements
     )
 
+    const metricSelect = wrapper
+      .findAllComponents(BaseSelect)
+      .find((select) => select.props('ariaLabel') === 'Metric')
+    expect(metricSelect?.props('modelValue')).toBe('medianJobDurationSeconds')
+
     const relativeRows = () => wrapper.findAll('.benchmarks__relative-row')
     expect(relativeRows().map((row) => row.get('.benchmarks__relative-result').text())).toEqual([
       '1.00×Baseline',
-      '0.59×Slower',
-      '1.67×Faster'
+      '0.58×Slower',
+      '1.73×Faster'
     ])
 
     expect(wrapper.find('[aria-label="Baseline"]').exists()).toBe(false)
@@ -344,14 +349,11 @@ describe('BenchmarksView', () => {
       selectedHeader.element
     )
     expect(relativeRows().map((row) => row.get('.benchmarks__relative-result').text())).toEqual([
-      '1.70×Faster',
+      '1.74×Faster',
       '1.00×Baseline',
-      '2.83×Faster'
+      '3.00×Faster'
     ])
 
-    const metricSelect = wrapper
-      .findAllComponents(BaseSelect)
-      .find((select) => select.props('ariaLabel') === 'Metric')
     metricSelect?.vm.$emit('update:modelValue', 'fastestJobDurationSeconds')
     await wrapper.vm.$nextTick()
     expect(relativeRows()[0]!.get('.benchmarks__relative-duration').text()).toBe('1.6 s')
