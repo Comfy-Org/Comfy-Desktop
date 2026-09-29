@@ -1518,7 +1518,10 @@ async function runLaunch(
   let prior: PriorProcessOutcome | null = null
   try {
     prior = await resolvePriorProcess(sessionId, {
-      stopBusy: actionData?.stopBusyPriorProcess === true
+      stopBusy: actionData?.stopBusyPriorProcess === true,
+      signal: abort.signal,
+      onProbe: () =>
+        sendProgress('launch', { percent: -1, status: i18n.t('launch.checkingPriorProcess') })
     })
   } catch (err) {
     // Bookkeeping never costs a launch: no answer means today's behaviour.
@@ -1528,6 +1531,8 @@ async function runLaunch(
     emitPriorProcessFound(installationId, prior)
     appendLog(sessionId, `[launch] ${describePriorOutcome(prior)}\n`)
   }
+  // A cancel during the busy check wins over whatever it found.
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
   if (prior?.blocked) {
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     if (prior.blocked === 'busy') {
@@ -1537,7 +1542,13 @@ async function runLaunch(
         message: prior.queueUnknown
           ? i18n.t('errors.priorProcessUnresponsive')
           : i18n.t('errors.priorProcessBusy'),
-        portConflict: { port: prior.port, pids: [prior.pid], isComfy: true, priorBusy: true }
+        portConflict: {
+          port: prior.port,
+          pids: [prior.pid],
+          isComfy: true,
+          priorBusy: true,
+          ...(prior.queueUnknown ? { priorUnknown: true } : {})
+        }
       }
     }
     // The recorded pid can be the venv launcher; on Windows the process holding the port (and

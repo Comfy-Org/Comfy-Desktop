@@ -542,9 +542,12 @@ async function handleStopBusyPrior(): Promise<void> {
   if (!id) return
   const op = progressStore.operations.get(id)
   if (!op) return
+  const unknown = op.result?.portConflict?.priorUnknown === true
   const confirmed = await modal.confirm({
-    title: t('errors.priorProcessBusyTitle'),
-    message: t('errors.priorProcessBusyConfirmMessage'),
+    title: t(unknown ? 'errors.priorProcessUnknownTitle' : 'errors.priorProcessBusyTitle'),
+    message: t(
+      unknown ? 'errors.priorProcessUnknownConfirmMessage' : 'errors.priorProcessBusyConfirmMessage'
+    ),
     confirmLabel: t('errors.priorProcessBusyStop'),
     confirmStyle: 'danger'
   })
@@ -641,9 +644,11 @@ defineExpose({ startOperation, showOperation })
               >
                 <X :size="20" />
                 <span>{{
-                  currentOp.result?.portConflict?.priorBusy
-                    ? $t('errors.priorProcessBusyTitle')
-                    : $t('errors.portConflictTitle')
+                  currentOp.result?.portConflict?.priorUnknown
+                    ? $t('errors.priorProcessUnknownTitle')
+                    : currentOp.result?.portConflict?.priorBusy
+                      ? $t('errors.priorProcessBusyTitle')
+                      : $t('errors.portConflictTitle')
                 }}</span>
               </div>
               <div

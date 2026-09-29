@@ -224,6 +224,58 @@ describe('resolvePriorProcess', () => {
     expect(out?.action).toBe('terminated')
   })
 
+  it('ends the probe loop even under a clock that never moves', async () => {
+    let calls = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        now: () => clock,
+        sleep: async () => {},
+        probeQueue: async () => {
+          calls++
+          return null
+        }
+      })
+    )
+    expect(calls).toBe(8)
+    expect(out).toMatchObject({ action: 'busy_left', queueUnknown: true })
+  })
+
+  it('does not wait past the budget on a probe that never settles', async () => {
+    let reads = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        // The start and the deadline are read at 0; every later read leaves 50 ms of budget.
+        now: () => (reads++ < 2 ? 0 : QUEUE_PROBE_BUDGET_MS - 50),
+        probeQueue: () => new Promise(() => {})
+      })
+    )
+    expect(out).toMatchObject({ action: 'busy_left', queueUnknown: true })
+    expect(kills).toEqual([])
+  })
+
+  it('stops probing and never kills once the launch is cancelled', async () => {
+    const abort = new AbortController()
+    const onProbe = vi.fn()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { signal: abort.signal, onProbe },
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          clock += timeoutMs!
+          abort.abort()
+          return { running: 0, pending: 0 }
+        }
+      })
+    )
+    expect(onProbe).toHaveBeenCalledOnce()
+    expect(kills).toEqual([])
+    expect(out?.action).toBe('left')
+  })
+
   it('never stops an orphan that does not answer within the budget: the user decides', async () => {
     const started = clock
     const out = await resolvePriorProcess(

@@ -71,7 +71,9 @@ const messages = {
       portConflictKill: 'Stop process and retry',
       priorProcessBusyTitle: 'ComfyUI is still running a prompt',
       priorProcessBusyStop: 'Stop it and launch',
-      priorProcessBusyConfirmMessage: 'This stops the earlier ComfyUI.'
+      priorProcessBusyConfirmMessage: 'This stops the earlier ComfyUI.',
+      priorProcessUnknownTitle: 'An earlier ComfyUI is still running',
+      priorProcessUnknownConfirmMessage: 'This stops it and cancels anything it is doing.'
     }
   }
 }
@@ -481,6 +483,35 @@ describe('ProgressModal — brand branch state transitions', () => {
     )
     expect(api.killPortProcess).not.toHaveBeenCalled()
     expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', { stopBusyPriorProcess: true })
+  })
+
+  it('never claims a prompt is running when the earlier ComfyUI did not answer', async () => {
+    installMockApi()
+    const portConflict: PortConflictInfo = {
+      port: 8188,
+      pids: [777],
+      isComfy: true,
+      priorBusy: true,
+      priorUnknown: true
+    }
+    const { body } = await mountWithOp('inst-1', {
+      title: 'Launching',
+      finished: true,
+      result: { ok: false, message: 'did not answer', portConflict } as ActionResult
+    })
+
+    expect(body.selectorText('.brand-progress__banner')).toContain(
+      'An earlier ComfyUI is still running'
+    )
+    expect(body.selectorText('.brand-progress__banner')).not.toContain('running a prompt')
+    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    await flushPromises()
+    expect(mockModal.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'An earlier ComfyUI is still running',
+        message: 'This stops it and cancels anything it is doing.'
+      })
+    )
   })
 
   it('renders Cancel (not Return to Dashboard) in flight for destroy ops', async () => {

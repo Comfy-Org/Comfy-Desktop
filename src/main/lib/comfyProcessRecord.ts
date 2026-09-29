@@ -426,22 +426,41 @@ export const QUEUE_PROBE_BUDGET_MS = 10_000
  */
 async function probeQueuePatiently(
   port: number,
-  deps: Pick<PriorProcessDeps, 'probeQueue' | 'now' | 'sleep'>
+  deps: Pick<PriorProcessDeps, 'probeQueue' | 'now' | 'sleep'>,
+  signal?: AbortSignal
 ): Promise<QueueState | null> {
   const deadline = deps.now() + QUEUE_PROBE_BUDGET_MS
   let timeoutMs = 1_000
   let pauseMs = 250
-  for (;;) {
+  // A backstop on top of the deadline: the loop must end even under a clock that does not move.
+  for (let attempt = 0; attempt < MAX_QUEUE_PROBES; attempt++) {
     const remaining = deadline - deps.now()
-    if (remaining <= 0) return null
-    const queue = await deps.probeQueue(port, Math.min(timeoutMs, remaining))
+    if (remaining <= 0 || signal?.aborted) return null
+    const queue = await withinBudget(
+      deps.probeQueue(port, Math.min(timeoutMs, remaining)),
+      remaining
+    )
     if (queue) return queue
     const left = deadline - deps.now()
-    if (left <= 0) return null
+    if (left <= 0 || signal?.aborted) return null
     await deps.sleep(Math.min(pauseMs, left))
     timeoutMs = Math.min(timeoutMs * 2, 4_000)
     pauseMs = Math.min(pauseMs * 2, 2_000)
   }
+  return null
+}
+
+const MAX_QUEUE_PROBES = 8
+
+/** The probe answers null once `ms` has passed, whatever the underlying probe does (the real
+ *  one has its own hard timer; this keeps the budget from depending on that). */
+function withinBudget(probe: Promise<QueueState | null>, ms: number): Promise<QueueState | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms)
+    timer.unref()
+  })
+  return Promise.race([probe, expired]).finally(() => clearTimeout(timer))
 }
 
 /** How long a process of ours that is already stopping gets to finish on its own. */
@@ -488,7 +507,13 @@ const defaultDeps: PriorProcessDeps = {
  */
 export async function resolvePriorProcess(
   sessionKey: string,
-  opts: { stopBusy?: boolean } = {},
+  opts: {
+    stopBusy?: boolean
+    /** A cancelled launch stops probing and never goes on to stop anything. */
+    signal?: AbortSignal
+    /** Called once before the (up to 10 s) busy check, so the caller can say what it is doing. */
+    onProbe?: () => void
+  } = {},
   deps: PriorProcessDeps = defaultDeps
 ): Promise<PriorProcessOutcome | null> {
   const record = deps.readRecord(sessionKey)
@@ -582,7 +607,9 @@ export async function resolvePriorProcess(
   if (verdict !== 'orphan') return outcome('left')
 
   if (!opts.stopBusy) {
-    const queue = await probeQueuePatiently(record.port, deps)
+    opts.onProbe?.()
+    const queue = await probeQueuePatiently(record.port, deps, opts.signal)
+    if (opts.signal?.aborted) return outcome('left')
     // No answer is not "idle": a ComfyUI generating, or stalled in an asset scan, can miss every
     // probe. It is left running and the user decides, exactly as for a busy one.
     if (!queue) return outcome('busy_left', { blocked: 'busy', queueUnknown: true })

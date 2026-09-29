@@ -135,12 +135,15 @@ const ownership = vi.hoisted(() => ({
   prior: null as null | Record<string, unknown>,
   priorCalls: [] as Array<{ sessionKey: string; opts: unknown }>,
   priorThrows: false,
+  onResolve: null as null | ((opts: unknown) => unknown),
   holderIsInstall: false as boolean | ((pid: number) => boolean),
   tracked: [] as Array<Record<string, unknown>>
 }))
 vi.mock('../../comfyProcessRecord', () => ({
   resolvePriorProcess: async (sessionKey: string, opts: unknown) => {
     ownership.priorCalls.push({ sessionKey, opts })
+    // Lets a test act while the check is "running" (e.g. cancel the launch).
+    ownership.onResolve?.(opts)
     if (ownership.priorThrows) throw new Error('state dir unreadable')
     return ownership.prior
   },
@@ -2136,6 +2139,7 @@ describe('prior ComfyUI process handling at launch', () => {
     ownership.prior = null
     ownership.priorCalls = []
     ownership.priorThrows = false
+    ownership.onResolve = null
     ownership.holderIsInstall = false
     ownership.tracked = []
     setArgs('--enable-assets')
@@ -2171,7 +2175,7 @@ describe('prior ComfyUI process handling at launch', () => {
 
     expect(res.ok).toBe(true)
     expect(ownership.priorCalls).toEqual([
-      { sessionKey: 'prior-records', opts: { stopBusy: false } }
+      { sessionKey: 'prior-records', opts: expect.objectContaining({ stopBusy: false }) }
     ])
     expect(ownership.tracked).toHaveLength(1)
     const [started] = eventsNamed('comfy.desktop.comfyui.boot_started')
@@ -2274,7 +2278,13 @@ describe('prior ComfyUI process handling at launch', () => {
 
     expect(res.ok).toBe(false)
     expect(res.message).toBe('errors.priorProcessUnresponsive')
-    expect(res.portConflict).toEqual({ port: PORT, pids: [777], isComfy: true, priorBusy: true })
+    expect(res.portConflict).toEqual({
+      port: PORT,
+      pids: [777],
+      isComfy: true,
+      priorBusy: true,
+      priorUnknown: true
+    })
     expect(children).toHaveLength(0)
     expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')[0]).toMatchObject({
       action: 'busy_left',
@@ -2282,10 +2292,19 @@ describe('prior ComfyUI process handling at launch', () => {
     })
   })
 
+  it('reports a cancel during the busy check as cancelled, whatever the check found', async () => {
+    ownership.prior = { ...terminated, action: 'busy_left', exitedInTime: false, blocked: 'busy' }
+    ownership.onResolve = () => _operationAborts.get('prior-cancel-during-probe')?.abort()
+    const res = await handleLaunch(ctxFor('prior-cancel-during-probe'))
+
+    expect(res).toMatchObject({ ok: false, cancelled: true })
+    expect(children).toHaveLength(0)
+  })
+
   it('passes the user choice to stop a busy orphan through to the check', async () => {
     await handleLaunch(ctxFor('prior-stop-busy', { stopBusyPriorProcess: true }))
 
-    expect(ownership.priorCalls[0]?.opts).toEqual({ stopBusy: true })
+    expect(ownership.priorCalls[0]?.opts).toMatchObject({ stopBusy: true })
   })
 
   it('refuses to launch beside an orphan that outlived the kill', async () => {
