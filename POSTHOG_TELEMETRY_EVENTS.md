@@ -252,3 +252,27 @@ The hosted ComfyUI bridge accepts an arbitrary `event: string` through
 therefore submit additional names that are not present in this repository.
 This inventory is exhaustive for event names defined by this repository, but
 cannot enumerate events originating from external hosted code.
+
+## Ops-flag targeting properties
+
+Ops flags (`makeOpsFlag` in `src/main/lib/opsFlag.ts`, e.g.
+`desktop_core_beta_features`) are evaluated with the installation-stable id as
+the distinct id and these request-scoped `person_properties`. PostHog matches
+release conditions against them but stores nothing, and no
+`$feature_flag_called` event is sent. The source is `opsFlagPersonProperties`
+in `src/main/lib/telemetry.ts`.
+
+| Property      | When sent                                              |
+| ------------- | ------------------------------------------------------ |
+| `app_version` | Every evaluation, whatever the consent state           |
+| `comfy_staff` | `'true'` only with consent granted and a staff account |
+
+- `app_version` is the same value the events carry. Release builds send plain
+  semver (`1.1.4`, `1.1.4-rc.1`), so a condition can use the semver operators,
+  e.g. `app_version semver_gte 1.1.4`.
+- Builds released before `app_version` was added send no version. A semver
+  condition does not match a missing property, so a `semver_gte` gate excludes
+  them. That is the safe direction for a payload that older builds reject.
+- Unpackaged development builds send `git describe` output (e.g.
+  `v1.1.1-5-gabc1234`), not a release version. Test version gates with a
+  packaged build or a hand-built `/flags` request.

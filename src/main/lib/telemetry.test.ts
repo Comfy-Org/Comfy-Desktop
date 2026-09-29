@@ -549,9 +549,9 @@ describe('telemetry anonymous flag reads', () => {
       {
         key: 'desktop_core_beta_features',
         distinctId: 'installation-id',
-        // Empty rather than absent: the request is made pre-consent by design, and this is
+        // Only the build's version: the request is made pre-consent by design, and this is
         // where an email would sit if one were ever attached without one.
-        options: { sendFeatureFlagEvents: false, personProperties: {} }
+        options: { sendFeatureFlagEvents: false, personProperties: { app_version: '0.0.0' } }
       }
     ])
   })
@@ -622,7 +622,7 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({ comfy_staff: 'true' })
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
   })
 
   it('leaves the distinct id the installation hash, so bucketing is unchanged', async () => {
@@ -651,18 +651,18 @@ describe('ops-flag person targeting', () => {
     expect(captured.map((event) => event.event)).not.toContain('$feature_flag_called')
   })
 
-  it('sends nothing for a non-staff install', async () => {
+  it('sends no comfy_staff for a non-staff install', async () => {
     // Absent rather than `comfy_staff: 'false'`: a `comfy_staff = true` condition does not match
-    // a missing property, so nothing goes on the wire for the majority of users.
+    // a missing property, so it stays off the wire for the majority of users.
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(false)
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({})
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
-  it('sends nothing when consent is undecided', async () => {
+  it('sends no comfy_staff when consent is undecided', async () => {
     // The flag FETCH bypasses consent on purpose (ops flags are config pushed to the client);
     // whether someone is an employee is a fact about them and does not inherit that exemption.
     setupTelemetry({ consent: null })
@@ -670,21 +670,21 @@ describe('ops-flag person targeting', () => {
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({})
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
-  it('sends nothing when consent is denied', async () => {
+  it('sends no comfy_staff when consent is denied', async () => {
     setupTelemetry({ consent: 'denied' })
     telemetry.setFlagEvaluationStaff(true)
 
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({})
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
-  it('still evaluates the flag without consent, carrying no property', async () => {
+  it('still evaluates the flag without consent, carrying no staff property', async () => {
     // The request itself must survive the consent gate — a declined user still gets ops
-    // overrides. Only the property is withheld.
+    // overrides. Only the staff property is withheld.
     setupTelemetry({ consent: 'denied' })
     telemetry.setFlagEvaluationStaff(true)
     posthogClientMock.featureFlagResult = { enabled: true, variant: 'beta', payload: null }
@@ -692,19 +692,19 @@ describe('ops-flag person targeting', () => {
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
     ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
-    expect(lastPersonProperties()).toEqual({})
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
   it('stops sending once the install is reclassified, as on sign-out', async () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)
     await evaluate()
-    expect(lastPersonProperties()).toEqual({ comfy_staff: 'true' })
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
 
     telemetry.setFlagEvaluationStaff(false)
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({})
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
   it('does not survive a reset, so no classification leaks between launches in-process', async () => {
@@ -714,7 +714,7 @@ describe('ops-flag person targeting', () => {
     setupTelemetry({ consent: 'granted' })
     await evaluate()
 
-    expect(lastPersonProperties()).toEqual({})
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
   // The bug in one test: with only a machine-derived distinct id, a person condition cannot
@@ -775,6 +775,95 @@ describe('ops-flag person targeting', () => {
       await expect(
         telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
       ).resolves.toEqual({ kind: 'value', value: false, payload: undefined })
+    })
+  })
+
+  // `app_version` describes the build, not the person, so unlike `comfy_staff` it rides on every
+  // evaluation. A grant only newer builds can apply must be gateable from the first launch, which
+  // is pre-consent.
+  describe('app_version', () => {
+    it.each([
+      ['undecided', null],
+      ['denied', 'denied'],
+      ['granted', 'granted']
+    ] as const)('is sent when consent is %s', async (_label, consent) => {
+      setupTelemetry({ consent, appVersion: '1.1.4' })
+
+      await evaluate()
+
+      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4' })
+    })
+
+    it('rides alongside comfy_staff for a consented staff install', async () => {
+      setupTelemetry({ consent: 'granted', appVersion: '1.1.4' })
+      telemetry.setFlagEvaluationStaff(true)
+
+      await evaluate()
+
+      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4', comfy_staff: 'true' })
+    })
+
+    it('is the version initTelemetry was given, verbatim, prerelease included', async () => {
+      // No normalisation: the flag condition compares the same string the events carry.
+      setupTelemetry({ consent: null, appVersion: '1.1.4-rc.1' })
+
+      await evaluate()
+
+      expect(lastPersonProperties()).toEqual({ app_version: '1.1.4-rc.1' })
+    })
+
+    it('is omitted rather than sent empty when the version is unknown', async () => {
+      // An empty string is not a version; absent is what a semver condition treats as no match.
+      setupTelemetry({ consent: null, appVersion: '' })
+
+      await evaluate()
+
+      expect(lastPersonProperties()).toEqual({})
+    })
+
+    // What the property is for: a payload carrying args older builds reject, gated server-side.
+    describe('against a stand-in `app_version semver_gte 1.1.4` condition', () => {
+      /** Release-only `major.minor.patch` comparison — enough for the versions below. A missing
+       *  value never matches, as in PostHog's own evaluation. */
+      function isAtLeast(version: string | undefined, min: [number, number, number]): boolean {
+        if (!version) return false
+        const [release = ''] = version.split('-')
+        const [major = 0, minor = 0, patch = 0] = release.split('.').map(Number)
+        if (major !== min[0]) return major > min[0]
+        if (minor !== min[1]) return minor > min[1]
+        return patch >= min[2]
+      }
+
+      function serveVersionGatedFlag(): void {
+        posthogClientMock.evaluateCondition = (options) => {
+          if (!isAtLeast(options?.personProperties?.['app_version'], [1, 1, 4])) {
+            return { enabled: false }
+          }
+          return {
+            enabled: true,
+            variant: 'beta',
+            payload: { flags: [{ arg: '--enable-assets-output-scanning' }] }
+          }
+        }
+      }
+
+      it.each(['1.1.4', '1.2.0'])('matches %s, even before consent', async (appVersion) => {
+        setupTelemetry({ consent: null, appVersion })
+        serveVersionGatedFlag()
+
+        await expect(
+          telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+        ).resolves.toMatchObject({ kind: 'value', value: 'beta' })
+      })
+
+      it('does not match 1.1.3', async () => {
+        setupTelemetry({ consent: 'granted', appVersion: '1.1.3' })
+        serveVersionGatedFlag()
+
+        await expect(
+          telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 100)
+        ).resolves.toEqual({ kind: 'value', value: false, payload: undefined })
+      })
     })
   })
 })
