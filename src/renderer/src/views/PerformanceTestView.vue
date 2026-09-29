@@ -39,7 +39,6 @@ import type { GpuTier } from '../../../shared/gpuTier'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 
-const BENCHMARK_STANDARD_SUITE_FLAG = 'benchmark_standard_suite'
 /** Run phases surfaced in the Results body (design §5). */
 type BenchmarkRunPhase = 'idle' | 'downloading' | 'warmup' | 'measuring' | 'done' | 'error'
 
@@ -92,7 +91,8 @@ const logsElement = ref<HTMLElement | null>(null)
 const performanceTestResult = ref<RunPerformanceTestWorkflowResult | null>(null)
 
 // --- Standard benchmark suite (flag-gated; BYO path is unchanged) ---------
-const standardSuiteEnabled = ref(false)
+// Standard benchmark suite is always available (additive, opt-in tab; no flag).
+const standardSuiteEnabled = ref(true)
 const benchmarkSource = ref<'standard' | 'custom'>('standard')
 const standardBenchmarks = STANDARD_BENCHMARKS
 const selectedBenchmarkId = ref<string | null>(standardBenchmarks[0]?.id ?? null)
@@ -209,26 +209,12 @@ const unsubscribeBenchmarkDownload = window.api.onStandardBenchmarkDownloadProgr
 onUnmounted(unsubscribeBenchmarkDownload)
 
 onMounted(async () => {
+  void refreshModelPresence()
   try {
-    const flag = await window.api.telemetryGetExperimentFlag(BENCHMARK_STANDARD_SUITE_FLAG)
-    standardSuiteEnabled.value = flag === true
+    const info = await window.api.getSystemInfo()
+    machineGpu.value = { tier: info.gpu_tier, vramGb: info.gpu_vram_gb }
   } catch {
-    standardSuiteEnabled.value = false
-  }
-  if (standardSuiteEnabled.value) {
-    // Per-session exposure (main dedups); safe to call on mount.
-    window.api.telemetryRecordExposure({
-      experimentKey: BENCHMARK_STANDARD_SUITE_FLAG,
-      variant: 'enabled',
-      source: 'cache'
-    })
-    void refreshModelPresence()
-    try {
-      const info = await window.api.getSystemInfo()
-      machineGpu.value = { tier: info.gpu_tier, vramGb: info.gpu_vram_gb }
-    } catch {
-      machineGpu.value = null
-    }
+    machineGpu.value = null
   }
 })
 
