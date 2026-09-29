@@ -27,7 +27,12 @@ let mockHardwareUuid = ''
 const siSystem = vi.fn(() =>
   mockSystemError ? Promise.reject(mockSystemError) : Promise.resolve({ uuid: mockSystemUuid })
 )
-const siUuid = vi.fn(() => Promise.resolve({ os: '', hardware: mockHardwareUuid, macs: [] }))
+let mockUuidHangs = false
+const siUuid = vi.fn(() =>
+  mockUuidHangs
+    ? new Promise<never>(() => {})
+    : Promise.resolve({ os: '', hardware: mockHardwareUuid, macs: [] })
+)
 
 vi.mock('systeminformation', () => ({
   default: {
@@ -62,6 +67,7 @@ describe('deviceId', () => {
     mockSystemUuid = 'aabbccdd-eeff-0011-2233-445566778899'
     mockSystemError = null
     mockHardwareUuid = ''
+    mockUuidHangs = false
     siSystem.mockClear()
     siUuid.mockClear()
     mockMachineIdFiles = {}
@@ -214,7 +220,7 @@ describe('deviceId', () => {
       const machineDerived = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
       fs.writeFileSync(deviceIdFile(), machineDerived)
       setPlatform('win32')
-      mockSystemUuid = undefined
+      mockHardwareUuid = ''
 
       await mod.initDeviceId()
       expect(mod.getDeviceId()).toBe(machineDerived)
@@ -331,6 +337,7 @@ describe('deviceId', () => {
     it.each<NodeJS.Platform>(['win32', 'darwin'])('is not consulted on %s', async (platform) => {
       setPlatform(platform)
       mockSystemUuid = undefined
+      mockHardwareUuid = ''
       mockMachineIdFiles = { [ETC_MACHINE_ID]: machineId }
 
       await mod.initDeviceId()
@@ -352,9 +359,10 @@ describe('deviceId', () => {
       expect(mod.getIdClass()).toBe('machine_derived')
     })
 
-    it('derives the same installation_id si.system() gave for that UUID', async () => {
-      // Existing Windows installs persisted the hash of si.system().uuid; the
-      // same hardware UUID must reproduce it exactly.
+    it('hashes the si.uuid() hardware UUID like any machine UUID', async () => {
+      // Existing installs persisted the hash of si.system().uuid. That the
+      // library returns the same string from si.uuid().hardware is not
+      // provable here (both are mocked); see lookupHardwareUuid().
       const uuid = 'aabbccdd-eeff-0011-2233-445566778899'
       fs.writeFileSync(path.join(testUserData, 'device-id.txt'), expectedIdFor(uuid))
       mockHardwareUuid = uuid
@@ -363,9 +371,10 @@ describe('deviceId', () => {
       expect(mod.getDeviceId()).toBe(expectedIdFor(uuid))
     })
 
-    it('keeps the first random id when WMI never answers', async () => {
+    it('keeps the first random id when WMI returns no UUID on every launch', async () => {
       mockHardwareUuid = ''
       await mod.initDeviceId()
+      expect(mod.getIdClass()).toBe('random_fallback')
       const first = mod.getDeviceId()
       for (let boot = 0; boot < 3; boot++) {
         vi.resetModules()
@@ -375,11 +384,52 @@ describe('deviceId', () => {
       }
     })
 
-    it('falls back when WMI returns no UUID', async () => {
-      mockHardwareUuid = ''
-      await mod.initDeviceId()
-      expect(mod.getIdClass()).toBe('random_fallback')
+    describe('when the lookup overruns its budget', () => {
+      beforeEach(() => {
+        vi.useFakeTimers()
+        mockUuidHangs = true
+      })
+
+      afterEach(() => {
+        vi.useRealTimers()
+      })
+
+      it('falls back after the timeout and keeps a persisted id', async () => {
+        const machineDerived = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
+        fs.writeFileSync(path.join(testUserData, 'device-id.txt'), machineDerived)
+
+        const init = mod.initDeviceId()
+        await vi.advanceTimersByTimeAsync(2000)
+        await init
+
+        expect(mod.getIdClass()).toBe('random_fallback')
+        expect(mod.getDeviceId()).toBe(machineDerived)
+      })
+
+      it('is still pending just before the timeout', async () => {
+        let settled = false
+        void mod.initDeviceId().then(() => {
+          settled = true
+        })
+        await vi.advanceTimersByTimeAsync(1999)
+        expect(settled).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        expect(settled).toBe(true)
+      })
     })
+  })
+
+  describe('initDeviceId — macOS and Linux hardware lookup', () => {
+    it.each<NodeJS.Platform>(['darwin', 'linux'])(
+      'uses si.system(), not si.uuid(), on %s',
+      async (platform) => {
+        setPlatform(platform)
+        await mod.initDeviceId()
+        expect(siSystem).toHaveBeenCalledTimes(1)
+        expect(siUuid).not.toHaveBeenCalled()
+        expect(mod.getDeviceId()).toBe(expectedIdFor('aabbccdd-eeff-0011-2233-445566778899'))
+      }
+    )
   })
 
   describe('initDeviceId — concurrent calls', () => {
