@@ -370,3 +370,9 @@ export function startTokenToEpochMs(
   const ms = Date.parse(token)
   return Number.isFinite(ms) ? ms : null
 }
+
+/** A command line whose script is `main.py` (quoted or not, any directory): a ComfyUI, whoever
+ *  started it. A process forked from ComfyUI keeps this command line. */
+export function runsMainPy(commandLine: string): boolean {
+  return /(^|[\s"'\\/])main\.py(["'\s]|$)/i.test(commandLine)
+}

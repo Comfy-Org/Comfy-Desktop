@@ -476,28 +476,39 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
 })
 
 describe.runIf(process.platform !== 'win32')('survivors of a real process group', () => {
-  it('records a descendant that outlives the child, and the next launch stops only it', async () => {
-    // A detached leader (like Desktop's ComfyUI) that starts a long-lived child, then exits
-    // when its stdin closes — which the test does only after `trackSpawn` is listening.
+  /** A detached leader (like Desktop's ComfyUI) that starts a long-lived child from `childFile`,
+   *  then exits when its stdin closes, which the test does only after `trackSpawn` listens. */
+  async function leaderWithChild(
+    childFile: string
+  ): Promise<{ leader: ReturnType<typeof spawn>; survivorPid: number }> {
+    fs.writeFileSync(childFile, 'setTimeout(() => {}, 60000)\n')
     const leader = spawn(
       process.execPath,
       [
         '-e',
-        `const c = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { stdio: 'ignore' }); console.log(c.pid); process.stdin.on('end', () => process.exit(0)); process.stdin.resume()`
+        `const c = require('child_process').spawn(process.execPath, [${JSON.stringify(childFile)}], { stdio: 'ignore' }); console.log(c.pid); process.stdin.on('end', () => process.exit(0)); process.stdin.resume()`
       ],
       { stdio: ['pipe', 'pipe', 'ignore'], detached: true }
     )
     const survivorPid = await new Promise<number>((r) =>
       leader.stdout!.once('data', (d: Buffer) => r(Number(String(d).trim())))
     )
+    return { leader, survivorPid }
+  }
+
+  const info = {
+    sessionKey: 'inst-1',
+    installationId: 'inst-1',
+    installPath: '/x',
+    port: 1,
+    bootId: 'b'
+  }
+
+  it('records a ComfyUI that outlives the child, and the next launch stops only it', async () => {
+    // Node runs a file of any name, so a script called main.py stands in for a ComfyUI worker.
+    const { leader, survivorPid } = await leaderWithChild(path.join(dirs.state, 'main.py'))
     try {
-      trackSpawn(leader, {
-        sessionKey: 'inst-1',
-        installationId: 'inst-1',
-        installPath: '/x',
-        port: 1,
-        bootId: 'b'
-      })
+      trackSpawn(leader, info)
       leader.stdin!.end()
       await vi.waitFor(() => expect(readRecord('inst-1')?.lingering?.[0]?.pid).toBe(survivorPid), {
         timeout: 5_000
@@ -508,6 +519,22 @@ describe.runIf(process.platform !== 'win32')('survivors of a real process group'
       expect(out).toMatchObject({ action: 'terminated', lingering: 1, exitedInTime: true })
       expect(isPidAlive(survivorPid)).toBe(false)
       expect(readRecord('inst-1')).toBeNull()
+    } finally {
+      try {
+        process.kill(survivorPid, 'SIGKILL')
+      } catch {}
+    }
+  })
+
+  it('never records a survivor that is not ComfyUI (a browser, a model server)', async () => {
+    const { leader, survivorPid } = await leaderWithChild(path.join(dirs.state, 'server.js'))
+    try {
+      trackSpawn(leader, info)
+      leader.stdin!.end()
+      await vi.waitFor(() => expect(readRecord('inst-1')).toBeNull(), { timeout: 5_000 })
+      expect(isPidAlive(survivorPid)).toBe(true)
+      expect(await resolvePriorProcess('inst-1')).toBeNull()
+      expect(isPidAlive(survivorPid)).toBe(true)
     } finally {
       try {
         process.kill(survivorPid, 'SIGKILL')

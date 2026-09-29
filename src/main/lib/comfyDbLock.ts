@@ -2,7 +2,13 @@ import fs from 'fs'
 import path from 'path'
 import { findLockingProcesses } from './file-lock-info'
 import { holderIsInstall, listRecords } from './comfyProcessRecord'
-import { commandLinesOf, isPidAlive, readStartTimes, startTokenToEpochMs } from './processIdentity'
+import {
+  commandLinesOf,
+  isPidAlive,
+  readStartTimes,
+  runsMainPy,
+  startTokenToEpochMs
+} from './processIdentity'
 
 /**
  * ComfyUI's startup refusal when another process holds its database lock (`<db>.lock`, an OS
@@ -66,10 +72,7 @@ export interface DbLockHolder {
   ageS: number | null
 }
 
-/** A command line whose script is `main.py` (quoted or not, any directory). */
-export function runsMainPy(commandLine: string): boolean {
-  return /(^|[\s"'\\/])main\.py(["'\s]|$)/i.test(commandLine)
-}
+export { runsMainPy }
 
 /**
  * Best-effort name for whoever holds the database lock after a `comfyui_db_locked` boot

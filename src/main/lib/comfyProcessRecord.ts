@@ -10,7 +10,8 @@ import {
   isPidAlive,
   ownStartTime,
   processGroupOf,
-  readStartTimes
+  readStartTimes,
+  runsMainPy
 } from './processIdentity'
 
 /**
@@ -177,12 +178,25 @@ function anythingAlive(record: ComfyProcessRecord, alive: (pid: number) => boole
   return alive(record.childPid) || (record.lingering ?? []).some((m) => alive(m.pid))
 }
 
+async function comfyOnly(pids: number[]): Promise<number[]> {
+  const out: number[] = []
+  for (const pid of pids) {
+    const [own] = await commandLinesOf(pid).catch(() => [] as string[])
+    if (own !== undefined && runsMainPy(own)) out.push(pid)
+  }
+  return out
+}
+
 /**
  * On the child's exit: drop the record, unless descendants outlived it in its process group, in
  * which case they are recorded (by pid and start time) for the next launch to stop.
  */
 async function recordChildExit(sessionKey: string, childPid: number): Promise<void> {
-  const members = await groupMembers(childPid)
+  // Only survivors that are themselves ComfyUI (their command line runs main.py: a forked worker
+  // keeps it, and so does a ComfyUI restarted in place). That is the shape that keeps the
+  // database lock. Anything else a custom node started — a browser, a local model server — is
+  // descended from ComfyUI but is not ComfyUI, and the next launch must not stop it.
+  const members = await comfyOnly(await groupMembers(childPid))
   const times = members.length > 0 ? await readStartTimes(members) : null
   const lingering = members.flatMap((pid) => {
     const startTime = times?.get(pid)
