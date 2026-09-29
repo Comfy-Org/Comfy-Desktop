@@ -1568,6 +1568,7 @@
     "peakNotMeasured": "— not measured",
     "unifiedMemory": "Unified memory",
     "systemRam": "System RAM",
+    "driverVersion": "Driver version",
     "deltaFaster": "{pct}% faster than last run ({prev} s)",
     "deltaSlower": "{pct}% slower than last run ({prev} s)",
     "deltaSame": "same as last run ({prev} s)",

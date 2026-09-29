@@ -159,8 +159,7 @@ export function compareToPrevious(opts: {
   }
   const sameBenchmark = opts.priorBenchmarks.filter(
     (benchmark) =>
-      benchmark.workflowName === opts.workflowName &&
-      benchmark.medianJobDurationSeconds != null
+      benchmark.workflowName === opts.workflowName && benchmark.medianJobDurationSeconds != null
   )
   if (sameBenchmark.length === 0) return { kind: 'first', tone: 'neutral' }
 

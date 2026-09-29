@@ -44,7 +44,7 @@ import { deriveGpuTier } from '../../../shared/gpuTier'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import { getFlagAsync, recordExposure } from '../experiments'
 import { createVramPeakAccumulator, fetchSystemStats } from '../systemStatsSampler'
-import { ensureBenchmarkModels } from '../benchmarkModels'
+import { ensureBenchmarkModels, areBenchmarkModelsPresent } from '../benchmarkModels'
 import { findStandardBenchmark } from '../../../shared/benchmarks/standardBenchmarks'
 import {
   calculatePerformanceTestStatistics,
@@ -485,23 +485,34 @@ export function registerAppHandlers(): void {
   // the existing runner can execute it unchanged. Flag-gated; the BYO path never
   // reaches here. Feeds the runner our pinned API-format JSON, NOT the template's
   // graph JSON (there is no graph→API converter in Desktop main).
+  ipcMain.handle('prepare-standard-benchmark-workflow', async (_event, benchmarkId: string) => {
+    try {
+      if ((await getFlagAsync(STANDARD_SUITE_FLAG)) !== true) {
+        return { ok: false, message: 'Standard benchmark suite is not enabled.' }
+      }
+      recordExposure(STANDARD_SUITE_FLAG, 'enabled', 'cache')
+      const benchmark = findStandardBenchmark(benchmarkId)
+      if (!benchmark) return { ok: false, message: 'Unknown benchmark.' }
+      const filePath = await storePerformanceTestWorkflow(
+        benchmarkAssetPath(benchmark.workflowAsset),
+        benchmarksDir
+      )
+      return { ok: true, filePath }
+    } catch (error) {
+      return { ok: false, message: (error as Error)?.message || String(error) }
+    }
+  })
+
+  // Cheap presence check for the card download badge (no network, no download).
   ipcMain.handle(
-    'prepare-standard-benchmark-workflow',
-    async (_event, benchmarkId: string) => {
+    'standard-benchmark-models-present',
+    async (_event, installationId: string, benchmarkId: string) => {
+      const benchmark = findStandardBenchmark(benchmarkId)
+      if (!benchmark) return false
       try {
-        if ((await getFlagAsync(STANDARD_SUITE_FLAG)) !== true) {
-          return { ok: false, message: 'Standard benchmark suite is not enabled.' }
-        }
-        recordExposure(STANDARD_SUITE_FLAG, 'enabled', 'cache')
-        const benchmark = findStandardBenchmark(benchmarkId)
-        if (!benchmark) return { ok: false, message: 'Unknown benchmark.' }
-        const filePath = await storePerformanceTestWorkflow(
-          benchmarkAssetPath(benchmark.workflowAsset),
-          benchmarksDir
-        )
-        return { ok: true, filePath }
-      } catch (error) {
-        return { ok: false, message: (error as Error)?.message || String(error) }
+        return await areBenchmarkModelsPresent(installationId, benchmark)
+      } catch {
+        return false
       }
     }
   )

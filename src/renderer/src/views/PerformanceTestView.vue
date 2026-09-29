@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, toRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
+import { ArrowDown, ArrowUp, Download, FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
+import ChoiceCard from '../components/ChoiceCard.vue'
 import CollapsibleSectionToggle from '../components/CollapsibleSectionToggle.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
@@ -12,6 +13,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type {
   ActionResult,
+  PerformanceTestBenchmark,
   PerformanceTestResultsSummary,
   RunPerformanceTestWorkflowResult
 } from '../types/ipc'
@@ -21,8 +23,25 @@ import {
   type PerformanceTestImageMetric
 } from '../lib/performanceTestResultsSvg'
 import { emitTelemetryAction } from '../lib/telemetry'
+import {
+  STANDARD_BENCHMARKS,
+  type StandardBenchmark
+} from '../../../shared/benchmarks/standardBenchmarks'
+import {
+  compareToPrevious,
+  memoryRowLabelKey,
+  perImageSeconds,
+  tierFromHardware,
+  vramPeakView,
+  type CompareResult
+} from '../lib/benchmarkMetrics'
+import type { GpuTier } from '../../../shared/gpuTier'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
+
+const BENCHMARK_STANDARD_SUITE_FLAG = 'benchmark_standard_suite'
+/** Run phases surfaced in the Results body (design §5). */
+type BenchmarkRunPhase = 'idle' | 'downloading' | 'warmup' | 'measuring' | 'done' | 'error'
 
 interface PerformanceTestRunTelemetry {
   readonly installationId: string
@@ -71,6 +90,30 @@ const logInstallationId = ref<string | null>(null)
 const performanceTestInstallationId = ref<string | null>(null)
 const logsElement = ref<HTMLElement | null>(null)
 const performanceTestResult = ref<RunPerformanceTestWorkflowResult | null>(null)
+
+// --- Standard benchmark suite (flag-gated; BYO path is unchanged) ---------
+const standardSuiteEnabled = ref(false)
+const benchmarkSource = ref<'standard' | 'custom'>('standard')
+const standardBenchmarks = STANDARD_BENCHMARKS
+const selectedBenchmarkId = ref<string | null>(standardBenchmarks[0]?.id ?? null)
+/** Per-benchmark on-disk model presence for the selected instance (card badge). */
+const modelsPresentById = reactive<Record<string, boolean>>({})
+const runPhase = ref<BenchmarkRunPhase>('idle')
+const downloadedBytes = ref(0)
+const totalDownloadBytes = ref(0)
+/** The benchmark that produced the current result (drives the rich headline). */
+const resultBenchmark = ref<StandardBenchmark | null>(null)
+const priorBenchmarks = ref<PerformanceTestBenchmark[]>([])
+/** This machine's GPU tier + VRAM, for the per-card fit note (design §4.2). */
+const machineGpu = ref<{ tier: GpuTier; vramGb: number | null } | null>(null)
+const selectedBenchmark = computed(
+  () => standardBenchmarks.find((benchmark) => benchmark.id === selectedBenchmarkId.value) ?? null
+)
+/** Standard suite is the active source only when enabled AND selected. */
+const isStandardMode = computed(
+  () => standardSuiteEnabled.value && benchmarkSource.value === 'standard'
+)
+
 const progressSessionId = ref<string | null>(null)
 const completedProgressRuns = ref(0)
 const totalProgressRuns = ref(0)
@@ -130,9 +173,13 @@ const performanceTestSessionId = (installationId: string): string =>
 const canRun = computed(() => {
   const installationId = selectedInstallationId.value
   const sessionId = installationId ? performanceTestSessionId(installationId) : ''
+  // Standard mode needs a selected benchmark; custom mode needs an imported file.
+  const sourceReady = isStandardMode.value
+    ? Boolean(selectedBenchmarkId.value)
+    : Boolean(workflowFilePath.value)
   return Boolean(
     installationId &&
-    workflowFilePath.value &&
+    sourceReady &&
     !isLaunching.value &&
     !isStopping.value &&
     !isWorkflowImporting.value &&
@@ -153,8 +200,66 @@ const unsubscribePerformanceTestProgress = window.api.onPerformanceTestProgress(
 })
 onUnmounted(unsubscribePerformanceTestProgress)
 
+const unsubscribeBenchmarkDownload = window.api.onStandardBenchmarkDownloadProgress((progress) => {
+  if (progress.installationId !== selectedInstallationId.value) return
+  if (progress.benchmarkId !== selectedBenchmarkId.value) return
+  downloadedBytes.value = progress.receivedBytes
+  totalDownloadBytes.value = progress.totalBytes
+})
+onUnmounted(unsubscribeBenchmarkDownload)
+
+onMounted(async () => {
+  try {
+    const flag = await window.api.telemetryGetExperimentFlag(BENCHMARK_STANDARD_SUITE_FLAG)
+    standardSuiteEnabled.value = flag === true
+  } catch {
+    standardSuiteEnabled.value = false
+  }
+  if (standardSuiteEnabled.value) {
+    // Per-session exposure (main dedups); safe to call on mount.
+    window.api.telemetryRecordExposure({
+      experimentKey: BENCHMARK_STANDARD_SUITE_FLAG,
+      variant: 'enabled',
+      source: 'cache'
+    })
+    void refreshModelPresence()
+    try {
+      const info = await window.api.getSystemInfo()
+      machineGpu.value = { tier: info.gpu_tier, vramGb: info.gpu_vram_gb }
+    } catch {
+      machineGpu.value = null
+    }
+  }
+})
+
+/** Resolve on-disk model presence for every benchmark on the selected instance,
+ *  so cards show "Downloaded" vs "~size". Best-effort; unresolved reads false. */
+async function refreshModelPresence(): Promise<void> {
+  const installationId = selectedInstallationId.value
+  if (!installationId) {
+    for (const benchmark of standardBenchmarks) modelsPresentById[benchmark.id] = false
+    return
+  }
+  await Promise.all(
+    standardBenchmarks.map(async (benchmark) => {
+      try {
+        modelsPresentById[benchmark.id] = await window.api.standardBenchmarkModelsPresent(
+          installationId,
+          benchmark.id
+        )
+      } catch {
+        modelsPresentById[benchmark.id] = false
+      }
+    })
+  )
+}
+
 watch(selectedWorkspaceId, () => {
   selectedInstallationId.value = null
+})
+
+watch(selectedInstallationId, () => {
+  if (standardSuiteEnabled.value) void refreshModelPresence()
 })
 
 function correctRunCount(
@@ -233,12 +338,185 @@ async function dropWorkflow(event: DragEvent): Promise<void> {
   await importWorkflow(sourcePath)
 }
 
+// --- Standard benchmark: card fit note + rich result metrics (design §4-6) ---
+
+function formatGbFromBytes(bytes: number): string {
+  return `${(bytes / 1e9).toFixed(1)} GB`
+}
+
+/** Per-card fit note. Dedicated GPUs get a fit judgement; Apple/CPU get a
+ *  recommendation instead (fit is meaningless on unified/shared memory). */
+function benchmarkFit(
+  benchmark: StandardBenchmark
+): { key: string; params?: Record<string, number>; tone: 'neutral' | 'caution' } | null {
+  const gpu = machineGpu.value
+  if (!gpu) return null
+  if (gpu.tier === 'apple' || gpu.tier === 'cpu_only') {
+    return {
+      key: 'performanceTest.tierRecommended',
+      params: { gb: benchmark.vramTierGb },
+      tone: 'neutral'
+    }
+  }
+  const vramGb = gpu.vramGb ?? 0
+  return vramGb >= benchmark.vramTierGb
+    ? { key: 'performanceTest.fitsVram', tone: 'neutral' }
+    : { key: 'performanceTest.mayExceedVram', tone: 'caution' }
+}
+
+/** True once a standard run has produced a result worth the rich headline. */
+const showBenchmarkHeadline = computed(
+  () =>
+    standardSuiteEnabled.value &&
+    resultBenchmark.value !== null &&
+    Boolean(performanceTestResult.value?.resultsSummary)
+)
+
+const headlineTier = computed<GpuTier | null>(() => {
+  const hardware = performanceTestResult.value?.resultsSummary?.hardware
+  if (!hardware) return null
+  return tierFromHardware({
+    backend: hardware.backend,
+    deviceType: hardware.deviceType,
+    vramMb: hardware.vramMb
+  })
+})
+
+const medianPerImageSeconds = computed(() => {
+  const summary = performanceTestResult.value?.resultsSummary
+  const benchmark = resultBenchmark.value
+  if (!summary || !benchmark) return null
+  return perImageSeconds(summary.medianJobDurationSeconds, benchmark.imagesPerRun)
+})
+
+const vramPeak = computed(() => {
+  const hardware = performanceTestResult.value?.resultsSummary?.hardware
+  const tier = headlineTier.value
+  if (!hardware || !tier) return null
+  return vramPeakView({
+    tier,
+    peakMb: hardware.peakVramMb,
+    totalMb: hardware.vramTotalMb ?? hardware.vramMb,
+    ramMb: hardware.ramMb
+  })
+})
+
+const compareResult = computed<CompareResult | null>(() => {
+  const summary = performanceTestResult.value?.resultsSummary
+  const benchmark = resultBenchmark.value
+  if (!summary || !benchmark) return null
+  const hardwareName = summary.hardware?.deviceName ?? summary.hardware?.deviceType ?? null
+  return compareToPrevious({
+    currentPerImageSeconds: medianPerImageSeconds.value,
+    imagesPerRun: benchmark.imagesPerRun,
+    workflowName: summary.workflowName,
+    hardwareName,
+    priorBenchmarks: priorBenchmarks.value
+  })
+})
+
+const benchmarkContextLine = computed(() => {
+  const summary = performanceTestResult.value?.resultsSummary
+  const benchmark = resultBenchmark.value
+  if (!summary || !benchmark) return ''
+  const device = computeDeviceNames.value || summary.hardware?.deviceType || ''
+  const datetime = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(summary.createdAt))
+  return t('performanceTest.contextLine', { name: benchmark.name, device, datetime })
+})
+
+const benchmarkRangeRow = computed(() => {
+  const summary = performanceTestResult.value?.resultsSummary
+  const benchmark = resultBenchmark.value
+  if (
+    !summary ||
+    !benchmark ||
+    summary.fastestJobDurationSeconds == null ||
+    summary.slowestJobDurationSeconds == null ||
+    summary.averageJobDurationSeconds == null
+  ) {
+    return ''
+  }
+  const perImage = benchmark.imagesPerRun || 1
+  return t('performanceTest.rangeRow', {
+    min: (summary.fastestJobDurationSeconds / perImage).toFixed(2),
+    max: (summary.slowestJobDurationSeconds / perImage).toFixed(2),
+    avg: (summary.averageJobDurationSeconds / perImage).toFixed(2),
+    n: summary.measuredJobCount,
+    failed: summary.failedRunCount
+  })
+})
+
+/** Backend-aware label for the System information VRAM/memory row. */
+const memoryRowLabel = computed(() => t(memoryRowLabelKey(headlineTier.value ?? 'cpu_only')))
+
+/** Progress phase label for the Results body during a standard run (design §5). */
+const benchmarkPhaseLabel = computed(() => {
+  const warmups = Number(warmupRuns.value)
+  const measured = Number(measuredRuns.value)
+  if (completedProgressRuns.value < warmups) {
+    return t('performanceTest.warmingUp', {
+      done: Math.min(completedProgressRuns.value + 1, warmups),
+      total: warmups
+    })
+  }
+  return t('performanceTest.measuring', {
+    done: Math.min(completedProgressRuns.value - warmups + 1, measured),
+    total: measured
+  })
+})
+
+const downloadPercent = computed(() =>
+  totalDownloadBytes.value > 0
+    ? Math.min(100, Math.round((downloadedBytes.value / totalDownloadBytes.value) * 100))
+    : 0
+)
+
+/**
+ * Prepare a standard run: download missing models (download phase) and copy the
+ * pinned API-format workflow into a managed session dir. Returns the workflow
+ * path to run, or null on failure/abort (message already logged).
+ */
+async function prepareStandardRun(
+  installationId: string,
+  sessionId: string
+): Promise<string | null> {
+  const benchmark = selectedBenchmark.value
+  if (!benchmark) return null
+  runPhase.value = 'downloading'
+  downloadedBytes.value = 0
+  totalDownloadBytes.value = benchmark.downloadBytes
+  const models = await window.api.ensureStandardBenchmarkModels(installationId, benchmark.id)
+  if (!models.ok || !models.present) {
+    sessionStore.appendOutput(
+      sessionId,
+      `${models.message || t('performanceTest.benchmarkModelDownloadFailed')}\n`
+    )
+    return null
+  }
+  modelsPresentById[benchmark.id] = true
+  const prepared = await window.api.prepareStandardBenchmarkWorkflow(benchmark.id)
+  if (!prepared.ok || !prepared.filePath) {
+    sessionStore.appendOutput(
+      sessionId,
+      `${prepared.message || t('performanceTest.submitFailed')}\n`
+    )
+    return null
+  }
+  return prepared.filePath
+}
+
 async function runPerformanceTest(): Promise<void> {
   const installationId = selectedInstallationId.value
-  const filePath = workflowFilePath.value
+  const standardBenchmarkForRun = isStandardMode.value ? selectedBenchmark.value : null
+  // Standard mode resolves its file path after preparing (download + copy);
+  // custom mode uses the imported workflow directly.
+  let filePath = isStandardMode.value ? null : workflowFilePath.value
   if (
     !installationId ||
-    !filePath ||
+    (isStandardMode.value ? !standardBenchmarkForRun : !filePath) ||
     isLaunching.value ||
     isStopping.value ||
     isWorkflowImporting.value ||
@@ -267,6 +545,8 @@ async function runPerformanceTest(): Promise<void> {
   })
   isLaunching.value = true
   performanceTestResult.value = null
+  resultBenchmark.value = null
+  runPhase.value = 'idle'
   progressSessionId.value = sessionId
   completedProgressRuns.value = 0
   totalProgressRuns.value = warmups + runs
@@ -275,6 +555,16 @@ async function runPerformanceTest(): Promise<void> {
     logInstallationId.value = sessionId
     performanceTestInstallationId.value = installationId
     sessionStore.startSession(sessionId)
+    if (standardBenchmarkForRun) {
+      filePath = await prepareStandardRun(installationId, sessionId)
+      if (token !== runToken) return
+      if (!filePath) {
+        runPhase.value = 'error'
+        performanceTestInstallationId.value = null
+        return
+      }
+    }
+    runPhase.value = 'measuring'
     const launchPromise = window.api.runAction(installationId, 'launch', {
       launchModeOverride: 'console',
       autoPortOnConflict: true,
@@ -299,6 +589,7 @@ async function runPerformanceTest(): Promise<void> {
         warmupCount: warmups
       })}\n`
     )
+    if (!filePath) return
     try {
       const submission = await window.api.runPerformanceTestWorkflow(
         sessionId,
@@ -308,6 +599,24 @@ async function runPerformanceTest(): Promise<void> {
       )
       if (submission.ok) {
         performanceTestResult.value = submission
+        runPhase.value = 'done'
+        if (standardBenchmarkForRun) {
+          resultBenchmark.value = standardBenchmarkForRun
+          try {
+            // Exclude the run we just saved so compare-to-previous looks at
+            // genuinely prior runs, not itself.
+            const summaryPath = submission.resultsSummaryPath
+            const currentSessionId = summaryPath
+              ? (summaryPath.split(/[\\/]/).slice(-2, -1)[0] ?? null)
+              : null
+            const list = await window.api.listPerformanceTestBenchmarks()
+            priorBenchmarks.value = list.benchmarks.filter(
+              (benchmark) => benchmark.id !== currentSessionId
+            )
+          } catch {
+            priorBenchmarks.value = []
+          }
+        }
         if (activeRunTelemetry === runTelemetry) {
           activeRunTelemetry = null
           const summary = submission.resultsSummary
@@ -361,14 +670,17 @@ async function runPerformanceTest(): Promise<void> {
             })}\n`
           : `${submission.message || t('performanceTest.submitFailed')}\n`
       )
+      if (!submission.ok) runPhase.value = 'error'
       if (submission.ok) await stopPerformanceTest()
     } catch (error) {
+      runPhase.value = 'error'
       sessionStore.appendOutput(
         sessionId,
         `${(error as Error)?.message || t('performanceTest.submitFailed')}\n`
       )
     }
   } catch (error) {
+    runPhase.value = 'error'
     sessionStore.appendOutput(
       sessionId,
       (error as Error)?.message || t('performanceTest.launchFailed')
@@ -376,7 +688,7 @@ async function runPerformanceTest(): Promise<void> {
     performanceTestInstallationId.value = null
   } finally {
     const logs = sessionStore.getSession(sessionId)?.output
-    if (logs !== undefined) {
+    if (filePath && logs !== undefined) {
       try {
         const savedLogs = await window.api.savePerformanceTestLogs(filePath, logs)
         if (!savedLogs.ok) {
@@ -608,52 +920,157 @@ watch(performanceTestLogs, async () => {
             </section>
 
             <section class="performance-test__column">
-              <h2>{{ t('performanceTest.dropWorkflow') }}</h2>
+              <h2>
+                {{
+                  isStandardMode
+                    ? t('performanceTest.chooseBenchmark')
+                    : t('performanceTest.dropWorkflow')
+                }}
+              </h2>
+
               <div
-                class="performance-test__drop-zone"
-                :class="{
-                  'performance-test__drop-zone--dragging': isWorkflowDragging,
-                  'performance-test__drop-zone--selected': workflowFilePath
-                }"
-                :aria-busy="isWorkflowImporting || isWorkflowDeleting"
-                @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
-                @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
-                @dragleave.prevent="isWorkflowDragging = false"
-                @drop.prevent="dropWorkflow"
+                v-if="standardSuiteEnabled"
+                class="performance-test__source-toggle"
+                role="radiogroup"
+                :aria-label="t('performanceTest.sourceLabel')"
               >
                 <button
-                  class="performance-test__drop-content"
                   type="button"
+                  role="radio"
+                  :aria-checked="benchmarkSource === 'standard'"
+                  class="performance-test__source-option"
+                  :class="{
+                    'performance-test__source-option--active': benchmarkSource === 'standard'
+                  }"
                   :disabled="isWorkflowLocked"
-                  @click="importWorkflow()"
+                  @click="benchmarkSource = 'standard'"
                 >
-                  <span v-if="!workflowFilePath">
-                    {{
-                      isWorkflowImporting
-                        ? t('performanceTest.importingWorkflow')
-                        : t('performanceTest.dropWorkflowHint')
-                    }}
-                  </span>
-                  <span v-else class="performance-test__workflow-file">
-                    <strong>{{ workflowFileName }}</strong>
-                    <code>{{ workflowFilePath }}</code>
-                  </span>
+                  {{ t('performanceTest.sourceStandard') }}
                 </button>
                 <button
-                  v-if="workflowFilePath && !isWorkflowLocked"
-                  class="performance-test__delete-workflow"
                   type="button"
-                  :aria-label="t('performanceTest.deleteWorkflow')"
-                  :title="t('performanceTest.deleteWorkflow')"
-                  :disabled="isWorkflowDeleting"
-                  @click="deleteWorkflow"
+                  role="radio"
+                  :aria-checked="benchmarkSource === 'custom'"
+                  class="performance-test__source-option"
+                  :class="{
+                    'performance-test__source-option--active': benchmarkSource === 'custom'
+                  }"
+                  :disabled="isWorkflowLocked"
+                  @click="benchmarkSource = 'custom'"
                 >
-                  <Trash2 :size="18" aria-hidden="true" />
+                  {{ t('performanceTest.sourceCustom') }}
                 </button>
               </div>
-              <p v-if="workflowImportError" class="performance-test__workflow-error" role="alert">
-                {{ workflowImportError }}
-              </p>
+
+              <div
+                v-if="isStandardMode"
+                class="performance-test__benchmark-cards"
+                role="radiogroup"
+                :aria-label="t('performanceTest.chooseBenchmark')"
+              >
+                <ChoiceCard
+                  v-for="benchmark in standardBenchmarks"
+                  :key="benchmark.id"
+                  selectable
+                  :selected="selectedBenchmarkId === benchmark.id"
+                  :tab-stop="selectedBenchmarkId === benchmark.id"
+                  :disabled="isWorkflowLocked"
+                  :label="benchmark.name"
+                  :description="`${benchmark.measures} · ${benchmark.specLine}`"
+                  @click="selectedBenchmarkId = benchmark.id"
+                >
+                  <template #label-trailing>
+                    <span
+                      v-if="modelsPresentById[benchmark.id]"
+                      class="performance-test__download-badge performance-test__download-badge--present"
+                      :title="
+                        t('performanceTest.downloadedWithSize', {
+                          size: formatGbFromBytes(benchmark.downloadBytes)
+                        })
+                      "
+                    >
+                      {{ t('performanceTest.downloaded') }}
+                    </span>
+                    <span
+                      v-else
+                      class="performance-test__download-badge"
+                      :title="t('performanceTest.downloadsOnFirstRun')"
+                    >
+                      {{
+                        t('performanceTest.downloadPending', {
+                          size: formatGbFromBytes(benchmark.downloadBytes)
+                        })
+                      }}
+                      <Download :size="13" aria-hidden="true" />
+                    </span>
+                  </template>
+                  <template #desc-trailing>
+                    <span class="performance-test__tier-row">
+                      <span class="performance-test__tier-chip">
+                        {{ t('performanceTest.tierChip', { gb: benchmark.vramTierGb }) }}
+                      </span>
+                      <span
+                        v-if="benchmarkFit(benchmark)"
+                        class="performance-test__fit-note"
+                        :class="{
+                          'performance-test__fit-note--caution':
+                            benchmarkFit(benchmark)?.tone === 'caution'
+                        }"
+                      >
+                        {{ t(benchmarkFit(benchmark)!.key, benchmarkFit(benchmark)!.params ?? {}) }}
+                      </span>
+                    </span>
+                  </template>
+                </ChoiceCard>
+              </div>
+
+              <template v-else>
+                <div
+                  class="performance-test__drop-zone"
+                  :class="{
+                    'performance-test__drop-zone--dragging': isWorkflowDragging,
+                    'performance-test__drop-zone--selected': workflowFilePath
+                  }"
+                  :aria-busy="isWorkflowImporting || isWorkflowDeleting"
+                  @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
+                  @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
+                  @dragleave.prevent="isWorkflowDragging = false"
+                  @drop.prevent="dropWorkflow"
+                >
+                  <button
+                    class="performance-test__drop-content"
+                    type="button"
+                    :disabled="isWorkflowLocked"
+                    @click="importWorkflow()"
+                  >
+                    <span v-if="!workflowFilePath">
+                      {{
+                        isWorkflowImporting
+                          ? t('performanceTest.importingWorkflow')
+                          : t('performanceTest.dropWorkflowHint')
+                      }}
+                    </span>
+                    <span v-else class="performance-test__workflow-file">
+                      <strong>{{ workflowFileName }}</strong>
+                      <code>{{ workflowFilePath }}</code>
+                    </span>
+                  </button>
+                  <button
+                    v-if="workflowFilePath && !isWorkflowLocked"
+                    class="performance-test__delete-workflow"
+                    type="button"
+                    :aria-label="t('performanceTest.deleteWorkflow')"
+                    :title="t('performanceTest.deleteWorkflow')"
+                    :disabled="isWorkflowDeleting"
+                    @click="deleteWorkflow"
+                  >
+                    <Trash2 :size="18" aria-hidden="true" />
+                  </button>
+                </div>
+                <p v-if="workflowImportError" class="performance-test__workflow-error" role="alert">
+                  {{ workflowImportError }}
+                </p>
+              </template>
             </section>
 
             <section class="performance-test__column">
@@ -707,7 +1124,13 @@ watch(performanceTestLogs, async () => {
                   :disabled="!canRun"
                   @click="runPerformanceTest"
                 >
-                  {{ isLaunching ? t('performanceTest.running') : t('performanceTest.run') }}
+                  {{
+                    isLaunching
+                      ? t('performanceTest.running')
+                      : isStandardMode
+                        ? t('performanceTest.runBenchmark')
+                        : t('performanceTest.run')
+                  }}
                 </button>
               </div>
             </section>
@@ -720,9 +1143,48 @@ watch(performanceTestLogs, async () => {
               @toggle="resultsExpanded = !resultsExpanded"
             />
             <div v-show="resultsExpanded" class="performance-test__results">
-              <div v-if="isLaunching && totalProgressRuns > 0" class="performance-test__progress">
+              <div
+                v-if="isLaunching && isStandardMode && runPhase === 'downloading'"
+                class="performance-test__progress"
+              >
                 <div class="performance-test__progress-heading">
-                  <span>{{ t('performanceTest.runProgress') }}</span>
+                  <span>
+                    {{
+                      t('performanceTest.downloadingModels', {
+                        name: selectedBenchmark?.name ?? ''
+                      })
+                    }}
+                  </span>
+                  <span>
+                    {{
+                      t('performanceTest.downloadingProgress', {
+                        received: formatGbFromBytes(downloadedBytes),
+                        total: formatGbFromBytes(totalDownloadBytes)
+                      })
+                    }}
+                  </span>
+                </div>
+                <div
+                  class="performance-test__progress-track"
+                  role="progressbar"
+                  :aria-valuenow="downloadPercent"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                >
+                  <i :style="{ width: `${downloadPercent}%` }" />
+                </div>
+                <p class="performance-test__phase-note">
+                  {{ t('performanceTest.downloadOnceNote') }}
+                </p>
+              </div>
+              <div
+                v-else-if="isLaunching && totalProgressRuns > 0"
+                class="performance-test__progress"
+              >
+                <div class="performance-test__progress-heading">
+                  <span>{{
+                    isStandardMode ? benchmarkPhaseLabel : t('performanceTest.runProgress')
+                  }}</span>
                   <span>
                     {{
                       t('performanceTest.runProgressCount', {
@@ -744,6 +1206,109 @@ watch(performanceTestLogs, async () => {
                 </div>
               </div>
               <template v-else-if="performanceTestResult?.resultsSummary">
+                <div v-if="showBenchmarkHeadline" class="performance-test__benchmark-headline">
+                  <p class="performance-test__context-line">{{ benchmarkContextLine }}</p>
+                  <div class="performance-test__headline-band">
+                    <div class="performance-test__headline-stat">
+                      <div class="performance-test__headline-value">
+                        <template v-if="medianPerImageSeconds != null">
+                          {{ medianPerImageSeconds.toFixed(2) }}
+                          <span class="performance-test__headline-unit">
+                            {{
+                              resultBenchmark
+                                ? t('performanceTest.secPerImage')
+                                : t('performanceTest.secPerRun')
+                            }}
+                          </span>
+                        </template>
+                        <template v-else>{{ t('performanceTest.peakNotMeasured') }}</template>
+                      </div>
+                      <p class="performance-test__headline-sub">
+                        {{
+                          t('performanceTest.medianOfRuns', {
+                            n: performanceTestResult.resultsSummary.measuredJobCount
+                          })
+                        }}
+                      </p>
+                      <p
+                        v-if="compareResult && compareResult.kind !== 'first'"
+                        class="performance-test__compare"
+                        :class="{
+                          'performance-test__compare--positive': compareResult.tone === 'positive',
+                          'performance-test__compare--caution': compareResult.tone === 'caution'
+                        }"
+                      >
+                        <ArrowUp
+                          v-if="compareResult.kind === 'faster'"
+                          :size="14"
+                          aria-hidden="true"
+                        />
+                        <ArrowDown
+                          v-else-if="compareResult.kind === 'slower'"
+                          :size="14"
+                          aria-hidden="true"
+                        />
+                        <span v-if="compareResult.kind === 'faster'">
+                          {{
+                            t('performanceTest.deltaFaster', {
+                              pct: compareResult.pct,
+                              prev: compareResult.prevSeconds.toFixed(2)
+                            })
+                          }}
+                        </span>
+                        <span v-else-if="compareResult.kind === 'slower'">
+                          {{
+                            t('performanceTest.deltaSlower', {
+                              pct: compareResult.pct,
+                              prev: compareResult.prevSeconds.toFixed(2)
+                            })
+                          }}
+                        </span>
+                        <span v-else-if="compareResult.kind === 'same'">
+                          {{
+                            t('performanceTest.deltaSame', {
+                              prev: compareResult.prevSeconds.toFixed(2)
+                            })
+                          }}
+                        </span>
+                        <span v-else-if="compareResult.kind === 'differentGpu'">
+                          {{ t('performanceTest.deltaDifferentGpu') }}
+                        </span>
+                      </p>
+                      <p
+                        v-else-if="compareResult && compareResult.kind === 'first'"
+                        class="performance-test__compare"
+                      >
+                        {{ t('performanceTest.deltaFirstRun') }}
+                      </p>
+                    </div>
+                    <div v-if="vramPeak" class="performance-test__headline-stat">
+                      <div class="performance-test__headline-value">
+                        <template v-if="!vramPeak.notMeasured && vramPeak.peakGb != null">
+                          {{ vramPeak.peakGb }} GB
+                          <span class="performance-test__headline-unit">
+                            {{ t(vramPeak.headlineKey) }}
+                          </span>
+                        </template>
+                        <template v-else>
+                          {{ t(vramPeak.headlineKey) }} {{ t('performanceTest.peakNotMeasured') }}
+                        </template>
+                      </div>
+                      <p
+                        v-if="!vramPeak.notMeasured && vramPeak.secondLine"
+                        class="performance-test__headline-sub"
+                        :class="{
+                          'performance-test__compare--caution': vramPeak.tone === 'caution'
+                        }"
+                      >
+                        {{ t(vramPeak.secondLine.key, vramPeak.secondLine.params) }}
+                      </p>
+                    </div>
+                  </div>
+                  <p v-if="benchmarkRangeRow" class="performance-test__range-row">
+                    {{ benchmarkRangeRow }}
+                  </p>
+                </div>
                 <div class="performance-test__summary">
                   <div class="performance-test__summary-column">
                     <dl class="performance-test__result-list">
@@ -817,7 +1382,11 @@ watch(performanceTestLogs, async () => {
                 </div>
               </template>
               <p v-else class="performance-test__results-placeholder">
-                {{ t('performanceTest.resultsPlaceholder') }}
+                {{
+                  standardSuiteEnabled
+                    ? t('performanceTest.idlePlaceholder')
+                    : t('performanceTest.resultsPlaceholder')
+                }}
               </p>
 
               <template v-if="performanceTestResult?.hardware">
@@ -832,12 +1401,20 @@ watch(performanceTestLogs, async () => {
                         <dd>{{ computeDeviceNames }}</dd>
                       </div>
                       <div v-if="performanceTestResult.hardware.vramMb != null">
-                        <dt>{{ t('performanceTest.vram') }}</dt>
+                        <dt>
+                          {{ showBenchmarkHeadline ? memoryRowLabel : t('performanceTest.vram') }}
+                        </dt>
                         <dd>{{ formatMemory(performanceTestResult.hardware.vramMb) }}</dd>
                       </div>
                       <div v-if="performanceTestResult.hardware.ramMb != null">
                         <dt>{{ t('performanceTest.ram') }}</dt>
                         <dd>{{ formatMemory(performanceTestResult.hardware.ramMb) }}</dd>
+                      </div>
+                      <div
+                        v-if="showBenchmarkHeadline && performanceTestResult.hardware.driverVersion"
+                      >
+                        <dt>{{ t('performanceTest.driverVersion') }}</dt>
+                        <dd>{{ performanceTestResult.hardware.driverVersion }}</dd>
                       </div>
                       <div v-if="performanceTestResult.hardware.pytorchVersion">
                         <dt>{{ t('performanceTest.pytorchVersion') }}</dt>
@@ -1072,6 +1649,150 @@ watch(performanceTestLogs, async () => {
   border-radius: 8px;
   background: var(--chooser-surface-bg);
   color: var(--text-muted);
+}
+
+/* --- Standard benchmark suite (flag-gated) --- */
+.performance-test__source-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--chooser-surface-border);
+  border-radius: 8px;
+  background: var(--chooser-surface-bg);
+}
+
+.performance-test__source-option {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.performance-test__source-option--active {
+  background: var(--chooser-surface-bg-hover);
+  color: var(--text-primary);
+}
+
+.performance-test__source-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.performance-test__benchmark-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.performance-test__download-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.performance-test__download-badge--present {
+  color: var(--accent-positive, var(--comfy-yellow));
+}
+
+.performance-test__tier-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.performance-test__tier-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--chooser-surface-border);
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.performance-test__fit-note {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.performance-test__fit-note--caution {
+  color: var(--accent-caution, #d9822b);
+}
+
+.performance-test__benchmark-headline {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.performance-test__context-line {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.performance-test__headline-band {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.performance-test__headline-stat {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--chooser-surface-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chooser-surface-bg-hover) 45%, transparent);
+}
+
+.performance-test__headline-value {
+  color: var(--text-primary);
+  font-size: 32px;
+  line-height: 1.15;
+}
+
+.performance-test__headline-unit {
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.performance-test__headline-sub {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.performance-test__compare {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.performance-test__compare--positive {
+  color: var(--accent-positive, var(--comfy-yellow));
+}
+
+.performance-test__compare--caution {
+  color: var(--accent-danger, #d92d20);
+}
+
+.performance-test__range-row {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.performance-test__phase-note {
+  margin: 4px 0 0;
+  color: var(--text-faint);
+  font-size: 11px;
 }
 
 .performance-test__drop-zone {

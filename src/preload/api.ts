@@ -46,6 +46,8 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('prepare-standard-benchmark-workflow', benchmarkId),
     ensureStandardBenchmarkModels: (installationId, benchmarkId) =>
       ipcRenderer.invoke('ensure-standard-benchmark-models', installationId, benchmarkId),
+    standardBenchmarkModelsPresent: (installationId, benchmarkId) =>
+      ipcRenderer.invoke('standard-benchmark-models-present', installationId, benchmarkId),
     runPerformanceTestWorkflow: (sessionId, filePath, measuredRuns, warmupRuns) =>
       ipcRenderer.invoke(
         'run-performance-test-workflow',

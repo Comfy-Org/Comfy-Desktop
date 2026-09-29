@@ -1316,6 +1316,8 @@ export interface ElectronApi {
     installationId: string,
     benchmarkId: string
   ): Promise<{ ok: boolean; present: boolean; downloaded: boolean; message?: string }>
+  /** Cheap on-disk presence check for a benchmark's models (no download). */
+  standardBenchmarkModelsPresent(installationId: string, benchmarkId: string): Promise<boolean>
   exportResultsImage(
     png: ArrayBuffer,
     imageType: 'performance-test' | 'benchmark-comparison',
