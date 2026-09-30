@@ -663,13 +663,16 @@ export interface QueueState {
   pending: number
 }
 
-/** One short `GET /queue` on loopback. Null when it could not be answered: not listening, not
- *  ComfyUI, wedged, or too slow. */
-export function probeQueue(port: number, timeoutMs = 1_000): Promise<QueueState | null> {
+export type QueueAnswer = QueueState | null | 'not_queue'
+
+/** One short `GET /queue` on loopback. Null when nothing answered in time (not listening,
+ *  wedged, or too slow); `not_queue` when something answered at once, but not with a queue (an
+ *  error status, or a body that is not one), which waiting longer will not change. */
+export function probeQueue(port: number, timeoutMs = 1_000): Promise<QueueAnswer> {
   if (!Number.isInteger(port) || port <= 0 || port > 65535) return Promise.resolve(null)
   return new Promise((resolve) => {
     let settled = false
-    const finish = (value: QueueState | null): void => {
+    const finish = (value: QueueAnswer): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
@@ -678,7 +681,7 @@ export function probeQueue(port: number, timeoutMs = 1_000): Promise<QueueState 
     const req = http.get({ host: '127.0.0.1', port, path: '/queue', timeout: timeoutMs }, (res) => {
       if (res.statusCode !== 200) {
         res.resume()
-        return finish(null)
+        return finish('not_queue')
       }
       let body = ''
       res.setEncoding('utf-8')
@@ -690,11 +693,11 @@ export function probeQueue(port: number, timeoutMs = 1_000): Promise<QueueState 
         try {
           const parsed = JSON.parse(body) as { queue_running?: unknown; queue_pending?: unknown }
           if (!Array.isArray(parsed.queue_running) || !Array.isArray(parsed.queue_pending)) {
-            return finish(null)
+            return finish('not_queue')
           }
           finish({ running: parsed.queue_running.length, pending: parsed.queue_pending.length })
         } catch {
-          finish(null)
+          finish('not_queue')
         }
       })
       res.on('error', () => finish(null))
@@ -791,7 +794,8 @@ export const QUEUE_PROBE_BUDGET_MS = 10_000
 
 /**
  * `/queue`, retried: a server busy generating, or stalled in an asset scan, can take seconds to
- * answer, and one short probe would read that as idle. Per-attempt timeouts and the pauses
+ * answer, and one short probe would read that as idle. Only silence is retried; an answer that
+ * is not a queue ends the probe as unknown at once. Per-attempt timeouts and the pauses
  * between them both grow, all inside `QUEUE_PROBE_BUDGET_MS`. Null means it never answered.
  */
 async function probeQueuePatiently(
@@ -808,6 +812,8 @@ async function probeQueuePatiently(
     if (remaining <= 0 || signal?.aborted) return null
     const attemptMs = Math.min(timeoutMs, remaining)
     const queue = await withinBudget(deps.probeQueue(port, attemptMs), attemptMs, signal)
+    // Answered, but not with a queue: asking again gets the same answer. Unknown, at once.
+    if (queue === 'not_queue') return null
     if (queue) return queue
     const left = deadline - deps.now()
     if (left <= 0 || signal?.aborted || attempt === MAX_QUEUE_PROBES - 1) return null
@@ -824,10 +830,10 @@ const MAX_QUEUE_PROBES = 8
  *  underlying probe does (the real one has its own hard timer; this keeps the budget from
  *  depending on that, and a late rejection from ever going unhandled). */
 function withinBudget(
-  probe: Promise<QueueState | null>,
+  probe: Promise<QueueAnswer>,
   ms: number,
   signal?: AbortSignal
-): Promise<QueueState | null> {
+): Promise<QueueAnswer> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const expired = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), ms)
@@ -1080,6 +1086,9 @@ export async function resolvePriorProcess(
   }
   if (opts.signal?.aborted) return null
   const survivors = proven ? await stopLingering(proven, deps) : null
+  // The user chose to stop them (the survivors' own busy prompt, or the child's).
+  const overridden = survivors && opts.stopBusy ? { busyOverride: true } : {}
+  const survivorPids = Array.isArray(proven) ? proven.map((m) => m.pid) : []
   // A cancel that landed while they were being stopped: say what was stopped, and go no further.
   if (opts.signal?.aborted && survivors) {
     return early({
@@ -1087,7 +1096,8 @@ export async function resolvePriorProcess(
       exitedInTime: !survivors.blocked,
       blocked: survivors.blocked,
       lingering: survivors.stopped,
-      stoppedPids: survivors.members
+      stoppedPids: survivors.members,
+      ...overridden
     })
   }
   if (survivors?.blocked) {
@@ -1101,7 +1111,10 @@ export async function resolvePriorProcess(
       exitedInTime: false,
       blocked: survivors.blocked,
       lingering: survivors.stopped,
-      stoppedPids: survivors.members
+      stoppedPids: survivors.members,
+      // What will not exit, or cannot be re-verified, are these, not the long-gone child.
+      survivorPids,
+      ...overridden
     }
   }
   // Cheap pre-check: after a clean quit the child is normally already gone, and on Windows the
@@ -1121,7 +1134,8 @@ export async function resolvePriorProcess(
       lingering: survivors.stopped,
       stoppedPids: survivors.members,
       // The child is long gone: what was stopped were these.
-      ...(Array.isArray(proven) ? { survivorPids: proven.map((m) => m.pid) } : {})
+      survivorPids,
+      ...overridden
     }
   }
   const classify = async (): Promise<RecordVerdict> => {
@@ -1153,6 +1167,7 @@ export async function resolvePriorProcess(
     exitedInTime: false,
     blocked: null,
     ...(survivors ? { lingering: survivors.stopped, stoppedPids: survivors.members } : {}),
+    ...overridden,
     ...extra
   })
   if (verdict === 'unproven') return outcome('left')

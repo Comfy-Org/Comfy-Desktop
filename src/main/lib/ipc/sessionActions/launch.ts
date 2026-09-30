@@ -595,8 +595,10 @@ export function describePriorOutcome(prior: PriorProcessOutcome): string {
         ? prior.exitedInTime
           ? 'stopped, and they exited'
           : 'stopped, but not all of them exited'
-        : "left running: they do not answer on this installation's port, so whether they are " +
-          'working cannot be asked'
+        : prior.blocked === 'unverified'
+          ? 'left running: they could not be re-verified'
+          : "left running: they do not answer on this installation's port, so whether they " +
+            'are working cannot be asked'
     return (
       `processes left by an earlier ComfyUI (pids ${prior.survivorPids.join(', ')}, proof ` +
       `${prior.proof}): ${them}${covered}${blocked}`
@@ -1601,7 +1603,8 @@ async function runLaunch(
         prior.blocked === 'unverified'
           ? 'errors.priorProcessUnverified'
           : 'errors.priorProcessStuck',
-        { pid: [...new Set([prior.pid, ...holders])].join(', ') }
+        // Survivors of a long-gone child are named instead of it.
+        { pid: [...new Set([...(prior.survivorPids ?? [prior.pid]), ...holders])].join(', ') }
       )
     }
   }
@@ -1697,6 +1700,16 @@ async function runLaunch(
         percent: -1,
         status: i18n.t('launch.portBusyUsing', { old: launchCmd.port!, new: nextPort })
       })
+      appendLog(
+        sessionId,
+        `[launch] port ${launchCmd.port} is held by ` +
+          (pendingPortOwner
+            ? `a launch of "${pendingPortOwner}" in this Desktop`
+            : existingPids.length > 0
+              ? `pids ${existingPids.join(', ')}`
+              : 'a process that could not be listed') +
+          `, not a ComfyUI of this installation; using port ${nextPort}\n`
+      )
       portBumpedFrom = launchCmd.port!
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {

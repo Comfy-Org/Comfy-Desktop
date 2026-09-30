@@ -53,10 +53,20 @@ export function registerSessionHandlers(): void {
 
   ipcMain.handle('kill-port-process', async (_event, port: number) => {
     recordIpcInvocation('kill-port-process', port)
+    // The user confirmed stopping whatever holds the port: say what that was, for support.
+    const holders = await findPidsByPort(port).catch(() => [] as number[])
+    console.info(
+      `[launch] stopping what holds port ${port} at the user's request: ` +
+        (holders.length > 0 ? `pids ${holders.join(', ')}` : 'no listener could be listed')
+    )
     removePortLock(port)
     await killByPort(port)
     await new Promise((r) => setTimeout(r, 500))
     const remaining = await findPidsByPort(port)
+    console.info(
+      `[launch] port ${port} ` +
+        (remaining.length === 0 ? 'is free' : `is still held by pids ${remaining.join(', ')}`)
+    )
     return { ok: remaining.length === 0 }
   })
 

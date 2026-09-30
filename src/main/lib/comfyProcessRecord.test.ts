@@ -253,6 +253,14 @@ describe('resolvePriorProcess', () => {
     expect(out).toMatchObject({ action: 'busy_left', queueUnknown: true })
   })
 
+  it('does not retry an answer that is not a queue: unknown at once, never stopped', async () => {
+    const probeQueue = vi.fn(async () => 'not_queue' as const)
+    const out = await resolvePriorProcess('inst-1', {}, deps({ probeQueue }))
+    expect(probeQueue).toHaveBeenCalledTimes(1)
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', queueUnknown: true })
+  })
+
   it('treats a probe that throws as no answer', async () => {
     const out = await resolvePriorProcess(
       'inst-1',
@@ -714,7 +722,7 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
             : { killed: false, reason: 'probe_failed', exited: false, waitMs: 5 }
       })
     )
-    expect(out).toMatchObject({ blocked: 'unverified', lingering: 1 })
+    expect(out).toMatchObject({ blocked: 'unverified', lingering: 1, survivorPids: [555, 556] })
     expect(removed).toEqual([])
   })
 
@@ -745,7 +753,7 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     const out = await resolvePriorProcess('inst-1', { stopBusy: true }, deps({ probeQueue }))
     expect(probeQueue).not.toHaveBeenCalled()
     expect(kills).toEqual([555])
-    expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
+    expect(out).toMatchObject({ action: 'terminated', lingering: 1, busyOverride: true })
   })
 
   it('asks at once, naming the survivors, when nothing serves the port (no probe to wait on)', async () => {
@@ -1670,8 +1678,8 @@ describe('probeQueue', () => {
         res.end('{"queue_running":[],"queue_pending":[]}')
       }
     ]
-  ])('answers null for %s', async (_name, handler) => {
-    expect(await probeQueue(await serve(handler))).toBeNull()
+  ])('answers "not a queue" for %s', async (_name, handler) => {
+    expect(await probeQueue(await serve(handler))).toBe('not_queue')
   })
 
   it('answers null when nothing listens, and when it hangs (its own timer ends the wait)', async () => {
