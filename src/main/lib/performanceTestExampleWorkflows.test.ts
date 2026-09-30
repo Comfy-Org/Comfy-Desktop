@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./fetch', () => ({ fetchJSON: vi.fn() }))
@@ -228,7 +229,8 @@ describe('performance test example workflows', () => {
     serveRepo()
     const installation = { id: 'inst-1' } as InstallationRecord
     const artifacts = await loadPerformanceTestExampleArtifacts(SAMPLE_ID)
-    const workflowFilePath = `C:\\benchmarks\\20260930120000\\${SAMPLE_ID}.json`
+    // Platform-native, like the paths the main process stores (CI runs on Linux).
+    const workflowFilePath = path.join('benchmarks', '20260930120000', `${SAMPLE_ID}.json`)
     const taskId = 'performance-test-download:20260930120000'
     const summary = (patch: Partial<TemplateDownloadSummary>): TemplateDownloadSummary => ({
       status: 'resolving',
