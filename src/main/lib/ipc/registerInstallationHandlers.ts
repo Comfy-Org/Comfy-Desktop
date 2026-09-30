@@ -27,8 +27,7 @@ import {
   _operationAborts,
   _runningSessions,
   sanitizeEnvVars,
-  getComfyArgsSchema,
-  peekComfyArgsSchema,
+  getComfyArgsSchemaReportingDiscovery,
   COMFYUI_REPO,
   snapshotRestoreFailureResult
 } from './shared'
@@ -689,15 +688,13 @@ export function registerInstallationHandlers(): void {
       }
       const mainPyRel = launchCmd.args[sIdx + 1]!
       const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
-      const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
-      const discovered = peekComfyArgsSchema(mainPyAbs, installationId, revision) === null
       try {
-        const schema = await getComfyArgsSchema(
+        const { schema, discovered } = await getComfyArgsSchemaReportingDiscovery(
           launchCmd.cmd,
           mainPyAbs,
           launchCmd.cwd,
           installationId,
-          revision
+          inst.comfyVersion?.commit ?? (inst.version as string | undefined)
         )
         return { args: schema.args, discovered }
       } catch (err) {
