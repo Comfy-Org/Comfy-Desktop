@@ -66,12 +66,12 @@
       }
     },
     {
-      "id": "image_pixeldit_t2i",
+      "id": "image_krea2_turbo_t2i_int8",
       "modality": "image",
       "snapshot": {
-        "title": "PixelDiT: Text to Image",
-        "description": "Input a text prompt and optional negative prompt. Generate a 1024px image using PixelDiT's VAE-free pixel diffusion transformer.",
-        "sizeBytes": 7838315315,
+        "title": "Krea-2 Int8: Text to Image",
+        "description": "Generate images with the Krea-2 Turbo distilled text-to-image model using the high-performance Int8 Convrot format, which delivers better quality than FP8 while generally running faster across most GPUs. This workflow accepts no file inputs and produces a single image output, with optional style LoRA support for creative customization. Ideal for rapid concept art iteration, batch asset generation for games or marketing, and exploring the speed-quality sweet spot of the Convrot Int8 quantization.",
+        "sizeBytes": 19112604467,
         "mediaSubtype": "webp"
       }
     },
