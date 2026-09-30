@@ -76,12 +76,12 @@
       }
     },
     {
-      "id": "sdxlturbo_example",
+      "id": "image_qwen_image_2_1_image_edit",
       "modality": "image",
       "snapshot": {
-        "title": "SDXL Turbo",
-        "description": "Generate images in a single step using SDXL Turbo.",
-        "sizeBytes": 6936372183,
+        "title": "Qwen Image 2.1: Image Edit",
+        "description": "Edit images with Qwen-Image-2.1 by feeding two reference images through a single checkpoint that handles both generation and editing, then comparing the result against the original. Ideal for character-consistent edits, product cutout compositing with real transparency, and style-transfer passes at native 2K.",
+        "sizeBytes": 26736171418,
         "mediaSubtype": "webp"
       }
     },
