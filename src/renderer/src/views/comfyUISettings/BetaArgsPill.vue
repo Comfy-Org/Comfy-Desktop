@@ -219,9 +219,10 @@ useEventListener(window, 'blur', () => close(false))
 }
 
 .beta-args-flag {
-  /* A flag is one token: never break inside it; a very long one ends in an ellipsis instead. */
-  flex: 0 1 auto;
-  min-width: 0;
+  /* A flag is one token: it keeps its full width and never breaks inside; the feature name beside
+   * it is what wraps. Only a flag wider than the whole row ends in an ellipsis. */
+  flex: 0 0 auto;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -231,6 +232,7 @@ useEventListener(window, 'blur', () => close(false))
 }
 
 .beta-args-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text-muted);
