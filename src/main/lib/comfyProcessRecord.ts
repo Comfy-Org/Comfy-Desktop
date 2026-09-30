@@ -198,7 +198,25 @@ export function markStopRequested(sessionKey: string): void {
 
 /** Whether anything a record names (the child, or a descendant that outlived it) may still run. */
 function anythingAlive(record: ComfyProcessRecord, alive: (pid: number) => boolean): boolean {
-  return alive(record.childPid) || (record.lingering ?? []).some((m) => alive(m.pid))
+  return (
+    alive(record.childPid) ||
+    (record.lingering ?? []).some((m) => alive(m.pid)) ||
+    // A scan still owed may find something alive: the record must outlive Desktop restarts.
+    pendingScanIsCurrent(record)
+  )
+}
+
+/** How long a pending Windows exit scan is kept for the next launch. */
+const PENDING_SCAN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+/** Whether the record owes a Windows exit scan that is not too old to run. */
+export function pendingScanIsCurrent(
+  record: ComfyProcessRecord,
+  nowMs: number = Date.now()
+): boolean {
+  const exitedAt = record.pendingScan?.exitedAt
+  if (!exitedAt || !/^\d+$/.test(exitedAt)) return false
+  return BigInt(exitedAt) >= filetimeOf(nowMs - PENDING_SCAN_MAX_AGE_MS)
 }
 
 /** FILETIME ticks (100 ns) per millisecond, and the Unix epoch in FILETIME. */
@@ -745,6 +763,8 @@ export interface PriorProcessDeps {
   /** Monotonic clock for every wait and deadline. */
   /** Defaults to waiting on this process's in-flight exit bookkeeping. */
   settleExitBookkeeping?: (sessionKey: string) => Promise<void>
+  /** Defaults to persisting the record (after a pending scan has run). */
+  writeRecord?: (record: ComfyProcessRecord) => boolean
   /** Defaults to a fresh Windows process-table scan; null when it could not run. */
   rescanWindows?: (record: ComfyProcessRecord) => Promise<LingeringProcess[] | null>
   now: () => number
@@ -791,8 +811,16 @@ export async function resolvePriorProcess(
   // Windows: an exit scan that could not run then runs now, under the same rules (creation
   // time within a minute of the recorded exit, parent not reused, this installation).
   if (record.pendingScan) {
-    const found = await (deps.rescanWindows ?? rescanWindows)(record)
-    if (found) record = { ...record, lingering: mergeLingering(record.lingering, found) }
+    const found = pendingScanIsCurrent(record, deps.wallNow())
+      ? await (deps.rescanWindows ?? rescanWindows)(record)
+      : []
+    if (found) {
+      // Done (or expired): the scan is owed no longer, and what it found is kept like any
+      // survivor, so it is re-proven on every later launch until stopped.
+      const { pendingScan: _done, ...rest } = record
+      record = { ...rest, lingering: mergeLingering(record.lingering, found) }
+      ;(deps.writeRecord ?? writeRecord)(record)
+    }
   }
   const survivors = await stopLingering(record, deps)
   if (survivors?.blocked) {

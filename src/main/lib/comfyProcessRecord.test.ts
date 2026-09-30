@@ -13,6 +13,7 @@ import {
   classifyRecord,
   filetimeOf,
   findWindowsSurvivors,
+  pendingScanIsCurrent,
   commandLineIsInstall,
   holderIsInstall,
   listRecords,
@@ -375,7 +376,12 @@ describe('resolvePriorProcess', () => {
       {},
       deps({
         readRecord: () =>
-          record({ pendingScan: { known: [{ pid: 101, startTime: '1100' }], exitedAt: '5000' } }),
+          record({
+            pendingScan: {
+              known: [{ pid: 101, startTime: '1100' }],
+              exitedAt: String(filetimeOf(Date.now()))
+            }
+          }),
         rescanWindows: async () => [{ pid: 300, startTime: 'restarted-start' }],
         readStartTimes: async (pids) =>
           new Map(
@@ -811,6 +817,70 @@ describe('takePriorSessionUnclean', () => {
     )
     expect(takePriorSessionUnclean()).toBe(false)
     expect(readRecord('inst-1')).not.toBeNull()
+  })
+
+  it('keeps a record that still owes a Windows exit scan across a Desktop restart', async () => {
+    const dead = await deadPid()
+    writeRecord(
+      record({
+        desktopPid: dead,
+        childPid: dead,
+        childExitedAt: 1,
+        pendingScan: {
+          known: [{ pid: 101, startTime: '1100' }],
+          exitedAt: String(filetimeOf(Date.now()))
+        }
+      })
+    )
+    takePriorSessionUnclean()
+    expect(readRecord('inst-1')?.pendingScan).toBeDefined()
+
+    // The next launch runs the scan, stops what it finds, and no longer owes it.
+    const kills: number[] = []
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      {
+        readRecord,
+        removeRecordIf,
+        readStartTimes: async (pids) =>
+          new Map(pids.filter((p) => p === 300).map((p) => [p, 'restarted-start'])),
+        ownStartTime: async () => 'self',
+        isPidAlive: (pid) => pid === 300 && kills.length === 0,
+        probeQueue: async () => null,
+        killPidTree: async (pid) => {
+          kills.push(pid)
+          return { killed: true, exited: true, waitMs: 1 }
+        },
+        rescanWindows: async () => [{ pid: 300, startTime: 'restarted-start' }],
+        settleExitBookkeeping: async () => {},
+        now: () => 0,
+        wallNow: () => Date.now(),
+        sleep: async () => {}
+      }
+    )
+    expect(kills).toEqual([300])
+    expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
+    expect(readRecord('inst-1')).toBeNull()
+  })
+
+  it('drops a pending Windows exit scan once it is too old to trust', async () => {
+    const dead = await deadPid()
+    const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000
+    writeRecord(
+      record({
+        desktopPid: dead,
+        childPid: dead,
+        childExitedAt: 1,
+        pendingScan: {
+          known: [{ pid: 101, startTime: '1100' }],
+          exitedAt: String(filetimeOf(eightDaysAgo))
+        }
+      })
+    )
+    expect(pendingScanIsCurrent(readRecord('inst-1')!)).toBe(false)
+    takePriorSessionUnclean()
+    expect(readRecord('inst-1')).toBeNull()
   })
 
   it('ignores records owned by a running Desktop', () => {
