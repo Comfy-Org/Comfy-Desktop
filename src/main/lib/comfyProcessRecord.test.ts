@@ -682,6 +682,55 @@ describe('findWindowsSurvivors (a ComfyUI that restarted itself with os.execv)',
     expect(findWindowsSurvivors(rows, ctx).map((m) => m.pid)).toEqual([200])
   })
 
+  describe('the shape QA saw: a relative main.py under a dead interpreter', () => {
+    // Recorded: launcher 11000 and its interpreter 12184 (the tree), exit at 00:36:04Z. The
+    // restarted launcher 1192 was created at 00:36:00Z, 4 s before the exit, names the dead
+    // interpreter as parent, and runs this install's venv python with a relative main.py.
+    const exit = filetimeOf(Date.UTC(2026, 8, 30, 0, 36, 4))
+    const t = (h: number, m: number, sec: number): string =>
+      String(filetimeOf(Date.UTC(2026, 8, 30, h, m, sec)))
+    const qaCtx = {
+      known: [
+        { pid: 11000, startTime: t(0, 20, 0) },
+        { pid: 12184, startTime: t(0, 20, 1) }
+      ],
+      installPath: 'C:\\Users\\qa\\ComfyUI-Installs\\ComfyUI',
+      exitedAt: exit
+    }
+    const restarted = row(
+      1192,
+      12184,
+      t(0, 36, 0),
+      '"C:\\Users\\qa\\ComfyUI-Installs\\ComfyUI\\.venv\\Scripts\\python.exe" "ComfyUI\\main.py" --port 8188 --enable-assets'
+    )
+
+    it('is found at exit, with the interpreter pid free', () => {
+      expect(findWindowsSurvivors([restarted], qaCtx)).toEqual([
+        { pid: 1192, startTime: t(0, 36, 0) }
+      ])
+    })
+
+    it('is still found by a later scan after the dead interpreter pid was reused', () => {
+      const reuser = row(12184, 4, t(0, 40, 0), 'C:\\Windows\\System32\\svchost.exe -k netsvcs')
+      expect(findWindowsSurvivors([reuser, restarted], qaCtx).map((m) => m.pid)).toEqual([1192])
+    })
+
+    it('is found with an unquoted relative main.py too', () => {
+      const unquoted = row(
+        1192,
+        12184,
+        t(0, 36, 0),
+        '"C:\\Users\\qa\\ComfyUI-Installs\\ComfyUI\\.venv\\Scripts\\python.exe" ComfyUI/main.py --port 8188'
+      )
+      expect(findWindowsSurvivors([unquoted], qaCtx).map((m) => m.pid)).toEqual([1192])
+    })
+
+    it('is rejected when the pid it names was already held by another process when it started', () => {
+      const earlierHolder = row(12184, 4, t(0, 35, 59), 'cmd.exe')
+      expect(findWindowsSurvivors([earlierHolder, restarted], qaCtx)).toEqual([])
+    })
+  })
+
   it('never returns Desktop itself', () => {
     expect(findWindowsSurvivors([row(process.pid, 101, at(-1), venvMain)], ctx)).toEqual([])
   })

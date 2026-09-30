@@ -266,10 +266,14 @@ export function findWindowsSurvivors(
     if (knownCreated.has(r.pid)) return false
     const parentCreated = knownCreated.get(r.ppid)
     if (parentCreated === undefined || created < parentCreated) return false
+    // The pid it names as parent may be held by someone else by now (a later scan especially:
+    // Windows reuses pids quickly). That holder can only be the real parent if it existed when
+    // this process was created; one created after it cannot have started it.
     const parentNow = byPid.get(r.ppid)
     if (
       parentNow &&
-      (!/^\d+$/.test(parentNow.created) || BigInt(parentNow.created) !== parentCreated)
+      (!/^\d+$/.test(parentNow.created) ||
+        (BigInt(parentNow.created) !== parentCreated && BigInt(parentNow.created) <= created))
     ) {
       return false
     }
