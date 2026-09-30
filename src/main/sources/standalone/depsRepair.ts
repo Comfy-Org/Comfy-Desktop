@@ -188,8 +188,9 @@ export async function repairDeps(
       ),
       ...drift.requirements
         .filter((r) => r.specifier)
-        // `==` relaxed to `>=`: a newer install the user chose stays put.
-        .map((r) => `${r.name}${r.specifier.replace(/(^|,)\s*==(?!=)/g, '$1>=')}`)
+        // `==` and `~=` relaxed to `>=`: a newer install the user chose stays
+        // put. Explicit upper bounds (`<`, `<=`, `!=`) are kept.
+        .map((r) => `${r.name}${r.specifier.replace(/(^|,)\s*(?:==(?!=)|~=)/g, '$1>=')}`)
     ]
   } catch (err) {
     tools.sendOutput?.(`Could not read the installed packages: ${(err as Error).message}\n`)

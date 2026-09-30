@@ -215,7 +215,8 @@ export function describeUnsatisfied(unsatisfied: UnsatisfiedRequirement[]): stri
 
 /** Quote a path for the platform's usual shell: single quotes on POSIX (inert
  *  to `$`, backticks and backslashes), double quotes on Windows, where `"` cannot
- *  appear in a path. */
+ *  appear in a path. Limit: cmd.exe still expands `%VAR%` inside double quotes,
+ *  so a path containing percent-delimited text may change when pasted. */
 export function shellQuote(p: string, platform: NodeJS.Platform = process.platform): string {
   return platform === 'win32' ? `"${p}"` : `'${p.replace(/'/g, `'\\''`)}'`
 }

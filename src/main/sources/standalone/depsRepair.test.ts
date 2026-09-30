@@ -431,6 +431,21 @@ describe('repairDeps', () => {
     expect(fs.existsSync(constraintPath)).toBe(false)
   })
 
+  it('relaxes ~= to a floor but keeps explicit upper bounds in the constraints', async () => {
+    const { inst, site } = managedInstall(
+      ['numpy-2.1.0.dist-info', 'pydantic-3.1.0.dist-info', 'av-17.0.dist-info'],
+      'blake3\nnumpy\npydantic~=2.0\nav>=17,<18\n'
+    )
+    let constraintText = ''
+    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
+      constraintText = fs.readFileSync(args[args.indexOf('--constraint') + 1]!, 'utf-8')
+      fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
+      return { code: 0, output: '' }
+    })
+    await repairDeps(inst, pendingDrift(inst)!, tools(), { freeze: noFreeze, runUvPip: uv })
+    expect(constraintText.split('\n').sort()).toEqual(['av>=17,<18', 'pydantic>=2.0'])
+  })
+
   it('leaves a protected package unpinned when it is itself unsatisfied', async () => {
     const { inst, site } = managedInstall(['numpy-2.1.0.dist-info'], 'setuptools>=70\nnumpy\n')
     let constraintText = ''
