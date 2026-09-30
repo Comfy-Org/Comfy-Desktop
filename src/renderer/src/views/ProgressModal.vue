@@ -559,7 +559,7 @@ async function handleStopBusyPrior(): Promise<void> {
           ? 'errors.priorProcessUnknownConfirmMessage'
           : 'errors.priorProcessBusyConfirmMessage'
     ),
-    confirmLabel: t('errors.priorProcessBusyStop'),
+    confirmLabel: t(survivors ? 'errors.priorSurvivorsStop' : 'errors.priorProcessBusyStop'),
     confirmStyle: 'danger'
   })
   if (!confirmed) return
@@ -863,7 +863,9 @@ defineExpose({ startOperation, showOperation })
               >
                 {{
                   currentOp.result.portConflict.priorBusy
-                    ? $t('errors.priorProcessBusyStop')
+                    ? currentOp.result.portConflict.priorSurvivors
+                      ? $t('errors.priorSurvivorsStop')
+                      : $t('errors.priorProcessBusyStop')
                     : $t('errors.portConflictKill')
                 }}
               </button>

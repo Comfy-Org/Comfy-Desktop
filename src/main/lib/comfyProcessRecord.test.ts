@@ -598,7 +598,12 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
   it('stops a proven survivor even though the Desktop that spawned the child is running', async () => {
     const out = await resolvePriorProcess('inst-1', {}, deps())
     expect(kills).toEqual([555])
-    expect(out).toMatchObject({ action: 'terminated', lingering: 1, blocked: null })
+    expect(out).toMatchObject({
+      action: 'terminated',
+      lingering: 1,
+      blocked: null,
+      survivorPids: [555]
+    })
     expect(removed).toEqual([222])
   })
 

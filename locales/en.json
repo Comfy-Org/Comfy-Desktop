@@ -1385,6 +1385,7 @@
     "priorSurvivorsTitle": "Processes from an earlier ComfyUI are still running",
     "priorSurvivorsRunning": "Processes left behind by an earlier ComfyUI for this installation are still running (PID {pids}). They serve no port, so Comfy Desktop cannot ask whether they are working, and while they run this ComfyUI cannot start. Keep them running, or stop them and launch.",
     "priorSurvivorsConfirmMessage": "This stops those processes and anything they are doing.",
+    "priorSurvivorsStop": "Stop them and launch",
     "priorProcessBusyStop": "Stop it and launch",
     "priorProcessBusyConfirmMessage": "This stops the earlier ComfyUI and cancels the prompts it is working on.",
     "priorProcessStuck": "An earlier ComfyUI for this installation (PID {pid}) did not exit after being stopped. Launching now would fail because it still holds the installation's database. Try again in a moment, or end the process manually.",

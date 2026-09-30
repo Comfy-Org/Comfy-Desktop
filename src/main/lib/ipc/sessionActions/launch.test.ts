@@ -2527,7 +2527,18 @@ describe('describePriorOutcome', () => {
         survivorPids: [555, 556]
       })
     ).toBe(
-      'processes left by an earlier ComfyUI (pids 555, 556, port 8188, proof desktop_record): left running: they serve no port, so whether they are working cannot be asked; launch refused (unknown)'
+      'processes left by an earlier ComfyUI (pids 555, 556, proof desktop_record): left running: they serve no port, so whether they are working cannot be asked; launch refused (unknown)'
+    )
+    expect(
+      describePriorOutcome({
+        ...base,
+        action: 'terminated',
+        exitedInTime: true,
+        lingering: 2,
+        survivorPids: [555, 556]
+      })
+    ).toBe(
+      'processes left by an earlier ComfyUI (pids 555, 556, proof desktop_record): stopped, and they exited'
     )
   })
 

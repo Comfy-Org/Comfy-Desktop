@@ -629,7 +629,9 @@ export async function resolvePriorProcess(
       waitMs: deps.now() - startedAt,
       exitedInTime: true,
       blocked: null,
-      lingering: survivors.stopped
+      lingering: survivors.stopped,
+      // The child is long gone: what was stopped were these.
+      ...(Array.isArray(proven) ? { survivorPids: proven.map((m) => m.pid) } : {})
     }
   }
   const classify = async (): Promise<RecordVerdict> => {
