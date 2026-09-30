@@ -762,6 +762,14 @@
       "imageAlt": "Comfy Router announcement",
       "unmute": "Unmute video",
       "mute": "Mute video"
+    },
+    "comfyApi": {
+      "title": "Introducing Comfy API",
+      "lead": "Deploy your ComfyUI workflows as production APIs. Package your workflow with its custom nodes and models, and deploy it as an endpoint that apps and tools can call. Nothing changes in how you use ComfyUI.",
+      "primaryCta": "Learn About Comfy API",
+      "imageAlt": "Comfy API announcement",
+      "unmute": "Unmute video",
+      "mute": "Mute video"
     }
   },
   "tray": {
@@ -1495,7 +1503,9 @@
     "stopFailed": "Could not stop the instance.",
     "measurementSettings": "3. Set measurement settings",
     "warmupRuns": "Warm-up runs",
+    "warmupRunsHint": "Runs executed first to load models and warm up caches. They are not included in the results.",
     "measuredRuns": "Measured runs",
+    "measuredRunsHint": "Runs timed after the warm-up runs. Their durations are used to calculate the results.",
     "logsPlaceholder": "Instance logs will appear here.",
     "results": "Results",
     "resultsPlaceholder": "Performance test results will appear here.",
@@ -1583,6 +1593,17 @@
     "exportingImage": "Exporting image...",
     "exportImageFailed": "Could not export the comparison image.",
     "metric": "Metric",
+    "baseline": "Baseline",
+    "selectBaseline": "Use {workflow}, session {session}, as the baseline",
+    "visualization": "Comparison visualization",
+    "speed": "Speed",
+    "relativePerformance": "Relative speed",
+    "relativePerformanceHint": "Choose a baseline. Relative speed factor = baseline duration / run duration.",
+    "faster": "Faster",
+    "slower": "Slower",
+    "same": "Same speed",
+    "missing": "Unavailable",
+    "duration": "Duration",
     "durationRange": "Duration range (min → max)",
     "durationRangeHint": "Each line shows the fastest and slowest run, with the average marked.",
     "selectPrompt": "Select runs from the library to compare them.",
