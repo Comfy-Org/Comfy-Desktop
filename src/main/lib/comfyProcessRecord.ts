@@ -391,16 +391,23 @@ export interface PriorProcessOutcome {
  * Stop the recorded survivors of an exited child that are still provably those processes. Owner
  * liveness does not matter here: no Desktop manages anything but the child itself.
  */
-async function stopLingering(
+async function provenLingering(
   record: ComfyProcessRecord,
   deps: PriorProcessDeps
-): Promise<{ stopped: number; blocked: null | 'stuck' | 'unverified' } | null> {
+): Promise<LingeringProcess[] | 'unverified' | null> {
   const listed = (record.lingering ?? []).filter((m) => deps.isPidAlive(m.pid))
   if (listed.length === 0) return null
   const times = await deps.readStartTimes(listed.map((m) => m.pid))
   // Could not ask the OS: these may still be ours and still hold the lock. Keep the record.
-  if (!times) return { stopped: 0, blocked: 'unverified' }
+  if (!times) return 'unverified'
   const proven = listed.filter((m) => times.get(m.pid) === m.startTime)
+  return proven.length > 0 ? proven : null
+}
+
+async function stopLingering(
+  proven: readonly LingeringProcess[],
+  deps: PriorProcessDeps
+): Promise<{ stopped: number; blocked: null | 'stuck' | 'unverified' } | null> {
   const kills = await Promise.all(proven.map((m) => deps.killPidTree(m.pid, m.startTime)))
   const stopped = kills.filter((k) => k.killed).length
   // A pid that now names another process is simply not ours; every other outcome counts.
@@ -465,7 +472,28 @@ export async function resolvePriorProcess(
   if (!record) return null
   const startedAt = deps.now()
   const ageMs = Math.max(0, deps.wallNow() - record.spawnedAt)
-  const survivors = await stopLingering(record, deps)
+  const proven = await provenLingering(record, deps)
+  const early = (extra: Partial<PriorProcessOutcome>): PriorProcessOutcome => ({
+    action: 'left',
+    proof: 'desktop_record',
+    pid: record.childPid,
+    port: record.port,
+    ageMs,
+    waitMs: deps.now() - startedAt,
+    exitedInTime: false,
+    blocked: null,
+    ...extra
+  })
+  if (proven === 'unverified') return early({ blocked: 'unverified' })
+  // A survivor can be a whole ComfyUI (one that restarted itself) still serving the recorded
+  // port: it gets the same busy check as the child before anything is stopped.
+  if (proven && !opts.stopBusy) {
+    const queue = await deps.probeQueue(record.port)
+    if (queue && (queue.running > 0 || queue.pending > 0)) {
+      return early({ action: 'busy_left', blocked: 'busy', queue })
+    }
+  }
+  const survivors = proven ? await stopLingering(proven, deps) : null
   if (survivors?.blocked) {
     return {
       action: survivors.blocked === 'stuck' ? 'terminated' : 'left',
@@ -603,7 +631,7 @@ function argvIsInstall(argv: readonly string[], root: string): boolean {
   if (script <= 0) return false
   const mainPy = args[script]!
   if (mainPy.startsWith(root)) return true
-  const relative = !mainPy.startsWith('/') && !/^[a-z]:\//.test(mainPy)
+  const relative = !mainPy.startsWith('/') && !/^[a-z]:\//i.test(mainPy)
   return relative && args[0]!.startsWith(root)
 }
 
@@ -620,10 +648,13 @@ function rawLineIsInstall(line: string, root: string): boolean {
     const next = text.indexOf('main.py', at)
     if (next < 0) break
     const between = text.slice(at, next)
-    if (!/\s[/-]/.test(between) && /(^|\/)$/.test(between)) return true
+    // A space may be part of the path, but not one that starts a new absolute path (/ or a
+    // drive letter) or a flag.
+    if (!/\s(?:[/-]|[a-z]:)/i.test(between) && /(^|\/)$/.test(between)) return true
   }
   const unquoted = text.replace(/^["']/, '')
-  return unquoted.startsWith(root) && /\s(?![/"'])[^\s]*main\.py(\s|$)/.test(text)
+  // Relative: not rooted at / and not at a drive letter (C:\\x\\main.py is absolute).
+  return unquoted.startsWith(root) && /\s(?![/"']|[a-z]:)[^\s]*main\.py(\s|$)/i.test(text)
 }
 
 /**
