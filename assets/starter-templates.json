@@ -160,13 +160,13 @@
       }
     },
     {
-      "id": "audio_ace_step_1_5_checkpoint",
+      "id": "audio_minimax_music_3",
       "modality": "audio",
       "snapshot": {
-        "title": "ACE-Step 1.5 Music Generation AIO",
-        "description": "Input style tags and lyrics to generate a full song. The workflow uses the ACE-Step 1.5 model to produce commercial-grade music in under 10 seconds on consumer hardware.",
-        "sizeBytes": 10737418240,
-        "mediaSubtype": "mp3"
+        "title": "MiniMax Music 3: Text to Music",
+        "description": "Create full-length songs from text prompts with MiniMax Music 3, generating complete 5-minute tracks with stable structure and high-fidelity audio. Input a structured caption describing lyrics, style, mood, and arrangement, and receive a finished song as output. Ideal for music producers prototyping demos, and content creators needing original background tracks.",
+        "sizeBytes": 15354508083,
+        "mediaSubtype": "webp"
       }
     }
   ]
