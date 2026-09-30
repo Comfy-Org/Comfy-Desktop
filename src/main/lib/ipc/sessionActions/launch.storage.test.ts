@@ -257,6 +257,151 @@ describe('applyStorageLaunchArgs', () => {
     expect(state.manageModelFolders).toBe(false)
   })
 
+  describe('--models-directory', () => {
+    const FLAGS: ReadonlySet<string> = new Set(['models-directory', 'extra-model-paths-config'])
+
+    function modelsDirectoryArg(args: readonly string[] | undefined): string | undefined {
+      const i = (args ?? []).indexOf('--models-directory')
+      return i === -1 ? undefined : args![i + 1]
+    }
+
+    function sections(yaml: string): Array<{ base: string; isDefault: boolean }> {
+      return yaml
+        .split(/^comfy\.desktop_\d+:$/m)
+        .slice(1)
+        .map((body) => ({
+          base: /base_path: '(.*)'/.exec(body)![1]!,
+          isDefault: /^ {2}is_default: true$/m.test(body)
+        }))
+    }
+
+    it('points the models root at the shared primary and keeps the install dir searchable', () => {
+      const shared = path.join(root, 'md-shared')
+      mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+      const inst = makeInstall()
+      const launchCmd = makeLaunchCmd({
+        args: ['-s', path.join('ComfyUI', 'main.py')],
+        cwd: inst.installPath
+      })
+
+      applyStorageLaunchArgs(inst, 'md-shared', launchCmd, FLAGS)
+
+      expect(modelsDirectoryArg(launchCmd.args)).toBe(path.resolve(shared))
+      expect(fs.statSync(shared).isDirectory()).toBe(true)
+      expect(sections(fs.readFileSync(yamlPath('md-shared'), 'utf8'))).toEqual([
+        { base: path.resolve(shared), isDefault: true },
+        { base: path.join(inst.installPath, 'ComfyUI', 'models'), isDefault: false }
+      ])
+    })
+
+    it('derives the install models dir from the launched main.py', () => {
+      const shared = path.join(root, 'md-git-shared')
+      mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+      const inst = makeInstall()
+      // Git layout: main.py at the install root, not under ComfyUI/.
+      const launchCmd = makeLaunchCmd({ args: ['-s', 'main.py'], cwd: inst.installPath })
+
+      applyStorageLaunchArgs(inst, 'md-git', launchCmd, FLAGS)
+
+      expect(sections(fs.readFileSync(yamlPath('md-git'), 'utf8'))).toEqual([
+        { base: path.resolve(shared), isDefault: true },
+        { base: path.join(inst.installPath, 'models'), isDefault: false }
+      ])
+    })
+
+    it('is not injected when the shared primary is the launched core own models dir', () => {
+      const inst = makeInstall()
+      const ownModels = path.join(inst.installPath, 'models')
+      mockSettings({ modelsDirs: [ownModels], inputDir: globalInput, outputDir: globalOutput })
+      const launchCmd = makeLaunchCmd({ args: ['-s', 'main.py'], cwd: inst.installPath })
+
+      applyStorageLaunchArgs(inst, 'md-self', launchCmd, FLAGS)
+
+      expect(modelsDirectoryArg(launchCmd.args)).toBeUndefined()
+    })
+
+    it('points the models root at a promoted per-install primary', () => {
+      const shared = path.join(root, 'md-promo-shared')
+      const owned = path.join(root, 'md-promo-owned')
+      mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+      const launchCmd = makeLaunchCmd()
+
+      applyStorageLaunchArgs(
+        makeInstall({ modelDirs: [owned], modelDirsPrimary: owned }),
+        'md-promo',
+        launchCmd,
+        FLAGS
+      )
+
+      expect(modelsDirectoryArg(launchCmd.args)).toBe(path.resolve(owned))
+    })
+
+    it.each([
+      ['--models-directory', '/user/models'],
+      ['--models-directory=/user/models'],
+      ['--base-directory', '/legacy/base']
+    ])('respects a user-set root (%s)', (...userArgs) => {
+      const shared = path.join(root, 'md-user-shared')
+      mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+      const inst = makeInstall()
+      const launchCmd = makeLaunchCmd({ args: ['main.py', ...userArgs] })
+
+      applyStorageLaunchArgs(inst, 'md-user', launchCmd, FLAGS)
+
+      expect(launchCmd.args!.filter((a) => a.startsWith('--models-directory'))).toHaveLength(
+        userArgs[0]!.startsWith('--models-directory') ? 1 : 0
+      )
+      const yaml = fs.readFileSync(yamlPath('md-user'), 'utf8')
+      expect(sections(yaml).map((s) => s.base)).toEqual([path.resolve(shared)])
+    })
+
+    it('is not injected when the core does not know the flag', () => {
+      mockSettings({
+        modelsDirs: [path.join(root, 'md-old-shared')],
+        inputDir: globalInput,
+        outputDir: globalOutput
+      })
+      for (const flags of [null, undefined, new Set(['extra-model-paths-config'])]) {
+        const launchCmd = makeLaunchCmd()
+        applyStorageLaunchArgs(makeInstall(), 'md-old', launchCmd, flags)
+        expect(modelsDirectoryArg(launchCmd.args)).toBeUndefined()
+        expect(sections(fs.readFileSync(yamlPath('md-old'), 'utf8'))).toHaveLength(1)
+      }
+    })
+
+    it('is not injected when the install own models dir is the primary', () => {
+      mockSettings({
+        modelsDirs: [path.join(root, 'md-own-shared')],
+        inputDir: globalInput,
+        outputDir: globalOutput
+      })
+      const inst = makeInstall()
+      inst.modelDirsPrimary = path.join(inst.installPath, 'ComfyUI', 'models')
+      const launchCmd = makeLaunchCmd()
+
+      applyStorageLaunchArgs(inst, 'md-own', launchCmd, FLAGS)
+
+      expect(modelsDirectoryArg(launchCmd.args)).toBeUndefined()
+      const parsed = sections(fs.readFileSync(yamlPath('md-own'), 'utf8'))
+      expect(parsed).toEqual([{ base: path.resolve(root, 'md-own-shared'), isDefault: false }])
+    })
+
+    it('is not injected without launcher-managed model dirs', () => {
+      const noDirs = makeLaunchCmd()
+      applyStorageLaunchArgs(makeInstall(), 'md-none', noDirs, FLAGS)
+      expect(modelsDirectoryArg(noDirs.args)).toBeUndefined()
+
+      const skipped = makeLaunchCmd({ skipSharedPaths: true })
+      mockSettings({
+        modelsDirs: [path.join(root, 'md-skip-shared')],
+        inputDir: globalInput,
+        outputDir: globalOutput
+      })
+      applyStorageLaunchArgs(makeInstall(), 'md-skip', skipped, FLAGS)
+      expect(skipped.args).toEqual(['main.py'])
+    })
+  })
+
   it('falls back to the default input dir when the setting is empty', () => {
     mockSettings({ inputDir: '', outputDir: globalOutput, modelsDirs: [] })
     const launchCmd = makeLaunchCmd()

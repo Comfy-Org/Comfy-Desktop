@@ -1103,6 +1103,33 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
   })
 
+  it.each([
+    ['knows', ['listen', 'models-directory'], false, true],
+    ['predates', ['listen'], false, false],
+    ['fails discovery for', ['listen', 'models-directory'], true, false]
+  ])(
+    'passes --models-directory only when the core %s the flag',
+    async (_label, schemaNames, schemaThrows, expected) => {
+      const shared = path.join(installDir, 'shared-models')
+      const prior = settingsModule.get('modelsDirs')
+      // Load keeps the system default dir listed, so promote ours explicitly.
+      settingsModule.set('modelsDirs', [shared])
+      launchHarness.schemaNames = schemaNames
+      launchHarness.schemaThrows = schemaThrows
+      try {
+        const ctx = ctxFor(`harness-models-dir-${_label}`)
+        ctx.inst = { ...ctx.inst, modelDirsPrimary: shared } as InstallationRecord
+        const res = await handleLaunch(ctx)
+
+        expect(res.ok).toBe(true)
+        const i = spawnArgs.indexOf('--models-directory')
+        expect(i === -1 ? null : spawnArgs[i + 1]).toBe(expected ? path.resolve(shared) : null)
+      } finally {
+        settingsModule.set('modelsDirs', prior)
+      }
+    }
+  )
+
   function gitInitComfyUI(): string {
     const cwd = path.join(installDir, 'ComfyUI')
     const env = {
