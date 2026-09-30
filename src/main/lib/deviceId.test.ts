@@ -169,12 +169,135 @@ describe('deviceId', () => {
       expect(mod.getIdClass()).toBe('random_fallback')
       expect(mod.getDeviceId()).toMatch(/^[0-9a-f]{64}$/i)
     })
+  })
 
-    it('rejects placeholder firmware UUIDs and falls back', async () => {
-      mockSystemUuid = '00000000-0000-0000-0000-000000000000'
+  describe('initDeviceId — placeholder firmware UUID', () => {
+    const PLACEHOLDERS = [
+      ['all zeros', '00000000-0000-0000-0000-000000000000'],
+      ['all F', 'ffffffff-ffff-ffff-ffff-ffffffffffff'],
+      ['all F, uppercase', 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF'],
+      ['one repeated digit', '11111111-1111-1111-1111-111111111111'],
+      ['F then zeros', 'ffffffff-ffff-0000-0000-000000000000'],
+      ['sequential OEM', '03000200-0400-0500-0006-000700080009'],
+      ['sequential OEM, byte-swapped', '00020003-0004-0005-0006-000700080009'],
+      ['sequential OEM, uppercase', '03000200-0400-0500-0006-000700080009'.toUpperCase()],
+      ['counting', '12345678-1234-5678-90ab-cddeefaabbcc'],
+      ['hex run', '01234567-89ab-cdef-0123-456789abcdef']
+    ]
+
+    function deviceIdFile(): string {
+      return path.join(testUserData, 'device-id.txt')
+    }
+
+    beforeEach(() => {
+      setPlatform('win32')
+    })
+
+    it.each(PLACEHOLDERS)('treats %s as no machine id', async (_label, uuid) => {
+      mockSystemUuid = uuid
       const { legacyId } = await mod.initDeviceId()
       expect(legacyId).toBeNull()
-      expect(mod.getIdClass()).toBe('random_fallback')
+      expect(mod.getIdClass()).toBe('placeholder_fallback')
+      const id = mod.getDeviceId()
+      expect(id).toMatch(/^[0-9a-f]{64}$/)
+      expect(id).not.toBe(expectedIdFor(uuid))
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(id)
+    })
+
+    it.each(PLACEHOLDERS)('moves an install off the shared %s id', async (_label, uuid) => {
+      const shared = expectedIdFor(uuid)
+      fs.writeFileSync(deviceIdFile(), shared)
+      mockSystemUuid = uuid
+
+      const { legacyId } = await mod.initDeviceId()
+      expect(legacyId).toBeNull()
+      const id = mod.getDeviceId()
+      expect(id).toMatch(/^[0-9a-f]{64}$/)
+      expect(id).not.toBe(shared)
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(id)
+    })
+
+    it('gives two machines with the same placeholder different ids', async () => {
+      const uuid = '03000200-0400-0500-0006-000700080009'
+      mockSystemUuid = uuid
+      await mod.initDeviceId()
+      const first = mod.getDeviceId()
+
+      fs.rmSync(deviceIdFile())
+      vi.resetModules()
+      mod = await import('./deviceId')
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).not.toBe(first)
+    })
+
+    it('mints once, then keeps the id across launches', async () => {
+      const uuid = '03000200-0400-0500-0006-000700080009'
+      fs.writeFileSync(deviceIdFile(), expectedIdFor(uuid))
+      mockSystemUuid = uuid
+      await mod.initDeviceId()
+      const minted = mod.getDeviceId()
+      expect(minted).not.toBe(expectedIdFor(uuid))
+
+      for (let boot = 0; boot < 3; boot++) {
+        vi.resetModules()
+        mod = await import('./deviceId')
+        await mod.initDeviceId()
+        expect(mod.getDeviceId()).toBe(minted)
+        expect(mod.getIdClass()).toBe('placeholder_fallback')
+      }
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(minted)
+    })
+
+    it('keeps a persisted unique id', async () => {
+      const unique = 'c'.repeat(64)
+      fs.writeFileSync(deviceIdFile(), unique)
+      mockSystemUuid = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(unique)
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(unique)
+    })
+
+    it('keeps an id derived from a real UUID when a launch reports a placeholder', async () => {
+      const machineDerived = expectedIdFor('aabbccdd-eeff-0011-2233-445566778899')
+      fs.writeFileSync(deviceIdFile(), machineDerived)
+      mockSystemUuid = '03000200-0400-0500-0006-000700080009'
+
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(machineDerived)
+    })
+
+    it('still migrates a legacy UUID', async () => {
+      const legacyUuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+      fs.writeFileSync(deviceIdFile(), legacyUuid)
+      mockSystemUuid = '03000200-0400-0500-0006-000700080009'
+
+      const { legacyId } = await mod.initDeviceId()
+      expect(legacyId).toBe(legacyUuid)
+      expect(mod.getDeviceId()).toMatch(/^[0-9a-f]{64}$/)
+    })
+
+    it('uses /etc/machine-id on Linux instead', async () => {
+      setPlatform('linux')
+      const machineId = '0123456789abcdef0123456789abcdef'
+      mockMachineIdFiles = { [ETC_MACHINE_ID]: machineId }
+      fs.writeFileSync(deviceIdFile(), expectedIdFor('03000200-0400-0500-0006-000700080009'))
+      mockSystemUuid = '03000200-0400-0500-0006-000700080009'
+
+      await mod.initDeviceId()
+      expect(mod.getIdClass()).toBe('machine_derived')
+      expect(mod.getDeviceId()).toBe(expectedIdFor(machineId))
+    })
+
+    it.each([
+      'aabbccdd-eeff-0011-2233-445566778899',
+      '4c4c4544-0042-3510-8052-b4c04f4e4332',
+      'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    ])('leaves a real UUID (%s) machine-derived', async (uuid) => {
+      mockSystemUuid = uuid
+      await mod.initDeviceId()
+      expect(mod.getIdClass()).toBe('machine_derived')
+      expect(mod.getDeviceId()).toBe(expectedIdFor(uuid))
     })
   })
 
