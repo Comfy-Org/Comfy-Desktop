@@ -12,6 +12,8 @@ const fake = vi.hoisted(() => ({
   rows: [] as Array<{ pid: number; ppid: number; created: string; commandLine: string }>,
   tableCalls: 0,
   rowCalls: 0,
+  rowsInFlight: 0,
+  maxRowsInFlight: 0,
   tableFails: 0
 }))
 vi.mock('./paths', () => ({ stateDir: () => fake.state }))
@@ -21,6 +23,11 @@ vi.mock('./processIdentity', async (importOriginal) => {
     ...actual,
     windowsProcessRows: async () => {
       fake.rowCalls++
+      fake.rowsInFlight++
+      fake.maxRowsInFlight = Math.max(fake.maxRowsInFlight, fake.rowsInFlight)
+      // A snapshot takes a while (PowerShell), so overlapping triggers would overlap here.
+      await new Promise((r) => setTimeout(r, 20))
+      fake.rowsInFlight--
       return fake.rows.map(({ pid, ppid, created }) => ({ pid, ppid, created }))
     },
     windowsProcessTable: async () => {
@@ -75,6 +82,8 @@ beforeEach(() => {
   fake.state = fs.mkdtempSync(path.join(os.tmpdir(), 'comfy-procs-win32-'))
   fake.tableCalls = 0
   fake.rowCalls = 0
+  fake.rowsInFlight = 0
+  fake.maxRowsInFlight = 0
   fake.tableFails = 0
   // Launcher 100 and its interpreter 101, both from well before the exit.
   fake.rows = [
@@ -172,12 +181,13 @@ describe('trackSpawn on Windows: races and failures', () => {
     return c
   }
 
-  it('takes one tree snapshot when both streams speak at once', async () => {
+  it('never runs two tree snapshots at once when both streams speak together', async () => {
     const c = await running()
     c.stdout.emit('data', Buffer.from('x'))
     c.stderr.emit('data', Buffer.from('y'))
     await vi.waitFor(() => expect(readRecord('inst-1')?.tree).toHaveLength(1))
-    expect(fake.rowCalls).toBe(1)
+    // Counted as concurrency, not calls: a slow run can also see the 3 s timer fire first.
+    expect(fake.maxRowsInFlight).toBe(1)
   })
 
   it('a launch right after the exit waits for the scan and then stops the restarted copy', async () => {
