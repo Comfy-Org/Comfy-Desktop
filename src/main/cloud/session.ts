@@ -9,6 +9,7 @@
 import type { TokenProvider } from '../comfybuilder'
 import { workspaceIdOf } from './claims'
 import { refresh, signIn } from './oauth'
+import { isGrantGone } from './oauthError'
 import {
   activateWorkspace,
   clearTokens,
@@ -28,6 +29,9 @@ const REFRESH_SKEW_MS = 60_000
 export class CloudSession {
   /** Refresh rotations are single-flight per workspace token family. */
   private readonly refreshing = new Map<string, Promise<AuthTokens | null>>()
+  /** Refusal reports are single-flight per rejected token, so N views reporting
+   *  the same token cannot replay one refresh token N times. */
+  private readonly revalidating = new Map<string, Promise<boolean>>()
   private loginInFlight: Promise<AuthStatus> | null = null
 
   /** Latest browser-auth intent. Older flows may finish, but cannot replace
@@ -78,6 +82,45 @@ export class CloudSession {
     await this.refreshWorkspaceTokens(workspaceId, tokens)
     const active = loadTokens()
     return active && workspaceIdOf(active.accessToken) === workspaceId ? active.accessToken : null
+  }
+
+  /**
+   * A resource server refused `rejectedAccessToken`. Refresh it once, and sign
+   * out only when the grant itself is gone (revoked, or refused by SSO policy
+   * at the re-mint). Resolves true while a session remains.
+   */
+  revalidate(rejectedAccessToken: string): Promise<boolean> {
+    const inFlight = this.revalidating.get(rejectedAccessToken)
+    if (inFlight) return inFlight
+    const run = this.doRevalidate(rejectedAccessToken).finally(() => {
+      this.revalidating.delete(rejectedAccessToken)
+    })
+    this.revalidating.set(rejectedAccessToken, run)
+    return run
+  }
+
+  private async doRevalidate(rejectedAccessToken: string): Promise<boolean> {
+    const tokens = loadTokens()
+    if (!tokens) return false
+    if (tokens.accessToken !== rejectedAccessToken) return true
+    const workspaceId = workspaceIdOf(tokens.accessToken)
+    const refreshToken = tokens.refreshToken
+    if (!refreshToken) {
+      this.logout()
+      return false
+    }
+    try {
+      const rotated = await refresh(refreshToken)
+      replaceWorkspaceTokens(workspaceId, tokens.accessToken, refreshToken, rotated)
+      return loadTokens() !== null
+    } catch (error) {
+      // Transient failures keep the session; a concurrent rotation already replaced the token.
+      if (!isGrantGone(error) || loadTokens()?.accessToken !== rejectedAccessToken) {
+        return loadTokens() !== null
+      }
+      this.logout()
+      return false
+    }
   }
 
   private refreshKey(workspaceId: string | null, refreshToken: string): string {

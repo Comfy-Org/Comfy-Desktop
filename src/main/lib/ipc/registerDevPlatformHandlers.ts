@@ -15,6 +15,7 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
 
 import { comfyWindows } from '../../host/registry'
+import { broadcastEmbeddedAuthChanged } from '../embeddedAuth'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
@@ -107,6 +108,7 @@ export function broadcastAuthChanged(status: AuthStatus): void {
     if (panel && !panel.webContents.isDestroyed())
       panel.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
   }
+  void broadcastEmbeddedAuthChanged()
 }
 
 /**

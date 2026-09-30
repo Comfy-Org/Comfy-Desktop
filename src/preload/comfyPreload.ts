@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
+  ComfyDesktop2AuthBridge,
+  ComfyDesktop2AuthState,
   ComfyDesktop2BridgeImplementation,
   ComfyDesktop2LogsBridge,
   ComfyDesktop2TelemetryBridge,
@@ -106,6 +108,20 @@ const Telemetry: ComfyDesktop2TelemetryBridge = {
 
 startLocalFirebaseAuthMonitor(reportFirebaseAuthState)
 
+/** Read-only view of Desktop's account session. Main decides trust and never sends a refresh token. */
+const Auth: ComfyDesktop2AuthBridge = {
+  getState: () => ipcRenderer.invoke('desktop2-auth:get-state'),
+  getAccessToken: () => ipcRenderer.invoke('desktop2-auth:get-access-token'),
+  requestSignIn: () => ipcRenderer.invoke('desktop2-auth:request-sign-in'),
+  reportRefusal: (accessToken, reason) =>
+    ipcRenderer.invoke('desktop2-auth:report-refusal', accessToken, reason),
+  onChanged: (callback) => {
+    const handler = (_event: IpcRendererEvent, state: ComfyDesktop2AuthState) => callback(state)
+    ipcRenderer.on('desktop2-auth:changed', handler)
+    return () => ipcRenderer.removeListener('desktop2-auth:changed', handler)
+  }
+}
+
 const bridge = {
   isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
   openModelAccessPage: (url: string): Promise<boolean> => {
@@ -143,7 +159,8 @@ const bridge = {
   openMcpSetup,
   Terminal,
   Logs,
-  Telemetry
+  Telemetry,
+  Auth
 } satisfies ComfyDesktop2BridgeImplementation
 
 contextBridge.exposeInMainWorld('__comfyDesktop2', bridge)

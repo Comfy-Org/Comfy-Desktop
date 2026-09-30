@@ -8,6 +8,7 @@ import { shell } from 'electron'
 import { statusFromAccessToken } from './claims'
 import { CLOUD_CONFIG } from './config'
 import { startLoopbackListener } from './loopback'
+import { OAuthTokenError, oauthErrorCode } from './oauthError'
 import {
   buildAuthorizeUrl,
   codeChallengeFromVerifier,
@@ -71,7 +72,11 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
     })
     if (!resp.ok) {
       const detail = await resp.text().catch(() => '')
-      throw new Error(`OAuth token request failed: ${resp.status} ${detail || resp.statusText}`)
+      throw new OAuthTokenError(
+        `OAuth token request failed: ${resp.status} ${detail || resp.statusText}`,
+        resp.status,
+        oauthErrorCode(detail)
+      )
     }
     const data = (await resp.json()) as Partial<TokenResponse>
     if (typeof data.access_token !== 'string' || data.access_token.length === 0) {

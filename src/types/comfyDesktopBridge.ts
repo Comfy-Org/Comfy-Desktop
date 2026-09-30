@@ -48,6 +48,41 @@ export type ComfyDesktop2FirebaseAuthState =
   | { status: 'signed_out' }
   | { status: 'signed_in'; userId: string }
 
+/** Desktop's account session as the hosted view may see it. Never carries a token. */
+export type ComfyDesktop2AuthState =
+  /** Desktop does not hand its session to this view (feature off or view not trusted). */
+  | { status: 'disabled' }
+  | { status: 'signed_out' }
+  | {
+      status: 'signed_in'
+      /** Comfy user id (the access token's `sub`), not a Firebase uid. */
+      userId: string
+      email?: string
+      /** Only set when the token says so; absent means unknown, not false. */
+      emailVerified?: boolean
+      workspaceId?: string
+    }
+
+/** Why the hosted view's request with a Desktop access token was refused. */
+export type ComfyDesktop2AuthRefusal = 'unauthorized' | 'sso_required'
+
+export interface ComfyDesktop2AuthBridge {
+  getState(): Promise<ComfyDesktop2AuthState>
+  /** A fresh access token, refreshed by Desktop; null when signed out or disabled.
+   *  The refresh token never leaves Desktop. */
+  getAccessToken(): Promise<string | null>
+  /** Starts Desktop's own browser sign-in. Resolves with the resulting state. */
+  requestSignIn(): Promise<ComfyDesktop2AuthState>
+  /** Reports a refusal of `accessToken`. Desktop refreshes it, or signs out
+   *  everywhere when the grant is gone. Resolves with the resulting state. */
+  reportRefusal(
+    accessToken: string,
+    reason: ComfyDesktop2AuthRefusal
+  ): Promise<ComfyDesktop2AuthState>
+  /** Fires on sign-in, sign-out and workspace switch. */
+  onChanged(callback: (state: ComfyDesktop2AuthState) => void): () => void
+}
+
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>
   unsubscribe(installationId?: string): Promise<void>
@@ -94,6 +129,8 @@ export interface ComfyDesktop2Bridge {
   Terminal?: ComfyDesktop2TerminalBridge
   Logs?: ComfyDesktop2LogsBridge
   Telemetry?: ComfyDesktop2TelemetryBridge
+  /** Desktop's account session. Optional: older desktop builds do not have it. */
+  Auth?: ComfyDesktop2AuthBridge
 }
 
 /**
