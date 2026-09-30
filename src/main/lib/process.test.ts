@@ -357,6 +357,10 @@ describe.runIf(process.platform !== 'win32')('kills that wait for exit (real pro
       const result = await killPidTree(proc.pid!, start)
       expect(result).toMatchObject({ killed: true, exited: true })
       expect(isPidAlive(grandchild)).toBe(false)
+      // The log names what the group stop covered.
+      expect(result.killed && result.members).toEqual(
+        expect.arrayContaining([proc.pid!, grandchild])
+      )
     } finally {
       cleanup(proc.pid!)
     }

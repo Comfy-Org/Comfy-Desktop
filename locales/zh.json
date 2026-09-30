@@ -477,6 +477,7 @@
     "completedCancelled": "操作已取消",
     "returnToDashboard": "返回仪表板",
     "reboot": "重启",
+    "restartComfyui": "重启 ComfyUI",
     "successChoiceGoDashboard": "前往仪表板",
     "successChoiceOpen": "打开实例",
     "phaseLabel": {

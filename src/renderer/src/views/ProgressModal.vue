@@ -781,7 +781,10 @@ defineExpose({ startOperation, showOperation })
             @click="handleReboot"
           >
             <RefreshCcw :size="14" />
-            {{ $t('progress.reboot') }}
+            <!-- A launch's retry restarts ComfyUI, not the computer some errors mention. -->
+            {{
+              currentOp.opKind === 'launch' ? $t('progress.restartComfyui') : $t('progress.reboot')
+            }}
           </button>
         </div>
       </div>

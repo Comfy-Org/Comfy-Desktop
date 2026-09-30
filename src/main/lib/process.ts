@@ -7,6 +7,7 @@ import net from 'net'
 import { stateDir } from './paths'
 import {
   groupHasLiveMembers,
+  groupMembers,
   isPidAlive,
   processGroupOf,
   readStartTimes,
@@ -109,7 +110,15 @@ export interface KillResult {
  *  signalled: the pid now names another process (`mismatch`), or the OS could not be asked
  *  (`probe_failed`), which proves nothing either way. */
 export type VerifiedKillResult = KillResult &
-  ({ killed: true } | { killed: false; reason: 'mismatch' | 'probe_failed' | 'unsafe' })
+  (
+    | {
+        killed: true
+        /** What the kill covered, as far as it could be listed: the process group (POSIX) or
+         *  the tree (Windows). For the log only. */
+        members?: number[]
+      }
+    | { killed: false; reason: 'mismatch' | 'probe_failed' | 'unsafe' }
+  )
 
 /** How long a kill waits for the tree to be gone. Windows termination is asynchronous (a
  *  process blocked in a driver call keeps its handles until the call returns), so it gets
@@ -207,7 +216,7 @@ async function killWindowsTreeVerified(
   await taskkillTree(pid)
   const pids = snapshot.pids.length > 0 ? snapshot.pids : [pid]
   const result = await waitUntil(() => !pids.some(isPidAlive), startedAt, KILL_WAIT_MS)
-  return { killed: true, ...result }
+  return { killed: true, members: pids, ...result }
 }
 
 export function killProcessTree(proc: ChildProcess | null): Promise<KillResult> {
@@ -252,6 +261,9 @@ export async function killPidTree(pid: number, expectedStart: string): Promise<V
     return { killed: false, reason: 'unsafe', exited: false, waitMs: 0 }
   }
   if (process.platform === 'win32') return killWindowsTreeVerified(pid, startedAt, expectedStart)
+  // The rest of its group (the leader excluded), listed before the proof, so nothing comes
+  // between the proof and the signal.
+  const members = await groupMembers(pid).catch(() => [] as number[])
   const now = await readStartTimes([pid])
   if (!now) {
     return {
@@ -287,7 +299,7 @@ export async function killPidTree(pid: number, expectedStart: string): Promise<V
     KILL_WAIT_MS,
     group ? async () => !(await groupHasLiveMembers(pid)) : undefined
   )
-  return { killed: true, ...result }
+  return { killed: true, members: group ? [pid, ...members] : [pid], ...result }
 }
 
 export function findPidsByPort(port: number): Promise<number[]> {

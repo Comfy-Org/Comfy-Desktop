@@ -732,7 +732,8 @@ export interface PriorProcessOutcome {
   queue?: QueueState
   /** The orphan never answered `/queue`, so whether it is working is unknown. */
   queueUnknown?: boolean
-  /** Left running: survivors of an exited ComfyUI that serve no port, so they cannot be asked.
+  /** Left running: survivors of an exited ComfyUI that do not answer on the recorded port, so
+   *  they cannot be asked.
    *  Their pids, for the user and the log (the recorded child is already gone). */
   survivorPids?: number[]
   /** The user chose to stop a busy process. */
@@ -742,6 +743,8 @@ export interface PriorProcessOutcome {
   /** Blocked because a Windows exit scan is still owed and the process list cannot be read,
    *  while something holds the recorded port. `pid` is then the long-gone child. */
   scanOwed?: boolean
+  /** Every pid the stops covered (process groups, trees), for the log. */
+  stoppedPids?: number[]
 }
 
 /**
@@ -764,9 +767,14 @@ async function provenLingering(
 async function stopLingering(
   proven: readonly LingeringProcess[],
   deps: PriorProcessDeps
-): Promise<{ stopped: number; blocked: null | 'stuck' | 'unverified' } | null> {
+): Promise<{
+  stopped: number
+  blocked: null | 'stuck' | 'unverified'
+  members: number[]
+} | null> {
   const kills = await Promise.all(proven.map((m) => deps.killPidTree(m.pid, m.startTime)))
   const stopped = kills.filter((k) => k.killed).length
+  const members = [...new Set(kills.flatMap((k) => (k.killed ? (k.members ?? []) : [])))]
   // A pid that now names another process is simply not ours; every other outcome counts.
   const relevant = kills.filter((k) => k.killed || k.reason === 'probe_failed')
   if (relevant.length === 0) return null
@@ -775,7 +783,7 @@ async function stopLingering(
     : relevant.some((k) => !k.exited)
       ? 'stuck'
       : null
-  return { stopped, blocked }
+  return { stopped, blocked, members }
 }
 
 /** Total time spent asking an orphan whether it is working before treating it as unknown. */
@@ -842,6 +850,13 @@ function abortable<T>(p: Promise<T>, signal?: AbortSignal): Promise<T | undefine
   })
 }
 
+/** Log a line through the caller; reporting must never change what happens. */
+function note(opts: { onNote?: (line: string) => void }, line: string): void {
+  try {
+    opts.onNote?.(line)
+  } catch {}
+}
+
 /**
  * Whether one of the survivors is what listens on the recorded port: a survivor's own pid, or
  * (POSIX) a member of the recorded child's process group, which cannot be anyone else's while a
@@ -866,7 +881,7 @@ async function survivorServesPort(
   return false
 }
 
-/** How long survivors that serve no port get to exit on their own (a teardown in progress)
+/** How long survivors that do not serve the recorded port get to exit on their own (a teardown in progress)
  *  before the user is asked about them; the poll count bounds it under any clock. */
 const PORTLESS_SURVIVOR_GRACE_MS = 5_000
 const PORTLESS_SURVIVOR_POLLS = 50
@@ -933,6 +948,8 @@ export async function resolvePriorProcess(
     signal?: AbortSignal
     /** Called once before the (up to 10 s) busy check, so the caller can say what it is doing. */
     onProbe?: () => void
+    /** A line for the launch log about a step that leaves no outcome of its own. */
+    onNote?: (line: string) => void
   } = {},
   deps: PriorProcessDeps = defaultDeps
 ): Promise<PriorProcessOutcome | null> {
@@ -1005,7 +1022,14 @@ export async function resolvePriorProcess(
       // the same, so survivors first get a short grace to exit on their own; only the ones still
       // there are put to the user, at once, rather than after the whole probe budget.
       let still = proven
-      const deadline = deps.now() + PORTLESS_SURVIVOR_GRACE_MS
+      const graceStart = deps.now()
+      note(
+        opts,
+        `processes left by an earlier ComfyUI (pids ${proven.map((m) => m.pid).join(', ')}) do ` +
+          `not answer on port ${record.port}; giving them up to ` +
+          `${PORTLESS_SURVIVOR_GRACE_MS / 1000} s to exit on their own`
+      )
+      const deadline = graceStart + PORTLESS_SURVIVOR_GRACE_MS
       for (
         let i = 0;
         i < PORTLESS_SURVIVOR_POLLS && still.length > 0 && deps.now() < deadline;
@@ -1018,6 +1042,16 @@ export async function resolvePriorProcess(
       if (opts.signal?.aborted) return null
       // One may have been booting and taken the port meanwhile: then it can be asked after all.
       if (still.length > 0) serving = await survivorServesPort(record, still, deps)
+      const graceMs = Math.round(deps.now() - graceStart)
+      note(
+        opts,
+        still.length === 0
+          ? `they all exited on their own within ${graceMs} ms`
+          : serving
+            ? `after ${graceMs} ms one of them (pids ${still.map((m) => m.pid).join(', ')}) ` +
+              `serves port ${record.port}: asking it whether it is working`
+            : `after ${graceMs} ms still running: pids ${still.map((m) => m.pid).join(', ')}`
+      )
       if (opts.signal?.aborted) return null
       if (still.length > 0 && !serving) {
         return early({
@@ -1052,7 +1086,8 @@ export async function resolvePriorProcess(
       action: 'terminated',
       exitedInTime: !survivors.blocked,
       blocked: survivors.blocked,
-      lingering: survivors.stopped
+      lingering: survivors.stopped,
+      stoppedPids: survivors.members
     })
   }
   if (survivors?.blocked) {
@@ -1065,7 +1100,8 @@ export async function resolvePriorProcess(
       waitMs: deps.now() - startedAt,
       exitedInTime: false,
       blocked: survivors.blocked,
-      lingering: survivors.stopped
+      lingering: survivors.stopped,
+      stoppedPids: survivors.members
     }
   }
   // Cheap pre-check: after a clean quit the child is normally already gone, and on Windows the
@@ -1083,6 +1119,7 @@ export async function resolvePriorProcess(
       exitedInTime: true,
       blocked: null,
       lingering: survivors.stopped,
+      stoppedPids: survivors.members,
       // The child is long gone: what was stopped were these.
       ...(Array.isArray(proven) ? { survivorPids: proven.map((m) => m.pid) } : {})
     }
@@ -1115,7 +1152,7 @@ export async function resolvePriorProcess(
     waitMs: deps.now() - startedAt,
     exitedInTime: false,
     blocked: null,
-    ...(survivors ? { lingering: survivors.stopped } : {}),
+    ...(survivors ? { lingering: survivors.stopped, stoppedPids: survivors.members } : {}),
     ...extra
   })
   if (verdict === 'unproven') return outcome('left')
@@ -1173,6 +1210,7 @@ export async function resolvePriorProcess(
   }
   if (kill.exited) deps.removeRecordIf(sessionKey, record.childPid)
   return outcome('terminated', {
+    stoppedPids: [...new Set([...(survivors?.members ?? []), ...(kill.members ?? [])])],
     exitedInTime: kill.exited,
     blocked: kill.exited ? null : 'stuck',
     ...(opts.stopBusy ? { busyOverride: true } : {})

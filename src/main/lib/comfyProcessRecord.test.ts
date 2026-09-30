@@ -936,6 +936,38 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     })
   })
 
+  it('logs the grace: who it waited for, and how it ended', async () => {
+    const lines: string[] = []
+    let polls = 0
+    await resolvePriorProcess(
+      'inst-1',
+      { onNote: (line) => lines.push(line) },
+      deps({
+        portListeners: async () => [],
+        sleep: async () => {
+          if (++polls === 3) alive.delete(555)
+        }
+      })
+    )
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('pids 555')
+    expect(lines[1]).toContain('exited on their own')
+  })
+
+  it('reports every pid the stops covered, for the log', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { stopBusy: true },
+      deps({
+        killPidTree: async (pid) => {
+          alive.delete(pid)
+          return { killed: true, exited: true, waitMs: 5, members: [pid, 560, 561] }
+        }
+      })
+    )
+    expect(out).toMatchObject({ action: 'terminated', stoppedPids: [555, 560, 561] })
+  })
+
   it('asks a survivor that took the port during the grace, instead of calling it portless', async () => {
     // Still booting when the launch looked; it binds (and turns busy) a moment later.
     let listening = false

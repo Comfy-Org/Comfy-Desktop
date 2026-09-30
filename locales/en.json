@@ -477,6 +477,7 @@
     "completedCancelled": "Operation was cancelled",
     "returnToDashboard": "Return to Dashboard",
     "reboot": "Reboot",
+    "restartComfyui": "Restart ComfyUI",
     "successChoiceGoDashboard": "Go to Dashboard",
     "successChoiceOpen": "Open Instance",
     "phaseLabel": {

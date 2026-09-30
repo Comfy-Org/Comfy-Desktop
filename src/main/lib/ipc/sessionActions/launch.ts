@@ -587,6 +587,7 @@ export function describePriorOutcome(prior: PriorProcessOutcome): string {
   const reason = prior.queueUnknown ? 'unknown' : prior.blocked
   const blocked = prior.blocked ? `; launch refused (${reason})` : ''
   const lingering = prior.lingering ? `; ${prior.lingering} surviving subprocess(es) stopped` : ''
+  const covered = prior.stoppedPids?.length ? `; stopped pids ${prior.stoppedPids.join(', ')}` : ''
   if (prior.survivorPids) {
     // No port here: nothing holds it any more, only these processes.
     const them =
@@ -594,13 +595,14 @@ export function describePriorOutcome(prior: PriorProcessOutcome): string {
         ? prior.exitedInTime
           ? 'stopped, and they exited'
           : 'stopped, but not all of them exited'
-        : 'left running: they serve no port, so whether they are working cannot be asked'
+        : "left running: they do not answer on this installation's port, so whether they are " +
+          'working cannot be asked'
     return (
       `processes left by an earlier ComfyUI (pids ${prior.survivorPids.join(', ')}, proof ` +
-      `${prior.proof}): ${them}${blocked}`
+      `${prior.proof}): ${them}${covered}${blocked}`
     )
   }
-  return `earlier ComfyUI (pid ${prior.pid}, port ${prior.port}, proof ${prior.proof}): ${what}${lingering}${blocked}`
+  return `earlier ComfyUI (pid ${prior.pid}, port ${prior.port}, proof ${prior.proof}): ${what}${lingering}${covered}${blocked}`
 }
 
 export function _resolveLaunchMode(
@@ -1542,7 +1544,8 @@ async function runLaunch(
       stopBusy: actionData?.stopBusyPriorProcess === true,
       signal: abort.signal,
       onProbe: () =>
-        sendProgress('launch', { percent: -1, status: i18n.t('launch.checkingPriorProcess') })
+        sendProgress('launch', { percent: -1, status: i18n.t('launch.checkingPriorProcess') }),
+      onNote: (line) => appendLog(sessionId, `[launch] ${line}\n`)
     })
   } catch (err) {
     // Bookkeeping never costs a launch: no answer means today's behaviour.
@@ -1648,7 +1651,10 @@ async function runLaunch(
     // Every listener is checked: lsof lists each one, and this install's may not come first.
     let sameInstallPid: number | null = null
     if (actionData?.autoPortOnConflict !== true && launchCmd.args!.includes('--enable-assets')) {
-      for (const pid of new Set(existingPids)) {
+      // The listeners, plus the pid a Desktop's port lock names: the listener list can come back
+      // empty (lsof sees only this user's processes, and none inside another namespace).
+      const lockPid = pendingPortOwner ? null : (readPortLock(launchCmd.port!)?.pid ?? null)
+      for (const pid of new Set([...existingPids, ...(lockPid ? [lockPid] : [])])) {
         if (await holderIsInstall(pid, inst.installPath).catch(() => false)) {
           sameInstallPid = pid
           break

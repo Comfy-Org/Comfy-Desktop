@@ -65,6 +65,8 @@ const launchHarness = vi.hoisted(() => ({
   portFreeWaits: [] as number[],
   /** The listeners `findPidsByPort` reports on a busy port. */
   busyPids: [31337] as number[],
+  /** A live Desktop port lock on a busy port (the pid it names); null = none. */
+  portLockPid: null as null | number,
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
   killExits: true
 }))
@@ -118,6 +120,12 @@ vi.mock('../shared', async (importOriginal) => {
       launchHarness.busyPorts
         ? Promise.resolve(launchHarness.busyPorts.includes(args[0]) ? launchHarness.busyPids : [])
         : actual.findPidsByPort(...args),
+    readPortLock: (...args: Parameters<typeof actual.readPortLock>) =>
+      launchHarness.busyPorts
+        ? launchHarness.portLockPid !== null && launchHarness.busyPorts.includes(args[0])
+          ? { pid: launchHarness.portLockPid, installationName: 'Other', timestamp: 0 }
+          : null
+        : actual.readPortLock(...args),
     getProcessInfo: (...args: Parameters<typeof actual.getProcessInfo>) =>
       launchHarness.busyPorts
         ? Promise.resolve({ name: 'python', commandLine: 'python -s ComfyUI/main.py' })
@@ -2129,6 +2137,7 @@ describe('prior ComfyUI process handling at launch', () => {
     // outcome.
     launchHarness.busyPorts = []
     launchHarness.busyPids = [31337]
+    launchHarness.portLockPid = null
     launchHarness.portFreeWaits = []
     launchHarness.killExits = true
     launchHarness.waitForPort = async () => {}
@@ -2405,6 +2414,21 @@ describe('prior ComfyUI process handling at launch', () => {
     ])
   })
 
+  it("recognises this install's ComfyUI from a port lock when no listener can be listed", async () => {
+    // lsof sees nothing (another user's or another namespace's process); the lock still names it.
+    launchHarness.busyPorts = [PORT]
+    launchHarness.busyPids = []
+    launchHarness.portLockPid = 40003
+    ownership.holderIsInstall = (pid) => pid === 40003
+
+    const res = await handleLaunch(ctxFor('prior-port-lock'))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.portConflictSameInstall')
+    expect(res.portConflict).not.toHaveProperty('nextPort')
+    expect(children).toHaveLength(0)
+  })
+
   it("finds this install's ComfyUI among several listeners on the port", async () => {
     launchHarness.busyPorts = [PORT]
     launchHarness.busyPids = [40001, 40002]
@@ -2545,7 +2569,7 @@ describe('describePriorOutcome', () => {
         survivorPids: [555, 556]
       })
     ).toBe(
-      'processes left by an earlier ComfyUI (pids 555, 556, proof desktop_record): left running: they serve no port, so whether they are working cannot be asked; launch refused (unknown)'
+      "processes left by an earlier ComfyUI (pids 555, 556, proof desktop_record): left running: they do not answer on this installation's port, so whether they are working cannot be asked; launch refused (unknown)"
     )
     expect(
       describePriorOutcome({

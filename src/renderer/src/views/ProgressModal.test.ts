@@ -51,6 +51,7 @@ const messages = {
       completedCancelled: 'Operation was cancelled',
       returnToDashboard: 'Return to Dashboard',
       reboot: 'Reboot',
+      restartComfyui: 'Restart ComfyUI',
       phaseLabel: {
         cleanup: 'Tidying up dependencies...',
         download: 'Downloading ComfyUI…',
@@ -557,6 +558,17 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.exists('.brand-progress__footer')).toBe(true)
     expect(body.selectorText('.brand-progress__footer')).toContain('Cancel')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Return to Dashboard')
+  })
+
+  it('labels a failed launch\'s retry "Restart ComfyUI", not "Reboot"', async () => {
+    // The database-lock advice mentions restarting the computer; the button does not do that.
+    const { body } = await mountWithOp('inst-1', {
+      finished: true,
+      error: "Another ComfyUI is using this installation's database",
+      opKind: 'launch'
+    })
+    expect(body.selectorText('.brand-progress__error-actions')).toContain('Restart ComfyUI')
+    expect(body.selectorText('.brand-progress__error-actions')).not.toContain('Reboot')
   })
 
   it('renders Back (no Reboot) on a destroy op error', async () => {
