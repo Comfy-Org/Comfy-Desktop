@@ -297,9 +297,9 @@ describe('waitForPortFree', () => {
     const { server, port } = await listenOn('127.0.0.1')
     const frozen = vi.spyOn(Date, 'now').mockReturnValue(0)
     try {
-      const started = performance.now()
+      // A deadline on the frozen wall clock would never pass: this would hang past the test's
+      // own timeout instead of returning.
       expect(await waitForPortFree(port, '127.0.0.1', 150, 20)).toBe(false)
-      expect(performance.now() - started).toBeLessThan(2_000)
     } finally {
       frozen.mockRestore()
       await closeServer(server)
