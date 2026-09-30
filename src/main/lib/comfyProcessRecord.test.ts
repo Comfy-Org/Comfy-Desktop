@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { execFileSync, spawn } from 'child_process'
 import fs from 'fs'
 import http from 'http'
 import os from 'os'
@@ -29,7 +29,7 @@ import {
   type ComfyProcessRecord,
   type PriorProcessDeps
 } from './comfyProcessRecord'
-import { isPidAlive } from './processIdentity'
+import { isPidAlive, readStartTimes } from './processIdentity'
 
 const SELF = { pid: process.pid, start: 'self-start' }
 
@@ -125,6 +125,8 @@ describe('resolvePriorProcess', () => {
     probeQueue: async () => ({ running: 0, pending: 0 }),
     // The copies these tests stand in for serve the recorded port.
     portInUse: async () => true,
+    portListeners: async () => [...alive],
+    processGroupOf: async () => null,
     killPidTree: async (pid, start) => {
       kills.push([pid, start])
       alive.delete(pid)
@@ -593,9 +595,37 @@ describe('resolvePriorProcess', () => {
         settleExitBookkeeping: async () => {}
       })
     )
-    expect(out).toMatchObject({ action: 'left', blocked: 'unverified' })
+    expect(out).toMatchObject({ action: 'left', blocked: 'unverified', scanOwed: true })
     expect(kills).toEqual([])
     expect(removed).toEqual([])
+  })
+
+  it('gives up an owed scan that cannot run when nothing holds the recorded port', async () => {
+    // What the scan looks for serves that port; with it free, blocking every launch for days
+    // (naming a child long gone) protects nothing.
+    const written: ComfyProcessRecord[] = []
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        readRecord: () =>
+          record({
+            pendingScan: {
+              known: [{ pid: 101, startTime: '1100' }],
+              exitedAt: String(filetimeOf(Date.now()))
+            }
+          }),
+        rescanWindows: async () => null,
+        portInUse: async () => false,
+        writeRecord: (r) => {
+          written.push(r)
+          return true
+        },
+        settleExitBookkeeping: async () => {}
+      })
+    )
+    expect(out?.blocked ?? null).not.toBe('unverified')
+    expect(written.at(-1)?.pendingScan).toBeUndefined()
   })
 
   it('does not block when the proof lapsed at the moment of the kill', async () => {
@@ -630,7 +660,8 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     isPidAlive: (pid) => alive.has(pid),
     // Idle unless a test says otherwise: a survivor still serving the port answers it.
     probeQueue: async () => ({ running: 0, pending: 0 }),
-    portInUse: async () => true,
+    portListeners: async () => [...alive],
+    processGroupOf: async () => null,
     killPidTree: async (pid) => {
       kills.push(pid)
       alive.delete(pid)
@@ -722,7 +753,7 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     const out = await resolvePriorProcess(
       'inst-1',
       {},
-      deps({ portInUse: async () => false, probeQueue })
+      deps({ portListeners: async () => [], probeQueue })
     )
     expect(probeQueue).not.toHaveBeenCalled()
     expect(kills).toEqual([])
@@ -741,7 +772,7 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
       'inst-1',
       {},
       deps({
-        portInUse: async () => false,
+        portListeners: async () => [],
         probeQueue,
         sleep: async () => {
           if (++polls === 3) alive.delete(555)
@@ -825,6 +856,104 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     )
     expect(out).toMatchObject({ blocked: 'stuck', lingering: 1 })
     expect(removed).toEqual([])
+  })
+
+  describe('when another process answers on the recorded port', () => {
+    // Every installation defaults to the same port: once the child is gone, another ComfyUI (a
+    // different installation, say) can hold it, and its answer says nothing about the survivors.
+    const STRANGER = 900
+
+    it('never stops the survivors on a stranger\'s "idle": they are put to the user', async () => {
+      const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
+      const out = await resolvePriorProcess(
+        'inst-1',
+        {},
+        deps({ portListeners: async () => [STRANGER], probeQueue })
+      )
+      expect(probeQueue).not.toHaveBeenCalled()
+      expect(kills).toEqual([])
+      expect(out).toMatchObject({ action: 'busy_left', blocked: 'busy', survivorPids: [555] })
+    })
+
+    it("names the survivors, not a stranger's prompt, when the stranger is busy", async () => {
+      const out = await resolvePriorProcess(
+        'inst-1',
+        {},
+        deps({
+          portListeners: async () => [STRANGER],
+          probeQueue: async () => ({ running: 1, pending: 0 })
+        })
+      )
+      expect(kills).toEqual([])
+      expect(out).toMatchObject({ action: 'busy_left', survivorPids: [555] })
+      expect(out).not.toHaveProperty('queue')
+    })
+
+    it('treats listeners that cannot be read as "not the survivors"', async () => {
+      const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
+      const out = await resolvePriorProcess(
+        'inst-1',
+        {},
+        deps({
+          portListeners: async () => {
+            throw new Error('lsof missing')
+          },
+          probeQueue
+        })
+      )
+      expect(probeQueue).not.toHaveBeenCalled()
+      expect(kills).toEqual([])
+      expect(out).toMatchObject({ action: 'busy_left', survivorPids: [555] })
+    })
+
+    it("asks /queue when the listener is in the recorded child's process group", async () => {
+      const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
+      const out = await resolvePriorProcess(
+        'inst-1',
+        {},
+        deps({
+          portListeners: async () => [777],
+          processGroupOf: async (pid) => (pid === 777 ? 222 : null),
+          probeQueue
+        })
+      )
+      expect(probeQueue).toHaveBeenCalled()
+      expect(kills).toEqual([555])
+      expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
+    })
+
+    it('does not trust a listener in some other process group', async () => {
+      const out = await resolvePriorProcess(
+        'inst-1',
+        {},
+        deps({
+          portListeners: async () => [777],
+          processGroupOf: async () => 4242
+        })
+      )
+      expect(kills).toEqual([])
+      expect(out).toMatchObject({ action: 'busy_left', survivorPids: [555] })
+    })
+  })
+
+  it('asks a survivor that took the port during the grace, instead of calling it portless', async () => {
+    // Still booting when the launch looked; it binds (and turns busy) a moment later.
+    let listening = false
+    let polls = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        portListeners: async () => (listening ? [555] : []),
+        probeQueue: async () => ({ running: 1, pending: 0 }),
+        sleep: async () => {
+          if (++polls === 5) listening = true
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', queue: { running: 1, pending: 0 } })
+    expect(out).not.toHaveProperty('survivorPids')
   })
 })
 
@@ -913,6 +1042,106 @@ describe.runIf(process.platform !== 'win32')('survivors of a real process group'
     await vi.waitFor(() => expect(readRecord('inst-1')).toBeNull())
   })
 })
+
+function hasLsof(): boolean {
+  try {
+    execFileSync('lsof', ['-v'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+describe.runIf(process.platform === 'linux' && hasLsof())(
+  'survivors and a real stranger on the recorded port',
+  () => {
+    const started: ReturnType<typeof spawn>[] = []
+    afterEach(() => {
+      for (const p of started.splice(0)) {
+        try {
+          process.kill(p.pid!, 'SIGKILL')
+        } catch {}
+      }
+    })
+
+    /** A stand-in ComfyUI (a script called main.py): answers /queue idle or busy on `port`, or
+     *  serves nothing (`portless`, a worker holding the lock). */
+    async function fakeComfy(mode: 'idle' | 'busy' | 'portless', port = 0): Promise<number> {
+      const file = path.join(dirs.state, 'main.py')
+      fs.writeFileSync(
+        file,
+        `const [mode, port] = process.argv.slice(2)
+const running = mode === 'busy' ? [[1, 'x']] : []
+if (mode !== 'portless') {
+  require('http')
+    .createServer((_q, r) => r.end(JSON.stringify({ queue_running: running, queue_pending: [] })))
+    .listen(Number(port), '127.0.0.1', () => console.log('up'))
+} else console.log('up')
+setInterval(() => {}, 1 << 30)
+`
+      )
+      const p = spawn(process.execPath, [file, mode, String(port)], {
+        stdio: ['ignore', 'pipe', 'ignore']
+      })
+      started.push(p)
+      await new Promise((r) => p.stdout!.once('data', r))
+      return p.pid!
+    }
+
+    async function freePort(): Promise<number> {
+      const server = http.createServer()
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+      const { port } = server.address() as AddressInfo
+      await new Promise((r) => server.close(r))
+      return port
+    }
+
+    /** A record whose child and Desktop are gone, with `survivor` proven by its start time. */
+    async function survivorRecord(survivor: number, port: number): Promise<void> {
+      const times = await readStartTimes([survivor])
+      writeRecord(
+        record({
+          port,
+          childPid: await deadPid(),
+          desktopPid: await deadPid(),
+          childExitedAt: Date.now(),
+          lingering: [{ pid: survivor, startTime: times!.get(survivor)! }]
+        })
+      )
+    }
+
+    it('asks about a portless survivor even when an idle stranger holds the port', async () => {
+      const port = await freePort()
+      const stranger = await fakeComfy('idle', port) // another installation took the free port
+      const survivor = await fakeComfy('portless')
+      await survivorRecord(survivor, port)
+      const out = await resolvePriorProcess('inst-1')
+      expect(out).toMatchObject({ action: 'busy_left', survivorPids: [survivor] })
+      expect(isPidAlive(survivor)).toBe(true)
+      expect(isPidAlive(stranger)).toBe(true)
+    }, 20_000)
+
+    it('never stops a busy survivor on another port because a stranger on the recorded one is idle', async () => {
+      const port = await freePort()
+      const stranger = await fakeComfy('idle', port)
+      const survivor = await fakeComfy('busy', await freePort())
+      await survivorRecord(survivor, port)
+      const out = await resolvePriorProcess('inst-1')
+      expect(out).toMatchObject({ action: 'busy_left', survivorPids: [survivor] })
+      expect(isPidAlive(survivor)).toBe(true)
+      expect(isPidAlive(stranger)).toBe(true)
+    }, 20_000)
+
+    it('still stops an idle survivor that serves the recorded port itself', async () => {
+      const port = await freePort()
+      const survivor = await fakeComfy('idle', port)
+      await survivorRecord(survivor, port)
+      const out = await resolvePriorProcess('inst-1')
+      expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
+      await vi.waitFor(() => expect(isPidAlive(survivor)).toBe(false))
+    }, 20_000)
+  }
+)
 
 describe('findWindowsSurvivors (a ComfyUI that restarted itself with os.execv)', () => {
   // Launcher L (pid 100) ran interpreter I (101). I execv'd: a new venv launcher N (200, parent
@@ -1093,7 +1322,12 @@ describe('record store', () => {
     ['a zero port', { port: 0 }],
     ['pid 1 as the child', { childPid: 1 }],
     ['pid 0 as the owner', { desktopPid: 0 }],
-    ['pid 1 as a survivor', { lingering: [{ pid: 1, startTime: 'x' }] }]
+    ['pid 1 as a survivor', { lingering: [{ pid: 1, startTime: 'x' }] }],
+    ['a null entry in an owed scan', { pendingScan: { known: [null], exitedAt: '1' } }],
+    [
+      'a numeric start token in an owed scan',
+      { pendingScan: { known: [{ pid: 101, startTime: 1100 }], exitedAt: '1' } }
+    ]
   ])('rejects a record with %s', (_why, bad) => {
     writeRecord({ ...record(), ...bad } as unknown as ComfyProcessRecord)
     expect(readRecord('inst-1')).toBeNull()
@@ -1234,7 +1468,7 @@ describe('takePriorSessionUnclean', () => {
         ownStartTime: async () => 'self',
         isPidAlive: (pid) => pid === 300 && kills.length === 0,
         // The restarted copy serves the recorded port and is idle.
-        portInUse: async () => true,
+        portListeners: async () => [300],
         probeQueue: async () => ({ running: 0, pending: 0 }),
         killPidTree: async (pid) => {
           kills.push(pid)

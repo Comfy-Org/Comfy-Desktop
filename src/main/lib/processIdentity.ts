@@ -42,8 +42,12 @@ function run(cmd: string, args: string[]): Promise<string | null> {
   })
 }
 
+/** Windows PowerShell writes stdout in the console code page, which would mangle a non-ASCII
+ *  install path before it is compared; ask for UTF-8 (without a BOM), which `run` decodes. */
+const PS_UTF8_PREFIX = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); '
+
 function powershell(command: string): Promise<string | null> {
-  return run('powershell', ['-NoProfile', '-NonInteractive', '-Command', command])
+  return run('powershell', ['-NoProfile', '-NonInteractive', '-Command', PS_UTF8_PREFIX + command])
 }
 
 function validPids(pids: readonly number[]): number[] {

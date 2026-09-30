@@ -1579,6 +1579,19 @@ async function runLaunch(
     // The recorded pid can be the venv launcher; on Windows the process holding the port (and
     // the database) is its child. Name whoever listens on the port too.
     const holders = await findPidsByPort(prior.port).catch(() => [] as number[])
+    if (prior.scanOwed) {
+      // The recorded child is long gone: name only what holds the port now.
+      return {
+        ok: false,
+        message:
+          holders.length > 0
+            ? i18n.t('errors.priorScanUnavailablePid', {
+                port: prior.port,
+                pid: holders.join(', ')
+              })
+            : i18n.t('errors.priorScanUnavailable', { port: prior.port })
+      }
+    }
     return {
       ok: false,
       message: i18n.t(

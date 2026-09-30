@@ -224,7 +224,7 @@ describe('trackSpawn on Windows: races and failures', () => {
         ownStartTime: async () => 'desktop-start',
         isPidAlive: (pid) => pid === 200,
         // The restarted copy serves the recorded port and is idle.
-        portInUse: async () => true,
+        portListeners: async () => [200],
         probeQueue: async () => ({ running: 0, pending: 0 }),
         killPidTree: async (pid) => {
           kills.push(pid)

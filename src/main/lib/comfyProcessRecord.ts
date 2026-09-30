@@ -3,7 +3,7 @@ import http from 'http'
 import path from 'path'
 import type { ChildProcess } from 'child_process'
 import { stateDir } from './paths'
-import { isPortListening, killPidTree } from './process'
+import { findPidsByPort, isPortListening, killPidTree } from './process'
 import {
   commandArgvOf,
   commandLinesOf,
@@ -102,6 +102,9 @@ function isRecord(value: unknown): value is ComfyProcessRecord {
       (typeof r.pendingScan === 'object' &&
         r.pendingScan !== null &&
         Array.isArray(r.pendingScan.known) &&
+        r.pendingScan.known.every(
+          (m) => Number.isInteger(m?.pid) && m.pid > 1 && typeof m?.startTime === 'string'
+        ) &&
         typeof r.pendingScan.exitedAt === 'string')) &&
     (r.tree === undefined ||
       (Array.isArray(r.tree) &&
@@ -736,6 +739,9 @@ export interface PriorProcessOutcome {
   busyOverride?: boolean
   /** Descendants that had outlived the child in its process group, and were stopped. */
   lingering?: number
+  /** Blocked because a Windows exit scan is still owed and the process list cannot be read,
+   *  while something holds the recorded port. `pid` is then the long-gone child. */
+  scanOwed?: boolean
 }
 
 /**
@@ -836,6 +842,30 @@ function abortable<T>(p: Promise<T>, signal?: AbortSignal): Promise<T | undefine
   })
 }
 
+/**
+ * Whether one of the survivors is what listens on the recorded port: a survivor's own pid, or
+ * (POSIX) a member of the recorded child's process group, which cannot be anyone else's while a
+ * survivor keeps that group alive. Listeners that cannot be read count as "not them": the
+ * survivors are then put to the user instead of trusting a stranger's answer.
+ */
+async function survivorServesPort(
+  record: ComfyProcessRecord,
+  survivors: readonly LingeringProcess[],
+  deps: PriorProcessDeps
+): Promise<boolean> {
+  const listeners = await (deps.portListeners ?? findPidsByPort)(record.port).catch(
+    () => [] as number[]
+  )
+  if (listeners.length === 0) return false
+  const pids = new Set(survivors.map((m) => m.pid))
+  if (listeners.some((pid) => pids.has(pid))) return true
+  const groupOf = deps.processGroupOf ?? processGroupOf
+  for (const pid of listeners) {
+    if ((await groupOf(pid).catch(() => null)) === record.childPid) return true
+  }
+  return false
+}
+
 /** How long survivors that serve no port get to exit on their own (a teardown in progress)
  *  before the user is asked about them; the poll count bounds it under any clock. */
 const PORTLESS_SURVIVOR_GRACE_MS = 5_000
@@ -861,6 +891,10 @@ export interface PriorProcessDeps {
   rescanWindows?: (record: ComfyProcessRecord) => Promise<LingeringProcess[] | null>
   /** Whether anything listens on the port; defaults to the real probe. */
   portInUse?: (port: number) => Promise<boolean>
+  /** The pids listening on the port (empty when none, or when they could not be read). */
+  portListeners?: (port: number) => Promise<number[]>
+  /** POSIX process group of a pid; null when unknown (always on Windows). */
+  processGroupOf?: (pid: number) => Promise<number | null>
   now: () => number
   /** Wall clock, only to date the record (`spawnedAt` is wall-clock). */
   wallNow: () => number
@@ -913,22 +947,30 @@ export async function resolvePriorProcess(
   // Windows: an exit scan that could not run then runs now, under the same rules (creation
   // time within a minute of the recorded exit, parent not reused, this installation).
   if (record.pendingScan) {
-    const found = pendingScanIsCurrent(record, deps.wallNow())
+    let found = pendingScanIsCurrent(record, deps.wallNow())
       ? await (deps.rescanWindows ?? rescanWindows)(record)
       : []
     if (!found) {
-      // Still owed and still not runnable: keep the record and do not launch beside whatever
-      // it may find (a later launch tries again, until the scan succeeds or expires).
-      return {
-        action: 'left',
-        proof: 'desktop_record',
-        pid: record.childPid,
-        port: record.port,
-        ageMs,
-        waitMs: deps.now() - startedAt,
-        exitedInTime: false,
-        blocked: 'unverified'
+      // Still not runnable. What it looks for is a ComfyUI that restarted itself, which serves
+      // the recorded port within seconds of starting: with that port free, there is nothing to
+      // launch beside, and the scan is given up rather than blocking every launch for days.
+      const serving = await (deps.portInUse ?? isPortListening)(record.port).catch(() => true)
+      if (serving) {
+        // Keep the record and do not launch beside whatever holds the port (a later launch
+        // tries again, until the scan succeeds or expires).
+        return {
+          action: 'left',
+          proof: 'desktop_record',
+          pid: record.childPid,
+          port: record.port,
+          ageMs,
+          waitMs: deps.now() - startedAt,
+          exitedInTime: false,
+          blocked: 'unverified',
+          scanOwed: true
+        }
       }
+      found = []
     }
     // Done (or expired): the scan is owed no longer, and what it found is kept like any
     // survivor, so it is re-proven on every later launch until stopped.
@@ -953,7 +995,10 @@ export async function resolvePriorProcess(
   // port: it gets the same busy check as the child before anything is stopped, and no answer
   // is not "idle" there either.
   if (proven && !opts.stopBusy) {
-    const serving = await (deps.portInUse ?? isPortListening)(record.port).catch(() => true)
+    // Whatever answers on the recorded port only speaks for the survivors if it IS one of them:
+    // the port is every installation's default, and once the child is gone another ComfyUI may
+    // hold it.
+    let serving = await survivorServesPort(record, proven, deps)
     if (!serving) {
       // Nothing on the recorded port: whatever survived serves no HTTP and cannot be asked.
       // A process that is only tearing down (an interpreter still releasing the GPU, say) looks
@@ -971,7 +1016,10 @@ export async function resolvePriorProcess(
         still = still.filter((m) => deps.isPidAlive(m.pid))
       }
       if (opts.signal?.aborted) return null
-      if (still.length > 0) {
+      // One may have been booting and taken the port meanwhile: then it can be asked after all.
+      if (still.length > 0) serving = await survivorServesPort(record, still, deps)
+      if (opts.signal?.aborted) return null
+      if (still.length > 0 && !serving) {
         return early({
           action: 'busy_left',
           blocked: 'busy',
@@ -980,8 +1028,9 @@ export async function resolvePriorProcess(
         })
       }
       // All of them exited on their own: nothing left to stop.
-      proven = null
-    } else {
+      proven = still.length > 0 ? still : null
+    }
+    if (proven && serving) {
       try {
         opts.onProbe?.()
       } catch {
