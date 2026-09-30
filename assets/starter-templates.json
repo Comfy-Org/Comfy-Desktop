@@ -34,12 +34,12 @@
       }
     },
     {
-      "id": "video_wan2.1_fun_camera_v1.1_1.3B",
+      "id": "video_minimax_h3_r2v",
       "modality": "video",
       "snapshot": {
-        "title": "Wan 2.1 Fun Camera 1.3B",
-        "description": "Generate dynamic videos with cinematic camera movements using Wan 2.1 Fun Camera 1.3B model.",
-        "sizeBytes": 11489037517,
+        "title": "MiniMax H3: Reference to Video",
+        "description": "Generate a new video by feeding MiniMax H3 a reference image, up to nine images, three videos, and three audio clips alongside a text prompt, letting the model match character identity, motion, camera, voice, or style from those sources while producing native stereo audio in a single pass. Output is a single MP4 video at up to 2K resolution and 24fps for roughly 15 seconds. Ideal for character-consistent animation, style-transfer video generation, and audio-synced content creation.",
+        "sizeBytes": 44452911514,
         "mediaSubtype": "webp"
       }
     },
