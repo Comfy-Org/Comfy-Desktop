@@ -421,7 +421,9 @@ export async function windowsProcessTable(): Promise<WinProcessRowWithCommand[] 
   const stdout = await powershell(
     'Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,CommandLine | ' +
       'ForEach-Object { $c = if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { "" }; ' +
-      '"$($_.ProcessId)`t$($_.ParentProcessId)`t$c`t$($_.CommandLine)" }'
+      // CR/LF are legal in a command line; left in, one could forge extra rows.
+      '$cmd = if ($_.CommandLine) { $_.CommandLine -replace "[\r\n]", " " } else { "" }; ' +
+      '"$($_.ProcessId)`t$($_.ParentProcessId)`t$c`t$cmd" }'
   )
   return stdout == null ? null : parseWinProcessRowsWithCommand(stdout)
 }

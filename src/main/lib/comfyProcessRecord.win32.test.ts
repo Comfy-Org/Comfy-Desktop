@@ -10,17 +10,25 @@ import type * as ProcessIdentity from './processIdentity'
 const fake = vi.hoisted(() => ({
   state: '',
   rows: [] as Array<{ pid: number; ppid: number; created: string; commandLine: string }>,
-  tableCalls: 0
+  tableCalls: 0,
+  rowCalls: 0,
+  tableFails: 0
 }))
 vi.mock('./paths', () => ({ stateDir: () => fake.state }))
 vi.mock('./processIdentity', async (importOriginal) => {
   const actual = await importOriginal<typeof ProcessIdentity>()
   return {
     ...actual,
-    windowsProcessRows: async () =>
-      fake.rows.map(({ pid, ppid, created }) => ({ pid, ppid, created })),
+    windowsProcessRows: async () => {
+      fake.rowCalls++
+      return fake.rows.map(({ pid, ppid, created }) => ({ pid, ppid, created }))
+    },
     windowsProcessTable: async () => {
       fake.tableCalls++
+      if (fake.tableFails > 0) {
+        fake.tableFails--
+        return null
+      }
       return fake.rows
     },
     readStartTimes: async (pids: number[]) =>
@@ -34,7 +42,7 @@ vi.mock('./processIdentity', async (importOriginal) => {
   }
 })
 
-import { filetimeOf, readRecord, trackSpawn } from './comfyProcessRecord'
+import { filetimeOf, readRecord, resolvePriorProcess, trackSpawn } from './comfyProcessRecord'
 
 const INSTALL = 'C:\\c\\one'
 const info = {
@@ -66,6 +74,8 @@ afterAll(() => {
 beforeEach(() => {
   fake.state = fs.mkdtempSync(path.join(os.tmpdir(), 'comfy-procs-win32-'))
   fake.tableCalls = 0
+  fake.rowCalls = 0
+  fake.tableFails = 0
   // Launcher 100 and its interpreter 101, both from well before the exit.
   fake.rows = [
     {
@@ -152,4 +162,65 @@ describe('trackSpawn on Windows', () => {
       { timeout: 4_000 }
     )
   })
+})
+
+describe('trackSpawn on Windows: races and failures', () => {
+  async function running(): Promise<FakeChild> {
+    const c = child(100)
+    trackSpawn(asProc(c), info)
+    await vi.waitFor(() => expect(readRecord('inst-1')?.childStartTime).toBe('1000'))
+    return c
+  }
+
+  it('takes one tree snapshot when both streams speak at once', async () => {
+    const c = await running()
+    c.stdout.emit('data', Buffer.from('x'))
+    c.stderr.emit('data', Buffer.from('y'))
+    await vi.waitFor(() => expect(readRecord('inst-1')?.tree).toHaveLength(1))
+    expect(fake.rowCalls).toBe(1)
+  })
+
+  it('a launch right after the exit waits for the scan and then stops the restarted copy', async () => {
+    const c = await running()
+    c.stderr.emit('data', Buffer.from('x'))
+    await vi.waitFor(() => expect(readRecord('inst-1')?.tree).toHaveLength(1))
+    restartedCopy()
+    c.emit('exit', 0, null) // pipes held: no close
+    const kills: number[] = []
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      {
+        readRecord,
+        removeRecordIf: () => {},
+        readStartTimes: async (pids) =>
+          new Map(pids.filter((p) => p === 200).map((p) => [p, fake.rows[0]!.created])),
+        ownStartTime: async () => 'desktop-start',
+        isPidAlive: (pid) => pid === 200,
+        probeQueue: async () => null,
+        killPidTree: async (pid) => {
+          kills.push(pid)
+          return { killed: true, exited: true, waitMs: 1 }
+        },
+        now: () => performance.now(),
+        wallNow: () => Date.now(),
+        sleep: async () => {}
+      }
+    )
+    expect(kills).toEqual([200])
+    expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
+  })
+
+  it('leaves the scan to the next launch when the process table cannot be read at exit', async () => {
+    const c = await running()
+    c.stderr.emit('data', Buffer.from('x'))
+    await vi.waitFor(() => expect(readRecord('inst-1')?.tree).toHaveLength(1))
+    fake.tableFails = 3
+    c.emit('exit', 0, null)
+    c.emit('close', 0, null)
+    await vi.waitFor(() => expect(readRecord('inst-1')?.pendingScan?.known).toHaveLength(2), {
+      timeout: 6_000
+    })
+    expect(readRecord('inst-1')?.lingering ?? []).toEqual([])
+  }, 10_000)
 })

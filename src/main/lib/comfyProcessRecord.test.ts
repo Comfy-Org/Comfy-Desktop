@@ -368,6 +368,28 @@ describe('resolvePriorProcess', () => {
     expect(removed).toEqual([['inst-1', 222]])
   })
 
+  it('runs an exit scan that could not run then, and stops what it finds', async () => {
+    alive.add(300)
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        readRecord: () =>
+          record({ pendingScan: { known: [{ pid: 101, startTime: '1100' }], exitedAt: '5000' } }),
+        rescanWindows: async () => [{ pid: 300, startTime: 'restarted-start' }],
+        readStartTimes: async (pids) =>
+          new Map(
+            pids
+              .filter((p) => alive.has(p))
+              .map((p) => [p, p === 300 ? 'restarted-start' : 'child-start'])
+          ),
+        settleExitBookkeeping: async () => {}
+      })
+    )
+    expect(kills.map(([pid]) => pid)).toContain(300)
+    expect(out).toMatchObject({ lingering: 1 })
+  })
+
   it('does not block when the proof lapsed at the moment of the kill', async () => {
     const out = await resolvePriorProcess(
       'inst-1',
@@ -635,6 +657,23 @@ describe('findWindowsSurvivors (a ComfyUI that restarted itself with os.execv)',
     expect(
       findWindowsSurvivors([row(101, 7, at(-1), 'C:\\Py\\python.exe -s ComfyUI\\main.py')], ctx)
     ).toEqual([])
+  })
+
+  it('below a restarted copy, ignores a main.py that is not this installation', () => {
+    const rows = [
+      row(200, 101, at(-1), venvMain),
+      row(201, 200, at(0), 'C:\\Py\\python.exe main.py --port 8188'),
+      row(202, 201, at(0), 'C:\\Py\\python.exe C:\\elsewhere\\main.py')
+    ]
+    expect(findWindowsSurvivors(rows, ctx).map((m) => m.pid)).toEqual([200, 201])
+  })
+
+  it('compares the parent creation time numerically', () => {
+    const rows = [
+      row(101, 100, '0' + at(-3599), 'C:\\Py\\python.exe'),
+      row(200, 101, at(-1), venvMain)
+    ]
+    expect(findWindowsSurvivors(rows, ctx).map((m) => m.pid)).toEqual([200])
   })
 
   it('never returns Desktop itself', () => {
