@@ -30,7 +30,11 @@ import {
   _runningSessions
 } from './shared'
 import si from 'systeminformation'
-import type { RunPerformanceTestWorkflowResult, SystemInfo } from '../../../types/ipc'
+import type {
+  CoreBenchmarkSummary,
+  RunPerformanceTestWorkflowResult,
+  SystemInfo
+} from '../../../types/ipc'
 import type { FieldOption } from './shared'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
@@ -57,6 +61,7 @@ import {
   submitPerformanceTestWorkflow,
   waitForPerformanceTestJobs
 } from '../performanceTestWorkflows'
+import { readRepresentativeCoreBenchmark, resolveComfyOutputDir } from '../benchmarkCapture'
 import {
   ExampleWorkflowsUnreachableError,
   getPerformanceTestStarterOptions,
@@ -352,7 +357,7 @@ export function registerAppHandlers(): void {
         imageType === 'benchmark-comparison'
           ? { title: 'Export benchmark comparison', prefix: 'benchmark-comparison' }
           : imageType === 'performance-test'
-            ? { title: 'Export performance test results', prefix: 'performance-test-results' }
+            ? { title: 'Export performance test results', prefix: 'comfy-benchmark' }
             : null
       if (!exportConfig) return { ok: false, message: 'Invalid results image type.' }
       const win = BrowserWindow.fromWebContents(_event.sender)
@@ -366,7 +371,11 @@ export function registerAppHandlers(): void {
       if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
 
       try {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23)
+        const now = new Date()
+        const pad = (value: number): string => String(value).padStart(2, '0')
+        const timestamp =
+          `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-` +
+          `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`
         const filePath = path.join(filePaths[0]!, `${exportConfig.prefix}-${timestamp}.png`)
         await fs.promises.writeFile(filePath, contents)
         return { ok: true, filePath }
@@ -464,6 +473,22 @@ export function registerAppHandlers(): void {
         )
         const hardware = session.getAcceleratorInfo?.() ?? null
         const systemInfo = await getSystemInfo()
+        // Prefer ComfyUI core's per-run benchmark capture when it wrote one. Core
+        // records it/s, a per-op timeline, and an authoritative peak-VRAM. Feature-
+        // detected: a missing file (older core, unrecognized flag) leaves this null
+        // and the run result degrades gracefully to the existing hardware snapshot.
+        let coreBenchmark: CoreBenchmarkSummary | null = null
+        try {
+          if (sourceInstallation) {
+            const sharedOutputDir =
+              (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
+            const outputDir = resolveComfyOutputDir(sourceInstallation, sharedOutputDir)
+            coreBenchmark = await readRepresentativeCoreBenchmark(outputDir, measuredPromptIds)
+          }
+        } catch {
+          // Best-effort: consuming the capture must never fail the run.
+          coreBenchmark = null
+        }
         const resultsSummaryPath = await savePerformanceTestResultsSummary(
           statistics,
           {
@@ -476,7 +501,8 @@ export function registerAppHandlers(): void {
           filePath,
           benchmarksDir,
           successfulRuns,
-          failedRuns
+          failedRuns,
+          coreBenchmark
         )
         const resultsSummary = await readPerformanceTestResultsSummary(
           resultsSummaryPath,
@@ -494,6 +520,7 @@ export function registerAppHandlers(): void {
           hardware,
           systemInfo,
           resultsSummary,
+          coreBenchmark,
           failedRuns
         }
       } catch (error) {

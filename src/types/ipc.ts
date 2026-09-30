@@ -858,6 +858,176 @@ export interface PerformanceTestResultsSummary {
     cudaDeviceSet: number | null
   } | null
   systemInfo: SystemInfo
+  /** Rich per-run metrics from ComfyUI core's benchmark collector, when the run
+   *  produced a capture file. Null/absent => fell back to `/system_stats`. */
+  coreBenchmark?: CoreBenchmarkSummary | null
+}
+
+/**
+ * Rich per-run benchmark record produced by ComfyUI core's in-process collector
+ * (`collector_id: "comfyui-core"`), written to
+ * `<comfyui_output_dir>/benchmarks/<prompt_id>.json`. This is the normalized,
+ * defensively-parsed view the Desktop UI consumes; see `benchmarkCapture.ts` for
+ * the mapping from the raw file. When core did not write the file (older core,
+ * flag unrecognized) this whole object is null and the UI falls back to the
+ * interim `/system_stats` sampler.
+ *
+ * The mapper accepts `capture_schema_version` 1 OR 2. v2 added `run`, `workflow`,
+ * and `summary` groups plus richer `device` / `durations` / `resources` fields;
+ * they are always present on this shape but carry `null` (or empty arrays) when
+ * mapped from a v1 file so the renderer never has to branch on the schema version.
+ */
+export interface CoreBenchmarkSummary {
+  /** The prompt_id whose capture this is (file basename). */
+  promptId: string
+  captureSchemaVersion: number | null
+  collectorId: string | null
+  /** Run-level metadata (schema v2+). All-null when mapped from a v1 capture. */
+  run: {
+    status: string | null
+    imageCount: number | null
+    batchSize: number | null
+    benchmarkId: string | null
+    benchmarkVersion: string | null
+    warmupRuns: number | null
+    measuredRuns: number | null
+    seed: number | null
+  }
+  /** Workflow parameters the run exercised (schema v2+). */
+  workflow: {
+    resolution: { width: number | null; height: number | null }
+    steps: number | null
+    sampler: string | null
+    scheduler: string | null
+    cfg: number | null
+    denoise: number | null
+    seed: number | null
+    /** Per-sampler detail for every KSampler-like node the workflow ran. Empty on
+     *  a v1 capture (the field did not exist) or when core emitted no samplers. */
+    samplers: CoreBenchmarkSampler[]
+  }
+  device: {
+    backend: string | null
+    gpuModel: string | null
+    driverVersion: string | null
+    vramIsUnified: boolean | null
+    pytorchVersion: string | null
+    comfyuiVersion: string | null
+    os: string | null
+    platform: string | null
+    arch: string | null
+    cpuModel: string | null
+    cpuCoresPhysical: number | null
+    cpuCoresLogical: number | null
+    totalVramMb: number | null
+    totalRamMb: number | null
+    // --- schema v2 additions (null on v1 / unavailable) ---
+    /** ComfyUI VRAM management state, e.g. `NORMAL_VRAM`, `LOW_VRAM`. */
+    vramState: string | null
+    /** Whether weights were offloaded to CPU/RAM during the run. */
+    offloaded: boolean | null
+    /** Model weight precision, e.g. `fp16`, `bf16`, `fp8_e4m3fn`. */
+    weightDtype: string | null
+    /** Compute (autocast) precision. */
+    computeDtype: string | null
+    /** Attention backend, e.g. `pytorch`, `sage`, `flash`, `xformers`. */
+    attentionImpl: string | null
+    cudaVersion: string | null
+    cudnnVersion: string | null
+    /** CUDA compute capability, e.g. `9.0`. */
+    computeCapability: string | null
+    isLaptop: boolean | null
+    pcieGen: number | null
+    pcieWidth: number | null
+    /** Idle baseline sampled before the run, for delta context. */
+    baseline: {
+      vramUsedMb: number | null
+      vramUtilPercent: number | null
+      temperatureC: number | null
+      ramUsedMb: number | null
+      cpuPercent: number | null
+    }
+  }
+  durations: {
+    totalRunMs: number | null
+    samplerMs: number | null
+    nodeTotalMs: number | null
+    /** Weight-load time (ms). Null on warm runs where weights were cached — that
+     *  is expected, not a parse failure. Schema v2+. */
+    modelLoadMs: number | null
+  }
+  /** Per-op timeline in execution order (non-cached nodes only). */
+  nodes: CoreBenchmarkNode[]
+  sampling: {
+    stepCount: number | null
+    /** it/s per sampled step, index-aligned; null for 0ms steps. */
+    perStepItPerS: (number | null)[]
+    /** Raw mean it/s as core reports it — skewed low by the first measured step's
+     *  one-time allocator warm-up. Kept for reference; NOT the headline. */
+    avgItPerS: number | null
+    /** Derived steady-state it/s: mean of `perStepItPerS` EXCLUDING the first
+     *  step (the warm-up outlier). Falls back to `avgItPerS` when <2 steps.
+     *  This is the it/s the UI headlines. See `computeSteadyStateItPerS`. */
+    steadyStateItPerS: number | null
+  }
+  resources: {
+    sampleIntervalMs: number | null
+    series: CoreBenchmarkResourceSample[]
+    peak: {
+      /** Peak VRAM used during the run (MB) — supersedes the sampler's estimate. */
+      vramUsedMb: number | null
+      ramUsedMb: number | null
+      cpuPercent: number | null
+      vramUtilPercent: number | null
+      powerW: number | null
+      // --- schema v2 additions (null on v1 / unavailable) ---
+      temperatureC: number | null
+      smClockMhz: number | null
+      memClockMhz: number | null
+      /** Device power cap (W) — context for `powerW`. */
+      powerLimitW: number | null
+      /** Whether the GPU throttled (thermal/power) at peak. */
+      throttled: boolean | null
+    }
+  }
+  /** Roll-up efficiency figures (schema v2+). All-null when mapped from v1. */
+  summary: {
+    energyWhPerImage: number | null
+    secPerImage: number | null
+    throttled: boolean | null
+  }
+}
+
+export interface CoreBenchmarkNode {
+  nodeId: string | null
+  classType: string | null
+  elapsedMs: number | null
+}
+
+/** One sampler node's parameters, as emitted per-sampler by core (schema v2+). */
+export interface CoreBenchmarkSampler {
+  nodeId: string | null
+  classType: string | null
+  steps: number | null
+  sampler: string | null
+  scheduler: string | null
+  cfg: number | null
+  denoise: number | null
+  seed: number | null
+}
+
+export interface CoreBenchmarkResourceSample {
+  tMs: number | null
+  cpuPercent: number | null
+  ramUsedMb: number | null
+  vramUsedMb: number | null
+  vramUtilPercent: number | null
+  powerW: number | null
+  // --- schema v2 additions (null on v1 / unavailable) ---
+  temperatureC: number | null
+  smClockMhz: number | null
+  memClockMhz: number | null
+  powerLimitW: number | null
 }
 
 export interface AcceleratorInfo {
@@ -902,6 +1072,9 @@ export interface RunPerformanceTestWorkflowResult {
   hardware?: AcceleratorSnapshot | null
   systemInfo?: SystemInfo
   resultsSummary?: PerformanceTestResultsSummary
+  /** Rich per-run metrics from ComfyUI core's benchmark collector, when present.
+   *  Null when no capture file was found (fell back to `/system_stats`). */
+  coreBenchmark?: CoreBenchmarkSummary | null
   cancelled?: boolean
   message?: string
 }
