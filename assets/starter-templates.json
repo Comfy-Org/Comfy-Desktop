@@ -24,12 +24,12 @@
       }
     },
     {
-      "id": "video_ltx2_5_i2v",
+      "id": "video_minimax_h3_i2v",
       "modality": "video",
       "snapshot": {
-        "title": "LTX-2.5: Image to Video",
-        "description": "Generate video from a single image using LTX-2.5, producing a high-fidelity clip with industry-leading pixel quality and native multishot capability that holds character, environment, and lighting across connected scenes. Ideal for cinematic production, VFX shot creation, and content pipelines requiring fast, locally deployable video generation.",
-        "sizeBytes": 56908316672,
+        "title": "MiniMax H3: Image to Video",
+        "description": "Turn a starting image into a short, high-quality video clip with MiniMax H3, a unified multimodal model that generates visuals and synchronized audio in a single pass. The workflow takes 1 input image and produces 1 video output, with optional text or reference media to steer motion, style, or sound. Ideal for rapid concept visualization, character-driven animation tests, and creating shareable social media clips with built-in sound design.",
+        "sizeBytes": 44452911514,
         "mediaSubtype": "webp"
       }
     },
