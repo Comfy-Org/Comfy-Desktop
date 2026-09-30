@@ -13,7 +13,11 @@
 import { fetchJSON } from '../../lib/fetch'
 import { loadStarterTemplates, _resetStarterTemplatesForTest } from './remoteStarterTemplates'
 import {
-  INDEX_URL,
+  resolveTemplatePackageVersion,
+  templateAssetBaseFor,
+  templateIndexUrlFor
+} from './templatePin'
+import {
   TEMPLATE_MODALITY_ORDER,
   thumbnailUrlFor,
   type TemplateModality,
@@ -148,8 +152,9 @@ function hydrateOne(card: {
   apiNode: boolean
   location: IndexLocation | undefined
   snapshot?: TemplateSnapshot
+  assetBase: string
 }): HydratedTemplate {
-  const { id, modality, recommended, apiNode, location, snapshot } = card
+  const { id, modality, recommended, apiNode, location, snapshot, assetBase } = card
   const entry = location?.entry
 
   const title = typeof entry?.title === 'string' ? entry.title : (snapshot?.title ?? id)
@@ -174,7 +179,7 @@ function hydrateOne(card: {
     description,
     sizeBytes,
     apiNode,
-    thumbnailUrl: thumbnailUrlFor(id, mediaSubtype),
+    thumbnailUrl: thumbnailUrlFor(id, mediaSubtype, assetBase),
     category: location?.category ?? ''
   }
 }
@@ -199,41 +204,58 @@ function byModalityOrder(a: HydratedTemplate, b: HydratedTemplate): number {
 /** Coalesces the wizard's field-options read and the thumbnail warm-up — which
  *  fire together at picker open — into one index fetch; a later open refetches. */
 const CATALOG_TTL_MS = 60_000
-let catalogInFlight: Promise<HydratedTemplate[]> | null = null
-let catalogCache: { at: number; value: HydratedTemplate[] } | null = null
+/** Keyed by target version, so toggling the release channel mid-wizard
+ *  re-resolves against that version's index instead of serving the last one. */
+const catalogInFlight = new Map<string, Promise<HydratedTemplate[]>>()
+const catalogCache = new Map<string, { at: number; value: HydratedTemplate[] }>()
 
-export function loadTemplateCatalog(): Promise<HydratedTemplate[]> {
-  if (catalogCache && Date.now() - catalogCache.at < CATALOG_TTL_MS) {
-    return Promise.resolve(catalogCache.value)
-  }
-  if (catalogInFlight) return catalogInFlight
-  catalogInFlight = loadTemplateCatalogUncached()
+export function loadTemplateCatalog(opts?: {
+  comfyVersion?: string | null
+}): Promise<HydratedTemplate[]> {
+  const key = opts?.comfyVersion ?? ''
+  const cached = catalogCache.get(key)
+  if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return Promise.resolve(cached.value)
+
+  const existing = catalogInFlight.get(key)
+  if (existing) return existing
+
+  const promise = loadTemplateCatalogUncached(opts?.comfyVersion ?? null)
     .then((value) => {
-      catalogCache = { at: Date.now(), value }
+      catalogCache.set(key, { at: Date.now(), value })
       return value
     })
     .finally(() => {
-      catalogInFlight = null
+      catalogInFlight.delete(key)
     })
-  return catalogInFlight
+  catalogInFlight.set(key, promise)
+  return promise
 }
 
 /** Drops the memoized catalog so the next read refetches. Test-only. */
 export function resetTemplateCatalogCache(): void {
-  catalogInFlight = null
-  catalogCache = null
+  catalogInFlight.clear()
+  catalogCache.clear()
   // The starter list is memoized for the process, so leaving it would make a
   // reset only half-work and any fetch-count assertion order-dependent.
   _resetStarterTemplatesForTest()
 }
 
-async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
+async function loadTemplateCatalogUncached(
+  comfyVersion: string | null
+): Promise<HydratedTemplate[]> {
+  // Hydrate against the index the TARGET ComfyUI ships, not `main`: a template
+  // added after that release is absent there, so it is dropped or substituted
+  // rather than offered as a card the install cannot open.
+  const pin = await resolveTemplatePackageVersion(comfyVersion).catch(() => null)
+  // Previews must come from the same revision as the cards, not `main`.
+  const assetBase = templateAssetBaseFor(pin)
+
   // The card list comes from R2 so content can change it without a release;
   // `loadStarterTemplates` falls back to `CURATED_TEMPLATES` on any failure and
   // never rejects, so this stays a straight read.
   const [starterTemplates, index] = await Promise.all([
     loadStarterTemplates(),
-    fetchJSON(INDEX_URL).catch(() => null)
+    fetchJSON(templateIndexUrlFor(pin)).catch(() => null)
   ])
 
   const byId = index ? indexById(index) : new Map<string, IndexLocation>()
@@ -254,7 +276,15 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
     if (location || !online) {
       used.add(curated.id)
       catalog.push(
-        hydrateOne({ id: curated.id, modality, recommended, apiNode, location, snapshot })
+        hydrateOne({
+          id: curated.id,
+          modality,
+          recommended,
+          apiNode,
+          location,
+          snapshot,
+          assetBase
+        })
       )
       continue
     }
@@ -268,7 +298,14 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
     if (sub) {
       used.add(sub.entry.name)
       catalog.push(
-        hydrateOne({ id: sub.entry.name, modality, recommended, apiNode: false, location: sub })
+        hydrateOne({
+          id: sub.entry.name,
+          modality,
+          recommended,
+          apiNode: false,
+          location: sub,
+          assetBase
+        })
       )
     } else {
       used.add(curated.id)
@@ -279,7 +316,8 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
           recommended,
           apiNode,
           location: undefined,
-          snapshot
+          snapshot,
+          assetBase
         })
       )
     }

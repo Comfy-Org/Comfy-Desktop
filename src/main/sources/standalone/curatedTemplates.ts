@@ -65,10 +65,14 @@ const IMAGE_SUBTYPES = new Set(['webp', 'png', 'jpg', 'jpeg', 'gif', 'avif'])
  * subtype isn't an image (e.g. `mp3`), so the caller falls back to the glyph
  * without a doomed network request. Pure + exported for reuse and tests.
  */
-export function thumbnailUrlFor(id: string, mediaSubtype: string): string | null {
+export function thumbnailUrlFor(
+  id: string,
+  mediaSubtype: string,
+  assetBase: string = RAW_TEMPLATES_BASE
+): string | null {
   const ext = (mediaSubtype || 'webp').toLowerCase()
   if (!IMAGE_SUBTYPES.has(ext)) return null
-  return `${RAW_TEMPLATES_BASE}/${id}-1.${ext}`
+  return `${assetBase}/${id}-1.${ext}`
 }
 
 /**
