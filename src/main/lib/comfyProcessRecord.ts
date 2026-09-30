@@ -490,6 +490,11 @@ function abortable<T>(p: Promise<T>, signal?: AbortSignal): Promise<T | undefine
   })
 }
 
+/** How long survivors that serve no port get to exit on their own (a teardown in progress)
+ *  before the user is asked about them; the poll count bounds it under any clock. */
+const PORTLESS_SURVIVOR_GRACE_MS = 5_000
+const PORTLESS_SURVIVOR_POLLS = 50
+
 /** How long a process of ours that is already stopping gets to finish on its own. */
 export const PRIOR_STOP_WAIT_MS = 10_000
 
@@ -551,7 +556,7 @@ export async function resolvePriorProcess(
   const ageMs = Math.max(0, deps.wallNow() - record.spawnedAt)
   // A cancelled launch never goes on to stop anything.
   if (opts.signal?.aborted) return null
-  const proven = await provenLingering(record, deps)
+  let proven = await provenLingering(record, deps)
   const early = (extra: Partial<PriorProcessOutcome>): PriorProcessOutcome => ({
     action: 'left',
     proof: 'desktop_record',
@@ -568,27 +573,46 @@ export async function resolvePriorProcess(
   // port: it gets the same busy check as the child before anything is stopped, and no answer
   // is not "idle" there either.
   if (proven && !opts.stopBusy) {
-    // Nothing on the recorded port: whatever survived serves no HTTP and cannot be asked. Say so
-    // at once rather than spend the whole probe budget on a port nobody listens to.
     const serving = await (deps.portInUse ?? isPortListening)(record.port).catch(() => true)
     if (!serving) {
-      return early({
-        action: 'busy_left',
-        blocked: 'busy',
-        queueUnknown: true,
-        survivorPids: proven.map((m) => m.pid)
-      })
-    }
-    try {
-      opts.onProbe?.()
-    } catch {
-      // Reporting progress must never change what happens to the earlier ComfyUI.
-    }
-    const queue = await probeQueuePatiently(record.port, deps, opts.signal)
-    if (opts.signal?.aborted) return null
-    if (!queue) return early({ action: 'busy_left', blocked: 'busy', queueUnknown: true })
-    if (queue.running > 0 || queue.pending > 0) {
-      return early({ action: 'busy_left', blocked: 'busy', queue })
+      // Nothing on the recorded port: whatever survived serves no HTTP and cannot be asked.
+      // A process that is only tearing down (an interpreter still releasing the GPU, say) looks
+      // the same, so survivors first get a short grace to exit on their own; only the ones still
+      // there are put to the user, at once, rather than after the whole probe budget.
+      let still = proven
+      const deadline = deps.now() + PORTLESS_SURVIVOR_GRACE_MS
+      for (
+        let i = 0;
+        i < PORTLESS_SURVIVOR_POLLS && still.length > 0 && deps.now() < deadline;
+        i++
+      ) {
+        if (opts.signal?.aborted) return null
+        await abortable(deps.sleep(100), opts.signal)
+        still = still.filter((m) => deps.isPidAlive(m.pid))
+      }
+      if (opts.signal?.aborted) return null
+      if (still.length > 0) {
+        return early({
+          action: 'busy_left',
+          blocked: 'busy',
+          queueUnknown: true,
+          survivorPids: still.map((m) => m.pid)
+        })
+      }
+      // All of them exited on their own: nothing left to stop.
+      proven = null
+    } else {
+      try {
+        opts.onProbe?.()
+      } catch {
+        // Reporting progress must never change what happens to the earlier ComfyUI.
+      }
+      const queue = await probeQueuePatiently(record.port, deps, opts.signal)
+      if (opts.signal?.aborted) return null
+      if (!queue) return early({ action: 'busy_left', blocked: 'busy', queueUnknown: true })
+      if (queue.running > 0 || queue.pending > 0) {
+        return early({ action: 'busy_left', blocked: 'busy', queue })
+      }
     }
   }
   if (opts.signal?.aborted) return null

@@ -681,6 +681,25 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     })
   })
 
+  it('lets a portless survivor that is only tearing down exit, without asking', async () => {
+    let polls = 0
+    const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        portInUse: async () => false,
+        probeQueue,
+        sleep: async () => {
+          if (++polls === 3) alive.delete(555)
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(probeQueue).not.toHaveBeenCalled()
+    expect(out).toBeNull()
+  })
+
   it('never stops a survivor that does not answer whether it is busy: the user decides', async () => {
     let t = 0
     const out = await resolvePriorProcess(
