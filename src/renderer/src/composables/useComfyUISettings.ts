@@ -739,15 +739,18 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       // Keyed on the session, not just "running": a restart can reach this window as
       // running -> running (the stop and relaunch landing between two snapshots), and the
       // session-derived rows - the port, the beta-args pill - belong to the old session.
-      return `running:${sessionStore.runningInstances.get(inst.id)?.startedAt ?? ''}`
+      // A string, so only a real change fires: `<install id>\0<session start>`.
+      return `${inst.id}\0${sessionStore.runningInstances.get(inst.id)?.startedAt ?? ''}`
     },
     (session, previous) => {
       const inst = toValue(opts.installation)
       if (!inst) return
-      // A new session replacing a running one consumed the edited values, so nothing is pending
-      // any more. The stop/launching edges below would clear this, but a restart seen as
-      // running -> running shows neither (e.g. a picker that was hidden for the restart).
-      if (session && previous && session !== previous) clearRestartAndErrors(inst.id)
+      // The SAME install's session replaced by a new one consumed the edited values, so nothing
+      // is pending any more. The stop/launching edges below would clear this, but a restart seen
+      // as running -> running shows neither (e.g. a picker that was hidden for the restart).
+      // Switching between two running installs is not a restart: their pending state survives.
+      const sameInstall = session?.split('\0')[0] === previous?.split('\0')[0]
+      if (session && previous && sameInstall && session !== previous) clearRestartAndErrors(inst.id)
       // Refetch so the "Running details" port row and the beta-args pill (sourced from main)
       // follow the session: appear on launch, clear on stop, renew on restart. Race-safe via
       // reload()'s requestSeq.

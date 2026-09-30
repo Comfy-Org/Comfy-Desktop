@@ -384,7 +384,8 @@ const PREVIEW_ANCESTRY_BUDGET_MS = 1500
  * nothing a launch would do on the side: the opt-in is peeked without seeding it, the args schema
  * comes only from the cache the settings view already filled (no Python spawn), commit ancestry is
  * resolved without fetching, and on a pygit2-fallback host (a Python spawn per git call) only from
- * relations this process's last launch proved; nothing is logged.
+ * relations this process's last launch proved; nothing is logged. (A proven relation never changes,
+ * but a later launch whose own resolution fails transiently would skip a grant this still shows.)
  *
  * `null` when an input the answer depends on is unavailable (no launch command, an uncached schema,
  * an unreadable setting, an ancestry check cut short by its shorter time budget, or on a pygit2 host

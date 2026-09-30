@@ -715,6 +715,35 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     scope.stop()
   })
 
+  it('keeps a pending restart when the selection moves between two running installs', async () => {
+    const { composable, installation, scope } = await mountWithField('b', 'window')
+    const store = useSessionStore()
+    for (const [id, startedAt] of [
+      ['a', 1],
+      ['b', 2]
+    ] as const) {
+      store.runningInstances.set(id, {
+        installationId: id,
+        installationName: id.toUpperCase(),
+        mode: 'standalone',
+        startedAt
+      })
+    }
+    await nextTick()
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+
+    installation.value = makeInstall('a', 'A')
+    await nextTick()
+    await Promise.resolve()
+    installation.value = makeInstall('b', 'B')
+    await nextTick()
+    await Promise.resolve()
+
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+    scope.stop()
+  })
+
   it('writes the new value into sections optimistically before the IPC resolves', async () => {
     // The optimistic write must land on `sections.value` regardless of
     // when main responds, so hold the IPC open.
