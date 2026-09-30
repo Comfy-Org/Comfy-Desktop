@@ -19,6 +19,7 @@ vi.mock('./workspaces', () => ({
 
 import { statusFromAccessToken, workspaceIdOf } from './claims'
 import { refresh, signIn } from './oauth'
+import { OAuthTokenError } from './oauthError'
 import { CloudSession } from './session'
 import {
   activateWorkspace,
@@ -339,5 +340,57 @@ describe('CloudSession workspaces', () => {
       { id: 'user-1', name: 'One' }
     ])
     expect(listWorkspaceMembers).toHaveBeenCalledExactlyOnceWith(tokens.accessToken)
+  })
+})
+
+describe('CloudSession.revalidate', () => {
+  it('re-mints a refused token and keeps the session', async () => {
+    const tokens = makeTokens('w1')
+    cache(tokens, true)
+    const rotated = makeTokens('w1', future, '-rotated')
+    mocked(refresh).mockResolvedValueOnce(rotated)
+
+    await expect(new CloudSession().revalidate(tokens.accessToken)).resolves.toBe(true)
+    expect(active).toEqual(rotated)
+    expect(clearTokens).not.toHaveBeenCalled()
+  })
+
+  it('signs out when the grant is gone', async () => {
+    const tokens = makeTokens('w1')
+    cache(tokens, true)
+    mocked(refresh).mockRejectedValueOnce(new OAuthTokenError('revoked', 400, 'invalid_grant'))
+
+    await expect(new CloudSession().revalidate(tokens.accessToken)).resolves.toBe(false)
+    expect(clearTokens).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the session on a transient refresh failure', async () => {
+    const tokens = makeTokens('w1')
+    cache(tokens, true)
+    mocked(refresh).mockRejectedValueOnce(new Error('network down'))
+
+    await expect(new CloudSession().revalidate(tokens.accessToken)).resolves.toBe(true)
+    expect(clearTokens).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a token that was already replaced', async () => {
+    const stale = makeTokens('w1')
+    cache(makeTokens('w1', future, '-newer'), true)
+
+    await expect(new CloudSession().revalidate(stale.accessToken)).resolves.toBe(true)
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('refreshes once when several views report the same token', async () => {
+    const tokens = makeTokens('w1')
+    cache(tokens, true)
+    mocked(refresh).mockResolvedValueOnce(makeTokens('w1', future, '-rotated'))
+    const session = new CloudSession()
+
+    await Promise.all([
+      session.revalidate(tokens.accessToken),
+      session.revalidate(tokens.accessToken)
+    ])
+    expect(refresh).toHaveBeenCalledOnce()
   })
 })

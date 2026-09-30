@@ -100,3 +100,49 @@ describe('comfyPreload model access bridge', () => {
     expect(mocks.invoke).toHaveBeenCalledWith('desktop2-open-terminal-popout')
   })
 })
+
+describe('comfyPreload auth bridge', () => {
+  beforeEach(() => {
+    mocks.invoke.mockReset()
+    mocks.on.mockReset()
+    mocks.removeListener.mockReset()
+  })
+
+  it('exposes only read and report calls over the desktop2-auth channels', async () => {
+    const { Auth } = hostedBridge()
+    mocks.invoke.mockResolvedValue(null)
+
+    await Auth.getState()
+    await Auth.getAccessToken()
+    await Auth.requestSignIn()
+    await Auth.reportRefusal('access', 'sso_required')
+
+    expect(Object.keys(Auth).sort()).toEqual([
+      'getAccessToken',
+      'getState',
+      'onChanged',
+      'reportRefusal',
+      'requestSignIn'
+    ])
+    expect(mocks.invoke.mock.calls).toEqual([
+      ['desktop2-auth:get-state'],
+      ['desktop2-auth:get-access-token'],
+      ['desktop2-auth:request-sign-in'],
+      ['desktop2-auth:report-refusal', 'access', 'sso_required']
+    ])
+  })
+
+  it('delivers sign-out pushes and unsubscribes', () => {
+    const { Auth } = hostedBridge()
+    const callback = vi.fn()
+
+    const stop = Auth.onChanged(callback)
+    const [channel, handler] = mocks.on.mock.calls[0]!
+    handler({}, { status: 'signed_out' })
+    stop()
+
+    expect(channel).toBe('desktop2-auth:changed')
+    expect(callback).toHaveBeenCalledWith({ status: 'signed_out' })
+    expect(mocks.removeListener).toHaveBeenCalledWith('desktop2-auth:changed', handler)
+  })
+})
