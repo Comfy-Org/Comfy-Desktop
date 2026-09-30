@@ -495,7 +495,8 @@ describe('submitPerformanceTestWorkflow', () => {
         headers: { 'Content-Type': 'application/json' }
       })
       expect(JSON.parse(String(requestInit?.body))).toEqual({
-        prompt: { '1': { class_type: 'KSampler', inputs: { seed: index + 2 } } }
+        prompt: { '1': { class_type: 'KSampler', inputs: { seed: index + 2 } } },
+        extra_data: { benchmark: true }
       })
     }
     expect(JSON.parse(await fs.promises.readFile(storedPath, 'utf8'))).toEqual(workflow)
@@ -745,7 +746,8 @@ describe('savePerformanceTestResultsSummary', () => {
       measuredJobCount: 2,
       failedRunCount: 1,
       hardware,
-      systemInfo
+      systemInfo,
+      coreBenchmark: null
     })
     expect(Number.isFinite(Date.parse(savedSummary.createdAt))).toBe(true)
 
