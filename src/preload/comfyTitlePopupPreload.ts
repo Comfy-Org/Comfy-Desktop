@@ -354,6 +354,12 @@ export interface ComfyTitlePopupBridge {
   onTerminalExited(callback: (data: { installationId: string }) => void): () => void
   /** Relaunch the app (`app.relaunch()` main-side). */
   pickerSettingsRelaunchApp(): void
+  /** Switch this popup to Global Settings, optionally on a tab and flashing a field. Same
+   *  contract as the panel's `window.api.openGlobalSettings`, which the settings UI calls. */
+  pickerSettingsOpenGlobalSettings(
+    tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
+    opts?: { highlightField?: string }
+  ): void
   /** Pull the panel-side i18n catalog; the popup boots with a minimal static
    *  one and merges this on top once the expanded settings UI opens. */
   pickerSettingsGetLocaleMessages(): Promise<Record<string, unknown>>
@@ -713,6 +719,9 @@ const bridge: ComfyTitlePopupBridge = {
   },
   pickerSettingsRelaunchApp: () => {
     ipcRenderer.send(CH.relaunchApp)
+  },
+  pickerSettingsOpenGlobalSettings: (tab, opts) => {
+    ipcRenderer.send(CH.openGlobalSettings, { tab, highlightField: opts?.highlightField })
   },
   pickerSettingsGetLocaleMessages: () => ipcRenderer.invoke(CH.getLocaleMessages),
   pickerSettingsGetLocale: () => ipcRenderer.invoke(CH.getLocale),

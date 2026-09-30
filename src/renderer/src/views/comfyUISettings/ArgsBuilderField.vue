@@ -3,12 +3,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Settings } from 'lucide-vue-next'
 import ArgsRawInput from './ArgsRawInput.vue'
+import BetaArgsPill from './BetaArgsPill.vue'
 import type { ComfyArgDef, DetailField } from '../../types/ipc'
 
 /**
  * Compact summary row for the `launchArgs` field. Shows the current
  * arg string with inline autocomplete and a gear icon that opens the
- * full `ArgsBuilderPage` sub-page.
+ * full `ArgsBuilderPage` sub-page. While the install runs, any Core beta
+ * grants on its command line show as a read-only pill after the user's args.
  */
 
 interface Props {
@@ -75,6 +77,7 @@ function handleChange(value: string): void {
     @change="handleChange"
   >
     <template #trailing>
+      <BetaArgsPill :args="field.betaArgs ?? []" />
       <button
         type="button"
         :aria-label="t('comfyUISettings.configureArgs', 'Configure arguments')"

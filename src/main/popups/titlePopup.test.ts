@@ -48,6 +48,7 @@ import {
   computePopupHeight,
   decideFlowMenuItemTarget,
   isFlowMenuItemId,
+  parseGlobalSettingsTarget,
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
   type FlowMenuItemId,
@@ -705,6 +706,33 @@ describe('buildInstancePickerSnapshot', () => {
       storage: EMPTY_STORAGE
     })
     expect(snap.pickerSelectionEpoch).toBe(7)
+  })
+})
+
+describe('parseGlobalSettingsTarget', () => {
+  it.each(['general', 'updates', 'storage', 'advanced', 'logs'])('accepts the %s tab', (tab) => {
+    expect(parseGlobalSettingsTarget({ tab }).initialTab).toBe(tab)
+  })
+
+  it.each([undefined, 'beta', 7, null])('drops an unknown tab %j', (tab) => {
+    expect(parseGlobalSettingsTarget({ tab }).initialTab).toBeNull()
+  })
+
+  it('forwards a non-empty highlight field id as-is', () => {
+    expect(
+      parseGlobalSettingsTarget({ tab: 'general', highlightField: 'betaFeaturesEnabled' })
+    ).toEqual({ initialTab: 'general', highlightFieldId: 'betaFeaturesEnabled' })
+  })
+
+  it.each(['', 3, undefined])('drops an unusable highlight field %j', (highlightField) => {
+    expect(parseGlobalSettingsTarget({ highlightField }).highlightFieldId).toBeNull()
+  })
+
+  it('tolerates a missing payload', () => {
+    expect(parseGlobalSettingsTarget(undefined)).toEqual({
+      initialTab: null,
+      highlightFieldId: null
+    })
   })
 })
 

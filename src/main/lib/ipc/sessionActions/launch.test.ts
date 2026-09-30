@@ -1155,6 +1155,69 @@ describe('core beta report placement', () => {
     expect(boot?.properties).toMatchObject({ core_commit: head, core_version_label: 'v0.3.81' })
   })
 
+  describe('session record of the applied grants (settings beta-args pill)', () => {
+    const launched: string[] = []
+    const launch = async (id: string): Promise<void> => {
+      launched.push(id)
+      const res = await handleLaunch(ctxFor(id))
+      expect(res.ok).toBe(true)
+    }
+    const recorded = (id: string): unknown => _runningSessions.get(id)?.coreBetaArgs
+
+    afterEach(() => {
+      while (launched.length) _runningSessions.delete(launched.pop()!)
+    })
+
+    it('records each applied grant with its payload name on the skip-port spawn', async () => {
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset browser' } }]
+      await launch('harness-session-skip-port')
+      expect(recorded('harness-session-skip-port')).toEqual([
+        { arg: '--enable-assets', name: 'Asset browser' }
+      ])
+    })
+
+    it('records the grants on the port-wait spawn too', async () => {
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset browser' } }]
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+        cwd: installDir,
+        skipPortWait: false,
+        port: 48236
+      }
+      launchHarness.waitForPort = async () => {}
+      await launch('harness-session-port-wait')
+      expect(recorded('harness-session-port-wait')).toEqual([
+        { arg: '--enable-assets', name: 'Asset browser' }
+      ])
+    })
+
+    it('records a silent grant, since it is still on the command line', async () => {
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { silent: true } }]
+      await launch('harness-session-silent')
+      expect(recorded('harness-session-silent')).toEqual([{ arg: '--enable-assets', name: null }])
+    })
+
+    it('records no grants for an opted-out launch', async () => {
+      launchHarness.betaEnabled = false
+      await launch('harness-session-opted-out')
+      expect(recorded('harness-session-opted-out')).toEqual([])
+    })
+
+    it("omits a grant the user's own args override", async () => {
+      launchHarness.schemaNames = ['enable-assets', 'disable-assets', 'listen', 'feature-flag']
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--disable-assets'],
+        cwd: installDir,
+        skipPortWait: true
+      }
+      await launch('harness-session-user-override')
+      expect(spawnArgs).not.toContain('--enable-assets')
+      expect(recorded('harness-session-user-override')).toEqual([])
+    })
+  })
+
   it('launches a legacy record whose version carries no commit', async () => {
     const ctx = ctxFor('harness-legacy-record')
     ctx.inst = {

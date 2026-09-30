@@ -172,3 +172,27 @@ describe('ArgsBuilderField — inline autocomplete', () => {
     expect(wrapper.find('input[aria-invalid="true"]').exists()).toBe(true)
   })
 })
+
+describe('ArgsBuilderField — beta args pill', () => {
+  it('shows no pill for a field without beta grants', async () => {
+    const wrapper = await mountField({ field: { ...FIELD, value: '--lowvram' } })
+    expect(wrapper.find('.beta-args').exists()).toBe(false)
+  })
+
+  it("shows the running session's grants after the user's args, before the gear", async () => {
+    const wrapper = await mountField({
+      field: {
+        ...FIELD,
+        value: '--lowvram',
+        betaArgs: [{ arg: '--enable-assets', name: 'Asset browser' }]
+      }
+    })
+    const trailing = wrapper.find('.ui-input-trailing')
+    const buttons = trailing.findAll('button')
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0]!.classes()).toContain('beta-args-pill')
+    expect(buttons[1]!.attributes('aria-label')).toBe('Configure arguments')
+    // The grants never enter the editable value: the user's own string is untouched.
+    expect((wrapper.find('input').element as HTMLInputElement).value).toBe('--lowvram')
+  })
+})

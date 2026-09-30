@@ -9,6 +9,7 @@ import {
   resolveExtraModelPaths
 } from '../../lib/models'
 import type { InstallationRecord } from '../../installations'
+import type { BetaArgView } from '../../../types/ipc'
 import {
   DEFAULT_MANAGER_SECURITY_LEVEL,
   MANAGER_SECURITY_LEVELS,
@@ -218,6 +219,25 @@ export function buildStorageFields(installation: InstallationRecord): Record<str
       editType: 'hidden'
     }
   ]
+}
+
+/**
+ * Attach a running session's Core beta grants to the `launchArgs` field, in place. Done at the IPC
+ * layer because the grants live on the session, which `getDetailSections` (a function of the
+ * installation record alone) cannot see. No-op when nothing was granted, so a stopped install's
+ * field carries no `betaArgs` at all.
+ */
+export function attachLaunchBetaArgs(
+  sections: Record<string, unknown>[],
+  betaArgs: readonly BetaArgView[] | undefined
+): void {
+  if (!betaArgs || betaArgs.length === 0) return
+  for (const section of sections) {
+    if (!Array.isArray(section.fields)) continue
+    for (const field of section.fields as Record<string, unknown>[]) {
+      if (field.id === 'launchArgs') field.betaArgs = betaArgs.map((view) => ({ ...view }))
+    }
+  }
 }
 
 export function buildLaunchSettingsFields(

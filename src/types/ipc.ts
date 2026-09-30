@@ -266,6 +266,13 @@ export interface ComfyArgDef {
   category: string
 }
 
+/** One Core beta grant on a running session's command line, as the settings view shows it. */
+export interface BetaArgView {
+  arg: string
+  /** Payload-supplied feature name, or `null` when the payload named none. */
+  name: string | null
+}
+
 export interface DetailField {
   id: string
   label: string
@@ -329,6 +336,9 @@ export interface DetailField {
   placeholder?: string
   min?: number
   max?: number
+  /** `args-builder` only: Core beta grants on the RUNNING session's command line, attached
+   *  main-side from the live session. Absent when the install is stopped. */
+  betaArgs?: BetaArgView[]
 }
 
 export interface ActionDef {
@@ -1989,5 +1999,6 @@ export const PICKER_SETTINGS_CHANNELS = {
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',
   getLocale: 'comfy-titlepopup:picker-settings-get-locale',
   getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags',
-  getUniqueName: 'comfy-titlepopup:picker-settings-get-unique-name'
+  getUniqueName: 'comfy-titlepopup:picker-settings-get-unique-name',
+  openGlobalSettings: 'comfy-titlepopup:picker-settings-open-global-settings'
 } as const

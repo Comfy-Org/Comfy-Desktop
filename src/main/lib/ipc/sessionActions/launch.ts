@@ -79,7 +79,7 @@ import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
-import type { ComfyExitedData } from '../../../../types/ipc'
+import type { BetaArgView, ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 import { buildErrorFields, errorTail } from '../../../../shared/errorEvent'
 import {
@@ -189,6 +189,13 @@ export interface CoreBetaLaunch {
    *  the report site so `opt_state` still tells the truth on the paths that never reach arg
    *  assembly — schema discovery failing must not make an opted-in user report as opted out. */
   readonly optedIn: boolean
+}
+
+/** What the settings view shows for this launch's grants: each arg with its payload feature name.
+ *  Silent grants are included — `silent` only mutes the one-off activation notice, and this
+ *  lists what is on the command line. */
+export function coreBetaArgViews(applied: readonly CoreBetaGrant[]): BetaArgView[] {
+  return applied.map((grant) => ({ arg: grant.arg, name: grant.notice?.description ?? null }))
 }
 
 /** No grants resolved: either the install opted out, or the launch never reached arg assembly
@@ -1393,6 +1400,7 @@ async function runLaunch(
         mode,
         installationName: inst.name,
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
+        coreBetaArgs: coreBetaArgViews(coreBeta.applied),
         flushTelemetry: () => {
           execTap.flushSummary()
           hwTap.flushSummary()
@@ -1880,6 +1888,7 @@ async function runLaunch(
       mode,
       installationName: inst.name,
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
+      coreBetaArgs: coreBetaArgViews(coreBeta.applied),
       flushTelemetry: () => {
         execTap.flushSummary()
         hwTap.flushSummary()

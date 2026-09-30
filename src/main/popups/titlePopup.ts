@@ -1,5 +1,5 @@
 import { ipcMain, shell, dialog, WebContentsView, BrowserWindow } from 'electron'
-import { POPUP_KIND } from '../../types/ipc'
+import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
 import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
@@ -1749,6 +1749,26 @@ export interface TitlePopupHostBindings {
  *  optional title-bar handshake (focus-return on dismiss). Callers
  *  that aren't the title bar pass the host's title-bar WebContents,
  *  which is the same value the hamburger handler uses. */
+/** Validate an `open-global-settings` payload from a renderer. Field ids are renderer-side
+ *  identifiers, so the highlight is forwarded as an opaque string rather than validated against a
+ *  list main would have to keep in sync; an id matching no row simply finds nothing to flash. */
+export function parseGlobalSettingsTarget(
+  payload: { tab?: unknown; highlightField?: unknown } | undefined
+): { initialTab: GlobalSettingsTab | null; highlightFieldId: string | null } {
+  const rawTab = payload?.tab
+  const initialTab: GlobalSettingsTab | null =
+    rawTab === 'general' ||
+    rawTab === 'updates' ||
+    rawTab === 'storage' ||
+    rawTab === 'advanced' ||
+    rawTab === 'logs'
+      ? rawTab
+      : null
+  const rawHighlight = payload?.highlightField
+  const highlightFieldId = typeof rawHighlight === 'string' && rawHighlight ? rawHighlight : null
+  return { initialTab, highlightFieldId }
+}
+
 function openGlobalSettingsForHost(
   parentEntry: ComfyWindowEntry,
   parentEntryId: number,
@@ -3030,21 +3050,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
         }
       }
       if (parentEntryId === undefined || !parentEntry) return
-      const rawTab = payload?.tab
-      const initialTab: GlobalSettingsTab | null =
-        rawTab === 'general' ||
-        rawTab === 'updates' ||
-        rawTab === 'storage' ||
-        rawTab === 'advanced' ||
-        rawTab === 'logs'
-          ? rawTab
-          : null
-      // Field ids are renderer-side identifiers, so this is forwarded as an opaque string
-      // rather than validated against a list main would have to keep in sync. A id matching
-      // no row simply finds nothing to flash.
-      const rawHighlight = payload?.highlightField
-      const highlightFieldId =
-        typeof rawHighlight === 'string' && rawHighlight ? rawHighlight : null
+      const { initialTab, highlightFieldId } = parseGlobalSettingsTarget(payload)
       openGlobalSettingsForHost(
         parentEntry,
         parentEntryId,
@@ -3067,6 +3073,28 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     }
     return entry
   }
+
+  // The per-install settings' deep links into Global Settings (e.g. the beta-args pill's "Manage
+  // beta features"). Swaps this popup to Global Settings for its host, like the hamburger entry.
+  ipcMain.on(
+    PICKER_SETTINGS_CHANNELS.openGlobalSettings,
+    (event, payload?: { tab?: unknown; highlightField?: unknown }) => {
+      recordIpcInvocation(PICKER_SETTINGS_CHANNELS.openGlobalSettings)
+      const entry = settingsEntryFor(event.sender.id)
+      if (!entry) return
+      const parentEntry = comfyWindows.get(entry.parentEntryId)
+      if (!parentEntry || parentEntry.window.isDestroyed()) return
+      const { initialTab, highlightFieldId } = parseGlobalSettingsTarget(payload)
+      openGlobalSettingsForHost(
+        parentEntry,
+        entry.parentEntryId,
+        bindings,
+        parentEntry.titleBarView.webContents,
+        initialTab,
+        highlightFieldId
+      )
+    }
+  )
 
   // Field update (Language / Theme / Cache / Advanced / Shared Dirs).
   // Same side-effects as the legacy `set-setting` handler, plus a
