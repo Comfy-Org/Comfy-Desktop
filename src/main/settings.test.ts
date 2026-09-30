@@ -708,32 +708,6 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
 // where a user hitting beta bugs escapes by disabling telemetry, killing the
 // diagnostics exactly when they matter. Consent only ever seeds the initial
 // value, once.
-describe('peekBetaFeaturesEnabled', () => {
-  it.each([true, false])(
-    'answers what the resolve would seed from telemetry=%s, without writing it',
-    (telemetry) => {
-      fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-      fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: telemetry }))
-
-      expect(settings.peekBetaFeaturesEnabled()).toBe(telemetry)
-      expect(readPersistedSettings()).toEqual({ telemetryEnabled: telemetry })
-
-      // The resolve, by contrast, persists the seed: the two differ in that and nothing else.
-      expect(settings.resolveBetaFeaturesEnabled()).toBe(telemetry)
-      expect(readPersistedSettings()).toMatchObject({ betaFeaturesEnabled: telemetry })
-    }
-  )
-
-  it.each([true, false])('returns a stored %s', (choice) => {
-    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ telemetryEnabled: !choice, betaFeaturesEnabled: choice })
-    )
-    expect(settings.peekBetaFeaturesEnabled()).toBe(choice)
-  })
-})
-
 describe('resolveBetaFeaturesEnabled', () => {
   it.each([true, false])(
     'retains a stored %s from a backup when the primary is unreadable',
@@ -843,5 +817,42 @@ describe('resolveBetaFeaturesEnabled', () => {
 
     expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
     expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(false)
+  })
+})
+
+// The read-only twin used by the settings view's next-launch preview.
+describe('peekBetaFeaturesEnabled', () => {
+  it.each([true, false])(
+    'answers what the resolve would seed from telemetry=%s, without writing it',
+    (telemetry) => {
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+      fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: telemetry }))
+
+      expect(settings.peekBetaFeaturesEnabled()).toBe(telemetry)
+      expect(readPersistedSettings()).toEqual({ telemetryEnabled: telemetry })
+
+      // The resolve, by contrast, persists the seed: the two differ in that and nothing else.
+      expect(settings.resolveBetaFeaturesEnabled()).toBe(telemetry)
+      expect(readPersistedSettings()).toMatchObject({ betaFeaturesEnabled: telemetry })
+    }
+  )
+
+  it('leaves the file untouched even where a normal load would rewrite it', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    // A legacy key: every normal load drops it and saves.
+    const raw = JSON.stringify({ telemetryEnabled: true, maxCachedFiles: 5 })
+    fs.writeFileSync(settingsPath, raw)
+
+    expect(settings.peekBetaFeaturesEnabled()).toBe(true)
+    expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(raw)
+  })
+
+  it.each([true, false])('returns a stored %s', (choice) => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ telemetryEnabled: !choice, betaFeaturesEnabled: choice })
+    )
+    expect(settings.peekBetaFeaturesEnabled()).toBe(choice)
   })
 })

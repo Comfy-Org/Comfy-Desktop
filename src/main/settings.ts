@@ -473,13 +473,15 @@ function load(): Settings {
  *  content is unknown, so saving anything derived from the stand-in would
  *  overwrite the user's intact, newer settings (the failure environment of
  *  issue #1367). */
-function loadOutcome(): { settings: Settings; unreadable: boolean } {
+/** The stored settings over the defaults, with no normalization and nothing written back.
+ *  `normalize: false` marks the unreadable-file case, which `loadOutcome` returns as-is. */
+function readOutcome(): { settings: Settings; unreadable: boolean; normalize: boolean } {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
   let unreadable = false
   const read = readFileSafe(dataPath)
   if (read.kind === 'unreadable') {
-    return { settings: { ...defaults }, unreadable: true }
+    return { settings: { ...defaults }, unreadable: true, normalize: false }
   }
   if (read.kind === 'data') {
     unreadable = read.primaryUnreadable === true
@@ -498,7 +500,13 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
       }
     }
   }
-  const result: Settings = { ...defaults, ...(parsed || {}) }
+  return { settings: { ...defaults, ...(parsed || {}) }, unreadable, normalize: true }
+}
+
+function loadOutcome(): { settings: Settings; unreadable: boolean } {
+  const read = readOutcome()
+  if (!read.normalize) return { settings: read.settings, unreadable: read.unreadable }
+  const { settings: result, unreadable } = read
   let changed = false
 
   // Drop legacy keys that no longer back any setting. `maxCachedFiles` was the
@@ -727,10 +735,11 @@ export function resolveBetaFeaturesEnabled(): boolean {
   return value
 }
 
-/** What `resolveBetaFeaturesEnabled` would return, without writing the seed back — for
- *  previews that must not have side effects. The next launch resolves to the same value. */
+/** What `resolveBetaFeaturesEnabled` would return, for previews that must not have side effects:
+ *  it skips the load-time normalization (which can create folders and save) as well as the seed.
+ *  Normalization never touches the two keys this reads, so the next launch resolves the same. */
 export function peekBetaFeaturesEnabled(): boolean {
-  const { settings, unreadable } = loadOutcome()
+  const { settings, unreadable } = readOutcome()
   return betaFeaturesEnabledFrom(settings, unreadable).value
 }
 

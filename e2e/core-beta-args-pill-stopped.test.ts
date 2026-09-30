@@ -106,10 +106,11 @@ async function pillAriaLabel(popup: WebContentsPage): Promise<string | null> {
   )
 }
 
-/** Absence only counts once the view has settled: the field is up (waited by the caller) and the
- *  schema is cached, so no discovery-driven re-read is still coming. */
-async function expectNoPillAfterSettling(popup: WebContentsPage): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 1_500))
+/** Absence is a real answer only against a fresh sections read. Every caller reaches here from the
+ *  Desktop Settings popup kind, which unmounts the picker, so the args field `openStartupArgs` waited
+ *  for was rendered from this open's own response. The schema is already cached by then, so no
+ *  discovery-driven re-read is still coming either. */
+async function expectNoPill(popup: WebContentsPage): Promise<void> {
   expect(await pillAriaLabel(popup)).toBeNull()
 }
 
@@ -144,7 +145,7 @@ test('turning the beta opt-in off removes the pill on the next open, and on rest
   await popup.waitFor(async () => (await checked()) === 'false', { timeout: 5_000 })
 
   popup = await openStartupArgs()
-  await expectNoPillAfterSettling(popup)
+  await expectNoPill(popup)
 
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))

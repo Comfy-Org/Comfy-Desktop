@@ -5,6 +5,7 @@ import {
   fetchCommitSha,
   findMergeBase,
   findMergeBaseOrNone,
+  isPygit2Configured,
   resolveGitDir,
   revParseRef
 } from './git'
@@ -196,21 +197,42 @@ export async function resolveCoreCommitState(
   /** Display-only resolution: `fetch: false` never schedules a background fetch (so it writes
    *  nothing, to the repository or the failure record), and `quiet` drops the per-SHA log lines.
    *  An ancestry a fetch could have settled stays unresolved, exactly as it is for the launch
-   *  that schedules that fetch. `onStoppedEarly` fires when the time budget or `signal` cut the
-   *  resolution short, which leaves SHAs unresolved for a reason a later call might not share.
-   *  `budgetMs` shortens the launch's time budget for a caller that must not hold its UI. */
-  options: { fetch?: boolean; quiet?: boolean; onStoppedEarly?: () => void; budgetMs?: number } = {}
+   *  that schedules that fetch. `budgetMs` shortens the launch's time budget for a caller that
+   *  must not hold its UI. `avoidPygit2` resolves nothing on a host whose git runs through the
+   *  pygit2 fallback, where every call is a Python spawn. `onIncomplete` fires when SHAs were left
+   *  unresolved for a reason a later call might not share: the time budget, `signal`, or
+   *  `avoidPygit2`. */
+  options: {
+    fetch?: boolean
+    quiet?: boolean
+    budgetMs?: number
+    avoidPygit2?: boolean
+    onIncomplete?: () => void
+  } = {}
 ): Promise<CoreCommitState> {
   if (shas.length === 0 || checkout.kind !== 'head') return NO_CORE_COMMITS
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
+  if (options.avoidPygit2 && isPygit2Configured()) {
+    options.onIncomplete?.()
+    return NO_CORE_COMMITS
+  }
   const ancestry = new Map<string, boolean>()
   const deadline = Date.now() + (options.budgetMs ?? RESOLVE_BUDGET_MS)
   const log = options.quiet ? () => {} : (message: string) => console.log(message)
+  const warn = options.quiet
+    ? () => {}
+    : (message: string, err: unknown) => console.warn(message, err)
   const budget: ResolveBudget = { fetches: 0, stopped: false, fetch: options.fetch !== false, log }
+  // Set when the loop itself notices the deadline or the abort between two SHAs, which can
+  // settle `work` before the race's own timer or abort listener fires.
+  let cutShort = false
   const work = (async () => {
     for (const [index, raw] of shas.entries()) {
-      if (budget.stopped || signal?.aborted || Date.now() > deadline) return
+      if (budget.stopped || signal?.aborted || Date.now() > deadline) {
+        if (!budget.stopped) cutShort = true
+        return
+      }
       // Re-validated here, not only at parse time: the SHA reaches `git fetch` as an argument.
       const sha = raw.toLowerCase()
       if (!FULL_SHA_RE.test(sha)) continue
@@ -226,7 +248,7 @@ export async function resolveCoreCommitState(
       try {
         related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
       } catch (err) {
-        console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+        warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
       }
       if (related === false && grafts?.length !== 0) {
         const provable =
@@ -261,7 +283,7 @@ export async function resolveCoreCommitState(
     if (signal?.aborted) onAbort()
   })
   // Abandoned when interrupted, so it must never be left with an unhandled rejection.
-  void work.catch((err: unknown) => console.warn('[core-beta] ancestry resolution failed:', err))
+  void work.catch((err: unknown) => warn('[core-beta] ancestry resolution failed:', err))
   try {
     // Cannot reject: a failure inside `work` is logged above and leaves the map partial, which is
     // the fail-closed answer. A beta lookup must never fail the launch.
@@ -274,7 +296,9 @@ export async function resolveCoreCommitState(
     ])
     if (outcome === 'interrupted') {
       log('[core-beta] ancestry: stopped early; SHAs not reached stay unresolved')
-      options.onStoppedEarly?.()
+      options.onIncomplete?.()
+    } else if (cutShort) {
+      options.onIncomplete?.()
     }
   } finally {
     budget.stopped = true

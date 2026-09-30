@@ -383,10 +383,12 @@ const PREVIEW_ANCESTRY_BUDGET_MS = 1500
  * stopped. Runs the launch's own resolution (`splitLaunchArgs` + `assembleCoreBetaArgs`) with
  * nothing a launch would do on the side: the opt-in is peeked without seeding it, the args schema
  * comes only from the cache the settings view already filled (no Python spawn), commit ancestry is
- * resolved without fetching, and nothing is logged.
+ * resolved without fetching and never through the pygit2 fallback (a Python spawn per call), and
+ * nothing is logged.
  *
  * `null` when an input the answer depends on is unavailable (no launch command, an uncached schema,
- * an unreadable setting, an ancestry check cut short by its shorter time budget): the view then shows
+ * an unreadable setting, an ancestry check cut short by its shorter time budget or needing pygit2):
+ * the view then shows
  * nothing rather than a guess. An empty list is a real answer: opted out, or nothing granted.
  */
 export async function previewCoreBetaGrants(
@@ -406,7 +408,7 @@ export async function previewCoreBetaGrants(
   if (!split) return []
   const schema = peekComfyArgsSchema(split.mainPyAbs, inst.id, split.revision)
   if (!schema) return null
-  let stoppedEarly = false
+  let incomplete = false
   const built = await assembleCoreBetaArgs({
     inst,
     split,
@@ -420,12 +422,13 @@ export async function previewCoreBetaGrants(
       // Local merge-base answers in milliseconds; a repository slow enough to need the launch's
       // full budget would hold the settings view, so it gets no pill instead.
       budgetMs: PREVIEW_ANCESTRY_BUDGET_MS,
-      onStoppedEarly: () => {
-        stoppedEarly = true
+      avoidPygit2: true,
+      onIncomplete: () => {
+        incomplete = true
       }
     }
   })
-  return stoppedEarly ? null : coreBetaArgViews(built.beta.applied)
+  return incomplete ? null : coreBetaArgViews(built.beta.applied)
 }
 
 /** Put each record in the on-disk log (bug reports) and the user-visible output. */
