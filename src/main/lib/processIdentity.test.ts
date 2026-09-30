@@ -2,6 +2,7 @@ import { spawn } from 'child_process'
 import { describe, expect, it } from 'vitest'
 import {
   descendantsOf,
+  treeFromRows,
   groupHasLiveMembers,
   isPidAlive,
   parseDarwinPs,
@@ -76,6 +77,26 @@ describe('descendantsOf', () => {
       { pid: 21, ppid: 10, created: '600' }
     ]
     expect(descendantsOf(rows, 10).sort()).toEqual([10, 21])
+  })
+})
+
+describe('treeFromRows', () => {
+  it('still finds the descendants of a root that has already exited', () => {
+    // taskkill ran first: the launcher (10) is gone, its interpreter (11) is still terminating.
+    const rows = [
+      { pid: 11, ppid: 10, created: '110' },
+      { pid: 12, ppid: 11, created: '120' },
+      { pid: 99, ppid: 1, created: '105' }
+    ]
+    expect(treeFromRows(rows, 10)).toEqual({ rootCreated: null, pids: [11, 12] })
+  })
+
+  it('includes a live root with its creation time', () => {
+    const rows = [
+      { pid: 10, ppid: 1, created: '100' },
+      { pid: 11, ppid: 10, created: '110' }
+    ]
+    expect(treeFromRows(rows, 10)).toEqual({ rootCreated: '100', pids: [10, 11] })
   })
 })
 
