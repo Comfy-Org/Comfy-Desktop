@@ -26,6 +26,13 @@ export interface ChartTick {
   y: number
 }
 
+export interface AxisTick {
+  /** The data value at this tick. */
+  value: number
+  /** Pixel position along the axis (x for the x-axis, y for the y-axis). */
+  pos: number
+}
+
 export interface SeriesChart {
   points: ChartPoint[]
   /** Open path through the points: `M x y L x y …` (for a line/polyline). */
@@ -38,6 +45,10 @@ export interface SeriesChart {
   min: number
   /** The y-value mapped to the top of the view box. */
   max: number
+  /** The x-value mapped to the left edge of the view box. */
+  minX: number
+  /** The x-value mapped to the right edge of the view box. */
+  maxX: number
   width: number
   height: number
 }
@@ -119,7 +130,7 @@ export function buildSeriesChart(
     }
   }
 
-  return { points, path, areaPath, ticks, min: minY, max: maxY, width, height }
+  return { points, path, areaPath, ticks, min: minY, max: maxY, minX, maxX, width, height }
 }
 
 /**
@@ -136,4 +147,122 @@ export function projectY(
   const span = chart.max - chart.min || 1
   const y = chart.height - ((value - chart.min) / span) * chart.height
   return round(Math.min(Math.max(y, 0), chart.height))
+}
+
+/**
+ * Project a value onto a built chart's x-axis, using the SAME minX/maxX/width
+ * normalization as `buildSeriesChart`. Clamped, 2-decimal-rounded x within
+ * `[0, width]` so axis ticks never escape the view box.
+ */
+export function projectX(
+  chart: Pick<SeriesChart, 'minX' | 'maxX' | 'width'>,
+  value: number
+): number {
+  const span = chart.maxX - chart.minX || 1
+  const x = ((value - chart.minX) / span) * chart.width
+  return round(Math.min(Math.max(x, 0), chart.width))
+}
+
+/** Round a candidate step/range to a "nice" 1-2-5×10ⁿ value (axis-tick spacing). */
+function niceNum(range: number, roundToNearest: boolean): number {
+  if (!(range > 0)) return 0
+  const exponent = Math.floor(Math.log10(range))
+  const fraction = range / 10 ** exponent
+  let niceFraction: number
+  if (roundToNearest) {
+    if (fraction < 1.5) niceFraction = 1
+    else if (fraction < 3) niceFraction = 2
+    else if (fraction < 7) niceFraction = 5
+    else niceFraction = 10
+  } else {
+    if (fraction <= 1) niceFraction = 1
+    else if (fraction <= 2) niceFraction = 2
+    else if (fraction <= 5) niceFraction = 5
+    else niceFraction = 10
+  }
+  return niceFraction * 10 ** exponent
+}
+
+/**
+ * Generate "nice" round axis-tick values spanning `[min, max]` (the classic
+ * Wilkinson/loose-label algorithm). Returns an ascending list of at most
+ * ~`targetCount + 1` round numbers (e.g. `0, 8, 16, 24, 32`), each 2-decimal
+ * rounded. The caller projects them onto the axis with `projectX`/`projectY` and
+ * filters to the visible range. Returns `[]` on non-finite input.
+ */
+export function niceTicks(min: number, max: number, targetCount = 5): number[] {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || targetCount < 1) return []
+  if (min === max) return [round(min)]
+  const lo = Math.min(min, max)
+  const hi = Math.max(min, max)
+  const step = niceNum((hi - lo) / targetCount, true)
+  if (!(step > 0)) return [round(lo), round(hi)]
+  const start = Math.ceil(lo / step) * step
+  const ticks: number[] = []
+  // Guard the loop bound against floating drift with a half-step epsilon.
+  for (let value = start; value <= hi + step * 0.5; value += step) {
+    ticks.push(round(value))
+  }
+  return ticks
+}
+
+export interface RadialGauge {
+  size: number
+  cx: number
+  cy: number
+  radius: number
+  strokeWidth: number
+  /** The input fraction clamped to `[0, 1]`. */
+  fraction: number
+  /** Full-sweep background arc path. */
+  trackPath: string
+  /** Value arc path from the start angle, or `''` when the fraction is 0. */
+  valuePath: string
+}
+
+/**
+ * Pure geometry for a radial-arc gauge (the VRAM-headroom dial). Produces two
+ * SVG arc `d` strings — a full-sweep track and a value arc covering
+ * `sweepAngle × fraction` — so the template just binds `:d`. Defaults to the
+ * mockup's 270° dial starting at 135°. Angles are clockwise degrees; 0° points
+ * up. The fraction is clamped to `[0, 1]` (a benchmark legitimately peaks near
+ * 100%, never above).
+ */
+export function buildRadialGauge(opts: {
+  fraction: number
+  size?: number
+  strokeWidth?: number
+  startAngle?: number
+  sweepAngle?: number
+}): RadialGauge {
+  const size = opts.size ?? 128
+  const strokeWidth = opts.strokeWidth ?? 12
+  const startAngle = opts.startAngle ?? 135
+  const sweepAngle = opts.sweepAngle ?? 270
+  const fraction = Number.isFinite(opts.fraction) ? Math.min(Math.max(opts.fraction, 0), 1) : 0
+  const cx = size / 2
+  const cy = size / 2
+  const radius = round(size / 2 - strokeWidth)
+
+  const polar = (deg: number): [number, number] => {
+    const angle = ((deg - 90) * Math.PI) / 180
+    return [round(cx + radius * Math.cos(angle)), round(cy + radius * Math.sin(angle))]
+  }
+  const arc = (from: number, to: number): string => {
+    const [x1, y1] = polar(from)
+    const [x2, y2] = polar(to)
+    const largeArc = to - from > 180 ? 1 : 0
+    return `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}`
+  }
+
+  return {
+    size,
+    cx,
+    cy,
+    radius,
+    strokeWidth,
+    fraction,
+    trackPath: arc(startAngle, startAngle + sweepAngle),
+    valuePath: fraction > 0 ? arc(startAngle, startAngle + sweepAngle * fraction) : ''
+  }
 }

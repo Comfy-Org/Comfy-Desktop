@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import type { GpuTier } from '../../../shared/gpuTier'
 import type { PerformanceTestBenchmark } from '../types/ipc'
 import {
   backendToVendor,
   compareToPrevious,
-  isDedicatedGpuTier,
-  memoryRowLabelKey,
   perImageSeconds,
   tierFromHardware,
   vramPeakView
@@ -39,18 +36,9 @@ describe('tierFromHardware', () => {
     expect(tierFromHardware({ backend: 'cpu', vramMb: null })).toBe('cpu_only')
   })
   it('yields a dedicated tier for a real NVIDIA card', () => {
-    expect(isDedicatedGpuTier(tierFromHardware({ backend: 'cuda', vramMb: 24576 }))).toBe(true)
-  })
-})
-
-describe('isDedicatedGpuTier', () => {
-  it('is true only for dedicated GPU tiers', () => {
-    for (const t of ['high', 'mid', 'low', 'sub_low'] as GpuTier[]) {
-      expect(isDedicatedGpuTier(t)).toBe(true)
-    }
-    for (const t of ['apple', 'cpu_only'] as GpuTier[]) {
-      expect(isDedicatedGpuTier(t)).toBe(false)
-    }
+    expect(['high', 'mid', 'low', 'sub_low']).toContain(
+      tierFromHardware({ backend: 'cuda', vramMb: 24576 })
+    )
   })
 })
 
@@ -68,35 +56,49 @@ describe('perImageSeconds', () => {
 })
 
 describe('vramPeakView', () => {
-  it('apple: memory peak + unified note, never a fit judgement', () => {
+  it('apple: memory peak + unified note, factual percent, never a fit judgement', () => {
     const v = vramPeakView({ tier: 'apple', peakMb: 8192, totalMb: 24576, ramMb: 24576 })
     expect(v.headlineKey).toBe('performanceTest.memoryPeak')
-    expect(v.secondLine?.key).toBe('performanceTest.unifiedMemoryNote')
+    expect(v.noteKey).toBe('performanceTest.unifiedMemoryNote')
+    expect(v.secondLine).toEqual({
+      key: 'performanceTest.vramPeakOfTotal',
+      params: { total: 24, percent: 33 }
+    })
     expect(v.peakGb).toBe(8)
     expect(v.notMeasured).toBe(false)
+    expect(v.tone).toBe('neutral')
   })
-  it('cpu: system RAM peak, with RAM headroom only when known', () => {
+  it('cpu: system RAM peak, factual percent only when the total is known', () => {
     expect(
       vramPeakView({ tier: 'cpu_only', peakMb: 4096, totalMb: null, ramMb: 16384 }).secondLine
-    ).toEqual({ key: 'performanceTest.ofRam', params: { total: 16 } })
+    ).toEqual({ key: 'performanceTest.vramPeakOfRam', params: { total: 16, percent: 25 } })
     expect(
       vramPeakView({ tier: 'cpu_only', peakMb: 4096, totalMb: null, ramMb: null }).secondLine
     ).toBeNull()
   })
-  it('dedicated GPU: fits vs exceeded', () => {
-    const fits = vramPeakView({ tier: 'high', peakMb: 7987, totalMb: 12288, ramMb: 32768 })
-    expect(fits.headlineKey).toBe('performanceTest.vramPeak')
-    expect(fits.secondLine?.key).toBe('performanceTest.vramPeakOfTotalFits')
-    expect(fits.tone).toBe('neutral')
+  it('dedicated GPU: presents high usage factually and stays neutral (no fits/exceeded)', () => {
+    const high = vramPeakView({ tier: 'high', peakMb: 31747, totalMb: 32607, ramMb: 65536 })
+    expect(high.headlineKey).toBe('performanceTest.vramPeak')
+    expect(high.secondLine).toEqual({
+      key: 'performanceTest.vramPeakOfTotal',
+      params: { total: 31.8, percent: 97 }
+    })
+    expect(high.percent).toBe(97)
+    expect(high.fraction).toBeCloseTo(0.9736, 3)
+    expect(high.tone).toBe('neutral')
+    // Even when the peak exceeds the reported total, the tone stays neutral —
+    // interpretation (offload / throttle) is surfaced separately, not here.
     const over = vramPeakView({ tier: 'low', peakMb: 13312, totalMb: 12288, ramMb: 32768 })
-    expect(over.secondLine?.key).toBe('performanceTest.vramPeakExceeded')
-    expect(over.tone).toBe('caution')
+    expect(over.secondLine?.key).toBe('performanceTest.vramPeakOfTotal')
+    expect(over.tone).toBe('neutral')
   })
   it('renders not-measured when the peak is missing', () => {
     const v = vramPeakView({ tier: 'high', peakMb: null, totalMb: 12288, ramMb: null })
     expect(v.notMeasured).toBe(true)
     expect(v.peakGb).toBeNull()
     expect(v.secondLine).toBeNull()
+    expect(v.percent).toBeNull()
+    expect(v.fraction).toBeNull()
   })
 })
 
@@ -151,13 +153,5 @@ describe('compareToPrevious', () => {
       priorBenchmarks: [prior({ hardwareName: deviceName, medianJobDurationSeconds: 2 })]
     })
     expect(result).toMatchObject({ kind: 'faster', pct: 20, tone: 'positive' })
-  })
-})
-
-describe('memoryRowLabelKey', () => {
-  it('follows the backend rule', () => {
-    expect(memoryRowLabelKey('apple')).toBe('performanceTest.unifiedMemory')
-    expect(memoryRowLabelKey('cpu_only')).toBe('performanceTest.systemRam')
-    expect(memoryRowLabelKey('high')).toBe('performanceTest.vram')
   })
 })

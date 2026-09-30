@@ -40,13 +40,6 @@ export function tierFromHardware(opts: {
   })
 }
 
-const DEDICATED_TIERS: ReadonlySet<GpuTier> = new Set<GpuTier>(['high', 'mid', 'low', 'sub_low'])
-
-/** True only on dedicated NVIDIA/AMD GPUs, where "VRAM" and "fits" are meaningful. */
-export function isDedicatedGpuTier(tier: GpuTier): boolean {
-  return DEDICATED_TIERS.has(tier)
-}
-
 /** Median seconds per image. Null when duration or images-per-run is unusable. */
 export function perImageSeconds(
   medianSeconds: number | null | undefined,
@@ -69,10 +62,18 @@ export interface VramPeakView {
   notMeasured: boolean
   /** Peak value in GB (1 decimal) for the big number; null when not measured. */
   peakGb: number | null
+  /** Total/ceiling in GB (1 decimal): total VRAM, unified memory, or system RAM. */
+  totalGb: number | null
+  /** Peak as a whole-number percent of total, or null when total is unknown/0. */
+  percent: number | null
+  /** peak/total as a 0..1 fraction for the radial gauge, or null when unknown. */
+  fraction: number | null
   /** i18n key for the headline label (`vramPeak` / `memoryPeak` / `systemRamPeak`). */
   headlineKey: string
-  /** Second line (fit / unified note / RAM headroom), or null to omit it. */
+  /** Factual "of X GB (Y%)" line, or null when total is unknown. Never a verdict. */
   secondLine: VramPeakSecondLine | null
+  /** Neutral factual note key (e.g. unified memory), or null. */
+  noteKey: string | null
   tone: BenchmarkTone
 }
 
@@ -83,9 +84,12 @@ export function toGb(mb: number | null | undefined): number | null {
 }
 
 /**
- * Backend-aware VRAM-peak block (design §3 / §6.3). "VRAM"/"fits" only on
- * dedicated GPUs; "unified memory" on Apple; "system RAM" on CPU. Never claims a
- * VRAM budget against shared memory.
+ * Backend-aware VRAM-peak block (design §3 / §6.3). Presents the peak
+ * **factually** against its ceiling — "of X GB (Y%)" — and never editorializes:
+ * a benchmark legitimately peaks near 100%, so this is not a warning and the tone
+ * stays neutral. "VRAM" on dedicated GPUs, "unified memory" on Apple, "system
+ * RAM" on CPU; it never claims a VRAM budget against shared memory. Genuinely
+ * abnormal conditions (offload / throttle) are surfaced separately by the view.
  */
 export function vramPeakView(opts: {
   tier: GpuTier
@@ -96,41 +100,48 @@ export function vramPeakView(opts: {
   const peakGb = toGb(opts.peakMb)
   const notMeasured = peakGb == null
 
-  if (opts.tier === 'apple') {
-    return {
-      notMeasured,
-      peakGb,
-      headlineKey: 'performanceTest.memoryPeak',
-      secondLine: { key: 'performanceTest.unifiedMemoryNote', params: {} },
-      tone: 'neutral'
-    }
-  }
+  // The ceiling depends on the backend: dedicated VRAM, unified memory (Apple),
+  // or system RAM (CPU). Percent/fraction are computed from the raw MB values.
+  const totalMb =
+    opts.tier === 'cpu_only'
+      ? opts.ramMb
+      : (opts.totalMb ?? (opts.tier === 'apple' ? opts.ramMb : null))
+  const totalGb = toGb(totalMb)
+  const hasRatio =
+    opts.peakMb != null &&
+    Number.isFinite(opts.peakMb) &&
+    totalMb != null &&
+    Number.isFinite(totalMb) &&
+    totalMb > 0
+  const fraction = hasRatio ? (opts.peakMb as number) / (totalMb as number) : null
+  const percent = fraction != null ? Math.round(fraction * 100) : null
 
-  if (opts.tier === 'cpu_only') {
-    const ramGb = toGb(opts.ramMb)
-    return {
-      notMeasured,
-      peakGb,
-      headlineKey: 'performanceTest.systemRamPeak',
-      secondLine: ramGb != null ? { key: 'performanceTest.ofRam', params: { total: ramGb } } : null,
-      tone: 'neutral'
-    }
-  }
+  const headlineKey =
+    opts.tier === 'apple'
+      ? 'performanceTest.memoryPeak'
+      : opts.tier === 'cpu_only'
+        ? 'performanceTest.systemRamPeak'
+        : 'performanceTest.vramPeak'
+  const noteKey = opts.tier === 'apple' ? 'performanceTest.unifiedMemoryNote' : null
 
-  // Dedicated NVIDIA / AMD GPU: show VRAM + a fit judgement against total VRAM.
-  const totalGb = toGb(opts.totalMb)
   let secondLine: VramPeakSecondLine | null = null
-  let tone: BenchmarkTone = 'neutral'
-  if (!notMeasured && totalGb != null && peakGb != null) {
-    if (peakGb <= totalGb) {
-      secondLine = { key: 'performanceTest.vramPeakOfTotalFits', params: { total: totalGb } }
-      tone = 'neutral'
-    } else {
-      secondLine = { key: 'performanceTest.vramPeakExceeded', params: { total: totalGb } }
-      tone = 'caution'
-    }
+  if (!notMeasured && totalGb != null && percent != null) {
+    const key =
+      opts.tier === 'cpu_only' ? 'performanceTest.vramPeakOfRam' : 'performanceTest.vramPeakOfTotal'
+    secondLine = { key, params: { total: totalGb, percent } }
   }
-  return { notMeasured, peakGb, headlineKey: 'performanceTest.vramPeak', secondLine, tone }
+
+  return {
+    notMeasured,
+    peakGb,
+    totalGb,
+    percent,
+    fraction,
+    headlineKey,
+    secondLine,
+    noteKey,
+    tone: 'neutral'
+  }
 }
 
 export type CompareResult =
@@ -180,15 +191,4 @@ export function compareToPrevious(opts: {
     return { kind: 'faster', pct: Math.round(deltaPct), prevSeconds, tone: 'positive' }
   }
   return { kind: 'slower', pct: Math.round(-deltaPct), prevSeconds, tone: 'caution' }
-}
-
-/**
- * VRAM/memory row label for the System information section + the exported image,
- * following the same backend rule as the headline (`VRAM` / `Unified memory` /
- * `System RAM`).
- */
-export function memoryRowLabelKey(tier: GpuTier): string {
-  if (tier === 'apple') return 'performanceTest.unifiedMemory'
-  if (tier === 'cpu_only') return 'performanceTest.systemRam'
-  return 'performanceTest.vram'
 }

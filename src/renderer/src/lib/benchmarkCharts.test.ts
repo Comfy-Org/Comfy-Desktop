@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildSeriesChart, projectY } from './benchmarkCharts'
+import {
+  buildRadialGauge,
+  buildSeriesChart,
+  niceTicks,
+  projectX,
+  projectY
+} from './benchmarkCharts'
 
 describe('buildSeriesChart', () => {
   it('returns null when fewer than two finite points survive', () => {
@@ -64,6 +70,63 @@ describe('buildSeriesChart', () => {
     const chart = buildSeriesChart([7, 7, 7], { width: 30, height: 20 })
     expect(chart).not.toBeNull()
     expect(chart!.points.every((point) => Number.isFinite(point.y))).toBe(true)
+  })
+
+  it('exposes the x-domain (minX/maxX) so callers can project axis ticks', () => {
+    const chart = buildSeriesChart([2, 4, 6], { xValues: [0, 500, 2000] })!
+    expect(chart.minX).toBe(0)
+    expect(chart.maxX).toBe(2000)
+  })
+})
+
+describe('projectX', () => {
+  it('projects a value onto the chart x-axis (same normalization)', () => {
+    const chart = buildSeriesChart([0, 10], { width: 100, xValues: [0, 20] })!
+    expect(projectX(chart, 0)).toBe(0)
+    expect(projectX(chart, 20)).toBe(100)
+    expect(projectX(chart, 10)).toBe(50)
+  })
+
+  it('clamps values outside the x-domain into the view box', () => {
+    const chart = buildSeriesChart([0, 10], { width: 100, xValues: [0, 20] })!
+    expect(projectX(chart, -5)).toBe(0)
+    expect(projectX(chart, 40)).toBe(100)
+  })
+})
+
+describe('niceTicks', () => {
+  it('returns round, ascending tick values spanning the range', () => {
+    expect(niceTicks(0, 32, 4)).toEqual([0, 10, 20, 30])
+    expect(niceTicks(0, 2.6, 5)).toEqual([0, 0.5, 1, 1.5, 2, 2.5])
+  })
+
+  it('handles a flat or degenerate range without looping forever', () => {
+    expect(niceTicks(5, 5)).toEqual([5])
+    expect(niceTicks(Number.NaN, 10)).toEqual([])
+  })
+})
+
+describe('buildRadialGauge', () => {
+  it('clamps the fraction to [0, 1] and emits two arc paths', () => {
+    const gauge = buildRadialGauge({ fraction: 0.97, size: 128, strokeWidth: 12 })
+    expect(gauge.fraction).toBe(0.97)
+    expect(gauge.radius).toBe(52)
+    expect(gauge.trackPath.startsWith('M ')).toBe(true)
+    expect(gauge.valuePath.startsWith('M ')).toBe(true)
+    expect(buildRadialGauge({ fraction: 2 }).fraction).toBe(1)
+    expect(buildRadialGauge({ fraction: -1 }).fraction).toBe(0)
+  })
+
+  it('emits an empty value path at fraction 0 (nothing to draw)', () => {
+    const gauge = buildRadialGauge({ fraction: 0 })
+    expect(gauge.valuePath).toBe('')
+    expect(gauge.trackPath).not.toBe('')
+  })
+
+  it('coerces a non-finite fraction to 0 instead of producing NaN geometry', () => {
+    const gauge = buildRadialGauge({ fraction: Number.NaN })
+    expect(gauge.fraction).toBe(0)
+    expect(gauge.valuePath).toBe('')
   })
 })
 
