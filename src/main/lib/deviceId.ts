@@ -170,6 +170,23 @@ export function isPlaceholderUuid(uuid: string): boolean {
   return PLACEHOLDER_UUIDS.has(normalized) || new Set(normalized.replace(/-/g, '')).size <= 2
 }
 
+let knownPlaceholderIds: Set<string> | null = null
+
+/**
+ * Installation ids earlier versions derived from common placeholders, so a
+ * launch whose UUID lookup times out or throws still refuses to keep one.
+ */
+function isKnownPlaceholderInstallationId(id: string): boolean {
+  if (!knownPlaceholderIds) {
+    const uuids = [...PLACEHOLDER_UUIDS, 'ffffffff-ffff-0000-0000-000000000000']
+    for (const digit of '0123456789abcdef') {
+      uuids.push([8, 4, 4, 4, 12].map((n) => digit.repeat(n)).join('-'))
+    }
+    knownPlaceholderIds = new Set(uuids.map(computeInstallationId))
+  }
+  return knownPlaceholderIds.has(id)
+}
+
 interface DerivedMachineId {
   machineId: string
   idClass: IdClass
@@ -310,15 +327,16 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
 
     // Without a machine id, keep a persisted installation id instead of
     // replacing it with a fresh random one on every launch. Legacy UUIDs and
-    // unreadable content still get a new id, and so does the placeholder's
-    // own hash, which earlier versions persisted and many machines share.
+    // unreadable content still get a new id, and so does a placeholder's
+    // hash, which earlier versions persisted and many machines share.
     // The class stays a fallback: this launch cannot vouch for where the id
     // came from.
     const newId =
       idClass !== 'machine_derived' &&
       existing != null &&
       INSTALLATION_ID_RE.test(existing) &&
-      existing !== placeholderInstallationId
+      existing !== placeholderInstallationId &&
+      !isKnownPlaceholderInstallationId(existing)
         ? existing
         : computeInstallationId(machineId)
 

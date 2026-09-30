@@ -180,7 +180,7 @@ describe('deviceId', () => {
       ['F then zeros', 'ffffffff-ffff-0000-0000-000000000000'],
       ['sequential OEM', '03000200-0400-0500-0006-000700080009'],
       ['sequential OEM, byte-swapped', '00020003-0004-0005-0006-000700080009'],
-      ['sequential OEM, uppercase', '03000200-0400-0500-0006-000700080009'.toUpperCase()],
+      ['counting, uppercase', '12345678-1234-5678-90AB-CDDEEFAABBCC'],
       ['counting', '12345678-1234-5678-90ab-cddeefaabbcc'],
       ['hex run', '01234567-89ab-cdef-0123-456789abcdef']
     ]
@@ -246,6 +246,25 @@ describe('deviceId', () => {
         expect(mod.getIdClass()).toBe('placeholder_fallback')
       }
       expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(minted)
+    })
+
+    it.each([
+      ['returns no UUID', () => (mockSystemUuid = undefined)],
+      ['throws', () => (mockSystemError = new Error('WMI failed'))]
+    ])('moves off a shared id when the lookup %s', async (_label, breakLookup) => {
+      const shared = expectedIdFor('03000200-0400-0500-0006-000700080009')
+      fs.writeFileSync(deviceIdFile(), shared)
+      breakLookup()
+
+      await mod.initDeviceId()
+      expect(mod.getIdClass()).toBe('random_fallback')
+      const minted = mod.getDeviceId()
+      expect(minted).not.toBe(shared)
+
+      vi.resetModules()
+      mod = await import('./deviceId')
+      await mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(minted)
     })
 
     it('keeps a persisted unique id', async () => {
