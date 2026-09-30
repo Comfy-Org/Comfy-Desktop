@@ -1067,7 +1067,9 @@ describe('assetsTap', () => {
         recovered_count: 3,
         missing_marked_count: 1
       }
-      // Not allowlisted: they reach telemetry through the convention alone.
+      // Not allowlisted: they reach telemetry through the convention alone, using six of
+      // scan_completed's eight per-event convention slots. Allowlist them before core adds
+      // more convention fields to this event, or the later-sorting ones get evicted.
       for (const field of Object.keys(perf)) expect(ALLOWED_FIELD_NAMES.has(field)).toBe(false)
       const tap = createAssetsTap(baseOpts)
       tap.ingest(
