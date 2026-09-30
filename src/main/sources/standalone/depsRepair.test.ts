@@ -258,6 +258,25 @@ describe('repairDeps', () => {
     )
   })
 
+  it('asks again on the next launch after a skip (the decline is not remembered)', async () => {
+    const { inst } = adoptedInstall(['numpy-2.1.0.dist-info'], 'sqlalchemy>=2.0.0\n')
+    const uv = vi.fn()
+    const confirm = vi.fn(async () => false)
+
+    for (let launch = 1; launch <= 2; launch++) {
+      const drift = pendingDrift(inst)
+      expect(drift).not.toBeNull()
+      const t = tools({ confirmAdoptedRepair: confirm })
+      await expect(repairDeps(inst, drift!, t, { freeze: noFreeze, runUvPip: uv })).resolves.toBe(
+        'declined'
+      )
+      // Nothing persisted, so nothing can suppress the next launch's prompt.
+      expect(t.update).not.toHaveBeenCalled()
+    }
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(uv).not.toHaveBeenCalled()
+  })
+
   it('treats a prompt that cannot be delivered as a skip', async () => {
     const { inst } = adoptedInstall(['numpy-2.1.0.dist-info'], 'sqlalchemy>=2.0.0\n')
     const uv = vi.fn()
