@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Benchmark Results</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ── Comfy Desktop plum theme tokens (from ComfyUI-Desktop-2.0 main.css) ── */
+  :root {
+    --neutral-50:  #f2ff59;   /* == comfy-yellow, single brand accent */
+    --neutral-100: #c2bfb9;
+    --neutral-200: #a6a2a1;
+    --neutral-300: #8a8688;
+    --neutral-400: #6f6970;
+    --neutral-500: #534d57;
+    --neutral-600: #37303f;
+    --neutral-700: #2c2533;
+    --neutral-800: #211927;
+    --neutral-900: #19131d;
+    --neutral-950: #100c13;
+
+    --bg: var(--neutral-950);
+    --surface: #1b1520;            /* card surface, one step above bg */
+    --surface-recessed: var(--neutral-900);
+    --surface-inset: #150f1a;
+    --border: #2c2533;
+    --border-soft: #241d2b;
+    --grid: #29222f;               /* muted 1px gridlines */
+
+    --text: #ffffff;
+    --text-muted: #8a8688;
+    --text-faint: #55505b;
+
+    --success: #00cd72;            /* speed / good */
+    --comfy-yellow: #f2ff59;       /* single brand accent, used sparingly */
+    --danger: #e05858;             /* heat / throttle / worse */
+    --accent-plum: #afa3db;
+
+    --radius-card: 12px;
+    --radius-sm: 8px;
+    --radius-chip: 999px;
+
+    --mono-num: "Inter", system-ui;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv05" 1;
+  }
+  .num { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: "tnum" 1; }
+
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 32px 28px 72px;
+  }
+
+  /* ── Context header ── */
+  .ctx { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 24px; }
+  .ctx-title { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 6px; }
+  .ctx-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; color: var(--text-muted); font-size: 13px; align-items: center; }
+  .ctx-meta .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-faint); }
+  .ctx-meta strong { color: var(--text); font-weight: 600; }
+  .ok-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: var(--radius-chip); background: rgba(0,205,114,0.10); color: var(--success); font-size: 12px; font-weight: 600; border: 1px solid rgba(0,205,114,0.22); }
+  .ok-pill .led { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px rgba(0,205,114,0.18); }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 22px 24px;
+  }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  .card-title { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-muted); margin: 0; }
+  .card-sub { font-size: 12px; color: var(--text-faint); }
+
+  .grid { display: grid; gap: 16px; }
+
+  /* ── Hero band ── */
+  .hero { grid-template-columns: 1.35fr 1fr; margin-bottom: 16px; }
+  @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
+
+  .hero-metrics { display: flex; gap: 34px; flex-wrap: wrap; align-items: flex-end; }
+  .metric-label { font-size: 12px; color: var(--text-muted); font-weight: 500; margin-bottom: 4px; letter-spacing: 0.01em; }
+  .metric-big { font-size: 46px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
+  .metric-unit { font-size: 16px; font-weight: 600; color: var(--text-muted); margin-left: 4px; letter-spacing: 0; }
+  .metric-big.speed { color: var(--text); }
+  .metric-mid { font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -0.01em; color: var(--success); }
+
+  .delta-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: var(--radius-chip); font-size: 12px; font-weight: 600; margin-top: 10px; }
+  .delta-chip.better { background: rgba(0,205,114,0.10); color: var(--success); border: 1px solid rgba(0,205,114,0.22); }
+  .delta-chip .arrow { font-size: 10px; }
+
+  .hero-eff { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border-soft); }
+  .eff-item .eff-val { font-size: 18px; font-weight: 700; }
+  .eff-item .eff-lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.01em; }
+  .eff-item .eff-val.hot { color: var(--danger); }
+
+  /* ── VRAM verdict gauge ── */
+  .verdict { display: flex; gap: 20px; align-items: center; }
+  .gauge-wrap { position: relative; flex: 0 0 auto; }
+  .gauge-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .gauge-pct { font-size: 30px; font-weight: 700; line-height: 1; color: var(--danger); letter-spacing: -0.01em; }
+  .gauge-pct-lbl { font-size: 10px; color: var(--text-muted); margin-top: 3px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .verdict-body { min-width: 0; }
+  .verdict-headline { font-size: 15px; font-weight: 700; color: var(--danger); margin: 0 0 6px; }
+  .verdict-detail { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+  .verdict-detail b { color: var(--text); font-weight: 600; }
+
+  /* ── Op timeline bars ── */
+  .bars { display: flex; flex-direction: column; gap: 9px; }
+  .bar-row { display: grid; grid-template-columns: 168px 1fr; gap: 14px; align-items: center; }
+  .bar-name { font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .bar-name .nid { color: var(--text-faint); font-size: 11px; margin-left: 5px; }
+  .bar-track { position: relative; height: 26px; display: flex; align-items: center; }
+  .bar-fill { height: 26px; border-radius: 5px; background: var(--neutral-600); min-width: 2px; transition: width .2s; }
+  .bar-fill.dominant { background: linear-gradient(90deg, #5a4a2e, var(--comfy-yellow)); }
+  .bar-val { margin-left: 10px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .bar-val b { color: var(--text); font-weight: 600; }
+  .bar-row.is-dominant .bar-name { color: var(--comfy-yellow); font-weight: 600; }
+  .bars-foot { margin-top: 14px; font-size: 11.5px; color: var(--text-faint); }
+
+  /* ── SVG chart shells ── */
+  .chart { width: 100%; display: block; }
+  .axis-lbl { fill: var(--text-muted); font-size: 10px; font-family: "Inter"; }
+  .axis-title { fill: var(--text-faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .ceiling { stroke: var(--danger); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .refline { stroke: var(--success); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .annot { fill: var(--text); font-size: 10.5px; font-weight: 600; }
+  .annot-danger { fill: var(--danger); font-size: 10.5px; font-weight: 600; }
+  .annot-ok { fill: var(--success); font-size: 10px; font-weight: 600; }
+
+  .legend { display: flex; gap: 16px; align-items: center; }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+  .legend-swatch { width: 12px; height: 3px; border-radius: 2px; }
+
+  /* ── Config chips ── */
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip { display: inline-flex; flex-direction: column; gap: 2px; padding: 9px 14px; background: var(--surface-inset); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+  .chip .k { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; }
+  .chip .v { font-size: 13px; font-weight: 600; color: var(--text); }
+
+  .two-col { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
+
+  .section-gap { margin-top: 16px; }
+  .foot { margin-top: 28px; text-align: center; color: var(--text-faint); font-size: 11.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ── 1. Context line ── -->
+  <header class="ctx">
+    <div>
+      <h1 class="ctx-title">Ideogram v4 · Text-to-Image</h1>
+      <div class="ctx-meta num">
+        <span><strong>NVIDIA RTX 5090</strong> · 32 GB</span>
+        <span class="dot"></span>
+        <span>20 steps · euler</span>
+        <span class="dot"></span>
+        <span>1 image · batch 1</span>
+        <span class="dot"></span>
+        <span>Sep 30, 2026 · 20:44 UTC</span>
+        <span class="dot"></span>
+        <span>ComfyUI 0.34.0</span>
+      </div>
+    </div>
+    <span class="ok-pill"><span class="led"></span>Completed · no throttling</span>
+  </header>
+
+  <!-- ── 2. Hero band ── -->
+  <div class="grid hero">
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">Throughput</h2>
+        <span class="card-sub">median of run</span>
+      </div>
+      <div class="hero-metrics">
+        <div>
+          <div class="metric-label">Seconds / image</div>
+          <div class="metric-big speed num">27.6<span class="metric-unit">s</span></div>
+          <span class="delta-chip better"><span class="arrow">▲</span> 9% faster than last run</span>
+        </div>
+        <div>
+          <div class="metric-label">Steady-state speed</div>
+          <div class="metric-mid num">~2.34<span class="metric-unit" style="color:var(--success);opacity:.7">it/s</span></div>
+          <div class="card-sub" style="margin-top:8px">steps 2–20, warm-up excluded</div>
+        </div>
+      </div>
+      <div class="hero-eff">
+        <div class="eff-item">
+          <div class="eff-val num">2.33<span style="font-size:12px;color:var(--text-muted)"> Wh</span></div>
+          <div class="eff-lbl">Energy / image</div>
+        </div>
+        <div class="eff-item">
+          <div class="eff-val num">561<span style="font-size:12px;color:var(--text-muted)"> W</span></div>
+          <div class="eff-lbl">Peak power (limit 575 W)</div>
+        </div>
+        <div class="eff-item">
+          <div class="eff-val hot num">75<span style="font-size:12px;color:var(--text-muted)"> °C</span></div>
+          <div class="eff-lbl">Peak temp</div>
+        </div>
+        <div class="eff-item">
+          <div class="eff-val num">100<span style="font-size:12px;color:var(--text-muted)"> %</span></div>
+          <div class="eff-lbl">Peak GPU util</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">VRAM headroom</h2>
+        <span class="card-sub">peak of 32 GB</span>
+      </div>
+      <div class="verdict">
+        <div class="gauge-wrap" id="gauge"></div>
+        <div class="verdict-body">
+          <p class="verdict-headline">Almost no headroom</p>
+          <p class="verdict-detail">
+            Peaked at <b class="num">31.7 GB</b> of <b class="num">32.6 GB</b> —
+            just <b class="num">0.84 GB</b> to spare. A larger batch or
+            higher resolution will likely spill to system RAM or OOM on this card.
+          </p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ── 3. Op timeline ── -->
+  <section class="card section-gap">
+    <div class="card-head">
+      <h2 class="card-title">Where the time went</h2>
+      <span class="card-sub">top 10 nodes · 27.13 s node total</span>
+    </div>
+    <div class="bars" id="opBars"></div>
+    <div class="bars-foot" id="opFoot"></div>
+  </section>
+
+  <!-- ── 4. VRAM over time ── -->
+  <section class="card section-gap">
+    <div class="card-head">
+      <h2 class="card-title">VRAM over time</h2>
+      <span class="card-sub">sampled every 500 ms</span>
+    </div>
+    <svg class="chart" id="vramChart" viewBox="0 0 1040 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="VRAM usage over time"></svg>
+  </section>
+
+  <!-- ── 5 + 6. per-step it/s and power/temp side by side ── -->
+  <div class="grid two-col section-gap">
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">Per-step speed</h2>
+        <span class="card-sub">iterations / second</span>
+      </div>
+      <svg class="chart" id="stepChart" viewBox="0 0 500 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Per-step iterations per second"></svg>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">Power &amp; temperature</h2>
+        <div class="legend">
+          <span class="legend-item"><span class="legend-swatch" style="background:var(--accent-plum)"></span>Power</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:var(--danger)"></span>Temp</span>
+        </div>
+      </div>
+      <svg class="chart" id="ptChart" viewBox="0 0 500 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Power and temperature over time"></svg>
+    </section>
+  </div>
+
+  <!-- ── 7. Config chips ── -->
+  <section class="card section-gap">
+    <div class="card-head">
+      <h2 class="card-title">Run configuration</h2>
+    </div>
+    <div class="chips">
+      <div class="chip"><span class="k">Weight dtype</span><span class="v">bfloat16</span></div>
+      <div class="chip"><span class="k">Attention</span><span class="v">pytorch</span></div>
+      <div class="chip"><span class="k">VRAM state</span><span class="v">NORMAL_VRAM</span></div>
+      <div class="chip"><span class="k">CUDA</span><span class="v num">13.0</span></div>
+      <div class="chip"><span class="k">cuDNN</span><span class="v num">9.12.0</span></div>
+      <div class="chip"><span class="k">PyTorch</span><span class="v num">2.10.0+cu130</span></div>
+      <div class="chip"><span class="k">Compute cap.</span><span class="v num">12.0</span></div>
+      <div class="chip"><span class="k">SM / Mem clock</span><span class="v num">2760 / 13801 MHz</span></div>
+    </div>
+  </section>
+
+  <div class="foot">
+    ComfyUI Desktop · benchmark <span class="num">8a67dcd0</span> · warm-up run (steady-state computed from steps 2–20)
+  </div>
+
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   REAL capture data — hardcoded from
+   8a67dcd0-f711-4f1d-b662-861f5727f806.json (RTX 5090, Ideogram v4)
+   ───────────────────────────────────────────────────────────── */
+const TOTAL_VRAM_MB = 32607.0;
+const PEAK_VRAM_MB = 31747.41;
+
+// top nodes {name, id, ms}
+const NODES = [
+  { name: "SamplerCustomAdvanced", id: "98:12", ms: 20731.939 },
+  { name: "CLIPTextEncode",        id: "98:24", ms: 4745.241 },
+  { name: "CLIPLoader",            id: "98:14", ms: 654.506 },
+  { name: "VAEDecode",             id: "98:13", ms: 612.751 },
+  { name: "VAELoader",             id: "98:9",  ms: 120.934 },
+  { name: "UNETLoader",            id: "98:154",ms: 84.788 },
+  { name: "UNETLoader",            id: "98:23", ms: 79.442 },
+  { name: "SaveImage",             id: "158",   ms: 75.742 },
+  { name: "Ideogram4Scheduler",    id: "98:17", ms: 9.486 },
+  { name: "ConditioningZeroOut",   id: "98:10", ms: 4.817 },
+];
+const NODE_TOTAL_MS = 27127.486;
+
+const PER_STEP_ITS = [0.138,2.396,2.2992,2.2898,2.2409,2.317,2.288,2.3878,2.2562,
+  2.3464,2.3536,2.388,2.3943,2.2948,2.3619,2.3528,2.4138,2.3842,2.3193,2.3724];
+
+// resources.series subset
+const SERIES = [
+[1.66,9501.57,76.597,51],[663.55,9501.57,59.112,50],[1219.02,10761.57,49.139,50],
+[1721.4,10901.57,44.633,50],[2222.59,10965.57,39.536,50],[2735.34,11989.57,39.744,50],
+[3236.36,13333.57,74.115,52],[3741.07,14485.57,107.523,52],[4255.73,15573.57,106.029,52],
+[4769.96,16693.57,105.206,52],[5276.04,17717.57,100.947,52],[5844.75,17621.57,89.735,51],
+[6351.35,17621.57,69.071,51],[6857.78,18453.57,60.013,51],[7361.3,19651.57,59.975,50],
+[7863.9,21187.57,68.016,52],[8370.81,22307.57,83.406,51],[8875.19,23427.57,95.582,53],
+[9375.39,24611.57,99.172,52],[9881.74,25891.57,102.281,52],[10387.48,27491.57,107.11,54],
+[10891.25,28931.57,112.908,53],[11396.47,30883.57,100.451,52],[11900.78,31747.41,99.82,53],
+[12404.67,31473.84,111.106,53],[12911.95,31569.84,119.77,54],[13418.75,31505.84,124.389,53],
+[13924.53,31477.78,124.625,54],[14429.87,31477.78,281.264,68],[14933.37,31477.78,508.178,70],
+[15441.75,31381.78,534.538,66],[15946.8,31381.78,541.244,71],[16452.3,31381.78,537.916,71],
+[16959.36,31445.28,535.063,71],[17466.78,31381.28,541.762,72],[17971.6,31378.91,543.603,72],
+[18477.36,31378.66,540.524,73],[18983.98,31398.78,548.002,69],[19488.79,31366.78,546.742,72],
+[19993.51,31366.28,541.434,73],[20499.16,31365.91,551.402,73],[21004.99,31365.09,559.144,74],
+[21509.77,31360.34,559.496,74],[22018.11,31422.28,555.732,74],[22523.22,31550.28,552.324,73],
+[23031.9,31550.28,550.832,74],[23539.5,31390.28,544.958,74],[24047.28,31454.28,554.5,75],
+[24549.8,31454.28,561.875,75],[25055.51,31454.28,561.627,75],[25563.63,31454.28,559.671,75],
+[26072.63,31454.28,550.116,74],[26575.03,31454.28,551.345,75],[27079.62,30507.91,561.11,75],
+[27554.77,28891.91,466.434,64]
+]; // [t_ms, vram_mb, power_w, temp_c]
+
+const svgNS = "http://www.w3.org/2000/svg";
+const el = (n, a) => { const e = document.createElementNS(svgNS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const fmt = (n, d=0) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+/* ── VRAM verdict radial gauge (270° arc) ── */
+(function gauge(){
+  const pct = PEAK_VRAM_MB / TOTAL_VRAM_MB;             // 0.974
+  const size = 128, r = 52, cx = size/2, cy = size/2;
+  const start = 135, sweep = 270;                        // degrees
+  const svg = el("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}` });
+  const polar = (deg) => { const a = (deg-90)*Math.PI/180; return [cx + r*Math.cos(a), cy + r*Math.sin(a)]; };
+  const arc = (from, to, color, w) => {
+    const [x1,y1] = polar(from), [x2,y2] = polar(to);
+    const large = (to-from) > 180 ? 1 : 0;
+    return el("path", { d:`M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`, fill:"none", stroke:color, "stroke-width":w, "stroke-linecap":"round" });
+  };
+  svg.appendChild(arc(start, start+sweep, "#2c2533", 12));               // track
+  svg.appendChild(arc(start, start+sweep*pct, "var(--danger)", 12));     // fill
+  document.getElementById("gauge").appendChild(svg);
+  const c = document.createElement("div");
+  c.className = "gauge-center";
+  c.innerHTML = '<div class="gauge-pct num">97%</div><div class="gauge-pct-lbl">of VRAM</div>';
+  document.getElementById("gauge").appendChild(c);
+  document.getElementById("gauge").style.width = size+"px";
+  document.getElementById("gauge").style.height = size+"px";
+})();
+
+/* ── Op timeline horizontal bars ── */
+(function opBars(){
+  const host = document.getElementById("opBars");
+  const max = NODES[0].ms;
+  NODES.forEach((nd, i) => {
+    const pct = nd.ms / NODE_TOTAL_MS * 100;
+    const w = Math.max(nd.ms / max * 100, 0.4);
+    const row = document.createElement("div");
+    row.className = "bar-row" + (i === 0 ? " is-dominant" : "");
+    const secs = nd.ms >= 1000 ? (nd.ms/1000).toFixed(1)+" s" : Math.round(nd.ms)+" ms";
+    row.innerHTML =
+      `<div class="bar-name" title="${nd.name} (${nd.id})">${nd.name}<span class="nid num">${nd.id}</span></div>`+
+      `<div class="bar-track"><div class="bar-fill${i===0?' dominant':''}" style="width:${w}%"></div>`+
+      `<span class="bar-val num"><b>${secs}</b> · ${pct.toFixed(pct<1?1:0)}%</span></div>`;
+    host.appendChild(row);
+  });
+  document.getElementById("opFoot").textContent =
+    "SamplerCustomAdvanced alone is 76% of run time; CLIPTextEncode adds another 17%. The remaining 38 nodes total under 1.7 s.";
+})();
+
+/* ── generic linear scale ── */
+const scale = (v, d0, d1, r0, r1) => r0 + (v - d0) / (d1 - d0) * (r1 - r0);
+
+/* ── VRAM over time area chart ── */
+(function vram(){
+  const svg = document.getElementById("vramChart");
+  const W = 1040, H = 300, m = { l: 52, r: 88, t: 18, b: 40 };
+  const x0 = m.l, x1 = W - m.r, y0 = H - m.b, y1 = m.t;
+  const tMax = 27554.77, gMax = 34;                       // GB axis top (ceiling 31.84 visible)
+  const gb = mb => mb / 1024;
+  const sx = t => scale(t, 0, tMax, x0, x1);
+  const sy = g => scale(g, 0, gMax, y0, y1);
+
+  // y gridlines + labels (GB)
+  [0,8,16,24,32].forEach(g => {
+    const y = sy(g);
+    svg.appendChild(el("line",{ x1:x0, y1:y, x2:x1, y2:y, class:"gridline" }));
+    const t = el("text",{ x:x0-10, y:y+3, "text-anchor":"end", class:"axis-lbl" }); t.textContent = g; svg.appendChild(t);
+  });
+  // x gridlines + labels (seconds)
+  [0,5,10,15,20,25].forEach(s => {
+    const x = sx(s*1000);
+    const t = el("text",{ x, y:y0+20, "text-anchor":"middle", class:"axis-lbl" }); t.textContent = s+"s"; svg.appendChild(t);
+  });
+  // axis titles
+  const yt = el("text",{ x:16, y:(y0+y1)/2, class:"axis-title", transform:`rotate(-90 16 ${(y0+y1)/2})`, "text-anchor":"middle" }); yt.textContent="VRAM (GB)"; svg.appendChild(yt);
+
+  // area + line
+  let area = `M ${sx(0)} ${y0} `;
+  let line = "";
+  SERIES.forEach((d, i) => {
+    const x = sx(d[0]), y = sy(gb(d[1]));
+    area += `L ${x} ${y} `;
+    line += (i===0?"M":"L") + ` ${x} ${y} `;
+  });
+  area += `L ${sx(tMax)} ${y0} Z`;
+  const grad = el("linearGradient",{ id:"vg", x1:0, y1:0, x2:0, y2:1 });
+  grad.appendChild(el("stop",{ offset:"0%", "stop-color":"#afa3db", "stop-opacity":"0.28" }));
+  grad.appendChild(el("stop",{ offset:"100%", "stop-color":"#afa3db", "stop-opacity":"0.02" }));
+  const defs = el("defs",{}); defs.appendChild(grad); svg.appendChild(defs);
+  svg.appendChild(el("path",{ d:area, fill:"url(#vg)" }));
+  svg.appendChild(el("path",{ d:line, fill:"none", stroke:"var(--accent-plum)", "stroke-width":2, "stroke-linejoin":"round" }));
+
+  // ceiling line 31.84 GB (32607 MB)
+  const yc = sy(gb(TOTAL_VRAM_MB));
+  svg.appendChild(el("line",{ x1:x0, y1:yc, x2:x1, y2:yc, class:"ceiling" }));
+  const cl = el("text",{ x:x1+6, y:yc+3, class:"annot-danger" }); cl.textContent="32.6 GB ceiling"; svg.appendChild(cl);
+
+  // peak annotation
+  const pk = SERIES.reduce((a,b)=> b[1]>a[1]?b:a);
+  const px = sx(pk[0]), py = sy(gb(pk[1]));
+  svg.appendChild(el("circle",{ cx:px, cy:py, r:4, fill:"var(--danger)", stroke:"var(--surface)", "stroke-width":2 }));
+  const pa = el("text",{ x:px+8, y:py-6, class:"annot-danger" }); pa.textContent="peak 31.7 GB (97%)"; svg.appendChild(pa);
+})();
+
+/* ── Per-step it/s line chart ── */
+(function step(){
+  const svg = document.getElementById("stepChart");
+  const W = 500, H = 280, m = { l: 42, r: 16, t: 16, b: 38 };
+  const x0 = m.l, x1 = W - m.r, y0 = H - m.b, y1 = m.t;
+  const n = PER_STEP_ITS.length, yMax = 2.6;
+  const sx = i => scale(i, 0, n-1, x0, x1);
+  const sy = v => scale(v, 0, yMax, y0, y1);
+  const steady = 2.34;
+
+  [0,0.5,1,1.5,2,2.5].forEach(v => {
+    const y = sy(v);
+    svg.appendChild(el("line",{ x1:x0, y1:y, x2:x1, y2:y, class:"gridline" }));
+    const t = el("text",{ x:x0-8, y:y+3, "text-anchor":"end", class:"axis-lbl" }); t.textContent=v.toFixed(1); svg.appendChild(t);
+  });
+  [1,5,10,15,20].forEach(s => {
+    const x = sx(s-1);
+    const t = el("text",{ x, y:y0+18, "text-anchor":"middle", class:"axis-lbl" }); t.textContent=s; svg.appendChild(t);
+  });
+  const xt = el("text",{ x:(x0+x1)/2, y:H-4, class:"axis-title", "text-anchor":"middle" }); xt.textContent="step"; svg.appendChild(xt);
+
+  // steady-state reference
+  const ys = sy(steady);
+  svg.appendChild(el("line",{ x1:x0, y1:ys, x2:x1, y2:ys, class:"refline" }));
+  const rl = el("text",{ x:x1-2, y:ys-6, class:"annot-ok", "text-anchor":"end" }); rl.textContent="steady-state ~2.34 it/s"; svg.appendChild(rl);
+
+  // line for steps 2..20 (index 1..)
+  let line = "";
+  for (let i=1;i<n;i++){ line += (i===1?"M":"L")+` ${sx(i)} ${sy(PER_STEP_ITS[i])} `; }
+  svg.appendChild(el("path",{ d:line, fill:"none", stroke:"var(--success)", "stroke-width":2, "stroke-linejoin":"round" }));
+
+  // dimmed warm-up segment (step1 -> step2) + point
+  svg.appendChild(el("path",{ d:`M ${sx(0)} ${sy(PER_STEP_ITS[0])} L ${sx(1)} ${sy(PER_STEP_ITS[1])}`, fill:"none", stroke:"var(--text-faint)", "stroke-width":1.5, "stroke-dasharray":"3 3" }));
+  for (let i=1;i<n;i++) svg.appendChild(el("circle",{ cx:sx(i), cy:sy(PER_STEP_ITS[i]), r:2.5, fill:"var(--success)" }));
+  svg.appendChild(el("circle",{ cx:sx(0), cy:sy(PER_STEP_ITS[0]), r:3, fill:"var(--text-faint)" }));
+  const wa = el("text",{ x:sx(0)+8, y:sy(PER_STEP_ITS[0])-4, class:"annot" , style:"fill:var(--text-faint)"}); wa.textContent="warm-up 0.14"; svg.appendChild(wa);
+})();
+
+/* ── Power & temperature dual-axis ── */
+(function powtemp(){
+  const svg = document.getElementById("ptChart");
+  const W = 500, H = 280, m = { l: 40, r: 40, t: 16, b: 38 };
+  const x0 = m.l, x1 = W - m.r, y0 = H - m.b, y1 = m.t;
+  const tMax = 27554.77, pMax = 600, tempMin = 40, tempMax = 80;
+  const sx = t => scale(t, 0, tMax, x0, x1);
+  const syP = p => scale(p, 0, pMax, y0, y1);
+  const syT = c => scale(c, tempMin, tempMax, y0, y1);
+
+  // left axis (power) grid + labels
+  [0,150,300,450,600].forEach(p => {
+    const y = syP(p);
+    svg.appendChild(el("line",{ x1:x0, y1:y, x2:x1, y2:y, class:"gridline" }));
+    const t = el("text",{ x:x0-8, y:y+3, "text-anchor":"end", class:"axis-lbl", style:"fill:var(--accent-plum)" }); t.textContent=p; svg.appendChild(t);
+  });
+  // right axis (temp) labels only
+  [40,60,80].forEach(c => {
+    const y = syT(c);
+    const t = el("text",{ x:x1+8, y:y+3, "text-anchor":"start", class:"axis-lbl", style:"fill:var(--danger)" }); t.textContent=c+"°"; svg.appendChild(t);
+  });
+  [0,10,20].forEach(s => {
+    const x = sx(s*1000);
+    const t = el("text",{ x, y:y0+18, "text-anchor":"middle", class:"axis-lbl" }); t.textContent=s+"s"; svg.appendChild(t);
+  });
+  const lt = el("text",{ x:12, y:(y0+y1)/2, class:"axis-title", transform:`rotate(-90 12 ${(y0+y1)/2})`, "text-anchor":"middle", style:"fill:var(--accent-plum)" }); lt.textContent="Watts"; svg.appendChild(lt);
+
+  let pl = "", tl = "";
+  SERIES.forEach((d,i) => {
+    pl += (i===0?"M":"L")+` ${sx(d[0])} ${syP(d[2])} `;
+    tl += (i===0?"M":"L")+` ${sx(d[0])} ${syT(d[3])} `;
+  });
+  svg.appendChild(el("path",{ d:pl, fill:"none", stroke:"var(--accent-plum)", "stroke-width":2, "stroke-linejoin":"round" }));
+  svg.appendChild(el("path",{ d:tl, fill:"none", stroke:"var(--danger)", "stroke-width":2, "stroke-linejoin":"round" }));
+
+  // peak power marker
+  const pk = SERIES.reduce((a,b)=> b[2]>a[2]?b:a);
+  svg.appendChild(el("circle",{ cx:sx(pk[0]), cy:syP(pk[2]), r:3, fill:"var(--accent-plum)" }));
+  const pa = el("text",{ x:sx(pk[0]), y:syP(pk[2])-8, class:"annot", "text-anchor":"middle", style:"fill:var(--accent-plum)" }); pa.textContent="561 W"; svg.appendChild(pa);
+})();
+</script>
+</body>
+</html>

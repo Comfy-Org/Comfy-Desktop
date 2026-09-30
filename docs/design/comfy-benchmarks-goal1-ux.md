@@ -214,19 +214,20 @@ dtype          fp8_e4m3fn                 fp8_e4m3fn               same
 
 ---
 
-## 6. Graceful degrade — "old ComfyUI without capture"
+## 6. Graceful degrade — core-only, "needs capture" when absent
 
-Feature-detect on `performanceTestResult.coreBenchmark`. Three tiers:
+Desktop relies **solely** on the ComfyUI-core capture (`performanceTestResult.coreBenchmark`). There is no longer a duration / `/system_stats` fallback tier: results either come from the capture, or we say so plainly.
 
-| Tier | Condition | Hero | Graphs | Chips |
-|---|---|---|---|---|
-| **Rich (v2)** | `coreBenchmark` present, `captureSchemaVersion >= 2` | full modality hero + it/s + energy | all §4 graphs | all §7 chips |
-| **Partial (v1)** | `coreBenchmark` present, v1 | sec/image + VRAM peak; **it/s only if `steadyStateItPerS` non-null**; no energy | op-timeline + VRAM if arrays present; power/temp/per-step **hidden** | dtype/attention only if present, else omit |
-| **Lite (no capture)** | `coreBenchmark == null`, `/system_stats` sampler only | sec/image + VRAM peak (from sampler) | **all graphs replaced by one line:** `Detailed metrics need ComfyUI with benchmark capture. Update ComfyUI to see the op timeline, per-step it/s, power and energy.` | GPU + backend only |
+| Tier | Condition | What renders |
+|---|---|---|
+| **Rich (v2)** | `coreBenchmark` present, `captureSchemaVersion >= 2` | full modality hero + it/s + energy, all §4 graphs, all §7 chips |
+| **Partial (v1)** | `coreBenchmark` present, v1 | sec/image + VRAM peak; **it/s only if `steadyStateItPerS` non-null**; op-timeline + VRAM if arrays present; power/temp/per-step hidden; dtype/attention chips only if present |
+| **Needs capture** | `coreBenchmark == null` (old ComfyUI / no capture) | a single calm, factual line where the dashboard would be: `This benchmark needs a version of ComfyUI that reports capture. Update ComfyUI to see results.` No hero, no duration bars, no system-info table, no modal, no red. The `Open folder` / `Export` actions stay available. |
 
 **Rules:**
-- A missing metric renders a muted `— not measured` chip in its slot, never a zero, dash-as-value, blank card, or crash. Every `num()`/`str()` in `benchmarkCapture.ts` already returns `null` on junk — the UI must treat `null` as "not measured," full stop.
-- The Lite→Rich upsell copy is the **only** place we nudge updating ComfyUI, and it is calm and factual (no modal, no red). It sits where the graphs would be.
+- A missing leaf **inside** a rich capture renders a muted `— not measured` in its slot, never a zero, dash-as-value, blank card, or crash. Every `num()`/`str()` in `benchmarkCapture.ts` already returns `null` on junk — the UI treats `null` as "not measured," full stop.
+- The "needs capture" state is the **only** place we nudge updating ComfyUI, and it is calm and factual (no modal, no red). It replaces the whole results body.
+- No editorializing anywhere: labels state what a number **is** (e.g. VRAM `31.7 GB of 32.6 GB (97%)`), never whether it is good or bad. A high VRAM peak is expected for a benchmark and is shown neutrally (plum, not danger). Only a genuinely abnormal condition is surfaced, and only as a plain fact: `device.offloaded === true` → "Offloaded to system RAM"; `summary.throttled === true` → "Thermal throttling · … W · …°C".
 - Never imply a capability the run did not have (e.g. don't show an empty power axis on Apple Silicon — hide the card, since `powerW` is legitimately null there, not "broken").
 
 ---
