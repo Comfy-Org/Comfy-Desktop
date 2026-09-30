@@ -97,12 +97,12 @@
       }
     },
     {
-      "id": "api_tripo3_1_image_to_model",
+      "id": "api_meshy7_1_image_to_model",
       "modality": "3d",
       "apiNode": true,
       "snapshot": {
-        "title": "Tripo H3.1: Image to Model",
-        "description": "Upload a reference image of your object. Generate a high-detail 3D model with dense geometry and PBR-ready materials.",
+        "title": "Meshy 7.1: Image to 3D",
+        "description": "Generate a 3D model from a single image using Meshy 7.1's Ultra 4K geometry mode, which produces 4096³ meshes so fine surface detail like stitching, wood grain, and scales becomes real geometry rather than texture. Takes one input image. Ideal for high-fidelity asset creation, detailed prop modeling, and product visualization.",
         "sizeBytes": 0,
         "mediaSubtype": "webp"
       }
