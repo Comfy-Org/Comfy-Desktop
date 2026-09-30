@@ -91,9 +91,6 @@ export interface ModelPathsOptions {
    *  shared / legacy); pass `null` for no default so ComfyUI keeps its built-in
    *  `<comfyDir>/models` as the default (per-install, install-owned primary). */
   primaryDir?: string | null
-  /** ComfyUI's own `<comfyDir>/models`, appended as a non-default section (once)
-   *  when `--models-directory` points the built-in root at `primaryDir`. */
-  builtinModelsDir?: string
 }
 
 /** Lists subdirectory names, including symlinks that resolve to directories. */
@@ -281,13 +278,8 @@ export function ensureModelPathsConfig(
   // explicit `null` → no default (ComfyUI keeps its built-in models default).
   const primaryRaw = options.primaryDir !== undefined ? options.primaryDir : resolved[0]
   const resolvedPrimary = primaryRaw != null ? path.resolve(primaryRaw) : null
-  const yamlDirs = [...resolved]
-  if (options.builtinModelsDir) {
-    const builtin = path.resolve(options.builtinModelsDir)
-    if (!yamlDirs.some((d) => samePath(d, builtin))) yamlDirs.push(builtin)
-  }
-  const extraFolders = discoverExtraFoldersFromSharedDirs(yamlDirs)
-  const yaml = buildYaml(yamlDirs, extraFolders, resolvedPrimary)
+  const extraFolders = discoverExtraFoldersFromSharedDirs(resolved)
+  const yaml = buildYaml(resolved, extraFolders, resolvedPrimary)
 
   let existing: string | null = null
   try {
