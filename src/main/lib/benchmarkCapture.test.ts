@@ -301,23 +301,53 @@ describe('mapCoreBenchmarkCapture', () => {
     expect(mapCoreBenchmarkCapture([], 'p')).toBeNull()
     expect(mapCoreBenchmarkCapture('nope', 'p')).toBeNull()
     // A future/incompatible schema with no collector id is ignored (fallback path).
-    expect(mapCoreBenchmarkCapture({ capture_schema_version: 3 }, 'p')).toBeNull()
+    expect(mapCoreBenchmarkCapture({ capture_schema_version: 4 }, 'p')).toBeNull()
     expect(mapCoreBenchmarkCapture({ foo: 'bar' }, 'p')).toBeNull()
   })
 
   it('rejects a future schema even when it self-identifies as comfyui-core', () => {
-    // m3: a breaking future schema (v3) must NOT be parsed with v2 assumptions, even
+    // m3: a breaking future schema (v4) must NOT be parsed with v3 assumptions, even
     // when collector_id matches — we degrade to the /system_stats fallback instead.
     expect(
       mapCoreBenchmarkCapture(
-        { ...cudaCaptureV2, capture_schema_version: 3, collector_id: 'comfyui-core' },
-        'prompt-v3'
+        { ...cudaCaptureV2, capture_schema_version: 4, collector_id: 'comfyui-core' },
+        'prompt-v4'
       )
     ).toBeNull()
     // A known schema (v2) still parses even without a collector id.
     expect(
       mapCoreBenchmarkCapture({ capture_schema_version: 2 }, 'prompt-v2-nocollector')
     ).not.toBeNull()
+  })
+
+  it('v3: maps power cap from device and throttle from summary (hoisted out of series/peak)', () => {
+    // v3 moves the constant power cap to `device.power_limit_w` and keeps the throttle
+    // rollup only in `summary` — neither appears per-sample or in peak anymore.
+    const v3 = {
+      ...cudaCaptureV2,
+      capture_schema_version: 3,
+      collector_id: 'comfyui-core',
+      device: { ...(cudaCaptureV2 as { device: object }).device, power_limit_w: 575 },
+      resources: {
+        sample_interval_ms: 500,
+        series: [
+          { t_ms: 0, vram_used_mb: 500, power_w: 60, temperature_c: 50 },
+          { t_ms: 500, vram_used_mb: 900, power_w: 560, temperature_c: 74 }
+        ],
+        // no power_limit_w, no throttled in peak (v3)
+        peak: { vram_used_mb: 900, power_w: 560, temperature_c: 74 }
+      },
+      summary: { energy_wh_per_image: 2.1, sec_per_image: 4.0, throttled: true }
+    }
+    const s = mapCoreBenchmarkCapture(v3, 'prompt-v3')
+    expect(s).not.toBeNull()
+    expect(s!.captureSchemaVersion).toBe(3)
+    // power cap recovered from device even though peak/series omit it
+    expect(s!.resources.peak.powerLimitW).toBe(575)
+    expect(s!.resources.series[0]!.powerLimitW).toBeNull() // gone from samples
+    // throttle recovered from summary even though peak omits it
+    expect(s!.resources.peak.throttled).toBe(true)
+    expect(s!.summary.throttled).toBe(true)
   })
 
   it('back-compat: a v1 capture still maps, with v2-only fields null', () => {
@@ -599,7 +629,7 @@ describe('readRepresentativeCoreBenchmark', () => {
     const readFile = vi
       .fn()
       .mockResolvedValue(
-        JSON.stringify({ capture_schema_version: 3, collector_id: 'comfyui-core' })
+        JSON.stringify({ capture_schema_version: 4, collector_id: 'comfyui-core' })
       )
     const unlink = vi.fn().mockResolvedValue(undefined)
     const summary = await readRepresentativeCoreBenchmark('/out', ['future'], { readFile, unlink })

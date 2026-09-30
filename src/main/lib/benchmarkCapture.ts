@@ -186,8 +186,8 @@ export function mapCoreBenchmarkCapture(
   // v1 or v2, or (for older/partial files) the `comfyui-core` collector id. Anything
   // else (a stray JSON file, a future incompatible schema) is ignored so we degrade
   // to the `/system_stats` fallback rather than render garbage.
-  const knownSchema = schemaVersion === 1 || schemaVersion === 2
-  // A version we don't understand (e.g. a future v3) is rejected outright — even when
+  const knownSchema = schemaVersion === 1 || schemaVersion === 2 || schemaVersion === 3
+  // A version we don't understand (e.g. a future v4) is rejected outright — even when
   // it self-identifies as `comfyui-core` — because parsing it with v2 assumptions would
   // silently mis-read a breaking layout. Fall back to `/system_stats` instead.
   if (schemaVersion != null && !knownSchema) return null
@@ -300,8 +300,11 @@ export function mapCoreBenchmarkCapture(
         temperatureC: num(peak.temperature_c),
         smClockMhz: num(peak.sm_clock_mhz),
         memClockMhz: num(peak.mem_clock_mhz),
-        powerLimitW: num(peak.power_limit_w),
-        throttled: boolOrNull(peak.throttled)
+        // v3 hoists the (constant) power cap to `device` and drops it from peak;
+        // fall back so v2 (peak) and v3 (device) both populate this field.
+        powerLimitW: num(peak.power_limit_w) ?? num(device.power_limit_w),
+        // v3 keeps the throttle rollup only in `summary`; v2 mirrored it here.
+        throttled: boolOrNull(peak.throttled) ?? boolOrNull(summary.throttled)
       }
     },
     summary: {
