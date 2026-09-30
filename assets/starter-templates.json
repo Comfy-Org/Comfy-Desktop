@@ -139,12 +139,12 @@
       }
     },
     {
-      "id": "api_bytedance_seed_audio1_0_t2a",
+      "id": "api_elevenlabs_text_to_speech",
       "modality": "audio",
       "apiNode": true,
       "snapshot": {
-        "title": "Seed Audio 1.0: Text to Audio",
-        "description": "Input a text prompt to generate speech, dialogue, background music, and sound effects in one audio file. Describe voices, emotion, and scene details to create multi-speaker audio up to 2 minutes.",
+        "title": "ElevenLabs: Text to Speech",
+        "description": "Input text to generate speech with ultra-realistic voices, or upload a voice sample to clone it for synthesis.",
         "sizeBytes": 0,
         "mediaSubtype": "webp"
       }
