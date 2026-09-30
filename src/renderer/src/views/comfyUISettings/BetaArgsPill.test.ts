@@ -130,6 +130,35 @@ describe('BetaArgsPill', () => {
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })
 
+  it('does not reopen by itself when grants return after the list emptied while open', async () => {
+    const wrapper = mountPill(ONE)
+    await pill(wrapper).trigger('click')
+    expect(popover(wrapper).exists()).toBe(true)
+
+    await wrapper.setProps({ args: [] })
+    await wrapper.setProps({ args: ONE })
+
+    expect(popover(wrapper).exists()).toBe(false)
+    expect(pill(wrapper).attributes('aria-expanded')).toBe('false')
+  })
+
+  it('keeps Escape from the host popup after a click on the popover body', async () => {
+    const hostEscape = vi.fn()
+    window.addEventListener('keydown', hostEscape)
+    try {
+      const wrapper = mountPill(ONE)
+      await pill(wrapper).trigger('click')
+      // Focusable, so a click on its text lands focus here rather than on <body>.
+      expect(popover(wrapper).attributes('tabindex')).toBe('-1')
+      await popover(wrapper).trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      expect(popover(wrapper).exists()).toBe(false)
+      expect(hostEscape).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('keydown', hostEscape)
+    }
+  })
+
   it('closes on a second click', async () => {
     const wrapper = mountPill(ONE)
     await pill(wrapper).trigger('click')

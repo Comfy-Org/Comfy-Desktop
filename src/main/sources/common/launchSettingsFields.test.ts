@@ -336,6 +336,14 @@ describe('attachLaunchBetaArgs', () => {
     expect(fieldById(all, 'launchArgs')).not.toHaveProperty('betaArgsTiming')
   })
 
+  it('clears grants a reused field object still carries when there is nothing to show', () => {
+    const all = sections()
+    attachLaunchBetaArgs(all, [{ arg: '--enable-assets', name: null }], 'session')
+    attachLaunchBetaArgs(all, null, 'next-launch')
+    expect(fieldById(all, 'launchArgs')).not.toHaveProperty('betaArgs')
+    expect(fieldById(all, 'launchArgs')).not.toHaveProperty('betaArgsTiming')
+  })
+
   it("copies the views, so the IPC payload never aliases the session's record", () => {
     const views = [{ arg: '--enable-assets', name: 'Asset browser' }]
     const all = sections()

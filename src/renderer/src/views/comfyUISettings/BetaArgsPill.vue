@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useId } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onClickOutside, useEventListener } from '@vueuse/core'
 import { ChevronDown, ChevronRight, FlaskConical } from 'lucide-vue-next'
@@ -72,6 +72,12 @@ function manage(): void {
   window.api.openGlobalSettings('general', { highlightField: BETA_FEATURES_FIELD_ID })
 }
 
+// The instance outlives its markup (the host renders it unconditionally), so a list that empties
+// while open — the session stopped — must not leave the next grants to render pre-expanded.
+watch(count, (n) => {
+  if (n === 0) open.value = false
+})
+
 onClickOutside(root, () => close(false))
 // A click in another WebContents never reaches this document's pointer listener.
 useEventListener(window, 'blur', () => close(false))
@@ -102,6 +108,7 @@ useEventListener(window, 'blur', () => close(false))
       :id="popoverId"
       class="beta-args-popover"
       role="dialog"
+      tabindex="-1"
       :aria-label="heading"
       @keydown.escape="onEscape"
     >
@@ -168,6 +175,7 @@ useEventListener(window, 'blur', () => close(false))
 
 .beta-args-popover {
   position: absolute;
+  outline: none;
   top: calc(100% + 8px);
   right: 0;
   z-index: 50;

@@ -90,6 +90,10 @@ watch(
       clearTimeout(openTimer)
       openTimer = null
     }
+    if (closeTimer) {
+      clearTimeout(closeTimer)
+      closeTimer = null
+    }
     hide()
   }
 )

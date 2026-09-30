@@ -224,21 +224,28 @@ export function buildStorageFields(installation: InstallationRecord): Record<str
 /**
  * Attach Core beta grants to the `launchArgs` field, in place: a running session's, or a stopped
  * install's next-launch preview. Done at the IPC layer because neither is visible to
- * `getDetailSections` (a function of the installation record alone). No-op when there is nothing to
- * show, including an unpredictable preview (`null`), so the field then carries no `betaArgs`.
+ * `getDetailSections` (a function of the installation record alone). With nothing to show,
+ * including an unpredictable preview (`null`), the field carries no `betaArgs` at all.
  */
 export function attachLaunchBetaArgs(
   sections: Record<string, unknown>[],
   betaArgs: readonly BetaArgView[] | null | undefined,
   timing: 'session' | 'next-launch'
 ): void {
-  if (!betaArgs || betaArgs.length === 0) return
+  const views = betaArgs && betaArgs.length > 0 ? betaArgs : null
   for (const section of sections) {
     if (!Array.isArray(section.fields)) continue
     for (const field of section.fields as Record<string, unknown>[]) {
       if (field.id !== 'launchArgs') continue
-      field.betaArgs = betaArgs.map((view) => ({ ...view }))
-      field.betaArgsTiming = timing
+      // Cleared rather than skipped, so a source that ever reused its field objects could not
+      // carry a previous session's grants forward.
+      if (views) {
+        field.betaArgs = views.map((view) => ({ ...view }))
+        field.betaArgsTiming = timing
+      } else {
+        delete field.betaArgs
+        delete field.betaArgsTiming
+      }
     }
   }
 }
