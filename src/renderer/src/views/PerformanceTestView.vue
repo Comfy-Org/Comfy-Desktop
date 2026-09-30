@@ -33,13 +33,20 @@ import {
   type BenchmarkTone,
   type CompareResult
 } from '../lib/benchmarkMetrics'
-import { buildSeriesChart, projectY } from '../lib/benchmarkCharts'
+import {
+  buildRadialGauge,
+  buildSeriesChart,
+  niceTicks,
+  projectX,
+  projectY,
+  type AxisTick,
+  type SeriesChart
+} from '../lib/benchmarkCharts'
 import { emitTelemetryAction } from '../lib/telemetry'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 
 type BenchmarkModality = 'image' | 'video' | 'audio'
-type CaptureTier = 'rich' | 'partial' | 'lite'
 
 interface ConfigChip {
   readonly key: string
@@ -162,20 +169,18 @@ const aggregateChart = computed(() => {
   }))
 })
 
-// --- Rich results view (design §3–§7) --------------------------------------
-// The rich schema-v2 capture, when core wrote one. Everything degrades to a
-// muted "— not measured" (never a zero/blank) when a leaf is null; the whole
-// object is null for old core / no capture (the "Lite" tier).
+// --- Results view (design §3–§7) -------------------------------------------
+// Desktop relies solely on the ComfyUI-core capture. When `coreBenchmark` is
+// present we render the full results dashboard; when a run completed but core
+// wrote no capture we show a calm "needs capture" state (see the template) — we
+// no longer fall back to the old duration / `/system_stats` rendering. Within the
+// rich view, an individual null leaf still degrades to a muted "— not measured".
 const coreBenchmark = computed(() => performanceTestResult.value?.coreBenchmark ?? null)
 const resultsSummary = computed(() => performanceTestResult.value?.resultsSummary ?? null)
+/** A run finished (a summary exists), regardless of whether core captured metrics. */
 const hasResult = computed(() => resultsSummary.value !== null)
-
-/** Rich (v2) → Partial (v1) → Lite (no capture); drives the graceful degrade. */
-const captureTier = computed<CaptureTier>(() => {
-  const bench = coreBenchmark.value
-  if (!bench) return 'lite'
-  return (bench.captureSchemaVersion ?? 1) >= 2 ? 'rich' : 'partial'
-})
+/** Core wrote a capture — the only source the results dashboard renders from. */
+const hasCoreResult = computed(() => coreBenchmark.value !== null)
 
 const medianSeconds = computed<number | null>(() => {
   const stats = performanceTestResult.value?.statistics
@@ -268,6 +273,26 @@ const heroDateText = computed<string>(() => {
     new Date(iso)
   )
 })
+/** Context-line fragment: "20 steps · euler" — only when both are known. */
+const heroStepsText = computed<{ steps: number; sampler: string } | null>(() => {
+  const workflow = coreBenchmark.value?.workflow
+  if (!workflow || workflow.steps == null || !workflow.sampler) return null
+  return { steps: workflow.steps, sampler: workflow.sampler }
+})
+/** Context-line fragment: "1 images · batch 1" — only when the batch size is known. */
+const heroBatchText = computed<{ count: number; batch: number } | null>(() => {
+  const run = coreBenchmark.value?.run
+  if (!run || run.batchSize == null) return null
+  return { count: run.imageCount ?? run.batchSize, batch: run.batchSize }
+})
+const heroComfyuiVersion = computed<string | null>(
+  () => coreBenchmark.value?.device.comfyuiVersion ?? null
+)
+/** Genuinely abnormal: weights spilled to system RAM. Surfaced as a plain fact. */
+const coreOffloaded = computed<boolean>(() => coreBenchmark.value?.device.offloaded === true)
+const powerLimitW = computed<number | null>(
+  () => coreBenchmark.value?.resources.peak.powerLimitW ?? null
+)
 
 const rangeStats = computed(() => {
   const stats = performanceTestResult.value?.statistics
@@ -333,65 +358,172 @@ const coreNodeTimeline = computed(() => {
 const vramPeakMb = computed<number | null>(
   () => coreBenchmark.value?.resources.peak.vramUsedMb ?? null
 )
-const vramChart = computed(() => {
+
+/**
+ * A charted series inside a padded plot area: the pure geometry plus projected
+ * axis ticks. The template renders gridlines/labels from `xTicks`/`yTicks` and
+ * translates the plot group by `padL`/`padT`. All numbers come from the pure,
+ * unit-tested `benchmarkCharts` helpers — the view only positions them.
+ */
+interface AxedChart {
+  width: number
+  height: number
+  padL: number
+  padT: number
+  plotW: number
+  plotH: number
+  plot: SeriesChart
+  xTicks: AxisTick[]
+  yTicks: AxisTick[]
+}
+const CHART_PAD = { l: 46, r: 18, t: 14, b: 30 }
+function buildAxedChart(
+  values: ReadonlyArray<number | null | undefined>,
+  opts: {
+    width: number
+    height: number
+    pad?: { l: number; r: number; t: number; b: number }
+    xValues?: ReadonlyArray<number | null | undefined>
+    minY?: number
+    maxY?: number
+    yTickCount?: number
+    xTickCount?: number
+  }
+): AxedChart | null {
+  const pad = opts.pad ?? CHART_PAD
+  const plotW = opts.width - pad.l - pad.r
+  const plotH = opts.height - pad.t - pad.b
+  const plot = buildSeriesChart(values, {
+    width: plotW,
+    height: plotH,
+    xValues: opts.xValues,
+    minY: opts.minY,
+    maxY: opts.maxY
+  })
+  if (!plot) return null
+  const epsilon = 1e-6
+  const yTicks = niceTicks(plot.min, plot.max, opts.yTickCount ?? 4)
+    .filter((value) => value >= plot.min - epsilon && value <= plot.max + epsilon)
+    .map((value) => ({ value, pos: projectY(plot, value) }))
+  const xTicks = niceTicks(plot.minX, plot.maxX, opts.xTickCount ?? 5)
+    .filter((value) => value >= plot.minX - epsilon && value <= plot.maxX + epsilon)
+    .map((value) => ({ value, pos: projectX(plot, value) }))
+  return {
+    width: opts.width,
+    height: opts.height,
+    padL: pad.l,
+    padT: pad.t,
+    plotW,
+    plotH,
+    plot,
+    xTicks,
+    yTicks
+  }
+}
+
+// Radial VRAM-headroom gauge. High peaks are expected for a benchmark, so this is
+// presented neutrally (plum), never as a danger dial.
+const vramGauge = computed(() => {
+  const fraction = vramPeak.value.fraction
+  if (fraction == null) return null
+  return buildRadialGauge({ fraction, size: 132, strokeWidth: 13 })
+})
+
+// VRAM over time — an area chart in GB (y) over seconds (x), with gridlines, tick
+// labels, a total-memory ceiling line and the authoritative-peak line.
+const vramChart = computed<AxedChart | null>(() => {
   const series = coreBenchmark.value?.resources.series ?? []
   if (series.length === 0) return null
-  const values = series.map((sample) => sample.vramUsedMb)
-  const xValues = series.map((sample, index) => sample.tMs ?? index)
-  const finite = values.filter((v): v is number => v != null && Number.isFinite(v))
+  const valuesGb = series.map((sample) => toGb(sample.vramUsedMb))
+  const xSeconds = series.map((sample, index) => (sample.tMs ?? index) / 1000)
+  const finite = valuesGb.filter((v): v is number => v != null && Number.isFinite(v))
   if (finite.length < 2) return null
-  const ceilingMb = coreBenchmark.value?.device.totalVramMb ?? null
+  const ceilingGb = toGb(coreBenchmark.value?.device.totalVramMb)
+  const peakGb = toGb(vramPeakMb.value)
   const dataMax = Math.max(...finite)
-  // Raise the y-axis top to fit the ceiling AND the authoritative peak, so the
-  // peak reference line renders at its true height instead of clipping.
-  const top = Math.max(dataMax, ceilingMb ?? dataMax, vramPeakMb.value ?? dataMax)
-  const maxY = top > dataMax ? top : undefined
-  return buildSeriesChart(values, { width: 480, height: 120, xValues, minY: 0, maxY, tickCount: 0 })
+  // Raise the axis top to fit the ceiling AND the authoritative peak so their
+  // reference lines render at true height instead of clipping.
+  const maxY = Math.max(dataMax, ceilingGb ?? dataMax, peakGb ?? dataMax)
+  return buildAxedChart(valuesGb, {
+    width: 720,
+    height: 240,
+    pad: { l: 46, r: 84, t: 16, b: 30 },
+    xValues: xSeconds,
+    minY: 0,
+    maxY,
+    yTickCount: 4,
+    xTickCount: 6
+  })
 })
 const vramCeilingGb = computed<number | null>(() => toGb(coreBenchmark.value?.device.totalVramMb))
 const vramCeilingY = computed<number | null>(() => {
   const chart = vramChart.value
-  const ceilingMb = coreBenchmark.value?.device.totalVramMb
-  if (!chart || ceilingMb == null) return null
-  return projectY(chart, ceilingMb)
+  if (!chart || vramCeilingGb.value == null) return null
+  return projectY(chart.plot, vramCeilingGb.value)
 })
+const vramPeakGb = computed<number | null>(() => toGb(vramPeakMb.value))
 const vramPeakY = computed<number | null>(() => {
   const chart = vramChart.value
-  if (!chart || vramPeakMb.value == null) return null
-  return projectY(chart, vramPeakMb.value)
+  if (!chart || vramPeakGb.value == null) return null
+  return projectY(chart.plot, vramPeakGb.value)
 })
 const vramBaselineGb = computed<number | null>(() =>
   toGb(coreBenchmark.value?.device.baseline.vramUsedMb)
 )
 
-const stepChart = computed(() => {
+// Per-step it/s line (Details), with a dashed steady-state reference.
+const stepChart = computed<AxedChart | null>(() => {
   const steps = coreBenchmark.value?.sampling.perStepItPerS ?? []
-  const nonNull = steps.filter((value) => value != null && Number.isFinite(value))
-  if (nonNull.length < 2) return null
-  return buildSeriesChart(steps, { width: 480, height: 96, minY: 0, tickCount: 3 })
+  if (steps.filter((value) => value != null && Number.isFinite(value)).length < 2) return null
+  const xValues = steps.map((_, index) => index + 1)
+  return buildAxedChart(steps, {
+    width: 460,
+    height: 220,
+    xValues,
+    minY: 0,
+    yTickCount: 5,
+    xTickCount: 5
+  })
 })
 const steadyLineY = computed<number | null>(() => {
   const chart = stepChart.value
   const steady = steadyItPerS.value
   if (!chart || steady == null) return null
-  return projectY(chart, steady)
+  return projectY(chart.plot, steady)
 })
 
-const powerChart = computed(() => {
+// Power & temperature — a dual-axis card sharing one time (x) axis with an
+// independent left (W) and right (°C) scale.
+const POWER_TEMP_LAYOUT = { width: 460, height: 220, pad: { l: 44, r: 40, t: 16, b: 30 } }
+const powerTempSeconds = computed<number[]>(() =>
+  (coreBenchmark.value?.resources.series ?? []).map((sample, index) => (sample.tMs ?? index) / 1000)
+)
+const powerChart = computed<AxedChart | null>(() => {
   const series = coreBenchmark.value?.resources.series ?? []
   const values = series.map((sample) => sample.powerW)
   if (values.filter((value) => value != null && Number.isFinite(value)).length < 2) return null
-  const xValues = series.map((sample, index) => sample.tMs ?? index)
-  return buildSeriesChart(values, { width: 480, height: 96, xValues, minY: 0, tickCount: 0 })
+  return buildAxedChart(values, {
+    ...POWER_TEMP_LAYOUT,
+    xValues: powerTempSeconds.value,
+    minY: 0,
+    yTickCount: 4,
+    xTickCount: 4
+  })
 })
-const tempChart = computed(() => {
+const tempChart = computed<AxedChart | null>(() => {
   const series = coreBenchmark.value?.resources.series ?? []
   const values = series.map((sample) => sample.temperatureC)
   if (values.filter((value) => value != null && Number.isFinite(value)).length < 2) return null
-  const xValues = series.map((sample, index) => sample.tMs ?? index)
-  return buildSeriesChart(values, { width: 480, height: 96, xValues, minY: 0, tickCount: 0 })
+  return buildAxedChart(values, {
+    ...POWER_TEMP_LAYOUT,
+    xValues: powerTempSeconds.value,
+    yTickCount: 4,
+    xTickCount: 4
+  })
 })
-const showPowerTemp = computed<boolean>(() => powerChart.value != null || tempChart.value != null)
+/** The power/temp card reuses one geometry frame; either line may be absent. */
+const powerTempFrame = computed<AxedChart | null>(() => powerChart.value ?? tempChart.value)
+const showPowerTemp = computed<boolean>(() => powerTempFrame.value != null)
 
 const compareResult = computed<CompareResult | null>(() => {
   const summary = resultsSummary.value
@@ -1228,103 +1360,155 @@ watch(performanceTestLogs, async () => {
                   <i :style="{ width: `${progressPercent}%` }" />
                 </div>
               </div>
-              <template v-else-if="hasResult">
-                <p class="benchmark-context">
-                  <span>{{ resultsSummary?.workflowName }}</span>
-                  <template v-if="heroGpuName">
-                    <span aria-hidden="true">·</span>
-                    <span
-                      >{{ heroGpuName
-                      }}<template v-if="heroTotalVramGb != null">
-                        ({{ t('performanceTest.gbValue', { value: heroTotalVramGb }) }})</template
-                      ></span
-                    >
-                  </template>
-                  <template v-if="heroDateText">
-                    <span aria-hidden="true">·</span>
-                    <span>{{ heroDateText }}</span>
-                  </template>
-                </p>
+              <template v-else-if="hasCoreResult">
+                <header class="benchmark-context">
+                  <div class="benchmark-context__meta">
+                    <span class="benchmark-context__title">{{ resultsSummary?.workflowName }}</span>
+                    <span class="benchmark-context__facts num">
+                      <span v-if="heroGpuName" class="benchmark-context__fact">
+                        {{ heroGpuName
+                        }}<template v-if="heroTotalVramGb != null">
+                          · {{ t('performanceTest.gbValue', { value: heroTotalVramGb }) }}</template
+                        >
+                      </span>
+                      <span v-if="heroStepsText" class="benchmark-context__fact">{{
+                        t('performanceTest.contextSteps', heroStepsText)
+                      }}</span>
+                      <span v-if="heroBatchText" class="benchmark-context__fact">{{
+                        t('performanceTest.contextImages', heroBatchText)
+                      }}</span>
+                      <span v-if="heroDateText" class="benchmark-context__fact">{{
+                        heroDateText
+                      }}</span>
+                      <span v-if="heroComfyuiVersion" class="benchmark-context__fact">{{
+                        t('performanceTest.contextComfyui', { version: heroComfyuiVersion })
+                      }}</span>
+                    </span>
+                  </div>
+                  <span class="benchmark-status">{{ t('performanceTest.statusCompleted') }}</span>
+                </header>
 
                 <div class="benchmark-hero">
-                  <div class="benchmark-hero__primary">
-                    <p v-if="heroSeconds != null" class="benchmark-hero__metric">
-                      <span class="benchmark-hero__value">{{
-                        formatHeroSeconds(heroSeconds)
+                  <section class="benchmark-card benchmark-hero__card">
+                    <header class="benchmark-card__head">
+                      <h3>{{ t('performanceTest.throughputTitle') }}</h3>
+                      <span class="benchmark-card__aside">{{
+                        t('performanceTest.heroMedianOf', { count: measuredRunCount })
                       }}</span>
-                      <span class="benchmark-hero__unit">{{ t(heroUnitKey) }}</span>
-                    </p>
-                    <p v-else class="benchmark-hero__metric benchmark-hero__metric--muted">
-                      {{ t('performanceTest.notMeasured') }}
-                    </p>
-                    <p class="benchmark-hero__sub">
-                      {{ t('performanceTest.heroMedianOf', { count: measuredRunCount }) }}
-                    </p>
-                    <p v-if="steadyItPerS != null" class="benchmark-hero__itps">
-                      {{ t('performanceTest.heroItPerS', { value: steadyItPerS.toFixed(1) }) }}
-                    </p>
-                    <p
-                      v-if="compareView"
-                      class="benchmark-hero__delta"
-                      :class="toneClass(compareView.tone)"
-                    >
-                      <ArrowUp v-if="compareView.dir === 'up'" :size="14" aria-hidden="true" />
-                      <ArrowDown
-                        v-else-if="compareView.dir === 'down'"
-                        :size="14"
-                        aria-hidden="true"
-                      />
-                      <span>{{ t(compareView.key, compareView.params) }}</span>
-                    </p>
-                  </div>
-                  <div class="benchmark-hero__secondary">
-                    <div class="benchmark-hero__vram" :class="toneClass(vramPeak.tone)">
-                      <p v-if="!vramPeak.notMeasured" class="benchmark-hero__vram-value">
-                        {{ t('performanceTest.gbValue', { value: vramPeak.peakGb }) }}
+                    </header>
+                    <div class="benchmark-hero__primary">
+                      <p v-if="heroSeconds != null" class="benchmark-hero__metric num">
+                        <span class="benchmark-hero__value">{{
+                          formatHeroSeconds(heroSeconds)
+                        }}</span>
+                        <span class="benchmark-hero__unit">{{ t(heroUnitKey) }}</span>
                       </p>
-                      <p
-                        v-else
-                        class="benchmark-hero__vram-value benchmark-hero__vram-value--muted"
-                      >
+                      <p v-else class="benchmark-hero__metric benchmark-hero__metric--muted">
                         {{ t('performanceTest.notMeasured') }}
                       </p>
-                      <p class="benchmark-hero__vram-label">{{ t(vramPeak.headlineKey) }}</p>
-                      <p v-if="vramPeak.secondLine" class="benchmark-hero__vram-note">
-                        {{ t(vramPeak.secondLine.key, vramPeak.secondLine.params) }}
+                      <p v-if="steadyItPerS != null" class="benchmark-hero__itps num">
+                        {{ t('performanceTest.heroItPerS', { value: steadyItPerS.toFixed(2) }) }}
+                      </p>
+                      <p
+                        v-if="compareView"
+                        class="benchmark-hero__delta"
+                        :class="toneClass(compareView.tone)"
+                      >
+                        <ArrowUp v-if="compareView.dir === 'up'" :size="14" aria-hidden="true" />
+                        <ArrowDown
+                          v-else-if="compareView.dir === 'down'"
+                          :size="14"
+                          aria-hidden="true"
+                        />
+                        <span>{{ t(compareView.key, compareView.params) }}</span>
                       </p>
                     </div>
-                    <p v-if="coreThrottled === true" class="benchmark-hero__efficiency is-caution">
-                      {{
-                        t('performanceTest.throttleWarning', {
-                          watts: peakPowerW != null ? Math.round(peakPowerW) : '—',
-                          temp: peakTempC != null ? Math.round(peakTempC) : '—'
-                        })
-                      }}
-                    </p>
-                    <p v-else-if="hasEfficiencyLine" class="benchmark-hero__efficiency">
-                      <span v-if="energyWhPerImage != null">
-                        {{
-                          t('performanceTest.energyPerImage', {
-                            value: energyWhPerImage.toFixed(2)
-                          })
-                        }}
+                    <dl v-if="hasEfficiencyLine" class="benchmark-eff">
+                      <div v-if="energyWhPerImage != null" class="benchmark-eff__item">
+                        <dt>{{ t('performanceTest.energyPerImageLabel') }}</dt>
+                        <dd class="num">
+                          {{
+                            t('performanceTest.energyPerImage', {
+                              value: energyWhPerImage.toFixed(2)
+                            })
+                          }}
+                        </dd>
+                      </div>
+                      <div v-if="peakPowerW != null" class="benchmark-eff__item">
+                        <dt>{{ t('performanceTest.peakPowerLabel') }}</dt>
+                        <dd class="num">
+                          {{ Math.round(peakPowerW) }} W<template v-if="powerLimitW != null">
+                            / {{ Math.round(powerLimitW) }} W</template
+                          >
+                        </dd>
+                      </div>
+                      <div v-if="peakTempC != null" class="benchmark-eff__item">
+                        <dt>{{ t('performanceTest.peakTempLabel') }}</dt>
+                        <dd class="num">{{ Math.round(peakTempC) }} °C</dd>
+                      </div>
+                    </dl>
+                  </section>
+
+                  <section class="benchmark-card benchmark-hero__card benchmark-vram">
+                    <header class="benchmark-card__head">
+                      <h3>{{ t(vramPeak.headlineKey) }}</h3>
+                      <span v-if="vramPeak.totalGb != null" class="benchmark-card__aside num">
+                        {{ t('performanceTest.gbValue', { value: vramPeak.totalGb }) }}
                       </span>
-                      <span
-                        v-if="peakPowerW != null || peakTempC != null"
-                        class="benchmark-hero__power"
-                      >
-                        {{
-                          t('performanceTest.powerTempPeak', {
-                            watts: peakPowerW != null ? Math.round(peakPowerW) : '—',
-                            temp: peakTempC != null ? Math.round(peakTempC) : '—'
-                          })
-                        }}
-                      </span>
-                    </p>
-                  </div>
+                    </header>
+                    <div class="benchmark-vram__body">
+                      <div v-if="vramGauge" class="benchmark-vram__gauge">
+                        <svg
+                          :viewBox="`0 0 ${vramGauge.size} ${vramGauge.size}`"
+                          role="img"
+                          :aria-label="t(vramPeak.headlineKey)"
+                        >
+                          <path
+                            class="benchmark-vram__gauge-track"
+                            :d="vramGauge.trackPath"
+                            :stroke-width="vramGauge.strokeWidth"
+                          />
+                          <path
+                            v-if="vramGauge.valuePath"
+                            class="benchmark-vram__gauge-value"
+                            :d="vramGauge.valuePath"
+                            :stroke-width="vramGauge.strokeWidth"
+                          />
+                        </svg>
+                        <div v-if="vramPeak.percent != null" class="benchmark-vram__gauge-center">
+                          <span class="benchmark-vram__gauge-pct num">{{ vramPeak.percent }}%</span>
+                        </div>
+                      </div>
+                      <div class="benchmark-vram__figures">
+                        <p v-if="!vramPeak.notMeasured" class="benchmark-vram__value num">
+                          {{ t('performanceTest.gbValue', { value: vramPeak.peakGb }) }}
+                        </p>
+                        <p v-else class="benchmark-vram__value benchmark-vram__value--muted">
+                          {{ t('performanceTest.notMeasured') }}
+                        </p>
+                        <p v-if="vramPeak.secondLine" class="benchmark-vram__sub num">
+                          {{ t(vramPeak.secondLine.key, vramPeak.secondLine.params) }}
+                        </p>
+                        <p v-if="vramPeak.noteKey" class="benchmark-vram__sub">
+                          {{ t(vramPeak.noteKey) }}
+                        </p>
+                        <p v-if="coreOffloaded" class="benchmark-vram__note num">
+                          {{ t('performanceTest.offloadNote') }}
+                        </p>
+                        <p v-if="coreThrottled === true" class="benchmark-vram__note num">
+                          {{
+                            t('performanceTest.throttleNote', {
+                              watts: peakPowerW != null ? Math.round(peakPowerW) : '—',
+                              temp: peakTempC != null ? Math.round(peakTempC) : '—'
+                            })
+                          }}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
                 </div>
 
-                <p v-if="rangeStats" class="benchmark-range">
+                <p v-if="rangeStats" class="benchmark-range num">
                   {{
                     t('performanceTest.rangeSummary', {
                       fastest: formatHeroSeconds(rangeStats.fastest),
@@ -1336,25 +1520,10 @@ watch(performanceTestLogs, async () => {
                   }}
                 </p>
 
-                <ul v-if="configChips.length" class="benchmark-chips">
-                  <li
-                    v-for="chip in configChips"
-                    :key="chip.key"
-                    class="benchmark-chip"
-                    :class="toneClass(chip.tone)"
-                  >
-                    {{ chip.text }}
-                  </li>
-                </ul>
-
-                <p v-if="captureTier === 'lite'" class="benchmark-upsell">
-                  {{ t('performanceTest.liteUpsell') }}
-                </p>
-
                 <section v-if="coreNodeTimeline.length" class="benchmark-card">
                   <header class="benchmark-card__head">
                     <h3>{{ t('performanceTest.opTimelineTitle') }}</h3>
-                    <span v-if="nodeTotalMs != null" class="benchmark-card__aside">
+                    <span v-if="nodeTotalMs != null" class="benchmark-card__aside num">
                       {{
                         t('performanceTest.nodeTotal', {
                           value: formatHeroSeconds(nodeTotalMs / 1000)
@@ -1367,6 +1536,7 @@ watch(performanceTestLogs, async () => {
                       v-for="node in coreNodeTimeline"
                       :key="node.key"
                       class="benchmark-timeline__row"
+                      :class="{ 'is-dominant': node.dominant }"
                     >
                       <span class="benchmark-timeline__label" :title="node.label">{{
                         node.label
@@ -1377,7 +1547,7 @@ watch(performanceTestLogs, async () => {
                           :style="{ width: node.width }"
                         />
                       </span>
-                      <span class="benchmark-timeline__value">
+                      <span class="benchmark-timeline__value num">
                         {{
                           t('performanceTest.nodeElapsed', {
                             value: formatHeroSeconds(node.seconds),
@@ -1392,7 +1562,7 @@ watch(performanceTestLogs, async () => {
                 <section v-if="vramChart" class="benchmark-card">
                   <header class="benchmark-card__head">
                     <h3>{{ t('performanceTest.vramOverTimeTitle') }}</h3>
-                    <span v-if="vramPeak.peakGb != null" class="benchmark-card__aside">
+                    <span v-if="vramPeak.peakGb != null" class="benchmark-card__aside num">
                       {{ t('performanceTest.vramPeakAside', { value: vramPeak.peakGb }) }}
                     </span>
                   </header>
@@ -1402,40 +1572,97 @@ watch(performanceTestLogs, async () => {
                     role="img"
                     :aria-label="t('performanceTest.vramOverTimeTitle')"
                   >
-                    <line
-                      v-if="vramCeilingY != null"
-                      class="benchmark-graph__ceiling"
-                      x1="0"
-                      :x2="vramChart.width"
-                      :y1="vramCeilingY"
-                      :y2="vramCeilingY"
-                    />
-                    <path class="benchmark-graph__area" :d="vramChart.areaPath" />
-                    <path class="benchmark-graph__line" :d="vramChart.path" />
-                    <line
-                      v-if="vramPeakY != null"
-                      class="benchmark-graph__peak"
-                      x1="0"
-                      :x2="vramChart.width"
-                      :y1="vramPeakY"
-                      :y2="vramPeakY"
-                    />
+                    <g :transform="`translate(${vramChart.padL} ${vramChart.padT})`">
+                      <line
+                        v-for="tick in vramChart.yTicks"
+                        :key="`vy-${tick.value}`"
+                        class="benchmark-graph__grid"
+                        x1="0"
+                        :x2="vramChart.plotW"
+                        :y1="tick.pos"
+                        :y2="tick.pos"
+                      />
+                      <line
+                        v-if="vramCeilingY != null"
+                        class="benchmark-graph__ceiling"
+                        x1="0"
+                        :x2="vramChart.plotW"
+                        :y1="vramCeilingY"
+                        :y2="vramCeilingY"
+                      />
+                      <path class="benchmark-graph__area" :d="vramChart.plot.areaPath" />
+                      <path
+                        class="benchmark-graph__line benchmark-graph__line--vram"
+                        :d="vramChart.plot.path"
+                      />
+                      <line
+                        v-if="vramPeakY != null"
+                        class="benchmark-graph__peak"
+                        x1="0"
+                        :x2="vramChart.plotW"
+                        :y1="vramPeakY"
+                        :y2="vramPeakY"
+                      />
+                    </g>
+                    <text
+                      v-for="tick in vramChart.yTicks"
+                      :key="`vyl-${tick.value}`"
+                      class="benchmark-graph__axis num"
+                      :x="vramChart.padL - 8"
+                      :y="vramChart.padT + tick.pos + 3"
+                      text-anchor="end"
+                    >
+                      {{ tick.value }}
+                    </text>
+                    <text
+                      v-for="tick in vramChart.xTicks"
+                      :key="`vxl-${tick.value}`"
+                      class="benchmark-graph__axis num"
+                      :x="vramChart.padL + tick.pos"
+                      :y="vramChart.height - 10"
+                      text-anchor="middle"
+                    >
+                      {{ tick.value }}s
+                    </text>
+                    <text
+                      v-if="vramCeilingGb != null && vramCeilingY != null"
+                      class="benchmark-graph__annot num"
+                      :x="vramChart.padL + vramChart.plotW + 6"
+                      :y="vramChart.padT + vramCeilingY + 3"
+                      text-anchor="start"
+                    >
+                      {{ t('performanceTest.vramCeiling', { value: vramCeilingGb }) }}
+                    </text>
                   </svg>
-                  <p class="benchmark-graph__caption">
-                    <span v-if="vramCeilingGb != null">{{
-                      t('performanceTest.vramCeiling', { value: vramCeilingGb })
-                    }}</span>
-                    <span v-if="vramBaselineGb != null">{{
-                      t('performanceTest.vramBaseline', { value: vramBaselineGb })
-                    }}</span>
+                  <p v-if="vramBaselineGb != null" class="benchmark-graph__caption num">
+                    {{ t('performanceTest.vramBaseline', { value: vramBaselineGb }) }}
                   </p>
                 </section>
+
+                <section v-if="configChips.length" class="benchmark-card">
+                  <header class="benchmark-card__head">
+                    <h3>{{ t('performanceTest.runConfigTitle') }}</h3>
+                  </header>
+                  <ul class="benchmark-chips">
+                    <li
+                      v-for="chip in configChips"
+                      :key="chip.key"
+                      class="benchmark-chip"
+                      :class="toneClass(chip.tone)"
+                    >
+                      {{ chip.text }}
+                    </li>
+                  </ul>
+                </section>
               </template>
+              <div v-else-if="hasResult" class="benchmark-empty">
+                <p class="benchmark-empty__text">{{ t('performanceTest.needsCapture') }}</p>
+              </div>
               <p v-else class="performance-test__results-placeholder">
                 {{ t('performanceTest.resultsPlaceholder') }}
               </p>
 
-              <section v-if="hasResult" class="performance-test__details">
+              <section v-if="hasCoreResult" class="performance-test__details">
                 <CollapsibleSectionToggle
                   :expanded="detailsExpanded"
                   :label="t('performanceTest.detailsToggle')"
@@ -1455,27 +1682,58 @@ watch(performanceTestLogs, async () => {
                       role="img"
                       :aria-label="t('performanceTest.perStepTitle')"
                     >
-                      <line
-                        v-if="steadyLineY != null"
-                        class="benchmark-graph__reference"
-                        x1="0"
-                        :x2="stepChart.width"
-                        :y1="steadyLineY"
-                        :y2="steadyLineY"
-                      />
-                      <path
-                        class="benchmark-graph__line benchmark-graph__line--success"
-                        :d="stepChart.path"
-                      />
-                      <circle
-                        v-for="point in stepChart.points"
-                        :key="point.index"
-                        class="benchmark-graph__dot"
-                        :class="{ 'is-dim': point.index === 0 }"
-                        :cx="point.x"
-                        :cy="point.y"
-                        r="2.5"
-                      />
+                      <g :transform="`translate(${stepChart.padL} ${stepChart.padT})`">
+                        <line
+                          v-for="tick in stepChart.yTicks"
+                          :key="`sy-${tick.value}`"
+                          class="benchmark-graph__grid"
+                          x1="0"
+                          :x2="stepChart.plotW"
+                          :y1="tick.pos"
+                          :y2="tick.pos"
+                        />
+                        <line
+                          v-if="steadyLineY != null"
+                          class="benchmark-graph__reference"
+                          x1="0"
+                          :x2="stepChart.plotW"
+                          :y1="steadyLineY"
+                          :y2="steadyLineY"
+                        />
+                        <path
+                          class="benchmark-graph__line benchmark-graph__line--success"
+                          :d="stepChart.plot.path"
+                        />
+                        <circle
+                          v-for="point in stepChart.plot.points"
+                          :key="point.index"
+                          class="benchmark-graph__dot"
+                          :class="{ 'is-dim': point.index === 0 }"
+                          :cx="point.x"
+                          :cy="point.y"
+                          r="2.5"
+                        />
+                      </g>
+                      <text
+                        v-for="tick in stepChart.yTicks"
+                        :key="`syl-${tick.value}`"
+                        class="benchmark-graph__axis num"
+                        :x="stepChart.padL - 8"
+                        :y="stepChart.padT + tick.pos + 3"
+                        text-anchor="end"
+                      >
+                        {{ tick.value }}
+                      </text>
+                      <text
+                        v-for="tick in stepChart.xTicks"
+                        :key="`sxl-${tick.value}`"
+                        class="benchmark-graph__axis num"
+                        :x="stepChart.padL + tick.pos"
+                        :y="stepChart.height - 10"
+                        text-anchor="middle"
+                      >
+                        {{ tick.value }}
+                      </text>
                     </svg>
                     <p class="benchmark-graph__caption">
                       {{ t('performanceTest.perStepCaption') }}
@@ -1487,21 +1745,67 @@ watch(performanceTestLogs, async () => {
                       <h3>{{ t('performanceTest.powerTempTitle') }}</h3>
                     </header>
                     <svg
+                      v-if="powerTempFrame"
                       class="benchmark-graph"
-                      :viewBox="`0 0 ${(powerChart ?? tempChart)!.width} ${(powerChart ?? tempChart)!.height}`"
+                      :viewBox="`0 0 ${powerTempFrame.width} ${powerTempFrame.height}`"
                       role="img"
                       :aria-label="t('performanceTest.powerTempTitle')"
                     >
-                      <path
-                        v-if="powerChart"
-                        class="benchmark-graph__line benchmark-graph__line--power"
-                        :d="powerChart.path"
-                      />
-                      <path
-                        v-if="tempChart"
-                        class="benchmark-graph__line benchmark-graph__line--temp"
-                        :d="tempChart.path"
-                      />
+                      <g :transform="`translate(${powerTempFrame.padL} ${powerTempFrame.padT})`">
+                        <line
+                          v-for="tick in (powerChart ?? powerTempFrame).yTicks"
+                          :key="`pty-${tick.value}`"
+                          class="benchmark-graph__grid"
+                          x1="0"
+                          :x2="powerTempFrame.plotW"
+                          :y1="tick.pos"
+                          :y2="tick.pos"
+                        />
+                        <path
+                          v-if="powerChart"
+                          class="benchmark-graph__line benchmark-graph__line--power"
+                          :d="powerChart.plot.path"
+                        />
+                        <path
+                          v-if="tempChart"
+                          class="benchmark-graph__line benchmark-graph__line--temp"
+                          :d="tempChart.plot.path"
+                        />
+                      </g>
+                      <template v-if="powerChart">
+                        <text
+                          v-for="tick in powerChart.yTicks"
+                          :key="`ptpl-${tick.value}`"
+                          class="benchmark-graph__axis benchmark-graph__axis--power num"
+                          :x="powerTempFrame.padL - 8"
+                          :y="powerTempFrame.padT + tick.pos + 3"
+                          text-anchor="end"
+                        >
+                          {{ tick.value }}
+                        </text>
+                      </template>
+                      <template v-if="tempChart">
+                        <text
+                          v-for="tick in tempChart.yTicks"
+                          :key="`pttl-${tick.value}`"
+                          class="benchmark-graph__axis benchmark-graph__axis--temp num"
+                          :x="powerTempFrame.padL + powerTempFrame.plotW + 8"
+                          :y="powerTempFrame.padT + tick.pos + 3"
+                          text-anchor="start"
+                        >
+                          {{ tick.value }}°
+                        </text>
+                      </template>
+                      <text
+                        v-for="tick in powerTempFrame.xTicks"
+                        :key="`ptxl-${tick.value}`"
+                        class="benchmark-graph__axis num"
+                        :x="powerTempFrame.padL + tick.pos"
+                        :y="powerTempFrame.height - 10"
+                        text-anchor="middle"
+                      >
+                        {{ tick.value }}s
+                      </text>
                     </svg>
                     <p class="benchmark-graph__legend">
                       <span v-if="powerChart" class="benchmark-legend benchmark-legend--power">
@@ -2209,77 +2513,107 @@ watch(performanceTestLogs, async () => {
 }
 
 /* --- Rich results view (design §3–§8) --- */
+.num {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
 .benchmark-context {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin: 0 0 16px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
-.benchmark-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 20px;
-  padding: 20px;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 10px;
-  background: var(--surface-recessed);
-}
-
-.benchmark-hero__primary,
-.benchmark-hero__secondary {
+.benchmark-context__meta {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
 }
 
-.benchmark-hero__secondary {
-  align-items: flex-end;
-  text-align: right;
+.benchmark-context__title {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.benchmark-context__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.benchmark-context__fact:not(:last-child)::after {
+  margin-left: 8px;
+  color: var(--text-faint);
+  content: '·';
+}
+
+.benchmark-status {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--success) 26%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.benchmark-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.benchmark-hero__card {
+  margin-top: 0;
+}
+
+.benchmark-hero__primary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .benchmark-hero__metric {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
 }
 
 .benchmark-hero__value {
   color: var(--text-primary);
   font-family: var(--font-display);
-  font-size: 34px;
+  font-size: 42px;
   line-height: 1;
-  font-variant-numeric: tabular-nums;
 }
 
 .benchmark-hero__unit {
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .benchmark-hero__metric--muted,
-.benchmark-hero__vram-value--muted {
+.benchmark-vram__value--muted {
   color: var(--text-faint);
   font-size: 20px;
   font-style: italic;
 }
 
-.benchmark-hero__sub {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
 .benchmark-hero__itps {
   margin: 0;
   color: var(--success);
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .benchmark-hero__delta {
@@ -2289,34 +2623,103 @@ watch(performanceTestLogs, async () => {
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 13px;
-  font-variant-numeric: tabular-nums;
 }
 
-.benchmark-hero__vram-value {
+.benchmark-eff {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 26px;
+  margin: 18px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--chooser-surface-border);
+}
+
+.benchmark-eff__item {
+  min-width: 0;
+}
+
+.benchmark-eff__item dt {
+  order: 2;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.benchmark-eff__item dd {
+  order: 1;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.benchmark-vram__body {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.benchmark-vram__gauge {
+  position: relative;
+  flex: 0 0 auto;
+  width: 112px;
+  height: 112px;
+}
+
+.benchmark-vram__gauge svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.benchmark-vram__gauge-track {
+  fill: none;
+  stroke: var(--neutral-600);
+  stroke-linecap: round;
+}
+
+.benchmark-vram__gauge-value {
+  fill: none;
+  stroke: var(--accent-plum);
+  stroke-linecap: round;
+}
+
+.benchmark-vram__gauge-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.benchmark-vram__gauge-pct {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 24px;
+}
+
+.benchmark-vram__figures {
+  min-width: 0;
+}
+
+.benchmark-vram__value {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-display);
   font-size: 26px;
   line-height: 1;
-  font-variant-numeric: tabular-nums;
 }
 
-.benchmark-hero__vram-label {
-  margin: 2px 0 0;
-  color: var(--neutral-200);
-  font-size: 12px;
-}
-
-.benchmark-hero__vram-note,
-.benchmark-hero__efficiency {
+.benchmark-vram__sub {
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
-.benchmark-hero__power {
-  margin-left: 6px;
+.benchmark-vram__note {
+  margin: 6px 0 0;
+  color: var(--accent-plum);
+  font-size: 12px;
 }
 
 .is-positive {
@@ -2331,14 +2734,13 @@ watch(performanceTestLogs, async () => {
   margin: 14px 0 0;
   color: var(--text-muted);
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
 .benchmark-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -2353,15 +2755,21 @@ watch(performanceTestLogs, async () => {
 }
 
 .benchmark-chip.is-caution {
-  background: color-mix(in srgb, var(--danger) 22%, transparent);
-  color: var(--danger);
+  background: color-mix(in srgb, var(--accent-plum) 20%, transparent);
+  color: var(--accent-plum);
 }
 
-.benchmark-upsell {
-  margin: 16px 0 0;
-  padding: 16px;
-  border: 1px dashed var(--chooser-surface-border);
-  border-radius: 8px;
+.benchmark-empty {
+  padding: 28px 20px;
+  border: 1px solid var(--chooser-surface-border);
+  border-radius: 10px;
+  background: var(--surface-recessed);
+  text-align: center;
+}
+
+.benchmark-empty__text {
+  max-width: 46ch;
+  margin: 0 auto;
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
@@ -2419,6 +2827,11 @@ watch(performanceTestLogs, async () => {
   white-space: nowrap;
 }
 
+.benchmark-timeline__row.is-dominant .benchmark-timeline__label {
+  color: var(--comfy-yellow);
+  font-weight: 600;
+}
+
 .benchmark-timeline__bar {
   height: 8px;
   overflow: hidden;
@@ -2449,12 +2862,12 @@ watch(performanceTestLogs, async () => {
   height: auto;
 }
 
+/* Plum area fill is the VRAM card's single accent (matches the mockup). */
 .benchmark-graph__area {
-  fill: color-mix(in srgb, var(--comfy-yellow) 15%, transparent);
+  fill: color-mix(in srgb, var(--accent-plum) 15%, transparent);
   stroke: none;
 }
 
-/* Muted so the yellow area fill is the card's single accent (design §8). */
 .benchmark-graph__line {
   fill: none;
   stroke: var(--neutral-400);
@@ -2462,16 +2875,45 @@ watch(performanceTestLogs, async () => {
   vector-effect: non-scaling-stroke;
 }
 
+.benchmark-graph__line--vram {
+  stroke: var(--accent-plum);
+}
+
 .benchmark-graph__line--success {
   stroke: var(--success);
 }
 
 .benchmark-graph__line--power {
-  stroke: var(--comfy-yellow);
+  stroke: var(--accent-plum);
 }
 
 .benchmark-graph__line--temp {
   stroke: var(--danger);
+}
+
+.benchmark-graph__grid {
+  stroke: var(--neutral-600);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.benchmark-graph__axis {
+  fill: var(--text-muted);
+  font-size: 10px;
+}
+
+.benchmark-graph__axis--power {
+  fill: var(--accent-plum);
+}
+
+.benchmark-graph__axis--temp {
+  fill: var(--danger);
+}
+
+.benchmark-graph__annot {
+  fill: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .benchmark-graph__ceiling,
@@ -2524,7 +2966,7 @@ watch(performanceTestLogs, async () => {
 }
 
 .benchmark-legend--power::before {
-  background: var(--comfy-yellow);
+  background: var(--accent-plum);
 }
 
 .benchmark-legend--temp::before {
@@ -2567,11 +3009,6 @@ watch(performanceTestLogs, async () => {
 
   .benchmark-hero {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .benchmark-hero__secondary {
-    align-items: flex-start;
-    text-align: left;
   }
 
   .performance-test__summary {

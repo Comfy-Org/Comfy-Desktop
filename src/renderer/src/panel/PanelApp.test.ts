@@ -279,7 +279,9 @@ const messages = {
       vramPeakOfTotalFits: 'of {total} GB · fits',
       vramPeakExceeded: 'of {total} GB · exceeded',
       unifiedMemory: 'Unified memory',
-      systemRam: 'System RAM'
+      systemRam: 'System RAM',
+      needsCapture:
+        'This benchmark needs a version of ComfyUI that reports capture. Update ComfyUI to see results.'
     },
     benchmarks: {
       title: 'Benchmarks',
@@ -1147,50 +1149,26 @@ describe('PanelApp', () => {
       telemetryEvents.some((event) => event.actionName === 'comfy.desktop.performance_test.stopped')
     ).toBe(false)
     const results = wrapper.get('.performance-test__results').text()
-    // Modality-aware hero (lite tier: no core capture -> seconds-only, from the median).
-    expect(results).toContain('cat-workflow.json')
-    expect(results).toContain('s / run')
-    expect(results).toContain('median of 5 runs')
-    // Range / variance sub-row backs the hero with fastest/slowest/avg + counts.
-    expect(results).toContain('range 1.25–2.75 s · avg 2.00 s · 5 runs, 0 failed')
-    // First-run compare + honest VRAM degrade (no peak available without a capture).
-    expect(results).toContain('First run of this benchmark')
-    expect(results).toContain('VRAM peak')
-    expect(results).toContain('— not measured')
-    // Lite tier surfaces the calm update-ComfyUI upsell where the graphs would be.
-    expect(results).toContain('Detailed metrics need ComfyUI with benchmark capture')
+    // Core-only: without a ComfyUI capture (coreBenchmark == null) we show a single
+    // calm "needs capture" state — never the old duration / system_stats rendering.
+    expect(results).toContain(
+      'This benchmark needs a version of ComfyUI that reports capture. Update ComfyUI to see results.'
+    )
+    // The killed fallback renders no hero, range row, compare line, upsell,
+    // per-node timeline, run-duration bars, or system-information table.
+    expect(results).not.toContain('s / run')
+    expect(results).not.toContain('median of 5 runs')
+    expect(results).not.toContain('range 1.25–2.75 s')
+    expect(results).not.toContain('First run of this benchmark')
+    expect(results).not.toContain('Detailed metrics need ComfyUI with benchmark capture')
+    expect(wrapper.find('.performance-test__aggregate-chart').exists()).toBe(false)
+    expect(wrapper.find('.performance-test__system-group').exists()).toBe(false)
+    expect(wrapper.find('.performance-test__details').exists()).toBe(false)
+    expect(results).not.toContain('NVIDIA GeForce RTX 4090')
+    expect(results).not.toContain('Top-level fallback should not be displayed')
     // Scoped rows from other instances never leak in.
     expect(results).not.toContain('prompt-3')
     expect(results).not.toContain('prompt-7')
-    // Run-durations bar is retained under the Details disclosure.
-    expect(
-      wrapper.findAll('.performance-test__aggregate-bar span').map((label) => label.text())
-    ).toEqual(['Fastest run', 'Slowest run', 'Average run', 'Median run'])
-    expect(wrapper.get('.performance-test__aggregate-chart').attributes('aria-label')).toBe(
-      'Run duration aggregates'
-    )
-    expect(wrapper.findAll('.performance-test__aggregate-bar')).toHaveLength(4)
-    expect(wrapper.findAll('.performance-test__results h3')).toHaveLength(2)
-    expect(results).toContain('System information')
-    expect(results).toContain('NVIDIA GeForce RTX 4090')
-    expect(results).not.toContain('Top-level fallback should not be displayed')
-    expect(wrapper.find('.performance-test__result-list--compact').exists()).toBe(true)
-    expect(wrapper.findAll('.performance-test__system-group h4')).toHaveLength(0)
-    const systemGroups = wrapper.findAll('.performance-test__system-group')
-    expect(systemGroups[0]!.text()).toContain('NVIDIA GeForce RTX 4090')
-    expect(systemGroups[0]!.text()).toContain('VRAM24.0 GB')
-    expect(systemGroups[0]!.text()).toContain('RAM63.9 GB')
-    expect(systemGroups[0]!.text()).toContain('PyTorch version2.10.0+cu130')
-    expect(systemGroups[0]!.text()).toContain('xFormers version0.0.31')
-    expect(systemGroups[1]!.text()).toContain('CPUAMD Ryzen 9 7950X')
-    expect(systemGroups[1]!.text()).toContain('CPU cores32')
-    expect(systemGroups[1]!.text()).toContain('Architecturex64')
-    expect(systemGroups[1]!.text()).toContain('Operating systemMicrosoft Windows 11 Pro 10.0.26200')
-    expect(results).not.toContain('GPU driver')
-    expect(results).not.toContain('Device index')
-    expect(results).not.toContain('Backend')
-    expect(results).not.toContain('24576 MB')
-    expect(results).not.toContain('65461 MB')
     expect(
       wrapper
         .get('.performance-test__results')
@@ -1238,7 +1216,9 @@ describe('PanelApp', () => {
 
     mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'performance-test' }))
     await flushPromises()
-    expect(wrapper.get('.performance-test__results').text()).toContain('range 1.25–2.75 s')
+    expect(wrapper.get('.performance-test__results').text()).toContain(
+      'This benchmark needs a version of ComfyUI that reports capture.'
+    )
     expect(wrapper.get('.performance-test__workflow-file').text()).toContain('cat-workflow.json')
 
     const outputCallback = api.onComfyOutput.mock.calls[0]![0] as (data: {
