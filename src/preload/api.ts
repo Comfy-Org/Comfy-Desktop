@@ -34,8 +34,6 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('get-performance-test-example-workflows', installationId),
     preparePerformanceTestExampleWorkflow: (installationId, templateId) =>
       ipcRenderer.invoke('prepare-performance-test-example-workflow', installationId, templateId),
-    getPerformanceTestExampleDownload: (filePath) =>
-      ipcRenderer.invoke('get-performance-test-example-download', filePath),
     deletePerformanceTestWorkflow: (filePath) =>
       ipcRenderer.invoke('delete-performance-test-workflow', filePath),
     savePerformanceTestLogs: (filePath, logs) =>
@@ -317,6 +315,12 @@ export function buildElectronApi(): ElectronApi {
         callback(data as Parameters<typeof callback>[0])
       ipcRenderer.on('performance-test-progress', handler)
       return () => ipcRenderer.removeListener('performance-test-progress', handler)
+    },
+    onPerformanceTestExampleDownload: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as Parameters<typeof callback>[0])
+      ipcRenderer.on('performance-test-example-download', handler)
+      return () => ipcRenderer.removeListener('performance-test-example-download', handler)
     },
     onComfyExited: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

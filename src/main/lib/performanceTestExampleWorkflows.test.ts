@@ -9,8 +9,8 @@ vi.mock('./modelDownloadPaths', () => ({
 }))
 vi.mock('../sources/standalone/templateDownloadTask', () => ({
   forgetTemplateDownload: vi.fn(),
-  getTemplateDownloadState: vi.fn(),
-  startTemplateDownloadTask: vi.fn()
+  startTemplateDownloadTask: vi.fn(),
+  subscribeTemplateDownload: vi.fn()
 }))
 
 import benchmarkTemplates from '../../../assets/benchmark-templates.json'
@@ -19,14 +19,14 @@ import { fetchJSON } from './fetch'
 import { resolveDownloadContextById, resolveModelsPresence } from './modelDownloadPaths'
 import {
   forgetTemplateDownload,
-  getTemplateDownloadState,
-  startTemplateDownloadTask
+  startTemplateDownloadTask,
+  subscribeTemplateDownload
 } from '../sources/standalone/templateDownloadTask'
+import type { TemplateDownloadSummary } from '../sources/standalone/templateDownloadCore'
 import type { InstallationRecord } from '../installations'
 import {
   cancelExampleModelDownload,
   ExampleWorkflowFetchError,
-  getExampleModelDownload,
   getPerformanceTestExampleCatalog,
   loadPerformanceTestExampleArtifacts,
   startExampleModelDownload
@@ -224,14 +224,35 @@ describe('performance test example workflows', () => {
     expect(fetchJSON).toHaveBeenCalledWith(INDEX_URL)
   })
 
-  it('runs one background model download per prepared session and exposes its progress', async () => {
+  it('runs one background model download per prepared session and forwards its progress', async () => {
     serveRepo()
     const installation = { id: 'inst-1' } as InstallationRecord
     const artifacts = await loadPerformanceTestExampleArtifacts(SAMPLE_ID)
     const workflowFilePath = `C:\\benchmarks\\20260930120000\\${SAMPLE_ID}.json`
     const taskId = 'performance-test-download:20260930120000'
+    const summary = (patch: Partial<TemplateDownloadSummary>): TemplateDownloadSummary => ({
+      status: 'resolving',
+      percent: -1,
+      receivedBytes: 0,
+      totalBytes: 123,
+      doneCount: 0,
+      fileCount: 0,
+      fileIndex: 0,
+      currentFile: '',
+      speedMBs: 0,
+      etaSecs: -1,
+      ...patch
+    })
+    let publish: (summary: TemplateDownloadSummary) => void = () => {}
+    vi.mocked(subscribeTemplateDownload).mockImplementation((_id, listener) => {
+      publish = listener
+      listener(summary({}))
+      return () => {}
+    })
+    const onProgress = vi.fn()
 
-    startExampleModelDownload(installation, workflowFilePath, artifacts)
+    const initial = startExampleModelDownload(installation, workflowFilePath, artifacts, onProgress)
+
     expect(startTemplateDownloadTask).toHaveBeenCalledWith(
       taskId,
       installation,
@@ -240,25 +261,18 @@ describe('performance test example workflows', () => {
       { sendOutput: expect.any(Function) },
       editorWorkflow
     )
+    expect(subscribeTemplateDownload).toHaveBeenCalledWith(taskId, expect.any(Function))
+    // The summary reported at subscribe time is returned, not forwarded.
+    expect(initial).toEqual({ status: 'resolving', percent: -1, message: expect.any(String) })
+    expect(onProgress).not.toHaveBeenCalled()
 
-    vi.mocked(getTemplateDownloadState).mockReturnValueOnce(undefined)
-    expect(getExampleModelDownload(workflowFilePath)).toBeNull()
-
-    vi.mocked(getTemplateDownloadState).mockReturnValueOnce({
-      status: 'error',
-      files: [],
-      estimatedTotalBytes: 123,
-      speedMBs: 0,
-      etaSecs: -1,
-      error: 'insufficient-disk'
-    })
-    expect(getExampleModelDownload(workflowFilePath)).toEqual({
+    publish(summary({ status: 'error', percent: 0, error: 'insufficient-disk' }))
+    expect(onProgress).toHaveBeenCalledWith({
       status: 'error',
       percent: 0,
       message: expect.any(String),
       error: 'insufficient-disk'
     })
-    expect(getTemplateDownloadState).toHaveBeenCalledWith(taskId)
 
     cancelExampleModelDownload(workflowFilePath)
     expect(forgetTemplateDownload).toHaveBeenCalledWith(taskId)

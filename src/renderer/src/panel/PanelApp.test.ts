@@ -2,7 +2,7 @@
 // Keep the feedback iframe in the DOM without loading the external support site.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
-import type { RunPerformanceTestWorkflowResult } from '../types/ipc'
+import type { ExampleWorkflowDownload, RunPerformanceTestWorkflowResult } from '../types/ipc'
 
 const installWizardOpen = vi.hoisted(() => vi.fn())
 const createResultsPngMock = vi.hoisted(() =>
@@ -297,6 +297,10 @@ interface MockApiState {
     completedRuns: number
     totalRuns: number
   }) => void)[]
+  performanceTestExampleDownloadCallbacks: ((data: {
+    filePath: string
+    download: ExampleWorkflowDownload
+  }) => void)[]
   /** File-menu Skip Onboarding callbacks. Main fires this when the
    *  user clicks the entry in the waffle popup; tests can simulate
    *  the click by invoking each callback. */
@@ -348,6 +352,7 @@ function installMockApi(initial?: {
     appUpdateUserActionFailedCallbacks: [],
     installationsChangedCallbacks: [],
     performanceTestProgressCallbacks: [],
+    performanceTestExampleDownloadCallbacks: [],
     firstUseSkipCallbacks: [],
     openFeedbackCallbacks: [],
     closeRequestCallbacks: [],
@@ -535,9 +540,15 @@ function installMockApi(initial?: {
     preparePerformanceTestExampleWorkflow: vi.fn(async () => ({
       ok: true,
       filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_turbo.json',
-      templateLabel: 'Z-Image-Turbo: Text to Image'
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
     })),
-    getPerformanceTestExampleDownload: vi.fn(async () => null),
+    onPerformanceTestExampleDownload: vi.fn((cb) => {
+      state.performanceTestExampleDownloadCallbacks.push(cb)
+      return () => {
+        state.performanceTestExampleDownloadCallbacks =
+          state.performanceTestExampleDownloadCallbacks.filter((callback) => callback !== cb)
+      }
+    }),
     deletePerformanceTestWorkflow: vi.fn(async () => ({ ok: true, status: 'deleted' as const })),
     listPerformanceTestBenchmarks: vi.fn(async () => ({ folderPath: '', benchmarks: [] })),
     onPerformanceTestProgress: vi.fn((cb) => {
@@ -1417,8 +1428,24 @@ describe('PanelApp', () => {
   interface ExampleWorkflowApi {
     getPerformanceTestExampleWorkflows: ReturnType<typeof vi.fn>
     preparePerformanceTestExampleWorkflow: ReturnType<typeof vi.fn>
-    getPerformanceTestExampleDownload: ReturnType<typeof vi.fn>
     deletePerformanceTestWorkflow: ReturnType<typeof vi.fn>
+  }
+
+  const downloading = {
+    status: 'downloading',
+    percent: 40,
+    message: 'model.safetensors (1 of 2) — 4 / 10 GB at 50.0 MB/s · 2m remaining'
+  } satisfies ExampleWorkflowDownload
+
+  /** Push model download progress the way the main process does. */
+  async function emitExampleDownload(
+    download: ExampleWorkflowDownload,
+    filePath = EXAMPLE_PATH
+  ): Promise<void> {
+    mockState.performanceTestExampleDownloadCallbacks.forEach((callback) =>
+      callback({ filePath, download })
+    )
+    await flushPromises()
   }
 
   /** Mount the performance test page with one local instance selected. */
@@ -1459,7 +1486,7 @@ describe('PanelApp', () => {
     api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
       ok: true,
       filePath: EXAMPLE_PATH,
-      templateLabel: 'Z-Image Int8: Text to Image'
+      download: downloading
     })
     window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
     const wrapper = mountPanel()
@@ -1478,17 +1505,8 @@ describe('PanelApp', () => {
     await flushPromises()
   }
 
-  const downloading = {
-    status: 'downloading',
-    percent: 40,
-    message: 'model.safetensors (1 of 2) — 4 / 10 GB at 50.0 MB/s · 2m remaining'
-  }
-
   it('prepares an example workflow and blocks the run until its models are downloaded', async () => {
     const { wrapper, api } = await mountWithInstance()
-    api.getPerformanceTestExampleDownload
-      .mockResolvedValueOnce(downloading)
-      .mockResolvedValue({ status: 'done', percent: 100, message: 'Template models ready' })
 
     await wrapper.get('.performance-test__example-workflow').trigger('click')
     await flushPromises()
@@ -1497,60 +1515,46 @@ describe('PanelApp', () => {
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       'Missing models will be downloaded automatically.'
     )
-    // Only timeouts are faked, so the progress poll advances on demand.
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
-      await flushPromises()
-
-      expect(api.preparePerformanceTestExampleWorkflow).toHaveBeenCalledWith(
-        'workspace-install',
-        'image_z_image_int8'
-      )
-      expect(api.getPerformanceTestExampleDownload).toHaveBeenCalledWith(EXAMPLE_PATH)
-      const workflow = wrapper.get('.performance-test__workflow-file')
-      expect(workflow.text()).toContain('Z-Image Int8: Text to Image')
-      expect(workflow.text()).toContain(downloading.message)
-      expect(workflow.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('40')
-      expect(wrapper.get('.performance-test__delete-workflow').attributes('aria-label')).toBe(
-        'Cancel download'
-      )
-      expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
-
-      await vi.advanceTimersByTimeAsync(500)
-      await flushPromises()
-
-      expect(api.getPerformanceTestExampleDownload).toHaveBeenCalledTimes(2)
-      expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
-      expect(wrapper.get('.performance-test__workflow-file').text()).toContain(EXAMPLE_PATH)
-      expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('keeps the run blocked and retries when reading the download progress fails', async () => {
-    const { wrapper, api } = await mountWithInstance()
-    api.getPerformanceTestExampleDownload
-      .mockRejectedValueOnce(new Error('IPC unavailable'))
-      .mockResolvedValue(downloading)
-    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
     await flushPromises()
 
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
-      await flushPromises()
-      expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+    expect(api.preparePerformanceTestExampleWorkflow).toHaveBeenCalledWith(
+      'workspace-install',
+      'image_z_image_int8'
+    )
+    const workflow = wrapper.get('.performance-test__workflow-file')
+    expect(workflow.text()).toContain('Z-Image Int8: Text to Image')
+    expect(workflow.text()).toContain(downloading.message)
+    expect(workflow.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('40')
+    expect(wrapper.get('.performance-test__delete-workflow').attributes('aria-label')).toBe(
+      'Cancel download'
+    )
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
 
-      await vi.advanceTimersByTimeAsync(500)
-      await flushPromises()
-      expect(api.getPerformanceTestExampleDownload).toHaveBeenCalledTimes(2)
-      expect(wrapper.get('.performance-test__workflow-file').text()).toContain(downloading.message)
-      expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
-    } finally {
-      vi.useRealTimers()
-    }
+    await emitExampleDownload({ ...downloading, percent: 80 })
+    expect(
+      wrapper
+        .get('.performance-test__workflow-file [role="progressbar"]')
+        .attributes('aria-valuenow')
+    ).toBe('80')
+
+    await emitExampleDownload({ status: 'done', percent: 100, message: 'Template models ready' })
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(EXAMPLE_PATH)
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+  })
+
+  it('ignores download progress for a workflow the page no longer shows', async () => {
+    const { wrapper } = await mountWithInstance()
+    await chooseExampleWorkflow(wrapper)
+
+    await emitExampleDownload(
+      { status: 'done', percent: 100, message: 'Template models ready' },
+      'C:\\ComfyUI\\performance-tests\\20260907220000\\image_z_image_int8.json'
+    )
+
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(downloading.message)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
   })
 
   it('explains that example workflows need an installed instance', async () => {
@@ -1582,7 +1586,6 @@ describe('PanelApp', () => {
 
   it('cancels the model download when the example workflow is removed', async () => {
     const { wrapper, api } = await mountWithInstance()
-    api.getPerformanceTestExampleDownload.mockResolvedValue(downloading)
     await chooseExampleWorkflow(wrapper)
 
     await wrapper.get('.performance-test__delete-workflow').trigger('click')
@@ -1595,14 +1598,15 @@ describe('PanelApp', () => {
 
   it('removes the example workflow and explains why when its models cannot be downloaded', async () => {
     const { wrapper, api } = await mountWithInstance()
-    api.getPerformanceTestExampleDownload.mockResolvedValue({
+    await chooseExampleWorkflow(wrapper)
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+
+    await emitExampleDownload({
       status: 'error',
       percent: 0,
       message: 'Not enough disk space',
       error: 'insufficient-disk'
     })
-
-    await chooseExampleWorkflow(wrapper)
 
     expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
     expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)

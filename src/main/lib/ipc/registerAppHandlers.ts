@@ -61,7 +61,6 @@ import {
 import {
   cancelExampleModelDownload,
   ExampleWorkflowFetchError,
-  getExampleModelDownload,
   getPerformanceTestExampleCatalog,
   loadPerformanceTestExampleArtifacts,
   startExampleModelDownload
@@ -223,8 +222,19 @@ export function registerAppHandlers(): void {
           artifacts.apiWorkflow,
           benchmarksDir
         )
-        startExampleModelDownload(installation, workflowFilePath, artifacts)
-        return { ok: true, filePath: workflowFilePath }
+        const download = startExampleModelDownload(
+          installation,
+          workflowFilePath,
+          artifacts,
+          (progress) => {
+            if (_event.sender.isDestroyed()) return
+            _event.sender.send('performance-test-example-download', {
+              filePath: workflowFilePath,
+              download: progress
+            })
+          }
+        )
+        return { ok: true, filePath: workflowFilePath, download }
       } catch (error) {
         return {
           ok: false,
@@ -233,10 +243,6 @@ export function registerAppHandlers(): void {
         }
       }
     }
-  )
-
-  ipcMain.handle('get-performance-test-example-download', (_event, filePath: string) =>
-    getExampleModelDownload(filePath)
   )
 
   ipcMain.handle('delete-performance-test-workflow', async (_event, filePath: string) => {

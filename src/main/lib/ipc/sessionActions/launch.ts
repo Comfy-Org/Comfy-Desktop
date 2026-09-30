@@ -68,9 +68,10 @@ import { createLaunchProgressTracker } from '../../launchProgress'
 import { buildLaunchPhases } from '../../launchPhases'
 import {
   getTemplateDownloadState,
-  summarizeTemplateState,
   formatTemplateSubStatus,
-  awaitTemplateDownloadSettled
+  awaitTemplateDownloadSettled,
+  subscribeTemplateDownload,
+  type TemplateDownloadSummary
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
 import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
@@ -1168,60 +1169,42 @@ async function runLaunch(
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd)
 
-  /** Gates the `template-models` reader: the bar derives "prior steps done" from
-   *  the active phase index, so the reader stays silent through the real phases
-   *  and only drives the trailing download row once the server is reachable.
-   *  Flipped true by `waitForTemplateDownloadGate()` at port-ready. */
+  /** Gates the `template-models` row: the bar derives "prior steps done" from
+   *  the active phase index, so the row stays silent through the real phases and
+   *  only shows the download once the server is reachable. Flipped true by
+   *  `waitForTemplateDownloadGate()` at port-ready. */
   let serverUp = false
+  /** Latest download summary, painted as soon as the row is released. */
+  let latestTemplateSummary: TemplateDownloadSummary | null = null
+  // A pre-completed phase reports indeterminate (emitting 100 into its slot would
+  // fill it in one frame and leap the bar); a live download reports real percent
+  // so the bar advances with the bytes.
+  let firstTemplatePaint = true
+  let templatePreCompleted = false
+  let templatePaintDone = false
+  const paintTemplateProgress = (summary: TemplateDownloadSummary): void => {
+    if (!serverUp || templatePaintDone) return
+    const terminal = isTemplateDownloadTerminal(summary.status)
+    if (firstTemplatePaint) {
+      firstTemplatePaint = false
+      templatePreCompleted = terminal
+    }
+    sendProgress('template-models', {
+      percent: templatePreCompleted || terminal ? -1 : Math.min(99, Math.max(0, summary.percent)),
+      status: formatTemplateSubStatus(summary),
+      error: summary.status === 'error'
+    })
+    templatePaintDone = terminal
+  }
 
-  // Single 500 ms reader for the `template-models` phase — paces the display only
-  // (bytes flow in the background task; logs are emitted there, not here).
+  // The background task publishes its progress every 500 ms (bytes and logs stay
+  // there); this only paces the display of the `template-models` phase.
   if (showTemplatePhase) {
-    void (async (): Promise<void> => {
-      // A pre-completed phase reports indeterminate (emitting 100 into its slot
-      // would fill it in one frame and leap the bar); a live download reports
-      // real percent so the bar advances with the bytes.
-      let firstEmittedTick = true
-      let preCompleted = false
-      const tick = (): boolean => {
-        if (!serverUp) return false
-        const state = getTemplateDownloadState(installationId)
-        if (!state) return true
-        const summary = summarizeTemplateState(state)
-        const terminal =
-          summary.status === 'done' || summary.status === 'error' || summary.status === 'cancelled'
-        if (firstEmittedTick) {
-          firstEmittedTick = false
-          preCompleted = terminal
-        }
-        const percent = preCompleted
-          ? -1
-          : terminal
-            ? -1
-            : Math.min(99, Math.max(0, summary.percent))
-        sendProgress('template-models', {
-          percent,
-          status: formatTemplateSubStatus(summary),
-          error: summary.status === 'error'
-        })
-        return terminal
-      }
-      while (!abort.signal.aborted) {
-        if (tick()) return
-        const done = await new Promise<boolean>((resolve) => {
-          const timer = setTimeout(() => {
-            abort.signal.removeEventListener('abort', onAbort)
-            resolve(false)
-          }, 500)
-          const onAbort = (): void => {
-            clearTimeout(timer)
-            resolve(true)
-          }
-          abort.signal.addEventListener('abort', onAbort, { once: true })
-        })
-        if (done) return
-      }
-    })()
+    const unsubscribe = subscribeTemplateDownload(installationId, (summary) => {
+      latestTemplateSummary = summary
+      paintTemplateProgress(summary)
+    })
+    abort.signal.addEventListener('abort', unsubscribe, { once: true })
   }
 
   /** Abortable sleep used by the failure countdown. Resolves early on abort. */
@@ -1254,9 +1237,10 @@ async function runLaunch(
    */
   async function waitForTemplateDownloadGate(): Promise<void> {
     if (!showTemplatePhase) return
-    // Release the reader (it held silent through the real phases). Set before the
-    // early-returns so the pre-done case still paints the final "models ready" row.
+    // Release the row (it held silent through the real phases) and paint the latest
+    // summary now, so the pre-done case still shows the final "models ready" row.
     serverUp = true
+    if (latestTemplateSummary) paintTemplateProgress(latestTemplateSummary)
 
     const state = getTemplateDownloadState(installationId)
     if (!state) return

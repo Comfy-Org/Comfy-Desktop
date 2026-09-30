@@ -2,8 +2,6 @@ import { computed, onUnmounted, ref, watch, type Ref, type ShallowRef } from 'vu
 import type TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import type { DiskSpaceInfo, ExampleWorkflowDownload, FieldOption } from '../types/ipc'
 
-const DOWNLOAD_POLL_MS = 500
-
 interface ExampleWorkflowContext {
   /** The page's example picker, which owns the disk-space rule. */
   picker: Readonly<ShallowRef<InstanceType<typeof TemplatePickerStep> | null>>
@@ -40,11 +38,9 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
   const preparedForInstallationId = ref<string | null>(null)
   /** Model download of the prepared example; the test can't run until it finishes. */
   const download = ref<ExampleWorkflowDownload | null>(null)
-  let downloadTimer: ReturnType<typeof setTimeout> | undefined
   let isUnmounted = false
 
   function clearState(): void {
-    clearTimeout(downloadTimer)
     download.value = null
     displayName.value = null
     preparedForInstallationId.value = null
@@ -62,30 +58,10 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
     clearState()
   }
 
-  function scheduleFollow(filePath: string): void {
-    downloadTimer = setTimeout(() => void followDownload(filePath), DOWNLOAD_POLL_MS)
-  }
-
-  /** Poll the model download until it settles; a failed download removes the workflow. */
-  async function followDownload(filePath: string): Promise<void> {
-    let current: ExampleWorkflowDownload | null
-    try {
-      current = await window.api.getPerformanceTestExampleDownload(filePath)
-    } catch {
-      // A failed read says nothing about the download: keep the test blocked and ask again.
-      if (isUnmounted || workflowFilePath.value !== filePath) return
-      download.value ??= {
-        status: 'resolving',
-        percent: -1,
-        message: t('performanceTest.preparingExampleWorkflow')
-      }
-      scheduleFollow(filePath)
-      return
-    }
-    if (isUnmounted || workflowFilePath.value !== filePath) return
+  /** Show the model download's progress; a failed download removes the workflow. */
+  async function applyDownload(current: ExampleWorkflowDownload | undefined): Promise<void> {
     if (current?.status === 'resolving' || current?.status === 'downloading') {
       download.value = current
-      scheduleFollow(filePath)
       return
     }
     download.value = null
@@ -98,6 +74,14 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
       workflowError.value = message
     }
   }
+
+  // The main process pushes progress until the download settles.
+  const unsubscribeDownload = window.api.onPerformanceTestExampleDownload(
+    ({ filePath, download: current }) => {
+      if (isUnmounted || !download.value || workflowFilePath.value !== filePath) return
+      void applyDownload(current)
+    }
+  )
 
   async function openPicker(): Promise<void> {
     const installationId = selectedInstallationId.value
@@ -167,8 +151,7 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
       preparedForInstallationId.value = installationId
       selectedId.value = templateId
       if (previousPath && previousPath !== result.filePath) abandon(previousPath)
-      // Keeps the "preparing" label (and the run blocked) until real progress arrives.
-      await followDownload(result.filePath)
+      await applyDownload(result.download)
     } catch (error) {
       workflowError.value = (error as Error)?.message || t('performanceTest.importFailed')
     } finally {
@@ -189,7 +172,7 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
 
   onUnmounted(() => {
     isUnmounted = true
-    clearTimeout(downloadTimer)
+    unsubscribeDownload()
     // Leaving the page abandons an unfinished example and stops its model download.
     if (download.value && workflowFilePath.value) abandon(workflowFilePath.value)
   })

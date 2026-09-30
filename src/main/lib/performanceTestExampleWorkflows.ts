@@ -21,12 +21,12 @@ import {
 } from '../sources/standalone/templateCatalog'
 import {
   formatTemplateSubStatus,
-  summarizeTemplateState
+  type TemplateDownloadSummary
 } from '../sources/standalone/templateDownloadCore'
 import {
   forgetTemplateDownload,
-  getTemplateDownloadState,
-  startTemplateDownloadTask
+  startTemplateDownloadTask,
+  subscribeTemplateDownload
 } from '../sources/standalone/templateDownloadTask'
 import { resolveTemplateModelsFromJson } from '../sources/standalone/templateModels'
 import type { InstallationRecord } from '../installations'
@@ -169,33 +169,44 @@ function exampleDownloadTaskId(workflowFilePath: string): string {
   return `performance-test-download:${path.basename(path.dirname(workflowFilePath))}`
 }
 
-/** Start downloading the models an example workflow needs, in the background. */
-export function startExampleModelDownload(
-  installation: InstallationRecord,
-  workflowFilePath: string,
-  { template, editorWorkflow }: PerformanceTestExampleArtifacts
-): void {
-  startTemplateDownloadTask(
-    exampleDownloadTaskId(workflowFilePath),
-    installation,
-    template.id,
-    template.sizeBytes,
-    { sendOutput: () => {} },
-    editorWorkflow
-  )
-}
-
-/** Progress of a prepared example's model download, or null when none was started. */
-export function getExampleModelDownload(workflowFilePath: string): ExampleWorkflowDownload | null {
-  const state = getTemplateDownloadState(exampleDownloadTaskId(workflowFilePath))
-  if (!state) return null
-  const summary = summarizeTemplateState(state)
+function toExampleDownload(summary: TemplateDownloadSummary): ExampleWorkflowDownload {
   return {
     status: summary.status,
     percent: summary.percent,
     message: formatTemplateSubStatus(summary),
     error: summary.error
   }
+}
+
+/**
+ * Start downloading the models an example workflow needs, in the background.
+ * Returns the progress at start; `onProgress` then gets the task's paced
+ * progress until it settles.
+ */
+export function startExampleModelDownload(
+  installation: InstallationRecord,
+  workflowFilePath: string,
+  { template, editorWorkflow }: PerformanceTestExampleArtifacts,
+  onProgress: (download: ExampleWorkflowDownload) => void
+): ExampleWorkflowDownload {
+  const taskId = exampleDownloadTaskId(workflowFilePath)
+  startTemplateDownloadTask(
+    taskId,
+    installation,
+    template.id,
+    template.sizeBytes,
+    { sendOutput: () => {} },
+    editorWorkflow
+  )
+  // The subscription ends when the download settles, or when the workflow is deleted.
+  let initial: ExampleWorkflowDownload | undefined
+  subscribeTemplateDownload(taskId, (summary) => {
+    const download = toExampleDownload(summary)
+    if (initial) onProgress(download)
+    else initial = download
+  })
+  // The task was just started under this id, so the subscription reported it at once.
+  return initial!
 }
 
 /** Stop a prepared example's model download (if any) and drop its state. */

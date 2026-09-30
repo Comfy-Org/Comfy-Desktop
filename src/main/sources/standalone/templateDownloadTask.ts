@@ -19,7 +19,9 @@ import {
   describeDownloadFailure,
   gbStr,
   DISK_SPACE_ERROR,
-  type TemplateDownloadState
+  summarizeTemplateState,
+  type TemplateDownloadState,
+  type TemplateDownloadSummary
 } from './templateDownloadCore'
 import type { InstallationRecord } from '../../installations'
 
@@ -231,6 +233,8 @@ export function startTemplateDownloadTask(
     `[templates] Starting background download for "${templateId}" (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
   )
 
+  const publisher = setInterval(() => publishProgress(taskId, state), PROGRESS_PUBLISH_MS)
+
   void runTask(taskId, installation, templateId, state, abort.signal, taskOpts, workflowJson)
     .catch((err) => {
       if (!isTerminal(state.status)) {
@@ -250,17 +254,68 @@ export function startTemplateDownloadTask(
         for (const release of [...jobLeases]) release()
         _templateJobLeases.delete(taskId)
       }
+      clearInterval(publisher)
+      publishProgress(taskId, state)
     })
 }
 
+// --- Progress subscription: one paced publisher per task ----------------------
+// Formatting and delivery stay off the download hot path: while a task runs, a
+// single 500 ms timer summarizes its state for whoever listens (the launch
+// stepper, the performance test page), plus one final summary when it settles.
+
+const PROGRESS_PUBLISH_MS = 500
+type TemplateDownloadListener = (summary: TemplateDownloadSummary) => void
+const _templateListeners = new Map<string, Set<TemplateDownloadListener>>()
+
+function publishProgress(taskId: string, state: TemplateDownloadState): void {
+  const listeners = _templateListeners.get(taskId)
+  // Identity-guarded: a forgotten or restarted task must not report as its successor.
+  if (!listeners?.size || _templateDownloads.get(taskId) !== state) return
+  const summary = summarizeTemplateState(state)
+  // Listeners follow a task until it settles: the terminal summary is their last.
+  if (isTerminal(state.status)) _templateListeners.delete(taskId)
+  for (const listener of listeners) listener(summary)
+}
+
 /**
- * Drop a task's state once nobody will read it again, aborting it first if it
- * is still running. For callers with per-use task ids (performance tests),
- * whose entries would otherwise accumulate for the whole process.
+ * Follow a task's progress. `listener` gets the current summary at once when the
+ * task exists, then one every 500 ms while it runs, and a final one when it
+ * settles, after which it is dropped. A task started later under the same id
+ * reports to it too. Returns the unsubscribe function.
+ */
+export function subscribeTemplateDownload(
+  taskId: string,
+  listener: TemplateDownloadListener
+): () => void {
+  const state = _templateDownloads.get(taskId)
+  if (state) {
+    listener(summarizeTemplateState(state))
+    if (isTerminal(state.status)) return () => {}
+  }
+  let listeners = _templateListeners.get(taskId)
+  if (!listeners) {
+    listeners = new Set()
+    _templateListeners.set(taskId, listeners)
+  }
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0 && _templateListeners.get(taskId) === listeners) {
+      _templateListeners.delete(taskId)
+    }
+  }
+}
+
+/**
+ * Drop a task's state and listeners once nobody will read them again, aborting it
+ * first if it is still running. For callers with per-use task ids (performance
+ * tests), whose entries would otherwise accumulate for the whole process.
  */
 export function forgetTemplateDownload(taskId: string): void {
   abortTemplateDownload(taskId)
   _templateDownloads.delete(taskId)
+  _templateListeners.delete(taskId)
 }
 
 /** Thrown when the managed job reports 'cancelled' - never auto-retried. */
