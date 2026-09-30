@@ -2386,6 +2386,29 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toHaveLength(1)
   })
 
+  it('does not blame the database lock when assets are off (ComfyUI only logs it then)', async () => {
+    setArgs()
+    launchHarness.waitForPort = async () => {
+      const first = children[0]!
+      first.stderr.emit(
+        'data',
+        Buffer.from(
+          'Database is locked. Another ComfyUI process is already using this database.\n' +
+            'Traceback (most recent call last):\nRuntimeError: CUDA error\n'
+        )
+      )
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+
+    const res = await handleLaunch(ctxFor('prior-lock-no-assets'))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).not.toBe('errors.comfyDbLocked')
+    const [failed] = eventsNamed('comfy.desktop.comfyui.boot_failed')
+    expect(failed?.error_class).not.toBe('comfyui_db_locked')
+  })
+
   it('classifies a database-lock boot failure regardless of the last traceback', async () => {
     launchHarness.waitForPort = async () => {
       const first = children[0]!

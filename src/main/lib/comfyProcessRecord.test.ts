@@ -485,6 +485,29 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     expect(removed).toEqual([])
   })
 
+  it('never stops a survivor that is running prompts without the user choosing', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({ probeQueue: async () => ({ running: 1, pending: 3 }) })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({
+      action: 'busy_left',
+      blocked: 'busy',
+      queue: { running: 1, pending: 3 }
+    })
+    expect(removed).toEqual([])
+  })
+
+  it('stops a busy survivor once the user has chosen to', async () => {
+    const probeQueue = vi.fn(async () => ({ running: 1, pending: 0 }))
+    const out = await resolvePriorProcess('inst-1', { stopBusy: true }, deps({ probeQueue }))
+    expect(probeQueue).not.toHaveBeenCalled()
+    expect(kills).toEqual([555])
+    expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
+  })
+
   it('never stops a survivor pid that now names another process', async () => {
     const out = await resolvePriorProcess(
       'inst-1',
@@ -638,6 +661,10 @@ describe('findWindowsSurvivors (a ComfyUI that restarted itself with os.execv)',
   it('ignores a process created long before the exit, even with a matching parent', () => {
     const rows = [row(300, 101, at(-1800), venvMain)]
     expect(findWindowsSurvivors(rows, ctx)).toEqual([])
+  })
+
+  it('ignores a process created after the exit (it cannot be what the child left)', () => {
+    expect(findWindowsSurvivors([row(300, 101, at(1), venvMain)], ctx)).toEqual([])
   })
 
   it('ignores a ComfyUI of another installation', () => {
@@ -978,7 +1005,10 @@ describe('commandLineIsInstall', () => {
       '/Users/a/My ComfyUI',
       false
     ],
-    ['/Users/a/My ComfyUI/.venv/bin/python -m pip list', '/Users/a/My ComfyUI', false]
+    ['/Users/a/My ComfyUI/.venv/bin/python -m pip list', '/Users/a/My ComfyUI', false],
+    // A drive-letter path is absolute: another install's main.py is not this one's relative one.
+    ['C:\\c\\one\\.venv\\Scripts\\python.exe C:\\c\\two\\ComfyUI\\main.py', 'C:\\c\\one', false],
+    ['C:\\c\\one\\.venv\\Scripts\\python.exe ComfyUI\\main.py', 'C:\\c\\one', true]
   ])('%s in %s → %s', (cmd, installPath, expected) => {
     expect(commandLineIsInstall(cmd, installPath)).toBe(expected)
   })
