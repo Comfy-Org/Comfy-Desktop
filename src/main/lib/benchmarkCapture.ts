@@ -3,8 +3,8 @@
  *
  * When a `/prompt` submission carries `extra_data: { benchmark: true }` (see
  * `performanceTestWorkflows.ts`), core writes one JSON file per run to
- * `<comfyui_output_dir>/benchmarks/<prompt_id>.json` (`capture_schema_version: 1`,
- * `collector_id: "comfyui-core"`). The runner has no websocket — it polls
+ * `<comfyui_output_dir>/benchmarks/<prompt_id>.json` (`capture_schema_version` 1
+ * or 2, `collector_id: "comfyui-core"`). The runner has no websocket — it polls
  * `/api/jobs` — so we treat that FILE as the channel: after a run reaches a
  * terminal state we read the file keyed by the prompt_id the runner already
  * collected.
@@ -87,7 +87,12 @@ function mapSeries(value: unknown): CoreBenchmarkResourceSample[] {
         ramUsedMb: num(sample.ram_used_mb),
         vramUsedMb: num(sample.vram_used_mb),
         vramUtilPercent: num(sample.vram_util_percent),
-        powerW: num(sample.power_w)
+        powerW: num(sample.power_w),
+        // v2 additions — null on v1 files / MPS where the counters don't exist.
+        temperatureC: num(sample.temperature_c),
+        smClockMhz: num(sample.sm_clock_mhz),
+        memClockMhz: num(sample.mem_clock_mhz),
+        powerLimitW: num(sample.power_limit_w)
       }
     ]
   })
@@ -97,6 +102,40 @@ function mapPerStep(value: unknown): (number | null)[] {
   if (!Array.isArray(value)) return []
   // Index-aligned with steps; null preserved for 0ms steps (do not drop).
   return value.map((entry) => num(entry))
+}
+
+/** Coerce a JSON array to a string[], dropping non-string entries. */
+function strArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((entry): entry is string => typeof entry === 'string')
+}
+
+/**
+ * Derive the steady-state sampling speed (it/s) from per-step measurements.
+ *
+ * The raw `sampling.avg_it_per_s` is skewed LOW by the first measured sampler
+ * step: on a cold run PyTorch's caching allocator does one-time work (cudaMalloc,
+ * cuDNN autotune, graph capture) that can make step 0 an order of magnitude
+ * slower than steady state (e.g. ~3.2 s vs ~90 ms per step). Folding that outlier
+ * into the mean drags the headline down and makes the GPU look slower than it
+ * actually sustains.
+ *
+ * So the headline it/s is the mean of `per_step_it_per_s` EXCLUDING the first
+ * step. Guards:
+ *   - fewer than 2 steps  -> nothing to exclude, fall back to the raw average.
+ *   - no finite entries left after dropping step 0 (all null/0ms) -> raw average.
+ * Non-finite / null per-step entries are ignored in the mean either way.
+ */
+export function computeSteadyStateItPerS(
+  perStepItPerS: readonly (number | null)[],
+  rawAvgItPerS: number | null
+): number | null {
+  if (perStepItPerS.length < 2) return rawAvgItPerS
+  const steady = perStepItPerS
+    .slice(1)
+    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+  if (steady.length === 0) return rawAvgItPerS
+  return steady.reduce((acc, v) => acc + v, 0) / steady.length
 }
 
 /**
@@ -115,21 +154,51 @@ export function mapCoreBenchmarkCapture(
 
   const schemaVersion = num(root.capture_schema_version)
   const collectorId = str(root.collector_id)
-  // Feature-detect: only accept payloads that identify as a v1 core capture.
-  // Anything else (a stray JSON file, a future incompatible schema) is ignored
-  // so we degrade to the `/system_stats` fallback rather than render garbage.
-  if (schemaVersion !== 1 && collectorId !== 'comfyui-core') return null
+  // Feature-detect: accept payloads that identify as a known core capture — schema
+  // v1 or v2, or (for older/partial files) the `comfyui-core` collector id. Anything
+  // else (a stray JSON file, a future incompatible schema) is ignored so we degrade
+  // to the `/system_stats` fallback rather than render garbage.
+  const knownSchema = schemaVersion === 1 || schemaVersion === 2
+  if (!knownSchema && collectorId !== 'comfyui-core') return null
 
+  const run = asRecord(root.run)
+  const workflow = asRecord(root.workflow)
+  const resolution = asRecord(workflow.resolution)
   const device = asRecord(root.device)
+  const baseline = asRecord(device.baseline)
   const durations = asRecord(root.durations)
   const sampling = asRecord(root.sampling)
   const resources = asRecord(root.resources)
   const peak = asRecord(resources.peak)
+  const summary = asRecord(root.summary)
+
+  const perStepItPerS = mapPerStep(sampling.per_step_it_per_s)
+  const avgItPerS = num(sampling.avg_it_per_s)
 
   return {
     promptId,
     captureSchemaVersion: schemaVersion,
     collectorId,
+    run: {
+      status: str(run.status),
+      imageCount: num(run.image_count),
+      batchSize: num(run.batch_size),
+      benchmarkId: str(run.benchmark_id),
+      benchmarkVersion: str(run.benchmark_version),
+      warmupRuns: num(run.warmup_runs),
+      measuredRuns: num(run.measured_runs),
+      seed: num(run.seed)
+    },
+    workflow: {
+      resolution: { width: num(resolution.width), height: num(resolution.height) },
+      steps: num(workflow.steps),
+      sampler: str(workflow.sampler),
+      scheduler: str(workflow.scheduler),
+      cfg: num(workflow.cfg),
+      denoise: num(workflow.denoise),
+      seed: num(workflow.seed),
+      samplers: strArray(workflow.samplers)
+    },
     device: {
       backend: str(device.backend),
       gpuModel: str(device.gpu_model),
@@ -144,18 +213,44 @@ export function mapCoreBenchmarkCapture(
       cpuCoresPhysical: num(device.cpu_cores_physical),
       cpuCoresLogical: num(device.cpu_cores_logical),
       totalVramMb: num(device.total_vram_mb),
-      totalRamMb: num(device.total_ram_mb)
+      totalRamMb: num(device.total_ram_mb),
+      vramState: str(device.vram_state),
+      offloaded: boolOrNull(device.offloaded),
+      weightDtype: str(device.weight_dtype),
+      computeDtype: str(device.compute_dtype),
+      attentionImpl: str(device.attention_impl),
+      cudaVersion: str(device.cuda_version),
+      cudnnVersion: str(device.cudnn_version),
+      // compute_capability may arrive as a number (9.0) or string ("9.0").
+      computeCapability:
+        typeof device.compute_capability === 'number'
+          ? String(device.compute_capability)
+          : str(device.compute_capability),
+      isLaptop: boolOrNull(device.is_laptop),
+      pcieGen: num(device.pcie_gen),
+      pcieWidth: num(device.pcie_width),
+      baseline: {
+        vramUsedMb: num(baseline.vram_used_mb),
+        vramUtilPercent: num(baseline.vram_util_percent),
+        temperatureC: num(baseline.temperature_c),
+        ramUsedMb: num(baseline.ram_used_mb),
+        cpuPercent: num(baseline.cpu_percent)
+      }
     },
     durations: {
       totalRunMs: num(durations.total_run_ms),
       samplerMs: num(durations.sampler_ms),
-      nodeTotalMs: num(durations.node_total_ms)
+      nodeTotalMs: num(durations.node_total_ms),
+      // Null on warm runs (weights cached) — expected, not a parse failure.
+      modelLoadMs: num(durations.model_load_ms)
     },
     nodes: mapNodes(root.nodes),
     sampling: {
       stepCount: num(sampling.step_count),
-      perStepItPerS: mapPerStep(sampling.per_step_it_per_s),
-      avgItPerS: num(sampling.avg_it_per_s)
+      perStepItPerS,
+      avgItPerS,
+      // Headline it/s: raw avg is skewed by the first step's warm-up; exclude it.
+      steadyStateItPerS: computeSteadyStateItPerS(perStepItPerS, avgItPerS)
     },
     resources: {
       sampleIntervalMs: num(resources.sample_interval_ms),
@@ -165,8 +260,18 @@ export function mapCoreBenchmarkCapture(
         ramUsedMb: num(peak.ram_used_mb),
         cpuPercent: num(peak.cpu_percent),
         vramUtilPercent: num(peak.vram_util_percent),
-        powerW: num(peak.power_w)
+        powerW: num(peak.power_w),
+        temperatureC: num(peak.temperature_c),
+        smClockMhz: num(peak.sm_clock_mhz),
+        memClockMhz: num(peak.mem_clock_mhz),
+        powerLimitW: num(peak.power_limit_w),
+        throttled: boolOrNull(peak.throttled)
       }
+    },
+    summary: {
+      energyWhPerImage: num(summary.energy_wh_per_image),
+      secPerImage: num(summary.sec_per_image),
+      throttled: boolOrNull(summary.throttled)
     }
   }
 }

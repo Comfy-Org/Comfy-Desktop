@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  computeSteadyStateItPerS,
   mapCoreBenchmarkCapture,
   pickRepresentativeCapture,
   readCoreBenchmarkCapture,
@@ -121,6 +122,123 @@ const mpsCapture = {
   }
 }
 
+/**
+ * Representative schema-v2 CUDA capture. The first measured sampler step (0.31
+ * it/s ≈ 3.2 s) is the one-time allocator warm-up; steps 1..n are steady state
+ * (~11 it/s ≈ 90 ms). `avg_it_per_s` (8.4) folds the warm-up in; the derived
+ * `steadyStateItPerS` must exclude it.
+ */
+const cudaCaptureV2 = {
+  capture_schema_version: 2,
+  collector_id: 'comfyui-core',
+  run: {
+    status: 'completed',
+    image_count: 1,
+    batch_size: 1,
+    benchmark_id: 'z-image-turbo',
+    benchmark_version: '2.0',
+    warmup_runs: 1,
+    measured_runs: 3,
+    seed: 42
+  },
+  workflow: {
+    resolution: { width: 1024, height: 1024 },
+    steps: 8,
+    sampler: 'euler',
+    scheduler: 'simple',
+    cfg: 1.0,
+    denoise: 1.0,
+    seed: 42,
+    samplers: ['euler']
+  },
+  device: {
+    backend: 'cuda',
+    gpu_model: 'NVIDIA GeForce RTX 5090',
+    driver_version: '560.94',
+    vram_is_unified: false,
+    pytorch_version: '2.5.1+cu124',
+    comfyui_version: '0.3.50',
+    os: 'Windows 11',
+    platform: 'win32',
+    arch: 'x64',
+    cpu_model: 'AMD Ryzen 9 7950X',
+    cpu_cores_physical: 16,
+    cpu_cores_logical: 32,
+    total_vram_mb: 32768,
+    total_ram_mb: 65536,
+    vram_state: 'NORMAL_VRAM',
+    offloaded: false,
+    weight_dtype: 'fp8_e4m3fn',
+    compute_dtype: 'bf16',
+    attention_impl: 'sage',
+    cuda_version: '12.4',
+    cudnn_version: '90100',
+    compute_capability: 9.0,
+    is_laptop: false,
+    pcie_gen: 5,
+    pcie_width: 16,
+    baseline: {
+      vram_used_mb: 800,
+      vram_util_percent: 2,
+      temperature_c: 38,
+      ram_used_mb: 12000,
+      cpu_percent: 3
+    }
+  },
+  durations: { total_run_ms: 4200, sampler_ms: 3600, node_total_ms: 4100, model_load_ms: 5200 },
+  nodes: [
+    { node_id: '3', class_type: 'KSampler', elapsed_ms: 3600 },
+    { node_id: '8', class_type: 'VAEDecode', elapsed_ms: 320 }
+  ],
+  sampling: {
+    step_count: 8,
+    per_step_it_per_s: [0.31, 11.0, 11.2, 10.8, 11.1, 10.9, 11.0, 11.0],
+    avg_it_per_s: 8.4
+  },
+  resources: {
+    sample_interval_ms: 250,
+    series: [
+      {
+        t_ms: 0,
+        cpu_percent: 5,
+        ram_used_mb: 12000,
+        vram_used_mb: 1000,
+        vram_util_percent: 5,
+        power_w: 120,
+        temperature_c: 40,
+        sm_clock_mhz: 2500,
+        mem_clock_mhz: 10000,
+        power_limit_w: 575
+      },
+      {
+        t_ms: 250,
+        cpu_percent: 20,
+        ram_used_mb: 13000,
+        vram_used_mb: 22000,
+        vram_util_percent: 95,
+        power_w: 520,
+        temperature_c: 64,
+        sm_clock_mhz: 2700,
+        mem_clock_mhz: 11000,
+        power_limit_w: 575
+      }
+    ],
+    peak: {
+      vram_used_mb: 22000,
+      ram_used_mb: 13000,
+      cpu_percent: 20,
+      vram_util_percent: 95,
+      power_w: 540,
+      temperature_c: 67,
+      sm_clock_mhz: 2700,
+      mem_clock_mhz: 11000,
+      power_limit_w: 575,
+      throttled: false
+    }
+  },
+  summary: { energy_wh_per_image: 3.4, sec_per_image: 4.2, throttled: false }
+}
+
 describe('mapCoreBenchmarkCapture', () => {
   it('maps a CUDA capture with util + power populated', () => {
     const summary = mapCoreBenchmarkCapture(cudaCapture, 'prompt-a')
@@ -167,12 +285,101 @@ describe('mapCoreBenchmarkCapture', () => {
     expect(summary!.resources.series[0]!.powerW).toBeNull()
   })
 
-  it('returns null for non-capture payloads and mismatched schema', () => {
+  it('returns null for non-capture payloads and unknown schema', () => {
     expect(mapCoreBenchmarkCapture(null, 'p')).toBeNull()
     expect(mapCoreBenchmarkCapture([], 'p')).toBeNull()
     expect(mapCoreBenchmarkCapture('nope', 'p')).toBeNull()
-    expect(mapCoreBenchmarkCapture({ capture_schema_version: 2 }, 'p')).toBeNull()
+    // A future/incompatible schema with no collector id is ignored (fallback path).
+    expect(mapCoreBenchmarkCapture({ capture_schema_version: 3 }, 'p')).toBeNull()
     expect(mapCoreBenchmarkCapture({ foo: 'bar' }, 'p')).toBeNull()
+  })
+
+  it('back-compat: a v1 capture still maps, with v2-only fields null', () => {
+    const summary = mapCoreBenchmarkCapture(cudaCapture, 'prompt-v1')
+    expect(summary).not.toBeNull()
+    expect(summary!.captureSchemaVersion).toBe(1)
+    // v2 groups are present on the shape but carry nulls / empties on a v1 file.
+    expect(summary!.run.status).toBeNull()
+    expect(summary!.run.measuredRuns).toBeNull()
+    expect(summary!.workflow.steps).toBeNull()
+    expect(summary!.workflow.resolution.width).toBeNull()
+    expect(summary!.workflow.samplers).toEqual([])
+    expect(summary!.device.vramState).toBeNull()
+    expect(summary!.device.weightDtype).toBeNull()
+    expect(summary!.device.baseline.temperatureC).toBeNull()
+    expect(summary!.durations.modelLoadMs).toBeNull()
+    expect(summary!.resources.peak.temperatureC).toBeNull()
+    expect(summary!.resources.peak.powerLimitW).toBeNull()
+    expect(summary!.resources.peak.throttled).toBeNull()
+    expect(summary!.resources.series[0]!.temperatureC).toBeNull()
+    expect(summary!.summary.energyWhPerImage).toBeNull()
+    expect(summary!.summary.throttled).toBeNull()
+  })
+
+  it('maps a v2 capture and carries the new run/workflow/device/summary fields', () => {
+    const summary = mapCoreBenchmarkCapture(cudaCaptureV2, 'prompt-v2')
+    expect(summary).not.toBeNull()
+    expect(summary!.captureSchemaVersion).toBe(2)
+    // run
+    expect(summary!.run.status).toBe('completed')
+    expect(summary!.run.imageCount).toBe(1)
+    expect(summary!.run.warmupRuns).toBe(1)
+    expect(summary!.run.measuredRuns).toBe(3)
+    // workflow
+    expect(summary!.workflow.resolution).toEqual({ width: 1024, height: 1024 })
+    expect(summary!.workflow.steps).toBe(8)
+    expect(summary!.workflow.sampler).toBe('euler')
+    expect(summary!.workflow.samplers).toEqual(['euler'])
+    // device v2
+    expect(summary!.device.vramState).toBe('NORMAL_VRAM')
+    expect(summary!.device.offloaded).toBe(false)
+    expect(summary!.device.weightDtype).toBe('fp8_e4m3fn')
+    expect(summary!.device.computeDtype).toBe('bf16')
+    expect(summary!.device.attentionImpl).toBe('sage')
+    expect(summary!.device.cudaVersion).toBe('12.4')
+    // numeric compute_capability coerced to string.
+    expect(summary!.device.computeCapability).toBe('9')
+    expect(summary!.device.pcieGen).toBe(5)
+    expect(summary!.device.baseline.temperatureC).toBe(38)
+    // durations
+    expect(summary!.durations.modelLoadMs).toBe(5200)
+    // resources v2
+    expect(summary!.resources.peak.temperatureC).toBe(67)
+    expect(summary!.resources.peak.powerLimitW).toBe(575)
+    expect(summary!.resources.peak.throttled).toBe(false)
+    expect(summary!.resources.series[1]!.temperatureC).toBe(64)
+    expect(summary!.resources.series[1]!.smClockMhz).toBe(2700)
+    // summary
+    expect(summary!.summary.energyWhPerImage).toBe(3.4)
+    expect(summary!.summary.secPerImage).toBe(4.2)
+    expect(summary!.summary.throttled).toBe(false)
+  })
+
+  it('derives steady-state it/s by excluding the first (warm-up) step', () => {
+    const summary = mapCoreBenchmarkCapture(cudaCaptureV2, 'prompt-v2')
+    // Raw avg (8.4) is dragged down by the 0.31 it/s warm-up first step.
+    expect(summary!.sampling.avgItPerS).toBe(8.4)
+    // Steady state = mean of steps 1..7 (~11 it/s), first step excluded.
+    expect(summary!.sampling.steadyStateItPerS).toBeCloseTo(11.0, 5)
+    expect(summary!.sampling.steadyStateItPerS).not.toBe(summary!.sampling.avgItPerS)
+  })
+
+  it('steady-state falls back to raw avg for the null/short MPS case', () => {
+    // MPS sample: per_step is [0.28, 0.28, 0.28, 0.29] (no warm-up outlier).
+    const summary = mapCoreBenchmarkCapture(mpsCapture, 'prompt-mps')
+    // Excludes the first step; mean of [0.28, 0.28, 0.29].
+    expect(summary!.sampling.steadyStateItPerS).toBeCloseTo((0.28 + 0.28 + 0.29) / 3, 5)
+
+    // A capture with a single measured step has nothing to exclude -> raw avg.
+    const oneStep = mapCoreBenchmarkCapture(
+      {
+        capture_schema_version: 2,
+        collector_id: 'comfyui-core',
+        sampling: { step_count: 1, per_step_it_per_s: [5.0], avg_it_per_s: 5.0 }
+      },
+      'p'
+    )
+    expect(oneStep!.sampling.steadyStateItPerS).toBe(5.0)
   })
 
   it('accepts a v1 capture identified by collector_id even if schema is absent', () => {
@@ -195,6 +402,26 @@ describe('mapCoreBenchmarkCapture', () => {
     )
     expect(summary!.sampling.avgItPerS).toBeNull()
     expect(summary!.resources.peak.vramUsedMb).toBeNull()
+  })
+})
+
+describe('computeSteadyStateItPerS', () => {
+  it('excludes the first step and averages the rest', () => {
+    // First step is the warm-up outlier; steady state is the mean of the rest.
+    expect(computeSteadyStateItPerS([0.3, 11, 11, 11], 8.3)).toBeCloseTo(11, 5)
+  })
+
+  it('ignores null / non-finite per-step entries in the mean', () => {
+    expect(computeSteadyStateItPerS([0.3, 10, null, 12], 7)).toBeCloseTo(11, 5)
+  })
+
+  it('falls back to the raw average when there are fewer than 2 steps', () => {
+    expect(computeSteadyStateItPerS([], 4.2)).toBe(4.2)
+    expect(computeSteadyStateItPerS([9.9], 4.2)).toBe(4.2)
+  })
+
+  it('falls back to the raw average when only the first step is finite', () => {
+    expect(computeSteadyStateItPerS([9.9, null, null], 4.2)).toBe(4.2)
   })
 })
 
