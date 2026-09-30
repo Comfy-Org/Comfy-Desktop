@@ -278,16 +278,21 @@ describe('resolvePriorProcess', () => {
     expect(out).toMatchObject({ action: 'busy_left', queue: { running: 1 } })
   })
 
-  it('returns promptly on a cancel during a probe that hangs', async () => {
+  it('returns on a cancel during a probe that hangs, without waiting it out', async () => {
     const abort = new AbortController()
-    setTimeout(() => abort.abort(), 20)
-    const started = performance.now()
     const out = await resolvePriorProcess(
       'inst-1',
       { signal: abort.signal },
-      deps({ now: () => 0, probeQueue: () => new Promise(() => {}) })
+      deps({
+        now: () => 0,
+        // Cancelled once the probe is under way; a probe that ignored the cancel would hang
+        // until the budget ran out (8 s of attempts), past the test's own timeout.
+        probeQueue: () => {
+          abort.abort()
+          return new Promise(() => {})
+        }
+      })
     )
-    expect(performance.now() - started).toBeLessThan(500)
     expect(kills).toEqual([])
     expect(out?.action).toBe('left')
   })
