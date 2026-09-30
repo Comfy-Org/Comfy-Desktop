@@ -11,6 +11,7 @@
  * non-empty and the picker always renders.
  */
 import { fetchJSON } from '../../lib/fetch'
+import type { FieldOption } from '../../types/sources'
 import { loadStarterTemplates, _resetStarterTemplatesForTest } from './remoteStarterTemplates'
 import {
   INDEX_URL,
@@ -285,6 +286,29 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
     }
   }
   return catalog.sort(byModalityOrder)
+}
+
+/** A hydrated template as a `TemplatePickerStep` card. */
+export function toTemplateFieldOption(
+  template: HydratedTemplate,
+  modelsPresent: boolean
+): FieldOption {
+  return {
+    value: template.id,
+    label: template.title,
+    description: template.description,
+    recommended: template.recommended,
+    data: {
+      modality: template.modality,
+      category: template.category,
+      name: template.name,
+      task: template.task,
+      thumbnailUrl: template.thumbnailUrl,
+      sizeBytes: template.sizeBytes,
+      modelsPresent,
+      apiNode: template.apiNode
+    }
+  }
 }
 
 /**

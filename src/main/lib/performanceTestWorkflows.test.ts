@@ -14,7 +14,7 @@ import {
   savePerformanceTestJobsResponse,
   savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
-  storePerformanceTestTemplate,
+  storePerformanceTestExampleWorkflow,
   storePerformanceTestWorkflow,
   submitPerformanceTestWorkflow,
   waitForPerformanceTestJobs
@@ -351,46 +351,41 @@ describe('storePerformanceTestWorkflow', () => {
   })
 })
 
-describe('storePerformanceTestTemplate', () => {
-  it('stores paired editor and API workflows in one managed session', async () => {
+describe('storePerformanceTestExampleWorkflow', () => {
+  it('stores the API prompt alone in a new managed session', async () => {
     const root = await makeTempDir()
     const benchmarksDir = path.join(root, 'benchmarks')
-    const editorWorkflow = { version: 0.4, nodes: [], links: [] }
     const apiWorkflow = { '1': { class_type: 'KSampler', inputs: { seed: 7 } } }
 
-    const stored = await storePerformanceTestTemplate(
+    const workflowFilePath = await storePerformanceTestExampleWorkflow(
       'image_z_image_turbo',
-      editorWorkflow,
       apiWorkflow,
       benchmarksDir
     )
 
-    expect(path.dirname(stored.workflowFilePath)).toBe(path.dirname(stored.sourceWorkflowFilePath))
-    expect(path.basename(stored.workflowFilePath)).toBe('image_z_image_turbo.json')
-    expect(path.basename(stored.sourceWorkflowFilePath)).toBe('image_z_image_turbo.source.json')
-    await expect(fs.promises.readFile(stored.workflowFilePath, 'utf8')).resolves.toBe(
+    expect(path.basename(workflowFilePath)).toBe('image_z_image_turbo.json')
+    await expect(fs.promises.readdir(path.dirname(workflowFilePath))).resolves.toEqual([
+      'image_z_image_turbo.json'
+    ])
+    await expect(fs.promises.readFile(workflowFilePath, 'utf8')).resolves.toBe(
       JSON.stringify(apiWorkflow)
-    )
-    await expect(fs.promises.readFile(stored.sourceWorkflowFilePath, 'utf8')).resolves.toBe(
-      JSON.stringify(editorWorkflow)
     )
   })
 
-  it('rejects unsafe IDs and invalid paired artifacts before creating a session', async () => {
+  it('rejects unsafe IDs and invalid API prompts before creating a session', async () => {
     const root = await makeTempDir()
     const benchmarksDir = path.join(root, 'benchmarks')
-    const editorWorkflow = { nodes: [] }
     const apiWorkflow = { '1': { class_type: 'KSampler', inputs: {} } }
 
     await expect(
-      storePerformanceTestTemplate('../escape', editorWorkflow, apiWorkflow, benchmarksDir)
-    ).rejects.toThrow('Invalid performance test template ID')
+      storePerformanceTestExampleWorkflow('../escape', apiWorkflow, benchmarksDir)
+    ).rejects.toThrow('Invalid example workflow ID')
     await expect(
-      storePerformanceTestTemplate('safe', {}, apiWorkflow, benchmarksDir)
-    ).rejects.toThrow('editor workflow is invalid')
+      storePerformanceTestExampleWorkflow('..', apiWorkflow, benchmarksDir)
+    ).rejects.toThrow('Invalid example workflow ID')
     await expect(
-      storePerformanceTestTemplate('safe', editorWorkflow, { nodes: [] }, benchmarksDir)
-    ).rejects.toThrow('no valid API-format artifact')
+      storePerformanceTestExampleWorkflow('safe', { nodes: [] }, benchmarksDir)
+    ).rejects.toThrow('no valid API-format prompt')
     await expect(fs.promises.stat(benchmarksDir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
@@ -411,20 +406,19 @@ describe('deletePerformanceTestWorkflow', () => {
     await expect(fs.promises.stat(storedPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('deletes an uncompleted paired template session including its editor source', async () => {
+  it('deletes an uncompleted example workflow session', async () => {
     const root = await makeTempDir()
     const benchmarksDir = path.join(root, 'benchmarks')
-    const stored = await storePerformanceTestTemplate(
+    const workflowFilePath = await storePerformanceTestExampleWorkflow(
       'image_z_image_turbo',
-      { nodes: [] },
       { '1': { class_type: 'KSampler', inputs: {} } },
       benchmarksDir
     )
-    const sessionDir = path.dirname(stored.workflowFilePath)
+    const sessionDir = path.dirname(workflowFilePath)
 
-    await expect(
-      deletePerformanceTestWorkflow(stored.workflowFilePath, benchmarksDir)
-    ).resolves.toBe('deleted')
+    await expect(deletePerformanceTestWorkflow(workflowFilePath, benchmarksDir)).resolves.toBe(
+      'deleted'
+    )
     await expect(fs.promises.stat(sessionDir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
@@ -499,6 +493,36 @@ describe('submitPerformanceTestWorkflow', () => {
       })
     }
     expect(JSON.parse(await fs.promises.readFile(storedPath, 'utf8'))).toEqual(workflow)
+  })
+
+  it('submits only the measured runs when warm-up is disabled, and rejects out-of-range warm-ups', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
+    const sourcePath = path.join(root, 'performanceTest.json')
+    await fs.promises.writeFile(
+      sourcePath,
+      JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
+    )
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
+    let requestCount = 0
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      requestCount++
+      return new Response(JSON.stringify({ prompt_id: `prompt-${requestCount}` }))
+    })
+    const submit = (warmupRuns: number) =>
+      submitPerformanceTestWorkflow(
+        storedPath,
+        benchmarksDir,
+        'http://127.0.0.1:8189',
+        2,
+        warmupRuns,
+        fetchMock
+      )
+
+    await expect(submit(0)).resolves.toEqual(['prompt-1', 'prompt-2'])
+    await expect(submit(-1)).rejects.toThrow('between 0 and 5')
+    await expect(submit(6)).rejects.toThrow('between 0 and 5')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('stops submitting when ComfyUI rejects a request', async () => {

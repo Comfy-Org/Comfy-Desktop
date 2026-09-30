@@ -8,6 +8,7 @@ import type {
   PerformanceTestStatistics,
   SystemInfo
 } from '../../types/ipc'
+import { isPersistableTemplateId } from '../sources/standalone/curatedTemplates'
 
 const PERFORMANCE_TEST_POLL_INTERVAL_MS = 1000
 const PERFORMANCE_TEST_TIMEOUT_MS = 4 * 60 * 60 * 1000
@@ -205,7 +206,7 @@ export function calculatePerformanceTestStatistics(
   }
 }
 
-export function isApiWorkflow(value: unknown): value is object {
+function isApiWorkflow(value: unknown): value is object {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const nodes = Object.values(value)
   return (
@@ -389,46 +390,24 @@ export async function storePerformanceTestWorkflow(
   }
 }
 
-export interface StoredPerformanceTestTemplate {
-  workflowFilePath: string
-  sourceWorkflowFilePath: string
-}
-
-/**
- * Persist a catalogue template's editor workflow beside its paired API prompt.
- * The editor copy remains the source of model/input metadata; only the validated
- * API copy is returned as the runnable performance-test workflow.
- */
-export async function storePerformanceTestTemplate(
+/** Persist an example workflow's API prompt as a new session's runnable workflow. */
+export async function storePerformanceTestExampleWorkflow(
   templateId: string,
-  editorWorkflow: unknown,
   apiWorkflow: unknown,
   benchmarksDir: string
-): Promise<StoredPerformanceTestTemplate> {
-  if (!/^[a-zA-Z0-9_.-]+$/.test(templateId) || templateId === '.' || templateId === '..') {
-    throw new Error('Invalid performance test template ID.')
-  }
-  if (
-    !editorWorkflow ||
-    typeof editorWorkflow !== 'object' ||
-    Array.isArray(editorWorkflow) ||
-    !Array.isArray((editorWorkflow as { nodes?: unknown }).nodes)
-  ) {
-    throw new Error('The catalogue editor workflow is invalid.')
+): Promise<string> {
+  if (!isPersistableTemplateId(templateId)) {
+    throw new Error('Invalid example workflow ID.')
   }
   if (!isApiWorkflow(apiWorkflow)) {
-    throw new Error('The catalogue workflow has no valid API-format artifact.')
+    throw new Error('The example workflow has no valid API-format prompt.')
   }
 
   const sessionDir = await createPerformanceTestSessionDir(benchmarksDir)
   const workflowFilePath = path.join(sessionDir, `${templateId}.json`)
-  const sourceWorkflowFilePath = path.join(sessionDir, `${templateId}.source.json`)
   try {
-    await Promise.all([
-      fs.promises.writeFile(workflowFilePath, JSON.stringify(apiWorkflow)),
-      fs.promises.writeFile(sourceWorkflowFilePath, JSON.stringify(editorWorkflow))
-    ])
-    return { workflowFilePath, sourceWorkflowFilePath }
+    await fs.promises.writeFile(workflowFilePath, JSON.stringify(apiWorkflow))
+    return workflowFilePath
   } catch (error) {
     await fs.promises.rm(sessionDir, { recursive: true, force: true })
     throw error
@@ -449,7 +428,10 @@ export async function deletePerformanceTestWorkflow(
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
   }
-  await fs.promises.rm(managedPath.sessionDir, { recursive: true })
+  await fs.promises.unlink(managedPath.filePath)
+  await fs.promises.rmdir(managedPath.sessionDir).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOTEMPTY') throw error
+  })
   return 'deleted'
 }
 
@@ -467,8 +449,8 @@ export async function submitPerformanceTestWorkflow(
   if (!Number.isInteger(measuredRuns) || measuredRuns < 1 || measuredRuns > 100) {
     throw new Error('Measured runs must be an integer between 1 and 100.')
   }
-  if (!Number.isInteger(warmupRuns) || warmupRuns < 1 || warmupRuns > 5) {
-    throw new Error('Warm-up runs must be an integer between 1 and 5.')
+  if (!Number.isInteger(warmupRuns) || warmupRuns < 0 || warmupRuns > 5) {
+    throw new Error('Warm-up runs must be an integer between 0 and 5.')
   }
 
   let workflow = await readPerformanceTestWorkflow(filePath, benchmarksDir)

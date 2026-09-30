@@ -291,6 +291,16 @@ describe('TemplatePickerStep', () => {
       expect(vmOf(wrapper).shownDiskError).toBeNull()
     })
 
+    it('never blocks a template whose models are all downloaded already', () => {
+      const downloaded: FieldOption = { ...VIDEO, data: { ...VIDEO.data, modelsPresent: true } }
+      const wrapper = mountPicker({
+        options: [NONE, downloaded],
+        selectedValue: downloaded.value,
+        diskSpace: { free: 1 * GB, total: 500 * GB }
+      })
+      expect(vmOf(wrapper).shownDiskError).toBeNull()
+    })
+
     it('never blocks the model-free none sentinel even on a full disk', () => {
       const wrapper = mountPicker({
         selectedValue: NONE.value,

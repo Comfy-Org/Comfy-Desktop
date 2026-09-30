@@ -175,20 +175,25 @@ const messages = {
       workspaceLabel: 'Workspace',
       instanceLabel: 'Instance',
       selectInstancePlaceholder: 'Select an instance',
-      dropWorkflow: '2. Drop a workflow in API format',
       chooseWorkflow: '2. Choose a workflow',
-      chooseStarterWorkflow: 'Choose an example workflow',
-      loadingStarterWorkflows: 'Loading example workflows...',
+      chooseExampleWorkflow: 'Choose an example workflow',
+      loadingExampleWorkflows: 'Loading example workflows...',
       orImportApiWorkflow: 'or import an API workflow',
-      starterWorkflowPickerTitle: 'Choose an example workflow',
-      starterWorkflowPickerDescription: 'Missing models will be downloaded automatically.',
-      useStarterWorkflow: 'Use workflow',
-      noStarterWorkflows: 'No benchmark-ready example workflows are currently available.',
+      exampleWorkflowPickerTitle: 'Choose an example workflow',
+      exampleWorkflowPickerDescription: 'Missing models will be downloaded automatically.',
+      useExampleWorkflow: 'Use workflow',
+      noExampleWorkflows: 'No benchmark-ready example workflows are currently available.',
       exampleWorkflowsOffline:
         'You need to be connected to the internet to download example workflows.',
-      dropWorkflowHint: 'Drop a workflow .json file here, or click to browse',
+      exampleWorkflowUnavailable: "This example workflow isn't available yet. Choose another one.",
+      exampleWorkflowsNeedInstall: 'Finish installing this instance to use example workflows.',
+      exampleModelsDownload: 'Model download progress',
+      exampleModelsFailed: 'Could not download every model required by this workflow.',
+      exampleModelsNoSpace: "There is not enough disk space for this workflow's models.",
+      cancelExampleDownload: 'Cancel download',
+      dropWorkflowHint: 'Drop a workflow .json file in API format here, or click to browse',
       importingWorkflow: 'Importing workflow...',
-      preparingStarterWorkflow: 'Preparing workflow and downloading required models...',
+      preparingExampleWorkflow: 'Preparing workflow and downloading required models...',
       importFailed: 'Could not import the workflow.',
       deleteWorkflow: 'Delete workflow',
       deleteFailed: 'Could not delete the workflow.',
@@ -526,13 +531,13 @@ function installMockApi(initial?: {
       ok: true,
       filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
     })),
-    getPerformanceTestStarterWorkflows: vi.fn(async () => []),
-    preparePerformanceTestStarterWorkflow: vi.fn(async () => ({
+    getPerformanceTestExampleWorkflows: vi.fn(async () => ({ options: [], diskSpace: null })),
+    preparePerformanceTestExampleWorkflow: vi.fn(async () => ({
       ok: true,
       filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_turbo.json',
-      templateId: 'image_z_image_turbo',
       templateLabel: 'Z-Image-Turbo: Text to Image'
     })),
+    getPerformanceTestExampleDownload: vi.fn(async () => null),
     deletePerformanceTestWorkflow: vi.fn(async () => ({ ok: true, status: 'deleted' as const })),
     listPerformanceTestBenchmarks: vi.fn(async () => ({ folderPath: '', benchmarks: [] })),
     onPerformanceTestProgress: vi.fn((cb) => {
@@ -904,11 +909,13 @@ describe('PanelApp', () => {
     ])
     const warmupRunsInput = settings[0]!.get('input')
     expect(warmupRunsInput.element).toHaveProperty('value', '1')
-    expect(warmupRunsInput.attributes()).toMatchObject({ min: '1', max: '5', step: '1' })
+    expect(warmupRunsInput.attributes()).toMatchObject({ min: '0', max: '5', step: '1' })
     await warmupRunsInput.setValue('6')
     expect(warmupRunsInput.element).toHaveProperty('value', '5')
     await warmupRunsInput.setValue('0')
-    expect(warmupRunsInput.element).toHaveProperty('value', '1')
+    expect(warmupRunsInput.element).toHaveProperty('value', '0')
+    await warmupRunsInput.setValue('-1')
+    expect(warmupRunsInput.element).toHaveProperty('value', '0')
     await warmupRunsInput.setValue('')
     expect(warmupRunsInput.element).toHaveProperty('value', '1')
     await warmupRunsInput.setValue('3')
@@ -948,7 +955,7 @@ describe('PanelApp', () => {
       wrapper.get('.performance-test__column:nth-child(3) .performance-test__run').exists()
     ).toBe(true)
     expect(wrapper.find('.performance-test__drop-zone').text()).toBe(
-      'Drop a workflow .json file here, or click to browse'
+      'Drop a workflow .json file in API format here, or click to browse'
     )
     expect(wrapper.find('.performance-test__run').text()).toBe('Run')
     expect(wrapper.find('.performance-test__logs').text()).toBe('Instance logs will appear here.')
@@ -1011,7 +1018,7 @@ describe('PanelApp', () => {
       'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
     )
     expect(wrapper.get('.performance-test__drop-zone').text()).not.toContain(
-      'Drop a workflow .json file here, or click to browse'
+      'Drop a workflow .json file in API format here, or click to browse'
     )
 
     api.importPerformanceTestWorkflow.mockResolvedValueOnce({
@@ -1253,7 +1260,7 @@ describe('PanelApp', () => {
     )
     expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
     expect(wrapper.get('.performance-test__drop-zone').text()).toContain(
-      'Drop a workflow .json file here, or click to browse'
+      'Drop a workflow .json file in API format here, or click to browse'
     )
     expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
       'This workflow belongs to a completed test and was kept with its results.'
@@ -1405,7 +1412,20 @@ describe('PanelApp', () => {
     })
   })
 
-  it('selects a validated starter workflow and prepares its paired artifacts', async () => {
+  const EXAMPLE_PATH = 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_int8.json'
+
+  interface ExampleWorkflowApi {
+    getPerformanceTestExampleWorkflows: ReturnType<typeof vi.fn>
+    preparePerformanceTestExampleWorkflow: ReturnType<typeof vi.fn>
+    getPerformanceTestExampleDownload: ReturnType<typeof vi.fn>
+    deletePerformanceTestWorkflow: ReturnType<typeof vi.fn>
+  }
+
+  /** Mount the performance test page with one local instance selected. */
+  async function mountWithInstance(status = 'installed'): Promise<{
+    wrapper: ReturnType<typeof mountPanel>
+    api: ExampleWorkflowApi
+  }> {
     mockState.comfybuilder.listWorkspaces.mockResolvedValue([
       { id: 'workspace-1', name: 'Workspace One', type: 'team' }
     ])
@@ -1415,137 +1435,226 @@ describe('PanelApp', () => {
         id: 'workspace-install',
         name: 'Workspace Install',
         sourceId: 'standalone',
-        status: 'installed',
+        status,
         workspaceId: 'workspace-1'
       }
     ]
-    const api = (
-      window as unknown as {
-        api: {
-          getPerformanceTestStarterWorkflows: ReturnType<typeof vi.fn>
-          preparePerformanceTestStarterWorkflow: ReturnType<typeof vi.fn>
+    const api = (window as unknown as { api: ExampleWorkflowApi }).api
+    api.getPerformanceTestExampleWorkflows.mockResolvedValue({
+      options: [
+        {
+          value: 'image_z_image_int8',
+          label: 'Z-Image Int8: Text to Image',
+          recommended: true,
+          data: {
+            modality: 'image',
+            name: 'Z-Image Int8',
+            task: 'Text to Image',
+            sizeBytes: 20_000_000_000
+          }
         }
-      }
-    ).api
-    api.getPerformanceTestStarterWorkflows.mockResolvedValueOnce([
-      {
-        value: 'image_z_image_turbo',
-        label: 'Z-Image-Turbo: Text to Image',
-        recommended: true,
-        data: {
-          modality: 'image',
-          name: 'Z-Image-Turbo',
-          task: 'Text to Image',
-          sizeBytes: 20_000_000_000
-        }
-      }
-    ])
-    let resolvePreparation!: (result: {
-      ok: boolean
-      filePath: string
-      templateId: string
-      templateLabel: string
-    }) => void
-    api.preparePerformanceTestStarterWorkflow.mockImplementationOnce(
-      () => new Promise((resolve) => (resolvePreparation = resolve))
-    )
+      ],
+      diskSpace: { free: 500_000_000_000, total: 1_000_000_000_000 }
+    })
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      templateLabel: 'Z-Image Int8: Text to Image'
+    })
     window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
-
     const wrapper = mountPanel()
     await flushPromises()
     await wrapper.get('.performance-test__instance-select button').trigger('click')
     await flushPromises()
     ;(document.querySelector('.ui-select-option') as HTMLElement).click()
     await flushPromises()
+    return { wrapper, api }
+  }
 
-    await wrapper.get('.performance-test__starter-workflow').trigger('click')
+  async function chooseExampleWorkflow(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
     await flushPromises()
-    expect(api.getPerformanceTestStarterWorkflows).toHaveBeenCalledWith('workspace-install')
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Z-Image-Turbo')
+    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+    await flushPromises()
+  }
+
+  const downloading = {
+    status: 'downloading',
+    percent: 40,
+    message: 'model.safetensors (1 of 2) — 4 / 10 GB at 50.0 MB/s · 2m remaining'
+  }
+
+  it('prepares an example workflow and blocks the run until its models are downloaded', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.getPerformanceTestExampleDownload
+      .mockResolvedValueOnce(downloading)
+      .mockResolvedValue({ status: 'done', percent: 100, message: 'Template models ready' })
+
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await flushPromises()
+    expect(api.getPerformanceTestExampleWorkflows).toHaveBeenCalledWith('workspace-install')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Z-Image Int8')
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       'Missing models will be downloaded automatically.'
     )
-    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+    // Only timeouts are faked, so the progress poll advances on demand.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+      await flushPromises()
+
+      expect(api.preparePerformanceTestExampleWorkflow).toHaveBeenCalledWith(
+        'workspace-install',
+        'image_z_image_int8'
+      )
+      expect(api.getPerformanceTestExampleDownload).toHaveBeenCalledWith(EXAMPLE_PATH)
+      const workflow = wrapper.get('.performance-test__workflow-file')
+      expect(workflow.text()).toContain('Z-Image Int8: Text to Image')
+      expect(workflow.text()).toContain(downloading.message)
+      expect(workflow.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('40')
+      expect(wrapper.get('.performance-test__delete-workflow').attributes('aria-label')).toBe(
+        'Cancel download'
+      )
+      expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+
+      await vi.advanceTimersByTimeAsync(500)
+      await flushPromises()
+
+      expect(api.getPerformanceTestExampleDownload).toHaveBeenCalledTimes(2)
+      expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+      expect(wrapper.get('.performance-test__workflow-file').text()).toContain(EXAMPLE_PATH)
+      expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the run blocked and retries when reading the download progress fails', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.getPerformanceTestExampleDownload
+      .mockRejectedValueOnce(new Error('IPC unavailable'))
+      .mockResolvedValue(downloading)
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
     await flushPromises()
-    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
-      'Z-Image-Turbo: Text to Image'
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+      await flushPromises()
+      expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+
+      await vi.advanceTimersByTimeAsync(500)
+      await flushPromises()
+      expect(api.getPerformanceTestExampleDownload).toHaveBeenCalledTimes(2)
+      expect(wrapper.get('.performance-test__workflow-file').text()).toContain(downloading.message)
+      expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('explains that example workflows need an installed instance', async () => {
+    const { wrapper, api } = await mountWithInstance('installing')
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await flushPromises()
+
+    expect(api.getPerformanceTestExampleWorkflows).not.toHaveBeenCalled()
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+      'Finish installing this instance to use example workflows.'
     )
-    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
-      'Preparing workflow and downloading required models...'
-    )
-    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
-    expect(api.preparePerformanceTestStarterWorkflow).toHaveBeenCalledWith(
-      'workspace-install',
-      'image_z_image_turbo'
-    )
-    resolvePreparation({
-      ok: true,
-      filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_turbo.json',
-      templateId: 'image_z_image_turbo',
-      templateLabel: 'Z-Image-Turbo: Text to Image'
+  })
+
+  it('explains that an example workflow is not published yet', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValueOnce({
+      ok: false,
+      reason: 'unavailable',
+      message: 'This example workflow is not available yet.'
     })
-    await flushPromises()
-    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
-      'Z-Image-Turbo: Text to Image'
+
+    await chooseExampleWorkflow(wrapper)
+
+    expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+      "This example workflow isn't available yet. Choose another one."
     )
-    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+  })
+
+  it('cancels the model download when the example workflow is removed', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.getPerformanceTestExampleDownload.mockResolvedValue(downloading)
+    await chooseExampleWorkflow(wrapper)
+
+    await wrapper.get('.performance-test__delete-workflow').trigger('click')
+    await flushPromises()
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+  })
+
+  it('removes the example workflow and explains why when its models cannot be downloaded', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.getPerformanceTestExampleDownload.mockResolvedValue({
+      status: 'error',
+      percent: 0,
+      message: 'Not enough disk space',
+      error: 'insufficient-disk'
+    })
+
+    await chooseExampleWorkflow(wrapper)
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+      "There is not enough disk space for this workflow's models."
+    )
+  })
+
+  it('blocks an example workflow whose models do not fit on disk', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.getPerformanceTestExampleWorkflows.mockResolvedValue({
+      options: [
+        {
+          value: 'image_z_image_int8',
+          label: 'Z-Image Int8: Text to Image',
+          data: { modality: 'image', sizeBytes: 20_000_000_000 }
+        }
+      ],
+      diskSpace: { free: 1_000_000_000, total: 1_000_000_000_000 }
+    })
+
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('.performance-test__example-disk-error')).not.toBeNull()
+    expect(
+      (document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).disabled
+    ).toBe(true)
   })
 
   it('asks the user to connect to the internet when example workflows cannot be downloaded', async () => {
-    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
-      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
-    ])
-    mockState.installations = [
-      {
-        ...SAMPLE_INSTALL,
-        id: 'workspace-install',
-        name: 'Workspace Install',
-        sourceId: 'standalone',
-        status: 'installed',
-        workspaceId: 'workspace-1'
-      }
-    ]
-    const api = (
-      window as unknown as {
-        api: {
-          getPerformanceTestStarterWorkflows: ReturnType<typeof vi.fn>
-          preparePerformanceTestStarterWorkflow: ReturnType<typeof vi.fn>
-        }
-      }
-    ).api
+    const { wrapper, api } = await mountWithInstance()
     const offlineMessage = 'You need to be connected to the internet to download example workflows.'
-    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
-    const wrapper = mountPanel()
-    await flushPromises()
-    await wrapper.get('.performance-test__instance-select button').trigger('click')
-    await flushPromises()
-    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
-    await flushPromises()
 
     // The browser knows it is offline: skip the picker entirely.
     const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
     try {
-      await wrapper.get('.performance-test__starter-workflow').trigger('click')
+      await wrapper.get('.performance-test__example-workflow').trigger('click')
       await flushPromises()
-      expect(api.getPerformanceTestStarterWorkflows).not.toHaveBeenCalled()
+      expect(api.getPerformanceTestExampleWorkflows).not.toHaveBeenCalled()
       expect(wrapper.get('.performance-test__workflow-error').text()).toBe(offlineMessage)
     } finally {
       onLine.mockRestore()
     }
 
     // The machine reports a connection but GitHub is unreachable when downloading.
-    api.getPerformanceTestStarterWorkflows.mockResolvedValueOnce([
-      { value: 'image_z_image_int8', label: 'Z-Image Int8', data: { modality: 'image' } }
-    ])
-    api.preparePerformanceTestStarterWorkflow.mockResolvedValueOnce({
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValueOnce({
       ok: false,
-      offline: true,
+      reason: 'offline',
       message: 'Connect to the internet to download example workflows.'
     })
-    await wrapper.get('.performance-test__starter-workflow').trigger('click')
-    await flushPromises()
-    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
-    await flushPromises()
+    await chooseExampleWorkflow(wrapper)
     expect(wrapper.get('.performance-test__workflow-error').text()).toBe(offlineMessage)
   })
 

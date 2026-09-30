@@ -12,12 +12,12 @@
       }
     },
     {
-      "id": "video_ltx2_5_t2v",
+      "id": "video_hunyuan_video_1.5_720p_t2v",
       "modality": "video",
       "snapshot": {
-        "title": "LTX-2.5: Text to Video",
-        "description": "Generate cinematic video from a text prompt using LTX-2.5, a production-ready diffusion model that outputs a single video file with optional spatial upscaling for enhanced resolution. Ideal for film previsualization, commercial storyboards, and high-volume content creation pipelines.",
-        "sizeBytes": 53150220288,
+        "title": "Hunyuan Video 1.5 Text to Video",
+        "description": "Generate high-quality 720p videos from text prompts with cinematic camera control, emotional expressions, and physics simulation. Supports multiple styles including realistic, anime, and 3D with text rendering.",
+        "sizeBytes": 45419279155,
         "mediaSubtype": "webp"
       }
     },
@@ -72,12 +72,12 @@
       }
     },
     {
-      "id": "image_z_image_int8",
+      "id": "image_z_image_turbo",
       "modality": "image",
       "snapshot": {
-        "title": "Z-Image Int8: Text to Image",
-        "description": "Generate high-quality, diverse images from text prompts using the Z-Image Int8 model, which leverages an undistilled transformer for precise prompt adherence and broad stylistic coverage. The workflow takes no file inputs and produces 1 image output through a standard text-to-image pipeline. Ideal for professional creative projects, LoRA training and model development, and scenarios requiring robust negative control and high compositional diversity.",
-        "sizeBytes": 14602888806,
+        "title": "Z-Image-Turbo: Text to Image",
+        "description": "An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.",
+        "sizeBytes": 20830591386,
         "mediaSubtype": "webp"
       }
     },

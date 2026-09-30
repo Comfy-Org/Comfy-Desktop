@@ -94,7 +94,7 @@ export async function resolveTemplateInputAssets(
 }
 
 /** Extract sample inputs from an already-resolved editor workflow. */
-export function resolveTemplateInputAssetsFromJson(json: unknown): TemplateInputAsset[] {
+function resolveTemplateInputAssetsFromJson(json: unknown): TemplateInputAsset[] {
   if (!json || typeof json !== 'object') return []
 
   const doc = json as { nodes?: unknown; definitions?: { subgraphs?: unknown } }

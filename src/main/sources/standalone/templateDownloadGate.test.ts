@@ -10,6 +10,7 @@ const resolveTemplateModels = vi.fn<() => Promise<Array<Record<string, unknown>>
 const startManagedModelJob = vi.fn()
 const getDiskSpace = vi.fn(async (_dir: string) => ({ free: 1e15, total: 1e15 }))
 const resolveDownloadContextById = vi.fn(async (_id: string): Promise<unknown> => null)
+const areModelsPresent = vi.fn(async (_id: string, _models: unknown[]) => false)
 
 vi.mock('./templateModels', () => ({ resolveTemplateModels: () => resolveTemplateModels() }))
 vi.mock('./templateInputAssets', () => ({ downloadTemplateInputAssets: vi.fn(async () => []) }))
@@ -19,7 +20,8 @@ vi.mock('../../lib/comfyDownloadManager', () => ({
 }))
 vi.mock('../../lib/modelDownloadPaths', () => ({
   getModelsBaseDir: () => '/tmp/models',
-  resolveDownloadContextById: (id: string) => resolveDownloadContextById(id)
+  resolveDownloadContextById: (id: string) => resolveDownloadContextById(id),
+  areModelsPresent: (id: string, models: unknown[]) => areModelsPresent(id, models)
 }))
 // Keep the task hermetic - never touch the real filesystem. `stat` rejects so
 // the completed-size probe is simply skipped.
@@ -36,6 +38,7 @@ import {
   awaitTemplateDownloadSettled,
   requestSkipTemplateDownload,
   abortTemplateDownload,
+  forgetTemplateDownload,
   startTemplateDownload,
   getTemplateDownloadState
 } from './templateDownloadTask'
@@ -85,6 +88,7 @@ describe('awaitTemplateDownloadSettled', () => {
     sendOutput.mockReset()
     getDiskSpace.mockReset().mockResolvedValue({ free: 1e15, total: 1e15 })
     resolveDownloadContextById.mockReset().mockResolvedValue(null)
+    areModelsPresent.mockReset().mockResolvedValue(false)
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -128,6 +132,21 @@ describe('awaitTemplateDownloadSettled', () => {
     await expect(awaitTemplateDownloadSettled('err-disk', ctrl.signal)).resolves.toBe('error')
   })
 
+  it('skips the disk pre-flight when every model is already on disk', async () => {
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
+    getDiskSpace.mockResolvedValue({ free: 1, total: 1e15 })
+    areModelsPresent.mockResolvedValue(true)
+    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
+    startTemplateDownload(makeInstall('present-1'), 10 * 1024 ** 3, { sendOutput })
+    await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalled())
+
+    expect(getDiskSpace).not.toHaveBeenCalled()
+    expect(getTemplateDownloadState('present-1')?.status).toBe('downloading')
+    abortTemplateDownload('present-1')
+  })
+
   it("resolves 'cancelled' after abortTemplateDownload, cancelling the real jobs", async () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
@@ -148,6 +167,20 @@ describe('awaitTemplateDownloadSettled', () => {
     await vi.waitFor(() => expect(jobReleases.get('id-u')).toHaveBeenCalled())
     const ctrl = new AbortController()
     await expect(awaitTemplateDownloadSettled('cancel-1', ctrl.signal)).resolves.toBe('cancelled')
+  })
+
+  it('forgetTemplateDownload aborts an in-flight task and drops its state', async () => {
+    resolveTemplateModels.mockResolvedValue([
+      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
+    ])
+    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
+    startTemplateDownload(makeInstall('forget-1'), 0, { sendOutput })
+    await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalled())
+
+    forgetTemplateDownload('forget-1')
+
+    await vi.waitFor(() => expect(jobReleases.get('id-u')).toHaveBeenCalled())
+    expect(getTemplateDownloadState('forget-1')).toBeUndefined()
   })
 
   it("resolves 'skipped' when the user requests skip mid-download", async () => {

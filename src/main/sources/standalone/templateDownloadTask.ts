@@ -1,7 +1,12 @@
 import fs from 'fs'
 import path from 'path'
 import { startManagedModelJob, type ModelJobOutcome } from '../../lib/comfyDownloadManager'
-import { getModelsBaseDir, resolveDownloadContextById } from '../../lib/modelDownloadPaths'
+import {
+  areModelsPresent,
+  getModelsBaseDir,
+  resolveDownloadContextById
+} from '../../lib/modelDownloadPaths'
+import { TEMPLATE_DISK_HEADROOM } from '../../../shared/templateDisk'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
 import { resolveTemplateModels, resolveTemplateModelsFromJson } from './templateModels'
@@ -45,7 +50,6 @@ import type { InstallationRecord } from '../../installations'
  */
 
 const MODEL_POOL_CONCURRENCY = 3
-const DISK_HEADROOM = 1.05
 /** Per-file auto-retry budget for transient failures. The managed job keeps
  *  its staged bytes on error, so each retry RESUMES from the prior byte count
  *  rather than restarting the file. Exhausted retries mark the file failed
@@ -55,7 +59,6 @@ const MODEL_DOWNLOAD_RETRIES = 2
 // --- Process-global state (mirrors _operationAborts). Task = sole writer. ---
 const _templateDownloads = new Map<string, TemplateDownloadState>()
 const _templateAborts = new Map<string, AbortController>()
-const _templatePromises = new Map<string, Promise<TemplateDownloadState>>()
 /** Release functions for THIS install's leases on its currently-active
  *  managed model jobs, so an install-level abort can release the real
  *  transfers. Each entry is a caller-owned idempotent lease handle: releasing
@@ -183,13 +186,7 @@ export function startTemplateDownload(
 ): void {
   const templateId = installation.bundledTemplateId
   if (!templateId) return
-  void startTemplateDownloadTask(
-    installation.id,
-    installation,
-    templateId,
-    estimatedSizeBytes,
-    opts
-  )
+  startTemplateDownloadTask(installation.id, installation, templateId, estimatedSizeBytes, opts)
 }
 
 /**
@@ -205,11 +202,9 @@ export function startTemplateDownloadTask(
   estimatedSizeBytes: number,
   opts: StartOpts,
   workflowJson?: unknown
-): Promise<TemplateDownloadState> {
+): void {
   const existing = _templateDownloads.get(taskId)
-  if (existing && !isTerminal(existing.status)) {
-    return _templatePromises.get(taskId) ?? Promise.resolve(existing)
-  }
+  if (existing && !isTerminal(existing.status)) return
 
   const state: TemplateDownloadState = {
     status: 'resolving',
@@ -236,15 +231,7 @@ export function startTemplateDownloadTask(
     `[templates] Starting background download for "${templateId}" (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
   )
 
-  const promise = runTask(
-    taskId,
-    installation,
-    templateId,
-    state,
-    abort.signal,
-    taskOpts,
-    workflowJson
-  )
+  void runTask(taskId, installation, templateId, state, abort.signal, taskOpts, workflowJson)
     .catch((err) => {
       if (!isTerminal(state.status)) {
         state.status = 'error'
@@ -264,9 +251,16 @@ export function startTemplateDownloadTask(
         _templateJobLeases.delete(taskId)
       }
     })
-    .then(() => state)
-  _templatePromises.set(taskId, promise)
-  return promise
+}
+
+/**
+ * Drop a task's state once nobody will read it again, aborting it first if it
+ * is still running. For callers with per-use task ids (performance tests),
+ * whose entries would otherwise accumulate for the whole process.
+ */
+export function forgetTemplateDownload(taskId: string): void {
+  abortTemplateDownload(taskId)
+  _templateDownloads.delete(taskId)
 }
 
 /** Thrown when the managed job reports 'cancelled' - never auto-retried. */
@@ -345,11 +339,12 @@ async function runTask(
   const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
 
   // Pre-flight disk guard against the coarse estimate (+ headroom): a hard error
-  // beats N failed writes when there's clearly no room.
-  if (state.estimatedTotalBytes > 0) {
+  // beats N failed writes when there's clearly no room. Skipped when every model
+  // is already on disk - nothing will be written, however full the volume is.
+  if (state.estimatedTotalBytes > 0 && !(await areModelsPresent(installation.id, models))) {
     try {
       const { free } = await getDiskSpace(baseDir)
-      if (free < state.estimatedTotalBytes * DISK_HEADROOM) {
+      if (free < state.estimatedTotalBytes * TEMPLATE_DISK_HEADROOM) {
         state.status = 'error'
         state.error = DISK_SPACE_ERROR
         sendOutput(

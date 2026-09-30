@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, toRef, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
 import BrandBackground from '../components/BrandBackground.vue'
@@ -9,13 +9,13 @@ import InfoTooltip from '../components/InfoTooltip.vue'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
+import { usePerformanceTestExampleWorkflow } from '../composables/usePerformanceTestExampleWorkflow'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type {
   ActionResult,
-  FieldOption,
   PerformanceTestResultsSummary,
   RunPerformanceTestWorkflowResult
 } from '../types/ipc'
@@ -58,20 +58,42 @@ const instanceOptions = computed<BaseSelectOption[]>(() =>
 )
 const selectedInstallationId = ref<string | null>(null)
 const workflowFilePath = ref<string | null>(null)
-const workflowDisplayName = ref<string | null>(null)
-const pendingStarterWorkflowLabel = ref<string | null>(null)
-const starterWorkflowInstallationId = ref<string | null>(null)
 const workflowImportError = ref<string | null>(null)
-const starterWorkflowOptions = ref<FieldOption[]>([])
-const selectedStarterWorkflowId = ref<string | null>(null)
-const isStarterPickerOpen = ref(false)
-const isStarterPickerLoading = ref(false)
 const isWorkflowDragging = ref(false)
 const isWorkflowImporting = ref(false)
 const isWorkflowDeleting = ref(false)
 const isLaunching = ref(false)
 const isStopping = ref(false)
 const isWorkflowLocked = computed(() => isLaunching.value || isStopping.value)
+const {
+  options: exampleWorkflowOptions,
+  diskSpace: exampleDiskSpace,
+  selectedId: selectedExampleWorkflowId,
+  isPickerOpen: isExamplePickerOpen,
+  isPickerLoading: isExamplePickerLoading,
+  diskError: exampleDiskError,
+  pendingLabel: pendingExampleWorkflowLabel,
+  displayName: workflowDisplayName,
+  download: exampleDownload,
+  openPicker: openExampleWorkflowPicker,
+  prepare: prepareExampleWorkflow,
+  release: releaseExampleWorkflow,
+  clearState: clearExampleWorkflowState
+} = usePerformanceTestExampleWorkflow({
+  picker: useTemplateRef<InstanceType<typeof TemplatePickerStep>>('examplePicker'),
+  selectedInstallationId,
+  isSelectedInstallationInstalled: computed(
+    () =>
+      performanceTestInstallations.value.find(({ id }) => id === selectedInstallationId.value)
+        ?.status === 'installed'
+  ),
+  workflowFilePath,
+  workflowError: workflowImportError,
+  isWorkflowImporting,
+  isWorkflowLocked,
+  deleteWorkflow,
+  t
+})
 const isExportingResults = ref(false)
 const exportResultsError = ref<string | null>(null)
 const logsExpanded = ref(true)
@@ -135,9 +157,9 @@ const aggregateChart = computed(() => {
     width: maximum > 0 ? `${(aggregate.value / maximum) * 100}%` : '0%'
   }))
 })
-const workflowFileName = computed(
+const workflowLabel = computed(
   () =>
-    pendingStarterWorkflowLabel.value ??
+    pendingExampleWorkflowLabel.value ??
     workflowDisplayName.value ??
     workflowFilePath.value?.split(/[\\/]/).pop() ??
     ''
@@ -154,6 +176,7 @@ const canRun = computed(() => {
     !isStopping.value &&
     !isWorkflowImporting.value &&
     !isWorkflowDeleting.value &&
+    !exampleDownload.value &&
     !sessionStore.isLaunching(sessionId)
   )
 })
@@ -174,16 +197,6 @@ watch(selectedWorkspaceId, () => {
   selectedInstallationId.value = null
 })
 
-watch(selectedInstallationId, (installationId) => {
-  if (
-    starterWorkflowInstallationId.value &&
-    starterWorkflowInstallationId.value !== installationId &&
-    workflowFilePath.value
-  ) {
-    void deleteWorkflow()
-  }
-})
-
 function correctRunCount(
   value: string,
   minimum: number,
@@ -200,7 +213,7 @@ function correctRunCount(
 }
 
 function correctWarmupRuns(): void {
-  warmupRuns.value = correctRunCount(warmupRuns.value, 1, 5, 1)
+  warmupRuns.value = correctRunCount(warmupRuns.value, 0, 5, 1)
 }
 
 function correctMeasuredRuns(): void {
@@ -218,88 +231,14 @@ async function importWorkflow(sourcePath?: string): Promise<void> {
   try {
     const result = await window.api.importPerformanceTestWorkflow(sourcePath)
     if (result.ok && result.filePath) {
+      releaseExampleWorkflow()
       workflowFilePath.value = result.filePath
-      workflowDisplayName.value = null
-      starterWorkflowInstallationId.value = null
-      selectedStarterWorkflowId.value = null
     } else if (!result.canceled) {
       workflowImportError.value = result.message || t('performanceTest.importFailed')
     }
   } catch (error) {
     workflowImportError.value = (error as Error)?.message || t('performanceTest.importFailed')
   } finally {
-    isWorkflowImporting.value = false
-  }
-}
-
-async function openStarterWorkflowPicker(): Promise<void> {
-  const installationId = selectedInstallationId.value
-  if (!installationId || isWorkflowLocked.value || isWorkflowImporting.value) return
-  if (!navigator.onLine) {
-    workflowImportError.value = t('performanceTest.exampleWorkflowsOffline')
-    return
-  }
-  isStarterPickerLoading.value = true
-  workflowImportError.value = null
-  try {
-    starterWorkflowOptions.value =
-      await window.api.getPerformanceTestStarterWorkflows(installationId)
-    if (starterWorkflowOptions.value.length === 0) {
-      workflowImportError.value = t('performanceTest.noStarterWorkflows')
-      return
-    }
-    const recommended = starterWorkflowOptions.value.find((option) => option.recommended)
-    selectedStarterWorkflowId.value =
-      starterWorkflowOptions.value.find(
-        (option) => option.value === selectedStarterWorkflowId.value
-      )?.value ??
-      recommended?.value ??
-      starterWorkflowOptions.value[0]!.value
-    isStarterPickerOpen.value = true
-  } catch (error) {
-    workflowImportError.value = (error as Error)?.message || t('performanceTest.importFailed')
-  } finally {
-    isStarterPickerLoading.value = false
-  }
-}
-
-async function prepareStarterWorkflow(): Promise<void> {
-  const installationId = selectedInstallationId.value
-  const templateId = selectedStarterWorkflowId.value
-  const option = starterWorkflowOptions.value.find(({ value }) => value === templateId)
-  if (!installationId || !templateId || !option || isWorkflowImporting.value) return
-
-  const previousPath = workflowFilePath.value
-  isStarterPickerOpen.value = false
-  isWorkflowImporting.value = true
-  workflowImportError.value = null
-  pendingStarterWorkflowLabel.value = option.label
-  try {
-    const result = await window.api.preparePerformanceTestStarterWorkflow(
-      installationId,
-      templateId
-    )
-    if (!result.ok || !result.filePath) {
-      throw new Error(
-        result.offline
-          ? t('performanceTest.exampleWorkflowsOffline')
-          : result.message || t('performanceTest.importFailed')
-      )
-    }
-    if (selectedInstallationId.value !== installationId) {
-      await window.api.deletePerformanceTestWorkflow(result.filePath).catch(() => {})
-      return
-    }
-    workflowFilePath.value = result.filePath
-    workflowDisplayName.value = result.templateLabel || option.label
-    starterWorkflowInstallationId.value = installationId
-    if (previousPath && previousPath !== result.filePath) {
-      await window.api.deletePerformanceTestWorkflow(previousPath).catch(() => {})
-    }
-  } catch (error) {
-    workflowImportError.value = (error as Error)?.message || t('performanceTest.importFailed')
-  } finally {
-    pendingStarterWorkflowLabel.value = null
     isWorkflowImporting.value = false
   }
 }
@@ -314,9 +253,7 @@ async function deleteWorkflow(): Promise<void> {
     if (result.ok) {
       if (workflowFilePath.value === filePath) {
         workflowFilePath.value = null
-        workflowDisplayName.value = null
-        starterWorkflowInstallationId.value = null
-        selectedStarterWorkflowId.value = null
+        clearExampleWorkflowState()
       }
       if (result.status === 'preserved') {
         workflowImportError.value = result.message || t('performanceTest.deleteFailed')
@@ -717,20 +654,20 @@ watch(performanceTestLogs, async () => {
             <section class="performance-test__column">
               <h2>{{ t('performanceTest.chooseWorkflow') }}</h2>
               <button
-                class="performance-test__starter-workflow brand-secondary"
+                class="performance-test__example-workflow brand-secondary"
                 type="button"
                 :disabled="
                   !selectedInstallationId ||
                   isWorkflowLocked ||
                   isWorkflowImporting ||
-                  isStarterPickerLoading
+                  isExamplePickerLoading
                 "
-                @click="openStarterWorkflowPicker"
+                @click="openExampleWorkflowPicker"
               >
                 {{
-                  isStarterPickerLoading
-                    ? t('performanceTest.loadingStarterWorkflows')
-                    : t('performanceTest.chooseStarterWorkflow')
+                  isExamplePickerLoading
+                    ? t('performanceTest.loadingExampleWorkflows')
+                    : t('performanceTest.chooseExampleWorkflow')
                 }}
               </button>
               <div class="performance-test__workflow-divider">
@@ -741,7 +678,7 @@ watch(performanceTestLogs, async () => {
                 :class="{
                   'performance-test__drop-zone--dragging': isWorkflowDragging,
                   'performance-test__drop-zone--selected':
-                    workflowFilePath || pendingStarterWorkflowLabel
+                    workflowFilePath || pendingExampleWorkflowLabel
                 }"
                 :aria-busy="isWorkflowImporting || isWorkflowDeleting"
                 @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
@@ -755,7 +692,7 @@ watch(performanceTestLogs, async () => {
                   :disabled="isWorkflowLocked"
                   @click="importWorkflow()"
                 >
-                  <span v-if="!workflowFilePath && !pendingStarterWorkflowLabel">
+                  <span v-if="!workflowFilePath && !pendingExampleWorkflowLabel">
                     {{
                       isWorkflowImporting
                         ? t('performanceTest.importingWorkflow')
@@ -763,10 +700,32 @@ watch(performanceTestLogs, async () => {
                     }}
                   </span>
                   <span v-else class="performance-test__workflow-file">
-                    <strong>{{ workflowFileName }}</strong>
-                    <code v-if="pendingStarterWorkflowLabel">
-                      {{ t('performanceTest.preparingStarterWorkflow') }}
+                    <strong>{{ workflowLabel }}</strong>
+                    <code v-if="pendingExampleWorkflowLabel">
+                      {{ t('performanceTest.preparingExampleWorkflow') }}
                     </code>
+                    <template v-else-if="exampleDownload">
+                      <code>{{ exampleDownload.message }}</code>
+                      <span
+                        class="performance-test__example-download-bar"
+                        role="progressbar"
+                        :aria-valuenow="
+                          exampleDownload.percent >= 0 ? exampleDownload.percent : undefined
+                        "
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        :aria-label="t('performanceTest.exampleModelsDownload')"
+                      >
+                        <span
+                          v-if="exampleDownload.percent >= 0"
+                          :style="{ width: `${exampleDownload.percent}%` }"
+                        />
+                        <span
+                          v-else
+                          class="performance-test__example-download-bar--indeterminate"
+                        />
+                      </span>
+                    </template>
                     <code v-else>{{ workflowFilePath }}</code>
                   </span>
                 </button>
@@ -774,8 +733,16 @@ watch(performanceTestLogs, async () => {
                   v-if="workflowFilePath && !isWorkflowLocked"
                   class="performance-test__delete-workflow"
                   type="button"
-                  :aria-label="t('performanceTest.deleteWorkflow')"
-                  :title="t('performanceTest.deleteWorkflow')"
+                  :aria-label="
+                    exampleDownload
+                      ? t('performanceTest.cancelExampleDownload')
+                      : t('performanceTest.deleteWorkflow')
+                  "
+                  :title="
+                    exampleDownload
+                      ? t('performanceTest.cancelExampleDownload')
+                      : t('performanceTest.deleteWorkflow')
+                  "
                   :disabled="isWorkflowDeleting"
                   @click="deleteWorkflow"
                 >
@@ -801,7 +768,7 @@ watch(performanceTestLogs, async () => {
                     id="performance-test-warmup-runs"
                     v-model="warmupRuns"
                     type="number"
-                    min="1"
+                    min="0"
                     max="5"
                     step="1"
                     @change="correctWarmupRuns"
@@ -1075,38 +1042,41 @@ watch(performanceTestLogs, async () => {
     </div>
 
     <BaseModal
-      :open="isStarterPickerOpen"
+      :open="isExamplePickerOpen"
       size="xl"
-      :aria-label="t('performanceTest.starterWorkflowPickerTitle')"
-      content-class="performance-test__starter-modal"
-      @close="isStarterPickerOpen = false"
+      :aria-label="t('performanceTest.exampleWorkflowPickerTitle')"
+      content-class="performance-test__example-modal"
+      @close="isExamplePickerOpen = false"
     >
       <template #header>
         <div>
-          <h2>{{ t('performanceTest.starterWorkflowPickerTitle') }}</h2>
-          <p>{{ t('performanceTest.starterWorkflowPickerDescription') }}</p>
+          <h2>{{ t('performanceTest.exampleWorkflowPickerTitle') }}</h2>
+          <p>{{ t('performanceTest.exampleWorkflowPickerDescription') }}</p>
         </div>
       </template>
+      <p v-if="exampleDiskError" class="performance-test__example-disk-error" role="alert">
+        {{ exampleDiskError }}
+      </p>
       <TemplatePickerStep
-        :options="starterWorkflowOptions"
-        none-value="none"
-        :selected-value="selectedStarterWorkflowId"
-        :disk-space="null"
+        ref="examplePicker"
+        :options="exampleWorkflowOptions"
+        :selected-value="selectedExampleWorkflowId"
+        :disk-space="exampleDiskSpace"
         :disk-space-loading="false"
         compact
-        @select="selectedStarterWorkflowId = $event.value"
+        @select="selectedExampleWorkflowId = $event.value"
       />
       <template #footer>
-        <button class="brand-secondary" type="button" @click="isStarterPickerOpen = false">
+        <button class="brand-secondary" type="button" @click="isExamplePickerOpen = false">
           {{ t('common.cancel') }}
         </button>
         <button
           class="brand-primary"
           type="button"
-          :disabled="!selectedStarterWorkflowId"
-          @click="prepareStarterWorkflow"
+          :disabled="!selectedExampleWorkflowId || !!exampleDiskError"
+          @click="prepareExampleWorkflow"
         >
-          {{ t('performanceTest.useStarterWorkflow') }}
+          {{ t('performanceTest.useExampleWorkflow') }}
         </button>
       </template>
     </BaseModal>
@@ -1244,9 +1214,13 @@ watch(performanceTestLogs, async () => {
   padding: 4px 8px;
 }
 
-.performance-test__starter-workflow {
+/* Same height and text size as the workspace and instance selectors beside it. */
+.performance-test__example-workflow {
+  box-sizing: border-box;
   width: 100%;
-  min-height: 34px;
+  height: 30px;
+  padding: 4px 8px;
+  font-size: var(--takeover-fs-caption);
 }
 
 .performance-test__workflow-divider {
@@ -1267,14 +1241,50 @@ watch(performanceTestLogs, async () => {
   content: '';
 }
 
-.performance-test__starter-modal h2 {
+.performance-test__example-modal h2 {
   margin: 0;
 }
 
-.performance-test__starter-modal p {
+.performance-test__example-modal h2 + p {
   margin: 6px 0 0;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.performance-test__example-disk-error {
+  margin: 0 0 12px;
+  color: var(--accent-danger, #d92d20);
+  font-size: 12px;
+}
+
+.performance-test__example-download-bar {
+  display: block;
+  overflow: hidden;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--chooser-surface-border);
+}
+
+.performance-test__example-download-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.performance-test__example-download-bar > .performance-test__example-download-bar--indeterminate {
+  width: 30%;
+  animation: performance-test-download-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes performance-test-download-pulse {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(333%);
+  }
 }
 
 .performance-test__drop-zone,

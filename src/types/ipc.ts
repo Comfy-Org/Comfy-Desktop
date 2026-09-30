@@ -728,6 +728,18 @@ export interface NvidiaDriverCheck {
   supported: boolean
 }
 
+export type TemplateDownloadStatus = 'resolving' | 'downloading' | 'done' | 'error' | 'cancelled'
+
+/** Model download progress for a prepared performance-test example workflow. */
+export interface ExampleWorkflowDownload {
+  status: TemplateDownloadStatus
+  /** 0–100, or -1 while the total is unknown. */
+  percent: number
+  /** Localized progress line, e.g. "model.safetensors (1 of 3) — 2.1 / 14 GB …". */
+  message: string
+  error?: string
+}
+
 export interface DiskSpaceInfo {
   free: number
   total: number
@@ -1256,19 +1268,21 @@ export interface ElectronApi {
     message?: string
     canceled?: boolean
   }>
-  getPerformanceTestStarterWorkflows(installationId: string): Promise<FieldOption[]>
-  preparePerformanceTestStarterWorkflow(
+  getPerformanceTestExampleWorkflows(
+    installationId: string
+  ): Promise<{ options: FieldOption[]; diskSpace: DiskSpaceInfo | null }>
+  /** Stores the workflow and starts its model download in the background. */
+  preparePerformanceTestExampleWorkflow(
     installationId: string,
     templateId: string
   ): Promise<{
     ok: boolean
     filePath?: string
-    templateId?: string
-    templateLabel?: string
-    /** The workflow repository was unreachable, typically because the user is offline. */
-    offline?: boolean
+    /** `offline`: the workflow repository was unreachable. `unavailable`: it has no such example. */
+    reason?: 'offline' | 'unavailable'
     message?: string
   }>
+  getPerformanceTestExampleDownload(filePath: string): Promise<ExampleWorkflowDownload | null>
   deletePerformanceTestWorkflow(
     filePath: string
   ): Promise<{ ok: boolean; status?: 'deleted' | 'preserved'; message?: string }>
