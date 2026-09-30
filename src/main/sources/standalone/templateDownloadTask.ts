@@ -6,7 +6,6 @@ import {
   getModelsBaseDir,
   resolveDownloadContextById
 } from '../../lib/modelDownloadPaths'
-import { TEMPLATE_DISK_HEADROOM } from '../../../shared/templateDisk'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
 import { resolveTemplateModels, resolveTemplateModelsFromJson } from './templateModels'
@@ -52,6 +51,7 @@ import type { InstallationRecord } from '../../installations'
  */
 
 const MODEL_POOL_CONCURRENCY = 3
+const DISK_HEADROOM = 1.05
 /** Per-file auto-retry budget for transient failures. The managed job keeps
  *  its staged bytes on error, so each retry RESUMES from the prior byte count
  *  rather than restarting the file. Exhausted retries mark the file failed
@@ -399,7 +399,7 @@ async function runTask(
   if (state.estimatedTotalBytes > 0 && !(await areModelsPresent(installation.id, models))) {
     try {
       const { free } = await getDiskSpace(baseDir)
-      if (free < state.estimatedTotalBytes * TEMPLATE_DISK_HEADROOM) {
+      if (free < state.estimatedTotalBytes * DISK_HEADROOM) {
         state.status = 'error'
         state.error = DISK_SPACE_ERROR
         sendOutput(

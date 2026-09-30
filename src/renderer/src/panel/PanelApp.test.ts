@@ -1561,6 +1561,92 @@ describe('PanelApp', () => {
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
   })
 
+  it('applies a download that settles before the prepare reply arrives', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    let resolvePrepare!: (result: unknown) => void
+    api.preparePerformanceTestExampleWorkflow.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrepare = resolve
+        })
+    )
+    await chooseExampleWorkflow(wrapper)
+
+    await emitExampleDownload({ status: 'done', percent: 100, message: 'Template models ready' })
+    resolvePrepare({ ok: true, filePath: EXAMPLE_PATH, download: downloading })
+    await flushPromises()
+
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+  })
+
+  it('shows a translated message instead of the technical detail when preparing fails', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValueOnce({
+      ok: false,
+      message: 'HTTP 429 (rate limited)'
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await chooseExampleWorkflow(wrapper)
+
+      expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+        'Could not import the workflow.'
+      )
+      expect(warn).toHaveBeenCalledWith(expect.any(String), 'HTTP 429 (rate limited)')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('abandons an unfinished example when the page closes', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    await chooseExampleWorkflow(wrapper)
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+  })
+
+  it('abandons an example whose prepare finishes after the instance changed', async () => {
+    const { wrapper, api } = await mountWithInstance('installed', [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'other-install',
+        name: 'Other Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ])
+    const importedPath = 'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await flushPromises()
+    let resolvePrepare!: (result: unknown) => void
+    api.preparePerformanceTestExampleWorkflow.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrepare = resolve
+        })
+    )
+    await chooseExampleWorkflow(wrapper)
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;[...document.querySelectorAll<HTMLElement>('.ui-select-option')]
+      .find((option) => option.textContent?.includes('Other Install'))!
+      .click()
+    await flushPromises()
+
+    resolvePrepare({ ok: true, filePath: EXAMPLE_PATH, download: downloading })
+    await flushPromises()
+
+    // The late example is dropped without replacing the workflow already chosen.
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalledWith(importedPath)
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(importedPath)
+  })
+
   it('removes an example prepared for another instance once a launching test releases it', async () => {
     const { wrapper, api } = await mountWithInstance('installed', [
       {

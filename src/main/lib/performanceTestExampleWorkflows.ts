@@ -1,4 +1,5 @@
 import path from 'node:path'
+import type { WebContents } from 'electron'
 import benchmarkTemplates from '../../../assets/benchmark-templates.json'
 import { getDiskSpace } from './disk'
 import { fetchJSON } from './fetch'
@@ -21,6 +22,7 @@ import {
 } from '../sources/standalone/templateCatalog'
 import {
   formatTemplateSubStatus,
+  isTerminal,
   type TemplateDownloadSummary
 } from '../sources/standalone/templateDownloadCore'
 import {
@@ -179,15 +181,49 @@ function toExampleDownload(summary: TemplateDownloadSummary): ExampleWorkflowDow
 }
 
 /**
+ * The page that asked for an example workflow. It receives the download
+ * progress, and only it can run the example.
+ */
+export type ExampleDownloadPage = Pick<WebContents, 'send' | 'isDestroyed' | 'on' | 'off'>
+
+/** Stops watching the page of an unfinished download, by task id. */
+const _pageWatches = new Map<string, () => void>()
+
+/**
+ * Call `onGone` once when a page goes away: closed, crashed, or replaced by
+ * another document. Returns a function that stops watching.
+ */
+function watchPageGone(page: ExampleDownloadPage, onGone: () => void): () => void {
+  const gone = (): void => {
+    stop()
+    onGone()
+  }
+  const navigated = (details: { isMainFrame: boolean; isSameDocument: boolean }): void => {
+    if (details.isMainFrame && !details.isSameDocument) gone()
+  }
+  function stop(): void {
+    page.off('destroyed', gone)
+    page.off('render-process-gone', gone)
+    page.off('did-start-navigation', navigated)
+  }
+  page.on('destroyed', gone)
+  page.on('render-process-gone', gone)
+  page.on('did-start-navigation', navigated)
+  return stop
+}
+
+/**
  * Start downloading the models an example workflow needs, in the background.
- * Returns the progress at start; `onProgress` then gets the task's paced
- * progress until it settles.
+ * Returns the progress at start; `page` then gets the paced progress until the
+ * download settles. If the page goes away first, the download stops and
+ * `onPageGone` runs.
  */
 export function startExampleModelDownload(
   installation: InstallationRecord,
   workflowFilePath: string,
   { template, editorWorkflow }: PerformanceTestExampleArtifacts,
-  onProgress: (download: ExampleWorkflowDownload) => void
+  page: ExampleDownloadPage,
+  onPageGone: () => void
 ): ExampleWorkflowDownload {
   const taskId = exampleDownloadTaskId(workflowFilePath)
   startTemplateDownloadTask(
@@ -198,12 +234,24 @@ export function startExampleModelDownload(
     { sendOutput: () => {} },
     editorWorkflow
   )
+  const stopWatching = watchPageGone(page, () => {
+    _pageWatches.delete(taskId)
+    forgetTemplateDownload(taskId)
+    onPageGone()
+  })
+  _pageWatches.set(taskId, stopWatching)
   // The subscription ends when the download settles, or when the workflow is deleted.
   let initial: ExampleWorkflowDownload | undefined
   subscribeTemplateDownload(taskId, (summary) => {
     const download = toExampleDownload(summary)
-    if (initial) onProgress(download)
-    else initial = download
+    if (isTerminal(summary.status)) {
+      stopWatching()
+      _pageWatches.delete(taskId)
+    }
+    if (!initial) initial = download
+    else if (!page.isDestroyed()) {
+      page.send('performance-test-example-download', { filePath: workflowFilePath, download })
+    }
   })
   // The task was just started under this id, so the subscription reported it at once.
   return initial!
@@ -211,5 +259,8 @@ export function startExampleModelDownload(
 
 /** Stop a prepared example's model download (if any) and drop its state. */
 export function cancelExampleModelDownload(workflowFilePath: string): void {
-  forgetTemplateDownload(exampleDownloadTaskId(workflowFilePath))
+  const taskId = exampleDownloadTaskId(workflowFilePath)
+  _pageWatches.get(taskId)?.()
+  _pageWatches.delete(taskId)
+  forgetTemplateDownload(taskId)
 }

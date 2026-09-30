@@ -75,13 +75,14 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
     }
   }
 
+  /** Latest push, for `prepare`: a download can settle before its reply arrives. */
+  let latestPush: { filePath: string; download: ExampleWorkflowDownload } | null = null
   // The main process pushes progress until the download settles.
-  const unsubscribeDownload = window.api.onPerformanceTestExampleDownload(
-    ({ filePath, download: current }) => {
-      if (isUnmounted || !download.value || workflowFilePath.value !== filePath) return
-      void applyDownload(current)
-    }
-  )
+  const unsubscribeDownload = window.api.onPerformanceTestExampleDownload((push) => {
+    latestPush = push
+    if (isUnmounted || !download.value || workflowFilePath.value !== push.filePath) return
+    void applyDownload(push.download)
+  })
 
   async function openPicker(): Promise<void> {
     const installationId = selectedInstallationId.value
@@ -110,7 +111,8 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
         catalog.options[0]!.value
       isPickerOpen.value = true
     } catch (error) {
-      workflowError.value = (error as Error)?.message || t('performanceTest.importFailed')
+      console.warn('[performance-test] Could not list the example workflows:', error)
+      workflowError.value = t('performanceTest.importFailed')
     } finally {
       isPickerLoading.value = false
     }
@@ -133,13 +135,15 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
         templateId
       )
       if (!result.ok || !result.filePath) {
-        throw new Error(
+        // The main process's detail is English and technical ("HTTP 429"): log it.
+        console.warn('[performance-test] Could not prepare the example workflow:', result.message)
+        workflowError.value =
           result.reason === 'offline'
             ? t('performanceTest.exampleWorkflowsOffline')
             : result.reason === 'unavailable'
               ? t('performanceTest.exampleWorkflowUnavailable')
-              : result.message || t('performanceTest.importFailed')
-        )
+              : t('performanceTest.importFailed')
+        return
       }
       if (isUnmounted || selectedInstallationId.value !== installationId) {
         abandon(result.filePath)
@@ -151,9 +155,13 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
       preparedForInstallationId.value = installationId
       selectedId.value = templateId
       if (previousPath && previousPath !== result.filePath) abandon(previousPath)
-      await applyDownload(result.download)
+      // A push that beat the reply is newer than the reply's snapshot.
+      const pushed = latestPush?.filePath === result.filePath ? latestPush.download : undefined
+      latestPush = null
+      await applyDownload(pushed ?? result.download)
     } catch (error) {
-      workflowError.value = (error as Error)?.message || t('performanceTest.importFailed')
+      console.warn('[performance-test] Could not prepare the example workflow:', error)
+      workflowError.value = t('performanceTest.importFailed')
     } finally {
       pendingLabel.value = null
       isWorkflowImporting.value = false

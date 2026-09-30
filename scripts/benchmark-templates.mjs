@@ -33,10 +33,22 @@ const die = (message) => {
   process.exit(1)
 }
 
+const fetchWithTimeout = (url, init) => fetch(url, { signal: AbortSignal.timeout(15_000), ...init })
+
 async function fetchOk(url, init) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(15_000), ...init })
-  if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`)
+  const response = await fetchWithTimeout(url, init)
+  if (!response.ok) {
+    throw Object.assign(new Error(`HTTP ${response.status} for ${url}`), {
+      status: response.status
+    })
+  }
   return response
+}
+
+/** `null` when the file is not published (404); network errors still throw. */
+const unlessMissing = (error) => {
+  if (error?.status === 404) return null
+  throw error
 }
 
 function isApiPrompt(value) {
@@ -82,7 +94,11 @@ function repoSource(sourceDir) {
     prompt: async (id) =>
       (await fetchOk(`${REPO}/benchmarks/${encodeURIComponent(id)}.json`)).json(),
     hasTemplate: async (id) =>
-      (await fetch(`${REPO}/templates/${encodeURIComponent(id)}.json`, { method: 'HEAD' })).ok
+      (
+        await fetchWithTimeout(`${REPO}/templates/${encodeURIComponent(id)}.json`, {
+          method: 'HEAD'
+        })
+      ).ok
   }
 }
 
@@ -172,7 +188,7 @@ async function validate() {
   for (const { id } of doc.templates) {
     const [hasTemplate, prompt] = await Promise.all([
       source.hasTemplate(id),
-      source.prompt(id).catch(() => null)
+      source.prompt(id).catch(unlessMissing)
     ])
     if (!hasTemplate) unpublished.push(`${id}: templates/${id}.json is not on GitHub main`)
     if (!prompt) unpublished.push(`${id}: benchmarks/${id}.json is not on GitHub main`)
@@ -187,6 +203,11 @@ async function validate() {
 
 const [command, ...args] = process.argv.slice(2)
 const sourceFlag = args.indexOf('--source')
-if (command === 'validate') await validate()
-else if (command === 'regenerate') await regenerate(sourceFlag >= 0 ? args[sourceFlag + 1] : null)
-else die('usage: benchmark-templates.mjs validate | regenerate [--source <dir>]')
+try {
+  if (command === 'validate') await validate()
+  else if (command === 'regenerate') await regenerate(sourceFlag >= 0 ? args[sourceFlag + 1] : null)
+  else die('usage: benchmark-templates.mjs validate | regenerate [--source <dir>]')
+} catch (error) {
+  // Network failures (offline, timeout, HTTP errors) end the run without a stack trace.
+  die(`${error?.cause?.message ?? error?.message ?? error}`)
+}

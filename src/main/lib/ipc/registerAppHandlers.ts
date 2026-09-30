@@ -222,17 +222,13 @@ export function registerAppHandlers(): void {
           artifacts.apiWorkflow,
           benchmarksDir
         )
+        // A page that goes away before the models arrive leaves nobody to run the example.
         const download = startExampleModelDownload(
           installation,
           workflowFilePath,
           artifacts,
-          (progress) => {
-            if (_event.sender.isDestroyed()) return
-            _event.sender.send('performance-test-example-download', {
-              filePath: workflowFilePath,
-              download: progress
-            })
-          }
+          _event.sender,
+          () => void deletePerformanceTestWorkflow(workflowFilePath, benchmarksDir).catch(() => {})
         )
         return { ok: true, filePath: workflowFilePath, download }
       } catch (error) {

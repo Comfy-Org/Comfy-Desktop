@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -28,6 +29,7 @@ import type { InstallationRecord } from '../installations'
 import {
   cancelExampleModelDownload,
   ExampleWorkflowFetchError,
+  type ExampleDownloadPage,
   getPerformanceTestExampleCatalog,
   loadPerformanceTestExampleArtifacts,
   startExampleModelDownload
@@ -225,13 +227,8 @@ describe('performance test example workflows', () => {
     expect(fetchJSON).toHaveBeenCalledWith(INDEX_URL)
   })
 
-  it('runs one background model download per prepared session and forwards its progress', async () => {
-    serveRepo()
+  describe('example model download', () => {
     const installation = { id: 'inst-1' } as InstallationRecord
-    const artifacts = await loadPerformanceTestExampleArtifacts(SAMPLE_ID)
-    // Platform-native, like the paths the main process stores (CI runs on Linux).
-    const workflowFilePath = path.join('benchmarks', '20260930120000', `${SAMPLE_ID}.json`)
-    const taskId = 'performance-test-download:20260930120000'
     const summary = (patch: Partial<TemplateDownloadSummary>): TemplateDownloadSummary => ({
       status: 'resolving',
       percent: -1,
@@ -245,38 +242,113 @@ describe('performance test example workflows', () => {
       etaSecs: -1,
       ...patch
     })
-    let publish: (summary: TemplateDownloadSummary) => void = () => {}
-    vi.mocked(subscribeTemplateDownload).mockImplementation((_id, listener) => {
-      publish = listener
-      listener(summary({}))
-      return () => {}
+
+    /** Start a download for a fresh session, followed by a fake page. */
+    async function startDownload(sessionId: string) {
+      serveRepo()
+      const artifacts = await loadPerformanceTestExampleArtifacts(SAMPLE_ID)
+      // Platform-native, like the paths the main process stores (CI runs on Linux).
+      const workflowFilePath = path.join('benchmarks', sessionId, `${SAMPLE_ID}.json`)
+      let publish: (summary: TemplateDownloadSummary) => void = () => {}
+      vi.mocked(subscribeTemplateDownload).mockImplementation((_id, listener) => {
+        publish = listener
+        listener(summary({}))
+        return () => {}
+      })
+      const page = Object.assign(new EventEmitter(), {
+        send: vi.fn(),
+        isDestroyed: vi.fn(() => false)
+      })
+      const onPageGone = vi.fn()
+      const initial = startExampleModelDownload(
+        installation,
+        workflowFilePath,
+        artifacts,
+        page as unknown as ExampleDownloadPage,
+        onPageGone
+      )
+      return {
+        workflowFilePath,
+        taskId: `performance-test-download:${sessionId}`,
+        page,
+        onPageGone,
+        initial,
+        publish: (patch: Partial<TemplateDownloadSummary>) => publish(summary(patch))
+      }
+    }
+
+    const watchedEvents = ['destroyed', 'render-process-gone', 'did-start-navigation']
+    const watchers = (page: EventEmitter): number =>
+      watchedEvents.reduce((count, event) => count + page.listenerCount(event), 0)
+
+    it('runs one background model download per prepared session and sends its progress to the page', async () => {
+      const { workflowFilePath, taskId, page, onPageGone, initial, publish } =
+        await startDownload('20260930120000')
+
+      expect(startTemplateDownloadTask).toHaveBeenCalledWith(
+        taskId,
+        installation,
+        SAMPLE_ID,
+        123,
+        { sendOutput: expect.any(Function) },
+        editorWorkflow
+      )
+      expect(subscribeTemplateDownload).toHaveBeenCalledWith(taskId, expect.any(Function))
+      // The summary reported at subscribe time is returned, not sent.
+      expect(initial).toEqual({ status: 'resolving', percent: -1, message: expect.any(String) })
+      expect(page.send).not.toHaveBeenCalled()
+
+      publish({ status: 'error', percent: 0, error: 'insufficient-disk' })
+      expect(page.send).toHaveBeenCalledWith('performance-test-example-download', {
+        filePath: workflowFilePath,
+        download: {
+          status: 'error',
+          percent: 0,
+          message: expect.any(String),
+          error: 'insufficient-disk'
+        }
+      })
+      // A settled download no longer depends on its page.
+      expect(watchers(page)).toBe(0)
+      page.emit('destroyed')
+      expect(onPageGone).not.toHaveBeenCalled()
+      expect(forgetTemplateDownload).not.toHaveBeenCalled()
     })
-    const onProgress = vi.fn()
 
-    const initial = startExampleModelDownload(installation, workflowFilePath, artifacts, onProgress)
+    it.each(['destroyed', 'render-process-gone'])(
+      'stops the download when its page is %s',
+      async (event) => {
+        const { taskId, page, onPageGone } = await startDownload('20260930120001')
 
-    expect(startTemplateDownloadTask).toHaveBeenCalledWith(
-      taskId,
-      installation,
-      SAMPLE_ID,
-      123,
-      { sendOutput: expect.any(Function) },
-      editorWorkflow
+        page.emit(event)
+
+        expect(forgetTemplateDownload).toHaveBeenCalledWith(taskId)
+        expect(onPageGone).toHaveBeenCalledOnce()
+        expect(watchers(page)).toBe(0)
+      }
     )
-    expect(subscribeTemplateDownload).toHaveBeenCalledWith(taskId, expect.any(Function))
-    // The summary reported at subscribe time is returned, not forwarded.
-    expect(initial).toEqual({ status: 'resolving', percent: -1, message: expect.any(String) })
-    expect(onProgress).not.toHaveBeenCalled()
 
-    publish(summary({ status: 'error', percent: 0, error: 'insufficient-disk' }))
-    expect(onProgress).toHaveBeenCalledWith({
-      status: 'error',
-      percent: 0,
-      message: expect.any(String),
-      error: 'insufficient-disk'
+    it('stops the download when its page loads another document, not on in-page navigation', async () => {
+      const { taskId, page, onPageGone } = await startDownload('20260930120002')
+
+      page.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true })
+      page.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false })
+      expect(onPageGone).not.toHaveBeenCalled()
+
+      page.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+      expect(forgetTemplateDownload).toHaveBeenCalledWith(taskId)
+      expect(onPageGone).toHaveBeenCalledOnce()
     })
 
-    cancelExampleModelDownload(workflowFilePath)
-    expect(forgetTemplateDownload).toHaveBeenCalledWith(taskId)
+    it('stops watching the page when the download is cancelled', async () => {
+      const { workflowFilePath, taskId, page, onPageGone } = await startDownload('20260930120003')
+
+      cancelExampleModelDownload(workflowFilePath)
+
+      expect(forgetTemplateDownload).toHaveBeenCalledWith(taskId)
+      expect(watchers(page)).toBe(0)
+      page.emit('destroyed')
+      expect(onPageGone).not.toHaveBeenCalled()
+    })
   })
 })

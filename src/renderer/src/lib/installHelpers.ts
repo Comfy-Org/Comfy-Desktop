@@ -2,7 +2,6 @@ import { ref, onUnmounted } from 'vue'
 import type { DiskSpaceInfo, FieldOption, PathIssue } from '../types/ipc'
 import { emitTelemetryAction } from './telemetry'
 import { formatBytes } from './formatting'
-import { TEMPLATE_DISK_HEADROOM } from '../../../shared/templateDisk'
 
 const pathIssueI18nKeys: Record<PathIssue, { title: string; message: string }> = {
   insideAppBundle: {
@@ -160,6 +159,19 @@ export async function checkDiskSpaceOrWarn(opts: {
   return true
 }
 
+/**
+ * Hard-block (not a warn) when the volume can't hold the template's required
+ * models. Unlike `checkDiskSpaceOrWarn`, there's no "continue anyway" — running
+ * out of disk would leave a half-downloaded model set and a confusing error
+ * row, so the user must free space or deselect the template first.
+ *
+ * Returns `true` when there's room (or nothing to check), `false` when the
+ * block alert was shown. `estimatedModelBytes` is the template's coarse model
+ * size; a small headroom multiplier covers the unzip/temp overhead and the
+ * estimate's imprecision.
+ */
+const TEMPLATE_DISK_HEADROOM = 1.1
+
 /** Bytes the volume must have free to safely fit `estimatedModelBytes` of
  *  template models (model size + a headroom for temp/unzip + estimate slop).
  *  Pure — the threshold math, isolated so it's unit-testable. */
@@ -211,17 +223,6 @@ export function isApiNodeTemplate(option: FieldOption | null | undefined): boole
   return option?.data?.apiNode === true
 }
 
-/**
- * Hard-block (not a warn) when the volume can't hold the template's required
- * models. Unlike `checkDiskSpaceOrWarn`, there's no "continue anyway" — running
- * out of disk would leave a half-downloaded model set and a confusing error
- * row, so the user must free space or deselect the template first.
- *
- * Returns `true` when there's room (or nothing to check), `false` when the
- * block alert was shown. `estimatedModelBytes` is the template's coarse model
- * size; a small headroom multiplier covers the unzip/temp overhead and the
- * estimate's imprecision.
- */
 export async function checkTemplateDiskOrBlock(opts: {
   path: string
   estimatedModelBytes: number
