@@ -130,7 +130,7 @@ vi.mock('../../hardwareTap', async (importOriginal) => {
 
 import {
   attachLaunchStreams,
-  createAssetsTapSafe,
+  createCoreEventTapSafe,
   buildLaunchArgs,
   desktopFeatureFlags,
   emitCoreBetaRecords,
@@ -144,7 +144,7 @@ import {
   _resolveLaunchMode,
   _resolvePortConflictPolicy
 } from './launch'
-import * as assetsTapModule from '../../assetsTap'
+import * as coreEventTapModule from '../../coreEventTap'
 import {
   BETA_NOTICE_ANNOUNCED_ARGS_KEY,
   _resetForTest as _resetBetaNotice,
@@ -207,6 +207,23 @@ describe('desktopFeatureFlags', () => {
   it('omits enable_telemetry for non-standalone installs even when opted in', () => {
     expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty('enable_telemetry')
     expect(desktopFeatureFlags(installOf('git'), true)).not.toHaveProperty('enable_telemetry')
+  })
+
+  // The core event tap runs for every install kind, so the flag that makes
+  // core write its lines follows consent, not enable_telemetry's install rule.
+  it.each(['standalone', 'portable', 'git'])(
+    'injects structured_log_events for a %s install that opted in',
+    (sourceId) => {
+      expect(desktopFeatureFlags(installOf(sourceId), true).structured_log_events).toBe('true')
+    }
+  )
+
+  it('omits structured_log_events when telemetry is disabled', () => {
+    for (const sourceId of ['standalone', 'portable', 'git']) {
+      expect(desktopFeatureFlags(installOf(sourceId), false)).not.toHaveProperty(
+        'structured_log_events'
+      )
+    }
   })
 })
 
@@ -480,7 +497,7 @@ describe('handleLaunch model-download startup await (#1322)', () => {
   })
 })
 
-describe('createAssetsTapSafe', () => {
+describe('createCoreEventTapSafe', () => {
   const BASE = {
     installationId: 'assets-tap-base',
     variant: 'nvidia',
@@ -493,8 +510,8 @@ describe('createAssetsTapSafe', () => {
   })
 
   it('forwards the launch-gated core-beta flags with the base context', () => {
-    const create = vi.spyOn(assetsTapModule, 'createAssetsTap')
-    createAssetsTapSafe(BASE)
+    const create = vi.spyOn(coreEventTapModule, 'createCoreEventTap')
+    createCoreEventTapSafe(BASE)
     expect(create).toHaveBeenCalledWith({
       installationId: 'assets-tap-base',
       variant: 'nvidia',
@@ -505,25 +522,25 @@ describe('createAssetsTapSafe', () => {
 
   it('hands back the constructed tap when construction succeeds', () => {
     const real = { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
-    vi.spyOn(assetsTapModule, 'createAssetsTap').mockReturnValue(real)
-    expect(createAssetsTapSafe(BASE)).toBe(real)
+    vi.spyOn(coreEventTapModule, 'createCoreEventTap').mockReturnValue(real)
+    expect(createCoreEventTapSafe(BASE)).toBe(real)
   })
 
   it('substitutes an inert tap when construction throws, letting no exception escape', () => {
-    vi.spyOn(assetsTapModule, 'createAssetsTap').mockImplementation(() => {
+    vi.spyOn(coreEventTapModule, 'createCoreEventTap').mockImplementation(() => {
       throw new Error('assets tap construction exploded')
     })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    let tap: ReturnType<typeof createAssetsTapSafe> | null = null
+    let tap: ReturnType<typeof createCoreEventTapSafe> | null = null
     expect(() => {
-      tap = createAssetsTapSafe(BASE)
+      tap = createCoreEventTapSafe(BASE)
     }).not.toThrow()
     expect(consoleError).toHaveBeenCalled()
 
     // Every lifecycle call the launch path makes must be a safe no-op on the
     // substitute, or containment at construction buys nothing.
-    const inert = tap as unknown as ReturnType<typeof createAssetsTapSafe>
+    const inert = tap as unknown as ReturnType<typeof createCoreEventTapSafe>
     expect(() => {
       inert.beginBoot()
       inert.ingest('[assets-event] assets.enabled hashing_enabled=true\n', 'stdout')
@@ -541,7 +558,7 @@ describe('attachLaunchStreams assets tap wiring', () => {
     return { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
   }
 
-  function harness(assetsTap = fakeTap()) {
+  function harness(coreEventTap = fakeTap()) {
     const stdout = new EventEmitter()
     const stderr = new EventEmitter()
     const proc = { stdout, stderr } as unknown as ChildProcess
@@ -557,16 +574,16 @@ describe('attachLaunchStreams assets tap wiring', () => {
       sendOutput,
       execTap as unknown as ReturnType<typeof createExecutionTap>,
       hwTap as unknown as ReturnType<typeof createHardwareTap>,
-      assetsTap,
+      coreEventTap,
       tracker
     )
-    return { stdout, stderr, execTap, hwTap, assetsTap, getStderr }
+    return { stdout, stderr, execTap, hwTap, coreEventTap, getStderr }
   }
 
   it('feeds stdout chunks to the assets tap tagged as stdout', () => {
     const h = harness()
     h.stdout.emit('data', Buffer.from('[assets-event] assets.enabled hashing_enabled=true\n'))
-    expect(h.assetsTap.ingest).toHaveBeenCalledWith(
+    expect(h.coreEventTap.ingest).toHaveBeenCalledWith(
       '[assets-event] assets.enabled hashing_enabled=true\n',
       'stdout'
     )
@@ -578,7 +595,7 @@ describe('attachLaunchStreams assets tap wiring', () => {
       'data',
       Buffer.from('[assets-event] scanner.stat_failed error_type=OSError site=discovery\n')
     )
-    expect(h.assetsTap.ingest).toHaveBeenCalledWith(
+    expect(h.coreEventTap.ingest).toHaveBeenCalledWith(
       '[assets-event] scanner.stat_failed error_type=OSError site=discovery\n',
       'stderr'
     )
@@ -596,12 +613,12 @@ describe('attachLaunchStreams assets tap wiring', () => {
   })
 
   it('keeps piping both streams when the inert substitute tap is attached', () => {
-    vi.spyOn(assetsTapModule, 'createAssetsTap').mockImplementation(() => {
+    vi.spyOn(coreEventTapModule, 'createCoreEventTap').mockImplementation(() => {
       throw new Error('assets tap construction exploded')
     })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
-      const inert = createAssetsTapSafe({
+      const inert = createCoreEventTapSafe({
         installationId: 'inert',
         variant: null,
         release: null,

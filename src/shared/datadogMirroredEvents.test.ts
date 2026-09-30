@@ -31,8 +31,8 @@ describe('isDatadogMirroredEvent', () => {
   })
 
   // The fourteen scan-pipeline failures from assetsTap's ALLOWED_EVENTS (prefix
-  // plus bare event name, verified against assetsTap.ts's own
-  // `${EVENT_PREFIX}${event}` construction).
+  // plus namespace and bare event name, verified against coreEventTap.ts's own
+  // `${EVENT_PREFIX}${namespace}.${event}` construction).
   const ASSETS_ERROR_EVENTS = [
     'comfy.desktop.comfyui.assets.scanner.hash_failed',
     'comfy.desktop.comfyui.assets.scanner.enrich_failed',

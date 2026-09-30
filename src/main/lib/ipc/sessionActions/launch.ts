@@ -61,7 +61,7 @@ import { lastNLines, stripAnsi } from '../../stderrTail'
 import { decodeExitCode } from '../../exitCodeInfo'
 import { auditVcRuntime } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
-import { createAssetsTap } from '../../assetsTap'
+import { createCoreEventTap } from '../../coreEventTap'
 import { createExecutionTap } from '../../executionTap'
 import { createHardwareTap } from '../../hardwareTap'
 import { createLaunchProgressTracker } from '../../launchProgress'
@@ -127,6 +127,11 @@ export function desktopFeatureFlags(
   // installs — never for portable or user-managed git clones.
   if (inst.sourceId === 'standalone' && telemetryEnabled) {
     flags.enable_telemetry = 'true'
+  }
+  // Core's `[comfy-event]` lines feed the core event tap, which runs for every
+  // install kind, so this follows consent alone. Off, core writes none.
+  if (telemetryEnabled) {
+    flags.structured_log_events = 'true'
   }
   return flags
 }
@@ -552,21 +557,21 @@ export function _resolvePortConflictPolicy(
   }
 }
 
-/** Builds the assets tap, substituting an inert one if construction throws.
+/** Builds the core event tap, substituting an inert one if construction throws.
  *  Deliberately stricter than the neighbouring `createHardwareTap`, whose
  *  construction failures propagate and abort the launch: this tap is pure
- *  diagnostics for an off-by-default subsystem and must never cost a user their
- *  launch. Same shape, so downstream lifecycle sites need no null checks. */
-export function createAssetsTapSafe(base: {
+ *  diagnostics and must never cost a user their launch. Same shape, so downstream
+ *  lifecycle sites need no null checks. */
+export function createCoreEventTapSafe(base: {
   installationId: string
   variant: string | null
   release: string | null
   coreBetaFlags: string[]
-}): ReturnType<typeof createAssetsTap> {
+}): ReturnType<typeof createCoreEventTap> {
   try {
-    return createAssetsTap(base)
+    return createCoreEventTap(base)
   } catch (err) {
-    console.error('Failed to create assets telemetry tap; continuing without it:', err)
+    console.error('Failed to create core event telemetry tap; continuing without it:', err)
     return { ingest: () => {}, beginBoot: () => {}, flushSummary: () => {} }
   }
 }
@@ -580,7 +585,7 @@ export function attachLaunchStreams(
   sendOutput: (text: string) => void,
   execTap: ReturnType<typeof createExecutionTap>,
   hwTap: ReturnType<typeof createHardwareTap>,
-  assetsTap: ReturnType<typeof createAssetsTap>,
+  coreEventTap: ReturnType<typeof createCoreEventTap>,
   tracker: LaunchProgressTracker
 ): { getStderr: () => string } {
   let stderrBuf = ''
@@ -590,7 +595,7 @@ export function attachLaunchStreams(
     sendOutput(text)
     execTap.ingest(text, 'stdout')
     hwTap.ingest(text, 'stdout')
-    assetsTap.ingest(text, 'stdout')
+    coreEventTap.ingest(text, 'stdout')
     tracker.ingest(stripAnsi(text))
   })
   proc.stderr?.on('data', (chunk: Buffer) => {
@@ -603,7 +608,7 @@ export function attachLaunchStreams(
     sendOutput(text)
     execTap.ingest(text, 'stderr')
     hwTap.ingest(text, 'stderr')
-    assetsTap.ingest(text, 'stderr')
+    coreEventTap.ingest(text, 'stderr')
     tracker.ingest(clean)
   })
   return { getStderr: () => stderrBuf }
@@ -836,7 +841,7 @@ async function runLaunch(
     logStream: WriteStream
     execTap: ReturnType<typeof createExecutionTap>
     hwTap: ReturnType<typeof createHardwareTap>
-    assetsTap: ReturnType<typeof createAssetsTap>
+    coreEventTap: ReturnType<typeof createCoreEventTap>
     tracker: LaunchProgressTracker
   }> {
     const logStream = await openLogStream(inst.installPath)
@@ -858,14 +863,14 @@ async function runLaunch(
         coreCommit,
         coreVersionLabel: coreVersionLabel()
       })
-      const assetsTap = createAssetsTapSafe({
+      const coreEventTap = createCoreEventTapSafe({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags
       })
       const tracker = await armLaunchTracker()
-      return { logStream, execTap, hwTap, assetsTap, tracker }
+      return { logStream, execTap, hwTap, coreEventTap, tracker }
     } catch (err) {
       logStream.end()
       throw err
@@ -1346,7 +1351,7 @@ async function runLaunch(
     // Marked inside the guard: even the marker's renderer broadcast can
     // throw, and every throw after the marker exists must clear it before
     // the handler settles.
-    const { logStream, execTap, hwTap, assetsTap, tracker } = await guardLaunchSetup(() => {
+    const { logStream, execTap, hwTap, coreEventTap, tracker } = await guardLaunchSetup(() => {
       _markLaunching(sessionId, inst.name)
       return acquireLaunchResources()
     })
@@ -1364,14 +1369,14 @@ async function runLaunch(
     const { proc, getStderr } = await guardLaunchSetup(
       async () => {
         hwTap.beginBoot()
-        assetsTap.beginBoot()
+        coreEventTap.beginBoot()
         const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
           showWindow: launchCmd.showWindow
         })
         try {
           return {
             proc: p,
-            ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, assetsTap, tracker)
+            ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, coreEventTap, tracker)
           }
         } catch (err) {
           // Stream wiring failed: kill and WAIT for the child so the settled
@@ -1396,7 +1401,7 @@ async function runLaunch(
         flushTelemetry: () => {
           execTap.flushSummary()
           hwTap.flushSummary()
-          assetsTap.flushSummary()
+          coreEventTap.flushSummary()
         }
       },
       Date.now() - launchStartedAt,
@@ -1413,7 +1418,7 @@ async function runLaunch(
       const lastStderr = lastNLines(getStderr(), 100)
       execTap.flushSummary()
       hwTap.flushSummary()
-      assetsTap.flushSummary()
+      coreEventTap.flushSummary()
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
@@ -1579,7 +1584,7 @@ async function runLaunch(
   // marker's renderer broadcast can throw, and every throw after either
   // exists must tear them back down before the handler settles. Pre-armed
   // tracker so the synchronous relaunch loop can reuse the single instance.
-  const { logStream, execTap, hwTap, assetsTap, tracker } = await guardLaunchSetup(
+  const { logStream, execTap, hwTap, coreEventTap, tracker } = await guardLaunchSetup(
     () => {
       _reservePort(launchCmd.port!, inst.name)
       _markLaunching(sessionId, inst.name)
@@ -1593,15 +1598,15 @@ async function runLaunch(
     // accelerator_detected.
     hwTap.beginBoot()
     // Drain the previous attempt's unterminated records before resetting its buffers.
-    assetsTap.flushSummary()
-    assetsTap.beginBoot()
+    coreEventTap.flushSummary()
+    coreEventTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
     })
     try {
       return {
         proc: p,
-        ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, assetsTap, tracker)
+        ...attachLaunchStreams(p, logStream, sendOutput, execTap, hwTap, coreEventTap, tracker)
       }
     } catch (err) {
       // Stream wiring failed: kill and WAIT for the child so cleanup can't
@@ -1822,7 +1827,7 @@ async function runLaunch(
     // with the proc still alive, leaving a pending accelerator event unemitted.
     // flushSummary is idempotent, so a later exit re-flush is harmless.
     hwTap.flushSummary()
-    assetsTap.flushSummary()
+    coreEventTap.flushSummary()
     if (launchResult.cancelled) {
       // User-initiated cancel is not a boot failure — discard the buffer so a
       // later relaunch starts clean and we don't emit phantom boot_phase rows.
@@ -1883,7 +1888,7 @@ async function runLaunch(
       flushTelemetry: () => {
         execTap.flushSummary()
         hwTap.flushSummary()
-        assetsTap.flushSummary()
+        coreEventTap.flushSummary()
       }
     },
     bootTimeMs,
@@ -1967,7 +1972,7 @@ async function runLaunch(
         // flushSummary is idempotent.
         execTap.flushSummary()
         hwTap.flushSummary()
-        assetsTap.flushSummary()
+        coreEventTap.flushSummary()
         _removeSession(sessionId)
         _clearLaunchingFailed(sessionId)
         clearBetaActivationClaim(installationId)
@@ -2085,7 +2090,7 @@ async function runLaunch(
       const lastStderr = lastNLines(currentGetStderr(), 100)
       execTap.flushSummary()
       hwTap.flushSummary()
-      assetsTap.flushSummary()
+      coreEventTap.flushSummary()
       // Run the (awaited) crash diagnosis BEFORE releasing the session, so a
       // relaunch can't slip in and clearCrash() during the audit and have this
       // handler then resurrect the stale crash via recordCrash().
