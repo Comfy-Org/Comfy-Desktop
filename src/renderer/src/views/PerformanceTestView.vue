@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
+import { ArrowDown, ArrowUp, FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import CollapsibleSectionToggle from '../components/CollapsibleSectionToggle.vue'
@@ -15,6 +15,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import type {
   ActionResult,
   FieldOption,
+  PerformanceTestBenchmark,
   PerformanceTestResultsSummary,
   RunPerformanceTestWorkflowResult
 } from '../types/ipc'
@@ -23,9 +24,27 @@ import {
   createPerformanceTestResultsSvg,
   type PerformanceTestImageMetric
 } from '../lib/performanceTestResultsSvg'
+import {
+  compareToPrevious,
+  perImageSeconds,
+  tierFromHardware,
+  vramPeakView,
+  type BenchmarkTone,
+  type CompareResult
+} from '../lib/benchmarkMetrics'
+import { buildSeriesChart } from '../lib/benchmarkCharts'
 import { emitTelemetryAction } from '../lib/telemetry'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
+
+type BenchmarkModality = 'image' | 'video' | 'audio'
+type CaptureTier = 'rich' | 'partial' | 'lite'
+
+interface ConfigChip {
+  readonly key: string
+  readonly text: string
+  readonly tone: BenchmarkTone
+}
 
 interface PerformanceTestRunTelemetry {
   readonly installationId: string
@@ -75,6 +94,13 @@ const isExportingResults = ref(false)
 const exportResultsError = ref<string | null>(null)
 const logsExpanded = ref(true)
 const resultsExpanded = ref(true)
+const detailsExpanded = ref(false)
+/** Modality of the currently-selected workflow (from the catalog option). */
+const workflowModality = ref<BenchmarkModality | null>(null)
+/** Modality that produced the current result — drives the modality-aware hero. */
+const resultModality = ref<BenchmarkModality | null>(null)
+/** Prior runs (newest-first) for the inline compare delta. */
+const priorBenchmarks = ref<PerformanceTestBenchmark[]>([])
 const warmupRuns = ref('1')
 const measuredRuns = ref('5')
 const logInstallationId = ref<string | null>(null)
@@ -134,6 +160,313 @@ const aggregateChart = computed(() => {
     width: maximum > 0 ? `${(aggregate.value / maximum) * 100}%` : '0%'
   }))
 })
+
+// --- Rich results view (design §3–§7) --------------------------------------
+// The rich schema-v2 capture, when core wrote one. Everything degrades to a
+// muted "— not measured" (never a zero/blank) when a leaf is null; the whole
+// object is null for old core / no capture (the "Lite" tier).
+const coreBenchmark = computed(() => performanceTestResult.value?.coreBenchmark ?? null)
+const resultsSummary = computed(() => performanceTestResult.value?.resultsSummary ?? null)
+const hasResult = computed(() => resultsSummary.value !== null)
+
+/** Rich (v2) → Partial (v1) → Lite (no capture); drives the graceful degrade. */
+const captureTier = computed<CaptureTier>(() => {
+  const bench = coreBenchmark.value
+  if (!bench) return 'lite'
+  return (bench.captureSchemaVersion ?? 1) >= 2 ? 'rich' : 'partial'
+})
+
+const medianSeconds = computed<number | null>(() => {
+  const stats = performanceTestResult.value?.statistics
+  if (stats?.medianDurationSeconds != null) return stats.medianDurationSeconds
+  return resultsSummary.value?.medianJobDurationSeconds ?? null
+})
+const measuredRunCount = computed<number>(
+  () =>
+    resultsSummary.value?.measuredJobCount ??
+    performanceTestResult.value?.statistics?.measuredJobCount ??
+    0
+)
+const heroImageCount = computed<number | null>(() => coreBenchmark.value?.run.imageCount ?? null)
+
+/** Modality of the run that produced the current result (image | video | audio). */
+const heroModality = computed<BenchmarkModality | null>(() => resultModality.value)
+
+/** The big hero number in seconds — sec/image when the image count is known,
+ *  else seconds per run (never fabricated). Video/audio stay seconds-only. */
+const heroSeconds = computed<number | null>(() => {
+  const bench = coreBenchmark.value
+  const median = medianSeconds.value
+  if (heroModality.value === 'image' || heroModality.value == null) {
+    if (bench?.summary.secPerImage != null) return bench.summary.secPerImage
+    const count = heroImageCount.value
+    if (count != null && count > 0 && median != null) return median / count
+  }
+  return median
+})
+
+const heroPerImageKnown = computed<boolean>(
+  () => coreBenchmark.value?.summary.secPerImage != null || (heroImageCount.value ?? 0) > 0
+)
+const heroUnitKey = computed<string>(() => {
+  if (heroModality.value === 'video') return 'performanceTest.heroUnitVideo'
+  if (heroModality.value === 'audio') return 'performanceTest.heroUnitRun'
+  return heroPerImageKnown.value ? 'performanceTest.heroUnitImage' : 'performanceTest.heroUnitRun'
+})
+const steadyItPerS = computed<number | null>(
+  () => coreBenchmark.value?.sampling.steadyStateItPerS ?? null
+)
+
+const resultTier = computed(() =>
+  tierFromHardware({
+    backend: coreBenchmark.value?.device.backend ?? resultsSummary.value?.hardware?.backend,
+    deviceType: resultsSummary.value?.hardware?.deviceType,
+    vramMb: coreBenchmark.value?.device.totalVramMb ?? resultsSummary.value?.hardware?.vramMb
+  })
+)
+
+const vramPeak = computed(() =>
+  vramPeakView({
+    tier: resultTier.value,
+    peakMb: coreBenchmark.value?.resources.peak.vramUsedMb,
+    totalMb: coreBenchmark.value?.device.totalVramMb ?? resultsSummary.value?.hardware?.vramMb,
+    ramMb: coreBenchmark.value?.device.totalRamMb ?? resultsSummary.value?.hardware?.ramMb
+  })
+)
+
+const coreThrottled = computed<boolean | null>(() => {
+  const bench = coreBenchmark.value
+  if (!bench) return null
+  return bench.summary.throttled ?? bench.resources.peak.throttled
+})
+const energyWhPerImage = computed<number | null>(
+  () => coreBenchmark.value?.summary.energyWhPerImage ?? null
+)
+const peakPowerW = computed<number | null>(() => coreBenchmark.value?.resources.peak.powerW ?? null)
+const peakTempC = computed<number | null>(
+  () => coreBenchmark.value?.resources.peak.temperatureC ?? null
+)
+const hasEfficiencyLine = computed<boolean>(
+  () => energyWhPerImage.value != null || peakPowerW.value != null || peakTempC.value != null
+)
+
+const heroGpuName = computed<string | null>(
+  () =>
+    coreBenchmark.value?.device.gpuModel ??
+    (computeDeviceNames.value || null) ??
+    resultsSummary.value?.hardware?.deviceName ??
+    null
+)
+const heroTotalVramGb = computed<number | null>(() =>
+  toGb(coreBenchmark.value?.device.totalVramMb ?? resultsSummary.value?.hardware?.vramMb)
+)
+const heroDateText = computed<string>(() => {
+  const iso = resultsSummary.value?.createdAt
+  if (!iso) return ''
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+    new Date(iso)
+  )
+})
+
+const rangeStats = computed(() => {
+  const stats = performanceTestResult.value?.statistics
+  if (!stats) return null
+  return {
+    fastest: stats.fastest.durationSeconds,
+    slowest: stats.slowest.durationSeconds,
+    average: stats.averageDurationSeconds,
+    measured: stats.measuredJobCount,
+    failed: resultsSummary.value?.failedRunCount ?? performanceTestResult.value?.failedRuns ?? 0
+  }
+})
+
+const configChips = computed<ConfigChip[]>(() => {
+  const device = coreBenchmark.value?.device
+  if (!device) return []
+  const chips: ConfigChip[] = []
+  const add = (key: string, text: string | null | undefined, tone: BenchmarkTone = 'neutral') => {
+    if (text != null && String(text).length > 0) chips.push({ key, text: String(text), tone })
+  }
+  add('dtype', device.weightDtype)
+  add('attention', device.attentionImpl)
+  if (device.cudaVersion)
+    add('cuda', t('performanceTest.chipCuda', { version: device.cudaVersion }))
+  if (device.cudnnVersion)
+    add('cudnn', t('performanceTest.chipCudnn', { version: device.cudnnVersion }))
+  add('vramState', device.vramState)
+  if (device.offloaded === true) add('offloaded', t('performanceTest.chipOffloaded'), 'caution')
+  if (device.vramIsUnified === true) add('unified', t('performanceTest.chipUnifiedMemory'))
+  if (device.isLaptop === true) add('laptop', t('performanceTest.chipLaptop'))
+  if (device.pytorchVersion)
+    add('torch', t('performanceTest.chipTorch', { version: device.pytorchVersion }))
+  return chips
+})
+
+const nodeTotalMs = computed<number | null>(
+  () => coreBenchmark.value?.durations.nodeTotalMs ?? null
+)
+const coreNodeTimeline = computed(() => {
+  const nodes = coreBenchmark.value?.nodes ?? []
+  const timed = nodes.filter((node) => node.elapsedMs != null && node.elapsedMs >= 0)
+  if (timed.length === 0) return []
+  const maximum = Math.max(...timed.map((node) => node.elapsedMs ?? 0))
+  const totalMs = nodeTotalMs.value ?? timed.reduce((sum, node) => sum + (node.elapsedMs ?? 0), 0)
+  return [...timed]
+    .sort((a, b) => (b.elapsedMs ?? 0) - (a.elapsedMs ?? 0))
+    .slice(0, 12)
+    .map((node, index) => {
+      const ms = node.elapsedMs ?? 0
+      return {
+        key: node.nodeId ?? `${node.classType ?? 'node'}-${index}`,
+        label: node.classType || node.nodeId || '—',
+        seconds: ms / 1000,
+        percent: totalMs > 0 ? Math.round((ms / totalMs) * 100) : 0,
+        width: maximum > 0 ? `${(ms / maximum) * 100}%` : '0%',
+        dominant: index === 0
+      }
+    })
+})
+
+const vramChart = computed(() => {
+  const series = coreBenchmark.value?.resources.series ?? []
+  if (series.length === 0) return null
+  const values = series.map((sample) => sample.vramUsedMb)
+  const xValues = series.map((sample, index) => sample.tMs ?? index)
+  const finite = values.filter((v): v is number => v != null && Number.isFinite(v))
+  if (finite.length < 2) return null
+  const ceilingMb = coreBenchmark.value?.device.totalVramMb ?? null
+  const dataMax = Math.max(...finite)
+  const maxY = ceilingMb != null && ceilingMb > dataMax ? ceilingMb : undefined
+  return buildSeriesChart(values, { width: 480, height: 120, xValues, minY: 0, maxY, tickCount: 0 })
+})
+const vramPeakPoint = computed(() => {
+  const chart = vramChart.value
+  if (!chart) return null
+  return chart.points.reduce((best, point) => (point.value > best.value ? point : best))
+})
+const vramCeilingGb = computed<number | null>(() => toGb(coreBenchmark.value?.device.totalVramMb))
+const vramCeilingY = computed<number | null>(() => {
+  const chart = vramChart.value
+  const ceilingMb = coreBenchmark.value?.device.totalVramMb
+  if (!chart || ceilingMb == null) return null
+  const span = chart.max - chart.min || 1
+  return clampY(chart.height - ((ceilingMb - chart.min) / span) * chart.height, chart.height)
+})
+const vramBaselineGb = computed<number | null>(() =>
+  toGb(coreBenchmark.value?.device.baseline.vramUsedMb)
+)
+
+const stepChart = computed(() => {
+  const steps = coreBenchmark.value?.sampling.perStepItPerS ?? []
+  const nonNull = steps.filter((value) => value != null && Number.isFinite(value))
+  if (nonNull.length < 2) return null
+  return buildSeriesChart(steps, { width: 480, height: 96, minY: 0, tickCount: 3 })
+})
+const steadyLineY = computed<number | null>(() => {
+  const chart = stepChart.value
+  const steady = steadyItPerS.value
+  if (!chart || steady == null) return null
+  const span = chart.max - chart.min || 1
+  return clampY(chart.height - ((steady - chart.min) / span) * chart.height, chart.height)
+})
+
+const powerChart = computed(() => {
+  const series = coreBenchmark.value?.resources.series ?? []
+  const values = series.map((sample) => sample.powerW)
+  if (values.filter((value) => value != null && Number.isFinite(value)).length < 2) return null
+  const xValues = series.map((sample, index) => sample.tMs ?? index)
+  return buildSeriesChart(values, { width: 480, height: 96, xValues, minY: 0, tickCount: 0 })
+})
+const tempChart = computed(() => {
+  const series = coreBenchmark.value?.resources.series ?? []
+  const values = series.map((sample) => sample.temperatureC)
+  if (values.filter((value) => value != null && Number.isFinite(value)).length < 2) return null
+  const xValues = series.map((sample, index) => sample.tMs ?? index)
+  return buildSeriesChart(values, { width: 480, height: 96, xValues, minY: 0, tickCount: 0 })
+})
+const showPowerTemp = computed<boolean>(() => powerChart.value != null || tempChart.value != null)
+
+const compareResult = computed<CompareResult | null>(() => {
+  const summary = resultsSummary.value
+  if (!summary) return null
+  const count = heroImageCount.value ?? 0
+  const imagesPerRun = count > 0 ? count : 1
+  const hardwareName =
+    coreBenchmark.value?.device.gpuModel ??
+    summary.hardware?.deviceName ??
+    summary.hardware?.deviceType ??
+    null
+  return compareToPrevious({
+    currentPerImageSeconds: perImageSeconds(medianSeconds.value, imagesPerRun),
+    imagesPerRun,
+    workflowName: summary.workflowName,
+    hardwareName,
+    priorBenchmarks: priorBenchmarks.value
+  })
+})
+const compareView = computed(() => {
+  const compare = compareResult.value
+  if (!compare) return null
+  switch (compare.kind) {
+    case 'faster':
+      return {
+        key: 'performanceTest.compareFaster',
+        params: { pct: compare.pct, prev: formatHeroSeconds(compare.prevSeconds) },
+        tone: compare.tone,
+        dir: 'up' as const
+      }
+    case 'slower':
+      return {
+        key: 'performanceTest.compareSlower',
+        params: { pct: compare.pct, prev: formatHeroSeconds(compare.prevSeconds) },
+        tone: compare.tone,
+        dir: 'down' as const
+      }
+    case 'same':
+      return {
+        key: 'performanceTest.compareSame',
+        params: { prev: formatHeroSeconds(compare.prevSeconds) },
+        tone: 'neutral' as const,
+        dir: 'flat' as const
+      }
+    case 'differentGpu':
+      return {
+        key: 'performanceTest.compareDifferentGpu',
+        params: {},
+        tone: 'neutral' as const,
+        dir: 'flat' as const
+      }
+    case 'first':
+    default:
+      return {
+        key: 'performanceTest.compareFirst',
+        params: {},
+        tone: 'neutral' as const,
+        dir: 'flat' as const
+      }
+  }
+})
+
+function toGb(mb: number | null | undefined): number | null {
+  if (mb == null || !Number.isFinite(mb)) return null
+  return Math.round((mb / 1024) * 10) / 10
+}
+function clampY(value: number, height: number): number {
+  return Math.round(Math.min(Math.max(value, 0), height) * 100) / 100
+}
+function toModality(value: unknown): BenchmarkModality | null {
+  return value === 'image' || value === 'video' || value === 'audio' ? value : null
+}
+/** Hero seconds: 2 decimals below 10 s, 1 decimal at/above (matches the spec). */
+function formatHeroSeconds(seconds: number): string {
+  return seconds >= 10 ? seconds.toFixed(1) : seconds.toFixed(2)
+}
+function toneClass(tone: BenchmarkTone): string {
+  if (tone === 'positive') return 'is-positive'
+  if (tone === 'caution') return 'is-caution'
+  return ''
+}
+
 const workflowFileName = computed(
   () =>
     pendingStarterWorkflowLabel.value ??
@@ -221,6 +554,7 @@ async function importWorkflow(sourcePath?: string): Promise<void> {
       workflowDisplayName.value = null
       starterWorkflowInstallationId.value = null
       selectedStarterWorkflowId.value = null
+      workflowModality.value = null
     } else if (!result.canceled) {
       workflowImportError.value = result.message || t('performanceTest.importFailed')
     }
@@ -292,6 +626,7 @@ async function prepareStarterWorkflow(): Promise<void> {
     workflowFilePath.value = result.filePath
     workflowDisplayName.value = result.templateLabel || option.label
     starterWorkflowInstallationId.value = installationId
+    workflowModality.value = toModality(option.data?.modality)
     if (previousPath && previousPath !== result.filePath) {
       await window.api.deletePerformanceTestWorkflow(previousPath).catch(() => {})
     }
@@ -316,6 +651,7 @@ async function deleteWorkflow(): Promise<void> {
         workflowDisplayName.value = null
         starterWorkflowInstallationId.value = null
         selectedStarterWorkflowId.value = null
+        workflowModality.value = null
       }
       if (result.status === 'preserved') {
         workflowImportError.value = result.message || t('performanceTest.deleteFailed')
@@ -373,6 +709,8 @@ async function runPerformanceTest(): Promise<void> {
   })
   isLaunching.value = true
   performanceTestResult.value = null
+  resultModality.value = null
+  priorBenchmarks.value = []
   progressSessionId.value = sessionId
   completedProgressRuns.value = 0
   totalProgressRuns.value = warmups + runs
@@ -414,6 +752,8 @@ async function runPerformanceTest(): Promise<void> {
       )
       if (submission.ok) {
         performanceTestResult.value = submission
+        resultModality.value = workflowModality.value
+        void loadPriorBenchmarks(submission)
         if (activeRunTelemetry === runTelemetry) {
           activeRunTelemetry = null
           const summary = submission.resultsSummary
@@ -516,6 +856,21 @@ function formatOperatingSystem(info: PerformanceTestResultsSummary['systemInfo']
 
 function openResultsFolder(): void {
   if (resultsFolderPath.value) void window.api.openPath(resultsFolderPath.value)
+}
+
+/** Load prior runs for the inline compare delta, excluding the just-finished run. */
+async function loadPriorBenchmarks(submission: RunPerformanceTestWorkflowResult): Promise<void> {
+  try {
+    const list = await window.api.listPerformanceTestBenchmarks(
+      resultsFolderPath.value ?? undefined
+    )
+    const currentCreatedAt = submission.resultsSummary?.createdAt ?? null
+    priorBenchmarks.value = list.benchmarks.filter(
+      (benchmark) => benchmark.createdAt !== currentCreatedAt
+    )
+  } catch {
+    priorBenchmarks.value = []
+  }
 }
 
 async function exportResultsImage(): Promise<void> {
@@ -873,17 +1228,295 @@ watch(performanceTestLogs, async () => {
                   <i :style="{ width: `${progressPercent}%` }" />
                 </div>
               </div>
-              <template v-else-if="performanceTestResult?.resultsSummary">
-                <div class="performance-test__summary">
-                  <div class="performance-test__summary-column">
-                    <dl class="performance-test__result-list">
-                      <div class="performance-test__result-workflow">
-                        <dt>{{ t('performanceTest.workflowFileName') }}</dt>
-                        <dd>{{ performanceTestResult.resultsSummary.workflowName }}</dd>
-                      </div>
-                    </dl>
+              <template v-else-if="hasResult">
+                <p class="benchmark-context">
+                  <span>{{ resultsSummary?.workflowName }}</span>
+                  <template v-if="heroGpuName">
+                    <span aria-hidden="true">·</span>
+                    <span
+                      >{{ heroGpuName
+                      }}<template v-if="heroTotalVramGb != null">
+                        ({{ t('performanceTest.gbValue', { value: heroTotalVramGb }) }})</template
+                      ></span
+                    >
+                  </template>
+                  <template v-if="heroDateText">
+                    <span aria-hidden="true">·</span>
+                    <span>{{ heroDateText }}</span>
+                  </template>
+                </p>
+
+                <div class="benchmark-hero">
+                  <div class="benchmark-hero__primary">
+                    <p v-if="heroSeconds != null" class="benchmark-hero__metric">
+                      <span class="benchmark-hero__value">{{
+                        formatHeroSeconds(heroSeconds)
+                      }}</span>
+                      <span class="benchmark-hero__unit">{{ t(heroUnitKey) }}</span>
+                    </p>
+                    <p v-else class="benchmark-hero__metric benchmark-hero__metric--muted">
+                      {{ t('performanceTest.notMeasured') }}
+                    </p>
+                    <p class="benchmark-hero__sub">
+                      {{ t('performanceTest.heroMedianOf', { count: measuredRunCount }) }}
+                    </p>
+                    <p v-if="steadyItPerS != null" class="benchmark-hero__itps">
+                      {{ t('performanceTest.heroItPerS', { value: steadyItPerS.toFixed(1) }) }}
+                    </p>
+                    <p
+                      v-if="compareView"
+                      class="benchmark-hero__delta"
+                      :class="toneClass(compareView.tone)"
+                    >
+                      <ArrowUp v-if="compareView.dir === 'up'" :size="14" aria-hidden="true" />
+                      <ArrowDown
+                        v-else-if="compareView.dir === 'down'"
+                        :size="14"
+                        aria-hidden="true"
+                      />
+                      <span>{{ t(compareView.key, compareView.params) }}</span>
+                    </p>
+                  </div>
+                  <div class="benchmark-hero__secondary">
+                    <div class="benchmark-hero__vram" :class="toneClass(vramPeak.tone)">
+                      <p v-if="!vramPeak.notMeasured" class="benchmark-hero__vram-value">
+                        {{ t('performanceTest.gbValue', { value: vramPeak.peakGb }) }}
+                      </p>
+                      <p
+                        v-else
+                        class="benchmark-hero__vram-value benchmark-hero__vram-value--muted"
+                      >
+                        {{ t('performanceTest.notMeasured') }}
+                      </p>
+                      <p class="benchmark-hero__vram-label">{{ t(vramPeak.headlineKey) }}</p>
+                      <p v-if="vramPeak.secondLine" class="benchmark-hero__vram-note">
+                        {{ t(vramPeak.secondLine.key, vramPeak.secondLine.params) }}
+                      </p>
+                    </div>
+                    <p v-if="coreThrottled === true" class="benchmark-hero__efficiency is-caution">
+                      {{
+                        t('performanceTest.throttleWarning', {
+                          watts: peakPowerW != null ? Math.round(peakPowerW) : '—',
+                          temp: peakTempC != null ? Math.round(peakTempC) : '—'
+                        })
+                      }}
+                    </p>
+                    <p v-else-if="hasEfficiencyLine" class="benchmark-hero__efficiency">
+                      <span v-if="energyWhPerImage != null">
+                        {{
+                          t('performanceTest.energyPerImage', {
+                            value: energyWhPerImage.toFixed(2)
+                          })
+                        }}
+                      </span>
+                      <span
+                        v-if="peakPowerW != null || peakTempC != null"
+                        class="benchmark-hero__power"
+                      >
+                        {{
+                          t('performanceTest.powerTempPeak', {
+                            watts: peakPowerW != null ? Math.round(peakPowerW) : '—',
+                            temp: peakTempC != null ? Math.round(peakTempC) : '—'
+                          })
+                        }}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <p v-if="rangeStats" class="benchmark-range">
+                  {{
+                    t('performanceTest.rangeSummary', {
+                      fastest: formatHeroSeconds(rangeStats.fastest),
+                      slowest: formatHeroSeconds(rangeStats.slowest),
+                      average: formatHeroSeconds(rangeStats.average),
+                      measured: rangeStats.measured,
+                      failed: rangeStats.failed
+                    })
+                  }}
+                </p>
+
+                <ul v-if="configChips.length" class="benchmark-chips">
+                  <li
+                    v-for="chip in configChips"
+                    :key="chip.key"
+                    class="benchmark-chip"
+                    :class="toneClass(chip.tone)"
+                  >
+                    {{ chip.text }}
+                  </li>
+                </ul>
+
+                <p v-if="captureTier === 'lite'" class="benchmark-upsell">
+                  {{ t('performanceTest.liteUpsell') }}
+                </p>
+
+                <section v-if="coreNodeTimeline.length" class="benchmark-card">
+                  <header class="benchmark-card__head">
+                    <h3>{{ t('performanceTest.opTimelineTitle') }}</h3>
+                    <span v-if="nodeTotalMs != null" class="benchmark-card__aside">
+                      {{
+                        t('performanceTest.nodeTotal', {
+                          value: formatHeroSeconds(nodeTotalMs / 1000)
+                        })
+                      }}
+                    </span>
+                  </header>
+                  <ul class="benchmark-timeline">
+                    <li
+                      v-for="node in coreNodeTimeline"
+                      :key="node.key"
+                      class="benchmark-timeline__row"
+                    >
+                      <span class="benchmark-timeline__label" :title="node.label">{{
+                        node.label
+                      }}</span>
+                      <span class="benchmark-timeline__bar" aria-hidden="true">
+                        <i
+                          :class="{ 'is-dominant': node.dominant }"
+                          :style="{ width: node.width }"
+                        />
+                      </span>
+                      <span class="benchmark-timeline__value">
+                        {{
+                          t('performanceTest.nodeElapsed', {
+                            value: formatHeroSeconds(node.seconds),
+                            percent: node.percent
+                          })
+                        }}
+                      </span>
+                    </li>
+                  </ul>
+                </section>
+
+                <section v-if="vramChart" class="benchmark-card">
+                  <header class="benchmark-card__head">
+                    <h3>{{ t('performanceTest.vramOverTimeTitle') }}</h3>
+                    <span v-if="vramPeak.peakGb != null" class="benchmark-card__aside">
+                      {{ t('performanceTest.vramPeakAside', { value: vramPeak.peakGb }) }}
+                    </span>
+                  </header>
+                  <svg
+                    class="benchmark-graph"
+                    :viewBox="`0 0 ${vramChart.width} ${vramChart.height}`"
+                    role="img"
+                    :aria-label="t('performanceTest.vramOverTimeTitle')"
+                  >
+                    <line
+                      v-if="vramCeilingY != null"
+                      class="benchmark-graph__ceiling"
+                      x1="0"
+                      :x2="vramChart.width"
+                      :y1="vramCeilingY"
+                      :y2="vramCeilingY"
+                    />
+                    <path class="benchmark-graph__area" :d="vramChart.areaPath" />
+                    <path class="benchmark-graph__line" :d="vramChart.path" />
+                    <circle
+                      v-if="vramPeakPoint"
+                      class="benchmark-graph__peak"
+                      :cx="vramPeakPoint.x"
+                      :cy="vramPeakPoint.y"
+                      r="3"
+                    />
+                  </svg>
+                  <p class="benchmark-graph__caption">
+                    <span v-if="vramCeilingGb != null">{{
+                      t('performanceTest.vramCeiling', { value: vramCeilingGb })
+                    }}</span>
+                    <span v-if="vramBaselineGb != null">{{
+                      t('performanceTest.vramBaseline', { value: vramBaselineGb })
+                    }}</span>
+                  </p>
+                </section>
+              </template>
+              <p v-else class="performance-test__results-placeholder">
+                {{ t('performanceTest.resultsPlaceholder') }}
+              </p>
+
+              <section v-if="hasResult" class="performance-test__details">
+                <CollapsibleSectionToggle
+                  :expanded="detailsExpanded"
+                  :label="t('performanceTest.detailsToggle')"
+                  @toggle="detailsExpanded = !detailsExpanded"
+                />
+                <div v-show="detailsExpanded" class="performance-test__details-body">
+                  <section v-if="stepChart" class="benchmark-card">
+                    <header class="benchmark-card__head">
+                      <h3>{{ t('performanceTest.perStepTitle') }}</h3>
+                      <span v-if="steadyItPerS != null" class="benchmark-card__aside">
+                        {{ t('performanceTest.heroItPerS', { value: steadyItPerS.toFixed(1) }) }}
+                      </span>
+                    </header>
+                    <svg
+                      class="benchmark-graph"
+                      :viewBox="`0 0 ${stepChart.width} ${stepChart.height}`"
+                      role="img"
+                      :aria-label="t('performanceTest.perStepTitle')"
+                    >
+                      <line
+                        v-if="steadyLineY != null"
+                        class="benchmark-graph__reference"
+                        x1="0"
+                        :x2="stepChart.width"
+                        :y1="steadyLineY"
+                        :y2="steadyLineY"
+                      />
+                      <path
+                        class="benchmark-graph__line benchmark-graph__line--success"
+                        :d="stepChart.path"
+                      />
+                      <circle
+                        v-for="point in stepChart.points"
+                        :key="point.index"
+                        class="benchmark-graph__dot"
+                        :class="{ 'is-dim': point.index === 0 }"
+                        :cx="point.x"
+                        :cy="point.y"
+                        r="2.5"
+                      />
+                    </svg>
+                    <p class="benchmark-graph__caption">
+                      {{ t('performanceTest.perStepCaption') }}
+                    </p>
+                  </section>
+
+                  <section v-if="showPowerTemp" class="benchmark-card">
+                    <header class="benchmark-card__head">
+                      <h3>{{ t('performanceTest.powerTempTitle') }}</h3>
+                    </header>
+                    <svg
+                      class="benchmark-graph"
+                      viewBox="0 0 480 96"
+                      role="img"
+                      :aria-label="t('performanceTest.powerTempTitle')"
+                    >
+                      <path
+                        v-if="powerChart"
+                        class="benchmark-graph__line benchmark-graph__line--power"
+                        :d="powerChart.path"
+                      />
+                      <path
+                        v-if="tempChart"
+                        class="benchmark-graph__line benchmark-graph__line--temp"
+                        :d="tempChart.path"
+                      />
+                    </svg>
+                    <p class="benchmark-graph__legend">
+                      <span v-if="powerChart" class="benchmark-legend benchmark-legend--power">
+                        {{ t('performanceTest.powerLegend') }}
+                      </span>
+                      <span v-if="tempChart" class="benchmark-legend benchmark-legend--temp">
+                        {{ t('performanceTest.tempLegend') }}
+                      </span>
+                    </p>
+                  </section>
+
+                  <section v-if="performanceTestResult?.statistics" class="benchmark-card">
+                    <header class="benchmark-card__head">
+                      <h3>{{ t('performanceTest.runDurationChart') }}</h3>
+                    </header>
                     <div
-                      v-if="performanceTestResult.statistics"
                       class="performance-test__aggregate-chart"
                       role="img"
                       :aria-label="t('performanceTest.runDurationChart')"
@@ -899,114 +1532,69 @@ watch(performanceTestLogs, async () => {
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <dl class="performance-test__result-list performance-test__timing-list">
-                    <div>
-                      <dt>{{ t('performanceTest.measuredRunCount') }}</dt>
-                      <dd>{{ performanceTestResult.resultsSummary.measuredJobCount }}</dd>
-                    </div>
-                    <div>
-                      <dt>{{ t('performanceTest.failedRunCount') }}</dt>
-                      <dd>{{ performanceTestResult.resultsSummary.failedRunCount }}</dd>
-                    </div>
-                    <template v-if="performanceTestResult.statistics">
-                      <div>
-                        <dt>{{ t('performanceTest.fastestRun') }}</dt>
-                        <dd>
-                          {{
-                            formatDuration(performanceTestResult.statistics.fastest.durationSeconds)
-                          }}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.averageRunDuration') }}</dt>
-                        <dd>
-                          {{
-                            formatDuration(performanceTestResult.statistics.averageDurationSeconds)
-                          }}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.slowestRun') }}</dt>
-                        <dd>
-                          {{
-                            formatDuration(performanceTestResult.statistics.slowest.durationSeconds)
-                          }}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.medianRunDuration') }}</dt>
-                        <dd>
-                          {{
-                            formatDuration(performanceTestResult.statistics.medianDurationSeconds)
-                          }}
-                        </dd>
-                      </div>
-                    </template>
-                  </dl>
-                </div>
-              </template>
-              <p v-else class="performance-test__results-placeholder">
-                {{ t('performanceTest.resultsPlaceholder') }}
-              </p>
-
-              <template v-if="performanceTestResult?.hardware">
-                <h3>{{ t('performanceTest.systemInformation') }}</h3>
-                <div class="performance-test__system-groups">
-                  <section class="performance-test__system-group">
-                    <dl
-                      class="performance-test__result-list performance-test__result-list--compact"
-                    >
-                      <div>
-                        <dt>{{ t('performanceTest.device') }}</dt>
-                        <dd>{{ computeDeviceNames }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult.hardware.vramMb != null">
-                        <dt>{{ t('performanceTest.vram') }}</dt>
-                        <dd>{{ formatMemory(performanceTestResult.hardware.vramMb) }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult.hardware.ramMb != null">
-                        <dt>{{ t('performanceTest.ram') }}</dt>
-                        <dd>{{ formatMemory(performanceTestResult.hardware.ramMb) }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult.hardware.pytorchVersion">
-                        <dt>{{ t('performanceTest.pytorchVersion') }}</dt>
-                        <dd>{{ performanceTestResult.hardware.pytorchVersion }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult.hardware.xformersVersion">
-                        <dt>{{ t('performanceTest.xformersVersion') }}</dt>
-                        <dd>{{ performanceTestResult.hardware.xformersVersion }}</dd>
-                      </div>
-                    </dl>
                   </section>
 
-                  <section
-                    v-if="performanceTestResult.systemInfo"
-                    class="performance-test__system-group"
-                  >
-                    <dl
-                      class="performance-test__result-list performance-test__result-list--compact"
-                    >
-                      <div>
-                        <dt>{{ t('performanceTest.cpu') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.cpu_model }}</dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.cpuCores') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.cpu_cores }}</dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.architecture') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.arch }}</dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.operatingSystem') }}</dt>
-                        <dd>{{ formatOperatingSystem(performanceTestResult.systemInfo) }}</dd>
-                      </div>
-                    </dl>
-                  </section>
+                  <template v-if="performanceTestResult?.hardware">
+                    <h3 class="performance-test__details-heading">
+                      {{ t('performanceTest.systemInformation') }}
+                    </h3>
+                    <div class="performance-test__system-groups">
+                      <section class="performance-test__system-group">
+                        <dl
+                          class="performance-test__result-list performance-test__result-list--compact"
+                        >
+                          <div>
+                            <dt>{{ t('performanceTest.device') }}</dt>
+                            <dd>{{ computeDeviceNames }}</dd>
+                          </div>
+                          <div v-if="performanceTestResult.hardware.vramMb != null">
+                            <dt>{{ t('performanceTest.vram') }}</dt>
+                            <dd>{{ formatMemory(performanceTestResult.hardware.vramMb) }}</dd>
+                          </div>
+                          <div v-if="performanceTestResult.hardware.ramMb != null">
+                            <dt>{{ t('performanceTest.ram') }}</dt>
+                            <dd>{{ formatMemory(performanceTestResult.hardware.ramMb) }}</dd>
+                          </div>
+                          <div v-if="performanceTestResult.hardware.pytorchVersion">
+                            <dt>{{ t('performanceTest.pytorchVersion') }}</dt>
+                            <dd>{{ performanceTestResult.hardware.pytorchVersion }}</dd>
+                          </div>
+                          <div v-if="performanceTestResult.hardware.xformersVersion">
+                            <dt>{{ t('performanceTest.xformersVersion') }}</dt>
+                            <dd>{{ performanceTestResult.hardware.xformersVersion }}</dd>
+                          </div>
+                        </dl>
+                      </section>
+
+                      <section
+                        v-if="performanceTestResult.systemInfo"
+                        class="performance-test__system-group"
+                      >
+                        <dl
+                          class="performance-test__result-list performance-test__result-list--compact"
+                        >
+                          <div>
+                            <dt>{{ t('performanceTest.cpu') }}</dt>
+                            <dd>{{ performanceTestResult.systemInfo.cpu_model }}</dd>
+                          </div>
+                          <div>
+                            <dt>{{ t('performanceTest.cpuCores') }}</dt>
+                            <dd>{{ performanceTestResult.systemInfo.cpu_cores }}</dd>
+                          </div>
+                          <div>
+                            <dt>{{ t('performanceTest.architecture') }}</dt>
+                            <dd>{{ performanceTestResult.systemInfo.arch }}</dd>
+                          </div>
+                          <div>
+                            <dt>{{ t('performanceTest.operatingSystem') }}</dt>
+                            <dd>{{ formatOperatingSystem(performanceTestResult.systemInfo) }}</dd>
+                          </div>
+                        </dl>
+                      </section>
+                    </div>
+                  </template>
                 </div>
-              </template>
+              </section>
 
               <div v-if="resultsFolderPath" class="performance-test__results-actions">
                 <span v-if="exportResultsError" class="performance-test__export-error">
@@ -1619,6 +2207,344 @@ watch(performanceTestLogs, async () => {
   margin: 0;
 }
 
+/* --- Rich results view (design §3–§8) --- */
+.benchmark-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px;
+  border: 1px solid var(--chooser-surface-border);
+  border-radius: 10px;
+  background: var(--surface-recessed);
+}
+
+.benchmark-hero__primary,
+.benchmark-hero__secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.benchmark-hero__secondary {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.benchmark-hero__metric {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+
+.benchmark-hero__value {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-hero__unit {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.benchmark-hero__metric--muted,
+.benchmark-hero__vram-value--muted {
+  color: var(--text-faint);
+  font-size: 20px;
+  font-style: italic;
+}
+
+.benchmark-hero__sub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.benchmark-hero__itps {
+  margin: 0;
+  color: var(--success);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-hero__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-hero__vram-value {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-hero__vram-label {
+  margin: 2px 0 0;
+  color: var(--neutral-200);
+  font-size: 12px;
+}
+
+.benchmark-hero__vram-note,
+.benchmark-hero__efficiency {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-hero__power {
+  margin-left: 6px;
+}
+
+.is-positive {
+  color: var(--success);
+}
+
+.is-caution {
+  color: var(--danger);
+}
+
+.benchmark-range {
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.benchmark-chip {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--neutral-700);
+  color: var(--neutral-200);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-chip.is-caution {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--danger);
+}
+
+.benchmark-upsell {
+  margin: 16px 0 0;
+  padding: 16px;
+  border: 1px dashed var(--chooser-surface-border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.benchmark-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--chooser-surface-border);
+  border-radius: 8px;
+  background: var(--surface-recessed);
+}
+
+.benchmark-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.benchmark-card__head h3 {
+  margin: 0;
+  color: var(--neutral-200);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.benchmark-card__aside {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-timeline {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.benchmark-timeline__row {
+  display: grid;
+  grid-template-columns: minmax(90px, 160px) minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.benchmark-timeline__label {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.benchmark-timeline__bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--neutral-800);
+}
+
+.benchmark-timeline__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--neutral-300);
+}
+
+.benchmark-timeline__bar i.is-dominant {
+  background: var(--comfy-yellow);
+}
+
+.benchmark-timeline__value {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.benchmark-graph {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.benchmark-graph__area {
+  fill: color-mix(in srgb, var(--comfy-yellow) 15%, transparent);
+  stroke: none;
+}
+
+.benchmark-graph__line {
+  fill: none;
+  stroke: var(--comfy-yellow);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.benchmark-graph__line--success {
+  stroke: var(--success);
+}
+
+.benchmark-graph__line--power {
+  stroke: var(--comfy-yellow);
+}
+
+.benchmark-graph__line--temp {
+  stroke: var(--danger);
+}
+
+.benchmark-graph__ceiling,
+.benchmark-graph__reference {
+  stroke: var(--neutral-400);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.benchmark-graph__peak {
+  fill: var(--comfy-yellow);
+  stroke: var(--surface-recessed);
+  stroke-width: 1;
+}
+
+.benchmark-graph__dot {
+  fill: var(--success);
+}
+
+.benchmark-graph__dot.is-dim {
+  fill: var(--neutral-500);
+}
+
+.benchmark-graph__caption,
+.benchmark-graph__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.benchmark-legend::before {
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  content: '';
+}
+
+.benchmark-legend--power::before {
+  background: var(--comfy-yellow);
+}
+
+.benchmark-legend--temp::before {
+  background: var(--danger);
+}
+
+.performance-test__details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.performance-test__details-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.performance-test__details-heading {
+  margin: 20px 0 12px;
+  color: var(--neutral-200);
+  font-size: 13px;
+  font-weight: 400;
+}
+
 .performance-test__account {
   position: absolute;
   top: 0;
@@ -1632,6 +2558,15 @@ watch(performanceTestLogs, async () => {
 @media (max-width: 900px) {
   .performance-test__columns {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .benchmark-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .benchmark-hero__secondary {
+    align-items: flex-start;
+    text-align: left;
   }
 
   .performance-test__summary {

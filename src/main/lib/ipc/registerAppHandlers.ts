@@ -357,7 +357,7 @@ export function registerAppHandlers(): void {
         imageType === 'benchmark-comparison'
           ? { title: 'Export benchmark comparison', prefix: 'benchmark-comparison' }
           : imageType === 'performance-test'
-            ? { title: 'Export performance test results', prefix: 'performance-test-results' }
+            ? { title: 'Export performance test results', prefix: 'comfy-benchmark' }
             : null
       if (!exportConfig) return { ok: false, message: 'Invalid results image type.' }
       const win = BrowserWindow.fromWebContents(_event.sender)
@@ -371,7 +371,11 @@ export function registerAppHandlers(): void {
       if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
 
       try {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23)
+        const now = new Date()
+        const pad = (value: number): string => String(value).padStart(2, '0')
+        const timestamp =
+          `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-` +
+          `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`
         const filePath = path.join(filePaths[0]!, `${exportConfig.prefix}-${timestamp}.png`)
         await fs.promises.writeFile(filePath, contents)
         return { ok: true, filePath }

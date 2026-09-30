@@ -232,7 +232,54 @@ const messages = {
       submittingRuns: 'Submitting {warmupCount} warm-up runs and {count} measured runs...',
       completedRuns:
         'Finished {count} measured runs ({failed} failed). Final response saved to {path}',
-      submitFailed: 'Failed to submit the performance test workflow.'
+      submitFailed: 'Failed to submit the performance test workflow.',
+      gbValue: '{value} GB',
+      notMeasured: '— not measured',
+      heroUnitImage: 's / image',
+      heroUnitVideo: 's / video',
+      heroUnitRun: 's / run',
+      heroMedianOf: 'median of {count} runs',
+      heroItPerS: '~{value} it/s',
+      compareFaster: '{pct}% faster than last run ({prev} s)',
+      compareSlower: '{pct}% slower than last run ({prev} s)',
+      compareSame: '≈ same as last run ({prev} s)',
+      compareFirst: 'First run of this benchmark — no comparison yet.',
+      compareDifferentGpu: 'Last run was on a different GPU — not compared.',
+      throttleWarning: '⚠ {watts} W · {temp}°C — thermal throttling detected',
+      energyPerImage: '⚡ {value} Wh / image',
+      powerTempPeak: '{watts} W peak · {temp}°C',
+      rangeSummary:
+        'range {fastest}–{slowest} s · avg {average} s · {measured} runs, {failed} failed',
+      liteUpsell:
+        'Detailed metrics need ComfyUI with benchmark capture. Update ComfyUI to see the op timeline, per-step it/s, power and energy.',
+      opTimelineTitle: 'Where the time went',
+      nodeTotal: '{value} s total',
+      nodeElapsed: '{value} s · {percent}%',
+      vramOverTimeTitle: 'VRAM over time',
+      vramPeakAside: 'peak {value} GB',
+      vramCeiling: '{value} GB total',
+      vramBaseline: 'baseline {value} GB',
+      detailsToggle: 'Details',
+      perStepTitle: 'it/s per step',
+      perStepCaption: 'Step 1 is dimmed — it is the excluded allocator warm-up.',
+      powerTempTitle: 'Power & temperature',
+      powerLegend: 'Power (W)',
+      tempLegend: 'Temp (°C)',
+      chipCuda: 'CUDA {version}',
+      chipCudnn: 'cuDNN {version}',
+      chipOffloaded: 'offloaded → RAM',
+      chipUnifiedMemory: 'unified memory',
+      chipLaptop: 'laptop',
+      chipTorch: 'torch {version}',
+      vramPeak: 'VRAM peak',
+      memoryPeak: 'Memory peak',
+      systemRamPeak: 'System RAM peak',
+      unifiedMemoryNote: 'unified memory',
+      ofRam: 'of {total} GB RAM',
+      vramPeakOfTotalFits: 'of {total} GB · fits',
+      vramPeakExceeded: 'of {total} GB · exceeded',
+      unifiedMemory: 'Unified memory',
+      systemRam: 'System RAM'
     },
     benchmarks: {
       title: 'Benchmarks',
@@ -1100,40 +1147,30 @@ describe('PanelApp', () => {
       telemetryEvents.some((event) => event.actionName === 'comfy.desktop.performance_test.stopped')
     ).toBe(false)
     const results = wrapper.get('.performance-test__results').text()
-    expect(results).toContain('Workflow filecat-workflow.json')
-    expect(results).toContain('Fastest run')
-    expect(results).toContain('1.250 s')
-    expect(results).toContain('Slowest run')
-    expect(results).toContain('2.750 s')
+    // Modality-aware hero (lite tier: no core capture -> seconds-only, from the median).
+    expect(results).toContain('cat-workflow.json')
+    expect(results).toContain('s / run')
+    expect(results).toContain('median of 5 runs')
+    // Range / variance sub-row backs the hero with fastest/slowest/avg + counts.
+    expect(results).toContain('range 1.25–2.75 s · avg 2.00 s · 5 runs, 0 failed')
+    // First-run compare + honest VRAM degrade (no peak available without a capture).
+    expect(results).toContain('First run of this benchmark')
+    expect(results).toContain('VRAM peak')
+    expect(results).toContain('— not measured')
+    // Lite tier surfaces the calm update-ComfyUI upsell where the graphs would be.
+    expect(results).toContain('Detailed metrics need ComfyUI with benchmark capture')
+    // Scoped rows from other instances never leak in.
     expect(results).not.toContain('prompt-3')
     expect(results).not.toContain('prompt-7')
-    expect(results).toContain('Average run')
-    expect(results).toContain('2.000 s')
-    expect(results).toContain('Median run')
-    expect(results).toContain('1.875 s')
-    expect(results).toContain('Measured runs')
-    expect(results).toContain('5')
-    expect(results).toContain('Failed runs')
-    expect(results).toContain('0')
-    expect(wrapper.get('.performance-test__summary').findAll(':scope > *')).toHaveLength(2)
+    // Run-durations bar is retained under the Details disclosure.
     expect(
-      wrapper
-        .get('.performance-test__timing-list')
-        .findAll('dt')
-        .map((label) => label.text())
-    ).toEqual([
-      'Measured runs',
-      'Failed runs',
-      'Fastest run',
-      'Average run',
-      'Slowest run',
-      'Median run'
-    ])
+      wrapper.findAll('.performance-test__aggregate-bar span').map((label) => label.text())
+    ).toEqual(['Fastest run', 'Slowest run', 'Average run', 'Median run'])
     expect(wrapper.get('.performance-test__aggregate-chart').attributes('aria-label')).toBe(
       'Run duration aggregates'
     )
     expect(wrapper.findAll('.performance-test__aggregate-bar')).toHaveLength(4)
-    expect(wrapper.findAll('.performance-test__results h3')).toHaveLength(1)
+    expect(wrapper.findAll('.performance-test__results h3')).toHaveLength(2)
     expect(results).toContain('System information')
     expect(results).toContain('NVIDIA GeForce RTX 4090')
     expect(results).not.toContain('Top-level fallback should not be displayed')
@@ -1201,7 +1238,7 @@ describe('PanelApp', () => {
 
     mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'performance-test' }))
     await flushPromises()
-    expect(wrapper.get('.performance-test__results').text()).toContain('1.250 s')
+    expect(wrapper.get('.performance-test__results').text()).toContain('range 1.25–2.75 s')
     expect(wrapper.get('.performance-test__workflow-file').text()).toContain('cat-workflow.json')
 
     const outputCallback = api.onComfyOutput.mock.calls[0]![0] as (data: {
