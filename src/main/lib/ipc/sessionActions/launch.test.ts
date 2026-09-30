@@ -2483,7 +2483,7 @@ describe('describePriorOutcome', () => {
     [{ action: 'waited', exitedInTime: true }, 'it exited on its own'],
     [
       { action: 'busy_left', exitedInTime: false, blocked: 'busy', queueUnknown: true },
-      'left running: it did not answer whether it is working on a prompt; launch refused (busy)'
+      'left running: it did not answer whether it is working on a prompt; launch refused (unknown)'
     ],
     [
       { action: 'terminated', exitedInTime: true, lingering: 2 },

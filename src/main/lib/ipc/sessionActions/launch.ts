@@ -578,7 +578,8 @@ export function describePriorOutcome(prior: PriorProcessOutcome): string {
             ? 'left running: it did not answer whether it is working on a prompt'
             : 'left running: it is working on a prompt'
           : 'left running: not proven to be ours'
-  const blocked = prior.blocked ? `; launch refused (${prior.blocked})` : ''
+  const reason = prior.queueUnknown ? 'unknown' : prior.blocked
+  const blocked = prior.blocked ? `; launch refused (${reason})` : ''
   const lingering = prior.lingering ? `; ${prior.lingering} surviving subprocess(es) stopped` : ''
   return `earlier ComfyUI (pid ${prior.pid}, port ${prior.port}, proof ${prior.proof}): ${what}${lingering}${blocked}`
 }
