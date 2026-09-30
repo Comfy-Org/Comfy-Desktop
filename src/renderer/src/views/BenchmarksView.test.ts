@@ -86,6 +86,18 @@ const messages = {
     exportingImage: 'Exporting image...',
     exportImageFailed: 'Could not export the comparison image.',
     metric: 'Metric',
+    baseline: 'Baseline',
+    selectBaseline: 'Use {workflow}, session {session}, as the baseline',
+    visualization: 'Comparison visualization',
+    speed: 'Speed',
+    relativePerformance: 'Relative speed',
+    relativePerformanceHint:
+      'Choose a baseline. Relative speed factor = baseline duration / run duration.',
+    faster: 'Faster',
+    slower: 'Slower',
+    same: 'Same speed',
+    missing: 'Unavailable',
+    duration: 'Duration',
     durationRange: 'Duration range (min → max)',
     durationRangeHint: 'Range hint',
     selectPrompt: 'Select runs from the library to compare them.',
@@ -225,6 +237,7 @@ describe('BenchmarksView', () => {
     expect(svg).toContain('Benchmark Comparison')
     expect(svg).toContain('portrait.json')
     expect(svg).toContain('Duration range')
+    expect(svg).toContain('Range hint')
     expect(svg).toContain('role="img" aria-label="Comfy"')
     expect(svg).toContain('class="footer-date"')
     expect(svg.match(/class="table-cell best-cell"/g)).toHaveLength(4)
@@ -299,6 +312,79 @@ describe('BenchmarksView', () => {
     )
   })
 
+  it('compares the selected metric against a selected baseline', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const chartElement = wrapper.get('.benchmarks__chart').element
+    const workflowLabelElements = wrapper
+      .findAll('[data-testid$="-workflowName"]')
+      .map((label) => label.element)
+    const visualizationTabs = wrapper.findAll('.benchmarks__visualization-tabs button')
+    expect(visualizationTabs.map((tab) => tab.text())).toEqual(['Duration', 'Speed'])
+    expect(visualizationTabs[0]!.attributes('aria-pressed')).toBe('true')
+    await visualizationTabs[1]!.trigger('click')
+    expect(wrapper.get('.benchmarks__chart').element).toBe(chartElement)
+    expect(wrapper.findAll('[data-testid$="-workflowName"]').map((label) => label.element)).toEqual(
+      workflowLabelElements
+    )
+
+    const metricSelect = wrapper
+      .findAllComponents(BaseSelect)
+      .find((select) => select.props('ariaLabel') === 'Metric')
+    expect(metricSelect?.props('modelValue')).toBe('medianJobDurationSeconds')
+
+    const relativeRows = () => wrapper.findAll('.benchmarks__relative-row')
+    expect(relativeRows().map((row) => row.get('.benchmarks__relative-result').text())).toEqual([
+      '1.00×Baseline',
+      '0.58×Slower',
+      '1.73×Faster'
+    ])
+
+    expect(wrapper.find('[aria-label="Baseline"]').exists()).toBe(false)
+    const selectedHeader = wrapper.get('[data-testid="benchmark-comparison-column-title-12"]')
+    await selectedHeader.get('.benchmarks__matrix-title').trigger('click')
+    expect(selectedHeader.classes()).toContain('benchmarks__matrix-column--baseline')
+    expect(selectedHeader.get('.benchmarks__matrix-title').attributes('aria-pressed')).toBe('true')
+    expect(selectedHeader.get('.benchmarks__baseline-badge').element.parentElement).toBe(
+      selectedHeader.element
+    )
+    expect(relativeRows().map((row) => row.get('.benchmarks__relative-result').text())).toEqual([
+      '1.74×Faster',
+      '1.00×Baseline',
+      '3.00×Faster'
+    ])
+
+    metricSelect?.vm.$emit('update:modelValue', 'fastestJobDurationSeconds')
+    await wrapper.vm.$nextTick()
+    expect(relativeRows()[0]!.get('.benchmarks__relative-duration').text()).toBe('1.6 s')
+    expect(relativeRows()[0]!.get('.benchmarks__relative-result').text()).toBe('1.88×Faster')
+
+    await wrapper.get('.benchmarks__export-results').trigger('click')
+    await flushPromises()
+    const svg = createResultsPngMock.mock.calls[0]![0]
+    expect(svg).toContain('Relative speed')
+    expect(svg).toContain('Relative speed factor = baseline duration / run duration.')
+    expect(svg).toContain('1.88× Faster')
+    expect(svg).toContain('1.00× Baseline')
+    expect(svg).toContain('class="relative-bar relative-faster"')
+    expect(svg).not.toContain('>Duration range (min → max)</text>')
+  })
+
+  it('does not label another equally fast run as the baseline', async () => {
+    vi.mocked(window.api.listPerformanceTestBenchmarks).mockResolvedValueOnce({
+      folderPath: 'C:\\results\\performance-tests',
+      benchmarks: [benchmark('21', 'a.json', 2), benchmark('22', 'b.json', 2)]
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('.benchmarks__visualization-tabs button')[1]!.trigger('click')
+
+    expect(wrapper.findAll('.benchmarks__relative-result').map((result) => result.text())).toEqual([
+      '1.00×Baseline',
+      '1.00×Same speed'
+    ])
+  })
+
   it('closes property menus when clicking outside', async () => {
     const wrapper = mountView()
     await flushPromises()
@@ -333,7 +419,7 @@ describe('BenchmarksView', () => {
       getData: vi.fn(() => '13')
     }
     await wrapper
-      .get('[data-testid="benchmark-comparison-column-title-13"] .benchmarks__matrix-title')
+      .get('[data-testid="benchmark-comparison-column-title-13"] .benchmarks__column-grip')
       .trigger('dragstart', { dataTransfer })
     await wrapper.get('[data-testid="benchmark-comparison-column-title-11"]').trigger('dragover', {
       dataTransfer
@@ -350,7 +436,7 @@ describe('BenchmarksView', () => {
     expect(columnIds()).toEqual(['12', '13', '11'])
 
     await wrapper
-      .get('[data-testid="benchmark-comparison-column-title-11"] .benchmarks__matrix-title')
+      .get('[data-testid="benchmark-comparison-column-title-11"] .benchmarks__column-grip')
       .trigger('dragstart', { dataTransfer })
     await wrapper.get('[data-testid="benchmark-comparison-column-title-12"]').trigger('drop', {
       dataTransfer
@@ -393,6 +479,32 @@ describe('BenchmarksView', () => {
     expect(wrapper.get('.benchmarks__sort-direction').attributes('aria-label')).toBe(
       'Switch to ascending sort'
     )
+  })
+
+  it('defaults the baseline to the first displayed column until one is picked', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('.benchmarks__visualization-tabs button')[1]!.trigger('click')
+    const baselineColumnId = () =>
+      wrapper
+        .get('.benchmarks__matrix-column--baseline')
+        .attributes('data-testid')
+        ?.split('-')
+        .at(-1)
+    const sortSelect = wrapper
+      .findAllComponents(BaseSelect)
+      .find((select) => select.props('ariaLabel') === 'Sort comparison')
+
+    expect(baselineColumnId()).toBe('13')
+    sortSelect?.vm.$emit('update:modelValue', 'fastestJobDurationSeconds')
+    await wrapper.vm.$nextTick()
+    expect(baselineColumnId()).toBe('11')
+
+    await wrapper
+      .get('[data-testid="benchmark-comparison-column-title-12"] .benchmarks__matrix-title')
+      .trigger('click')
+    await wrapper.get('.benchmarks__sort-direction').trigger('click')
+    expect(baselineColumnId()).toBe('12')
   })
 
   it('places endpoint labels immediately outside their data point markers', async () => {
@@ -492,6 +604,13 @@ describe('BenchmarksView', () => {
   it('renames a session inline and preserves its comparison selection', async () => {
     const wrapper = mountView()
     await flushPromises()
+    await wrapper
+      .findAll('.benchmarks__visualization-tabs button')
+      .find((tab) => tab.text() === 'Speed')!
+      .trigger('click')
+    await wrapper
+      .get('[data-testid="benchmark-comparison-column-title-13"] .benchmarks__matrix-title')
+      .trigger('click')
 
     const sessionButton = wrapper.get('[data-testid="benchmark-row-13"] .benchmarks__session-name')
     expect(sessionButton.text()).toBe('13')
@@ -518,6 +637,11 @@ describe('BenchmarksView', () => {
     )
     expect(
       wrapper.find('[data-testid="benchmark-comparison-column-title-gpu-baseline"]').exists()
+    ).toBe(true)
+    expect(
+      wrapper
+        .get('[data-testid="benchmark-comparison-column-title-gpu-baseline"]')
+        .classes('benchmarks__matrix-column--baseline')
     ).toBe(true)
   })
 
