@@ -187,7 +187,11 @@ const messages = {
       stopFailed: 'Could not stop the instance.',
       measurementSettings: '3. Set measurement settings',
       warmupRuns: 'Warm-up runs',
+      warmupRunsHint:
+        'Runs executed first to load models and warm up caches. They are not included in the results.',
       measuredRuns: 'Measured runs',
+      measuredRunsHint:
+        'Runs timed after the warm-up runs. Their durations are used to calculate the results.',
       logsPlaceholder: 'Instance logs will appear here.',
       results: 'Results',
       resultsPlaceholder: 'Performance test results will appear here.',
@@ -875,6 +879,14 @@ describe('PanelApp', () => {
     expect(settings.map((setting) => setting.find('label').text())).toEqual([
       'Warm-up runs',
       'Measured runs'
+    ])
+    expect(
+      settings.map((setting) =>
+        setting.get('.info-tooltip-trigger[data-icon="info"]').attributes('aria-label')
+      )
+    ).toEqual([
+      'Runs executed first to load models and warm up caches. They are not included in the results.',
+      'Runs timed after the warm-up runs. Their durations are used to calculate the results.'
     ])
     const warmupRunsInput = settings[0]!.get('input')
     expect(warmupRunsInput.element).toHaveProperty('value', '1')

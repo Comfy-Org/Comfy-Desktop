@@ -5,6 +5,7 @@ import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import CollapsibleSectionToggle from '../components/CollapsibleSectionToggle.vue'
+import InfoTooltip from '../components/InfoTooltip.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
 import { useAuthStore } from '../stores/authStore'
@@ -659,9 +660,12 @@ watch(performanceTestLogs, async () => {
             <section class="performance-test__column">
               <h2>{{ t('performanceTest.measurementSettings') }}</h2>
               <div class="performance-test__setting">
-                <label for="performance-test-warmup-runs">
-                  {{ t('performanceTest.warmupRuns') }}
-                </label>
+                <span class="performance-test__setting-label">
+                  <label for="performance-test-warmup-runs">
+                    {{ t('performanceTest.warmupRuns') }}
+                  </label>
+                  <InfoTooltip :text="t('performanceTest.warmupRunsHint')" icon="info" />
+                </span>
                 <div class="brand-input performance-test__setting-input">
                   <input
                     id="performance-test-warmup-runs"
@@ -676,9 +680,12 @@ watch(performanceTestLogs, async () => {
                 </div>
               </div>
               <div class="performance-test__setting">
-                <label for="performance-test-measured-runs">
-                  {{ t('performanceTest.measuredRuns') }}
-                </label>
+                <span class="performance-test__setting-label">
+                  <label for="performance-test-measured-runs">
+                    {{ t('performanceTest.measuredRuns') }}
+                  </label>
+                  <InfoTooltip :text="t('performanceTest.measuredRunsHint')" icon="info" />
+                </span>
                 <div class="brand-input performance-test__setting-input">
                   <input
                     id="performance-test-measured-runs"
@@ -1009,8 +1016,13 @@ watch(performanceTestLogs, async () => {
   width: 100%;
 }
 
+.performance-test__setting-label {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
 .performance-test__setting label {
-  flex: 0 0 68px;
   color: var(--neutral-200);
   font-size: 13px;
   white-space: nowrap;
