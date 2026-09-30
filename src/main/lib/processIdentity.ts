@@ -207,10 +207,27 @@ export async function snapshotWindowsTree(
   root: number
 ): Promise<{ rootCreated: string | null; pids: number[] } | null> {
   const rows = await winRows()
-  if (!rows) return null
+  return rows ? treeFromRows(rows, root) : null
+}
+
+/**
+ * The tree under `root` from a snapshot. The root may already be gone (a stop starts taskkill
+ * before the snapshot): its descendants still name it as their parent and are still found, and
+ * may be the very processes still holding the database lock. Without the root's own creation
+ * time the "no older than its parent" guard cannot apply to its direct children, so a much older
+ * process whose recorded parent pid happens to match is watched too; that only lengthens the
+ * bounded wait, and it is never signalled.
+ */
+export function treeFromRows(
+  rows: readonly WinProcessRow[],
+  root: number
+): { rootCreated: string | null; pids: number[] } {
   const rootRow = rows.find((r) => r.pid === root)
-  if (!rootRow) return { rootCreated: null, pids: [] }
-  return { rootCreated: rootRow.created || null, pids: descendantsOf(rows, root) }
+  const pids = descendantsOf(rows, root)
+  return {
+    rootCreated: rootRow?.created || null,
+    pids: rootRow ? pids : pids.filter((p) => p !== root)
+  }
 }
 
 /** Command lines of `pid` and (Windows) of its parent. On Windows the venv `python.exe` is a
