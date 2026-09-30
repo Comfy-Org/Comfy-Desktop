@@ -1588,8 +1588,9 @@ async function runLaunch(
       // The recorded child is long gone: name only what holds the port now.
       return {
         ok: false,
-        message:
-          holders.length > 0
+        message: prior.scanRecent
+          ? i18n.t('errors.priorScanRecent')
+          : holders.length > 0
             ? i18n.t('errors.priorScanUnavailablePid', {
                 port: prior.port,
                 pid: holders.join(', ')

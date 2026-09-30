@@ -574,6 +574,8 @@ describe('resolvePriorProcess', () => {
             }
           }),
         rescanWindows: async () => [{ pid: 300, startTime: 'restarted-start' }],
+        // The restarted copy serves the port.
+        portListeners: async () => [300],
         readStartTimes: async (pids) =>
           new Map(
             pids
@@ -608,7 +610,7 @@ describe('resolvePriorProcess', () => {
     expect(removed).toEqual([])
   })
 
-  it('gives up an owed scan that cannot run when nothing holds the recorded port', async () => {
+  it('gives up an owed scan that cannot run when the port is free and the exit is old', async () => {
     // What the scan looks for serves that port; with it free, blocking every launch for days
     // (naming a child long gone) protects nothing.
     const written: ComfyProcessRecord[] = []
@@ -620,10 +622,11 @@ describe('resolvePriorProcess', () => {
           record({
             pendingScan: {
               known: [{ pid: 101, startTime: '1100' }],
-              exitedAt: String(filetimeOf(Date.now()))
+              exitedAt: String(filetimeOf(Date.now() - 10 * 60_000))
             }
           }),
         rescanWindows: async () => null,
+        wallNow: () => Date.now(),
         portInUse: async () => false,
         writeRecord: (r) => {
           written.push(r)
@@ -634,6 +637,35 @@ describe('resolvePriorProcess', () => {
     )
     expect(out?.blocked ?? null).not.toBe('unverified')
     expect(written.at(-1)?.pendingScan).toBeUndefined()
+  })
+
+  it('keeps blocking on an owed scan while a restarted copy may still be starting up', async () => {
+    // Booting (custom nodes, prestartup installs) can take minutes with the database open and
+    // the port not yet bound: a free port says nothing that soon after the exit.
+    const written: ComfyProcessRecord[] = []
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        readRecord: () =>
+          record({
+            pendingScan: {
+              known: [{ pid: 101, startTime: '1100' }],
+              exitedAt: String(filetimeOf(Date.now() - 30_000))
+            }
+          }),
+        rescanWindows: async () => null,
+        wallNow: () => Date.now(),
+        portInUse: async () => false,
+        writeRecord: (r) => {
+          written.push(r)
+          return true
+        },
+        settleExitBookkeeping: async () => {}
+      })
+    )
+    expect(out).toMatchObject({ blocked: 'unverified', scanOwed: true, scanRecent: true })
+    expect(written).toEqual([])
   })
 
   it('does not block when the proof lapsed at the moment of the kill', async () => {
@@ -976,6 +1008,55 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     expect(out).toMatchObject({ action: 'terminated', stoppedPids: [555, 560, 561] })
   })
 
+  it('does not trust /queue when a stranger listens on the port beside a survivor', async () => {
+    // A survivor bound to a LAN address and a stranger on loopback share the port number; the
+    // busy check (127.0.0.1) would reach the stranger.
+    const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({ portListeners: async () => [555, 900], probeQueue })
+    )
+    expect(probeQueue).not.toHaveBeenCalled()
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', survivorPids: [555] })
+  })
+
+  it('counts a listener a survivor started after the exit scan (Windows ancestry)', async () => {
+    const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        portListeners: async () => [700],
+        windowsProcessRows: async () => [
+          { pid: 555, ppid: 1, created: '100' },
+          { pid: 700, ppid: 555, created: '200' }
+        ],
+        probeQueue
+      })
+    )
+    expect(probeQueue).toHaveBeenCalled()
+    expect(kills).toEqual([555])
+    expect(out).toMatchObject({ action: 'terminated' })
+  })
+
+  it('does not count a listener under a reused survivor pid created before it', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        portListeners: async () => [700],
+        windowsProcessRows: async () => [
+          { pid: 555, ppid: 1, created: '300' },
+          { pid: 700, ppid: 555, created: '200' }
+        ]
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', survivorPids: [555] })
+  })
+
   it('asks a survivor that took the port during the grace, instead of calling it portless', async () => {
     // Still booting when the launch looked; it binds (and turns busy) a moment later.
     let listening = false
@@ -1106,34 +1187,30 @@ describe.runIf(process.platform === 'linux' && hasLsof())(
 
     /** A stand-in ComfyUI (a script called main.py): answers /queue idle or busy on `port`, or
      *  serves nothing (`portless`, a worker holding the lock). */
-    async function fakeComfy(mode: 'idle' | 'busy' | 'portless', port = 0): Promise<number> {
+    /** Listens on a port of the OS's choosing (no free-then-rebind race with other workers)
+     *  and reports it. */
+    async function fakeComfy(
+      mode: 'idle' | 'busy' | 'portless'
+    ): Promise<{ pid: number; port: number }> {
       const file = path.join(dirs.state, 'main.py')
       fs.writeFileSync(
         file,
-        `const [mode, port] = process.argv.slice(2)
+        `const [mode] = process.argv.slice(2)
 const running = mode === 'busy' ? [[1, 'x']] : []
 if (mode !== 'portless') {
-  require('http')
+  const server = require('http')
     .createServer((_q, r) => r.end(JSON.stringify({ queue_running: running, queue_pending: [] })))
-    .listen(Number(port), '127.0.0.1', () => console.log('up'))
-} else console.log('up')
+  server.listen(0, '127.0.0.1', () => console.log(server.address().port))
+} else console.log(0)
 setInterval(() => {}, 1 << 30)
 `
       )
-      const p = spawn(process.execPath, [file, mode, String(port)], {
-        stdio: ['ignore', 'pipe', 'ignore']
-      })
+      const p = spawn(process.execPath, [file, mode], { stdio: ['ignore', 'pipe', 'ignore'] })
       started.push(p)
-      await new Promise((r) => p.stdout!.once('data', r))
-      return p.pid!
-    }
-
-    async function freePort(): Promise<number> {
-      const server = http.createServer()
-      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
-      const { port } = server.address() as AddressInfo
-      await new Promise((r) => server.close(r))
-      return port
+      const port = await new Promise<number>((r) =>
+        p.stdout!.once('data', (d: Buffer) => r(Number(String(d).trim())))
+      )
+      return { pid: p.pid!, port }
     }
 
     /** A record whose child and Desktop are gone, with `survivor` proven by its start time. */
@@ -1151,9 +1228,9 @@ setInterval(() => {}, 1 << 30)
     }
 
     it('asks about a portless survivor even when an idle stranger holds the port', async () => {
-      const port = await freePort()
-      const stranger = await fakeComfy('idle', port) // another installation took the free port
-      const survivor = await fakeComfy('portless')
+      // Another installation took the recorded port once it was free.
+      const { pid: stranger, port } = await fakeComfy('idle')
+      const { pid: survivor } = await fakeComfy('portless')
       await survivorRecord(survivor, port)
       const out = await resolvePriorProcess('inst-1')
       expect(out).toMatchObject({ action: 'busy_left', survivorPids: [survivor] })
@@ -1162,9 +1239,8 @@ setInterval(() => {}, 1 << 30)
     }, 20_000)
 
     it('never stops a busy survivor on another port because a stranger on the recorded one is idle', async () => {
-      const port = await freePort()
-      const stranger = await fakeComfy('idle', port)
-      const survivor = await fakeComfy('busy', await freePort())
+      const { pid: stranger, port } = await fakeComfy('idle')
+      const { pid: survivor } = await fakeComfy('busy')
       await survivorRecord(survivor, port)
       const out = await resolvePriorProcess('inst-1')
       expect(out).toMatchObject({ action: 'busy_left', survivorPids: [survivor] })
@@ -1173,8 +1249,7 @@ setInterval(() => {}, 1 << 30)
     }, 20_000)
 
     it('still stops an idle survivor that serves the recorded port itself', async () => {
-      const port = await freePort()
-      const survivor = await fakeComfy('idle', port)
+      const { pid: survivor, port } = await fakeComfy('idle')
       await survivorRecord(survivor, port)
       const out = await resolvePriorProcess('inst-1')
       expect(out).toMatchObject({ action: 'terminated', lingering: 1 })

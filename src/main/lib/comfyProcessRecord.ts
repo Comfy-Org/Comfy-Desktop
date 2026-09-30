@@ -16,6 +16,7 @@ import {
   runsMainPy,
   windowsProcessRows,
   windowsProcessTable,
+  type WinProcessRow,
   type WinProcessRowWithCommand
 } from './processIdentity'
 
@@ -207,6 +208,17 @@ function anythingAlive(record: ComfyProcessRecord, alive: (pid: number) => boole
     // A scan still owed may find something alive: the record must outlive Desktop restarts.
     pendingScanIsCurrent(record)
   )
+}
+
+/** How long after an exit a ComfyUI that restarted itself may still be booting (and holding the
+ *  database) without serving its port yet. */
+const OWED_SCAN_BOOT_WINDOW_MS = 5 * 60 * 1000
+
+/** Whether an owed scan's recorded exit is more than `ms` ago (unparseable counts as old). */
+function pendingScanIsOlderThan(record: ComfyProcessRecord, nowMs: number, ms: number): boolean {
+  const exitedAt = record.pendingScan?.exitedAt
+  if (!exitedAt || !/^\d+$/.test(exitedAt)) return true
+  return BigInt(exitedAt) < filetimeOf(nowMs - ms)
 }
 
 /** How long a pending Windows exit scan is kept for the next launch. */
@@ -746,6 +758,9 @@ export interface PriorProcessOutcome {
   /** Blocked because a Windows exit scan is still owed and the process list cannot be read,
    *  while something holds the recorded port. `pid` is then the long-gone child. */
   scanOwed?: boolean
+  /** With `scanOwed`: the port is free, but the exit was too recent to rule out a copy that is
+   *  still starting up. */
+  scanRecent?: boolean
   /** Every pid the stops covered (process groups, trees), for the log. */
   stoppedPids?: number[]
 }
@@ -878,13 +893,24 @@ async function survivorServesPort(
     () => [] as number[]
   )
   if (listeners.length === 0) return false
-  const pids = new Set(survivors.map((m) => m.pid))
-  if (listeners.some((pid) => pids.has(pid))) return true
+  // Every listener, not just one: the busy check asks 127.0.0.1, and a survivor bound to a LAN
+  // address can share the port number with a stranger on loopback, which would answer for it.
+  const ours = new Set(survivors.map((m) => m.pid))
   const groupOf = deps.processGroupOf ?? processGroupOf
+  let rows: WinProcessRow[] | null | undefined
   for (const pid of listeners) {
-    if ((await groupOf(pid).catch(() => null)) === record.childPid) return true
+    if (ours.has(pid)) continue
+    if ((await groupOf(pid).catch(() => null)) === record.childPid) continue
+    // Windows has no process groups: a listener started by a survivor after the exit scan (the
+    // interpreter a restarted launcher starts) is found through its ancestry, creation-ordered.
+    if (rows === undefined) {
+      rows = await (deps.windowsProcessRows ?? windowsProcessRows)().catch(() => null)
+      if (rows) for (const m of survivors) for (const d of descendantsOf(rows, m.pid)) ours.add(d)
+      if (ours.has(pid)) continue
+    }
+    return false
   }
-  return false
+  return true
 }
 
 /** How long survivors that do not serve the recorded port get to exit on their own (a teardown in progress)
@@ -916,6 +942,8 @@ export interface PriorProcessDeps {
   portListeners?: (port: number) => Promise<number[]>
   /** POSIX process group of a pid; null when unknown (always on Windows). */
   processGroupOf?: (pid: number) => Promise<number | null>
+  /** Windows process table (pid, parent, creation time); null elsewhere or when unreadable. */
+  windowsProcessRows?: () => Promise<WinProcessRow[] | null>
   now: () => number
   /** Wall clock, only to date the record (`spawnedAt` is wall-clock). */
   wallNow: () => number
@@ -974,13 +1002,16 @@ export async function resolvePriorProcess(
       ? await (deps.rescanWindows ?? rescanWindows)(record)
       : []
     if (!found) {
-      // Still not runnable. What it looks for is a ComfyUI that restarted itself, which serves
-      // the recorded port within seconds of starting: with that port free, there is nothing to
-      // launch beside, and the scan is given up rather than blocking every launch for days.
+      // Still not runnable. What it looks for is a ComfyUI that restarted itself: once it has
+      // booted it serves the recorded port, but booting (custom nodes, prestartup installs) can
+      // take minutes, with the database already open. So the scan is given up, rather than
+      // blocking every launch for days, only when the port is free AND the exit is old enough
+      // for such a copy to have been serving by now.
       const serving = await (deps.portInUse ?? isPortListening)(record.port).catch(() => true)
-      if (serving) {
-        // Keep the record and do not launch beside whatever holds the port (a later launch
-        // tries again, until the scan succeeds or expires).
+      const recent = !pendingScanIsOlderThan(record, deps.wallNow(), OWED_SCAN_BOOT_WINDOW_MS)
+      if (serving || recent) {
+        // Keep the record and do not launch beside whatever it may find (a later launch tries
+        // again, until the scan succeeds or expires).
         return {
           action: 'left',
           proof: 'desktop_record',
@@ -990,7 +1021,8 @@ export async function resolvePriorProcess(
           waitMs: deps.now() - startedAt,
           exitedInTime: false,
           blocked: 'unverified',
-          scanOwed: true
+          scanOwed: true,
+          ...(serving ? {} : { scanRecent: true })
         }
       }
       found = []

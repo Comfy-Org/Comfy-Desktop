@@ -263,7 +263,10 @@ export async function killPidTree(pid: number, expectedStart: string): Promise<V
   if (process.platform === 'win32') return killWindowsTreeVerified(pid, startedAt, expectedStart)
   // The rest of its group (the leader excluded), listed before the proof, so nothing comes
   // between the proof and the signal.
-  const members = await groupMembers(pid).catch(() => [] as number[])
+  const members =
+    (await processGroupOf(pid).catch(() => null)) === pid
+      ? await groupMembers(pid).catch(() => [] as number[])
+      : []
   const now = await readStartTimes([pid])
   if (!now) {
     return {

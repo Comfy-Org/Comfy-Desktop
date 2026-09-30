@@ -2378,6 +2378,23 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(children).toHaveLength(0)
   })
 
+  it('says to try again later when an owed scan blocks right after the exit', async () => {
+    ownership.prior = {
+      ...terminated,
+      action: 'left',
+      exitedInTime: false,
+      blocked: 'unverified',
+      scanOwed: true,
+      scanRecent: true
+    }
+
+    const res = await handleLaunch(ctxFor('prior-scan-recent'))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.priorScanRecent')
+    expect(children).toHaveLength(0)
+  })
+
   it('reports a left process once, even when it is also the port holder', async () => {
     ownership.prior = { ...terminated, action: 'left', exitedInTime: false, blocked: null }
     launchHarness.busyPorts = [PORT]
