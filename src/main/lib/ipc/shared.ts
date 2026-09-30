@@ -118,7 +118,7 @@ import { REQUIRES_STOPPED } from '../../../types/ipc'
 import type { Theme, ResolvedTheme, QuitActiveItem, BetaArgView } from '../../../types/ipc'
 import { findLockingProcesses } from '../file-lock-info'
 import type { LaunchCmd } from '../process'
-import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
+import { getComfyArgsSchema, filterUnsupportedArgs, peekComfyArgsSchema } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
 import { getComfyFeatureFlagRegistry } from '../comfy-feature-flags'
 import type { FeatureFlagRegistry } from '../comfy-feature-flags'
@@ -236,6 +236,7 @@ export {
   REQUIRES_STOPPED,
   findLockingProcesses,
   getComfyArgsSchema,
+  peekComfyArgsSchema,
   filterUnsupportedArgs,
   getComfyFeatureFlagRegistry
 }

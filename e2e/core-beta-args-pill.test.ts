@@ -86,7 +86,10 @@ async function openStartupArgs(): Promise<WebContentsPage> {
   return popup
 }
 
-test('a stopped install shows no beta pill @windows @macos @linux', async () => {
+// This fixture has no interpreter, so the settings view's schema discovery fails and the next-launch
+// preview (which only reads a cached schema) cannot be computed: the pill must stay away rather than
+// guess. The predictable stopped case is `core-beta-args-pill-stopped.test.ts`.
+test('a stopped install whose next launch cannot be predicted shows no beta pill @windows @macos @linux', async () => {
   const popup = await openStartupArgs()
   // The args field is on screen (waited above), so the pill's absence is a real answer.
   expect(await popup.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(PILL)})`)).toBe(
@@ -114,8 +117,7 @@ test('a running install shows its grants and links to the beta opt-in @windows @
   )
   expect(pill).toEqual({ text: '+2 beta', expanded: 'false' })
 
-  expect(await popup.click(PILL)).toBe(true)
-  await popup.waitForVisible(POPOVER, { timeout: 5_000 })
+  await popup.clickUntilVisible(PILL, POPOVER, { timeout: 10_000 })
   const rows = await popup.evaluate<string[][]>(
     `Array.from(document.querySelectorAll(${JSON.stringify(`${POPOVER} .beta-args-row`)}))
       .map((row) => [

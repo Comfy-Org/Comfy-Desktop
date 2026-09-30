@@ -474,6 +474,75 @@ describe('resolveCoreCommitState', () => {
     })
   })
 
+  describe('display-only resolution (settings next-launch preview)', () => {
+    const PREVIEW = { fetch: false, quiet: true } as const
+
+    it('never schedules a fetch, records a failure or logs, on a shallow clone', async () => {
+      // A SHA no other test uses: abandoned resolutions from earlier tests can still log about
+      // theirs, so "logged nothing about this one" is the assertion that holds in a full run.
+      const ONLY_HERE = '7c'.repeat(20)
+      makeShallow()
+      git.findMergeBase.mockResolvedValue(undefined)
+      const logs = vi.spyOn(console, 'log').mockImplementation(() => {})
+      try {
+        const state = await resolveCoreCommitState(
+          REPO,
+          { kind: 'head', commit: HEAD },
+          [ONLY_HERE],
+          undefined,
+          PREVIEW
+        )
+
+        expect(state.ancestry.has(ONLY_HERE), 'unresolved, as it is for the launch').toBe(false)
+        expect(git.fetchCommitSha).not.toHaveBeenCalled()
+        expect(fs.existsSync(path.join(git.configDir, 'core-beta-fetch-failures.json'))).toBe(false)
+        const aboutThis = logs.mock.calls.filter((call) =>
+          String(call[0]).includes(ONLY_HERE.slice(0, 12))
+        )
+        expect(aboutThis).toEqual([])
+      } finally {
+        logs.mockRestore()
+      }
+    })
+
+    it('resolves exactly what the default resolution resolves', async () => {
+      git.findMergeBase.mockResolvedValue(LOWER)
+      const checkout = { kind: 'head', commit: HEAD } as const
+      const launch = await resolveCoreCommitState(REPO, checkout, [LOWER])
+      const preview = await resolveCoreCommitState(REPO, checkout, [LOWER], undefined, PREVIEW)
+      expect(preview).toEqual(launch)
+    })
+
+    it('reports a resolution cut short by its budget', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      git.findMergeBase.mockImplementation(() => new Promise(() => {}))
+      const stoppedEarly = vi.fn()
+
+      const pending = resolveCoreCommitState(
+        REPO,
+        { kind: 'head', commit: HEAD },
+        [LOWER],
+        undefined,
+        { ...PREVIEW, budgetMs: 1500, onStoppedEarly: stoppedEarly }
+      )
+      await vi.advanceTimersByTimeAsync(1500)
+      await pending
+
+      expect(stoppedEarly).toHaveBeenCalledOnce()
+      vi.useRealTimers()
+    })
+
+    it('does not report a resolution that finished', async () => {
+      git.findMergeBase.mockResolvedValue(LOWER)
+      const stoppedEarly = vi.fn()
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER], undefined, {
+        ...PREVIEW,
+        onStoppedEarly: stoppedEarly
+      })
+      expect(stoppedEarly).not.toHaveBeenCalled()
+    })
+  })
+
   describe('human review follow-ups', () => {
     it('proves "not contained" for a commit with no common ancestor on a full clone', async () => {
       git.noCommonAncestor = true

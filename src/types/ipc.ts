@@ -336,9 +336,11 @@ export interface DetailField {
   placeholder?: string
   min?: number
   max?: number
-  /** `args-builder` only: Core beta grants on the RUNNING session's command line, attached
-   *  main-side from the live session. Absent when the install is stopped. */
+  /** `args-builder` only: Core beta grants attached main-side — the running session's, or while
+   *  stopped the ones its next launch would apply (`betaArgsTiming` says which). Absent when there
+   *  are none, or when a stopped install's next launch cannot be predicted. */
   betaArgs?: BetaArgView[]
+  betaArgsTiming?: 'session' | 'next-launch'
 }
 
 export interface ActionDef {
@@ -1559,7 +1561,12 @@ export interface ElectronApi {
   // Actions
   getListActions(installationId: string): Promise<ListAction[]>
   getDetailSections(installationId: string): Promise<DetailSection[]>
-  getComfyArgs(installationId: string): Promise<{ args: ComfyArgDef[]; error?: string } | null>
+  /** `discovered` is true when this call ran schema discovery (a cache miss) rather than reading
+   *  the cache: the settings view re-reads its sections then, since the next-launch beta preview
+   *  only ever uses a cached schema. */
+  getComfyArgs(
+    installationId: string
+  ): Promise<{ args: ComfyArgDef[]; error?: string; discovered?: boolean } | null>
   runAction(
     installationId: string,
     actionId: string,

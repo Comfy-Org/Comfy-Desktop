@@ -92,20 +92,29 @@ function scheduleFetch(repoPath: string, sha: string, head: string): boolean {
 
 type Relation = boolean | null
 
+/** One resolution's shared state. `fetch` and `log` are the launch's defaults unless a caller
+ *  resolving for display turns them off. */
+interface ResolveBudget {
+  fetches: number
+  stopped: boolean
+  fetch: boolean
+  log: (message: string) => void
+}
+
 // Not `isAncestorOf`: it answers `false` for "could not look", which would fail an upper bound open.
 async function commitAncestry(
   repoPath: string,
   sha: string,
   head: string,
   complete: boolean,
-  budget: { fetches: number; stopped: boolean }
+  budget: ResolveBudget
 ): Promise<Relation> {
   const base = await findMergeBaseOrNone(repoPath, sha, head)
   if (typeof base === 'string') return base.toLowerCase() === sha
   // Both commits resolved and share nothing: on a complete graph HEAD cannot contain `sha`. A shallow
   // graph may just be cut short, and the graft rule cannot hold without a common ancestor.
   if (base === null && complete) {
-    console.log(
+    budget.log(
       `[core-beta] ancestry ${sha.slice(0, 12)}: no common ancestor with HEAD in a full clone`
     )
     return false
@@ -115,12 +124,12 @@ async function commitAncestry(
   if ((await commitPresence(repoPath, sha)) !== 'absent') return null
   // A complete clone holds every ancestor of HEAD, so a commit it lacks is not one of them.
   if (complete) {
-    console.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
+    budget.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
     return false
   }
-  if (budget.stopped) return null
+  if (budget.stopped || !budget.fetch) return null
   if (budget.fetches >= MAX_FETCHES) {
-    console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
+    budget.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
   } else if (scheduleFetch(repoPath, sha, head)) {
     budget.fetches += 1
   }
@@ -183,14 +192,22 @@ export async function resolveCoreCommitState(
   repoPath: string,
   checkout: CoreCheckout,
   shas: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** Display-only resolution: `fetch: false` never schedules a background fetch (so it writes
+   *  nothing, to the repository or the failure record), and `quiet` drops the per-SHA log lines.
+   *  An ancestry a fetch could have settled stays unresolved, exactly as it is for the launch
+   *  that schedules that fetch. `onStoppedEarly` fires when the time budget or `signal` cut the
+   *  resolution short, which leaves SHAs unresolved for a reason a later call might not share.
+   *  `budgetMs` shortens the launch's time budget for a caller that must not hold its UI. */
+  options: { fetch?: boolean; quiet?: boolean; onStoppedEarly?: () => void; budgetMs?: number } = {}
 ): Promise<CoreCommitState> {
   if (shas.length === 0 || checkout.kind !== 'head') return NO_CORE_COMMITS
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
   const ancestry = new Map<string, boolean>()
-  const deadline = Date.now() + RESOLVE_BUDGET_MS
-  const budget = { fetches: 0, stopped: false }
+  const deadline = Date.now() + (options.budgetMs ?? RESOLVE_BUDGET_MS)
+  const log = options.quiet ? () => {} : (message: string) => console.log(message)
+  const budget: ResolveBudget = { fetches: 0, stopped: false, fetch: options.fetch !== false, log }
   const work = (async () => {
     for (const [index, raw] of shas.entries()) {
       if (budget.stopped || signal?.aborted || Date.now() > deadline) return
@@ -198,7 +215,7 @@ export async function resolveCoreCommitState(
       const sha = raw.toLowerCase()
       if (!FULL_SHA_RE.test(sha)) continue
       if (index >= MAX_RESOLVED_SHAS) {
-        console.log(
+        log(
           `[core-beta] ancestry ${sha.slice(0, 12)}: not checked (the payload names more than ${MAX_RESOLVED_SHAS} commits), so entries that need it do not match`
         )
         continue
@@ -219,7 +236,7 @@ export async function resolveCoreCommitState(
       }
       // A launch that has moved on takes no late answers: the map it was handed must not change.
       if (budget.stopped) return
-      console.log(
+      log(
         `[core-beta] ancestry ${sha.slice(0, 12)}: ${
           related === null
             ? 'unresolved (not provable on this checkout, so entries that need it do not match)'
@@ -256,7 +273,8 @@ export async function resolveCoreCommitState(
       interrupted
     ])
     if (outcome === 'interrupted') {
-      console.log('[core-beta] ancestry: stopped early; SHAs not reached stay unresolved')
+      log('[core-beta] ancestry: stopped early; SHAs not reached stay unresolved')
+      options.onStoppedEarly?.()
     }
   } finally {
     budget.stopped = true

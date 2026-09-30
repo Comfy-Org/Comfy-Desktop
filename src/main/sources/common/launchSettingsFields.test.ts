@@ -302,34 +302,44 @@ describe('attachLaunchBetaArgs', () => {
       .flatMap((section) => (section.fields as Record<string, unknown>[] | undefined) ?? [])
       .find((field) => field.id === id)!
 
-  it('attaches the grants to the launchArgs field only', () => {
-    const all = sections()
-    attachLaunchBetaArgs(all, [
-      { arg: '--enable-assets', name: 'Asset browser' },
-      { arg: '--enable-asset-hashing', name: null }
-    ])
-    expect(fieldById(all, 'launchArgs').betaArgs).toEqual([
-      { arg: '--enable-assets', name: 'Asset browser' },
-      { arg: '--enable-asset-hashing', name: null }
-    ])
-    expect(fieldById(all, 'launchArgs').value).toBe('--lowvram')
-    expect(fieldById(all, 'name')).not.toHaveProperty('betaArgs')
-    expect(fieldById(all, 'port')).not.toHaveProperty('betaArgs')
-  })
+  it.each(['session', 'next-launch'] as const)(
+    'attaches %s grants, with their timing, to the launchArgs field only',
+    (timing) => {
+      const all = sections()
+      attachLaunchBetaArgs(
+        all,
+        [
+          { arg: '--enable-assets', name: 'Asset browser' },
+          { arg: '--enable-asset-hashing', name: null }
+        ],
+        timing
+      )
+      expect(fieldById(all, 'launchArgs').betaArgsTiming).toBe(timing)
+      expect(fieldById(all, 'launchArgs').betaArgs).toEqual([
+        { arg: '--enable-assets', name: 'Asset browser' },
+        { arg: '--enable-asset-hashing', name: null }
+      ])
+      expect(fieldById(all, 'launchArgs').value).toBe('--lowvram')
+      expect(fieldById(all, 'name')).not.toHaveProperty('betaArgs')
+      expect(fieldById(all, 'port')).not.toHaveProperty('betaArgs')
+    }
+  )
 
   it.each([
     ['no running session', undefined],
-    ['a session with no grants', []]
+    ['an unpredictable next launch', null],
+    ['no grants', []]
   ])('leaves the field without betaArgs for %s', (_label, betaArgs) => {
     const all = sections()
-    attachLaunchBetaArgs(all, betaArgs)
+    attachLaunchBetaArgs(all, betaArgs, 'next-launch')
     expect(fieldById(all, 'launchArgs')).not.toHaveProperty('betaArgs')
+    expect(fieldById(all, 'launchArgs')).not.toHaveProperty('betaArgsTiming')
   })
 
   it("copies the views, so the IPC payload never aliases the session's record", () => {
     const views = [{ arg: '--enable-assets', name: 'Asset browser' }]
     const all = sections()
-    attachLaunchBetaArgs(all, views)
+    attachLaunchBetaArgs(all, views, 'session')
     const attached = fieldById(all, 'launchArgs').betaArgs as { name: string | null }[]
     attached[0]!.name = 'mutated'
     expect(views[0]!.name).toBe('Asset browser')

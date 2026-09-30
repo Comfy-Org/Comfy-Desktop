@@ -9,13 +9,18 @@ import type { BetaArgView } from '../../types/ipc'
 
 /**
  * Collapsed "+N beta" pill after the user's startup args: the Core beta grants on the running
- * session's command line. Read-only — the only way to change them is the beta opt-in switch,
- * which the popover links to. Renders nothing when no grant is active.
+ * session's command line, or while stopped the ones its next launch would apply. Read-only — the
+ * only way to change them is the beta opt-in switch, which the popover links to. Renders nothing
+ * when there are none.
  */
 
-const props = defineProps<{
-  args: readonly BetaArgView[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    args: readonly BetaArgView[]
+    timing?: 'session' | 'next-launch'
+  }>(),
+  { timing: 'session' }
+)
 
 const { t } = useI18n()
 
@@ -25,7 +30,24 @@ const trigger = ref<HTMLButtonElement | null>(null)
 const popoverId = `beta-args-${useId()}`
 
 const count = computed(() => props.args.length)
-const heading = computed(() => t('comfyUISettings.betaArgsHeading'))
+const next = computed(() => props.timing === 'next-launch')
+const heading = computed(() =>
+  t(next.value ? 'comfyUISettings.betaArgsHeadingNext' : 'comfyUISettings.betaArgsHeading')
+)
+const tooltip = computed(() =>
+  t(
+    next.value ? 'comfyUISettings.betaArgsTooltipNext' : 'comfyUISettings.betaArgsTooltip',
+    { n: count.value },
+    count.value
+  )
+)
+const ariaLabel = computed(() =>
+  t(
+    next.value ? 'comfyUISettings.betaArgsAriaLabelNext' : 'comfyUISettings.betaArgsAriaLabel',
+    { n: count.value },
+    count.value
+  )
+)
 
 function toggle(): void {
   open.value = !open.value
@@ -57,7 +79,7 @@ useEventListener(window, 'blur', () => close(false))
 
 <template>
   <span v-if="count > 0" ref="root" class="beta-args">
-    <Tooltip :text="t('comfyUISettings.betaArgsTooltip', { n: count }, count)" :disabled="open">
+    <Tooltip :text="tooltip" :disabled="open">
       <button
         ref="trigger"
         type="button"
@@ -66,7 +88,7 @@ useEventListener(window, 'blur', () => close(false))
         aria-haspopup="dialog"
         :aria-expanded="open"
         :aria-controls="popoverId"
-        :aria-label="t('comfyUISettings.betaArgsAriaLabel', { n: count }, count)"
+        :aria-label="ariaLabel"
         @click="toggle"
         @keydown.escape="onEscape"
       >

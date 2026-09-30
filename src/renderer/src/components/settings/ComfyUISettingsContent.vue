@@ -1062,6 +1062,7 @@ defineExpose({
                     @update-field="updateField"
                     @run-action="runAction"
                     @open-args-page="openArgsPage"
+                    @schema-discovered="reload"
                     @open-path="handleOpenPath"
                   />
                 </div>

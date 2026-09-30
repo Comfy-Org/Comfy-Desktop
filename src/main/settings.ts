@@ -719,13 +719,29 @@ export function getAll(): Settings {
  */
 export function resolveBetaFeaturesEnabled(): boolean {
   const { settings, unreadable } = loadOutcome()
+  const { value, seed } = betaFeaturesEnabledFrom(settings, unreadable)
+  if (seed) {
+    settings.betaFeaturesEnabled = value
+    save(settings)
+  }
+  return value
+}
+
+/** What `resolveBetaFeaturesEnabled` would return, without writing the seed back — for
+ *  previews that must not have side effects. The next launch resolves to the same value. */
+export function peekBetaFeaturesEnabled(): boolean {
+  const { settings, unreadable } = loadOutcome()
+  return betaFeaturesEnabledFrom(settings, unreadable).value
+}
+
+function betaFeaturesEnabledFrom(
+  settings: Settings,
+  unreadable: boolean
+): { value: boolean; seed: boolean } {
   const stored = settings.betaFeaturesEnabled
-  if (typeof stored === 'boolean') return stored
-  if (unreadable) return false
-  const seeded = settings.telemetryEnabled === true
-  settings.betaFeaturesEnabled = seeded
-  save(settings)
-  return seeded
+  if (typeof stored === 'boolean') return { value: stored, seed: false }
+  if (unreadable) return { value: false, seed: false }
+  return { value: settings.telemetryEnabled === true, seed: true }
 }
 
 function camelToSnake(s: string): string {

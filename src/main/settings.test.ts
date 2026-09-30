@@ -33,6 +33,7 @@ let settings: {
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
   resolveBetaFeaturesEnabled: () => boolean
+  peekBetaFeaturesEnabled: () => boolean
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
   ) => Record<string, boolean | number | string | null>
@@ -707,6 +708,32 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
 // where a user hitting beta bugs escapes by disabling telemetry, killing the
 // diagnostics exactly when they matter. Consent only ever seeds the initial
 // value, once.
+describe('peekBetaFeaturesEnabled', () => {
+  it.each([true, false])(
+    'answers what the resolve would seed from telemetry=%s, without writing it',
+    (telemetry) => {
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+      fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: telemetry }))
+
+      expect(settings.peekBetaFeaturesEnabled()).toBe(telemetry)
+      expect(readPersistedSettings()).toEqual({ telemetryEnabled: telemetry })
+
+      // The resolve, by contrast, persists the seed: the two differ in that and nothing else.
+      expect(settings.resolveBetaFeaturesEnabled()).toBe(telemetry)
+      expect(readPersistedSettings()).toMatchObject({ betaFeaturesEnabled: telemetry })
+    }
+  )
+
+  it.each([true, false])('returns a stored %s', (choice) => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ telemetryEnabled: !choice, betaFeaturesEnabled: choice })
+    )
+    expect(settings.peekBetaFeaturesEnabled()).toBe(choice)
+  })
+})
+
 describe('resolveBetaFeaturesEnabled', () => {
   it.each([true, false])(
     'retains a stored %s from a backup when the primary is unreadable',

@@ -339,7 +339,7 @@ export interface ComfyTitlePopupBridge {
   }>
   pickerSettingsGetComfyArgs(
     installationId: string
-  ): Promise<{ args: Record<string, unknown>[]; error?: string } | null>
+  ): Promise<{ args: Record<string, unknown>[]; error?: string; discovered?: boolean } | null>
   pickerSettingsBrowseFolder(opts?: { defaultPath?: string }): Promise<string | null>
   pickerSettingsCancelOperation(installationId: string): Promise<void>
   pickerSettingsPreviewLocalMigration(installationId: string): Promise<Record<string, unknown>>

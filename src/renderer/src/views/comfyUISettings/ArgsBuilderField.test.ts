@@ -197,6 +197,49 @@ describe('ArgsBuilderField — beta args pill', () => {
   })
 })
 
+describe('ArgsBuilderField — beta pill timing', () => {
+  it("passes a stopped install's next-launch timing to the pill", async () => {
+    const wrapper = await mountField({
+      field: {
+        ...FIELD,
+        betaArgs: [{ arg: '--enable-assets', name: null }],
+        betaArgsTiming: 'next-launch'
+      }
+    })
+    expect(wrapper.get('button.beta-args-pill').attributes('aria-label')).toBe(
+      'comfyUISettings.betaArgsAriaLabelNext'
+    )
+  })
+})
+
+describe('ArgsBuilderField — asks for a re-read after schema discovery', () => {
+  function stubArgs(result: Record<string, unknown>): void {
+    ;(window as unknown as { api: unknown }).api = {
+      getComfyArgs: vi.fn().mockResolvedValue({ args: SCHEMA, ...result })
+    }
+  }
+
+  it('emits schema-discovered when its load ran discovery and no pill is showing', async () => {
+    stubArgs({ discovered: true })
+    const wrapper = await mountField()
+    expect(wrapper.emitted('schema-discovered')).toHaveLength(1)
+  })
+
+  it.each([
+    ['the schema came from the cache', { discovered: false }, {}],
+    ['discovery failed', { discovered: true, error: 'no python' }, {}],
+    [
+      'the field already carries grants',
+      { discovered: true },
+      { betaArgs: [{ arg: '--enable-assets', name: null }] }
+    ]
+  ])('stays quiet when %s', async (_label, result, field) => {
+    stubArgs(result)
+    const wrapper = await mountField({ field: { ...FIELD, ...field } })
+    expect(wrapper.emitted('schema-discovered')).toBeUndefined()
+  })
+})
+
 describe('ArgsBuilderField — trailing buttons stay out of autocomplete', () => {
   const BETA = [{ arg: '--enable-assets', name: 'Asset browser' }]
 

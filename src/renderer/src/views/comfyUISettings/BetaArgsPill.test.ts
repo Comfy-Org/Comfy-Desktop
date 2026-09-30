@@ -13,9 +13,9 @@ const TWO: BetaArgView[] = [...ONE, { arg: '--enable-asset-hashing', name: null 
 let openGlobalSettings: ReturnType<typeof vi.fn>
 const wrappers: VueWrapper[] = []
 
-function mountPill(args: readonly BetaArgView[]): VueWrapper {
+function mountPill(args: readonly BetaArgView[], timing?: 'session' | 'next-launch'): VueWrapper {
   const wrapper = mount(BetaArgsPill, {
-    props: { args },
+    props: { args, ...(timing ? { timing } : {}) },
     global: { plugins: [createAppI18n()] },
     attachTo: document.body
   })
@@ -62,6 +62,31 @@ describe('BetaArgsPill', () => {
     expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
       '1 beta argument added for this session. Click to see which.'
     )
+  })
+
+  it("says a stopped install's grants arrive at the next launch", async () => {
+    vi.useFakeTimers()
+    const wrapper = mountPill(TWO, 'next-launch')
+    expect(pill(wrapper).text()).toBe('+2 beta')
+    expect(pill(wrapper).attributes('aria-label')).toBe(
+      '2 beta arguments will be added at next launch, show details'
+    )
+    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
+    vi.advanceTimersByTime(200)
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
+      '2 beta arguments will be added at next launch. Click to see which.'
+    )
+    await wrapper.find('.tooltip-wrap').trigger('mouseleave')
+    await pill(wrapper).trigger('click')
+    expect(popover(wrapper).text()).toContain('Will be added at next launch by beta features')
+  })
+
+  it("defaults to the running session's copy", async () => {
+    const wrapper = mountPill(ONE)
+    await pill(wrapper).trigger('click')
+    expect(popover(wrapper).text()).toContain('Added at launch by beta features')
+    expect(popover(wrapper).text()).not.toContain('next launch')
   })
 
   it('lists each grant with its feature name when opened', async () => {
