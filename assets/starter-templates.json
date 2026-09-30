@@ -128,13 +128,13 @@
       }
     },
     {
-      "id": "audio_stable_audio_3_medium",
+      "id": "audio_yue2_text2music",
       "modality": "audio",
       "recommended": true,
       "snapshot": {
-        "title": "Stable Audio 3.0 Medium",
-        "description": "Input a short text idea, optional duration, seed, and category. Generate stereo audio (music, SFX, or instruments) using Stable Audio 3 with optional AI-driven text expansion.",
-        "sizeBytes": 15676630630,
+        "title": "YuE2: Text to Music",
+        "description": "Generate complete songs from a music style and lyrics with YuE2. Use symbolic music planning to create structured melodies and harmonies, then turn them into full songs with vocals and instrumental accompaniment.",
+        "sizeBytes": 3972844749,
         "mediaSubtype": "webp"
       }
     },
@@ -150,22 +150,22 @@
       }
     },
     {
-      "id": "audio_yue2_text2music",
-      "modality": "audio",
-      "snapshot": {
-        "title": "YuE2: Text to Music",
-        "description": "Generate complete songs from a music style and lyrics with YuE2. Use symbolic music planning to create structured melodies and harmonies, then turn them into full songs with vocals and instrumental accompaniment.",
-        "sizeBytes": 3972844749,
-        "mediaSubtype": "webp"
-      }
-    },
-    {
       "id": "audio_minimax_music_3",
       "modality": "audio",
       "snapshot": {
         "title": "MiniMax Music 3: Text to Music",
         "description": "Create full-length songs from text prompts with MiniMax Music 3, generating complete 5-minute tracks with stable structure and high-fidelity audio. Input a structured caption describing lyrics, style, mood, and arrangement, and receive a finished song as output. Ideal for music producers prototyping demos, and content creators needing original background tracks.",
         "sizeBytes": 15354508083,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "audio_stable_audio_3_medium",
+      "modality": "audio",
+      "snapshot": {
+        "title": "Stable Audio 3.0 Medium",
+        "description": "Input a short text idea, optional duration, seed, and category. Generate stereo audio (music, SFX, or instruments) using Stable Audio 3 with optional AI-driven text expansion.",
+        "sizeBytes": 15676630630,
         "mediaSubtype": "webp"
       }
     }
