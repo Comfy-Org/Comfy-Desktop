@@ -103,7 +103,7 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
       // a legacy install with nothing stored arrives seeded, never blank.
       {
         id: 'betaFeaturesEnabled',
-        label: 'Opt in to beta features',
+        label: 'Opt-in to beta features',
         value: true,
         editable: true,
         editType: 'boolean'
@@ -695,7 +695,7 @@ describe('GlobalSettingsView', () => {
   })
 
   describe('beta features opt-in row', () => {
-    const BETA_LABEL = 'Opt in to beta features'
+    const BETA_LABEL = 'Opt-in to beta features'
     const TELEMETRY_LABEL = 'Send anonymous telemetry'
 
     function toggleFor(wrapper: ReturnType<typeof mountView>, label: string) {

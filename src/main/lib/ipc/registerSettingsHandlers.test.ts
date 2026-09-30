@@ -79,7 +79,7 @@ describe('buildSettingsSections', () => {
     expect(fields).toContainEqual(
       expect.objectContaining({
         id: 'betaFeaturesEnabled',
-        label: 'Opt in to beta features',
+        label: 'Opt-in to beta features',
         type: 'boolean',
         value: true
       })
