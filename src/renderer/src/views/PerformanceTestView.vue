@@ -75,6 +75,7 @@ const {
   pendingLabel: pendingExampleWorkflowLabel,
   displayName: workflowDisplayName,
   download: exampleDownload,
+  isForOtherInstallation: isExampleForOtherInstallation,
   openPicker: openExampleWorkflowPicker,
   prepare: prepareExampleWorkflow,
   release: releaseExampleWorkflow,
@@ -177,6 +178,7 @@ const canRun = computed(() => {
     !isWorkflowImporting.value &&
     !isWorkflowDeleting.value &&
     !exampleDownload.value &&
+    !isExampleForOtherInstallation.value &&
     !sessionStore.isLaunching(sessionId)
   )
 })

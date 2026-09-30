@@ -1449,7 +1449,10 @@ describe('PanelApp', () => {
   }
 
   /** Mount the performance test page with one local instance selected. */
-  async function mountWithInstance(status = 'installed'): Promise<{
+  async function mountWithInstance(
+    status = 'installed',
+    otherInstallations: Array<Record<string, unknown>> = []
+  ): Promise<{
     wrapper: ReturnType<typeof mountPanel>
     api: ExampleWorkflowApi
   }> {
@@ -1464,7 +1467,8 @@ describe('PanelApp', () => {
         sourceId: 'standalone',
         status,
         workspaceId: 'workspace-1'
-      }
+      },
+      ...otherInstallations
     ]
     const api = (window as unknown as { api: ExampleWorkflowApi }).api
     api.getPerformanceTestExampleWorkflows.mockResolvedValue({
@@ -1554,6 +1558,84 @@ describe('PanelApp', () => {
     )
 
     expect(wrapper.get('.performance-test__workflow-file').text()).toContain(downloading.message)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+  })
+
+  it('removes an example prepared for another instance once a launching test releases it', async () => {
+    const { wrapper, api } = await mountWithInstance('installed', [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'other-install',
+        name: 'Other Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ])
+    const runApi = (window as unknown as { api: { runAction: ReturnType<typeof vi.fn> } }).api
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await chooseExampleWorkflow(wrapper)
+    let resolveLaunch!: (result: { ok: false; message: string }) => void
+    runApi.runAction.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLaunch = resolve
+        })
+    )
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    // The launch holds the workflow: switching instance can't remove it yet,
+    // but the example must not run on the other instance.
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;[...document.querySelectorAll<HTMLElement>('.ui-select-option')]
+      .find((option) => option.textContent?.includes('Other Install'))!
+      .click()
+    await flushPromises()
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+
+    resolveLaunch({ ok: false, message: 'Launch failed' })
+    await flushPromises()
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+  })
+
+  it('keeps the run blocked when an example for another instance cannot be removed', async () => {
+    const { wrapper, api } = await mountWithInstance('installed', [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'other-install',
+        name: 'Other Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ])
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await chooseExampleWorkflow(wrapper)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+    api.deletePerformanceTestWorkflow.mockResolvedValueOnce({ ok: false, message: 'File in use' })
+
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;[...document.querySelectorAll<HTMLElement>('.ui-select-option')]
+      .find((option) => option.textContent?.includes('Other Install'))!
+      .click()
+    await flushPromises()
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(wrapper.get('.performance-test__workflow-file').exists()).toBe(true)
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
   })
 

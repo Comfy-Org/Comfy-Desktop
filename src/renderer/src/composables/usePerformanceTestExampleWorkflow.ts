@@ -160,15 +160,23 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
     }
   }
 
-  watch(selectedInstallationId, (installationId) => {
-    if (
+  /** The prepared example was downloaded for another instance; it must not run on this one. */
+  const isForOtherInstallation = computed(() =>
+    Boolean(
+      workflowFilePath.value &&
       preparedForInstallationId.value &&
-      preparedForInstallationId.value !== installationId &&
-      workflowFilePath.value
-    ) {
-      void context.deleteWorkflow()
+      preparedForInstallationId.value !== selectedInstallationId.value
+    )
+  )
+
+  // Remove it as soon as nothing holds the workflow: a launching or stopping test
+  // defers the removal until the lock clears.
+  watch(
+    () => isForOtherInstallation.value && !context.isWorkflowLocked.value,
+    (shouldRemove) => {
+      if (shouldRemove) void context.deleteWorkflow()
     }
-  })
+  )
 
   onUnmounted(() => {
     isUnmounted = true
@@ -187,6 +195,7 @@ export function usePerformanceTestExampleWorkflow(context: ExampleWorkflowContex
     pendingLabel,
     displayName,
     download,
+    isForOtherInstallation,
     openPicker,
     prepare,
     release,
