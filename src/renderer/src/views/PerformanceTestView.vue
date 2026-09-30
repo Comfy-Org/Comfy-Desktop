@@ -458,6 +458,13 @@ const corePeakMemoryLabelKey = computed(() => {
   return 'performanceTest.corePeakVram'
 })
 
+/** Whether the GPU throttled during the run — summary roll-up first, then peak. */
+const coreThrottled = computed<boolean | null>(() => {
+  const bench = coreBenchmark.value
+  if (!bench) return null
+  return bench.summary.throttled ?? bench.resources.peak.throttled
+})
+
 function formatMbAsGb(mb: number | null | undefined): string {
   return mb != null ? `${(mb / 1024).toFixed(1)} GB` : t('performanceTest.peakNotMeasured')
 }
@@ -1535,13 +1542,29 @@ watch(performanceTestLogs, async () => {
                       <div>
                         <dt>{{ t('performanceTest.coreItPerSecond') }}</dt>
                         <dd>
-                          {{
-                            coreBenchmark.sampling.avgItPerS != null
-                              ? t('performanceTest.coreItPerSecondValue', {
+                          <template v-if="coreBenchmark.sampling.steadyStateItPerS != null">
+                            {{
+                              t('performanceTest.coreItPerSecondValue', {
+                                value: coreBenchmark.sampling.steadyStateItPerS.toFixed(2)
+                              })
+                            }}
+                            <span
+                              v-if="
+                                coreBenchmark.sampling.avgItPerS != null &&
+                                coreBenchmark.sampling.avgItPerS !==
+                                  coreBenchmark.sampling.steadyStateItPerS
+                              "
+                              class="performance-test__core-subvalue"
+                              :title="t('performanceTest.coreItPerSecondRawTooltip')"
+                            >
+                              {{
+                                t('performanceTest.coreItPerSecondRaw', {
                                   value: coreBenchmark.sampling.avgItPerS.toFixed(2)
                                 })
-                              : t('performanceTest.peakNotMeasured')
-                          }}
+                              }}
+                            </span>
+                          </template>
+                          <template v-else>{{ t('performanceTest.peakNotMeasured') }}</template>
                         </dd>
                       </div>
                       <div v-if="coreBenchmark.sampling.stepCount != null">
@@ -1560,9 +1583,64 @@ watch(performanceTestLogs, async () => {
                         <dt>{{ t('performanceTest.corePeakPower') }}</dt>
                         <dd>
                           {{
-                            t('performanceTest.corePowerWatts', {
-                              value: Math.round(coreBenchmark.resources.peak.powerW)
+                            coreBenchmark.resources.peak.powerLimitW != null
+                              ? t('performanceTest.corePowerWithLimit', {
+                                  value: Math.round(coreBenchmark.resources.peak.powerW),
+                                  limit: Math.round(coreBenchmark.resources.peak.powerLimitW)
+                                })
+                              : t('performanceTest.corePowerWatts', {
+                                  value: Math.round(coreBenchmark.resources.peak.powerW)
+                                })
+                          }}
+                        </dd>
+                      </div>
+                      <div v-if="coreBenchmark.resources.peak.temperatureC != null">
+                        <dt>{{ t('performanceTest.corePeakTemp') }}</dt>
+                        <dd>
+                          {{
+                            t('performanceTest.coreTempCelsius', {
+                              value: Math.round(coreBenchmark.resources.peak.temperatureC)
                             })
+                          }}
+                        </dd>
+                      </div>
+                      <div v-if="coreBenchmark.summary.energyWhPerImage != null">
+                        <dt>{{ t('performanceTest.coreEnergyPerImage') }}</dt>
+                        <dd>
+                          {{
+                            t('performanceTest.coreEnergyWh', {
+                              value: coreBenchmark.summary.energyWhPerImage.toFixed(1)
+                            })
+                          }}
+                        </dd>
+                      </div>
+                      <div v-if="coreBenchmark.device.weightDtype != null">
+                        <dt>{{ t('performanceTest.corePrecision') }}</dt>
+                        <dd>{{ coreBenchmark.device.weightDtype }}</dd>
+                      </div>
+                      <div v-if="coreBenchmark.device.attentionImpl != null">
+                        <dt>{{ t('performanceTest.coreAttention') }}</dt>
+                        <dd>{{ coreBenchmark.device.attentionImpl }}</dd>
+                      </div>
+                      <div v-if="coreBenchmark.device.vramState != null">
+                        <dt>{{ t('performanceTest.coreVramState') }}</dt>
+                        <dd>
+                          {{ coreBenchmark.device.vramState }}
+                          <span
+                            v-if="coreBenchmark.device.offloaded === true"
+                            class="performance-test__core-subvalue"
+                          >
+                            {{ t('performanceTest.coreOffloaded') }}
+                          </span>
+                        </dd>
+                      </div>
+                      <div v-if="coreThrottled != null">
+                        <dt>{{ t('performanceTest.coreThrottled') }}</dt>
+                        <dd>
+                          {{
+                            coreThrottled
+                              ? t('performanceTest.coreThrottledYes')
+                              : t('performanceTest.coreThrottledNo')
                           }}
                         </dd>
                       </div>
@@ -2317,6 +2395,12 @@ watch(performanceTestLogs, async () => {
 /* --- Core benchmark capture (ComfyUI core in-process collector) --- */
 .performance-test__core-subtitle {
   margin-left: 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.performance-test__core-subvalue {
+  margin-left: 6px;
   color: var(--text-faint);
   font-size: 11px;
 }
