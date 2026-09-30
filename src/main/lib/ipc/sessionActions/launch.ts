@@ -55,6 +55,7 @@ import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
 import type { LaunchCommand, SourcePlugin } from '../../../types/sources'
 import { randomUUID } from 'node:crypto'
 import { displayLaunchUrl } from '../../cloudUrl'
+import { installModelsDir, isSamePath } from '../../models'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
@@ -483,10 +484,49 @@ export interface StorageLaunchState {
   modelSyncOptions: ModelPathsOptions
 }
 
+function hasArg(args: readonly string[], flag: string): boolean {
+  return args.some((a) => a === flag || a.startsWith(`${flag}=`))
+}
+
+/** ComfyUI's built-in `<comfyDir>/models`: next to the launched `main.py`, so it
+ *  matches `folder_paths` even for git layouts `resolveComfyDir` can't probe. */
+export function builtinComfyModelsDir(installPath: string, launchCmd: LaunchCommand): string {
+  const args = launchCmd.args ?? []
+  const sIdx = args.indexOf('-s')
+  const mainPy = sIdx !== -1 ? args[sIdx + 1] : undefined
+  if (mainPy && launchCmd.cwd) {
+    return path.join(path.dirname(path.resolve(launchCmd.cwd, mainPy)), 'models')
+  }
+  return installModelsDir(installPath)
+}
+
+/**
+ * Where `--models-directory` should point, or null to leave ComfyUI's models root
+ * alone. Custom nodes that read `folder_paths.models_dir` only see the launcher's
+ * primary model dir when it IS the models root. Skipped when the core predates
+ * the flag, the user (or an adopted install's `--base-directory`) already picks
+ * the root, or the primary is the install's own dir.
+ */
+export function resolveModelsRootRedirect(
+  primaryDir: string | null,
+  builtinModelsDir: string,
+  launchArgs: readonly string[],
+  knownFlags: ReadonlySet<string> | null | undefined
+): string | null {
+  if (primaryDir == null) return null
+  if (!knownFlags?.has('models-directory')) return null
+  if (hasArg(launchArgs, '--models-directory') || hasArg(launchArgs, '--base-directory')) {
+    return null
+  }
+  if (isSamePath(primaryDir, builtinModelsDir)) return null
+  return path.resolve(primaryDir)
+}
+
 export function applyStorageLaunchArgs(
   inst: InstallationRecord,
   installationId: string,
-  launchCmd: LaunchCommand
+  launchCmd: LaunchCommand,
+  knownFlags?: ReadonlySet<string> | null
 ): StorageLaunchState {
   // Shared models and shared input/output are independent flags.
   const argsAvailable = !launchCmd.skipSharedPaths && !!launchCmd.args
@@ -498,15 +538,36 @@ export function applyStorageLaunchArgs(
   let modelDirsForLaunch: string[] | undefined
   let modelSyncOptions: ModelPathsOptions = {}
   let manageModelFolders = false
+  let modelsRoot: string | null = null
   if (argsAvailable) {
     const sharedDirs = (settings.get('modelsDirs') as string[] | undefined) ?? []
     const { dirs, primaryDir } = resolveLauncherModelDirs(inst, sharedDirs)
     if (dirs.length > 0) {
       manageModelFolders = true
       modelDirsForLaunch = dirs
+      const builtinModelsDir = builtinComfyModelsDir(inst.installPath, launchCmd)
+      modelsRoot = resolveModelsRootRedirect(
+        primaryDir,
+        builtinModelsDir,
+        launchCmd.args!,
+        knownFlags
+      )
+      if (modelsRoot) {
+        try {
+          // ComfyUI rejects a `--models-directory` that doesn't exist.
+          fs.mkdirSync(modelsRoot, { recursive: true })
+        } catch {
+          modelsRoot = null
+        }
+      }
       // Always the per-install YAML: the effective dir set is install-specific
-      // now that shared and per-install dirs combine.
-      modelSyncOptions = { yamlPath: instanceModelPathsYaml(installationId), primaryDir }
+      // now that shared and per-install dirs combine. With the root redirected,
+      // the install's own models dir must be listed to stay searchable.
+      modelSyncOptions = {
+        yamlPath: instanceModelPathsYaml(installationId),
+        primaryDir,
+        ...(modelsRoot ? { builtinModelsDir } : {})
+      }
     }
   }
   if (manageModelFolders) {
@@ -518,6 +579,7 @@ export function applyStorageLaunchArgs(
     )
     if (config) {
       launchCmd.args!.push('--extra-model-paths-config', config.yamlPath)
+      if (modelsRoot) launchCmd.args!.push('--models-directory', modelsRoot)
     }
     const installExtras = discoverExtraModelFolders(inst.installPath)
     const baselineSet = new Set([...(config?.extraFolders ?? []), ...installExtras])
@@ -1220,6 +1282,8 @@ async function runLaunch(
   }
   const launchCmd = launchCmdRaw
 
+  // Null when discovery fails: flags a core may not know are then never injected.
+  let argsSchemaFlags: ReadonlySet<string> | null = null
   // Filter unsupported args, then inject desktop-managed feature flags.
   const split = splitLaunchArgs(launchCmd, inst)
   if (split) {
@@ -1235,6 +1299,7 @@ async function runLaunch(
     launchCmd.args = [...split.prefixArgs, ...split.userArgs]
     try {
       const schema = await getComfyArgsSchema(cmd, mainPyAbs, cwd, installationId, revision)
+      argsSchemaFlags = schema.knownFlags
       // Skip when the discovery flag is absent (avoids a pointless python spawn).
       const desktopFlagArgs: string[] = []
       if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
@@ -1287,7 +1352,7 @@ async function runLaunch(
   }
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
-    applyStorageLaunchArgs(inst, installationId, launchCmd)
+    applyStorageLaunchArgs(inst, installationId, launchCmd, argsSchemaFlags)
 
   /** Gates the `template-models` reader: the bar derives "prior steps done" from
    *  the active phase index, so the reader stays silent through the real phases
