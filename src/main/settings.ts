@@ -466,14 +466,8 @@ function load(): Settings {
   return loadOutcome().settings
 }
 
-/** Load settings plus whether settings.json must NOT be rewritten right now:
- *  it exists but could not be read (e.g. an AV lock outlasting the retry
- *  budget), so this call is serving bare defaults or stale `.bak` content in
- *  its place. `set()` refuses to persist while that holds - the file's real
- *  content is unknown, so saving anything derived from the stand-in would
- *  overwrite the user's intact, newer settings (the failure environment of
- *  issue #1367). */
-/** The stored settings over the defaults, with no normalization and nothing written back.
+/** The stored settings over the defaults, without the load-time normalization or its save. (The
+ *  shared file read can still restore settings.json from its `.bak`, as every read does.)
  *  `normalize: false` marks the unreadable-file case, which `loadOutcome` returns as-is. */
 function readOutcome(): { settings: Settings; unreadable: boolean; normalize: boolean } {
   maybeSeedFromEnv()
@@ -503,6 +497,13 @@ function readOutcome(): { settings: Settings; unreadable: boolean; normalize: bo
   return { settings: { ...defaults, ...(parsed || {}) }, unreadable, normalize: true }
 }
 
+/** Load settings plus whether settings.json must NOT be rewritten right now:
+ *  it exists but could not be read (e.g. an AV lock outlasting the retry
+ *  budget), so this call is serving bare defaults or stale `.bak` content in
+ *  its place. `set()` refuses to persist while that holds - the file's real
+ *  content is unknown, so saving anything derived from the stand-in would
+ *  overwrite the user's intact, newer settings (the failure environment of
+ *  issue #1367). */
 function loadOutcome(): { settings: Settings; unreadable: boolean } {
   const read = readOutcome()
   if (!read.normalize) return { settings: read.settings, unreadable: read.unreadable }
@@ -735,8 +736,8 @@ export function resolveBetaFeaturesEnabled(): boolean {
   return value
 }
 
-/** What `resolveBetaFeaturesEnabled` would return, for previews that must not have side effects:
- *  it skips the load-time normalization (which can create folders and save) as well as the seed.
+/** What `resolveBetaFeaturesEnabled` would return, for previews that must not write settings: it
+ *  skips the load-time normalization (which can create folders and save) as well as the seed.
  *  Normalization never touches the two keys this reads, so the next launch resolves the same. */
 export function peekBetaFeaturesEnabled(): boolean {
   const { settings, unreadable } = readOutcome()
