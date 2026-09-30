@@ -234,6 +234,10 @@ async function importWorkflow(sourcePath?: string): Promise<void> {
 async function openStarterWorkflowPicker(): Promise<void> {
   const installationId = selectedInstallationId.value
   if (!installationId || isWorkflowLocked.value || isWorkflowImporting.value) return
+  if (!navigator.onLine) {
+    workflowImportError.value = t('performanceTest.exampleWorkflowsOffline')
+    return
+  }
   isStarterPickerLoading.value = true
   workflowImportError.value = null
   try {
@@ -275,7 +279,11 @@ async function prepareStarterWorkflow(): Promise<void> {
       templateId
     )
     if (!result.ok || !result.filePath) {
-      throw new Error(result.message || t('performanceTest.importFailed'))
+      throw new Error(
+        result.offline
+          ? t('performanceTest.exampleWorkflowsOffline')
+          : result.message || t('performanceTest.importFailed')
+      )
     }
     if (selectedInstallationId.value !== installationId) {
       await window.api.deletePerformanceTestWorkflow(result.filePath).catch(() => {})

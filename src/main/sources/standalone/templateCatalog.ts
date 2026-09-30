@@ -287,6 +287,33 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
   return catalog.sort(byModalityOrder)
 }
 
+/**
+ * Hydrate a fixed template list against the live index. Unlike the starter
+ * catalog, an id missing upstream keeps its snapshot instead of being swapped
+ * for another template, since callers pair each id with id-specific artifacts.
+ */
+export async function hydrateTemplates(
+  templates: ReadonlyArray<{
+    id: string
+    modality: TemplateModality
+    recommended?: boolean
+    snapshot: TemplateSnapshot
+  }>
+): Promise<HydratedTemplate[]> {
+  const index = await fetchJSON(INDEX_URL).catch(() => null)
+  const byId = index ? indexById(index) : new Map<string, IndexLocation>()
+  return templates.map(({ id, modality, recommended, snapshot }) =>
+    hydrateOne({
+      id,
+      modality,
+      recommended: recommended === true,
+      apiNode: false,
+      location: byId.get(id),
+      snapshot
+    })
+  )
+}
+
 /** First unused, locally-installable index template of `modality` — skips
  *  API/cloud entries (`api_*`) and size-less ones, since a substitute fills a
  *  local download slot the disk-space gate sizes off `sizeBytes`. */

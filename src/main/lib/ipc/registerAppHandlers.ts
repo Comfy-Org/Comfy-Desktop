@@ -58,6 +58,7 @@ import {
   waitForPerformanceTestJobs
 } from '../performanceTestWorkflows'
 import {
+  ExampleWorkflowsUnreachableError,
   getPerformanceTestStarterOptions,
   loadPerformanceTestStarterArtifacts
 } from '../performanceTestStarterWorkflows'
@@ -247,7 +248,11 @@ export function registerAppHandlers(): void {
         if (workflowFilePath) {
           await deletePerformanceTestWorkflow(workflowFilePath, benchmarksDir).catch(() => {})
         }
-        return { ok: false, message: (error as Error)?.message || String(error) }
+        return {
+          ok: false,
+          offline: error instanceof ExampleWorkflowsUnreachableError,
+          message: (error as Error)?.message || String(error)
+        }
       }
     }
   )

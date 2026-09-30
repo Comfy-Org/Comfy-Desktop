@@ -177,13 +177,15 @@ const messages = {
       selectInstancePlaceholder: 'Select an instance',
       dropWorkflow: '2. Drop a workflow in API format',
       chooseWorkflow: '2. Choose a workflow',
-      chooseStarterWorkflow: 'Choose a starter workflow',
-      loadingStarterWorkflows: 'Loading starter workflows...',
+      chooseStarterWorkflow: 'Choose an example workflow',
+      loadingStarterWorkflows: 'Loading example workflows...',
       orImportApiWorkflow: 'or import an API workflow',
-      starterWorkflowPickerTitle: 'Choose a starter workflow',
+      starterWorkflowPickerTitle: 'Choose an example workflow',
       starterWorkflowPickerDescription: 'Missing models will be downloaded automatically.',
       useStarterWorkflow: 'Use workflow',
-      noStarterWorkflows: 'No benchmark-ready starter workflows are currently available.',
+      noStarterWorkflows: 'No benchmark-ready example workflows are currently available.',
+      exampleWorkflowsOffline:
+        'You need to be connected to the internet to download example workflows.',
       dropWorkflowHint: 'Drop a workflow .json file here, or click to browse',
       importingWorkflow: 'Importing workflow...',
       preparingStarterWorkflow: 'Preparing workflow and downloading required models...',
@@ -1475,6 +1477,64 @@ describe('PanelApp', () => {
       'Z-Image-Turbo: Text to Image'
     )
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+  })
+
+  it('asks the user to connect to the internet when example workflows cannot be downloaded', async () => {
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
+    ])
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ]
+    const api = (
+      window as unknown as {
+        api: {
+          getPerformanceTestStarterWorkflows: ReturnType<typeof vi.fn>
+          preparePerformanceTestStarterWorkflow: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    const offlineMessage = 'You need to be connected to the internet to download example workflows.'
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+
+    // The browser knows it is offline: skip the picker entirely.
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      await wrapper.get('.performance-test__starter-workflow').trigger('click')
+      await flushPromises()
+      expect(api.getPerformanceTestStarterWorkflows).not.toHaveBeenCalled()
+      expect(wrapper.get('.performance-test__workflow-error').text()).toBe(offlineMessage)
+    } finally {
+      onLine.mockRestore()
+    }
+
+    // The machine reports a connection but GitHub is unreachable when downloading.
+    api.getPerformanceTestStarterWorkflows.mockResolvedValueOnce([
+      { value: 'image_z_image_int8', label: 'Z-Image Int8', data: { modality: 'image' } }
+    ])
+    api.preparePerformanceTestStarterWorkflow.mockResolvedValueOnce({
+      ok: false,
+      offline: true,
+      message: 'Connect to the internet to download example workflows.'
+    })
+    await wrapper.get('.performance-test__starter-workflow').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(offlineMessage)
   })
 
   it('locks workflow changes while a separate performance test process runs', async () => {

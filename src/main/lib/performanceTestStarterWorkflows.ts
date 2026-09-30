@@ -1,102 +1,32 @@
-import fs from 'node:fs'
-import path from 'node:path'
+import benchmarkTemplates from '../../../assets/benchmark-templates.json'
 import { fetchJSON } from './fetch'
-import { isPersistableTemplateId, RAW_TEMPLATES_BASE } from '../sources/standalone/curatedTemplates'
-import { loadTemplateCatalog, type HydratedTemplate } from '../sources/standalone/templateCatalog'
+import {
+  RAW_TEMPLATES_BASE,
+  type TemplateModality,
+  type TemplateSnapshot
+} from '../sources/standalone/curatedTemplates'
+import { hydrateTemplates, type HydratedTemplate } from '../sources/standalone/templateCatalog'
 import type { FieldOption } from '../types/sources'
 
-const API_WORKFLOWS_BASE = RAW_TEMPLATES_BASE.replace(/\/templates$/, '/api_workflows')
-const API_WORKFLOWS_INDEX_URL = `${API_WORKFLOWS_BASE}/index.json`
-const LOCAL_API_WORKFLOWS_DIR = path.resolve('assets')
-const SHA256_PATTERN = /^[a-f0-9]{64}$/
+/**
+ * API-format prompts for performance tests, published beside `templates/` in
+ * the workflow_templates repo. Each shares its id with a parent template whose
+ * editor workflow supplies the cover image and the model download URLs.
+ */
+const BENCHMARKS_BASE = RAW_TEMPLATES_BASE.replace(/\/templates$/, '/benchmarks')
 
-interface ApiWorkflowIndexEntry {
-  sourceSha256: string
-  apiSha256: string
+interface BenchmarkTemplate {
+  id: string
+  modality: TemplateModality
+  recommended?: boolean
+  snapshot: TemplateSnapshot
 }
 
-interface ApiWorkflowIndex {
-  schemaVersion: 1
-  workflows: Record<string, ApiWorkflowIndexEntry>
-}
+/** Bundled list of the workflows in `benchmarks/`, with offline display metadata. */
+const BENCHMARK_TEMPLATES = benchmarkTemplates.templates as BenchmarkTemplate[]
 
-function parseApiWorkflowIndex(value: unknown): ApiWorkflowIndex | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const candidate = value as { schemaVersion?: unknown; workflows?: unknown }
-  if (
-    candidate.schemaVersion !== 1 ||
-    !candidate.workflows ||
-    typeof candidate.workflows !== 'object' ||
-    Array.isArray(candidate.workflows)
-  ) {
-    return null
-  }
-
-  const workflows: Record<string, ApiWorkflowIndexEntry> = {}
-  for (const [id, rawEntry] of Object.entries(candidate.workflows)) {
-    if (!isPersistableTemplateId(id) || !rawEntry || typeof rawEntry !== 'object') continue
-    const entry = rawEntry as Partial<ApiWorkflowIndexEntry>
-    if (
-      typeof entry.sourceSha256 !== 'string' ||
-      !SHA256_PATTERN.test(entry.sourceSha256) ||
-      typeof entry.apiSha256 !== 'string' ||
-      !SHA256_PATTERN.test(entry.apiSha256)
-    ) {
-      continue
-    }
-    workflows[id] = { sourceSha256: entry.sourceSha256, apiSha256: entry.apiSha256 }
-  }
-  return { schemaVersion: 1, workflows }
-}
-
-async function loadApiWorkflowIndex(): Promise<ApiWorkflowIndex | null> {
-  try {
-    return parseApiWorkflowIndex(await fetchJSON(API_WORKFLOWS_INDEX_URL, { refresh: true }))
-  } catch {
-    return null
-  }
-}
-
-async function loadLocalApiWorkflowIds(): Promise<Set<string>> {
-  if (process.env.NODE_ENV !== 'development') return new Set()
-  try {
-    const entries = await fs.promises.readdir(LOCAL_API_WORKFLOWS_DIR, { withFileTypes: true })
-    return new Set(
-      entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
-        .map((entry) => entry.name.slice(0, -'.json'.length))
-        .filter(isPersistableTemplateId)
-    )
-  } catch {
-    return new Set()
-  }
-}
-
-async function loadLocalApiWorkflow(templateId: string): Promise<unknown | null> {
-  if (process.env.NODE_ENV !== 'development' || !isPersistableTemplateId(templateId)) return null
-  try {
-    const contents = await fs.promises.readFile(
-      path.join(LOCAL_API_WORKFLOWS_DIR, `${templateId}.json`),
-      'utf8'
-    )
-    return JSON.parse(contents)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
-}
-
-export async function loadPerformanceTestStarterCatalog(): Promise<HydratedTemplate[]> {
-  const [catalog, apiIndex, localApiWorkflowIds] = await Promise.all([
-    loadTemplateCatalog(),
-    loadApiWorkflowIndex(),
-    loadLocalApiWorkflowIds()
-  ])
-  return catalog.filter(
-    (template) =>
-      template.apiNode !== true &&
-      (apiIndex?.workflows[template.id] !== undefined || localApiWorkflowIds.has(template.id))
-  )
+function loadPerformanceTestStarterCatalog(): Promise<HydratedTemplate[]> {
+  return hydrateTemplates(BENCHMARK_TEMPLATES)
 }
 
 export async function getPerformanceTestStarterOptions(): Promise<FieldOption[]> {
@@ -117,6 +47,14 @@ export async function getPerformanceTestStarterOptions(): Promise<FieldOption[]>
   }))
 }
 
+/** The workflow_templates repo could not be reached, typically because the user is offline. */
+export class ExampleWorkflowsUnreachableError extends Error {
+  constructor() {
+    super('Connect to the internet to download example workflows.')
+    this.name = 'ExampleWorkflowsUnreachableError'
+  }
+}
+
 export interface PerformanceTestStarterArtifacts {
   template: HydratedTemplate
   editorWorkflow: unknown
@@ -131,20 +69,19 @@ export async function loadPerformanceTestStarterArtifacts(
     throw new Error('This starter workflow is unavailable for performance testing.')
   }
 
-  const [editorWorkflow, localApiWorkflow] = await Promise.all([
-    fetchJSON(`${RAW_TEMPLATES_BASE}/${encodeURIComponent(templateId)}.json`, { refresh: true }),
-    loadLocalApiWorkflow(templateId)
-  ])
-  const apiWorkflow =
-    localApiWorkflow ??
-    (await fetchJSON(`${API_WORKFLOWS_BASE}/${encodeURIComponent(templateId)}.json`, {
-      refresh: true
-    }))
-  if (!editorWorkflow) throw new Error('Could not download the starter workflow.')
-  return { template, editorWorkflow, apiWorkflow }
-}
-
-export const performanceTestStarterArtifactUrls = {
-  base: API_WORKFLOWS_BASE,
-  index: API_WORKFLOWS_INDEX_URL
+  const fileName = `${encodeURIComponent(templateId)}.json`
+  try {
+    const [editorWorkflow, apiWorkflow] = await Promise.all([
+      fetchJSON(`${RAW_TEMPLATES_BASE}/${fileName}`, { refresh: true }),
+      fetchJSON(`${BENCHMARKS_BASE}/${fileName}`, { refresh: true })
+    ])
+    return { template, editorWorkflow, apiWorkflow }
+  } catch (error) {
+    // Chromium reports a failed connection as `net::ERR_*` (e.g. ERR_NAME_NOT_RESOLVED
+    // when offline); a reachable server answering with an error is `HTTP <status>`.
+    if (/\bnet::ERR_/.test((error as Error)?.message ?? '')) {
+      throw new ExampleWorkflowsUnreachableError()
+    }
+    throw error
+  }
 }

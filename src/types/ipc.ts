@@ -1265,6 +1265,8 @@ export interface ElectronApi {
     filePath?: string
     templateId?: string
     templateLabel?: string
+    /** The workflow repository was unreachable, typically because the user is offline. */
+    offline?: boolean
     message?: string
   }>
   deletePerformanceTestWorkflow(

@@ -1,149 +1,131 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./fetch', () => ({ fetchJSON: vi.fn() }))
-vi.mock('../sources/standalone/templateCatalog', () => ({ loadTemplateCatalog: vi.fn() }))
 
+import benchmarkTemplates from '../../../assets/benchmark-templates.json'
 import { fetchJSON } from './fetch'
-import { loadTemplateCatalog } from '../sources/standalone/templateCatalog'
 import {
+  ExampleWorkflowsUnreachableError,
   getPerformanceTestStarterOptions,
-  loadPerformanceTestStarterArtifacts,
-  performanceTestStarterArtifactUrls
+  loadPerformanceTestStarterArtifacts
 } from './performanceTestStarterWorkflows'
 
-const HASH = 'a'.repeat(64)
-const freeTemplate = {
-  id: 'image_z_image_turbo',
-  modality: 'image' as const,
-  recommended: true,
-  title: 'Z-Image-Turbo: Text to Image',
-  name: 'Z-Image-Turbo',
-  task: 'Text to Image',
-  description: 'Generate an image.',
-  sizeBytes: 42,
-  apiNode: false,
-  thumbnailUrl: 'https://example.com/image.webp',
-  category: 'Image'
-}
-const paidTemplate = {
-  ...freeTemplate,
-  id: 'api_paid_image',
-  title: 'Paid image',
-  apiNode: true
-}
-const unpairedTemplate = {
-  ...freeTemplate,
-  id: 'image_without_api',
-  title: 'No API artifact'
-}
+const REPO = 'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main'
+const INDEX_URL = `${REPO}/templates/index.json`
+const bundledIds = benchmarkTemplates.templates.map(({ id }) => id)
+const liveIndex = [
+  {
+    title: 'Image',
+    type: 'image',
+    templates: [
+      {
+        name: 'image_z_image_int8',
+        title: 'Z-Image Int8 Live: Text to Image',
+        description: 'Live description.',
+        size: 123,
+        mediaSubtype: 'webp',
+        tags: ['Image', 'Text to Image']
+      }
+    ]
+  }
+]
 
 describe('performance test starter workflows', () => {
   beforeEach(() => {
     vi.mocked(fetchJSON).mockReset()
-    vi.mocked(loadTemplateCatalog).mockReset()
-    vi.mocked(loadTemplateCatalog).mockResolvedValue([freeTemplate, paidTemplate, unpairedTemplate])
   })
 
-  afterEach(() => {
-    vi.unstubAllEnvs()
-  })
+  it('offers every bundled benchmark with metadata and cover from its parent template', async () => {
+    vi.mocked(fetchJSON).mockImplementation(async (url) => {
+      if (url === INDEX_URL) return liveIndex
+      throw new Error(`unexpected fetch ${url}`)
+    })
 
-  it('offers only free catalogue entries with validated API index records', async () => {
-    vi.mocked(fetchJSON).mockResolvedValue({
-      schemaVersion: 1,
-      workflows: {
-        [freeTemplate.id]: { sourceSha256: HASH, apiSha256: HASH },
-        [paidTemplate.id]: { sourceSha256: HASH, apiSha256: HASH },
-        malformed: { sourceSha256: 'not-a-hash', apiSha256: HASH }
+    const options = await getPerformanceTestStarterOptions()
+
+    expect(options.map(({ value }) => value)).toEqual(bundledIds)
+    expect(options.find(({ value }) => value === 'image_z_image_int8')).toEqual({
+      value: 'image_z_image_int8',
+      label: 'Z-Image Int8 Live: Text to Image',
+      description: 'Live description.',
+      recommended: false,
+      data: {
+        modality: 'image',
+        category: 'Image',
+        name: 'Z-Image Int8 Live',
+        task: 'Text to Image',
+        thumbnailUrl: `${REPO}/templates/image_z_image_int8-1.webp`,
+        sizeBytes: 123,
+        apiNode: false
       }
     })
-
-    await expect(getPerformanceTestStarterOptions()).resolves.toEqual([
-      expect.objectContaining({
-        value: freeTemplate.id,
-        label: freeTemplate.title,
-        recommended: true,
-        data: expect.objectContaining({ apiNode: false, modality: 'image', sizeBytes: 42 })
-      })
-    ])
   })
 
-  it('fails closed when the API artifact index is unavailable or malformed', async () => {
-    vi.mocked(fetchJSON).mockRejectedValueOnce(new Error('offline'))
-    await expect(getPerformanceTestStarterOptions()).resolves.toEqual([])
+  it('falls back to the bundled snapshots when the template index is unreachable', async () => {
+    vi.mocked(fetchJSON).mockRejectedValue(new Error('offline'))
 
-    vi.mocked(fetchJSON).mockResolvedValueOnce({ schemaVersion: 2, workflows: {} })
-    await expect(getPerformanceTestStarterOptions()).resolves.toEqual([])
-  })
+    const options = await getPerformanceTestStarterOptions()
+    const snapshot = benchmarkTemplates.templates[0]!
 
-  it('uses API workflow fixtures from assets in development', async () => {
-    vi.stubEnv('NODE_ENV', 'development')
-    vi.mocked(fetchJSON).mockRejectedValue(new Error('No upstream API workflow index'))
-
-    await expect(getPerformanceTestStarterOptions()).resolves.toEqual([
-      expect.objectContaining({ value: 'image_z_image_turbo' })
-    ])
-  })
-
-  it('loads a development API workflow fixture while downloading its editor workflow', async () => {
-    vi.stubEnv('NODE_ENV', 'development')
-    const editorWorkflow = { nodes: [] }
-    vi.mocked(fetchJSON).mockImplementation(async (url) => {
-      if (String(url).includes('/templates/')) return editorWorkflow
-      throw new Error('No upstream API workflow artifact')
-    })
-
-    await expect(loadPerformanceTestStarterArtifacts('image_z_image_turbo')).resolves.toEqual({
-      template: freeTemplate,
-      editorWorkflow,
-      apiWorkflow: expect.objectContaining({
-        '9': expect.objectContaining({ class_type: 'SaveImage' })
-      })
+    expect(options.map(({ value }) => value)).toEqual(bundledIds)
+    expect(options[0]).toMatchObject({
+      value: snapshot.id,
+      label: snapshot.snapshot.title,
+      data: {
+        sizeBytes: snapshot.snapshot.sizeBytes,
+        thumbnailUrl: `${REPO}/templates/${snapshot.id}-1.${snapshot.snapshot.mediaSubtype}`
+      }
     })
   })
 
-  it('loads the editor and paired API artifacts for an eligible template', async () => {
+  it('pairs the parent editor workflow from templates/ with the API prompt from benchmarks/', async () => {
     const editorWorkflow = { nodes: [] }
     const apiWorkflow = { '1': { class_type: 'KSampler', inputs: {} } }
     vi.mocked(fetchJSON).mockImplementation(async (url) => {
-      if (url === performanceTestStarterArtifactUrls.index) {
-        return {
-          schemaVersion: 1,
-          workflows: { [freeTemplate.id]: { sourceSha256: HASH, apiSha256: HASH } }
-        }
-      }
-      if (String(url).includes('/templates/')) return editorWorkflow
-      return apiWorkflow
+      if (url === INDEX_URL) return liveIndex
+      if (url === `${REPO}/templates/image_z_image_int8.json`) return editorWorkflow
+      if (url === `${REPO}/benchmarks/image_z_image_int8.json`) return apiWorkflow
+      throw new Error(`unexpected fetch ${url}`)
     })
-    await expect(loadPerformanceTestStarterArtifacts(freeTemplate.id)).resolves.toEqual({
-      template: freeTemplate,
+
+    await expect(loadPerformanceTestStarterArtifacts('image_z_image_int8')).resolves.toEqual({
+      template: expect.objectContaining({ id: 'image_z_image_int8', sizeBytes: 123 }),
       editorWorkflow,
       apiWorkflow
     })
-    expect(fetchJSON).toHaveBeenCalledWith(
-      `https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main/templates/${freeTemplate.id}.json`,
-      { refresh: true }
+    expect(fetchJSON).toHaveBeenCalledWith(`${REPO}/templates/image_z_image_int8.json`, {
+      refresh: true
+    })
+    expect(fetchJSON).toHaveBeenCalledWith(`${REPO}/benchmarks/image_z_image_int8.json`, {
+      refresh: true
+    })
+  })
+
+  it('reports an unreachable repository separately from an HTTP error', async () => {
+    let artifactError: Error
+    vi.mocked(fetchJSON).mockImplementation(async (url) => {
+      if (url === INDEX_URL) return liveIndex
+      throw artifactError
+    })
+
+    artifactError = new Error('net::ERR_NAME_NOT_RESOLVED')
+    await expect(loadPerformanceTestStarterArtifacts('image_z_image_int8')).rejects.toBeInstanceOf(
+      ExampleWorkflowsUnreachableError
     )
-    expect(fetchJSON).toHaveBeenCalledWith(
-      `${performanceTestStarterArtifactUrls.base}/${freeTemplate.id}.json`,
-      { refresh: true }
+
+    artifactError = new Error('HTTP 404')
+    await expect(loadPerformanceTestStarterArtifacts('image_z_image_int8')).rejects.toThrow(
+      'HTTP 404'
     )
   })
 
-  it('rejects paid, unpaired, and unknown templates before artifact download', async () => {
-    vi.mocked(fetchJSON).mockResolvedValue({
-      schemaVersion: 1,
-      workflows: {
-        [freeTemplate.id]: { sourceSha256: HASH, apiSha256: HASH },
-        [paidTemplate.id]: { sourceSha256: HASH, apiSha256: HASH }
-      }
-    })
+  it('rejects an id outside the benchmark list before downloading anything', async () => {
+    vi.mocked(fetchJSON).mockResolvedValue(liveIndex)
 
-    await expect(loadPerformanceTestStarterArtifacts(paidTemplate.id)).rejects.toThrow(
+    await expect(loadPerformanceTestStarterArtifacts('image_z_image_turbo')).rejects.toThrow(
       'unavailable for performance testing'
     )
-    await expect(loadPerformanceTestStarterArtifacts(unpairedTemplate.id)).rejects.toThrow(
-      'unavailable for performance testing'
-    )
+    expect(fetchJSON).toHaveBeenCalledTimes(1)
+    expect(fetchJSON).toHaveBeenCalledWith(INDEX_URL)
   })
 })
