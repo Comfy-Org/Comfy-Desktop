@@ -6,6 +6,7 @@ export type {
   Installation,
   RunningInstance,
   PerformanceTestBenchmark,
+  ExampleWorkflowDownload,
   PerformanceTestResultValue,
   PerformanceTestResultsSummary,
   PerformanceTestStatistics,

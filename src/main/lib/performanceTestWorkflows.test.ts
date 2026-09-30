@@ -14,6 +14,7 @@ import {
   savePerformanceTestJobsResponse,
   savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
+  storePerformanceTestExampleWorkflow,
   storePerformanceTestWorkflow,
   submitPerformanceTestWorkflow,
   waitForPerformanceTestJobs
@@ -350,6 +351,45 @@ describe('storePerformanceTestWorkflow', () => {
   })
 })
 
+describe('storePerformanceTestExampleWorkflow', () => {
+  it('stores the API prompt alone in a new managed session', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'benchmarks')
+    const apiWorkflow = { '1': { class_type: 'KSampler', inputs: { seed: 7 } } }
+
+    const workflowFilePath = await storePerformanceTestExampleWorkflow(
+      'image_z_image_turbo',
+      apiWorkflow,
+      benchmarksDir
+    )
+
+    expect(path.basename(workflowFilePath)).toBe('image_z_image_turbo.json')
+    await expect(fs.promises.readdir(path.dirname(workflowFilePath))).resolves.toEqual([
+      'image_z_image_turbo.json'
+    ])
+    await expect(fs.promises.readFile(workflowFilePath, 'utf8')).resolves.toBe(
+      JSON.stringify(apiWorkflow)
+    )
+  })
+
+  it('rejects unsafe IDs and invalid API prompts before creating a session', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'benchmarks')
+    const apiWorkflow = { '1': { class_type: 'KSampler', inputs: {} } }
+
+    await expect(
+      storePerformanceTestExampleWorkflow('../escape', apiWorkflow, benchmarksDir)
+    ).rejects.toThrow('Invalid example workflow ID')
+    await expect(
+      storePerformanceTestExampleWorkflow('..', apiWorkflow, benchmarksDir)
+    ).rejects.toThrow('Invalid example workflow ID')
+    await expect(
+      storePerformanceTestExampleWorkflow('safe', { nodes: [] }, benchmarksDir)
+    ).rejects.toThrow('no valid API-format prompt')
+    await expect(fs.promises.stat(benchmarksDir)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
 describe('deletePerformanceTestWorkflow', () => {
   it('deletes a managed performance test workflow copy', async () => {
     const root = await makeTempDir()
@@ -364,6 +404,22 @@ describe('deletePerformanceTestWorkflow', () => {
     await expect(deletePerformanceTestWorkflow(storedPath, benchmarksDir)).resolves.toBe('deleted')
 
     await expect(fs.promises.stat(storedPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('deletes an uncompleted example workflow session', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'benchmarks')
+    const workflowFilePath = await storePerformanceTestExampleWorkflow(
+      'image_z_image_turbo',
+      { '1': { class_type: 'KSampler', inputs: {} } },
+      benchmarksDir
+    )
+    const sessionDir = path.dirname(workflowFilePath)
+
+    await expect(deletePerformanceTestWorkflow(workflowFilePath, benchmarksDir)).resolves.toBe(
+      'deleted'
+    )
+    await expect(fs.promises.stat(sessionDir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('refuses to delete files outside the managed directory', async () => {
@@ -437,6 +493,36 @@ describe('submitPerformanceTestWorkflow', () => {
       })
     }
     expect(JSON.parse(await fs.promises.readFile(storedPath, 'utf8'))).toEqual(workflow)
+  })
+
+  it('submits only the measured runs when warm-up is disabled, and rejects out-of-range warm-ups', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
+    const sourcePath = path.join(root, 'performanceTest.json')
+    await fs.promises.writeFile(
+      sourcePath,
+      JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
+    )
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
+    let requestCount = 0
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      requestCount++
+      return new Response(JSON.stringify({ prompt_id: `prompt-${requestCount}` }))
+    })
+    const submit = (warmupRuns: number) =>
+      submitPerformanceTestWorkflow(
+        storedPath,
+        benchmarksDir,
+        'http://127.0.0.1:8189',
+        2,
+        warmupRuns,
+        fetchMock
+      )
+
+    await expect(submit(0)).resolves.toEqual(['prompt-1', 'prompt-2'])
+    await expect(submit(-1)).rejects.toThrow('between 0 and 5')
+    await expect(submit(6)).rejects.toThrow('between 0 and 5')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('stops submitting when ComfyUI rejects a request', async () => {

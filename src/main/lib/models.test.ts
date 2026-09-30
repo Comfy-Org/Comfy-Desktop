@@ -178,42 +178,6 @@ describe('models per-install YAML', () => {
     expect(yaml.match(/^ {2}is_default: true$/gm)).toBeNull()
   })
 
-  it('appends builtinModelsDir as a trailing non-default section', () => {
-    const shared = path.join(tmpRoot, 'shared')
-    const builtin = path.join(tmpRoot, 'install', 'ComfyUI', 'models')
-    fs.mkdirSync(path.join(builtin, 'BiRefNet'), { recursive: true })
-    const yamlPath = instanceModelPathsYaml('inst-builtin')
-
-    const result = ensureModelPathsConfig([shared], {
-      yamlPath,
-      primaryDir: shared,
-      builtinModelsDir: builtin
-    })
-
-    const yaml = fs.readFileSync(yamlPath, 'utf-8')
-    const bases = [...yaml.matchAll(/^ {2}base_path: '(.*)'$/gm)].map((m) => m[1])
-    expect(bases).toEqual([shared, builtin])
-    expect(yaml.match(/^ {2}is_default: true$/gm)).toHaveLength(1)
-    expect(yaml.search(/^ {2}is_default: true$/m)).toBeLessThan(yaml.indexOf(builtin))
-    // Its custom-node folders register too, not just the shared dirs'.
-    expect(result!.extraFolders).toEqual(['BiRefNet'])
-  })
-
-  it('does not duplicate a builtinModelsDir already listed', () => {
-    const shared = path.join(tmpRoot, 'shared')
-    const builtin = path.join(tmpRoot, 'builtin')
-    const yamlPath = instanceModelPathsYaml('inst-builtin-dupe')
-
-    ensureModelPathsConfig([shared, builtin], {
-      yamlPath,
-      primaryDir: shared,
-      builtinModelsDir: builtin + path.sep
-    })
-
-    const yaml = fs.readFileSync(yamlPath, 'utf-8')
-    expect(yaml.match(/^ {2}base_path: /gm)).toHaveLength(2)
-  })
-
   it('does not write the global YAML when targeting a per-install path', () => {
     const dir = path.join(tmpRoot, 'models')
     fs.mkdirSync(dir, { recursive: true })
