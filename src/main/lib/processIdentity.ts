@@ -31,12 +31,17 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
-function run(cmd: string, args: string[]): Promise<string | null> {
+function run(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
       cmd,
       args,
-      { windowsHide: true, timeout: PROBE_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 },
+      {
+        windowsHide: true,
+        timeout: PROBE_TIMEOUT_MS,
+        maxBuffer: 32 * 1024 * 1024,
+        ...(env ? { env } : {})
+      },
       (err, stdout) => resolve(err ? null : stdout)
     )
   })
@@ -155,7 +160,13 @@ export async function readStartTimes(pids: readonly number[]): Promise<Map<numbe
     for (const row of rows) if (row.created) out.set(row.pid, row.created)
     return out
   }
-  const stdout = await run('ps', ['-o', 'pid=,stat=,lstart=', '-p', want.join(',')])
+  // `lstart` is rendered in the reader's time zone and locale: pinned, so a time-zone or DST
+  // change between the spawn and a later launch does not change the token.
+  const stdout = await run('ps', ['-o', 'pid=,stat=,lstart=', '-p', want.join(',')], {
+    ...process.env,
+    TZ: 'UTC',
+    LC_ALL: 'C'
+  })
   // `ps` exits 1 when none of the pids exist; that is an answer, not a failed probe.
   if (stdout == null) {
     return want.some(isPidAlive) ? null : out
@@ -410,6 +421,23 @@ export async function commandArgvOf(pid: number): Promise<string[] | null> {
   } catch {
     return null
   }
+}
+
+/** The working directory of `pid` (POSIX), to resolve a relative command line; null when it
+ *  cannot be read. */
+export async function processCwdOf(pid: number): Promise<string | null> {
+  if (!Number.isInteger(pid) || pid <= 0) return null
+  if (process.platform === 'linux') {
+    try {
+      return await fs.promises.readlink(`/proc/${pid}/cwd`)
+    } catch {
+      return null
+    }
+  }
+  if (process.platform !== 'darwin') return null
+  const stdout = await run('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'])
+  const line = stdout?.split('\n').find((l) => l.startsWith('n'))
+  return line ? line.slice(1) : null
 }
 
 export interface WinProcessRowWithCommand extends WinProcessRow {

@@ -10,6 +10,7 @@ import {
   groupMembers,
   isPidAlive,
   ownStartTime,
+  processCwdOf,
   processGroupOf,
   readStartTimes,
   descendantsOf,
@@ -1325,11 +1326,26 @@ function rawLineIsInstall(line: string, root: string): boolean {
  */
 export function commandLineIsInstall(
   commandLine: string | readonly string[],
-  installPath: string
+  installPath: string,
+  /** The process's working directory: a relative interpreter or `main.py` resolves against it
+   *  (`./ComfyUI/.venv/bin/python3 -s ComfyUI/main.py`, run from the install). */
+  cwd?: string | null
 ): boolean {
   const root = `${normalizePathForMatch(installPath)}/`
-  if (typeof commandLine !== 'string') return argvIsInstall(commandLine, root)
-  return argvIsInstall(splitCommandLine(commandLine), root) || rawLineIsInstall(commandLine, root)
+  const argv = typeof commandLine === 'string' ? splitCommandLine(commandLine) : commandLine
+  if (argvIsInstall(argv, root)) return true
+  if (cwd && argvIsInstall(resolveRelative(argv, cwd), root)) return true
+  return typeof commandLine === 'string' && rawLineIsInstall(commandLine, root)
+}
+
+/** The interpreter (when given as a path) and the `main.py` argument, made absolute against
+ *  `cwd`. A bare interpreter name is looked up on PATH, not in `cwd`, so it is left alone. */
+function resolveRelative(argv: readonly string[], cwd: string): string[] {
+  const absolute = (a: string): boolean => a.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(a)
+  return argv.map((a, i) => {
+    const pathLike = i === 0 ? /[\\/]/.test(a) : a === 'main.py' || /[\\/]main\.py$/.test(a)
+    return pathLike && !absolute(a) ? path.resolve(cwd, a) : a
+  })
 }
 
 /**
@@ -1343,6 +1359,12 @@ export async function holderIsInstall(pid: number, installPath: string): Promise
   if (argv && commandLineIsInstall(argv, installPath)) return true
   const lines = argv ? [] : await commandLinesOf(pid)
   if (lines.some((line) => commandLineIsInstall(line, installPath))) return true
+  // Started with a relative interpreter or script: resolve it where the process runs.
+  const cwd = await processCwdOf(pid).catch(() => null)
+  if (cwd) {
+    if (argv && commandLineIsInstall(argv, installPath, cwd)) return true
+    if (lines.some((line) => commandLineIsInstall(line, installPath, cwd))) return true
+  }
   // Our own bookkeeping gives the same answer: the recorded child, a recorded survivor, or (POSIX)
   // any member of the recorded child's process group — a helper subprocess whose command line
   // names nothing of the install.

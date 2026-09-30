@@ -1686,13 +1686,26 @@ describe('commandLineIsInstall with an exact argv', () => {
       commandLineIsInstall(['/usr/bin/python3', '/x/main.py', `${root}/ComfyUI/user/a.lock`], root)
     ).toBe(false)
   })
+
+  it('resolves a relative interpreter or main.py against the working directory', () => {
+    const root = '/home/a/My ComfyUI'
+    const venv = ['./ComfyUI/.venv/bin/python3', '-s', 'ComfyUI/main.py']
+    expect(commandLineIsInstall(venv, root)).toBe(false)
+    expect(commandLineIsInstall(venv, root, root)).toBe(true)
+    expect(commandLineIsInstall(['python3', 'main.py'], root, `${root}/ComfyUI`)).toBe(true)
+    // Somewhere else, the same relative command line is another ComfyUI.
+    expect(commandLineIsInstall(venv, root, '/home/a/Other')).toBe(false)
+    // A bare interpreter name comes from PATH, not the working directory.
+    expect(commandLineIsInstall(['python3', '-c', 'x'], root, root)).toBe(false)
+  })
 })
 
 describe.runIf(process.platform === 'linux')('holderIsInstall (real process, spaced path)', () => {
   it.each([
-    ['relative main.py run by the install venv interpreter', true],
-    ['absolute main.py inside the install', false]
-  ])('%s', async (_name, relative) => {
+    ['relative main.py run by the install venv interpreter', 'relative'],
+    ['absolute main.py inside the install', 'absolute'],
+    ['a relative interpreter, started from the install', 'relative-interpreter']
+  ])('%s', async (_name, mode) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'My ComfyUI ('))
     const install = path.join(root, 'Install One')
     fs.mkdirSync(path.join(install, 'ComfyUI'), { recursive: true })
@@ -1700,9 +1713,15 @@ describe.runIf(process.platform === 'linux')('holderIsInstall (real process, spa
     fs.writeFileSync(path.join(install, 'ComfyUI', 'main.py'), 'setTimeout(() => {}, 60000)\n')
     const interpreter = path.join(install, '.venv', 'bin', 'python')
     fs.symlinkSync(process.execPath, interpreter)
-    const child = relative
-      ? spawn(interpreter, [path.join('ComfyUI', 'main.py')], { cwd: install, stdio: 'ignore' })
-      : spawn(process.execPath, [path.join(install, 'ComfyUI', 'main.py')], { stdio: 'ignore' })
+    const child =
+      mode === 'relative'
+        ? spawn(interpreter, [path.join('ComfyUI', 'main.py')], { cwd: install, stdio: 'ignore' })
+        : mode === 'absolute'
+          ? spawn(process.execPath, [path.join(install, 'ComfyUI', 'main.py')], { stdio: 'ignore' })
+          : spawn('./.venv/bin/python', ['-s', path.join('ComfyUI', 'main.py')], {
+              cwd: install,
+              stdio: 'ignore'
+            })
     try {
       await vi.waitFor(async () => {
         const argv = await fs.promises.readFile(`/proc/${child.pid}/cmdline`, 'utf-8')
