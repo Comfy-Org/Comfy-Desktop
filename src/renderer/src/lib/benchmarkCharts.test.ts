@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildSeriesChart } from './benchmarkCharts'
+import { buildSeriesChart, projectY } from './benchmarkCharts'
 
 describe('buildSeriesChart', () => {
   it('returns null when fewer than two finite points survive', () => {
@@ -64,5 +64,28 @@ describe('buildSeriesChart', () => {
     const chart = buildSeriesChart([7, 7, 7], { width: 30, height: 20 })
     expect(chart).not.toBeNull()
     expect(chart!.points.every((point) => Number.isFinite(point.y))).toBe(true)
+  })
+})
+
+describe('projectY', () => {
+  it('projects a reference value onto the chart y-axis (same normalization)', () => {
+    const chart = buildSeriesChart([0, 10], { height: 100, minY: 0, maxY: 10 })!
+    expect(projectY(chart, 0)).toBe(100) // min → bottom
+    expect(projectY(chart, 10)).toBe(0) // max → top
+    expect(projectY(chart, 5)).toBe(50) // midpoint
+  })
+
+  it('clamps values above max to the top and below min to the bottom', () => {
+    const chart = buildSeriesChart([2, 8], { height: 100, minY: 2, maxY: 8 })!
+    expect(projectY(chart, 20)).toBe(0) // above max clamps to top
+    expect(projectY(chart, -5)).toBe(100) // below min clamps to bottom
+  })
+
+  it('does not divide by zero on an all-equal series', () => {
+    const chart = buildSeriesChart([7, 7, 7], { height: 40 })!
+    const y = projectY(chart, 7)
+    expect(Number.isFinite(y)).toBe(true)
+    expect(y).toBeGreaterThanOrEqual(0)
+    expect(y).toBeLessThanOrEqual(40)
   })
 })

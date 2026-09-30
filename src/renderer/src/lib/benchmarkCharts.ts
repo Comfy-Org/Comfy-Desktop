@@ -121,3 +121,19 @@ export function buildSeriesChart(
 
   return { points, path, areaPath, ticks, min: minY, max: maxY, width, height }
 }
+
+/**
+ * Project an arbitrary reference value (e.g. a VRAM ceiling or steady-state line)
+ * onto a built chart's y-axis, using the SAME min/max/height normalization as
+ * `buildSeriesChart`. Returns a clamped, 2-decimal-rounded y within `[0, height]`
+ * so reference lines never escape the view box. Values above `max` clamp to the
+ * top (`0`); values at/below `min` clamp to the bottom (`height`).
+ */
+export function projectY(
+  chart: Pick<SeriesChart, 'min' | 'max' | 'height'>,
+  value: number
+): number {
+  const span = chart.max - chart.min || 1
+  const y = chart.height - ((value - chart.min) / span) * chart.height
+  return round(Math.min(Math.max(y, 0), chart.height))
+}

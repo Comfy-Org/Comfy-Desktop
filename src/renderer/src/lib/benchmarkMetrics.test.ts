@@ -139,6 +139,19 @@ describe('compareToPrevious', () => {
     })
     expect(same.kind).toBe('same')
   })
+  it('shows a delta for two rich runs on the same deviceName (not differentGpu)', () => {
+    // Priors store hardwareName from `deviceName ?? deviceType`. The current run
+    // must key on the SAME field; if it keyed on gpuModel instead, this would
+    // wrongly report `differentGpu` for the same GPU.
+    const deviceName = 'AMD Radeon RX 7900 XTX'
+    const result = compareToPrevious({
+      ...base,
+      hardwareName: deviceName,
+      currentPerImageSeconds: 1.6,
+      priorBenchmarks: [prior({ hardwareName: deviceName, medianJobDurationSeconds: 2 })]
+    })
+    expect(result).toMatchObject({ kind: 'faster', pct: 20, tone: 'positive' })
+  })
 })
 
 describe('memoryRowLabelKey', () => {

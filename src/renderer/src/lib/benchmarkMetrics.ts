@@ -76,7 +76,8 @@ export interface VramPeakView {
   tone: BenchmarkTone
 }
 
-function toGb(mb: number | null | undefined): number | null {
+/** Megabytes → gigabytes rounded to 1 decimal. Null for missing/non-finite input. */
+export function toGb(mb: number | null | undefined): number | null {
   if (mb == null || !Number.isFinite(mb)) return null
   return Math.round((mb / 1024) * 10) / 10
 }

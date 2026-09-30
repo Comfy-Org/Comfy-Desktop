@@ -28,11 +28,12 @@ import {
   compareToPrevious,
   perImageSeconds,
   tierFromHardware,
+  toGb,
   vramPeakView,
   type BenchmarkTone,
   type CompareResult
 } from '../lib/benchmarkMetrics'
-import { buildSeriesChart } from '../lib/benchmarkCharts'
+import { buildSeriesChart, projectY } from '../lib/benchmarkCharts'
 import { emitTelemetryAction } from '../lib/telemetry'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
@@ -327,6 +328,11 @@ const coreNodeTimeline = computed(() => {
     })
 })
 
+// Authoritative peak from core (may exceed any sampled value); drives both the
+// card label AND the peak reference line so the two never contradict each other.
+const vramPeakMb = computed<number | null>(
+  () => coreBenchmark.value?.resources.peak.vramUsedMb ?? null
+)
 const vramChart = computed(() => {
   const series = coreBenchmark.value?.resources.series ?? []
   if (series.length === 0) return null
@@ -336,21 +342,23 @@ const vramChart = computed(() => {
   if (finite.length < 2) return null
   const ceilingMb = coreBenchmark.value?.device.totalVramMb ?? null
   const dataMax = Math.max(...finite)
-  const maxY = ceilingMb != null && ceilingMb > dataMax ? ceilingMb : undefined
+  // Raise the y-axis top to fit the ceiling AND the authoritative peak, so the
+  // peak reference line renders at its true height instead of clipping.
+  const top = Math.max(dataMax, ceilingMb ?? dataMax, vramPeakMb.value ?? dataMax)
+  const maxY = top > dataMax ? top : undefined
   return buildSeriesChart(values, { width: 480, height: 120, xValues, minY: 0, maxY, tickCount: 0 })
-})
-const vramPeakPoint = computed(() => {
-  const chart = vramChart.value
-  if (!chart) return null
-  return chart.points.reduce((best, point) => (point.value > best.value ? point : best))
 })
 const vramCeilingGb = computed<number | null>(() => toGb(coreBenchmark.value?.device.totalVramMb))
 const vramCeilingY = computed<number | null>(() => {
   const chart = vramChart.value
   const ceilingMb = coreBenchmark.value?.device.totalVramMb
   if (!chart || ceilingMb == null) return null
-  const span = chart.max - chart.min || 1
-  return clampY(chart.height - ((ceilingMb - chart.min) / span) * chart.height, chart.height)
+  return projectY(chart, ceilingMb)
+})
+const vramPeakY = computed<number | null>(() => {
+  const chart = vramChart.value
+  if (!chart || vramPeakMb.value == null) return null
+  return projectY(chart, vramPeakMb.value)
 })
 const vramBaselineGb = computed<number | null>(() =>
   toGb(coreBenchmark.value?.device.baseline.vramUsedMb)
@@ -366,8 +374,7 @@ const steadyLineY = computed<number | null>(() => {
   const chart = stepChart.value
   const steady = steadyItPerS.value
   if (!chart || steady == null) return null
-  const span = chart.max - chart.min || 1
-  return clampY(chart.height - ((steady - chart.min) / span) * chart.height, chart.height)
+  return projectY(chart, steady)
 })
 
 const powerChart = computed(() => {
@@ -391,11 +398,11 @@ const compareResult = computed<CompareResult | null>(() => {
   if (!summary) return null
   const count = heroImageCount.value ?? 0
   const imagesPerRun = count > 0 ? count : 1
-  const hardwareName =
-    coreBenchmark.value?.device.gpuModel ??
-    summary.hardware?.deviceName ??
-    summary.hardware?.deviceType ??
-    null
+  // Key on the SAME field priors are stored under (see `toPerformanceTestBenchmark`
+  // in performanceTestWorkflows.ts) so both sides of the match come from one
+  // producer — otherwise rich runs compare gpuModel vs deviceName and falsely
+  // report `differentGpu` for the same GPU (esp. AMD/DirectML/multi-GPU).
+  const hardwareName = summary.hardware?.deviceName ?? summary.hardware?.deviceType ?? null
   return compareToPrevious({
     currentPerImageSeconds: perImageSeconds(medianSeconds.value, imagesPerRun),
     imagesPerRun,
@@ -447,13 +454,6 @@ const compareView = computed(() => {
   }
 })
 
-function toGb(mb: number | null | undefined): number | null {
-  if (mb == null || !Number.isFinite(mb)) return null
-  return Math.round((mb / 1024) * 10) / 10
-}
-function clampY(value: number, height: number): number {
-  return Math.round(Math.min(Math.max(value, 0), height) * 100) / 100
-}
 function toModality(value: unknown): BenchmarkModality | null {
   return value === 'image' || value === 'video' || value === 'audio' ? value : null
 }
@@ -844,7 +844,7 @@ function formatDuration(seconds: number): string {
 }
 
 function formatMemory(megabytes: number): string {
-  return `${(megabytes / 1024).toFixed(1)} GB`
+  return `${(toGb(megabytes) ?? 0).toFixed(1)} GB`
 }
 
 function formatOperatingSystem(info: PerformanceTestResultsSummary['systemInfo']): string {
@@ -1412,12 +1412,13 @@ watch(performanceTestLogs, async () => {
                     />
                     <path class="benchmark-graph__area" :d="vramChart.areaPath" />
                     <path class="benchmark-graph__line" :d="vramChart.path" />
-                    <circle
-                      v-if="vramPeakPoint"
+                    <line
+                      v-if="vramPeakY != null"
                       class="benchmark-graph__peak"
-                      :cx="vramPeakPoint.x"
-                      :cy="vramPeakPoint.y"
-                      r="3"
+                      x1="0"
+                      :x2="vramChart.width"
+                      :y1="vramPeakY"
+                      :y2="vramPeakY"
                     />
                   </svg>
                   <p class="benchmark-graph__caption">
@@ -1487,7 +1488,7 @@ watch(performanceTestLogs, async () => {
                     </header>
                     <svg
                       class="benchmark-graph"
-                      viewBox="0 0 480 96"
+                      :viewBox="`0 0 ${(powerChart ?? tempChart)!.width} ${(powerChart ?? tempChart)!.height}`"
                       role="img"
                       :aria-label="t('performanceTest.powerTempTitle')"
                     >
@@ -2453,9 +2454,10 @@ watch(performanceTestLogs, async () => {
   stroke: none;
 }
 
+/* Muted so the yellow area fill is the card's single accent (design §8). */
 .benchmark-graph__line {
   fill: none;
-  stroke: var(--comfy-yellow);
+  stroke: var(--neutral-400);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
@@ -2480,10 +2482,13 @@ watch(performanceTestLogs, async () => {
   vector-effect: non-scaling-stroke;
 }
 
+/* Authoritative peak drawn as a neutral reference line at its true height, so it
+   matches the "peak X GB" label instead of a dot sitting below it. */
 .benchmark-graph__peak {
-  fill: var(--comfy-yellow);
-  stroke: var(--surface-recessed);
+  fill: none;
+  stroke: var(--neutral-500);
   stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 .benchmark-graph__dot {
