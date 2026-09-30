@@ -147,10 +147,12 @@ describe('startTokenToEpochMs', () => {
 })
 
 describe.runIf(process.platform === 'linux')('startTokenToEpochMs (this process)', () => {
-  it('puts this process start within a second of what node reports', async () => {
+  it('puts this process start near what node reports', async () => {
     const token = (await readStartTimes([process.pid]))!.get(process.pid)!
     const expected = Date.now() - process.uptime() * 1000
-    expect(Math.abs(startTokenToEpochMs(token)! - expected)).toBeLessThan(2_000)
+    // Both measure the same start, so load does not move this: the slack covers the kernel's
+    // whole-second boot time and node's own startup. A unit mistake would be off by far more.
+    expect(Math.abs(startTokenToEpochMs(token)! - expected)).toBeLessThan(5_000)
   })
 })
 
