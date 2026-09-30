@@ -248,8 +248,8 @@ export async function resolveCoreCommitState(
     ? () => {}
     : (message: string, err: unknown) => console.warn(message, err)
   const budget: ResolveBudget = { fetches: 0, stopped: false, fetch: options.fetch !== false, log }
-  // Set when the loop itself notices the deadline or the abort between two SHAs, which can
-  // settle `work` before the race's own timer or abort listener fires.
+  // Set when the loop itself notices the deadline or the abort between two SHAs (which can settle
+  // `work` before the race's own timer or abort listener fires), or when a check throws.
   let cutShort = false
   const work = (async () => {
     for (const [index, raw] of shas.entries()) {
@@ -273,6 +273,9 @@ export async function resolveCoreCommitState(
         related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
       } catch (err) {
         warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+        // A thrown check is a transient failure, not an answer about the commits: report the
+        // resolution as incomplete rather than as a definite "unresolved".
+        cutShort = true
       }
       if (related === false && grafts?.length !== 0) {
         const provable =

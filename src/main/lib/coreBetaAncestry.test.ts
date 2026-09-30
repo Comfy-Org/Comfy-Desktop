@@ -690,6 +690,41 @@ describe('resolveCoreCommitState', () => {
       }
     })
 
+    it('reports a resolution with a failing git call as incomplete', async () => {
+      git.mergeBaseRejects = true
+      const warns = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const incomplete = vi.fn()
+        const state = await resolveCoreCommitState(
+          REPO,
+          { kind: 'head', commit: HEAD },
+          [LOWER],
+          undefined,
+          { ...PREVIEW, onIncomplete: incomplete }
+        )
+        expect(state.ancestry.has(LOWER)).toBe(false)
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        git.mergeBaseRejects = false
+        warns.mockRestore()
+      }
+    })
+
+    it('does not report a SHA that is merely unprovable as incomplete', async () => {
+      git.findMergeBase.mockResolvedValue(undefined)
+      git.revParseRef.mockResolvedValue(undefined)
+      const incomplete = vi.fn()
+      const state = await resolveCoreCommitState(
+        REPO,
+        { kind: 'head', commit: HEAD },
+        [UPPER],
+        undefined,
+        { ...PREVIEW, onIncomplete: incomplete }
+      )
+      expect(state.ancestry.has(UPPER)).toBe(false)
+      expect(incomplete).not.toHaveBeenCalled()
+    })
+
     it('keeps a failing git call out of the log when quiet, and in it otherwise', async () => {
       const ONLY_HERE = '5e'.repeat(20)
       git.mergeBaseRejects = true
