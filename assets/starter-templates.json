@@ -150,12 +150,12 @@
       }
     },
     {
-      "id": "audio_stable_audio_example",
+      "id": "audio_yue2_text2music",
       "modality": "audio",
       "snapshot": {
-        "title": "Stable Audio 1.0: Text to Audio",
-        "description": "Generate audio from text prompts using Stable Audio.",
-        "sizeBytes": 5690831667,
+        "title": "YuE2: Text to Music",
+        "description": "Generate complete songs from a music style and lyrics with YuE2. Use symbolic music planning to create structured melodies and harmonies, then turn them into full songs with vocals and instrumental accompaniment.",
+        "sizeBytes": 3972844749,
         "mediaSubtype": "webp"
       }
     },
