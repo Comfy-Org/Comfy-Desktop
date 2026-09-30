@@ -909,8 +909,9 @@ export interface CoreBenchmarkSummary {
     cfg: number | null
     denoise: number | null
     seed: number | null
-    /** All sampler names the workflow used, when more than one KSampler ran. */
-    samplers: string[]
+    /** Per-sampler detail for every KSampler-like node the workflow ran. Empty on
+     *  a v1 capture (the field did not exist) or when core emitted no samplers. */
+    samplers: CoreBenchmarkSampler[]
   }
   device: {
     backend: string | null
@@ -1008,6 +1009,18 @@ export interface CoreBenchmarkNode {
   nodeId: string | null
   classType: string | null
   elapsedMs: number | null
+}
+
+/** One sampler node's parameters, as emitted per-sampler by core (schema v2+). */
+export interface CoreBenchmarkSampler {
+  nodeId: string | null
+  classType: string | null
+  steps: number | null
+  sampler: string | null
+  scheduler: string | null
+  cfg: number | null
+  denoise: number | null
+  seed: number | null
 }
 
 export interface CoreBenchmarkResourceSample {

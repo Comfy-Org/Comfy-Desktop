@@ -27,13 +27,16 @@ import type { InstallationRecord } from '../installations'
 import type {
   CoreBenchmarkNode,
   CoreBenchmarkResourceSample,
+  CoreBenchmarkSampler,
   CoreBenchmarkSummary
 } from '../../types/ipc'
 
 /** Finite number or null. Rejects NaN/Infinity/strings so the UI never renders junk. */
-/** Minimal utf8 file-reader surface, so tests can inject a simple fake. */
+/** Minimal FS surface (utf8 read + best-effort delete), so tests can inject a fake. */
 export interface CaptureFileReader {
   readFile: (filePath: string, encoding: 'utf8') => Promise<string>
+  /** Remove a capture file once it's been folded into results.json (best-effort). */
+  unlink?: (filePath: string) => Promise<void>
 }
 
 function num(value: unknown): number | null {
@@ -104,10 +107,35 @@ function mapPerStep(value: unknown): (number | null)[] {
   return value.map((entry) => num(entry))
 }
 
-/** Coerce a JSON array to a string[], dropping non-string entries. */
-function strArray(value: unknown): string[] {
+/**
+ * Map core's per-sampler objects into typed sampler detail. Core emits `samplers`
+ * as an array of objects ({node_id, class_type, steps, sampler, scheduler, cfg,
+ * denoise, seed}); non-object entries are dropped. Mirrors `mapNodes`.
+ */
+function mapSamplers(value: unknown): CoreBenchmarkSampler[] {
   if (!Array.isArray(value)) return []
-  return value.filter((entry): entry is string => typeof entry === 'string')
+  return value.flatMap((entry): CoreBenchmarkSampler[] => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
+    const sampler = entry as Record<string, unknown>
+    return [
+      {
+        // node_id may arrive as a number in some graphs; coerce to string.
+        nodeId:
+          typeof sampler.node_id === 'string'
+            ? sampler.node_id
+            : typeof sampler.node_id === 'number'
+              ? String(sampler.node_id)
+              : null,
+        classType: str(sampler.class_type),
+        steps: num(sampler.steps),
+        sampler: str(sampler.sampler),
+        scheduler: str(sampler.scheduler),
+        cfg: num(sampler.cfg),
+        denoise: num(sampler.denoise),
+        seed: num(sampler.seed)
+      }
+    ]
+  })
 }
 
 /**
@@ -159,6 +187,10 @@ export function mapCoreBenchmarkCapture(
   // else (a stray JSON file, a future incompatible schema) is ignored so we degrade
   // to the `/system_stats` fallback rather than render garbage.
   const knownSchema = schemaVersion === 1 || schemaVersion === 2
+  // A version we don't understand (e.g. a future v3) is rejected outright — even when
+  // it self-identifies as `comfyui-core` — because parsing it with v2 assumptions would
+  // silently mis-read a breaking layout. Fall back to `/system_stats` instead.
+  if (schemaVersion != null && !knownSchema) return null
   if (!knownSchema && collectorId !== 'comfyui-core') return null
 
   const run = asRecord(root.run)
@@ -197,7 +229,7 @@ export function mapCoreBenchmarkCapture(
       cfg: num(workflow.cfg),
       denoise: num(workflow.denoise),
       seed: num(workflow.seed),
-      samplers: strArray(workflow.samplers)
+      samplers: mapSamplers(workflow.samplers)
     },
     device: {
       backend: str(device.backend),
@@ -220,7 +252,11 @@ export function mapCoreBenchmarkCapture(
       computeDtype: str(device.compute_dtype),
       attentionImpl: str(device.attention_impl),
       cudaVersion: str(device.cuda_version),
-      cudnnVersion: str(device.cudnn_version),
+      // cudnn_version arrives as an int (e.g. 90100) — coerce like compute_capability.
+      cudnnVersion:
+        typeof device.cudnn_version === 'number'
+          ? String(device.cudnn_version)
+          : str(device.cudnn_version),
       // compute_capability may arrive as a number (9.0) or string ("9.0").
       computeCapability:
         typeof device.compute_capability === 'number'
@@ -347,7 +383,22 @@ export async function readRepresentativeCoreBenchmark(
 ): Promise<CoreBenchmarkSummary | null> {
   const captures = (
     await Promise.all(
-      measuredPromptIds.map((id) => readCoreBenchmarkCapture(outputDir, id, fsImpl))
+      measuredPromptIds.map(async (id) => {
+        const capture = await readCoreBenchmarkCapture(outputDir, id, fsImpl)
+        // The per-run capture file lives in the (shared) output dir and is disposable
+        // once we've folded it into results.json — delete it to avoid unbounded disk
+        // growth. Only files we actually read + mapped this run (capture !== null);
+        // read/parse failures are left on disk for debugging. Best-effort: swallow
+        // errors so a failed unlink never breaks the results summary.
+        if (capture !== null && fsImpl.unlink) {
+          try {
+            await fsImpl.unlink(coreBenchmarkCapturePath(outputDir, id))
+          } catch {
+            // ignore — a leftover file is harmless; a throw here is not.
+          }
+        }
+        return capture
+      })
     )
   ).filter((capture): capture is CoreBenchmarkSummary => capture !== null)
   return pickRepresentativeCapture(captures)

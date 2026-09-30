@@ -149,7 +149,18 @@ const cudaCaptureV2 = {
     cfg: 1.0,
     denoise: 1.0,
     seed: 42,
-    samplers: ['euler']
+    samplers: [
+      {
+        node_id: 3,
+        class_type: 'KSampler',
+        steps: 8,
+        sampler: 'euler',
+        scheduler: 'simple',
+        cfg: 1.0,
+        denoise: 1.0,
+        seed: 42
+      }
+    ]
   },
   device: {
     backend: 'cuda',
@@ -294,6 +305,21 @@ describe('mapCoreBenchmarkCapture', () => {
     expect(mapCoreBenchmarkCapture({ foo: 'bar' }, 'p')).toBeNull()
   })
 
+  it('rejects a future schema even when it self-identifies as comfyui-core', () => {
+    // m3: a breaking future schema (v3) must NOT be parsed with v2 assumptions, even
+    // when collector_id matches — we degrade to the /system_stats fallback instead.
+    expect(
+      mapCoreBenchmarkCapture(
+        { ...cudaCaptureV2, capture_schema_version: 3, collector_id: 'comfyui-core' },
+        'prompt-v3'
+      )
+    ).toBeNull()
+    // A known schema (v2) still parses even without a collector id.
+    expect(
+      mapCoreBenchmarkCapture({ capture_schema_version: 2 }, 'prompt-v2-nocollector')
+    ).not.toBeNull()
+  })
+
   it('back-compat: a v1 capture still maps, with v2-only fields null', () => {
     const summary = mapCoreBenchmarkCapture(cudaCapture, 'prompt-v1')
     expect(summary).not.toBeNull()
@@ -329,7 +355,19 @@ describe('mapCoreBenchmarkCapture', () => {
     expect(summary!.workflow.resolution).toEqual({ width: 1024, height: 1024 })
     expect(summary!.workflow.steps).toBe(8)
     expect(summary!.workflow.sampler).toBe('euler')
-    expect(summary!.workflow.samplers).toEqual(['euler'])
+    // samplers: per-sampler objects map through (numeric node_id coerced to string).
+    expect(summary!.workflow.samplers).toEqual([
+      {
+        nodeId: '3',
+        classType: 'KSampler',
+        steps: 8,
+        sampler: 'euler',
+        scheduler: 'simple',
+        cfg: 1.0,
+        denoise: 1.0,
+        seed: 42
+      }
+    ])
     // device v2
     expect(summary!.device.vramState).toBe('NORMAL_VRAM')
     expect(summary!.device.offloaded).toBe(false)
@@ -337,6 +375,8 @@ describe('mapCoreBenchmarkCapture', () => {
     expect(summary!.device.computeDtype).toBe('bf16')
     expect(summary!.device.attentionImpl).toBe('sage')
     expect(summary!.device.cudaVersion).toBe('12.4')
+    // cudnn_version arrives as an int (90100) — must coerce to string, not drop to null.
+    expect(summary!.device.cudnnVersion).toBe('90100')
     // numeric compute_capability coerced to string.
     expect(summary!.device.computeCapability).toBe('9')
     expect(summary!.device.pcieGen).toBe(5)
@@ -527,5 +567,51 @@ describe('readRepresentativeCoreBenchmark', () => {
       readFile
     })
     expect(summary!.durations.totalRunMs).toBe(3000)
+  })
+
+  it('unlinks each capture file it successfully read (B1: no unbounded disk growth)', async () => {
+    const readFile = vi.fn().mockResolvedValue(JSON.stringify(cudaCapture))
+    const unlink = vi.fn().mockResolvedValue(undefined)
+    await readRepresentativeCoreBenchmark('/out', ['a', 'b'], { readFile, unlink })
+    expect(unlink).toHaveBeenCalledTimes(2)
+    expect(unlink).toHaveBeenCalledWith(expect.stringContaining('a.json'))
+    expect(unlink).toHaveBeenCalledWith(expect.stringContaining('b.json'))
+  })
+
+  it('does NOT unlink a capture it failed to read (left on disk for debugging)', async () => {
+    // 'good' reads + maps; 'bad' is missing (ENOENT) and must be left in place.
+    const readFile = vi.fn(async (filePath: unknown) => {
+      if (String(filePath).includes('bad')) {
+        throw Object.assign(new Error('nope'), { code: 'ENOENT' })
+      }
+      return JSON.stringify(cudaCapture)
+    })
+    const unlink = vi.fn().mockResolvedValue(undefined)
+    await readRepresentativeCoreBenchmark('/out', ['good', 'bad'], { readFile, unlink })
+    expect(unlink).toHaveBeenCalledTimes(1)
+    expect(unlink).toHaveBeenCalledWith(expect.stringContaining('good.json'))
+    expect(unlink).not.toHaveBeenCalledWith(expect.stringContaining('bad.json'))
+  })
+
+  it('does NOT unlink a file that read but failed to map (future schema left on disk)', async () => {
+    // File is present + valid JSON but a future schema -> mapCoreBenchmarkCapture returns
+    // null. Treated as a read-failure for cleanup purposes: leave it for debugging.
+    const readFile = vi
+      .fn()
+      .mockResolvedValue(
+        JSON.stringify({ capture_schema_version: 3, collector_id: 'comfyui-core' })
+      )
+    const unlink = vi.fn().mockResolvedValue(undefined)
+    const summary = await readRepresentativeCoreBenchmark('/out', ['future'], { readFile, unlink })
+    expect(summary).toBeNull()
+    expect(unlink).not.toHaveBeenCalled()
+  })
+
+  it('swallows unlink errors — a failed delete never breaks the results summary', async () => {
+    const readFile = vi.fn().mockResolvedValue(JSON.stringify(cudaCapture))
+    const unlink = vi.fn().mockRejectedValue(new Error('EPERM'))
+    const summary = await readRepresentativeCoreBenchmark('/out', ['a'], { readFile, unlink })
+    expect(summary).not.toBeNull()
+    expect(unlink).toHaveBeenCalledTimes(1)
   })
 })
