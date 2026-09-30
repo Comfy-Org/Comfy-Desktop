@@ -92,6 +92,19 @@ describe('BetaArgsPill', () => {
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })
 
+  it('hides a tooltip already showing when the popover opens', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountPill(ONE)
+    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
+    vi.advanceTimersByTime(200)
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
+
+    await pill(wrapper).trigger('click')
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
+
   it('closes on a second click', async () => {
     const wrapper = mountPill(ONE)
     await pill(wrapper).trigger('click')

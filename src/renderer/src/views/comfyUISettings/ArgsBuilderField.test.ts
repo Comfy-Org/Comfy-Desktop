@@ -196,3 +196,48 @@ describe('ArgsBuilderField — beta args pill', () => {
     expect((wrapper.find('input').element as HTMLInputElement).value).toBe('--lowvram')
   })
 })
+
+describe('ArgsBuilderField — trailing buttons stay out of autocomplete', () => {
+  const BETA = [{ arg: '--enable-assets', name: 'Asset browser' }]
+
+  async function typePartialFlag(wrapper: VueWrapper): Promise<void> {
+    const input = wrapper.get('input')
+    await input.trigger('focusin')
+    await input.setValue('--lo')
+    await flushPromises()
+    expect(wrapper.find('.args-raw-input-ac').exists()).toBe(true)
+  }
+
+  it('Enter on the beta pill does not complete a partially typed flag', async () => {
+    const wrapper = await mountField({ field: { ...FIELD, betaArgs: BETA } })
+    await typePartialFlag(wrapper)
+    const pill = wrapper.get('button.beta-args-pill')
+    await wrapper.get('input').trigger('focusout')
+    await pill.trigger('focusin')
+    await pill.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    // Typing commits '--lo' itself; what must never be committed is the completed flag.
+    const committed = (wrapper.emitted('update') ?? []).map(([, value]) => value)
+    expect(committed.some((value) => String(value).includes('--lowvram'))).toBe(false)
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('--lo')
+  })
+
+  it('moving focus to a trailing button closes the suggestions', async () => {
+    const wrapper = await mountField({ field: { ...FIELD, betaArgs: BETA } })
+    await typePartialFlag(wrapper)
+    await wrapper.get('input').trigger('focusout')
+    await wrapper.get('button.beta-args-pill').trigger('focusin')
+    await flushPromises()
+    expect(wrapper.find('.args-raw-input-ac').exists()).toBe(false)
+  })
+
+  it('Enter in the text input still accepts the highlighted suggestion', async () => {
+    const wrapper = await mountField()
+    await typePartialFlag(wrapper)
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const committed = (wrapper.emitted('update') ?? []).map(([, value]) => value)
+    expect(committed.some((value) => String(value).includes('--lowvram'))).toBe(true)
+  })
+})

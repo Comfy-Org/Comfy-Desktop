@@ -1736,19 +1736,6 @@ export interface TitlePopupHostBindings {
   broadcastPickerSnapshot: () => void
 }
 
-/** Open the Global Settings popup for a specific host window. Shared
- *  by the hamburger menu's `id === 'settings'` handler and the panel
- *  renderer's `comfy-titlepopup:open-global-settings` IPC — both end up
- *  doing the same thing: build a desktop-only snapshot and open the
- *  centred popup.
- *
- *  `parentEntry` is the host window's `ComfyWindowEntry`. Bail if the
- *  window is destroyed.
- *
- *  `titleBarSender` is forwarded as-is to `openTitlePopup` for the
- *  optional title-bar handshake (focus-return on dismiss). Callers
- *  that aren't the title bar pass the host's title-bar WebContents,
- *  which is the same value the hamburger handler uses. */
 /** Validate an `open-global-settings` payload from a renderer. Field ids are renderer-side
  *  identifiers, so the highlight is forwarded as an opaque string rather than validated against a
  *  list main would have to keep in sync; an id matching no row simply finds nothing to flash. */
@@ -1769,6 +1756,19 @@ export function parseGlobalSettingsTarget(
   return { initialTab, highlightFieldId }
 }
 
+/** Open the Global Settings popup for a specific host window. Shared
+ *  by the hamburger menu's `id === 'settings'` handler, the panel
+ *  renderer's `comfy-titlepopup:open-global-settings` IPC and the
+ *  instance picker's settings deep links — all end up doing the same thing: build a desktop-only snapshot and open the
+ *  centred popup.
+ *
+ *  `parentEntry` is the host window's `ComfyWindowEntry`. Bail if the
+ *  window is destroyed.
+ *
+ *  `titleBarSender` is forwarded as-is to `openTitlePopup` for the
+ *  optional title-bar handshake (focus-return on dismiss). Callers
+ *  that aren't the title bar pass the host's title-bar WebContents,
+ *  which is the same value the hamburger handler uses. */
 function openGlobalSettingsForHost(
   parentEntry: ComfyWindowEntry,
   parentEntryId: number,
