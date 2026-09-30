@@ -132,7 +132,7 @@
     "betaArgsAriaLabel": "已添加 {n} 个 Beta 参数，查看详情 | 已添加 {n} 个 Beta 参数，查看详情",
     "betaArgsAriaLabelNext": "下次启动时将添加 {n} 个 Beta 参数，查看详情 | 下次启动时将添加 {n} 个 Beta 参数，查看详情",
     "betaArgsHeading": "由 Beta 功能在启动时添加",
-    "betaArgsHeadingNext": "下次启动时由 Beta 功能添加",
+    "betaArgsHeadingNext": "下次启动的 Beta 参数",
     "betaArgsUnnamed": "Beta 功能",
     "betaArgsManage": "管理 Beta 功能",
     "argsRawHint": "可直接编辑，或在下方逐项切换。",

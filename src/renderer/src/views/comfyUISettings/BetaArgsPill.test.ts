@@ -79,7 +79,7 @@ describe('BetaArgsPill', () => {
     )
     await wrapper.find('.tooltip-wrap').trigger('mouseleave')
     await pill(wrapper).trigger('click')
-    expect(popover(wrapper).text()).toContain('Will be added at next launch by beta features')
+    expect(popover(wrapper).text()).toContain('Beta args for the next launch')
   })
 
   it("defaults to the running session's copy", async () => {
@@ -156,6 +156,28 @@ describe('BetaArgsPill', () => {
       expect(hostEscape).not.toHaveBeenCalled()
     } finally {
       window.removeEventListener('keydown', hostEscape)
+    }
+  })
+
+  it('closes when keyboard focus leaves the pill and its popover', async () => {
+    const outside = document.createElement('input')
+    document.body.appendChild(outside)
+    try {
+      const wrapper = mountPill(ONE)
+      await pill(wrapper).trigger('click')
+      const manage = popover(wrapper).find('.beta-args-manage').element
+
+      // Within the component (pill -> Manage): stays open.
+      await pill(wrapper).trigger('focusout', { relatedTarget: manage })
+      expect(popover(wrapper).exists()).toBe(true)
+
+      // Shift+Tab back into the args input: closes.
+      await popover(wrapper)
+        .find('.beta-args-manage')
+        .trigger('focusout', { relatedTarget: outside })
+      expect(popover(wrapper).exists()).toBe(false)
+    } finally {
+      outside.remove()
     }
   })
 

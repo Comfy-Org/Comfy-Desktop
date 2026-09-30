@@ -696,6 +696,25 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     scope.stop()
   })
 
+  it('clears a pending restart when a restart replaces the session without a stopped edge', async () => {
+    const { composable, scope } = await mountWithField('a', 'window')
+    const store = useSessionStore()
+    store.runningInstances.set('a', {
+      installationId: 'a',
+      installationName: 'A',
+      mode: 'standalone',
+      startedAt: 1
+    })
+    await nextTick()
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+
+    store.runningInstances.set('a', { ...store.runningInstances.get('a')!, startedAt: 2 })
+    await nextTick()
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(false)
+    scope.stop()
+  })
+
   it('writes the new value into sections optimistically before the IPC resolves', async () => {
     // The optimistic write must land on `sections.value` regardless of
     // when main responds, so hold the IPC open.

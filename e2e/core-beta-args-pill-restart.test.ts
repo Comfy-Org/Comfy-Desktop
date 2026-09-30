@@ -1,8 +1,8 @@
 /**
  * Beta-args pill across a Restart from the instance picker.
  *
- * A restart replaces the session, but the stop and relaunch can reach the picker as one
- * running -> running change. The pill is session-derived, so it must follow the new session:
+ * A restart replaces the session, but the picker that issued it is hidden for the restart and gets no
+ * snapshots meanwhile, so on reopen it sees one running -> running change. The pill is session-derived, so it must follow the new session:
  * here the user adds the granted arg themselves, which overrides the grant, and after the restart
  * the pill must be gone. (It went stale before the picker snapshot carried session identity.)
  *
@@ -28,6 +28,7 @@ const INSTALL_ID = 'inst-beta-args-restart'
 const INSTALL_NAME = 'Restart Beta Fixture'
 const ARGS_FIELD = '[data-field-id="launchArgs"]'
 const PILL = `${ARGS_FIELD} button.beta-args-pill`
+const RESTART_TAG = `${ARGS_FIELD} .settings-v2-restart-tag`
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
 
 let ctx: AppContext
@@ -115,7 +116,9 @@ test('the pill follows the new session after a Restart that drops a grant @linux
       input.dispatchEvent(new Event('change', { bubbles: true }))
     })()`,
   )
-  // Still the running session's grant until the restart.
+  // The edit has landed once the field asks for a restart; the pill still shows the running
+  // session's grant, which the edit cannot take back before the restart.
+  await popup.waitForVisible(RESTART_TAG, { timeout: 10_000 })
   expect(await pillLabel(popup)).toBe('1 beta argument added, show details')
 
   await expect
@@ -142,5 +145,10 @@ test('the pill follows the new session after a Restart that drops a grant @linux
   await popup.waitFor(async () => (await pillLabel(popup)) === null, {
     timeout: 10_000,
     message: "the pill still showed the previous session's grant after the restart",
+  })
+  // The new session consumed the edit, so nothing is pending any more.
+  await popup.waitFor(async () => !(await popup.exists(RESTART_TAG)), {
+    timeout: 10_000,
+    message: '"Restart to apply" was still shown after the restart',
   })
 })

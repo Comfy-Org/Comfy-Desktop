@@ -741,8 +741,13 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
       // session-derived rows - the port, the beta-args pill - belong to the old session.
       return `running:${sessionStore.runningInstances.get(inst.id)?.startedAt ?? ''}`
     },
-    () => {
-      if (!toValue(opts.installation)) return
+    (session, previous) => {
+      const inst = toValue(opts.installation)
+      if (!inst) return
+      // A new session replacing a running one consumed the edited values, so nothing is pending
+      // any more. The stop/launching edges below would clear this, but a restart seen as
+      // running -> running shows neither (e.g. a picker that was hidden for the restart).
+      if (session && previous && session !== previous) clearRestartAndErrors(inst.id)
       // Refetch so the "Running details" port row and the beta-args pill (sourced from main)
       // follow the session: appear on launch, clear on stop, renew on restart. Race-safe via
       // reload()'s requestSeq.

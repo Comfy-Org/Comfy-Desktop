@@ -223,6 +223,15 @@ describe('GlobalSettingsView', () => {
       expect(row('betaFeaturesEnabled')?.classList.contains('gs-field-flash')).toBe(true)
     })
 
+    it("moves keyboard focus to the flashed field's control", async () => {
+      installMockBridge()
+      mountView(makeSnapshot({ initialTab: 'general', highlightFieldId: 'betaFeaturesEnabled' }))
+      await flushPromises()
+      const control = row('betaFeaturesEnabled')?.querySelector('button')
+      expect(control).toBeTruthy()
+      expect(document.activeElement).toBe(control)
+    })
+
     it('flashes nothing when the snapshot names no field', async () => {
       installMockBridge()
       mountView(makeSnapshot({ initialTab: 'general' }))

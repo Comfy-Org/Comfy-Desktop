@@ -37,7 +37,11 @@ vi.mock('./git', () => ({
 vi.mock('./paths', () => ({ configDir: () => git.configDir }))
 vi.mock('./telemetry', () => ({ getOpsFlagResult: vi.fn() }))
 
-import { _backgroundFetchesForTest, resolveCoreCommitState } from './coreBetaAncestry'
+import {
+  _backgroundFetchesForTest,
+  _resetProvenRelationsForTest,
+  resolveCoreCommitState
+} from './coreBetaAncestry'
 import { NO_CORE_COMMITS } from './coreBetaGrants'
 
 const REPO = '/installs/comfy/ComfyUI'
@@ -55,6 +59,7 @@ beforeEach(() => {
   git.presence = undefined
   git.noCommonAncestor = false
   git.gitDirReads = 0
+  _resetProvenRelationsForTest()
   git.revParseRef.mockReset()
   git.revParseRef.mockImplementation(async (_repo, ref) =>
     ref === `${HEAD}^{commit}` ? HEAD : undefined
@@ -540,6 +545,65 @@ describe('resolveCoreCommitState', () => {
         expect(incomplete).toHaveBeenCalledOnce()
       } finally {
         clock.mockRestore()
+      }
+    })
+
+    it('answers from what the launch proved when git would run through pygit2', async () => {
+      const checkout = { kind: 'head', commit: HEAD } as const
+      git.findMergeBase.mockResolvedValue(LOWER)
+      git.pygit2 = true
+      try {
+        const launch = await resolveCoreCommitState(REPO, checkout, [LOWER])
+        git.findMergeBase.mockClear()
+        const incomplete = vi.fn()
+
+        const preview = await resolveCoreCommitState(REPO, checkout, [LOWER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+
+        expect(preview).toEqual(launch)
+        expect(git.findMergeBase, 'no Python spawn for the preview').not.toHaveBeenCalled()
+        expect(incomplete).not.toHaveBeenCalled()
+      } finally {
+        git.pygit2 = false
+      }
+    })
+
+    it('misses once HEAD has moved since the launch', async () => {
+      git.findMergeBase.mockResolvedValue(LOWER)
+      git.pygit2 = true
+      try {
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER])
+        const incomplete = vi.fn()
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: OLDER }, [LOWER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        git.pygit2 = false
+      }
+    })
+
+    it('misses a relation the launch could not prove', async () => {
+      git.findMergeBase.mockResolvedValue(undefined)
+      git.revParseRef.mockResolvedValue(undefined)
+      git.pygit2 = true
+      try {
+        const launch = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+        expect(launch.ancestry.has(UPPER)).toBe(false)
+        const incomplete = vi.fn()
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        git.pygit2 = false
       }
     })
 

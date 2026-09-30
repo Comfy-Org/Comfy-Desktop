@@ -93,6 +93,17 @@ function scheduleFetch(repoPath: string, sha: string, head: string): boolean {
 
 type Relation = boolean | null
 
+/** Relations proven by any resolution in this process, keyed by repository, HEAD and SHA. How two
+ *  commits relate never changes, so on a host whose git is a Python spawn per call (pygit2) a
+ *  display-only resolution answers from here instead of from git; a moved HEAD simply misses. */
+const provenRelations = new Map<string, boolean>()
+const relationKey = (repoPath: string, head: string, sha: string): string =>
+  `${repoPath}\0${head}\0${sha}`
+
+export function _resetProvenRelationsForTest(): void {
+  provenRelations.clear()
+}
+
 /** One resolution's shared state. `fetch` and `log` are the launch's defaults unless a caller
  *  resolving for display turns them off. */
 interface ResolveBudget {
@@ -198,10 +209,11 @@ export async function resolveCoreCommitState(
    *  nothing, to the repository or the failure record), and `quiet` drops the per-SHA log lines.
    *  An ancestry a fetch could have settled stays unresolved, exactly as it is for the launch
    *  that schedules that fetch. `budgetMs` shortens the launch's time budget for a caller that
-   *  must not hold its UI. `avoidPygit2` resolves nothing on a host whose git runs through the
-   *  pygit2 fallback, where every call is a Python spawn. `onIncomplete` fires when SHAs were left
-   *  unresolved for a reason a later call might not share: the time budget, `signal`, or
-   *  `avoidPygit2`. */
+   *  must not hold its UI. `avoidPygit2`, on a host whose git runs through the pygit2 fallback
+   *  (every call a Python spawn), answers only from relations an earlier resolution in this
+   *  process proved, typically the last launch. `onIncomplete` fires when SHAs were left
+   *  unresolved for a reason a later call might not share: the time budget, `signal`, or an
+   *  `avoidPygit2` lookup that missed. */
   options: {
     fetch?: boolean
     quiet?: boolean
@@ -214,8 +226,19 @@ export async function resolveCoreCommitState(
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
   if (options.avoidPygit2 && isPygit2Configured()) {
-    options.onIncomplete?.()
-    return NO_CORE_COMMITS
+    const known = new Map<string, boolean>()
+    for (const [index, raw] of shas.entries()) {
+      const sha = raw.toLowerCase()
+      // Skipped exactly as the resolving loop below skips them, so the answers agree.
+      if (!FULL_SHA_RE.test(sha) || index >= MAX_RESOLVED_SHAS) continue
+      const related = provenRelations.get(relationKey(repoPath, head, sha))
+      if (related === undefined) {
+        options.onIncomplete?.()
+        return NO_CORE_COMMITS
+      }
+      known.set(sha, related)
+    }
+    return { head, ancestry: known }
   }
   const ancestry = new Map<string, boolean>()
   const deadline = Date.now() + (options.budgetMs ?? RESOLVE_BUDGET_MS)
@@ -267,7 +290,10 @@ export async function resolveCoreCommitState(
               : 'not contained'
         }`
       )
-      if (related !== null) ancestry.set(sha, related)
+      if (related !== null) {
+        ancestry.set(sha, related)
+        provenRelations.set(relationKey(repoPath, head, sha), related)
+      }
     }
   })()
 

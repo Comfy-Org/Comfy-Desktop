@@ -132,7 +132,7 @@
     "betaArgsAriaLabel": "{n} beta argument added, show details | {n} beta arguments added, show details",
     "betaArgsAriaLabelNext": "{n} beta argument will be added at next launch, show details | {n} beta arguments will be added at next launch, show details",
     "betaArgsHeading": "Added at launch by beta features",
-    "betaArgsHeadingNext": "Will be added at next launch by beta features",
+    "betaArgsHeadingNext": "Beta args for the next launch",
     "betaArgsUnnamed": "Beta feature",
     "betaArgsManage": "Manage beta features",
     "argsRawHint": "Edit directly, or toggle individual flags below.",

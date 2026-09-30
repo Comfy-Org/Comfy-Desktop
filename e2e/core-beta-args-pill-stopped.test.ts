@@ -125,7 +125,7 @@ test('shows the grants the next launch would apply @linux', async () => {
   const text = await popup.evaluate<string>(
     `document.querySelector(${JSON.stringify(`${ARGS_FIELD} .beta-args-popover`)}).textContent`,
   )
-  expect(text).toContain('Will be added at next launch by beta features')
+  expect(text).toContain('Beta args for the next launch')
   expect(text).toContain('--enable-assets')
   expect(text).toContain('Asset library')
 })
@@ -158,6 +158,25 @@ test('turning the beta opt-in off removes the pill on the next open, and on rest
   expect(await popup.click(BETA_SWITCH)).toBe(true)
   await popup.waitFor(async () => (await checked()) === 'true', { timeout: 5_000 })
 
+  popup = await openStartupArgs()
+  await popup.waitForVisible(PILL, { timeout: 10_000 })
+})
+
+test('an opt-in change made while the picker is hidden shows on reopen @linux', async () => {
+  let popup = await openStartupArgs()
+  await popup.waitForVisible(PILL, { timeout: 10_000 })
+  // Hidden, not swapped: the cached picker keeps its sections, which is what could go stale.
+  await closeTitlePopupIfOpen(ctx.app)
+  await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', false)`)
+
+  popup = await openStartupArgs()
+  await popup.waitFor(async () => (await pillAriaLabel(popup)) === null, {
+    timeout: 10_000,
+    message: 'the pill survived an opt-out made while the picker was hidden',
+  })
+
+  await closeTitlePopupIfOpen(ctx.app)
+  await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', true)`)
   popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
 })

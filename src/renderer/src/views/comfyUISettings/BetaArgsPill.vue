@@ -79,12 +79,20 @@ watch(count, (n) => {
 })
 
 onClickOutside(root, () => close(false))
+
+// Keyboard focus leaving the pill and its popover (Tab / Shift+Tab into the args input) closes it,
+// so it cannot linger under the input's autocomplete.
+function onFocusOut(event: FocusEvent): void {
+  const next = event.relatedTarget
+  if (next instanceof Node && root.value?.contains(next)) return
+  close(false)
+}
 // A click in another WebContents never reaches this document's pointer listener.
 useEventListener(window, 'blur', () => close(false))
 </script>
 
 <template>
-  <span v-if="count > 0" ref="root" class="beta-args">
+  <span v-if="count > 0" ref="root" class="beta-args" @focusout="onFocusOut">
     <Tooltip :text="tooltip" :disabled="open">
       <button
         ref="trigger"
@@ -115,7 +123,7 @@ useEventListener(window, 'blur', () => close(false))
       <div class="beta-args-heading">{{ heading }}</div>
       <ul class="beta-args-list">
         <li v-for="view in args" :key="view.arg" class="beta-args-row">
-          <code class="beta-args-flag">{{ view.arg }}</code>
+          <code class="beta-args-flag" :title="view.arg">{{ view.arg }}</code>
           <span class="beta-args-name">{{
             view.name ?? t('comfyUISettings.betaArgsUnnamed')
           }}</span>
@@ -211,6 +219,12 @@ useEventListener(window, 'blur', () => close(false))
 }
 
 .beta-args-flag {
+  /* A flag is one token: never break inside it; a very long one ends in an ellipsis instead. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-weight: 600;
   color: var(--text);

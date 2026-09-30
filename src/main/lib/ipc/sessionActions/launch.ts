@@ -383,12 +383,12 @@ const PREVIEW_ANCESTRY_BUDGET_MS = 1500
  * stopped. Runs the launch's own resolution (`splitLaunchArgs` + `assembleCoreBetaArgs`) with
  * nothing a launch would do on the side: the opt-in is peeked without seeding it, the args schema
  * comes only from the cache the settings view already filled (no Python spawn), commit ancestry is
- * resolved without fetching and never through the pygit2 fallback (a Python spawn per call), and
- * nothing is logged.
+ * resolved without fetching, and on a pygit2-fallback host (a Python spawn per git call) only from
+ * relations this process's last launch proved; nothing is logged.
  *
  * `null` when an input the answer depends on is unavailable (no launch command, an uncached schema,
- * an unreadable setting, an ancestry check cut short by its shorter time budget or needing pygit2):
- * the view then shows
+ * an unreadable setting, an ancestry check cut short by its shorter time budget, or on a pygit2 host
+ * a relation no launch has proved yet): the view then shows
  * nothing rather than a guess. An empty list is a real answer: opted out, or nothing granted.
  */
 export async function previewCoreBetaGrants(
