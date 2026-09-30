@@ -466,14 +466,18 @@ function load(): Settings {
   return loadOutcome().settings
 }
 
-/** The stored settings over the defaults, without the load-time normalization or its save. (The
- *  shared file read can still restore settings.json from its `.bak`, as every read does.)
+/** The stored settings over the defaults, without the load-time normalization or its save.
+ *  `restore: false` also stops the file read restoring settings.json from its `.bak`.
  *  `normalize: false` marks the unreadable-file case, which `loadOutcome` returns as-is. */
-function readOutcome(): { settings: Settings; unreadable: boolean; normalize: boolean } {
+function readOutcome(opts: { restore?: boolean } = {}): {
+  settings: Settings
+  unreadable: boolean
+  normalize: boolean
+} {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
   let unreadable = false
-  const read = readFileSafe(dataPath)
+  const read = readFileSafe(dataPath, opts)
   if (read.kind === 'unreadable') {
     return { settings: { ...defaults }, unreadable: true, normalize: false }
   }
@@ -737,10 +741,11 @@ export function resolveBetaFeaturesEnabled(): boolean {
 }
 
 /** What `resolveBetaFeaturesEnabled` would return, for previews that must not write settings: it
- *  skips the load-time normalization (which can create folders and save) as well as the seed.
+ *  skips the load-time normalization (which can create folders and save), the `.bak` restore, and
+ *  the seed.
  *  Normalization never touches the two keys this reads, so the next launch resolves the same. */
 export function peekBetaFeaturesEnabled(): boolean {
-  const { settings, unreadable } = readOutcome()
+  const { settings, unreadable } = readOutcome({ restore: false })
   return betaFeaturesEnabledFrom(settings, unreadable).value
 }
 

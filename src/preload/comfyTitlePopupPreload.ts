@@ -46,6 +46,8 @@ export interface PopupInstancePickerSnapshot {
    *  collapses remote ⇒ cloud. Optional for back-compat with older bundles. */
   currentCategory?: Category | null
   runningInstallationIds: string[]
+  /** `startedAt` per running session; changes on a restart the id list cannot show. */
+  runningSessionStartedAt?: Record<string, number>
   /** Selected install in the picker's right pane; defaults to the host's active
    *  install on open. */
   selectedInstallationId: string | null

@@ -623,6 +623,26 @@ describe('buildInstancePickerSnapshot', () => {
     expect(snap.activeInstallationId).toBeNull()
   })
 
+  it("carries each running session's start time, defaulting to none", () => {
+    const withStarts = buildInstancePickerSnapshot({
+      installs: [],
+      hostInstallationId: null,
+      runningInstallationIds: ['a'],
+      runningSessionStartedAt: { a: 123 },
+      launchingInstallationIds: [],
+      storage: EMPTY_STORAGE
+    })
+    expect(withStarts.runningSessionStartedAt).toEqual({ a: 123 })
+    const without = buildInstancePickerSnapshot({
+      installs: [],
+      hostInstallationId: null,
+      runningInstallationIds: [],
+      launchingInstallationIds: [],
+      storage: EMPTY_STORAGE
+    })
+    expect(without.runningSessionStartedAt).toEqual({})
+  })
+
   it('flattens running ids into a stable string array', () => {
     const snap = buildInstancePickerSnapshot({
       installs: [],

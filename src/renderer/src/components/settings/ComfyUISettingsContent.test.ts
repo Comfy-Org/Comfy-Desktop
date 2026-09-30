@@ -81,6 +81,7 @@ function createTestI18n() {
 }
 
 const useComfyUISettingsState = {
+  reloadStub: vi.fn(),
   pinBottomActions: ref<{ id: string; label: string }[]>([{ id: 'untrack', label: 'Forget' }]),
   sections: ref<unknown[]>([
     { tab: 'update', fields: [] },
@@ -112,7 +113,7 @@ vi.mock('../../composables/useComfyUISettings', () => ({
         )
         return hasTab ? [{ tab, fields: [] }] : []
       }),
-    reload: vi.fn()
+    reload: useComfyUISettingsState.reloadStub
   })
 }))
 
@@ -188,6 +189,24 @@ describe('ComfyUISettingsContent', () => {
   })
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  describe('refreshKey', () => {
+    it('re-reads the sections when the host bumps the key (a picker reopen)', async () => {
+      const w = await mountContent({ refreshKey: 1 })
+      useComfyUISettingsState.reloadStub.mockClear()
+      await w.setProps({ refreshKey: 2 })
+      await flushPromises()
+      expect(useComfyUISettingsState.reloadStub).toHaveBeenCalledOnce()
+    })
+
+    it('does not re-read on mount or on unrelated prop changes', async () => {
+      useComfyUISettingsState.reloadStub.mockClear()
+      const w = await mountContent({ refreshKey: 1 })
+      await w.setProps({ currentView: 'instance' })
+      await flushPromises()
+      expect(useComfyUISettingsState.reloadStub).not.toHaveBeenCalled()
+    })
   })
 
   describe('overlay title — isDowngrade branch', () => {

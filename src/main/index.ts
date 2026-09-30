@@ -1993,6 +1993,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         return enriched as unknown as InstancePickerInstall[]
       },
       getRunningInstallationIds: () => Array.from(_runningSessions.keys()),
+      getRunningSessionStartedAt: () =>
+        Object.fromEntries(Array.from(_runningSessions, ([id, s]) => [id, s.startedAt])),
       getLaunchingInstallationIds: () => _getLaunchingInstallationIds(),
       // Per-install Settings + Snapshots payload for the picker's
       // right-pane accordions. Both reads route through the same

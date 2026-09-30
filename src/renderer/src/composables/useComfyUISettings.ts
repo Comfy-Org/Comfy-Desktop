@@ -735,12 +735,17 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   watch(
     () => {
       const inst = toValue(opts.installation)
-      return inst ? sessionStore.isRunning(inst.id) : false
+      if (!inst || !sessionStore.isRunning(inst.id)) return null
+      // Keyed on the session, not just "running": a restart can reach this window as
+      // running -> running (the stop and relaunch landing between two snapshots), and the
+      // session-derived rows - the port, the beta-args pill - belong to the old session.
+      return `running:${sessionStore.runningInstances.get(inst.id)?.startedAt ?? ''}`
     },
     () => {
       if (!toValue(opts.installation)) return
-      // Refetch so the "Running details" port row (sourced from main) appears
-      // on launch and clears on stop. Race-safe via reload()'s requestSeq.
+      // Refetch so the "Running details" port row and the beta-args pill (sourced from main)
+      // follow the session: appear on launch, clear on stop, renew on restart. Race-safe via
+      // reload()'s requestSeq.
       void reload()
     }
   )

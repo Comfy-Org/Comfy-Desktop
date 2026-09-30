@@ -143,6 +143,10 @@ export interface InstancePickerSnapshot {
    *  Carried verbatim for copy/telemetry; navigation collapses it via `navClass`. */
   currentCategory: Category | null
   runningInstallationIds: string[]
+  /** `startedAt` of each running session, keyed by installation id. A restart replaces the session
+   *  but can land between two snapshots, leaving the id list unchanged; this is what tells the
+   *  picker's settings view its session-derived rows (the beta-args pill) went stale. */
+  runningSessionStartedAt: Record<string, number>
   /** Installs mid-launch — `instance-launching` fired, `instance-started`
    *  has not. Mirrors `_launchingInstances` in main so the picker
    *  popup can hydrate `sessionStore.launchingInstances` from the
@@ -263,6 +267,7 @@ interface BuildInstancePickerSnapshotArgs {
    *  `attachInstall` after `instance-started`. */
   previewInstallationId?: string | null
   runningInstallationIds: string[]
+  runningSessionStartedAt?: Record<string, number>
   launchingInstallationIds: string[]
   selectedInstallationId?: string | null
   pickerSelectionEpoch?: number
@@ -359,6 +364,7 @@ export function buildInstancePickerSnapshot(
     currentView,
     currentCategory,
     runningInstallationIds: args.runningInstallationIds,
+    runningSessionStartedAt: args.runningSessionStartedAt ?? {},
     launchingInstallationIds: args.launchingInstallationIds,
     selectedInstallationId: args.selectedInstallationId ?? null,
     pickerSelectionEpoch: args.pickerSelectionEpoch ?? 0,
@@ -891,6 +897,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
   const installs = await bindings.getInstancePickerInstalls()
   if (mySeq !== pickerSnapshotBroadcastSeq) return
   const runningInstallationIds = bindings.getRunningInstallationIds()
+  const runningSessionStartedAt = bindings.getRunningSessionStartedAt?.() ?? {}
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'instance-picker') continue
@@ -924,6 +931,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
       hostInstallationId: parentEntry?.installationId ?? null,
       previewInstallationId: parentEntry?.previewInstallationId ?? null,
       runningInstallationIds,
+      runningSessionStartedAt,
       launchingInstallationIds,
       selectedInstallationId: selectedId,
       // Forward the current epoch verbatim — broadcasts NEVER bump it.
@@ -1640,6 +1648,8 @@ export interface TitlePopupHostBindings {
   /** Currently-running installation ids. Drives the picker's "running"
    *  row indicator and the focus-vs-launch decision in `pickInstall`. */
   getRunningInstallationIds: () => string[]
+  /** `startedAt` per running session; see `InstancePickerSnapshot.runningSessionStartedAt`. */
+  getRunningSessionStartedAt?: () => Record<string, number>
   /** Installs mid-launch (between `instance-launching` and
    *  `instance-started` / `instance-launch-failed`). Surfaced in the
    *  picker snapshot so the popup — whose preload doesn't expose the
@@ -1851,6 +1861,7 @@ function openInstancePickerForHost(
   if (parentEntry.window.isDestroyed()) return
   const installs: InstancePickerInstall[] = cachedInstallsForPicker.slice()
   const runningInstallationIds = bindings.getRunningInstallationIds()
+  const runningSessionStartedAt = bindings.getRunningSessionStartedAt?.() ?? {}
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   // A chooser host that already staked a claim (preview) reads as
   // owning the install for default-selection purposes.
@@ -1889,6 +1900,7 @@ function openInstancePickerForHost(
     hostInstallationId: parentEntry.installationId,
     previewInstallationId: parentEntry.previewInstallationId,
     runningInstallationIds,
+    runningSessionStartedAt,
     launchingInstallationIds,
     selectedInstallationId: initialSelectedId,
     pickerSelectionEpoch,

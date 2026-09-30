@@ -847,6 +847,15 @@ describe('peekBetaFeaturesEnabled', () => {
     expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(raw)
   })
 
+  it('reads a backup without restoring it over a missing settings file', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.rmSync(settingsPath, { force: true })
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ betaFeaturesEnabled: true }))
+
+    expect(settings.peekBetaFeaturesEnabled()).toBe(true)
+    expect(fs.existsSync(settingsPath)).toBe(false)
+  })
+
   it.each([true, false])('returns a stored %s', (choice) => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
+import { useSessionStore } from '../stores/sessionStore'
 
 import { en } from '../lib/i18nMessages.ts'
 import { NAV_LABEL, type NavDecision } from '../../../shared/navigation/navDecision'
@@ -85,6 +86,7 @@ interface MockSnapshot {
   installs: MockInstall[]
   activeInstallationId: string | null
   runningInstallationIds: string[]
+  runningSessionStartedAt?: Record<string, number>
   /** Optional — defaults to `[]` in `mountPicker`. Tests that exercise
    *  the launching state explicitly set this. */
   launchingInstallationIds?: string[]
@@ -271,6 +273,27 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       const rows = wrapper.findAll('.picker-row')
       const alphaRow = rows.find((c) => c.text().includes('Alpha'))
       expect(alphaRow!.classes()).toContain('is-running')
+    })
+
+    it("carries each running session's start time into the session store, renewing it on restart", async () => {
+      const snapshot = {
+        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
+        activeInstallationId: null,
+        runningInstallationIds: ['a'],
+        runningSessionStartedAt: { a: 100 }
+      }
+      const wrapper = await mountPicker(snapshot)
+      const store = useSessionStore()
+      expect(store.runningInstances.get('a')?.startedAt).toBe(100)
+
+      // Same id, new session: a restart that landed between two snapshots.
+      await wrapper.setProps({
+        snapshot: {
+          ...wrapper.props('snapshot'),
+          runningSessionStartedAt: { a: 200 }
+        }
+      })
+      expect(store.runningInstances.get('a')?.startedAt).toBe(200)
     })
 
     it('selects a row on click without launching', async () => {
