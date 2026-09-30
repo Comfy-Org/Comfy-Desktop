@@ -24,12 +24,12 @@
       }
     },
     {
-      "id": "wan2.1_fun_inp",
+      "id": "video_ltx2_5_i2v",
       "modality": "video",
       "snapshot": {
-        "title": "Wan 2.1 Inpainting",
-        "description": "Generate videos from start and end frames using Wan 2.1 inpainting.",
-        "sizeBytes": 11381663334,
+        "title": "LTX-2.5: Image to Video",
+        "description": "Generate video from a single image using LTX-2.5, producing a high-fidelity clip with industry-leading pixel quality and native multishot capability that holds character, environment, and lighting across connected scenes. Ideal for cinematic production, VFX shot creation, and content pipelines requiring fast, locally deployable video generation.",
+        "sizeBytes": 56908316672,
         "mediaSubtype": "webp"
       }
     },
