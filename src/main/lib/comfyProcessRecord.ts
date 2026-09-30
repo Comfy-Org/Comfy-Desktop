@@ -284,17 +284,16 @@ export function findWindowsSurvivors(
     }
     return commandLineIsInstall(r.commandLine, ctx.installPath)
   })
-  const seedPids = new Set(seeds.map((r) => r.pid))
   const picked = new Set<number>()
   for (const seed of seeds) for (const pid of descendantsOf(rows, seed.pid)) picked.add(pid)
   const out: LingeringProcess[] = []
   for (const pid of picked) {
     const row = byPid.get(pid)
     if (!row?.created || pid === process.pid || !runsMainPy(row.commandLine)) continue
-    // Below a seed, only this installation's ComfyUI: its own command line, or the relative
-    // main.py a venv launcher hands its interpreter. Some other main.py is not ours to stop.
+    // Only this installation's ComfyUI: its own command line, or the relative main.py a venv
+    // launcher hands its interpreter. Ancestry alone is not enough (a custom node's helper can
+    // run some other main.py), for a known tree member as much as for anything below it.
     if (
-      !seedPids.has(pid) &&
       !commandLineIsInstall(row.commandLine, ctx.installPath) &&
       !runsRelativeMainPy(row.commandLine)
     ) {
@@ -411,8 +410,15 @@ async function recordChildExit(
 /** Exit bookkeeping still running, per session: a launch waits for it before it looks. */
 const pendingExitBookkeeping = new Map<string, Promise<void>>()
 
-function trackExitBookkeeping(sessionKey: string, work: Promise<void>): void {
-  const done = work
+/**
+ * Run `work` after every exit bookkeeping already queued for `sessionKey`, one at a time: an
+ * older child's scan must merge its survivors before a newer one decides the record's fate, and
+ * a launch waits for all of them (`settleExitBookkeeping`).
+ */
+export function queueExitBookkeeping(sessionKey: string, work: () => Promise<void>): void {
+  const before = pendingExitBookkeeping.get(sessionKey) ?? Promise.resolve()
+  const done: Promise<void> = before
+    .then(work)
     .catch((err: unknown) => console.warn('[comfy-procs] exit bookkeeping failed:', err))
     .finally(() => {
       if (pendingExitBookkeeping.get(sessionKey) === done) pendingExitBookkeeping.delete(sessionKey)
@@ -535,25 +541,24 @@ function watchWindowsChild(proc: ChildProcess, sessionKey: string, childPid: num
     const exitedAt = filetimeOf(Date.now())
     // Captured now: a respawn may replace the record before the scan runs.
     const captured = windowsExitContext(sessionKey, childPid, exitedAt)
-    let release: () => void = () => {}
-    trackExitBookkeeping(
-      sessionKey,
-      new Promise<void>((resolve) => {
-        release = resolve
-      })
-    )
+    // The scan waits for its trigger (close, or the timer below), then takes its turn behind
+    // any earlier child's bookkeeping for this session.
+    let trigger: () => void = () => {}
+    const triggered = new Promise<void>((resolve) => {
+      trigger = resolve
+    })
+    queueExitBookkeeping(sessionKey, async () => {
+      await triggered
+      // A tree snapshot still in flight may add the interpreter the scan needs.
+      if (treeInFlight) await treeInFlight
+      const context = windowsExitContext(sessionKey, childPid, exitedAt) ?? captured
+      await recordChildExit(sessionKey, childPid, context)
+    })
     let scanned = false
     const scanOnce = (): void => {
       if (scanned) return
       scanned = true
-      void (async () => {
-        // A tree snapshot still in flight may add the interpreter the scan needs.
-        if (treeInFlight) await treeInFlight
-        const context = windowsExitContext(sessionKey, childPid, exitedAt) ?? captured
-        await recordChildExit(sessionKey, childPid, context)
-      })()
-        .catch((err: unknown) => console.warn('[comfy-procs] exit bookkeeping failed:', err))
-        .finally(release)
+      trigger()
     }
     // `close` always follows `exit` (Node emits it once the process has exited and its stdio
     // is closed).
@@ -590,7 +595,7 @@ export function trackSpawn(
   })
   if (process.platform !== 'win32') {
     proc.once('exit', () =>
-      trackExitBookkeeping(info.sessionKey, recordChildExit(info.sessionKey, childPid))
+      queueExitBookkeeping(info.sessionKey, () => recordChildExit(info.sessionKey, childPid))
     )
   } else {
     watchWindowsChild(proc, info.sessionKey, childPid)
@@ -827,13 +832,25 @@ export async function resolvePriorProcess(
     const found = pendingScanIsCurrent(record, deps.wallNow())
       ? await (deps.rescanWindows ?? rescanWindows)(record)
       : []
-    if (found) {
-      // Done (or expired): the scan is owed no longer, and what it found is kept like any
-      // survivor, so it is re-proven on every later launch until stopped.
-      const { pendingScan: _done, ...rest } = record
-      record = { ...rest, lingering: mergeLingering(record.lingering, found) }
-      ;(deps.writeRecord ?? writeRecord)(record)
+    if (!found) {
+      // Still owed and still not runnable: keep the record and do not launch beside whatever
+      // it may find (a later launch tries again, until the scan succeeds or expires).
+      return {
+        action: 'left',
+        proof: 'desktop_record',
+        pid: record.childPid,
+        port: record.port,
+        ageMs,
+        waitMs: deps.now() - startedAt,
+        exitedInTime: false,
+        blocked: 'unverified'
+      }
     }
+    // Done (or expired): the scan is owed no longer, and what it found is kept like any
+    // survivor, so it is re-proven on every later launch until stopped.
+    const { pendingScan: _done, ...rest } = record
+    record = { ...rest, lingering: mergeLingering(record.lingering, found) }
+    ;(deps.writeRecord ?? writeRecord)(record)
   }
   const proven = await provenLingering(record, deps)
   const early = (extra: Partial<PriorProcessOutcome>): PriorProcessOutcome => ({

@@ -49,7 +49,14 @@ vi.mock('./processIdentity', async (importOriginal) => {
   }
 })
 
-import { filetimeOf, readRecord, resolvePriorProcess, trackSpawn } from './comfyProcessRecord'
+import {
+  filetimeOf,
+  queueExitBookkeeping,
+  readRecord,
+  resolvePriorProcess,
+  settleExitBookkeeping,
+  trackSpawn
+} from './comfyProcessRecord'
 
 const INSTALL = 'C:\\c\\one'
 const info = {
@@ -62,11 +69,15 @@ const info = {
 const realPlatform = process.platform
 
 type FakeChild = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; pid: number }
+/** Every child a test created, so cleanup can end them: a child that never exits keeps its
+ *  tree-snapshot timers (3, 10, 30 s) alive into later tests. */
+const created: FakeChild[] = []
 function child(pid: number): FakeChild {
   const c = new EventEmitter() as FakeChild
   c.stdout = new EventEmitter()
   c.stderr = new EventEmitter()
   c.pid = pid
+  created.push(c)
   return c
 }
 const asProc = (c: FakeChild): ChildProcess => c as unknown as ChildProcess
@@ -96,7 +107,12 @@ beforeEach(() => {
     { pid: 101, ppid: 100, created: '1100', commandLine: 'C:\\Py\\python.exe -s ComfyUI\\main.py' }
   ]
 })
-afterEach(() => {
+afterEach(async () => {
+  for (const c of created.splice(0)) {
+    if (c.listenerCount('exit') > 0) c.emit('exit', 0, null)
+    if (c.listenerCount('close') > 0) c.emit('close', 0, null)
+  }
+  await settleExitBookkeeping('inst-1')
   fs.rmSync(fake.state, { recursive: true, force: true })
 })
 
@@ -233,4 +249,27 @@ describe('trackSpawn on Windows: races and failures', () => {
     })
     expect(readRecord('inst-1')?.lingering ?? []).toEqual([])
   }, 10_000)
+})
+
+describe('exit bookkeeping per session', () => {
+  it('runs one at a time, in order, and a launch waits for all of it', async () => {
+    const order: string[] = []
+    let releaseFirst: () => void = () => {}
+    queueExitBookkeeping('inst-2', async () => {
+      order.push('first:start')
+      await new Promise<void>((r) => {
+        releaseFirst = r
+      })
+      order.push('first:end')
+    })
+    queueExitBookkeeping('inst-2', async () => {
+      order.push('second')
+    })
+    const settled = settleExitBookkeeping('inst-2').then(() => order.push('settled'))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(order).toEqual(['first:start'])
+    releaseFirst()
+    await settled
+    expect(order).toEqual(['first:start', 'first:end', 'second', 'settled'])
+  })
 })

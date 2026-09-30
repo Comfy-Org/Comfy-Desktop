@@ -396,6 +396,27 @@ describe('resolvePriorProcess', () => {
     expect(out).toMatchObject({ lingering: 1 })
   })
 
+  it('keeps the record and refuses the launch while an owed scan still cannot run', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        readRecord: () =>
+          record({
+            pendingScan: {
+              known: [{ pid: 101, startTime: '1100' }],
+              exitedAt: String(filetimeOf(Date.now()))
+            }
+          }),
+        rescanWindows: async () => null,
+        settleExitBookkeeping: async () => {}
+      })
+    )
+    expect(out).toMatchObject({ action: 'left', blocked: 'unverified' })
+    expect(kills).toEqual([])
+    expect(removed).toEqual([])
+  })
+
   it('does not block when the proof lapsed at the moment of the kill', async () => {
     const out = await resolvePriorProcess(
       'inst-1',
@@ -756,6 +777,15 @@ describe('findWindowsSurvivors (a ComfyUI that restarted itself with os.execv)',
       const earlierHolder = row(12184, 4, t(0, 35, 59), 'cmd.exe')
       expect(findWindowsSurvivors([earlierHolder, restarted], qaCtx)).toEqual([])
     })
+  })
+
+  it('ignores a known tree member that runs some other main.py (a custom node helper)', () => {
+    expect(
+      findWindowsSurvivors(
+        [row(101, 100, at(-3599), 'C:\\Py\\python.exe C:\\service\\main.py')],
+        ctx
+      )
+    ).toEqual([])
   })
 
   it('never returns Desktop itself', () => {
