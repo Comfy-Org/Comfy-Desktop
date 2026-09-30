@@ -542,10 +542,24 @@ async function handleStopBusyPrior(): Promise<void> {
   if (!id) return
   const op = progressStore.operations.get(id)
   if (!op) return
+  const unknown = op.result?.portConflict?.priorUnknown === true
+  const survivors = op.result?.portConflict?.priorSurvivors === true
   const confirmed = await modal.confirm({
-    title: t('errors.priorProcessBusyTitle'),
-    message: t('errors.priorProcessBusyConfirmMessage'),
-    confirmLabel: t('errors.priorProcessBusyStop'),
+    title: t(
+      survivors
+        ? 'errors.priorSurvivorsTitle'
+        : unknown
+          ? 'errors.priorProcessUnknownTitle'
+          : 'errors.priorProcessBusyTitle'
+    ),
+    message: t(
+      survivors
+        ? 'errors.priorSurvivorsConfirmMessage'
+        : unknown
+          ? 'errors.priorProcessUnknownConfirmMessage'
+          : 'errors.priorProcessBusyConfirmMessage'
+    ),
+    confirmLabel: t(survivors ? 'errors.priorSurvivorsStop' : 'errors.priorProcessBusyStop'),
     confirmStyle: 'danger'
   })
   if (!confirmed) return
@@ -641,9 +655,15 @@ defineExpose({ startOperation, showOperation })
               >
                 <X :size="20" />
                 <span>{{
-                  currentOp.result?.portConflict?.priorBusy
-                    ? $t('errors.priorProcessBusyTitle')
-                    : $t('errors.portConflictTitle')
+                  currentOp.result?.portConflict?.priorBusy &&
+                  currentOp.result.portConflict.priorSurvivors
+                    ? $t('errors.priorSurvivorsTitle')
+                    : currentOp.result?.portConflict?.priorBusy &&
+                        currentOp.result.portConflict.priorUnknown
+                      ? $t('errors.priorProcessUnknownTitle')
+                      : currentOp.result?.portConflict?.priorBusy
+                        ? $t('errors.priorProcessBusyTitle')
+                        : $t('errors.portConflictTitle')
                 }}</span>
               </div>
               <div
@@ -843,7 +863,9 @@ defineExpose({ startOperation, showOperation })
               >
                 {{
                   currentOp.result.portConflict.priorBusy
-                    ? $t('errors.priorProcessBusyStop')
+                    ? currentOp.result.portConflict.priorSurvivors
+                      ? $t('errors.priorSurvivorsStop')
+                      : $t('errors.priorProcessBusyStop')
                     : $t('errors.portConflictKill')
                 }}
               </button>

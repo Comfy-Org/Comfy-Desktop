@@ -25,6 +25,7 @@ import {
   takePriorSessionUnclean,
   trackSpawn,
   writeRecord,
+  QUEUE_PROBE_BUDGET_MS,
   type ComfyProcessRecord,
   type PriorProcessDeps
 } from './comfyProcessRecord'
@@ -122,6 +123,8 @@ describe('resolvePriorProcess', () => {
     ownStartTime: async () => SELF.start,
     isPidAlive: (pid) => alive.has(pid),
     probeQueue: async () => ({ running: 0, pending: 0 }),
+    // The copies these tests stand in for serve the recorded port.
+    portInUse: async () => true,
     killPidTree: async (pid, start) => {
       kills.push([pid, start])
       alive.delete(pid)
@@ -193,9 +196,187 @@ describe('resolvePriorProcess', () => {
     expect(out).toMatchObject({ action: 'terminated', busyOverride: true })
   })
 
-  it('falls back to the proven-orphan rule when the queue cannot be read', async () => {
-    const out = await resolvePriorProcess('inst-1', {}, deps({ probeQueue: async () => null }))
+  it('keeps asking a slow orphan until it answers, then acts on the answer', async () => {
+    const timeouts: number[] = []
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          timeouts.push(timeoutMs!)
+          clock += timeoutMs!
+          return timeouts.length < 3 ? null : { running: 1, pending: 0 }
+        }
+      })
+    )
+    expect(timeouts).toEqual([1_000, 2_000, 4_000])
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', blocked: 'busy', queue: { running: 1 } })
+  })
+
+  it('stops a slow orphan that finally answers idle', async () => {
+    let calls = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          clock += timeoutMs!
+          return ++calls < 2 ? null : { running: 0, pending: 0 }
+        }
+      })
+    )
     expect(out?.action).toBe('terminated')
+  })
+
+  it('ends the probe loop even under a clock that never moves, without a pause after the last try', async () => {
+    let calls = 0
+    let sleeps = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        now: () => clock,
+        sleep: async () => {
+          sleeps++
+        },
+        probeQueue: async () => {
+          calls++
+          return null
+        }
+      })
+    )
+    expect(calls).toBe(8)
+    expect(sleeps).toBe(7)
+    expect(out).toMatchObject({ action: 'busy_left', queueUnknown: true })
+  })
+
+  it('treats a probe that throws as no answer', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          clock += timeoutMs!
+          throw new Error('socket hang up')
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', queueUnknown: true })
+  })
+
+  it('gives each attempt only its own timeout, so a hung probe still gets retried', async () => {
+    let calls = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        now: () => 0,
+        probeQueue: (_port, _timeoutMs) => {
+          calls++
+          return calls === 1 ? new Promise(() => {}) : Promise.resolve({ running: 1, pending: 0 })
+        }
+      })
+    )
+    expect(calls).toBe(2)
+    expect(out).toMatchObject({ action: 'busy_left', queue: { running: 1 } })
+  })
+
+  it('returns on a cancel during a probe that hangs, without waiting it out', async () => {
+    const abort = new AbortController()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { signal: abort.signal },
+      deps({
+        now: () => 0,
+        // Cancelled once the probe is under way; a probe that ignored the cancel would hang
+        // until the budget ran out (8 s of attempts), past the test's own timeout.
+        probeQueue: () => {
+          abort.abort()
+          return new Promise(() => {})
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out?.action).toBe('left')
+  })
+
+  it('never stops anything after a cancel, even on the "stop it" path', async () => {
+    const abort = new AbortController()
+    abort.abort()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { stopBusy: true, signal: abort.signal },
+      deps()
+    )
+    expect(kills).toEqual([])
+    expect(out).toBeNull()
+  })
+
+  it('carries on when reporting progress throws', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {
+        onProbe: () => {
+          throw new Error('Object has been destroyed')
+        }
+      },
+      deps({ probeQueue: async () => ({ running: 1, pending: 0 }) })
+    )
+    expect(out).toMatchObject({ action: 'busy_left' })
+  })
+
+  it('does not wait past the budget on a probe that never settles', async () => {
+    let reads = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        // The start and the deadline are read at 0; every later read leaves 50 ms of budget.
+        now: () => (reads++ < 2 ? 0 : QUEUE_PROBE_BUDGET_MS - 50),
+        probeQueue: () => new Promise(() => {})
+      })
+    )
+    expect(out).toMatchObject({ action: 'busy_left', queueUnknown: true })
+    expect(kills).toEqual([])
+  })
+
+  it('stops probing and never kills once the launch is cancelled', async () => {
+    const abort = new AbortController()
+    const onProbe = vi.fn()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { signal: abort.signal, onProbe },
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          clock += timeoutMs!
+          abort.abort()
+          return { running: 0, pending: 0 }
+        }
+      })
+    )
+    expect(onProbe).toHaveBeenCalledOnce()
+    expect(kills).toEqual([])
+    expect(out?.action).toBe('left')
+  })
+
+  it('never stops an orphan that does not answer within the budget: the user decides', async () => {
+    const started = clock
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        probeQueue: async (_port, timeoutMs) => {
+          clock += timeoutMs!
+          return null
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', blocked: 'busy', queueUnknown: true })
+    expect(out?.queue).toBeUndefined()
+    expect(clock - started).toBe(QUEUE_PROBE_BUDGET_MS)
   })
 
   it('never touches a child whose Desktop is still running', async () => {
@@ -447,7 +628,9 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
       new Map(pids.filter((p) => alive.has(p)).map((p) => [p, p === 555 ? 'survivor-start' : 'x'])),
     ownStartTime: async () => SELF.start,
     isPidAlive: (pid) => alive.has(pid),
-    probeQueue: async () => null,
+    // Idle unless a test says otherwise: a survivor still serving the port answers it.
+    probeQueue: async () => ({ running: 0, pending: 0 }),
+    portInUse: async () => true,
     killPidTree: async (pid) => {
       kills.push(pid)
       alive.delete(pid)
@@ -468,7 +651,12 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
   it('stops a proven survivor even though the Desktop that spawned the child is running', async () => {
     const out = await resolvePriorProcess('inst-1', {}, deps())
     expect(kills).toEqual([555])
-    expect(out).toMatchObject({ action: 'terminated', lingering: 1, blocked: null })
+    expect(out).toMatchObject({
+      action: 'terminated',
+      lingering: 1,
+      blocked: null,
+      survivorPids: [555]
+    })
     expect(removed).toEqual([222])
   })
 
@@ -527,6 +715,96 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     expect(probeQueue).not.toHaveBeenCalled()
     expect(kills).toEqual([555])
     expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
+  })
+
+  it('asks at once, naming the survivors, when nothing serves the port (no probe to wait on)', async () => {
+    const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({ portInUse: async () => false, probeQueue })
+    )
+    expect(probeQueue).not.toHaveBeenCalled()
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({
+      action: 'busy_left',
+      blocked: 'busy',
+      queueUnknown: true,
+      survivorPids: [555]
+    })
+  })
+
+  it('lets a portless survivor that is only tearing down exit, without asking', async () => {
+    let polls = 0
+    const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        portInUse: async () => false,
+        probeQueue,
+        sleep: async () => {
+          if (++polls === 3) alive.delete(555)
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(probeQueue).not.toHaveBeenCalled()
+    expect(out).toBeNull()
+  })
+
+  it('never stops a survivor that does not answer whether it is busy: the user decides', async () => {
+    let t = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        now: () => t,
+        sleep: async (ms) => {
+          t += ms
+        },
+        probeQueue: async (_port, timeoutMs) => {
+          t += timeoutMs!
+          return null
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', blocked: 'busy', queueUnknown: true })
+  })
+
+  it('stops nothing once the launch is cancelled during the survivor check', async () => {
+    const abort = new AbortController()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { signal: abort.signal },
+      deps({
+        probeQueue: async () => {
+          abort.abort()
+          return { running: 0, pending: 0 }
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toBeNull()
+  })
+
+  it('reports survivors already stopped when a cancel lands during the stop', async () => {
+    const abort = new AbortController()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { signal: abort.signal },
+      deps({
+        killPidTree: async (pid) => {
+          kills.push(pid)
+          alive.delete(pid)
+          abort.abort()
+          return { killed: true, exited: true, waitMs: 5 }
+        }
+      })
+    )
+    expect(kills).toEqual([555])
+    expect(out).toMatchObject({ action: 'terminated', lingering: 1, blocked: null })
   })
 
   it('never stops a survivor pid that now names another process', async () => {
@@ -590,7 +868,9 @@ describe.runIf(process.platform !== 'win32')('survivors of a real process group'
       })
       expect(isPidAlive(leader.pid!)).toBe(false)
 
-      const out = await resolvePriorProcess('inst-1')
+      // This survivor serves no port, so it never answers the busy check; the next launch asks,
+      // and this is the user having chosen "Stop it and launch".
+      const out = await resolvePriorProcess('inst-1', { stopBusy: true })
       expect(out).toMatchObject({ action: 'terminated', lingering: 1, exitedInTime: true })
       expect(isPidAlive(survivorPid)).toBe(false)
       expect(readRecord('inst-1')).toBeNull()
@@ -953,7 +1233,9 @@ describe('takePriorSessionUnclean', () => {
           new Map(pids.filter((p) => p === 300).map((p) => [p, 'restarted-start'])),
         ownStartTime: async () => 'self',
         isPidAlive: (pid) => pid === 300 && kills.length === 0,
-        probeQueue: async () => null,
+        // The restarted copy serves the recorded port and is idle.
+        portInUse: async () => true,
+        probeQueue: async () => ({ running: 0, pending: 0 }),
         killPidTree: async (pid) => {
           kills.push(pid)
           return { killed: true, exited: true, waitMs: 1 }

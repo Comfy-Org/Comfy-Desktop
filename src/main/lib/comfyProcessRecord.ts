@@ -3,7 +3,7 @@ import http from 'http'
 import path from 'path'
 import type { ChildProcess } from 'child_process'
 import { stateDir } from './paths'
-import { killPidTree } from './process'
+import { isPortListening, killPidTree } from './process'
 import {
   commandArgvOf,
   commandLinesOf,
@@ -727,6 +727,11 @@ export interface PriorProcessOutcome {
    *  query failed), so it was neither stopped nor forgotten. */
   blocked: null | 'busy' | 'stuck' | 'unverified'
   queue?: QueueState
+  /** The orphan never answered `/queue`, so whether it is working is unknown. */
+  queueUnknown?: boolean
+  /** Left running: survivors of an exited ComfyUI that serve no port, so they cannot be asked.
+   *  Their pids, for the user and the log (the recorded child is already gone). */
+  survivorPids?: number[]
   /** The user chose to stop a busy process. */
   busyOverride?: boolean
   /** Descendants that had outlived the child in its process group, and were stopped. */
@@ -767,6 +772,75 @@ async function stopLingering(
   return { stopped, blocked }
 }
 
+/** Total time spent asking an orphan whether it is working before treating it as unknown. */
+export const QUEUE_PROBE_BUDGET_MS = 10_000
+
+/**
+ * `/queue`, retried: a server busy generating, or stalled in an asset scan, can take seconds to
+ * answer, and one short probe would read that as idle. Per-attempt timeouts and the pauses
+ * between them both grow, all inside `QUEUE_PROBE_BUDGET_MS`. Null means it never answered.
+ */
+async function probeQueuePatiently(
+  port: number,
+  deps: Pick<PriorProcessDeps, 'probeQueue' | 'now' | 'sleep'>,
+  signal?: AbortSignal
+): Promise<QueueState | null> {
+  const deadline = deps.now() + QUEUE_PROBE_BUDGET_MS
+  let timeoutMs = 1_000
+  let pauseMs = 250
+  // A backstop on top of the deadline: the loop must end even under a clock that does not move.
+  for (let attempt = 0; attempt < MAX_QUEUE_PROBES; attempt++) {
+    const remaining = deadline - deps.now()
+    if (remaining <= 0 || signal?.aborted) return null
+    const attemptMs = Math.min(timeoutMs, remaining)
+    const queue = await withinBudget(deps.probeQueue(port, attemptMs), attemptMs, signal)
+    if (queue) return queue
+    const left = deadline - deps.now()
+    if (left <= 0 || signal?.aborted || attempt === MAX_QUEUE_PROBES - 1) return null
+    await abortable(deps.sleep(Math.min(pauseMs, left)), signal)
+    timeoutMs = Math.min(timeoutMs * 2, 4_000)
+    pauseMs = Math.min(pauseMs * 2, 2_000)
+  }
+  return null
+}
+
+const MAX_QUEUE_PROBES = 8
+
+/** The probe answers null once `ms` has passed, on a cancel, or if it throws — whatever the
+ *  underlying probe does (the real one has its own hard timer; this keeps the budget from
+ *  depending on that, and a late rejection from ever going unhandled). */
+function withinBudget(
+  probe: Promise<QueueState | null>,
+  ms: number,
+  signal?: AbortSignal
+): Promise<QueueState | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms)
+    timer.unref()
+  })
+  return abortable(
+    Promise.race([probe.catch(() => null), expired]).finally(() => clearTimeout(timer)),
+    signal
+  ).then((v) => v ?? null)
+}
+
+/** Settles with `undefined` as soon as `signal` aborts, instead of waiting for `p`. */
+function abortable<T>(p: Promise<T>, signal?: AbortSignal): Promise<T | undefined> {
+  if (!signal) return p
+  if (signal.aborted) return Promise.resolve(undefined)
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => resolve(undefined)
+    signal.addEventListener('abort', onAbort, { once: true })
+    p.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
+
+/** How long survivors that serve no port get to exit on their own (a teardown in progress)
+ *  before the user is asked about them; the poll count bounds it under any clock. */
+const PORTLESS_SURVIVOR_GRACE_MS = 5_000
+const PORTLESS_SURVIVOR_POLLS = 50
+
 /** How long a process of ours that is already stopping gets to finish on its own. */
 export const PRIOR_STOP_WAIT_MS = 10_000
 
@@ -785,6 +859,8 @@ export interface PriorProcessDeps {
   writeRecord?: (record: ComfyProcessRecord) => boolean
   /** Defaults to a fresh Windows process-table scan; null when it could not run. */
   rescanWindows?: (record: ComfyProcessRecord) => Promise<LingeringProcess[] | null>
+  /** Whether anything listens on the port; defaults to the real probe. */
+  portInUse?: (port: number) => Promise<boolean>
   now: () => number
   /** Wall clock, only to date the record (`spawnedAt` is wall-clock). */
   wallNow: () => number
@@ -817,7 +893,13 @@ const defaultDeps: PriorProcessDeps = {
  */
 export async function resolvePriorProcess(
   sessionKey: string,
-  opts: { stopBusy?: boolean } = {},
+  opts: {
+    stopBusy?: boolean
+    /** A cancelled launch stops probing and never goes on to stop anything. */
+    signal?: AbortSignal
+    /** Called once before the (up to 10 s) busy check, so the caller can say what it is doing. */
+    onProbe?: () => void
+  } = {},
   deps: PriorProcessDeps = defaultDeps
 ): Promise<PriorProcessOutcome | null> {
   // The previous child's exit bookkeeping may still be looking for what it left.
@@ -826,6 +908,8 @@ export async function resolvePriorProcess(
   if (!record) return null
   const startedAt = deps.now()
   const ageMs = Math.max(0, deps.wallNow() - record.spawnedAt)
+  // A cancelled launch never goes on to stop anything.
+  if (opts.signal?.aborted) return null
   // Windows: an exit scan that could not run then runs now, under the same rules (creation
   // time within a minute of the recorded exit, parent not reused, this installation).
   if (record.pendingScan) {
@@ -852,7 +936,7 @@ export async function resolvePriorProcess(
     record = { ...rest, lingering: mergeLingering(record.lingering, found) }
     ;(deps.writeRecord ?? writeRecord)(record)
   }
-  const proven = await provenLingering(record, deps)
+  let proven = await provenLingering(record, deps)
   const early = (extra: Partial<PriorProcessOutcome>): PriorProcessOutcome => ({
     action: 'left',
     proof: 'desktop_record',
@@ -866,14 +950,62 @@ export async function resolvePriorProcess(
   })
   if (proven === 'unverified') return early({ blocked: 'unverified' })
   // A survivor can be a whole ComfyUI (one that restarted itself) still serving the recorded
-  // port: it gets the same busy check as the child before anything is stopped.
+  // port: it gets the same busy check as the child before anything is stopped, and no answer
+  // is not "idle" there either.
   if (proven && !opts.stopBusy) {
-    const queue = await deps.probeQueue(record.port)
-    if (queue && (queue.running > 0 || queue.pending > 0)) {
-      return early({ action: 'busy_left', blocked: 'busy', queue })
+    const serving = await (deps.portInUse ?? isPortListening)(record.port).catch(() => true)
+    if (!serving) {
+      // Nothing on the recorded port: whatever survived serves no HTTP and cannot be asked.
+      // A process that is only tearing down (an interpreter still releasing the GPU, say) looks
+      // the same, so survivors first get a short grace to exit on their own; only the ones still
+      // there are put to the user, at once, rather than after the whole probe budget.
+      let still = proven
+      const deadline = deps.now() + PORTLESS_SURVIVOR_GRACE_MS
+      for (
+        let i = 0;
+        i < PORTLESS_SURVIVOR_POLLS && still.length > 0 && deps.now() < deadline;
+        i++
+      ) {
+        if (opts.signal?.aborted) return null
+        await abortable(deps.sleep(100), opts.signal)
+        still = still.filter((m) => deps.isPidAlive(m.pid))
+      }
+      if (opts.signal?.aborted) return null
+      if (still.length > 0) {
+        return early({
+          action: 'busy_left',
+          blocked: 'busy',
+          queueUnknown: true,
+          survivorPids: still.map((m) => m.pid)
+        })
+      }
+      // All of them exited on their own: nothing left to stop.
+      proven = null
+    } else {
+      try {
+        opts.onProbe?.()
+      } catch {
+        // Reporting progress must never change what happens to the earlier ComfyUI.
+      }
+      const queue = await probeQueuePatiently(record.port, deps, opts.signal)
+      if (opts.signal?.aborted) return null
+      if (!queue) return early({ action: 'busy_left', blocked: 'busy', queueUnknown: true })
+      if (queue.running > 0 || queue.pending > 0) {
+        return early({ action: 'busy_left', blocked: 'busy', queue })
+      }
     }
   }
+  if (opts.signal?.aborted) return null
   const survivors = proven ? await stopLingering(proven, deps) : null
+  // A cancel that landed while they were being stopped: say what was stopped, and go no further.
+  if (opts.signal?.aborted && survivors) {
+    return early({
+      action: 'terminated',
+      exitedInTime: !survivors.blocked,
+      blocked: survivors.blocked,
+      lingering: survivors.stopped
+    })
+  }
   if (survivors?.blocked) {
     return {
       action: survivors.blocked === 'stuck' ? 'terminated' : 'left',
@@ -901,7 +1033,9 @@ export async function resolvePriorProcess(
       waitMs: deps.now() - startedAt,
       exitedInTime: true,
       blocked: null,
-      lingering: survivors.stopped
+      lingering: survivors.stopped,
+      // The child is long gone: what was stopped were these.
+      ...(Array.isArray(proven) ? { survivorPids: proven.map((m) => m.pid) } : {})
     }
   }
   const classify = async (): Promise<RecordVerdict> => {
@@ -960,11 +1094,22 @@ export async function resolvePriorProcess(
   if (verdict !== 'orphan') return outcome('left')
 
   if (!opts.stopBusy) {
-    const queue = await deps.probeQueue(record.port)
-    if (queue && (queue.running > 0 || queue.pending > 0)) {
+    try {
+      opts.onProbe?.()
+    } catch {
+      // Reporting progress must never change what happens to the earlier ComfyUI.
+    }
+    const queue = await probeQueuePatiently(record.port, deps, opts.signal)
+    if (opts.signal?.aborted) return outcome('left')
+    // No answer is not "idle": a ComfyUI generating, or stalled in an asset scan, can miss every
+    // probe. It is left running and the user decides, exactly as for a busy one.
+    if (!queue) return outcome('busy_left', { blocked: 'busy', queueUnknown: true })
+    if (queue.running > 0 || queue.pending > 0) {
       return outcome('busy_left', { blocked: 'busy', queue })
     }
   }
+  // Checked here too: the user's "stop it" choice skips the probe, but not a cancel.
+  if (opts.signal?.aborted) return outcome('left')
   const kill = await deps.killPidTree(record.childPid, record.childStartTime!)
   if (!kill.killed) {
     if (kill.reason === 'probe_failed') {

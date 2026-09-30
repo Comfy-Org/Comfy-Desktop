@@ -278,6 +278,39 @@ test('an orphan still running a prompt is left alone until the user stops it @li
   }
 })
 
+test('cancelling from the busy check stops nothing and starts nothing @linux', async () => {
+  const before = await readRecord()
+  expect(before && isAlive(before.childPid)).toBe(true)
+  await writeFile(path.join(installPath, 'queue-hang'), '')
+  try {
+    await crashDesktop(ctx!)
+    const app = await start()
+    await clickInstallTile(app.panel, INSTALL_NAME)
+    await app.panel.waitFor(
+      async () =>
+        (await app.panel.allText('.brand-progress__status'))
+          .join(' ')
+          .includes('Checking an earlier ComfyUI'),
+      { timeout: 30_000, message: 'the busy check never started' },
+    )
+
+    // The real in-flight footer button, then its confirmation: the cancel only happens once
+    // "Cancel operation" is confirmed.
+    expect(await app.panel.clickByText('.brand-progress__footer-btn', 'Return to Dashboard')).toBe(true)
+    await app.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
+    expect(await app.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
+
+    // Well past the 10 s check: no busy prompt, nothing stopped, nothing spawned.
+    await new Promise((r) => setTimeout(r, 12_000))
+    expect(await app.panel.exists(byTestId(TID.progressPortConflictBanner))).toBe(false)
+    expect(isAlive(before!.childPid), 'the earlier ComfyUI was left running').toBe(true)
+    expect((await readRecord())?.childPid).toBe(before!.childPid)
+    expect(await priorEvents(app)).toEqual([])
+  } finally {
+    await rm(path.join(installPath, 'queue-hang'), { force: true })
+  }
+})
+
 test('a ComfyUI of the same install that Desktop did not start is never stopped @linux', async () => {
   // End the previous run completely, including its ComfyUI, so what holds the port next is
   // provably not something Desktop spawned.

@@ -223,7 +223,9 @@ describe('trackSpawn on Windows: races and failures', () => {
           new Map(pids.filter((p) => p === 200).map((p) => [p, fake.rows[0]!.created])),
         ownStartTime: async () => 'desktop-start',
         isPidAlive: (pid) => pid === 200,
-        probeQueue: async () => null,
+        // The restarted copy serves the recorded port and is idle.
+        portInUse: async () => true,
+        probeQueue: async () => ({ running: 0, pending: 0 }),
         killPidTree: async (pid) => {
           kills.push(pid)
           return { killed: true, exited: true, waitMs: 1 }

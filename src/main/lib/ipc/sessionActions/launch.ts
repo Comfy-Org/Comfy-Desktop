@@ -551,7 +551,8 @@ export function emitPriorProcessFound(installationId: string, prior: PriorProces
     wait_ms: prior.waitMs,
     exited_in_time: prior.exitedInTime,
     busy_override: prior.busyOverride === true,
-    lingering_count: prior.lingering ?? 0
+    lingering_count: prior.lingering ?? 0,
+    queue_unknown: prior.queueUnknown === true
   })
 }
 
@@ -579,10 +580,26 @@ export function describePriorOutcome(prior: PriorProcessOutcome): string {
       : prior.action === 'waited'
         ? 'it exited on its own'
         : prior.action === 'busy_left'
-          ? 'left running: it is working on a prompt'
+          ? prior.queueUnknown
+            ? 'left running: it did not answer whether it is working on a prompt'
+            : 'left running: it is working on a prompt'
           : 'left running: not proven to be ours'
-  const blocked = prior.blocked ? `; launch refused (${prior.blocked})` : ''
+  const reason = prior.queueUnknown ? 'unknown' : prior.blocked
+  const blocked = prior.blocked ? `; launch refused (${reason})` : ''
   const lingering = prior.lingering ? `; ${prior.lingering} surviving subprocess(es) stopped` : ''
+  if (prior.survivorPids) {
+    // No port here: nothing holds it any more, only these processes.
+    const them =
+      prior.action === 'terminated'
+        ? prior.exitedInTime
+          ? 'stopped, and they exited'
+          : 'stopped, but not all of them exited'
+        : 'left running: they serve no port, so whether they are working cannot be asked'
+    return (
+      `processes left by an earlier ComfyUI (pids ${prior.survivorPids.join(', ')}, proof ` +
+      `${prior.proof}): ${them}${blocked}`
+    )
+  }
   return `earlier ComfyUI (pid ${prior.pid}, port ${prior.port}, proof ${prior.proof}): ${what}${lingering}${blocked}`
 }
 
@@ -1522,24 +1539,41 @@ async function runLaunch(
   let prior: PriorProcessOutcome | null = null
   try {
     prior = await resolvePriorProcess(sessionId, {
-      stopBusy: actionData?.stopBusyPriorProcess === true
+      stopBusy: actionData?.stopBusyPriorProcess === true,
+      signal: abort.signal,
+      onProbe: () =>
+        sendProgress('launch', { percent: -1, status: i18n.t('launch.checkingPriorProcess') })
     })
   } catch (err) {
     // Bookkeeping never costs a launch: no answer means today's behaviour.
     console.warn('[launch] prior-process check failed:', err)
   }
-  if (prior) {
+  // After a cancel, only a stop that really happened is reported; anything else was cut short.
+  if (prior && (!abort.signal.aborted || prior.action === 'terminated')) {
     emitPriorProcessFound(installationId, prior)
     appendLog(sessionId, `[launch] ${describePriorOutcome(prior)}\n`)
   }
+  // A cancel during the busy check wins over whatever it found.
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
   if (prior?.blocked) {
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     if (prior.blocked === 'busy') {
       return {
         ok: false,
         // No counts: the prompt stays on screen while the queue moves on.
-        message: i18n.t('errors.priorProcessBusy'),
-        portConflict: { port: prior.port, pids: [prior.pid], isComfy: true, priorBusy: true }
+        message: prior.survivorPids
+          ? i18n.t('errors.priorSurvivorsRunning', { pids: prior.survivorPids.join(', ') })
+          : prior.queueUnknown
+            ? i18n.t('errors.priorProcessUnresponsive')
+            : i18n.t('errors.priorProcessBusy'),
+        portConflict: {
+          port: prior.port,
+          pids: prior.survivorPids ?? [prior.pid],
+          isComfy: true,
+          priorBusy: true,
+          ...(prior.queueUnknown ? { priorUnknown: true } : {}),
+          ...(prior.survivorPids ? { priorSurvivors: true } : {})
+        }
       }
     }
     // The recorded pid can be the venv launcher; on Windows the process holding the port (and

@@ -516,6 +516,10 @@ export interface PortConflictInfo {
    *  running a prompt. "Stop" relaunches with `stopBusyPriorProcess`, which re-proves ownership
    *  and stops it through the launch path rather than by port. */
   priorBusy?: boolean
+  /** With `priorBusy`: it never answered whether it is working, so nothing may claim it is. */
+  priorUnknown?: boolean
+  /** With `priorBusy`: it is not the earlier ComfyUI but processes it left behind (`pids`). */
+  priorSurvivors?: boolean
 }
 
 export interface AddResult {

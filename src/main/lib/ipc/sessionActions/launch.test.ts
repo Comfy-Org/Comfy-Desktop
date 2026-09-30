@@ -135,12 +135,15 @@ const ownership = vi.hoisted(() => ({
   prior: null as null | Record<string, unknown>,
   priorCalls: [] as Array<{ sessionKey: string; opts: unknown }>,
   priorThrows: false,
+  onResolve: null as null | ((opts: unknown) => unknown),
   holderIsInstall: false as boolean | ((pid: number) => boolean),
   tracked: [] as Array<Record<string, unknown>>
 }))
 vi.mock('../../comfyProcessRecord', () => ({
   resolvePriorProcess: async (sessionKey: string, opts: unknown) => {
     ownership.priorCalls.push({ sessionKey, opts })
+    // Lets a test act while the check is "running" (e.g. cancel the launch).
+    ownership.onResolve?.(opts)
     if (ownership.priorThrows) throw new Error('state dir unreadable')
     return ownership.prior
   },
@@ -2137,6 +2140,7 @@ describe('prior ComfyUI process handling at launch', () => {
     ownership.prior = null
     ownership.priorCalls = []
     ownership.priorThrows = false
+    ownership.onResolve = null
     ownership.holderIsInstall = false
     ownership.tracked = []
     setArgs('--enable-assets')
@@ -2172,7 +2176,7 @@ describe('prior ComfyUI process handling at launch', () => {
 
     expect(res.ok).toBe(true)
     expect(ownership.priorCalls).toEqual([
-      { sessionKey: 'prior-records', opts: { stopBusy: false } }
+      { sessionKey: 'prior-records', opts: expect.objectContaining({ stopBusy: false }) }
     ])
     expect(ownership.tracked).toHaveLength(1)
     const [started] = eventsNamed('comfy.desktop.comfyui.boot_started')
@@ -2203,7 +2207,8 @@ describe('prior ComfyUI process handling at launch', () => {
         wait_ms: 40,
         exited_in_time: true,
         busy_override: false,
-        lingering_count: 0
+        lingering_count: 0,
+        queue_unknown: false
       }
     ])
   })
@@ -2261,10 +2266,69 @@ describe('prior ComfyUI process handling at launch', () => {
     })
   })
 
+  it('asks the user about an orphan that never answered, with its own message', async () => {
+    ownership.prior = {
+      ...terminated,
+      action: 'busy_left',
+      exitedInTime: false,
+      blocked: 'busy',
+      queueUnknown: true
+    }
+
+    const res = await handleLaunch(ctxFor('prior-unknown'))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.priorProcessUnresponsive')
+    expect(res.portConflict).toEqual({
+      port: PORT,
+      pids: [777],
+      isComfy: true,
+      priorBusy: true,
+      priorUnknown: true
+    })
+    expect(children).toHaveLength(0)
+    expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')[0]).toMatchObject({
+      action: 'busy_left',
+      queue_unknown: true
+    })
+  })
+
+  it('reports a cancel during the busy check as cancelled, whatever the check found', async () => {
+    ownership.prior = { ...terminated, action: 'busy_left', exitedInTime: false, blocked: 'busy' }
+    ownership.onResolve = () => _operationAborts.get('prior-cancel-during-probe')?.abort()
+    const res = await handleLaunch(ctxFor('prior-cancel-during-probe'))
+
+    expect(res).toMatchObject({ ok: false, cancelled: true })
+    expect(children).toHaveLength(0)
+  })
+
+  it('names the survivors when they serve no port, with their own prompt', async () => {
+    ownership.prior = {
+      ...terminated,
+      action: 'busy_left',
+      exitedInTime: false,
+      blocked: 'busy',
+      queueUnknown: true,
+      survivorPids: [555, 556]
+    }
+
+    const res = await handleLaunch(ctxFor('prior-survivors'))
+
+    expect(res.message).toBe('errors.priorSurvivorsRunning')
+    expect(res.portConflict).toEqual({
+      port: PORT,
+      pids: [555, 556],
+      isComfy: true,
+      priorBusy: true,
+      priorUnknown: true,
+      priorSurvivors: true
+    })
+  })
+
   it('passes the user choice to stop a busy orphan through to the check', async () => {
     await handleLaunch(ctxFor('prior-stop-busy', { stopBusyPriorProcess: true }))
 
-    expect(ownership.priorCalls[0]?.opts).toEqual({ stopBusy: true })
+    expect(ownership.priorCalls[0]?.opts).toMatchObject({ stopBusy: true })
   })
 
   it('refuses to launch beside an orphan that outlived the kill', async () => {
@@ -2453,6 +2517,32 @@ describe('describePriorOutcome', () => {
     waitMs: 1,
     blocked: null
   }
+  it('names the survivors, not the dead child, in the log', () => {
+    expect(
+      describePriorOutcome({
+        ...base,
+        action: 'busy_left',
+        exitedInTime: false,
+        blocked: 'busy',
+        queueUnknown: true,
+        survivorPids: [555, 556]
+      })
+    ).toBe(
+      'processes left by an earlier ComfyUI (pids 555, 556, proof desktop_record): left running: they serve no port, so whether they are working cannot be asked; launch refused (unknown)'
+    )
+    expect(
+      describePriorOutcome({
+        ...base,
+        action: 'terminated',
+        exitedInTime: true,
+        lingering: 2,
+        survivorPids: [555, 556]
+      })
+    ).toBe(
+      'processes left by an earlier ComfyUI (pids 555, 556, proof desktop_record): stopped, and they exited'
+    )
+  })
+
   it.each([
     [{ action: 'terminated', exitedInTime: true }, 'stopped, and it exited'],
     [
@@ -2464,6 +2554,10 @@ describe('describePriorOutcome', () => {
       'left running: not proven to be ours; launch refused (unverified)'
     ],
     [{ action: 'waited', exitedInTime: true }, 'it exited on its own'],
+    [
+      { action: 'busy_left', exitedInTime: false, blocked: 'busy', queueUnknown: true },
+      'left running: it did not answer whether it is working on a prompt; launch refused (unknown)'
+    ],
     [
       { action: 'terminated', exitedInTime: true, lingering: 2 },
       'stopped, and it exited; 2 surviving subprocess(es) stopped'
