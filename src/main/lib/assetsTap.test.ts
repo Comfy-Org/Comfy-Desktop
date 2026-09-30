@@ -70,6 +70,7 @@ const FIELD_VALUES: Array<{ field: string; value: LogfmtValue }> = [
     value: 7
   })),
   { field: 'error_type', value: 'ValueError' },
+  { field: 'error_kind', value: 'database_locked' },
   { field: 'hashing_enabled', value: true },
   { field: 'reason', value: 'network_unavailable' },
   { field: 'errno_name', value: 'ESTALE' },
@@ -150,6 +151,7 @@ describe('assetsTap', () => {
           'site',
           ...COUNTER_FIELDS,
           'error_type',
+          'error_kind',
           'hashing_enabled',
           ...CLASSIFICATION_FIELDS
         ].sort()
@@ -986,6 +988,100 @@ describe('assetsTap', () => {
       expect(captured.map(({ event }) => event)).toEqual([
         'comfy.desktop.comfyui.assets.seeder.scan_completed'
       ])
+    })
+  })
+
+  describe('scan failure and performance fields', () => {
+    /** Mirror of ComfyUI `ERROR_KINDS`. */
+    const ERROR_KINDS = [
+      'expression_tree_too_large',
+      'too_many_variables',
+      'database_locked',
+      'disk_full',
+      'disk_io',
+      'unable_to_open',
+      'database_corrupt',
+      'permission_denied',
+      'file_locked',
+      'other'
+    ]
+    /** The core events that carry `error_kind`, always next to `error_type`. */
+    const ERROR_KIND_EVENTS = [
+      'seeder.scan_failed',
+      'scanner.fast_scan_failed',
+      'scanner.temp_sync_failed',
+      'scanner.mark_missing_failed',
+      'seeder.batch_insert_failed',
+      'scanner.watch_stat_failed',
+      'scanner.watch_seed_failed'
+    ]
+
+    it.each(ERROR_KINDS)('forwards error_kind=%s', (kind) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('seeder.scan_failed', { error_type: 'OperationalError', error_kind: kind }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ error_type: 'OperationalError', error_kind: kind })
+    })
+
+    it.each(ERROR_KIND_EVENTS)('forwards error_type and error_kind on %s', (event) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine(event, { error_type: 'OSError', error_kind: 'disk_full' }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe(`comfy.desktop.comfyui.assets.${event}`)
+      expect(captured[0]!.ctx).toMatchObject({ error_type: 'OSError', error_kind: 'disk_full' })
+    })
+
+    it('omits and counts a well-shaped error_kind this build does not know', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('seeder.scan_failed', { error_type: 'OSError', error_kind: 'quota_exceeded' }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.error_type).toBe('OSError')
+      expect(captured[0]!.ctx).not.toHaveProperty('error_kind')
+      tap.flushSummary()
+      expect(captured[1]!.event).toBe('comfy.desktop.comfyui.assets.unknown_enum_values_omitted')
+      expect(captured[1]!.ctx).toMatchObject({ count: 1 })
+      expect(JSON.stringify(captured[1]!.ctx)).not.toContain('quota_exceeded')
+    })
+
+    it.each(['Disk_Full', 'disk/full', 'x'.repeat(65)])(
+      'rejects the line for a malformed error_kind %s',
+      (kind) => {
+        const tap = createAssetsTap(baseOpts)
+        tap.ingest(taggedLine('seeder.scan_failed', { error_kind: kind }), 'stdout')
+        expect(captured).toHaveLength(0)
+      }
+    )
+
+    it('forwards the scan performance counters by the naming convention', () => {
+      const perf = {
+        cpu_ms: 4210,
+        paused_ms: 150,
+        dirs_listed_count: 312,
+        files_statted_count: 9876,
+        recovered_count: 3,
+        missing_marked_count: 1
+      }
+      // Not allowlisted: they reach telemetry through the convention alone.
+      for (const field of Object.keys(perf)) expect(ALLOWED_FIELD_NAMES.has(field)).toBe(false)
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('seeder.scan_completed', { ...perf, elapsed_ms: 8123, phase: 'fast' }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ ...perf, elapsed_ms: 8123, phase: 'fast' })
+    })
+
+    it('forwards recovered_count=0, the value that shows nothing needed recovering', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { recovered_count: 0 }), 'stdout')
+      expect(captured[0]!.ctx.recovered_count).toBe(0)
     })
   })
 

@@ -15,8 +15,8 @@
  * contract: an event allowlist, a field-name allowlist, per-field type and
  * value checks, and rejection of any key colliding with the trusted base
  * context. Ordinary unknown fields are omitted for version skew, as is a
- * `reason` or `site` value outside its enum that still has an enum value's
- * shape. The one exception: an unknown field named by a typed convention
+ * `reason`, `site` or `error_kind` value outside its enum that still has an
+ * enum value's shape. The one exception: an unknown field named by a typed convention
  * (`*_ms`, `*_count`, `*_bytes`, `*_pct`, `*_enabled`, `is_*`, `has_*`) is
  * forwarded when its value is a number or boolean of that convention's type
  * (see the CONVENTION CONTRACT below), so core can add metrics without a Desktop
@@ -83,7 +83,7 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
  * `ALLOWED_EVENTS` so a crafted log line cannot forge it.
  */
 const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
-/** Same contract as above, for `reason` / `site` values the build doesn't know. */
+/** Same contract as above, for `reason` / `site` / `error_kind` values the build doesn't know. */
 const UNKNOWN_ENUM_VALUES_OMITTED = 'unknown_enum_values_omitted'
 /** Same contract, for valid convention fields past the per-event cap. */
 const CONVENTION_FIELDS_OVER_EVENT_CAP = 'convention_fields_over_event_cap'
@@ -147,13 +147,31 @@ const REASONS: ReadonlySet<string> = new Set([
   'other'
 ])
 /**
+ * Mirror of ComfyUI `app/assets/event_log.py` `ERROR_KINDS`: what a failure
+ * was, classified from its SQLite result code, errno or winerror, never from
+ * its message.
+ */
+const ERROR_KINDS: ReadonlySet<string> = new Set([
+  'expression_tree_too_large',
+  'too_many_variables',
+  'database_locked',
+  'disk_full',
+  'disk_io',
+  'unable_to_open',
+  'database_corrupt',
+  'permission_denied',
+  'file_locked',
+  'other'
+])
+/**
  * Enums a newer core is expected to grow. A well-shaped value this build does
  * not know omits just that field, so a new failure reason cannot silently drop
  * the failure events (and their Datadog alerting copies) that carry it.
  */
 const EXTENSIBLE_ENUMS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['reason', REASONS],
-  ['site', SITES]
+  ['site', SITES],
+  ['error_kind', ERROR_KINDS]
 ])
 const ENUM_VALUE = /^[a-z][a-z0-9_]*$/
 /**
@@ -231,6 +249,7 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'permission_denied',
   'count',
   'error_type',
+  'error_kind',
   'hashing_enabled',
   'reason',
   'errno_name',
@@ -346,6 +365,7 @@ function isAllowedFieldValue(key: string, value: unknown): value is TelemetryVal
   if (key === 'stage') return STAGES.has(value)
   if (key === 'site') return SITES.has(value)
   if (key === 'reason') return REASONS.has(value)
+  if (key === 'error_kind') return ERROR_KINDS.has(value)
   if (key === 'errno_name') return ERRNO_NAME.test(value)
   if (key === 'exc_fp') return EXC_FP.test(value)
   if (key === 'exc_class' || key === 'exc_site') return DOTTED_NAME.test(value)
