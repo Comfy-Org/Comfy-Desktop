@@ -379,13 +379,15 @@ export async function assembleCoreBetaArgs(input: {
 const PREVIEW_ANCESTRY_BUDGET_MS = 1500
 
 /**
- * The Core beta grants the install's NEXT launch would apply, for the settings view while it is
- * stopped. Runs the launch's own resolution (`splitLaunchArgs` + `assembleCoreBetaArgs`) with
+ * The Core beta grants the install is eligible for at its NEXT launch, for the settings view while
+ * it is stopped. A prediction: the launch re-checks everything and may still withhold a grant (a
+ * transient failure resolving ancestry, a changed flag payload), so the view says "eligible", not
+ * "will be added". Runs the launch's own resolution (`splitLaunchArgs` + `assembleCoreBetaArgs`) with
  * nothing a launch would do on the side: the opt-in is peeked without seeding it, the args schema
  * comes only from the cache the settings view already filled (no Python spawn), commit ancestry is
  * resolved without fetching, and on a pygit2-fallback host (a Python spawn per git call) only from
- * relations this process's last launch proved; nothing is logged. (A proven relation never changes,
- * but a later launch whose own resolution fails transiently would skip a grant this still shows.)
+ * relations this process's last resolution proved (a resolution that fails to prove a relation
+ * evicts it, so this never outruns the last launch); nothing is logged.
  *
  * `null` when an input the answer depends on is unavailable (no launch command, an uncached schema,
  * an unreadable setting, an ancestry check cut short by its shorter time budget, or on a pygit2 host

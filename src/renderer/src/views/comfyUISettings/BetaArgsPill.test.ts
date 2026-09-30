@@ -64,22 +64,22 @@ describe('BetaArgsPill', () => {
     )
   })
 
-  it("says a stopped install's grants arrive at the next launch", async () => {
+  it("says a stopped install's grants are eligible for the next launch", async () => {
     vi.useFakeTimers()
     const wrapper = mountPill(TWO, 'next-launch')
     expect(pill(wrapper).text()).toBe('+2 beta')
     expect(pill(wrapper).attributes('aria-label')).toBe(
-      '2 beta arguments will be added at next launch, show details'
+      '2 beta arguments eligible for the next launch, show details'
     )
     await wrapper.find('.tooltip-wrap').trigger('mouseenter')
     vi.advanceTimersByTime(200)
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
-      '2 beta arguments will be added at next launch. Click to see which.'
+      '2 beta arguments are eligible for the next launch. Click to see which.'
     )
     await wrapper.find('.tooltip-wrap').trigger('mouseleave')
     await pill(wrapper).trigger('click')
-    expect(popover(wrapper).text()).toContain('Beta args for the next launch')
+    expect(popover(wrapper).text()).toContain('Eligible for the next launch')
   })
 
   it("defaults to the running session's copy", async () => {

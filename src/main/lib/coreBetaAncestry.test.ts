@@ -571,6 +571,59 @@ describe('resolveCoreCommitState', () => {
       }
     })
 
+    it('takes a cached answer back once a later launch fails to prove it', async () => {
+      // The review counterexample: proven by one launch, withheld by the next (a transient git
+      // failure). The preview must follow the later launch, not the earlier proof.
+      const checkout = { kind: 'head', commit: HEAD } as const
+      git.pygit2 = true
+      try {
+        git.findMergeBase.mockResolvedValue(LOWER)
+        await resolveCoreCommitState(REPO, checkout, [LOWER])
+
+        git.findMergeBase.mockResolvedValue(undefined)
+        git.revParseRef.mockResolvedValue(undefined)
+        const later = await resolveCoreCommitState(REPO, checkout, [LOWER])
+        expect(later.ancestry.has(LOWER), 'the later launch withholds it').toBe(false)
+
+        const incomplete = vi.fn()
+        await resolveCoreCommitState(REPO, checkout, [LOWER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        git.pygit2 = false
+      }
+    })
+
+    it('takes a cached answer back when a later launch runs out of budget before it', async () => {
+      const checkout = { kind: 'head', commit: HEAD } as const
+      git.pygit2 = true
+      try {
+        git.findMergeBase.mockResolvedValue(LOWER)
+        await resolveCoreCommitState(REPO, checkout, [LOWER])
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        git.findMergeBase.mockImplementation(() => new Promise(() => {}))
+        const pending = resolveCoreCommitState(REPO, checkout, [LOWER])
+        await vi.advanceTimersByTimeAsync(10_000)
+        await pending
+        vi.useRealTimers()
+
+        const incomplete = vi.fn()
+        await resolveCoreCommitState(REPO, checkout, [LOWER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        vi.useRealTimers()
+        git.pygit2 = false
+      }
+    })
+
     it('misses once HEAD has moved since the launch', async () => {
       git.findMergeBase.mockResolvedValue(LOWER)
       git.pygit2 = true

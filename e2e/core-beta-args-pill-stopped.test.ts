@@ -1,7 +1,7 @@
 /**
  * Beta-args pill for a STOPPED install — instance-picker Settings › Startup Args.
  *
- * While stopped, the pill shows the grants the install's next launch would apply. Main computes
+ * While stopped, the pill shows the grants the install is eligible for at its next launch. Main computes
  * them with the launch's own resolution, fed only inputs it can read without side effects: the
  * seeded grant payload, the record's Core version, the user's args, and the args schema the
  * settings view itself discovers (the fake install answers `--help`). The pill therefore appears
@@ -114,18 +114,18 @@ async function expectNoPill(popup: WebContentsPage): Promise<void> {
   expect(await pillAriaLabel(popup)).toBeNull()
 }
 
-test('shows the grants the next launch would apply @linux', async () => {
+test('shows the grants the next launch is eligible for @linux', async () => {
   const popup = await openStartupArgs()
   // First open: the field's own schema discovery fills the cache, then the view re-reads.
   await popup.waitForVisible(PILL, { timeout: 15_000 })
   expect(await pillAriaLabel(popup)).toBe(
-    '1 beta argument will be added at next launch, show details',
+    '1 beta argument eligible for the next launch, show details',
   )
   await popup.clickUntilVisible(PILL, `${ARGS_FIELD} .beta-args-popover`, { timeout: 10_000 })
   const text = await popup.evaluate<string>(
     `document.querySelector(${JSON.stringify(`${ARGS_FIELD} .beta-args-popover`)}).textContent`,
   )
-  expect(text).toContain('Beta args for the next launch')
+  expect(text).toContain('Eligible for the next launch')
   expect(text).toContain('--enable-assets')
   expect(text).toContain('Asset library')
 })

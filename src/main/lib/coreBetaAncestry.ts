@@ -93,9 +93,10 @@ function scheduleFetch(repoPath: string, sha: string, head: string): boolean {
 
 type Relation = boolean | null
 
-/** Relations proven by any resolution in this process, keyed by repository, HEAD and SHA. How two
- *  commits relate never changes, so on a host whose git is a Python spawn per call (pygit2) a
- *  display-only resolution answers from here instead of from git; a moved HEAD simply misses. */
+/** Relations proven by resolutions in this process, keyed by repository, HEAD and SHA. On a host
+ *  whose git is a Python spawn per call (pygit2) a display-only resolution answers from here instead
+ *  of from git; a moved HEAD simply misses. Each resolution also evicts whatever it could not prove,
+ *  so the cache holds the LAST resolution's answer, never one it has since withheld. */
 const provenRelations = new Map<string, boolean>()
 const relationKey = (repoPath: string, head: string, sha: string): string =>
   `${repoPath}\0${head}\0${sha}`
@@ -330,6 +331,14 @@ export async function resolveCoreCommitState(
     budget.stopped = true
     clearTimeout(timer)
     if (onAbort) signal?.removeEventListener('abort', onAbort)
+  }
+  // Whatever this resolution could not prove, it also withholds, so a relation proven earlier must
+  // not keep answering for it: a later display-only lookup is never more optimistic than the last
+  // resolution, whatever made that one fall short (budget, abort, a failed git call).
+  for (const [index, raw] of shas.entries()) {
+    const sha = raw.toLowerCase()
+    if (!FULL_SHA_RE.test(sha) || index >= MAX_RESOLVED_SHAS) continue
+    if (!ancestry.has(sha)) provenRelations.delete(relationKey(repoPath, head, sha))
   }
   return { head, ancestry }
 }
