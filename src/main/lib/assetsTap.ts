@@ -161,6 +161,7 @@ const ERROR_KINDS: ReadonlySet<string> = new Set([
   'database_corrupt',
   'permission_denied',
   'file_locked',
+  'read_only',
   'other'
 ])
 /**

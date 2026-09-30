@@ -1003,6 +1003,7 @@ describe('assetsTap', () => {
       'database_corrupt',
       'permission_denied',
       'file_locked',
+      'read_only',
       'other'
     ]
     /** The core events that carry `error_kind`, always next to `error_type`. */
@@ -1011,6 +1012,7 @@ describe('assetsTap', () => {
       'scanner.fast_scan_failed',
       'scanner.temp_sync_failed',
       'scanner.mark_missing_failed',
+      'scanner.stat_failed',
       'seeder.batch_insert_failed',
       'scanner.watch_stat_failed',
       'scanner.watch_seed_failed'
