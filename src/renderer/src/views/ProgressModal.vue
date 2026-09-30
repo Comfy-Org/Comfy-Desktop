@@ -543,10 +543,21 @@ async function handleStopBusyPrior(): Promise<void> {
   const op = progressStore.operations.get(id)
   if (!op) return
   const unknown = op.result?.portConflict?.priorUnknown === true
+  const survivors = op.result?.portConflict?.priorSurvivors === true
   const confirmed = await modal.confirm({
-    title: t(unknown ? 'errors.priorProcessUnknownTitle' : 'errors.priorProcessBusyTitle'),
+    title: t(
+      survivors
+        ? 'errors.priorSurvivorsTitle'
+        : unknown
+          ? 'errors.priorProcessUnknownTitle'
+          : 'errors.priorProcessBusyTitle'
+    ),
     message: t(
-      unknown ? 'errors.priorProcessUnknownConfirmMessage' : 'errors.priorProcessBusyConfirmMessage'
+      survivors
+        ? 'errors.priorSurvivorsConfirmMessage'
+        : unknown
+          ? 'errors.priorProcessUnknownConfirmMessage'
+          : 'errors.priorProcessBusyConfirmMessage'
     ),
     confirmLabel: t('errors.priorProcessBusyStop'),
     confirmStyle: 'danger'
@@ -645,11 +656,14 @@ defineExpose({ startOperation, showOperation })
                 <X :size="20" />
                 <span>{{
                   currentOp.result?.portConflict?.priorBusy &&
-                  currentOp.result.portConflict.priorUnknown
-                    ? $t('errors.priorProcessUnknownTitle')
-                    : currentOp.result?.portConflict?.priorBusy
-                      ? $t('errors.priorProcessBusyTitle')
-                      : $t('errors.portConflictTitle')
+                  currentOp.result.portConflict.priorSurvivors
+                    ? $t('errors.priorSurvivorsTitle')
+                    : currentOp.result?.portConflict?.priorBusy &&
+                        currentOp.result.portConflict.priorUnknown
+                      ? $t('errors.priorProcessUnknownTitle')
+                      : currentOp.result?.portConflict?.priorBusy
+                        ? $t('errors.priorProcessBusyTitle')
+                        : $t('errors.portConflictTitle')
                 }}</span>
               </div>
               <div

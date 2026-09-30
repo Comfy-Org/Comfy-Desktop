@@ -73,7 +73,9 @@ const messages = {
       priorProcessBusyStop: 'Stop it and launch',
       priorProcessBusyConfirmMessage: 'This stops the earlier ComfyUI.',
       priorProcessUnknownTitle: 'An earlier ComfyUI is still running',
-      priorProcessUnknownConfirmMessage: 'This stops it and cancels anything it is doing.'
+      priorProcessUnknownConfirmMessage: 'This stops it and cancels anything it is doing.',
+      priorSurvivorsTitle: 'Processes from an earlier ComfyUI are still running',
+      priorSurvivorsConfirmMessage: 'This stops those processes and anything they are doing.'
     }
   }
 }
@@ -510,6 +512,35 @@ describe('ProgressModal — brand branch state transitions', () => {
       expect.objectContaining({
         title: 'An earlier ComfyUI is still running',
         message: 'This stops it and cancels anything it is doing.'
+      })
+    )
+  })
+
+  it('titles and confirms survivors as processes, not as a running ComfyUI', async () => {
+    installMockApi()
+    const portConflict: PortConflictInfo = {
+      port: 8188,
+      pids: [555, 556],
+      isComfy: true,
+      priorBusy: true,
+      priorUnknown: true,
+      priorSurvivors: true
+    }
+    const { body } = await mountWithOp('inst-1', {
+      title: 'Launching',
+      finished: true,
+      result: { ok: false, message: 'PID 555, 556', portConflict } as ActionResult
+    })
+
+    expect(body.selectorText('.brand-progress__banner')).toContain(
+      'Processes from an earlier ComfyUI are still running'
+    )
+    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    await flushPromises()
+    expect(mockModal.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Processes from an earlier ComfyUI are still running',
+        message: 'This stops those processes and anything they are doing.'
       })
     )
   })

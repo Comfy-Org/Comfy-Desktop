@@ -3,7 +3,7 @@ import http from 'http'
 import path from 'path'
 import type { ChildProcess } from 'child_process'
 import { stateDir } from './paths'
-import { killPidTree } from './process'
+import { isPortListening, killPidTree } from './process'
 import {
   commandArgvOf,
   commandLinesOf,
@@ -383,6 +383,9 @@ export interface PriorProcessOutcome {
   queue?: QueueState
   /** The orphan never answered `/queue`, so whether it is working is unknown. */
   queueUnknown?: boolean
+  /** Left running: survivors of an exited ComfyUI that serve no port, so they cannot be asked.
+   *  Their pids, for the user and the log (the recorded child is already gone). */
+  survivorPids?: number[]
   /** The user chose to stop a busy process. */
   busyOverride?: boolean
   /** Descendants that had outlived the child in its process group, and were stopped. */
@@ -499,6 +502,8 @@ export interface PriorProcessDeps {
   probeQueue: typeof probeQueue
   killPidTree: typeof killPidTree
   /** Monotonic clock for every wait and deadline. */
+  /** Whether anything listens on the port; defaults to the real probe. */
+  portInUse?: (port: number) => Promise<boolean>
   now: () => number
   /** Wall clock, only to date the record (`spawnedAt` is wall-clock). */
   wallNow: () => number
@@ -563,6 +568,17 @@ export async function resolvePriorProcess(
   // port: it gets the same busy check as the child before anything is stopped, and no answer
   // is not "idle" there either.
   if (proven && !opts.stopBusy) {
+    // Nothing on the recorded port: whatever survived serves no HTTP and cannot be asked. Say so
+    // at once rather than spend the whole probe budget on a port nobody listens to.
+    const serving = await (deps.portInUse ?? isPortListening)(record.port).catch(() => true)
+    if (!serving) {
+      return early({
+        action: 'busy_left',
+        blocked: 'busy',
+        queueUnknown: true,
+        survivorPids: proven.map((m) => m.pid)
+      })
+    }
     try {
       opts.onProbe?.()
     } catch {

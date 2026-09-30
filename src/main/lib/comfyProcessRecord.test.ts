@@ -572,6 +572,7 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     isPidAlive: (pid) => alive.has(pid),
     // Idle unless a test says otherwise: a survivor still serving the port answers it.
     probeQueue: async () => ({ running: 0, pending: 0 }),
+    portInUse: async () => true,
     killPidTree: async (pid) => {
       kills.push(pid)
       alive.delete(pid)
@@ -651,6 +652,23 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     expect(probeQueue).not.toHaveBeenCalled()
     expect(kills).toEqual([555])
     expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
+  })
+
+  it('asks at once, naming the survivors, when nothing serves the port (no probe to wait on)', async () => {
+    const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({ portInUse: async () => false, probeQueue })
+    )
+    expect(probeQueue).not.toHaveBeenCalled()
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({
+      action: 'busy_left',
+      blocked: 'busy',
+      queueUnknown: true,
+      survivorPids: [555]
+    })
   })
 
   it('never stops a survivor that does not answer whether it is busy: the user decides', async () => {

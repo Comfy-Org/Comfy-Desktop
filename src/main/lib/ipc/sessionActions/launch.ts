@@ -581,6 +581,13 @@ export function describePriorOutcome(prior: PriorProcessOutcome): string {
   const reason = prior.queueUnknown ? 'unknown' : prior.blocked
   const blocked = prior.blocked ? `; launch refused (${reason})` : ''
   const lingering = prior.lingering ? `; ${prior.lingering} surviving subprocess(es) stopped` : ''
+  if (prior.survivorPids) {
+    return (
+      `processes left by an earlier ComfyUI (pids ${prior.survivorPids.join(', ')}, port ` +
+      `${prior.port}, proof ${prior.proof}): left running: they serve no port, so whether they ` +
+      `are working cannot be asked${blocked}`
+    )
+  }
   return `earlier ComfyUI (pid ${prior.pid}, port ${prior.port}, proof ${prior.proof}): ${what}${lingering}${blocked}`
 }
 
@@ -1541,15 +1548,18 @@ async function runLaunch(
       return {
         ok: false,
         // No counts: the prompt stays on screen while the queue moves on.
-        message: prior.queueUnknown
-          ? i18n.t('errors.priorProcessUnresponsive')
-          : i18n.t('errors.priorProcessBusy'),
+        message: prior.survivorPids
+          ? i18n.t('errors.priorSurvivorsRunning', { pids: prior.survivorPids.join(', ') })
+          : prior.queueUnknown
+            ? i18n.t('errors.priorProcessUnresponsive')
+            : i18n.t('errors.priorProcessBusy'),
         portConflict: {
           port: prior.port,
-          pids: [prior.pid],
+          pids: prior.survivorPids ?? [prior.pid],
           isComfy: true,
           priorBusy: true,
-          ...(prior.queueUnknown ? { priorUnknown: true } : {})
+          ...(prior.queueUnknown ? { priorUnknown: true } : {}),
+          ...(prior.survivorPids ? { priorSurvivors: true } : {})
         }
       }
     }

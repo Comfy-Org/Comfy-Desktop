@@ -518,6 +518,8 @@ export interface PortConflictInfo {
   priorBusy?: boolean
   /** With `priorBusy`: it never answered whether it is working, so nothing may claim it is. */
   priorUnknown?: boolean
+  /** With `priorBusy`: it is not the earlier ComfyUI but processes it left behind (`pids`). */
+  priorSurvivors?: boolean
 }
 
 export interface AddResult {
