@@ -2031,6 +2031,10 @@ async function runLaunch(
     const errorSource = tail
       ? `${launchResult.message}\n${launchResult.stderr}`
       : launchResult.message
+    // Without assets, ComfyUI logs the lock line and carries on, so a later, unrelated crash
+    // would carry it in its tail: only a launch that takes the lock can fail on it.
+    const dbLocked =
+      launchCmd.args!.includes('--enable-assets') && isDbLockFailure(launchResult.stderr)
     const bootFailed = {
       installation_id: installationId,
       boot_id: bootId,
@@ -2045,7 +2049,7 @@ async function runLaunch(
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries
     }
-    if (isDbLockFailure(launchResult.stderr)) {
+    if (dbLocked) {
       // Whatever traceback ends the tail (often an unrelated custom-node warning) would
       // otherwise name the error. The holder lookup can take seconds (Restart Manager / lsof),
       // so it runs off the failure path and the event follows it.
@@ -2078,7 +2082,7 @@ async function runLaunch(
       telemetry.emit('comfy.desktop.comfyui.boot_failed', bootFailed)
     }
     // "Process exited with code 1" hides the one thing the user can act on.
-    if (isDbLockFailure(launchResult.stderr)) {
+    if (dbLocked) {
       return { ok: false, message: i18n.t('errors.comfyDbLocked') }
     }
     return { ok: false, message: launchResult.message }

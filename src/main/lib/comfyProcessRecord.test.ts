@@ -570,7 +570,8 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
       new Map(pids.filter((p) => alive.has(p)).map((p) => [p, p === 555 ? 'survivor-start' : 'x'])),
     ownStartTime: async () => SELF.start,
     isPidAlive: (pid) => alive.has(pid),
-    probeQueue: async () => null,
+    // Idle unless a test says otherwise: a survivor still serving the port answers it.
+    probeQueue: async () => ({ running: 0, pending: 0 }),
     killPidTree: async (pid) => {
       kills.push(pid)
       alive.delete(pid)
@@ -627,6 +628,83 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     expect(kills).toEqual([])
     expect(out).toMatchObject({ blocked: 'unverified' })
     expect(removed).toEqual([])
+  })
+
+  it('never stops a survivor that is running prompts without the user choosing', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({ probeQueue: async () => ({ running: 1, pending: 3 }) })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({
+      action: 'busy_left',
+      blocked: 'busy',
+      queue: { running: 1, pending: 3 }
+    })
+    expect(removed).toEqual([])
+  })
+
+  it('stops a busy survivor once the user has chosen to', async () => {
+    const probeQueue = vi.fn(async () => ({ running: 1, pending: 0 }))
+    const out = await resolvePriorProcess('inst-1', { stopBusy: true }, deps({ probeQueue }))
+    expect(probeQueue).not.toHaveBeenCalled()
+    expect(kills).toEqual([555])
+    expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
+  })
+
+  it('never stops a survivor that does not answer whether it is busy: the user decides', async () => {
+    let t = 0
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        now: () => t,
+        sleep: async (ms) => {
+          t += ms
+        },
+        probeQueue: async (_port, timeoutMs) => {
+          t += timeoutMs!
+          return null
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', blocked: 'busy', queueUnknown: true })
+  })
+
+  it('stops nothing once the launch is cancelled during the survivor check', async () => {
+    const abort = new AbortController()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { signal: abort.signal },
+      deps({
+        probeQueue: async () => {
+          abort.abort()
+          return { running: 0, pending: 0 }
+        }
+      })
+    )
+    expect(kills).toEqual([])
+    expect(out).toBeNull()
+  })
+
+  it('reports survivors already stopped when a cancel lands during the stop', async () => {
+    const abort = new AbortController()
+    const out = await resolvePriorProcess(
+      'inst-1',
+      { signal: abort.signal },
+      deps({
+        killPidTree: async (pid) => {
+          kills.push(pid)
+          alive.delete(pid)
+          abort.abort()
+          return { killed: true, exited: true, waitMs: 5 }
+        }
+      })
+    )
+    expect(kills).toEqual([555])
+    expect(out).toMatchObject({ action: 'terminated', lingering: 1, blocked: null })
   })
 
   it('never stops a survivor pid that now names another process', async () => {
@@ -690,7 +768,9 @@ describe.runIf(process.platform !== 'win32')('survivors of a real process group'
       })
       expect(isPidAlive(leader.pid!)).toBe(false)
 
-      const out = await resolvePriorProcess('inst-1')
+      // This survivor serves no port, so it never answers the busy check; the next launch asks,
+      // and this is the user having chosen "Stop it and launch".
+      const out = await resolvePriorProcess('inst-1', { stopBusy: true })
       expect(out).toMatchObject({ action: 'terminated', lingering: 1, exitedInTime: true })
       expect(isPidAlive(survivorPid)).toBe(false)
       expect(readRecord('inst-1')).toBeNull()
@@ -912,7 +992,10 @@ describe('commandLineIsInstall', () => {
       '/Users/a/My ComfyUI',
       false
     ],
-    ['/Users/a/My ComfyUI/.venv/bin/python -m pip list', '/Users/a/My ComfyUI', false]
+    ['/Users/a/My ComfyUI/.venv/bin/python -m pip list', '/Users/a/My ComfyUI', false],
+    // A drive-letter path is absolute: another install's main.py is not this one's relative one.
+    ['C:\\c\\one\\.venv\\Scripts\\python.exe C:\\c\\two\\ComfyUI\\main.py', 'C:\\c\\one', false],
+    ['C:\\c\\one\\.venv\\Scripts\\python.exe ComfyUI\\main.py', 'C:\\c\\one', true]
   ])('%s in %s → %s', (cmd, installPath, expected) => {
     expect(commandLineIsInstall(cmd, installPath)).toBe(expected)
   })
