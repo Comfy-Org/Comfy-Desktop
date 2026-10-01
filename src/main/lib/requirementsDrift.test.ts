@@ -10,10 +10,14 @@ vi.mock('electron', () => ({
 import {
   compareReleases,
   detectRequirementsDrift,
+  envRootForPython,
   findUnsatisfiedRequirements,
   normalizeDistName,
+  comfyuiDirForLaunch,
+  shellQuote,
   parseRequirementLine,
-  readInstalledDists
+  readInstalledDists,
+  unmanagedRequirementsWarning
 } from './requirementsDrift'
 
 let tmpDir: string
@@ -264,5 +268,112 @@ describe('detectRequirementsDrift', () => {
     expect(detectRequirementsDrift(comfy, makeSitePackages(tmpDir, []))).toBeNull()
     fs.rmSync(path.join(comfy, 'requirements.txt'))
     expect(detectRequirementsDrift(comfy, makeSitePackages(tmpDir, ['x-1.dist-info']))).toBeNull()
+  })
+})
+
+describe('envRootForPython', () => {
+  it('resolves a venv root from Scripts/ or bin/, and an embedded dir as itself', () => {
+    expect(envRootForPython(path.join('/v', '.venv', 'Scripts', 'python.exe'))).toBe(
+      path.join('/v', '.venv')
+    )
+    expect(envRootForPython(path.join('/v', '.venv', 'bin', 'python3'))).toBe(
+      path.join('/v', '.venv')
+    )
+    expect(envRootForPython(path.join('/p', 'python_embeded', 'python.exe'))).toBe(
+      path.join('/p', 'python_embeded')
+    )
+  })
+})
+
+describe('unmanagedRequirementsWarning', () => {
+  it('suggests uv when the environment has no pip (a uv-created venv)', () => {
+    const comfy = makeComfy('sqlalchemy>=2.0.0\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, ['filelock-3.0.dist-info'])
+    const python = path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', 'python3')
+    const warning = unmanagedRequirementsWarning(python, comfy)
+    expect(warning).toContain(
+      `uv pip install --python ${shellQuote(python)} -r ${shellQuote(path.join(comfy, 'requirements.txt'))}`
+    )
+    expect(warning).not.toContain('-m pip')
+  })
+
+  it('names the unsatisfied requirements and the exact pip command', () => {
+    const comfy = makeComfy('sqlalchemy>=2.0.0\nfilelock\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, ['filelock-3.0.dist-info', 'pip-24.0.dist-info'])
+    const python =
+      process.platform === 'win32'
+        ? path.join(venv, 'Scripts', 'python.exe')
+        : path.join(venv, 'bin', 'python3')
+    const warning = unmanagedRequirementsWarning(python, comfy)
+    expect(warning).toContain('sqlalchemy (missing)')
+    expect(warning).not.toContain('filelock')
+    expect(warning).toContain(
+      `${shellQuote(python)} -m pip install -r ${shellQuote(path.join(comfy, 'requirements.txt'))}`
+    )
+  })
+
+  it('adds -s for an isolated (portable) interpreter', () => {
+    const comfy = makeComfy('blake3\n')
+    const embedded = path.join(tmpDir, 'python_embeded')
+    const site = path.join(embedded, 'Lib', 'site-packages')
+    fs.mkdirSync(path.join(site, 'x-1.dist-info'), { recursive: true })
+    fs.mkdirSync(path.join(site, 'pip-24.0.dist-info'))
+    const python = path.join(embedded, 'python.exe')
+    const warning = unmanagedRequirementsWarning(python, comfy, { isolated: true })
+    if (process.platform === 'win32') {
+      expect(warning).toContain(`"${python}" -s -m pip install -r`)
+    } else {
+      // findSitePackages only knows the Windows embedded layout on win32.
+      expect(warning).toBeNull()
+    }
+  })
+
+  it('returns null when everything is satisfied', () => {
+    const comfy = makeComfy('blake3\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, ['blake3-1.0.dist-info'])
+    expect(unmanagedRequirementsWarning(path.join(venv, 'bin', 'python3'), comfy)).toBeNull()
+  })
+
+  it('includes manager_requirements.txt in the command when present', () => {
+    const comfy = makeComfy('blake3\n', 'comfyui_manager==4.2.2\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, ['x-1.dist-info', 'pip-24.0.dist-info'])
+    const python = path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', 'python3')
+    expect(unmanagedRequirementsWarning(python, comfy)).toContain(
+      `-m pip install -r ${shellQuote(path.join(comfy, 'requirements.txt'))} -r ${shellQuote(path.join(comfy, 'manager_requirements.txt'))}`
+    )
+  })
+})
+
+describe('comfyuiDirForLaunch', () => {
+  it('resolves a git launch (relative main.py in the checkout)', () => {
+    const cwd = path.join('/g', 'ComfyUI')
+    expect(comfyuiDirForLaunch({ cwd, args: ['-s', 'main.py', '--port', '1'] })).toBe(cwd)
+  })
+
+  it('resolves a portable launch (root cwd, absolute ComfyUI/main.py)', () => {
+    const root = path.join('/p', 'ComfyUI_windows_portable')
+    expect(
+      comfyuiDirForLaunch({ cwd: root, args: ['-s', path.join(root, 'ComfyUI', 'main.py')] })
+    ).toBe(path.join(root, 'ComfyUI'))
+  })
+
+  it('returns null without a main.py argument', () => {
+    expect(comfyuiDirForLaunch({ cwd: '/x', args: ['main.py'] })).toBeNull()
+    expect(comfyuiDirForLaunch({ args: ['-s', 'main.py'] })).toBeNull()
+  })
+})
+
+describe('shellQuote', () => {
+  it('single-quotes on POSIX so $, backticks and backslashes stay literal', () => {
+    expect(shellQuote('/a/$(rm -rf x)/`id`/b\\c', 'linux')).toBe("'/a/$(rm -rf x)/`id`/b\\c'")
+    expect(shellQuote("/it's/here", 'darwin')).toBe("'/it'\\''s/here'")
+  })
+
+  it('double-quotes on Windows', () => {
+    expect(shellQuote('C:\\Program Files\\py.exe', 'win32')).toBe('"C:\\Program Files\\py.exe"')
   })
 })

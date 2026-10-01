@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { createHash } from 'crypto'
+import { findSitePackages } from '../sources/standalone/envPaths'
 
 /**
  * Detects when a Python environment no longer satisfies ComfyUI's
@@ -214,4 +215,61 @@ export function describeUnsatisfied(unsatisfied: UnsatisfiedRequirement[]): stri
       r.reason === 'missing' ? `${r.name} (missing)` : `${r.name} ${r.installed} < ${r.minVersion}`
     )
     .join(', ')
+}
+
+/** Quote a path for the platform's usual shell: single quotes on POSIX (inert
+ *  to `$`, backticks and backslashes), double quotes on Windows, where `"` cannot
+ *  appear in a path. Limit: cmd.exe still expands `%VAR%` inside double quotes,
+ *  so a path containing percent-delimited text may change when pasted. */
+export function shellQuote(p: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? `"${p}"` : `'${p.replace(/'/g, `'\\''`)}'`
+}
+
+/** The environment root of a venv or embedded interpreter, from its python path. */
+export function envRootForPython(pythonPath: string): string {
+  const dir = path.dirname(pythonPath)
+  const base = path.basename(dir).toLowerCase()
+  return base === 'scripts' || base === 'bin' ? path.dirname(dir) : dir
+}
+
+/**
+ * Launch-log warning for an environment Desktop doesn't own (git, portable):
+ * names the unsatisfied requirements and the exact command to install them.
+ * Null when nothing is unsatisfied or the environment can't be read.
+ */
+export function unmanagedRequirementsWarning(
+  pythonPath: string,
+  comfyuiDir: string,
+  opts: { isolated?: boolean } = {}
+): string | null {
+  const sitePackages = findSitePackages(envRootForPython(pythonPath))
+  const drift = detectRequirementsDrift(comfyuiDir, sitePackages)
+  if (!drift || drift.unsatisfied.length === 0) return null
+  const files = REQUIREMENTS_FILES.map((f) => path.join(comfyuiDir, f)).filter((f) =>
+    fs.existsSync(f)
+  )
+  // A uv-created venv has no pip, so `python -m pip` would fail there.
+  const hasPip = sitePackages !== null && readInstalledDists(sitePackages).has('pip')
+  const installer = hasPip
+    ? [shellQuote(pythonPath), ...(opts.isolated ? ['-s'] : []), '-m pip install']
+    : ['uv pip install --python', shellQuote(pythonPath)]
+  const command = [...installer, ...files.map((f) => `-r ${shellQuote(f)}`)].join(' ')
+  return (
+    `\nWARNING: this Python environment does not satisfy ComfyUI's requirements: ` +
+    `${describeUnsatisfied(drift.unsatisfied)}\n` +
+    `ComfyUI may fail to start. To install them, run:\n  ${command}\n`
+  )
+}
+
+/**
+ * The ComfyUI checkout a launch command runs: the directory of the `main.py`
+ * that follows `-s`, resolved against `cwd`. Portable launches run from the
+ * portable root with an absolute `ComfyUI/main.py`, so `cwd` alone is wrong.
+ */
+export function comfyuiDirForLaunch(cmd: { args?: string[]; cwd?: string }): string | null {
+  const args = cmd.args ?? []
+  const sIdx = args.indexOf('-s')
+  const mainPy = sIdx !== -1 ? args[sIdx + 1] : undefined
+  if (!mainPy || !cmd.cwd) return null
+  return path.dirname(path.resolve(cmd.cwd, mainPy))
 }
