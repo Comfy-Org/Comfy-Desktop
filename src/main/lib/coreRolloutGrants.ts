@@ -22,7 +22,6 @@ import semver from 'semver'
 import { MAX_RESOLVED_SHAS } from './coreBetaAncestry'
 import {
   commitShortfall,
-  oppositeArg,
   parseCommitRanges,
   parseCommitSha,
   parseCoreVersion,
@@ -31,6 +30,7 @@ import {
 } from './coreBetaGrants'
 import type { CoreBetaGrant, CoreCommitState, CoreVersionState } from './coreBetaGrants'
 import { makeOpsFlag } from './opsFlag'
+import { oppositeArg } from './posthogControlledArgs'
 import type { ConsentState, FeatureFlagValue } from './telemetry'
 
 export const CORE_ROLLOUT_FLAG_KEY = 'desktop_core_rollout'
