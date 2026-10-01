@@ -352,3 +352,21 @@ describe('a probe never outlasts the overall deadline', () => {
     }
   })
 })
+
+describe('a spent budget still ends the wait', () => {
+  // With nothing left of timeoutMs the probe's timeout must not become 0, which Node reads as
+  // "no timeout": the probe would hang on a silent peer and the wait would never time out.
+  it.each(['waitForPort', 'waitForUrl'] as const)('%s with timeoutMs 0', async (fn) => {
+    const { close, port } = await listenHanging()
+    try {
+      const opts = { timeoutMs: 0, intervalMs: 10 }
+      const wait =
+        fn === 'waitForPort'
+          ? waitForPort(port, '127.0.0.1', opts)
+          : waitForUrl(`http://127.0.0.1:${port}/`, opts)
+      await expect(wait).rejects.toThrow('Timed out')
+    } finally {
+      await close()
+    }
+  })
+})
