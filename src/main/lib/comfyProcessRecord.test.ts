@@ -1749,7 +1749,8 @@ describe.runIf(process.platform === 'linux')('holderIsInstall (real process, spa
         ? spawn(interpreter, [path.join('ComfyUI', 'main.py')], { cwd: install, stdio: 'ignore' })
         : mode === 'absolute'
           ? spawn(process.execPath, [path.join(install, 'ComfyUI', 'main.py')], { stdio: 'ignore' })
-          : spawn('./.venv/bin/python', ['-s', path.join('ComfyUI', 'main.py')], {
+          : // No `-s`: the stand-in interpreter is node, which exits on it at once.
+            spawn('./.venv/bin/python', [path.join('ComfyUI', 'main.py')], {
               cwd: install,
               stdio: 'ignore'
             })
