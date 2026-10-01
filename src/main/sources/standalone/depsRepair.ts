@@ -50,10 +50,14 @@ export interface DepsRepairMarker {
   attempts: Record<string, number>
 }
 
-/** ComfyUI requirements that depend on torch unconditionally (per their
- *  metadata): installing one into a venv with no torch to pin would let uv pull
- *  a default-index (CPU on Windows) torch. */
-const TORCH_DEPENDENT = new Set(['torchsde', 'kornia', 'spandrel'])
+/** ComfyUI requirements that need part of the torch stack (per their
+ *  metadata), and which part: installing one while that part is missing would
+ *  let uv pull a default-index (CPU on Windows) build of it. */
+const TORCH_DEPENDENT: Record<string, string[]> = {
+  torchsde: ['torch'],
+  kornia: ['torch'],
+  spandrel: ['torch', 'torchvision']
+}
 
 function currentAppVersion(): string {
   try {
@@ -72,6 +76,7 @@ export type DepsRepairOutcome =
   | 'torch_missing'
   | 'unverified'
   | 'declined'
+  | 'prompt_unavailable'
   | 'no_uv'
   | 'cancelled'
   | 'site_packages_empty'
@@ -81,8 +86,10 @@ export interface DepsRepairTools {
   sendOutput?: (text: string) => void
   update: (data: Record<string, unknown>) => Promise<unknown>
   signal?: AbortSignal
-  /** Ask before modifying an adopted install's venv. Resolves true to install;
-   *  any rejection is treated as "skip". Not called for managed installs. */
+  /** Ask before modifying an adopted install's venv. Resolves true to install,
+   *  false when the user skips; rejects when the prompt can't be shown (no
+   *  window to show it in, no acknowledgement), which changes nothing either.
+   *  Not called for managed installs. */
   confirmAdoptedRepair: (unsatisfied: UnsatisfiedRequirement[]) => Promise<boolean>
 }
 
@@ -144,14 +151,16 @@ export function relaxSpecifier(specifier: string): string {
  *  held back, so they neither join nor lift a suppression. */
 function withoutHeldBack(
   unsatisfied: UnsatisfiedRequirement[],
-  torchPresent: boolean
+  torchStack: Set<string>
 ): UnsatisfiedRequirement[] {
-  return torchPresent ? unsatisfied : unsatisfied.filter((r) => !TORCH_DEPENDENT.has(r.name))
+  return unsatisfied.filter((r) => (TORCH_DEPENDENT[r.name] ?? []).every((d) => torchStack.has(d)))
 }
 
-function torchPresentIn(installation: InstallationRecord): boolean {
+/** Which of torch / torchvision the environment has. */
+function torchStackIn(installation: InstallationRecord): Set<string> {
   const sitePackages = findSitePackages(getActiveVenvDir(installation))
-  return sitePackages !== null && readInstalledDists(sitePackages).has('torch')
+  const dists = sitePackages !== null ? readInstalledDists(sitePackages) : new Map()
+  return new Set(['torch', 'torchvision'].filter((name) => dists.has(name)))
 }
 
 /** Attempts so far per package, for these requirement files and this Desktop
@@ -180,20 +189,32 @@ function suppressed(
   appVersion: string
 ): boolean {
   const attempts = priorAttempts(installation, drift.reqsHash, appVersion)
-  const relevant = withoutHeldBack(drift.unsatisfied, torchPresentIn(installation))
+  const relevant = withoutHeldBack(drift.unsatisfied, torchStackIn(installation))
   return relevant.length > 0 && relevant.every((r) => isSpent(attempts, r.name))
 }
 
-/** A marker left from an earlier repair is dropped once nothing is
- *  unsatisfied, so a package that goes missing again later gets a fresh
- *  budget. */
-export async function clearSatisfiedMarker(
+/**
+ * Drop marker entries for packages that are no longer unsatisfied, so a
+ * package that recovers and goes missing again later gets a fresh budget - even
+ * while another package keeps the repair suppressed. Returns the record as the
+ * rest of the launch should see it.
+ */
+export async function pruneMarker(
   installation: InstallationRecord,
   update: (data: Record<string, unknown>) => Promise<unknown>
-): Promise<void> {
-  if (!installation.depsRepairMarker) return
+): Promise<InstallationRecord> {
+  const marker = installation.depsRepairMarker as DepsRepairMarker | null | undefined
+  if (!marker || marker.attempts === null || typeof marker.attempts !== 'object') {
+    return installation
+  }
   const drift = detectInstallDrift(installation)
-  if (drift && drift.unsatisfied.length === 0) await update({ depsRepairMarker: null })
+  if (!drift) return installation
+  const unsatisfied = new Set(drift.unsatisfied.map((r) => r.name))
+  const kept = Object.entries(marker.attempts).filter(([name]) => unsatisfied.has(name))
+  if (kept.length === Object.keys(marker.attempts).length) return installation
+  const next = kept.length > 0 ? { ...marker, attempts: Object.fromEntries(kept) } : null
+  await update({ depsRepairMarker: next })
+  return { ...installation, depsRepairMarker: next } as InstallationRecord
 }
 
 /** Launch-log note when drift remains but the repair is suppressed, so it is
@@ -239,6 +260,8 @@ export function pendingDrift(
 ): RequirementsDrift | null {
   const drift = detectInstallDrift(installation)
   if (!drift || drift.unsatisfied.length === 0) return null
+  // Only held-back packages left: nothing can install until torch is back.
+  if (withoutHeldBack(drift.unsatisfied, torchStackIn(installation)).length === 0) return null
   return suppressed(installation, drift, appVersion) ? null : drift
 }
 
@@ -288,10 +311,11 @@ export async function repairDeps(
   // would conflict with its own requirement. The requirement files' bounds go
   // in too, so installing one line can't pull another requirement out of range.
   let constraints: string[]
-  let torchInstalled: boolean
+  let torchStack: Set<string>
   try {
     const installed = await freeze(uvPath, pythonPath)
-    torchInstalled = Object.keys(installed).some((name) => normalizeDistName(name) === 'torch')
+    const installedNames = new Set(Object.keys(installed).map(normalizeDistName))
+    torchStack = new Set(['torch', 'torchvision'].filter((name) => installedNames.has(name)))
     const unsatisfiedNames = new Set(drift.unsatisfied.map((r) => r.name))
     constraints = [
       ...buildProtectedConstraints(installed).filter(
@@ -310,13 +334,15 @@ export async function repairDeps(
   // With no torch installed there is nothing to pin, so a torch-dependent
   // requirement could pull a CPU torch. Hold it back - never recorded as
   // failed - so it installs on a later launch once torch is back.
-  const installable = withoutHeldBack(drift.unsatisfied, torchInstalled)
+  const installable = withoutHeldBack(drift.unsatisfied, torchStack)
   const heldBack = drift.unsatisfied.filter((r) => !installable.includes(r))
   const heldBackNames = new Set(heldBack.map((r) => r.name))
   if (heldBack.length > 0) {
+    const needs = (r: UnsatisfiedRequirement): string =>
+      `${r.name} (needs ${TORCH_DEPENDENT[r.name]!.filter((d) => !torchStack.has(d)).join(', ')})`
     tools.sendOutput?.(
-      `Not installing ${heldBack.map((r) => r.name).join(', ')}: PyTorch is not installed ` +
-        `in this environment, so it could pull in the wrong PyTorch build.\n`
+      `Not installing ${heldBack.map(needs).join(', ')}: that part of PyTorch is not ` +
+        `installed in this environment, so it could pull in the wrong PyTorch build.\n`
     )
   }
   if (installable.length === 0) {
@@ -339,10 +365,24 @@ export async function repairDeps(
 
   // Asked only now, so the prompt never offers a package that won't install.
   if (adopted) {
-    const accepted = await tools.confirmAdoptedRepair(toInstall).catch(() => false)
+    let accepted: boolean
+    try {
+      accepted = await tools.confirmAdoptedRepair(toInstall)
+    } catch {
+      if (tools.signal?.aborted) return 'cancelled'
+      // Not the user's choice: the prompt never reached them.
+      tools.sendOutput?.(
+        'Could not show the prompt to install the missing or outdated packages; ' +
+          'ComfyUI may fail to start.\n'
+      )
+      report('prompt_unavailable')
+      return 'prompt_unavailable'
+    }
     if (tools.signal?.aborted) return 'cancelled'
     if (!accepted) {
-      tools.sendOutput?.('Skipped installing the missing packages; ComfyUI may fail to start.\n')
+      tools.sendOutput?.(
+        'Skipped installing the missing or outdated packages; ComfyUI may fail to start.\n'
+      )
       report('declined')
       return 'declined'
     }
@@ -357,7 +397,7 @@ export async function repairDeps(
 
   // One line at a time, so one unresolvable requirement can't block the rest
   // and each package's outcome is known.
-  tools.sendOutput?.('Installing the missing Python packages…\n')
+  tools.sendOutput?.('Installing the missing or outdated Python packages…\n')
   const mirrors = settings.getMirrorConfig()
   let lastFailure: Awaited<ReturnType<typeof runUv>> | null = null
   const uvFailed = new Set<string>()
@@ -446,13 +486,13 @@ export async function repairDeps(
     tools.sendOutput?.('Will retry on next launch.\n')
 
   if (remaining.length === 0 && heldBack.length === 0 && skipped.length === 0) {
-    tools.sendOutput?.('Missing Python packages installed.\n')
+    tools.sendOutput?.('Missing or outdated Python packages installed.\n')
     report('repaired')
     return 'repaired'
   }
   if (remaining.length === 0) {
     tools.sendOutput?.(
-      `Installed the missing Python packages except ${[...heldBack, ...skipped].map((r) => r.name).join(', ')}.\n`
+      `Installed the missing or outdated Python packages except ${[...heldBack, ...skipped].map((r) => r.name).join(', ')}.\n`
     )
   }
   // Partial when at least one attempted package was repaired - judged by

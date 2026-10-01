@@ -16,7 +16,8 @@ vi.mock('../../settings', () => ({
 
 import {
   MAX_FAILED_ATTEMPTS,
-  clearSatisfiedMarker,
+  detectInstallDrift,
+  pruneMarker,
   pausedRepairNote,
   pendingDrift,
   relaxSpecifier,
@@ -231,17 +232,26 @@ describe('repairDeps', () => {
     expect(uv).not.toHaveBeenCalled()
   })
 
-  it('treats a prompt that cannot be delivered as a skip', async () => {
+  it('reports a prompt that could not be shown separately from a Skip', async () => {
     const { inst } = adoptedInstall(['numpy-2.1.0.dist-info'], 'sqlalchemy>=2.0.0\n')
     const uv = vi.fn()
+    const output: string[] = []
     const t = tools({
+      sendOutput: (s) => output.push(s),
       confirmAdoptedRepair: vi.fn(async () => Promise.reject(new Error('adopt-prompt-unavailable')))
     })
 
     await expect(
       repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
-    ).resolves.toBe('declined')
+    ).resolves.toBe('prompt_unavailable')
     expect(uv).not.toHaveBeenCalled()
+    expect(t.update).not.toHaveBeenCalled()
+    expect(output.join('')).toContain('Could not show the prompt')
+    expect(output.join('')).not.toContain('Skipped')
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'prompt_unavailable' })
+    )
   })
 
   it('does not prompt when an adopted venv has no uv to install with', async () => {
@@ -336,9 +346,9 @@ describe('repairDeps', () => {
     expect(t.confirmAdoptedRepair.mock.calls[0]![0].map((r: { name: string }) => r.name)).toEqual([
       'sqlalchemy'
     ])
-    expect(output.join('')).toContain('Not installing torchsde, kornia')
+    expect(output.join('')).toContain('Not installing torchsde (needs torch), kornia (needs torch)')
     expect(output.join('')).toContain(
-      'Installed the missing Python packages except torchsde, kornia'
+      'Installed the missing or outdated Python packages except torchsde, kornia'
     )
     expect(emit).toHaveBeenCalledWith(
       'comfy.desktop.deps_repair',
@@ -348,10 +358,13 @@ describe('repairDeps', () => {
 
   it('does not prompt an adopted install when everything is held back', async () => {
     const { inst } = adoptedInstall(['numpy-2.1.0.dist-info'], 'torchsde\nspandrel\nnumpy\n')
+    // Nothing is installable, so no repair is pending at all...
+    expect(pendingDrift(inst)).toBeNull()
+    // ...and even if one ran, it would neither prompt nor install.
     const t = tools()
     const uv = vi.fn()
     await expect(
-      repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
+      repairDeps(inst, detectInstallDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
     ).resolves.toBe('torch_missing')
     expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
     expect(uv).not.toHaveBeenCalled()
@@ -362,7 +375,10 @@ describe('repairDeps', () => {
   })
 
   it('installs torchsde when torch is there to pin', async () => {
-    const { inst, site } = managedInstall(['numpy-2.1.0.dist-info'], 'torch\ntorchsde\nnumpy\n')
+    const { inst, site } = managedInstall(
+      ['numpy-2.1.0.dist-info', 'torch-2.10.0.dist-info'],
+      'torch\ntorchsde\nnumpy\n'
+    )
     const uv = vi.fn(async (_uvPath: string, args: string[]) => {
       expect(args).toContain('torchsde')
       fs.mkdirSync(path.join(site, 'torchsde-0.2.6.dist-info'))
@@ -388,20 +404,45 @@ describe('repairDeps', () => {
     await expect(
       repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
     ).resolves.toBe('partial')
-    expect(output.join('')).toContain('Not installing torchsde: PyTorch is not installed')
+    expect(output.join('')).toContain('Not installing torchsde (needs torch)')
     // Held back, not failed: nothing is recorded against it.
     expect(t.update).not.toHaveBeenCalled()
-    // Still pending, so it installs once torch is back.
+    // Nothing to do until torch is back; then it is pending again.
+    expect(pendingDrift(inst)).toBeNull()
+    fs.mkdirSync(path.join(site, 'torch-2.10.0.dist-info'))
     expect(pendingDrift(inst)!.unsatisfied.map((r) => r.name)).toEqual(['torchsde'])
   })
 
-  it('runs no install when torchsde is the only drift and torch is missing', async () => {
+  it('starts no repair when torchsde is the only drift and torch is missing', async () => {
     const { inst } = managedInstall(['numpy-2.1.0.dist-info'], 'torchsde\nnumpy\n')
+    expect(pendingDrift(inst)).toBeNull()
     const uv = vi.fn()
     await expect(
-      repairDeps(inst, pendingDrift(inst)!, tools(), { freeze: noFreeze, runUvPip: uv })
+      repairDeps(inst, detectInstallDrift(inst)!, tools(), { freeze: noFreeze, runUvPip: uv })
     ).resolves.toBe('torch_missing')
     expect(uv).not.toHaveBeenCalled()
+  })
+
+  it('holds spandrel back when torch is there but torchvision is not', async () => {
+    // spandrel needs torchvision too: with nothing to pin it, uv could pull a
+    // default-index (CPU) torchvision.
+    const { inst, site } = managedInstall(
+      ['numpy-2.1.0.dist-info', 'torch-2.10.0.dist-info'],
+      'spandrel\nkornia\nnumpy\n'
+    )
+    const output: string[] = []
+    const uv = perLineUv(site, { kornia: 'kornia-0.8.3.dist-info' })
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, tools({ sendOutput: (s) => output.push(s) }), {
+        freeze: async () => ({ torch: '2.10.0+cu128', numpy: '2.1.0' }),
+        runUvPip: uv
+      })
+    ).resolves.toBe('partial')
+    expect(uv.calls).toEqual([['kornia']])
+    expect(output.join('')).toContain('Not installing spandrel (needs torchvision)')
+    // With torchvision present it is installable.
+    fs.mkdirSync(path.join(site, 'torchvision-0.25.0.dist-info'))
+    expect(pendingDrift(inst)!.unsatisfied.map((r) => r.name)).toEqual(['spandrel'])
   })
 
   it('does not claim a repair it cannot verify', async () => {
@@ -720,7 +761,7 @@ describe('repair marker', () => {
       )
     )
     expect(pausedRepairNote(stale)).toBeNull()
-    expect(pendingDrift(stale)!.unsatisfied.map((r) => r.name)).toEqual(['torchsde'])
+    expect(pendingDrift(stale)).toBeNull()
   })
 
   it('stops prompting an adopted install once suppressed', async () => {
@@ -854,16 +895,40 @@ describe('repair marker', () => {
       depsRepairMarker: { reqsHash: 'x', appVersion: '1.1.4', attempts: { blake3: 3 } }
     } as InstallationRecord
     const update = vi.fn(async () => {})
-    await clearSatisfiedMarker(withMarker, update)
+    const pruned = await pruneMarker(withMarker, update)
     expect(update).toHaveBeenCalledWith({ depsRepairMarker: null })
+    expect(pruned.depsRepairMarker).toBeNull()
+  })
 
-    const { inst: drifted } = managedInstall(SYNCED.slice(1), REQS, {}, 'drifted')
-    const update2 = vi.fn(async () => {})
-    await clearSatisfiedMarker(
-      { ...drifted, depsRepairMarker: withMarker.depsRepairMarker },
-      update2
+  it('prunes a recovered package while another keeps the repair suppressed', async () => {
+    // blake3 and sqlalchemy both spent; sqlalchemy recovers, blake3 stays missing.
+    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
+    const reqsHash = pendingDrift(inst)!.reqsHash
+    const marker = { reqsHash, appVersion: '1.1.4', attempts: { blake3: 3, sqlalchemy: 3 } }
+    fs.mkdirSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'))
+    const update = vi.fn(async () => {})
+    const pruned = await pruneMarker(
+      { ...inst, depsRepairMarker: marker } as InstallationRecord,
+      update
     )
-    expect(update2).not.toHaveBeenCalled()
+    expect(update).toHaveBeenCalledWith({
+      depsRepairMarker: { reqsHash, appVersion: '1.1.4', attempts: { blake3: 3 } }
+    })
+    expect(pendingDrift(pruned)).toBeNull()
+    // sqlalchemy goes missing again: it gets a fresh attempt.
+    fs.rmSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'), { recursive: true })
+    expect(pendingDrift(pruned)!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'sqlalchemy'])
+  })
+
+  it('leaves the marker alone while everything in it is still unsatisfied', async () => {
+    const { inst } = managedInstall(SYNCED.slice(1), REQS)
+    const withMarker = {
+      ...inst,
+      depsRepairMarker: { reqsHash: 'x', appVersion: '1.1.4', attempts: { blake3: 2 } }
+    } as InstallationRecord
+    const update = vi.fn(async () => {})
+    expect(await pruneMarker(withMarker, update)).toBe(withMarker)
+    expect(update).not.toHaveBeenCalled()
   })
 
   it('reports the last failing install when several fail', async () => {
