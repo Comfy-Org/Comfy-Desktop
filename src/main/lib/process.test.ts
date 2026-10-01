@@ -277,8 +277,11 @@ describe('requestTimeoutMs reaches the probe request', () => {
   it.each([
     ['waitForPort', 1234, 1234],
     ['waitForPort', undefined, 2000],
+    ['waitForPort', Number.NaN, 2000],
+    ['waitForPort', -5, 2000],
     ['waitForUrl', 1234, 1234],
-    ['waitForUrl', undefined, 2000]
+    ['waitForUrl', undefined, 2000],
+    ['waitForUrl', Number.POSITIVE_INFINITY, 2000]
   ] as const)('%s with %s', async (fn, requestTimeoutMs, expected) => {
     const { close, port } = await listenHanging()
     const get = vi.spyOn(http, 'get')
@@ -288,7 +291,7 @@ describe('requestTimeoutMs reaches the probe request', () => {
         timeoutMs: 600_000,
         intervalMs: 100,
         signal: controller.signal,
-        ...(requestTimeoutMs ? { requestTimeoutMs } : {})
+        ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {})
       }
       const wait =
         fn === 'waitForPort'
@@ -303,6 +306,38 @@ describe('requestTimeoutMs reaches the probe request', () => {
           )?.timeout
       )
       expect(timeouts).toContain(expected)
+      controller.abort()
+      await expect(wait).rejects.toThrow('Launch cancelled.')
+    } finally {
+      get.mockRestore()
+      await close()
+    }
+  })
+})
+
+describe('a probe never outlasts the overall deadline', () => {
+  it.each(['waitForPort', 'waitForUrl'] as const)('%s', async (fn) => {
+    const { close, port } = await listenHanging()
+    const get = vi.spyOn(http, 'get')
+    const controller = new AbortController()
+    try {
+      const opts = {
+        timeoutMs: 3_000,
+        requestTimeoutMs: 600_000,
+        intervalMs: 100,
+        signal: controller.signal
+      }
+      const wait =
+        fn === 'waitForPort'
+          ? waitForPort(port, '127.0.0.1', opts)
+          : waitForUrl(`http://127.0.0.1:${port}/`, opts)
+      await vi.waitFor(() => expect(get).toHaveBeenCalled())
+      const timeout = get.mock.calls[0]!.find(
+        (arg): arg is { timeout: number } =>
+          typeof arg === 'object' && arg !== null && 'timeout' in arg
+      )?.timeout
+      expect(timeout).toBeGreaterThan(0)
+      expect(timeout).toBeLessThanOrEqual(3_000)
       controller.abort()
       await expect(wait).rejects.toThrow('Launch cancelled.')
     } finally {
