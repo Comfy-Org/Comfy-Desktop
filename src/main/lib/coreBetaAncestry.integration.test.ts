@@ -233,6 +233,28 @@ describe('resolveCoreCommitState against a real repository', () => {
       )
       await _backgroundFetchesForTest()
       expect(state.ancestry.size).toBe(0)
+      // HEAD stays known, so the records say "unresolved" rather than "no readable HEAD".
+      expect(state.head).toBe(head)
+      expect(presentNoFetch(dir, sha.backport!)).toBe(false)
+    })
+
+    it('treats any promisor value as a partial clone, not only "true"', async () => {
+      // git reads `1`, `yes` and `on` as true too. With the promisor packs gone, the config line
+      // is the only remaining sign, and git still fetches on demand.
+      const { dir, head } = partialClone('partial-promisor-1')
+      git(dir, 'config', 'remote.origin.promisor', '1')
+      const packDir = path.join(dir, '.git', 'objects', 'pack')
+      for (const name of fs.readdirSync(packDir)) {
+        if (name.endsWith('.promisor')) fs.rmSync(path.join(packDir, name))
+      }
+      const state = await resolveCoreCommitState(
+        dir,
+        { kind: 'head', commit: head },
+        [sha.backport!],
+        undefined,
+        { allowFetch: false }
+      )
+      expect(state.ancestry.size).toBe(0)
       expect(presentNoFetch(dir, sha.backport!)).toBe(false)
     })
 

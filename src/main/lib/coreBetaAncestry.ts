@@ -149,7 +149,9 @@ function mayLazyFetch(repoPath: string): boolean {
     const common = commonGitDir(repoPath)
     if (common === null) return true
     const config = fs.readFileSync(path.join(common, 'config'), 'utf-8')
-    if (/^\s*(promisor\s*=\s*true|partialclone\s*=)/im.test(config)) return true
+    // Any `promisor` setting counts, whatever its value: git reads true as `true`, `yes`, `on`,
+    // `1` and more, and a false positive only costs this launch its commit checks.
+    if (/^\s*(promisor|partialclone)\s*=/im.test(config)) return true
     const packDir = path.join(common, 'objects', 'pack')
     if (!fs.existsSync(packDir)) return false
     return fs.readdirSync(packDir).some((name) => name.endsWith('.promisor'))
@@ -215,12 +217,14 @@ export async function resolveCoreCommitState(
   { allowFetch = true, label = 'core-beta' }: { allowFetch?: boolean; label?: string } = {}
 ): Promise<CoreCommitState> {
   if (shas.length === 0 || checkout.kind !== 'head') return NO_CORE_COMMITS
-  if (!allowFetch && mayLazyFetch(repoPath)) {
-    console.log(`[${label}] ancestry: partial clone, not checked without fetching`)
-    return NO_CORE_COMMITS
-  }
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
+  if (!allowFetch && mayLazyFetch(repoPath)) {
+    console.log(`[${label}] ancestry: partial clone, not checked without fetching`)
+    // HEAD is known; only the relations are withheld, so the records say "unresolved", not
+    // "no readable HEAD".
+    return { head, ancestry: new Map() }
+  }
   const ancestry = new Map<string, boolean>()
   const deadline = Date.now() + RESOLVE_BUDGET_MS
   const budget = { fetches: 0, stopped: false, allowFetch, label }
