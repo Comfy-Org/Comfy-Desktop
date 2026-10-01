@@ -62,6 +62,18 @@ convention:
   `convention_names_over_session_cap` (a bare `count`, never the names).
 - Names Desktop attaches to every event itself (such as `platform`, `is_packaged` or
   `telemetry_enabled`) are never forwarded.
+- The same convention name twice on one line drops the line, reserved names included.
+
+**Accepted risk: the field name is free text.** The value can only be a number or a boolean,
+but the name is chosen by whoever writes the line. A convention-shaped name becomes a PostHog
+property key, and a Datadog action-context key on the failure events mirrored to Datadog. So
+anything that can print to Core's stdout, such as a custom node, can put up to 48 lowercase
+characters into a key, at most 32 distinct names per launch. This is accepted: such code can
+already send arbitrary data over the network directly. Core's own emitter only sends names from
+its reviewed allowlist.
+
+`error_kind`, like `reason` and `site`, is validated per field rather than per event: Core
+decides which events carry it, and Desktop accepts a valid value on any forwarded event.
 
 The shared line fixture (`src/main/lib/__fixtures__/assets-event-lines.txt`, a byte-identical copy
 of Core's) gains a convention example when Core next changes its copy.

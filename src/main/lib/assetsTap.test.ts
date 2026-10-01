@@ -531,6 +531,27 @@ describe('assetsTap', () => {
       }
     })
 
+    it('rejects a repeated reserved name that fits a convention, like any repeated convention name', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        '[assets-event] seeder.scan_completed cpu_ms=1 is_packaged=true is_packaged=false\n',
+        'stdout'
+      )
+      tap.ingest(
+        '[assets-event] scanner.walk_failed telemetry_enabled=true telemetry_enabled=true\n',
+        'stdout'
+      )
+      expect(captured).toHaveLength(0)
+    })
+
+    it('omits a repeated reserved name outside the conventions, like any unknown field', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed cpu_ms=1 platform=a platform=b\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.cpu_ms).toBe(1)
+      expect(captured[0]!.ctx).not.toHaveProperty('platform')
+    })
+
     it('keeps the field vocabulary disjoint from the telemetry defaults and Datadog context', () => {
       expect(
         [...ALLOWED_FIELD_NAMES].filter(
@@ -1034,6 +1055,14 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(1)
       expect(captured[0]!.event).toBe(`comfy.desktop.comfyui.assets.${event}`)
       expect(captured[0]!.ctx).toMatchObject({ error_type: 'OSError', error_kind: 'disk_full' })
+    })
+
+    it('validates error_kind per field, so it forwards on any allowed event', () => {
+      // Like reason and site: core decides which events carry it.
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { error_kind: 'disk_full' }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.error_kind).toBe('disk_full')
     })
 
     it('omits and counts a well-shaped error_kind this build does not know', () => {

@@ -29,6 +29,14 @@
  * along in a field). It is not a boundary against deliberately encoded
  * exfiltration — the closed vocabulary plus the AST discipline on the core
  * side is the primary guarantee.
+ *
+ * The typed conventions widen that gap on purpose: a convention-shaped NAME
+ * becomes a property key in PostHog (and a Datadog action-context key on the
+ * mirrored failure events), so anything writing to core's stdout can choose up
+ * to 48 lowercase characters of key text, at most 32 distinct names per
+ * launch. Accepted: code that can print to core's stdout can already send
+ * arbitrary data over the network directly. Core's own emitter can only send
+ * names from its reviewed `ALLOWED_FIELDS`.
  */
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
@@ -149,7 +157,9 @@ const REASONS: ReadonlySet<string> = new Set([
 /**
  * Mirror of ComfyUI `app/assets/event_log.py` `ERROR_KINDS`: what a failure
  * was, classified from its SQLite result code, errno or winerror, never from
- * its message.
+ * its message. Validated per field, like `reason` and `site`: core decides
+ * which events carry it (today the eight failure events), and this tap accepts
+ * it on any allowed event.
  */
 const ERROR_KINDS: ReadonlySet<string> = new Set([
   'expression_tree_too_large',
@@ -283,7 +293,7 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
  * - Suffixes are checked before prefixes: `is_cache_hit_pct` is a percentage.
  * - Fractions are not forwarded (`99.5` stays a string); send an integer.
  * - A value that doesn't match is omitted and the rest of the line forwards.
- *   The same name twice on one line drops the line.
+ *   The same name twice on one line drops the line, even a reserved name.
  * - At most 8 convention fields per event, in core's (sorted) field order;
  *   the rest are omitted and counted.
  * - At most 32 distinct convention names per tap (one Desktop launch); a new
@@ -416,18 +426,19 @@ function parseFields(
       // Prototype keys clear the lowercase FIELD_NAME filter but are never a
       // plausible core field, so they stay whole-line rejects.
       if (Object.hasOwn(Object.prototype, key)) return null
+      // Anything else is a newer core emitting a field this build predates;
+      // rejecting the line would delete an existing metric instead.
+      const convention = fieldConvention(key)
+      if (!convention) continue
+      // A repeated convention key is malformed, like a repeated listed key,
+      // reserved or not.
+      if (seenKeys.has(key)) return null
+      seenKeys.add(key)
       // Names Desktop sets on every event itself lose nothing by being
       // omitted, but forwarded they would win the merge: over a telemetry
       // default in PostHog, and over the renderer's Datadog global context.
       // Omitted rather than rejected, like any other unknown field.
       if (reservedKeys.has(key)) continue
-      // Anything else is a newer core emitting a field this build predates;
-      // rejecting the line would delete an existing metric instead.
-      const convention = fieldConvention(key)
-      if (!convention) continue
-      // A repeated convention key is malformed, like a repeated listed key.
-      if (seenKeys.has(key)) return null
-      seenKeys.add(key)
       const value = coerceValue(key, rawValue)
       if (!conventionFieldValue(convention, value)) continue
       const isNewName = !forwardedConventionNames.has(key)
