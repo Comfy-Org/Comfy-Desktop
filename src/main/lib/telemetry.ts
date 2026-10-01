@@ -137,6 +137,7 @@ import {
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
 import { normalizePostHogUserId } from './opaqueIdentifier'
+import { recordIpcInvocation } from './e2eOverrides'
 import {
   clearPendingIdentityMerges,
   type PendingIdentityProperties,
@@ -609,6 +610,8 @@ export interface InitOptions {
   appVersion: string
   appEnv: string
   isPackaged: boolean
+  /** Extra `session.started` properties known at boot (e.g. `prior_session_unclean`). */
+  sessionStartProps?: Record<string, TelemetryValue>
 }
 
 /**
@@ -710,6 +713,7 @@ export function initTelemetry(opts: InitOptions): void {
   // The session-start payload duplicates the defaults so an event-only
   // reader (no defaults yet) still sees them on the first event.
   pendingSessionStart = {
+    ...opts.sessionStartProps,
     app_env: opts.appEnv,
     app_version: opts.appVersion,
     is_packaged: opts.isPackaged
@@ -1314,6 +1318,9 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
 }
 
 function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
+  // E2E only (no-op otherwise): lets a spec assert an event was raised without consent or a
+  // reachable PostHog.
+  recordIpcInvocation(`telemetry:${event}`, properties)
   if (!canEmit() || !distinctId) return false
   if (!isAllowedToFire(event)) return false
   if (!_checkRateLimit(event)) return false

@@ -91,8 +91,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           # npm trusted publishing requires Node >=22.14 and npm >=11.5.1.
-          # Node 24 supplies a compatible npm CLI.
-          node-version: 24
+          # Node 26 supplies a compatible npm CLI.
+          node-version: 26
           package-manager-cache: false
           registry-url: https://registry.npmjs.org
 

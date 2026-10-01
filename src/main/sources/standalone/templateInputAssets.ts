@@ -90,6 +90,11 @@ export async function resolveTemplateInputAssets(
   templateId: string
 ): Promise<TemplateInputAsset[]> {
   const json = await loadTemplateJson(installation, templateId)
+  return resolveTemplateInputAssetsFromJson(json)
+}
+
+/** Extract sample inputs from an already-resolved editor workflow. */
+function resolveTemplateInputAssetsFromJson(json: unknown): TemplateInputAsset[] {
   if (!json || typeof json !== 'object') return []
 
   const doc = json as { nodes?: unknown; definitions?: { subgraphs?: unknown } }
@@ -142,9 +147,12 @@ export async function downloadTemplateInputAssets(
   installation: InstallationRecord,
   templateId: string,
   log: (text: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  workflowJson?: unknown
 ): Promise<PlacedInputAsset[]> {
-  const assets = await resolveTemplateInputAssets(installation, templateId)
+  const assets = workflowJson
+    ? resolveTemplateInputAssetsFromJson(workflowJson)
+    : await resolveTemplateInputAssets(installation, templateId)
   if (assets.length === 0) return []
 
   let destDir: string

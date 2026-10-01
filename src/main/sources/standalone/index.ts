@@ -6,7 +6,7 @@ import { t } from '../../lib/i18n'
 import { launchAction } from '../../lib/actions'
 import { getLatestStableTag, getStableTags } from '../../lib/comfyui-releases'
 import { copyDirWithProgress } from '../../lib/copy'
-import { areModelsPresent } from '../../lib/modelDownloadPaths'
+import { resolveModelsPresence } from '../../lib/modelDownloadPaths'
 import {
   PLATFORM_PREFIX,
   DEFAULT_LAUNCH_ARGS,
@@ -20,7 +20,7 @@ import {
 } from './envPaths'
 import { install, postInstall, probeInstallation } from './install'
 import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
-import { loadTemplateCatalog } from './templateCatalog'
+import { loadTemplateCatalog, toTemplateFieldOption } from './templateCatalog'
 import { resolveTemplateModels } from './templateModels'
 import * as installations from '../../installations'
 
@@ -564,30 +564,13 @@ export const standalone: SourcePlugin = {
 
       const installId = typeof context.installationId === 'string' ? context.installationId : null
       const installation = installId ? await installations.get(installId) : null
-      // `budgeted` stops the timed-out pass writing after we return, so a slow
-      // `modelsPresent: false` reads as "unbadged", never "confirmed absent".
-      let budgeted = false
-      const presenceById = new Map<string, boolean>()
-      const presencePass = Promise.all(
-        catalog.map(async (tpl) => {
-          try {
-            const models = await resolveTemplateModels(installation, tpl.id)
-            const present = await areModelsPresent(installId, models)
-            if (!budgeted) presenceById.set(tpl.id, present)
-          } catch {
-            if (!budgeted) presenceById.set(tpl.id, false)
-          }
-        })
+      const { presence: presenceById, timedOut } = await resolveModelsPresence(
+        catalog.map(({ id }) => id),
+        installId,
+        (id) => resolveTemplateModels(installation, id),
+        MODELS_PRESENT_BUDGET_MS
       )
-      let budgetTimer: NodeJS.Timeout | undefined
-      const timedOut = await Promise.race([
-        presencePass.then(() => false),
-        new Promise<boolean>((resolve) => {
-          budgetTimer = setTimeout(() => resolve(true), MODELS_PRESENT_BUDGET_MS)
-        })
-      ]).finally(() => clearTimeout(budgetTimer))
       if (timedOut) {
-        budgeted = true
         console.warn(
           `Template models-present check hit ${MODELS_PRESENT_BUDGET_MS}ms budget for install ${installId ?? '(none)'}; some cards unbadged`
         )
@@ -599,24 +582,7 @@ export const standalone: SourcePlugin = {
           label: t('standalone.starterTemplateNone'),
           description: t('standalone.starterTemplateNoneDesc')
         },
-        ...catalog.map(
-          (tpl): FieldOption => ({
-            value: tpl.id,
-            label: tpl.title,
-            description: tpl.description,
-            recommended: tpl.recommended,
-            data: {
-              modality: tpl.modality,
-              category: tpl.category,
-              name: tpl.name,
-              task: tpl.task,
-              thumbnailUrl: tpl.thumbnailUrl,
-              sizeBytes: tpl.sizeBytes,
-              modelsPresent: presenceById.get(tpl.id) ?? false,
-              apiNode: tpl.apiNode
-            }
-          })
-        )
+        ...catalog.map((tpl) => toTemplateFieldOption(tpl, presenceById.get(tpl.id) ?? false))
       ]
     }
 
