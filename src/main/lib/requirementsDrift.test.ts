@@ -286,10 +286,22 @@ describe('envRootForPython', () => {
 })
 
 describe('unmanagedRequirementsWarning', () => {
+  it('suggests uv when the environment has no pip (a uv-created venv)', () => {
+    const comfy = makeComfy('sqlalchemy>=2.0.0\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, ['filelock-3.0.dist-info'])
+    const python = path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', 'python3')
+    const warning = unmanagedRequirementsWarning(python, comfy)
+    expect(warning).toContain(
+      `uv pip install --python ${shellQuote(python)} -r ${shellQuote(path.join(comfy, 'requirements.txt'))}`
+    )
+    expect(warning).not.toContain('-m pip')
+  })
+
   it('names the unsatisfied requirements and the exact pip command', () => {
     const comfy = makeComfy('sqlalchemy>=2.0.0\nfilelock\n')
     const venv = path.join(tmpDir, '.venv')
-    makeSitePackages(venv, ['filelock-3.0.dist-info'])
+    makeSitePackages(venv, ['filelock-3.0.dist-info', 'pip-24.0.dist-info'])
     const python =
       process.platform === 'win32'
         ? path.join(venv, 'Scripts', 'python.exe')
@@ -307,6 +319,7 @@ describe('unmanagedRequirementsWarning', () => {
     const embedded = path.join(tmpDir, 'python_embeded')
     const site = path.join(embedded, 'Lib', 'site-packages')
     fs.mkdirSync(path.join(site, 'x-1.dist-info'), { recursive: true })
+    fs.mkdirSync(path.join(site, 'pip-24.0.dist-info'))
     const python = path.join(embedded, 'python.exe')
     const warning = unmanagedRequirementsWarning(python, comfy, { isolated: true })
     if (process.platform === 'win32') {
@@ -327,7 +340,7 @@ describe('unmanagedRequirementsWarning', () => {
   it('includes manager_requirements.txt in the command when present', () => {
     const comfy = makeComfy('blake3\n', 'comfyui_manager==4.2.2\n')
     const venv = path.join(tmpDir, '.venv')
-    makeSitePackages(venv, ['x-1.dist-info'])
+    makeSitePackages(venv, ['x-1.dist-info', 'pip-24.0.dist-info'])
     const python = path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', 'python3')
     expect(unmanagedRequirementsWarning(python, comfy)).toContain(
       `-m pip install -r ${shellQuote(path.join(comfy, 'requirements.txt'))} -r ${shellQuote(path.join(comfy, 'manager_requirements.txt'))}`

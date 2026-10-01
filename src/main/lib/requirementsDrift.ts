@@ -242,17 +242,18 @@ export function unmanagedRequirementsWarning(
   comfyuiDir: string,
   opts: { isolated?: boolean } = {}
 ): string | null {
-  const drift = detectRequirementsDrift(comfyuiDir, findSitePackages(envRootForPython(pythonPath)))
+  const sitePackages = findSitePackages(envRootForPython(pythonPath))
+  const drift = detectRequirementsDrift(comfyuiDir, sitePackages)
   if (!drift || drift.unsatisfied.length === 0) return null
   const files = REQUIREMENTS_FILES.map((f) => path.join(comfyuiDir, f)).filter((f) =>
     fs.existsSync(f)
   )
-  const command = [
-    shellQuote(pythonPath),
-    ...(opts.isolated ? ['-s'] : []),
-    '-m pip install',
-    ...files.map((f) => `-r ${shellQuote(f)}`)
-  ].join(' ')
+  // A uv-created venv has no pip, so `python -m pip` would fail there.
+  const hasPip = sitePackages !== null && readInstalledDists(sitePackages).has('pip')
+  const installer = hasPip
+    ? [shellQuote(pythonPath), ...(opts.isolated ? ['-s'] : []), '-m pip install']
+    : ['uv pip install --python', shellQuote(pythonPath)]
+  const command = [...installer, ...files.map((f) => `-r ${shellQuote(f)}`)].join(' ')
   return (
     `\nWARNING: this Python environment does not satisfy ComfyUI's requirements: ` +
     `${describeUnsatisfied(drift.unsatisfied)}\n` +
