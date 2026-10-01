@@ -18,6 +18,7 @@ import {
   MAX_FAILED_ATTEMPTS,
   pausedRepairNote,
   pendingDrift,
+  reportPausedRepair,
   repairDeps,
   warnIfSitePackagesEmpty,
   type DepsRepairTools
@@ -321,7 +322,12 @@ describe('repairDeps', () => {
         repairDeps(record, drift, t, { freeze: noFreeze, runUvPip: fakeUv(site, [], 2) })
       ).resolves.toBe('failed')
       expect(t.update).toHaveBeenCalledWith({
-        depsRepairFailures: { reqsHash: drift.reqsHash, count: attempt, appVersion: '1.1.4' }
+        depsRepairFailures: {
+          reqsHash: drift.reqsHash,
+          count: attempt,
+          packages: ['blake3'],
+          appVersion: '1.1.4'
+        }
       })
       record = { ...record, ...(t.update.mock.calls[0]![0] as object) } as InstallationRecord
     }
@@ -342,12 +348,86 @@ describe('repairDeps', () => {
     expect(pausedRepairNote(record)).toBeNull()
   })
 
+  it('scopes the pause to the packages that failed: a newly missing package still repairs', async () => {
+    // Paused for blake3 (3 failures), then a custom node removes sqlalchemy.
+    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
+    const pausedFor = {
+      ...inst,
+      depsRepairFailures: {
+        reqsHash: pendingDrift(inst)!.reqsHash,
+        count: MAX_FAILED_ATTEMPTS,
+        packages: ['blake3'],
+        appVersion: '1.1.4'
+      }
+    } as InstallationRecord
+    const drift = pendingDrift(pausedFor)
+    expect(drift!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'sqlalchemy'])
+    expect(pausedRepairNote(pausedFor)).toBeNull()
+
+    // blake3 still can't install; sqlalchemy can.
+    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
+      const lines = args.slice(2, args.indexOf('--python'))
+      if (lines.includes('blake3')) return { code: 1, output: 'no wheel' }
+      fs.mkdirSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'))
+      return { code: 0, output: '' }
+    })
+    const t = tools()
+    await expect(
+      repairDeps(pausedFor, drift!, t, { freeze: async () => ({ torch: '2.10.0' }), runUvPip: uv })
+    ).resolves.toBe('partial')
+    expect(fs.existsSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'))).toBe(true)
+
+    // blake3 is back in its pause (the same package kept failing), and the
+    // pause is logged and reported on the next launch.
+    const after = { ...pausedFor } as InstallationRecord
+    for (const [data] of t.update.mock.calls) Object.assign(after, data as object)
+    expect(after.depsRepairFailures).toMatchObject({
+      count: MAX_FAILED_ATTEMPTS + 1,
+      packages: ['blake3']
+    })
+    expect(pendingDrift(after)).toBeNull()
+    emit.mockClear()
+    const output: string[] = []
+    expect(reportPausedRepair(after, (s) => output.push(s))).toBe(true)
+    expect(output.join('')).toContain('Automatic repair paused')
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'paused', packages: ['blake3'] })
+    )
+  })
+
+  it('gives a package failing for the first time the full budget', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
+    const pausedFor = {
+      ...inst,
+      depsRepairFailures: {
+        reqsHash: pendingDrift(inst)!.reqsHash,
+        count: MAX_FAILED_ATTEMPTS,
+        packages: ['blake3'],
+        appVersion: '1.1.4'
+      }
+    } as InstallationRecord
+    const t = tools()
+    await repairDeps(pausedFor, pendingDrift(pausedFor)!, t, {
+      freeze: async () => ({ torch: '2.10.0' }),
+      runUvPip: fakeUv(site, [], 1)
+    })
+    expect(t.update).toHaveBeenCalledWith({
+      depsRepairFailures: expect.objectContaining({ count: 1, packages: ['blake3', 'sqlalchemy'] })
+    })
+  })
+
   it('has no paused note while the budget remains or nothing is missing', () => {
     const { inst } = managedInstall(SYNCED.slice(1), REQS)
     const drift = pendingDrift(inst)!
     const twice = {
       ...inst,
-      depsRepairFailures: { reqsHash: drift.reqsHash, count: 2, appVersion: '1.1.4' }
+      depsRepairFailures: {
+        reqsHash: drift.reqsHash,
+        count: 2,
+        packages: ['blake3'],
+        appVersion: '1.1.4'
+      }
     } as InstallationRecord
     expect(pausedRepairNote(twice)).toBeNull()
     const { inst: synced } = managedInstall(SYNCED, REQS, {}, 'synced')
@@ -405,7 +485,12 @@ describe('repairDeps', () => {
       // A line that failed its own retry spends the failure budget; it is
       // never given up on, so a transient failure gets retried.
       expect(t.update).toHaveBeenCalledWith({
-        depsRepairFailures: { reqsHash: drift.reqsHash, count: launch, appVersion: '1.1.4' }
+        depsRepairFailures: {
+          reqsHash: drift.reqsHash,
+          count: launch,
+          packages: ['sqlalchemy'],
+          appVersion: '1.1.4'
+        }
       })
       expect(t.update).not.toHaveBeenCalledWith(
         expect.objectContaining({ depsRepairGaveUp: expect.anything() })
@@ -437,7 +522,7 @@ describe('repairDeps', () => {
     const uv = fakeUv(site, ['SQLAlchemy-2.0.36.dist-info'])
     await expect(
       repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
-    ).resolves.toBe('repaired')
+    ).resolves.toBe('partial')
     expect(t.confirmAdoptedRepair.mock.calls[0]![0].map((r: { name: string }) => r.name)).toEqual([
       'sqlalchemy'
     ])
@@ -447,7 +532,7 @@ describe('repairDeps', () => {
     )
     expect(emit).toHaveBeenCalledWith(
       'comfy.desktop.deps_repair',
-      expect.objectContaining({ outcome: 'repaired', held_back: ['torchsde', 'kornia'] })
+      expect.objectContaining({ outcome: 'partial', held_back: ['torchsde', 'kornia'] })
     )
   })
 
@@ -460,6 +545,10 @@ describe('repairDeps', () => {
     ).resolves.toBe('torch_missing')
     expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
     expect(uv).not.toHaveBeenCalled()
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'torch_missing', held_back: ['torchsde', 'spandrel'] })
+    )
   })
 
   it('installs torchsde when torch is there to pin', async () => {
@@ -488,7 +577,7 @@ describe('repairDeps', () => {
     const t = tools({ sendOutput: (s) => output.push(s) })
     await expect(
       repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
-    ).resolves.toBe('repaired')
+    ).resolves.toBe('partial')
     expect(output.join('')).toContain('Not installing torchsde: PyTorch is not installed')
     expect(t.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ depsRepairGaveUp: expect.anything() })
@@ -511,7 +600,7 @@ describe('repairDeps', () => {
     const drift = pendingDrift(inst)!
     const failedOnce = {
       ...inst,
-      depsRepairFailures: { reqsHash: drift.reqsHash, count: 1 }
+      depsRepairFailures: { reqsHash: drift.reqsHash, count: 1, packages: ['blake3'] }
     } as InstallationRecord
     const t = tools()
     await repairDeps(failedOnce, drift, t, {

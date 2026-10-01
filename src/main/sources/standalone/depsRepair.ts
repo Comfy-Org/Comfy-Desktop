@@ -50,6 +50,10 @@ export interface DepsRepairGaveUp {
 export interface DepsRepairFailures {
   reqsHash: string
   count: number
+  /** The packages that failed (plus any held back). The pause applies only
+   *  while every unsatisfied package is among them, so a package that goes
+   *  missing later is still repaired. */
+  packages: string[]
   /** Desktop version that recorded the failures; a new version resets them. */
   appVersion?: string
 }
@@ -80,6 +84,7 @@ export type DepsRepairOutcome =
   | 'torch_missing'
   | 'cancelled'
   | 'site_packages_empty'
+  | 'paused'
 
 export interface DepsRepairTools {
   sendOutput?: (text: string) => void
@@ -136,7 +141,9 @@ function failureBudgetSpent(
   return (
     failures?.reqsHash === drift.reqsHash &&
     failures.count >= MAX_FAILED_ATTEMPTS &&
-    (failures.appVersion ?? '') === appVersion
+    (failures.appVersion ?? '') === appVersion &&
+    Array.isArray(failures.packages) &&
+    drift.unsatisfied.every((r) => failures.packages.includes(r.name))
   )
 }
 
@@ -154,6 +161,27 @@ export function pausedRepairNote(
     `Automatic repair paused after ${MAX_FAILED_ATTEMPTS} failed attempts; it retries when ` +
     `ComfyUI's requirements or Desktop's version change.\n`
   )
+}
+
+/** Log a paused repair and report it, so the paused population is measurable.
+ *  True when the repair is paused. */
+export function reportPausedRepair(
+  installation: InstallationRecord,
+  sendOutput?: (text: string) => void,
+  appVersion: string = currentAppVersion()
+): boolean {
+  const note = pausedRepairNote(installation, appVersion)
+  if (!note) return false
+  sendOutput?.(note)
+  const failures = installation.depsRepairFailures as DepsRepairFailures
+  telemetry.emit('comfy.desktop.deps_repair', {
+    outcome: 'paused',
+    adopted: installation.adopted === true,
+    variant: (installation.variant as string | undefined) ?? null,
+    packages: failures.packages,
+    attempts: failures.count
+  })
+  return true
 }
 
 /** Drift that a repair should act on: unsatisfied, and not already given up on. */
@@ -257,7 +285,7 @@ export async function repairDeps(
     )
   }
   if (toInstall.length === 0) {
-    report('torch_missing')
+    report('torch_missing', { held_back: heldBack.map((r) => r.name) })
     return 'torch_missing'
   }
 
@@ -327,14 +355,24 @@ export async function repairDeps(
   // the failure budget: it retries on the next launch (it may be transient),
   // and after MAX_FAILED_ATTEMPTS the pause is logged and a new Desktop
   // version resets it.
-  const recordFailure = async (): Promise<number> => {
+  // The count carries on only while the same packages keep failing: a package
+  // that fails for the first time gets the full budget.
+  const recordFailure = async (failed: string[]): Promise<number> => {
     const prior = installation.depsRepairFailures as DepsRepairFailures | null | undefined
-    const sameRun = prior?.reqsHash === drift.reqsHash && (prior.appVersion ?? '') === appVersion
+    const sameRun =
+      prior?.reqsHash === drift.reqsHash &&
+      (prior.appVersion ?? '') === appVersion &&
+      Array.isArray(prior.packages) &&
+      failed.every((name) => prior.packages.includes(name))
     const count = (sameRun ? prior.count : 0) + 1
+    // Held-back packages are recorded too: they can't install until torch is
+    // back, so they must not lift the pause on the packages that failed.
+    const packages = [...new Set([...failed, ...heldBackNames])]
     await tools.update({
       depsRepairFailures: {
         reqsHash: drift.reqsHash,
         count,
+        packages,
         appVersion
       } satisfies DepsRepairFailures
     })
@@ -349,7 +387,7 @@ export async function repairDeps(
     ? toInstall.every((r) => failedAlone.has(r.name))
     : result.code !== 0
   if (nothingInstalled) {
-    const count = await recordFailure()
+    const count = await recordFailure(toInstall.map((r) => r.name))
     const message = withOutputTail(`uv pip install exited with code ${result.code}`, result.output)
     tools.sendOutput?.(`Installing the missing packages failed (${retryNote(count)}).\n`)
     report('failed', { uv_exit: result.code, attempts: count, ...buildErrorFields(message) })
@@ -374,7 +412,7 @@ export async function repairDeps(
   const stuck = remaining.filter((r) => !failedAlone.has(r.name))
 
   let attempts: number | null = null
-  if (retryable.length > 0) attempts = await recordFailure()
+  if (retryable.length > 0) attempts = await recordFailure(retryable.map((r) => r.name))
   else if (installation.depsRepairFailures) await tools.update({ depsRepairFailures: null })
   if (stuck.length > 0) {
     await tools.update({
@@ -396,9 +434,14 @@ export async function repairDeps(
   if (stuck.length > 0) {
     tools.sendOutput?.(`Still not satisfied after install: ${describeUnsatisfied(stuck)}\n`)
   }
+  // Held-back packages are still missing, so that is not a full repair either.
   const outcome: DepsRepairOutcome =
-    retryable.length > 0 ? 'partial' : stuck.length > 0 ? 'still_unsatisfied' : 'repaired'
-  if (outcome === 'repaired') {
+    retryable.length > 0 || (stuck.length === 0 && heldBack.length > 0)
+      ? 'partial'
+      : stuck.length > 0
+        ? 'still_unsatisfied'
+        : 'repaired'
+  if (retryable.length === 0 && stuck.length === 0) {
     tools.sendOutput?.(
       heldBack.length > 0
         ? `Installed the missing Python packages except ${heldBack.map((r) => r.name).join(', ')}.\n`
