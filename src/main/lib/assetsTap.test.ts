@@ -70,7 +70,6 @@ const FIELD_VALUES: Array<{ field: string; value: LogfmtValue }> = [
     value: 7
   })),
   { field: 'error_type', value: 'ValueError' },
-  { field: 'error_kind', value: 'database_locked' },
   { field: 'hashing_enabled', value: true },
   { field: 'reason', value: 'network_unavailable' },
   { field: 'errno_name', value: 'ESTALE' },
@@ -151,7 +150,6 @@ describe('assetsTap', () => {
           'site',
           ...COUNTER_FIELDS,
           'error_type',
-          'error_kind',
           'hashing_enabled',
           ...CLASSIFICATION_FIELDS
         ].sort()
@@ -883,32 +881,6 @@ describe('assetsTap', () => {
       }
     })
 
-    it('forwards at most eight convention fields per event', () => {
-      const fields = Object.fromEntries(
-        'abcdefghi'.split('').map((letter, index) => [`${letter}_count`, index])
-      )
-      const tap = createAssetsTap(baseOpts)
-      // taggedLine sorts keys, so `i_count` is the ninth field on the line.
-      tap.ingest(taggedLine('seeder.scan_completed', { ...fields, elapsed_ms: 5 }), 'stdout')
-      expect(captured).toHaveLength(1)
-      const ctx = captured[0]!.ctx
-      for (const letter of 'abcdefgh') expect(ctx).toHaveProperty(`${letter}_count`)
-      expect(ctx).not.toHaveProperty('i_count')
-      // Allowlisted fields don't spend the convention budget.
-      expect(ctx.elapsed_ms).toBe(5)
-    })
-
-    it('does not spend the cap on an omitted convention field', () => {
-      const fields = Object.fromEntries(
-        'abcdefgh'.split('').map((letter, index) => [`${letter}_count`, index])
-      )
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest(taggedLine('seeder.scan_completed', { ...fields, a_bad_count: -1 }), 'stdout')
-      expect(captured).toHaveLength(1)
-      for (const letter of 'abcdefgh') expect(captured[0]!.ctx).toHaveProperty(`${letter}_count`)
-      expect(captured[0]!.ctx).not.toHaveProperty('a_bad_count')
-    })
-
     it('accepts a 48-character name and omits a 49-character one', () => {
       const atLimit = `${'x'.repeat(42)}_bytes`
       const overLimit = `${'x'.repeat(43)}_bytes`
@@ -924,7 +896,7 @@ describe('assetsTap', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_completed cpu_ms=1 cpu_ms=2\n', 'stdout')
       tap.ingest('[assets-event] seeder.scan_completed is_x=3 is_x=true\n', 'stdout')
-      // Past the per-event cap too: the duplicate check runs before the cap.
+      // Even after many other convention fields.
       const pastCap = 'abcdefghi'.split('').map((letter) => `${letter}_count=1`)
       tap.ingest(`[assets-event] seeder.scan_completed ${pastCap.join(' ')} i_count=2\n`, 'stdout')
       expect(captured).toHaveLength(0)
@@ -959,49 +931,6 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).not.toHaveProperty('dir_count')
     })
 
-    it('counts fields past the per-event cap, never naming them', () => {
-      const fields = Object.fromEntries(
-        'abcdefghij'.split('').map((letter, index) => [`${letter}_count`, index])
-      )
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest(taggedLine('seeder.scan_completed', fields), 'stdout')
-      // An invalid value past the cap is a mismatch, not an eviction.
-      tap.ingest(taggedLine('seeder.scan_completed', { ...fields, z_count: -1 }), 'stdout')
-      tap.flushSummary()
-      expect(captured.map(({ event }) => event)).toEqual([
-        'comfy.desktop.comfyui.assets.seeder.scan_completed',
-        'comfy.desktop.comfyui.assets.seeder.scan_completed',
-        'comfy.desktop.comfyui.assets.convention_fields_over_event_cap'
-      ])
-      expect(captured[2]!.ctx).toMatchObject({ count: 4 })
-      expect(JSON.stringify(captured[2]!.ctx)).not.toContain('i_count')
-
-      tap.flushSummary()
-      expect(captured).toHaveLength(3)
-    })
-
-    it('does not count omissions on a rate-capped line', () => {
-      const fields = Object.fromEntries(
-        'abcdefghij'.split('').map((letter, index) => [`${letter}_count`, index])
-      )
-      const tap = createAssetsTap(baseOpts)
-      for (let i = 0; i < 60; i++) tap.ingest(taggedLine('seeder.scan_started', {}), 'stdout')
-      tap.ingest(taggedLine('seeder.scan_started', fields), 'stdout')
-      tap.flushSummary()
-      expect(captured).toHaveLength(60)
-    })
-
-    it('cannot forge the convention counters with a crafted line', () => {
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest(taggedLine('convention_fields_over_event_cap', { count: 999 }), 'stdout')
-      tap.ingest(taggedLine('convention_names_over_session_cap', { count: 999 }), 'stdout')
-      tap.flushSummary()
-      expect(captured.map(({ event }) => event)).toEqual([
-        'comfy.desktop.comfyui.assets.unknown_events_dropped'
-      ])
-      expect(captured[0]!.ctx.count).toBe(2)
-    })
-
     it('does not count omitted convention fields as unknown enum values', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { cpu_ms: true }), 'stdout')
@@ -1012,83 +941,7 @@ describe('assetsTap', () => {
     })
   })
 
-  describe('scan failure and performance fields', () => {
-    /** Mirror of ComfyUI `ERROR_KINDS`. */
-    const ERROR_KINDS = [
-      'expression_tree_too_large',
-      'too_many_variables',
-      'database_locked',
-      'disk_full',
-      'disk_io',
-      'unable_to_open',
-      'database_corrupt',
-      'permission_denied',
-      'file_locked',
-      'read_only',
-      'other'
-    ]
-    /** The core events that carry `error_kind`, always next to `error_type`. */
-    const ERROR_KIND_EVENTS = [
-      'seeder.scan_failed',
-      'scanner.fast_scan_failed',
-      'scanner.temp_sync_failed',
-      'scanner.mark_missing_failed',
-      'scanner.stat_failed',
-      'seeder.batch_insert_failed',
-      'scanner.watch_stat_failed',
-      'scanner.watch_seed_failed'
-    ]
-
-    it.each(ERROR_KINDS)('forwards error_kind=%s', (kind) => {
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest(
-        taggedLine('seeder.scan_failed', { error_type: 'OperationalError', error_kind: kind }),
-        'stdout'
-      )
-      expect(captured).toHaveLength(1)
-      expect(captured[0]!.ctx).toMatchObject({ error_type: 'OperationalError', error_kind: kind })
-    })
-
-    it.each(ERROR_KIND_EVENTS)('forwards error_type and error_kind on %s', (event) => {
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest(taggedLine(event, { error_type: 'OSError', error_kind: 'disk_full' }), 'stdout')
-      expect(captured).toHaveLength(1)
-      expect(captured[0]!.event).toBe(`comfy.desktop.comfyui.assets.${event}`)
-      expect(captured[0]!.ctx).toMatchObject({ error_type: 'OSError', error_kind: 'disk_full' })
-    })
-
-    it('validates error_kind per field, so it forwards on any allowed event', () => {
-      // Like reason and site: core decides which events carry it.
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest(taggedLine('seeder.scan_completed', { error_kind: 'disk_full' }), 'stdout')
-      expect(captured).toHaveLength(1)
-      expect(captured[0]!.ctx.error_kind).toBe('disk_full')
-    })
-
-    it('omits and counts a well-shaped error_kind this build does not know', () => {
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest(
-        taggedLine('seeder.scan_failed', { error_type: 'OSError', error_kind: 'quota_exceeded' }),
-        'stdout'
-      )
-      expect(captured).toHaveLength(1)
-      expect(captured[0]!.ctx.error_type).toBe('OSError')
-      expect(captured[0]!.ctx).not.toHaveProperty('error_kind')
-      tap.flushSummary()
-      expect(captured[1]!.event).toBe('comfy.desktop.comfyui.assets.unknown_enum_values_omitted')
-      expect(captured[1]!.ctx).toMatchObject({ count: 1 })
-      expect(JSON.stringify(captured[1]!.ctx)).not.toContain('quota_exceeded')
-    })
-
-    it.each(['Disk_Full', 'disk/full', 'x'.repeat(65)])(
-      'rejects the line for a malformed error_kind %s',
-      (kind) => {
-        const tap = createAssetsTap(baseOpts)
-        tap.ingest(taggedLine('seeder.scan_failed', { error_kind: kind }), 'stdout')
-        expect(captured).toHaveLength(0)
-      }
-    )
-
+  describe('scan performance fields', () => {
     it('forwards the scan performance counters by the naming convention', () => {
       const perf = {
         cpu_ms: 4210,
@@ -1098,9 +951,7 @@ describe('assetsTap', () => {
         recovered_count: 3,
         missing_marked_count: 1
       }
-      // Not allowlisted: they reach telemetry through the convention alone, using six of
-      // scan_completed's eight per-event convention slots. Allowlist them before core adds
-      // more convention fields to this event, or the later-sorting ones get evicted.
+      // Not allowlisted: they reach telemetry through the convention alone.
       for (const field of Object.keys(perf)) expect(ALLOWED_FIELD_NAMES.has(field)).toBe(false)
       const tap = createAssetsTap(baseOpts)
       tap.ingest(
@@ -1115,94 +966,6 @@ describe('assetsTap', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { recovered_count: 0 }), 'stdout')
       expect(captured[0]!.ctx.recovered_count).toBe(0)
-    })
-  })
-
-  describe('distinct convention names per tap', () => {
-    /** `aa_count`, `ab_count`, ...: distinct, digit-free, sorted by index. */
-    const nameFor = (index: number): string =>
-      `${String.fromCharCode(97 + Math.floor(index / 26))}${String.fromCharCode(97 + (index % 26))}_count`
-    const lineWith = (from: number, to: number): string =>
-      taggedLine(
-        'seeder.scan_completed',
-        Object.fromEntries(Array.from({ length: to - from }, (_, i) => [nameFor(from + i), 1]))
-      )
-
-    it('forwards 32 distinct names, then omits and counts new ones', () => {
-      const tap = createAssetsTap(baseOpts)
-      for (let from = 0; from < 32; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
-      expect(captured).toHaveLength(4)
-      expect(captured[3]!.ctx[nameFor(31)]).toBe(1)
-
-      // Two new names and one already seen: only the seen one forwards.
-      tap.ingest(
-        taggedLine('seeder.scan_completed', {
-          [nameFor(32)]: 1,
-          [nameFor(33)]: 1,
-          [nameFor(0)]: 7
-        }),
-        'stdout'
-      )
-      expect(captured).toHaveLength(5)
-      expect(captured[4]!.ctx[nameFor(0)]).toBe(7)
-      expect(captured[4]!.ctx).not.toHaveProperty(nameFor(32))
-      expect(captured[4]!.ctx).not.toHaveProperty(nameFor(33))
-
-      tap.flushSummary()
-      expect(captured[5]!.event).toBe(
-        'comfy.desktop.comfyui.assets.convention_names_over_session_cap'
-      )
-      expect(captured[5]!.ctx).toMatchObject({ count: 2 })
-      expect(JSON.stringify(captured[5]!.ctx)).not.toContain(nameFor(32))
-    })
-
-    it('admits only up to the budget within a single line', () => {
-      const tap = createAssetsTap(baseOpts)
-      for (let from = 0; from < 24; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
-      tap.ingest(lineWith(24, 30), 'stdout')
-      // Two slots left, four new names: the first two in line order win.
-      tap.ingest(lineWith(30, 34), 'stdout')
-      const last = captured[captured.length - 1]!.ctx
-      expect(Object.keys(last).filter((k) => k.endsWith('_count'))).toEqual([
-        nameFor(30),
-        nameFor(31)
-      ])
-    })
-
-    it('does not spend a per-event slot on a name refused by the session cap', () => {
-      const tap = createAssetsTap(baseOpts)
-      for (let from = 0; from < 32; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
-      // `a` sorts first: eight refused new names, then eight seen names.
-      const fresh = Object.fromEntries('abcdefgh'.split('').map((l) => [`a_${l}_count`, 1]))
-      const seen = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [nameFor(8 + i), 2]))
-      tap.ingest(taggedLine('seeder.scan_completed', { ...fresh, ...seen }), 'stdout')
-      const last = captured[captured.length - 1]!.ctx
-      for (const name of Object.keys(seen)) expect(last[name]).toBe(2)
-      for (const name of Object.keys(fresh)) expect(last).not.toHaveProperty(name)
-    })
-
-    it('does not spend the budget on a line that is rejected or rate-capped', () => {
-      const tap = createAssetsTap(baseOpts)
-      // Rejected lines: the names never reach telemetry.
-      for (let i = 0; i < 40; i++) {
-        tap.ingest(taggedLine('seeder.scan_completed', { [nameFor(i)]: 1, root: 'x' }), 'stdout')
-      }
-      // Spend scan_started's hourly budget, then offer new names on it.
-      for (let i = 0; i < 60; i++) tap.ingest(taggedLine('seeder.scan_started', {}), 'stdout')
-      tap.ingest(lineWith(40, 48).replace('scan_completed', 'scan_started'), 'stdout')
-      expect(captured).toHaveLength(60)
-      // All 32 slots are still free.
-      for (let from = 100; from < 132; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
-      expect(captured).toHaveLength(64)
-      expect(captured[63]!.ctx).toHaveProperty(nameFor(131))
-    })
-
-    it('keeps the budget across core restarts', () => {
-      const tap = createAssetsTap(baseOpts)
-      for (let from = 0; from < 32; from += 8) tap.ingest(lineWith(from, from + 8), 'stdout')
-      tap.beginBoot()
-      tap.ingest(lineWith(32, 33), 'stdout')
-      expect(captured[captured.length - 1]!.ctx).not.toHaveProperty(nameFor(32))
     })
   })
 

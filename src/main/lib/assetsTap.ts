@@ -15,13 +15,10 @@
  * contract: an event allowlist, a field-name allowlist, per-field type and
  * value checks, and rejection of any key colliding with the trusted base
  * context. Ordinary unknown fields are omitted for version skew, as is a
- * `reason`, `site` or `error_kind` value outside its enum that still has an
- * enum value's shape. The one exception: an unknown field named by a typed convention
- * (`*_ms`, `*_count`, `*_bytes`, `*_pct`, `*_enabled`, `is_*`, `has_*`) is
- * forwarded when its value is a number or boolean of that convention's type
- * (see the CONVENTION CONTRACT below), so core can add metrics without a Desktop
- * release. Other invalid known values and malformed or spoofing keys drop the
- * whole line silently:
+ * `reason` or `site` value outside its enum that still has an enum value's
+ * shape, except that an unknown field following a typed naming convention is
+ * forwarded (see the CONVENTION CONTRACT below). Other invalid known values
+ * and malformed or spoofing keys drop the whole line silently:
  * reporting the rejection would put the untrusted content back into a signal
  * we forward.
  *
@@ -31,12 +28,10 @@
  * side is the primary guarantee.
  *
  * The typed conventions widen that gap on purpose: a convention-shaped NAME
- * becomes a property key in PostHog (and a Datadog action-context key on the
- * mirrored failure events), so anything writing to core's stdout can choose up
- * to 48 lowercase characters of key text, at most 32 distinct names per
- * launch. Accepted: code that can print to core's stdout can already send
- * arbitrary data over the network directly. Core's own emitter can only send
- * names from its reviewed `ALLOWED_FIELDS`.
+ * becomes a PostHog property key (and a Datadog context key on mirrored
+ * failure events), so anything writing to core's stdout chooses up to 48
+ * lowercase characters of key text. Accepted: such code can already send data
+ * directly. Core's own emitter only sends names from its `ALLOWED_FIELDS`.
  */
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
@@ -91,12 +86,8 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
  * `ALLOWED_EVENTS` so a crafted log line cannot forge it.
  */
 const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
-/** Same contract as above, for `reason` / `site` / `error_kind` values the build doesn't know. */
+/** Same contract as above, for `reason` / `site` values the build doesn't know. */
 const UNKNOWN_ENUM_VALUES_OMITTED = 'unknown_enum_values_omitted'
-/** Same contract, for valid convention fields past the per-event cap. */
-const CONVENTION_FIELDS_OVER_EVENT_CAP = 'convention_fields_over_event_cap'
-/** Same contract, for valid convention fields with a name past the session cap. */
-const CONVENTION_NAMES_OVER_SESSION_CAP = 'convention_names_over_session_cap'
 
 const MAX_STRING_LENGTH = 64
 const FORBIDDEN_STRING_CHARS = ['/', '\\', ':', ' ', '=', '"', '\n', '\r']
@@ -155,34 +146,13 @@ const REASONS: ReadonlySet<string> = new Set([
   'other'
 ])
 /**
- * Mirror of ComfyUI `app/assets/event_log.py` `ERROR_KINDS`: what a failure
- * was, classified from its SQLite result code, errno or winerror, never from
- * its message. Validated per field, like `reason` and `site`: core decides
- * which events carry it (today the eight failure events), and this tap accepts
- * it on any allowed event.
- */
-const ERROR_KINDS: ReadonlySet<string> = new Set([
-  'expression_tree_too_large',
-  'too_many_variables',
-  'database_locked',
-  'disk_full',
-  'disk_io',
-  'unable_to_open',
-  'database_corrupt',
-  'permission_denied',
-  'file_locked',
-  'read_only',
-  'other'
-])
-/**
  * Enums a newer core is expected to grow. A well-shaped value this build does
  * not know omits just that field, so a new failure reason cannot silently drop
  * the failure events (and their Datadog alerting copies) that carry it.
  */
 const EXTENSIBLE_ENUMS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['reason', REASONS],
-  ['site', SITES],
-  ['error_kind', ERROR_KINDS]
+  ['site', SITES]
 ])
 const ENUM_VALUE = /^[a-z][a-z0-9_]*$/
 /**
@@ -236,10 +206,8 @@ function isSafeString(value: unknown): value is string {
 /**
  * Mirror of the field names in ComfyUI `app/assets/event_log.py`. Adding a field
  * is a reviewed change on BOTH sides; the vocabulary deliberately holds no
- * file names, paths, asset ids or content hashes. Numeric and boolean metrics
- * can skip that review by following a typed naming convention (see
- * `fieldConvention` below); a name listed here keeps its own validator even
- * when it also fits a convention, as `elapsed_ms` and `hashing_enabled` do.
+ * file names, paths, asset ids or content hashes. A name listed here keeps its
+ * own validator even when it fits a convention (`elapsed_ms`).
  *
  * A Set, NOT an object literal: lookup keys here come straight from untrusted
  * logfmt, and `{}['constructor']` / `{}['__proto__']` resolve up the prototype
@@ -260,7 +228,6 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'permission_denied',
   'count',
   'error_type',
-  'error_kind',
   'hashing_enabled',
   'reason',
   'errno_name',
@@ -272,15 +239,9 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Typed-field conventions for names OUTSIDE `ALLOWED_FIELD_NAMES`. A number or
- * boolean can't carry a path, a name or file content, so a field whose name
- * declares one of these types is safe to forward without a reviewed allowlist
- * entry. Strings stay strict: an unknown string-valued field is never
- * forwarded, whatever its name. A value of the wrong type is omitted like any
- * other unknown field, since the name is only a claim about the value.
- *
- * CONVENTION CONTRACT, for core authors adding a field to `event_log.py`
- * without a matching Desktop change:
+ * CONVENTION CONTRACT for names OUTSIDE `ALLOWED_FIELD_NAMES`, so core can add
+ * a numeric or boolean metric without a Desktop release. Strings stay strict:
+ * an unknown string-valued field is never forwarded, whatever its name.
  *
  * | Name                                 | Value forwarded              |
  * | ------------------------------------ | ---------------------------- |
@@ -288,30 +249,17 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
  * | `*_pct`                              | integer, 0 to 100            |
  * | `*_enabled`, `is_*`, `has_*`         | `true` / `false`             |
  *
- * - Names follow the line grammar (`[a-z_]+`, so no digits: `p95_ms` drops the
- *   whole line) and are at most 48 characters.
+ * - Names follow the line grammar, `[a-z_]+`. A digit anywhere in a name
+ *   (`p95_ms`) drops the WHOLE line, not just that field. Names over 48
+ *   characters are omitted.
  * - Suffixes are checked before prefixes: `is_cache_hit_pct` is a percentage.
  * - Fractions are not forwarded (`99.5` stays a string); send an integer.
  * - A value that doesn't match is omitted and the rest of the line forwards.
  *   The same name twice on one line drops the line, even a reserved name.
- * - At most 8 convention fields per event, in core's (sorted) field order;
- *   the rest are omitted and counted.
- * - At most 32 distinct convention names per tap (one Desktop launch); a new
- *   name past that is omitted and counted, names already forwarded still are.
  * - Names Desktop attaches to every event itself (base context, telemetry
  *   defaults, Datadog global context) are never forwarded.
- *
- * The shared fixture has no convention line yet; one is added with core's
- * matching change to its copy.
  */
 const MAX_CONVENTION_FIELD_NAME_LENGTH = 48
-/** Per event, so a runaway core cannot fan one event out into many properties. */
-const MAX_CONVENTION_FIELDS = 8
-/**
- * Per tap, so crafted lines cannot mint unbounded analytics property names by
- * rotating fresh names under the per-event cap.
- */
-const MAX_DISTINCT_CONVENTION_NAMES = 32
 const MAX_PCT = 100
 
 type FieldConvention = 'non_negative_integer' | 'percent' | 'boolean'
@@ -376,41 +324,25 @@ function isAllowedFieldValue(key: string, value: unknown): value is TelemetryVal
   if (key === 'stage') return STAGES.has(value)
   if (key === 'site') return SITES.has(value)
   if (key === 'reason') return REASONS.has(value)
-  if (key === 'error_kind') return ERROR_KINDS.has(value)
   if (key === 'errno_name') return ERRNO_NAME.test(value)
   if (key === 'exc_fp') return EXC_FP.test(value)
   if (key === 'exc_class' || key === 'exc_site') return DOTTED_NAME.test(value)
   return false
 }
 
-interface ParsedFields {
-  fields: Record<string, TelemetryValue>
-  omittedEnumValues: number
-  /** Forwarded convention names not yet in the tap's session set. */
-  newConventionNames: string[]
-  conventionFieldsOverEventCap: number
-  conventionNamesOverSessionCap: number
-}
-
 /**
  * Parse the logfmt tail into forwardable fields, omitting ordinary unknown
- * fields, reserved names, convention-named fields whose value doesn't match
- * the convention (or past the per-event or session name cap), and
- * unknown-but-well-shaped extensible enum values. Other invalid known values
- * and malformed, duplicate or spoofing keys reject the whole line.
+ * fields, reserved names, mistyped convention fields and unknown-but-well-shaped
+ * extensible enum values. Other invalid known values and malformed, duplicate
+ * or spoofing keys reject the whole line.
  */
 function parseFields(
   tail: string,
   baseKeys: ReadonlySet<string>,
-  reservedKeys: ReadonlySet<string>,
-  forwardedConventionNames: ReadonlySet<string>
-): ParsedFields | null {
+  reservedKeys: ReadonlySet<string>
+): { fields: Record<string, TelemetryValue>; omittedEnumValues: number } | null {
   const fields: Record<string, TelemetryValue> = {}
   let omittedEnumValues = 0
-  let conventionFields = 0
-  const newConventionNames: string[] = []
-  let conventionFieldsOverEventCap = 0
-  let conventionNamesOverSessionCap = 0
   // Separate from `fields`, which omits some keys, so a repeat is still caught.
   const seenKeys = new Set<string>()
   const pairs = tail ? tail.slice(1).split(' ') : []
@@ -419,8 +351,8 @@ function parseFields(
     const key = pair.slice(0, separatorIndex)
     const rawValue = pair.slice(separatorIndex + 1)
     if (!FIELD_NAME.test(key)) return null
-    // A field named like a base-context property is a context-spoofing
-    // attempt. The merge order already makes it ineffective.
+    // A field named like a base-context property would be a context-spoofing
+    // attempt, even though the merge order already makes it ineffective.
     if (baseKeys.has(key)) return null
     if (!ALLOWED_FIELD_NAMES.has(key)) {
       // Prototype keys clear the lowercase FIELD_NAME filter but are never a
@@ -430,33 +362,14 @@ function parseFields(
       // rejecting the line would delete an existing metric instead.
       const convention = fieldConvention(key)
       if (!convention) continue
-      // A repeated convention key is malformed, like a repeated listed key,
-      // reserved or not.
+      // A repeated convention key is malformed, like a repeated listed key.
       if (seenKeys.has(key)) return null
       seenKeys.add(key)
-      // Names Desktop sets on every event itself lose nothing by being
-      // omitted, but forwarded they would win the merge: over a telemetry
-      // default in PostHog, and over the renderer's Datadog global context.
-      // Omitted rather than rejected, like any other unknown field.
+      // Omitted, like any unknown field: forwarded, a name Desktop sets on every
+      // event would win the merge over that trusted value.
       if (reservedKeys.has(key)) continue
       const value = coerceValue(key, rawValue)
-      if (!conventionFieldValue(convention, value)) continue
-      const isNewName = !forwardedConventionNames.has(key)
-      // Checked before the per-event cap so a refused name doesn't take a slot.
-      if (
-        isNewName &&
-        forwardedConventionNames.size + newConventionNames.length >= MAX_DISTINCT_CONVENTION_NAMES
-      ) {
-        conventionNamesOverSessionCap++
-        continue
-      }
-      if (conventionFields >= MAX_CONVENTION_FIELDS) {
-        conventionFieldsOverEventCap++
-        continue
-      }
-      conventionFields++
-      if (isNewName) newConventionNames.push(key)
-      fields[key] = value
+      if (conventionFieldValue(convention, value)) fields[key] = value
       continue
     }
     if (seenKeys.has(key)) return null
@@ -476,13 +389,7 @@ function parseFields(
     if (!isAllowedFieldValue(key, value)) return null
     fields[key] = value
   }
-  return {
-    fields,
-    omittedEnumValues,
-    newConventionNames,
-    conventionFieldsOverEventCap,
-    conventionNamesOverSessionCap
-  }
+  return { fields, omittedEnumValues }
 }
 
 /**
@@ -520,9 +427,6 @@ export function createAssetsTap(opts: {
     ...telemetry.DEFAULT_EVENT_PROPERTY_NAMES,
     ...DATADOG_GLOBAL_CONTEXT_KEYS
   ])
-  // Convention names forwarded so far. Like the rate buckets, deliberately NOT
-  // reset by beginBoot: the cap bounds the property names one launch can mint.
-  const forwardedConventionNames = new Set<string>()
 
   // Fixed windows per event name, so one chatty event cannot starve the others.
   // Deliberately NOT reset by beginBoot: a tap is reused across core restarts
@@ -532,8 +436,6 @@ export function createAssetsTap(opts: {
 
   let unknownEventsDropped = 0
   let unknownEnumValuesOmitted = 0
-  let conventionFieldsOverEventCap = 0
-  let conventionNamesOverSessionCap = 0
 
   function withinRateCap(event: string): boolean {
     const now = Date.now()
@@ -561,19 +463,13 @@ export function createAssetsTap(opts: {
       unknownEventsDropped++
       return
     }
-    const parsed = parseFields(tail, baseKeys, reservedKeys, forwardedConventionNames)
+    const parsed = parseFields(tail, baseKeys, reservedKeys)
     if (!parsed) return
     const { fields } = parsed
     // Counted like unknown events, and for the same reason: it says this build
     // is behind core's vocabulary without naming the untrusted value.
     unknownEnumValuesOmitted += parsed.omittedEnumValues
     if (!withinRateCap(event)) return
-    // Counted so a new metric evicting an old one is visible, still unnamed.
-    // After the rate cap: a line that is never sent omitted nothing from an event.
-    conventionFieldsOverEventCap += parsed.conventionFieldsOverEventCap
-    conventionNamesOverSessionCap += parsed.conventionNamesOverSessionCap
-    // Only names that are actually sent spend the session budget.
-    for (const name of parsed.newConventionNames) forwardedConventionNames.add(name)
     try {
       // Base context merged LAST so parsed fields can never override it.
       telemetry.emit(`${EVENT_PREFIX}${event}`, { ...fields, ...baseContext })
@@ -636,22 +532,6 @@ export function createAssetsTap(opts: {
           const count = unknownEnumValuesOmitted
           unknownEnumValuesOmitted = 0
           telemetry.emit(`${EVENT_PREFIX}${UNKNOWN_ENUM_VALUES_OMITTED}`, {
-            count,
-            ...baseContext
-          })
-        }
-        if (conventionFieldsOverEventCap > 0 && withinRateCap(CONVENTION_FIELDS_OVER_EVENT_CAP)) {
-          const count = conventionFieldsOverEventCap
-          conventionFieldsOverEventCap = 0
-          telemetry.emit(`${EVENT_PREFIX}${CONVENTION_FIELDS_OVER_EVENT_CAP}`, {
-            count,
-            ...baseContext
-          })
-        }
-        if (conventionNamesOverSessionCap > 0 && withinRateCap(CONVENTION_NAMES_OVER_SESSION_CAP)) {
-          const count = conventionNamesOverSessionCap
-          conventionNamesOverSessionCap = 0
-          telemetry.emit(`${EVENT_PREFIX}${CONVENTION_NAMES_OVER_SESSION_CAP}`, {
             count,
             ...baseContext
           })
