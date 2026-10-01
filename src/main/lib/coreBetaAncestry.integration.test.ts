@@ -268,6 +268,61 @@ describe('resolveCoreCommitState against a real repository', () => {
       expect(presentNoFetch(dir, sha.backport!)).toBe(false)
     })
 
+    it('fetches nothing even when the partial clone is invisible to the backstop', async () => {
+      // The promisor setting reached only through `include.path`, with no promisor packs: the
+      // config-file backstop cannot see it, so only GIT_NO_LAZY_FETCH stands between the git
+      // commands and the remote.
+      const { dir, head } = partialClone('partial-included')
+      const cfg = path.join(dir, '.git', 'config')
+      fs.writeFileSync(
+        cfg,
+        fs
+          .readFileSync(cfg, 'utf-8')
+          .replace(/^\s*promisor\s*=.*$/im, '')
+          .replace(/^\s*partialclone\s*=.*$/im, '')
+      )
+      fs.writeFileSync(
+        path.join(dir, '.git', 'promisor.cfg'),
+        '[remote "origin"]\n\tpromisor = true\n'
+      )
+      git(dir, 'config', 'include.path', 'promisor.cfg')
+      const packDir = path.join(dir, '.git', 'objects', 'pack')
+      for (const name of fs.readdirSync(packDir)) {
+        if (name.endsWith('.promisor')) fs.rmSync(path.join(packDir, name))
+      }
+      expect(git(dir, 'config', '--get', 'remote.origin.promisor')).toBe('true')
+
+      const state = await resolveCoreCommitState(
+        dir,
+        { kind: 'head', commit: head },
+        [sha.backport!],
+        undefined,
+        { allowFetch: false }
+      )
+      await _backgroundFetchesForTest()
+      // Filters never omit commits, so on this complete history the absent backport is provably
+      // not an ancestor; what matters is that answering never reached the remote.
+      expect(state.ancestry.get(sha.backport!)).not.toBe(true)
+      expect(presentNoFetch(dir, sha.backport!)).toBe(false)
+    })
+
+    it('still relates commits on a full clone that disables its promisor remote', async () => {
+      // `promisor = false` is how a promisor remote is turned off; it must not withhold every
+      // commit check on that install.
+      const dir = path.join(root, 'full-promisor-false')
+      git(root, 'clone', '-q', '--single-branch', '-b', 'master', `file://${upstream}`, dir)
+      git(dir, 'config', 'remote.origin.promisor', 'false')
+      const head = git(dir, 'rev-parse', 'HEAD')
+      const state = await resolveCoreCommitState(
+        dir,
+        { kind: 'head', commit: head },
+        [sha.knownGood!],
+        undefined,
+        { allowFetch: false }
+      )
+      expect(state.ancestry.get(sha.knownGood!)).toBe(true)
+    })
+
     it('leaves a missing commit unresolved and unfetched when fetching is off', async () => {
       const { dir, head } = shallowClone('shallow-fetch-off')
       const state = await resolveCoreCommitState(

@@ -735,6 +735,21 @@ describe('makeOpsFlag maxAgeMs', () => {
     }
   })
 
+  it('keeps an expired treatment expired when the clock moves back', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const flag = makeAgedFlag(14 * DAY)
+      getOpsFlagResult.mockResolvedValue(flagResult('disabled', null))
+      await flag.init({ distinctId: 'anon' })
+      vi.setSystemTime(Date.now() + 15 * DAY)
+      expect(await flag.get()).toBe('normal')
+      vi.setSystemTime(Date.now() - 15 * DAY)
+      expect(await flag.get()).toBe('normal')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('never expires a fetched treatment for a flag without maxAgeMs', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     try {

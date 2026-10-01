@@ -342,7 +342,9 @@ export function makeOpsFlag<T>(opts: {
         }
       }
       if (maxAgeMs !== undefined && cachedAt !== null && Date.now() - cachedAt > maxAgeMs) {
-        return parse(undefined, undefined) ?? fallback
+        // Terminal for this process: a clock moved back later must not bring the treatment back.
+        cached = parse(undefined, undefined) ?? fallback
+        cachedAt = null
       }
       return cached
     },

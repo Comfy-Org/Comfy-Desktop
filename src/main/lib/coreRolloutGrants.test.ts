@@ -333,6 +333,14 @@ describe('parseCoreRollout payload', () => {
       'fixed_in'
     ],
     [
+      'fixed_in below introduced_in (a blocker that could never veto)',
+      (p) =>
+        (p.grants = grantOf({
+          blockers: [{ id: 'x', introduced_in: '0.39.0', fixed_in: '0.38.0' }]
+        })),
+      'fixed_in is below introduced_in'
+    ],
+    [
       'a bad introduced_in',
       (p) => (p.grants = grantOf({ blockers: [{ id: 'x', introduced_in: 39 }] })),
       'introduced_in'

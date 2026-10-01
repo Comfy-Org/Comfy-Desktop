@@ -100,7 +100,8 @@ async function commitAncestry(
   complete: boolean,
   budget: { fetches: number; stopped: boolean; allowFetch: boolean; label: string }
 ): Promise<Relation> {
-  const base = await findMergeBaseOrNone(repoPath, sha, head)
+  const git = { noLazyFetch: !budget.allowFetch }
+  const base = await findMergeBaseOrNone(repoPath, sha, head, git)
   if (typeof base === 'string') return base.toLowerCase() === sha
   // Both commits resolved and share nothing: on a complete graph HEAD cannot contain `sha`. A shallow
   // graph may just be cut short, and the graft rule cannot hold without a common ancestor.
@@ -111,8 +112,8 @@ async function commitAncestry(
     return false
   }
   // Absence counts only once the repository has been shown readable, by resolving HEAD itself.
-  if ((await revParseRef(repoPath, `${head}^{commit}`))?.toLowerCase() !== head) return null
-  if ((await commitPresence(repoPath, sha)) !== 'absent') return null
+  if ((await revParseRef(repoPath, `${head}^{commit}`, git))?.toLowerCase() !== head) return null
+  if ((await commitPresence(repoPath, sha, git)) !== 'absent') return null
   // A complete clone holds every ancestor of HEAD, so a commit it lacks is not one of them.
   if (complete) {
     console.log(`[${budget.label}] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
@@ -149,9 +150,10 @@ function mayLazyFetch(repoPath: string): boolean {
     const common = commonGitDir(repoPath)
     if (common === null) return true
     const config = fs.readFileSync(path.join(common, 'config'), 'utf-8')
-    // Any `promisor` setting counts, whatever its value: git reads true as `true`, `yes`, `on`,
-    // `1` and more, and a false positive only costs this launch its commit checks.
-    if (/^\s*(promisor|partialclone)\s*=/im.test(config)) return true
+    // A backstop for git older than 2.44, which ignores `GIT_NO_LAZY_FETCH` (newer git and pygit2
+    // never fetch here at all). Any value git reads as true counts; `promisor = false` does not.
+    if (/^\s*promisor\s*=\s*(true|yes|on|1)\s*$/im.test(config)) return true
+    if (/^\s*partialclone\s*=\s*\S/im.test(config)) return true
     const packDir = path.join(common, 'objects', 'pack')
     if (!fs.existsSync(packDir)) return false
     return fs.readdirSync(packDir).some((name) => name.endsWith('.promisor'))
@@ -191,14 +193,15 @@ function readShallowGrafts(repoPath: string): string[] | null {
 async function notContainedHoldsOnShallow(
   repoPath: string,
   sha: string,
-  grafts: readonly string[]
+  grafts: readonly string[],
+  noLazyFetch: boolean
 ): Promise<boolean> {
   if (grafts.length > MAX_SHALLOW_GRAFTS) return false
   for (const graft of grafts) {
     if (graft === sha) return false
     // `findMergeBase`, not `findMergeBaseOrNone`: here "no common ancestor" and "could not look" both
     // mean the graft is not proven an ancestor, and both must fail.
-    const base = await findMergeBase(repoPath, graft, sha)
+    const base = await findMergeBase(repoPath, graft, sha, { noLazyFetch })
     if (base?.toLowerCase() !== graft) return false
   }
   return true
@@ -211,8 +214,10 @@ export async function resolveCoreCommitState(
   signal?: AbortSignal,
   /** `false` resolves from the local graph only: a SHA the checkout lacks stays unresolved and no
    *  background fetch is started. For callers acting on users who never opted into anything that
-   *  reaches the network on their behalf. A partial clone resolves nothing at all then, because
-   *  its own git commands fetch a missing object from the remote on demand. `label` prefixes the
+   *  reaches the network on their behalf. Its git commands run with `GIT_NO_LAZY_FETCH`, since a
+   *  partial clone otherwise fetches a missing object from inside `merge-base` itself; and a
+   *  repository that looks like a partial clone resolves nothing at all, for git too old to
+   *  honour that variable. `label` prefixes the
    *  log lines, so one channel's ancestry work is never reported as another's. */
   { allowFetch = true, label = 'core-beta' }: { allowFetch?: boolean; label?: string } = {}
 ): Promise<CoreCommitState> {
@@ -251,7 +256,7 @@ export async function resolveCoreCommitState(
       if (related === false && grafts?.length !== 0) {
         const provable =
           grafts !== null &&
-          (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
+          (await notContainedHoldsOnShallow(repoPath, sha, grafts, !allowFetch).catch(() => false))
         if (!provable) related = null
       }
       // A launch that has moved on takes no late answers: the map it was handed must not change.

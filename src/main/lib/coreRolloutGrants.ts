@@ -190,6 +190,10 @@ function parseBlocker(candidate: unknown, where: string): CoreRolloutBlocker {
   if (typeof id !== 'string' || !BLOCKER_ID_RE.test(id)) fail(`${where}id is missing or malformed`)
   const fixedIn = optionalVersion(candidate, 'fixed_in', where)
   const introducedIn = optionalVersion(candidate, 'introduced_in', where)
+  // Below its introduction the fix is not a fix: such a blocker would be in scope and fixed at
+  // once from `introduced_in` on, so it could never veto anything.
+  if (fixedIn !== undefined && introducedIn !== undefined && semver.lt(fixedIn, introducedIn))
+    fail(`${where}fixed_in is below introduced_in`)
   return {
     id,
     fixCommits: shaList(candidate, 'fix_commits', where),
