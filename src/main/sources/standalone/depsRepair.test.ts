@@ -168,64 +168,9 @@ describe('pendingDrift', () => {
     const { inst } = adoptedInstall(['numpy-2.1.0.dist-info'], 'sqlalchemy>=2.0.0\nnumpy\n')
     expect(pendingDrift(inst)!.unsatisfied.map((r) => r.name)).toEqual(['sqlalchemy'])
   })
-
-  it('stays quiet once given up on the same requirements, and retries when they change', () => {
-    const { inst } = managedInstall([...SYNCED.slice(1)], REQS)
-    const drift = pendingDrift(inst)!
-    const gaveUp = {
-      ...inst,
-      depsRepairGaveUp: { reqsHash: drift.reqsHash, packages: ['blake3'], at: 1 }
-    }
-    expect(pendingDrift(gaveUp as InstallationRecord)).toBeNull()
-    writeReqs(inst.installPath, REQS + 'alembic\n')
-    expect(pendingDrift(gaveUp as InstallationRecord)).not.toBeNull()
-  })
 })
 
 describe('repairDeps', () => {
-  it('repairs a managed install without asking, installing only the unsatisfied lines', async () => {
-    const { inst, site } = managedInstall(
-      ['numpy-2.1.0.dist-info', 'comfy_aimdo-0.4.1.dist-info'],
-      REQS
-    )
-    const drift = pendingDrift(inst)!
-    const uv = fakeUv(site, [
-      'blake3-1.0.dist-info',
-      'sqlalchemy-2.0.36.dist-info',
-      'comfy_aimdo-0.5.5.dist-info'
-    ])
-    const t = tools()
-
-    await expect(repairDeps(inst, drift, t, { freeze: noFreeze, runUvPip: uv })).resolves.toBe(
-      'repaired'
-    )
-
-    expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
-    const args = uv.mock.calls[0]![1] as string[]
-    expect(args.slice(0, 5)).toEqual([
-      'pip',
-      'install',
-      'blake3',
-      'sqlalchemy>=2.0.0',
-      'comfy-aimdo==0.5.5'
-    ])
-    expect(args).toContain('--python')
-    expect(args).not.toContain('torch')
-    expect(args).not.toContain('numpy>=1.25.0')
-    expect(pendingDrift(inst)).toBeNull()
-    expect(emit).toHaveBeenCalledWith(
-      'comfy.desktop.deps_repair',
-      expect.objectContaining({
-        outcome: 'repaired',
-        adopted: false,
-        variant: 'win-nvidia',
-        packages: ['blake3', 'sqlalchemy', 'comfy-aimdo'],
-        missing_count: 2,
-        outdated_count: 1
-      })
-    )
-  })
-
   it('asks before touching an adopted venv, and installs into it when accepted', async () => {
     const { inst, site } = adoptedInstall(['numpy-2.1.0.dist-info'], 'sqlalchemy>=2.0.0\n')
     const drift = pendingDrift(inst)!
@@ -312,158 +257,6 @@ describe('repairDeps', () => {
     expect(output.join('')).toContain('sqlalchemy (missing)')
   })
 
-  it('retries a failed install on later launches, up to a limit per requirement set', async () => {
-    const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
-    const drift = pendingDrift(inst)!
-    let record = inst
-    for (let attempt = 1; attempt <= MAX_FAILED_ATTEMPTS; attempt++) {
-      expect(pendingDrift(record)).not.toBeNull()
-      const t = tools()
-      await expect(
-        repairDeps(record, drift, t, { freeze: noFreeze, runUvPip: fakeUv(site, [], 2) })
-      ).resolves.toBe('failed')
-      expect(t.update).toHaveBeenCalledWith({
-        depsRepairFailures: {
-          reqsHash: drift.reqsHash,
-          count: attempt,
-          packages: ['blake3'],
-          appVersion: '1.1.4'
-        }
-      })
-      record = { ...record, ...(t.update.mock.calls[0]![0] as object) } as InstallationRecord
-    }
-    expect(emit).toHaveBeenLastCalledWith(
-      'comfy.desktop.deps_repair',
-      expect.objectContaining({ outcome: 'failed', uv_exit: 2, attempts: MAX_FAILED_ATTEMPTS })
-    )
-    // Budget spent: no more uv runs, but the pause is logged on every launch.
-    expect(pendingDrift(record)).toBeNull()
-    expect(pausedRepairNote(record)).toContain('Automatic repair paused after 3 failed attempts')
-    expect(pausedRepairNote(record)).toContain('blake3 (missing)')
-    // A new Desktop version resets the budget...
-    expect(pendingDrift(record, '1.1.5')).not.toBeNull()
-    expect(pausedRepairNote(record, '1.1.5')).toBeNull()
-    // ...and so do new requirement files.
-    writeReqs(inst.installPath, REQS + 'alembic\n')
-    expect(pendingDrift(record)).not.toBeNull()
-    expect(pausedRepairNote(record)).toBeNull()
-  })
-
-  it('scopes the pause to the packages that failed: a newly missing package still repairs', async () => {
-    // Paused for blake3 (3 failures), then a custom node removes sqlalchemy.
-    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
-    const pausedFor = {
-      ...inst,
-      depsRepairFailures: {
-        reqsHash: pendingDrift(inst)!.reqsHash,
-        count: MAX_FAILED_ATTEMPTS,
-        packages: ['blake3'],
-        appVersion: '1.1.4'
-      }
-    } as InstallationRecord
-    const drift = pendingDrift(pausedFor)
-    expect(drift!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'sqlalchemy'])
-    expect(pausedRepairNote(pausedFor)).toBeNull()
-
-    // blake3 still can't install; sqlalchemy can.
-    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
-      const lines = args.slice(2, args.indexOf('--python'))
-      if (lines.includes('blake3')) return { code: 1, output: 'no wheel' }
-      fs.mkdirSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'))
-      return { code: 0, output: '' }
-    })
-    const t = tools()
-    await expect(
-      repairDeps(pausedFor, drift!, t, { freeze: async () => ({ torch: '2.10.0' }), runUvPip: uv })
-    ).resolves.toBe('partial')
-    expect(fs.existsSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'))).toBe(true)
-
-    // blake3 is back in its pause (the same package kept failing), and the
-    // pause is logged and reported on the next launch.
-    const after = { ...pausedFor } as InstallationRecord
-    for (const [data] of t.update.mock.calls) Object.assign(after, data as object)
-    expect(after.depsRepairFailures).toMatchObject({
-      count: MAX_FAILED_ATTEMPTS + 1,
-      packages: ['blake3']
-    })
-    expect(pendingDrift(after)).toBeNull()
-    emit.mockClear()
-    const output: string[] = []
-    expect(reportPausedRepair(after, (s) => output.push(s))).toBe(true)
-    expect(output.join('')).toContain('Automatic repair paused')
-    expect(emit).toHaveBeenCalledWith(
-      'comfy.desktop.deps_repair',
-      expect.objectContaining({ outcome: 'paused', packages: ['blake3'] })
-    )
-  })
-
-  it('gives a package failing for the first time the full budget', async () => {
-    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
-    const pausedFor = {
-      ...inst,
-      depsRepairFailures: {
-        reqsHash: pendingDrift(inst)!.reqsHash,
-        count: MAX_FAILED_ATTEMPTS,
-        packages: ['blake3'],
-        appVersion: '1.1.4'
-      }
-    } as InstallationRecord
-    const t = tools()
-    await repairDeps(pausedFor, pendingDrift(pausedFor)!, t, {
-      freeze: async () => ({ torch: '2.10.0' }),
-      runUvPip: fakeUv(site, [], 1)
-    })
-    expect(t.update).toHaveBeenCalledWith({
-      depsRepairFailures: expect.objectContaining({ count: 1, packages: ['blake3', 'sqlalchemy'] })
-    })
-  })
-
-  it('keeps held-back packages out of the pause, so they install once torch is back', async () => {
-    // torch absent: torchsde is held back, blake3 keeps failing.
-    const { inst, site } = managedInstall(['numpy-2.1.0.dist-info'], 'blake3\ntorchsde\nnumpy\n')
-    let record = inst
-    for (let launch = 1; launch <= MAX_FAILED_ATTEMPTS; launch++) {
-      const t = tools()
-      await expect(
-        repairDeps(record, pendingDrift(record)!, t, {
-          freeze: noFreeze,
-          runUvPip: fakeUv(site, [], 1)
-        })
-      ).resolves.toBe('failed')
-      for (const [data] of t.update.mock.calls) record = { ...record, ...(data as object) }
-    }
-    expect(record.depsRepairFailures).toMatchObject({ packages: ['blake3'] })
-    // Paused for blake3; the held-back torchsde neither joins nor lifts it.
-    expect(pendingDrift(record)).toBeNull()
-    expect(pausedRepairNote(record)).toContain('Automatic repair paused')
-    // torch comes back: torchsde is now installable, so the pause lifts.
-    fs.mkdirSync(path.join(site, 'torch-2.10.0.dist-info'))
-    expect(pendingDrift(record)!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'torchsde'])
-    expect(pausedRepairNote(record)).toBeNull()
-  })
-
-  it('does not report a pause when only held-back packages remain', () => {
-    const { inst } = managedInstall(['numpy-2.1.0.dist-info'], 'blake3\ntorchsde\nnumpy\n')
-    const stale = {
-      ...inst,
-      depsRepairFailures: {
-        reqsHash: pendingDrift(inst)!.reqsHash,
-        count: MAX_FAILED_ATTEMPTS,
-        packages: ['blake3'],
-        appVersion: '1.1.4'
-      }
-    } as InstallationRecord
-    // blake3 got installed some other way; only the held-back torchsde is left.
-    fs.mkdirSync(
-      path.join(
-        sitePackagesOf(path.join(inst.installPath, 'ComfyUI', '.venv')),
-        'blake3-1.0.dist-info'
-      )
-    )
-    expect(pausedRepairNote(stale)).toBeNull()
-    expect(pendingDrift(stale)!.unsatisfied.map((r) => r.name)).toEqual(['torchsde'])
-  })
-
   it('keeps a wildcard pin as written in the constraints (uv rejects >= with a wildcard)', async () => {
     const { inst, site } = managedInstall(
       ['numpy-2.1.0.dist-info', 'av-17.2.dist-info'],
@@ -502,23 +295,6 @@ describe('repairDeps', () => {
     expect(constraintText.split('\n')).toEqual(['numpy>=2.1.0'])
   })
 
-  it('has no paused note while the budget remains or nothing is missing', () => {
-    const { inst } = managedInstall(SYNCED.slice(1), REQS)
-    const drift = pendingDrift(inst)!
-    const twice = {
-      ...inst,
-      depsRepairFailures: {
-        reqsHash: drift.reqsHash,
-        count: 2,
-        packages: ['blake3'],
-        appVersion: '1.1.4'
-      }
-    } as InstallationRecord
-    expect(pausedRepairNote(twice)).toBeNull()
-    const { inst: synced } = managedInstall(SYNCED, REQS, {}, 'synced')
-    expect(pausedRepairNote(synced)).toBeNull()
-  })
-
   it('passes the constraints file by bare name, so a spaced install path survives', async () => {
     // uv splits a --constraint value on whitespace; "(1)" installs and Windows
     // account names with spaces put one in every absolute path.
@@ -543,77 +319,6 @@ describe('repairDeps', () => {
     expect(constraintArg).not.toMatch(/[\s/\\]/)
     expect(cwdAtCall).toBe(inst.installPath)
     expect(existedAtCall).toBe(true)
-  })
-
-  it('retries one line at a time when the batch fails, installing what it can', async () => {
-    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
-    const drift = pendingDrift(inst)!
-    const calls: string[][] = []
-    // sqlalchemy is unresolvable; everything else installs on its own.
-    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
-      const lines = args.slice(2, args.indexOf('--python'))
-      calls.push(lines)
-      if (lines.includes('sqlalchemy>=2.0.0')) return { code: 1, output: 'no solution' }
-      if (lines.includes('blake3')) fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
-      return { code: 0, output: '' }
-    })
-    const freeze = async (): Promise<Record<string, string>> => ({ torch: '2.10.0' })
-
-    let record = inst
-    for (let launch = 1; launch <= MAX_FAILED_ATTEMPTS; launch++) {
-      const current = pendingDrift(record)
-      expect(current).not.toBeNull()
-      const t = tools()
-      await expect(repairDeps(record, current!, t, { freeze, runUvPip: uv })).resolves.toBe(
-        launch === 1 ? 'partial' : 'failed'
-      )
-      // A line that failed its own retry spends the failure budget; it is
-      // never given up on, so a transient failure gets retried.
-      expect(t.update).toHaveBeenCalledWith({
-        depsRepairFailures: {
-          reqsHash: drift.reqsHash,
-          count: launch,
-          packages: ['sqlalchemy'],
-          appVersion: '1.1.4'
-        }
-      })
-      expect(t.update).not.toHaveBeenCalledWith(
-        expect.objectContaining({ depsRepairGaveUp: expect.anything() })
-      )
-      for (const [data] of t.update.mock.calls) record = { ...record, ...(data as object) }
-    }
-    expect(calls.slice(0, 3)).toEqual([
-      ['blake3', 'sqlalchemy>=2.0.0'],
-      ['blake3'],
-      ['sqlalchemy>=2.0.0']
-    ])
-    expect(emit).toHaveBeenCalledWith(
-      'comfy.desktop.deps_repair',
-      expect.objectContaining({ outcome: 'partial', remaining: ['sqlalchemy'], attempts: 1 })
-    )
-    // Budget spent: paused, logged, and reset by a new Desktop version.
-    expect(pendingDrift(record)).toBeNull()
-    expect(pausedRepairNote(record)).toContain('sqlalchemy (missing)')
-    expect(pendingDrift(record, '1.1.5')).not.toBeNull()
-  })
-
-  it('reports the per-line failure, not the batch failure, when every retry fails', async () => {
-    const { inst } = managedInstall(SYNCED.slice(2), REQS)
-    const uv = vi.fn(async (_uvPath: string, args: string[]) =>
-      args.slice(2, args.indexOf('--python')).length > 1
-        ? { code: 2, output: 'error: network unreachable' }
-        : { code: 1, output: 'error: no solution found' }
-    )
-    await expect(
-      repairDeps(inst, pendingDrift(inst)!, tools(), {
-        freeze: async () => ({ torch: '2.10.0' }),
-        runUvPip: uv
-      })
-    ).resolves.toBe('failed')
-    expect(emit).toHaveBeenCalledWith(
-      'comfy.desktop.deps_repair',
-      expect.objectContaining({ outcome: 'failed', uv_exit: 1 })
-    )
   })
 
   it('asks an adopted install only about the packages it will install', async () => {
@@ -670,7 +375,7 @@ describe('repairDeps', () => {
     ).resolves.toBe('repaired')
   })
 
-  it('holds torchsde back when no torch is installed, without giving up on it', async () => {
+  it('holds torchsde back when no torch is installed, without recording it as failed', async () => {
     const { inst, site } = managedInstall(['numpy-2.1.0.dist-info'], 'torchsde\nblake3\nnumpy\n')
     const output: string[] = []
     const uv = vi.fn(async (_uvPath: string, args: string[]) => {
@@ -683,10 +388,9 @@ describe('repairDeps', () => {
       repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
     ).resolves.toBe('partial')
     expect(output.join('')).toContain('Not installing torchsde: PyTorch is not installed')
-    expect(t.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({ depsRepairGaveUp: expect.anything() })
-    )
-    // Still pending, so it installs once the torch repair has put torch back.
+    // Held back, not failed: nothing is recorded against it.
+    expect(t.update).not.toHaveBeenCalled()
+    // Still pending, so it installs once torch is back.
     expect(pendingDrift(inst)!.unsatisfied.map((r) => r.name)).toEqual(['torchsde'])
   })
 
@@ -699,26 +403,11 @@ describe('repairDeps', () => {
     expect(uv).not.toHaveBeenCalled()
   })
 
-  it('clears the failure count once an install succeeds', async () => {
-    const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
-    const drift = pendingDrift(inst)!
-    const failedOnce = {
-      ...inst,
-      depsRepairFailures: { reqsHash: drift.reqsHash, count: 1, packages: ['blake3'] }
-    } as InstallationRecord
-    const t = tools()
-    await repairDeps(failedOnce, drift, t, {
-      freeze: noFreeze,
-      runUvPip: fakeUv(site, ['blake3-1.0.dist-info'])
-    })
-    expect(t.update).toHaveBeenCalledWith({ depsRepairFailures: null })
-  })
-
   it('does not claim a repair it cannot verify', async () => {
     const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
     const withGiveUp = {
       ...inst,
-      depsRepairGaveUp: { reqsHash: 'older', packages: ['x'], at: 1 }
+      depsRepairMarker: { reqsHash: 'older', appVersion: '1.1.4', packages: ['x'], attempts: 1 }
     } as InstallationRecord
     const t = tools()
     await expect(
@@ -733,40 +422,6 @@ describe('repairDeps', () => {
       'comfy.desktop.deps_repair',
       expect.objectContaining({ outcome: 'unverified' })
     )
-  })
-
-  it('gives up on these requirements when uv succeeds but they still read as unsatisfied', async () => {
-    const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
-    const drift = pendingDrift(inst)!
-    const uv = fakeUv(site, []) // exits 0 but nothing shows up in site-packages
-    const t = tools()
-
-    await expect(repairDeps(inst, drift, t, { freeze: noFreeze, runUvPip: uv })).resolves.toBe(
-      'still_unsatisfied'
-    )
-
-    expect(t.update).toHaveBeenCalledWith({
-      depsRepairGaveUp: { reqsHash: drift.reqsHash, packages: ['blake3'], at: expect.any(Number) }
-    })
-    const updated = { ...inst, ...(t.update.mock.calls[0]![0] as object) } as InstallationRecord
-    expect(pendingDrift(updated)).toBeNull()
-  })
-
-  it('clears an earlier give-up once a repair succeeds', async () => {
-    const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
-    const drift = pendingDrift(inst)!
-    const withOldGiveUp = {
-      ...inst,
-      depsRepairGaveUp: { reqsHash: 'older', at: 1 }
-    } as InstallationRecord
-    const t = tools()
-
-    await repairDeps(withOldGiveUp, drift, t, {
-      freeze: noFreeze,
-      runUvPip: fakeUv(site, ['blake3-1.0.dist-info'])
-    })
-
-    expect(t.update).toHaveBeenCalledWith({ depsRepairGaveUp: null })
   })
 
   it('reports a cancelled launch as cancelled, without telemetry or give-up', async () => {
@@ -864,17 +519,315 @@ describe('repairDeps', () => {
     ).resolves.toBe('failed')
     expect(uv).not.toHaveBeenCalled()
   })
+})
 
-  it('does not let a give-up suppress drift in other packages', async () => {
-    const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
-    const drift = pendingDrift(inst)!
+/** A uv stub that installs line by line: `installs` maps a requirement line to
+ *  the dist-info it creates; a line mapped to a number fails with that exit code;
+ *  an unmapped line "succeeds" without installing anything (uv accepted it, but
+ *  it still reads as unsatisfied). */
+function perLineUv(site: string, installs: Record<string, string | number>) {
+  const calls: string[][] = []
+  const fn = vi.fn(async (_uvPath: string, args: string[]) => {
+    const lines = args.slice(2, args.indexOf('--python'))
+    calls.push(lines)
+    const effect = installs[lines[0]!]
+    if (typeof effect === 'number') return { code: effect, output: `error ${effect}` }
+    if (effect) fs.mkdirSync(path.join(site, effect), { recursive: true })
+    return { code: 0, output: '' }
+  })
+  return Object.assign(fn, { calls })
+}
+
+/** Run `launches` repairs, carrying the record's updates between them like the
+ *  launch does; stops early once the drift is suppressed. */
+async function launchRepeatedly(
+  inst: InstallationRecord,
+  uv: ReturnType<typeof perLineUv>,
+  launches: number,
+  freeze: () => Promise<Record<string, string>> = async () => ({ torch: '2.10.0' })
+): Promise<{ record: InstallationRecord; outcomes: string[] }> {
+  let record = inst
+  const outcomes: string[] = []
+  for (let i = 0; i < launches; i++) {
+    const drift = pendingDrift(record)
+    if (!drift) break
     const t = tools()
-    await repairDeps(inst, drift, t, { freeze: noFreeze, runUvPip: fakeUv(site, []) })
-    const updated = { ...inst, ...(t.update.mock.calls[0]![0] as object) } as InstallationRecord
-    expect(pendingDrift(updated)).toBeNull()
+    outcomes.push(await repairDeps(record, drift, t, { freeze, runUvPip: uv }))
+    for (const [data] of t.update.mock.calls) record = { ...record, ...(data as object) }
+  }
+  return { record, outcomes }
+}
 
-    fs.rmSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'), { recursive: true })
-    expect(pendingDrift(updated)!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'sqlalchemy'])
+describe('repair marker', () => {
+  it('repairs a managed install without asking, one line at a time', async () => {
+    const { inst, site } = managedInstall(
+      ['numpy-2.1.0.dist-info', 'comfy_aimdo-0.4.1.dist-info'],
+      REQS
+    )
+    const uv = perLineUv(site, {
+      blake3: 'blake3-1.0.dist-info',
+      'sqlalchemy>=2.0.0': 'SQLAlchemy-2.0.36.dist-info',
+      'comfy-aimdo==0.5.5': 'comfy_aimdo-0.5.5.dist-info'
+    })
+    const t = tools()
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, t, {
+        freeze: async () => ({ torch: '2.10.0' }),
+        runUvPip: uv
+      })
+    ).resolves.toBe('repaired')
+    expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
+    expect(uv.calls).toEqual([['blake3'], ['sqlalchemy>=2.0.0'], ['comfy-aimdo==0.5.5']])
+    const args = uv.mock.calls[0]![1]
+    expect(args).toContain('--python')
+    expect(args).not.toContain('torch')
+    expect(t.update).not.toHaveBeenCalled()
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({
+        outcome: 'repaired',
+        adopted: false,
+        variant: 'win-nvidia',
+        packages: ['blake3', 'sqlalchemy', 'comfy-aimdo'],
+        missing_count: 2,
+        outdated_count: 1
+      })
+    )
+  })
+
+  it('retries a failing package on later launches, then suppresses it and says so', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
+    const reqsHash = pendingDrift(inst)!.reqsHash
+    const { record, outcomes } = await launchRepeatedly(inst, perLineUv(site, { blake3: 2 }), 5)
+    expect(outcomes).toEqual(['failed', 'failed', 'failed'])
+    expect(record.depsRepairMarker).toEqual({
+      reqsHash,
+      appVersion: '1.1.4',
+      packages: ['blake3'],
+      attempts: MAX_FAILED_ATTEMPTS
+    })
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'failed', uv_exit: 2, attempts: MAX_FAILED_ATTEMPTS })
+    )
+    // Suppressed: no repair, but every launch logs and reports it.
+    expect(pendingDrift(record)).toBeNull()
+    emit.mockClear()
+    const output: string[] = []
+    expect(reportPausedRepair(record, (s) => output.push(s))).toBe(true)
+    expect(output.join('')).toContain('Automatic repair paused after 3 failed attempts')
+    expect(output.join('')).toContain('blake3 (missing)')
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'paused', packages: ['blake3'], attempts: 3 })
+    )
+    // A new Desktop version, or new requirement files, lift it.
+    expect(pendingDrift(record, '1.1.5')).not.toBeNull()
+    expect(pausedRepairNote(record, '1.1.5')).toBeNull()
+    writeReqs(inst.installPath, REQS + 'alembic\n')
+    expect(pendingDrift(record)).not.toBeNull()
+  })
+
+  it('does not suppress while the budget remains, or once nothing is missing', () => {
+    const { inst } = managedInstall(SYNCED.slice(1), REQS)
+    const twice = {
+      ...inst,
+      depsRepairMarker: {
+        reqsHash: pendingDrift(inst)!.reqsHash,
+        appVersion: '1.1.4',
+        packages: ['blake3'],
+        attempts: 2
+      }
+    } as InstallationRecord
+    expect(pendingDrift(twice)).not.toBeNull()
+    expect(pausedRepairNote(twice)).toBeNull()
+    const { inst: synced } = managedInstall(SYNCED, REQS, {}, 'synced')
+    expect(pausedRepairNote(synced)).toBeNull()
+  })
+
+  it('installs what it can when one package is unresolvable', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
+    const uv = perLineUv(site, { blake3: 'blake3-1.0.dist-info', 'sqlalchemy>=2.0.0': 1 })
+    const t = tools()
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, t, {
+        freeze: async () => ({ torch: '2.10.0' }),
+        runUvPip: uv
+      })
+    ).resolves.toBe('partial')
+    expect(fs.existsSync(path.join(site, 'blake3-1.0.dist-info'))).toBe(true)
+    expect(t.update).toHaveBeenCalledWith({
+      depsRepairMarker: expect.objectContaining({ packages: ['sqlalchemy'], attempts: 1 })
+    })
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'partial', remaining: ['sqlalchemy'], uv_exit: 1 })
+    )
+  })
+
+  it('suppresses a stuck package and a failing one together (they share one marker)', async () => {
+    // blake3: uv accepts it but it never shows up. sqlalchemy: uv fails.
+    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
+    const uv = perLineUv(site, { 'sqlalchemy>=2.0.0': 1 })
+    const { record, outcomes } = await launchRepeatedly(inst, uv, 6)
+    expect(outcomes).toEqual(['failed', 'failed', 'failed'])
+    expect(record.depsRepairMarker).toMatchObject({
+      packages: ['blake3', 'sqlalchemy'],
+      attempts: MAX_FAILED_ATTEMPTS
+    })
+    expect(uv).toHaveBeenCalledTimes(6)
+    expect(pendingDrift(record)).toBeNull()
+    expect(pausedRepairNote(record)).toContain('Automatic repair paused')
+  })
+
+  it('suppresses a stuck package alongside a held-back one, and lifts when torch returns', async () => {
+    // No torch: torchsde is held back; blake3 is accepted by uv but never shows up.
+    const { inst, site } = managedInstall(['numpy-2.1.0.dist-info'], 'blake3\ntorchsde\nnumpy\n')
+    const uv = perLineUv(site, {})
+    const { record, outcomes } = await launchRepeatedly(inst, uv, 6, noFreeze)
+    expect(outcomes).toEqual(['failed', 'failed', 'failed'])
+    expect(uv.calls).toEqual([['blake3'], ['blake3'], ['blake3']])
+    expect(record.depsRepairMarker).toMatchObject({ packages: ['blake3'], attempts: 3 })
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'failed', held_back: ['torchsde'] })
+    )
+    expect(pendingDrift(record)).toBeNull()
+    expect(pausedRepairNote(record)).toContain('Automatic repair paused')
+    // torch comes back: torchsde is installable now, so the suppression lifts.
+    fs.mkdirSync(path.join(site, 'torch-2.10.0.dist-info'))
+    expect(pendingDrift(record)!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'torchsde'])
+    expect(pausedRepairNote(record)).toBeNull()
+  })
+
+  it('does not report a suppression when only held-back packages remain', () => {
+    const { inst } = managedInstall(['numpy-2.1.0.dist-info'], 'blake3\ntorchsde\nnumpy\n')
+    const stale = {
+      ...inst,
+      depsRepairMarker: {
+        reqsHash: pendingDrift(inst)!.reqsHash,
+        appVersion: '1.1.4',
+        packages: ['blake3'],
+        attempts: MAX_FAILED_ATTEMPTS
+      }
+    } as InstallationRecord
+    expect(pendingDrift(stale)).toBeNull()
+    // blake3 got installed some other way; only the held-back torchsde is left.
+    fs.mkdirSync(
+      path.join(
+        sitePackagesOf(path.join(inst.installPath, 'ComfyUI', '.venv')),
+        'blake3-1.0.dist-info'
+      )
+    )
+    expect(pausedRepairNote(stale)).toBeNull()
+    expect(pendingDrift(stale)!.unsatisfied.map((r) => r.name)).toEqual(['torchsde'])
+  })
+
+  it('stops prompting an adopted install once suppressed', async () => {
+    const { inst, site } = adoptedInstall(['numpy-2.1.0.dist-info'], 'sqlalchemy>=2.0.0\nnumpy\n')
+    const uv = perLineUv(site, { 'sqlalchemy>=2.0.0': 1 })
+    const confirm = vi.fn(async () => true)
+    let record = inst
+    let prompts = 0
+    for (let launch = 0; launch < 5; launch++) {
+      const drift = pendingDrift(record)
+      if (!drift) continue
+      const t = tools({ confirmAdoptedRepair: confirm })
+      await repairDeps(record, drift, t, {
+        freeze: async () => ({ torch: '2.10.0' }),
+        runUvPip: uv
+      })
+      prompts = confirm.mock.calls.length
+      for (const [data] of t.update.mock.calls) record = { ...record, ...(data as object) }
+    }
+    expect(prompts).toBe(MAX_FAILED_ATTEMPTS)
+    expect(pausedRepairNote(record)).toContain('Automatic repair paused')
+  })
+
+  it('still repairs a package that goes missing while another is suppressed', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
+    const suppressedFor = {
+      ...inst,
+      depsRepairMarker: {
+        reqsHash: pendingDrift(inst)!.reqsHash,
+        appVersion: '1.1.4',
+        packages: ['blake3'],
+        attempts: MAX_FAILED_ATTEMPTS
+      }
+    } as InstallationRecord
+    const drift = pendingDrift(suppressedFor)
+    expect(drift!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'sqlalchemy'])
+    const uv = perLineUv(site, { blake3: 1, 'sqlalchemy>=2.0.0': 'SQLAlchemy-2.0.36.dist-info' })
+    const t = tools()
+    await expect(
+      repairDeps(suppressedFor, drift!, t, {
+        freeze: async () => ({ torch: '2.10.0' }),
+        runUvPip: uv
+      })
+    ).resolves.toBe('partial')
+    expect(fs.existsSync(path.join(site, 'SQLAlchemy-2.0.36.dist-info'))).toBe(true)
+    // blake3 kept failing, so it carries its count and stays suppressed.
+    const after = { ...suppressedFor } as InstallationRecord
+    for (const [data] of t.update.mock.calls) Object.assign(after, data as object)
+    expect(after.depsRepairMarker).toMatchObject({
+      packages: ['blake3'],
+      attempts: MAX_FAILED_ATTEMPTS + 1
+    })
+    expect(pendingDrift(after)).toBeNull()
+  })
+
+  it('gives a package failing for the first time the full budget', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
+    const suppressedFor = {
+      ...inst,
+      depsRepairMarker: {
+        reqsHash: pendingDrift(inst)!.reqsHash,
+        appVersion: '1.1.4',
+        packages: ['blake3'],
+        attempts: MAX_FAILED_ATTEMPTS
+      }
+    } as InstallationRecord
+    const t = tools()
+    await repairDeps(suppressedFor, pendingDrift(suppressedFor)!, t, {
+      freeze: async () => ({ torch: '2.10.0' }),
+      runUvPip: perLineUv(site, { blake3: 1, 'sqlalchemy>=2.0.0': 1 })
+    })
+    expect(t.update).toHaveBeenCalledWith({
+      depsRepairMarker: expect.objectContaining({ packages: ['blake3', 'sqlalchemy'], attempts: 1 })
+    })
+  })
+
+  it('clears the marker once nothing is left', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(1), REQS)
+    const withMarker = {
+      ...inst,
+      depsRepairMarker: {
+        reqsHash: pendingDrift(inst)!.reqsHash,
+        appVersion: '1.1.4',
+        packages: ['blake3'],
+        attempts: 1
+      }
+    } as InstallationRecord
+    const t = tools()
+    await expect(
+      repairDeps(withMarker, pendingDrift(withMarker)!, t, {
+        freeze: noFreeze,
+        runUvPip: perLineUv(site, { blake3: 'blake3-1.0.dist-info' })
+      })
+    ).resolves.toBe('repaired')
+    expect(t.update).toHaveBeenCalledWith({ depsRepairMarker: null })
+  })
+
+  it('reports the last failing install when several fail', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
+    await repairDeps(inst, pendingDrift(inst)!, tools(), {
+      freeze: async () => ({ torch: '2.10.0' }),
+      runUvPip: perLineUv(site, { blake3: 2, 'sqlalchemy>=2.0.0': 1 })
+    })
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'failed', uv_exit: 1 })
+    )
   })
 })
 

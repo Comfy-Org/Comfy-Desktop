@@ -33,30 +33,19 @@ import type { InstallationRecord } from '../../installations'
  * path logs and returns so the launch proceeds exactly as it would have.
  */
 
-/** Persisted on the record when a repair ran but the venv still didn't satisfy
- *  the same requirements, so the launch doesn't re-run uv every time. Scoped to
- *  the requirement files' hash AND the packages left unsatisfied: new
- *  requirements, or drift in any other package, get a fresh attempt. */
-export interface DepsRepairGaveUp {
+/**
+ * The one record a repair leaves behind, for the packages it could not make
+ * satisfied - whether uv failed on them or accepted them and they still read
+ * as unsatisfied. A failure is often transient (offline, index outage), so the
+ * repair retries on later launches; after MAX_FAILED_ATTEMPTS for the same
+ * packages it is suppressed until ComfyUI's requirements or Desktop's version
+ * change, and every suppressed launch says so. Cleared once nothing is left.
+ */
+export interface DepsRepairMarker {
   reqsHash: string
+  appVersion: string
   packages: string[]
-  at: number
-}
-
-/** Consecutive failed installs for one set of requirement files. A failure is
- *  usually transient (offline, index outage) and retries next launch, but a
- *  deterministic one (an unresolvable conflict) would otherwise re-run uv on
- *  every launch; after MAX_FAILED_ATTEMPTS it pauses until the requirement
- *  files or Desktop's version change. */
-export interface DepsRepairFailures {
-  reqsHash: string
-  count: number
-  /** The packages that failed. The pause applies only while every unsatisfied
-   *  package (ignoring torch-dependent ones held back for a missing torch) is
-   *  among them, so a package that goes missing later is still repaired. */
-  packages: string[]
-  /** Desktop version that recorded the failures; a new version resets them. */
-  appVersion?: string
+  attempts: number
 }
 
 /** ComfyUI requirements that depend on torch unconditionally (per their
@@ -76,13 +65,12 @@ export const MAX_FAILED_ATTEMPTS = 3
 
 export type DepsRepairOutcome =
   | 'repaired'
+  | 'partial'
+  | 'failed'
+  | 'torch_missing'
   | 'unverified'
   | 'declined'
   | 'no_uv'
-  | 'failed'
-  | 'still_unsatisfied'
-  | 'partial'
-  | 'torch_missing'
   | 'cancelled'
   | 'site_packages_empty'
   | 'paused'
@@ -150,45 +138,48 @@ export function relaxSpecifier(specifier: string): string {
     .join(',')
 }
 
-/** Torch-dependent packages that are unsatisfied only because torch is absent
- *  are held back, not failed: they neither join nor lift a pause. */
-function pauseRelevant(
-  installation: InstallationRecord,
-  drift: RequirementsDrift
-): typeof drift.unsatisfied {
-  const sitePackages = findSitePackages(getActiveVenvDir(installation))
-  const torchPresent = sitePackages !== null && readInstalledDists(sitePackages).has('torch')
-  return torchPresent
-    ? drift.unsatisfied
-    : drift.unsatisfied.filter((r) => !TORCH_DEPENDENT.has(r.name))
+/** Requirements that are unsatisfied only because torch is absent: they are
+ *  held back, so they neither join nor lift a suppression. */
+function withoutHeldBack(
+  unsatisfied: UnsatisfiedRequirement[],
+  torchPresent: boolean
+): UnsatisfiedRequirement[] {
+  return torchPresent ? unsatisfied : unsatisfied.filter((r) => !TORCH_DEPENDENT.has(r.name))
 }
 
-function failureBudgetSpent(
+function torchPresentIn(installation: InstallationRecord): boolean {
+  const sitePackages = findSitePackages(getActiveVenvDir(installation))
+  return sitePackages !== null && readInstalledDists(sitePackages).has('torch')
+}
+
+function suppressed(
   installation: InstallationRecord,
   drift: RequirementsDrift,
   appVersion: string
 ): boolean {
-  const failures = installation.depsRepairFailures as DepsRepairFailures | null | undefined
-  const relevant = pauseRelevant(installation, drift)
-  return (
-    relevant.length > 0 &&
-    failures?.reqsHash === drift.reqsHash &&
-    failures.count >= MAX_FAILED_ATTEMPTS &&
-    (failures.appVersion ?? '') === appVersion &&
-    Array.isArray(failures.packages) &&
-    relevant.every((r) => failures.packages.includes(r.name))
-  )
+  const marker = installation.depsRepairMarker as DepsRepairMarker | null | undefined
+  if (
+    !marker ||
+    marker.reqsHash !== drift.reqsHash ||
+    marker.appVersion !== appVersion ||
+    marker.attempts < MAX_FAILED_ATTEMPTS ||
+    !Array.isArray(marker.packages)
+  ) {
+    return false
+  }
+  const relevant = withoutHeldBack(drift.unsatisfied, torchPresentIn(installation))
+  return relevant.length > 0 && relevant.every((r) => marker.packages.includes(r.name))
 }
 
-/** Launch-log note when drift remains but the failure budget is spent, so a
- *  paused repair is never silent. Null otherwise. */
+/** Launch-log note when drift remains but the repair is suppressed, so it is
+ *  never silent. Null otherwise. */
 export function pausedRepairNote(
   installation: InstallationRecord,
   appVersion: string = currentAppVersion()
 ): string | null {
   const drift = detectInstallDrift(installation)
   if (!drift || drift.unsatisfied.length === 0) return null
-  if (!failureBudgetSpent(installation, drift, appVersion)) return null
+  if (!suppressed(installation, drift, appVersion)) return null
   return (
     `\nComfyUI requirements not satisfied by this environment: ${describeUnsatisfied(drift.unsatisfied)}\n` +
     `Automatic repair paused after ${MAX_FAILED_ATTEMPTS} failed attempts; it retries when ` +
@@ -196,8 +187,8 @@ export function pausedRepairNote(
   )
 }
 
-/** Log a paused repair and report it, so the paused population is measurable.
- *  True when the repair is paused. */
+/** Log a suppressed repair and report it, so the paused population is
+ *  measurable. True when suppressed. */
 export function reportPausedRepair(
   installation: InstallationRecord,
   sendOutput?: (text: string) => void,
@@ -206,34 +197,25 @@ export function reportPausedRepair(
   const note = pausedRepairNote(installation, appVersion)
   if (!note) return false
   sendOutput?.(note)
-  const failures = installation.depsRepairFailures as DepsRepairFailures
+  const marker = installation.depsRepairMarker as DepsRepairMarker
   telemetry.emit('comfy.desktop.deps_repair', {
     outcome: 'paused',
     adopted: installation.adopted === true,
     variant: (installation.variant as string | undefined) ?? null,
-    packages: failures.packages,
-    attempts: failures.count
+    packages: marker.packages,
+    attempts: marker.attempts
   })
   return true
 }
 
-/** Drift that a repair should act on: unsatisfied, and not already given up on. */
+/** Drift that a repair should act on: unsatisfied, and not suppressed. */
 export function pendingDrift(
   installation: InstallationRecord,
   appVersion: string = currentAppVersion()
 ): RequirementsDrift | null {
   const drift = detectInstallDrift(installation)
   if (!drift || drift.unsatisfied.length === 0) return null
-  const gaveUp = installation.depsRepairGaveUp as DepsRepairGaveUp | null | undefined
-  if (
-    gaveUp?.reqsHash === drift.reqsHash &&
-    Array.isArray(gaveUp.packages) &&
-    drift.unsatisfied.every((r) => gaveUp.packages.includes(r.name))
-  ) {
-    return null
-  }
-  if (failureBudgetSpent(installation, drift, appVersion)) return null
-  return drift
+  return suppressed(installation, drift, appVersion) ? null : drift
 }
 
 export async function repairDeps(
@@ -280,7 +262,7 @@ export async function repairDeps(
   // default-index CPU torch on Windows. A conflict fails the install instead.
   // A protected package that is itself unsatisfied is left unpinned, or it
   // would conflict with its own requirement. The requirement files' bounds go
-  // in too, so installing the subset can't pull another requirement out of range.
+  // in too, so installing one line can't pull another requirement out of range.
   let constraints: string[]
   let torchInstalled: boolean
   try {
@@ -302,13 +284,11 @@ export async function repairDeps(
   }
 
   // With no torch installed there is nothing to pin, so a torch-dependent
-  // requirement could pull a CPU torch. Hold it back - never given up on - so
-  // it installs on a later launch once torch is back.
-  const heldBack = torchInstalled
-    ? []
-    : drift.unsatisfied.filter((r) => TORCH_DEPENDENT.has(r.name))
+  // requirement could pull a CPU torch. Hold it back - never recorded as
+  // failed - so it installs on a later launch once torch is back.
+  const toInstall = withoutHeldBack(drift.unsatisfied, torchInstalled)
+  const heldBack = drift.unsatisfied.filter((r) => !toInstall.includes(r))
   const heldBackNames = new Set(heldBack.map((r) => r.name))
-  const toInstall = drift.unsatisfied.filter((r) => !heldBackNames.has(r.name))
   if (heldBack.length > 0) {
     tools.sendOutput?.(
       `Not installing ${heldBack.map((r) => r.name).join(', ')}: PyTorch is not installed ` +
@@ -338,156 +318,103 @@ export async function repairDeps(
   const constraintName = `.deps-repair-constraints-${randomUUID()}.txt`
   const constraintPath = path.join(installation.installPath, constraintName)
 
+  // One line at a time, so one unresolvable requirement can't block the rest
+  // and each package's outcome is known.
   tools.sendOutput?.('Installing the missing Python packages…\n')
   const mirrors = settings.getMirrorConfig()
-  const install = (lines: string[]): ReturnType<typeof runUv> =>
-    runUv(
-      uvPath,
-      [
-        'pip',
-        'install',
-        ...lines,
-        '--python',
-        pythonPath,
-        ...(constraints.length > 0 ? ['--constraint', constraintName] : []),
-        ...getPipIndexArgs(mirrors.pypiMirror, mirrors.useChineseMirrors)
-      ],
-      installation.installPath,
-      tools.sendOutput ?? (() => {}),
-      tools.signal
-    )
-
-  let result: Awaited<ReturnType<typeof runUv>>
-  // Lines whose own install failed after the batch failed; empty when the
-  // batch itself succeeded.
-  const failedAlone = new Set<string>()
-  let retriedAlone = false
+  let lastFailure: Awaited<ReturnType<typeof runUv>> | null = null
   try {
     if (constraints.length > 0) {
       await fs.promises.writeFile(constraintPath, constraints.join('\n'), 'utf-8')
     }
-    result = await install(toInstall.map((r) => r.line))
-    // One unresolvable requirement must not block the rest: retry each line
-    // on its own, so whatever can install does.
-    if (result.code !== 0 && toInstall.length > 1 && !tools.signal?.aborted) {
-      tools.sendOutput?.('Retrying the packages one at a time…\n')
-      retriedAlone = true
-      for (const req of toInstall) {
-        if (tools.signal?.aborted) break
-        const single = await install([req.line])
-        if (single.code !== 0) {
-          failedAlone.add(req.name)
-          // Report the retry's own failure: it can differ from the batch's.
-          result = single
-        }
-      }
+    for (const req of toInstall) {
+      if (tools.signal?.aborted) break
+      const result = await runUv(
+        uvPath,
+        [
+          'pip',
+          'install',
+          req.line,
+          '--python',
+          pythonPath,
+          ...(constraints.length > 0 ? ['--constraint', constraintName] : []),
+          ...getPipIndexArgs(mirrors.pypiMirror, mirrors.useChineseMirrors)
+        ],
+        installation.installPath,
+        tools.sendOutput ?? (() => {}),
+        tools.signal
+      )
+      if (result.code !== 0) lastFailure = result
     }
   } finally {
     await fs.promises.unlink(constraintPath).catch(() => {})
   }
   if (tools.signal?.aborted) return 'cancelled'
 
-  // A failed install - the batch, or a line that failed its own retry - spends
-  // the failure budget: it retries on the next launch (it may be transient),
-  // and after MAX_FAILED_ATTEMPTS the pause is logged and a new Desktop
-  // version resets it.
-  // The count carries on only while the same packages keep failing: a package
-  // that fails for the first time gets the full budget.
-  const recordFailure = async (failed: string[]): Promise<number> => {
-    const prior = installation.depsRepairFailures as DepsRepairFailures | null | undefined
-    const sameRun =
-      prior?.reqsHash === drift.reqsHash &&
-      (prior.appVersion ?? '') === appVersion &&
-      Array.isArray(prior.packages) &&
-      failed.every((name) => prior.packages.includes(name))
-    const count = (sameRun ? prior.count : 0) + 1
-    // Held-back packages are not recorded: once torch is back they must
-    // install, not inherit the pause (pauseRelevant ignores them meanwhile).
-    const packages = failed
-    await tools.update({
-      depsRepairFailures: {
-        reqsHash: drift.reqsHash,
-        count,
-        packages,
-        appVersion
-      } satisfies DepsRepairFailures
-    })
-    return count
-  }
-  const retryNote = (count: number): string =>
-    count < MAX_FAILED_ATTEMPTS
-      ? 'will retry on next launch'
-      : `failed ${count} times; paused until ComfyUI's requirements or Desktop's version change`
-
-  const nothingInstalled = retriedAlone
-    ? toInstall.every((r) => failedAlone.has(r.name))
-    : result.code !== 0
-  if (nothingInstalled) {
-    const count = await recordFailure(toInstall.map((r) => r.name))
-    const message = withOutputTail(`uv pip install exited with code ${result.code}`, result.output)
-    tools.sendOutput?.(`Installing the missing packages failed (${retryNote(count)}).\n`)
-    report('failed', { uv_exit: result.code, attempts: count, ...buildErrorFields(message) })
-    return 'failed'
-  }
-
   const after = detect(installation)
   if (!after) {
-    // uv succeeded but the environment can't be read back: don't claim a
-    // repair nobody verified, and leave the markers as they were.
+    // The environment can't be read back: don't claim a repair nobody
+    // verified, and leave the marker as it was.
     tools.sendOutput?.('Installed, but could not verify the environment afterwards.\n')
     report('unverified')
     return 'unverified'
   }
-  // Held-back packages were never attempted, so they count as neither.
+  // Whatever is still unsatisfied - uv failed, or accepted it and it still
+  // reads as unsatisfied - is recorded the same way. Held-back packages were
+  // never attempted.
   const remaining = after.unsatisfied.filter((r) => !heldBackNames.has(r.name))
-  const retryable = remaining.filter((r) => failedAlone.has(r.name))
-  // Loop guard: uv accepted these lines but they still read as unsatisfied
-  // (e.g. a metadata-name mismatch this check can't see through). Re-running
-  // uv each launch would never converge; stop until the requirements change
-  // or other packages drift.
-  const stuck = remaining.filter((r) => !failedAlone.has(r.name))
+  const failure = lastFailure
+    ? {
+        uv_exit: lastFailure.code,
+        ...buildErrorFields(
+          withOutputTail(`uv pip install exited with code ${lastFailure.code}`, lastFailure.output)
+        )
+      }
+    : {}
 
-  let attempts: number | null = null
-  if (retryable.length > 0) attempts = await recordFailure(retryable.map((r) => r.name))
-  else if (installation.depsRepairFailures) await tools.update({ depsRepairFailures: null })
-  if (stuck.length > 0) {
-    await tools.update({
-      depsRepairGaveUp: {
-        reqsHash: drift.reqsHash,
-        packages: stuck.map((r) => r.name),
-        at: Date.now()
-      } satisfies DepsRepairGaveUp
-    })
-  } else if (installation.depsRepairGaveUp) {
-    await tools.update({ depsRepairGaveUp: null })
-  }
-
-  if (retryable.length > 0) {
-    tools.sendOutput?.(
-      `Could not install ${describeUnsatisfied(retryable)} (${retryNote(attempts!)}).\n`
-    )
-  }
-  if (stuck.length > 0) {
-    tools.sendOutput?.(`Still not satisfied after install: ${describeUnsatisfied(stuck)}\n`)
-  }
-  // Held-back packages are still missing, so that is not a full repair either.
-  const outcome: DepsRepairOutcome =
-    retryable.length > 0 || (stuck.length === 0 && heldBack.length > 0)
-      ? 'partial'
-      : stuck.length > 0
-        ? 'still_unsatisfied'
-        : 'repaired'
-  if (retryable.length === 0 && stuck.length === 0) {
+  if (remaining.length === 0) {
+    if (installation.depsRepairMarker) await tools.update({ depsRepairMarker: null })
     tools.sendOutput?.(
       heldBack.length > 0
         ? `Installed the missing Python packages except ${heldBack.map((r) => r.name).join(', ')}.\n`
         : 'Missing Python packages installed.\n'
     )
+    const outcome = heldBack.length > 0 ? 'partial' : 'repaired'
+    report(outcome, heldBack.length > 0 ? { held_back: heldBack.map((r) => r.name) } : {})
+    return outcome
   }
+
+  // The count carries on only while the same packages keep failing: a package
+  // failing for the first time gets the full budget.
+  const names = remaining.map((r) => r.name)
+  const prior = installation.depsRepairMarker as DepsRepairMarker | null | undefined
+  const sameRun =
+    prior?.reqsHash === drift.reqsHash &&
+    prior.appVersion === appVersion &&
+    Array.isArray(prior.packages) &&
+    names.every((name) => prior.packages.includes(name))
+  const attempts = (sameRun ? prior.attempts : 0) + 1
+  await tools.update({
+    depsRepairMarker: {
+      reqsHash: drift.reqsHash,
+      appVersion,
+      packages: names,
+      attempts
+    } satisfies DepsRepairMarker
+  })
+  tools.sendOutput?.(
+    `Could not install ${describeUnsatisfied(remaining)} (` +
+      (attempts < MAX_FAILED_ATTEMPTS
+        ? 'will retry on next launch'
+        : `failed ${attempts} times; paused until ComfyUI's requirements or Desktop's version change`) +
+      `).\n`
+  )
+  const outcome = remaining.length === toInstall.length ? 'failed' : 'partial'
   report(outcome, {
-    ...(remaining.length > 0 ? { remaining: remaining.map((r) => r.name) } : {}),
+    remaining: names,
+    attempts,
     ...(heldBack.length > 0 ? { held_back: heldBack.map((r) => r.name) } : {}),
-    ...(attempts !== null ? { attempts } : {})
+    ...failure
   })
   return outcome
 }
