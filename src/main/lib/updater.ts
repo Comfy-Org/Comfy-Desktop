@@ -21,7 +21,7 @@ import {
   isUpdateInstallQuit,
   setQuitReason
 } from './quit-state'
-import { beginQuitSequence, endQuitSequence, waitForExitWork } from './quitWait'
+import { beginQuitSequence, endQuitSequence, isQuitHeld, waitForExitWork } from './quitWait'
 import { _broadcastToRenderer, cancelAll } from './ipc/shared'
 import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
@@ -518,7 +518,7 @@ function bindUpdaterEvents(): void {
     })
     // An install that failed after its stops: the next quit waits afresh. Keyed on the quit
     // reason, not the operation: a background check during the install's wait replaces it.
-    if (isUpdateInstallQuit()) endQuitSequence()
+    if (isUpdateInstallQuit() && !isQuitHeld()) endQuitSequence()
     _activeUpdateOperation = null
     clearQuitReason()
     _autoDownloadTriggeredFor = null
@@ -789,8 +789,9 @@ function reportInstallFailure(err: unknown, userInitiated: boolean, source: stri
 /** Back out of an install that did not go ahead after its stops: the app stays up. */
 function abandonInstall(): void {
   _activeUpdateOperation = null
-  clearQuitReason()
-  endQuitSequence()
+  // A user quit may have taken over during the wait: its reason and its held quit stay.
+  if (isUpdateInstallQuit()) clearQuitReason()
+  if (!isQuitHeld()) endQuitSequence()
 }
 
 /**
@@ -845,8 +846,9 @@ export async function installUpdate(userInitiated = true): Promise<void> {
   cancelAll()
   await waitForExitWork()
   // The session may have started ending during the wait (no installer the OS would kill), or an
-  // updater error during it already failed the install.
-  if (isSessionEnding() || !isUpdateInstallQuit()) {
+  // updater error during it already failed the install (it clears the reason). A user quit that
+  // took over meanwhile sets its own reason; the install the user asked for still goes ahead.
+  if (isSessionEnding() || getQuitReason() === 'none') {
     abandonInstall()
     return
   }

@@ -941,6 +941,62 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       expect(quitReason).toBe('none')
     })
 
+    it('a user quit during the wait keeps its reason and its hold, and the install goes ahead', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      // Tray Quit: quitApp sets its own reason, then before-quit holds on the same sequence.
+      quitReason = 'user-quit'
+      const quit = vi.fn()
+      quitWait.holdQuit({ preventDefault: () => {} }, { drain: async () => {}, quit })
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+      expect(quitReason).toBe('user-quit')
+      await new Promise((r) => setTimeout(r, 0))
+      expect(quit).toHaveBeenCalledTimes(1)
+    })
+
+    it('an updater error while a quit is held does not drop the hold', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      // Menu Quit keeps the update-install reason and holds on the same sequence.
+      quitWait.holdQuit({ preventDefault: () => {} }, { drain: async () => {}, quit: vi.fn() })
+      for (const cb of listeners.error || []) cb(new Error('net::ERR_INTERNET_DISCONNECTED'))
+      expect(quitWait.isQuitHeld()).toBe(true)
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+    })
+
+    it('a session end during the wait leaves a held user quit intact', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      quitReason = 'user-quit'
+      const quit = vi.fn()
+      quitWait.holdQuit({ preventDefault: () => {} }, { drain: async () => {}, quit })
+      sessionEnding = true
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      expect(quitReason).toBe('user-quit')
+      // Still the same held quit: a repeated before-quit is held, not a second sequence.
+      expect(quitWait.isQuitHeld()).toBe(true)
+      await new Promise((r) => setTimeout(r, 0))
+      expect(quit).toHaveBeenCalledTimes(1)
+    })
+
     it('spends one deadline in total: the quit after the update does not wait again', async () => {
       vi.useFakeTimers()
       try {
