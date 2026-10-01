@@ -342,9 +342,14 @@ function parseFields(
   tail: string,
   baseKeys: ReadonlySet<string>,
   reservedKeys: ReadonlySet<string>,
-  conventionNames: Set<string>
-): { fields: Record<string, TelemetryValue>; omittedEnumValues: number } | null {
+  conventionNames: ReadonlySet<string>
+): {
+  fields: Record<string, TelemetryValue>
+  omittedEnumValues: number
+  newNames: string[]
+} | null {
   const fields: Record<string, TelemetryValue> = {}
+  const newNames: string[] = []
   let omittedEnumValues = 0
   // Separate from `fields`, which omits some keys, so a repeat is still caught.
   const seenKeys = new Set<string>()
@@ -373,8 +378,10 @@ function parseFields(
       if (reservedKeys.has(key)) continue
       const value = coerceValue(key, rawValue)
       if (!conventionFieldValue(convention, value)) continue
-      if (!conventionNames.has(key) && conventionNames.size >= MAX_CONVENTION_NAMES) continue
-      conventionNames.add(key)
+      if (!conventionNames.has(key)) {
+        if (conventionNames.size + newNames.length >= MAX_CONVENTION_NAMES) continue
+        newNames.push(key)
+      }
       fields[key] = value
       continue
     }
@@ -395,7 +402,7 @@ function parseFields(
     if (!isAllowedFieldValue(key, value)) return null
     fields[key] = value
   }
-  return { fields, omittedEnumValues }
+  return { fields, omittedEnumValues, newNames }
 }
 
 /**
@@ -478,6 +485,8 @@ export function createAssetsTap(opts: {
     // is behind core's vocabulary without naming the untrusted value.
     unknownEnumValuesOmitted += parsed.omittedEnumValues
     if (!withinRateCap(event)) return
+    // Charged only now, so a rejected or rate-capped line spends no name budget.
+    for (const name of parsed.newNames) conventionNames.add(name)
     try {
       // Base context merged LAST so parsed fields can never override it.
       telemetry.emit(`${EVENT_PREFIX}${event}`, { ...fields, ...baseContext })

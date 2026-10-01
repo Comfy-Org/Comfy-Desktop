@@ -924,6 +924,36 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(9)
     })
 
+    describe('name budget is spent only by lines that are sent', () => {
+      const sixtyFourNames = Object.fromEntries(
+        Array.from({ length: 64 }, (_, i) => [
+          `${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}_count`,
+          1
+        ])
+      )
+
+      it('not by a line rejected after its convention fields', () => {
+        const tap = createAssetsTap(baseOpts)
+        // `installation_id` sorts last and rejects the whole line.
+        tap.ingest(
+          taggedLine('seeder.scan_completed', { ...sixtyFourNames, installation_id: 'forged' }),
+          'stdout'
+        )
+        tap.ingest(taggedLine('seeder.scan_completed', { cpu_ms: 7 }), 'stdout')
+        expect(captured).toHaveLength(1)
+        expect(captured[0]!.ctx.cpu_ms).toBe(7)
+      })
+
+      it('not by a rate-capped line', () => {
+        const tap = createAssetsTap(baseOpts)
+        for (let i = 0; i < 60; i++) tap.ingest(taggedLine('seeder.scan_started', {}), 'stdout')
+        tap.ingest(taggedLine('seeder.scan_started', sixtyFourNames), 'stdout')
+        tap.ingest(taggedLine('seeder.scan_completed', { cpu_ms: 7 }), 'stdout')
+        expect(captured).toHaveLength(61)
+        expect(captured[60]!.ctx.cpu_ms).toBe(7)
+      })
+    })
+
     it('leaves allowlisted fields that fit a convention on their own validators', () => {
       const tap = createAssetsTap(baseOpts)
       // A negative elapsed_ms passes its own (signed) validator...
