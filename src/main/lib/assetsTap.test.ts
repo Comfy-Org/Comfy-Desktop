@@ -899,6 +899,31 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
     })
 
+    it('silently omits new names past 64 per tap, but keeps forwarding seen ones', () => {
+      // `aa_count`, `ab_count`, ...: distinct and digit-free.
+      const nameFor = (i: number): string =>
+        `${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}_count`
+      const tap = createAssetsTap(baseOpts)
+      for (let line = 0; line < 8; line++) {
+        const names = Array.from({ length: 8 }, (_, i) => [nameFor(line * 8 + i), 1])
+        tap.ingest(taggedLine('seeder.scan_completed', Object.fromEntries(names)), 'stdout')
+      }
+      expect(captured).toHaveLength(8)
+      expect(captured[7]!.ctx[nameFor(63)]).toBe(1)
+      // Survives a core restart; a new name is dropped, a seen one still forwards.
+      tap.beginBoot()
+      tap.ingest(
+        taggedLine('seeder.scan_completed', { [nameFor(64)]: 1, [nameFor(0)]: 2, phase: 'fast' }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(9)
+      expect(captured[8]!.ctx).not.toHaveProperty(nameFor(64))
+      expect(captured[8]!.ctx).toMatchObject({ [nameFor(0)]: 2, phase: 'fast' })
+      // Silent: no counter event.
+      tap.flushSummary()
+      expect(captured).toHaveLength(9)
+    })
+
     it('leaves allowlisted fields that fit a convention on their own validators', () => {
       const tap = createAssetsTap(baseOpts)
       // A negative elapsed_ms passes its own (signed) validator...

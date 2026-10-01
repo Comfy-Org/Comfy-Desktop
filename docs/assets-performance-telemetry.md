@@ -60,12 +60,14 @@ convention:
 - Names Desktop attaches to every event itself (such as `platform`, `is_packaged` or
   `telemetry_enabled`) are never forwarded.
 - The same convention name twice on one line drops the line, reserved names included.
+- At most 64 distinct convention names are forwarded per ComfyUI launch session. Later new names
+  are silently omitted, and names already forwarded keep forwarding.
 
 **Accepted risk: the field name is free text.** The value can only be a number or a boolean,
 but the name is chosen by whoever writes the line. A convention-shaped name becomes a PostHog
 property key, and a Datadog action-context key on the failure events mirrored to Datadog. So
 anything that can print to Core's stdout, such as a custom node, can put up to 48 lowercase
-characters into a key. This is accepted: such code can
+characters into a key, at most 64 distinct names per launch session. This is accepted: such code can
 already send arbitrary data over the network directly. Core's own emitter only sends names from
 its reviewed allowlist.
 

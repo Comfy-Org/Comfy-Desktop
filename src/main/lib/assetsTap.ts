@@ -258,8 +258,10 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
  *   The same name twice on one line drops the line, even a reserved name.
  * - Names Desktop attaches to every event itself (base context, telemetry
  *   defaults, Datadog global context) are never forwarded.
+ * - At most 64 distinct names per tap; later new names are silently omitted.
  */
 const MAX_CONVENTION_FIELD_NAME_LENGTH = 48
+const MAX_CONVENTION_NAMES = 64
 const MAX_PCT = 100
 
 type FieldConvention = 'non_negative_integer' | 'percent' | 'boolean'
@@ -339,7 +341,8 @@ function isAllowedFieldValue(key: string, value: unknown): value is TelemetryVal
 function parseFields(
   tail: string,
   baseKeys: ReadonlySet<string>,
-  reservedKeys: ReadonlySet<string>
+  reservedKeys: ReadonlySet<string>,
+  conventionNames: Set<string>
 ): { fields: Record<string, TelemetryValue>; omittedEnumValues: number } | null {
   const fields: Record<string, TelemetryValue> = {}
   let omittedEnumValues = 0
@@ -369,7 +372,10 @@ function parseFields(
       // event would win the merge over that trusted value.
       if (reservedKeys.has(key)) continue
       const value = coerceValue(key, rawValue)
-      if (conventionFieldValue(convention, value)) fields[key] = value
+      if (!conventionFieldValue(convention, value)) continue
+      if (!conventionNames.has(key) && conventionNames.size >= MAX_CONVENTION_NAMES) continue
+      conventionNames.add(key)
+      fields[key] = value
       continue
     }
     if (seenKeys.has(key)) return null
@@ -427,6 +433,8 @@ export function createAssetsTap(opts: {
     ...telemetry.DEFAULT_EVENT_PROPERTY_NAMES,
     ...DATADOG_GLOBAL_CONTEXT_KEYS
   ])
+  // Bounds the property names one tap can mint. Not reset by beginBoot.
+  const conventionNames = new Set<string>()
 
   // Fixed windows per event name, so one chatty event cannot starve the others.
   // Deliberately NOT reset by beginBoot: a tap is reused across core restarts
@@ -463,7 +471,7 @@ export function createAssetsTap(opts: {
       unknownEventsDropped++
       return
     }
-    const parsed = parseFields(tail, baseKeys, reservedKeys)
+    const parsed = parseFields(tail, baseKeys, reservedKeys, conventionNames)
     if (!parsed) return
     const { fields } = parsed
     // Counted like unknown events, and for the same reason: it says this build
