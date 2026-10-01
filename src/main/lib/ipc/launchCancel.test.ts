@@ -62,6 +62,21 @@ describe('cancelAll', () => {
     _endLaunch(INSTALL, launch)
     await waiting
   })
+
+  it('a launch whose slot a relaunch took still settles, so later quits do not wait for it', async () => {
+    _resetQuitWaitForTest()
+    // A restart while the first launch is parked after registration (the template gate).
+    const first = _beginLaunch(INSTALL)
+    const second = _beginLaunch(INSTALL)
+    _endLaunch(INSTALL, second)
+    _endLaunch(INSTALL, first)
+    let waited = false
+    void waitForExitWork().then(() => {
+      waited = true
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(waited).toBe(true)
+  })
 })
 
 describe('launch tracking (_beginLaunch/_endLaunch/_hasActiveLaunch)', () => {

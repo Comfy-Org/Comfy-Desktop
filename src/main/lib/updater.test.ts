@@ -455,7 +455,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     checkForUpdates: ReturnType<typeof vi.fn>
     restartAndInstall: ReturnType<typeof vi.fn>
   }
-  let electronUpdaterMock: { autoInstallOnAppQuit: boolean; installerPath?: string }
+  let electronUpdaterMock: { autoInstallOnAppQuit: boolean; installerPath?: string | null }
   let emitMock: ReturnType<typeof vi.fn>
   let broadcastMock: ReturnType<typeof vi.fn>
   let cancelAllMock: ReturnType<typeof vi.fn>
@@ -841,6 +841,44 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       expect(broadcastMock).toHaveBeenCalledWith('app-update:user-action-failed', {
         message: expect.any(String)
       })
+    })
+
+    it('stops nothing when electron-updater has nothing staged (null installer path)', async () => {
+      electronUpdaterMock.installerPath = null
+      const updater = await bootUpdater()
+      stageUpdate()
+      await updater.installUpdate()
+      expect(cancelAllMock).not.toHaveBeenCalled()
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+    })
+
+    it('runs no update check while the install waits', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      fakeUpdater.checkForUpdates.mockClear()
+      await updater.runCheck('auto-check')
+      expect(fakeUpdater.checkForUpdates).not.toHaveBeenCalled()
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not start the installer when an updater error failed it during the wait', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      for (const cb of listeners.error || []) cb(new Error('net::ERR_INTERNET_DISCONNECTED'))
+      exit.resolve()
+      await installing
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      expect(quitReason).toBe('none')
     })
 
     it('installs when the staged installer is on disk', async () => {

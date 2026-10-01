@@ -606,6 +606,10 @@ const USER_INITIATED_CHECK_TRIGGERS = new Set(['manual-check', 'download-button'
 async function checkForUpdate(
   source: string
 ): Promise<{ available: boolean; version?: string; error?: string }> {
+  // An install is stopping ComfyUI before it starts: a check now (the 10-minute auto-check) would
+  // replace the install's operation, and its error would be taken for the install's.
+  if (isUpdateInstallQuit())
+    return { available: true, version: _appUpdateState.version ?? undefined }
   const operation: DesktopUpdateOperation =
     source === 'download-button' || source === 'auto-download' ? 'download' : 'check'
   const activeOperation: ActiveUpdateOperation = {
@@ -760,12 +764,14 @@ export async function downloadUpdate(): Promise<void> {
  * Whether the installer `restartAndInstall` would spawn is known to be gone from disk. Checked
  * before anything is stopped. Windows only: electron-updater (under ToDesktop) stages it under
  * `%LOCALAPPDATA%\<app>-updater\pending\` and records the path in memory; `installerPath`
- * is its own getter (protected in its typings). When the path is unknown it cannot tell, and the
+ * is its own getter (protected in its typings). Without the getter it cannot tell, and the
  * install goes ahead as it did before this check.
  */
 function stagedInstallerMissing(): boolean {
   if (process.platform !== 'win32') return false
   const file = (electronAutoUpdater as unknown as { installerPath?: unknown }).installerPath
+  // null is electron-updater's own "nothing staged": its install fails on it.
+  if (file === null) return true
   if (typeof file !== 'string') {
     console.warn('[updater] staged installer path unknown; installing without the check')
     return false
@@ -838,8 +844,9 @@ export async function installUpdate(userInitiated = true): Promise<void> {
   beginQuitSequence()
   cancelAll()
   await waitForExitWork()
-  // The session may have started ending during the wait: no installer the OS would kill.
-  if (isSessionEnding()) {
+  // The session may have started ending during the wait (no installer the OS would kill), or an
+  // updater error during it already failed the install.
+  if (isSessionEnding() || !isUpdateInstallQuit()) {
     abandonInstall()
     return
   }
