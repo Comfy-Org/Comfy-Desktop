@@ -179,11 +179,8 @@ describe('parseCoreRollout payload', () => {
     expect(parsedOn(payload).grants[0]).toMatchObject({ arg: '--disable-assets', blockers: [] })
   })
 
-  it('ignores unknown top-level and blocker keys', () => {
-    const payload: Json = {
-      ...validPayload([assetsGrant({ blockers: [{ id: 'x', fixed_in: '0.38.0', note: 'n' }] })]),
-      future_field: 1
-    }
+  it('ignores unknown top-level keys', () => {
+    const payload: Json = { ...validPayload(), future_field: 1 }
     expect(parsedOn(payload).grants).toHaveLength(1)
   })
 
@@ -226,6 +223,13 @@ describe('parseCoreRollout payload', () => {
       (p) => (p.grants = grantOf({ install_source: ['git'] })),
       'unknown key install_source'
     ],
+    ...['introduced_comits', 'fixed_in_verison', 'fix_commit', 'note'].map(
+      (key): [string, (p: Json) => void, string] => [
+        `a blocker with unknown key ${key}`,
+        (p) => (p.grants = grantOf({ blockers: [{ id: 'x', fixed_in: '0.38.0', [key]: [FIX] }] })),
+        `unknown key ${key}`
+      ]
+    ),
     [
       'a beta notice field on a grant',
       (p) => (p.grants = grantOf({ notice: 'silent' })),

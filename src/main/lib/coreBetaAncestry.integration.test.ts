@@ -183,6 +183,59 @@ describe('resolveCoreCommitState against a real repository', () => {
       expect(present(dir, sha.knownGood!)).toBe(true)
     })
 
+    // A partial clone fetches a missing object on demand from inside ordinary git commands
+    // (`merge-base`, `rev-parse`), so skipping Desktop's own fetch is not enough there.
+    function partialClone(name: string): { dir: string; head: string } {
+      git(upstream, 'config', 'uploadpack.allowFilter', 'true')
+      const dir = path.join(root, name)
+      git(
+        root,
+        'clone',
+        '-q',
+        '--filter=tree:0',
+        '--single-branch',
+        '-b',
+        'master',
+        `file://${upstream}`,
+        dir
+      )
+      return { dir, head: git(dir, 'rev-parse', 'HEAD') }
+    }
+    const presentNoFetch = (dir: string, commitSha: string): boolean => {
+      try {
+        execFileSync('git', ['cat-file', '-e', `${commitSha}^{commit}`], {
+          cwd: dir,
+          env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
+          stdio: 'ignore'
+        })
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    it('lets a partial clone fetch a missing commit on demand by default (control)', async () => {
+      const { dir, head } = partialClone('partial-fetch-on')
+      expect(presentNoFetch(dir, sha.backport!)).toBe(false)
+      await resolveCoreCommitState(dir, { kind: 'head', commit: head }, [sha.backport!])
+      await _backgroundFetchesForTest()
+      expect(presentNoFetch(dir, sha.backport!)).toBe(true)
+    })
+
+    it('relates nothing on a partial clone when fetching is off, and fetches nothing', async () => {
+      const { dir, head } = partialClone('partial-fetch-off')
+      const state = await resolveCoreCommitState(
+        dir,
+        { kind: 'head', commit: head },
+        [sha.backport!, sha.knownGood!],
+        undefined,
+        { allowFetch: false }
+      )
+      await _backgroundFetchesForTest()
+      expect(state.ancestry.size).toBe(0)
+      expect(presentNoFetch(dir, sha.backport!)).toBe(false)
+    })
+
     it('leaves a missing commit unresolved and unfetched when fetching is off', async () => {
       const { dir, head } = shallowClone('shallow-fetch-off')
       const state = await resolveCoreCommitState(

@@ -137,9 +137,10 @@ function list(obj: object, key: string, min: number, max: number, where = ''): u
   return raw
 }
 
-// Unknown keys are refused inside grants and windows, unlike at the top level: a misspelt
-// `max_core_version` would otherwise read as an open upper bound, and a misspelt
-// `install_sources` as the default, the typos that fail OPEN.
+// Unknown keys are refused inside grants, windows and blockers, unlike at the top level: a
+// misspelt `max_core_version` would otherwise read as an open upper bound, a misspelt
+// `install_sources` as the default, and a misspelt `introduced_commits` would leave scope to the
+// version bound alone, which can rule a backported bug out. Those are the typos that fail OPEN.
 function refuseUnknownKeys(obj: object, allowed: ReadonlySet<string>, where: string): void {
   const unknownKey = Object.keys(obj).find((key) => !allowed.has(key))
   if (unknownKey !== undefined) fail(`${where}has unknown key ${unknownKey.slice(0, 32)}`)
@@ -151,6 +152,13 @@ const GRANT_KEYS: ReadonlySet<string> = new Set([
   'windows',
   'blockers',
   'install_sources'
+])
+const BLOCKER_KEYS: ReadonlySet<string> = new Set([
+  'id',
+  'fix_commits',
+  'fixed_in',
+  'introduced_commits',
+  'introduced_in'
 ])
 const WINDOW_KEYS: ReadonlySet<string> = new Set([
   'min_core_version',
@@ -177,6 +185,7 @@ function parseWindow(arg: string, candidate: unknown, where: string): CoreBetaGr
 
 function parseBlocker(candidate: unknown, where: string): CoreRolloutBlocker {
   if (!isPlainObject(candidate)) fail(`${where}is not an object`)
+  refuseUnknownKeys(candidate, BLOCKER_KEYS, where)
   const id = field(candidate, 'id')
   if (typeof id !== 'string' || !BLOCKER_ID_RE.test(id)) fail(`${where}id is missing or malformed`)
   const fixedIn = optionalVersion(candidate, 'fixed_in', where)

@@ -299,7 +299,7 @@ export function buildLaunchArgs(input: {
   )
   const applied = selected.filter((grant) => supported.has(grant.arg))
   const betaArgs = applied.map((grant) => grant.arg)
-  const rollout = selectRolloutLaunch(input, [...userArgs, ...betaArgs], schema)
+  const rollout = selectRolloutLaunchContained(input, [...userArgs, ...betaArgs], schema)
   return {
     args: [
       ...prefixArgs,
@@ -329,6 +329,23 @@ export function buildLaunchArgs(input: {
 
 /** Runs after beta selection, against the user's args plus what beta granted, through the same
  *  schema filter. */
+/** Same containment as `resolveRolloutLaunch`: this runs inside `buildLaunchArgs`, so a throw
+ *  here would otherwise cost the launch its beta grants, desktop flags and arg filtering. */
+function selectRolloutLaunchContained(
+  input: Parameters<typeof buildLaunchArgs>[0],
+  presentArgs: readonly string[],
+  schema: ComfyArgsSchema
+): CoreRolloutLaunch {
+  try {
+    return selectRolloutLaunch(input, presentArgs, schema)
+  } catch (err) {
+    return {
+      ...NO_ROLLOUT,
+      logRecords: [`[core-rollout] withheld at error: ${String(err).slice(0, 200)}\n`]
+    }
+  }
+}
+
 function selectRolloutLaunch(
   input: Parameters<typeof buildLaunchArgs>[0],
   presentArgs: readonly string[],
@@ -390,7 +407,7 @@ export async function resolveRolloutLaunch(input: {
           input.checkout,
           eligibleRolloutShas(eligibility, input.userArgs),
           input.signal,
-          { allowFetch: false }
+          { allowFetch: false, label: 'core-rollout' }
         )
       : NO_CORE_COMMITS
     return { eligibility, rolloutCommits }

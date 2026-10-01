@@ -72,6 +72,8 @@ const launchHarness = vi.hoisted(() => ({
   /** The rollout key as fetched; `null` = the real fallback (nothing fetched). */
   rollout: null as null | CoreRolloutState,
   rolloutThrows: false,
+  /** Makes per-arg selection throw, inside `buildLaunchArgs`. */
+  rolloutSelectThrows: false,
   /** What `getAppVersion` reports: a dev checkout's real one is a describe string. */
   appVersion: '1.1.6',
   /** Every `coreRolloutEligibility` call's launch facts, in order. */
@@ -97,6 +99,10 @@ vi.mock('../../coreRolloutGrants', async (importOriginal) => {
     getCoreRolloutAsync: async () => {
       if (launchHarness.rolloutThrows) throw new Error('rollout store unreadable')
       return launchHarness.rollout ?? actual.getCoreRolloutAsync()
+    },
+    selectCoreRolloutArgs: (...args: Parameters<typeof actual.selectCoreRolloutArgs>) => {
+      if (launchHarness.rolloutSelectThrows) throw new Error('selection exploded')
+      return actual.selectCoreRolloutArgs(...args)
     },
     coreRolloutEligibility: (...args: Parameters<typeof actual.coreRolloutEligibility>) => {
       launchHarness.rolloutFacts.push(args[1])
@@ -1263,6 +1269,24 @@ describe('buildLaunchArgs rollout injection', () => {
     expect(built.beta.rollout.logRecords[0]).toContain('withheld at launch-args')
   })
 
+  it('keeps the beta grants, desktop flags and user args when rollout selection throws', () => {
+    launchHarness.rolloutSelectThrows = true
+    try {
+      const built = withRollout(
+        { userArgs: ['--listen'], schema: schemaOf('enable-assets', 'listen'), betaEnabled: true },
+        { beta: false }
+      )
+      expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets', '--listen'])
+      expect(built.beta.applied).toEqual([ASSETS_GRANT])
+      expect(built.beta.rollout).toEqual({
+        applied: [],
+        logRecords: ['[core-rollout] withheld at error: Error: selection exploded\n']
+      })
+    } finally {
+      launchHarness.rolloutSelectThrows = false
+    }
+  })
+
   it('makes no rollout decision at all when given none', () => {
     const built = build({ schema: schemaOf('enable-assets'), betaEnabled: false })
     expect(built.beta.rollout).toEqual({ applied: [], logRecords: [] })
@@ -1310,7 +1334,7 @@ describe('resolveRolloutLaunch', () => {
     expect(eligibility.eligible).toBe(true)
     expect(ancestryCalls).toHaveLength(1)
     expect(ancestryCalls[0]![2]).toEqual(['a'.repeat(40), 'f'.repeat(40)])
-    expect(ancestryCalls[0]![4]).toEqual({ allowFetch: false })
+    expect(ancestryCalls[0]![4]).toEqual({ allowFetch: false, label: 'core-rollout' })
   })
 
   it('relates no commits for a grant the user has already decided', async () => {
