@@ -56,6 +56,8 @@ export function buildElectronApi(): ElectronApi {
       ),
     exportResultsImage: (png, imageType, defaultPath?) =>
       ipcRenderer.invoke('export-results-image', png, imageType, defaultPath),
+    exportBenchmarkData: (contents, defaultBaseName, defaultDir?) =>
+      ipcRenderer.invoke('export-benchmark-data', contents, defaultBaseName, defaultDir),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),

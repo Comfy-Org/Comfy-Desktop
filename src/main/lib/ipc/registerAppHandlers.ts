@@ -355,7 +355,7 @@ export function registerAppHandlers(): void {
       }
       const exportConfig =
         imageType === 'benchmark-comparison'
-          ? { title: 'Export benchmark comparison', prefix: 'benchmark-comparison' }
+          ? { title: 'Export benchmark comparison', prefix: 'comfy-benchmark-compare' }
           : imageType === 'performance-test'
             ? { title: 'Export performance test results', prefix: 'comfy-benchmark' }
             : null
@@ -378,6 +378,45 @@ export function registerAppHandlers(): void {
           `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`
         const filePath = path.join(filePaths[0]!, `${exportConfig.prefix}-${timestamp}.png`)
         await fs.promises.writeFile(filePath, contents)
+        return { ok: true, filePath }
+      } catch (error) {
+        return { ok: false, message: (error as Error)?.message || String(error) }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'export-benchmark-data',
+    async (_event, contents: string, defaultBaseName: string, defaultDir?: string) => {
+      // Renderer builds the CSV/JSON string (pure, in `benchmarkExport.ts`); main only
+      // writes it to a user-chosen path. The format is inferred from the base name's
+      // extension so one handler serves both exports.
+      if (typeof contents !== 'string' || contents.length === 0) {
+        return { ok: false, message: 'Nothing to export.' }
+      }
+      if (contents.length > 100_000_000) {
+        return { ok: false, message: 'The export is too large to save.' }
+      }
+      // Strip any directory parts a caller might embed; the dialog owns the location.
+      const requestedName =
+        typeof defaultBaseName === 'string' ? path.basename(defaultBaseName) : ''
+      const extension = path.extname(requestedName).toLowerCase() === '.json' ? 'json' : 'csv'
+      const baseName = requestedName || `comfy-benchmarks.${extension}`
+      const win = BrowserWindow.fromWebContents(_event.sender)
+      if (!win) return { ok: false, message: 'No window.' }
+      const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        title: 'Export benchmark data',
+        defaultPath:
+          defaultDir && path.isAbsolute(defaultDir) ? path.join(defaultDir, baseName) : baseName,
+        filters:
+          extension === 'json'
+            ? [{ name: 'JSON', extensions: ['json'] }]
+            : [{ name: 'CSV', extensions: ['csv'] }]
+      })
+      if (canceled || !filePath) return { ok: false, canceled: true }
+
+      try {
+        await fs.promises.writeFile(filePath, contents, 'utf8')
         return { ok: true, filePath }
       } catch (error) {
         return { ok: false, message: (error as Error)?.message || String(error) }

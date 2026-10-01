@@ -285,7 +285,8 @@ const messages = {
     },
     benchmarks: {
       title: 'Benchmarks',
-      description: 'Browse and compare results from your performance tests.'
+      description: 'Browse and compare results from your performance tests.',
+      subtitle: 'Browse every run, compare any set, export the numbers.'
     }
   }
 }
@@ -772,7 +773,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="benchmarks-logo"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Benchmarks')
     expect(wrapper.get('.branded-page-header__description').text()).toBe(
-      'Browse and compare results from your performance tests.'
+      'Browse every run, compare any set, export the numbers.'
     )
   })
 

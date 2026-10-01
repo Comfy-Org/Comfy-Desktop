@@ -9,6 +9,7 @@ import type {
   PerformanceTestStatistics,
   SystemInfo
 } from '../../types/ipc'
+import { computeSteadyStateItPerS } from './benchmarkCapture'
 
 const PERFORMANCE_TEST_POLL_INTERVAL_MS = 1000
 const PERFORMANCE_TEST_TIMEOUT_MS = 4 * 60 * 60 * 1000
@@ -65,6 +66,19 @@ function parsePerformanceTestBenchmark(
       : hardware && typeof hardware.deviceType === 'string'
         ? hardware.deviceType
         : null
+  // The full results.json is already parsed into `summary`, so expose its rich
+  // `coreBenchmark` typed rather than making History walk flattened `result.*`
+  // keys. No new file read. Recompute steady-state it/s here (reusing the mapper's
+  // helper) so every consumer shares one headline figure. Null stays null for
+  // captureless (older ComfyUI) runs — back-compat preserved.
+  const coreBenchmark = (summary.coreBenchmark ?? null) as CoreBenchmarkSummary | null
+  const perStepItPerS = coreBenchmark?.sampling?.perStepItPerS
+  const steadyStateItPerS = coreBenchmark
+    ? computeSteadyStateItPerS(
+        Array.isArray(perStepItPerS) ? perStepItPerS : [],
+        coreBenchmark.sampling?.avgItPerS ?? null
+      )
+    : null
   return {
     id,
     createdAt: summary.createdAt ?? null,
@@ -77,6 +91,8 @@ function parsePerformanceTestBenchmark(
     medianJobDurationSeconds: summary.medianJobDurationSeconds,
     measuredJobCount: summary.measuredJobCount!,
     hardwareName,
+    coreBenchmark,
+    steadyStateItPerS,
     result: value as Record<string, PerformanceTestResultValue>
   }
 }

@@ -206,6 +206,193 @@ export function niceTicks(min: number, max: number, targetCount = 5): number[] {
   return ticks
 }
 
+/** One input series for an overlaid multi-run chart. */
+export interface MultiSeriesInput {
+  /** The numeric series (null gaps allowed). */
+  values: ReadonlyArray<number | null | undefined>
+  /** Per-index x positions (e.g. step index or sample `tMs`). Falls back to the
+   *  array index. */
+  xValues?: ReadonlyArray<number | null | undefined>
+}
+
+/** One built series within a `MultiSeriesChart`. */
+export interface MultiSeries {
+  /** The series' position in the input list (so callers map it to a run / color). */
+  index: number
+  points: ChartPoint[]
+  /** Open line path, or `''` when the series has fewer than two points. */
+  path: string
+  /** Closed area path down to the baseline, or `''` when fewer than two points. */
+  areaPath: string
+}
+
+export interface MultiSeriesChart {
+  series: MultiSeries[]
+  /** Evenly spaced horizontal gridlines, or `[]` when `tickCount < 2`. */
+  ticks: ChartTick[]
+  min: number
+  max: number
+  minX: number
+  maxX: number
+  width: number
+  height: number
+}
+
+/**
+ * Build geometry for N overlaid series that SHARE one pair of axes (the Compare
+ * view's per-step it/s overlay and VRAM-over-time overlay, design §4.4).
+ *
+ * The y-axis spans the min/max across every series; the x-axis spans the min/max
+ * x across every series. Crucially, x is NOT normalized per series: when runs have
+ * different step counts a shorter series simply ends earlier (its last point lands
+ * before the right edge) rather than being stretched to match the longest — the
+ * design's "step index, not normalized; lines end where their steps end" rule.
+ *
+ * Returns `null` when no series has at least two finite points (nothing to draw) —
+ * callers hide the whole card. Individual empty / single-point series are kept in
+ * the result with `path === ''` so the caller's color/legend indexing stays stable.
+ */
+export function buildMultiSeriesChart(
+  seriesList: ReadonlyArray<MultiSeriesInput>,
+  options: BuildSeriesChartOptions = {}
+): MultiSeriesChart | null {
+  const width = options.width ?? DEFAULT_WIDTH
+  const height = options.height ?? DEFAULT_HEIGHT
+
+  const perSeriesRaw = seriesList.map((input) => {
+    const raw: { index: number; x: number; value: number }[] = []
+    input.values.forEach((value, index) => {
+      if (value == null || !Number.isFinite(value)) return
+      const rawX = input.xValues?.[index]
+      const x = rawX != null && Number.isFinite(rawX) ? rawX : index
+      raw.push({ index, x, value })
+    })
+    return raw
+  })
+
+  const allPoints = perSeriesRaw.flat()
+  if (allPoints.length === 0) return null
+  if (!perSeriesRaw.some((raw) => raw.length >= 2)) return null
+
+  const xs = allPoints.map((point) => point.x)
+  const ys = allPoints.map((point) => point.value)
+  const minY = options.minY ?? Math.min(...ys)
+  const maxY = options.maxY ?? Math.max(...ys)
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const spanX = maxX - minX || 1
+  const spanY = maxY - minY || 1
+
+  const series: MultiSeries[] = perSeriesRaw.map((raw, index) => {
+    const points: ChartPoint[] = raw.map((point) => ({
+      index: point.index,
+      value: point.value,
+      x: round(((point.x - minX) / spanX) * width),
+      y: round(height - ((point.value - minY) / spanY) * height)
+    }))
+    const path =
+      points.length >= 2
+        ? points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+        : ''
+    const areaPath =
+      points.length >= 2
+        ? `M ${points[0]!.x} ${height} ` +
+          points.map((point) => `L ${point.x} ${point.y}`).join(' ') +
+          ` L ${points[points.length - 1]!.x} ${height} Z`
+        : ''
+    return { index, points, path, areaPath }
+  })
+
+  const ticks: ChartTick[] = []
+  const tickCount = options.tickCount ?? 0
+  if (tickCount >= 2) {
+    for (let i = 0; i < tickCount; i++) {
+      const value = minY + ((maxY - minY) * i) / (tickCount - 1)
+      ticks.push({ value: round(value), y: round(height - ((value - minY) / spanY) * height) })
+    }
+  }
+
+  return { series, ticks, min: minY, max: maxY, minX, maxX, width, height }
+}
+
+/**
+ * Project a set of reference ceilings (e.g. distinct GPU `totalVramMb` values) onto
+ * a built chart's y-axis. Deduplicates, sorts ascending, and clamps each via
+ * `projectY`. Used by the VRAM-over-time overlay to draw ONE labelled dashed ceiling
+ * per unique VRAM total (design §4.4: never a single shared ceiling when GPUs differ).
+ * Returns `[]` when no finite ceiling is supplied.
+ */
+export function buildCeilingLines(
+  chart: Pick<SeriesChart, 'min' | 'max' | 'height'>,
+  values: ReadonlyArray<number | null | undefined>
+): ChartTick[] {
+  const unique = [
+    ...new Set(values.filter((value): value is number => value != null && Number.isFinite(value)))
+  ].sort((a, b) => a - b)
+  return unique.map((value) => ({ value: round(value), y: projectY(chart, value) }))
+}
+
+/** One op (node) to lay out in an op-timeline panel. */
+export interface OpTimelineInput {
+  label: string
+  /** Elapsed time for this op (ms). Null / non-positive ops are dropped. */
+  value: number | null | undefined
+}
+
+/** One laid-out horizontal bar in an op-timeline panel. */
+export interface OpTimelineBar {
+  /** The op's position in the input list (stable key). */
+  index: number
+  label: string
+  value: number
+  /** Bar width as a fraction `[0, 1]` of the panel's largest bar. */
+  widthFraction: number
+  /** Share `[0, 1]` of the panel's total time (the "71%" label). */
+  share: number
+}
+
+export interface OpTimeline {
+  bars: OpTimelineBar[]
+  /** Sum of every finite op value (ms) — the denominator for `share`. */
+  total: number
+  /** The largest shown op value (ms) — the denominator for `widthFraction`. */
+  max: number
+}
+
+/**
+ * Lay out one op-timeline panel: the "where the time went" horizontal bars for a
+ * single workflow (design §4.4). Ops are sorted by elapsed time descending and
+ * truncated to `topN`; `share` is relative to the FULL workflow total (so hidden
+ * ops still count against the percentages), while `widthFraction` is relative to the
+ * largest shown bar (so the dominant op fills the panel). Pure geometry — the view
+ * owns the bar markup. An empty / all-null input yields `bars: []` so the caller can
+ * hide the panel.
+ */
+export function buildOpTimeline(
+  nodes: ReadonlyArray<OpTimelineInput>,
+  options: { topN?: number } = {}
+): OpTimeline {
+  const finite = nodes
+    .map((node, index) => ({ index, label: node.label, value: node.value }))
+    .filter(
+      (node): node is { index: number; label: string; value: number } =>
+        typeof node.value === 'number' && Number.isFinite(node.value) && node.value > 0
+    )
+  const total = finite.reduce((sum, node) => sum + node.value, 0)
+  const sorted = [...finite].sort((a, b) => b.value - a.value)
+  const topN = options.topN ?? sorted.length
+  const shown = sorted.slice(0, Math.max(0, topN))
+  const max = shown.length > 0 ? shown[0]!.value : 0
+  const bars: OpTimelineBar[] = shown.map((node) => ({
+    index: node.index,
+    label: node.label,
+    value: node.value,
+    widthFraction: max > 0 ? round(node.value / max) : 0,
+    share: total > 0 ? round(node.value / total) : 0
+  }))
+  return { bars, total: round(total), max: round(max) }
+}
+
 export interface RadialGauge {
   size: number
   cx: number
