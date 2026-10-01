@@ -76,6 +76,7 @@ import {
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
 import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
+import { isManagerEnablingArg } from '../../../comfybuilder/launch'
 import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
@@ -1227,7 +1228,7 @@ async function runLaunch(
     if (unmanagedComfyDir && launchCmd.cmd) {
       const warning = unmanagedRequirementsWarning(launchCmd.cmd, unmanagedComfyDir, {
         isolated: inst.sourceId === 'portable',
-        withManager: launchCmd.args?.includes('--enable-manager') === true
+        withManager: launchCmd.args?.some(isManagerEnablingArg) === true
       })
       if (warning) {
         console.warn(warning.trim())
