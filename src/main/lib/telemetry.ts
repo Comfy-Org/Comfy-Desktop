@@ -108,7 +108,6 @@
  * the flag-evaluation subset only, for A/B testing. Don't recreate the
  * kill-switch without a concrete need.
  */
-import { app } from 'electron'
 import { PostHog } from 'posthog-node'
 import { AsyncLocalStorage } from 'node:async_hooks'
 
@@ -205,7 +204,6 @@ export function _resetForTest(): void {
   quarantinedWrites = []
   defaultEventProperties = {}
   initialized = false
-  drainingForQuit = false
   pendingIdentityMergeFlush = null
   pendingIdentityMergeFileDirty = true
   queuedPendingIdentityMergeIds.clear()
@@ -1906,7 +1904,7 @@ export function emit(event: string, context: TelemetryContext = {}): void {
 /**
  * Drain queued events. Safe to await during `app.before-quit`.
  */
-export async function shutdown(reason: string): Promise<void> {
+export async function shutdown(reason: string, fields: TelemetryContext = {}): Promise<void> {
   if (!client) return
   const uptimeMs = Date.now() - bootstrapTimeMs
   try {
@@ -1928,6 +1926,7 @@ export async function shutdown(reason: string): Promise<void> {
       }
     }
     capture('comfy.desktop.session.ended', {
+      ...fields,
       reason,
       uptime_ms: uptimeMs,
       uptime_seconds: Math.round(uptimeMs / 1000)
@@ -1946,9 +1945,6 @@ export async function shutdown(reason: string): Promise<void> {
   }
 }
 
-let beforeQuitHooked = false
-let drainingForQuit = false
-
 /**
  * Maximum time we'll block the quit on draining queued PostHog events.
  * If the network is slow / down, we still want the app to exit promptly.
@@ -1956,34 +1952,18 @@ let drainingForQuit = false
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 1500
 
 /**
- * Wire `app.before-quit` so PostHog drains its queue before the process exits.
- *
- * Electron does NOT await async listeners on `before-quit`, so we use the
- * standard pattern of calling `event.preventDefault()`, awaiting the
- * shutdown, then re-issuing `app.quit()`. A one-shot guard prevents the
- * subsequent quit from re-entering this branch.
- *
- * The re-issue MUST be `app.quit()`, not `app.exit()`: exit() skips
- * `will-quit`, where active managed model downloads park their staged bytes
- * and sidecars for resume on the next launch. Killing the process there would
- * strand in-flight transfers with unflushed streams.
- *
- * Safe to call multiple times - the hook only attaches once.
+ * Drain queued events for a quit, with `session.ended` carrying `fields` (the quit's wait for
+ * ComfyUI). Bounded: a slow or offline network must not hold the quit. Called from the quit
+ * hold (`holdQuit`), which keeps every before-quit held until this settles.
  */
-export function installAppHooks(): void {
-  if (beforeQuitHooked) return
-  beforeQuitHooked = true
-
-  app.on('before-quit', (event) => {
-    if (drainingForQuit || !client) return
-    drainingForQuit = true
-    event.preventDefault()
-    const drainPromise = shutdown('quit').catch(() => {})
-    const timeoutPromise = new Promise<void>((resolve) =>
-      setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)
-    )
-    void Promise.race([drainPromise, timeoutPromise]).finally(() => {
-      app.quit()
+export async function drainForQuit(fields: TelemetryContext = {}): Promise<void> {
+  if (!client) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    shutdown('quit', fields).catch(() => {}),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)
     })
-  })
+  ])
+  clearTimeout(timer)
 }

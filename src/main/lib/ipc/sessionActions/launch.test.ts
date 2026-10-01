@@ -212,6 +212,8 @@ import {
   _resolveLaunchMode,
   _resolvePortConflictPolicy
 } from './launch'
+import { _resetQuitWaitForTest, waitForExitWork } from '../../quitWait'
+import { clearQuitReason, setQuitReason } from '../../quit-state'
 import * as assetsTapModule from '../../assetsTap'
 import {
   BETA_NOTICE_ANNOUNCED_ARGS_KEY,
@@ -407,6 +409,61 @@ describe('onProcessTerminated', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('onProcessTerminated holds a quit for the exit bookkeeping', () => {
+  beforeEach(() => {
+    _resetQuitWaitForTest()
+  })
+
+  it('from the exit until the callback has finished', async () => {
+    const proc = new EventEmitter() as unknown as ChildProcess
+    let finish!: () => void
+    onProcessTerminated(proc, () => new Promise<void>((resolve) => (finish = resolve)))
+    proc.emit('exit', 0, null)
+    proc.emit('close', 0, null)
+    let waited = false
+    const waiting = waitForExitWork().then(() => {
+      waited = true
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(waited).toBe(false)
+    finish()
+    await waiting
+  })
+
+  it('and lets it go when the callback throws', async () => {
+    const proc = new EventEmitter() as unknown as ChildProcess
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      onProcessTerminated(proc, () => {
+        throw new Error('sync failure')
+      })
+      proc.emit('exit', 1, null)
+      proc.emit('close', 1, null)
+      await waitForExitWork()
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+})
+
+describe('handleLaunch during a quit', () => {
+  afterEach(() => {
+    clearQuitReason()
+  })
+
+  it('refuses to start a ComfyUI while Desktop is quitting or installing an update', async () => {
+    setQuitReason('update-install')
+    const res = await handleLaunch({
+      event: { sender: { send: vi.fn() } } as unknown as Electron.IpcMainInvokeEvent,
+      installationId: 'launch-during-quit',
+      inst: installOf('not-a-real-source'),
+      actionData: {}
+    })
+    expect(res).toEqual({ ok: false, cancelled: true })
+    expect(_operationAborts.has('launch-during-quit')).toBe(false)
   })
 })
 

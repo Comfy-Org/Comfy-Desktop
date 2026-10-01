@@ -52,9 +52,12 @@ import { waitForPort, COMFY_BOOT_TIMEOUT_MS } from './lib/process'
 import {
   clearQuitReason,
   isQuitInProgress,
+  relaunchIfQuitting,
+  scheduleRelaunch,
   setQuitReason,
   setSessionEnding
 } from './lib/quit-state'
+import { holdQuit, isQuitHeld } from './lib/quitWait'
 import { showUpdateInstallSplash } from './lib/updateSplash'
 import type { InstallationRecord } from './installations'
 import {
@@ -789,7 +792,7 @@ ipcMain.handle('app:relaunch', () => {
     tray.destroy()
     tray = null
   }
-  app.relaunch()
+  scheduleRelaunch(() => app.relaunch())
   app.quit()
 })
 
@@ -1333,6 +1336,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 } else {
   if (app.isPackaged) {
     app.on('second-instance', () => {
+      // Quitting: the window would close with the app, so relaunch after the quit instead.
+      if (relaunchIfQuitting(() => app.relaunch())) return
       // OS-level "open another instance" attempt - focus an existing
       // host window (chooser or install-backed) instead of stacking
       // a duplicate. Queued until startup recovery settles.
@@ -1471,7 +1476,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       sessionStartProps: { prior_session_unclean: priorSessionUnclean }
     })
     mainTelemetry.setConsentState(initialConsent)
-    mainTelemetry.installAppHooks()
 
     // installation_id is an event/person property, never a PostHog identity.
     const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
@@ -2392,6 +2396,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.on('before-quit', (event) => {
+    // A quit already waiting for ComfyUI to exit (closing the windows below quits again, via
+    // window-all-closed): hold this one too, or the process exits mid-wait.
+    if (isQuitHeld()) {
+      event.preventDefault()
+      return
+    }
     // Template models are still downloading in the background: quitting pauses
     // them (they restore as resumable rows in Downloads next launch), but the
     // template setup itself stops until the user resumes them. Confirm once and
@@ -2439,6 +2449,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     flushLastSessionSync()
     flushOperationOutput()
     cleanupTempDownloads()
+    // Hold the quit until the ComfyUI processes being stopped have exited (bounded) and
+    // telemetry has drained, then quit again; that re-issued quit passes through.
+    holdQuit(event, { drain: mainTelemetry.drainForQuit, quit: () => app.quit() })
   })
 
   // Deferred-quit suspension for managed model downloads: stop each active
