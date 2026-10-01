@@ -384,39 +384,82 @@ describe('repairDeps', () => {
     const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
     const drift = pendingDrift(inst)!
     const calls: string[][] = []
+    // sqlalchemy is unresolvable; everything else installs on its own.
     const uv = vi.fn(async (_uvPath: string, args: string[]) => {
       const lines = args.slice(2, args.indexOf('--python'))
       calls.push(lines)
-      // sqlalchemy is unresolvable; everything else installs on its own.
       if (lines.includes('sqlalchemy>=2.0.0')) return { code: 1, output: 'no solution' }
-      for (const line of lines) {
-        if (line === 'blake3') fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
-      }
+      if (lines.includes('blake3')) fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
       return { code: 0, output: '' }
     })
-    const t = tools()
+    const freeze = async (): Promise<Record<string, string>> => ({ torch: '2.10.0' })
+
+    let record = inst
+    for (let launch = 1; launch <= MAX_FAILED_ATTEMPTS; launch++) {
+      const current = pendingDrift(record)
+      expect(current).not.toBeNull()
+      const t = tools()
+      await expect(repairDeps(record, current!, t, { freeze, runUvPip: uv })).resolves.toBe(
+        launch === 1 ? 'partial' : 'failed'
+      )
+      // A line that failed its own retry spends the failure budget; it is
+      // never given up on, so a transient failure gets retried.
+      expect(t.update).toHaveBeenCalledWith({
+        depsRepairFailures: { reqsHash: drift.reqsHash, count: launch, appVersion: '1.1.4' }
+      })
+      expect(t.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ depsRepairGaveUp: expect.anything() })
+      )
+      for (const [data] of t.update.mock.calls) record = { ...record, ...(data as object) }
+    }
+    expect(calls.slice(0, 3)).toEqual([
+      ['blake3', 'sqlalchemy>=2.0.0'],
+      ['blake3'],
+      ['sqlalchemy>=2.0.0']
+    ])
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'partial', remaining: ['sqlalchemy'], attempts: 1 })
+    )
+    // Budget spent: paused, logged, and reset by a new Desktop version.
+    expect(pendingDrift(record)).toBeNull()
+    expect(pausedRepairNote(record)).toContain('sqlalchemy (missing)')
+    expect(pendingDrift(record, '1.1.5')).not.toBeNull()
+  })
+
+  it('asks an adopted install only about the packages it will install', async () => {
+    const { inst, site } = adoptedInstall(
+      ['numpy-2.1.0.dist-info'],
+      'torchsde\nkornia\nsqlalchemy>=2.0.0\nnumpy\n'
+    )
+    const output: string[] = []
+    const t = tools({ sendOutput: (s) => output.push(s) })
+    const uv = fakeUv(site, ['SQLAlchemy-2.0.36.dist-info'])
     await expect(
-      repairDeps(inst, drift, t, { freeze: async () => ({ torch: '2.10.0' }), runUvPip: uv })
-    ).resolves.toBe('partial')
-    expect(calls).toEqual([['blake3', 'sqlalchemy>=2.0.0'], ['blake3'], ['sqlalchemy>=2.0.0']])
-    expect(t.update).toHaveBeenCalledWith({
-      depsRepairGaveUp: {
-        reqsHash: drift.reqsHash,
-        packages: ['sqlalchemy'],
-        at: expect.any(Number)
-      }
-    })
-    expect(t.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({ depsRepairFailures: expect.anything() })
+      repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
+    ).resolves.toBe('repaired')
+    expect(t.confirmAdoptedRepair.mock.calls[0]![0].map((r: { name: string }) => r.name)).toEqual([
+      'sqlalchemy'
+    ])
+    expect(output.join('')).toContain('Not installing torchsde, kornia')
+    expect(output.join('')).toContain(
+      'Installed the missing Python packages except torchsde, kornia'
     )
     expect(emit).toHaveBeenCalledWith(
       'comfy.desktop.deps_repair',
-      expect.objectContaining({
-        outcome: 'partial',
-        installed: ['blake3'],
-        remaining: ['sqlalchemy']
-      })
+      expect.objectContaining({ outcome: 'repaired', held_back: ['torchsde', 'kornia'] })
     )
+  })
+
+  it('does not prompt an adopted install when everything is held back', async () => {
+    const { inst } = adoptedInstall(['numpy-2.1.0.dist-info'], 'torchsde\nspandrel\nnumpy\n')
+    const t = tools()
+    const uv = vi.fn()
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
+    ).resolves.toBe('torch_missing')
+    expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
+    expect(uv).not.toHaveBeenCalled()
   })
 
   it('installs torchsde when torch is there to pin', async () => {
