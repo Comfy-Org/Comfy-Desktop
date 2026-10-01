@@ -70,6 +70,7 @@ const messages = {
       portConflictTitle: 'Port already in use',
       portConflictUsePort: 'Use next available port',
       portConflictKill: 'Stop process and retry',
+      portConflictKillFailed: 'Could not free port {port}.',
       priorProcessBusyTitle: 'ComfyUI is still running a prompt',
       priorProcessBusyStop: 'Stop it and launch',
       priorProcessBusyConfirmMessage: 'This stops the earlier ComfyUI.',
@@ -456,6 +457,30 @@ describe('ProgressModal — brand branch state transitions', () => {
     const api = (window as unknown as { api: MockApi }).api
     expect(await body.click('.brand-progress__footer-bar button')).toBe(true)
     expect(api.returnToDashboard).toHaveBeenCalledTimes(1)
+  })
+
+  it('says so when "Stop process and retry" could not free the port', async () => {
+    const api = installMockApi()
+    api.killPortProcess.mockResolvedValue({ ok: false })
+    const portConflict: PortConflictInfo = { port: 8188, pids: [777], isComfy: true }
+    const { body } = await mountWithOp('inst-1', {
+      title: 'Launching',
+      finished: true,
+      result: { ok: false, message: 'Port 8188 is already in use', portConflict } as ActionResult
+    })
+    expect(body.selectorText('.brand-progress__error-message')).not.toContain('Could not free')
+
+    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    await flushPromises()
+
+    expect(api.killPortProcess).toHaveBeenCalledWith(8188)
+    expect(api.runAction).not.toHaveBeenCalled()
+    expect(body.selectorText('.brand-progress__error-message')).toContain(
+      'Port 8188 is already in use'
+    )
+    expect(body.selectorText('.brand-progress__error-message')).toContain(
+      'Could not free port 8188.'
+    )
   })
 
   it('offers to stop a busy earlier ComfyUI through launch, never by killing the port', async () => {

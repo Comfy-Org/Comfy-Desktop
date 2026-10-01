@@ -108,7 +108,10 @@ describe.runIf(
         installationId: 'inst-1',
         installPath: install,
         cwd: install,
-        args: ['-s', path.join('ComfyUI', 'main.py')]
+        args: ['-s', path.join('ComfyUI', 'main.py')],
+        // lsof walks the whole process table: on a loaded machine it can exceed the product's
+        // 10 s cap, which this test is not about.
+        probeTimeoutMs: 25_000
       })
       expect(found).toMatchObject({
         pid: holder.pid,
@@ -122,7 +125,7 @@ describe.runIf(
       holder.kill('SIGKILL')
       fs.rmSync(root, { recursive: true, force: true })
     }
-    // Real lsof and ps against the whole process table: seconds on a loaded machine (the
-    // product caps lsof at 10 s), so this gets more than the default 5 s.
-  }, 30_000)
+    // Real lsof and ps against the whole process table: seconds on a loaded machine, so the
+    // probe gets its own cap and the test more than the default 5 s.
+  }, 60_000)
 })

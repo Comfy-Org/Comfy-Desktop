@@ -46,6 +46,9 @@ const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
 const currentId = ref<string | null>(null)
 const resolvingConflict = ref(false)
+/** The port a "Stop process and retry" just failed to free: said under the conflict, which
+ *  otherwise comes back unchanged. Cleared by anything that replaces the conflict. */
+const killFailedPort = ref<number | null>(null)
 
 const currentOp = computed(() => {
   const id = currentId.value ?? props.installationId
@@ -107,7 +110,14 @@ const finishedErrorMessage = computed<string | null>(() => {
   const op = currentOp.value
   if (!op?.finished) return null
   if (op.cancelRequested) return null
-  if (isPortConflictOpen.value) return op.result?.message ?? null
+  if (isPortConflictOpen.value) {
+    const message = op.result?.message ?? null
+    const port = op.result?.portConflict?.port
+    if (message && port != null && killFailedPort.value === port) {
+      return `${message}\n\n${t('errors.portConflictKillFailed', { port })}`
+    }
+    return message
+  }
   if (op.error) return op.error
   return null
 })
@@ -588,6 +598,7 @@ async function handleKillProcess(port: number): Promise<void> {
   if (!confirmed) return
   resolvingConflict.value = true
 
+  killFailedPort.value = null
   const killResult: KillResult = await window.api.killPortProcess(port)
   if (killResult.ok) {
     startOperation({
@@ -597,9 +608,17 @@ async function handleKillProcess(port: number): Promise<void> {
       returnTo: op.returnTo
     })
   } else {
+    killFailedPort.value = port
     resolvingConflict.value = false
   }
 }
+
+watch(
+  () => currentOp.value?.result,
+  () => {
+    killFailedPort.value = null
+  }
+)
 
 defineExpose({ startOperation, showOperation })
 </script>

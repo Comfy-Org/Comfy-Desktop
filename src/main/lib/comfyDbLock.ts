@@ -88,6 +88,8 @@ export async function identifyDbLockHolder(input: {
   installPath: string
   cwd: string
   args: readonly string[]
+  /** The lock probe's cap (the probe's own default when unset). */
+  probeTimeoutMs?: number
 }): Promise<DbLockHolder | null> {
   const recorded = listRecords().find(
     (r) =>
@@ -109,7 +111,7 @@ export async function identifyDbLockHolder(input: {
   for (const db of databaseCandidates(input.cwd, input.args)) {
     const lockFile = `${db}.lock`
     if (!fs.existsSync(lockFile)) continue
-    const probe = await findLockingProcesses(lockFile)
+    const probe = await findLockingProcesses(lockFile, input.probeTimeoutMs)
     if (!probe.ok) continue
     const holder = probe.processes.find((p) => p.pid !== process.pid)
     if (!holder) continue
