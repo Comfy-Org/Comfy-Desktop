@@ -11,6 +11,7 @@ import {
   describeUnsatisfied,
   isSitePackagesEmpty,
   normalizeDistName,
+  readInstalledDists,
   type RequirementsDrift,
   type UnsatisfiedRequirement
 } from '../../lib/requirementsDrift'
@@ -50,9 +51,9 @@ export interface DepsRepairGaveUp {
 export interface DepsRepairFailures {
   reqsHash: string
   count: number
-  /** The packages that failed (plus any held back). The pause applies only
-   *  while every unsatisfied package is among them, so a package that goes
-   *  missing later is still repaired. */
+  /** The packages that failed. The pause applies only while every unsatisfied
+   *  package (ignoring torch-dependent ones held back for a missing torch) is
+   *  among them, so a package that goes missing later is still repaired. */
   packages: string[]
   /** Desktop version that recorded the failures; a new version resets them. */
   appVersion?: string
@@ -132,18 +133,49 @@ export function warnIfSitePackagesEmpty(
   return true
 }
 
+/**
+ * A requirement's specifier as a constraint: `==` and `~=` relaxed to `>=`, so a
+ * newer install the user chose stays put. Explicit upper bounds (`<`, `<=`,
+ * `!=`) are kept, and so is a wildcard pin (`==1.*`): uv rejects `>=` with a
+ * wildcard, which would fail every install.
+ */
+export function relaxSpecifier(specifier: string): string {
+  return specifier
+    .split(',')
+    .map((part) => {
+      const m = part.trim().match(/^(?:==(?!=)|~=)\s*([^\s*]+)$/)
+      return m ? `>=${m[1]}` : part.trim()
+    })
+    .join(',')
+}
+
+/** Torch-dependent packages that are unsatisfied only because torch is absent
+ *  are held back, not failed: they neither join nor lift a pause. */
+function pauseRelevant(
+  installation: InstallationRecord,
+  drift: RequirementsDrift
+): typeof drift.unsatisfied {
+  const sitePackages = findSitePackages(getActiveVenvDir(installation))
+  const torchPresent = sitePackages !== null && readInstalledDists(sitePackages).has('torch')
+  return torchPresent
+    ? drift.unsatisfied
+    : drift.unsatisfied.filter((r) => !TORCH_DEPENDENT.has(r.name))
+}
+
 function failureBudgetSpent(
   installation: InstallationRecord,
   drift: RequirementsDrift,
   appVersion: string
 ): boolean {
   const failures = installation.depsRepairFailures as DepsRepairFailures | null | undefined
+  const relevant = pauseRelevant(installation, drift)
   return (
+    relevant.length > 0 &&
     failures?.reqsHash === drift.reqsHash &&
     failures.count >= MAX_FAILED_ATTEMPTS &&
     (failures.appVersion ?? '') === appVersion &&
     Array.isArray(failures.packages) &&
-    drift.unsatisfied.every((r) => failures.packages.includes(r.name))
+    relevant.every((r) => failures.packages.includes(r.name))
   )
 }
 
@@ -260,9 +292,7 @@ export async function repairDeps(
       ),
       ...drift.requirements
         .filter((r) => r.specifier)
-        // `==` and `~=` relaxed to `>=`: a newer install the user chose stays
-        // put. Explicit upper bounds (`<`, `<=`, `!=`) are kept.
-        .map((r) => `${r.name}${r.specifier.replace(/(^|,)\s*(?:==(?!=)|~=)/g, '$1>=')}`)
+        .map((r) => `${r.name}${relaxSpecifier(r.specifier)}`)
     ]
   } catch (err) {
     tools.sendOutput?.(`Could not read the installed packages: ${(err as Error).message}\n`)
@@ -370,9 +400,9 @@ export async function repairDeps(
       Array.isArray(prior.packages) &&
       failed.every((name) => prior.packages.includes(name))
     const count = (sameRun ? prior.count : 0) + 1
-    // Held-back packages are recorded too: they can't install until torch is
-    // back, so they must not lift the pause on the packages that failed.
-    const packages = [...new Set([...failed, ...heldBackNames])]
+    // Held-back packages are not recorded: once torch is back they must
+    // install, not inherit the pause (pauseRelevant ignores them meanwhile).
+    const packages = failed
     await tools.update({
       depsRepairFailures: {
         reqsHash: drift.reqsHash,

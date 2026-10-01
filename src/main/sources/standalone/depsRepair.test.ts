@@ -18,6 +18,7 @@ import {
   MAX_FAILED_ATTEMPTS,
   pausedRepairNote,
   pendingDrift,
+  relaxSpecifier,
   reportPausedRepair,
   repairDeps,
   warnIfSitePackagesEmpty,
@@ -417,6 +418,70 @@ describe('repairDeps', () => {
     })
   })
 
+  it('keeps held-back packages out of the pause, so they install once torch is back', async () => {
+    // torch absent: torchsde is held back, blake3 keeps failing.
+    const { inst, site } = managedInstall(['numpy-2.1.0.dist-info'], 'blake3\ntorchsde\nnumpy\n')
+    let record = inst
+    for (let launch = 1; launch <= MAX_FAILED_ATTEMPTS; launch++) {
+      const t = tools()
+      await expect(
+        repairDeps(record, pendingDrift(record)!, t, {
+          freeze: noFreeze,
+          runUvPip: fakeUv(site, [], 1)
+        })
+      ).resolves.toBe('failed')
+      for (const [data] of t.update.mock.calls) record = { ...record, ...(data as object) }
+    }
+    expect(record.depsRepairFailures).toMatchObject({ packages: ['blake3'] })
+    // Paused for blake3; the held-back torchsde neither joins nor lifts it.
+    expect(pendingDrift(record)).toBeNull()
+    expect(pausedRepairNote(record)).toContain('Automatic repair paused')
+    // torch comes back: torchsde is now installable, so the pause lifts.
+    fs.mkdirSync(path.join(site, 'torch-2.10.0.dist-info'))
+    expect(pendingDrift(record)!.unsatisfied.map((r) => r.name)).toEqual(['blake3', 'torchsde'])
+    expect(pausedRepairNote(record)).toBeNull()
+  })
+
+  it('does not report a pause when only held-back packages remain', () => {
+    const { inst } = managedInstall(['numpy-2.1.0.dist-info'], 'blake3\ntorchsde\nnumpy\n')
+    const stale = {
+      ...inst,
+      depsRepairFailures: {
+        reqsHash: pendingDrift(inst)!.reqsHash,
+        count: MAX_FAILED_ATTEMPTS,
+        packages: ['blake3'],
+        appVersion: '1.1.4'
+      }
+    } as InstallationRecord
+    // blake3 got installed some other way; only the held-back torchsde is left.
+    fs.mkdirSync(
+      path.join(
+        sitePackagesOf(path.join(inst.installPath, 'ComfyUI', '.venv')),
+        'blake3-1.0.dist-info'
+      )
+    )
+    expect(pausedRepairNote(stale)).toBeNull()
+    expect(pendingDrift(stale)!.unsatisfied.map((r) => r.name)).toEqual(['torchsde'])
+  })
+
+  it('keeps a wildcard pin as written in the constraints (uv rejects >= with a wildcard)', async () => {
+    const { inst, site } = managedInstall(
+      ['numpy-2.1.0.dist-info', 'av-17.2.dist-info'],
+      'blake3\nnumpy\nav==17.*\n'
+    )
+    let constraintText = ''
+    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
+      constraintText = fs.readFileSync(
+        path.join(inst.installPath, args[args.indexOf('--constraint') + 1]!),
+        'utf-8'
+      )
+      fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
+      return { code: 0, output: '' }
+    })
+    await repairDeps(inst, pendingDrift(inst)!, tools(), { freeze: noFreeze, runUvPip: uv })
+    expect(constraintText.split('\n')).toContain('av==17.*')
+  })
+
   it('has no paused note while the budget remains or nothing is missing', () => {
     const { inst } = managedInstall(SYNCED.slice(1), REQS)
     const drift = pendingDrift(inst)!
@@ -812,5 +877,16 @@ describe('warnIfSitePackagesEmpty', () => {
     const missing = { ...inst, installPath: path.join(tmpDir, 'nowhere') } as InstallationRecord
     expect(warnIfSitePackagesEmpty(missing)).toBe(false)
     expect(emit).not.toHaveBeenCalled()
+  })
+})
+
+describe('relaxSpecifier', () => {
+  it('relaxes == and ~= to a floor and keeps everything else', () => {
+    expect(relaxSpecifier('==0.5.5')).toBe('>=0.5.5')
+    expect(relaxSpecifier('~=2.0')).toBe('>=2.0')
+    expect(relaxSpecifier('>=17,<18')).toBe('>=17,<18')
+    expect(relaxSpecifier('==1.*')).toBe('==1.*')
+    expect(relaxSpecifier('===1.0')).toBe('===1.0')
+    expect(relaxSpecifier('>=1.4.2, ~=1.4')).toBe('>=1.4.2,>=1.4')
   })
 })
