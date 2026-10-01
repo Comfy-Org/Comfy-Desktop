@@ -38,7 +38,7 @@ describe('POSTHOG_CONTROLLED_ARGS', () => {
   )
 
   it.each(POSTHOG_CONTROLLED_ARGS.map((row) => [row.arg, row] as const))(
-    '%s requires blockers exactly when it turns something on',
+    "%s requires blockers exactly when it turns something on (today's rows)",
     (_, row) => {
       expect(row.requiresBlockers).toBe(row.direction === 'enable')
     }

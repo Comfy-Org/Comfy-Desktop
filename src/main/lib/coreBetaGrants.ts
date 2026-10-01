@@ -405,7 +405,8 @@ export function selectCoreBetaGrantArgs(
       continue
     }
     // Selected grants join the conflict set so the checks above hold between two grants too, not
-    // just against the user's args. Redundant after `parseCoreBetaGrants`, load-bearing without it.
+    // just against the user's args. Redundant after `parseCoreBetaGrants`; without it, this still
+    // catches a conflict between two allowlisted args, the only ones with a known opposite.
     presentArgs.add(arg)
     selected.push(flag)
   }
