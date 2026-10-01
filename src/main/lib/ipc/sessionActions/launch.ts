@@ -1176,16 +1176,11 @@ async function runLaunch(
     // Managed installs repair automatically; adopted installs ask first.
     // Non-fatal: a failed or skipped repair launches exactly as before.
     try {
-      const {
-        clearSatisfiedMarker,
-        pendingDrift,
-        reportPausedRepair,
-        repairDeps,
-        warnIfSitePackagesEmpty
-      } = await import('../../../sources/standalone/depsRepair')
+      const { pendingDrift, pruneMarker, reportPausedRepair, repairDeps, warnIfSitePackagesEmpty } =
+        await import('../../../sources/standalone/depsRepair')
+      inst = await pruneMarker(inst, updateFn)
       const drift = pendingDrift(inst)
       if (!drift && !reportPausedRepair(inst, makeSendOutput(event.sender, sessionId))) {
-        await clearSatisfiedMarker(inst, updateFn)
         warnIfSitePackagesEmpty(inst, makeSendOutput(event.sender, sessionId))
       }
       if (drift) {
