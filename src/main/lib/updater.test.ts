@@ -976,6 +976,24 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
     })
 
+    it('an updater error after a user quit took over keeps the quit in progress', async () => {
+      const updater = await bootUpdater()
+      const quitWait = await import('./quitWait')
+      stageUpdate()
+      const exit = deferred()
+      cancelAllMock.mockImplementation(() => quitWait.trackExitWork(exit.promise, 'stop'))
+      const installing = updater.installUpdate()
+      quitReason = 'user-quit'
+      quitWait.holdQuit({ preventDefault: () => {} }, { drain: async () => {}, quit: vi.fn() })
+      // E.g. the 10-minute check, which runs again once the reason is no longer the install's.
+      for (const cb of listeners.error || []) cb(new Error('net::ERR_INTERNET_DISCONNECTED'))
+      // Still a quit in progress: the respawn, launch and relaunch guards keep holding.
+      expect(quitReason).toBe('user-quit')
+      expect(quitWait.isQuitHeld()).toBe(true)
+      exit.resolve()
+      await installing
+    })
+
     it('a session end during the wait leaves a held user quit intact', async () => {
       const updater = await bootUpdater()
       const quitWait = await import('./quitWait')

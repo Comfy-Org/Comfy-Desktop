@@ -516,11 +516,13 @@ function bindUpdaterEvents(): void {
         (operation === 'download' ? (_autoDownloadTriggeredFor ?? _appUpdateState.version) : null),
       source: active ? `updater_event:${active.source}` : 'updater_event'
     })
-    // An install that failed after its stops: the next quit waits afresh. Keyed on the quit
-    // reason, not the operation: a background check during the install's wait replaces it.
-    if (isUpdateInstallQuit()) abandonQuitSequence()
+    // An install that failed after its stops: back out of it, so the next quit waits afresh.
+    // Only the install's own reason: a user quit that took over keeps its reason and its hold.
+    if (isUpdateInstallQuit()) {
+      abandonQuitSequence()
+      clearQuitReason()
+    }
     _activeUpdateOperation = null
-    clearQuitReason()
     _autoDownloadTriggeredFor = null
     _userInitiatedDownload = false
     // A failed download can't stay in `'downloading'`. Auto-on downloads
