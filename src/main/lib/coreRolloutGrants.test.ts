@@ -619,6 +619,27 @@ describe('blockerShortfall', () => {
       'clear'
     ],
     [
+      'below introduced_in on an exact tag, but the named backport commit unresolved',
+      { introducedCommits: [INTRO], introducedIn: '0.40.0' },
+      core(),
+      commits({}),
+      'may apply'
+    ],
+    [
+      'introduced commit proven absent, but introduced_in has no trusted version',
+      { introducedCommits: [INTRO], introducedIn: '0.40.0' },
+      core({ verified: false }),
+      commits({ [INTRO]: false }),
+      'may apply'
+    ],
+    [
+      'both signals prove absence',
+      { introducedCommits: [INTRO], introducedIn: '0.40.0' },
+      core(),
+      commits({ [INTRO]: false }),
+      'clear'
+    ],
+    [
       'introduced commit absent but introduced_in reached: in scope wins',
       { introducedCommits: [INTRO], introducedIn: '0.38.0' },
       core(),

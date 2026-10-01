@@ -403,14 +403,15 @@ export function blockerShortfall(
       (blocker.introducedIn !== undefined &&
         version !== null &&
         semver.gte(version, blocker.introducedIn))
-    // Below the bound proves "out" only on an exact tag: past a tag, the install may well
-    // contain the introducing change already.
-    const provenOut =
-      (blocker.introducedCommits.length > 0 && blocker.introducedCommits.every(notContained)) ||
-      (blocker.introducedIn !== undefined &&
-        version !== null &&
-        core.exact &&
-        semver.lt(version, blocker.introducedIn))
+    // "Out" needs EVERY scope signal the blocker names to prove absence: a version below the
+    // bound says nothing about a backport the commit list names, and vice versa. Below the bound
+    // proves "out" only on an exact tag: past a tag, the install may already contain the change.
+    const commitsOut =
+      blocker.introducedCommits.length === 0 || blocker.introducedCommits.every(notContained)
+    const versionOut =
+      blocker.introducedIn === undefined ||
+      (version !== null && core.exact && semver.lt(version, blocker.introducedIn))
+    const provenOut = commitsOut && versionOut
     if (provenIn) scope = 'in'
     else if (provenOut) scope = 'out'
   }

@@ -705,6 +705,49 @@ describe('makeOpsFlag maxAgeMs', () => {
     }
   )
 
+  it('expires a treatment loaded offline while the app stays open', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      store({ value: 'disabled', payload: null, fetchedAt: Date.now() - 13 * DAY })
+      const flag = makeAgedFlag(14 * DAY)
+      getOpsFlagResult.mockResolvedValue(unreachable())
+      await flag.init({ distinctId: 'anon' })
+      expect(await flag.get()).toBe('disabled')
+      vi.setSystemTime(Date.now() + 2 * DAY)
+      expect(await flag.get()).toBe('normal')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('expires a fetched treatment once the session outlives the window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const flag = makeAgedFlag(14 * DAY)
+      getOpsFlagResult.mockResolvedValue(flagResult('disabled', null))
+      await flag.init({ distinctId: 'anon' })
+      vi.setSystemTime(Date.now() + 13 * DAY)
+      expect(await flag.get()).toBe('disabled')
+      vi.setSystemTime(Date.now() + 2 * DAY)
+      expect(await flag.get()).toBe('normal')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never expires a fetched treatment for a flag without maxAgeMs', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const flag = makeAgedFlag(undefined)
+      getOpsFlagResult.mockResolvedValue(flagResult('disabled', null))
+      await flag.init({ distinctId: 'anon' })
+      vi.setSystemTime(Date.now() + 365 * DAY)
+      expect(await flag.get()).toBe('disabled')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('leaves a flag without maxAgeMs holding an entry with no fetchedAt, as before', async () => {
     // The beta key's stored entries have no timestamp and must keep loading exactly as today.
     store({ value: 'disabled', payload: null })

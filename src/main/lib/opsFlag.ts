@@ -146,6 +146,7 @@ function readPersistedResult(
     if (typeof fetchedAt !== 'number' || !Number.isFinite(fetchedAt)) return undefined
     const age = Date.now() - fetchedAt
     if (age > maxAgeMs || age < -MAX_FUTURE_SKEW_MS) return undefined
+    return { value, payload, fetchedAt }
   }
   return { value, payload }
 }
@@ -214,13 +215,18 @@ export function makeOpsFlag<T>(opts: {
    *  Only for flags whose fail direction is a downgrade a returning user would notice; a
    *  fail-closed guard must NOT persist. */
   persist?: true
-  /** With `persist`: how long a stored value may stand in for an unreachable server. Past it the
-   *  flag drops to `fallback` exactly as if nothing were stored, which bounds how long a deleted
-   *  key or a machine that never reaches the server can hold a treatment. Omit to hold forever. */
+  /** How long a treatment may stand without being confirmed by a fetch. Past it the flag reads as
+   *  if nothing had been fetched (`parse(undefined, undefined)`, else `fallback`), which bounds how
+   *  long a deleted key, a machine that never reaches the server, or a session that never
+   *  restarts can hold a treatment. Measured from when the server produced the value, so it is
+   *  checked both when a stored value is loaded and on every `get`. Omit to hold forever. */
   maxAgeMs?: number
 }): OpsFlag<T> {
   const { key, fallback, parse, logLabel, persist, maxAgeMs } = opts
   let cached: T = fallback
+  /** When the server produced `cached` (ms), for the `maxAgeMs` check on read; `null` while
+   *  `cached` is not a fetched treatment. */
+  let cachedAt: number | null = null
   let initPromise: Promise<void> | null = null
   /** Captured by each `init`, bumped by `_resetForTest`. A fetch this flag abandoned at the
    *  deadline can still settle long after the launch (or the test) that started it moved on;
@@ -243,6 +249,7 @@ export function makeOpsFlag<T>(opts: {
     const parsed = parse(stored.value, stored.payload)
     if (parsed === undefined) return false
     cached = parsed
+    cachedAt = stored.fetchedAt ?? null
     return true
   }
 
@@ -295,7 +302,10 @@ export function makeOpsFlag<T>(opts: {
             }
           } else {
             const parsed = parse(result.value, result.payload)
-            if (parsed !== undefined) cached = parsed
+            if (parsed !== undefined) {
+              cached = parsed
+              cachedAt = Date.now()
+            }
             if (persist) {
               try {
                 writePersistedResult(key, toPersistedEntry(result))
@@ -331,10 +341,14 @@ export function makeOpsFlag<T>(opts: {
           /* keep cached */
         }
       }
+      if (maxAgeMs !== undefined && cachedAt !== null && Date.now() - cachedAt > maxAgeMs) {
+        return parse(undefined, undefined) ?? fallback
+      }
       return cached
     },
     _resetForTest() {
       cached = fallback
+      cachedAt = null
       initPromise = null
       // Strands any fetch still in flight, so a late result from the previous test cannot
       // write into the next one's config dir.
