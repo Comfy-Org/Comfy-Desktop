@@ -14,7 +14,7 @@
  * Data comes from the nav store's resolved `compareRuns` objects (oldest-first) so this
  * view never re-lists from disk.
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import {
@@ -28,7 +28,8 @@ import {
   type MultiSeriesInput
 } from '../lib/benchmarkCharts'
 import { buildBenchmarkCsv, buildBenchmarkJson } from '../lib/benchmarkExport'
-import { computeMetricDelta, toGb, type MetricDelta } from '../lib/benchmarkMetrics'
+import { computeMetricDelta, secPerImageOf, toGb, type MetricDelta } from '../lib/benchmarkMetrics'
+import { exportBaseName, seriesColors } from '../lib/benchmarkShared'
 import { createResultsPng } from '../lib/performanceTestResultsSvg'
 import { useBenchmarkNavStore } from '../stores/benchmarkNavStore'
 import type { PerformanceTestBenchmark } from '../types/ipc'
@@ -36,10 +37,17 @@ import type { PerformanceTestBenchmark } from '../types/ipc'
 const { t } = useI18n()
 const benchmarkNav = useBenchmarkNavStore()
 
-// Column series colors — identical ramp to History so the legend + every chart agree.
-const seriesColors = ['#55e0d1', '#a970ff', '#f6f31b', '#ff8a65', '#62a8ff', '#ff6fae', '#7ee081']
-// Ceiling hues when GPUs differ: one dashed line per distinct VRAM total.
-const ceilingColors = ['var(--danger)', 'var(--accent-plum)', 'var(--text-faint)']
+// Ceiling hues when GPUs differ: one dashed line per distinct VRAM total. A VRAM
+// total is a neutral fact, never a verdict, so this palette stays neutral (plum +
+// a graded gray ramp) — NO `--danger` (reserved for delta chips + abnormal flags,
+// spec §6). ≥5 distinct entries so up to 5 GPU ceilings never share a hue.
+const ceilingColors = [
+  'var(--accent-plum)',
+  'var(--neutral-300)',
+  'var(--text-faint)',
+  'var(--neutral-200)',
+  'var(--neutral-500)'
+]
 
 const runs = computed(() => benchmarkNav.compareRuns)
 const runCount = computed(() => runs.value.length)
@@ -98,18 +106,9 @@ function setBaseline(event: Event): void {
   benchmarkNav.setBaseline((event.target as HTMLSelectElement).value)
 }
 
-// --- value accessors (defensive; `coreBenchmark` is null on needs-capture runs) ---
-function secPerImageOf(run: PerformanceTestBenchmark): number | null {
-  const cb = run.coreBenchmark
-  const captured = num(cb?.summary?.secPerImage)
-  if (captured != null) return captured
-  const imageCount = cb?.run?.imageCount
-  if (run.medianJobDurationSeconds != null && imageCount != null && imageCount > 0) {
-    return run.medianJobDurationSeconds / imageCount
-  }
-  return null
-}
-
+// --- value accessors (defensive; `coreBenchmark` is null on needs-capture runs).
+// sec/image comes from the shared `secPerImageOf` helper so History, Compare and the
+// data export agree on the captured-else-median/imageCount rule. ---
 interface MetricDef {
   labelKey: string
   value: (run: PerformanceTestBenchmark) => number | null
@@ -331,14 +330,30 @@ function formatDate(iso: string | null): string {
 interface ConfigDef {
   labelKey: string
   get: (run: PerformanceTestBenchmark) => string
+  /** Whether a per-column difference from the baseline is highlighted (`⟵ differs`).
+   *  Only the genuine config fields that can explain an A/B delta are diffable; Date
+   *  always differs run-to-run, so flagging it is pure noise. */
+  diffable: boolean
 }
 const configDefs: ConfigDef[] = [
-  { labelKey: 'rowGpu', get: gpuConfig },
-  { labelKey: 'rowWeightDtype', get: (run) => run.coreBenchmark?.device?.weightDtype ?? '—' },
-  { labelKey: 'rowAttention', get: (run) => run.coreBenchmark?.device?.attentionImpl ?? '—' },
-  { labelKey: 'rowCudaCudnn', get: cudaCudnn },
-  { labelKey: 'rowComfyui', get: (run) => run.coreBenchmark?.device?.comfyuiVersion ?? '—' },
-  { labelKey: 'rowDate', get: (run) => formatDate(run.createdAt) }
+  { labelKey: 'rowGpu', get: gpuConfig, diffable: true },
+  {
+    labelKey: 'rowWeightDtype',
+    get: (run) => run.coreBenchmark?.device?.weightDtype ?? '—',
+    diffable: true
+  },
+  {
+    labelKey: 'rowAttention',
+    get: (run) => run.coreBenchmark?.device?.attentionImpl ?? '—',
+    diffable: true
+  },
+  { labelKey: 'rowCudaCudnn', get: cudaCudnn, diffable: true },
+  {
+    labelKey: 'rowComfyui',
+    get: (run) => run.coreBenchmark?.device?.comfyuiVersion ?? '—',
+    diffable: true
+  },
+  { labelKey: 'rowDate', get: (run) => formatDate(run.createdAt), diffable: false }
 ]
 
 interface ConfigCellVM {
@@ -362,7 +377,8 @@ const configBand = computed<ConfigRowVM[]>(() =>
         return {
           display,
           isBaseline: column.isBaseline,
-          differs: !column.isBaseline && baselineValue != null && display !== baselineValue
+          differs:
+            def.diffable && !column.isBaseline && baselineValue != null && display !== baselineValue
         }
       })
     }
@@ -427,23 +443,31 @@ const opDiff = computed<OpDiff | null>(() => {
   if (!sameWorkflow.value || columns.value.length !== 2) return null
   const [a, b] = columns.value
   if (!a || !b) return null
-  const shareMap = (run: PerformanceTestBenchmark): Map<string, number> => {
-    const map = new Map<string, number>()
-    buildOpTimeline(opNodesOf(run)).bars.forEach((bar) => map.set(bar.label, bar.share))
+  // Per node, carry BOTH the share (fraction of that run's own total → bar size/label)
+  // and the raw elapsed ms (absolute time → faster/slower verdict).
+  const statsMap = (run: PerformanceTestBenchmark): Map<string, { share: number; ms: number }> => {
+    const map = new Map<string, { share: number; ms: number }>()
+    buildOpTimeline(opNodesOf(run)).bars.forEach((bar) =>
+      map.set(bar.label, { share: bar.share, ms: bar.value })
+    )
     return map
   }
-  const ma = shareMap(a.run)
-  const mb = shareMap(b.run)
+  const ma = statsMap(a.run)
+  const mb = statsMap(b.run)
   if (ma.size === 0 && mb.size === 0) return null
   const labels = [...new Set([...ma.keys(), ...mb.keys()])]
   const maxShare = Math.max(
-    ...labels.map((label) => Math.max(ma.get(label) ?? 0, mb.get(label) ?? 0)),
+    ...labels.map((label) => Math.max(ma.get(label)?.share ?? 0, mb.get(label)?.share ?? 0)),
     0.0001
   )
   const rows: OpDiffRow[] = labels
     .map((label) => {
-      const sa = ma.get(label) ?? 0
-      const sb = mb.get(label) ?? 0
+      const sa = ma.get(label)?.share ?? 0
+      const sb = mb.get(label)?.share ?? 0
+      // Faster/slower is decided on ABSOLUTE elapsed ms, not share: a node can grow in
+      // ms yet shrink in share (if the run's total grew more), so share would mislead.
+      const msA = ma.get(label)?.ms ?? 0
+      const msB = mb.get(label)?.ms ?? 0
       return {
         key: label,
         label,
@@ -451,7 +475,7 @@ const opDiff = computed<OpDiff | null>(() => {
         aWidth: Math.round((sa / maxShare) * 100),
         bPercent: Math.round(sb * 100),
         bWidth: Math.round((sb / maxShare) * 100),
-        faster: sb < sa
+        faster: msB < msA
       }
     })
     .sort((x, y) => Math.max(y.aPercent, y.bPercent) - Math.max(x.aPercent, x.bPercent))
@@ -621,6 +645,12 @@ const tempChart = computed<MultiAxed | null>(() => {
   })
 })
 
+// Power + temp share one time x-axis; take ticks from whichever chart exists so the
+// overlay draws x-axis labels like the other time-series charts (design consistency).
+const powerTempXTicks = computed<AxisTick[]>(
+  () => powerChart.value?.xTicks ?? tempChart.value?.xTicks ?? []
+)
+
 const legend = computed(() =>
   columns.value.map((column) => ({
     key: column.run.id,
@@ -630,25 +660,41 @@ const legend = computed(() =>
 )
 
 // --- export (design §5) ---
-const dataMenuOpen = ref(false)
 const isExportingImage = ref(false)
 const exportError = ref<string | null>(null)
 
-function exportBaseName(extension: 'csv' | 'json'): string {
-  const now = new Date()
-  const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-    now.getDate()
-  ).padStart(2, '0')}`
-  return `comfy-benchmarks-${runCount.value}-runs-${iso}.${extension}`
+// Outside-click close for the "Export data ▾" <details> menu — same global
+// pointerdown pattern as History, so clicking anywhere else collapses the dropdown.
+function closeMenusOnOutsideClick(event: PointerEvent): void {
+  const target = event.target
+  if (!(target instanceof Node)) return
+  for (const element of document.querySelectorAll<HTMLDetailsElement>(
+    'details.benchmark-compare__menu[open]'
+  )) {
+    if (!element.contains(target)) element.open = false
+  }
+}
+document.addEventListener('pointerdown', closeMenusOnOutsideClick, true)
+onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenusOnOutsideClick, true))
+
+function closeAllMenus(): void {
+  for (const element of document.querySelectorAll<HTMLDetailsElement>(
+    'details.benchmark-compare__menu[open]'
+  )) {
+    element.open = false
+  }
 }
 
 async function exportData(format: 'csv' | 'json'): Promise<void> {
-  dataMenuOpen.value = false
+  closeAllMenus()
   if (runs.value.length === 0) return
   exportError.value = null
   const contents = format === 'csv' ? buildBenchmarkCsv(runs.value) : buildBenchmarkJson(runs.value)
   try {
-    const result = await window.api.exportBenchmarkData(contents, exportBaseName(format))
+    const result = await window.api.exportBenchmarkData(
+      contents,
+      exportBaseName(runCount.value, format)
+    )
     if (!result.ok && !result.canceled) {
       exportError.value = result.message || t('benchmarks.exportDataFailed')
     }
@@ -684,6 +730,9 @@ function buildComparisonSvg(): string {
     { band: t('benchmarks.compare.bandPerWorkload'), rows: metricBands.value[0]!.rows },
     { band: t('benchmarks.compare.bandPerRun'), rows: metricBands.value[1]!.rows }
   ]
+  // Hardcoded hexes mirror the design tokens --success (#00cd72), --danger (#e05858)
+  // and --text-faint (#8a8688): the exported SVG is a standalone raster with no CSS
+  // custom properties, so the token values are inlined here to keep chips on-brand.
   const chipColor = (cls: ChipVM['cls']): string =>
     cls === 'good' ? '#00cd72' : cls === 'bad' ? '#e05858' : '#8a8688'
 
@@ -815,17 +864,11 @@ async function exportImage(): Promise<void> {
       >
         {{ t('benchmarks.compare.exportImage') }}
       </button>
-      <div class="benchmark-compare__menu">
-        <button
-          type="button"
-          class="benchmark-compare__btn"
-          aria-haspopup="true"
-          :aria-expanded="dataMenuOpen"
-          @click="dataMenuOpen = !dataMenuOpen"
-        >
+      <details class="benchmark-compare__menu">
+        <summary class="benchmark-compare__btn benchmark-compare__datatrigger" aria-haspopup="true">
           {{ t('benchmarks.compare.exportData') }} ▾
-        </button>
-        <div v-if="dataMenuOpen" class="benchmark-compare__pop" role="menu">
+        </summary>
+        <div class="benchmark-compare__pop" role="menu">
           <button
             type="button"
             data-testid="compare-export-csv"
@@ -843,7 +886,7 @@ async function exportImage(): Promise<void> {
             {{ t('benchmarks.exportJson') }}
           </button>
         </div>
-      </div>
+      </details>
     </header>
 
     <div class="benchmark-compare__controls">
@@ -1221,6 +1264,16 @@ async function exportImage(): Promise<void> {
           >
             {{ tick.value }}°
           </text>
+          <text
+            v-for="tick in powerTempXTicks"
+            :key="`ptxl-${tick.value}`"
+            class="benchmark-compare__axis num"
+            :x="POWER_PAD.l + tick.pos"
+            :y="CHART_H - 12"
+            text-anchor="middle"
+          >
+            {{ tick.value }}s
+          </text>
         </svg>
       </section>
     </div>
@@ -1296,6 +1349,17 @@ async function exportImage(): Promise<void> {
 
 .benchmark-compare__menu {
   position: relative;
+}
+
+.benchmark-compare__datatrigger {
+  display: inline-flex;
+  align-items: center;
+  list-style: none;
+  cursor: pointer;
+}
+
+.benchmark-compare__datatrigger::-webkit-details-marker {
+  display: none;
 }
 
 .benchmark-compare__pop {

@@ -21,6 +21,8 @@ import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import { buildBenchmarkCsv, buildBenchmarkJson } from '../lib/benchmarkExport'
+import { secPerImageOf } from '../lib/benchmarkMetrics'
+import { exportBaseName, seriesColors } from '../lib/benchmarkShared'
 import { useBenchmarkNavStore } from '../stores/benchmarkNavStore'
 import { useDialogs } from '../composables/useDialogs'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
@@ -92,9 +94,6 @@ const sortId = ref<SortId>('date-desc')
 const UNMANAGED_WORKSPACE_FILTER = '__unmanaged__'
 const COMPARE_CAP = 5
 
-/** Series colors reused across the row accent + (later) the Compare legend. */
-const seriesColors = ['#55e0d1', '#a970ff', '#f6f31b', '#ff8a65', '#62a8ff', '#ff6fae', '#7ee081']
-
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   month: 'short',
   day: 'numeric',
@@ -143,17 +142,6 @@ function core(run: PerformanceTestBenchmark): CoreBenchmarkSummary | null {
 
 function needsCapture(run: PerformanceTestBenchmark): boolean {
   return core(run) == null
-}
-
-function secPerImage(run: PerformanceTestBenchmark): number | null {
-  const cb = core(run)
-  const captured = cb?.summary?.secPerImage
-  if (isFiniteNumber(captured)) return captured
-  const imageCount = cb?.run?.imageCount
-  if (run.medianJobDurationSeconds != null && isFiniteNumber(imageCount) && imageCount > 0) {
-    return run.medianJobDurationSeconds / imageCount
-  }
-  return null
 }
 
 function itPerS(run: PerformanceTestBenchmark): number | null {
@@ -299,7 +287,8 @@ const columns: HistoryColumn[] = [
     labelKey: 'benchmarks.colSecPerImage',
     defaultVisible: true,
     sortCol: 'spi',
-    cell: (run) => metricOrDash(run, secPerImage(run), (value) => ({ text: `${fmt(value, 2)} s` }))
+    cell: (run) =>
+      metricOrDash(run, secPerImageOf(run), (value) => ({ text: `${fmt(value, 2)} s` }))
   },
   {
     id: 'itPerS',
@@ -527,8 +516,8 @@ const comparators: Record<
 > = {
   'date-desc': numericComparator(createdAtMs, -1),
   'date-asc': numericComparator(createdAtMs, 1),
-  'spi-asc': numericComparator(secPerImage, 1),
-  'spi-desc': numericComparator(secPerImage, -1),
+  'spi-asc': numericComparator(secPerImageOf, 1),
+  'spi-desc': numericComparator(secPerImageOf, -1),
   'its-desc': numericComparator(itPerS, -1),
   'vram-asc': numericComparator(vramPeakMb, 1),
   'vram-desc': numericComparator(vramPeakMb, -1),
@@ -612,14 +601,6 @@ function openCompareView(): void {
 }
 
 // --- export (design §5.3) ---
-function exportBaseName(count: number, extension: 'csv' | 'json'): string {
-  const now = new Date()
-  const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-    now.getDate()
-  ).padStart(2, '0')}`
-  return `comfy-benchmarks-${count}-runs-${iso}.${extension}`
-}
-
 async function exportData(format: 'csv' | 'json'): Promise<void> {
   closeAllMenus()
   const runs = selectedBenchmarks.value

@@ -336,7 +336,7 @@ describe('BenchmarksView (History)', () => {
     await wrapper.get('[data-testid="benchmark-row-z"]').trigger('click')
     expect(wrapper.get('[data-testid="benchmarks-compare"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-testid="benchmarks-action-bar"]').text()).not.toContain(
-      'Compare uses the first 5'
+      'Compare uses the 5 most recent'
     )
   })
 

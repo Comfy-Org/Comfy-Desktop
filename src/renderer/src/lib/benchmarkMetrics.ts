@@ -7,7 +7,7 @@
  * `t()`. Unit-tested in `benchmarkMetrics.test.ts`.
  */
 import { deriveGpuTier, type GpuTier } from '../../../shared/gpuTier'
-import type { PerformanceTestBenchmark } from '../types/ipc'
+import type { CoreBenchmarkSummary, PerformanceTestBenchmark } from '../types/ipc'
 
 /**
  * Map a ComfyUI compute backend / device type to the vendor `deriveGpuTier`
@@ -48,6 +48,22 @@ export function perImageSeconds(
   if (medianSeconds == null || !Number.isFinite(medianSeconds)) return null
   if (imagesPerRun == null || !Number.isFinite(imagesPerRun) || imagesPerRun <= 0) return null
   return medianSeconds / imagesPerRun
+}
+
+/**
+ * Resolve a run's seconds-per-image (single source for History, Compare, and the
+ * data export): prefer the captured `summary.secPerImage`, else normalize the median
+ * run duration by the captured image count (`perImageSeconds`). Pass an already
+ * resolved `coreBenchmark` to avoid re-reading it; defaults to `run.coreBenchmark`.
+ * Null when neither path is derivable.
+ */
+export function secPerImageOf(
+  run: PerformanceTestBenchmark,
+  cb: CoreBenchmarkSummary | null = run.coreBenchmark ?? null
+): number | null {
+  const captured = cb?.summary?.secPerImage
+  if (typeof captured === 'number' && Number.isFinite(captured)) return captured
+  return perImageSeconds(run.medianJobDurationSeconds, cb?.run?.imageCount)
 }
 
 export type BenchmarkTone = 'neutral' | 'positive' | 'caution'

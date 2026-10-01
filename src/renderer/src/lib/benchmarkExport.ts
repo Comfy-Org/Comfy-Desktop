@@ -19,6 +19,7 @@
  *   - steady-state it/s is the desktop-recomputed `PerformanceTestBenchmark.steadyStateItPerS`.
  */
 
+import { secPerImageOf } from './benchmarkMetrics'
 import type {
   CoreBenchmarkSummary,
   PerformanceTestBenchmark,
@@ -48,7 +49,7 @@ export const BENCHMARK_CSV_COLUMNS = [
   'power_peak_w',
   'power_limit_w',
   'temp_peak_c',
-  'gpu_util_peak_pct',
+  'vram_util_peak_pct',
   'sm_clock_mhz',
   'mem_clock_mhz',
   'throttled',
@@ -93,21 +94,6 @@ function resultNumber(
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-/** Compute sec/image: prefer the captured `summary.secPerImage`, else normalize
- *  the median run duration by image count (spec §5.3). Null when neither is derivable. */
-function secPerImage(
-  run: PerformanceTestBenchmark,
-  cb: CoreBenchmarkSummary | null
-): number | null {
-  const captured = cb?.summary?.secPerImage
-  if (typeof captured === 'number' && Number.isFinite(captured)) return captured
-  const imageCount = cb?.run?.imageCount
-  if (run.medianJobDurationSeconds != null && typeof imageCount === 'number' && imageCount > 0) {
-    return run.medianJobDurationSeconds / imageCount
-  }
-  return null
-}
-
 /** Peak VRAM as a percent of the device total (spec §5.3: peak / totalVramMb × 100). */
 function vramPeakPct(cb: CoreBenchmarkSummary | null): number | null {
   const peak = cb?.resources?.peak?.vramUsedMb
@@ -143,7 +129,7 @@ function toCsvRecord(run: PerformanceTestBenchmark): Record<string, CsvCell> {
     vram_total_mb: device?.totalVramMb ?? null,
     driver_version: device?.driverVersion ?? null,
     comfyui_version: device?.comfyuiVersion ?? null,
-    median_sec_per_image: secPerImage(run, cb),
+    median_sec_per_image: secPerImageOf(run, cb),
     steady_state_it_per_s: run.steadyStateItPerS,
     avg_it_per_s: cb?.sampling?.avgItPerS ?? null,
     vram_peak_mb: peak?.vramUsedMb ?? null,
@@ -152,7 +138,7 @@ function toCsvRecord(run: PerformanceTestBenchmark): Record<string, CsvCell> {
     power_peak_w: peak?.powerW ?? null,
     power_limit_w: peak?.powerLimitW ?? null,
     temp_peak_c: peak?.temperatureC ?? null,
-    gpu_util_peak_pct: peak?.vramUtilPercent ?? null,
+    vram_util_peak_pct: peak?.vramUtilPercent ?? null,
     sm_clock_mhz: peak?.smClockMhz ?? null,
     mem_clock_mhz: peak?.memClockMhz ?? null,
     throttled: throttled(cb),

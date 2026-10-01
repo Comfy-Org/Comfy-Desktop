@@ -170,7 +170,7 @@ describe('buildBenchmarkCsv', () => {
     expect(cell(csv, 0, 'vram_peak_mb')).toBe('11400')
     expect(cell(csv, 0, 'power_peak_w')).toBe('540')
     expect(cell(csv, 0, 'temp_peak_c')).toBe('68')
-    expect(cell(csv, 0, 'gpu_util_peak_pct')).toBe('99')
+    expect(cell(csv, 0, 'vram_util_peak_pct')).toBe('99')
     expect(cell(csv, 0, 'throttled')).toBe('false')
     expect(cell(csv, 0, 'offloaded')).toBe('false')
     expect(cell(csv, 0, 'weight_dtype')).toBe('fp8_e4m3fn')

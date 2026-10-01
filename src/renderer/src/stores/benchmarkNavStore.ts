@@ -46,13 +46,15 @@ export const useBenchmarkNavStore = defineStore('benchmarkNav', () => {
   const canCompare = computed(() => compareCount.value >= 2)
 
   /**
-   * Open Compare with a set of run OBJECTS. Pass them OLDEST-FIRST so the default
-   * baseline (first run) is the oldest selected (resolved decision). Caps at
-   * `COMPARE_COLUMN_CAP` columns; extra selections are dropped from the tail.
-   * Stores both the ids and the resolved objects so Compare never re-lists from disk.
+   * Open Compare with a set of run OBJECTS. Pass them OLDEST-FIRST. Caps at
+   * `COMPARE_COLUMN_CAP` columns by keeping the MOST RECENT selections (trimming the
+   * oldest from the head), so an over-cap selection surfaces the newest runs rather
+   * than the oldest — while the kept columns stay oldest-first. The default baseline
+   * is therefore the oldest of the kept runs (first column). Stores both the ids and
+   * the resolved objects so Compare never re-lists from disk.
    */
   function openCompare(runs: PerformanceTestBenchmark[], baselineId?: string | null): void {
-    const capped = runs.slice(0, COMPARE_COLUMN_CAP)
+    const capped = runs.slice(-COMPARE_COLUMN_CAP)
     const cappedIds = capped.map((run) => run.id)
     compareRuns.value = capped
     compareRunIds.value = cappedIds
