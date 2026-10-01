@@ -665,3 +665,137 @@ describe('makeOpsFlag late results', () => {
     expect(fs.existsSync(flagsFilePath())).toBe(false)
   })
 })
+
+describe('makeOpsFlag maxAgeMs', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const flagsFile = (): string => path.join(testConfigDir, 'ops-flags.json')
+  const store = (entry: Record<string, unknown>): void =>
+    fs.writeFileSync(flagsFile(), JSON.stringify({ 'test-flag': entry }), 'utf-8')
+
+  function makeAgedFlag(maxAgeMs: number | undefined) {
+    return makeOpsFlag<'normal' | 'disabled'>({
+      key: 'test-flag',
+      fallback: 'normal',
+      parse: (value) => (value === 'disabled' || value === 'normal' ? value : undefined),
+      persist: true,
+      ...(maxAgeMs === undefined ? {} : { maxAgeMs })
+    })
+  }
+
+  async function offlineValue(maxAgeMs: number | undefined): Promise<string> {
+    const flag = makeAgedFlag(maxAgeMs)
+    getOpsFlagResult.mockResolvedValue(unreachable())
+    await flag.init({ distinctId: 'anon' })
+    return flag.get()
+  }
+
+  it.each([
+    ['inside the window', { fetchedAt: Date.now() - 13 * DAY }, 'disabled'],
+    ['past the window', { fetchedAt: Date.now() - 15 * DAY }, 'normal'],
+    ['with no fetchedAt', {}, 'normal'],
+    ['with a non-numeric fetchedAt', { fetchedAt: '2026-10-01' }, 'normal'],
+    ['with a non-finite fetchedAt', { fetchedAt: null }, 'normal'],
+    ['minutes in the future (clock skew)', { fetchedAt: Date.now() + 10 * 60 * 1000 }, 'disabled'],
+    ['days in the future', { fetchedAt: Date.now() + 2 * DAY }, 'normal']
+  ])(
+    'an offline launch holds a stored entry %s only while it is in date',
+    async (_, extra, want) => {
+      store({ value: 'disabled', payload: null, ...extra })
+      expect(await offlineValue(14 * DAY)).toBe(want)
+    }
+  )
+
+  it('expires a treatment loaded offline while the app stays open', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      store({ value: 'disabled', payload: null, fetchedAt: Date.now() - 13 * DAY })
+      const flag = makeAgedFlag(14 * DAY)
+      getOpsFlagResult.mockResolvedValue(unreachable())
+      await flag.init({ distinctId: 'anon' })
+      expect(await flag.get()).toBe('disabled')
+      vi.setSystemTime(Date.now() + 2 * DAY)
+      expect(await flag.get()).toBe('normal')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('expires a fetched treatment once the session outlives the window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const flag = makeAgedFlag(14 * DAY)
+      getOpsFlagResult.mockResolvedValue(flagResult('disabled', null))
+      await flag.init({ distinctId: 'anon' })
+      vi.setSystemTime(Date.now() + 13 * DAY)
+      expect(await flag.get()).toBe('disabled')
+      vi.setSystemTime(Date.now() + 2 * DAY)
+      expect(await flag.get()).toBe('normal')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps an expired treatment expired when the clock moves back', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const flag = makeAgedFlag(14 * DAY)
+      getOpsFlagResult.mockResolvedValue(flagResult('disabled', null))
+      await flag.init({ distinctId: 'anon' })
+      vi.setSystemTime(Date.now() + 15 * DAY)
+      expect(await flag.get()).toBe('normal')
+      vi.setSystemTime(Date.now() - 15 * DAY)
+      expect(await flag.get()).toBe('normal')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never expires a fetched treatment for a flag without maxAgeMs', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const flag = makeAgedFlag(undefined)
+      getOpsFlagResult.mockResolvedValue(flagResult('disabled', null))
+      await flag.init({ distinctId: 'anon' })
+      vi.setSystemTime(Date.now() + 365 * DAY)
+      expect(await flag.get()).toBe('disabled')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves a flag without maxAgeMs holding an entry with no fetchedAt, as before', async () => {
+    // The beta key's stored entries have no timestamp and must keep loading exactly as today.
+    store({ value: 'disabled', payload: null })
+    expect(await offlineValue(undefined)).toBe('disabled')
+  })
+
+  it('leaves a flag without maxAgeMs holding an entry however old its fetchedAt', async () => {
+    store({ value: 'disabled', payload: null, fetchedAt: 0 })
+    expect(await offlineValue(undefined)).toBe('disabled')
+  })
+
+  it('stamps fetchedAt on an in-band and a late write, only for a flag with maxAgeMs', async () => {
+    const before = Date.now()
+    const aged = makeAgedFlag(14 * DAY)
+    getOpsFlagResult.mockResolvedValue(flagResult('disabled', null))
+    await aged.init({ distinctId: 'anon' })
+    const inBand = JSON.parse(fs.readFileSync(flagsFile(), 'utf-8'))['test-flag']
+    expect(inBand.fetchedAt).toBeGreaterThanOrEqual(before)
+
+    aged._resetForTest()
+    getOpsFlagResult.mockResolvedValue(unreachable())
+    await aged.init({ distinctId: 'anon' })
+    lateCallback()?.(flagResult('normal', null))
+    const late = JSON.parse(fs.readFileSync(flagsFile(), 'utf-8'))['test-flag']
+    expect(late).toEqual({ value: 'normal', payload: null, fetchedAt: expect.any(Number) })
+
+    fs.rmSync(flagsFile())
+    fs.rmSync(`${flagsFile()}.bak`, { force: true })
+    const plain = makeAgedFlag(undefined)
+    getOpsFlagResult.mockResolvedValue(flagResult('disabled', null))
+    await plain.init({ distinctId: 'anon' })
+    expect(JSON.parse(fs.readFileSync(flagsFile(), 'utf-8'))).toEqual({
+      'test-flag': { value: 'disabled', payload: null }
+    })
+  })
+})

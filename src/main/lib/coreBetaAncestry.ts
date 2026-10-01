@@ -16,7 +16,7 @@ import type { CoreCheckout } from './version'
 
 const FULL_SHA_RE = /^[0-9a-f]{40}$/
 
-const MAX_RESOLVED_SHAS = 16
+export const MAX_RESOLVED_SHAS = 16
 
 // All git work for one launch, which runs before spawn; SHAs not reached in time stay unresolved.
 const RESOLVE_BUDGET_MS = 10_000
@@ -98,29 +98,30 @@ async function commitAncestry(
   sha: string,
   head: string,
   complete: boolean,
-  budget: { fetches: number; stopped: boolean }
+  budget: { fetches: number; stopped: boolean; allowFetch: boolean; label: string }
 ): Promise<Relation> {
-  const base = await findMergeBaseOrNone(repoPath, sha, head)
+  const git = { noLazyFetch: !budget.allowFetch }
+  const base = await findMergeBaseOrNone(repoPath, sha, head, git)
   if (typeof base === 'string') return base.toLowerCase() === sha
   // Both commits resolved and share nothing: on a complete graph HEAD cannot contain `sha`. A shallow
   // graph may just be cut short, and the graft rule cannot hold without a common ancestor.
   if (base === null && complete) {
     console.log(
-      `[core-beta] ancestry ${sha.slice(0, 12)}: no common ancestor with HEAD in a full clone`
+      `[${budget.label}] ancestry ${sha.slice(0, 12)}: no common ancestor with HEAD in a full clone`
     )
     return false
   }
   // Absence counts only once the repository has been shown readable, by resolving HEAD itself.
-  if ((await revParseRef(repoPath, `${head}^{commit}`))?.toLowerCase() !== head) return null
-  if ((await commitPresence(repoPath, sha)) !== 'absent') return null
+  if ((await revParseRef(repoPath, `${head}^{commit}`, git))?.toLowerCase() !== head) return null
+  if ((await commitPresence(repoPath, sha, git)) !== 'absent') return null
   // A complete clone holds every ancestor of HEAD, so a commit it lacks is not one of them.
   if (complete) {
-    console.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
+    console.log(`[${budget.label}] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
     return false
   }
-  if (budget.stopped) return null
+  if (budget.stopped || !budget.allowFetch) return null
   if (budget.fetches >= MAX_FETCHES) {
-    console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
+    console.log(`[${budget.label}] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
   } else if (scheduleFetch(repoPath, sha, head)) {
     budget.fetches += 1
   }
@@ -130,17 +131,43 @@ async function commitAncestry(
 /** More boundaries than this and a shallow "not contained" is left unproven rather than paid for. */
 const MAX_SHALLOW_GRAFTS = 8
 
+/** The repository's common git dir (where `shallow`, `config` and the object store live, shared
+ *  by every worktree), or `null` when it cannot be located. Throws on an unreadable `commondir`. */
+function commonGitDir(repoPath: string): string | null {
+  const gitDir = resolveGitDir(repoPath)
+  if (gitDir === null) return null
+  const commondir = path.join(gitDir, 'commondir')
+  return fs.existsSync(commondir)
+    ? path.resolve(gitDir, fs.readFileSync(commondir, 'utf-8').trim())
+    : gitDir
+}
+
+/** Whether the repository may be a partial clone, whose git commands fetch a missing object from
+ *  the remote on demand. `true` also when that cannot be ruled out. Read from the config's
+ *  promisor settings and from promisor packs, so an `include`d config still shows up in the packs. */
+function mayLazyFetch(repoPath: string): boolean {
+  try {
+    const common = commonGitDir(repoPath)
+    if (common === null) return true
+    const config = fs.readFileSync(path.join(common, 'config'), 'utf-8')
+    // A backstop for git older than 2.44, which ignores `GIT_NO_LAZY_FETCH` (newer git and pygit2
+    // never fetch here at all). Any value git reads as true counts; `promisor = false` does not.
+    if (/^\s*promisor\s*=\s*(true|yes|on|1)\s*$/im.test(config)) return true
+    if (/^\s*partialclone\s*=\s*\S/im.test(config)) return true
+    const packDir = path.join(common, 'objects', 'pack')
+    if (!fs.existsSync(packDir)) return false
+    return fs.readdirSync(packDir).some((name) => name.endsWith('.promisor'))
+  } catch {
+    return true
+  }
+}
+
 /** The shallow clone's graft commits: `[]` for a complete clone, `null` when that could not be
  *  established, which callers must treat as "shallow, boundaries unknown". */
 function readShallowGrafts(repoPath: string): string[] | null {
-  const gitDir = resolveGitDir(repoPath)
-  if (gitDir === null) return null
   try {
-    // `shallow` is shared by all worktrees, so a linked worktree's lives in the common dir.
-    const commondir = path.join(gitDir, 'commondir')
-    const common = fs.existsSync(commondir)
-      ? path.resolve(gitDir, fs.readFileSync(commondir, 'utf-8').trim())
-      : gitDir
+    const common = commonGitDir(repoPath)
+    if (common === null) return null
     const file = path.join(common, 'shallow')
     try {
       fs.statSync(file)
@@ -166,14 +193,15 @@ function readShallowGrafts(repoPath: string): string[] | null {
 async function notContainedHoldsOnShallow(
   repoPath: string,
   sha: string,
-  grafts: readonly string[]
+  grafts: readonly string[],
+  noLazyFetch: boolean
 ): Promise<boolean> {
   if (grafts.length > MAX_SHALLOW_GRAFTS) return false
   for (const graft of grafts) {
     if (graft === sha) return false
     // `findMergeBase`, not `findMergeBaseOrNone`: here "no common ancestor" and "could not look" both
     // mean the graft is not proven an ancestor, and both must fail.
-    const base = await findMergeBase(repoPath, graft, sha)
+    const base = await findMergeBase(repoPath, graft, sha, { noLazyFetch })
     if (base?.toLowerCase() !== graft) return false
   }
   return true
@@ -183,14 +211,28 @@ export async function resolveCoreCommitState(
   repoPath: string,
   checkout: CoreCheckout,
   shas: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** `false` resolves from the local graph only: a SHA the checkout lacks stays unresolved and no
+   *  background fetch is started. For callers acting on users who never opted into anything that
+   *  reaches the network on their behalf. Its git commands run with `GIT_NO_LAZY_FETCH`, since a
+   *  partial clone otherwise fetches a missing object from inside `merge-base` itself; and a
+   *  repository that looks like a partial clone resolves nothing at all, for git too old to
+   *  honour that variable. `label` prefixes the
+   *  log lines, so one channel's ancestry work is never reported as another's. */
+  { allowFetch = true, label = 'core-beta' }: { allowFetch?: boolean; label?: string } = {}
 ): Promise<CoreCommitState> {
   if (shas.length === 0 || checkout.kind !== 'head') return NO_CORE_COMMITS
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
+  if (!allowFetch && mayLazyFetch(repoPath)) {
+    console.log(`[${label}] ancestry: partial clone, not checked without fetching`)
+    // HEAD is known; only the relations are withheld, so the records say "unresolved", not
+    // "no readable HEAD".
+    return { head, ancestry: new Map() }
+  }
   const ancestry = new Map<string, boolean>()
   const deadline = Date.now() + RESOLVE_BUDGET_MS
-  const budget = { fetches: 0, stopped: false }
+  const budget = { fetches: 0, stopped: false, allowFetch, label }
   const work = (async () => {
     for (const [index, raw] of shas.entries()) {
       if (budget.stopped || signal?.aborted || Date.now() > deadline) return
@@ -199,7 +241,7 @@ export async function resolveCoreCommitState(
       if (!FULL_SHA_RE.test(sha)) continue
       if (index >= MAX_RESOLVED_SHAS) {
         console.log(
-          `[core-beta] ancestry ${sha.slice(0, 12)}: not checked (the payload names more than ${MAX_RESOLVED_SHAS} commits), so entries that need it do not match`
+          `[${label}] ancestry ${sha.slice(0, 12)}: not checked (the payload names more than ${MAX_RESOLVED_SHAS} commits), so entries that need it do not match`
         )
         continue
       }
@@ -209,18 +251,18 @@ export async function resolveCoreCommitState(
       try {
         related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
       } catch (err) {
-        console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+        console.warn(`[${label}] ancestry check failed for ${sha.slice(0, 12)}:`, err)
       }
       if (related === false && grafts?.length !== 0) {
         const provable =
           grafts !== null &&
-          (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
+          (await notContainedHoldsOnShallow(repoPath, sha, grafts, !allowFetch).catch(() => false))
         if (!provable) related = null
       }
       // A launch that has moved on takes no late answers: the map it was handed must not change.
       if (budget.stopped) return
       console.log(
-        `[core-beta] ancestry ${sha.slice(0, 12)}: ${
+        `[${label}] ancestry ${sha.slice(0, 12)}: ${
           related === null
             ? 'unresolved (not provable on this checkout, so entries that need it do not match)'
             : related
@@ -244,7 +286,7 @@ export async function resolveCoreCommitState(
     if (signal?.aborted) onAbort()
   })
   // Abandoned when interrupted, so it must never be left with an unhandled rejection.
-  void work.catch((err: unknown) => console.warn('[core-beta] ancestry resolution failed:', err))
+  void work.catch((err: unknown) => console.warn(`[${label}] ancestry resolution failed:`, err))
   try {
     // Cannot reject: a failure inside `work` is logged above and leaves the map partial, which is
     // the fail-closed answer. A beta lookup must never fail the launch.
@@ -256,7 +298,7 @@ export async function resolveCoreCommitState(
       interrupted
     ])
     if (outcome === 'interrupted') {
-      console.log('[core-beta] ancestry: stopped early; SHAs not reached stay unresolved')
+      console.log(`[${label}] ancestry: stopped early; SHAs not reached stay unresolved`)
     }
   } finally {
     budget.stopped = true

@@ -919,7 +919,8 @@ export function isAncestorOf(
 export function findMergeBase(
   repoPath: string,
   ref1: string,
-  ref2: string
+  ref2: string,
+  opts?: LocalGitOptions
 ): Promise<string | undefined> {
   if (isPygit2Configured()) {
     return runPygit2(['merge-base', repoPath, ref1, ref2]).then(({ exitCode, stdout }) => {
@@ -936,7 +937,8 @@ export function findMergeBase(
         cwd: repoPath,
         encoding: 'utf-8',
         windowsHide: true,
-        timeout: LOCAL_GIT_TIMEOUT_MS
+        timeout: LOCAL_GIT_TIMEOUT_MS,
+        env: localGitEnv(opts)
       },
       (error, stdout) => {
         if (error) {
@@ -955,7 +957,11 @@ export function findMergeBase(
  * asynchronously (local operation, no network).  Returns the SHA on success,
  * undefined on error.
  */
-export function revParseRef(repoPath: string, ref: string): Promise<string | undefined> {
+export function revParseRef(
+  repoPath: string,
+  ref: string,
+  opts?: LocalGitOptions
+): Promise<string | undefined> {
   if (isPygit2Configured()) {
     return runPygit2(['rev-parse', repoPath, ref]).then(({ exitCode, stdout }) => {
       if (exitCode !== 0) return undefined
@@ -971,7 +977,8 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
         cwd: repoPath,
         encoding: 'utf-8',
         windowsHide: true,
-        timeout: LOCAL_GIT_TIMEOUT_MS
+        timeout: LOCAL_GIT_TIMEOUT_MS,
+        env: localGitEnv(opts)
       },
       (error, stdout) => {
         if (error) {
@@ -985,6 +992,18 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
   })
 }
 
+/** Options for the read-only commit-graph lookups below. */
+export interface LocalGitOptions {
+  /** Forbid git from fetching a missing object on demand (`GIT_NO_LAZY_FETCH`, git 2.44+), which
+   *  a partial clone otherwise does from inside ordinary commands like `merge-base`. The pygit2
+   *  path never fetches, so this only reaches the git CLI. */
+  noLazyFetch?: boolean
+}
+
+function localGitEnv(opts: LocalGitOptions | undefined): NodeJS.ProcessEnv | undefined {
+  return opts?.noLazyFetch ? { ...process.env, GIT_NO_LAZY_FETCH: '1' } : undefined
+}
+
 /** Exit code `git_operations.py merge-base` uses when the commits share no ancestor. */
 const MERGE_BASE_NONE = 5
 
@@ -995,7 +1014,8 @@ const MERGE_BASE_NONE = 5
 export function findMergeBaseOrNone(
   repoPath: string,
   ref1: string,
-  ref2: string
+  ref2: string,
+  opts?: LocalGitOptions
 ): Promise<string | null | undefined> {
   if (isPygit2Configured()) {
     return runPygit2(['merge-base', repoPath, ref1, ref2]).then(({ exitCode, stdout }) => {
@@ -1007,7 +1027,13 @@ export function findMergeBaseOrNone(
     execFile(
       'git',
       ['merge-base', ref1, ref2],
-      { cwd: repoPath, encoding: 'utf-8', windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      {
+        cwd: repoPath,
+        encoding: 'utf-8',
+        windowsHide: true,
+        timeout: LOCAL_GIT_TIMEOUT_MS,
+        env: localGitEnv(opts)
+      },
       (error, stdout) => {
         // `git merge-base` exits 1 for "no merge base" and 128 for a bad ref or repository.
         if (error) {
@@ -1030,7 +1056,8 @@ const HAS_COMMIT_ABSENT = 3
  */
 export function commitPresence(
   repoPath: string,
-  sha: string
+  sha: string,
+  opts?: LocalGitOptions
 ): Promise<'present' | 'absent' | 'unknown'> {
   if (isPygit2Configured()) {
     return runPygit2(['has-commit', repoPath, sha]).then(({ exitCode }) =>
@@ -1041,7 +1068,7 @@ export function commitPresence(
     execFile(
       'git',
       ['rev-parse', '--verify', '--quiet', '--end-of-options', `${sha}^{commit}`],
-      { cwd: repoPath, windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      { cwd: repoPath, windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS, env: localGitEnv(opts) },
       (error) => {
         if (!error) return resolve('present')
         // `--verify --quiet` exits 1 for "not a valid object name" and 128 for real failures.

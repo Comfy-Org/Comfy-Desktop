@@ -68,8 +68,48 @@ const launchHarness = vi.hoisted(() => ({
   /** A live Desktop port lock on a busy port (the pid it names); null = none. */
   portLockPid: null as null | number,
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
-  killExits: true
+  killExits: true,
+  /** The rollout key as fetched; `null` = the real fallback (nothing fetched). */
+  rollout: null as null | CoreRolloutState,
+  rolloutThrows: false,
+  /** Makes per-arg selection throw, inside `buildLaunchArgs`. */
+  rolloutSelectThrows: false,
+  /** What `getAppVersion` reports: a dev checkout's real one is a describe string. */
+  appVersion: '1.1.6',
+  /** Every `coreRolloutEligibility` call's launch facts, in order. */
+  rolloutFacts: [] as CoreRolloutLaunchFacts[]
 }))
+
+const ancestryCalls = vi.hoisted(() => [] as unknown[][])
+vi.mock('../../coreBetaAncestry', async (importOriginal) => {
+  const actual = await importOriginal<typeof CoreBetaAncestryModule>()
+  return {
+    ...actual,
+    resolveCoreCommitState: (...args: Parameters<typeof actual.resolveCoreCommitState>) => {
+      ancestryCalls.push(args)
+      return actual.resolveCoreCommitState(...args)
+    }
+  }
+})
+
+vi.mock('../../coreRolloutGrants', async (importOriginal) => {
+  const actual = await importOriginal<typeof CoreRolloutGrantsModule>()
+  return {
+    ...actual,
+    getCoreRolloutAsync: async () => {
+      if (launchHarness.rolloutThrows) throw new Error('rollout store unreadable')
+      return launchHarness.rollout ?? actual.getCoreRolloutAsync()
+    },
+    selectCoreRolloutArgs: (...args: Parameters<typeof actual.selectCoreRolloutArgs>) => {
+      if (launchHarness.rolloutSelectThrows) throw new Error('selection exploded')
+      return actual.selectCoreRolloutArgs(...args)
+    },
+    coreRolloutEligibility: (...args: Parameters<typeof actual.coreRolloutEligibility>) => {
+      launchHarness.rolloutFacts.push(args[1])
+      return actual.coreRolloutEligibility(...args)
+    }
+  }
+})
 
 vi.mock('../shared', async (importOriginal) => {
   const actual = await importOriginal<typeof SharedModule>()
@@ -96,6 +136,7 @@ vi.mock('../shared', async (importOriginal) => {
       }
     }),
     spawnProcess: (...args: unknown[]) => launchHarness.spawn?.(...args),
+    getAppVersion: () => launchHarness.appVersion,
     waitForPort: (...args: Parameters<typeof actual.waitForPort>) =>
       launchHarness.waitForPort ? launchHarness.waitForPort() : actual.waitForPort(...args),
     getComfyFeatureFlagRegistry: async () => {
@@ -202,6 +243,7 @@ import {
   emitCoreBetaRecords,
   emitCoreBetaTelemetry,
   handleLaunch,
+  resolveRolloutLaunch,
   isCrashedExit,
   launchedCoreCommit,
   onProcessTerminated,
@@ -244,6 +286,10 @@ import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
+import type * as CoreRolloutGrantsModule from '../../coreRolloutGrants'
+import type * as CoreBetaAncestryModule from '../../coreBetaAncestry'
+import { coreRolloutEligibility, parseCoreRollout } from '../../coreRolloutGrants'
+import type { CoreRolloutLaunchFacts, CoreRolloutState } from '../../coreRolloutGrants'
 import type * as HardwareTapModule from '../../hardwareTap'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
@@ -1063,6 +1109,259 @@ describe('emitCoreBetaRecords', () => {
   })
 })
 
+const ROLLOUT_ON: CoreRolloutState = parseCoreRollout(true, {
+  grants: [
+    {
+      arg: '--enable-assets',
+      epoch: 4,
+      windows: [{ min_core_version: '0.3.80' }],
+      blockers: [{ id: 'fixed', fixed_in: '0.3.80' }]
+    }
+  ],
+  min_desktop_version: '1.1.6',
+  include_telemetry_off: true,
+  include_beta_off_with_telemetry: true
+})
+
+const rolloutFacts = (over: Partial<CoreRolloutLaunchFacts> = {}): CoreRolloutLaunchFacts => ({
+  appVersion: '1.1.6',
+  sourceId: 'standalone',
+  beta: false,
+  consent: 'denied',
+  ...over
+})
+
+describe('buildLaunchArgs rollout injection', () => {
+  const withRollout = (
+    over: Parameters<typeof build>[0],
+    facts: Partial<CoreRolloutLaunchFacts>,
+    state: CoreRolloutState = ROLLOUT_ON
+  ): ReturnType<typeof buildLaunchArgs> =>
+    buildLaunchArgs({
+      prefixArgs: PREFIX,
+      userArgs: over.userArgs ?? [],
+      desktopFlagArgs: DESKTOP_FLAGS,
+      schema: over.schema,
+      betaFlags: over.betaFlags ?? [ASSETS_GRANT],
+      coreVersion: '0.3.81',
+      coreVersionExact: true,
+      coreVersionVerified: true,
+      coreVersionCurrent: true,
+      coreCommits: NO_CORE_COMMITS,
+      betaEnabled: over.betaEnabled ?? true,
+      rollout: {
+        eligibility: coreRolloutEligibility(state, rolloutFacts(facts)),
+        commits: NO_CORE_COMMITS
+      }
+    })
+
+  it.each([
+    ['beta on, rollout served', true, ROLLOUT_ON],
+    ['beta on, rollout off', true, parseCoreRollout(false, null)],
+    ['beta off, rollout off', false, parseCoreRollout(false, null)]
+  ] as const)('leaves every beta output byte-identical (%s)', (_, betaEnabled, state) => {
+    const over = {
+      userArgs: ['--listen'],
+      schema: schemaOf('enable-assets', 'listen'),
+      betaEnabled
+    }
+    const without = build(over)
+    const withIt = withRollout(over, { beta: betaEnabled }, state)
+
+    expect(withIt.args).toEqual(without.args)
+    const { rollout, ...betaFields } = withIt.beta
+    const { rollout: noRollout, ...baseline } = without.beta
+    expect(betaFields).toEqual(baseline)
+    expect(noRollout.logRecords).toEqual([])
+    expect(rollout.applied).toEqual([])
+  })
+
+  it('injects the rollout arg after the beta args and before the user args', () => {
+    const built = withRollout(
+      { userArgs: ['--listen'], schema: schemaOf('enable-assets', 'listen'), betaEnabled: false },
+      {}
+    )
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets', '--listen'])
+    expect(built.beta.applied).toEqual([])
+    expect(built.beta.logRecords).toEqual([])
+    expect(built.beta.rollout).toEqual({
+      applied: [{ arg: '--enable-assets', epoch: 4 }],
+      logRecords: [
+        '[core-rollout] --enable-assets granted (cohort telemetry-off, epoch 4, blockers clear)\n'
+      ]
+    })
+  })
+
+  it('withholds the rollout arg the running core does not accept, naming the schema gate', () => {
+    const built = withRollout(
+      { userArgs: ['--listen'], schema: schemaOf('listen'), betaEnabled: false },
+      {}
+    )
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--listen'])
+    expect(built.beta.droppedUnsupported).toEqual([])
+    expect(built.beta.rollout).toEqual({
+      applied: [],
+      logRecords: [
+        '[core-rollout] --enable-assets withheld at schema: not supported by this core\n'
+      ]
+    })
+  })
+
+  it('applies each granted arg the core accepts, and names the schema gate for the rest', () => {
+    const agentAndAssets = parseCoreRollout(true, {
+      grants: [
+        {
+          arg: '--enable-agent',
+          epoch: 2,
+          windows: [{ min_core_version: '0.3.80' }],
+          blockers: [{ id: 'floor', fixed_in: '0.3.80' }]
+        },
+        {
+          arg: '--enable-assets',
+          epoch: 4,
+          windows: [{ min_core_version: '0.3.80' }],
+          blockers: [{ id: 'fixed', fixed_in: '0.3.80' }]
+        }
+      ],
+      min_desktop_version: '1.1.6',
+      include_telemetry_off: true,
+      include_beta_off_with_telemetry: true
+    })
+    const built = withRollout(
+      { userArgs: ['--listen'], schema: schemaOf('enable-assets', 'listen'), betaEnabled: false },
+      {},
+      agentAndAssets
+    )
+
+    expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets', '--listen'])
+    expect(built.beta.rollout).toEqual({
+      applied: [{ arg: '--enable-assets', epoch: 4 }],
+      logRecords: [
+        '[core-rollout] --enable-agent withheld at schema: not supported by this core\n',
+        '[core-rollout] --enable-assets granted (cohort telemetry-off, epoch 4, blockers clear)\n'
+      ]
+    })
+  })
+
+  it('never doubles or contradicts an arg the beta key selected', () => {
+    // Unreachable through eligibility (disjoint cohorts); built by hand to pin the defence.
+    const eligibility = coreRolloutEligibility(ROLLOUT_ON, rolloutFacts())
+    const built = buildLaunchArgs({
+      prefixArgs: PREFIX,
+      userArgs: [],
+      desktopFlagArgs: DESKTOP_FLAGS,
+      schema: schemaOf('enable-assets'),
+      betaFlags: [ASSETS_GRANT],
+      coreVersion: '0.3.81',
+      coreVersionExact: true,
+      coreVersionVerified: true,
+      coreVersionCurrent: true,
+      coreCommits: NO_CORE_COMMITS,
+      betaEnabled: true,
+      rollout: { eligibility, commits: NO_CORE_COMMITS }
+    })
+
+    expect(built.args.filter((a) => a === '--enable-assets')).toHaveLength(1)
+    expect(built.beta.applied).toEqual([ASSETS_GRANT])
+    expect(built.beta.rollout.applied).toEqual([])
+    expect(built.beta.rollout.logRecords[0]).toContain('withheld at launch-args')
+  })
+
+  it('keeps the beta grants, desktop flags and user args when rollout selection throws', () => {
+    launchHarness.rolloutSelectThrows = true
+    try {
+      const built = withRollout(
+        { userArgs: ['--listen'], schema: schemaOf('enable-assets', 'listen'), betaEnabled: true },
+        { beta: false }
+      )
+      expect(built.args).toEqual([...PREFIX, ...DESKTOP_FLAGS, '--enable-assets', '--listen'])
+      expect(built.beta.applied).toEqual([ASSETS_GRANT])
+      expect(built.beta.rollout).toEqual({
+        applied: [],
+        logRecords: ['[core-rollout] withheld at error: Error: selection exploded\n']
+      })
+    } finally {
+      launchHarness.rolloutSelectThrows = false
+    }
+  })
+
+  it('makes no rollout decision at all when given none', () => {
+    const built = build({ schema: schemaOf('enable-assets'), betaEnabled: false })
+    expect(built.beta.rollout).toEqual({ applied: [], logRecords: [] })
+  })
+})
+
+describe('resolveRolloutLaunch', () => {
+  const COMMIT_ROLLOUT = parseCoreRollout(true, {
+    grants: [
+      {
+        arg: '--enable-assets',
+        epoch: 1,
+        windows: [{ commit_ranges: [['a'.repeat(40), null]] }],
+        blockers: [{ id: 'x', fix_commits: ['f'.repeat(40)] }]
+      }
+    ],
+    min_desktop_version: '1.1.6',
+    include_telemetry_off: true,
+    include_beta_off_with_telemetry: true
+  })
+  const input = (betaState: boolean | 'unknown', userArgs: string[] = []) => ({
+    betaState,
+    sourceId: 'standalone',
+    userArgs,
+    comfyuiDir: os.tmpdir(),
+    checkout: { kind: 'head' as const, commit: 'c'.repeat(40) },
+    signal: new AbortController().signal
+  })
+
+  beforeEach(() => {
+    ancestryCalls.length = 0
+    launchHarness.rollout = COMMIT_ROLLOUT
+    launchHarness.rolloutThrows = false
+    launchHarness.appVersion = '1.1.6'
+    telemetry.setConsentState('denied')
+  })
+  afterEach(() => {
+    launchHarness.rollout = null
+    telemetry.setConsentState('undecided')
+  })
+
+  it('relates the payload commits from the local graph only, never fetching', async () => {
+    const { eligibility } = await resolveRolloutLaunch(input(false))
+
+    expect(eligibility.eligible).toBe(true)
+    expect(ancestryCalls).toHaveLength(1)
+    expect(ancestryCalls[0]![2]).toEqual(['a'.repeat(40), 'f'.repeat(40)])
+    expect(ancestryCalls[0]![4]).toEqual({ allowFetch: false, label: 'core-rollout' })
+  })
+
+  it('relates no commits for a grant the user has already decided', async () => {
+    const { eligibility } = await resolveRolloutLaunch(input(false, ['--disable-assets']))
+
+    expect(eligibility.eligible).toBe(true)
+    expect(ancestryCalls.map((call) => call[2])).toEqual([[]])
+  })
+
+  it('does no git work for a launch the cheap gates already refused', async () => {
+    const { eligibility } = await resolveRolloutLaunch(input(true))
+
+    expect(eligibility).toMatchObject({ eligible: false, gate: 'cohort' })
+    expect(ancestryCalls).toHaveLength(0)
+  })
+
+  it('turns a throw into a refusal for the rollout alone', async () => {
+    launchHarness.rolloutThrows = true
+
+    expect((await resolveRolloutLaunch(input(false))).eligibility).toEqual({
+      eligible: false,
+      gate: 'error',
+      reason: 'Error: rollout store unreadable'
+    })
+  })
+})
+
 describe('core beta report placement', () => {
   const HARNESS_GRANT = { arg: '--enable-assets', minCoreVersion: '0.3.80' }
   let installDir = ''
@@ -1112,6 +1411,9 @@ describe('core beta report placement', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
+    launchHarness.rollout = null
+    launchHarness.rolloutThrows = false
+    launchHarness.rolloutFacts = []
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
     // Both halves of the activation-notice state: the in-process pending queue and the
@@ -1171,6 +1473,70 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain('[core-beta] --enable-assets')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.applied')
     expect(reportedEvents()).toContain('comfy.desktop.core_beta.opt_state')
+  })
+
+  it('hands the rollout the beta toggle, its consent state and the install source', async () => {
+    launchHarness.betaEnabled = false
+    telemetry.setConsentState('denied')
+    try {
+      await handleLaunch(ctxFor('harness-rollout-facts'))
+    } finally {
+      telemetry.setConsentState('undecided')
+    }
+
+    expect(launchHarness.rolloutFacts).toEqual([
+      expect.objectContaining({
+        beta: false,
+        consent: 'denied',
+        sourceId: 'harness-source'
+      })
+    ])
+  })
+
+  it('hands the rollout an unknown beta toggle when the setting cannot be resolved', async () => {
+    // The beta path reads that failure as "off" and carries on; for the rollout it means "might
+    // be a beta user", which the cohort gate refuses.
+    launchHarness.betaEnabledThrows = true
+
+    await handleLaunch(ctxFor('harness-rollout-beta-unknown'))
+
+    expect(launchHarness.rolloutFacts.map((f) => f.beta)).toEqual(['unknown'])
+    expect(
+      coreRolloutEligibility(ROLLOUT_ON, {
+        ...launchHarness.rolloutFacts[0]!,
+        sourceId: 'standalone',
+        consent: 'denied'
+      })
+    ).toMatchObject({ eligible: false, gate: 'cohort' })
+  })
+
+  it('writes the rollout decision to the launch output beside the beta records', async () => {
+    launchHarness.rollout = ROLLOUT_ON
+
+    const res = await handleLaunch(ctxFor('harness-rollout-record'))
+
+    expect(res.ok).toBe(true)
+    const output = sent.join('')
+    expect(output).toContain('[core-beta] --enable-assets')
+    // The harness launches with beta on, so the payload-wide cohort gate answers for every arg.
+    expect(output).toContain(
+      '[core-rollout] withheld at cohort: beta features are on (the beta key governs this launch)\n'
+    )
+    // The beta grant is untouched: injected once, by the beta key.
+    expect(spawnArgs.filter((a) => a === '--enable-assets')).toHaveLength(1)
+  })
+
+  it('keeps the beta grants when the rollout path throws', async () => {
+    launchHarness.rolloutThrows = true
+
+    const res = await handleLaunch(ctxFor('harness-rollout-throws'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain('--enable-assets')
+    expect(spawnArgs).toContain('--listen')
+    expect(sent.join('')).toContain(
+      '[core-rollout] withheld at error: Error: rollout store unreadable\n'
+    )
   })
 
   function gitInitComfyUI(): string {

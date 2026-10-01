@@ -50,6 +50,7 @@ import {
   getComfyArgsSchema,
   filterUnsupportedArgs,
   getComfyFeatureFlagRegistry,
+  getAppVersion,
   _broadcastToRenderer
 } from '../shared'
 import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
@@ -118,6 +119,15 @@ import { coreGateVersion, coreRecordCurrent, coreSemver, formatComfyVersion } fr
 import type { CoreCheckout } from '../../version'
 import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
+import {
+  coreRolloutEligibility,
+  coreRolloutArgRecord,
+  coreRolloutRecords,
+  eligibleRolloutShas,
+  getCoreRolloutAsync,
+  selectCoreRolloutArgs
+} from '../../coreRolloutGrants'
+import type { CoreRolloutEligibility } from '../../coreRolloutGrants'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
@@ -198,7 +208,22 @@ export interface CoreBetaLaunch {
    *  the report site so `opt_state` still tells the truth on the paths that never reach arg
    *  assembly — schema discovery failing must not make an opted-in user report as opted out. */
   readonly optedIn: boolean
+  /** The non-beta rollout's share of this launch, kept apart from the beta fields above so
+   *  nothing that reports or announces beta grants ever sees it. */
+  readonly rollout: CoreRolloutLaunch
 }
+
+export interface CoreRolloutLaunch {
+  /** Args the rollout put on the command line (after the schema filter), each with the epoch of
+   *  the grant behind it: exactly what anything that must take the rollout back off a launch has
+   *  to remove, per arg. */
+  readonly applied: readonly { readonly arg: string; readonly epoch: number }[]
+  /** `[core-rollout]` records: one for a payload-wide refusal, else one per arg the payload names,
+   *  each naming the decision and the first gate that refused it. */
+  readonly logRecords: readonly string[]
+}
+
+const NO_ROLLOUT: CoreRolloutLaunch = { applied: [], logRecords: [] }
 
 /** No grants resolved: either the install opted out, or the launch never reached arg assembly
  *  (schema discovery unavailable). `optedIn` is still the real toggle in both cases. */
@@ -208,7 +233,8 @@ function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
     droppedUnsupported: [],
     logRecords: [],
     coreVersion: null,
-    optedIn
+    optedIn,
+    rollout: NO_ROLLOUT
   }
 }
 
@@ -246,6 +272,8 @@ export function buildLaunchArgs(input: {
   coreVersionCurrent: boolean
   coreCommits: CoreCommitState
   betaEnabled: boolean
+  /** Absent: no rollout decision is made at all (no args, no record). */
+  rollout?: { eligibility: CoreRolloutEligibility; commits: CoreCommitState }
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
@@ -271,8 +299,15 @@ export function buildLaunchArgs(input: {
   )
   const applied = selected.filter((grant) => supported.has(grant.arg))
   const betaArgs = applied.map((grant) => grant.arg)
+  const rollout = selectRolloutLaunchContained(input, [...userArgs, ...betaArgs], schema)
   return {
-    args: [...prefixArgs, ...desktopFlagArgs, ...betaArgs, ...filtered],
+    args: [
+      ...prefixArgs,
+      ...desktopFlagArgs,
+      ...betaArgs,
+      ...rollout.applied.map((a) => a.arg),
+      ...filtered
+    ],
     beta: {
       applied,
       droppedUnsupported: selected
@@ -286,7 +321,100 @@ export function buildLaunchArgs(input: {
           .map((grant) => `[core-beta] ${grant.arg} withheld: not supported by this core\n`)
       ],
       coreVersion,
-      optedIn: input.betaEnabled
+      optedIn: input.betaEnabled,
+      rollout
+    }
+  }
+}
+
+/** Runs after beta selection, against the user's args plus what beta granted, through the same
+ *  schema filter. */
+/** Same containment as `resolveRolloutLaunch`: this runs inside `buildLaunchArgs`, so a throw
+ *  here would otherwise cost the launch its beta grants, desktop flags and arg filtering. */
+function selectRolloutLaunchContained(
+  input: Parameters<typeof buildLaunchArgs>[0],
+  presentArgs: readonly string[],
+  schema: ComfyArgsSchema
+): CoreRolloutLaunch {
+  try {
+    return selectRolloutLaunch(input, presentArgs, schema)
+  } catch (err) {
+    return {
+      ...NO_ROLLOUT,
+      logRecords: [`[core-rollout] withheld at error: ${String(err).slice(0, 200)}\n`]
+    }
+  }
+}
+
+function selectRolloutLaunch(
+  input: Parameters<typeof buildLaunchArgs>[0],
+  presentArgs: readonly string[],
+  schema: ComfyArgsSchema
+): CoreRolloutLaunch {
+  if (!input.rollout) return NO_ROLLOUT
+  const decision = selectCoreRolloutArgs(
+    input.rollout.eligibility,
+    {
+      semver: input.coreVersion,
+      exact: input.coreVersionExact,
+      verified: input.coreVersionVerified,
+      current: input.coreVersionCurrent
+    },
+    input.rollout.commits,
+    presentArgs
+  )
+  if (!decision.evaluated) return { ...NO_ROLLOUT, logRecords: coreRolloutRecords(decision) }
+  const applied: { arg: string; epoch: number }[] = []
+  const logRecords: string[] = []
+  for (const arg of decision.args) {
+    if (arg.granted && filterUnsupportedArgs([arg.arg], schema).length === 0) {
+      logRecords.push(
+        coreRolloutArgRecord(
+          { arg: arg.arg, granted: false, gate: 'schema', reason: 'not supported by this core' },
+          decision.cohort
+        )
+      )
+      continue
+    }
+    if (arg.granted) applied.push({ arg: arg.arg, epoch: arg.epoch })
+    logRecords.push(coreRolloutArgRecord(arg, decision.cohort))
+  }
+  return { applied, logRecords }
+}
+
+/** The rollout's pre-assembly work for one launch. Contained: anything it throws becomes a
+ *  refusal for the rollout alone, so it can never cost the launch its beta grants or its
+ *  schema filtering, which share the surrounding discovery `try`. */
+export async function resolveRolloutLaunch(input: {
+  betaState: boolean | 'unknown'
+  sourceId: string
+  userArgs: readonly string[]
+  comfyuiDir: string
+  checkout: CoreCheckout
+  signal: AbortSignal
+}): Promise<{ eligibility: CoreRolloutEligibility; rolloutCommits: CoreCommitState }> {
+  try {
+    const eligibility = coreRolloutEligibility(await getCoreRolloutAsync(), {
+      appVersion: getAppVersion(),
+      sourceId: input.sourceId,
+      beta: input.betaState,
+      consent: telemetry.getConsentState()
+    })
+    // Local graph only: this cohort never opted into anything reaching the network for it.
+    const rolloutCommits = eligibility.eligible
+      ? await resolveCoreCommitState(
+          input.comfyuiDir,
+          input.checkout,
+          eligibleRolloutShas(eligibility, input.userArgs),
+          input.signal,
+          { allowFetch: false, label: 'core-rollout' }
+        )
+      : NO_CORE_COMMITS
+    return { eligibility, rolloutCommits }
+  } catch (err) {
+    return {
+      eligibility: { eligible: false, gate: 'error', reason: String(err).slice(0, 200) },
+      rolloutCommits: NO_CORE_COMMITS
     }
   }
 }
@@ -760,8 +888,14 @@ async function runLaunch(
   // assembly, so user args are still filtered against the running core's schema — which is what
   // keeps flags an older core cannot parse from reaching it.
   let betaEnabled = false
+  // The rollout reads the same resolution as a tri-state: a failure here leaves beta off (above,
+  // unchanged), but for the rollout it means "might be a beta user", which must not be selected.
+  // An unreadable settings file resolves to false rather than throwing; that misreads a beta user
+  // as non-beta, which only ever subjects them to the rollout's stricter gates.
+  let betaState: boolean | 'unknown' = 'unknown'
   try {
     betaEnabled = settings.resolveBetaFeaturesEnabled()
+    betaState = betaEnabled
   } catch (err) {
     console.warn('[core-beta] beta setting resolution failed:', err)
   }
@@ -960,7 +1094,7 @@ async function runLaunch(
   function reportCoreBetaLaunch(logStream: WriteStream, sendOutput: (text: string) => void): void {
     if (coreBetaReported) return
     coreBetaReported = true
-    emitCoreBetaRecords(coreBeta.logRecords, {
+    emitCoreBetaRecords([...coreBeta.logRecords, ...coreBeta.rollout.logRecords], {
       writeLog: (text) => writeLog(logStream, text),
       sendOutput
     })
@@ -1207,6 +1341,14 @@ async function runLaunch(
               abort.signal
             )
           : NO_CORE_COMMITS
+        const { eligibility, rolloutCommits } = await resolveRolloutLaunch({
+          betaState,
+          sourceId: inst.sourceId,
+          userArgs,
+          comfyuiDir,
+          checkout,
+          signal: abort.signal
+        })
         // The gate's version, not the display label: the `[core-beta]` log line and the
         // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
         // an install whose label is unverified they name the lower ancestry-proven release.
@@ -1222,7 +1364,8 @@ async function runLaunch(
           coreVersionVerified: gate.verified,
           coreVersionCurrent: coreRecordCurrent(inst, checkout),
           coreCommits,
-          betaEnabled
+          betaEnabled,
+          rollout: { eligibility, commits: rolloutCommits }
         })
         launchCmd.args = built.args
         coreBeta = built.beta
