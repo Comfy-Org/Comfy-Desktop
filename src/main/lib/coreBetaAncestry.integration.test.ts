@@ -243,6 +243,16 @@ describe('resolveCoreCommitState against a real repository', () => {
       // is the only remaining sign, and git still fetches on demand.
       const { dir, head } = partialClone('partial-promisor-1')
       git(dir, 'config', 'remote.origin.promisor', '1')
+      // Some git versions also write `extensions.partialClone`, which would satisfy the check on
+      // its own; git 2.55 does not. Drop it where present so the promisor line is the only sign.
+      try {
+        git(dir, 'config', '--unset', 'extensions.partialClone')
+      } catch {
+        // Absent: nothing to isolate.
+      }
+      expect(fs.readFileSync(path.join(dir, '.git', 'config'), 'utf-8')).not.toMatch(
+        /partialclone\s*=/i
+      )
       const packDir = path.join(dir, '.git', 'objects', 'pack')
       for (const name of fs.readdirSync(packDir)) {
         if (name.endsWith('.promisor')) fs.rmSync(path.join(packDir, name))
