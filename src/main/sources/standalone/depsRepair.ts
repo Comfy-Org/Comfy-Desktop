@@ -34,18 +34,20 @@ import type { InstallationRecord } from '../../installations'
  */
 
 /**
- * The one record a repair leaves behind, for the packages it could not make
- * satisfied - whether uv failed on them or accepted them and they still read
- * as unsatisfied. A failure is often transient (offline, index outage), so the
- * repair retries on later launches; after MAX_FAILED_ATTEMPTS for the same
- * packages it is suppressed until ComfyUI's requirements or Desktop's version
- * change, and every suppressed launch says so. Cleared once nothing is left.
+ * The one record a repair leaves behind: per package it could not make
+ * satisfied - whether uv failed on it or accepted it and it still reads as
+ * unsatisfied - how many attempts it has had. A failure is often transient
+ * (offline, index outage), so the repair retries on later launches; once a
+ * package has had MAX_FAILED_ATTEMPTS it is skipped, and when every remaining
+ * package is skipped the repair is suppressed and every launch says so. A new
+ * set of requirement files or a new Desktop version starts the counts afresh.
+ * Counted per package, so another package going missing neither resets nor
+ * inherits a count. Cleared once nothing is left.
  */
 export interface DepsRepairMarker {
   reqsHash: string
   appVersion: string
-  packages: string[]
-  attempts: number
+  attempts: Record<string, number>
 }
 
 /** ComfyUI requirements that depend on torch unconditionally (per their
@@ -152,23 +154,46 @@ function torchPresentIn(installation: InstallationRecord): boolean {
   return sitePackages !== null && readInstalledDists(sitePackages).has('torch')
 }
 
+/** Attempts so far per package, for these requirement files and this Desktop
+ *  version; empty when the marker belongs to other ones. */
+function priorAttempts(
+  installation: InstallationRecord,
+  reqsHash: string,
+  appVersion: string
+): Record<string, number> {
+  const marker = installation.depsRepairMarker as DepsRepairMarker | null | undefined
+  return marker &&
+    marker.reqsHash === reqsHash &&
+    marker.appVersion === appVersion &&
+    marker.attempts !== null &&
+    typeof marker.attempts === 'object'
+    ? marker.attempts
+    : {}
+}
+
+const isSpent = (attempts: Record<string, number>, name: string): boolean =>
+  (attempts[name] ?? 0) >= MAX_FAILED_ATTEMPTS
+
 function suppressed(
   installation: InstallationRecord,
   drift: RequirementsDrift,
   appVersion: string
 ): boolean {
-  const marker = installation.depsRepairMarker as DepsRepairMarker | null | undefined
-  if (
-    !marker ||
-    marker.reqsHash !== drift.reqsHash ||
-    marker.appVersion !== appVersion ||
-    marker.attempts < MAX_FAILED_ATTEMPTS ||
-    !Array.isArray(marker.packages)
-  ) {
-    return false
-  }
+  const attempts = priorAttempts(installation, drift.reqsHash, appVersion)
   const relevant = withoutHeldBack(drift.unsatisfied, torchPresentIn(installation))
-  return relevant.length > 0 && relevant.every((r) => marker.packages.includes(r.name))
+  return relevant.length > 0 && relevant.every((r) => isSpent(attempts, r.name))
+}
+
+/** A marker left from an earlier repair is dropped once nothing is
+ *  unsatisfied, so a package that goes missing again later gets a fresh
+ *  budget. */
+export async function clearSatisfiedMarker(
+  installation: InstallationRecord,
+  update: (data: Record<string, unknown>) => Promise<unknown>
+): Promise<void> {
+  if (!installation.depsRepairMarker) return
+  const drift = detectInstallDrift(installation)
+  if (drift && drift.unsatisfied.length === 0) await update({ depsRepairMarker: null })
 }
 
 /** Launch-log note when drift remains but the repair is suppressed, so it is
@@ -202,8 +227,7 @@ export function reportPausedRepair(
     outcome: 'paused',
     adopted: installation.adopted === true,
     variant: (installation.variant as string | undefined) ?? null,
-    packages: marker.packages,
-    attempts: marker.attempts
+    packages: Object.keys(marker.attempts)
   })
   return true
 }
@@ -286,8 +310,8 @@ export async function repairDeps(
   // With no torch installed there is nothing to pin, so a torch-dependent
   // requirement could pull a CPU torch. Hold it back - never recorded as
   // failed - so it installs on a later launch once torch is back.
-  const toInstall = withoutHeldBack(drift.unsatisfied, torchInstalled)
-  const heldBack = drift.unsatisfied.filter((r) => !toInstall.includes(r))
+  const installable = withoutHeldBack(drift.unsatisfied, torchInstalled)
+  const heldBack = drift.unsatisfied.filter((r) => !installable.includes(r))
   const heldBackNames = new Set(heldBack.map((r) => r.name))
   if (heldBack.length > 0) {
     tools.sendOutput?.(
@@ -295,9 +319,22 @@ export async function repairDeps(
         `in this environment, so it could pull in the wrong PyTorch build.\n`
     )
   }
-  if (toInstall.length === 0) {
+  if (installable.length === 0) {
     report('torch_missing', { held_back: heldBack.map((r) => r.name) })
     return 'torch_missing'
+  }
+  // Packages that have had their attempts are skipped, so they can't hold up
+  // the rest (or ride along on every launch another package needs repairing).
+  const attempts = priorAttempts(installation, drift.reqsHash, appVersion)
+  const skipped = installable.filter((r) => isSpent(attempts, r.name))
+  const toInstall = installable.filter((r) => !skipped.includes(r))
+  const pausedNote = (names: string[]): string =>
+    `Automatic repair paused for ${names.join(', ')} after ${MAX_FAILED_ATTEMPTS} failed ` +
+    `attempts; it retries when ComfyUI's requirements or Desktop's version change.\n`
+  if (skipped.length > 0) tools.sendOutput?.(pausedNote(skipped.map((r) => r.name)))
+  if (toInstall.length === 0) {
+    report('paused', { skipped: skipped.map((r) => r.name) })
+    return 'paused'
   }
 
   // Asked only now, so the prompt never offers a package that won't install.
@@ -323,6 +360,7 @@ export async function repairDeps(
   tools.sendOutput?.('Installing the missing Python packages…\n')
   const mirrors = settings.getMirrorConfig()
   let lastFailure: Awaited<ReturnType<typeof runUv>> | null = null
+  const uvFailed = new Set<string>()
   try {
     if (constraints.length > 0) {
       await fs.promises.writeFile(constraintPath, constraints.join('\n'), 'utf-8')
@@ -344,25 +382,16 @@ export async function repairDeps(
         tools.sendOutput ?? (() => {}),
         tools.signal
       )
-      if (result.code !== 0) lastFailure = result
+      if (result.code !== 0) {
+        lastFailure = result
+        uvFailed.add(req.name)
+      }
     }
   } finally {
     await fs.promises.unlink(constraintPath).catch(() => {})
   }
   if (tools.signal?.aborted) return 'cancelled'
 
-  const after = detect(installation)
-  if (!after) {
-    // The environment can't be read back: don't claim a repair nobody
-    // verified, and leave the marker as it was.
-    tools.sendOutput?.('Installed, but could not verify the environment afterwards.\n')
-    report('unverified')
-    return 'unverified'
-  }
-  // Whatever is still unsatisfied - uv failed, or accepted it and it still
-  // reads as unsatisfied - is recorded the same way. Held-back packages were
-  // never attempted.
-  const remaining = after.unsatisfied.filter((r) => !heldBackNames.has(r.name))
   const failure = lastFailure
     ? {
         uv_exit: lastFailure.code,
@@ -372,48 +401,71 @@ export async function repairDeps(
       }
     : {}
 
-  if (remaining.length === 0) {
-    if (installation.depsRepairMarker) await tools.update({ depsRepairMarker: null })
-    tools.sendOutput?.(
-      heldBack.length > 0
-        ? `Installed the missing Python packages except ${heldBack.map((r) => r.name).join(', ')}.\n`
-        : 'Missing Python packages installed.\n'
-    )
-    const outcome = heldBack.length > 0 ? 'partial' : 'repaired'
-    report(outcome, heldBack.length > 0 ? { held_back: heldBack.map((r) => r.name) } : {})
-    return outcome
+  const after = detect(installation)
+  if (!after) {
+    // The environment can't be read back: don't claim a repair nobody
+    // verified, and leave the marker as it was.
+    tools.sendOutput?.('Could not verify the environment after installing.\n')
+    report('unverified', failure)
+    return 'unverified'
+  }
+  // Whatever is still unsatisfied - uv failed, or accepted it and it still
+  // reads as unsatisfied - counts an attempt against that package. Held-back
+  // and skipped packages weren't attempted, so their counts stand.
+  const remaining = after.unsatisfied.filter((r) => !heldBackNames.has(r.name))
+  const attempted = new Set(toInstall.map((r) => r.name))
+  const nextAttempts: Record<string, number> = {}
+  for (const r of remaining) {
+    const count = (attempts[r.name] ?? 0) + (attempted.has(r.name) ? 1 : 0)
+    if (count > 0) nextAttempts[r.name] = count
+  }
+  if (Object.keys(nextAttempts).length > 0) {
+    await tools.update({
+      depsRepairMarker: {
+        reqsHash: drift.reqsHash,
+        appVersion,
+        attempts: nextAttempts
+      } satisfies DepsRepairMarker
+    })
+  } else if (installation.depsRepairMarker) {
+    await tools.update({ depsRepairMarker: null })
   }
 
-  // The count carries on only while the same packages keep failing: a package
-  // failing for the first time gets the full budget.
-  const names = remaining.map((r) => r.name)
-  const prior = installation.depsRepairMarker as DepsRepairMarker | null | undefined
-  const sameRun =
-    prior?.reqsHash === drift.reqsHash &&
-    prior.appVersion === appVersion &&
-    Array.isArray(prior.packages) &&
-    names.every((name) => prior.packages.includes(name))
-  const attempts = (sameRun ? prior.attempts : 0) + 1
-  await tools.update({
-    depsRepairMarker: {
-      reqsHash: drift.reqsHash,
-      appVersion,
-      packages: names,
-      attempts
-    } satisfies DepsRepairMarker
-  })
-  tools.sendOutput?.(
-    `Could not install ${describeUnsatisfied(remaining)} (` +
-      (attempts < MAX_FAILED_ATTEMPTS
-        ? 'will retry on next launch'
-        : `failed ${attempts} times; paused until ComfyUI's requirements or Desktop's version change`) +
-      `).\n`
-  )
-  const outcome = remaining.length === toInstall.length ? 'failed' : 'partial'
+  const remainingNames = new Set(remaining.map((r) => r.name))
+  const failedNow = remaining.filter((r) => uvFailed.has(r.name))
+  const stuckNow = remaining.filter((r) => attempted.has(r.name) && !uvFailed.has(r.name))
+  if (failedNow.length > 0) {
+    tools.sendOutput?.(`Could not install ${describeUnsatisfied(failedNow)}.\n`)
+  }
+  if (stuckNow.length > 0) {
+    tools.sendOutput?.(`Installed, but still not satisfied: ${describeUnsatisfied(stuckNow)}\n`)
+  }
+  const nowSpent = [...failedNow, ...stuckNow].filter((r) => isSpent(nextAttempts, r.name))
+  if (nowSpent.length > 0) tools.sendOutput?.(pausedNote(nowSpent.map((r) => r.name)))
+  else if (failedNow.length + stuckNow.length > 0)
+    tools.sendOutput?.('Will retry on next launch.\n')
+
+  if (remaining.length === 0 && heldBack.length === 0 && skipped.length === 0) {
+    tools.sendOutput?.('Missing Python packages installed.\n')
+    report('repaired')
+    return 'repaired'
+  }
+  if (remaining.length === 0) {
+    tools.sendOutput?.(
+      `Installed the missing Python packages except ${[...heldBack, ...skipped].map((r) => r.name).join(', ')}.\n`
+    )
+  }
+  // Partial when at least one attempted package was repaired - judged by
+  // membership, since the install can leave a different package unsatisfied.
+  const repairedAny = toInstall.some((r) => !remainingNames.has(r.name))
+  const outcome = repairedAny || remaining.length === 0 ? 'partial' : 'failed'
   report(outcome, {
-    remaining: names,
-    attempts,
+    ...(remaining.length > 0 ? { remaining: remaining.map((r) => r.name) } : {}),
     ...(heldBack.length > 0 ? { held_back: heldBack.map((r) => r.name) } : {}),
+    ...(skipped.length > 0 ? { skipped: skipped.map((r) => r.name) } : {}),
+    ...(remaining.length > 0
+      ? { attempts: Math.max(0, ...remaining.map((r) => nextAttempts[r.name] ?? 0)) }
+      : {}),
     ...failure
   })
   return outcome
