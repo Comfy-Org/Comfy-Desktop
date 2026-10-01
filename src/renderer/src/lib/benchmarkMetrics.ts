@@ -152,7 +152,82 @@ export type CompareResult =
   | { kind: 'differentGpu'; tone: BenchmarkTone }
 
 /** Delta is "same" inside this band, so we don't cry wolf over run-to-run noise. */
-const SAME_BAND_PCT = 2
+export const SAME_BAND_PCT = 2
+
+/** Which direction the current value moved relative to the baseline. */
+export type DeltaDirection = 'up' | 'down' | 'none'
+
+/**
+ * Outcome of a Compare delta, keyed to the design's honesty rules (§4.2/§4.3):
+ * - `better` / `worse`: a real change, scored by the metric's good direction.
+ * - `same`: inside the ±`SAME_BAND_PCT` dead-band, or a neutral metric (no good
+ *   direction, e.g. GPU util) — rendered muted, never colored.
+ * - `notComparable`: a per-run metric across different workflows (`✕`).
+ */
+export type DeltaOutcome = 'better' | 'worse' | 'same' | 'notComparable'
+
+export interface MetricDelta {
+  direction: DeltaDirection
+  /** Signed percent change `(current - baseline) / baseline * 100`, or null when
+   *  the baseline is 0 / non-finite (percent would be meaningless). */
+  pct: number | null
+  /** Signed absolute difference `current - baseline`. */
+  abs: number
+  outcome: DeltaOutcome
+}
+
+/**
+ * Compute a Compare delta chip's facts (design §4.2). Pure + outcome-based: the
+ * color is decided by the metric's good direction, NOT by the sign, so the view
+ * only has to map `outcome → chip class`.
+ *
+ * - Returns `null` when either side is missing/non-finite — the view renders the
+ *   muted `—` (not-measured) chip, which takes precedence over everything else
+ *   (matches the mockup's ordering).
+ * - `comparable: false` (a per-run metric across different workflows) yields
+ *   `notComparable` (the `✕` chip) — but only once both values are present.
+ * - `lowerIsBetter: null` marks a neutral metric (e.g. GPU util): always `same`
+ *   (muted), carrying the signed `abs`/`direction` so the view can still show the
+ *   raw movement without implying a verdict.
+ * - Otherwise within ±`SAME_BAND_PCT` is `same`; past it, `better`/`worse` by the
+ *   metric's good direction.
+ */
+export function computeMetricDelta(opts: {
+  baseline: number | null | undefined
+  current: number | null | undefined
+  lowerIsBetter: boolean | null
+  comparable?: boolean
+}): MetricDelta | null {
+  const { baseline, current } = opts
+  if (
+    baseline == null ||
+    current == null ||
+    !Number.isFinite(baseline) ||
+    !Number.isFinite(current)
+  ) {
+    return null
+  }
+  const abs = current - baseline
+  const direction: DeltaDirection = abs > 0 ? 'up' : abs < 0 ? 'down' : 'none'
+  const pct = baseline !== 0 ? (abs / baseline) * 100 : null
+
+  if (opts.comparable === false) {
+    return { direction, pct, abs, outcome: 'notComparable' }
+  }
+  // Neutral metric: never scored good/bad.
+  if (opts.lowerIsBetter === null) {
+    return { direction, pct, abs, outcome: 'same' }
+  }
+  // Dead-band (percent-based). When the baseline is 0 we fall back to "any nonzero
+  // absolute change is a real change" since percent is undefined.
+  if (pct != null) {
+    if (Math.abs(pct) < SAME_BAND_PCT) return { direction, pct, abs, outcome: 'same' }
+  } else if (abs === 0) {
+    return { direction, pct, abs, outcome: 'same' }
+  }
+  const better = opts.lowerIsBetter ? current < baseline : current > baseline
+  return { direction, pct, abs, outcome: better ? 'better' : 'worse' }
+}
 
 /**
  * Compare the current run's median sec/image to the newest prior run of the

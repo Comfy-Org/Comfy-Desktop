@@ -598,17 +598,16 @@ function toggleBenchmark(id: string): void {
 
 function openCompareView(): void {
   if (!canCompare.value) return
-  // Pass OLDEST-FIRST so the store's default baseline (first id) is the oldest run (design §2).
-  const oldestFirst = [...selectedBenchmarks.value]
-    .sort((a, b) => {
-      const aMs = createdAtMs(a)
-      const bMs = createdAtMs(b)
-      if (aMs == null && bMs == null) return 0
-      if (aMs == null) return 1
-      if (bMs == null) return -1
-      return aMs - bMs
-    })
-    .map((benchmark) => benchmark.id)
+  // Pass OLDEST-FIRST run objects so the store's default baseline (first run) is the
+  // oldest run (design §2) and Compare reads real benchmarks without re-listing from disk.
+  const oldestFirst = [...selectedBenchmarks.value].sort((a, b) => {
+    const aMs = createdAtMs(a)
+    const bMs = createdAtMs(b)
+    if (aMs == null && bMs == null) return 0
+    if (aMs == null) return 1
+    if (bMs == null) return -1
+    return aMs - bMs
+  })
   benchmarkNav.openCompare(oldestFirst)
 }
 

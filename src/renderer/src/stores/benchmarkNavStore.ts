@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
+import type { PerformanceTestBenchmark } from '../types/ipc'
+
 /**
  * Benchmark-area navigation (design §2 IA).
  *
@@ -27,6 +29,13 @@ export const useBenchmarkNavStore = defineStore('benchmarkNav', () => {
   const screen = ref<BenchmarkScreen>('history')
   /** Session ids selected for comparison, oldest-first (the baseline default). */
   const compareRunIds = ref<string[]>([])
+  /**
+   * The resolved run objects for the compare columns, index-aligned with
+   * `compareRunIds` (oldest-first, same cap). History passes these in so Compare
+   * reads real `PerformanceTestBenchmark` objects (`coreBenchmark` + recomputed
+   * `steadyStateItPerS`) instead of re-listing them from disk.
+   */
+  const compareRuns = ref<PerformanceTestBenchmark[]>([])
   /** Which column deltas are measured against. Defaults to the oldest selected. */
   const baselineRunId = ref<string | null>(null)
   /** Pending Run↔History host panel switch; consumed + cleared by the host router. */
@@ -37,15 +46,18 @@ export const useBenchmarkNavStore = defineStore('benchmarkNav', () => {
   const canCompare = computed(() => compareCount.value >= 2)
 
   /**
-   * Open Compare with a set of run session ids. Pass them OLDEST-FIRST so the default
-   * baseline (first id) is the oldest selected (resolved decision). Caps at
+   * Open Compare with a set of run OBJECTS. Pass them OLDEST-FIRST so the default
+   * baseline (first run) is the oldest selected (resolved decision). Caps at
    * `COMPARE_COLUMN_CAP` columns; extra selections are dropped from the tail.
+   * Stores both the ids and the resolved objects so Compare never re-lists from disk.
    */
-  function openCompare(runIds: string[], baselineId?: string | null): void {
-    const capped = runIds.slice(0, COMPARE_COLUMN_CAP)
-    compareRunIds.value = capped
+  function openCompare(runs: PerformanceTestBenchmark[], baselineId?: string | null): void {
+    const capped = runs.slice(0, COMPARE_COLUMN_CAP)
+    const cappedIds = capped.map((run) => run.id)
+    compareRuns.value = capped
+    compareRunIds.value = cappedIds
     baselineRunId.value =
-      baselineId && capped.includes(baselineId) ? baselineId : (capped[0] ?? null)
+      baselineId && cappedIds.includes(baselineId) ? baselineId : (cappedIds[0] ?? null)
     screen.value = 'compare'
   }
 
@@ -62,6 +74,7 @@ export const useBenchmarkNavStore = defineStore('benchmarkNav', () => {
   /** Clear the compare selection + baseline (e.g. after an export or on unmount). */
   function clearSelection(): void {
     compareRunIds.value = []
+    compareRuns.value = []
     baselineRunId.value = null
   }
 
@@ -85,6 +98,7 @@ export const useBenchmarkNavStore = defineStore('benchmarkNav', () => {
   return {
     screen,
     compareRunIds,
+    compareRuns,
     baselineRunId,
     panelRequest,
     compareCount,

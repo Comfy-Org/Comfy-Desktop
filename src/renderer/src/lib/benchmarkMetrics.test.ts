@@ -4,7 +4,9 @@ import type { PerformanceTestBenchmark } from '../types/ipc'
 import {
   backendToVendor,
   compareToPrevious,
+  computeMetricDelta,
   perImageSeconds,
+  SAME_BAND_PCT,
   tierFromHardware,
   vramPeakView
 } from './benchmarkMetrics'
@@ -153,5 +155,73 @@ describe('compareToPrevious', () => {
       priorBenchmarks: [prior({ hardwareName: deviceName, medianJobDurationSeconds: 2 })]
     })
     expect(result).toMatchObject({ kind: 'faster', pct: 20, tone: 'positive' })
+  })
+})
+
+describe('computeMetricDelta', () => {
+  it('returns null when either side is missing or non-finite (view renders —)', () => {
+    expect(computeMetricDelta({ baseline: null, current: 5, lowerIsBetter: true })).toBeNull()
+    expect(computeMetricDelta({ baseline: 5, current: null, lowerIsBetter: true })).toBeNull()
+    expect(computeMetricDelta({ baseline: Number.NaN, current: 5, lowerIsBetter: true })).toBeNull()
+  })
+
+  it('scores lower-is-better by outcome, not by sign', () => {
+    // VRAM/energy/power/temp/duration: a LOWER current is better.
+    const lower = computeMetricDelta({ baseline: 10, current: 8, lowerIsBetter: true })
+    expect(lower).toMatchObject({ outcome: 'better', direction: 'down', abs: -2 })
+    expect(lower!.pct).toBeCloseTo(-20, 5)
+    const higher = computeMetricDelta({ baseline: 10, current: 12, lowerIsBetter: true })
+    expect(higher).toMatchObject({ outcome: 'worse', direction: 'up', abs: 2 })
+  })
+
+  it('scores higher-is-better by outcome (it/s: a higher current is better)', () => {
+    expect(computeMetricDelta({ baseline: 10, current: 12, lowerIsBetter: false })).toMatchObject({
+      outcome: 'better',
+      direction: 'up'
+    })
+    expect(computeMetricDelta({ baseline: 10, current: 8, lowerIsBetter: false })).toMatchObject({
+      outcome: 'worse',
+      direction: 'down'
+    })
+  })
+
+  it(`treats changes within ±${SAME_BAND_PCT}% as "same" (no crying wolf over noise)`, () => {
+    // 1.5% movement either way is inside the dead-band.
+    expect(
+      computeMetricDelta({ baseline: 100, current: 101.5, lowerIsBetter: true })
+    ).toMatchObject({ outcome: 'same' })
+    expect(
+      computeMetricDelta({ baseline: 100, current: 98.5, lowerIsBetter: false })
+    ).toMatchObject({ outcome: 'same' })
+    // Exactly at the band edge is NOT same (strict <).
+    expect(computeMetricDelta({ baseline: 100, current: 102, lowerIsBetter: true })?.outcome).toBe(
+      'worse'
+    )
+  })
+
+  it('keeps neutral metrics (lowerIsBetter null, e.g. GPU util) muted and uncolored', () => {
+    const big = computeMetricDelta({ baseline: 90, current: 100, lowerIsBetter: null })
+    // Even a large move stays "same" (muted) — a neutral metric has no good direction.
+    expect(big).toMatchObject({ outcome: 'same', direction: 'up', abs: 10 })
+  })
+
+  it('marks per-run metrics across different workflows as notComparable (the ✕ chip)', () => {
+    expect(
+      computeMetricDelta({ baseline: 1.12, current: 3.47, lowerIsBetter: true, comparable: false })
+    ).toMatchObject({ outcome: 'notComparable' })
+    // Missing values still win over notComparable (— takes precedence).
+    expect(
+      computeMetricDelta({ baseline: null, current: 3.47, lowerIsBetter: true, comparable: false })
+    ).toBeNull()
+  })
+
+  it('handles a zero baseline without dividing by zero (pct null, abs drives it)', () => {
+    const fromZero = computeMetricDelta({ baseline: 0, current: 5, lowerIsBetter: false })
+    expect(fromZero).toMatchObject({ outcome: 'better', pct: null, abs: 5, direction: 'up' })
+    expect(computeMetricDelta({ baseline: 0, current: 0, lowerIsBetter: false })).toMatchObject({
+      outcome: 'same',
+      pct: null,
+      abs: 0
+    })
   })
 })
