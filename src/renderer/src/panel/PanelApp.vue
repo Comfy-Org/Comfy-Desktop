@@ -11,6 +11,7 @@ import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
 import BenchmarkCompareView from '../views/BenchmarkCompareView.vue'
+import BenchmarkRunDetailView from '../views/BenchmarkRunDetailView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
 import TrackModal from '../views/TrackModal.vue'
 import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
@@ -628,6 +629,7 @@ onUnmounted(() => {
 
         <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
           <BenchmarkCompareView v-if="benchmarkNav.screen === 'compare'" />
+          <BenchmarkRunDetailView v-else-if="benchmarkNav.screen === 'detail'" />
           <BenchmarksView v-else />
         </div>
 

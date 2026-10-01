@@ -221,6 +221,11 @@ function mountView() {
   })
 }
 
+/** Select a run for Compare via its checkbox (row-click now opens the run detail). */
+function selectRow(wrapper: ReturnType<typeof mountView>, id: string): Promise<void> {
+  return wrapper.get(`[data-testid="benchmark-row-${id}"] .benchmarks__checkbox`).setValue(true)
+}
+
 describe('BenchmarksView (History)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -314,9 +319,10 @@ describe('BenchmarksView (History)', () => {
 
     expect(wrapper.find('[data-testid="benchmarks-action-bar"]').exists()).toBe(false)
 
-    // Select newest first, then older — Compare must still pass oldest-first.
-    await wrapper.get('[data-testid="benchmark-row-z"]').trigger('click')
-    await wrapper.get('[data-testid="benchmark-row-q"]').trigger('click')
+    // Select newest first, then older — Compare must still pass oldest-first. Selection
+    // is the checkbox now; a row-click opens the run detail instead (see dedicated test).
+    await selectRow(wrapper, 'z')
+    await selectRow(wrapper, 'q')
 
     const bar = wrapper.get('[data-testid="benchmarks-action-bar"]')
     expect(bar.text()).toContain('2 of 4 selected')
@@ -329,11 +335,43 @@ describe('BenchmarksView (History)', () => {
     expect(nav.baselineRunId).toBe('q')
   })
 
+  it('opens the run detail on row-click (not selection) and via the ⋯ Open item', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const nav = useBenchmarkNavStore()
+
+    // Row-click opens the read-only detail dashboard and does NOT toggle selection.
+    await wrapper.get('[data-testid="benchmark-row-z"]').trigger('click')
+    expect(nav.screen).toBe('detail')
+    expect(nav.detailRun?.id).toBe('z')
+    expect(nav.compareRunIds).toEqual([])
+    expect(wrapper.find('[data-testid="benchmarks-action-bar"]').exists()).toBe(false)
+
+    nav.backToHistory()
+    await flushPromises()
+
+    // The ⋯ Open item opens the same detail screen for its row.
+    await wrapper.get('[data-testid="benchmark-open-q"]').trigger('click')
+    expect(nav.screen).toBe('detail')
+    expect(nav.detailRun?.id).toBe('q')
+  })
+
+  it('checkbox selection does not open the detail screen', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const nav = useBenchmarkNavStore()
+
+    await selectRow(wrapper, 'z')
+    expect(nav.screen).toBe('history')
+    // Checkbox selection surfaces the action bar but never navigates to the detail screen.
+    expect(wrapper.get('[data-testid="benchmarks-action-bar"]').text()).toContain('1 of 4 selected')
+  })
+
   it('keeps Compare disabled below two and notes the five-column cap above it', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('[data-testid="benchmark-row-z"]').trigger('click')
+    await selectRow(wrapper, 'z')
     expect(wrapper.get('[data-testid="benchmarks-compare"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-testid="benchmarks-action-bar"]').text()).not.toContain(
       'Compare uses the 5 most recent'
@@ -344,8 +382,8 @@ describe('BenchmarksView (History)', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('[data-testid="benchmark-row-z"]').trigger('click')
-    await wrapper.get('[data-testid="benchmark-row-q"]').trigger('click')
+    await selectRow(wrapper, 'z')
+    await selectRow(wrapper, 'q')
     await wrapper.get('[data-testid="benchmarks-export-csv"]').trigger('click')
     await flushPromises()
 

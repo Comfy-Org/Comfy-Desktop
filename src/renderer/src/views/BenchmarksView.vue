@@ -622,23 +622,19 @@ async function exportData(format: 'csv' | 'json'): Promise<void> {
 }
 
 // --- row actions (design §3.1 ⋯ menu) ---
-function openRun(run: PerformanceTestBenchmark): void {
+/** Open a run's read-only single-run dashboard (row-click + ⋯ Open). Selection for
+ *  Compare stays on the checkbox, so a row-click never toggles selection. */
+function openDetail(run: PerformanceTestBenchmark): void {
   closeAllMenus()
-  // TODO(benchmarks): open this run's read-only single-run dashboard once a shared
-  // historical-dashboard component exists. The foundation does not yet expose one
-  // (PerformanceTestView takes no props and there is no store channel to load a saved
-  // result into it), so "Open" is deferred. Selecting the row (row click) remains the
-  // interactive path into the headline Compare flow. See report / design §7 P1.
-  void run
+  benchmarkNav.openDetail(run)
 }
 
 function runAgain(run: PerformanceTestBenchmark): void {
   closeAllMenus()
-  // TODO(benchmarks): prefill Run with this run's exact workflow + config. The
-  // foundation has no prefill channel (open question §8.6), so we navigate to Run; the
-  // user re-selects the workflow there. Switching panels is wired via the nav store.
-  void run
-  benchmarkNav.goToRun()
+  // Carry the run's instance + workflow name to the Run view (best-effort preselect)
+  // and switch panels. The Run flow has no exact-config (seed/steps) prefill channel,
+  // so only the instance + workflow are forwarded — never fabricated.
+  benchmarkNav.requestRunAgain(run)
 }
 
 async function revealInFolder(run: PerformanceTestBenchmark): Promise<void> {
@@ -1014,7 +1010,7 @@ onMounted(() => {
                     : undefined
                 "
                 :data-testid="`benchmark-row-${benchmark.id}`"
-                @click="toggleBenchmark(benchmark.id)"
+                @click="openDetail(benchmark)"
               >
                 <td class="benchmarks__check-cell">
                   <input
@@ -1105,7 +1101,7 @@ onMounted(() => {
                       <button
                         type="button"
                         :data-testid="`benchmark-open-${benchmark.id}`"
-                        @click="openRun(benchmark)"
+                        @click="openDetail(benchmark)"
                       >
                         {{ t('benchmarks.menuOpen') }}
                       </button>

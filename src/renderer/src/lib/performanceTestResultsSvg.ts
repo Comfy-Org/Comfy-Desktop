@@ -1,4 +1,8 @@
 import comfyWordmarkSource from '../components/icons/ComfyWordmark.vue?raw'
+import type { PerformanceTestResultsSummary } from '../types/ipc'
+
+/** The i18n translator shape the results-image builder needs. */
+type ResultsImageTranslate = (key: string, params?: Record<string, unknown>) => string
 
 export interface PerformanceTestImageMetric {
   label: string
@@ -120,6 +124,109 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
   </g>
   ${text(width - margin, height - 28, data.testDateTime, 'footer-date', 'end')}
 </svg>`
+}
+
+function formatResultsDuration(seconds: number): string {
+  return `${seconds.toFixed(3)} s`
+}
+function formatResultsMemory(megabytes: number): string {
+  return `${(megabytes / 1024).toFixed(1)} GB`
+}
+function formatResultsOperatingSystem(info: PerformanceTestResultsSummary['systemInfo']): string {
+  return (
+    [info.os_distro, info.os_release].filter(Boolean).join(' ') ||
+    `${info.platform} ${info.os_version}`
+  )
+}
+
+/**
+ * Build the single-run results-image SVG from a results summary. Shared by the live
+ * Run view and the History "Open" detail view so both export the identical artifact.
+ * Returns `null` when the summary is missing the hardware or duration fields the image
+ * requires (the caller surfaces that as an export failure) — never fabricates values.
+ */
+export function buildPerformanceTestResultsSvg(
+  summary: PerformanceTestResultsSummary,
+  t: ResultsImageTranslate
+): string | null {
+  const hardware = summary.hardware
+  const fastest = summary.fastestJobDurationSeconds
+  const slowest = summary.slowestJobDurationSeconds
+  const average = summary.averageJobDurationSeconds
+  const median = summary.medianJobDurationSeconds
+  if (!hardware || fastest === null || slowest === null || average === null || median === null) {
+    return null
+  }
+  const hardwareRows: PerformanceTestImageMetric[] = [
+    {
+      label: t('performanceTest.device'),
+      value: hardware.devices.flatMap((device) => device.deviceName ?? []).join(', ')
+    }
+  ]
+  if (hardware.vramMb != null)
+    hardwareRows.push({
+      label: t('performanceTest.vram'),
+      value: formatResultsMemory(hardware.vramMb)
+    })
+  if (hardware.ramMb != null)
+    hardwareRows.push({
+      label: t('performanceTest.ram'),
+      value: formatResultsMemory(hardware.ramMb)
+    })
+  if (hardware.pytorchVersion)
+    hardwareRows.push({
+      label: t('performanceTest.pytorchVersion'),
+      value: hardware.pytorchVersion
+    })
+  if (hardware.xformersVersion)
+    hardwareRows.push({
+      label: t('performanceTest.xformersVersion'),
+      value: hardware.xformersVersion
+    })
+
+  return createPerformanceTestResultsSvg({
+    title: t('performanceTest.imageTitle', { workflowName: summary.workflowName }),
+    aggregateTitle: t('performanceTest.runDurationChart'),
+    systemInformationTitle: t('performanceTest.systemInformation'),
+    testDateTime: new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(new Date(summary.createdAt)),
+    metrics: [
+      { label: t('performanceTest.measuredRunCount'), value: String(summary.measuredJobCount) },
+      { label: t('performanceTest.failedRunCount'), value: String(summary.failedRunCount) },
+      {
+        label: t('performanceTest.fastestRun'),
+        value: formatResultsDuration(fastest),
+        durationSeconds: fastest
+      },
+      {
+        label: t('performanceTest.slowestRun'),
+        value: formatResultsDuration(slowest),
+        durationSeconds: slowest
+      },
+      {
+        label: t('performanceTest.averageRunDuration'),
+        value: formatResultsDuration(average),
+        durationSeconds: average
+      },
+      {
+        label: t('performanceTest.medianRunDuration'),
+        value: formatResultsDuration(median),
+        durationSeconds: median
+      }
+    ],
+    hardware: hardwareRows,
+    system: [
+      { label: t('performanceTest.cpu'), value: summary.systemInfo.cpu_model },
+      { label: t('performanceTest.cpuCores'), value: String(summary.systemInfo.cpu_cores) },
+      { label: t('performanceTest.architecture'), value: summary.systemInfo.arch },
+      {
+        label: t('performanceTest.operatingSystem'),
+        value: formatResultsOperatingSystem(summary.systemInfo)
+      }
+    ]
+  })
 }
 
 /** Rasterize the self-contained results SVG at its intrinsic dimensions. */

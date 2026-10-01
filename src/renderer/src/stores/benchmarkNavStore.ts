@@ -14,9 +14,20 @@ import type { PerformanceTestBenchmark } from '../types/ipc'
  * This store is the single owner of that routing + the compare selection, so the two
  * view engineers (History, Compare) only consume these actions and never touch the host
  * router (`PanelApp` / `usePanelOverlays`). PanelApp watches `panelRequest` to perform the
- * Run↔History switch, and renders Compare vs History off `screen`.
+ * Run↔History switch, and renders Compare vs Detail vs History off `screen`.
+ *
+ * `detail` is the read-only single-run dashboard pushed from a History row ("Open"),
+ * mirroring how `compare` is pushed — both live WITHIN the benchmarks panel.
  */
-export type BenchmarkScreen = 'history' | 'compare'
+export type BenchmarkScreen = 'history' | 'compare' | 'detail'
+
+/** A deferred "Run again" hand-off, consumed by the Run view when it activates. */
+export interface RunAgainRequest {
+  /** The instance the historical run executed on; preselected if still available. */
+  readonly installationId: string
+  /** The run's workflow display name; used to preselect a matching catalog option. */
+  readonly workflowName: string
+}
 
 /** Host panel keys the segmented control can request (mirrors `PanelKey`). */
 export type BenchmarkPanelRequest = 'performance-test' | 'benchmarks'
@@ -38,8 +49,12 @@ export const useBenchmarkNavStore = defineStore('benchmarkNav', () => {
   const compareRuns = ref<PerformanceTestBenchmark[]>([])
   /** Which column deltas are measured against. Defaults to the oldest selected. */
   const baselineRunId = ref<string | null>(null)
+  /** The run shown by the `detail` screen (read-only single-run dashboard). */
+  const detailRun = ref<PerformanceTestBenchmark | null>(null)
   /** Pending Run↔History host panel switch; consumed + cleared by the host router. */
   const panelRequest = ref<BenchmarkPanelRequest | null>(null)
+  /** Pending "Run again" hand-off; consumed + cleared by the Run view on activation. */
+  const runAgainRequest = ref<RunAgainRequest | null>(null)
 
   const compareCount = computed(() => compareRunIds.value.length)
   /** Compare needs ≥2 runs; the entry button stays disabled below that. */
@@ -68,7 +83,18 @@ export const useBenchmarkNavStore = defineStore('benchmarkNav', () => {
     baselineRunId.value = runId
   }
 
-  /** Leave Compare, returning to the History list (selection is retained). */
+  /**
+   * Open the read-only single-run dashboard for a History row ("Open" / row-click).
+   * Stores the resolved `PerformanceTestBenchmark` object so the detail view reads
+   * real data (`coreBenchmark` + recomputed `steadyStateItPerS` + the full result
+   * summary) without re-listing from disk — mirroring `openCompare`.
+   */
+  function openDetail(run: PerformanceTestBenchmark): void {
+    detailRun.value = run
+    screen.value = 'detail'
+  }
+
+  /** Leave Compare/Detail, returning to the History list (selection is retained). */
   function backToHistory(): void {
     screen.value = 'history'
   }
@@ -83,6 +109,23 @@ export const useBenchmarkNavStore = defineStore('benchmarkNav', () => {
   /** Request the Run panel via the host router (segmented control → Run). */
   function goToRun(): void {
     panelRequest.value = 'performance-test'
+  }
+
+  /**
+   * "Run again" from a History row/detail: carry the run's instance + workflow name to
+   * the Run view (best-effort preselect) and switch to Run. The Run flow has no exact
+   * config (seed/steps) prefill channel, so only the instance + workflow are forwarded.
+   */
+  function requestRunAgain(run: PerformanceTestBenchmark): void {
+    runAgainRequest.value = { installationId: run.instance.id, workflowName: run.workflowName }
+    goToRun()
+  }
+
+  /** Run view consumes and clears any pending "Run again" hand-off. */
+  function consumeRunAgainRequest(): RunAgainRequest | null {
+    const request = runAgainRequest.value
+    runAgainRequest.value = null
+    return request
   }
 
   /** Request the History panel via the host router (segmented control → History). */
@@ -102,15 +145,20 @@ export const useBenchmarkNavStore = defineStore('benchmarkNav', () => {
     compareRunIds,
     compareRuns,
     baselineRunId,
+    detailRun,
     panelRequest,
+    runAgainRequest,
     compareCount,
     canCompare,
     openCompare,
     setBaseline,
+    openDetail,
     backToHistory,
     clearSelection,
     goToRun,
     goToHistory,
-    consumePanelRequest
+    consumePanelRequest,
+    requestRunAgain,
+    consumeRunAgainRequest
   }
 })
