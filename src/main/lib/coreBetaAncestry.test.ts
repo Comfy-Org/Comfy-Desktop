@@ -98,7 +98,8 @@ describe('resolveCoreCommitState', () => {
       [LOWER, true],
       [UPPER, false]
     ])
-    expect(git.findMergeBase).toHaveBeenCalledWith(REPO, LOWER, HEAD)
+    // The beta path (fetching allowed) leaves git free to fetch: no GIT_NO_LAZY_FETCH.
+    expect(git.findMergeBase).toHaveBeenCalledWith(REPO, LOWER, HEAD, { noLazyFetch: false })
     expect(git.fetchCommitSha).not.toHaveBeenCalled()
   })
 
