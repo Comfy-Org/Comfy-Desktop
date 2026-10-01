@@ -2422,36 +2422,40 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         return
       }
     }
-    if (!isQuitInProgress()) {
-      setQuitReason('user-quit')
-      ipc.cancelAll()
-      for (const [, entry] of comfyWindows) {
-        if (!entry.window.isDestroyed()) entry.window.destroy()
+    try {
+      if (!isQuitInProgress()) {
+        setQuitReason('user-quit')
+        ipc.cancelAll()
+        for (const [, entry] of comfyWindows) {
+          if (!entry.window.isDestroyed()) entry.window.destroy()
+        }
+        comfyWindows.clear()
+        // Pop-out terminal/logs windows live outside `comfyWindows`; close them
+        // here too and kill their shared shells so no window or PTY child lingers.
+        closeAllPopouts()
+        disposeAllTerminals()
+        if (tray) {
+          tray.destroy()
+          tray = null
+        }
       }
-      comfyWindows.clear()
-      // Pop-out terminal/logs windows live outside `comfyWindows`; close them
-      // here too and kill their shared shells so no window or PTY child lingers.
-      closeAllPopouts()
-      disposeAllTerminals()
-      if (tray) {
-        tray.destroy()
-        tray = null
+      updater.recordProcessExit()
+      if (_stopPeriodicReleaseChecks) {
+        _stopPeriodicReleaseChecks()
+        _stopPeriodicReleaseChecks = null
       }
+      // Persist any pending last-active-surface write so the next boot can
+      // restore it. Synchronous: the app exits without awaiting promises, so an
+      // async write would be torn down mid-flight and lose a just-made change.
+      flushLastSessionSync()
+      flushOperationOutput()
+      cleanupTempDownloads()
+    } finally {
+      // Hold the quit until the ComfyUI processes being stopped have exited (bounded) and
+      // telemetry has drained, then quit again; that re-issued quit passes through. In a
+      // finally: a throw above must not cost the wait or the drain.
+      holdQuit(event, { drain: mainTelemetry.drainForQuit, quit: () => app.quit() })
     }
-    updater.recordProcessExit()
-    if (_stopPeriodicReleaseChecks) {
-      _stopPeriodicReleaseChecks()
-      _stopPeriodicReleaseChecks = null
-    }
-    // Persist any pending last-active-surface write so the next boot can
-    // restore it. Synchronous: the app exits without awaiting promises, so an
-    // async write would be torn down mid-flight and lose a just-made change.
-    flushLastSessionSync()
-    flushOperationOutput()
-    cleanupTempDownloads()
-    // Hold the quit until the ComfyUI processes being stopped have exited (bounded) and
-    // telemetry has drained, then quit again; that re-issued quit passes through.
-    holdQuit(event, { drain: mainTelemetry.drainForQuit, quit: () => app.quit() })
   })
 
   // Deferred-quit suspension for managed model downloads: stop each active

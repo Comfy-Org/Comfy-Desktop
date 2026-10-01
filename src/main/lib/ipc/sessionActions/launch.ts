@@ -2278,7 +2278,8 @@ async function runLaunch(
         rebootModelCheckAbort = null
       }
 
-      if (pendingModelFolderRelaunch || checkRebootMarker(sessionPath)) {
+      // Never respawn while quitting: the new ComfyUI would outlive the quit's wait.
+      if (!isQuitInProgress() && (pendingModelFolderRelaunch || checkRebootMarker(sessionPath))) {
         const isModelRelaunch = pendingModelFolderRelaunch
         pendingModelFolderRelaunch = false
         if (!isModelRelaunch) {

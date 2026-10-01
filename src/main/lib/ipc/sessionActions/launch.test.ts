@@ -68,7 +68,9 @@ const launchHarness = vi.hoisted(() => ({
   /** A live Desktop port lock on a busy port (the pid it names); null = none. */
   portLockPid: null as null | number,
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
-  killExits: true
+  killExits: true,
+  /** What `checkRebootMarker` answers (a Manager restart request); null = the real check. */
+  rebootMarker: null as null | boolean
 }))
 
 vi.mock('../shared', async (importOriginal) => {
@@ -132,7 +134,9 @@ vi.mock('../shared', async (importOriginal) => {
         : actual.getProcessInfo(...args),
     // Never let a test reach the real one: the fake child's pid is invented, and killing it
     // would signal whatever real process happens to hold that pid.
-    killProcessTree: async () => ({ exited: launchHarness.killExits, waitMs: 0 })
+    killProcessTree: async () => ({ exited: launchHarness.killExits, waitMs: 0 }),
+    checkRebootMarker: (...args: Parameters<typeof actual.checkRebootMarker>) =>
+      launchHarness.rebootMarker ?? actual.checkRebootMarker(...args)
   }
 })
 
@@ -1171,6 +1175,7 @@ describe('core beta report placement', () => {
     launchHarness.grants = [HARNESS_GRANT]
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
+    launchHarness.rebootMarker = null
     // Both halves of the activation-notice state: the in-process pending queue and the
     // persisted announced list, which the real settings module keeps in this run's temp
     // app dir. Without the reset, the first test to launch spends the notice for the rest.
@@ -1220,6 +1225,32 @@ describe('core beta report placement', () => {
     proc.kill = () => true
     return proc
   }
+
+  it('does not respawn on a Manager restart request while Desktop is quitting', async () => {
+    let spawns = 0
+    let child: FakeChild | null = null
+    launchHarness.spawn = () => {
+      spawns++
+      child = fakeChild()
+      return child
+    }
+    // The port-wait path: the one that wires the long-lived exit handler.
+    launchHarness.launchCommand = { ...launchHarness.launchCommand, skipPortWait: false }
+    launchHarness.waitForPort = async () => {}
+    const res = await handleLaunch(ctxFor('harness-quit-no-respawn'))
+    expect(res.ok).toBe(true)
+    _resetQuitWaitForTest()
+    launchHarness.rebootMarker = true
+    setQuitReason('user-quit')
+    try {
+      child!.emit('exit', 0, null)
+      child!.emit('close', 0, null)
+      await waitForExitWork()
+      expect(spawns).toBe(1)
+    } finally {
+      clearQuitReason()
+    }
+  })
 
   it('reports on a launch that reaches the skip-port spawn', async () => {
     const res = await handleLaunch(ctxFor('harness-skip-port-spawns'))

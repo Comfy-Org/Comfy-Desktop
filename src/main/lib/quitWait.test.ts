@@ -3,7 +3,7 @@ import {
   QUIT_WAIT_MS,
   _resetQuitWaitForTest,
   beginQuitSequence,
-  endQuitSequence,
+  abandonQuitSequence,
   holdQuit,
   isQuitHeld,
   trackExitWork,
@@ -111,13 +111,37 @@ describe('waitForExitWork', () => {
     expect(await settledAfter(waitForExitWork(), 0)).toBe(true)
   })
 
-  it('gives a fresh deadline once the sequence is ended', async () => {
+  it('abandon: an open sequence ends, and the next one gets a fresh deadline', async () => {
+    beginQuitSequence()
+    await vi.advanceTimersByTimeAsync(QUIT_WAIT_MS)
+    abandonQuitSequence()
+    trackExitWork(never(), 'stop')
+    expect(await settledAfter(waitForExitWork(), QUIT_WAIT_MS - 1)).toBe(false)
+  })
+
+  it('evicts the work a timed-out wait gave up on', async () => {
     trackExitWork(never(), 'stop')
     const first = waitForExitWork()
     await vi.advanceTimersByTimeAsync(QUIT_WAIT_MS)
     await first
-    endQuitSequence()
-    expect(await settledAfter(waitForExitWork(), QUIT_WAIT_MS - 1)).toBe(false)
+    abandonQuitSequence()
+    // A later sequence neither waits for nor counts it.
+    const { drain, hold } = quitHarness()
+    hold()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drain).toHaveBeenCalledWith({
+      quit_wait_ms: 0,
+      quit_wait_timed_out: false,
+      quit_wait_stops: 0
+    })
+  })
+
+  it('stops waiting once the OS session starts ending', async () => {
+    trackExitWork(never(), 'stop')
+    const waiting = waitForExitWork()
+    expect(await settledAfter(waiting, 1_000)).toBe(false)
+    setSessionEnding()
+    expect(await settledAfter(waiting, 250)).toBe(true)
   })
 
   it('lets concurrent callers share one wait', async () => {
@@ -168,6 +192,9 @@ describe('holdQuit', () => {
 
   it('holds every repeated quit while waiting and lets the re-issued one through', async () => {
     const { drain, quit, hold } = quitHarness()
+    // app.quit() emits the re-issued before-quit before it returns.
+    const reissued: Array<{ preventDefault: ReturnType<typeof vi.fn> }> = []
+    quit.mockImplementation(() => reissued.push(hold()))
     const exit = deferred()
     trackExitWork(exit.promise, 'stop')
     hold()
@@ -179,8 +206,30 @@ describe('holdQuit', () => {
     expect(isQuitHeld()).toBe(false)
     expect(drain).toHaveBeenCalledTimes(1)
     expect(quit).toHaveBeenCalledTimes(1)
-    // The quit it re-issued passes through.
-    expect(hold().preventDefault).not.toHaveBeenCalled()
+    expect(reissued).toHaveLength(1)
+    expect(reissued[0]!.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('ends after the release: a quit cancelled and issued again is held afresh', async () => {
+    const { drain, hold } = quitHarness()
+    hold()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drain).toHaveBeenCalledTimes(1)
+    // The quit did not happen (a window's close consult cancelled it); the user quits again.
+    expect(hold().preventDefault).toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drain).toHaveBeenCalledTimes(2)
+  })
+
+  it('abandon leaves a held quit alone', async () => {
+    const { quit, hold } = quitHarness()
+    const exit = deferred()
+    trackExitWork(exit.promise, 'stop')
+    hold()
+    abandonQuitSequence()
+    expect(isQuitHeld()).toBe(true)
+    exit.resolve()
+    await vi.advanceTimersByTimeAsync(0)
     expect(quit).toHaveBeenCalledTimes(1)
   })
 

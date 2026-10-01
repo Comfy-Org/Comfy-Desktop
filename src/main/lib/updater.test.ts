@@ -1044,6 +1044,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
         expect(broadcastMock).toHaveBeenCalledWith('app-update:user-action-failed', {
           message: 'installer failed'
         })
+        // Work still running then: a fresh sequence waits for it again in full.
+        quitWait.trackExitWork(new Promise(() => {}), 'stop')
         let waited = false
         void quitWait.waitForExitWork().then(() => {
           waited = true
@@ -1055,6 +1057,43 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       } finally {
         vi.useRealTimers()
       }
+    })
+
+    it('the startup backstop abandons a sequence whose install never quit', async () => {
+      vi.useFakeTimers()
+      try {
+        const updater = await bootUpdater()
+        const quitWait = await import('./quitWait')
+        stageUpdate()
+        await updater.installUpdate(false)
+        expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+        // No quit followed; the backstop recovers into the normal UI after the deadline passed.
+        await vi.advanceTimersByTimeAsync(quitWait.QUIT_WAIT_MS)
+        updater.recordStartupInstallBackstopRecovered()
+        quitWait.trackExitWork(new Promise(() => {}), 'stop')
+        let waited = false
+        void quitWait.waitForExitWork().then(() => {
+          waited = true
+        })
+        await vi.advanceTimersByTimeAsync(quitWait.QUIT_WAIT_MS - 1)
+        expect(waited).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('reports a failure to stop ComfyUI as a failed install', async () => {
+      const updater = await bootUpdater()
+      stageUpdate()
+      cancelAllMock.mockImplementation(() => {
+        throw new Error('stop failed')
+      })
+      await updater.installUpdate()
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+      expect(quitReason).toBe('none')
+      expect(broadcastMock).toHaveBeenCalledWith('app-update:user-action-failed', {
+        message: 'stop failed'
+      })
     })
 
     it('an updater error while applying abandons the install sequence', async () => {
@@ -1071,6 +1110,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
         await installing
         for (const cb of listeners.error || []) cb(new Error('No update filepath provided'))
         expect(quitReason).toBe('none')
+        // Work still running then: a fresh sequence waits for it again in full.
+        quitWait.trackExitWork(new Promise(() => {}), 'stop')
         let waited = false
         void quitWait.waitForExitWork().then(() => {
           waited = true

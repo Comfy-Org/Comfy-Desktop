@@ -21,7 +21,7 @@ import {
   isUpdateInstallQuit,
   setQuitReason
 } from './quit-state'
-import { beginQuitSequence, endQuitSequence, isQuitHeld, waitForExitWork } from './quitWait'
+import { abandonQuitSequence, beginQuitSequence, waitForExitWork } from './quitWait'
 import { _broadcastToRenderer, cancelAll } from './ipc/shared'
 import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
@@ -518,7 +518,7 @@ function bindUpdaterEvents(): void {
     })
     // An install that failed after its stops: the next quit waits afresh. Keyed on the quit
     // reason, not the operation: a background check during the install's wait replaces it.
-    if (isUpdateInstallQuit() && !isQuitHeld()) endQuitSequence()
+    if (isUpdateInstallQuit()) abandonQuitSequence()
     _activeUpdateOperation = null
     clearQuitReason()
     _autoDownloadTriggeredFor = null
@@ -791,7 +791,7 @@ function abandonInstall(): void {
   _activeUpdateOperation = null
   // A user quit may have taken over during the wait: its reason and its held quit stay.
   if (isUpdateInstallQuit()) clearQuitReason()
-  if (!isQuitHeld()) endQuitSequence()
+  abandonQuitSequence()
 }
 
 /**
@@ -843,16 +843,16 @@ export async function installUpdate(userInitiated = true): Promise<void> {
   }
   setQuitReason('update-install')
   beginQuitSequence()
-  cancelAll()
-  await waitForExitWork()
-  // The session may have started ending during the wait (no installer the OS would kill), or an
-  // updater error during it already failed the install (it clears the reason). A user quit that
-  // took over meanwhile sets its own reason; the install the user asked for still goes ahead.
-  if (isSessionEnding() || getQuitReason() === 'none') {
-    abandonInstall()
-    return
-  }
   try {
+    cancelAll()
+    await waitForExitWork()
+    // The session may have started ending during the wait (no installer the OS would kill), or
+    // an updater error during it already failed the install (it clears the reason). A user quit
+    // that took over meanwhile sets its own reason; the install the user asked for goes ahead.
+    if (isSessionEnding() || getQuitReason() === 'none') {
+      abandonInstall()
+      return
+    }
     // macOS Squirrel quirk: if requestSingleInstanceLock is still held by
     // the quitting process, ShipIt swaps the .app bundle correctly but
     // the new Squirrel.Mac process cannot acquire the lock and exits
@@ -889,6 +889,8 @@ export function _test_setUpdateState(next: AppUpdateState): void {
 
 /** Record recovery when the startup installer did not enter Electron's quit path. */
 export function recordStartupInstallBackstopRecovered(): void {
+  // The install never quit the app: its sequence is abandoned like any install's.
+  abandonQuitSequence()
   emitUpdateTelemetry(
     'comfy.desktop.app_update.startup_install_backstop_recovered',
     _appUpdateState.version ?? settings.get('pendingDownloadedUpdateVersion') ?? null
