@@ -1168,6 +1168,14 @@ describe('resolvePriorProcess: the recorded Windows tree outliving its launcher'
     expect(kills).toEqual([])
   })
 
+  it("does not take a custom node's own `python main.py` under the interpreter for it", async () => {
+    // A helper started by a custom node, recorded as a tree member: relative main.py, but its
+    // parent is the interpreter, not the recorded launcher.
+    table = [{ pid: 700, ppid: 650, created: '1700', commandLine: 'C:\\Py\\python.exe main.py' }]
+    expect(await resolvePriorProcess('inst-1', {}, deps())).toBeNull()
+    expect(kills).toEqual([])
+  })
+
   it('leaves the tree to the child path while the launcher itself is alive', async () => {
     alive.add(222)
     const probe = vi.fn(async () => table)

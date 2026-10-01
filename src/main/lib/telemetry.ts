@@ -2014,7 +2014,7 @@ export function installAppHooks(
         : {}
       const drainPromise = shutdown('quit', endedProps).catch(() => {})
       const timeoutPromise = new Promise<void>((resolve) =>
-        setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)
+        setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS).unref()
       )
       await Promise.race([drainPromise, timeoutPromise])
     })().finally(() => {

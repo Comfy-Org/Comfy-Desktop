@@ -100,6 +100,21 @@ describe('waitForComfyStops', () => {
     expect(await waiting).toMatchObject({ timedOut: true, waitedMs: QUIT_WAIT_MS })
   })
 
+  it("reports the update's completed wait to the quit that follows it", async () => {
+    // The update waits before the installer; the installer's quit then finds nothing left.
+    let clock = 0
+    const d: QuitWaitDeps = { ...deps(), now: () => clock }
+    const stop = deferred()
+    stops = [stop.promise]
+    const update = waitForComfyStops(d)
+    await new Promise((r) => setTimeout(r, 0))
+    clock = 2500
+    stops = []
+    stop.resolve()
+    await update
+    expect(await waitForComfyStops(d)).toMatchObject({ waitedMs: 2500, stopsInFlight: 1 })
+  })
+
   it('does not start the deadline while there is nothing to wait for', async () => {
     // A quit that is cancelled (or still behind a dialog) must not spend the next one's budget.
     let clock = 0
@@ -151,8 +166,8 @@ describe('waitForComfyStops', () => {
     clock = QUIT_WAIT_MS
     await vi.advanceTimersByTimeAsync(QUIT_WAIT_MS)
     expect(await first).toMatchObject({ timedOut: true })
-    // The stuck one alone: nothing to wait for.
-    expect(await waitForComfyStops(d)).toMatchObject({ waitedMs: 0, stopsInFlight: 0 })
+    // The stuck one alone: nothing to wait for; it reports the wait that already happened.
+    expect(await waitForComfyStops(d)).toMatchObject({ timedOut: true, waitedMs: QUIT_WAIT_MS })
     // A new stop (the update's second round) gets a deadline of its own.
     const fresh = deferred()
     stops = [stuck, fresh.promise]

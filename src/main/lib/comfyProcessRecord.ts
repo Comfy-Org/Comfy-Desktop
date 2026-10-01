@@ -820,7 +820,10 @@ async function provenTreeMembers(
       row.created === m.startTime &&
       runsMainPy(row.commandLine) &&
       (commandLineIsInstall(row.commandLine, record.installPath) ||
-        runsRelativeMainPy(row.commandLine))
+        // The relative main.py a venv launcher hands its interpreter proves nothing by itself (a
+        // custom node's helper can run its own `python main.py`): only for the launcher's own
+        // direct child, which is what that interpreter is.
+        (row.ppid === record.childPid && runsRelativeMainPy(row.commandLine)))
     )
   })
   return proven.length > 0 ? proven : null
