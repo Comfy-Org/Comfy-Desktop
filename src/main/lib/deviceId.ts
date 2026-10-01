@@ -142,10 +142,31 @@ function isLegacyUuid(value: string): boolean {
  */
 const MACHINE_ID_TIMEOUT_MS = 2000
 
+/**
+ * On Windows `si.system()` runs three cold `powershell.exe` spawns in
+ * sequence (Win32_ComputerSystemProduct, MS_Systeminformation, Win32_bios)
+ * and routinely overruns the budget above. `si.uuid()` runs the same
+ * Win32_ComputerSystemProduct UUID query with the same parsing and
+ * lowercasing in a single PowerShell spawn (plus a quick `reg query`), so it
+ * yields a byte-identical UUID and therefore the same installation_id.
+ *
+ * That equivalence lives inside systeminformation (verified against 5.31.5:
+ * both read `getValue(lines, 'uuid', ':').toLowerCase()`). Recheck it on any
+ * version bump; a change there silently re-keys every Windows install.
+ * Not used on macOS, where `si.uuid().hardware` is the serial number.
+ */
+async function lookupHardwareUuid(): Promise<{ uuid?: string }> {
+  if (process.platform === 'win32') {
+    const ids = await si.uuid()
+    return { uuid: ids.hardware }
+  }
+  return si.system()
+}
+
 async function deriveMachineId(): Promise<{ machineId: string; idClass: IdClass }> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const sysPromise = si.system()
+    const sysPromise = lookupHardwareUuid()
     const timeoutPromise = new Promise<null>((resolve) => {
       timer = setTimeout(() => resolve(null), MACHINE_ID_TIMEOUT_MS)
     })
