@@ -217,17 +217,17 @@ describe('waitForPort abort settlement', () => {
     const { close, port } = await listenHanging()
     const controller = new AbortController()
     try {
+      // The in-flight request never ends on its own, and no later poll pass can run: only the
+      // abort listener can settle this. Without it, the test times out instead of passing slowly,
+      // so no wall-clock bound is needed.
       const wait = waitForPort(port, '127.0.0.1', {
-        timeoutMs: 30000,
+        timeoutMs: 600_000,
+        requestTimeoutMs: 600_000,
         intervalMs: 100,
         signal: controller.signal
       })
       setTimeout(() => controller.abort(), 50)
-      const start = Date.now()
       await expect(wait).rejects.toThrow('Launch cancelled.')
-      // Settled by the abort listener, not by the 2s request timeout or a
-      // later poll pass.
-      expect(Date.now() - start).toBeLessThan(1500)
     } finally {
       await close()
     }
@@ -247,15 +247,15 @@ describe('waitForUrl abort settlement', () => {
     const { close, port } = await listenHanging()
     const controller = new AbortController()
     try {
+      // As for waitForPort: only the abort listener can settle this.
       const wait = waitForUrl(`http://127.0.0.1:${port}/`, {
-        timeoutMs: 30000,
+        timeoutMs: 600_000,
+        requestTimeoutMs: 600_000,
         intervalMs: 100,
         signal: controller.signal
       })
       setTimeout(() => controller.abort(), 50)
-      const start = Date.now()
       await expect(wait).rejects.toThrow('Launch cancelled.')
-      expect(Date.now() - start).toBeLessThan(1500)
     } finally {
       await close()
     }
