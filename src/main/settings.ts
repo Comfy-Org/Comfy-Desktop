@@ -719,13 +719,23 @@ export function getAll(): Settings {
  */
 export function resolveBetaFeaturesEnabled(): boolean {
   const { settings, unreadable } = loadOutcome()
+  const enabled = betaFeaturesEnabledIn(settings, unreadable)
+  if (typeof settings.betaFeaturesEnabled === 'boolean' || unreadable) return enabled
+  settings.betaFeaturesEnabled = enabled
+  save(settings)
+  return enabled
+}
+
+/** What {@link resolveBetaFeaturesEnabled} would return, without writing the seed. */
+export function peekBetaFeaturesEnabled(): boolean {
+  const { settings, unreadable } = loadOutcome()
+  return betaFeaturesEnabledIn(settings, unreadable)
+}
+
+function betaFeaturesEnabledIn(settings: Settings, unreadable: boolean): boolean {
   const stored = settings.betaFeaturesEnabled
   if (typeof stored === 'boolean') return stored
-  if (unreadable) return false
-  const seeded = settings.telemetryEnabled === true
-  settings.betaFeaturesEnabled = seeded
-  save(settings)
-  return seeded
+  return unreadable ? false : settings.telemetryEnabled === true
 }
 
 function camelToSnake(s: string): string {

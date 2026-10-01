@@ -52,6 +52,7 @@ import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { isInstallationVisibleToRenderer } from './installationVisibility'
+import { previewCoreBetaArgs, withCommittedArgs } from '../coreBetaPreview'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -654,6 +655,31 @@ export function registerInstallationHandlers(): void {
     }
     return sections
   })
+
+  // Asked for only by the beta-args pill, so `get-detail-sections` never waits on it.
+  ipcMain.handle(
+    'get-core-beta-args',
+    async (_event, installationId: string, launchArgs?: unknown) => {
+      recordIpcInvocation('get-core-beta-args', installationId)
+      const running = _runningSessions.get(installationId)
+      if (running) return { timing: 'session', args: [...(running.coreBetaArgs ?? [])] }
+      const none = { timing: 'next-launch', args: [] }
+      const stored = await installations.get(installationId)
+      if (!stored) return none
+      const inst = withCommittedArgs(stored, launchArgs)
+      const launchCmd = sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
+      try {
+        return {
+          timing: 'next-launch',
+          args: await previewCoreBetaArgs(installationId, inst, launchCmd)
+        }
+      } catch (err) {
+        // Best-effort: a preview failure costs the pill, never the settings view.
+        console.warn('[get-core-beta-args] preview failed:', err)
+        return none
+      }
+    }
+  )
 
   ipcMain.handle(
     'get-comfy-args',

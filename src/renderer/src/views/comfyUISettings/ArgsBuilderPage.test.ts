@@ -300,14 +300,15 @@ describe('ArgsBuilderPage — raw-args validation', () => {
     // Unfocused: the partial is flagged as unsupported.
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(true)
 
-    // Focused: the trailing flag being typed is no longer flagged.
-    await wrapper.find('.args-raw-input').trigger('focusin')
+    // Focused: the trailing flag being typed is no longer flagged. Dispatched from the text input,
+    // as a real focus is: the wrapper also hosts the trailing buttons, which must not count.
+    await wrapper.find('.args-raw-input input').trigger('focusin')
     await flushPromises()
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(false)
     expect(wrapper.find('input[aria-invalid="true"]').exists()).toBe(false)
 
     // Blur: validation applies again.
-    await wrapper.find('.args-raw-input').trigger('focusout')
+    await wrapper.find('.args-raw-input input').trigger('focusout')
     await flushPromises()
     expect(wrapper.find('.args-raw-validation-error').exists()).toBe(true)
   })

@@ -95,15 +95,10 @@ function disablePygit2(reason: string): void {
   _pygit2 = { status: 'disabled', reason }
 }
 
-/** Set while a caller's git calls must leave the breaker exactly as they found it. */
 const _breakerExempt = new AsyncLocalStorage<true>()
 
-/**
- * Run `work` with its pygit2 calls kept out of the circuit breaker: their failures do not count
- * toward disabling the fallback, and their successes do not reset the count. For callers whose
- * git work must not change how anything else behaves, such as a settings view proving commit
- * ancestry for display. Covers every call `work` makes, across awaits.
- */
+/** Run `work` with its pygit2 calls, across awaits, kept out of the circuit breaker: their
+ *  failures do not count toward disabling the fallback and their successes do not reset it. */
 export function withoutPygit2Breaker<T>(work: () => Promise<T>): Promise<T> {
   return _breakerExempt.run(true, work)
 }

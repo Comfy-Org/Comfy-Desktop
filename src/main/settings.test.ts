@@ -33,6 +33,7 @@ let settings: {
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
   resolveBetaFeaturesEnabled: () => boolean
+  peekBetaFeaturesEnabled: () => boolean
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
   ) => Record<string, boolean | number | string | null>
@@ -707,6 +708,27 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
 // where a user hitting beta bugs escapes by disabling telemetry, killing the
 // diagnostics exactly when they matter. Consent only ever seeds the initial
 // value, once.
+describe('peekBetaFeaturesEnabled', () => {
+  it.each([
+    ['a telemetry opt-in', { telemetryEnabled: true }, true],
+    ['a telemetry opt-out', { telemetryEnabled: false }, false],
+    ['no telemetry choice', {}, false]
+  ])('answers as resolve would from %s, without writing the seed', (_label, stored, expected) => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify(stored))
+
+    expect(settings.peekBetaFeaturesEnabled()).toBe(expected)
+    expect(readPersistedSettings()).toEqual(stored)
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(expected)
+  })
+
+  it.each([true, false])('returns a stored %s', (choice) => {
+    settings.set('betaFeaturesEnabled', choice)
+    settings.set('telemetryEnabled', !choice)
+    expect(settings.peekBetaFeaturesEnabled()).toBe(choice)
+  })
+})
+
 describe('resolveBetaFeaturesEnabled', () => {
   it.each([true, false])(
     'retains a stored %s from a backup when the primary is unreadable',
