@@ -297,6 +297,7 @@ describe('requestTimeoutMs reaches the probe request', () => {
         fn === 'waitForPort'
           ? waitForPort(port, '127.0.0.1', opts)
           : waitForUrl(`http://127.0.0.1:${port}/`, opts)
+      wait.catch(() => {}) // settled by the abort, in the test or in cleanup
       await vi.waitFor(() => expect(get).toHaveBeenCalled())
       const timeouts = get.mock.calls.map(
         (call) =>
@@ -309,6 +310,8 @@ describe('requestTimeoutMs reaches the probe request', () => {
       controller.abort()
       await expect(wait).rejects.toThrow('Launch cancelled.')
     } finally {
+      // Even when an assertion threw first: a live waiter would keep polling for minutes.
+      controller.abort()
       get.mockRestore()
       await close()
     }
@@ -331,6 +334,7 @@ describe('a probe never outlasts the overall deadline', () => {
         fn === 'waitForPort'
           ? waitForPort(port, '127.0.0.1', opts)
           : waitForUrl(`http://127.0.0.1:${port}/`, opts)
+      wait.catch(() => {}) // settled by the abort, in the test or in cleanup
       await vi.waitFor(() => expect(get).toHaveBeenCalled())
       const timeout = get.mock.calls[0]!.find(
         (arg): arg is { timeout: number } =>
@@ -341,6 +345,8 @@ describe('a probe never outlasts the overall deadline', () => {
       controller.abort()
       await expect(wait).rejects.toThrow('Launch cancelled.')
     } finally {
+      // Even when an assertion threw first: a live waiter would keep polling for minutes.
+      controller.abort()
       get.mockRestore()
       await close()
     }
