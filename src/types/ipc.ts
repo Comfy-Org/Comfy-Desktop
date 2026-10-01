@@ -1105,6 +1105,15 @@ export interface PerformanceTestBenchmark {
   medianJobDurationSeconds: number | null
   measuredJobCount: number
   hardwareName: string | null
+  /** Typed, renderer-safe view of the run's rich core benchmark record, lifted
+   *  from `result.coreBenchmark` so History/Compare read a real `CoreBenchmarkSummary`
+   *  instead of walking flattened dotted keys off `result`. `null` for a run with no
+   *  capture (older ComfyUI / fallback to `/system_stats`) — back-compat preserved. */
+  coreBenchmark?: CoreBenchmarkSummary | null
+  /** Desktop-recomputed steady-state it/s (mean of `coreBenchmark.sampling.perStepItPerS`
+   *  excluding the warm-up first step; see `computeSteadyStateItPerS`). The headline it/s
+   *  the UI shows. `null` when there is no capture or no finite per-step data. */
+  steadyStateItPerS: number | null
   /** Complete results.json payload used to discover configurable table columns. */
   result: Record<string, PerformanceTestResultValue>
 }
@@ -1473,6 +1482,15 @@ export interface ElectronApi {
     png: ArrayBuffer,
     imageType: 'performance-test' | 'benchmark-comparison',
     defaultPath?: string
+  ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
+  /** Write a renderer-built benchmark data export (CSV or JSON string) to a
+   *  user-chosen path via a save dialog. `defaultBaseName` includes the extension
+   *  (e.g. `comfy-benchmarks-3-runs-2026-09-30.csv`); the file format is inferred
+   *  from that extension. `defaultDir` seeds the dialog's starting folder. */
+  exportBenchmarkData(
+    contents: string,
+    defaultBaseName: string,
+    defaultDir?: string
   ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>

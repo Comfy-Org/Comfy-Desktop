@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildCeilingLines,
+  buildMultiSeriesChart,
+  buildOpTimeline,
   buildRadialGauge,
   buildSeriesChart,
   niceTicks,
@@ -152,3 +155,91 @@ describe('projectY', () => {
     expect(y).toBeLessThanOrEqual(40)
   })
 })
+
+describe('buildMultiSeriesChart', () => {
+  it('returns null when no series has two finite points', () => {
+    expect(buildMultiSeriesChart([])).toBeNull()
+    expect(buildMultiSeriesChart([{ values: [] }, { values: [5] }])).toBeNull()
+    expect(buildMultiSeriesChart([{ values: [null, Number.NaN] }])).toBeNull()
+  })
+
+  it('shares axes across series and does not stretch a shorter series to the full width', () => {
+    // Two series on a shared x = step index: one of length 8, one of length 20.
+    const long = Array.from({ length: 20 }, (_, i) => i + 1)
+    const short = [1, 2, 3, 4, 5, 6, 7, 8]
+    const chart = buildMultiSeriesChart([{ values: long }, { values: short }], {
+      width: 190,
+      height: 100
+    })!
+    expect(chart.series).toHaveLength(2)
+    expect(chart.minX).toBe(0)
+    expect(chart.maxX).toBe(19)
+    // The long series spans the full width.
+    const longPoints = chart.series[0]!.points
+    expect(longPoints[0]!.x).toBe(0)
+    expect(longPoints[longPoints.length - 1]!.x).toBe(190)
+    // The short series ENDS EARLY at (7 / 19) * 190, not stretched to 190.
+    const shortPoints = chart.series[1]!.points
+    expect(shortPoints[shortPoints.length - 1]!.x).toBeCloseTo((7 / 19) * 190, 1)
+    expect(shortPoints[shortPoints.length - 1]!.x).toBeLessThan(190)
+  })
+
+  it('keeps an empty series in the result with an empty path so color indexing stays stable', () => {
+    const chart = buildMultiSeriesChart([{ values: [10, 20, 30] }, { values: [] }])!
+    expect(chart.series).toHaveLength(2)
+    expect(chart.series[1]!.points).toEqual([])
+    expect(chart.series[1]!.path).toBe('')
+    expect(chart.series[1]!.areaPath).toBe('')
+  })
+})
+
+describe('buildCeilingLines', () => {
+  it('projects one dashed ceiling per unique value, sorted ascending', () => {
+    const chart = buildSeriesChart([0, 32], { height: 100, minY: 0, maxY: 32 })!
+    const lines = buildCeilingLines(chart, [32, 24, 32, 24])
+    expect(lines.map((line) => line.value)).toEqual([24, 32])
+    expect(lines[0]!.y).toBe(projectY(chart, 24))
+    expect(lines[1]!.y).toBe(projectY(chart, 32))
+  })
+
+  it('drops non-finite ceilings and returns [] when none are finite', () => {
+    const chart = buildSeriesChart([0, 10], { height: 100, minY: 0, maxY: 10 })!
+    expect(buildCeilingLines(chart, [null, undefined, Number.NaN])).toEqual([])
+  })
+})
+
+describe('buildOpTimeline', () => {
+  it('sorts ops by time desc, shares against the total, widths against the largest shown', () => {
+    const timeline = buildOpTimeline(
+      [
+        { label: 'KSampler', value: 710 },
+        { label: 'VAEDecode', value: 120 },
+        { label: 'CLIPTextEncode', value: 170 }
+      ],
+      { topN: 2 }
+    )
+    expect(timeline.total).toBe(1000)
+    expect(timeline.max).toBe(710)
+    expect(timeline.bars.map((bar) => bar.label)).toEqual(['KSampler', 'CLIPTextEncode'])
+    // Share is of the full 1000ms total even though VAEDecode is hidden.
+    expect(timeline.bars[0]!.share).toBe(0.71)
+    expect(timeline.bars[1]!.share).toBe(0.17)
+    // Width is relative to the largest shown bar.
+    expect(timeline.bars[0]!.widthFraction).toBe(1)
+    expect(timeline.bars[1]!.widthFraction).toBe(round2(170 / 710))
+  })
+
+  it('drops null / non-positive ops and yields no bars for an empty panel', () => {
+    expect(buildOpTimeline([]).bars).toEqual([])
+    expect(
+      buildOpTimeline([
+        { label: 'a', value: null },
+        { label: 'b', value: 0 }
+      ]).bars
+    ).toEqual([])
+  })
+})
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100
+}

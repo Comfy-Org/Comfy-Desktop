@@ -10,6 +10,7 @@ import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
+import BenchmarkCompareView from '../views/BenchmarkCompareView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
 import TrackModal from '../views/TrackModal.vue'
 import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
@@ -20,6 +21,7 @@ import McpSetupModal from '../views/mcp/McpSetupModal.vue'
 import { useTheme } from '../composables/useTheme'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
+import { useBenchmarkNavStore } from '../stores/benchmarkNavStore'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useModal } from '../composables/useModal'
 import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
@@ -165,6 +167,24 @@ const {
   dismissTakeoverDirect,
   switchPanel
 } = overlays
+
+// Benchmark-area routing (design §2). The store owns History↔Compare (a pushed state
+// inside the benchmarks panel) and the compare selection; the host is the only place
+// that touches `switchPanel`, so the two benchmark view engineers consume the store
+// alone. Watch its Run↔History request and run the host panel switch.
+const benchmarkNav = useBenchmarkNavStore()
+watch(
+  () => benchmarkNav.panelRequest,
+  (request) => {
+    if (!request) return
+    const panel = benchmarkNav.consumePanelRequest()
+    if (panel) void switchPanel(panel, 'benchmark_nav')
+  }
+)
+// Re-entering History from any other panel starts on the list, not a stale Compare.
+watch(activePanel, (panel, previous) => {
+  if (panel === 'benchmarks' && previous !== 'benchmarks') benchmarkNav.backToHistory()
+})
 
 // Defers only for a running instance, not an open overlay — the picker lives
 // inside the new-install takeover, which is exactly when we want it warm.
@@ -607,7 +627,8 @@ onUnmounted(() => {
         </div>
 
         <div v-else-if="activePanel === 'benchmarks'" class="panel-benchmarks">
-          <BenchmarksView />
+          <BenchmarkCompareView v-if="benchmarkNav.screen === 'compare'" />
+          <BenchmarksView v-else />
         </div>
 
         <KeepAlive>

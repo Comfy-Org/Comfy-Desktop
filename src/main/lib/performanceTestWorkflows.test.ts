@@ -192,6 +192,8 @@ describe('listPerformanceTestBenchmarks', () => {
       medianJobDurationSeconds: 2,
       measuredJobCount: 5,
       hardwareName: 'mps',
+      coreBenchmark: null,
+      steadyStateItPerS: null,
       result: {
         ...validSummary,
         createdAt: '2026-09-13T15:30:45.000Z',
@@ -202,6 +204,75 @@ describe('listPerformanceTestBenchmarks', () => {
       }
     })
     expect(benchmarks[1]!.createdAt).toBeNull()
+  })
+
+  it('exposes a typed coreBenchmark and a recomputed steady-state it/s when the run has a capture', async () => {
+    const root = await makeTempDir()
+    const testsPath = path.join(root, 'user-data', 'performance-tests')
+    const coreBenchmark = {
+      promptId: 'abc-123',
+      captureSchemaVersion: 2,
+      collectorId: 'comfyui-core',
+      sampling: {
+        stepCount: 4,
+        // Step 1 is the warm-up outlier (0.3) and is excluded; mean of 10,11,12 = 11.
+        perStepItPerS: [0.3, 10, 11, 12],
+        avgItPerS: 8.3,
+        steadyStateItPerS: null
+      },
+      summary: { energyWhPerImage: 0.21, secPerImage: 1.12, throttled: false }
+    }
+    await fs.promises.mkdir(path.join(testsPath, 'captured-session'), { recursive: true })
+    await fs.promises.writeFile(
+      path.join(testsPath, 'captured-session', 'results.json'),
+      JSON.stringify({
+        createdAt: '2026-09-30T20:51:00.000Z',
+        instance: { id: 'instance-1', name: 'Comfy One' },
+        workspace: { id: null, name: null },
+        workflowName: 'z-image.json',
+        fastestJobDurationSeconds: 1,
+        slowestJobDurationSeconds: 2,
+        averageJobDurationSeconds: 1.5,
+        medianJobDurationSeconds: 1.5,
+        measuredJobCount: 3,
+        hardware: { deviceName: 'NVIDIA RTX 5090' },
+        coreBenchmark
+      })
+    )
+
+    const benchmarks = await listPerformanceTestBenchmarks(testsPath)
+
+    expect(benchmarks).toHaveLength(1)
+    expect(benchmarks[0]!.coreBenchmark).toEqual(coreBenchmark)
+    expect(benchmarks[0]!.steadyStateItPerS).toBeCloseTo(11, 5)
+  })
+
+  it('falls back to the raw average when a capture has too few finite per-step samples', async () => {
+    const root = await makeTempDir()
+    const testsPath = path.join(root, 'user-data', 'performance-tests')
+    await fs.promises.mkdir(path.join(testsPath, 'single-step'), { recursive: true })
+    await fs.promises.writeFile(
+      path.join(testsPath, 'single-step', 'results.json'),
+      JSON.stringify({
+        createdAt: '2026-09-30T20:00:00.000Z',
+        instance: { id: 'instance-1', name: 'Comfy One' },
+        workspace: { id: null, name: null },
+        workflowName: 'one-step.json',
+        fastestJobDurationSeconds: 1,
+        slowestJobDurationSeconds: 2,
+        averageJobDurationSeconds: 1.5,
+        medianJobDurationSeconds: 1.5,
+        measuredJobCount: 1,
+        coreBenchmark: {
+          promptId: 'one-step',
+          sampling: { stepCount: 1, perStepItPerS: [9.9], avgItPerS: 4.2, steadyStateItPerS: null }
+        }
+      })
+    )
+
+    const benchmarks = await listPerformanceTestBenchmarks(testsPath)
+
+    expect(benchmarks[0]!.steadyStateItPerS).toBeCloseTo(4.2, 5)
   })
 
   it('returns an empty list before any performance tests have been saved', async () => {
