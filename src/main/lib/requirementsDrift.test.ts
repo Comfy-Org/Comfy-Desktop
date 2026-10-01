@@ -295,7 +295,9 @@ describe('unmanagedRequirementsWarning', () => {
     expect(warning).toContain(
       `uv pip install --python ${shellQuote(python)} -r ${shellQuote(path.join(comfy, 'requirements.txt'))}`
     )
-    expect(warning).not.toContain('-m pip')
+    // uv may not be installed either: seeding pip is the fallback.
+    expect(warning).toContain('or, without uv:')
+    expect(warning).toContain(`${shellQuote(python)} -m ensurepip`)
   })
 
   it('names the unsatisfied requirements and the exact pip command', () => {
@@ -323,7 +325,7 @@ describe('unmanagedRequirementsWarning', () => {
     const python = path.join(embedded, 'python.exe')
     const warning = unmanagedRequirementsWarning(python, comfy, { isolated: true })
     if (process.platform === 'win32') {
-      expect(warning).toContain(`"${python}" -s -m pip install -r`)
+      expect(warning).toContain(`& ${shellQuote(python)} -s -m pip install -r`)
     } else {
       // findSitePackages only knows the Windows embedded layout on win32.
       expect(warning).toBeNull()
@@ -337,14 +339,67 @@ describe('unmanagedRequirementsWarning', () => {
     expect(unmanagedRequirementsWarning(path.join(venv, 'bin', 'python3'), comfy)).toBeNull()
   })
 
-  it('includes manager_requirements.txt in the command when present', () => {
+  it('checks manager_requirements.txt only when the launch enables Manager', () => {
     const comfy = makeComfy('blake3\n', 'comfyui_manager==4.2.2\n')
     const venv = path.join(tmpDir, '.venv')
-    makeSitePackages(venv, ['x-1.dist-info', 'pip-24.0.dist-info'])
+    makeSitePackages(venv, ['blake3-1.0.dist-info', 'pip-24.0.dist-info'])
     const python = path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', 'python3')
-    expect(unmanagedRequirementsWarning(python, comfy)).toContain(
+    // Without --enable-manager, a missing Manager is no reason to warn.
+    expect(unmanagedRequirementsWarning(python, comfy)).toBeNull()
+    expect(unmanagedRequirementsWarning(python, comfy, { withManager: true })).toContain(
       `-m pip install -r ${shellQuote(path.join(comfy, 'requirements.txt'))} -r ${shellQuote(path.join(comfy, 'manager_requirements.txt'))}`
     )
+  })
+})
+
+describe('unmanagedRequirementsWarning: environments it must judge carefully', () => {
+  const pythonIn = (venv: string): string =>
+    path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin', 'python3')
+
+  it('warns about an empty environment instead of saying nothing', () => {
+    const comfy = makeComfy('blake3\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, [])
+    const warning = unmanagedRequirementsWarning(pythonIn(venv), comfy)
+    expect(warning).toContain('no installed Python packages found')
+    expect(warning).toContain('uv pip install --python')
+  })
+
+  it('checks the torch stack too, since nothing repairs it here', () => {
+    const comfy = makeComfy('torch\nblake3\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, ['blake3-1.0.dist-info', 'pip-24.0.dist-info'])
+    expect(unmanagedRequirementsWarning(pythonIn(venv), comfy)).toContain('torch (missing)')
+  })
+
+  it('stays out of a venv that inherits the system site-packages', () => {
+    const comfy = makeComfy('blake3\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, ['pip-24.0.dist-info'])
+    fs.writeFileSync(
+      path.join(venv, 'pyvenv.cfg'),
+      'home = /usr/bin\ninclude-system-site-packages = true\n'
+    )
+    expect(unmanagedRequirementsWarning(pythonIn(venv), comfy)).toBeNull()
+  })
+
+  it('writes a PowerShell command on Windows', () => {
+    const comfy = makeComfy('blake3\n')
+    const venv = path.join(tmpDir, '.venv')
+    makeSitePackages(venv, ['pip-24.0.dist-info'])
+    const python = pythonIn(venv)
+    const warning = unmanagedRequirementsWarning(python, comfy, { platform: 'win32' })
+    expect(warning).toContain('In PowerShell, run:')
+    expect(warning).toContain(`& ${shellQuote(python, 'win32')} -m pip install -r`)
+  })
+
+  it('strips control characters from what it logs', () => {
+    const comfy = makeComfy('blake3\n')
+    const venv = path.join(tmpDir, 'ev\u001b[31mil')
+    makeSitePackages(venv, ['pip-24.0.dist-info'])
+    const warning = unmanagedRequirementsWarning(pythonIn(venv), comfy)!
+    expect(warning).not.toContain('\u001b')
+    expect(warning).toContain('ev[31mil')
   })
 })
 
@@ -364,6 +419,9 @@ describe('comfyuiDirForLaunch', () => {
   it('returns null without a main.py argument', () => {
     expect(comfyuiDirForLaunch({ cwd: '/x', args: ['main.py'] })).toBeNull()
     expect(comfyuiDirForLaunch({ args: ['-s', 'main.py'] })).toBeNull()
+    // The token after -s must be a main.py, not a flag or another file.
+    expect(comfyuiDirForLaunch({ cwd: '/x', args: ['-s', '--port', '1'] })).toBeNull()
+    expect(comfyuiDirForLaunch({ cwd: '/x', args: ['-s', 'other.py'] })).toBeNull()
   })
 })
 
@@ -373,7 +431,9 @@ describe('shellQuote', () => {
     expect(shellQuote("/it's/here", 'darwin')).toBe("'/it'\\''s/here'")
   })
 
-  it('double-quotes on Windows', () => {
-    expect(shellQuote('C:\\Program Files\\py.exe', 'win32')).toBe('"C:\\Program Files\\py.exe"')
+  it('uses literal PowerShell single quotes on Windows', () => {
+    expect(shellQuote('C:\\Program Files\\py.exe', 'win32')).toBe("'C:\\Program Files\\py.exe'")
+    // $ and backticks are inert in single quotes; an embedded ' is doubled.
+    expect(shellQuote("C:\\$(calc)\\`x\\it's", 'win32')).toBe("'C:\\$(calc)\\`x\\it''s'")
   })
 })

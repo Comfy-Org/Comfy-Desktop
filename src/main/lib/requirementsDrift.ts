@@ -49,12 +49,21 @@ export function normalizeDistName(name: string): string {
 const REQ_LINE_RE = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(.*)$/
 const SPEC_RE = /^(===|==|~=|>=|<=|!=|>|<)\s*(\S+)$/
 
+export interface DriftOptions {
+  /** Check torch/torchvision/torchaudio too. Off for Desktop-owned venvs, whose
+   *  torch stack the torch repair owns; on for environments nothing repairs. */
+  includeTorch?: boolean
+}
+
 /** Parse one requirements line; null for anything this check doesn't evaluate. */
-export function parseRequirementLine(raw: string): ParsedRequirement | null {
+export function parseRequirementLine(
+  raw: string,
+  opts: DriftOptions = {}
+): ParsedRequirement | null {
   const line = raw.replace(/\s+#.*$/, '').trim()
   if (!line || line.startsWith('#') || line.startsWith('-')) return null
   if (line.includes(';') || line.includes('://') || line.includes(' @ ')) return null
-  if (TORCH_STACK_RE.test(line)) return null
+  if (!opts.includeTorch && TORCH_STACK_RE.test(line)) return null
   const m = line.match(REQ_LINE_RE)
   if (!m) return null
   let minVersion: string | null = null
@@ -142,11 +151,12 @@ export function isSitePackagesEmpty(sitePackages: string | null): boolean {
 /** Requirement lines from `reqText` that `installed` does not satisfy. */
 export function findUnsatisfiedRequirements(
   reqText: string,
-  installed: Map<string, string | null>
+  installed: Map<string, string | null>,
+  opts: DriftOptions = {}
 ): UnsatisfiedRequirement[] {
   const out: UnsatisfiedRequirement[] = []
   for (const raw of reqText.split(/\r?\n/)) {
-    const req = parseRequirementLine(raw)
+    const req = parseRequirementLine(raw, opts)
     if (!req) continue
     if (!installed.has(req.name)) {
       out.push({ ...req, reason: 'missing' })
@@ -175,11 +185,12 @@ export interface RequirementsDrift {
  */
 export function detectRequirementsDrift(
   comfyuiDir: string,
-  sitePackages: string | null
+  sitePackages: string | null,
+  opts: DriftOptions & { files?: readonly string[] } = {}
 ): RequirementsDrift | null {
   if (!sitePackages || !fs.existsSync(sitePackages)) return null
   const texts: string[] = []
-  for (const file of REQUIREMENTS_FILES) {
+  for (const file of opts.files ?? REQUIREMENTS_FILES) {
     try {
       texts.push(fs.readFileSync(path.join(comfyuiDir, file), 'utf-8'))
     } catch {
@@ -196,10 +207,10 @@ export function detectRequirementsDrift(
   const requirements: ParsedRequirement[] = []
   for (const text of texts) {
     for (const raw of text.split(/\r?\n/)) {
-      const req = parseRequirementLine(raw)
+      const req = parseRequirementLine(raw, opts)
       if (req) requirements.push(req)
     }
-    for (const req of findUnsatisfiedRequirements(text, installed)) {
+    for (const req of findUnsatisfiedRequirements(text, installed, opts)) {
       if (seen.has(req.name)) continue
       seen.add(req.name)
       unsatisfied.push(req)
@@ -217,12 +228,12 @@ export function describeUnsatisfied(unsatisfied: UnsatisfiedRequirement[]): stri
     .join(', ')
 }
 
-/** Quote a path for the platform's usual shell: single quotes on POSIX (inert
- *  to `$`, backticks and backslashes), double quotes on Windows, where `"` cannot
- *  appear in a path. Limit: cmd.exe still expands `%VAR%` inside double quotes,
- *  so a path containing percent-delimited text may change when pasted. */
+/** Quote a path for the shell the suggested command targets: POSIX single
+ *  quotes on Linux/macOS, PowerShell single quotes on Windows (the default in
+ *  Windows Terminal). Both are literal - `$`, backticks and backslashes are
+ *  inert - with an embedded `'` escaped the way each shell expects. */
 export function shellQuote(p: string, platform: NodeJS.Platform = process.platform): string {
-  return platform === 'win32' ? `"${p}"` : `'${p.replace(/'/g, `'\\''`)}'`
+  return platform === 'win32' ? `'${p.replace(/'/g, "''")}'` : `'${p.replace(/'/g, `'\\''`)}'`
 }
 
 /** The environment root of a venv or embedded interpreter, from its python path. */
@@ -232,32 +243,82 @@ export function envRootForPython(pythonPath: string): string {
   return base === 'scripts' || base === 'bin' ? path.dirname(dir) : dir
 }
 
+/** A venv that also sees the system's site-packages: its own directory is not
+ *  the whole picture, so a check against it would report false misses. */
+function inheritsSystemSitePackages(envRoot: string): boolean {
+  try {
+    const cfg = fs.readFileSync(path.join(envRoot, 'pyvenv.cfg'), 'utf-8')
+    return /^\s*include-system-site-packages\s*=\s*true\s*$/im.test(cfg)
+  } catch {
+    return false
+  }
+}
+
+/** Paths and package names go into a log line: drop control characters so
+ *  they can't forge lines or carry terminal escapes. */
+const clean = (text: string): string =>
+  Array.from(text)
+    .filter((c) => {
+      const code = c.charCodeAt(0)
+      return code >= 0x20 && (code < 0x7f || code > 0x9f)
+    })
+    .join('')
+
+export interface UnmanagedWarningOptions {
+  /** Portable's embedded interpreter runs with `-s`. */
+  isolated?: boolean
+  /** The launch enables ComfyUI-Manager, so its requirements matter too. */
+  withManager?: boolean
+  platform?: NodeJS.Platform
+}
+
 /**
  * Launch-log warning for an environment Desktop doesn't own (git, portable):
- * names the unsatisfied requirements and the exact command to install them.
- * Null when nothing is unsatisfied or the environment can't be read.
+ * names the unsatisfied requirements and the command to install them. Null
+ * when nothing is unsatisfied or the environment can't be judged.
  */
 export function unmanagedRequirementsWarning(
   pythonPath: string,
   comfyuiDir: string,
-  opts: { isolated?: boolean } = {}
+  opts: UnmanagedWarningOptions = {}
 ): string | null {
-  const sitePackages = findSitePackages(envRootForPython(pythonPath))
-  const drift = detectRequirementsDrift(comfyuiDir, sitePackages)
-  if (!drift || drift.unsatisfied.length === 0) return null
-  const files = REQUIREMENTS_FILES.map((f) => path.join(comfyuiDir, f)).filter((f) =>
-    fs.existsSync(f)
-  )
-  // A uv-created venv has no pip, so `python -m pip` would fail there.
+  const platform = opts.platform ?? process.platform
+  const envRoot = envRootForPython(pythonPath)
+  if (inheritsSystemSitePackages(envRoot)) return null
+  const sitePackages = findSitePackages(envRoot)
+  const files = ['requirements.txt', ...(opts.withManager ? ['manager_requirements.txt'] : [])]
+  const existing = files.map((f) => path.join(comfyuiDir, f)).filter((f) => fs.existsSync(f))
+  if (existing.length === 0) return null
+
+  const q = (p: string): string => shellQuote(clean(p), platform)
+  const reqArgs = existing.map((f) => `-r ${q(f)}`)
   const hasPip = sitePackages !== null && readInstalledDists(sitePackages).has('pip')
-  const installer = hasPip
-    ? [shellQuote(pythonPath), ...(opts.isolated ? ['-s'] : []), '-m pip install']
-    : ['uv pip install --python', shellQuote(pythonPath)]
-  const command = [...installer, ...files.map((f) => `-r ${shellQuote(f)}`)].join(' ')
+  const pipCommand = [q(pythonPath), ...(opts.isolated ? ['-s'] : []), '-m pip install', ...reqArgs]
+  // PowerShell runs a quoted path only through the call operator.
+  const run = (parts: string[]): string =>
+    (platform === 'win32' && parts[0]!.startsWith("'") ? '& ' : '') + parts.join(' ')
+  const commands = hasPip
+    ? `  ${run(pipCommand)}\n`
+    : // No pip (a uv-created venv): uv if it is installed, or seed pip first.
+      `  ${run(['uv pip install --python', q(pythonPath), ...reqArgs])}\n` +
+      `or, without uv:\n  ${run([q(pythonPath), '-m ensurepip'])}\n  ${run(pipCommand)}\n`
+  const how = `${platform === 'win32' ? 'In PowerShell, run' : 'To install them, run'}:\n${commands}`
+
+  if (isSitePackagesEmpty(sitePackages)) {
+    return (
+      `\nWARNING: no installed Python packages found in ${clean(sitePackages!)}; ` +
+      `ComfyUI will likely fail to start. ${how}`
+    )
+  }
+  const drift = detectRequirementsDrift(comfyuiDir, sitePackages, {
+    includeTorch: true,
+    files
+  })
+  if (!drift || drift.unsatisfied.length === 0) return null
   return (
     `\nWARNING: this Python environment does not satisfy ComfyUI's requirements: ` +
-    `${describeUnsatisfied(drift.unsatisfied)}\n` +
-    `ComfyUI may fail to start. To install them, run:\n  ${command}\n`
+    `${clean(describeUnsatisfied(drift.unsatisfied))}\n` +
+    `ComfyUI may fail to start. ${how}`
   )
 }
 
@@ -265,11 +326,14 @@ export function unmanagedRequirementsWarning(
  * The ComfyUI checkout a launch command runs: the directory of the `main.py`
  * that follows `-s`, resolved against `cwd`. Portable launches run from the
  * portable root with an absolute `ComfyUI/main.py`, so `cwd` alone is wrong.
+ * Null unless the token after `-s` really is a `main.py`.
  */
 export function comfyuiDirForLaunch(cmd: { args?: string[]; cwd?: string }): string | null {
   const args = cmd.args ?? []
   const sIdx = args.indexOf('-s')
   const mainPy = sIdx !== -1 ? args[sIdx + 1] : undefined
-  if (!mainPy || !cmd.cwd) return null
+  if (!mainPy || !cmd.cwd || mainPy.startsWith('-') || path.basename(mainPy) !== 'main.py') {
+    return null
+  }
   return path.dirname(path.resolve(cmd.cwd, mainPy))
 }

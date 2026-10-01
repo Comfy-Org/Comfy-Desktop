@@ -1223,18 +1223,24 @@ async function runLaunch(
   // Git and portable installs run a venv the user owns: never modify it, but
   // say which requirements it's missing and how to install them, so an import
   // crash at boot isn't the first sign.
-  const unmanagedComfyDir =
-    (inst.sourceId === 'git' || inst.sourceId === 'portable') && launchCmd.cmd
-      ? comfyuiDirForLaunch(launchCmd)
-      : null
-  if (unmanagedComfyDir && launchCmd.cmd) {
-    const warning = unmanagedRequirementsWarning(launchCmd.cmd, unmanagedComfyDir, {
-      isolated: inst.sourceId === 'portable'
-    })
-    if (warning) {
-      console.warn(warning.trim())
-      makeSendOutput(event.sender, sessionId)(warning)
+  // Best-effort, like the repairs above: it must never block the launch.
+  try {
+    const unmanagedComfyDir =
+      (inst.sourceId === 'git' || inst.sourceId === 'portable') && launchCmd.cmd
+        ? comfyuiDirForLaunch(launchCmd)
+        : null
+    if (unmanagedComfyDir && launchCmd.cmd) {
+      const warning = unmanagedRequirementsWarning(launchCmd.cmd, unmanagedComfyDir, {
+        isolated: inst.sourceId === 'portable',
+        withManager: launchCmd.args?.includes('--enable-manager') === true
+      })
+      if (warning) {
+        console.warn(warning.trim())
+        makeSendOutput(event.sender, sessionId)(warning)
+      }
     }
+  } catch (err) {
+    console.warn('Requirements check for an unmanaged install failed:', err)
   }
 
   // Filter unsupported args, then inject desktop-managed feature flags.
