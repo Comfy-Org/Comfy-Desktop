@@ -728,22 +728,6 @@ export function resolveBetaFeaturesEnabled(): boolean {
   return seeded
 }
 
-/**
- * The beta opt-in as a read-only tri-state, for callers that must refuse when it is uncertain.
- *
- * `resolveBetaFeaturesEnabled` above answers `false` for an unreadable file and may answer from
- * a stale `.bak`: right for the beta grants, which then fail closed. A caller that treats "beta
- * off" as an ELIGIBILITY (the non-beta rollout) needs the opposite fail direction, so here every
- * uncertain state is `'unknown'`: an unreadable primary (with or without `.bak` standing in), or
- * no stored value. Never seeds and never writes.
- */
-export function peekBetaFeaturesEnabled(): boolean | 'unknown' {
-  const { settings, unreadable } = loadOutcome()
-  if (unreadable) return 'unknown'
-  const stored = settings.betaFeaturesEnabled
-  return typeof stored === 'boolean' ? stored : 'unknown'
-}
-
 function camelToSnake(s: string): string {
   // Handle acronym runs so `showInstallerUI` -> `show_installer_ui`, not
   // `show_installer_u_i`.

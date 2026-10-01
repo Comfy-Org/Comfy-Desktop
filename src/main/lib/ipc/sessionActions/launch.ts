@@ -859,13 +859,14 @@ async function runLaunch(
   // assembly, so user args are still filtered against the running core's schema — which is what
   // keeps flags an older core cannot parse from reaching it.
   let betaEnabled = false
-  // The rollout needs the opposite fail direction: "beta off" makes a launch ELIGIBLE there, so
-  // anything uncertain (this throwing, an unreadable file, a stale backup) must read as
-  // "might be a beta user". Read after the resolve above so a first-run seed is already written.
+  // The rollout reads the same resolution as a tri-state: a failure here leaves beta off (above,
+  // unchanged), but for the rollout it means "might be a beta user", which must not be selected.
+  // An unreadable settings file resolves to false rather than throwing; that misreads a beta user
+  // as non-beta, which only ever subjects them to the rollout's stricter gates.
   let betaState: boolean | 'unknown' = 'unknown'
   try {
     betaEnabled = settings.resolveBetaFeaturesEnabled()
-    betaState = settings.peekBetaFeaturesEnabled()
+    betaState = betaEnabled
   } catch (err) {
     console.warn('[core-beta] beta setting resolution failed:', err)
   }
