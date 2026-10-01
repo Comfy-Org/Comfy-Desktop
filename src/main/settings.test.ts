@@ -33,6 +33,7 @@ let settings: {
   has: (key: string) => boolean
   defaults: { onAppClose: 'tray' | 'quit' }
   resolveBetaFeaturesEnabled: () => boolean
+  peekBetaFeaturesEnabled: () => boolean | 'unknown'
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
   ) => Record<string, boolean | number | string | null>
@@ -816,5 +817,60 @@ describe('resolveBetaFeaturesEnabled', () => {
 
     expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
     expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(false)
+  })
+})
+
+// The rollout's eligibility reads "beta off" as permission, so its fail direction is the
+// opposite of the resolver's: every uncertain state must come back 'unknown', never false.
+describe('peekBetaFeaturesEnabled', () => {
+  function lockPrimary(): void {
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (p === settingsPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM'
+        throw err
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+  }
+
+  it.each([true, false])('returns a stored %s', (choice) => {
+    settings.set('betaFeaturesEnabled', choice)
+    expect(settings.peekBetaFeaturesEnabled()).toBe(choice)
+  })
+
+  it('returns unknown when nothing is stored, and does not seed', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: true }))
+
+    expect(settings.peekBetaFeaturesEnabled()).toBe('unknown')
+    expect(readPersistedSettings()).toEqual({ telemetryEnabled: true })
+  })
+
+  it.each([true, false])(
+    'returns unknown when the primary is unreadable, even with a stored %s in the backup',
+    (choice) => {
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+      fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+      fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ betaFeaturesEnabled: choice }))
+      lockPrimary()
+
+      expect(settings.peekBetaFeaturesEnabled()).toBe('unknown')
+    }
+  )
+
+  it('returns unknown when neither the primary nor a backup can be read', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    fs.rmSync(settingsPath + '.bak', { force: true })
+    lockPrimary()
+
+    // The resolver reads this state as false; the peek must not.
+    expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
+    expect(settings.peekBetaFeaturesEnabled()).toBe('unknown')
   })
 })

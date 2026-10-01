@@ -213,8 +213,8 @@ export interface CoreBetaLaunch {
 }
 
 export interface CoreRolloutLaunch {
-  /** Args the rollout put on the command line (after the schema filter). A retry that has to
-   *  drop the rollout removes exactly these. */
+  /** Args the rollout put on the command line (after the schema filter): exactly what anything
+   *  that must take the rollout back off a launch has to remove. */
   readonly applied: readonly string[]
   /** The payload epoch behind `applied`, or `null` when nothing was granted. */
   readonly epoch: number | null
@@ -859,12 +859,13 @@ async function runLaunch(
   // assembly, so user args are still filtered against the running core's schema — which is what
   // keeps flags an older core cannot parse from reaching it.
   let betaEnabled = false
-  // The rollout reads the same resolution as a tri-state: a failure here leaves beta off (above,
-  // unchanged), but for the rollout it means "might be a beta user", which must not be selected.
+  // The rollout needs the opposite fail direction: "beta off" makes a launch ELIGIBLE there, so
+  // anything uncertain (this throwing, an unreadable file, a stale backup) must read as
+  // "might be a beta user". Read after the resolve above so a first-run seed is already written.
   let betaState: boolean | 'unknown' = 'unknown'
   try {
     betaEnabled = settings.resolveBetaFeaturesEnabled()
-    betaState = betaEnabled
+    betaState = settings.peekBetaFeaturesEnabled()
   } catch (err) {
     console.warn('[core-beta] beta setting resolution failed:', err)
   }
@@ -1310,9 +1311,6 @@ async function runLaunch(
               abort.signal
             )
           : NO_CORE_COMMITS
-        // The gate's version, not the display label: the `[core-beta]` log line and the
-        // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
-        // an install whose label is unverified they name the lower ancestry-proven release.
         const { eligibility, rolloutCommits } = await resolveRolloutLaunch({
           betaState,
           sourceId: inst.sourceId,
@@ -1321,6 +1319,9 @@ async function runLaunch(
           checkout,
           signal: abort.signal
         })
+        // The gate's version, not the display label: the `[core-beta]` log line and the
+        // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
+        // an install whose label is unverified they name the lower ancestry-proven release.
         const gate = coreGateVersion(inst)
         const built = buildLaunchArgs({
           prefixArgs,

@@ -52,6 +52,9 @@ const ROLLOUT_VARIANT_RE = /^rollout(?:-[a-z0-9]{1,16})?$/
 
 export interface CoreRolloutBlocker {
   readonly id: string
+  // Commit lists name one SHA per lineage, as `commit_ranges` do: a proven absence of every
+  // introducing commit rules the blocker out, so a lineage missing from that list is one it
+  // cannot see. Same contract for `fix_commits`, where the omission only ever withholds.
   readonly fixCommits: readonly string[]
   readonly fixedIn?: string
   readonly introducedCommits: readonly string[]
@@ -104,8 +107,19 @@ function shaList(obj: object, key: string, where: string): string[] {
   return raw.map((value) => parseCommitSha(value) ?? fail(`${where}${key} has a bad commit`))
 }
 
+// Unknown keys are refused inside an entry, unlike at the top level: a misspelt
+// `max_core_version` would otherwise read as an open upper bound, the one typo that fails OPEN.
+const GRANT_KEYS: ReadonlySet<string> = new Set([
+  'arg',
+  'min_core_version',
+  'max_core_version',
+  'commit_ranges'
+])
+
 function parseGrant(candidate: unknown, where: string): CoreBetaGrant {
   if (!isPlainObject(candidate)) fail(`${where}is not an object`)
+  const unknownKey = Object.keys(candidate).find((key) => !GRANT_KEYS.has(key))
+  if (unknownKey !== undefined) fail(`${where}has unknown key ${unknownKey.slice(0, 32)}`)
   if (field(candidate, 'arg') !== CORE_ROLLOUT_ARG) fail(`${where}arg is not ${CORE_ROLLOUT_ARG}`)
   if ('commit_ranges' in candidate) {
     if ('min_core_version' in candidate || 'max_core_version' in candidate)

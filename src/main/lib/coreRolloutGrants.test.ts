@@ -129,19 +129,29 @@ describe('parseCoreRollout payload', () => {
     })
   })
 
-  it('accepts an open upper bound and ignores unknown keys', () => {
+  it('accepts an open upper bound and ignores unknown top-level and blocker keys', () => {
     const payload: Record<string, unknown> = { ...validPayload(), future_field: 1 }
-    ;(payload.grants as object[])[0] = {
-      arg: '--enable-assets',
-      min_core_version: '0.39.0',
-      notice: 'silent'
-    }
+    payload.blockers = [{ id: 'x', fixed_in: '0.38.0', note: 'tracked elsewhere' }]
     expect(parsedOn(payload).grants).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.39.0' }])
   })
 
   // Each row breaks one field; ONE bad field must refuse the whole payload, never just the entry.
   const breaks: [string, (p: Record<string, unknown>) => void, string][] = [
     ['grants missing', (p) => delete p.grants, 'grants must list'],
+    [
+      'a misspelt max_core_version (would read as an open bound)',
+      (p) =>
+        (p.grants = [
+          { arg: '--enable-assets', min_core_version: '0.39.0', max_core_verison: '0.40.0' }
+        ]),
+      'unknown key max_core_verison'
+    ],
+    [
+      'a beta notice field on a grant',
+      (p) =>
+        (p.grants = [{ arg: '--enable-assets', min_core_version: '0.39.0', notice: 'silent' }]),
+      'unknown key notice'
+    ],
     ['grants empty', (p) => (p.grants = []), 'grants must list'],
     [
       'nine grants',

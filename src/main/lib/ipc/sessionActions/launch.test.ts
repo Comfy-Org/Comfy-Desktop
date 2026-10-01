@@ -50,6 +50,8 @@ const launchHarness = vi.hoisted(() => ({
   /** Settings can throw on read: `resolveBetaFeaturesEnabled` writes the default back on first
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
+  /** What the rollout's read-only peek reports; `null` = the same as `betaEnabled`. */
+  betaPeek: null as null | boolean | 'unknown',
   grants: [] as CoreBetaGrant[],
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
@@ -119,6 +121,9 @@ vi.mock('../shared', async (importOriginal) => {
     },
     settings: new Proxy(actual.settings, {
       get(target, key) {
+        if (key === 'peekBetaFeaturesEnabled') {
+          return () => launchHarness.betaPeek ?? launchHarness.betaEnabled
+        }
         if (key === 'resolveBetaFeaturesEnabled') {
           return () => {
             if (launchHarness.betaEnabledThrows) throw new Error('settings write failed: EROFS')
@@ -1337,6 +1342,7 @@ describe('core beta report placement', () => {
     launchHarness.registryCalls = 0
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
+    launchHarness.betaPeek = null
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
@@ -1438,6 +1444,17 @@ describe('core beta report placement', () => {
         consent: 'denied'
       })
     ).toMatchObject({ eligible: false, gate: 'cohort' })
+  })
+
+  it('hands the rollout an unknown beta toggle when settings are unreadable', async () => {
+    // The resolver answers false for an unreadable file (beta grants fail closed); the rollout
+    // must instead see that it cannot tell.
+    launchHarness.betaEnabled = false
+    launchHarness.betaPeek = 'unknown'
+
+    await handleLaunch(ctxFor('harness-rollout-settings-unreadable'))
+
+    expect(launchHarness.rolloutFacts.map((f) => f.beta)).toEqual(['unknown'])
   })
 
   it('writes the rollout decision to the launch output beside the beta records', async () => {
@@ -2425,6 +2442,7 @@ describe('prior ComfyUI process handling at launch', () => {
     launchHarness.registryThrows = false
     launchHarness.betaEnabled = false
     launchHarness.betaEnabledThrows = false
+    launchHarness.betaPeek = null
     launchHarness.schemaNames = ['enable-assets', 'listen', 'port']
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null
