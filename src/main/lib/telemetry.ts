@@ -401,6 +401,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
  * after a downgrade an `unreachable` launch still applies a grant a newer build
  * persisted.
  *
+ * PostHog orders prereleases by SemVer, so `1.1.5-rc.1` is below `1.1.5`; gate
+ * on `X-0` (e.g. `semver_gte 1.1.5-0`) to include X's prereleases. Unpackaged
+ * builds send `git describe` output (`1.1.4-5-gabc1234`, a prerelease of the
+ * last tag), or a bare commit id when no tag is reachable.
+ *
  * The version is self-asserted, so a version gate is a compatibility gate, not
  * a trust boundary: never gate anything a user could want withheld on it.
  *
