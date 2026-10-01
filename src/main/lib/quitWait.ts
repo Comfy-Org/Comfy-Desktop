@@ -72,7 +72,11 @@ export function abandonQuitWait(): void {
 /** The last wait that had something to wait for. An update waits before the installer starts
  *  and the app quits; the quit's own wait then finds nothing left and reports this one, so
  *  `session.ended` describes the wait that happened. */
-let lastCompleted: QuitWaitResult | null = null
+let lastCompleted: { result: QuitWaitResult; at: number } | null = null
+
+/** How recent that wait must be to describe this quit: an update whose install then did not go
+ *  ahead must not be reported by a quit much later. */
+const LAST_WAIT_FRESH_MS = 30_000
 
 /** Whether anything a quit would wait for is in flight right now. */
 export function comfyStopsPending(deps: QuitWaitDeps = defaultDeps): boolean {
@@ -94,7 +98,8 @@ export async function waitForComfyStops(deps: QuitWaitDeps = defaultDeps): Promi
   // The deadline starts when there is first something to wait for, not when a waiter first
   // looks: a quit's other before-quit work (a dialog, a telemetry drain) must not spend it.
   if (!state && !comfyStopsPending(deps)) {
-    return lastCompleted ?? { waitedMs: 0, timedOut: false, stopsInFlight: 0 }
+    const fresh = lastCompleted && deps.now() - lastCompleted.at <= LAST_WAIT_FRESH_MS
+    return fresh ? lastCompleted!.result : { waitedMs: 0, timedOut: false, stopsInFlight: 0 }
   }
   if (!state) {
     const now = deps.now()
@@ -124,12 +129,13 @@ export async function waitForComfyStops(deps: QuitWaitDeps = defaultDeps): Promi
     // Settling does not end the wait: a settled stop can queue bookkeeping, so look again.
     await Promise.race([Promise.allSettled(work), expired]).finally(() => clearTimeout(timer))
   }
-  lastCompleted = {
+  const result = {
     waitedMs: Math.round(deps.now() - s.startedAt),
     timedOut: s.timedOut,
     stopsInFlight: s.seen.size
   }
-  return lastCompleted
+  lastCompleted = { result, at: deps.now() }
+  return result
 }
 
 /** The part of Electron's `app` the quit gate needs. */
