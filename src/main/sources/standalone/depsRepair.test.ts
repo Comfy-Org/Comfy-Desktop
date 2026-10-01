@@ -482,6 +482,26 @@ describe('repairDeps', () => {
     expect(constraintText.split('\n')).toContain('av==17.*')
   })
 
+  it('floors a satisfied local-version pin on its public version', async () => {
+    const { inst, site } = managedInstall(
+      ['numpy-2.1.0+vendor.dist-info'],
+      'blake3\nnumpy==2.1.0+vendor\n'
+    )
+    let constraintText = ''
+    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
+      constraintText = fs.readFileSync(
+        path.join(inst.installPath, args[args.indexOf('--constraint') + 1]!),
+        'utf-8'
+      )
+      fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
+      return { code: 0, output: '' }
+    })
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, tools(), { freeze: noFreeze, runUvPip: uv })
+    ).resolves.toBe('repaired')
+    expect(constraintText.split('\n')).toEqual(['numpy>=2.1.0'])
+  })
+
   it('has no paused note while the budget remains or nothing is missing', () => {
     const { inst } = managedInstall(SYNCED.slice(1), REQS)
     const drift = pendingDrift(inst)!
@@ -888,5 +908,7 @@ describe('relaxSpecifier', () => {
     expect(relaxSpecifier('==1.*')).toBe('==1.*')
     expect(relaxSpecifier('===1.0')).toBe('===1.0')
     expect(relaxSpecifier('>=1.4.2, ~=1.4')).toBe('>=1.4.2,>=1.4')
+    // uv rejects a local version label with >=.
+    expect(relaxSpecifier('==2.1.0+vendor')).toBe('>=2.1.0')
   })
 })

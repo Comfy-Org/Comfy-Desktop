@@ -144,7 +144,8 @@ export function relaxSpecifier(specifier: string): string {
     .split(',')
     .map((part) => {
       const m = part.trim().match(/^(?:==(?!=)|~=)\s*([^\s*]+)$/)
-      return m ? `>=${m[1]}` : part.trim()
+      // PEP 440 forbids a local label (`+vendor`) with `>=`: floor on the public version.
+      return m ? `>=${m[1]!.split('+')[0]}` : part.trim()
     })
     .join(',')
 }
