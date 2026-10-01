@@ -136,6 +136,18 @@ describe('waitForExitWork', () => {
     })
   })
 
+  it('evicts only what it gave up on: work registered during its last round stays', async () => {
+    trackExitWork(never(), 'stop')
+    const first = waitForExitWork()
+    await vi.advanceTimersByTimeAsync(QUIT_WAIT_MS - 100)
+    trackExitWork(never(), 'stop')
+    await vi.advanceTimersByTimeAsync(100)
+    await first
+    abandonQuitSequence()
+    // The later stop is still running, so a fresh sequence waits for it.
+    expect(await settledAfter(waitForExitWork(), QUIT_WAIT_MS - 1)).toBe(false)
+  })
+
   it('stops waiting once the OS session starts ending', async () => {
     trackExitWork(never(), 'stop')
     const waiting = waitForExitWork()
@@ -269,6 +281,18 @@ describe('holdQuit', () => {
     setSessionEnding()
     hold()
     await vi.advanceTimersByTimeAsync(0)
+    expect(drain).toHaveBeenCalledWith({ quit_wait_skipped: 'session_ending' })
+    expect(quit).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a wait the OS session end cut short as skipped', async () => {
+    const { drain, quit, hold } = quitHarness()
+    trackExitWork(never(), 'stop')
+    hold()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(drain).not.toHaveBeenCalled()
+    setSessionEnding()
+    await vi.advanceTimersByTimeAsync(250)
     expect(drain).toHaveBeenCalledWith({ quit_wait_skipped: 'session_ending' })
     expect(quit).toHaveBeenCalledTimes(1)
   })

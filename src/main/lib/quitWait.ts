@@ -29,6 +29,7 @@ interface QuitSequence {
   stops: number
   /** The wait in progress, shared by every caller (an update and a quit held behind it). */
   waiting: Promise<void> | null
+  /** See the transitions below. */
   phase: 'open' | 'held' | 'released'
 }
 
@@ -37,7 +38,8 @@ interface QuitSequence {
  *
  *   from      | transition                                     | to
  *   ----------|------------------------------------------------|-----------------------------
- *   none      | begin: an update install, or a committed quit  | open (the deadline starts)
+ *   none      | begin: an update install (its stop and wait),  | open (the deadline starts)
+ *             | or a committed quit                            |
  *   open      | hold: a committed before-quit                  | held
  *   held      | a further before-quit                          | held (prevented too)
  *   held      | wait + drain done: release, quit again         | released
@@ -92,21 +94,24 @@ export function abandonQuitSequence(): void {
 async function runWait(seq: QuitSequence): Promise<void> {
   const startedAt = now()
   const stops = new Set<Promise<void>>()
+  let raced: Promise<void>[] = []
   // Re-read after each round: a stop's exit handler, or an aborted launch's kill, registers
   // while the wait is already running.
   while (pending.size > 0 && !isSessionEnding()) {
     const remaining = seq.deadline - now()
     if (remaining <= 0) {
-      // Given up: evicted, so no later sequence waits for (or counts) it again.
-      pending.clear()
+      // What this wait gave up on is evicted, so no later sequence waits for (or counts) it
+      // again. Work registered since its last round stays.
+      for (const entry of raced) pending.delete(entry)
       seq.timedOut = true
       break
     }
+    raced = [...pending.keys()]
     for (const [entry, kind] of pending) if (kind === 'stop') stops.add(entry)
     let timer: ReturnType<typeof setTimeout> | undefined
     // Raced, never cancelled: a hung probe or a stuck tree is given up on, not waited out.
     await Promise.race([
-      Promise.all(pending.keys()),
+      Promise.all(raced),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, Math.min(remaining, SESSION_END_POLL_MS))
       })
@@ -155,11 +160,12 @@ export function holdQuit(event: { preventDefault: () => void }, deps: QuitHoldDe
   event.preventDefault()
   if (seq.phase === 'held') return
   seq.phase = 'held'
-  const skip = isSessionEnding()
-  void (skip ? Promise.resolve() : waitForExitWork())
+  // A session end, before or during the wait, ends it at once (see `runWait`).
+  void waitForExitWork()
     .then(() =>
       deps.drain(
-        skip
+        // The session end skipped the wait or cut it short.
+        isSessionEnding()
           ? { quit_wait_skipped: 'session_ending' }
           : {
               quit_wait_ms: Math.round(seq.waitedMs),
