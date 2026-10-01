@@ -36,7 +36,23 @@ export async function flushWindowState(): Promise<void> {
   } catch {}
 }
 
+/** Synchronous flush for `will-quit`, which exits without awaiting promises. */
+export function flushWindowStateSync(): void {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  if (!windowStateCache) return
+  try {
+    const p = windowStatePath()
+    fs.mkdirSync(path.dirname(p), { recursive: true })
+    fs.writeFileSync(p, JSON.stringify(windowStateCache, null, 2))
+  } catch {}
+}
+
 export function saveWindowBounds(installationId: string, window: BrowserWindow): void {
+  // Fullscreen bounds are the whole display; keep the last windowed size instead.
+  if (window.isFullScreen()) return
   const state = getWindowStateCache()
   const maximized = window.isMaximized()
   const bounds = window.getBounds()
@@ -66,4 +82,13 @@ export function getWindowOptions(
   const x = Math.max(wx, Math.min(saved.x, wx + ww - width))
   const y = Math.max(wy, Math.min(saved.y, wy + wh - height))
   return { x, y, width, height }
+}
+
+/** Test-only reset of the in-memory cache. */
+export function _resetWindowStateCacheForTest(): void {
+  windowStateCache = null
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
 }
