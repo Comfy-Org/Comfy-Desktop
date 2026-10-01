@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import http from 'http'
 import { findAvailablePort, isPortListening, waitForPort, waitForUrl } from './process'
 import net from 'net'
 
@@ -267,5 +268,46 @@ describe('waitForUrl abort settlement', () => {
     await expect(
       waitForUrl('http://127.0.0.1:1/', { timeoutMs: 30000, signal: controller.signal })
     ).rejects.toThrow('Launch cancelled.')
+  })
+})
+
+describe('requestTimeoutMs reaches the probe request', () => {
+  // The abort tests rely on it: a probe that ignored the option would end at the 2 s default and
+  // let a later poll pass settle the wait, which is what those tests must rule out.
+  it.each([
+    ['waitForPort', 1234, 1234],
+    ['waitForPort', undefined, 2000],
+    ['waitForUrl', 1234, 1234],
+    ['waitForUrl', undefined, 2000]
+  ] as const)('%s with %s', async (fn, requestTimeoutMs, expected) => {
+    const { close, port } = await listenHanging()
+    const get = vi.spyOn(http, 'get')
+    const controller = new AbortController()
+    try {
+      const opts = {
+        timeoutMs: 600_000,
+        intervalMs: 100,
+        signal: controller.signal,
+        ...(requestTimeoutMs ? { requestTimeoutMs } : {})
+      }
+      const wait =
+        fn === 'waitForPort'
+          ? waitForPort(port, '127.0.0.1', opts)
+          : waitForUrl(`http://127.0.0.1:${port}/`, opts)
+      await vi.waitFor(() => expect(get).toHaveBeenCalled())
+      const timeouts = get.mock.calls.map(
+        (call) =>
+          call.find(
+            (arg): arg is { timeout: number } =>
+              typeof arg === 'object' && arg !== null && 'timeout' in arg
+          )?.timeout
+      )
+      expect(timeouts).toContain(expected)
+      controller.abort()
+      await expect(wait).rejects.toThrow('Launch cancelled.')
+    } finally {
+      get.mockRestore()
+      await close()
+    }
   })
 })
