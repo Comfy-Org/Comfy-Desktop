@@ -119,13 +119,34 @@ function readPersistedFileForWrite(): Record<string, unknown> {
 interface PersistedOpsFlagEntry {
   value: FeatureFlagValue
   payload: unknown
+  /** When the server produced this value (ms). Written and read only by a flag with `maxAgeMs`,
+   *  so every other flag's entry stays exactly as it was. */
+  fetchedAt?: number
 }
 
-function readPersistedResult(key: string): PersistedOpsFlagEntry | undefined {
+/** A clock that runs a little ahead of the one that wrote the file is not grounds for refusal;
+ *  a timestamp further out than this cannot have come from a real fetch. */
+const MAX_FUTURE_SKEW_MS = 60 * 60 * 1000
+
+function readPersistedResult(
+  key: string,
+  maxAgeMs: number | undefined
+): PersistedOpsFlagEntry | undefined {
   const entry = readPersistedFile().entries[key]
   if (!entry || typeof entry !== 'object') return undefined
-  const { value, payload } = entry as { value?: unknown; payload?: unknown }
+  const { value, payload, fetchedAt } = entry as {
+    value?: unknown
+    payload?: unknown
+    fetchedAt?: unknown
+  }
   if (typeof value !== 'string' && typeof value !== 'boolean') return undefined
+  if (maxAgeMs !== undefined) {
+    // Unknown age reads as expired: the file is user-writable, and an entry that cannot say when
+    // it was fetched cannot show it is still inside the window.
+    if (typeof fetchedAt !== 'number' || !Number.isFinite(fetchedAt)) return undefined
+    const age = Date.now() - fetchedAt
+    if (age > maxAgeMs || age < -MAX_FUTURE_SKEW_MS) return undefined
+  }
   return { value, payload }
 }
 
@@ -193,8 +214,12 @@ export function makeOpsFlag<T>(opts: {
    *  Only for flags whose fail direction is a downgrade a returning user would notice; a
    *  fail-closed guard must NOT persist. */
   persist?: true
+  /** With `persist`: how long a stored value may stand in for an unreachable server. Past it the
+   *  flag drops to `fallback` exactly as if nothing were stored, which bounds how long a deleted
+   *  key or a machine that never reaches the server can hold a treatment. Omit to hold forever. */
+  maxAgeMs?: number
 }): OpsFlag<T> {
-  const { key, fallback, parse, logLabel, persist } = opts
+  const { key, fallback, parse, logLabel, persist, maxAgeMs } = opts
   let cached: T = fallback
   let initPromise: Promise<void> | null = null
   /** Captured by each `init`, bumped by `_resetForTest`. A fetch this flag abandoned at the
@@ -202,12 +227,18 @@ export function makeOpsFlag<T>(opts: {
    *  without the token its write would land under whatever state replaced it. */
   let generation = 0
 
+  function toPersistedEntry(result: OpsFlagValueResult): PersistedOpsFlagEntry {
+    const entry: PersistedOpsFlagEntry = { value: result.value, payload: result.payload }
+    if (maxAgeMs !== undefined) entry.fetchedAt = Date.now()
+    return entry
+  }
+
   /** The `unreachable` path — `getOpsFlagResult` classifies timeout/network errors rather
    *  than rejecting, so this covers both that and a defensive rejection. Read-only: an
    *  unreachable server must never overwrite what a successful fetch stored. */
   function applyPersisted(): boolean {
     if (!persist) return false
-    const stored = readPersistedResult(key)
+    const stored = readPersistedResult(key, maxAgeMs)
     if (!stored) return false
     const parsed = parse(stored.value, stored.payload)
     if (parsed === undefined) return false
@@ -226,13 +257,14 @@ export function makeOpsFlag<T>(opts: {
    *  `writePersistedResult` is a read-modify-write over a single shared `ops-flags.json`, and a
    *  late write is the first thing that makes concurrent writers structurally possible — it can
    *  now land after its own launch has moved on, so two overlapping launches could interleave.
-   *  Left unlocked on purpose: `coreBetaGrants` is the only flag that persists, so there is one
-   *  writer per process, and the loser of such a race re-fetches on the next launch anyway.
-   *  Revisit if a second `persist` flag is ever added. */
+   *  Left unlocked on purpose. Every write is a synchronous read-modify-write on the main thread,
+   *  so the persisting flags of ONE process (`coreBetaGrants`, `coreRolloutGrants`) cannot
+   *  interleave; only two overlapping Desktop processes could, and the loser of that race
+   *  re-fetches on the next launch anyway. */
   function persistLate(generationAtInit: number, result: OpsFlagValueResult): void {
     if (generationAtInit !== generation) return
     try {
-      writePersistedResult(key, { value: result.value, payload: result.payload })
+      writePersistedResult(key, toPersistedEntry(result))
     } catch (err) {
       // Same containment as the in-band write: a failed persist costs the next launch its
       // convergence and nothing else, so it must not escape as an unhandled rejection.
@@ -266,7 +298,7 @@ export function makeOpsFlag<T>(opts: {
             if (parsed !== undefined) cached = parsed
             if (persist) {
               try {
-                writePersistedResult(key, { value: result.value, payload: result.payload })
+                writePersistedResult(key, toPersistedEntry(result))
               } catch (err) {
                 // A failed write must not cost this launch the value it just fetched.
                 if (logLabel) console.log(`[${logLabel}] persist error:`, err)

@@ -147,6 +147,59 @@ describe('resolveCoreCommitState against a real repository', () => {
     expect(selectCoreBetaGrantArgs([grant], NO_VERSION, true, [], after)).toEqual([])
   })
 
+  describe('allowFetch', () => {
+    // A depth-1 clone lacks `knownGood`, an ancestor it cannot show, so resolving it is exactly
+    // the case that schedules a background fetch. The control proves the fetch is real here, so
+    // the `false` case cannot pass merely because nothing would have been fetched anyway.
+    function shallowClone(name: string): { dir: string; head: string } {
+      const dir = path.join(root, name)
+      git(
+        root,
+        'clone',
+        '-q',
+        '--depth',
+        '1',
+        '--single-branch',
+        '-b',
+        'master',
+        `file://${upstream}`,
+        dir
+      )
+      return { dir, head: git(dir, 'rev-parse', 'HEAD') }
+    }
+    const present = (dir: string, commitSha: string): boolean => {
+      try {
+        git(dir, 'cat-file', '-e', `${commitSha}^{commit}`)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    it('fetches a missing commit in the background by default (control)', async () => {
+      const { dir, head } = shallowClone('shallow-fetch-on')
+      await resolveCoreCommitState(dir, { kind: 'head', commit: head }, [sha.knownGood!])
+      await _backgroundFetchesForTest()
+      expect(present(dir, sha.knownGood!)).toBe(true)
+    })
+
+    it('leaves a missing commit unresolved and unfetched when fetching is off', async () => {
+      const { dir, head } = shallowClone('shallow-fetch-off')
+      const state = await resolveCoreCommitState(
+        dir,
+        { kind: 'head', commit: head },
+        [sha.knownGood!],
+        undefined,
+        { allowFetch: false }
+      )
+      await _backgroundFetchesForTest()
+      expect(state.ancestry.has(sha.knownGood!)).toBe(false)
+      expect(present(dir, sha.knownGood!)).toBe(false)
+      // Not even a failed attempt: nothing was tried, so nothing was recorded.
+      expect(fs.existsSync(path.join(store.dir, 'core-beta-fetch-failures.json'))).toBe(false)
+    })
+  })
+
   it('leaves an ancestor the depth-1 graph cannot show unresolved', async () => {
     const shallow = path.join(root, 'shallow')
     git(

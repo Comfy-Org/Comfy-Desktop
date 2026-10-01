@@ -107,18 +107,18 @@ function isEnabled(value: FeatureFlagValue | undefined): boolean {
   return typeof value === 'string' && !OFF_VARIANTS.has(value.toLowerCase())
 }
 
-function parseCoreVersion(value: unknown): string | null {
+export function parseCoreVersion(value: unknown): string | null {
   if (typeof value !== 'string') return null
   return semver.valid(value.replace(/^v/, ''))
 }
 
-function parseCommitSha(value: unknown): string | null {
+export function parseCommitSha(value: unknown): string | null {
   if (typeof value !== 'string' || !FULL_SHA_RE.test(value)) return null
   return value.toLowerCase()
 }
 
 /** Any bad range drops the entry, as a bad `max_core_version` does, rather than granting on less. */
-function parseCommitRanges(value: unknown): CoreCommitRange[] | null {
+export function parseCommitRanges(value: unknown): CoreCommitRange[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_COMMIT_RANGES) return null
   const ranges: CoreCommitRange[] = []
   for (const range of value) {
@@ -256,7 +256,7 @@ const DISABLE_PREFIX = '--disable-'
  *  the `--enable-`/`--disable-` prefix pair rather than a hardcoded table, so a new allowlist
  *  entry gets its conflict rule for free. Swapping only the prefix keeps the stem exact, so
  *  `--enable-assets` pairs with `--disable-assets` and never with `--disable-asset-hashing`. */
-function oppositeArg(arg: string): string | null {
+export function oppositeArg(arg: string): string | null {
   if (arg.startsWith(ENABLE_PREFIX)) return DISABLE_PREFIX + arg.slice(ENABLE_PREFIX.length)
   if (arg.startsWith(DISABLE_PREFIX)) return ENABLE_PREFIX + arg.slice(DISABLE_PREFIX.length)
   return null
@@ -319,7 +319,10 @@ function rangeShortfall(
 }
 
 /** Why a commit entry does not match, or `null` when it does. */
-function commitShortfall(flag: CoreBetaCommitGrant, commits: CoreCommitState): string | null {
+export function commitShortfall(
+  flag: CoreBetaCommitGrant,
+  commits: CoreCommitState
+): string | null {
   if (flag.commitRanges.some((range) => commitRangeMatches(range, commits.ancestry))) return null
   if (commits.head === null) return 'no readable git HEAD to measure'
   return flag.commitRanges
@@ -330,7 +333,7 @@ function commitShortfall(flag: CoreBetaCommitGrant, commits: CoreCommitState): s
     .join(' | ')
 }
 
-function versionGateOpen(core: CoreVersionState, hasVersionGrants: boolean): boolean {
+export function versionGateOpen(core: CoreVersionState, hasVersionGrants: boolean): boolean {
   const version = core.semver
   if (version === null) return false
   if (!core.current) {
@@ -462,7 +465,7 @@ function reportWithheld(
 }
 
 /** Why a version entry does not match, or `null` when it does. */
-function versionShortfall(
+export function versionShortfall(
   flag: CoreBetaVersionGrant,
   core: CoreVersionState,
   versionOpen: boolean

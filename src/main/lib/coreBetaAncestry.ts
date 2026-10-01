@@ -16,7 +16,7 @@ import type { CoreCheckout } from './version'
 
 const FULL_SHA_RE = /^[0-9a-f]{40}$/
 
-const MAX_RESOLVED_SHAS = 16
+export const MAX_RESOLVED_SHAS = 16
 
 // All git work for one launch, which runs before spawn; SHAs not reached in time stay unresolved.
 const RESOLVE_BUDGET_MS = 10_000
@@ -98,7 +98,7 @@ async function commitAncestry(
   sha: string,
   head: string,
   complete: boolean,
-  budget: { fetches: number; stopped: boolean }
+  budget: { fetches: number; stopped: boolean; allowFetch: boolean }
 ): Promise<Relation> {
   const base = await findMergeBaseOrNone(repoPath, sha, head)
   if (typeof base === 'string') return base.toLowerCase() === sha
@@ -118,7 +118,7 @@ async function commitAncestry(
     console.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
     return false
   }
-  if (budget.stopped) return null
+  if (budget.stopped || !budget.allowFetch) return null
   if (budget.fetches >= MAX_FETCHES) {
     console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
   } else if (scheduleFetch(repoPath, sha, head)) {
@@ -183,14 +183,18 @@ export async function resolveCoreCommitState(
   repoPath: string,
   checkout: CoreCheckout,
   shas: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** `false` resolves from the local graph only: a SHA the checkout lacks stays unresolved and no
+   *  background fetch is started. For callers acting on users who never opted into anything that
+   *  reaches the network on their behalf. */
+  { allowFetch = true }: { allowFetch?: boolean } = {}
 ): Promise<CoreCommitState> {
   if (shas.length === 0 || checkout.kind !== 'head') return NO_CORE_COMMITS
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
   const ancestry = new Map<string, boolean>()
   const deadline = Date.now() + RESOLVE_BUDGET_MS
-  const budget = { fetches: 0, stopped: false }
+  const budget = { fetches: 0, stopped: false, allowFetch }
   const work = (async () => {
     for (const [index, raw] of shas.entries()) {
       if (budget.stopped || signal?.aborted || Date.now() > deadline) return
