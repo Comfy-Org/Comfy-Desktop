@@ -5,6 +5,14 @@ import fs from 'fs'
 import path from 'path'
 import net from 'net'
 import { stateDir } from './paths'
+import {
+  groupHasLiveMembers,
+  groupMembers,
+  isPidAlive,
+  processGroupOf,
+  readStartTimes,
+  snapshotWindowsTree
+} from './processIdentity'
 
 /** Default timeout for waiting for ComfyUI to boot (5 minutes). */
 export const COMFY_BOOT_TIMEOUT_MS = 300_000
@@ -70,48 +78,234 @@ export function killProcTree(proc: ChildProcess): void {
   }
 }
 
-export function killProcessTree(proc: ChildProcess | null): Promise<void> {
-  const pid = proc?.pid
-  if (!proc || !pid) return Promise.resolve()
-  return new Promise<void>((resolve) => {
-    const done = (): void => {
-      proc.stdout?.destroy()
-      proc.stderr?.destroy()
-      resolve()
-    }
-    if (process.platform === 'win32') {
-      execFile('taskkill', ['/T', '/F', '/PID', String(pid)], { windowsHide: true }, done)
-      return
-    }
+/** Deadlines for kills and waits: immune to wall-clock steps, which could otherwise stretch a
+ *  bounded wait by hours or skip it entirely. */
+const monotonicNow = (): number => performance.now()
 
-    const processGroup = -pid
-    try {
-      process.kill(processGroup, 'SIGKILL')
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ESRCH') return done()
-    }
+/** Our own process group (POSIX), read once. Signalling it would take down this Desktop. */
+let ownPgid: Promise<number | null> | null = null
+function ownProcessGroup(): Promise<number | null> {
+  if (!ownPgid) ownPgid = processGroupOf(process.pid)
+  return ownPgid
+}
 
-    // Bounded: a group member stuck in uninterruptible sleep (or persistently
-    // EPERM) would otherwise trap this poll forever and hang every caller that
-    // awaits the kill (launch cancel, relaunch). Resolving on the cap is the
-    // lesser evil - the caller proceeds against a possibly-lingering process
-    // instead of deadlocking the lifecycle.
-    const killDeadline = Date.now() + 5000
-    const waitForGroupExit = (): void => {
-      if (Date.now() > killDeadline) return done()
-      try {
-        process.kill(processGroup, 0)
-        setTimeout(waitForGroupExit, 25).unref()
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'EPERM') {
-          setTimeout(waitForGroupExit, 25).unref()
-        } else {
-          done()
-        }
+/**
+ * Whether `pid` may be signalled by a kill that works from a record rather than a child we hold.
+ * Refuses pid 0 and 1 (`kill(-1)` is every process the user owns), this Desktop, and — on POSIX,
+ * where the kill is to `-pid` — this Desktop's own process group. Only a forged or corrupt record
+ * can ask for these; the proof would normally never get this far.
+ */
+export async function isSafeToSignal(pid: number): Promise<boolean> {
+  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return false
+  if (process.platform === 'win32') return pid !== 4 // the System process
+  const own = await ownProcessGroup()
+  return own === null || pid !== own
+}
+
+/** Outcome of a kill that waits. `exited` is false when the bound ran out with part of the
+ *  tree still alive: the caller must not assume the port, or ComfyUI's database lock, is free. */
+export interface KillResult {
+  exited: boolean
+  waitMs: number
+}
+
+/** A kill that first re-verifies whose pid it is. `killed: false` says why nothing was
+ *  signalled: the pid now names another process (`mismatch`), or the OS could not be asked
+ *  (`probe_failed`), which proves nothing either way. */
+export type VerifiedKillResult = KillResult &
+  (
+    | {
+        killed: true
+        /** What the kill covered, as far as it could be listed: the process group (POSIX) or
+         *  the tree (Windows). For the log only. */
+        members?: number[]
       }
+    | { killed: false; reason: 'mismatch' | 'probe_failed' | 'unsafe' }
+  )
+
+/** How long a kill waits for the tree to be gone. Windows termination is asynchronous (a
+ *  process blocked in a driver call keeps its handles until the call returns), so it gets
+ *  longer than the POSIX SIGKILL. */
+export const KILL_WAIT_MS = process.platform === 'win32' ? 10_000 : 5_000
+const KILL_POLL_MS = process.platform === 'win32' ? 100 : 25
+
+function waitUntil(
+  gone: () => boolean,
+  startedAt: number,
+  boundMs: number,
+  /** Asked once when the bound runs out: whether what is left is really gone after all (a
+   *  process group holding only unreaped zombies, which answer `kill 0` but hold nothing). */
+  goneOnTimeout?: () => Promise<boolean>
+): Promise<KillResult> {
+  return new Promise((resolve) => {
+    // The bound is for waiting, measured from here: whatever ran before (a PowerShell snapshot
+    // can take longer than the bound itself) must not leave the poll a single sample.
+    const deadline = monotonicNow() + boundMs
+    const poll = (): void => {
+      if (gone()) return resolve({ exited: true, waitMs: monotonicNow() - startedAt })
+      // Bounded: a member stuck in uninterruptible sleep (or persistently EPERM) would
+      // otherwise trap this poll forever and hang every caller that awaits the kill. The
+      // caller learns it timed out and decides; it is never told the tree is gone.
+      if (monotonicNow() >= deadline) {
+        void (goneOnTimeout ? goneOnTimeout().catch(() => false) : Promise.resolve(false)).then(
+          (exited) => resolve({ exited, waitMs: monotonicNow() - startedAt })
+        )
+        return
+      }
+      setTimeout(poll, KILL_POLL_MS).unref()
     }
-    waitForGroupExit()
+    poll()
   })
+}
+
+function posixGroupGone(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0)
+    return false
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'EPERM'
+  }
+}
+
+function taskkillTree(pid: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    execFile('taskkill', ['/T', '/F', '/PID', String(pid)], { windowsHide: true }, () => resolve())
+  })
+}
+
+/**
+ * Windows: `taskkill /T /F`, then poll every pid of the tree until it has exited. taskkill
+ * returns when it has ASKED for termination, not when it is done. The tree comes from a
+ * process-table snapshot (taskkill's own output is localized).
+ *
+ * `taskkill` is started first, synchronously: this also runs on quit, where nothing waits for
+ * it, and a kill queued behind a PowerShell round trip could be lost with the app. The snapshot
+ * runs alongside; processes still terminating are still in the table, and survivors keep their
+ * (now dead) parent's pid, so the tree is still found. A failed snapshot still kills; it can
+ * only watch the root.
+ */
+async function killWindowsTree(pid: number, startedAt: number): Promise<KillResult> {
+  const killing = taskkillTree(pid)
+  const snapshot = await snapshotWindowsTree(pid)
+  await killing
+  const pids = snapshot && snapshot.pids.length > 0 ? snapshot.pids : [pid]
+  return waitUntil(() => !pids.some(isPidAlive), startedAt, KILL_WAIT_MS)
+}
+
+/** Windows, verified: the root's start token must match a snapshot taken before the kill, or
+ *  nothing is signalled. */
+async function killWindowsTreeVerified(
+  pid: number,
+  startedAt: number,
+  expectedRoot: string
+): Promise<VerifiedKillResult> {
+  const snapshot = await snapshotWindowsTree(pid)
+  if (!snapshot) {
+    return {
+      killed: false,
+      reason: 'probe_failed',
+      exited: false,
+      waitMs: monotonicNow() - startedAt
+    }
+  }
+  if (snapshot.rootCreated !== expectedRoot) {
+    return {
+      killed: false,
+      reason: 'mismatch',
+      exited: !isPidAlive(pid),
+      waitMs: monotonicNow() - startedAt
+    }
+  }
+  await taskkillTree(pid)
+  const pids = snapshot.pids.length > 0 ? snapshot.pids : [pid]
+  const result = await waitUntil(() => !pids.some(isPidAlive), startedAt, KILL_WAIT_MS)
+  return { killed: true, members: pids, ...result }
+}
+
+export function killProcessTree(proc: ChildProcess | null): Promise<KillResult> {
+  const pid = proc?.pid
+  if (!proc || !pid) return Promise.resolve({ exited: true, waitMs: 0 })
+  const startedAt = monotonicNow()
+  const done = (result: KillResult): KillResult => {
+    proc.stdout?.destroy()
+    proc.stderr?.destroy()
+    return result
+  }
+  if (process.platform === 'win32') {
+    return killWindowsTree(pid, startedAt).then(({ exited, waitMs }) => done({ exited, waitMs }))
+  }
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ESRCH') {
+      return Promise.resolve(done({ exited: true, waitMs: 0 }))
+    }
+  }
+  return waitUntil(
+    () => posixGroupGone(pid),
+    startedAt,
+    KILL_WAIT_MS,
+    async () => !(await groupHasLiveMembers(pid))
+  ).then(done)
+}
+
+/**
+ * Kill a process tree Desktop no longer holds a `ChildProcess` for (an orphan left by a
+ * previous Desktop), and wait for it to be gone. `expectedStart` is the start token the caller
+ * proved ownership with; it is re-checked immediately before the kill so a pid recycled since
+ * the proof is never signalled (`killed: false`).
+ *
+ * POSIX: Desktop spawns ComfyUI `detached`, so the orphan leads its own process group and the
+ * whole group is signalled, exactly as `killProcessTree` does.
+ */
+export async function killPidTree(pid: number, expectedStart: string): Promise<VerifiedKillResult> {
+  const startedAt = monotonicNow()
+  if (!(await isSafeToSignal(pid))) {
+    return { killed: false, reason: 'unsafe', exited: false, waitMs: 0 }
+  }
+  if (process.platform === 'win32') return killWindowsTreeVerified(pid, startedAt, expectedStart)
+  // The rest of its group (the leader excluded), listed before the proof, so nothing comes
+  // between the proof and the signal.
+  const members =
+    (await processGroupOf(pid).catch(() => null)) === pid
+      ? await groupMembers(pid).catch(() => [] as number[])
+      : []
+  const now = await readStartTimes([pid])
+  if (!now) {
+    return {
+      killed: false,
+      reason: 'probe_failed',
+      exited: false,
+      waitMs: monotonicNow() - startedAt
+    }
+  }
+  if (now.get(pid) !== expectedStart) {
+    return {
+      killed: false,
+      reason: 'mismatch',
+      exited: !isPidAlive(pid),
+      waitMs: monotonicNow() - startedAt
+    }
+  }
+  let group = true
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    group = false
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {}
+  }
+  // Not a group leader (should not happen for a detached spawn): watch the pid itself. The
+  // orphan's parent is init or a subreaper, which reaps it, so it does not linger as a zombie.
+  const gone = group ? () => posixGroupGone(pid) : () => !isPidAlive(pid)
+  const result = await waitUntil(
+    gone,
+    startedAt,
+    KILL_WAIT_MS,
+    group ? async () => !(await groupHasLiveMembers(pid)) : undefined
+  )
+  return { killed: true, members: group ? [pid, ...members] : [pid], ...result }
 }
 
 export function findPidsByPort(port: number): Promise<number[]> {
@@ -473,6 +667,26 @@ export async function isPortListening(port: number, host: string = '127.0.0.1'):
   if (connectResults.some(Boolean)) return true
 
   return !(await canBind(port, host))
+}
+
+/**
+ * Wait until `port` on `host` can be bound again, up to `timeoutMs`. A process that has exited
+ * can still own its listening socket for a few milliseconds while the OS tears it down (measured
+ * on Windows: 2-12 ms after the exit code is set), so a port probe straight after a kill can see
+ * the dead process's port as busy. Resolves whether the port became free.
+ */
+export async function waitForPortFree(
+  port: number,
+  host: string = '127.0.0.1',
+  timeoutMs: number = 2_000,
+  intervalMs: number = 50
+): Promise<boolean> {
+  const deadline = monotonicNow() + timeoutMs
+  for (;;) {
+    if (!(await isPortListening(port, host))) return true
+    if (monotonicNow() >= deadline) return false
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
 }
 
 export async function findAvailablePort(

@@ -15,6 +15,7 @@ import {
   setPortArg,
   findAvailablePort,
   isPortListening,
+  waitForPortFree,
   writePortLock,
   readPortLock,
   COMFY_BOOT_TIMEOUT_MS,
@@ -93,6 +94,13 @@ import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
+import {
+  holderIsInstall,
+  resolvePriorProcess,
+  trackSpawn,
+  type PriorProcessOutcome
+} from '../../comfyProcessRecord'
+import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -419,17 +427,23 @@ const PROCESS_CLOSE_GRACE_MS = 1_000
 /** Prefer `close` so output pipes can drain, but do not hang on inherited pipes. */
 export function onProcessTerminated(
   proc: ChildProcess,
-  callback: (code: number | null, signal: NodeJS.Signals | null) => void | Promise<void>
+  callback: (
+    code: number | null,
+    signal: NodeJS.Signals | null,
+    /** `pipesHeld`: the process exited but its output pipes were still open at the grace
+     *  deadline — something it started still holds them. */
+    info: { pipesHeld: boolean }
+  ) => void | Promise<void>
 ): void {
   let finished = false
   let fallbackTimer: NodeJS.Timeout | undefined
 
-  const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
+  const finish = (code: number | null, signal: NodeJS.Signals | null, pipesHeld: boolean): void => {
     if (finished) return
     finished = true
     if (fallbackTimer) clearTimeout(fallbackTimer)
     try {
-      void Promise.resolve(callback(code, signal)).catch((err) => {
+      void Promise.resolve(callback(code, signal, { pipesHeld })).catch((err) => {
         console.error('Process termination callback failed:', err)
       })
     } catch (err) {
@@ -437,10 +451,10 @@ export function onProcessTerminated(
     }
   }
 
-  proc.once('close', finish)
+  proc.once('close', (code, signal) => finish(code, signal, false))
   proc.once('exit', (code, signal) => {
     if (finished) return
-    fallbackTimer = setTimeout(() => finish(code, signal), PROCESS_CLOSE_GRACE_MS)
+    fallbackTimer = setTimeout(() => finish(code, signal, true), PROCESS_CLOSE_GRACE_MS)
     fallbackTimer.unref()
   })
 }
@@ -525,6 +539,73 @@ async function openLogStream(installPath: string): Promise<WriteStream> {
 export function writeLog(stream: WriteStream, text: string): void {
   // `destroyed` too: a stream that errored is not `writableEnded`, and each write would warn again.
   if (!stream.writableEnded && !stream.destroyed) stream.write(stripAnsi(text))
+}
+
+/** `prior_process_found`: a ComfyUI from an earlier run of this session met at launch, and
+ *  what was done about it. */
+export function emitPriorProcessFound(installationId: string, prior: PriorProcessOutcome): void {
+  telemetry.capture('comfy.desktop.comfyui.prior_process_found', {
+    installation_id: installationId,
+    action: prior.action,
+    proof: prior.proof,
+    age_ms: prior.ageMs,
+    wait_ms: prior.waitMs,
+    exited_in_time: prior.exitedInTime,
+    busy_override: prior.busyOverride === true,
+    lingering_count: prior.lingering ?? 0,
+    queue_unknown: prior.queueUnknown === true
+  })
+}
+
+/** The lock holder, for the log: what the probe found, or that it found nothing. */
+export function describeLockHolder(holder: DbLockHolder | null): string {
+  if (!holder) return 'holder not identified'
+  const parts = [
+    `holder pid ${holder.pid}`,
+    `source ${holder.source}`,
+    `same install ${holder.sameInstall}`
+  ]
+  if (holder.name) parts.push(`name ${holder.name}`)
+  if (holder.runsMainPy !== null) parts.push(`runs main.py ${holder.runsMainPy}`)
+  if (holder.ageS !== null) parts.push(`running ${holder.ageS}s`)
+  return parts.join(', ')
+}
+
+/** One log line saying what really happened to an earlier ComfyUI met at launch. */
+export function describePriorOutcome(prior: PriorProcessOutcome): string {
+  const what =
+    prior.action === 'terminated'
+      ? prior.exitedInTime
+        ? 'stopped, and it exited'
+        : 'stopped, but it did not exit'
+      : prior.action === 'waited'
+        ? 'it exited on its own'
+        : prior.action === 'busy_left'
+          ? prior.queueUnknown
+            ? 'left running: it did not answer whether it is working on a prompt'
+            : 'left running: it is working on a prompt'
+          : 'left running: not proven to be ours'
+  const reason = prior.queueUnknown ? 'unknown' : prior.blocked
+  const blocked = prior.blocked ? `; launch refused (${reason})` : ''
+  const lingering = prior.lingering ? `; ${prior.lingering} surviving subprocess(es) stopped` : ''
+  const covered = prior.stoppedPids?.length ? `; stopped pids ${prior.stoppedPids.join(', ')}` : ''
+  if (prior.survivorPids) {
+    // No port here: nothing holds it any more, only these processes.
+    const them =
+      prior.action === 'terminated'
+        ? prior.exitedInTime
+          ? 'stopped, and they exited'
+          : 'stopped, but not all of them exited'
+        : prior.blocked === 'unverified'
+          ? 'left running: they could not be re-verified'
+          : "left running: they do not answer on this installation's port, so whether they " +
+            'are working cannot be asked'
+    return (
+      `processes left by an earlier ComfyUI (pids ${prior.survivorPids.join(', ')}, proof ` +
+      `${prior.proof}): ${them}${covered}${blocked}`
+    )
+  }
+  return `earlier ComfyUI (pid ${prior.pid}, port ${prior.port}, proof ${prior.proof}): ${what}${lingering}${covered}${blocked}`
 }
 
 export function _resolveLaunchMode(
@@ -1388,7 +1469,7 @@ async function runLaunch(
       installationId
     )
 
-    onProcessTerminated(proc, async (code, signal) => {
+    onProcessTerminated(proc, async (code, signal, { pipesHeld }) => {
       logStream.end()
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
@@ -1418,7 +1499,8 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null
+        last_stderr: lastStderr ?? null,
+        pipes_held_after_exit: pipesHeld
       })
       if (crashed) {
         recordCrash(exitedPayload)
@@ -1438,6 +1520,84 @@ async function runLaunch(
     return { ok: true, mode }
   }
 
+  // A ComfyUI an earlier run of this session left behind would hold the install's database
+  // lock, so the new one would die at startup (or, in auto port mode, start beside it on the
+  // next port and die there). Runs before any port logic: a terminated orphan frees its port.
+  // Only a PROVEN orphan (see comfyProcessRecord) is ever stopped without asking.
+  let prior: PriorProcessOutcome | null = null
+  try {
+    prior = await resolvePriorProcess(sessionId, {
+      stopBusy: actionData?.stopBusyPriorProcess === true,
+      signal: abort.signal,
+      onProbe: () =>
+        sendProgress('launch', { percent: -1, status: i18n.t('launch.checkingPriorProcess') }),
+      onNote: (line) => appendLog(sessionId, `[launch] ${line}\n`)
+    })
+  } catch (err) {
+    // Bookkeeping never costs a launch: no answer means today's behaviour.
+    console.warn('[launch] prior-process check failed:', err)
+  }
+  // After a cancel, only a stop that really happened is reported; anything else was cut short.
+  if (prior && (!abort.signal.aborted || prior.action === 'terminated')) {
+    emitPriorProcessFound(installationId, prior)
+    appendLog(sessionId, `[launch] ${describePriorOutcome(prior)}\n`)
+  }
+  // A cancel during the busy check wins over whatever it found.
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
+  if (prior?.blocked) {
+    if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+    if (prior.blocked === 'busy') {
+      return {
+        ok: false,
+        // No counts: the prompt stays on screen while the queue moves on.
+        message: prior.survivorPids
+          ? i18n.t('errors.priorSurvivorsRunning', { pids: prior.survivorPids.join(', ') })
+          : prior.queueUnknown
+            ? i18n.t('errors.priorProcessUnresponsive')
+            : i18n.t('errors.priorProcessBusy'),
+        portConflict: {
+          port: prior.port,
+          pids: prior.survivorPids ?? [prior.pid],
+          isComfy: true,
+          priorBusy: true,
+          ...(prior.queueUnknown ? { priorUnknown: true } : {}),
+          ...(prior.survivorPids ? { priorSurvivors: true } : {})
+        }
+      }
+    }
+    // The recorded pid can be the venv launcher; on Windows the process holding the port (and
+    // the database) is its child. Name whoever listens on the port too.
+    const holders = await findPidsByPort(prior.port).catch(() => [] as number[])
+    if (prior.scanOwed) {
+      // The recorded child is long gone: name only what holds the port now.
+      return {
+        ok: false,
+        message: prior.scanRecent
+          ? i18n.t('errors.priorScanRecent')
+          : holders.length > 0
+            ? i18n.t('errors.priorScanUnavailablePid', {
+                port: prior.port,
+                pid: holders.join(', ')
+              })
+            : i18n.t('errors.priorScanUnavailable', { port: prior.port })
+      }
+    }
+    return {
+      ok: false,
+      message: i18n.t(
+        prior.blocked === 'unverified'
+          ? 'errors.priorProcessUnverified'
+          : 'errors.priorProcessStuck',
+        // Survivors of a long-gone child are named instead of it.
+        { pid: [...new Set([...(prior.survivorPids ?? [prior.pid]), ...holders])].join(', ') }
+      )
+    }
+  }
+  // A stopped process can own its listening socket for a few milliseconds more; without this the
+  // port check below sees the port busy and moves to the next one.
+  if (prior?.exitedInTime) await waitForPortFree(prior.port)
+  if (abort.signal.aborted) return { ok: false, cancelled: true }
+
   if (actionData?.portOverride != null) {
     setPortArg(launchCmd as LaunchCmd, actionData.portOverride as number)
   }
@@ -1455,6 +1615,8 @@ async function runLaunch(
   const portBusy = !pendingPortOwner && (await isPortListening(launchCmd.port!))
   const existingPids = pendingPortOwner || !portBusy ? [] : await findPidsByPort(launchCmd.port!)
   const portOccupied = !!pendingPortOwner || portBusy
+  // Where the pre-launch auto bump moved from, for `boot_started`.
+  let portBumpedFrom: number | null = null
 
   if (portOccupied) {
     const reservedPorts = new Set(_pendingPorts.keys())
@@ -1468,11 +1630,72 @@ async function runLaunch(
       )
     } catch {}
 
+    // The holder may be ComfyUI for THIS install that the prior-process check could not prove
+    // ours (a manual launch, another Desktop build, one left by an older Desktop). Bumping
+    // would start a second ComfyUI on the same database, which with assets enabled dies on
+    // the database lock, so ask instead — and in "ask" mode or with an explicit --port, do not
+    // offer the next port either, for the same reason. Never grounds for stopping it.
+    // Callers that asked for a port bump explicitly (`autoPortOnConflict`) keep it.
+    // Every listener is checked: lsof lists each one, and this install's may not come first.
+    let sameInstallPid: number | null = null
+    if (actionData?.autoPortOnConflict !== true && launchCmd.args!.includes('--enable-assets')) {
+      // The listeners, plus the pid a Desktop's port lock names: the listener list can come back
+      // empty (lsof sees only this user's processes, and none inside another namespace).
+      const lockPid = pendingPortOwner ? null : (readPortLock(launchCmd.port!)?.pid ?? null)
+      for (const pid of new Set([...existingPids, ...(lockPid ? [lockPid] : [])])) {
+        if (await holderIsInstall(pid, inst.installPath).catch(() => false)) {
+          sameInstallPid = pid
+          break
+        }
+      }
+    }
+    if (sameInstallPid !== null) {
+      // Already reported when the record check found it and left it.
+      if (prior?.action !== 'left')
+        emitPriorProcessFound(installationId, {
+          action: 'left',
+          proof: 'none',
+          pid: sameInstallPid,
+          port: launchCmd.port!,
+          ageMs: null,
+          waitMs: 0,
+          exitedInTime: false,
+          blocked: null
+        })
+      const info = await getProcessInfo(sameInstallPid)
+      appendLog(
+        sessionId,
+        `[launch] port ${launchCmd.port} is held by a ComfyUI of this installation that this ` +
+          `Desktop cannot prove it started (pid ${sameInstallPid}): left running; asking ` +
+          `instead of starting a second copy on the same database\n`
+      )
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+      return {
+        ok: false,
+        message: i18n.t('errors.portConflictSameInstall', {
+          port: launchCmd.port!,
+          process: info ? info.name : `PID ${sameInstallPid}`
+        }),
+        // No `nextPort`: offering the next port would offer the failure this avoids.
+        portConflict: { port: launchCmd.port, pids: existingPids, isComfy: true }
+      }
+    }
     if (portConflictMode === 'auto' && nextPort && !portIsExplicit) {
       sendProgress('launch', {
         percent: -1,
         status: i18n.t('launch.portBusyUsing', { old: launchCmd.port!, new: nextPort })
       })
+      appendLog(
+        sessionId,
+        `[launch] port ${launchCmd.port} is held by ` +
+          (pendingPortOwner
+            ? `a launch of "${pendingPortOwner}" in this Desktop`
+            : existingPids.length > 0
+              ? `pids ${existingPids.join(', ')}`
+              : 'a process that could not be listed') +
+          `, not a ComfyUI of this installation; using port ${nextPort}\n`
+      )
+      portBumpedFrom = launchCmd.port!
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {
       let message: string
@@ -1535,6 +1758,7 @@ async function runLaunch(
         percent: -1,
         status: i18n.t('launch.portBusyUsing', { old: launchCmd.port!, new: nextPort })
       })
+      portBumpedFrom ??= launchCmd.port!
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
@@ -1572,6 +1796,10 @@ async function runLaunch(
     { port: launchCmd.port! }
   )
 
+  // One id per logical boot, reused across port/reboot retries (tryLaunch
+  // recurses), so boot_started→boot_completed joins per-attempt, not per-machine.
+  const bootId = randomUUID()
+
   async function spawnComfy(): Promise<{ proc: ChildProcess; getStderr: () => string }> {
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected.
@@ -1581,6 +1809,14 @@ async function runLaunch(
     assetsTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow
+    })
+    // Every (re)spawn is recorded, so a later Desktop can prove this child is ours.
+    trackSpawn(p, {
+      sessionKey: sessionId,
+      installationId,
+      installPath: inst.installPath,
+      port: launchCmd.port!,
+      bootId
     })
     try {
       return {
@@ -1599,9 +1835,6 @@ async function runLaunch(
   const REBOOT_RETRY_MAX = 5
   let portRetries = 0
   let rebootRetries = 0
-  // One id per logical boot, reused across port/reboot retries (tryLaunch
-  // recurses), so boot_started→boot_completed joins per-attempt, not per-machine.
-  const bootId = randomUUID()
 
   const tryLaunch = async (): Promise<
     | { ok: true; proc: ChildProcess; getStderr: () => string }
@@ -1651,7 +1884,9 @@ async function runLaunch(
       variant: (inst.variant as string | undefined) ?? null,
       ...bootCohort(),
       port_retry_count: portRetries,
-      reboot_retry_count: rebootRetries
+      reboot_retry_count: rebootRetries,
+      port: launchCmd.port ?? null,
+      port_bumped_from: portBumpedFrom
     })
     // Begin (re)buffering per-phase timings for THIS attempt. On a port /
     // reboot retry this resets so the buffer reflects the attempt that
@@ -1730,9 +1965,13 @@ async function runLaunch(
       }
       // WAIT for the failed spawn's whole tree to die before any retry below:
       // the reboot path reuses the same port, and an overlapping old process
-      // can hold it (or its stream handlers) into the replacement's boot.
-      await killProcessTree(spawned.proc)
-      if (checkRebootMarker(sessionPath) && rebootRetries < REBOOT_RETRY_MAX) {
+      // can hold it (or its stream handlers) into the replacement's boot. A tree
+      // that outlived the wait still holds the database, so no retry follows it.
+      const stopped = await killProcessTree(spawned.proc)
+      if (!stopped.exited) {
+        sendOutput(`\nThe failed ComfyUI process did not exit in time; not retrying.\n`)
+      }
+      if (stopped.exited && checkRebootMarker(sessionPath) && rebootRetries < REBOOT_RETRY_MAX) {
         rebootRetries++
         sendOutput('\n--- Manager requested restart during startup, respawning… ---\n\n')
         return tryLaunch()
@@ -1745,6 +1984,7 @@ async function runLaunch(
       // pre-launch conflict checks: never override an explicitly chosen port,
       // and never switch when the conflict mode is not 'auto'.
       if (
+        stopped.exited &&
         isPortConflict &&
         portConflictMode === 'auto' &&
         !portIsExplicit &&
@@ -1831,7 +2071,11 @@ async function runLaunch(
     const errorSource = tail
       ? `${launchResult.message}\n${launchResult.stderr}`
       : launchResult.message
-    telemetry.emit('comfy.desktop.comfyui.boot_failed', {
+    // Without assets, ComfyUI logs the lock line and carries on, so a later, unrelated crash
+    // would carry it in its tail: only a launch that takes the lock can fail on it.
+    const dbLocked =
+      launchCmd.args!.includes('--enable-assets') && isDbLockFailure(launchResult.stderr)
+    const bootFailed = {
       installation_id: installationId,
       boot_id: bootId,
       variant: (inst.variant as string | undefined) ?? null,
@@ -1844,7 +2088,43 @@ async function runLaunch(
       retry_count: portRetries + rebootRetries,
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries
-    })
+    }
+    if (dbLocked) {
+      // Whatever traceback ends the tail (often an unrelated custom-node warning) would
+      // otherwise name the error. The holder lookup can take seconds (Restart Manager / lsof),
+      // so it runs off the failure path and the event follows it.
+      void identifyDbLockHolder({
+        sessionKey: sessionId,
+        installationId,
+        installPath: inst.installPath,
+        cwd: launchCmd.cwd!,
+        args: launchCmd.args!
+      })
+        .catch(() => null)
+        .then((holder) => {
+          appendLog(
+            sessionId,
+            `[launch] ComfyUI could not start: another process holds this installation's ` +
+              `database lock (${describeLockHolder(holder)})\n`
+          )
+          telemetry.emit('comfy.desktop.comfyui.boot_failed', {
+            ...bootFailed,
+            error_class: 'comfyui_db_locked',
+            lock_holder_pid: holder?.pid ?? null,
+            lock_holder_source: holder?.source ?? 'unknown',
+            lock_holder_same_install: holder?.sameInstall ?? null,
+            lock_holder_name: holder?.name ?? null,
+            lock_holder_runs_main_py: holder?.runsMainPy ?? null,
+            lock_holder_age_s: holder?.ageS ?? null
+          })
+        })
+    } else {
+      telemetry.emit('comfy.desktop.comfyui.boot_failed', bootFailed)
+    }
+    // "Process exited with code 1" hides the one thing the user can act on.
+    if (dbLocked) {
+      return { ok: false, message: i18n.t('errors.comfyDbLocked') }
+    }
     return { ok: false, message: launchResult.message }
   }
   // Healthy boot — discard buffered phase timings (no boot_phase on success;
@@ -1920,7 +2200,23 @@ async function runLaunch(
       if (_onModelFolderRelaunch) {
         await Promise.resolve(_onModelFolderRelaunch({ installationId: sessionId })).catch(() => {})
       }
-      await killProcessTree(proc)
+      // This path returns before the normal exit handler is attached; flush so a pending
+      // accelerator event isn't dropped (flushSummary is idempotent).
+      const abandonRelaunch = (): void => {
+        logStream.end()
+        execTap.flushSummary()
+        hwTap.flushSummary()
+        assetsTap.flushSummary()
+        _removeSession(sessionId)
+        _clearLaunchingFailed(sessionId)
+        clearBetaActivationClaim(installationId)
+      }
+      const stopped = await killProcessTree(proc)
+      if (!stopped.exited) {
+        // Respawning now would start a second ComfyUI beside one still holding the database.
+        abandonRelaunch()
+        return { ok: false, message: i18n.t('errors.priorProcessStuck', { pid: proc.pid ?? 0 }) }
+      }
       const respawned = await spawnComfy()
       proc = respawned.proc
       const session = _runningSessions.get(sessionId)
@@ -1944,17 +2240,8 @@ async function runLaunch(
           relaunchEarlyExit
         ])
       } catch (err) {
-        logStream.end()
         await killProcessTree(proc)
-        // This relaunch path returns before the normal exit handler is
-        // attached; flush so a pending accelerator event isn't dropped.
-        // flushSummary is idempotent.
-        execTap.flushSummary()
-        hwTap.flushSummary()
-        assetsTap.flushSummary()
-        _removeSession(sessionId)
-        _clearLaunchingFailed(sessionId)
-        clearBetaActivationClaim(installationId)
+        abandonRelaunch()
         if (abort.signal.aborted) return { ok: false, cancelled: true }
         return { ok: false, message: (err as Error).message }
       }
@@ -1970,7 +2257,7 @@ async function runLaunch(
   let currentGetStderr = launchResult.getStderr
 
   function attachExitHandler(p: ChildProcess): void {
-    onProcessTerminated(p, async (code, signal) => {
+    onProcessTerminated(p, async (code, signal, { pipesHeld }) => {
       if (rebootModelCheckAbort) {
         rebootModelCheckAbort.abort()
         rebootModelCheckAbort = null
@@ -2090,7 +2377,8 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
-        last_stderr: lastStderr ?? null
+        last_stderr: lastStderr ?? null,
+        pipes_held_after_exit: pipesHeld
       })
       if (crashed) {
         recordCrash(exitedPayload)

@@ -1,6 +1,19 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import http from 'http'
-import { findAvailablePort, isPortListening, waitForPort, waitForUrl } from './process'
+import type { ChildProcess } from 'child_process'
+import {
+  findAvailablePort,
+  isPortListening,
+  killPidTree,
+  isSafeToSignal,
+  killProcessTree,
+  spawnProcess,
+  waitForPortFree,
+  waitForPort,
+  waitForUrl
+} from './process'
+import { isPidAlive, processGroupOf, readStartTimes } from './processIdentity'
+import { vi } from 'vitest'
 import net from 'net'
 
 function listenOn(host: string, port: number = 0): Promise<{ server: net.Server; port: number }> {
@@ -269,6 +282,125 @@ describe('waitForUrl abort settlement', () => {
       waitForUrl('http://127.0.0.1:1/', { timeoutMs: 30000, signal: controller.signal })
     ).rejects.toThrow('Launch cancelled.')
   })
+})
+
+describe('waitForPortFree', () => {
+  it('waits out a socket that is released a moment after its owner is gone', async () => {
+    const { server, port } = await listenOn('127.0.0.1')
+    setTimeout(() => server.close(), 150)
+    const started = Date.now()
+    expect(await waitForPortFree(port, '127.0.0.1', 2_000, 20)).toBe(true)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(100)
+    expect(await isPortListening(port)).toBe(false)
+  })
+
+  it('keeps its bound when the wall clock stands still (monotonic deadline)', async () => {
+    const { server, port } = await listenOn('127.0.0.1')
+    const frozen = vi.spyOn(Date, 'now').mockReturnValue(0)
+    try {
+      // A deadline on the frozen wall clock would never pass: this would hang past the test's
+      // own timeout instead of returning.
+      expect(await waitForPortFree(port, '127.0.0.1', 150, 20)).toBe(false)
+    } finally {
+      frozen.mockRestore()
+      await closeServer(server)
+    }
+  })
+
+  it('gives up at its bound when the port stays held', async () => {
+    const { server, port } = await listenOn('127.0.0.1')
+    try {
+      expect(await waitForPortFree(port, '127.0.0.1', 150, 20)).toBe(false)
+    } finally {
+      await closeServer(server)
+    }
+  })
+})
+
+describe.runIf(process.platform !== 'win32')('kills that wait for exit (real processes)', () => {
+  // A detached parent with a child of its own: the shape Desktop spawns ComfyUI in.
+  const TREE = `
+    const { spawn } = require('child_process')
+    const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' })
+    console.log(c.pid)
+    setTimeout(() => {}, 60000)
+  `
+
+  async function spawnTree(): Promise<{ proc: ChildProcess; grandchild: number }> {
+    const proc = spawnProcess(process.execPath, ['-e', TREE], process.cwd())
+    const grandchild = await new Promise<number>((resolve) => {
+      proc.stdout!.once('data', (d: Buffer) => resolve(Number(String(d).trim())))
+    })
+    return { proc, grandchild }
+  }
+
+  function cleanup(pid: number): void {
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {}
+  }
+
+  it('killProcessTree reports exited only once the whole group is gone', async () => {
+    const { proc, grandchild } = await spawnTree()
+    try {
+      const result = await killProcessTree(proc)
+      expect(result.exited).toBe(true)
+      expect(isPidAlive(grandchild)).toBe(false)
+    } finally {
+      cleanup(proc.pid!)
+    }
+  })
+
+  it('killPidTree stops an unowned tree when the start time still matches', async () => {
+    const { proc, grandchild } = await spawnTree()
+    try {
+      const start = (await readStartTimes([proc.pid!]))!.get(proc.pid!)!
+      const result = await killPidTree(proc.pid!, start)
+      expect(result).toMatchObject({ killed: true, exited: true })
+      expect(isPidAlive(grandchild)).toBe(false)
+      // The log names what the group stop covered.
+      expect(result.killed && result.members).toEqual(
+        expect.arrayContaining([proc.pid!, grandchild])
+      )
+    } finally {
+      cleanup(proc.pid!)
+    }
+  })
+
+  it('killPidTree never signals a pid whose start time no longer matches', async () => {
+    const { proc } = await spawnTree()
+    try {
+      const result = await killPidTree(proc.pid!, 'a-process-that-had-this-pid-before')
+      expect(result.killed).toBe(false)
+      expect(isPidAlive(proc.pid!)).toBe(true)
+    } finally {
+      cleanup(proc.pid!)
+    }
+  })
+})
+
+describe('isSafeToSignal (never signal what a forged record names)', () => {
+  it.each([0, 1, -5, 1.5])('refuses pid %s', async (pid) => {
+    expect(await isSafeToSignal(pid)).toBe(false)
+  })
+
+  it('refuses this Desktop', async () => {
+    expect(await isSafeToSignal(process.pid)).toBe(false)
+  })
+
+  it.runIf(process.platform !== 'win32')('refuses our own process group', async () => {
+    const own = await processGroupOf(process.pid)
+    expect(own).not.toBeNull()
+    expect(await isSafeToSignal(own!)).toBe(false)
+  })
+
+  it.runIf(process.platform !== 'win32')(
+    'killPidTree refuses pid 1 before reading or signalling anything',
+    async () => {
+      const result = await killPidTree(1, 'whatever-token')
+      expect(result).toMatchObject({ killed: false, reason: 'unsafe' })
+    }
+  )
 })
 
 describe('requestTimeoutMs reaches the probe request', () => {
