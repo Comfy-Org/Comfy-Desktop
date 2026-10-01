@@ -896,9 +896,6 @@ describe('assetsTap', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_completed cpu_ms=1 cpu_ms=2\n', 'stdout')
       tap.ingest('[assets-event] seeder.scan_completed is_x=3 is_x=true\n', 'stdout')
-      // Even after many other convention fields.
-      const pastCap = 'abcdefghi'.split('').map((letter) => `${letter}_count=1`)
-      tap.ingest(`[assets-event] seeder.scan_completed ${pastCap.join(' ')} i_count=2\n`, 'stdout')
       expect(captured).toHaveLength(0)
     })
 

@@ -183,7 +183,8 @@ export type RendererCohortContextKey = (typeof RENDERER_COHORT_CONTEXT_KEYS)[num
  * Every Datadog global-context key the renderer sets. An action's own context
  * wins the merge with global context, so a forwarded event field of the same
  * name would replace the facet on that action. Main-side taps that forward
- * untrusted field names reserve these.
+ * untrusted field names reserve these. Only the cohort keys are type-checked:
+ * a new `setGlobalContextProperty` key must be added here by hand.
  */
 export const DATADOG_GLOBAL_CONTEXT_KEYS: ReadonlySet<string> = new Set([
   ...RENDERER_COHORT_CONTEXT_KEYS,
