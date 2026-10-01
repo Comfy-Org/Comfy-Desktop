@@ -10,6 +10,14 @@
  * the deterministic installation property. Desktop intentionally performs no
  * PostHog alias write; historical reconciliation is handled directly there.
  *
+ * On Linux the SMBIOS product UUID is usually root-only, so a normal user
+ * gets no hardware id. There the machine id falls back to `/etc/machine-id`
+ * (world-readable, stable per OS install), hashed the same way. Cloned
+ * images that share a machine-id share an installation id, as cloned VMs
+ * sharing an SMBIOS UUID already do. When no
+ * machine id is available at all, a previously persisted installation id is
+ * reused rather than replaced, so the id stays stable across launches.
+ *
  * Synchronous `getDeviceId()` is preserved for backward compatibility with
  * the existing IPC handler and main-process call sites. It must only be
  * called after `initDeviceId()` has resolved; if called earlier it falls back
@@ -28,6 +36,9 @@ import { configDir } from './paths'
  *      invalidates every previously-issued installation_id at once.
  *      Useful as a nuclear option for invalidating property-level joins
  *      after an incident; this does not change PostHog person identity.
+ *      Exception: an install with no machine id keeps its persisted id
+ *      (see `initDeviceId`), so a bump does not reach it. Such ids are
+ *      random, so no other product can compute them to join against.
  *   2. Future namespace alignment — if another Comfy product later ships
  *      telemetry with this same constant, analytics can join their events by
  *      property without treating the machine hash as a person identity.
@@ -116,6 +127,8 @@ function legacyIdentityRetryPath(): string {
 
 const LEGACY_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+const INSTALLATION_ID_RE = /^[0-9a-f]{64}$/
+
 function isLegacyUuid(value: string): boolean {
   return LEGACY_UUID_RE.test(value)
 }
@@ -146,6 +159,11 @@ async function deriveMachineId(): Promise<{ machineId: string; idClass: IdClass 
       if (uuid.length === 36 && uuid !== '-' && uuid !== '00000000-0000-0000-0000-000000000000') {
         return { machineId: uuid, idClass: 'machine_derived' }
       }
+      // The lookup answered without a usable UUID, which is the steady state
+      // for a non-root Linux user. A timeout or throw is not: it can be a
+      // one-off, and switching sources for one launch would change the id.
+      const linuxMachineId = readLinuxMachineId()
+      if (linuxMachineId) return { machineId: linuxMachineId, idClass: 'machine_derived' }
     }
   } catch {
     // fall through to fallback
@@ -154,6 +172,30 @@ async function deriveMachineId(): Promise<{ machineId: string; idClass: IdClass 
   }
   // Fallback: random UUID, flagged so dashboards can quarantine.
   return { machineId: randomUUID(), idClass: 'random_fallback' }
+}
+
+/**
+ * systemd's machine id, with the pre-systemd D-Bus location as a second
+ * source. Both are world-readable, unlike `/sys/class/dmi/id/product_uuid`.
+ * Only ever used as hash input: systemd documents the raw value as
+ * confidential, so it must not leave the device.
+ */
+const LINUX_MACHINE_ID_PATHS = ['/etc/machine-id', '/var/lib/dbus/machine-id']
+
+const MACHINE_ID_RE = /^[0-9a-f]{32}$/
+
+function readLinuxMachineId(): string | null {
+  if (process.platform !== 'linux') return null
+  for (const filePath of LINUX_MACHINE_ID_PATHS) {
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8').trim().toLowerCase()
+      // Rejects empty files (image builds) and systemd's "uninitialized".
+      if (MACHINE_ID_RE.test(raw) && raw !== '0'.repeat(32)) return raw
+    } catch {
+      // try the next location
+    }
+  }
+  return null
 }
 
 function computeInstallationId(machineId: string): string {
@@ -213,7 +255,6 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
   initPromise = (async () => {
     const filePath = deviceIdPath()
     const { machineId, idClass } = await deriveMachineId()
-    const newId = computeInstallationId(machineId)
 
     let existing: string | null = null
     try {
@@ -222,6 +263,15 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
     } catch {
       // file does not exist yet
     }
+
+    // Without a machine id, keep a persisted installation id instead of
+    // replacing it with a fresh random one on every launch. Legacy UUIDs and
+    // unreadable content still get a new id. The class stays
+    // `random_fallback`: this launch cannot vouch for where the id came from.
+    const newId =
+      idClass === 'random_fallback' && existing != null && INSTALLATION_ID_RE.test(existing)
+        ? existing
+        : computeInstallationId(machineId)
 
     cached = { installationId: newId, idClass }
 
@@ -244,8 +294,11 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
 
     // Existing differs from what we'd compute. Three cases:
     //   (a) existing is a legacy UUID -> first local migration.
-    //   (b) existing is a 64-char hex (different hash) -> salt rotated or
-    //       cross-machine copy. Update silently.
+    //   (b) existing is a 64-char hex (different hash) -> a random id
+    //       persisted by an earlier launch without a machine id (the common
+    //       Linux case), salt rotated, or cross-machine copy. Update
+    //       silently. Only reachable with a machine id; without one, a
+    //       64-char hex was reused above.
     //   (c) existing is garbage -> overwrite.
     const isLegacy = existing != null && isLegacyUuid(existing) && !isMigrationCompleted()
 

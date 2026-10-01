@@ -24,22 +24,22 @@
       }
     },
     {
-      "id": "wan2.1_fun_inp",
+      "id": "video_minimax_h3_i2v",
       "modality": "video",
       "snapshot": {
-        "title": "Wan 2.1 Inpainting",
-        "description": "Generate videos from start and end frames using Wan 2.1 inpainting.",
-        "sizeBytes": 11381663334,
+        "title": "MiniMax H3: Image to Video",
+        "description": "Turn a starting image into a short, high-quality video clip with MiniMax H3, a unified multimodal model that generates visuals and synchronized audio in a single pass. The workflow takes 1 input image and produces 1 video output, with optional text or reference media to steer motion, style, or sound. Ideal for rapid concept visualization, character-driven animation tests, and creating shareable social media clips with built-in sound design.",
+        "sizeBytes": 44452911514,
         "mediaSubtype": "webp"
       }
     },
     {
-      "id": "video_wan2.1_fun_camera_v1.1_1.3B",
+      "id": "video_minimax_h3_r2v",
       "modality": "video",
       "snapshot": {
-        "title": "Wan 2.1 Fun Camera 1.3B",
-        "description": "Generate dynamic videos with cinematic camera movements using Wan 2.1 Fun Camera 1.3B model.",
-        "sizeBytes": 11489037517,
+        "title": "MiniMax H3: Reference to Video",
+        "description": "Generate a new video by feeding MiniMax H3 a reference image, up to nine images, three videos, and three audio clips alongside a text prompt, letting the model match character identity, motion, camera, voice, or style from those sources while producing native stereo audio in a single pass. Output is a single MP4 video at up to 2K resolution and 24fps for roughly 15 seconds. Ideal for character-consistent animation, style-transfer video generation, and audio-synced content creation.",
+        "sizeBytes": 44452911514,
         "mediaSubtype": "webp"
       }
     },
@@ -55,54 +55,54 @@
       }
     },
     {
-      "id": "api_bytedance_seedream_5_0_pro_image_edit",
+      "id": "api_google_nano_banana2_text_to_image",
       "modality": "image",
       "apiNode": true,
       "snapshot": {
-        "title": "Seedream 5.0 Pro: Image Edit",
-        "description": "Edit images with precision using Seedream 5.0 Pro, targeting specific regions while preserving lighting, depth, and texture. The workflow takes 1 input image and produces 1 output image. Ideal for product photography edits, portrait consistency adjustments, and creating structured layouts with multilingual text.",
+        "title": "Nano Banana 2: Text to Image",
+        "description": "Generate images from text prompts using the Nano Banana 2 model, producing one image output with no file inputs required. Ideal for rapid prototyping, concept art generation, and creative exploration.",
         "sizeBytes": 0,
         "mediaSubtype": "webp"
       }
     },
     {
-      "id": "image_pixeldit_t2i",
+      "id": "image_krea2_turbo_t2i_int8",
       "modality": "image",
       "snapshot": {
-        "title": "PixelDiT: Text to Image",
-        "description": "Input a text prompt and optional negative prompt. Generate a 1024px image using PixelDiT's VAE-free pixel diffusion transformer.",
-        "sizeBytes": 7838315315,
+        "title": "Krea-2 Int8: Text to Image",
+        "description": "Generate images with the Krea-2 Turbo distilled text-to-image model using the high-performance Int8 Convrot format, which delivers better quality than FP8 while generally running faster across most GPUs. This workflow accepts no file inputs and produces a single image output, with optional style LoRA support for creative customization. Ideal for rapid concept art iteration, batch asset generation for games or marketing, and exploring the speed-quality sweet spot of the Convrot Int8 quantization.",
+        "sizeBytes": 19112604467,
         "mediaSubtype": "webp"
       }
     },
     {
-      "id": "sdxlturbo_example",
+      "id": "image_qwen_image_2_1_image_edit",
       "modality": "image",
       "snapshot": {
-        "title": "SDXL Turbo",
-        "description": "Generate images in a single step using SDXL Turbo.",
-        "sizeBytes": 6936372183,
+        "title": "Qwen Image 2.1: Image Edit",
+        "description": "Edit images with Qwen-Image-2.1 by feeding two reference images through a single checkpoint that handles both generation and editing, then comparing the result against the original. Ideal for character-consistent edits, product cutout compositing with real transparency, and style-transfer passes at native 2K.",
+        "sizeBytes": 26736171418,
         "mediaSubtype": "webp"
       }
     },
     {
-      "id": "3d_triposplat_image_to_gaussian_splat",
+      "id": "3d_pixal3d_trellis2_image_to_model",
       "modality": "3d",
       "recommended": true,
       "snapshot": {
-        "title": "TripoSplat: Image to Gaussian Splat",
-        "description": "Upload a single 2D image. Generate a high-quality 3D Gaussian splat representation with controllable density and budget for rendering.",
-        "sizeBytes": 3972844749,
+        "title": "Pixal3D & TRELLIS.2: Image to Model",
+        "description": "Upload a single image. Generate a high-fidelity 3D model with PBR textures using either Pixal3D or TRELLIS.2, toggled by a single switch. Both pipelines share the same DINOv3 encoder and shape/texture VAEs; Pixal3D adds MoGe camera estimation for pixel-aligned geometry. Includes background removal and a complete mesh post-processing pipeline: remesh, decimate, UV unwrap, and texture baking.",
+        "sizeBytes": 15354508083,
         "mediaSubtype": "webp"
       }
     },
     {
-      "id": "api_tripo3_1_image_to_model",
+      "id": "api_meshy7_1_image_to_model",
       "modality": "3d",
       "apiNode": true,
       "snapshot": {
-        "title": "Tripo H3.1: Image to Model",
-        "description": "Upload a reference image of your object. Generate a high-detail 3D model with dense geometry and PBR-ready materials.",
+        "title": "Meshy 7.1: Image to 3D",
+        "description": "Generate a 3D model from a single image using Meshy 7.1's Ultra 4K geometry mode, which produces 4096³ meshes so fine surface detail like stitching, wood grain, and scales becomes real geometry rather than texture. Takes one input image. Ideal for high-fidelity asset creation, detailed prop modeling, and product visualization.",
         "sizeBytes": 0,
         "mediaSubtype": "webp"
       }
@@ -118,55 +118,55 @@
       }
     },
     {
-      "id": "3d_hunyuan3d_multiview_to_model_turbo",
+      "id": "3d_triposplat_image_to_gaussian_splat",
       "modality": "3d",
       "snapshot": {
-        "title": "HY 3D 2.0 MV Turbo",
-        "description": "Generate 3D models from multiple views using Hunyuan3D 2.0 MV Turbo.",
-        "sizeBytes": 4928474972,
+        "title": "TripoSplat: Image to Gaussian Splat",
+        "description": "Upload a single 2D image. Generate a high-quality 3D Gaussian splat representation with controllable density and budget for rendering.",
+        "sizeBytes": 3972844749,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "audio_yue2_text2music",
+      "modality": "audio",
+      "recommended": true,
+      "snapshot": {
+        "title": "YuE2: Text to Music",
+        "description": "Generate complete songs from a music style and lyrics with YuE2. Use symbolic music planning to create structured melodies and harmonies, then turn them into full songs with vocals and instrumental accompaniment.",
+        "sizeBytes": 3972844749,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "api_elevenlabs_text_to_speech",
+      "modality": "audio",
+      "apiNode": true,
+      "snapshot": {
+        "title": "ElevenLabs: Text to Speech",
+        "description": "Input text to generate speech with ultra-realistic voices, or upload a voice sample to clone it for synthesis.",
+        "sizeBytes": 0,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "audio_minimax_music_3",
+      "modality": "audio",
+      "snapshot": {
+        "title": "MiniMax Music 3: Text to Music",
+        "description": "Create full-length songs from text prompts with MiniMax Music 3, generating complete 5-minute tracks with stable structure and high-fidelity audio. Input a structured caption describing lyrics, style, mood, and arrangement, and receive a finished song as output. Ideal for music producers prototyping demos, and content creators needing original background tracks.",
+        "sizeBytes": 15354508083,
         "mediaSubtype": "webp"
       }
     },
     {
       "id": "audio_stable_audio_3_medium",
       "modality": "audio",
-      "recommended": true,
       "snapshot": {
         "title": "Stable Audio 3.0 Medium",
         "description": "Input a short text idea, optional duration, seed, and category. Generate stereo audio (music, SFX, or instruments) using Stable Audio 3 with optional AI-driven text expansion.",
         "sizeBytes": 15676630630,
         "mediaSubtype": "webp"
-      }
-    },
-    {
-      "id": "api_bytedance_seed_audio1_0_t2a",
-      "modality": "audio",
-      "apiNode": true,
-      "snapshot": {
-        "title": "Seed Audio 1.0: Text to Audio",
-        "description": "Input a text prompt to generate speech, dialogue, background music, and sound effects in one audio file. Describe voices, emotion, and scene details to create multi-speaker audio up to 2 minutes.",
-        "sizeBytes": 0,
-        "mediaSubtype": "webp"
-      }
-    },
-    {
-      "id": "audio_stable_audio_example",
-      "modality": "audio",
-      "snapshot": {
-        "title": "Stable Audio 1.0: Text to Audio",
-        "description": "Generate audio from text prompts using Stable Audio.",
-        "sizeBytes": 5690831667,
-        "mediaSubtype": "webp"
-      }
-    },
-    {
-      "id": "audio_ace_step_1_5_checkpoint",
-      "modality": "audio",
-      "snapshot": {
-        "title": "ACE-Step 1.5 Music Generation AIO",
-        "description": "Input style tags and lyrics to generate a full song. The workflow uses the ACE-Step 1.5 model to produce commercial-grade music in under 10 seconds on consumer hardware.",
-        "sizeBytes": 10737418240,
-        "mediaSubtype": "mp3"
       }
     }
   ]

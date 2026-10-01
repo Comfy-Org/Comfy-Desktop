@@ -3,7 +3,6 @@ import {
   dialog,
   shell,
   BrowserWindow,
-  app,
   fs,
   path,
   os,
@@ -33,6 +32,7 @@ import {
 import si from 'systeminformation'
 import type { RunPerformanceTestWorkflowResult, SystemInfo } from '../../../types/ipc'
 import type { FieldOption } from './shared'
+import type { InstallationRecord } from '../../installations'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
 import { getCachedWorkspaceName } from '../../cloud/tokenStore'
@@ -40,6 +40,7 @@ import { getCloudSession } from '../../devplatform/session'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
+import { defaultBenchmarksDir } from '../paths'
 import { deriveGpuTier } from '../../../shared/gpuTier'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import {
@@ -52,12 +53,22 @@ import {
   savePerformanceTestJobsResponse,
   savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
+  storePerformanceTestExampleWorkflow,
   storePerformanceTestWorkflow,
   submitPerformanceTestWorkflow,
   waitForPerformanceTestJobs
 } from '../performanceTestWorkflows'
+import {
+  cancelExampleModelDownload,
+  ExampleWorkflowFetchError,
+  getPerformanceTestExampleCatalog,
+  loadPerformanceTestExampleArtifacts,
+  startExampleModelDownload
+} from '../performanceTestExampleWorkflows'
 
 export function registerAppHandlers(): void {
+  const benchmarksDir = defaultBenchmarksDir()
+
   // App version
   ipcMain.handle('get-app-version', () => getAppVersion())
 
@@ -171,16 +182,69 @@ export function registerAppHandlers(): void {
       sourcePath = filePaths[0]!
     }
     try {
-      const filePath = await storePerformanceTestWorkflow(sourcePath, app.getPath('userData'))
+      const filePath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
       return { ok: true, filePath }
     } catch (error) {
       return { ok: false, message: (error as Error)?.message || String(error) }
     }
   })
 
+  /** Example workflows download models into a local, installed instance. */
+  async function findExampleWorkflowInstallation(
+    installationId: string
+  ): Promise<InstallationRecord | null> {
+    const installation = await installations.get(installationId)
+    if (!installation || installation.status !== 'installed') return null
+    const source = sourceMap[installation.sourceId]
+    return source && source.category !== 'cloud' ? installation : null
+  }
+
+  ipcMain.handle(
+    'get-performance-test-example-workflows',
+    async (_event, installationId: string) => {
+      const installation = await findExampleWorkflowInstallation(installationId)
+      if (!installation) return { options: [], diskSpace: null }
+      return getPerformanceTestExampleCatalog(installation.id)
+    }
+  )
+
+  ipcMain.handle(
+    'prepare-performance-test-example-workflow',
+    async (_event, installationId: string, templateId: string) => {
+      try {
+        const installation = await findExampleWorkflowInstallation(installationId)
+        if (!installation) {
+          throw new Error('Example workflows require an installed local instance.')
+        }
+        const artifacts = await loadPerformanceTestExampleArtifacts(templateId)
+        const workflowFilePath = await storePerformanceTestExampleWorkflow(
+          templateId,
+          artifacts.apiWorkflow,
+          benchmarksDir
+        )
+        // A page that goes away before the models arrive leaves nobody to run the example.
+        const download = startExampleModelDownload(
+          installation,
+          workflowFilePath,
+          artifacts,
+          _event.sender,
+          () => void deletePerformanceTestWorkflow(workflowFilePath, benchmarksDir).catch(() => {})
+        )
+        return { ok: true, filePath: workflowFilePath, download }
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error instanceof ExampleWorkflowFetchError ? error.reason : undefined,
+          message: (error as Error)?.message || String(error)
+        }
+      }
+    }
+  )
+
   ipcMain.handle('delete-performance-test-workflow', async (_event, filePath: string) => {
     try {
-      const status = await deletePerformanceTestWorkflow(filePath, app.getPath('userData'))
+      cancelExampleModelDownload(filePath)
+      const status = await deletePerformanceTestWorkflow(filePath, benchmarksDir)
       return {
         ok: true,
         status,
@@ -197,7 +261,7 @@ export function registerAppHandlers(): void {
   ipcMain.handle('save-performance-test-logs', async (_event, filePath: string, logs: string) => {
     try {
       if (typeof logs !== 'string') throw new Error('Invalid performance test logs.')
-      const logsPath = await savePerformanceTestLogs(logs, filePath, app.getPath('userData'))
+      const logsPath = await savePerformanceTestLogs(logs, filePath, benchmarksDir)
       return { ok: true, logsPath }
     } catch (error) {
       return { ok: false, message: (error as Error)?.message || String(error) }
@@ -207,8 +271,7 @@ export function registerAppHandlers(): void {
   ipcMain.handle(
     'list-performance-test-benchmarks',
     async (_event, selectedFolderPath?: string) => {
-      const folderPath =
-        selectedFolderPath || path.join(app.getPath('userData'), 'performance-tests')
+      const folderPath = selectedFolderPath || benchmarksDir
       return {
         folderPath,
         benchmarks: await listPerformanceTestBenchmarks(folderPath)
@@ -250,7 +313,7 @@ export function registerAppHandlers(): void {
   )
 
   ipcMain.handle('read-performance-test-results-summary', (_event, filePath: string) =>
-    readPerformanceTestResultsSummary(filePath, app.getPath('userData'))
+    readPerformanceTestResultsSummary(filePath, benchmarksDir)
   )
 
   ipcMain.handle(
@@ -345,7 +408,7 @@ export function registerAppHandlers(): void {
         const sessionUrl = session.url || `http://127.0.0.1:${session.port}`
         await submitPerformanceTestWorkflow(
           filePath,
-          app.getPath('userData'),
+          benchmarksDir,
           sessionUrl,
           measuredRuns,
           warmupRuns,
@@ -382,7 +445,7 @@ export function registerAppHandlers(): void {
         const resultPath = await savePerformanceTestJobsResponse(
           jobsResponse,
           filePath,
-          app.getPath('userData')
+          benchmarksDir
         )
         const hardware = session.getAcceleratorInfo?.() ?? null
         const systemInfo = await getSystemInfo()
@@ -396,13 +459,13 @@ export function registerAppHandlers(): void {
           hardware,
           systemInfo,
           filePath,
-          app.getPath('userData'),
+          benchmarksDir,
           successfulRuns,
           failedRuns
         )
         const resultsSummary = await readPerformanceTestResultsSummary(
           resultsSummaryPath,
-          app.getPath('userData')
+          benchmarksDir
         )
         return {
           ok: true,

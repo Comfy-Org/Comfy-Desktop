@@ -147,6 +147,18 @@ export function defaultDataRoot(): string {
   return app.getPath('home')
 }
 
+/** Default location for saved performance-test workflows and results. */
+export function defaultBenchmarksDir(): string {
+  const root =
+    process.platform === 'win32'
+      ? path.join(
+          process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local'),
+          'Comfy-Desktop'
+        )
+      : app.getPath('home')
+  return path.join(root, 'ComfyUI-Shared', 'benchmarks')
+}
+
 /** Default location for the multi-GB download cache. When the large data dirs
  *  are grouped under a `Comfy-Desktop` parent (a redirected drive, or a new
  *  Windows system-drive install), the cache lives there too; otherwise the

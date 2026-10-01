@@ -662,7 +662,7 @@ describe('registerDevPlatformHandlers', () => {
 
     expect(result).toEqual({
       ok: false,
-      message: 'Comfy Builder created the draft in a different workspace.'
+      message: 'Comfy Developer Platform created the draft in a different workspace.'
     })
     expect(mocks.openExternal).not.toHaveBeenCalled()
     warn.mockRestore()

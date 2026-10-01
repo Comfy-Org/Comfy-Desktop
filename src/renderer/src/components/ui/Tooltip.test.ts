@@ -87,6 +87,31 @@ describe('Tooltip (ui primitive)', () => {
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })
 
+  it('keeps an interactive bubble open while the pointer moves onto its content', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(Tooltip, {
+      props: { text: 'Learn more', delayMs: 0, interactive: true },
+      slots: {
+        default: '<button data-testid="trigger">trigger</button>',
+        content: '<a href="https://example.com">Read more</a>'
+      },
+      attachTo: document.body
+    })
+    wrappers.push(wrapper)
+
+    await wrapper.trigger('mouseenter')
+    await flushPromises()
+    const bubble = document.querySelector('.tooltip-bubble') as HTMLElement
+    wrapper.element.dispatchEvent(new Event('mouseleave'))
+    bubble.dispatchEvent(new Event('mouseenter'))
+    await vi.advanceTimersByTimeAsync(100)
+    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
+
+    bubble.dispatchEvent(new Event('mouseleave'))
+    await vi.advanceTimersByTimeAsync(100)
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
+
   it('teleports the bubble to document.body (outside any overflow:hidden parent)', async () => {
     const wrapper = mountTooltip()
     await wrapper.trigger('mouseenter')
