@@ -104,6 +104,8 @@ import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
+import { describeUnsatisfied, type UnsatisfiedRequirement } from '../../requirementsDrift'
+import { requestAdoptPromptButton } from './migrate'
 import type { WriteStream } from 'fs'
 import {
   NO_CORE_COMMITS,
@@ -715,6 +717,28 @@ export function _cleanupFailedLaunchSetup(
   clearBetaActivationClaim(installationId)
 }
 
+/** Ask before installing packages into an install's venv (repair mode
+ *  `prompt`; adopted installs today). Rejects when the prompt can't be shown. */
+async function confirmDepsRepair(
+  sender: Electron.WebContents,
+  signal: AbortSignal,
+  unsatisfied: UnsatisfiedRequirement[]
+): Promise<boolean> {
+  const idx = await requestAdoptPromptButton(sender, signal, {
+    type: 'question',
+    title: i18n.t('standalone.depsRepairPromptTitle'),
+    message: i18n.t('standalone.depsRepairPromptMessage'),
+    detail: describeUnsatisfied(unsatisfied),
+    buttons: [
+      { label: i18n.t('standalone.depsRepairInstall') },
+      { label: i18n.t('standalone.depsRepairSkip') }
+    ],
+    defaultId: 0,
+    cancelId: 1
+  })
+  return idx === 0
+}
+
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   const { installationId } = ctx
   const sessionId = ctx.sessionId ?? installationId
@@ -1117,6 +1141,13 @@ async function runLaunch(
         // a cheap sync check; arming only when a repair will actually run.
         if (getTorchVendorMismatch(inst)) {
           preLaunchPhases.push('torchRepair')
+          // The tracker's steps are fixed once armed, so register the
+          // dependency repair below now if it will run too.
+          const { pendingDrift } = await import('../../../sources/standalone/depsRepair')
+          const { depsRepairPolicy } = await import('../../../sources/standalone/depsRepair')
+          if (depsRepairPolicy(inst) !== 'off' && pendingDrift(inst)) {
+            preLaunchPhases.push('depsRepair')
+          }
           await armLaunchTracker()
         }
         const repaired = await maybeRepairTorch(
@@ -1136,6 +1167,48 @@ async function runLaunch(
         }
         console.warn('PyTorch vendor repair failed:', err)
       }
+    }
+    // Install requirements the venv no longer satisfies (ComfyUI moved outside
+    // Desktop's update path, a failed adoption install, a custom node that
+    // downgraded a core dependency) - otherwise ComfyUI crashes at import.
+    // Managed installs repair automatically; adopted installs ask first.
+    // Non-fatal: a failed or skipped repair launches exactly as before.
+    try {
+      const {
+        depsRepairPolicy,
+        pendingDrift,
+        pruneMarker,
+        reportDetectedOnly,
+        reportPausedRepair,
+        repairDeps,
+        warnIfSitePackagesEmpty
+      } = await import('../../../sources/standalone/depsRepair')
+      inst = await pruneMarker(inst, updateFn)
+      const mode = depsRepairPolicy(inst)
+      const drift = pendingDrift(inst)
+      if (!drift && !reportPausedRepair(inst, makeSendOutput(event.sender, sessionId))) {
+        warnIfSitePackagesEmpty(inst, makeSendOutput(event.sender, sessionId))
+      }
+      if (drift && mode === 'off') {
+        reportDetectedOnly(inst, drift, makeSendOutput(event.sender, sessionId))
+      } else if (drift && mode !== 'off') {
+        if (!preLaunchPhases.includes('depsRepair')) preLaunchPhases.push('depsRepair')
+        await armLaunchTracker()
+        sendProgress('depsRepair', { percent: -1 })
+        await repairDeps(inst, drift, {
+          mode,
+          sendOutput: makeSendOutput(event.sender, sessionId),
+          update: updateFn,
+          signal: abort.signal,
+          confirmRepair: (unsatisfied) => confirmDepsRepair(sender, abort.signal, unsatisfied)
+        })
+        inst = (await installations.get(installationId)) || inst
+      }
+    } catch (err) {
+      if (abort.signal.aborted) {
+        return { ok: false, cancelled: true }
+      }
+      console.warn('Dependency repair failed:', err)
     }
     await writeComfyEnvironment(path.join(inst.installPath, 'ComfyUI'))
   }
