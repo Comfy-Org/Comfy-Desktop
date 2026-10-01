@@ -121,10 +121,11 @@ import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
 import {
   coreRolloutEligibility,
-  coreRolloutRecord,
-  coreRolloutShas,
+  coreRolloutArgRecord,
+  coreRolloutRecords,
+  eligibleRolloutShas,
   getCoreRolloutAsync,
-  selectCoreRolloutArg
+  selectCoreRolloutArgs
 } from '../../coreRolloutGrants'
 import type { CoreRolloutEligibility } from '../../coreRolloutGrants'
 import type { ComfyArgsSchema } from '../../comfy-args'
@@ -213,16 +214,16 @@ export interface CoreBetaLaunch {
 }
 
 export interface CoreRolloutLaunch {
-  /** Args the rollout put on the command line (after the schema filter): exactly what anything
-   *  that must take the rollout back off a launch has to remove. */
-  readonly applied: readonly string[]
-  /** The payload epoch behind `applied`, or `null` when nothing was granted. */
-  readonly epoch: number | null
-  /** One `[core-rollout]` record naming the decision, and the first gate that refused it. */
+  /** Args the rollout put on the command line (after the schema filter), each with the epoch of
+   *  the grant behind it: exactly what anything that must take the rollout back off a launch has
+   *  to remove, per arg. */
+  readonly applied: readonly { readonly arg: string; readonly epoch: number }[]
+  /** `[core-rollout]` records: one for a payload-wide refusal, else one per arg the payload names,
+   *  each naming the decision and the first gate that refused it. */
   readonly logRecords: readonly string[]
 }
 
-const NO_ROLLOUT: CoreRolloutLaunch = { applied: [], epoch: null, logRecords: [] }
+const NO_ROLLOUT: CoreRolloutLaunch = { applied: [], logRecords: [] }
 
 /** No grants resolved: either the install opted out, or the launch never reached arg assembly
  *  (schema discovery unavailable). `optedIn` is still the real toggle in both cases. */
@@ -300,7 +301,13 @@ export function buildLaunchArgs(input: {
   const betaArgs = applied.map((grant) => grant.arg)
   const rollout = selectRolloutLaunch(input, [...userArgs, ...betaArgs], schema)
   return {
-    args: [...prefixArgs, ...desktopFlagArgs, ...betaArgs, ...rollout.applied, ...filtered],
+    args: [
+      ...prefixArgs,
+      ...desktopFlagArgs,
+      ...betaArgs,
+      ...rollout.applied.map((a) => a.arg),
+      ...filtered
+    ],
     beta: {
       applied,
       droppedUnsupported: selected
@@ -328,7 +335,7 @@ function selectRolloutLaunch(
   schema: ComfyArgsSchema
 ): CoreRolloutLaunch {
   if (!input.rollout) return NO_ROLLOUT
-  const decision = selectCoreRolloutArg(
+  const decision = selectCoreRolloutArgs(
     input.rollout.eligibility,
     {
       semver: input.coreVersion,
@@ -339,17 +346,23 @@ function selectRolloutLaunch(
     input.rollout.commits,
     presentArgs
   )
-  if (!decision.granted) return { ...NO_ROLLOUT, logRecords: [coreRolloutRecord(decision)] }
-  const arg = decision.grant.arg
-  if (filterUnsupportedArgs([arg], schema).length === 0) {
-    return {
-      ...NO_ROLLOUT,
-      logRecords: [
-        coreRolloutRecord({ granted: false, gate: 'schema', reason: 'not supported by this core' })
-      ]
+  if (!decision.evaluated) return { ...NO_ROLLOUT, logRecords: coreRolloutRecords(decision) }
+  const applied: { arg: string; epoch: number }[] = []
+  const logRecords: string[] = []
+  for (const arg of decision.args) {
+    if (arg.granted && filterUnsupportedArgs([arg.arg], schema).length === 0) {
+      logRecords.push(
+        coreRolloutArgRecord(
+          { arg: arg.arg, granted: false, gate: 'schema', reason: 'not supported by this core' },
+          decision.cohort
+        )
+      )
+      continue
     }
+    if (arg.granted) applied.push({ arg: arg.arg, epoch: arg.epoch })
+    logRecords.push(coreRolloutArgRecord(arg, decision.cohort))
   }
-  return { applied: [arg], epoch: decision.epoch, logRecords: [coreRolloutRecord(decision)] }
+  return { applied, logRecords }
 }
 
 /** The rollout's pre-assembly work for one launch. Contained: anything it throws becomes a
@@ -368,15 +381,14 @@ export async function resolveRolloutLaunch(input: {
       appVersion: getAppVersion(),
       sourceId: input.sourceId,
       beta: input.betaState,
-      consent: telemetry.getConsentState(),
-      userArgs: input.userArgs
+      consent: telemetry.getConsentState()
     })
     // Local graph only: this cohort never opted into anything reaching the network for it.
     const rolloutCommits = eligibility.eligible
       ? await resolveCoreCommitState(
           input.comfyuiDir,
           input.checkout,
-          coreRolloutShas(eligibility.rollout),
+          eligibleRolloutShas(eligibility, input.userArgs),
           input.signal,
           { allowFetch: false }
         )

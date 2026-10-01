@@ -20,12 +20,13 @@ import {
   _resetForTest,
   blockerShortfall,
   coreRolloutEligibility,
-  coreRolloutRecord,
+  coreRolloutRecords,
   coreRolloutShas,
+  eligibleRolloutShas,
   getCoreRolloutAsync,
   initCoreRollout,
   parseCoreRollout,
-  selectCoreRolloutArg
+  selectCoreRolloutArgs
 } from './coreRolloutGrants'
 import type {
   CoreRollout,
@@ -40,12 +41,20 @@ const INTRO = sha('e')
 const LOWER = sha('a')
 const UPPER = sha('b')
 
+type Json = Record<string, unknown>
+
+const assetsGrant = (over: Json = {}): Json => ({
+  arg: '--enable-assets',
+  epoch: 1,
+  windows: [{ min_core_version: '0.39.0' }],
+  blockers: [{ id: 'core-16646', fix_commits: [FIX], fixed_in: '0.38.0' }],
+  ...over
+})
+
 /** A payload every gate accepts; each test breaks exactly one thing. */
-function validPayload(): Record<string, unknown> {
+function validPayload(grants: Json[] = [assetsGrant()]): Json {
   return {
-    grants: [{ arg: '--enable-assets', min_core_version: '0.39.0' }],
-    blockers: [{ id: 'core-16646', fix_commits: [FIX], fixed_in: '0.38.0' }],
-    epoch: 1,
+    grants,
     min_desktop_version: '1.1.6',
     include_telemetry_off: true,
     include_beta_off_with_telemetry: true
@@ -67,15 +76,10 @@ function commits(relations: Record<string, boolean>, head: string | null = sha('
 }
 
 function facts(over: Partial<CoreRolloutLaunchFacts> = {}): CoreRolloutLaunchFacts {
-  return {
-    appVersion: '1.1.6',
-    sourceId: 'standalone',
-    beta: false,
-    consent: 'denied',
-    userArgs: [],
-    ...over
-  }
+  return { appVersion: '1.1.6', sourceId: 'standalone', beta: false, consent: 'denied', ...over }
 }
+
+const on = (rollout: CoreRollout = parsedOn()): CoreRolloutState => ({ kind: 'on', rollout })
 
 describe('parseCoreRollout flag value', () => {
   it.each([true, 'rollout', 'rollout-a', 'rollout-phase2'])('accepts %j', (value) => {
@@ -83,7 +87,7 @@ describe('parseCoreRollout flag value', () => {
   })
 
   it.each([
-    [undefined, 'no flag value'],
+    [undefined, 'key not served, or server unreachable'],
     [false, 'flag served false'],
     ['control', 'not a rollout variant'],
     ['on', 'not a rollout variant'],
@@ -98,153 +102,244 @@ describe('parseCoreRollout flag value', () => {
 })
 
 describe('parseCoreRollout payload', () => {
-  it('parses a complete payload', () => {
-    const payload = validPayload()
-    payload.grants = [
-      { arg: '--enable-assets', min_core_version: 'v0.39.0', max_core_version: '0.40.0' },
-      { arg: '--enable-assets', commit_ranges: [[LOWER, null]] }
-    ]
-    payload.blockers = [
-      { id: 'a', fix_commits: [FIX], introduced_commits: [INTRO], introduced_in: '0.37.0' },
-      { id: 'b' }
-    ]
+  it('parses one grant per arg, each with its own windows, blockers, epoch and sources', () => {
+    const payload = validPayload([
+      assetsGrant({
+        epoch: 3,
+        windows: [
+          { min_core_version: 'v0.39.0', max_core_version: '0.40.0' },
+          { commit_ranges: [[LOWER, null]] }
+        ],
+        blockers: [
+          { id: 'a', fix_commits: [FIX], introduced_commits: [INTRO], introduced_in: '0.37.0' },
+          { id: 'b' }
+        ]
+      }),
+      {
+        arg: '--enable-agent',
+        epoch: 1,
+        windows: [{ min_core_version: '0.40.0' }],
+        blockers: [{ id: 'agent-floor', fixed_in: '0.40.0' }],
+        install_sources: ['standalone', 'git']
+      },
+      {
+        arg: '--enable-asset-hashing',
+        epoch: 0,
+        windows: [{ min_core_version: '0.39.0' }],
+        blockers: [{ id: 'h', fixed_in: '0.39.0' }]
+      }
+    ])
     expect(parsedOn(payload)).toEqual({
       grants: [
-        { arg: '--enable-assets', minCoreVersion: '0.39.0', maxCoreVersion: '0.40.0' },
-        { arg: '--enable-assets', commitRanges: [[LOWER, null]] }
-      ],
-      blockers: [
         {
-          id: 'a',
-          fixCommits: [FIX],
-          introducedCommits: [INTRO],
-          introducedIn: '0.37.0'
+          arg: '--enable-assets',
+          epoch: 3,
+          windows: [
+            { arg: '--enable-assets', minCoreVersion: '0.39.0', maxCoreVersion: '0.40.0' },
+            { arg: '--enable-assets', commitRanges: [[LOWER, null]] }
+          ],
+          blockers: [
+            {
+              id: 'a',
+              fixCommits: [FIX],
+              introducedCommits: [INTRO],
+              introducedIn: '0.37.0'
+            },
+            { id: 'b', fixCommits: [], introducedCommits: [] }
+          ],
+          installSources: ['standalone']
         },
-        { id: 'b', fixCommits: [], introducedCommits: [] }
+        {
+          arg: '--enable-agent',
+          epoch: 1,
+          windows: [{ arg: '--enable-agent', minCoreVersion: '0.40.0' }],
+          blockers: [
+            { id: 'agent-floor', fixCommits: [], fixedIn: '0.40.0', introducedCommits: [] }
+          ],
+          installSources: ['standalone', 'git']
+        },
+        {
+          arg: '--enable-asset-hashing',
+          epoch: 0,
+          windows: [{ arg: '--enable-asset-hashing', minCoreVersion: '0.39.0' }],
+          blockers: [{ id: 'h', fixCommits: [], fixedIn: '0.39.0', introducedCommits: [] }],
+          installSources: ['standalone']
+        }
       ],
-      epoch: 1,
       minDesktopVersion: '1.1.6',
       includeTelemetryOff: true,
       includeBetaOffWithTelemetry: true
     })
   })
 
-  it('accepts an open upper bound and ignores unknown top-level and blocker keys', () => {
-    const payload: Record<string, unknown> = { ...validPayload(), future_field: 1 }
-    payload.blockers = [{ id: 'x', fixed_in: '0.38.0', note: 'tracked elsewhere' }]
-    expect(parsedOn(payload).grants).toEqual([{ arg: '--enable-assets', minCoreVersion: '0.39.0' }])
+  it('lets a force-off grant name no blockers', () => {
+    const payload = validPayload([
+      { arg: '--disable-assets', epoch: 1, windows: [{ min_core_version: '0.39.0' }], blockers: [] }
+    ])
+    expect(parsedOn(payload).grants[0]).toMatchObject({ arg: '--disable-assets', blockers: [] })
   })
 
+  it('ignores unknown top-level and blocker keys', () => {
+    const payload: Json = {
+      ...validPayload([assetsGrant({ blockers: [{ id: 'x', fixed_in: '0.38.0', note: 'n' }] })]),
+      future_field: 1
+    }
+    expect(parsedOn(payload).grants).toHaveLength(1)
+  })
+
+  const window = (w: Json): Json[] => [assetsGrant({ windows: [w] })]
+  const grantOf = (over: Json): Json[] => [assetsGrant(over)]
   // Each row breaks one field; ONE bad field must refuse the whole payload, never just the entry.
-  const breaks: [string, (p: Record<string, unknown>) => void, string][] = [
+  const breaks: [string, (p: Json) => void, string][] = [
     ['grants missing', (p) => delete p.grants, 'grants must list'],
-    [
-      'a misspelt max_core_version (would read as an open bound)',
-      (p) =>
-        (p.grants = [
-          { arg: '--enable-assets', min_core_version: '0.39.0', max_core_verison: '0.40.0' }
-        ]),
-      'unknown key max_core_verison'
-    ],
-    [
-      'a beta notice field on a grant',
-      (p) =>
-        (p.grants = [{ arg: '--enable-assets', min_core_version: '0.39.0', notice: 'silent' }]),
-      'unknown key notice'
-    ],
     ['grants empty', (p) => (p.grants = []), 'grants must list'],
     [
-      'nine grants',
-      (p) => (p.grants = Array(9).fill({ arg: '--enable-assets', min_core_version: '0.39.0' })),
+      'more grants than the allowlist has args',
+      (p) => (p.grants = Array(5).fill(assetsGrant())),
       'grants must list'
     ],
     ['a grant that is not an object', (p) => (p.grants = ['--enable-assets']), 'not an object'],
-    ...['--enable-asset-hashing', '--disable-assets', '--enable-agent', '--enable-assets '].map(
-      (arg): [string, (p: Record<string, unknown>) => void, string] => [
-        `a grant of ${arg}`,
-        (p) => (p.grants = [{ arg, min_core_version: '0.39.0' }]),
-        'arg is not --enable-assets'
+    ...['--listen', '--disable-asset-hashing', '--enable-assets ', '--ENABLE-ASSETS', 7].map(
+      (arg): [string, (p: Json) => void, string] => [
+        `a grant of ${JSON.stringify(arg)}`,
+        (p) => (p.grants = grantOf({ arg })),
+        'not an allowlisted arg'
       ]
     ),
+    ['the same arg twice', (p) => (p.grants = [assetsGrant(), assetsGrant()]), 'more than once'],
     [
-      'a second, bad grant beside a good one',
+      'an arg and its opposite',
       (p) =>
         (p.grants = [
-          { arg: '--enable-assets', min_core_version: '0.39.0' },
-          { arg: '--enable-assets', min_core_version: 'latest' }
+          assetsGrant(),
+          {
+            arg: '--disable-assets',
+            epoch: 1,
+            windows: [{ min_core_version: '0.39.0' }],
+            blockers: []
+          }
         ]),
-      'grants[1] min_core_version'
+      'names both --enable-assets and --disable-assets'
     ],
     [
-      'a grant with no bound',
-      (p) => (p.grants = [{ arg: '--enable-assets' }]),
-      'min_core_version missing'
+      'a misspelt key on a grant (would read as the default)',
+      (p) => (p.grants = grantOf({ install_source: ['git'] })),
+      'unknown key install_source'
     ],
+    [
+      'a beta notice field on a grant',
+      (p) => (p.grants = grantOf({ notice: 'silent' })),
+      'unknown key notice'
+    ],
+    ['epoch missing', (p) => (p.grants = [{ ...assetsGrant(), epoch: undefined }]), 'epoch'],
+    ['a negative epoch', (p) => (p.grants = grantOf({ epoch: -1 })), 'epoch'],
+    ['a fractional epoch', (p) => (p.grants = grantOf({ epoch: 1.5 })), 'epoch'],
+    ['a string epoch', (p) => (p.grants = grantOf({ epoch: '1' })), 'epoch'],
+    ['windows missing', (p) => (p.grants = grantOf({ windows: undefined })), 'windows must list'],
+    ['windows empty', (p) => (p.grants = grantOf({ windows: [] })), 'windows must list'],
+    [
+      'nine windows',
+      (p) => (p.grants = grantOf({ windows: Array(9).fill({ min_core_version: '0.39.0' }) })),
+      'windows must list'
+    ],
+    [
+      'a misspelt max_core_version (would read as an open bound)',
+      (p) => (p.grants = window({ min_core_version: '0.39.0', max_core_verison: '0.40.0' })),
+      'unknown key max_core_verison'
+    ],
+    ['a window with no bound', (p) => (p.grants = window({})), 'min_core_version missing'],
+    ['a bad min', (p) => (p.grants = window({ min_core_version: 'latest' })), 'min_core_version'],
     [
       'max equal to min',
-      (p) =>
-        (p.grants = [
-          { arg: '--enable-assets', min_core_version: '0.39.0', max_core_version: '0.39.0' }
-        ]),
+      (p) => (p.grants = window({ min_core_version: '0.39.0', max_core_version: '0.39.0' })),
       'not above'
     ],
     [
       'max below min',
-      (p) =>
-        (p.grants = [
-          { arg: '--enable-assets', min_core_version: '0.39.0', max_core_version: '0.38.0' }
-        ]),
+      (p) => (p.grants = window({ min_core_version: '0.39.0', max_core_version: '0.38.0' })),
       'not above'
     ],
     [
       'commit ranges mixed with a version',
-      (p) =>
-        (p.grants = [
-          { arg: '--enable-assets', commit_ranges: [[LOWER, null]], min_core_version: '0.39.0' }
-        ]),
+      (p) => (p.grants = window({ commit_ranges: [[LOWER, null]], min_core_version: '0.39.0' })),
       'mixes'
     ],
     [
       'a short commit in a range',
-      (p) => (p.grants = [{ arg: '--enable-assets', commit_ranges: [['abc1234', null]] }]),
+      (p) => (p.grants = window({ commit_ranges: [['abc1234', null]] })),
       'bad commit_ranges'
     ],
-    ['blockers missing', (p) => delete p.blockers, 'blockers must list'],
-    ['blockers empty', (p) => (p.blockers = []), 'blockers must list'],
     [
-      'nine blockers',
-      (p) => (p.blockers = Array.from({ length: 9 }, (_, i) => ({ id: `b${i}` }))),
+      'blockers missing',
+      (p) => (p.grants = grantOf({ blockers: undefined })),
       'blockers must list'
     ],
-    ['a blocker id with spaces', (p) => (p.blockers = [{ id: 'core 1' }]), 'id is missing'],
-    ['a blocker with no id', (p) => (p.blockers = [{ fixed_in: '0.38.0' }]), 'id is missing'],
-    ['duplicate blocker ids', (p) => (p.blockers = [{ id: 'x' }, { id: 'x' }]), 'duplicate'],
-    ['fix_commits not a list', (p) => (p.blockers = [{ id: 'x', fix_commits: FIX }]), 'not a list'],
+    [
+      'nine blockers',
+      (p) =>
+        (p.grants = grantOf({ blockers: Array.from({ length: 9 }, (_, i) => ({ id: `b${i}` })) })),
+      'blockers must list'
+    ],
+    ...['--enable-assets', '--enable-asset-hashing', '--enable-agent'].map(
+      (arg): [string, (p: Json) => void, string] => [
+        `${arg} with no blockers`,
+        (p) => (p.grants = grantOf({ arg, blockers: [] })),
+        `${arg} needs at least one blocker`
+      ]
+    ),
+    [
+      'a blocker id with spaces',
+      (p) => (p.grants = grantOf({ blockers: [{ id: 'core 1' }] })),
+      'id is missing'
+    ],
+    [
+      'a blocker with no id',
+      (p) => (p.grants = grantOf({ blockers: [{ fixed_in: '0.38.0' }] })),
+      'id is missing'
+    ],
+    [
+      'duplicate blocker ids',
+      (p) => (p.grants = grantOf({ blockers: [{ id: 'x' }, { id: 'x' }] })),
+      'duplicate'
+    ],
+    [
+      'fix_commits not a list',
+      (p) => (p.grants = grantOf({ blockers: [{ id: 'x', fix_commits: FIX }] })),
+      'not a list'
+    ],
     [
       'five fix commits',
-      (p) => (p.blockers = [{ id: 'x', fix_commits: Array(5).fill(FIX) }]),
+      (p) => (p.grants = grantOf({ blockers: [{ id: 'x', fix_commits: Array(5).fill(FIX) }] })),
       'not a list'
     ],
     [
       'an abbreviated fix commit',
-      (p) => (p.blockers = [{ id: 'x', fix_commits: ['f'.repeat(12)] }]),
+      (p) => (p.grants = grantOf({ blockers: [{ id: 'x', fix_commits: ['f'.repeat(12)] }] })),
       'bad commit'
     ],
     [
       'an abbreviated introduced commit',
-      (p) => (p.blockers = [{ id: 'x', introduced_commits: ['e'.repeat(39)] }]),
+      (p) =>
+        (p.grants = grantOf({ blockers: [{ id: 'x', introduced_commits: ['e'.repeat(39)] }] })),
       'bad commit'
     ],
-    ['a bad fixed_in', (p) => (p.blockers = [{ id: 'x', fixed_in: 'soon' }]), 'fixed_in'],
+    [
+      'a bad fixed_in',
+      (p) => (p.grants = grantOf({ blockers: [{ id: 'x', fixed_in: 'soon' }] })),
+      'fixed_in'
+    ],
     [
       'a bad introduced_in',
-      (p) => (p.blockers = [{ id: 'x', introduced_in: 39 }]),
+      (p) => (p.grants = grantOf({ blockers: [{ id: 'x', introduced_in: 39 }] })),
       'introduced_in'
     ],
-    ['epoch missing', (p) => delete p.epoch, 'epoch'],
-    ['a negative epoch', (p) => (p.epoch = -1), 'epoch'],
-    ['a fractional epoch', (p) => (p.epoch = 1.5), 'epoch'],
-    ['a string epoch', (p) => (p.epoch = '1'), 'epoch'],
+    ...[[], 'standalone', ['desktop'], ['remote'], ['cloud'], ['Standalone'], [7]].map(
+      (sources): [string, (p: Json) => void, string] => [
+        `install_sources ${JSON.stringify(sources)}`,
+        (p) => (p.grants = grantOf({ install_sources: sources })),
+        'install_sources'
+      ]
+    ),
     ['min_desktop_version missing', (p) => delete p.min_desktop_version, 'min_desktop_version'],
     ['a bad min_desktop_version', (p) => (p.min_desktop_version = '1.1'), 'min_desktop_version'],
     ['include_telemetry_off missing', (p) => delete p.include_telemetry_off, 'include_telemetry'],
@@ -256,15 +351,25 @@ describe('parseCoreRollout payload', () => {
     [
       'twenty commits in all',
       (p) =>
-        (p.blockers = Array.from({ length: 5 }, (_, i) => ({
-          id: `b${i}`,
-          fix_commits: [0, 1, 2, 3].map((j) => (i * 4 + j).toString(16).padStart(40, '0'))
-        }))),
+        (p.grants = grantOf({
+          blockers: Array.from({ length: 5 }, (_, i) => ({
+            id: `b${i}`,
+            fix_commits: [0, 1, 2, 3].map((j) => (i * 4 + j).toString(16).padStart(40, '0'))
+          }))
+        })),
       'more than 16 commits'
     ]
   ]
   it.each(breaks)('refuses the whole payload with %s', (_, mutate, reason) => {
-    const payload = validPayload()
+    const payload = validPayload([
+      assetsGrant(),
+      {
+        arg: '--enable-agent',
+        epoch: 1,
+        windows: [{ min_core_version: '0.40.0' }],
+        blockers: [{ id: 'a', fixed_in: '0.40.0' }]
+      }
+    ])
     mutate(payload)
     expect(parseCoreRollout(true, payload)).toEqual({
       kind: 'off',
@@ -272,12 +377,18 @@ describe('parseCoreRollout payload', () => {
     })
   })
 
-  it('accepts exactly sixteen commits', () => {
-    const payload = validPayload()
-    payload.blockers = Array.from({ length: 4 }, (_, i) => ({
-      id: `b${i}`,
-      fix_commits: [0, 1, 2, 3].map((j) => (i * 4 + j).toString(16).padStart(40, '0'))
-    }))
+  it('counts the commit cap across grants, a shared commit once', () => {
+    const fixes = (i: number): string[] =>
+      [0, 1, 2, 3].map((j) => (i * 4 + j).toString(16).padStart(40, '0'))
+    const payload = validPayload([
+      assetsGrant({ blockers: [0, 1].map((i) => ({ id: `b${i}`, fix_commits: fixes(i) })) }),
+      {
+        arg: '--enable-agent',
+        epoch: 1,
+        windows: [{ min_core_version: '0.40.0' }],
+        blockers: [1, 2, 3].map((i) => ({ id: `b${i}`, fix_commits: fixes(i) }))
+      }
+    ])
     expect(coreRolloutShas(parsedOn(payload))).toHaveLength(16)
   })
 
@@ -295,27 +406,26 @@ describe('parseCoreRollout payload', () => {
 })
 
 describe('coreRolloutShas', () => {
-  it('collects range bounds, fix and introduced commits once each', () => {
-    const payload = validPayload()
-    payload.grants = [
-      { arg: '--enable-assets', commit_ranges: [[LOWER, UPPER]] },
-      { arg: '--enable-assets', commit_ranges: [[LOWER, null]] }
-    ]
-    payload.blockers = [{ id: 'x', fix_commits: [FIX, UPPER], introduced_commits: [INTRO] }]
+  it('collects range bounds, fix and introduced commits once each, across grants', () => {
+    const payload = validPayload([
+      assetsGrant({
+        windows: [{ commit_ranges: [[LOWER, UPPER]] }, { commit_ranges: [[LOWER, null]] }],
+        blockers: [{ id: 'x', fix_commits: [FIX, UPPER], introduced_commits: [INTRO] }]
+      }),
+      {
+        arg: '--enable-agent',
+        epoch: 1,
+        windows: [{ commit_ranges: [[LOWER, null]] }],
+        blockers: [{ id: 'y', fix_commits: [FIX] }]
+      }
+    ])
     expect(coreRolloutShas(parsedOn(payload)).sort()).toEqual([LOWER, UPPER, INTRO, FIX].sort())
   })
 })
 
 describe('coreRolloutEligibility', () => {
-  const on = (): CoreRolloutState => ({ kind: 'on', rollout: parsedOn() })
-  const withIncludes = (telemetryOff: boolean, betaOff: boolean): CoreRolloutState => ({
-    kind: 'on',
-    rollout: {
-      ...parsedOn(),
-      includeTelemetryOff: telemetryOff,
-      includeBetaOffWithTelemetry: betaOff
-    }
-  })
+  const withIncludes = (telemetryOff: boolean, betaOff: boolean): CoreRolloutState =>
+    on({ ...parsedOn(), includeTelemetryOff: telemetryOff, includeBetaOffWithTelemetry: betaOff })
 
   it('refuses at the payload gate with the parse reason', () => {
     expect(coreRolloutEligibility({ kind: 'off', reason: 'flag served false' }, facts())).toEqual({
@@ -336,18 +446,6 @@ describe('coreRolloutEligibility', () => {
   ])('desktop %s against min 1.1.6: eligible=%s', (appVersion, want) => {
     const result = coreRolloutEligibility(on(), facts({ appVersion }))
     expect(result.eligible ? 'eligible' : result.gate).toBe(want ? 'eligible' : 'desktop')
-  })
-
-  it.each([
-    ['standalone', true],
-    ['git', false],
-    ['portable', false],
-    ['desktop', false],
-    ['comfybuilder', false],
-    ['remote', false]
-  ])('source %s: eligible=%s', (sourceId, want) => {
-    const result = coreRolloutEligibility(on(), facts({ sourceId }))
-    expect(result.eligible ? 'eligible' : result.gate).toBe(want ? 'eligible' : 'install')
   })
 
   // beta × consent × the payload's two audience switches.
@@ -382,16 +480,32 @@ describe('coreRolloutEligibility', () => {
       }
     }
   )
+})
 
-  it.each([
-    [['--enable-assets'], 'already in the launch args'],
-    [['--disable-assets'], 'the launch args contain --disable-assets']
-  ])('yields to the user arg %j', (userArgs, reason) => {
-    expect(coreRolloutEligibility(on(), facts({ userArgs }))).toEqual({
-      eligible: false,
-      gate: 'launch-args',
-      reason
-    })
+describe('eligibleRolloutShas', () => {
+  const payload = validPayload([
+    assetsGrant({ blockers: [{ id: 'x', fix_commits: [FIX] }] }),
+    {
+      arg: '--enable-agent',
+      epoch: 1,
+      windows: [{ commit_ranges: [[LOWER, null]] }],
+      blockers: [{ id: 'y', fix_commits: [INTRO] }],
+      install_sources: ['git']
+    }
+  ])
+
+  it('relates only the commits of grants this install and these args leave open', () => {
+    const standalone = coreRolloutEligibility(on(parsedOn(payload)), facts())
+    expect(eligibleRolloutShas(standalone, [])).toEqual([FIX])
+    expect(eligibleRolloutShas(standalone, ['--disable-assets'])).toEqual([])
+    const git = coreRolloutEligibility(on(parsedOn(payload)), facts({ sourceId: 'git' }))
+    expect(eligibleRolloutShas(git, []).sort()).toEqual([LOWER, INTRO].sort())
+  })
+
+  it('relates nothing for a refused launch', () => {
+    expect(
+      eligibleRolloutShas(coreRolloutEligibility(on(parsedOn(payload)), facts({ beta: true })), [])
+    ).toEqual([])
   })
 })
 
@@ -522,104 +636,186 @@ describe('blockerShortfall', () => {
   })
 })
 
-describe('selectCoreRolloutArg', () => {
-  const eligible = (rollout: CoreRollout = parsedOn()) =>
-    coreRolloutEligibility({ kind: 'on', rollout }, facts())
+describe('selectCoreRolloutArgs', () => {
+  const agentGrant = (over: Json = {}): Json => ({
+    arg: '--enable-agent',
+    epoch: 2,
+    windows: [{ min_core_version: '0.39.0' }],
+    blockers: [{ id: 'agent-floor', fixed_in: '0.39.0' }],
+    ...over
+  })
+  const select = (
+    grants: Json[],
+    over: {
+      facts?: Partial<CoreRolloutLaunchFacts>
+      core?: CoreVersionState
+      commits?: CoreCommitState
+      present?: string[]
+    } = {}
+  ) =>
+    selectCoreRolloutArgs(
+      coreRolloutEligibility(on(parsedOn(validPayload(grants))), facts(over.facts)),
+      over.core ?? core(),
+      over.commits ?? commits({ [FIX]: true }),
+      over.present ?? []
+    )
 
-  it('grants with the epoch and cohort when an entry matches and every blocker clears', () => {
-    expect(selectCoreRolloutArg(eligible(), core(), commits({ [FIX]: true }), [])).toMatchObject({
-      granted: true,
-      epoch: 1,
-      cohort: 'telemetry-off'
+  it('decides each arg on its own, with its own epoch', () => {
+    expect(select([assetsGrant(), agentGrant()])).toEqual({
+      evaluated: true,
+      cohort: 'telemetry-off',
+      args: [
+        { arg: '--enable-assets', granted: true, epoch: 1 },
+        { arg: '--enable-agent', granted: true, epoch: 2 }
+      ]
     })
   })
 
-  it('lets one unmet blocker veto, however loose the entries (the OR-union leak)', () => {
-    const payload = validPayload()
-    payload.grants = [
-      { arg: '--enable-assets', min_core_version: '0.39.0', max_core_version: '0.40.0' },
-      { arg: '--enable-assets', min_core_version: '0.0.1' }
-    ]
-    payload.blockers = [
-      { id: 'met', fixed_in: '0.30.0' },
-      { id: 'unmet', fix_commits: [FIX] }
-    ]
-    expect(selectCoreRolloutArg(eligible(parsedOn(payload)), core(), commits({}), [])).toEqual({
-      granted: false,
-      gate: 'blocker',
-      reason: expect.stringContaining('blocker unmet applies')
+  it("keeps one arg's blocker from holding back another", () => {
+    const decision = select(
+      [assetsGrant({ blockers: [{ id: 'x', fix_commits: [FIX] }] }), agentGrant()],
+      { commits: commits({ [FIX]: false }) }
+    )
+    expect(decision).toMatchObject({
+      args: [
+        { arg: '--enable-assets', granted: false, gate: 'blocker' },
+        { arg: '--enable-agent', granted: true }
+      ]
     })
   })
 
-  it('refuses at the core gate, naming every entry, when no entry matches', () => {
-    const payload = validPayload()
-    payload.grants = [
-      { arg: '--enable-assets', min_core_version: '0.40.0' },
-      { arg: '--enable-assets', commit_ranges: [[LOWER, null]] }
-    ]
-    expect(
-      selectCoreRolloutArg(eligible(parsedOn(payload)), core(), commits({ [FIX]: true }), [])
-    ).toEqual({
-      granted: false,
-      gate: 'core',
-      reason: expect.stringMatching(/entry 1: version 0.39.0 < min 0.40.0; entry 2: commit range/)
+  it("lets one unmet blocker veto its arg, however loose that arg's windows (the OR-union leak)", () => {
+    const loose = assetsGrant({
+      windows: [
+        { min_core_version: '0.39.0', max_core_version: '0.40.0' },
+        { min_core_version: '0.0.1' }
+      ],
+      blockers: [
+        { id: 'met', fixed_in: '0.30.0' },
+        { id: 'unmet', fix_commits: [FIX] }
+      ]
+    })
+    expect(select([loose], { commits: commits({}) })).toMatchObject({
+      args: [
+        {
+          arg: '--enable-assets',
+          granted: false,
+          gate: 'blocker',
+          reason: expect.stringContaining('blocker unmet applies')
+        }
+      ]
+    })
+  })
+
+  it('withholds a grant on an install source it does not list, standalone by default', () => {
+    const decision = select(
+      [assetsGrant(), agentGrant({ install_sources: ['git', 'standalone'] })],
+      {
+        facts: { sourceId: 'git' }
+      }
+    )
+    expect(decision).toMatchObject({
+      args: [
+        {
+          arg: '--enable-assets',
+          granted: false,
+          gate: 'install',
+          reason: 'source git is not in standalone'
+        },
+        { arg: '--enable-agent', granted: true }
+      ]
+    })
+  })
+
+  it("yields per arg to the user's own args", () => {
+    expect(select([assetsGrant(), agentGrant()], { present: ['--disable-assets'] })).toMatchObject({
+      args: [
+        {
+          arg: '--enable-assets',
+          granted: false,
+          gate: 'launch-args',
+          reason: 'the launch args contain --disable-assets'
+        },
+        { arg: '--enable-agent', granted: true }
+      ]
+    })
+    expect(select([agentGrant()], { present: ['--enable-agent'] })).toMatchObject({
+      args: [{ granted: false, gate: 'launch-args', reason: 'already in the launch args' }]
+    })
+  })
+
+  it('refuses at the core gate, naming every window, when none matches', () => {
+    const grant = assetsGrant({
+      windows: [{ min_core_version: '0.40.0' }, { commit_ranges: [[LOWER, null]] }]
+    })
+    expect(select([grant])).toMatchObject({
+      args: [
+        {
+          granted: false,
+          gate: 'core',
+          reason: expect.stringMatching(
+            /window 1: version 0.39.0 < min 0.40.0; window 2: commit range/
+          )
+        }
+      ]
     })
   })
 
   it('refuses a max bound on a non-exact release', () => {
-    const payload = validPayload()
-    payload.grants = [
-      { arg: '--enable-assets', min_core_version: '0.39.0', max_core_version: '0.40.0' }
-    ]
-    const decision = selectCoreRolloutArg(
-      eligible(parsedOn(payload)),
-      core({ exact: false }),
-      commits({ [FIX]: true }),
-      []
-    )
-    expect(decision).toMatchObject({ granted: false, gate: 'core' })
-  })
-
-  it('yields to an arg the beta key selected', () => {
-    expect(
-      selectCoreRolloutArg(eligible(), core(), commits({ [FIX]: true }), ['--disable-assets'])
-    ).toEqual({
-      granted: false,
-      gate: 'launch-args',
-      reason: 'the launch args contain --disable-assets'
+    const grant = assetsGrant({
+      windows: [{ min_core_version: '0.39.0', max_core_version: '0.40.0' }]
+    })
+    expect(select([grant], { core: core({ exact: false }) })).toMatchObject({
+      args: [{ granted: false, gate: 'core' }]
     })
   })
 
-  it('passes a refusal from eligibility straight through', () => {
-    const refused = coreRolloutEligibility(
-      { kind: 'on', rollout: parsedOn() },
-      facts({ beta: true })
-    )
-    expect(selectCoreRolloutArg(refused, core(), commits({ [FIX]: true }), [])).toMatchObject({
-      granted: false,
+  it('grants a force-off with no blockers', () => {
+    const off = {
+      arg: '--disable-assets',
+      epoch: 5,
+      windows: [{ min_core_version: '0.39.0' }],
+      blockers: []
+    }
+    expect(select([off], { commits: NO_CORE_COMMITS })).toMatchObject({
+      args: [{ arg: '--disable-assets', granted: true, epoch: 5 }]
+    })
+  })
+
+  it('passes a payload-wide refusal straight through', () => {
+    expect(select([assetsGrant()], { facts: { beta: true } })).toMatchObject({
+      evaluated: false,
       gate: 'cohort'
     })
   })
 })
 
-describe('coreRolloutRecord', () => {
-  it('names the cohort and epoch of a grant', () => {
+describe('coreRolloutRecords', () => {
+  it('writes one line for a payload-wide refusal', () => {
     expect(
-      coreRolloutRecord({
-        granted: true,
-        grant: { arg: '--enable-assets', minCoreVersion: '0.39.0' },
-        epoch: 3,
-        cohort: 'telemetry-off'
-      })
-    ).toBe(
-      '[core-rollout] --enable-assets granted (cohort telemetry-off, epoch 3, blockers clear)\n'
-    )
+      coreRolloutRecords({ evaluated: false, gate: 'desktop', reason: 'app 1.1.5 < min 1.1.6' })
+    ).toEqual(['[core-rollout] withheld at desktop: app 1.1.5 < min 1.1.6\n'])
   })
 
-  it('names the first refusing gate and its reason', () => {
-    expect(coreRolloutRecord({ granted: false, gate: 'install', reason: 'source git' })).toBe(
-      '[core-rollout] --enable-assets withheld at install: source git\n'
-    )
+  it('writes one line per arg, naming cohort and epoch or the refusing gate', () => {
+    expect(
+      coreRolloutRecords({
+        evaluated: true,
+        cohort: 'telemetry-off',
+        args: [
+          { arg: '--enable-agent', granted: true, epoch: 3 },
+          {
+            arg: '--enable-assets',
+            granted: false,
+            gate: 'install',
+            reason: 'source git is not in standalone'
+          }
+        ]
+      })
+    ).toEqual([
+      '[core-rollout] --enable-agent granted (cohort telemetry-off, epoch 3, blockers clear)\n',
+      '[core-rollout] --enable-assets withheld at install: source git is not in standalone\n'
+    ])
   })
 })
 
