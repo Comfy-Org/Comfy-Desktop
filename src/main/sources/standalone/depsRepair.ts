@@ -343,7 +343,12 @@ export async function repairDeps(
       retriedAlone = true
       for (const req of toInstall) {
         if (tools.signal?.aborted) break
-        if ((await install([req.line])).code !== 0) failedAlone.add(req.name)
+        const single = await install([req.line])
+        if (single.code !== 0) {
+          failedAlone.add(req.name)
+          // Report the retry's own failure: it can differ from the batch's.
+          result = single
+        }
       }
     }
   } finally {

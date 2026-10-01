@@ -512,6 +512,25 @@ describe('repairDeps', () => {
     expect(pendingDrift(record, '1.1.5')).not.toBeNull()
   })
 
+  it('reports the per-line failure, not the batch failure, when every retry fails', async () => {
+    const { inst } = managedInstall(SYNCED.slice(2), REQS)
+    const uv = vi.fn(async (_uvPath: string, args: string[]) =>
+      args.slice(2, args.indexOf('--python')).length > 1
+        ? { code: 2, output: 'error: network unreachable' }
+        : { code: 1, output: 'error: no solution found' }
+    )
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, tools(), {
+        freeze: async () => ({ torch: '2.10.0' }),
+        runUvPip: uv
+      })
+    ).resolves.toBe('failed')
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({ outcome: 'failed', uv_exit: 1 })
+    )
+  })
+
   it('asks an adopted install only about the packages it will install', async () => {
     const { inst, site } = adoptedInstall(
       ['numpy-2.1.0.dist-info'],
