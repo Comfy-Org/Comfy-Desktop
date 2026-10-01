@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as UpdaterModule from './updater'
+import type * as SharedModule from './ipc/shared'
 
 let mockPlatform = 'linux'
 let mockAppImage: string | undefined
@@ -608,7 +609,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     updater.register()
     updater.installUpdate()
     // The manual path is the whole point of auto-install off — it must work.
-    expect(fakeUpdater.restartAndInstall).toHaveBeenCalled()
+    // Called once any ComfyUI stops have settled (none here).
+    await vi.waitFor(() => expect(fakeUpdater.restartAndInstall).toHaveBeenCalled())
   })
 
   it('does not mislabel a later check failure as applying the staged update', async () => {
@@ -762,17 +764,100 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
   })
 
+  it('installUpdate() stops every ComfyUI and waits for them before the installer starts', async () => {
+    // electron-updater spawns the installer and only then quits: the quit's own wait is too late.
+    const order: string[] = []
+    let release: () => void = () => {}
+    vi.doMock('./ipc/shared', async (importOriginal) => ({
+      ...(await importOriginal<typeof SharedModule>()),
+      cancelAll: () => order.push('stop-all')
+    }))
+    let waits = 0
+    vi.doMock('./quitWait', () => ({
+      abandonQuitWait: () => {},
+      waitForComfyStops: () => {
+        order.push('wait')
+        // The first wait is the long one; the second only covers what launched meanwhile.
+        return waits++ === 0
+          ? new Promise<void>((resolve) => (release = resolve))
+          : Promise.resolve()
+      }
+    }))
+    try {
+      fakeUpdater.restartAndInstall.mockImplementation(() => order.push('install'))
+      const updater = await bootUpdater()
+      updater.installUpdate()
+      await new Promise((r) => setTimeout(r, 10))
+      expect(order).toEqual(['stop-all', 'wait'])
+      release()
+      await vi.waitFor(() =>
+        // Stopped again just before: anything launched during the wait.
+        expect(order).toEqual(['stop-all', 'wait', 'stop-all', 'wait', 'install'])
+      )
+    } finally {
+      vi.doUnmock('./ipc/shared')
+      vi.doUnmock('./quitWait')
+    }
+  })
+
+  it('installUpdate() starts one installer however often it is asked during the wait', async () => {
+    let release: () => void = () => {}
+    let waits = 0
+    vi.doMock('./quitWait', () => ({
+      abandonQuitWait: () => {},
+      waitForComfyStops: () =>
+        waits++ === 0 ? new Promise<void>((resolve) => (release = resolve)) : Promise.resolve()
+    }))
+    try {
+      const updater = await bootUpdater()
+      updater.installUpdate()
+      updater.installUpdate() // a double click, or the startup install racing the user
+      release()
+      await vi.waitFor(() => expect(fakeUpdater.restartAndInstall).toHaveBeenCalled())
+      await new Promise((r) => setTimeout(r, 20))
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+      // Counted once too: the ignored second request is not a second trigger.
+      expect(findEmitCalls('comfy.desktop.app_update.install_triggered')).toHaveLength(1)
+    } finally {
+      vi.doUnmock('./quitWait')
+    }
+  })
+
+  it('installUpdate() does not start the installer if the OS began shutting down during the wait', async () => {
+    let release: () => void = () => {}
+    vi.doMock('./quitWait', () => ({
+      abandonQuitWait: () => {},
+      waitForComfyStops: () => new Promise<void>((resolve) => (release = resolve))
+    }))
+    try {
+      const updater = await bootUpdater()
+      updater.installUpdate()
+      sessionEnding = true
+      release()
+      await new Promise((r) => setTimeout(r, 20))
+      expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+    } finally {
+      vi.doUnmock('./quitWait')
+    }
+  })
+
   it('installUpdate() shows the NSIS installer UI by default on Windows', async () => {
     const updater = await bootUpdater()
     updater.installUpdate()
-    expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: false })
+    // Called once any ComfyUI stops have settled (none here).
+    await vi.waitFor(() =>
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: false })
+    )
   })
 
   it('installUpdate() installs silently when showInstallerUI is opted out', async () => {
     settingsStore['showInstallerUI'] = false
     const updater = await bootUpdater()
     updater.installUpdate()
-    expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: true })
+    // Called once any ComfyUI stops have settled (none here).
+    await vi.waitFor(() =>
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: true })
+    )
   })
 
   it('installUpdate() ignores showInstallerUI off Windows (isSilent stays true)', async () => {
@@ -780,7 +865,10 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     settingsStore['showInstallerUI'] = true
     const updater = await bootUpdater()
     updater.installUpdate()
-    expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: true })
+    // Called once any ComfyUI stops have settled (none here).
+    await vi.waitFor(() =>
+      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledWith({ isSilent: true })
+    )
   })
 
   it('hasPendingStartupUpdate() reflects the staged-update markers', async () => {
@@ -809,7 +897,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     const installing = await updater.applyPendingUpdateOnStartup()
 
     expect(installing).toBe(true)
-    expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+    // Called once any ComfyUI stops have settled (none here).
+    await vi.waitFor(() => expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1))
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBe('1.0.1')
     // The install event carries the .bak-fallback diagnostic (issue #1367).
     const installs = findEmitCalls('comfy.desktop.app_update.startup_install')
@@ -1021,7 +1110,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       // Cross the floor — the install now fires.
       await vi.advanceTimersByTimeAsync(1200)
       expect(await pending).toBe(true)
-      expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+      // Called once any ComfyUI stops have settled (none here).
+      await vi.waitFor(() => expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1))
     } finally {
       vi.useRealTimers()
     }
@@ -1322,7 +1412,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     readyVersion = '1.0.2'
     const updater = await bootUpdater()
     expect(await updater.applyPendingUpdateOnStartup()).toBe(true)
-    expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+    // Called once any ComfyUI stops have settled (none here).
+    await vi.waitFor(() => expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1))
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBe('1.0.2')
     expect(sidecarMarker?.version).toBe('1.0.2')
   })
@@ -1335,7 +1426,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     sidecarMarker = { version: '1.0.1', attemptedAt: new Date().toISOString() }
     const updater = await bootUpdater()
     updater.installUpdate()
-    expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+    // Called once any ComfyUI stops have settled (none here).
+    await vi.waitFor(() => expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1))
   })
 
   it('records the sidecar marker alongside the settings marker when installing', async () => {
@@ -1343,7 +1435,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     readyVersion = '1.0.1'
     const updater = await bootUpdater()
     expect(await updater.applyPendingUpdateOnStartup()).toBe(true)
-    expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1)
+    // Called once any ComfyUI stops have settled (none here).
+    await vi.waitFor(() => expect(fakeUpdater.restartAndInstall).toHaveBeenCalledTimes(1))
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBe('1.0.1')
     expect(sidecarMarker?.version).toBe('1.0.1')
   })

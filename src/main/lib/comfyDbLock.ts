@@ -4,6 +4,7 @@ import { findLockingProcesses } from './file-lock-info'
 import { holderIsInstall, listRecords } from './comfyProcessRecord'
 import {
   commandLinesOf,
+  parentPidOf,
   isPidAlive,
   readStartTimes,
   runsMainPy,
@@ -70,9 +71,27 @@ export interface DbLockHolder {
   runsMainPy: boolean | null
   /** How long it has been running, in seconds. Null when unknown. */
   ageS: number | null
+  /** Whether it, or its parent, is a process a Desktop record names for this installation (the
+   *  child, a survivor, or a member of the recorded Windows tree): "ours but not provable" as
+   *  opposed to "not ours". By pid only; telemetry, never grounds for a stop. */
+  inDesktopTree: boolean | null
 }
 
 export { runsMainPy }
+
+/** Whether `pid` or its parent is named by a record of `installationId`. */
+async function inDesktopTree(pid: number, installationId: string): Promise<boolean> {
+  const ours = new Set<number>()
+  for (const r of listRecords()) {
+    if (r.installationId !== installationId) continue
+    ours.add(r.childPid)
+    for (const m of [...(r.tree ?? []), ...(r.lingering ?? [])]) ours.add(m.pid)
+  }
+  if (ours.size === 0) return false
+  if (ours.has(pid)) return true
+  const parent = await parentPidOf(pid)
+  return parent !== null && ours.has(parent)
+}
 
 /**
  * Best-effort name for whoever holds the database lock after a `comfyui_db_locked` boot
@@ -104,7 +123,8 @@ export async function identifyDbLockHolder(input: {
       sameInstall: true,
       name: null,
       runsMainPy: true,
-      ageS: Math.max(0, Math.round((Date.now() - recorded.spawnedAt) / 1000))
+      ageS: Math.max(0, Math.round((Date.now() - recorded.spawnedAt) / 1000)),
+      inDesktopTree: true
     }
   }
 
@@ -124,7 +144,8 @@ export async function identifyDbLockHolder(input: {
       sameInstall: await holderIsInstall(holder.pid, input.installPath).catch(() => false),
       name: path.basename(holder.name.replace(/\\/g, '/')) || null,
       runsMainPy: ownLine === undefined ? null : runsMainPy(ownLine),
-      ageS: startedMs === null ? null : Math.max(0, Math.round((Date.now() - startedMs) / 1000))
+      ageS: startedMs === null ? null : Math.max(0, Math.round((Date.now() - startedMs) / 1000)),
+      inDesktopTree: await inDesktopTree(holder.pid, input.installationId).catch(() => null)
     }
   }
   return null

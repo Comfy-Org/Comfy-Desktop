@@ -423,6 +423,28 @@ export async function commandArgvOf(pid: number): Promise<string[] | null> {
   }
 }
 
+/** The parent pid of `pid`; null when unknown. */
+export async function parentPidOf(pid: number): Promise<number | null> {
+  if (!Number.isInteger(pid) || pid <= 0) return null
+  if (process.platform === 'win32') {
+    const rows = await windowsProcessRows()
+    return rows?.find((r) => r.pid === pid)?.ppid ?? null
+  }
+  if (process.platform === 'linux') {
+    try {
+      const stat = await fs.promises.readFile(`/proc/${pid}/stat`, 'utf-8')
+      // Fields after the command name, which may itself contain spaces and parentheses.
+      const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1])
+      return Number.isInteger(ppid) && ppid > 0 ? ppid : null
+    } catch {
+      return null
+    }
+  }
+  const stdout = await run('ps', ['-o', 'ppid=', '-p', String(pid)])
+  const ppid = Number(stdout?.trim())
+  return Number.isInteger(ppid) && ppid > 0 ? ppid : null
+}
+
 /** The working directory of `pid` (POSIX), to resolve a relative command line; null when it
  *  cannot be read. */
 export async function processCwdOf(pid: number): Promise<string | null> {

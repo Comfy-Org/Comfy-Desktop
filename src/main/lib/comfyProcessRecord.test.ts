@@ -22,6 +22,7 @@ import {
   readRecord,
   removeRecordIf,
   resolvePriorProcess,
+  stopLingeringAtQuit,
   takePriorSessionUnclean,
   trackSpawn,
   writeRecord,
@@ -780,6 +781,23 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     expect(removed).toEqual([])
   })
 
+  it('remembers that the user was asked, so a later quit leaves the survivors alone', async () => {
+    const written: ComfyProcessRecord[] = []
+    await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({
+        probeQueue: async () => ({ running: 1, pending: 0 }),
+        writeRecord: (r) => {
+          written.push(r)
+          return true
+        },
+        wallNow: () => 4242
+      })
+    )
+    expect(written.at(-1)).toMatchObject({ keptAt: 4242, lingering: [survivor] })
+  })
+
   it('stops a busy survivor once the user has chosen to', async () => {
     const probeQueue = vi.fn(async () => ({ running: 1, pending: 0 }))
     const out = await resolvePriorProcess('inst-1', { stopBusy: true }, deps({ probeQueue }))
@@ -1075,6 +1093,189 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
     expect(kills).toEqual([])
     expect(out).toMatchObject({ action: 'busy_left', queue: { running: 1, pending: 0 } })
     expect(out).not.toHaveProperty('survivorPids')
+  })
+})
+
+describe('resolvePriorProcess: the recorded Windows tree outliving its launcher', () => {
+  // A Desktop that died ran no exit scan; the interpreter it recorded under the venv launcher
+  // (the recorded child, now gone) is still running and still holds the lock.
+  const INSTALL = 'C:\\c\\one'
+  const interpreter = { pid: 700, startTime: '1700' }
+  let alive = new Set<number>()
+  let kills: number[] = []
+  let table: Array<{ pid: number; ppid: number; created: string; commandLine: string }> | null
+  const deps = (overrides: Partial<PriorProcessDeps> = {}): PriorProcessDeps => ({
+    readRecord: () =>
+      record({ installPath: INSTALL, desktopPid: 111, childPid: 222, tree: [interpreter] }),
+    removeRecordIf: () => {},
+    readStartTimes: async (pids) =>
+      new Map(pids.filter((p) => alive.has(p)).map((p) => [p, p === 700 ? '1700' : 'x'])),
+    ownStartTime: async () => SELF.start,
+    isPidAlive: (pid) => alive.has(pid),
+    probeQueue: async () => ({ running: 0, pending: 0 }),
+    portListeners: async () => [...alive],
+    processGroupOf: async () => null,
+    windowsProcessRows: async () => null,
+    windowsProcessTable: async () => table,
+    platform: 'win32',
+    killPidTree: async (pid) => {
+      kills.push(pid)
+      alive.delete(pid)
+      return { killed: true, exited: true, waitMs: 5 }
+    },
+    now: () => 0,
+    wallNow: () => 0,
+    sleep: async () => {},
+    ...overrides
+  })
+
+  beforeEach(() => {
+    alive = new Set([700])
+    kills = []
+    table = [
+      {
+        pid: 700,
+        ppid: 222,
+        created: '1700',
+        commandLine: 'C:\\Py\\python.exe -s ComfyUI\\main.py --port 8188'
+      }
+    ]
+  })
+
+  it('stops the recorded interpreter once it is proven, and says the tree proved it', async () => {
+    const out = await resolvePriorProcess('inst-1', {}, deps())
+    expect(kills).toEqual([700])
+    expect(out).toMatchObject({ action: 'terminated', proof: 'desktop_tree', lingering: 1 })
+  })
+
+  it('still asks first when it is busy', async () => {
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({ probeQueue: async () => ({ running: 1, pending: 0 }) })
+    )
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ action: 'busy_left', proof: 'desktop_tree' })
+  })
+
+  it.each([
+    ['another process now has its pid', { created: '9999' }],
+    ['it no longer runs main.py', { commandLine: 'C:\\Py\\python.exe -m pip install x' }],
+    ['it runs another installation', { commandLine: 'C:\\Py\\python.exe D:\\other\\main.py' }]
+  ])('leaves it alone when %s', async (_why, change) => {
+    table = [{ ...table![0]!, ...change }]
+    expect(await resolvePriorProcess('inst-1', {}, deps())).toBeNull()
+    expect(kills).toEqual([])
+  })
+
+  it("does not take a custom node's own `python main.py` under the interpreter for it", async () => {
+    // A helper started by a custom node, recorded as a tree member: relative main.py, but its
+    // parent is the interpreter, not the recorded launcher.
+    table = [{ pid: 700, ppid: 650, created: '1700', commandLine: 'C:\\Py\\python.exe main.py' }]
+    expect(await resolvePriorProcess('inst-1', {}, deps())).toBeNull()
+    expect(kills).toEqual([])
+  })
+
+  it('leaves the tree to the child path while the launcher itself is alive', async () => {
+    alive.add(222)
+    const probe = vi.fn(async () => table)
+    await resolvePriorProcess('inst-1', {}, deps({ windowsProcessTable: probe }))
+    expect(probe).not.toHaveBeenCalled()
+    expect(kills).not.toContain(700)
+  })
+
+  it('ignores a recorded tree off Windows, where nothing can verify it', async () => {
+    const probe = vi.fn(async () => null)
+    const out = await resolvePriorProcess(
+      'inst-1',
+      {},
+      deps({ platform: 'linux', windowsProcessTable: probe })
+    )
+    expect(probe).not.toHaveBeenCalled()
+    expect(out).toBeNull()
+  })
+
+  it('does not launch beside it when the process table cannot be read', async () => {
+    table = null
+    const out = await resolvePriorProcess('inst-1', {}, deps())
+    expect(kills).toEqual([])
+    expect(out).toMatchObject({ blocked: 'unverified' })
+  })
+})
+
+describe('stopLingeringAtQuit', () => {
+  const survivor = { pid: 555, startTime: 'survivor-start' }
+  let kills: number[] = []
+  const deps = (overrides: Partial<PriorProcessDeps> = {}): PriorProcessDeps => ({
+    readRecord,
+    removeRecordIf: () => {},
+    readStartTimes: async (pids) =>
+      new Map(pids.filter((p) => p === 555).map((p) => [p, 'survivor-start'])),
+    ownStartTime: async () => SELF.start,
+    isPidAlive: (pid) => pid === 555,
+    probeQueue: async () => ({ running: 0, pending: 0 }),
+    killPidTree: async (pid) => {
+      kills.push(pid)
+      return { killed: true, exited: true, waitMs: 1 }
+    },
+    now: () => 0,
+    wallNow: () => 0,
+    sleep: async () => {},
+    ...overrides
+  })
+  beforeEach(() => {
+    kills = []
+  })
+
+  it("stops the proven survivors of this Desktop's children", async () => {
+    writeRecord(
+      record({
+        desktopPid: SELF.pid,
+        desktopStartTime: SELF.start,
+        childExitedAt: 1,
+        lingering: [survivor]
+      })
+    )
+    expect(await stopLingeringAtQuit(deps())).toBe(1)
+    expect(kills).toEqual([555])
+  })
+
+  it.each([
+    ['the user was asked about them at a launch', { keptAt: 5 }],
+    ['another Desktop wrote the record', { desktopPid: 111, desktopStartTime: 'desk-start' }],
+    ['a previous Desktop that had our pid wrote it', { desktopStartTime: 'an-earlier-desktop' }]
+  ])('leaves them alone when %s', async (_why, overrides) => {
+    writeRecord(
+      record({
+        desktopPid: SELF.pid,
+        desktopStartTime: SELF.start,
+        childExitedAt: 1,
+        lingering: [survivor],
+        ...overrides
+      })
+    )
+    expect(await stopLingeringAtQuit(deps())).toBe(0)
+    expect(kills).toEqual([])
+  })
+
+  it('costs nothing when no record of ours has survivors (no start-time query)', async () => {
+    writeRecord(record({ desktopPid: SELF.pid, desktopStartTime: SELF.start }))
+    const ownStartTime = vi.fn(async () => SELF.start)
+    expect(await stopLingeringAtQuit(deps({ ownStartTime }))).toBe(0)
+    expect(ownStartTime).not.toHaveBeenCalled()
+  })
+
+  it('never stops a pid that now names another process', async () => {
+    writeRecord(
+      record({
+        desktopPid: SELF.pid,
+        desktopStartTime: SELF.start,
+        childExitedAt: 1,
+        lingering: [{ pid: 555, startTime: 'a-process-that-had-this-pid-before' }]
+      })
+    )
+    expect(await stopLingeringAtQuit(deps())).toBe(0)
+    expect(kills).toEqual([])
   })
 })
 
@@ -1551,6 +1752,15 @@ describe('takePriorSessionUnclean', () => {
       })
     )
     expect(takePriorSessionUnclean()).toBe(false)
+    expect(readRecord('inst-1')).not.toBeNull()
+  })
+
+  it('keeps a record whose recorded tree outlived its Desktop and launcher', async () => {
+    const dead = await deadPid()
+    writeRecord(
+      record({ desktopPid: dead, childPid: dead, tree: [{ pid: process.pid, startTime: 'x' }] })
+    )
+    takePriorSessionUnclean()
     expect(readRecord('inst-1')).not.toBeNull()
   })
 

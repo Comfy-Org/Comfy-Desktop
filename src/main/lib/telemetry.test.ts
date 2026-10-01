@@ -5,11 +5,18 @@ import path from 'path'
 import { EventEmitter } from 'events'
 import type { TelemetryValue } from './telemetry'
 
+const appHooks = vi.hoisted(() => ({
+  listeners: new Map<string, (event: { preventDefault: () => void }) => void>(),
+  quit: vi.fn()
+}))
 vi.mock('electron', () => ({
   app: {
     getPath: () => path.join(os.tmpdir(), 'launcher-test'),
     isPackaged: true,
-    on: () => {}
+    on: (event: string, listener: (event: { preventDefault: () => void }) => void) => {
+      appHooks.listeners.set(event, listener)
+    },
+    quit: appHooks.quit
   },
   BrowserWindow: { getAllWindows: () => [] }
 }))
@@ -1839,6 +1846,42 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.map((call) => call.event)).toContain('before.quit')
     const ended = captured.find((call) => call.event === 'comfy.desktop.session.ended')
     expect(ended?.distinctId).toBe('user-123')
+  })
+
+  it('captures session.ended only after the quit has waited for ComfyUI, with how long', async () => {
+    captured.length = 0
+    let release: (props: Record<string, unknown>) => void = () => {}
+    telemetry.installAppHooks({
+      beforeSessionEnded: () => new Promise((resolve) => (release = resolve))
+    })
+    const event = { preventDefault: vi.fn() }
+    appHooks.listeners.get('before-quit')!(event)
+    expect(event.preventDefault).toHaveBeenCalled()
+    // Closing the last window quits again while the drain runs: that quit is held too.
+    const again = { preventDefault: vi.fn() }
+    appHooks.listeners.get('before-quit')!(again)
+    expect(again.preventDefault).toHaveBeenCalled()
+    await new Promise((r) => setTimeout(r, 10))
+    const ended = (): CapturedCall | undefined =>
+      captured.find((call) => call.event === 'comfy.desktop.session.ended')
+    expect(ended()).toBeUndefined()
+    expect(appHooks.quit).not.toHaveBeenCalled()
+
+    release({ quit_wait_ms: 1200, quit_wait_timed_out: false, quit_wait_stops: 1 })
+    await vi.waitFor(() =>
+      expect(ended()?.properties).toMatchObject({
+        reason: 'quit',
+        quit_wait_ms: 1200,
+        quit_wait_timed_out: false,
+        quit_wait_stops: 1
+      })
+    )
+    await vi.waitFor(() => expect(appHooks.quit).toHaveBeenCalled())
+    expect(appHooks.quit).toHaveBeenCalledTimes(1)
+    // The re-issued quit, once drained, goes through.
+    const after = { preventDefault: vi.fn() }
+    appHooks.listeners.get('before-quit')!(after)
+    expect(after.preventDefault).not.toHaveBeenCalled()
   })
 
   it('captures a still-staged login attribution during shutdown', async () => {

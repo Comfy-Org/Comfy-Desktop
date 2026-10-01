@@ -56,7 +56,7 @@ function seed(): SeedOptions {
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: false,
-      hasSeenCentralPillHint: true,
+      hasSeenCentralPillHint: true
     },
     installations: [
       {
@@ -74,10 +74,10 @@ function seed(): SeedOptions {
           commit: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
           baseTag: 'v0.3.99',
           commitsAhead: 0,
-          baseTagVerified: true,
-        },
-      },
-    ],
+          baseTagVerified: true
+        }
+      }
+    ]
   }
 }
 
@@ -97,7 +97,7 @@ async function readRecord(): Promise<OwnershipRecord | null> {
     'state',
     'comfyui-desktop-2',
     'comfy-procs',
-    `${INSTALL_ID}.json`,
+    `${INSTALL_ID}.json`
   )
   try {
     return JSON.parse(await readFile(file, 'utf-8')) as OwnershipRecord
@@ -144,7 +144,7 @@ async function launchInstall(app: AppContext, previousPid?: number): Promise<Own
           (await portAnswers())
         )
       },
-      { timeout: 90_000, message: 'the install never booted a new ComfyUI stub' },
+      { timeout: 90_000, message: 'the install never booted a new ComfyUI stub' }
     )
     .toBe(true)
   stubPids.add(record!.childPid)
@@ -224,8 +224,8 @@ test('an orphan left by a killed Desktop is stopped, and the install boots on it
       action: 'terminated',
       proof: 'desktop_record',
       exited_in_time: true,
-      busy_override: false,
-    }),
+      busy_override: false
+    })
   ])
 })
 
@@ -240,12 +240,12 @@ test('an orphan still running a prompt is left alone until the user stops it @li
 
     await app.panel.waitForVisible(byTestId(TID.progressPortConflictBanner), { timeout: 60_000 })
     expect(await app.panel.textOf(byTestId(TID.progressPortConflictBanner))).toContain(
-      'still running a prompt',
+      'still running a prompt'
     )
     expect(isAlive(busy!.childPid), 'a busy ComfyUI is not stopped without asking').toBe(true)
     expect(await app.panel.exists(byTestId(TID.progressPortConflictUsePort))).toBe(false)
     expect(await priorEvents(app)).toEqual([
-      expect.objectContaining({ action: 'busy_left', proof: 'desktop_record' }),
+      expect.objectContaining({ action: 'busy_left', proof: 'desktop_record' })
     ])
 
     expect(await app.panel.click(byTestId(TID.progressPortConflictKill))).toBe(true)
@@ -264,14 +264,14 @@ test('an orphan still running a prompt is left alone until the user stops it @li
             (await portAnswers())
           )
         },
-        { timeout: 90_000, message: 'stopping the busy ComfyUI never led to a new boot' },
+        { timeout: 90_000, message: 'stopping the busy ComfyUI never led to a new boot' }
       )
       .toBe(true)
     stubPids.add(replaced!.childPid)
     expect(isAlive(busy!.childPid)).toBe(false)
     expect(await priorEvents(app)).toEqual([
       expect.objectContaining({ action: 'busy_left' }),
-      expect.objectContaining({ action: 'terminated', busy_override: true }),
+      expect.objectContaining({ action: 'terminated', busy_override: true })
     ])
   } finally {
     await rm(path.join(installPath, 'queue-busy'), { force: true })
@@ -291,12 +291,14 @@ test('cancelling from the busy check stops nothing and starts nothing @linux', a
         (await app.panel.allText('.brand-progress__status'))
           .join(' ')
           .includes('Checking an earlier ComfyUI'),
-      { timeout: 30_000, message: 'the busy check never started' },
+      { timeout: 30_000, message: 'the busy check never started' }
     )
 
     // The real in-flight footer button, then its confirmation: the cancel only happens once
     // "Cancel operation" is confirmed.
-    expect(await app.panel.clickByText('.brand-progress__footer-btn', 'Return to Dashboard')).toBe(true)
+    expect(await app.panel.clickByText('.brand-progress__footer-btn', 'Return to Dashboard')).toBe(
+      true
+    )
     await app.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
     expect(await app.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
 
@@ -327,7 +329,7 @@ test('a ComfyUI of the same install that Desktop did not start is never stopped 
   const manual = spawn(
     path.join(installPath, 'venv', 'bin', 'python3'),
     ['-s', path.join('ComfyUI', 'main.py'), '--port', String(port)],
-    { cwd: installPath, detached: true, stdio: 'ignore' },
+    { cwd: installPath, detached: true, stdio: 'ignore' }
   )
   manual.unref()
   stubPids.add(manual.pid!)
@@ -341,4 +343,48 @@ test('a ComfyUI of the same install that Desktop did not start is never stopped 
   expect(await portAnswers()).toBe(true)
   // The stale record of the ComfyUI stopped above proves nothing and is dropped silently.
   expect(await priorEvents(app)).toEqual([])
+})
+
+// On Linux the SIGKILL teardown and its bookkeeping finish before Electron completes a quit, so
+// this passes with or without the quit's wait (checked by disabling it). It pins the outcome end
+// to end; the wait itself is proven by `quitWait.test.ts`. On Windows, where termination is
+// asynchronous, the wait is what makes it hold.
+test('a quit leaves nothing behind, and an immediate relaunch finds nothing to handle @linux', async () => {
+  // Start clean: nothing of this install running, no record.
+  if (ctx) await crashDesktop(ctx)
+  for (const pid of stubPids) {
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {}
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {}
+  }
+  await expect.poll(portAnswers, { timeout: 15_000 }).toBe(false)
+  await rm(
+    path.join(
+      profileDir,
+      '.local',
+      'state',
+      'comfyui-desktop-2',
+      'comfy-procs',
+      `${INSTALL_ID}.json`
+    ),
+    { force: true }
+  )
+
+  const running = await launchInstall(await start())
+  const app = ctx!
+  await app.app.evaluate(({ app }) => app.quit())
+  await waitForAppExit(app.app, 30_000)
+  ctx = null
+
+  // By the time Desktop is gone, so is its ComfyUI, and its exit has been recorded.
+  expect(isAlive(running.childPid), 'ComfyUI outlived the quit').toBe(false)
+  expect(await readRecord(), 'the exit was recorded before Desktop exited').toBeNull()
+
+  const next = await start()
+  const relaunched = await launchInstall(next, running.childPid)
+  expect(relaunched.port, 'the relaunch boots on the same port').toBe(port)
+  expect(await priorEvents(next), 'nothing was left for the relaunch to handle').toEqual([])
 })

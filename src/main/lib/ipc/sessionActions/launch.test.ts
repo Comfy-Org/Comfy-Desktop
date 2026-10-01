@@ -68,7 +68,9 @@ const launchHarness = vi.hoisted(() => ({
   /** A live Desktop port lock on a busy port (the pid it names); null = none. */
   portLockPid: null as null | number,
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
-  killExits: true
+  killExits: true,
+  /** What `stopOutcomeOf` reports for any child: null = Desktop never stopped it. */
+  stopOutcome: null as null | { exited: boolean; waitMs: number }
 }))
 
 vi.mock('../shared', async (importOriginal) => {
@@ -132,7 +134,9 @@ vi.mock('../shared', async (importOriginal) => {
         : actual.getProcessInfo(...args),
     // Never let a test reach the real one: the fake child's pid is invented, and killing it
     // would signal whatever real process happens to hold that pid.
-    killProcessTree: async () => ({ exited: launchHarness.killExits, waitMs: 0 })
+    killProcessTree: async () => ({ exited: launchHarness.killExits, waitMs: 0 }),
+    stopOutcomeOf: () =>
+      launchHarness.stopOutcome ? Promise.resolve(launchHarness.stopOutcome) : undefined
   }
 })
 
@@ -2138,6 +2142,7 @@ describe('prior ComfyUI process handling at launch', () => {
     launchHarness.busyPorts = []
     launchHarness.busyPids = [31337]
     launchHarness.portLockPid = null
+    launchHarness.stopOutcome = null
     launchHarness.portFreeWaits = []
     launchHarness.killExits = true
     launchHarness.waitForPort = async () => {}
@@ -2198,6 +2203,39 @@ describe('prior ComfyUI process handling at launch', () => {
     })
     expect(started?.port_bumped_from).toBeNull()
     expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toHaveLength(0)
+  })
+
+  it.each([
+    [
+      'a stop Desktop asked for',
+      { exited: true, waitMs: 1234.4 },
+      { stop_wait_ms: 1234, stop_timed_out: false }
+    ],
+    [
+      'a stop that outlived its wait',
+      { exited: false, waitMs: 5000 },
+      { stop_wait_ms: 5000, stop_timed_out: true }
+    ]
+  ])('reports how long %s took on comfyui.exited', async (_name, outcome, expected) => {
+    launchHarness.stopOutcome = outcome
+    const res = await handleLaunch(ctxFor('exit-stop-wait'))
+    expect(res.ok).toBe(true)
+    children[0]!.emit('exit', null, 'SIGKILL')
+    children[0]!.emit('close', null, 'SIGKILL')
+    await vi.waitFor(() =>
+      expect(eventsNamed('comfy.desktop.comfyui.exited')).toEqual([
+        expect.objectContaining(expected)
+      ])
+    )
+  })
+
+  it('adds no stop fields to an exit Desktop did not ask for', async () => {
+    const res = await handleLaunch(ctxFor('exit-own'))
+    expect(res.ok).toBe(true)
+    children[0]!.emit('exit', 1, null)
+    children[0]!.emit('close', 1, null)
+    await vi.waitFor(() => expect(eventsNamed('comfy.desktop.comfyui.exited')).toHaveLength(1))
+    expect(eventsNamed('comfy.desktop.comfyui.exited')[0]).not.toHaveProperty('stop_wait_ms')
   })
 
   it('reports a terminated orphan and launches on the port it freed', async () => {
@@ -2636,7 +2674,8 @@ describe('describeLockHolder', () => {
         sameInstall: true,
         name: 'python',
         runsMainPy: true,
-        ageS: 192
+        ageS: 192,
+        inDesktopTree: false
       })
     ).toBe(
       'holder pid 13708, source restart_manager, same install true, name python, runs main.py true, running 192s'

@@ -6,12 +6,13 @@ import path from 'path'
 import net from 'net'
 import { stateDir } from './paths'
 import {
+  descendantsOf,
   groupHasLiveMembers,
   groupMembers,
   isPidAlive,
   processGroupOf,
   readStartTimes,
-  snapshotWindowsTree
+  windowsProcessRows
 } from './processIdentity'
 
 /** Default timeout for waiting for ComfyUI to boot (5 minutes). */
@@ -170,34 +171,105 @@ function taskkillTree(pid: number): Promise<void> {
   })
 }
 
-/**
- * Windows: `taskkill /T /F`, then poll every pid of the tree until it has exited. taskkill
- * returns when it has ASKED for termination, not when it is done. The tree comes from a
- * process-table snapshot (taskkill's own output is localized).
- *
- * `taskkill` is started first, synchronously: this also runs on quit, where nothing waits for
- * it, and a kill queued behind a PowerShell round trip could be lost with the app. The snapshot
- * runs alongside; processes still terminating are still in the table, and survivors keep their
- * (now dead) parent's pid, so the tree is still found. A failed snapshot still kills; it can
- * only watch the root.
- */
-async function killWindowsTree(pid: number, startedAt: number): Promise<KillResult> {
-  const killing = taskkillTree(pid)
-  const snapshot = await snapshotWindowsTree(pid)
-  await killing
-  const pids = snapshot && snapshot.pids.length > 0 ? snapshot.pids : [pid]
-  return waitUntil(() => !pids.some(isPidAlive), startedAt, KILL_WAIT_MS)
+/** A process Desktop recorded, by pid and creation time (Windows FILETIME). */
+export interface KnownProcess {
+  pid: number
+  startTime: string
 }
 
-/** Windows, verified: the root's start token must match a snapshot taken before the kill, or
- *  nothing is signalled. */
+/** How long a stop waits for the process table before killing anyway: the kill must not be held
+ *  up by a slow PowerShell for longer than the quit is willing to wait. */
+const PRE_KILL_SNAPSHOT_MS = 3_000
+
+/**
+ * The tree under `root` (only when the root itself is in the table: without its creation time,
+ * "a child of this pid" cannot tell its children from older processes naming a reused pid), and
+ * under each `known` process still alive with its recorded creation time (the recorded
+ * interpreter, whose child outside the launcher's job is not under the launcher once that is
+ * gone), by pid and creation time. Null when the table could not be read (within `capMs`).
+ */
+async function windowsTreeWithTimes(
+  root: number,
+  known: readonly KnownProcess[],
+  capMs: number | null
+): Promise<Map<number, string> | null> {
+  const read = windowsProcessRows()
+  const rows =
+    capMs === null
+      ? await read
+      : await Promise.race([
+          read,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), capMs).unref())
+        ])
+  if (!rows) return null
+  const byPid = new Map(rows.map((r) => [r.pid, r]))
+  const roots = [
+    ...(byPid.get(root)?.created ? [root] : []),
+    ...known.filter((k) => byPid.get(k.pid)?.created === k.startTime).map((k) => k.pid)
+  ]
+  const tree = new Map<number, string>()
+  for (const r of roots) {
+    for (const pid of descendantsOf(rows, r)) {
+      const created = byPid.get(pid)?.created
+      if (created) tree.set(pid, created)
+    }
+  }
+  return tree
+}
+
+/** After the root's `taskkill /T`: kill each member still alive, but only while its pid still
+ *  names the same process (creation time re-read now). Never a bare pid. */
+async function killWindowsSurvivors(tree: ReadonlyMap<number, string>): Promise<void> {
+  const alive = [...tree.keys()].filter(isPidAlive)
+  if (alive.length === 0) return
+  const rows = await windowsProcessRows()
+  if (!rows) return
+  const byPid = new Map(rows.map((r) => [r.pid, r]))
+  const same = alive.filter((pid) => byPid.get(pid)?.created === tree.get(pid))
+  const safe = await Promise.all(same.map((pid) => isSafeToSignal(pid)))
+  await Promise.all(same.filter((_, i) => safe[i]).map((pid) => taskkillTree(pid)))
+}
+
+/**
+ * Windows: snapshot the tree first (pid and creation time, seeded with the recorded processes),
+ * then `taskkill /T /F` the root, then kill whatever of the snapshot is still alive and still the
+ * same process, then poll every pid of it until it has exited. The snapshot comes first because a
+ * child of the interpreter outside the launcher's job loses its place in the tree the moment the
+ * launcher and interpreter die.
+ *
+ * The root is signalled only while `rootAlive()` (Node has not yet reported its exit): until then
+ * Node holds a handle to the process, and Windows does not reuse a pid while a handle is open.
+ * A snapshot that cannot be read in time still kills the root, and can only watch it.
+ */
+async function killWindowsTree(
+  pid: number,
+  startedAt: number,
+  known: readonly KnownProcess[],
+  rootAlive: () => boolean
+): Promise<KillResult> {
+  const tree = await windowsTreeWithTimes(pid, known, PRE_KILL_SNAPSHOT_MS)
+  if (rootAlive()) await taskkillTree(pid)
+  const rootGone = (): boolean => !rootAlive() || !isPidAlive(pid)
+  if (!tree) {
+    console.warn(`[process] process table not read in time for pid ${pid}: watching it alone`)
+    return waitUntil(rootGone, startedAt, KILL_WAIT_MS)
+  }
+  if (tree.size === 0) return waitUntil(rootGone, startedAt, KILL_WAIT_MS)
+  await killWindowsSurvivors(tree)
+  // The root's own pid is watched through Node's handle, never by a pid that may be reused.
+  const others = [...tree.keys()].filter((p) => p !== pid)
+  return waitUntil(() => rootGone() && !others.some(isPidAlive), startedAt, KILL_WAIT_MS)
+}
+
+/** Windows, verified: the root's creation time must match the snapshot, or nothing is signalled. */
 async function killWindowsTreeVerified(
   pid: number,
   startedAt: number,
   expectedRoot: string
 ): Promise<VerifiedKillResult> {
-  const snapshot = await snapshotWindowsTree(pid)
-  if (!snapshot) {
+  // No cap of its own: the launch-time stop waits for the table as long as the probe allows.
+  const tree = await windowsTreeWithTimes(pid, [], null)
+  if (!tree) {
     return {
       killed: false,
       reason: 'probe_failed',
@@ -205,7 +277,7 @@ async function killWindowsTreeVerified(
       waitMs: monotonicNow() - startedAt
     }
   }
-  if (snapshot.rootCreated !== expectedRoot) {
+  if (tree.get(pid) !== expectedRoot) {
     return {
       killed: false,
       reason: 'mismatch',
@@ -214,14 +286,138 @@ async function killWindowsTreeVerified(
     }
   }
   await taskkillTree(pid)
-  const pids = snapshot.pids.length > 0 ? snapshot.pids : [pid]
+  await killWindowsSurvivors(tree)
+  const pids = [...tree.keys()]
   const result = await waitUntil(() => !pids.some(isPidAlive), startedAt, KILL_WAIT_MS)
   return { killed: true, members: pids, ...result }
 }
 
-export function killProcessTree(proc: ChildProcess | null): Promise<KillResult> {
-  const pid = proc?.pid
-  if (!proc || !pid) return Promise.resolve({ exited: true, waitMs: 0 })
+// --- Stops in flight, so quitting can wait for them (they are all bounded by KILL_WAIT_MS) ---
+
+const stopsInFlight = new Set<Promise<unknown>>()
+/** The first stop requested for each child, for its `exited` report. */
+const stopOutcomes = new WeakMap<ChildProcess, Promise<KillResult>>()
+/** A stop of each child still in flight: a second request (an abort handler and a quit, say)
+ *  joins it instead of killing again under it. */
+const stopsByChild = new WeakMap<ChildProcess, Promise<KillResult>>()
+
+function trackStop<T>(stop: Promise<T>): Promise<T> {
+  stopsInFlight.add(stop)
+  void stop.then(
+    () => stopsInFlight.delete(stop),
+    () => stopsInFlight.delete(stop)
+  )
+  return stop
+}
+
+const stopSweeps = new Set<Promise<unknown>>()
+
+/** A search for processes to stop (several, found asynchronously): in flight from now, so a quit
+ *  that starts right after waits for it. Not itself a stop: each kill it makes is one, and is
+ *  counted as one. */
+export function trackStopSweep<T>(sweep: Promise<T>): Promise<T> {
+  stopSweeps.add(sweep)
+  void sweep.then(
+    () => stopSweeps.delete(sweep),
+    () => stopSweeps.delete(sweep)
+  )
+  return sweep
+}
+
+export function stopSweepsInFlight(): Promise<unknown>[] {
+  return [...stopSweeps]
+}
+
+/** Every ComfyUI stop still in flight: a kill whose tree has not been seen to exit yet. */
+export function comfyStopsInFlight(): Promise<unknown>[] {
+  return [...stopsInFlight]
+}
+
+const exitReports = new Set<Promise<unknown>>()
+
+/** An exit handler still running (it reports `comfyui.exited`, which a quit waits for). */
+export function trackExitReport(report: Promise<unknown>): void {
+  exitReports.add(report)
+  void report.then(
+    () => exitReports.delete(report),
+    () => exitReports.delete(report)
+  )
+}
+
+export function exitReportsInFlight(): Promise<unknown>[] {
+  return [...exitReports]
+}
+
+/** How the stop Desktop requested for `proc` went; undefined when Desktop never stopped it. */
+export function stopOutcomeOf(proc: ChildProcess): Promise<KillResult> | undefined {
+  return stopOutcomes.get(proc)
+}
+
+/** How long a stop that saw the tree exit waits for Node to report the child's exit and its
+ *  pipes closing, so the exit handlers (records, telemetry) have run when the stop settles. */
+const EXIT_REPORT_WAIT_MS = 1_000
+
+/** Resolves once Node has reported the child closed (exit seen, pipes shut), which is when its
+ *  exit handlers run; at most `EXIT_REPORT_WAIT_MS` after `bounded()` is called. Listens from
+ *  the moment it is created, so a close during the kill is not missed. */
+function closeReport(proc: ChildProcess): { bounded: () => Promise<void> } {
+  const closedAlready =
+    (proc.exitCode !== null || proc.signalCode !== null) &&
+    (!proc.stdout || proc.stdout.destroyed) &&
+    (!proc.stderr || proc.stderr.destroyed)
+  if (closedAlready) return { bounded: () => Promise.resolve() }
+  let closed = false
+  let onClose: () => void = () => {}
+  proc.once('close', () => {
+    closed = true
+    onClose()
+  })
+  return {
+    bounded: () =>
+      closed
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            const timer = setTimeout(resolve, EXIT_REPORT_WAIT_MS)
+            timer.unref()
+            onClose = () => {
+              clearTimeout(timer)
+              resolve()
+            }
+          })
+  }
+}
+
+export function killProcessTree(
+  proc: ChildProcess | null,
+  /** Windows: processes recorded under this child (its interpreter), by creation time, so their
+   *  children are found even once the child itself is gone. */
+  known: readonly KnownProcess[] = []
+): Promise<KillResult> {
+  if (!proc?.pid) return Promise.resolve({ exited: true, waitMs: 0 })
+  const running = stopsByChild.get(proc)
+  if (running) return running
+  const close = closeReport(proc)
+  const stop = trackStop(
+    killProcessTreeNow(proc, known).then(async (result) => {
+      if (result.exited) await close.bounded()
+      return result
+    })
+  )
+  if (!stopOutcomes.has(proc)) stopOutcomes.set(proc, stop)
+  stopsByChild.set(proc, stop)
+  const forget = (): void => {
+    if (stopsByChild.get(proc) === stop) stopsByChild.delete(proc)
+  }
+  // Settled either way: a failed stop must not be handed to every later request.
+  void stop.then(forget, forget)
+  return stop
+}
+
+function killProcessTreeNow(
+  proc: ChildProcess,
+  known: readonly KnownProcess[]
+): Promise<KillResult> {
+  const pid = proc.pid!
   const startedAt = monotonicNow()
   const done = (result: KillResult): KillResult => {
     proc.stdout?.destroy()
@@ -229,7 +425,10 @@ export function killProcessTree(proc: ChildProcess | null): Promise<KillResult> 
     return result
   }
   if (process.platform === 'win32') {
-    return killWindowsTree(pid, startedAt).then(({ exited, waitMs }) => done({ exited, waitMs }))
+    const rootAlive = (): boolean => proc.exitCode === null && proc.signalCode === null
+    return killWindowsTree(pid, startedAt, known, rootAlive).then(({ exited, waitMs }) =>
+      done({ exited, waitMs })
+    )
   }
   try {
     process.kill(-pid, 'SIGKILL')
@@ -255,7 +454,11 @@ export function killProcessTree(proc: ChildProcess | null): Promise<KillResult> 
  * POSIX: Desktop spawns ComfyUI `detached`, so the orphan leads its own process group and the
  * whole group is signalled, exactly as `killProcessTree` does.
  */
-export async function killPidTree(pid: number, expectedStart: string): Promise<VerifiedKillResult> {
+export function killPidTree(pid: number, expectedStart: string): Promise<VerifiedKillResult> {
+  return trackStop(killPidTreeNow(pid, expectedStart))
+}
+
+async function killPidTreeNow(pid: number, expectedStart: string): Promise<VerifiedKillResult> {
   const startedAt = monotonicNow()
   if (!(await isSafeToSignal(pid))) {
     return { killed: false, reason: 'unsafe', exited: false, waitMs: 0 }

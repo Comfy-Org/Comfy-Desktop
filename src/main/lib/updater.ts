@@ -14,7 +14,8 @@ import {
   type StartupAttemptMarkerRead
 } from './startup-attempt-marker'
 import { clearQuitReason, getQuitReason, isSessionEnding, setQuitReason } from './quit-state'
-import { _broadcastToRenderer } from './ipc/shared'
+import { _broadcastToRenderer, cancelAll } from './ipc/shared'
+import { abandonQuitWait, waitForComfyStops } from './quitWait'
 import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
 
@@ -760,6 +761,9 @@ export function installUpdate(userInitiated = true): void {
     // applies on the next launch instead.
     return
   }
+  // Already stopping ComfyUI ahead of an install (a second click, or the startup install racing
+  // the user): one install, not two, and one install_triggered.
+  if (installPending) return
   const updater = getAutoUpdater()
   if (!updater) {
     emitDesktopUpdateError('apply_restart', UPDATER_UNAVAILABLE_MESSAGE, {
@@ -782,33 +786,65 @@ export function installUpdate(userInitiated = true): void {
       startedAt: Date.now()
     }
     setQuitReason('update-install')
-    // macOS Squirrel quirk: if requestSingleInstanceLock is still held by
-    // the quitting process, ShipIt swaps the .app bundle correctly but
-    // the new Squirrel.Mac process cannot acquire the lock and exits
-    // silently — the user sees the app close and nothing relaunches.
-    // Electron's own docs call this out: quitAndInstall + single-instance
-    // lock is a known footgun on darwin. Releasing the lock immediately
-    // before restartAndInstall lets the next process come up cleanly.
-    // Windows / Linux update paths don't have this contention and don't
-    // need the release.
-    if (process.platform === 'darwin') {
-      app.releaseSingleInstanceLock()
-    }
-    // `isSilent: false` shows the NSIS progress window during the install (see
-    // `isInstallerUIEnabled` — Windows-only, default on). Forced silent on
-    // macOS/Linux, where `isSilent` has no effect anyway.
-    updater.restartAndInstall({ isSilent: !isInstallerUIEnabled() })
+    // The installer is started BEFORE the app quits (electron-updater spawns it, then quits), so
+    // the quit's own wait would come too late: stop every ComfyUI now and let the trees exit
+    // (bounded, shared with the quit that follows) before the installer runs.
+    cancelAll()
+    installPending = true
+    void waitForComfyStops()
+      // Anything launched during the wait (the chooser is still open) is stopped and waited for
+      // too: the installer starts before the quit, so the quit's own wait would be too late.
+      .finally(() => {
+        cancelAll()
+        return waitForComfyStops()
+      })
+      .finally(() => {
+        installPending = false
+        try {
+          // The wait can take seconds: the OS may have begun shutting down meanwhile, which is
+          // exactly when the installer must not start (the staged update applies next launch).
+          if (isSessionEnding()) {
+            abandonQuitWait()
+            _activeUpdateOperation = null
+            clearQuitReason()
+            return
+          }
+          // macOS Squirrel quirk: if requestSingleInstanceLock is still held by
+          // the quitting process, ShipIt swaps the .app bundle correctly but
+          // the new Squirrel.Mac process cannot acquire the lock and exits
+          // silently — the user sees the app close and nothing relaunches.
+          // Electron's own docs call this out: quitAndInstall + single-instance
+          // lock is a known footgun on darwin. Releasing the lock immediately
+          // before restartAndInstall lets the next process come up cleanly.
+          // Windows / Linux update paths don't have this contention and don't
+          // need the release.
+          if (process.platform === 'darwin') {
+            app.releaseSingleInstanceLock()
+          }
+          // `isSilent: false` shows the NSIS progress window during the install (see
+          // `isInstallerUIEnabled` — Windows-only, default on). Forced silent on
+          // macOS/Linux, where `isSilent` has no effect anyway.
+          updater.restartAndInstall({ isSilent: !isInstallerUIEnabled() })
+        } catch (err) {
+          failApplyRestart(err, userInitiated, updateSource)
+        }
+      })
   } catch (err) {
-    _activeUpdateOperation = null
-    clearQuitReason()
-    emitDesktopUpdateError('apply_restart', err, {
-      userInitiated,
-      source: updateSource
-    })
-    _broadcastToRenderer('app-update:user-action-failed', {
-      message: err instanceof Error ? err.message : String(err)
-    })
+    failApplyRestart(err, userInitiated, updateSource)
   }
+}
+
+/** Set while an install waits for ComfyUI to stop before starting the installer. */
+let installPending = false
+
+function failApplyRestart(err: unknown, userInitiated: boolean, source: string): void {
+  abandonQuitWait()
+  _activeUpdateOperation = null
+  clearQuitReason()
+  emitDesktopUpdateError('apply_restart', err, { userInitiated, source })
+  _broadcastToRenderer('app-update:user-action-failed', {
+    message: err instanceof Error ? err.message : String(err)
+  })
 }
 
 /**
