@@ -1700,6 +1700,37 @@ describe('commandLineIsInstall with an exact argv', () => {
   })
 })
 
+describe.runIf(process.platform === 'linux')('holderIsInstall from a record', () => {
+  // A helper whose command line names nothing of the install: only the record says it is ours.
+  it.each([
+    ['the recorded child, by start time', 'child', true],
+    ['a recorded survivor, by start time', 'survivor', true],
+    ['a pid a stale record names, now another process', 'stale', false]
+  ])('%s', async (_name, kind, expected) => {
+    const install = '/installs/recorded'
+    const helper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
+      stdio: 'ignore'
+    })
+    try {
+      await vi.waitFor(async () => expect(await readStartTimes([helper.pid!])).not.toBeNull())
+      const token = (await readStartTimes([helper.pid!]))!.get(helper.pid!)!
+      const recorded = kind === 'stale' ? 'a-process-that-had-this-pid-before' : token
+      writeRecord(
+        record({
+          sessionKey: 'performance-test:inst-1',
+          installPath: install,
+          ...(kind === 'survivor'
+            ? { childPid: await deadPid(), lingering: [{ pid: helper.pid!, startTime: recorded }] }
+            : { childPid: helper.pid!, childStartTime: recorded })
+        })
+      )
+      expect(await holderIsInstall(helper.pid!, install)).toBe(expected)
+    } finally {
+      helper.kill('SIGKILL')
+    }
+  })
+})
+
 describe.runIf(process.platform === 'linux')('holderIsInstall (real process, spaced path)', () => {
   it.each([
     ['relative main.py run by the install venv interpreter', 'relative'],

@@ -1367,15 +1367,22 @@ export async function holderIsInstall(pid: number, installPath: string): Promise
   }
   // Our own bookkeeping gives the same answer: the recorded child, a recorded survivor, or (POSIX)
   // any member of the recorded child's process group — a helper subprocess whose command line
-  // names nothing of the install.
+  // names nothing of the install. Each by start time too: a record can outlive its processes,
+  // and a pid (or a group id, once its group is gone) is reused.
   const mine = listRecords().filter(
     (r) => normalizePathForMatch(r.installPath) === normalizePathForMatch(installPath)
   )
-  if (mine.some((r) => r.childPid === pid || (r.lingering ?? []).some((m) => m.pid === pid))) {
-    return true
-  }
-  const pgid = mine.length > 0 ? await processGroupOf(pid) : null
-  return pgid !== null && mine.some((r) => r.childPid === pgid)
+  if (mine.length === 0) return false
+  const pgid = await processGroupOf(pid)
+  const claims = mine.flatMap((r) => [
+    ...(r.childStartTime && (r.childPid === pid || r.childPid === pgid)
+      ? [{ pid: r.childPid, startTime: r.childStartTime }]
+      : []),
+    ...(r.lingering ?? []).filter((m) => m.pid === pid)
+  ])
+  if (claims.length === 0) return false
+  const now = await readStartTimes([...new Set(claims.map((c) => c.pid))])
+  return !!now && claims.some((c) => now.get(c.pid) === c.startTime)
 }
 
 // --- Startup ---
