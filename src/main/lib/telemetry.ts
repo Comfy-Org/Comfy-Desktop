@@ -206,6 +206,7 @@ export function _resetForTest(): void {
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
+  drainedForQuit = false
   pendingIdentityMergeFlush = null
   pendingIdentityMergeFileDirty = true
   queuedPendingIdentityMergeIds.clear()
@@ -1906,7 +1907,11 @@ export function emit(event: string, context: TelemetryContext = {}): void {
 /**
  * Drain queued events. Safe to await during `app.before-quit`.
  */
-export async function shutdown(reason: string): Promise<void> {
+export async function shutdown(
+  reason: string,
+  /** Extra `session.ended` properties (how long the quit waited for ComfyUI). */
+  endedProps: Record<string, unknown> = {}
+): Promise<void> {
   if (!client) return
   const uptimeMs = Date.now() - bootstrapTimeMs
   try {
@@ -1930,7 +1935,8 @@ export async function shutdown(reason: string): Promise<void> {
     capture('comfy.desktop.session.ended', {
       reason,
       uptime_ms: uptimeMs,
-      uptime_seconds: Math.round(uptimeMs / 1000)
+      uptime_seconds: Math.round(uptimeMs / 1000),
+      ...endedProps
     })
   } catch {
     // ignore
@@ -1948,12 +1954,17 @@ export async function shutdown(reason: string): Promise<void> {
 
 let beforeQuitHooked = false
 let drainingForQuit = false
+/** The drain has finished: the re-issued quit goes through. */
+let drainedForQuit = false
 
 /**
  * Maximum time we'll block the quit on draining queued PostHog events.
  * If the network is slow / down, we still want the app to exit promptly.
  */
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 1500
+
+/** The longest the quit waits for `beforeSessionEnded` (it has its own, shorter bound). */
+const BEFORE_SESSION_ENDED_MAX_MS = 15_000
 
 /**
  * Wire `app.before-quit` so PostHog drains its queue before the process exits.
@@ -1970,19 +1981,44 @@ const SHUTDOWN_DRAIN_TIMEOUT_MS = 1500
  *
  * Safe to call multiple times - the hook only attaches once.
  */
-export function installAppHooks(): void {
+export function installAppHooks(
+  opts: {
+    /** Awaited before `session.ended` is captured (it is bounded by the caller); its result is
+     *  added to that event. The drain timeout starts after it. */
+    beforeSessionEnded?: () => Promise<Record<string, unknown>>
+  } = {}
+): void {
   if (beforeQuitHooked) return
   beforeQuitHooked = true
 
   app.on('before-quit', (event) => {
-    if (drainingForQuit || !client) return
+    if (drainedForQuit) return
+    // A quit can be requested again while the drain runs (closing the last window quits too):
+    // hold every one of them, or the second goes through and the process exits mid-drain.
+    if (drainingForQuit) {
+      event.preventDefault()
+      return
+    }
+    if (!client) return
     drainingForQuit = true
     event.preventDefault()
-    const drainPromise = shutdown('quit').catch(() => {})
-    const timeoutPromise = new Promise<void>((resolve) =>
-      setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)
-    )
-    void Promise.race([drainPromise, timeoutPromise]).finally(() => {
+    void (async () => {
+      // Bounded here too, whatever the hook promises: the quit is held until this settles.
+      const endedProps = opts.beforeSessionEnded
+        ? await Promise.race([
+            opts.beforeSessionEnded().catch(() => ({})),
+            new Promise<Record<string, unknown>>((resolve) =>
+              setTimeout(() => resolve({}), BEFORE_SESSION_ENDED_MAX_MS).unref()
+            )
+          ])
+        : {}
+      const drainPromise = shutdown('quit', endedProps).catch(() => {})
+      const timeoutPromise = new Promise<void>((resolve) =>
+        setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)
+      )
+      await Promise.race([drainPromise, timeoutPromise])
+    })().finally(() => {
+      drainedForQuit = true
       app.quit()
     })
   })

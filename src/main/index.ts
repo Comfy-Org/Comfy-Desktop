@@ -49,9 +49,13 @@ import {
 } from './popups/titlePopup'
 import { registerPickerSettingsIpc } from './popups/pickerSettingsHandlers'
 import { waitForPort, COMFY_BOOT_TIMEOUT_MS } from './lib/process'
+import { comfyStopsPending, installQuitGate, waitForComfyStops } from './lib/quitWait'
 import {
   clearQuitReason,
   isQuitInProgress,
+  isSessionEnding,
+  markRelaunchScheduled,
+  relaunchForSecondInstance,
   setQuitReason,
   setSessionEnding
 } from './lib/quit-state'
@@ -789,6 +793,7 @@ ipcMain.handle('app:relaunch', () => {
     tray.destroy()
     tray = null
   }
+  markRelaunchScheduled()
   app.relaunch()
   app.quit()
 })
@@ -1333,6 +1338,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 } else {
   if (app.isPackaged) {
     app.on('second-instance', () => {
+      // Opened again while this one is quitting: come back after the quit instead of losing the
+      // click (the new instance has already exited for want of the lock).
+      if (relaunchForSecondInstance(() => app.relaunch())) return
       // OS-level "open another instance" attempt - focus an existing
       // host window (chooser or install-backed) instead of stacking
       // a duplicate. Queued until startup recovery settles.
@@ -1471,7 +1479,19 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       sessionStartProps: { prior_session_unclean: priorSessionUnclean }
     })
     mainTelemetry.setConsentState(initialConsent)
-    mainTelemetry.installAppHooks()
+    // `session.ended` reports how long the quit waited for ComfyUI, so it is captured after it.
+    mainTelemetry.installAppHooks({
+      beforeSessionEnded: async () => {
+        // The OS is ending the session and kills apps that linger: no wait, quit at once.
+        if (isSessionEnding()) return { quit_wait_skipped: 'session_ending' }
+        const wait = await waitForComfyStops()
+        return {
+          quit_wait_ms: wait.waitedMs,
+          quit_wait_timed_out: wait.timedOut,
+          quit_wait_stops: wait.stopsInFlight
+        }
+      }
+    })
 
     // installation_id is an event/person property, never a PostHog identity.
     const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
@@ -2441,21 +2461,25 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     cleanupTempDownloads()
   })
 
-  // Deferred-quit suspension for managed model downloads: stop each active
-  // transfer's network request and let its stream flush the staged `.part` +
-  // sidecar, then continue quitting. The staged state hydrates back into
-  // paused Downloads rows on the next launch (`initializeModelDownloads`).
-  // `will-quit` (after every window closed) is the Electron-sanctioned spot
-  // for async teardown; a bounded timeout inside the suspend call keeps a
-  // wedged stream from hanging shutdown. Applies to every quit reason -
-  // user quit, relaunch, and updates all preserve resumable state.
-  let modelDownloadsSuspended = false
-  app.on('will-quit', (event) => {
-    if (modelDownloadsSuspended || !hasActiveModelTransfers()) return
-    modelDownloadsSuspended = true
-    event.preventDefault()
-    void suspendActiveModelDownloadsForQuit().finally(() => app.quit())
-  })
+  // Deferred quit, in `will-quit` (after every window closed, the Electron-sanctioned spot for
+  // async teardown), for two things at once:
+  // - managed model downloads: stop each active transfer's network request and let its stream
+  //   flush the staged `.part` + sidecar, which hydrate back into paused Downloads rows on the
+  //   next launch (`initializeModelDownloads`); a bounded timeout inside the suspend call keeps a
+  //   wedged stream from hanging shutdown;
+  // - ComfyUI stops started by this quit: the process exits only once the trees are gone (and
+  //   recorded), so a relaunch or an update never meets them. Bounded by `QUIT_WAIT_MS`.
+  // Applies to every quit reason - user quit, relaunch, and updates.
+  installQuitGate(
+    app,
+    { active: hasActiveModelTransfers, suspend: suspendActiveModelDownloadsForQuit },
+    {
+      // Not while the OS is ending the session: it kills apps that linger, and the download
+      // suspension above matters more than these few seconds.
+      pending: () => !isSessionEnding() && comfyStopsPending(),
+      wait: () => waitForComfyStops()
+    }
+  )
 
   // System sleep can kill a download socket without emitting anything on
   // wake, leaving an in-flight transfer waiting on its idle timeout. Park

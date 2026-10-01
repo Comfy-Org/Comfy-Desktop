@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { PICKER_SETTINGS_CHANNELS as CH } from '../../types/ipc'
+import { markRelaunchScheduled } from '../lib/quit-state'
 
 /**
  * Picker expanded-Manage IPC handlers. The picker popup has its own preload (no `window.api`), so each
@@ -158,6 +159,7 @@ export function registerPickerSettingsIpc(options: PickerSettingsIpcOptions): vo
   ipcMain.on(CH.relaunchApp, () => {
     try {
       app.relaunch()
+      markRelaunchScheduled()
     } catch (err) {
       console.error('Picker: relaunch failed', err)
       return

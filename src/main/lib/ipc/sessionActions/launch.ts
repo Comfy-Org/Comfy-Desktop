@@ -9,6 +9,8 @@ import {
   waitForPort,
   waitForUrl,
   killProcessTree,
+  stopOutcomeOf,
+  trackExitReport,
   findPidsByPort,
   getProcessInfo,
   looksLikeComfyUI,
@@ -422,6 +424,19 @@ export function isCrashedExit(code: number | null, signal: NodeJS.Signals | null
   return code !== 0 || signal !== null
 }
 
+/** `comfyui.exited` fields for a ComfyUI Desktop stopped: how long the tree took to exit, and
+ *  whether it outlived the kill's bound. Empty for an exit Desktop did not ask for. */
+async function stopTelemetry(
+  proc: ChildProcess
+): Promise<{ stop_wait_ms?: number; stop_timed_out?: boolean }> {
+  const stop = stopOutcomeOf(proc)
+  if (!stop) return {}
+  // A stop that failed outright degrades these fields; it must not cost the exit event.
+  const outcome = await stop.catch(() => null)
+  if (!outcome) return {}
+  return { stop_wait_ms: Math.round(outcome.waitMs), stop_timed_out: !outcome.exited }
+}
+
 const PROCESS_CLOSE_GRACE_MS = 1_000
 
 /** Prefer `close` so output pipes can drain, but do not hang on inherited pipes. */
@@ -443,9 +458,11 @@ export function onProcessTerminated(
     finished = true
     if (fallbackTimer) clearTimeout(fallbackTimer)
     try {
-      void Promise.resolve(callback(code, signal, { pipesHeld })).catch((err) => {
+      const report = Promise.resolve(callback(code, signal, { pipesHeld })).catch((err) => {
         console.error('Process termination callback failed:', err)
       })
+      // A quit waits for it: it reports the exit, and a quit must not end before that.
+      trackExitReport(report)
     } catch (err) {
       console.error('Process termination callback failed:', err)
     }
@@ -1493,15 +1510,6 @@ async function runLaunch(
         lastStderr,
         ...crashDiagnosis
       }
-      // Emit from main so it survives the Desktop 2 panel teardown on exit.
-      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
-      telemetry.emit('comfy.desktop.comfyui.exited', {
-        installation_id: installationId,
-        crashed,
-        exit_code: code ?? null,
-        last_stderr: lastStderr ?? null,
-        pipes_held_after_exit: pipesHeld
-      })
       if (crashed) {
         recordCrash(exitedPayload)
         // Broadcast to every renderer (not just `sender`) so any already-open
@@ -1512,6 +1520,17 @@ async function runLaunch(
         sender.send('comfy-exited', exitedPayload)
       }
       if (_onComfyExited) _onComfyExited({ installationId: sessionId, crashed })
+      // Emit from main so it survives the Desktop 2 panel teardown on exit. Last: waiting for
+      // the stop's outcome must not hold back the exit's UI.
+      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
+      telemetry.emit('comfy.desktop.comfyui.exited', {
+        installation_id: installationId,
+        crashed,
+        exit_code: code ?? null,
+        last_stderr: lastStderr ?? null,
+        pipes_held_after_exit: pipesHeld,
+        ...(await stopTelemetry(proc))
+      })
     })
 
     if (_onLaunch) {
@@ -2115,7 +2134,8 @@ async function runLaunch(
             lock_holder_same_install: holder?.sameInstall ?? null,
             lock_holder_name: holder?.name ?? null,
             lock_holder_runs_main_py: holder?.runsMainPy ?? null,
-            lock_holder_age_s: holder?.ageS ?? null
+            lock_holder_age_s: holder?.ageS ?? null,
+            lock_holder_in_desktop_tree: holder?.inDesktopTree ?? null
           })
         })
     } else {
@@ -2371,15 +2391,6 @@ async function runLaunch(
         lastStderr,
         ...crashDiagnosis
       }
-      // Emit from main so it survives the Desktop 2 panel teardown on exit.
-      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
-      telemetry.emit('comfy.desktop.comfyui.exited', {
-        installation_id: installationId,
-        crashed,
-        exit_code: code ?? null,
-        last_stderr: lastStderr ?? null,
-        pipes_held_after_exit: pipesHeld
-      })
       if (crashed) {
         recordCrash(exitedPayload)
         // Broadcast to every renderer (not just `sender`) so any already-open
@@ -2390,6 +2401,17 @@ async function runLaunch(
         sender.send('comfy-exited', exitedPayload)
       }
       if (_onComfyExited) _onComfyExited({ installationId: sessionId, crashed })
+      // Emit from main so it survives the Desktop 2 panel teardown on exit. Last: waiting for
+      // the stop's outcome must not hold back the exit's UI.
+      // `emit` = PostHog + Datadog crash-rate monitor; `last_stderr` is scrubbed.
+      telemetry.emit('comfy.desktop.comfyui.exited', {
+        installation_id: installationId,
+        crashed,
+        exit_code: code ?? null,
+        last_stderr: lastStderr ?? null,
+        pipes_held_after_exit: pipesHeld,
+        ...(await stopTelemetry(p))
+      })
     })
   }
   attachExitHandler(proc)

@@ -66,6 +66,9 @@ export interface ComfyProcessRecord {
   pendingScan?: { known: LingeringProcess[]; exitedAt: string }
   /** The child itself has exited; the record is kept only for `lingering`. */
   childExitedAt?: number
+  /** When the user was asked about these survivors at a launch (and may have chosen to keep
+   *  them running): quitting Desktop then leaves them alone. */
+  keptAt?: number
 }
 
 export interface LingeringProcess {
@@ -206,6 +209,8 @@ function anythingAlive(record: ComfyProcessRecord, alive: (pid: number) => boole
   return (
     alive(record.childPid) ||
     (record.lingering ?? []).some((m) => alive(m.pid)) ||
+    // A tree member (Windows) outliving its launcher: the next launch proves and stops it.
+    (record.tree ?? []).some((m) => alive(m.pid)) ||
     // A scan still owed may find something alive: the record must outlive Desktop restarts.
     pendingScanIsCurrent(record)
   )
@@ -440,6 +445,11 @@ export function queueExitBookkeeping(sessionKey: string, work: () => Promise<voi
       if (pendingExitBookkeeping.get(sessionKey) === done) pendingExitBookkeeping.delete(sessionKey)
     })
   pendingExitBookkeeping.set(sessionKey, done)
+}
+
+/** Exit bookkeeping still running for any session (quitting waits for it, bounded). */
+export function exitBookkeepingInFlight(): Promise<void>[] {
+  return [...pendingExitBookkeeping.values()]
 }
 
 /** Resolves once no exit bookkeeping for `sessionKey` is in flight (bounded by its own work). */
@@ -733,7 +743,9 @@ export type PriorProcessAction = 'terminated' | 'waited' | 'left' | 'busy_left'
 
 export interface PriorProcessOutcome {
   action: PriorProcessAction
-  proof: 'desktop_record' | 'none'
+  /** `desktop_tree`: survivors proven through the recorded Windows process tree (the child's
+   *  interpreter, which outlived a launcher that is gone). */
+  proof: 'desktop_record' | 'desktop_tree' | 'none'
   pid: number
   port: number
   /** Since the recorded spawn; null when there was no record to date it. */
@@ -780,6 +792,37 @@ async function provenLingering(
   // Could not ask the OS: these may still be ours and still hold the lock. Keep the record.
   if (!times) return 'unverified'
   const proven = listed.filter((m) => times.get(m.pid) === m.startTime)
+  return proven.length > 0 ? proven : null
+}
+
+/**
+ * Windows: live members of the recorded tree whose launcher (the recorded child) is gone, proven
+ * by exact pid and creation time from a snapshot taken while the child ran, and running this
+ * installation's `main.py` (its own command line, or the relative one a venv launcher hands its
+ * interpreter). A still-alive child is left to the child path, whose kill takes its tree.
+ */
+async function provenTreeMembers(
+  record: ComfyProcessRecord,
+  deps: PriorProcessDeps
+): Promise<LingeringProcess[] | 'unverified' | null> {
+  // A tree is only ever recorded on Windows, and only Windows can verify one: anywhere else a
+  // record that names one (copied between machines, say) must not block launches.
+  if ((deps.platform ?? process.platform) !== 'win32') return null
+  const listed = (record.tree ?? []).filter((m) => deps.isPidAlive(m.pid))
+  if (listed.length === 0 || deps.isPidAlive(record.childPid)) return null
+  const rows = await (deps.windowsProcessTable ?? windowsProcessTable)()
+  if (!rows) return 'unverified'
+  const byPid = new Map(rows.map((r) => [r.pid, r]))
+  const proven = listed.filter((m) => {
+    const row = byPid.get(m.pid)
+    return (
+      !!row &&
+      row.created === m.startTime &&
+      runsMainPy(row.commandLine) &&
+      (commandLineIsInstall(row.commandLine, record.installPath) ||
+        runsRelativeMainPy(row.commandLine))
+    )
+  })
   return proven.length > 0 ? proven : null
 }
 
@@ -943,6 +986,10 @@ export interface PriorProcessDeps {
   portListeners?: (port: number) => Promise<number[]>
   /** POSIX process group of a pid; null when unknown (always on Windows). */
   processGroupOf?: (pid: number) => Promise<number | null>
+  /** Defaults to `process.platform`. */
+  platform?: NodeJS.Platform
+  /** Windows process table with command lines; null elsewhere or when unreadable. */
+  windowsProcessTable?: () => Promise<WinProcessRowWithCommand[] | null>
   /** Windows process table (pid, parent, creation time); null elsewhere or when unreadable. */
   windowsProcessRows?: () => Promise<WinProcessRow[] | null>
   now: () => number
@@ -1035,9 +1082,10 @@ export async function resolvePriorProcess(
     ;(deps.writeRecord ?? writeRecord)(record)
   }
   let proven = await provenLingering(record, deps)
+  let survivorProof: 'desktop_record' | 'desktop_tree' = 'desktop_record'
   const early = (extra: Partial<PriorProcessOutcome>): PriorProcessOutcome => ({
     action: 'left',
-    proof: 'desktop_record',
+    proof: survivorProof,
     pid: record.childPid,
     port: record.port,
     ageMs,
@@ -1047,9 +1095,27 @@ export async function resolvePriorProcess(
     ...extra
   })
   if (proven === 'unverified') return early({ blocked: 'unverified' })
+  // Windows: a Desktop that died took no exit scan with it, but the tree it recorded while
+  // ComfyUI ran may still be alive (the interpreter, with its launcher gone).
+  const fromTree = await provenTreeMembers(record, deps)
+  if (fromTree === 'unverified') return early({ blocked: 'unverified' })
+  if (fromTree) {
+    const known = new Set((proven ?? []).map((m) => m.pid))
+    const added = fromTree.filter((m) => !known.has(m.pid))
+    if (added.length > 0) {
+      proven = mergeLingering(proven ?? [], added)
+      survivorProof = 'desktop_tree'
+    }
+  }
   // A survivor can be a whole ComfyUI (one that restarted itself) still serving the recorded
   // port: it gets the same busy check as the child before anything is stopped, and no answer
   // is not "idle" there either.
+  // The user is asked about these survivors: whatever they choose, quitting Desktop later must
+  // not quietly stop what they may have decided to keep.
+  const asked = (extra: Partial<PriorProcessOutcome>): PriorProcessOutcome => {
+    ;(deps.writeRecord ?? writeRecord)({ ...record, keptAt: deps.wallNow() })
+    return early(extra)
+  }
   if (proven && !opts.stopBusy) {
     // Whatever answers on the recorded port only speaks for the survivors if it IS one of them:
     // the port is every installation's default, and once the child is gone another ComfyUI may
@@ -1093,7 +1159,7 @@ export async function resolvePriorProcess(
       )
       if (opts.signal?.aborted) return null
       if (still.length > 0 && !serving) {
-        return early({
+        return asked({
           action: 'busy_left',
           blocked: 'busy',
           queueUnknown: true,
@@ -1111,9 +1177,9 @@ export async function resolvePriorProcess(
       }
       const queue = await probeQueuePatiently(record.port, deps, opts.signal)
       if (opts.signal?.aborted) return null
-      if (!queue) return early({ action: 'busy_left', blocked: 'busy', queueUnknown: true })
+      if (!queue) return asked({ action: 'busy_left', blocked: 'busy', queueUnknown: true })
       if (queue.running > 0 || queue.pending > 0) {
-        return early({ action: 'busy_left', blocked: 'busy', queue })
+        return asked({ action: 'busy_left', blocked: 'busy', queue })
       }
     }
   }
@@ -1136,7 +1202,7 @@ export async function resolvePriorProcess(
   if (survivors?.blocked) {
     return {
       action: survivors.blocked === 'stuck' ? 'terminated' : 'left',
-      proof: 'desktop_record',
+      proof: survivorProof,
       pid: record.childPid,
       port: record.port,
       ageMs,
@@ -1157,7 +1223,7 @@ export async function resolvePriorProcess(
     if (!survivors) return null
     return {
       action: 'terminated',
-      proof: 'desktop_record',
+      proof: survivorProof,
       pid: record.childPid,
       port: record.port,
       ageMs,
@@ -1383,6 +1449,36 @@ export async function holderIsInstall(pid: number, installPath: string): Promise
   if (claims.length === 0) return false
   const now = await readStartTimes([...new Set(claims.map((c) => c.pid))])
   return !!now && claims.some((c) => now.get(c.pid) === c.startTime)
+}
+
+// --- Quit ---
+
+/**
+ * Stop the survivors of children THIS Desktop spawned (a ComfyUI that restarted itself outside
+ * Desktop's reach, typically), each re-proven by start time immediately before the kill. Quitting
+ * stops what Desktop runs; these are the same ComfyUI after a restart. Never survivors the user
+ * was asked about at a launch (`keptAt`), nor anything a record from another Desktop names.
+ */
+export async function stopLingeringAtQuit(deps: PriorProcessDeps = defaultDeps): Promise<number> {
+  const candidates = listRecords().filter(
+    (r) =>
+      r.desktopPid === process.pid &&
+      r.desktopStartTime !== null &&
+      !r.keptAt &&
+      (r.lingering ?? []).length > 0
+  )
+  // Only now ask for our own start time (a PowerShell round trip on Windows, inside the quit).
+  if (candidates.length === 0) return 0
+  const self = await deps.ownStartTime()
+  const mine = candidates.filter((r) => r.desktopStartTime === self)
+  let stopped = 0
+  for (const r of mine) {
+    const proven = await provenLingering(r, deps)
+    if (!proven || proven === 'unverified') continue
+    const kills = await Promise.all(proven.map((m) => deps.killPidTree(m.pid, m.startTime)))
+    stopped += kills.filter((k) => k.killed).length
+  }
+  return stopped
 }
 
 // --- Startup ---

@@ -6,6 +6,10 @@ import {
   killPidTree,
   isSafeToSignal,
   killProcessTree,
+  comfyStopsInFlight,
+  exitReportsInFlight,
+  stopOutcomeOf,
+  trackExitReport,
   spawnProcess,
   waitForPortFree,
   waitForPort,
@@ -339,6 +343,41 @@ describe.runIf(process.platform !== 'win32')('kills that wait for exit (real pro
     } catch {}
   }
 
+  it('a stop stays in flight until the tree is gone and Node has reported the close', async () => {
+    const { proc, grandchild } = await spawnTree()
+    try {
+      let closed = false
+      proc.once('close', () => (closed = true))
+      const stop = killProcessTree(proc)
+      expect(comfyStopsInFlight()).toContain(stop)
+      // The first stop requested is the one the exit report describes.
+      expect(stopOutcomeOf(proc)).toBe(stop)
+      // A second request while it is in flight joins it rather than killing again under it.
+      expect(killProcessTree(proc)).toBe(stop)
+      expect(stopOutcomeOf(proc)).toBe(stop)
+      const result = await stop
+      expect(result.exited).toBe(true)
+      expect(closed).toBe(true)
+      expect(isPidAlive(grandchild)).toBe(false)
+      await vi.waitFor(() => expect(comfyStopsInFlight()).not.toContain(stop))
+    } finally {
+      cleanup(proc.pid!)
+    }
+  })
+
+  it('a verified kill is in flight too', async () => {
+    const { proc } = await spawnTree()
+    try {
+      const start = (await readStartTimes([proc.pid!]))!.get(proc.pid!)!
+      const kill = killPidTree(proc.pid!, start)
+      expect(comfyStopsInFlight()).toContain(kill)
+      await kill
+      await vi.waitFor(() => expect(comfyStopsInFlight()).not.toContain(kill))
+    } finally {
+      cleanup(proc.pid!)
+    }
+  })
+
   it('killProcessTree reports exited only once the whole group is gone', async () => {
     const { proc, grandchild } = await spawnTree()
     try {
@@ -400,4 +439,18 @@ describe('isSafeToSignal (never signal what a forged record names)', () => {
       expect(result).toMatchObject({ killed: false, reason: 'unsafe' })
     }
   )
+})
+
+describe('exit reports in flight', () => {
+  it('are tracked until they settle, whether they resolve or reject', async () => {
+    let resolve: () => void = () => {}
+    const ok = new Promise<void>((r) => (resolve = r))
+    const failed = Promise.reject(new Error('handler threw'))
+    failed.catch(() => {})
+    trackExitReport(ok)
+    trackExitReport(failed)
+    expect(exitReportsInFlight()).toContain(ok)
+    resolve()
+    await vi.waitFor(() => expect(exitReportsInFlight()).toEqual([]))
+  })
 })

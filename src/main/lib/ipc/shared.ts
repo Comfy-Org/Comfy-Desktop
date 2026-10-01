@@ -42,6 +42,8 @@ import {
   waitForPort,
   waitForUrl,
   killProcessTree,
+  stopOutcomeOf,
+  trackExitReport,
   killByPort,
   findPidsByPort,
   getProcessInfo,
@@ -118,7 +120,8 @@ import type { FieldOption, SourcePlugin } from '../../types/sources'
 import { REQUIRES_STOPPED } from '../../../types/ipc'
 import type { Theme, ResolvedTheme, QuitActiveItem } from '../../../types/ipc'
 import { findLockingProcesses } from '../file-lock-info'
-import { markStopRequested } from '../comfyProcessRecord'
+import { markStopRequested, readRecord, stopLingeringAtQuit } from '../comfyProcessRecord'
+import { trackStopSweep } from '../process'
 import type { LaunchCmd } from '../process'
 import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
@@ -170,6 +173,8 @@ export {
   waitForPort,
   waitForUrl,
   killProcessTree,
+  stopOutcomeOf,
+  trackExitReport,
   killByPort,
   findPidsByPort,
   getProcessInfo,
@@ -1537,6 +1542,16 @@ export function makeSendOutput(
   }
 }
 
+/** Windows: the processes recorded under a session's child (its interpreter), which a stop must
+ *  reach even once the child itself is gone. */
+function recordedTree(sessionKey: string): { pid: number; startTime: string }[] {
+  try {
+    return readRecord(sessionKey)?.tree ?? []
+  } catch {
+    return []
+  }
+}
+
 /**
  * Stop running session(s) and kill their process tree(s).
  *
@@ -1562,7 +1577,7 @@ export async function stopRunning(
     markStopRequested(installationId)
     _runningSessions.delete(installationId)
     if (session.proc && !session.proc.killed) {
-      await killProcessTree(session.proc)
+      await killProcessTree(session.proc, recordedTree(installationId))
     }
     // Flush after the kill so shutdown output emitted while dying is captured
     // and can't bleed into the next run for this id.
@@ -1583,9 +1598,9 @@ export async function stopRunning(
     }
     _runningSessions.clear()
     const kills: Promise<unknown>[] = []
-    for (const [, session] of sessions) {
+    for (const [id, session] of sessions) {
       if (session.proc && !session.proc.killed) {
-        kills.push(killProcessTree(session.proc))
+        kills.push(killProcessTree(session.proc, recordedTree(id)))
       }
     }
     await Promise.all(kills)
@@ -1739,4 +1754,12 @@ export function cancelAll(): void {
     }
   }
   void stopRunning()
+  // Survivors of this Desktop's children (a ComfyUI that restarted itself) go too; in flight from
+  // now, so the quit waits for them like any stop.
+  void trackStopSweep(
+    stopLingeringAtQuit().catch((err: unknown) => {
+      console.warn('[comfy-procs] stopping survivors at quit failed:', err)
+      return 0
+    })
+  )
 }

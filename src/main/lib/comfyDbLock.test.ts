@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 const dirs = vi.hoisted(() => ({ state: '' }))
 vi.mock('./paths', () => ({ stateDir: () => dirs.state }))
 
+import { writeRecord } from './comfyProcessRecord'
 import {
   databaseCandidates,
   identifyDbLockHolder,
@@ -117,16 +118,43 @@ describe.runIf(
         pid: holder.pid,
         source: 'lsof',
         sameInstall: false,
-        runsMainPy: true
+        runsMainPy: true,
+        inDesktopTree: false
       })
       // Started just now, but how long the lookup took on a loaded machine is not this test's
       // business: no upper bound.
       expect(found!.ageS).toBeGreaterThanOrEqual(0)
+
+      // Its parent (this test process) is named in a record's Windows tree for this install:
+      // "ours, but not provable" rather than "not ours".
+      writeRecord({
+        v: 1,
+        sessionKey: 'another-session',
+        installationId: 'inst-1',
+        installPath: install,
+        port: 8188,
+        bootId: 'b',
+        spawnedAt: Date.now(),
+        desktopPid: 999_999_999,
+        desktopStartTime: null,
+        childPid: 999_999_998,
+        childStartTime: null,
+        tree: [{ pid: process.pid, startTime: 'x' }]
+      })
+      const again = await identifyDbLockHolder({
+        sessionKey: 'inst-1',
+        installationId: 'inst-1',
+        installPath: install,
+        cwd: install,
+        args: ['-s', path.join('ComfyUI', 'main.py')],
+        probeTimeoutMs: 25_000
+      })
+      expect(again).toMatchObject({ pid: holder.pid, source: 'lsof', inDesktopTree: true })
     } finally {
       holder.kill('SIGKILL')
       fs.rmSync(root, { recursive: true, force: true })
     }
     // Real lsof and ps against the whole process table: seconds on a loaded machine, so the
-    // probe gets its own cap and the test more than the default 5 s.
-  }, 60_000)
+    // probe gets its own cap (twice here) and the test more than the default 5 s.
+  }, 90_000)
 })
