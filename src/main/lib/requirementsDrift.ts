@@ -1,7 +1,6 @@
 import fs from 'fs'
 import path from 'path'
 import { createHash } from 'crypto'
-import { PYTORCH_RE } from './pip'
 import { findSitePackages } from '../sources/standalone/envPaths'
 
 /**
@@ -17,6 +16,11 @@ import { findSitePackages } from '../sources/standalone/envPaths'
  * too-new install would make the repair downgrade it. The torch family is
  * skipped: the torch repair owns it.
  */
+
+/** The torch stack the torch repair owns. Deliberately narrower than pip.ts's
+ *  PYTORCH_RE: `torchsde` is an ordinary ComfyUI requirement that crashes the
+ *  boot when missing, so it is checked here. */
+const TORCH_STACK_RE = /^(torch|torchvision|torchaudio)(\s*[<>=!~;[#]|$)/i
 
 export const REQUIREMENTS_FILES = ['requirements.txt', 'manager_requirements.txt'] as const
 
@@ -50,7 +54,7 @@ export function parseRequirementLine(raw: string): ParsedRequirement | null {
   const line = raw.replace(/\s+#.*$/, '').trim()
   if (!line || line.startsWith('#') || line.startsWith('-')) return null
   if (line.includes(';') || line.includes('://') || line.includes(' @ ')) return null
-  if (PYTORCH_RE.test(line)) return null
+  if (TORCH_STACK_RE.test(line)) return null
   const m = line.match(REQ_LINE_RE)
   if (!m) return null
   let minVersion: string | null = null

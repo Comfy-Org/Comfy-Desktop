@@ -110,10 +110,19 @@ describe('parseRequirementLine', () => {
     expect(parseRequirementLine('pkg==1.*')?.minVersion).toBeNull()
   })
 
-  it('skips the torch family, which the torch repair owns', () => {
-    for (const line of ['torch', 'torchvision', 'torchaudio>=2', 'torchsde']) {
+  it('skips the torch stack, which the torch repair owns', () => {
+    for (const line of ['torch', 'torchvision', 'torchaudio>=2']) {
       expect(parseRequirementLine(line)).toBeNull()
     }
+  })
+
+  it('checks torchsde: it is an ordinary requirement that crashes the boot when missing', () => {
+    expect(parseRequirementLine('torchsde')?.name).toBe('torchsde')
+    expect(
+      findUnsatisfiedRequirements('torch\ntorchsde\n', installedOf({ torch: '2.10.0' })).map(
+        (r) => r.name
+      )
+    ).toEqual(['torchsde'])
   })
 })
 

@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '' }
+  app: { getPath: () => '', getVersion: () => '1.1.4' }
 }))
 
 const { emit } = vi.hoisted(() => ({ emit: vi.fn() }))
@@ -16,6 +16,7 @@ vi.mock('../../settings', () => ({
 
 import {
   MAX_FAILED_ATTEMPTS,
+  pausedRepairNote,
   pendingDrift,
   repairDeps,
   warnIfSitePackagesEmpty,
@@ -69,8 +70,13 @@ function writeReqs(installPath: string, reqs: string): void {
 }
 
 /** A managed standalone install: venv at ComfyUI/.venv, uv in standalone-env. */
-function managedInstall(dists: string[], reqs: string, over: Partial<InstallationRecord> = {}) {
-  const installPath = path.join(tmpDir, 'managed')
+function managedInstall(
+  dists: string[],
+  reqs: string,
+  over: Partial<InstallationRecord> = {},
+  dirName = 'managed'
+) {
+  const installPath = path.join(tmpDir, dirName)
   writeReqs(installPath, reqs)
   const site = makeVenv(path.join(installPath, 'ComfyUI', '.venv'), dists, {
     uvDir: isWin
@@ -315,7 +321,7 @@ describe('repairDeps', () => {
         repairDeps(record, drift, t, { freeze: noFreeze, runUvPip: fakeUv(site, [], 2) })
       ).resolves.toBe('failed')
       expect(t.update).toHaveBeenCalledWith({
-        depsRepairFailures: { reqsHash: drift.reqsHash, count: attempt }
+        depsRepairFailures: { reqsHash: drift.reqsHash, count: attempt, appVersion: '1.1.4' }
       })
       record = { ...record, ...(t.update.mock.calls[0]![0] as object) } as InstallationRecord
     }
@@ -323,10 +329,138 @@ describe('repairDeps', () => {
       'comfy.desktop.deps_repair',
       expect.objectContaining({ outcome: 'failed', uv_exit: 2, attempts: MAX_FAILED_ATTEMPTS })
     )
-    // Budget spent: no more uv runs until the requirement files change.
+    // Budget spent: no more uv runs, but the pause is logged on every launch.
     expect(pendingDrift(record)).toBeNull()
+    expect(pausedRepairNote(record)).toContain('Automatic repair paused after 3 failed attempts')
+    expect(pausedRepairNote(record)).toContain('blake3 (missing)')
+    // A new Desktop version resets the budget...
+    expect(pendingDrift(record, '1.1.5')).not.toBeNull()
+    expect(pausedRepairNote(record, '1.1.5')).toBeNull()
+    // ...and so do new requirement files.
     writeReqs(inst.installPath, REQS + 'alembic\n')
     expect(pendingDrift(record)).not.toBeNull()
+    expect(pausedRepairNote(record)).toBeNull()
+  })
+
+  it('has no paused note while the budget remains or nothing is missing', () => {
+    const { inst } = managedInstall(SYNCED.slice(1), REQS)
+    const drift = pendingDrift(inst)!
+    const twice = {
+      ...inst,
+      depsRepairFailures: { reqsHash: drift.reqsHash, count: 2, appVersion: '1.1.4' }
+    } as InstallationRecord
+    expect(pausedRepairNote(twice)).toBeNull()
+    const { inst: synced } = managedInstall(SYNCED, REQS, {}, 'synced')
+    expect(pausedRepairNote(synced)).toBeNull()
+  })
+
+  it('passes the constraints file by bare name, so a spaced install path survives', async () => {
+    // uv splits a --constraint value on whitespace; "(1)" installs and Windows
+    // account names with spaces put one in every absolute path.
+    const { inst, site } = managedInstall(SYNCED.slice(1), REQS, {}, 'My User/ComfyUI (1)')
+    let constraintArg = ''
+    let cwdAtCall = ''
+    let existedAtCall = false
+    const uv = vi.fn(async (_uvPath: string, args: string[], cwd: string) => {
+      constraintArg = args[args.indexOf('--constraint') + 1]!
+      cwdAtCall = cwd
+      existedAtCall = fs.existsSync(path.join(cwd, constraintArg))
+      fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
+      return { code: 0, output: '' }
+    })
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, tools(), {
+        freeze: async () => ({ torch: '2.10.0' }),
+        runUvPip: uv
+      })
+    ).resolves.toBe('repaired')
+    expect(constraintArg).toMatch(/^\.deps-repair-constraints-[0-9a-f-]+\.txt$/)
+    expect(constraintArg).not.toMatch(/[\s/\\]/)
+    expect(cwdAtCall).toBe(inst.installPath)
+    expect(existedAtCall).toBe(true)
+  })
+
+  it('retries one line at a time when the batch fails, installing what it can', async () => {
+    const { inst, site } = managedInstall(SYNCED.slice(2), REQS)
+    const drift = pendingDrift(inst)!
+    const calls: string[][] = []
+    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
+      const lines = args.slice(2, args.indexOf('--python'))
+      calls.push(lines)
+      // sqlalchemy is unresolvable; everything else installs on its own.
+      if (lines.includes('sqlalchemy>=2.0.0')) return { code: 1, output: 'no solution' }
+      for (const line of lines) {
+        if (line === 'blake3') fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
+      }
+      return { code: 0, output: '' }
+    })
+    const t = tools()
+    await expect(
+      repairDeps(inst, drift, t, { freeze: async () => ({ torch: '2.10.0' }), runUvPip: uv })
+    ).resolves.toBe('partial')
+    expect(calls).toEqual([['blake3', 'sqlalchemy>=2.0.0'], ['blake3'], ['sqlalchemy>=2.0.0']])
+    expect(t.update).toHaveBeenCalledWith({
+      depsRepairGaveUp: {
+        reqsHash: drift.reqsHash,
+        packages: ['sqlalchemy'],
+        at: expect.any(Number)
+      }
+    })
+    expect(t.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ depsRepairFailures: expect.anything() })
+    )
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({
+        outcome: 'partial',
+        installed: ['blake3'],
+        remaining: ['sqlalchemy']
+      })
+    )
+  })
+
+  it('installs torchsde when torch is there to pin', async () => {
+    const { inst, site } = managedInstall(['numpy-2.1.0.dist-info'], 'torch\ntorchsde\nnumpy\n')
+    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
+      expect(args).toContain('torchsde')
+      fs.mkdirSync(path.join(site, 'torchsde-0.2.6.dist-info'))
+      return { code: 0, output: '' }
+    })
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, tools(), {
+        freeze: async () => ({ torch: '2.10.0+cu128', numpy: '2.1.0' }),
+        runUvPip: uv
+      })
+    ).resolves.toBe('repaired')
+  })
+
+  it('holds torchsde back when no torch is installed, without giving up on it', async () => {
+    const { inst, site } = managedInstall(['numpy-2.1.0.dist-info'], 'torchsde\nblake3\nnumpy\n')
+    const output: string[] = []
+    const uv = vi.fn(async (_uvPath: string, args: string[]) => {
+      expect(args).not.toContain('torchsde')
+      fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
+      return { code: 0, output: '' }
+    })
+    const t = tools({ sendOutput: (s) => output.push(s) })
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
+    ).resolves.toBe('repaired')
+    expect(output.join('')).toContain('Not installing torchsde: PyTorch is not installed')
+    expect(t.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ depsRepairGaveUp: expect.anything() })
+    )
+    // Still pending, so it installs once the torch repair has put torch back.
+    expect(pendingDrift(inst)!.unsatisfied.map((r) => r.name)).toEqual(['torchsde'])
+  })
+
+  it('runs no install when torchsde is the only drift and torch is missing', async () => {
+    const { inst } = managedInstall(['numpy-2.1.0.dist-info'], 'torchsde\nnumpy\n')
+    const uv = vi.fn()
+    await expect(
+      repairDeps(inst, pendingDrift(inst)!, tools(), { freeze: noFreeze, runUvPip: uv })
+    ).resolves.toBe('torch_missing')
+    expect(uv).not.toHaveBeenCalled()
   })
 
   it('clears the failure count once an install succeeds', async () => {
@@ -421,7 +555,7 @@ describe('repairDeps', () => {
     let constraintPath = ''
     let constraintText = ''
     const uv = vi.fn(async (_uvPath: string, args: string[]) => {
-      constraintPath = args[args.indexOf('--constraint') + 1]!
+      constraintPath = path.join(inst.installPath, args[args.indexOf('--constraint') + 1]!)
       constraintText = fs.readFileSync(constraintPath, 'utf-8')
       fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
       return { code: 0, output: '' }
@@ -457,7 +591,10 @@ describe('repairDeps', () => {
     )
     let constraintText = ''
     const uv = vi.fn(async (_uvPath: string, args: string[]) => {
-      constraintText = fs.readFileSync(args[args.indexOf('--constraint') + 1]!, 'utf-8')
+      constraintText = fs.readFileSync(
+        path.join(inst.installPath, args[args.indexOf('--constraint') + 1]!),
+        'utf-8'
+      )
       fs.mkdirSync(path.join(site, 'blake3-1.0.dist-info'))
       return { code: 0, output: '' }
     })
@@ -469,7 +606,10 @@ describe('repairDeps', () => {
     const { inst, site } = managedInstall(['numpy-2.1.0.dist-info'], 'setuptools>=70\nnumpy\n')
     let constraintText = ''
     const uv = vi.fn(async (_uvPath: string, args: string[]) => {
-      constraintText = fs.readFileSync(args[args.indexOf('--constraint') + 1]!, 'utf-8')
+      constraintText = fs.readFileSync(
+        path.join(inst.installPath, args[args.indexOf('--constraint') + 1]!),
+        'utf-8'
+      )
       fs.mkdirSync(path.join(site, 'setuptools-75.0.dist-info'))
       return { code: 0, output: '' }
     })
