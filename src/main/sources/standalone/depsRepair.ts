@@ -20,6 +20,7 @@ import * as settings from '../../settings'
 import * as telemetry from '../../lib/telemetry'
 import { buildErrorFields } from '../../../shared/errorEvent'
 import type { InstallationRecord } from '../../installations'
+import type { DepsRepairFlag } from '../../lib/depsRepairMode'
 
 /**
  * Pre-launch repair for a Desktop-owned venv (managed standalone or adopted)
@@ -90,11 +91,34 @@ export type DepsRepairOutcome =
  */
 export type DepsRepairMode = 'prompt' | 'auto' | 'off'
 
-/** Adopted installs ask before their legacy venv is changed. Managed installs
- *  only report drift for now: whether Desktop repairs them is decided
- *  separately. */
-export function depsRepairPolicy(installation: InstallationRecord): DepsRepairMode {
-  return installation.adopted === true ? 'prompt' : 'off'
+/** Gated by the `deps_repair_mode` list of install kinds: a listed adopted
+ *  install asks first, a listed managed install repairs without asking. */
+export function depsRepairPolicy(
+  installation: InstallationRecord,
+  flag: DepsRepairFlag
+): DepsRepairMode {
+  if (installation.adopted === true) return flag.includes('adopted') ? 'prompt' : 'off'
+  return flag.includes('managed') ? 'auto' : 'off'
+}
+
+/** Drift first: a launch with nothing to repair never waits on the rollout flag. */
+export async function depsRepairPlan(
+  installation: InstallationRecord,
+  readFlag: () => Promise<DepsRepairFlag>
+): Promise<{ drift: RequirementsDrift | null; mode: DepsRepairMode }> {
+  const drift = pendingDrift(installation)
+  if (!drift) return { drift, mode: 'off' }
+  return { drift, mode: depsRepairPolicy(installation, await readFlag()) }
+}
+
+/** Torch pre-arm: any unsatisfied line counts (the torch repair can release held-back ones);
+ *  a registered step that never runs is skipped past, an unregistered repair is not. */
+export async function mayRepairDeps(
+  installation: InstallationRecord,
+  readFlag: () => Promise<DepsRepairFlag>
+): Promise<boolean> {
+  if (!detectInstallDrift(installation)?.unsatisfied.length) return false
+  return depsRepairPolicy(installation, await readFlag()) !== 'off'
 }
 
 /** Mode `off`: log the drift and report it, without touching the venv. */

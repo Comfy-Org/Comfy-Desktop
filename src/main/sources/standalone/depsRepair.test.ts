@@ -18,7 +18,9 @@ import {
   MAX_FAILED_ATTEMPTS,
   detectInstallDrift,
   pruneMarker,
+  depsRepairPlan,
   depsRepairPolicy,
+  mayRepairDeps,
   pausedRepairNote,
   reportDetectedOnly,
   pendingDrift,
@@ -152,6 +154,50 @@ const SYNCED = [
   'comfy_aimdo-0.5.5.dist-info',
   'numpy-2.1.0.dist-info'
 ]
+
+describe('depsRepairPlan', () => {
+  it('does not read the flag when there is no drift, so a pending fetch cannot hold the launch', async () => {
+    const { inst } = managedInstall(SYNCED, REQS)
+    const readFlag = vi.fn(() => new Promise<never>(() => {}))
+    await expect(depsRepairPlan(inst, readFlag)).resolves.toEqual({ drift: null, mode: 'off' })
+    expect(readFlag).not.toHaveBeenCalled()
+  })
+
+  it('reads the flag when there is drift, and decides by it', async () => {
+    const { inst } = managedInstall(
+      SYNCED.filter((d) => !d.startsWith('blake3')),
+      REQS
+    )
+    const plan = await depsRepairPlan(inst, async () => ['managed'])
+    expect(plan.drift).not.toBeNull()
+    expect(plan.mode).toBe('auto')
+  })
+})
+
+describe('mayRepairDeps', () => {
+  it('registers the step for drift that is only held back, which the torch repair can release', async () => {
+    // spandrel waits on torchvision, so nothing is pending now - but a torch repair that brings
+    // torchvision back makes it installable within the same launch.
+    const { inst } = managedInstall(
+      ['numpy-2.1.0.dist-info', 'torch-2.10.0.dist-info'],
+      'spandrel\nnumpy\n'
+    )
+    expect(pendingDrift(inst)).toBeNull()
+    await expect(mayRepairDeps(inst, async () => ['managed'])).resolves.toBe(true)
+  })
+
+  it('does not register it while the flag leaves the install off', async () => {
+    const { inst } = managedInstall(['torch-2.10.0.dist-info'], 'spandrel\n')
+    await expect(mayRepairDeps(inst, async () => ['adopted'])).resolves.toBe(false)
+  })
+
+  it('does not read the flag when nothing is unsatisfied', async () => {
+    const { inst } = managedInstall(SYNCED, REQS)
+    const readFlag = vi.fn(() => new Promise<never>(() => {}))
+    await expect(mayRepairDeps(inst, readFlag)).resolves.toBe(false)
+    expect(readFlag).not.toHaveBeenCalled()
+  })
+})
 
 describe('pendingDrift', () => {
   it('is null for a venv that satisfies the requirements', () => {
@@ -984,10 +1030,23 @@ describe('relaxSpecifier', () => {
 })
 
 describe('depsRepairPolicy', () => {
-  it('asks adopted installs first and only reports drift on managed ones', () => {
-    expect(depsRepairPolicy(adoptedInstall([], 'blake3\n').inst)).toBe('prompt')
-    expect(depsRepairPolicy(managedInstall([], 'blake3\n').inst)).toBe('off')
-  })
+  const adopted = (): InstallationRecord => adoptedInstall([], 'blake3\n').inst
+  const managed = (): InstallationRecord => managedInstall([], 'blake3\n').inst
+
+  // Unreachable, empty and unknown flag values all resolve to `[]` before they get here
+  // (`depsRepairMode.test.ts`), so `[]` covers them.
+  it.each([
+    [[], 'off', 'off'],
+    [['adopted'], 'prompt', 'off'],
+    [['managed'], 'off', 'auto'],
+    [['adopted', 'managed'], 'prompt', 'auto']
+  ] as const)(
+    'under %j: adopted installs %s, managed installs %s',
+    (flag, forAdopted, forManaged) => {
+      expect(depsRepairPolicy(adopted(), flag)).toBe(forAdopted)
+      expect(depsRepairPolicy(managed(), flag)).toBe(forManaged)
+    }
+  )
 })
 
 describe('reportDetectedOnly', () => {
