@@ -1,4 +1,4 @@
-// Fail-open semantics for the requirements-repair kill switch.
+// Default-off semantics for the requirements-repair rollout scope.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -44,9 +44,9 @@ afterEach(() => {
 describe('depsRepairMode', () => {
   it('reads deps_repair_mode as a persisted flag', async () => {
     expect(DEPS_REPAIR_MODE_FLAG_KEY).toBe('deps_repair_mode')
-    await resolveWithResult(value('off'))
-    // The fourth argument is the late-result callback: present only for a persisted flag, so an
-    // `off` served in an emergency holds through later offline launches.
+    await resolveWithResult(value('all'))
+    // The fourth argument is the late-result callback: present only for a persisted flag, so a
+    // served scope still applies on later offline launches.
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       DEPS_REPAIR_MODE_FLAG_KEY,
       'anon',
@@ -55,36 +55,35 @@ describe('depsRepairMode', () => {
     )
   })
 
-  it('turns the repair off only on an explicit off', async () => {
-    expect(await resolveWithResult(value('off'))).toBe('off')
+  it.each([['off'], ['adopted'], ['all']])('reads %s as served', async (v) => {
+    expect(await resolveWithResult(value(v))).toBe(v)
   })
 
-  it.each([['auto'], ['garbage'], [true], [false]])('reads %s as auto', async (v) => {
-    _resetForTest()
-    expect(await resolveWithResult(value(v))).toBe('auto')
+  it.each([['garbage'], ['auto'], [true], [false]])('reads %s as off', async (v) => {
+    expect(await resolveWithResult(value(v))).toBe('off')
   })
 
-  it('fails open to auto when the flag is unreachable', async () => {
-    expect(await resolveWithResult({ kind: 'unreachable' })).toBe('auto')
-  })
-
-  it('fails open to auto when the fetch rejects', async () => {
-    getOpsFlagResult.mockRejectedValue(new Error('network'))
-    await initDepsRepairMode({ distinctId: 'anon' })
-    expect(await getDepsRepairModeAsync()).toBe('auto')
-  })
-
-  it('holds a fetched off through a later launch that cannot reach the flag', async () => {
-    expect(await resolveWithResult(value('off'))).toBe('off')
-    _resetForTest()
+  it('is off when the flag was never fetched (unreachable)', async () => {
     expect(await resolveWithResult({ kind: 'unreachable' })).toBe('off')
   })
 
-  it('turns the repair back on once auto is served, and holds that offline too', async () => {
-    await resolveWithResult(value('off'))
+  it('is off when the fetch rejects', async () => {
+    getOpsFlagResult.mockRejectedValue(new Error('network'))
+    await initDepsRepairMode({ distinctId: 'anon' })
+    expect(await getDepsRepairModeAsync()).toBe('off')
+  })
+
+  it('holds a fetched scope through a later launch that cannot reach the flag', async () => {
+    expect(await resolveWithResult(value('all'))).toBe('all')
     _resetForTest()
-    expect(await resolveWithResult(value('auto'))).toBe('auto')
+    expect(await resolveWithResult({ kind: 'unreachable' })).toBe('all')
+  })
+
+  it('narrows back to off once off is served, and holds that offline too', async () => {
+    await resolveWithResult(value('all'))
     _resetForTest()
-    expect(await resolveWithResult({ kind: 'unreachable' })).toBe('auto')
+    expect(await resolveWithResult(value('off'))).toBe('off')
+    _resetForTest()
+    expect(await resolveWithResult({ kind: 'unreachable' })).toBe('off')
   })
 })
