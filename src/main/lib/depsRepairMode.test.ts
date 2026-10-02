@@ -65,7 +65,7 @@ describe('parseDepsRepairKinds', () => {
     [['adopted', 'portable'], ['adopted']],
     [['adopted', 7, null, ['managed']], ['adopted']],
     [[], []],
-    [['adopted,managed'], []]
+    [['adopted,managed'], ['adopted', 'managed']]
   ])('reads an array payload %j as %j', (payload, kinds) => {
     expect(parseDepsRepairKinds(true, payload)).toEqual(kinds)
   })
@@ -89,6 +89,14 @@ describe('parseDepsRepairKinds', () => {
     'repairs nothing for a disabled flag, even with a supported payload %j',
     (payload) => {
       expect(parseDepsRepairKinds(false, payload)).toEqual([])
+    }
+  )
+
+  it.each([['control'], ['off'], ['false'], ['Disabled']])(
+    'repairs nothing for the off variant %j, even with a supported payload',
+    (variant) => {
+      expect(parseDepsRepairKinds(variant, ['adopted', 'managed'])).toEqual([])
+      expect(parseDepsRepairKinds(variant, 'adopted,managed')).toEqual([])
     }
   )
 })

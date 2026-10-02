@@ -17,14 +17,21 @@ const KINDS = ['adopted', 'managed'] as const
 export type DepsRepairKind = (typeof KINDS)[number]
 export type DepsRepairFlag = readonly DepsRepairKind[]
 
+/** Variant names that mean off whatever the payload says, as in `coreBetaGrants.ts`. */
+const OFF_VARIANTS = new Set(['control', 'off', 'false', 'disabled'])
+
 export function parseDepsRepairKinds(
   value: FeatureFlagValue | undefined,
   payload: unknown
 ): DepsRepairFlag {
-  // A disabled flag keeps its payload (`toOpsFlagValue`), and disabling must stop the repair.
-  if (value === false) return []
+  // A disabled flag (or an off variant) keeps its payload (`toOpsFlagValue`), and disabling
+  // must stop the repair.
+  if (value === false || (typeof value === 'string' && OFF_VARIANTS.has(value.toLowerCase())))
+    return []
   const names = Array.isArray(payload)
-    ? payload.filter((name): name is string => typeof name === 'string')
+    ? payload
+        .filter((name): name is string => typeof name === 'string')
+        .flatMap((name) => name.split(','))
     : typeof payload === 'string'
       ? payload.split(',')
       : payload == null && typeof value === 'string'
