@@ -20,7 +20,7 @@ import { peekBetaFeaturesEnabled } from '../settings'
 import type { CoreCheckout } from './version'
 import type { InstallationRecord } from '../installations'
 import type { LaunchCommand } from '../types/sources'
-import type { BetaArgView } from '../../types/ipc'
+import type { BetaArgView, CoreBetaArgs } from '../../types/ipc'
 
 /** A proof still running past this keeps going and caches its answer for the next request. */
 export const PREVIEW_PROOF_BUDGET_MS = 5_000
@@ -119,6 +119,33 @@ export async function previewCoreBetaArgs(
     schema
   })
   return plan.applied.map(toBetaArgView)
+}
+
+/** The beta-args pill's answer: the running session's grants, else the next-launch preview.
+ *  Never throws: a failure anywhere costs the pill, never the settings view. */
+export async function answerCoreBetaArgs(
+  installationId: string,
+  launchArgs: unknown,
+  lookup: {
+    /** `null` when the install is not running. */
+    sessionArgs: (id: string) => readonly BetaArgView[] | null
+    record: (id: string) => Promise<InstallationRecord | null>
+    launchCommand: (inst: InstallationRecord) => LaunchCommand | null
+  }
+): Promise<CoreBetaArgs> {
+  const none: CoreBetaArgs = { timing: 'next-launch', args: [] }
+  try {
+    const session = lookup.sessionArgs(installationId)
+    if (session) return { timing: 'session', args: [...session] }
+    const stored = await lookup.record(installationId)
+    if (!stored) return none
+    const inst = withCommittedArgs(stored, launchArgs)
+    const args = await previewCoreBetaArgs(installationId, inst, lookup.launchCommand(inst))
+    return { timing: 'next-launch', args }
+  } catch (err) {
+    console.warn('[get-core-beta-args] preview failed:', err)
+    return none
+  }
 }
 
 /** @internal */

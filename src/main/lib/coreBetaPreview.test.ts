@@ -46,6 +46,7 @@ vi.mock('./git', () => ({
 import {
   PREVIEW_PROOF_BUDGET_MS,
   _resetForTest,
+  answerCoreBetaArgs,
   previewCoreBetaArgs,
   withCommittedArgs
 } from './coreBetaPreview'
@@ -256,5 +257,56 @@ describe('withCommittedArgs', () => {
     await expect(previewCoreBetaArgs('inst-1', committed, cmd)).resolves.toEqual([
       { arg: '--enable-agent', name: null }
     ])
+  })
+})
+
+describe('answerCoreBetaArgs', () => {
+  const lookup = (overrides: Partial<Parameters<typeof answerCoreBetaArgs>[2]> = {}) => ({
+    sessionArgs: () => null,
+    record: async () => INST,
+    launchCommand: () => launchCmd(),
+    ...overrides
+  })
+
+  it('answers a running install from its session, with no preview', async () => {
+    const args = [{ arg: '--enable-assets', name: 'Asset library' }]
+    await expect(
+      answerCoreBetaArgs('inst-1', undefined, lookup({ sessionArgs: () => args }))
+    ).resolves.toEqual({ timing: 'session', args })
+    expect(h.prove).not.toHaveBeenCalled()
+  })
+
+  it('shows nothing for a running session that recorded no grants, rather than a preview', async () => {
+    await expect(
+      answerCoreBetaArgs('inst-1', undefined, lookup({ sessionArgs: () => [] }))
+    ).resolves.toEqual({ timing: 'session', args: [] })
+  })
+
+  it('previews a stopped install', async () => {
+    await expect(answerCoreBetaArgs('inst-1', undefined, lookup())).resolves.toEqual({
+      timing: 'next-launch',
+      args: [
+        { arg: '--enable-assets', name: 'Asset library' },
+        { arg: '--enable-agent', name: null }
+      ]
+    })
+  })
+
+  it.each([
+    ['the record lookup', { record: () => Promise.reject(new Error('EIO')) }],
+    [
+      'building the launch command',
+      {
+        launchCommand: () => {
+          throw new TypeError('path must be a string')
+        }
+      }
+    ]
+  ])('answers "nothing" instead of failing when %s throws', async (_label, overrides) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await expect(answerCoreBetaArgs('inst-1', undefined, lookup(overrides))).resolves.toEqual({
+      timing: 'next-launch',
+      args: []
+    })
   })
 })

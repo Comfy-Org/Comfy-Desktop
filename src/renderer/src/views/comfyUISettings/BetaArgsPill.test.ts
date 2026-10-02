@@ -267,6 +267,16 @@ describe('BetaArgsPill', () => {
       expect(settingsListener).toBeNull()
     })
 
+    it("drops the previous install's pill as soon as another install is selected", async () => {
+      const wrapper = mountPill()
+      await flushPromises()
+      expect(wrapper.text()).toContain('+2 beta')
+      api.getCoreBetaArgs.mockReturnValue(new Promise(() => {}))
+      await wrapper.setProps({ installationId: 'inst-2' })
+      await flushPromises()
+      expect(wrapper.find('.beta-args').exists()).toBe(false)
+    })
+
     it('keeps the newest answer when an older request resolves after it', async () => {
       let resolveFirst: (value: CoreBetaArgs) => void = () => {}
       api.getCoreBetaArgs

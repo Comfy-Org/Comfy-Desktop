@@ -29,6 +29,7 @@ const menu = useTemplateRef<InstanceType<typeof BaseMenu>>('menu')
 const data = ref<CoreBetaArgs | null>(null)
 const loading = ref(false)
 let requestSeq = 0
+let shownFor: string | null = null
 
 // Keyed on start time too: a restart can reach a hidden picker as running -> running.
 const sessionKey = computed(() => {
@@ -38,6 +39,9 @@ const sessionKey = computed(() => {
 
 async function refresh(): Promise<void> {
   const seq = ++requestSeq
+  // Never show one install's args while another's are on the way.
+  if (shownFor !== props.installationId) data.value = null
+  shownFor = props.installationId
   const slow = setTimeout(() => {
     if (seq === requestSeq) loading.value = true
   }, LOADING_DELAY_MS)
