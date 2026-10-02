@@ -15,6 +15,8 @@ import {
   filterUnsupportedArgs,
   getComfyArgsSchema,
   parseHelpOutput,
+  peekComfyArgsSchema,
+  getComfyArgsSchemaReportingDiscovery,
   validateArgs
 } from './comfy-args'
 
@@ -308,6 +310,85 @@ describe('getComfyArgsSchema', () => {
     )
     expect(mockedExecFile).toHaveBeenCalledTimes(2)
     expect(updatedSchema.knownFlags.has('use-ck-attention')).toBe(true)
+  })
+})
+
+describe('peekComfyArgsSchema', () => {
+  const installationId = 'peeked-comfy-install'
+
+  beforeEach(() => {
+    clearSchemaCache(installationId)
+    mockedExecFile.mockReset()
+    mockedReadGitHead.mockReset()
+    mockHelpOutput(() => SAMPLE_HELP)
+  })
+
+  it('returns null on a miss, without running python', () => {
+    mockedReadGitHead.mockReturnValue('commit-a')
+    expect(peekComfyArgsSchema('main.py', installationId, 'stored-version')).toBeNull()
+    expect(mockedExecFile).not.toHaveBeenCalled()
+  })
+
+  it('returns the schema discovery cached for the same checkout', async () => {
+    mockedReadGitHead.mockReturnValue('commit-a')
+    const discovered = await getComfyArgsSchema(
+      'python',
+      'main.py',
+      '.',
+      installationId,
+      'stored-version'
+    )
+    expect(peekComfyArgsSchema('main.py', installationId, 'stored-version')).toBe(discovered)
+    expect(mockedExecFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('misses once the checkout has moved, as discovery would', async () => {
+    mockedReadGitHead.mockReturnValue('commit-a')
+    await getComfyArgsSchema('python', 'main.py', '.', installationId, 'stored-version')
+    mockedReadGitHead.mockReturnValue('commit-b')
+    expect(peekComfyArgsSchema('main.py', installationId, 'stored-version')).toBeNull()
+  })
+})
+
+describe('getComfyArgsSchemaReportingDiscovery', () => {
+  const installationId = 'reporting-comfy-install'
+
+  beforeEach(() => {
+    clearSchemaCache(installationId)
+    mockedExecFile.mockReset()
+    mockedReadGitHead.mockReset()
+    mockHelpOutput(() => SAMPLE_HELP)
+  })
+
+  it('reports a discovery that filled the cache, then a cache hit as none', async () => {
+    mockedReadGitHead.mockReturnValue('commit-a')
+    const first = await getComfyArgsSchemaReportingDiscovery(
+      'python',
+      'main.py',
+      '.',
+      installationId
+    )
+    expect(first.discovered).toBe(true)
+    const second = await getComfyArgsSchemaReportingDiscovery(
+      'python',
+      'main.py',
+      '.',
+      installationId
+    )
+    expect(second.discovered).toBe(false)
+    expect(mockedExecFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not report a discovery it could not cache (no revision to key it on)', async () => {
+    mockedReadGitHead.mockReturnValue(null)
+    const result = await getComfyArgsSchemaReportingDiscovery(
+      'python',
+      'main.py',
+      '.',
+      installationId
+    )
+    expect(mockedExecFile).toHaveBeenCalledTimes(1)
+    expect(result.discovered).toBe(false)
   })
 })
 

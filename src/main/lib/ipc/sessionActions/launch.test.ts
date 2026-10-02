@@ -44,6 +44,10 @@ const launchHarness = vi.hoisted(() => ({
   launchCommand: null as null | Record<string, unknown>,
   schemaNames: ['enable-assets', 'listen', 'feature-flag'] as string[],
   schemaThrows: false,
+  /** Whether the preview's cache-only schema read hits. */
+  schemaCached: true,
+  /** Calls to the spawning schema discovery; the preview must never add one. */
+  schemaSpawns: 0,
   registryThrows: false,
   registryCalls: 0,
   betaEnabled: true,
@@ -85,7 +89,7 @@ vi.mock('../shared', async (importOriginal) => {
     },
     settings: new Proxy(actual.settings, {
       get(target, key) {
-        if (key === 'resolveBetaFeaturesEnabled') {
+        if (key === 'resolveBetaFeaturesEnabled' || key === 'peekBetaFeaturesEnabled') {
           return () => {
             if (launchHarness.betaEnabledThrows) throw new Error('settings write failed: EROFS')
             return launchHarness.betaEnabled
@@ -171,9 +175,12 @@ vi.mock('../../comfy-args', async (importOriginal) => {
   return {
     ...actual,
     getComfyArgsSchema: async () => {
+      launchHarness.schemaSpawns += 1
       if (launchHarness.schemaThrows) throw new Error('schema discovery unavailable')
       return schemaOf(...launchHarness.schemaNames)
     },
+    peekComfyArgsSchema: () =>
+      launchHarness.schemaCached ? schemaOf(...launchHarness.schemaNames) : null,
     getComfyFeatureFlagRegistry: async () => ({})
   }
 })
@@ -202,6 +209,7 @@ import {
   emitCoreBetaRecords,
   emitCoreBetaTelemetry,
   handleLaunch,
+  previewCoreBetaGrants,
   isCrashedExit,
   launchedCoreCommit,
   onProcessTerminated,
@@ -1105,6 +1113,8 @@ describe('core beta report placement', () => {
     sent = []
     events = []
     launchHarness.schemaThrows = false
+    launchHarness.schemaCached = true
+    launchHarness.schemaSpawns = 0
     launchHarness.registryThrows = false
     launchHarness.registryCalls = 0
     launchHarness.betaEnabled = true
@@ -1223,6 +1233,213 @@ describe('core beta report placement', () => {
     expect(applied?.properties).toMatchObject({ core_commit: head, core_version_label: 'v0.3.81' })
     const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
     expect(boot?.properties).toMatchObject({ core_commit: head, core_version_label: 'v0.3.81' })
+  })
+
+  describe('session record of the applied grants (settings beta-args pill)', () => {
+    const launched: string[] = []
+    const launch = async (id: string): Promise<void> => {
+      launched.push(id)
+      const res = await handleLaunch(ctxFor(id))
+      expect(res.ok).toBe(true)
+    }
+    const recorded = (id: string): unknown => _runningSessions.get(id)?.coreBetaArgs
+
+    afterEach(() => {
+      while (launched.length) _runningSessions.delete(launched.pop()!)
+    })
+
+    it('records each applied grant with its payload name on the skip-port spawn', async () => {
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset browser' } }]
+      await launch('harness-session-skip-port')
+      expect(recorded('harness-session-skip-port')).toEqual([
+        { arg: '--enable-assets', name: 'Asset browser' }
+      ])
+    })
+
+    it('records the grants on the port-wait spawn too', async () => {
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset browser' } }]
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+        cwd: installDir,
+        skipPortWait: false,
+        port: 48236
+      }
+      launchHarness.waitForPort = async () => {}
+      await launch('harness-session-port-wait')
+      expect(recorded('harness-session-port-wait')).toEqual([
+        { arg: '--enable-assets', name: 'Asset browser' }
+      ])
+    })
+
+    it('records a silent grant, since it is still on the command line', async () => {
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { silent: true } }]
+      await launch('harness-session-silent')
+      expect(recorded('harness-session-silent')).toEqual([{ arg: '--enable-assets', name: null }])
+    })
+
+    it('records no grants for an opted-out launch', async () => {
+      launchHarness.betaEnabled = false
+      await launch('harness-session-opted-out')
+      expect(recorded('harness-session-opted-out')).toEqual([])
+    })
+
+    it("omits a grant the user's own args override", async () => {
+      launchHarness.schemaNames = ['enable-assets', 'disable-assets', 'listen', 'feature-flag']
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--disable-assets'],
+        cwd: installDir,
+        skipPortWait: true
+      }
+      await launch('harness-session-user-override')
+      expect(spawnArgs).not.toContain('--enable-assets')
+      expect(recorded('harness-session-user-override')).toEqual([])
+    })
+  })
+
+  // The settings view's stopped-install pill must show exactly what the next launch applies. Both
+  // sides run from one fixture per case: a real `handleLaunch` (grants recorded on its session)
+  // and `previewCoreBetaGrants` over the same record, launch command, grants and schema.
+  describe('next-launch preview agrees with the launch', () => {
+    const launched: string[] = []
+    const harnessSource = { getLaunchCommand: () => launchHarness.launchCommand as never }
+    const withUserArgs = (...userArgs: string[]): void => {
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), ...userArgs],
+        cwd: installDir,
+        skipPortWait: true
+      }
+    }
+
+    afterEach(() => {
+      while (launched.length) _runningSessions.delete(launched.pop()!)
+    })
+
+    async function bothSides(id: string): Promise<{ launch: unknown; preview: unknown }> {
+      const preview = await previewCoreBetaGrants(harnessInstall(), harnessSource)
+      launched.push(id)
+      const res = await handleLaunch(ctxFor(id))
+      expect(res.ok).toBe(true)
+      return { launch: _runningSessions.get(id)?.coreBetaArgs, preview }
+    }
+
+    const NAMED = { ...HARNESS_GRANT, notice: { description: 'Asset browser' } }
+    const cases: {
+      name: string
+      grants: CoreBetaGrant[]
+      userArgs?: string[]
+      schemaNames?: string[]
+      betaEnabled?: boolean
+      expected: { arg: string; name: string | null }[]
+    }[] = [
+      {
+        name: 'a version grant inside its window',
+        grants: [NAMED],
+        expected: [{ arg: '--enable-assets', name: 'Asset browser' }]
+      },
+      {
+        name: 'a version grant below its minimum',
+        grants: [{ arg: '--enable-assets', minCoreVersion: '0.4.0' }],
+        expected: []
+      },
+      {
+        name: 'a silent grant',
+        grants: [{ ...HARNESS_GRANT, notice: { silent: true } }],
+        expected: [{ arg: '--enable-assets', name: null }]
+      },
+      {
+        name: 'a grant the user already passes',
+        grants: [NAMED],
+        userArgs: ['--enable-assets'],
+        expected: []
+      },
+      {
+        name: "a grant the user's opposite arg overrides",
+        grants: [NAMED],
+        userArgs: ['--disable-assets'],
+        schemaNames: ['enable-assets', 'disable-assets', 'listen', 'feature-flag'],
+        expected: []
+      },
+      {
+        name: "a grant this core's schema does not know",
+        grants: [NAMED],
+        schemaNames: ['listen', 'feature-flag'],
+        expected: []
+      },
+      {
+        name: 'two grants, one outside its window',
+        grants: [NAMED, { arg: '--enable-agent', minCoreVersion: '0.9.0' }],
+        schemaNames: ['enable-assets', 'enable-agent', 'listen', 'feature-flag'],
+        expected: [{ arg: '--enable-assets', name: 'Asset browser' }]
+      },
+      {
+        name: 'an opted-out install',
+        grants: [NAMED],
+        betaEnabled: false,
+        expected: []
+      }
+    ]
+
+    it.each(cases)('$name', async (c) => {
+      launchHarness.grants = c.grants
+      if (c.schemaNames) launchHarness.schemaNames = c.schemaNames
+      if (c.betaEnabled !== undefined) launchHarness.betaEnabled = c.betaEnabled
+      withUserArgs('--listen', ...(c.userArgs ?? []))
+
+      const { launch, preview } = await bothSides(`harness-agree-${cases.indexOf(c)}`)
+
+      expect(launch).toEqual(c.expected)
+      expect(preview).toEqual(launch)
+    })
+
+    it('a commit-range grant the live HEAD falls inside', async () => {
+      const head = gitInitComfyUI()
+      launchHarness.grants = [
+        { arg: '--enable-assets', commitRanges: [[head, null]], notice: { description: 'X' } }
+      ]
+      withUserArgs('--listen')
+
+      const { launch, preview } = await bothSides('harness-agree-commit')
+
+      expect(launch).toEqual([{ arg: '--enable-assets', name: 'X' }])
+      expect(preview).toEqual(launch)
+    })
+  })
+
+  describe('next-launch preview without its inputs', () => {
+    const harnessSource = { getLaunchCommand: () => launchHarness.launchCommand as never }
+
+    it('returns null, and never spawns discovery, when the schema is not cached', async () => {
+      launchHarness.schemaCached = false
+      expect(await previewCoreBetaGrants(harnessInstall(), harnessSource)).toBeNull()
+      expect(launchHarness.schemaSpawns).toBe(0)
+    })
+
+    it('returns null without a launch command', async () => {
+      launchHarness.launchCommand = null
+      expect(await previewCoreBetaGrants(harnessInstall(), harnessSource)).toBeNull()
+    })
+
+    it('returns null without a source', async () => {
+      expect(await previewCoreBetaGrants(harnessInstall(), undefined)).toBeNull()
+    })
+
+    it('returns null when the opt-in cannot be read', async () => {
+      launchHarness.betaEnabledThrows = true
+      expect(await previewCoreBetaGrants(harnessInstall(), harnessSource)).toBeNull()
+    })
+
+    it('returns no grants for a remote connection, which gets no arg assembly', async () => {
+      launchHarness.launchCommand = { remote: true, url: 'http://127.0.0.1:8188' }
+      expect(await previewCoreBetaGrants(harnessInstall(), harnessSource)).toEqual([])
+    })
+
+    it('never spawns discovery on a cache hit either', async () => {
+      await previewCoreBetaGrants(harnessInstall(), harnessSource)
+      expect(launchHarness.schemaSpawns).toBe(0)
+    })
   })
 
   it('launches a legacy record whose version carries no commit', async () => {

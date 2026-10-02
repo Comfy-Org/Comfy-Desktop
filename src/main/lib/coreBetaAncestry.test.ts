@@ -11,12 +11,19 @@ const git = vi.hoisted(() => ({
   configDir: '',
   presence: undefined as undefined | 'present' | 'absent' | 'unknown',
   noCommonAncestor: false,
-  gitDirReads: 0
+  gitDirReads: 0,
+  /** Whether git runs through the pygit2 fallback (a Python spawn per call). */
+  pygit2: false,
+  /** Makes `findMergeBaseOrNone` reject, which the real helpers never do. */
+  mergeBaseRejects: false
 }))
 vi.mock('./git', () => ({
   findMergeBase: (...args: [string, string, string]) => git.findMergeBase(...args),
-  findMergeBaseOrNone: async (...args: [string, string, string]) =>
-    git.noCommonAncestor ? null : git.findMergeBase(...args),
+  findMergeBaseOrNone: async (...args: [string, string, string]) => {
+    if (git.mergeBaseRejects) throw new Error('git exploded')
+    return git.noCommonAncestor ? null : git.findMergeBase(...args)
+  },
+  isPygit2Configured: () => git.pygit2,
   fetchCommitSha: (...args: [string, string]) => git.fetchCommitSha(...args),
   resolveGitDir: () => {
     git.gitDirReads += 1
@@ -30,7 +37,11 @@ vi.mock('./git', () => ({
 vi.mock('./paths', () => ({ configDir: () => git.configDir }))
 vi.mock('./telemetry', () => ({ getOpsFlagResult: vi.fn() }))
 
-import { _backgroundFetchesForTest, resolveCoreCommitState } from './coreBetaAncestry'
+import {
+  _backgroundFetchesForTest,
+  _resetProvenRelationsForTest,
+  resolveCoreCommitState
+} from './coreBetaAncestry'
 import { NO_CORE_COMMITS } from './coreBetaGrants'
 
 const REPO = '/installs/comfy/ComfyUI'
@@ -48,6 +59,7 @@ beforeEach(() => {
   git.presence = undefined
   git.noCommonAncestor = false
   git.gitDirReads = 0
+  _resetProvenRelationsForTest()
   git.revParseRef.mockReset()
   git.revParseRef.mockImplementation(async (_repo, ref) =>
     ref === `${HEAD}^{commit}` ? HEAD : undefined
@@ -471,6 +483,293 @@ describe('resolveCoreCommitState', () => {
         git.fetchCommitSha,
         'the two skips must not use up the budget'
       ).toHaveBeenCalledExactlyOnceWith(REPO, shaOf(3))
+    })
+  })
+
+  describe('display-only resolution (settings next-launch preview)', () => {
+    const PREVIEW = { fetch: false, quiet: true } as const
+
+    it('never schedules a fetch, records a failure or logs, on a shallow clone', async () => {
+      // A SHA no other test uses: abandoned resolutions from earlier tests can still log about
+      // theirs, so "logged nothing about this one" is the assertion that holds in a full run.
+      const ONLY_HERE = '7c'.repeat(20)
+      makeShallow()
+      git.findMergeBase.mockResolvedValue(undefined)
+      const logs = vi.spyOn(console, 'log').mockImplementation(() => {})
+      try {
+        const state = await resolveCoreCommitState(
+          REPO,
+          { kind: 'head', commit: HEAD },
+          [ONLY_HERE],
+          undefined,
+          PREVIEW
+        )
+
+        expect(state.ancestry.has(ONLY_HERE), 'unresolved, as it is for the launch').toBe(false)
+        expect(git.fetchCommitSha).not.toHaveBeenCalled()
+        expect(fs.existsSync(path.join(git.configDir, 'core-beta-fetch-failures.json'))).toBe(false)
+        const aboutThis = logs.mock.calls.filter((call) =>
+          String(call[0]).includes(ONLY_HERE.slice(0, 12))
+        )
+        expect(aboutThis).toEqual([])
+      } finally {
+        logs.mockRestore()
+      }
+    })
+
+    it('resolves exactly what the default resolution resolves', async () => {
+      git.findMergeBase.mockResolvedValue(LOWER)
+      const checkout = { kind: 'head', commit: HEAD } as const
+      const launch = await resolveCoreCommitState(REPO, checkout, [LOWER])
+      const preview = await resolveCoreCommitState(REPO, checkout, [LOWER], undefined, PREVIEW)
+      expect(preview).toEqual(launch)
+    })
+
+    it('reports a deadline the loop notices between two SHAs', async () => {
+      let now = 1_000_000
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+      try {
+        git.findMergeBase.mockImplementation(async () => {
+          now += 2_000
+          return LOWER
+        })
+        const incomplete = vi.fn()
+        const state = await resolveCoreCommitState(
+          REPO,
+          { kind: 'head', commit: HEAD },
+          [LOWER, UPPER],
+          undefined,
+          { ...PREVIEW, budgetMs: 1500, onIncomplete: incomplete }
+        )
+        expect(state.ancestry.has(UPPER), 'the second SHA was never reached').toBe(false)
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        clock.mockRestore()
+      }
+    })
+
+    it('answers from what the launch proved when git would run through pygit2', async () => {
+      const checkout = { kind: 'head', commit: HEAD } as const
+      git.findMergeBase.mockResolvedValue(LOWER)
+      git.pygit2 = true
+      try {
+        const launch = await resolveCoreCommitState(REPO, checkout, [LOWER])
+        git.findMergeBase.mockClear()
+        const incomplete = vi.fn()
+
+        const preview = await resolveCoreCommitState(REPO, checkout, [LOWER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+
+        expect(preview).toEqual(launch)
+        expect(git.findMergeBase, 'no Python spawn for the preview').not.toHaveBeenCalled()
+        expect(incomplete).not.toHaveBeenCalled()
+      } finally {
+        git.pygit2 = false
+      }
+    })
+
+    it('takes a cached answer back once a later launch fails to prove it', async () => {
+      // The review counterexample: proven by one launch, withheld by the next (a transient git
+      // failure). The preview must follow the later launch, not the earlier proof.
+      const checkout = { kind: 'head', commit: HEAD } as const
+      git.pygit2 = true
+      try {
+        git.findMergeBase.mockResolvedValue(LOWER)
+        await resolveCoreCommitState(REPO, checkout, [LOWER])
+
+        git.findMergeBase.mockResolvedValue(undefined)
+        git.revParseRef.mockResolvedValue(undefined)
+        const later = await resolveCoreCommitState(REPO, checkout, [LOWER])
+        expect(later.ancestry.has(LOWER), 'the later launch withholds it').toBe(false)
+
+        const incomplete = vi.fn()
+        await resolveCoreCommitState(REPO, checkout, [LOWER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        git.pygit2 = false
+      }
+    })
+
+    it('takes a cached answer back when a later launch runs out of budget before it', async () => {
+      const checkout = { kind: 'head', commit: HEAD } as const
+      git.pygit2 = true
+      try {
+        git.findMergeBase.mockResolvedValue(LOWER)
+        await resolveCoreCommitState(REPO, checkout, [LOWER])
+
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        git.findMergeBase.mockImplementation(() => new Promise(() => {}))
+        const pending = resolveCoreCommitState(REPO, checkout, [LOWER])
+        await vi.advanceTimersByTimeAsync(10_000)
+        await pending
+        vi.useRealTimers()
+
+        const incomplete = vi.fn()
+        await resolveCoreCommitState(REPO, checkout, [LOWER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        vi.useRealTimers()
+        git.pygit2 = false
+      }
+    })
+
+    it('misses once HEAD has moved since the launch', async () => {
+      git.findMergeBase.mockResolvedValue(LOWER)
+      git.pygit2 = true
+      try {
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER])
+        const incomplete = vi.fn()
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: OLDER }, [LOWER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        git.pygit2 = false
+      }
+    })
+
+    it('misses a relation the launch could not prove', async () => {
+      git.findMergeBase.mockResolvedValue(undefined)
+      git.revParseRef.mockResolvedValue(undefined)
+      git.pygit2 = true
+      try {
+        const launch = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])
+        expect(launch.ancestry.has(UPPER)).toBe(false)
+        const incomplete = vi.fn()
+        await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER], undefined, {
+          ...PREVIEW,
+          avoidPygit2: true,
+          onIncomplete: incomplete
+        })
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        git.pygit2 = false
+      }
+    })
+
+    it('resolves nothing, and says so, when git would run through pygit2', async () => {
+      git.pygit2 = true
+      try {
+        const incomplete = vi.fn()
+        const state = await resolveCoreCommitState(
+          REPO,
+          { kind: 'head', commit: HEAD },
+          [LOWER],
+          undefined,
+          { ...PREVIEW, avoidPygit2: true, onIncomplete: incomplete }
+        )
+        expect(state.ancestry.size).toBe(0)
+        expect(git.findMergeBase).not.toHaveBeenCalled()
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        git.pygit2 = false
+      }
+    })
+
+    it('still resolves through pygit2 for the launch, which does not ask to avoid it', async () => {
+      git.pygit2 = true
+      try {
+        git.findMergeBase.mockResolvedValue(LOWER)
+        const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER])
+        expect(state.ancestry.get(LOWER)).toBe(true)
+      } finally {
+        git.pygit2 = false
+      }
+    })
+
+    it('reports a resolution with a failing git call as incomplete', async () => {
+      git.mergeBaseRejects = true
+      const warns = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const incomplete = vi.fn()
+        const state = await resolveCoreCommitState(
+          REPO,
+          { kind: 'head', commit: HEAD },
+          [LOWER],
+          undefined,
+          { ...PREVIEW, onIncomplete: incomplete }
+        )
+        expect(state.ancestry.has(LOWER)).toBe(false)
+        expect(incomplete).toHaveBeenCalledOnce()
+      } finally {
+        git.mergeBaseRejects = false
+        warns.mockRestore()
+      }
+    })
+
+    it('does not report a SHA that is merely unprovable as incomplete', async () => {
+      git.findMergeBase.mockResolvedValue(undefined)
+      git.revParseRef.mockResolvedValue(undefined)
+      const incomplete = vi.fn()
+      const state = await resolveCoreCommitState(
+        REPO,
+        { kind: 'head', commit: HEAD },
+        [UPPER],
+        undefined,
+        { ...PREVIEW, onIncomplete: incomplete }
+      )
+      expect(state.ancestry.has(UPPER)).toBe(false)
+      expect(incomplete).not.toHaveBeenCalled()
+    })
+
+    it('keeps a failing git call out of the log when quiet, and in it otherwise', async () => {
+      const ONLY_HERE = '5e'.repeat(20)
+      git.mergeBaseRejects = true
+      const warns = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const aboutThis = (): unknown[][] =>
+        warns.mock.calls.filter((call) => String(call[0]).includes(ONLY_HERE.slice(0, 12)))
+      try {
+        const checkout = { kind: 'head', commit: HEAD } as const
+        await resolveCoreCommitState(REPO, checkout, [ONLY_HERE], undefined, PREVIEW)
+        expect(aboutThis()).toEqual([])
+        await resolveCoreCommitState(REPO, checkout, [ONLY_HERE])
+        expect(aboutThis()).toHaveLength(1)
+      } finally {
+        git.mergeBaseRejects = false
+        warns.mockRestore()
+      }
+    })
+
+    it('reports a resolution cut short by its budget', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      git.findMergeBase.mockImplementation(() => new Promise(() => {}))
+      const incomplete = vi.fn()
+
+      const pending = resolveCoreCommitState(
+        REPO,
+        { kind: 'head', commit: HEAD },
+        [LOWER],
+        undefined,
+        { ...PREVIEW, budgetMs: 1500, onIncomplete: incomplete }
+      )
+      await vi.advanceTimersByTimeAsync(1500)
+      await pending
+
+      expect(incomplete).toHaveBeenCalledOnce()
+      vi.useRealTimers()
+    })
+
+    it('does not report a resolution that finished', async () => {
+      git.findMergeBase.mockResolvedValue(LOWER)
+      const incomplete = vi.fn()
+      await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [LOWER], undefined, {
+        ...PREVIEW,
+        onIncomplete: incomplete
+      })
+      expect(incomplete).not.toHaveBeenCalled()
     })
   })
 

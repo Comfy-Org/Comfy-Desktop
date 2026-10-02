@@ -466,20 +466,20 @@ function load(): Settings {
   return loadOutcome().settings
 }
 
-/** Load settings plus whether settings.json must NOT be rewritten right now:
- *  it exists but could not be read (e.g. an AV lock outlasting the retry
- *  budget), so this call is serving bare defaults or stale `.bak` content in
- *  its place. `set()` refuses to persist while that holds - the file's real
- *  content is unknown, so saving anything derived from the stand-in would
- *  overwrite the user's intact, newer settings (the failure environment of
- *  issue #1367). */
-function loadOutcome(): { settings: Settings; unreadable: boolean } {
+/** The stored settings over the defaults, without the load-time normalization or its save.
+ *  `restore: false` also stops the file read restoring settings.json from its `.bak`.
+ *  `normalize: false` marks the unreadable-file case, which `loadOutcome` returns as-is. */
+function readOutcome(opts: { restore?: boolean } = {}): {
+  settings: Settings
+  unreadable: boolean
+  normalize: boolean
+} {
   maybeSeedFromEnv()
   let parsed: Record<string, unknown> | null = null
   let unreadable = false
-  const read = readFileSafe(dataPath)
+  const read = readFileSafe(dataPath, opts)
   if (read.kind === 'unreadable') {
-    return { settings: { ...defaults }, unreadable: true }
+    return { settings: { ...defaults }, unreadable: true, normalize: false }
   }
   if (read.kind === 'data') {
     unreadable = read.primaryUnreadable === true
@@ -498,7 +498,20 @@ function loadOutcome(): { settings: Settings; unreadable: boolean } {
       }
     }
   }
-  const result: Settings = { ...defaults, ...(parsed || {}) }
+  return { settings: { ...defaults, ...(parsed || {}) }, unreadable, normalize: true }
+}
+
+/** Load settings plus whether settings.json must NOT be rewritten right now:
+ *  it exists but could not be read (e.g. an AV lock outlasting the retry
+ *  budget), so this call is serving bare defaults or stale `.bak` content in
+ *  its place. `set()` refuses to persist while that holds - the file's real
+ *  content is unknown, so saving anything derived from the stand-in would
+ *  overwrite the user's intact, newer settings (the failure environment of
+ *  issue #1367). */
+function loadOutcome(): { settings: Settings; unreadable: boolean } {
+  const read = readOutcome()
+  if (!read.normalize) return { settings: read.settings, unreadable: read.unreadable }
+  const { settings: result, unreadable } = read
   let changed = false
 
   // Drop legacy keys that no longer back any setting. `maxCachedFiles` was the
@@ -719,13 +732,31 @@ export function getAll(): Settings {
  */
 export function resolveBetaFeaturesEnabled(): boolean {
   const { settings, unreadable } = loadOutcome()
+  const { value, seed } = betaFeaturesEnabledFrom(settings, unreadable)
+  if (seed) {
+    settings.betaFeaturesEnabled = value
+    save(settings)
+  }
+  return value
+}
+
+/** What `resolveBetaFeaturesEnabled` would return, for previews that must not write settings: it
+ *  skips the load-time normalization (which can create folders and save), the `.bak` restore, and
+ *  the seed.
+ *  Normalization never touches the two keys this reads, so the next launch resolves the same. */
+export function peekBetaFeaturesEnabled(): boolean {
+  const { settings, unreadable } = readOutcome({ restore: false })
+  return betaFeaturesEnabledFrom(settings, unreadable).value
+}
+
+function betaFeaturesEnabledFrom(
+  settings: Settings,
+  unreadable: boolean
+): { value: boolean; seed: boolean } {
   const stored = settings.betaFeaturesEnabled
-  if (typeof stored === 'boolean') return stored
-  if (unreadable) return false
-  const seeded = settings.telemetryEnabled === true
-  settings.betaFeaturesEnabled = seeded
-  save(settings)
-  return seeded
+  if (typeof stored === 'boolean') return { value: stored, seed: false }
+  if (unreadable) return { value: false, seed: false }
+  return { value: settings.telemetryEnabled === true, seed: true }
 }
 
 function camelToSnake(s: string): string {

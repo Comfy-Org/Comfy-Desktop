@@ -5,6 +5,7 @@ import {
   fetchCommitSha,
   findMergeBase,
   findMergeBaseOrNone,
+  isPygit2Configured,
   resolveGitDir,
   revParseRef
 } from './git'
@@ -92,20 +93,41 @@ function scheduleFetch(repoPath: string, sha: string, head: string): boolean {
 
 type Relation = boolean | null
 
+/** Relations proven by resolutions in this process, keyed by repository, HEAD and SHA. On a host
+ *  whose git is a Python spawn per call (pygit2) a display-only resolution answers from here instead
+ *  of from git; a moved HEAD simply misses. Each resolution also evicts whatever it could not prove,
+ *  so the cache holds the LAST resolution's answer, never one it has since withheld. */
+const provenRelations = new Map<string, boolean>()
+const relationKey = (repoPath: string, head: string, sha: string): string =>
+  `${repoPath}\0${head}\0${sha}`
+
+export function _resetProvenRelationsForTest(): void {
+  provenRelations.clear()
+}
+
+/** One resolution's shared state. `fetch` and `log` are the launch's defaults unless a caller
+ *  resolving for display turns them off. */
+interface ResolveBudget {
+  fetches: number
+  stopped: boolean
+  fetch: boolean
+  log: (message: string) => void
+}
+
 // Not `isAncestorOf`: it answers `false` for "could not look", which would fail an upper bound open.
 async function commitAncestry(
   repoPath: string,
   sha: string,
   head: string,
   complete: boolean,
-  budget: { fetches: number; stopped: boolean }
+  budget: ResolveBudget
 ): Promise<Relation> {
   const base = await findMergeBaseOrNone(repoPath, sha, head)
   if (typeof base === 'string') return base.toLowerCase() === sha
   // Both commits resolved and share nothing: on a complete graph HEAD cannot contain `sha`. A shallow
   // graph may just be cut short, and the graft rule cannot hold without a common ancestor.
   if (base === null && complete) {
-    console.log(
+    budget.log(
       `[core-beta] ancestry ${sha.slice(0, 12)}: no common ancestor with HEAD in a full clone`
     )
     return false
@@ -115,12 +137,12 @@ async function commitAncestry(
   if ((await commitPresence(repoPath, sha)) !== 'absent') return null
   // A complete clone holds every ancestor of HEAD, so a commit it lacks is not one of them.
   if (complete) {
-    console.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
+    budget.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
     return false
   }
-  if (budget.stopped) return null
+  if (budget.stopped || !budget.fetch) return null
   if (budget.fetches >= MAX_FETCHES) {
-    console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
+    budget.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
   } else if (scheduleFetch(repoPath, sha, head)) {
     budget.fetches += 1
   }
@@ -183,22 +205,63 @@ export async function resolveCoreCommitState(
   repoPath: string,
   checkout: CoreCheckout,
   shas: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** Display-only resolution: `fetch: false` never schedules a background fetch (so it writes
+   *  nothing, to the repository or the failure record), and `quiet` drops the per-SHA log lines.
+   *  An ancestry a fetch could have settled stays unresolved, exactly as it is for the launch
+   *  that schedules that fetch. `budgetMs` shortens the launch's time budget for a caller that
+   *  must not hold its UI. `avoidPygit2`, on a host whose git runs through the pygit2 fallback
+   *  (every call a Python spawn), answers only from relations an earlier resolution in this
+   *  process proved, typically the last launch. `onIncomplete` fires when SHAs were left
+   *  unresolved for a reason a later call might not share: the time budget, `signal`, or an
+   *  `avoidPygit2` lookup that missed. */
+  options: {
+    fetch?: boolean
+    quiet?: boolean
+    budgetMs?: number
+    avoidPygit2?: boolean
+    onIncomplete?: () => void
+  } = {}
 ): Promise<CoreCommitState> {
   if (shas.length === 0 || checkout.kind !== 'head') return NO_CORE_COMMITS
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
+  if (options.avoidPygit2 && isPygit2Configured()) {
+    const known = new Map<string, boolean>()
+    for (const [index, raw] of shas.entries()) {
+      const sha = raw.toLowerCase()
+      // Skipped exactly as the resolving loop below skips them, so the answers agree.
+      if (!FULL_SHA_RE.test(sha) || index >= MAX_RESOLVED_SHAS) continue
+      const related = provenRelations.get(relationKey(repoPath, head, sha))
+      if (related === undefined) {
+        options.onIncomplete?.()
+        return NO_CORE_COMMITS
+      }
+      known.set(sha, related)
+    }
+    return { head, ancestry: known }
+  }
   const ancestry = new Map<string, boolean>()
-  const deadline = Date.now() + RESOLVE_BUDGET_MS
-  const budget = { fetches: 0, stopped: false }
+  const deadline = Date.now() + (options.budgetMs ?? RESOLVE_BUDGET_MS)
+  const log = options.quiet ? () => {} : (message: string) => console.log(message)
+  const warn = options.quiet
+    ? () => {}
+    : (message: string, err: unknown) => console.warn(message, err)
+  const budget: ResolveBudget = { fetches: 0, stopped: false, fetch: options.fetch !== false, log }
+  // Set when the loop itself notices the deadline or the abort between two SHAs (which can settle
+  // `work` before the race's own timer or abort listener fires), or when a check throws.
+  let cutShort = false
   const work = (async () => {
     for (const [index, raw] of shas.entries()) {
-      if (budget.stopped || signal?.aborted || Date.now() > deadline) return
+      if (budget.stopped || signal?.aborted || Date.now() > deadline) {
+        if (!budget.stopped) cutShort = true
+        return
+      }
       // Re-validated here, not only at parse time: the SHA reaches `git fetch` as an argument.
       const sha = raw.toLowerCase()
       if (!FULL_SHA_RE.test(sha)) continue
       if (index >= MAX_RESOLVED_SHAS) {
-        console.log(
+        log(
           `[core-beta] ancestry ${sha.slice(0, 12)}: not checked (the payload names more than ${MAX_RESOLVED_SHAS} commits), so entries that need it do not match`
         )
         continue
@@ -209,7 +272,10 @@ export async function resolveCoreCommitState(
       try {
         related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
       } catch (err) {
-        console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+        warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+        // A thrown check is a transient failure, not an answer about the commits: report the
+        // resolution as incomplete rather than as a definite "unresolved".
+        cutShort = true
       }
       if (related === false && grafts?.length !== 0) {
         const provable =
@@ -219,7 +285,7 @@ export async function resolveCoreCommitState(
       }
       // A launch that has moved on takes no late answers: the map it was handed must not change.
       if (budget.stopped) return
-      console.log(
+      log(
         `[core-beta] ancestry ${sha.slice(0, 12)}: ${
           related === null
             ? 'unresolved (not provable on this checkout, so entries that need it do not match)'
@@ -228,7 +294,10 @@ export async function resolveCoreCommitState(
               : 'not contained'
         }`
       )
-      if (related !== null) ancestry.set(sha, related)
+      if (related !== null) {
+        ancestry.set(sha, related)
+        provenRelations.set(relationKey(repoPath, head, sha), related)
+      }
     }
   })()
 
@@ -244,7 +313,7 @@ export async function resolveCoreCommitState(
     if (signal?.aborted) onAbort()
   })
   // Abandoned when interrupted, so it must never be left with an unhandled rejection.
-  void work.catch((err: unknown) => console.warn('[core-beta] ancestry resolution failed:', err))
+  void work.catch((err: unknown) => warn('[core-beta] ancestry resolution failed:', err))
   try {
     // Cannot reject: a failure inside `work` is logged above and leaves the map partial, which is
     // the fail-closed answer. A beta lookup must never fail the launch.
@@ -256,12 +325,23 @@ export async function resolveCoreCommitState(
       interrupted
     ])
     if (outcome === 'interrupted') {
-      console.log('[core-beta] ancestry: stopped early; SHAs not reached stay unresolved')
+      log('[core-beta] ancestry: stopped early; SHAs not reached stay unresolved')
+      options.onIncomplete?.()
+    } else if (cutShort) {
+      options.onIncomplete?.()
     }
   } finally {
     budget.stopped = true
     clearTimeout(timer)
     if (onAbort) signal?.removeEventListener('abort', onAbort)
+  }
+  // Whatever this resolution could not prove, it also withholds, so a relation proven earlier must
+  // not keep answering for it: a later display-only lookup is never more optimistic than the last
+  // resolution, whatever made that one fall short (budget, abort, a failed git call).
+  for (const [index, raw] of shas.entries()) {
+    const sha = raw.toLowerCase()
+    if (!FULL_SHA_RE.test(sha) || index >= MAX_RESOLVED_SHAS) continue
+    if (!ancestry.has(sha)) provenRelations.delete(relationKey(repoPath, head, sha))
   }
   return { head, ancestry }
 }

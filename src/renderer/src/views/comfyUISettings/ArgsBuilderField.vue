@@ -3,12 +3,15 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Settings } from 'lucide-vue-next'
 import ArgsRawInput from './ArgsRawInput.vue'
+import BetaArgsPill from './BetaArgsPill.vue'
 import type { ComfyArgDef, DetailField } from '../../types/ipc'
 
 /**
  * Compact summary row for the `launchArgs` field. Shows the current
  * arg string with inline autocomplete and a gear icon that opens the
- * full `ArgsBuilderPage` sub-page.
+ * full `ArgsBuilderPage` sub-page. Core beta grants — the running session's,
+ * or the next launch's while stopped — show as a read-only pill after the
+ * user's args.
  */
 
 interface Props {
@@ -21,6 +24,9 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   open: []
   update: [field: DetailField, value: string]
+  /** This field's schema load ran discovery rather than hitting the cache. The next-launch beta
+   *  pill is computed from that cache only, so the host re-reads the sections to show it. */
+  'schema-discovered': []
 }>()
 
 const { t } = useI18n()
@@ -41,6 +47,7 @@ async function loadSchema(id: string | undefined): Promise<void> {
   try {
     const result = await window.api.getComfyArgs(id)
     schema.value = result?.args ?? []
+    if (result?.discovered && !result.error && !props.field.betaArgs) emit('schema-discovered')
   } catch {
     schema.value = []
   }
@@ -75,6 +82,7 @@ function handleChange(value: string): void {
     @change="handleChange"
   >
     <template #trailing>
+      <BetaArgsPill :args="field.betaArgs ?? []" :timing="field.betaArgsTiming" />
       <button
         type="button"
         :aria-label="t('comfyUISettings.configureArgs', 'Configure arguments')"

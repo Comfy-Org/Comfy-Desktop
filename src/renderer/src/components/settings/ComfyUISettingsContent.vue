@@ -95,6 +95,9 @@ interface Props {
   currentView?: ViewKind
   /** Raw active-install category of the host (`null` on a dashboard host). */
   currentCategory?: Category | null
+  /** Re-read the sections whenever this changes. The picker passes its open epoch: the popup is
+   *  cached, so a reopen would otherwise show sections from the previous open. */
+  refreshKey?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -106,6 +109,7 @@ const props = withDefaults(defineProps<Props>(), {
   activeInstallationId: null,
   currentView: 'dashboard',
   currentCategory: null,
+  refreshKey: 0,
   globalSettingsSnapshot: () => ({
     sharedDirectoriesFields: [],
     modelsDirs: [],
@@ -183,6 +187,13 @@ const {
   onClose: () => emit('request-close'),
   onDismissPreview: () => emit('request-dismiss')
 })
+
+watch(
+  () => props.refreshKey,
+  () => {
+    if (props.installation) void reload()
+  }
+)
 
 // Fires the named action once per prop transition, after sections load.
 // Keyed on `autoAction` + `autoActionNonce` (not install id) so reloads
@@ -1062,6 +1073,7 @@ defineExpose({
                     @update-field="updateField"
                     @run-action="runAction"
                     @open-args-page="openArgsPage"
+                    @schema-discovered="reload"
                     @open-path="handleOpenPath"
                   />
                 </div>

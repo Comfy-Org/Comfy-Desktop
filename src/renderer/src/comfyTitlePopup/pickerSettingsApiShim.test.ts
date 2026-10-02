@@ -93,3 +93,23 @@ describe('installPickerSettingsApiShim — terminal forwarding', () => {
     expect(bridge.onTerminalOutput).toHaveBeenCalledWith(cb)
   })
 })
+
+describe('installPickerSettingsApiShim — Global Settings deep link', () => {
+  it('forwards openGlobalSettings to the popup bridge with its tab and highlight', () => {
+    const bridge = installBridge()
+    installPickerSettingsApiShim()
+
+    const api = (
+      window as unknown as {
+        api: {
+          openGlobalSettings: (tab?: string, opts?: { highlightField?: string }) => void
+        }
+      }
+    ).api
+    api.openGlobalSettings('general', { highlightField: 'betaFeaturesEnabled' })
+
+    expect(bridge.pickerSettingsOpenGlobalSettings).toHaveBeenCalledExactlyOnceWith('general', {
+      highlightField: 'betaFeaturesEnabled'
+    })
+  })
+})

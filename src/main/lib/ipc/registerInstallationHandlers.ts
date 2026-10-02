@@ -27,7 +27,7 @@ import {
   _operationAborts,
   _runningSessions,
   sanitizeEnvVars,
-  getComfyArgsSchema,
+  getComfyArgsSchemaReportingDiscovery,
   COMFYUI_REPO,
   snapshotRestoreFailureResult
 } from './shared'
@@ -52,6 +52,8 @@ import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { isInstallationVisibleToRenderer } from './installationVisibility'
+import { attachLaunchBetaArgs } from '../../sources/common/launchSettingsFields'
+import { previewCoreBetaGrants } from './sessionActions/launch'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -642,10 +644,21 @@ export function registerInstallationHandlers(): void {
       }
     }
     const sections = source.getDetailSections(inst)
-    // Surface the live port for a running instance. Sourced here (not in the
+    // Surface live session state for a running instance: the Core beta grants on its
+    // command line, and its port. Sourced here (not in the
     // renderer session store) so it works in every window the settings panel
     // renders in, including the title popup where the store isn't initialised.
     const running = _runningSessions.get(installationId)
+    if (running) {
+      attachLaunchBetaArgs(sections, running.coreBetaArgs, 'session')
+    } else {
+      // Best-effort: a preview failure costs the pill, never the settings view.
+      const preview = await previewCoreBetaGrants(inst, source).catch((err: unknown) => {
+        console.warn('[get-detail-sections] beta grant preview failed:', err)
+        return null
+      })
+      attachLaunchBetaArgs(sections, preview, 'next-launch')
+    }
     if (running?.port) {
       sections.push({
         tab: 'status',
@@ -660,7 +673,7 @@ export function registerInstallationHandlers(): void {
     async (
       _event,
       installationId: string
-    ): Promise<{ args: ComfyArgDef[]; error?: string } | null> => {
+    ): Promise<{ args: ComfyArgDef[]; error?: string; discovered?: boolean } | null> => {
       const inst = await installations.get(installationId)
       if (!inst) return { args: [], error: 'Installation not found' }
       const source = sourceMap[inst.sourceId]
@@ -676,14 +689,14 @@ export function registerInstallationHandlers(): void {
       const mainPyRel = launchCmd.args[sIdx + 1]!
       const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
       try {
-        const schema = await getComfyArgsSchema(
+        const { schema, discovered } = await getComfyArgsSchemaReportingDiscovery(
           launchCmd.cmd,
           mainPyAbs,
           launchCmd.cwd,
           installationId,
           inst.comfyVersion?.commit ?? (inst.version as string | undefined)
         )
-        return { args: schema.args }
+        return { args: schema.args, discovered }
       } catch (err) {
         const msg = (err as Error).message ?? String(err)
         console.warn('[get-comfy-args] Failed to get schema:', msg)

@@ -68,6 +68,8 @@ interface PickerSnapshot {
   currentView?: ViewKind
   currentCategory?: Category | null
   runningInstallationIds: string[]
+  /** `startedAt` per running session; changes on a restart the id list cannot show. */
+  runningSessionStartedAt?: Record<string, number>
   /** Installs launching but not yet started. Hydrated into
    *  sessionStore because the popup preload has no onInstanceLaunching. */
   launchingInstallationIds: string[]
@@ -96,14 +98,21 @@ function hydrateSessionStoreFromSnapshot(): void {
   for (const id of Array.from(sessionStore.runningInstances.keys())) {
     if (!next.has(id)) sessionStore.runningInstances.delete(id)
   }
+  const startedAt = props.snapshot.runningSessionStartedAt ?? {}
   for (const id of next) {
-    if (!sessionStore.runningInstances.has(id)) {
+    const current = sessionStore.runningInstances.get(id)
+    if (!current) {
       const placeholder: RunningInstance = {
         installationId: id,
         installationName: '',
-        mode: ''
+        mode: '',
+        startedAt: startedAt[id]
       }
       sessionStore.runningInstances.set(id, placeholder)
+    } else if (startedAt[id] !== undefined && current.startedAt !== startedAt[id]) {
+      // A restart that landed between two snapshots: same id, new session. Replaced rather than
+      // mutated so the settings view's session watch sees a new value.
+      sessionStore.runningInstances.set(id, { ...current, startedAt: startedAt[id] })
     }
   }
   // The snapshot is the only path that brings launching state in (the
@@ -342,7 +351,9 @@ const initialExpandedTab = computed<PickerTab>(() =>
 watch(
   [
     () => props.snapshot.runningInstallationIds.join('\0'),
-    () => (props.snapshot.launchingInstallationIds ?? []).join('\0')
+    () => (props.snapshot.launchingInstallationIds ?? []).join('\0'),
+    // A restart between two snapshots changes only this.
+    () => JSON.stringify(props.snapshot.runningSessionStartedAt ?? {})
   ],
   () => hydrateSessionStoreFromSnapshot(),
   { immediate: true }
@@ -604,6 +615,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               :active-installation-id="snapshot.activeInstallationId"
               :current-view="snapshot.currentView ?? 'dashboard'"
               :current-category="snapshot.currentCategory ?? null"
+              :refresh-key="snapshot.pickerSelectionEpoch ?? 0"
               class="picker-expanded-body"
               @show-progress="handleSettingsShowProgress"
               @navigate-list="handleSettingsNavigateList"

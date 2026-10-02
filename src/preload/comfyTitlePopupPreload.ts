@@ -46,6 +46,8 @@ export interface PopupInstancePickerSnapshot {
    *  collapses remote ⇒ cloud. Optional for back-compat with older bundles. */
   currentCategory?: Category | null
   runningInstallationIds: string[]
+  /** `startedAt` per running session; changes on a restart the id list cannot show. */
+  runningSessionStartedAt?: Record<string, number>
   /** Selected install in the picker's right pane; defaults to the host's active
    *  install on open. */
   selectedInstallationId: string | null
@@ -339,7 +341,7 @@ export interface ComfyTitlePopupBridge {
   }>
   pickerSettingsGetComfyArgs(
     installationId: string
-  ): Promise<{ args: Record<string, unknown>[]; error?: string } | null>
+  ): Promise<{ args: Record<string, unknown>[]; error?: string; discovered?: boolean } | null>
   pickerSettingsBrowseFolder(opts?: { defaultPath?: string }): Promise<string | null>
   pickerSettingsCancelOperation(installationId: string): Promise<void>
   pickerSettingsPreviewLocalMigration(installationId: string): Promise<Record<string, unknown>>
@@ -354,6 +356,12 @@ export interface ComfyTitlePopupBridge {
   onTerminalExited(callback: (data: { installationId: string }) => void): () => void
   /** Relaunch the app (`app.relaunch()` main-side). */
   pickerSettingsRelaunchApp(): void
+  /** Switch this popup to Global Settings, optionally on a tab and flashing a field. Same
+   *  contract as the panel's `window.api.openGlobalSettings`, which the settings UI calls. */
+  pickerSettingsOpenGlobalSettings(
+    tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
+    opts?: { highlightField?: string }
+  ): void
   /** Pull the panel-side i18n catalog; the popup boots with a minimal static
    *  one and merges this on top once the expanded settings UI opens. */
   pickerSettingsGetLocaleMessages(): Promise<Record<string, unknown>>
@@ -713,6 +721,9 @@ const bridge: ComfyTitlePopupBridge = {
   },
   pickerSettingsRelaunchApp: () => {
     ipcRenderer.send(CH.relaunchApp)
+  },
+  pickerSettingsOpenGlobalSettings: (tab, opts) => {
+    ipcRenderer.send(CH.openGlobalSettings, { tab, highlightField: opts?.highlightField })
   },
   pickerSettingsGetLocaleMessages: () => ipcRenderer.invoke(CH.getLocaleMessages),
   pickerSettingsGetLocale: () => ipcRenderer.invoke(CH.getLocale),

@@ -363,6 +363,17 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
 
 const schemaCache = new Map<string, { schema: ComfyArgsSchema; revision: string }>()
 
+function cachedSchema(
+  mainPyPath: string,
+  installationId: string,
+  fallbackRevision: string | undefined
+): { revision: string | undefined; schema: ComfyArgsSchema | null } {
+  const revision = readGitHead(path.dirname(mainPyPath)) ?? fallbackRevision
+  const cached = schemaCache.get(installationId)
+  const hit = cached && revision && cached.revision === revision ? cached.schema : null
+  return { revision, schema: hit }
+}
+
 /** Run `python main.py --help` and parse the output, cached per installation and source revision. */
 export async function getComfyArgsSchema(
   pythonPath: string,
@@ -371,11 +382,8 @@ export async function getComfyArgsSchema(
   installationId: string,
   fallbackRevision?: string
 ): Promise<ComfyArgsSchema> {
-  const revision = readGitHead(path.dirname(mainPyPath)) ?? fallbackRevision
-  const cached = schemaCache.get(installationId)
-  if (cached && revision && cached.revision === revision) {
-    return cached.schema
-  }
+  const { revision, schema: cached } = cachedSchema(mainPyPath, installationId, fallbackRevision)
+  if (cached) return cached
 
   const helpText = await runHelp(pythonPath, mainPyPath, cwd)
   const schema = parseHelpOutput(helpText)
@@ -385,6 +393,39 @@ export async function getComfyArgsSchema(
   }
 
   return schema
+}
+
+/** `getComfyArgsSchema`, plus whether this call newly cached the schema, i.e. whether a cache-only
+ *  reader (`peekComfyArgsSchema`) has it now and did not before. A discovery that cannot be cached
+ *  (no revision to key it on) reports `false`: re-reading for it could change nothing. */
+export async function getComfyArgsSchemaReportingDiscovery(
+  pythonPath: string,
+  mainPyPath: string,
+  cwd: string,
+  installationId: string,
+  fallbackRevision?: string
+): Promise<{ schema: ComfyArgsSchema; discovered: boolean }> {
+  const wasCached = peekComfyArgsSchema(mainPyPath, installationId, fallbackRevision) !== null
+  const schema = await getComfyArgsSchema(
+    pythonPath,
+    mainPyPath,
+    cwd,
+    installationId,
+    fallbackRevision
+  )
+  const discovered =
+    !wasCached && peekComfyArgsSchema(mainPyPath, installationId, fallbackRevision) !== null
+  return { schema, discovered }
+}
+
+/** The schema `getComfyArgsSchema` would return from its cache, or `null` on a miss. Never spawns
+ *  Python: for previews that may only reuse a discovery something else already paid for. */
+export function peekComfyArgsSchema(
+  mainPyPath: string,
+  installationId: string,
+  fallbackRevision?: string
+): ComfyArgsSchema | null {
+  return cachedSchema(mainPyPath, installationId, fallbackRevision).schema
 }
 
 function runHelp(pythonPath: string, mainPyPath: string, cwd: string): Promise<string> {

@@ -55,6 +55,7 @@ interface PickerSnapshot {
   installs: PickerInstall[]
   activeInstallationId: string | null
   runningInstallationIds: string[]
+  runningSessionStartedAt?: Record<string, number>
   /** Installs mid-launch. Hydrated into sessionStore because the popup
    *  preload doesn't expose onInstanceLaunching. */
   launchingInstallationIds: string[]

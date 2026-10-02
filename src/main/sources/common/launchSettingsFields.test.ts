@@ -35,7 +35,7 @@ vi.mock('../../lib/models', async (importOriginal) => {
   }
 })
 
-const { buildExtraModelPathsView, buildLaunchSettingsFields } =
+const { attachLaunchBetaArgs, buildExtraModelPathsView, buildLaunchSettingsFields } =
   await import('./launchSettingsFields')
 
 let tmp: string
@@ -288,5 +288,68 @@ describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
     // if they ever became adjacent.
     const security = fields.find((f) => f.id === 'managerSecurityLevel')
     expect(launchMode?.rowGroup).not.toBe(security?.rowGroup)
+  })
+})
+
+describe('attachLaunchBetaArgs', () => {
+  const sections = (): Record<string, unknown>[] => [
+    { title: 'General', fields: [{ id: 'name', value: 'x' }] },
+    { title: 'Launch', fields: [{ id: 'launchArgs', value: '--lowvram' }, { id: 'port' }] },
+    { tab: 'status', items: [] }
+  ]
+  const fieldById = (all: Record<string, unknown>[], id: string): Record<string, unknown> =>
+    all
+      .flatMap((section) => (section.fields as Record<string, unknown>[] | undefined) ?? [])
+      .find((field) => field.id === id)!
+
+  it.each(['session', 'next-launch'] as const)(
+    'attaches %s grants, with their timing, to the launchArgs field only',
+    (timing) => {
+      const all = sections()
+      attachLaunchBetaArgs(
+        all,
+        [
+          { arg: '--enable-assets', name: 'Asset browser' },
+          { arg: '--enable-asset-hashing', name: null }
+        ],
+        timing
+      )
+      expect(fieldById(all, 'launchArgs').betaArgsTiming).toBe(timing)
+      expect(fieldById(all, 'launchArgs').betaArgs).toEqual([
+        { arg: '--enable-assets', name: 'Asset browser' },
+        { arg: '--enable-asset-hashing', name: null }
+      ])
+      expect(fieldById(all, 'launchArgs').value).toBe('--lowvram')
+      expect(fieldById(all, 'name')).not.toHaveProperty('betaArgs')
+      expect(fieldById(all, 'port')).not.toHaveProperty('betaArgs')
+    }
+  )
+
+  it.each([
+    ['no running session', undefined],
+    ['an unpredictable next launch', null],
+    ['no grants', []]
+  ])('leaves the field without betaArgs for %s', (_label, betaArgs) => {
+    const all = sections()
+    attachLaunchBetaArgs(all, betaArgs, 'next-launch')
+    expect(fieldById(all, 'launchArgs')).not.toHaveProperty('betaArgs')
+    expect(fieldById(all, 'launchArgs')).not.toHaveProperty('betaArgsTiming')
+  })
+
+  it('clears grants a reused field object still carries when there is nothing to show', () => {
+    const all = sections()
+    attachLaunchBetaArgs(all, [{ arg: '--enable-assets', name: null }], 'session')
+    attachLaunchBetaArgs(all, null, 'next-launch')
+    expect(fieldById(all, 'launchArgs')).not.toHaveProperty('betaArgs')
+    expect(fieldById(all, 'launchArgs')).not.toHaveProperty('betaArgsTiming')
+  })
+
+  it("copies the views, so the IPC payload never aliases the session's record", () => {
+    const views = [{ arg: '--enable-assets', name: 'Asset browser' }]
+    const all = sections()
+    attachLaunchBetaArgs(all, views, 'session')
+    const attached = fieldById(all, 'launchArgs').betaArgs as { name: string | null }[]
+    attached[0]!.name = 'mutated'
+    expect(views[0]!.name).toBe('Asset browser')
   })
 })

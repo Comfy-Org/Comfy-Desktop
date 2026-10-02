@@ -53,7 +53,7 @@ import {
   _broadcastToRenderer
 } from '../shared'
 import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
-import type { LaunchCommand } from '../../../types/sources'
+import type { LaunchCommand, SourcePlugin } from '../../../types/sources'
 import { randomUUID } from 'node:crypto'
 import { displayLaunchUrl } from '../../cloudUrl'
 import type { ModelPathsOptions } from '../../models'
@@ -81,7 +81,7 @@ import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
-import type { ComfyExitedData } from '../../../../types/ipc'
+import type { BetaArgView, ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 import { buildErrorFields, errorTail } from '../../../../shared/errorEvent'
 import {
@@ -119,6 +119,7 @@ import type { CoreCheckout } from '../../version'
 import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
 import type { ComfyArgsSchema } from '../../comfy-args'
+import { peekComfyArgsSchema } from '../../comfy-args'
 
 // Feature flags injected on a spawned ComfyUI, gated by the running install's
 // --list-feature-flags registry so we never inject unrecognized keys.
@@ -200,6 +201,13 @@ export interface CoreBetaLaunch {
   readonly optedIn: boolean
 }
 
+/** What the settings view shows for this launch's grants: each arg with its payload feature name.
+ *  Silent grants are included — `silent` only mutes the one-off activation notice, and this
+ *  lists what is on the command line. */
+export function coreBetaArgViews(applied: readonly CoreBetaGrant[]): BetaArgView[] {
+  return applied.map((grant) => ({ arg: grant.arg, name: grant.notice?.description ?? null }))
+}
+
 /** No grants resolved: either the install opted out, or the launch never reached arg assembly
  *  (schema discovery unavailable). `optedIn` is still the real toggle in both cases. */
 function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
@@ -246,6 +254,8 @@ export function buildLaunchArgs(input: {
   coreVersionCurrent: boolean
   coreCommits: CoreCommitState
   betaEnabled: boolean
+  /** Suppress the per-grant selection log lines (a display-only preview). */
+  quiet?: boolean
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
@@ -261,7 +271,8 @@ export function buildLaunchArgs(input: {
     input.betaEnabled,
     userArgs,
     input.coreCommits,
-    withheld
+    withheld,
+    input.quiet
   )
   const supported = new Set(
     filterUnsupportedArgs(
@@ -289,6 +300,147 @@ export function buildLaunchArgs(input: {
       optedIn: input.betaEnabled
     }
   }
+}
+
+/** A launch command split where Desktop's own prefix ends: after `-s <main.py>`. Everything past it
+ *  is the user's args (as the source rendered them). */
+export interface SplitLaunchArgs {
+  cmd: string
+  cwd: string
+  mainPyAbs: string
+  comfyuiDir: string
+  /** The schema cache's fallback revision when the checkout's HEAD is unreadable. */
+  revision: string | undefined
+  prefixArgs: string[]
+  userArgs: string[]
+}
+
+/** `null` for a command without that shape (a remote connection, or no `-s <main.py>`): such a
+ *  launch gets no arg assembly, so no schema filtering and no Core beta grants. */
+export function splitLaunchArgs(
+  launchCmd: Pick<LaunchCommand, 'cmd' | 'args' | 'cwd'>,
+  inst: InstallationRecord
+): SplitLaunchArgs | null {
+  const { cmd, args, cwd } = launchCmd
+  if (!cmd || !args || !cwd) return null
+  const sIdx = args.indexOf('-s')
+  if (sIdx === -1 || sIdx + 1 >= args.length) return null
+  const mainPyAbs = path.resolve(cwd, args[sIdx + 1]!)
+  return {
+    cmd,
+    cwd,
+    mainPyAbs,
+    comfyuiDir: path.dirname(mainPyAbs),
+    revision: inst.comfyVersion?.commit ?? (inst.version as string | undefined),
+    prefixArgs: args.slice(0, sIdx + 2),
+    userArgs: args.slice(sIdx + 2)
+  }
+}
+
+/**
+ * The Core beta half of arg assembly: which grants this launch applies, and the final args. Shared
+ * by the launch and by the settings view's next-launch preview, so the two cannot disagree about
+ * what a launch would do; they differ only in `commits`, where the preview forbids the background
+ * fetch and the log lines a launch is entitled to.
+ */
+export async function assembleCoreBetaArgs(input: {
+  inst: InstallationRecord
+  split: SplitLaunchArgs
+  checkout: CoreCheckout
+  schema: ComfyArgsSchema
+  desktopFlagArgs: readonly string[]
+  betaEnabled: boolean
+  commits: Parameters<typeof resolveCoreCommitState>[4] & { signal?: AbortSignal }
+}): Promise<{ args: string[]; beta: CoreBetaLaunch }> {
+  const { inst, split, checkout, betaEnabled } = input
+  const { signal, ...commitOptions } = input.commits
+  const betaFlags = await getCoreBetaGrantsAsync()
+  // Opted-out launches skip it: the checks can reach the network and could grant nothing.
+  const coreCommits = betaEnabled
+    ? await resolveCoreCommitState(
+        split.comfyuiDir,
+        checkout,
+        commitGrantShas(betaFlags, split.userArgs),
+        signal,
+        commitOptions
+      )
+    : NO_CORE_COMMITS
+  // The gate's version, not the display label: the `[core-beta]` log line and the
+  // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
+  // an install whose label is unverified they name the lower ancestry-proven release.
+  const gate = coreGateVersion(inst)
+  return buildLaunchArgs({
+    prefixArgs: split.prefixArgs,
+    userArgs: split.userArgs,
+    desktopFlagArgs: input.desktopFlagArgs,
+    schema: input.schema,
+    betaFlags,
+    coreVersion: gate.semver,
+    coreVersionExact: gate.exact,
+    coreVersionVerified: gate.verified,
+    coreVersionCurrent: coreRecordCurrent(inst, checkout),
+    coreCommits,
+    betaEnabled,
+    quiet: commitOptions.quiet
+  })
+}
+
+const PREVIEW_ANCESTRY_BUDGET_MS = 1500
+
+/**
+ * The Core beta grants the install is eligible for at its NEXT launch, for the settings view while
+ * it is stopped. A prediction: the launch re-checks everything and may still withhold a grant (a
+ * transient failure resolving ancestry, a changed flag payload), so the view says "eligible", not
+ * "will be added". Runs the launch's own resolution (`splitLaunchArgs` + `assembleCoreBetaArgs`) with
+ * nothing a launch would do on the side: the opt-in is peeked without seeding it, the args schema
+ * comes only from the cache the settings view already filled (no Python spawn), commit ancestry is
+ * resolved without fetching, and on a pygit2-fallback host (a Python spawn per git call) only from
+ * relations this process's last resolution proved (a resolution that fails to prove a relation
+ * evicts it, so this never outruns the last launch); nothing is logged.
+ *
+ * `null` when an input the answer depends on is unavailable (no launch command, an uncached schema,
+ * an unreadable setting, an ancestry check cut short by its shorter time budget, or on a pygit2 host
+ * a relation no launch has proved yet): the view then shows
+ * nothing rather than a guess. An empty list is a real answer: opted out, or nothing granted.
+ */
+export async function previewCoreBetaGrants(
+  inst: InstallationRecord,
+  source: Pick<SourcePlugin, 'getLaunchCommand'> | undefined
+): Promise<BetaArgView[] | null> {
+  let betaEnabled: boolean
+  try {
+    betaEnabled = settings.peekBetaFeaturesEnabled()
+  } catch {
+    return null
+  }
+  if (!betaEnabled) return []
+  const launchCmd = source?.getLaunchCommand(inst)
+  if (!launchCmd) return null
+  const split = splitLaunchArgs(launchCmd, inst)
+  if (!split) return []
+  const schema = peekComfyArgsSchema(split.mainPyAbs, inst.id, split.revision)
+  if (!schema) return null
+  let incomplete = false
+  const built = await assembleCoreBetaArgs({
+    inst,
+    split,
+    checkout: resolveCoreCheckout(split.comfyuiDir),
+    schema,
+    desktopFlagArgs: [],
+    betaEnabled,
+    commits: {
+      fetch: false,
+      quiet: true,
+      // Local merge-base answers in milliseconds; a repository slow enough to need the launch's
+      // full budget would hold the settings view, so it gets no pill instead.
+      budgetMs: PREVIEW_ANCESTRY_BUDGET_MS,
+      avoidPygit2: true,
+      onIncomplete: () => {
+        incomplete = true
+      }
+    }
+  })
+  return incomplete ? null : coreBetaArgViews(built.beta.applied)
 }
 
 /** Put each record in the on-disk log (bug reports) and the user-visible output. */
@@ -1151,84 +1303,53 @@ async function runLaunch(
   const launchCmd = launchCmdRaw
 
   // Filter unsupported args, then inject desktop-managed feature flags.
-  if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {
-    const sIdx = launchCmd.args.indexOf('-s')
-    if (sIdx !== -1 && sIdx + 1 < launchCmd.args.length) {
-      const mainPyRel = launchCmd.args[sIdx + 1]!
-      const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
-      const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
-      const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
-      const userArgs = launchCmd.args.slice(sIdx + 2)
-      const comfyuiDir = path.dirname(mainPyAbs)
-      // Read here rather than reused from `revision` above: that one falls back to the
-      // record when HEAD is unreadable, which is the very disagreement being checked for.
-      const checkout = resolveCoreCheckout(comfyuiDir)
-      coreCommit = launchedCoreCommit(inst, checkout)
-      // Take ownership of the array before anything downstream mutates it in place:
-      // `applyStorageLaunchArgs` pushes onto `launchCmd.args`, and when discovery fails there is
-      // no `built.args` to replace it, so those pushes would otherwise reach the array the
-      // source handed us. Same values either way — this is about aliasing, not content.
-      launchCmd.args = [...launchCmd.args]
-      try {
-        const schema = await getComfyArgsSchema(
-          launchCmd.cmd,
+  const split = splitLaunchArgs(launchCmd, inst)
+  if (split) {
+    const { cmd, cwd, mainPyAbs, revision, comfyuiDir } = split
+    // Read here rather than reused from `revision` above: that one falls back to the
+    // record when HEAD is unreadable, which is the very disagreement being checked for.
+    const checkout = resolveCoreCheckout(comfyuiDir)
+    coreCommit = launchedCoreCommit(inst, checkout)
+    // Take ownership of the array before anything downstream mutates it in place:
+    // `applyStorageLaunchArgs` pushes onto `launchCmd.args`, and when discovery fails there is
+    // no `built.args` to replace it, so those pushes would otherwise reach the array the
+    // source handed us. Same values either way — this is about aliasing, not content.
+    launchCmd.args = [...split.prefixArgs, ...split.userArgs]
+    try {
+      const schema = await getComfyArgsSchema(cmd, mainPyAbs, cwd, installationId, revision)
+      // Skip when the discovery flag is absent (avoids a pointless python spawn).
+      const desktopFlagArgs: string[] = []
+      if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
+        const registry = await getComfyFeatureFlagRegistry(
+          cmd,
           mainPyAbs,
-          launchCmd.cwd,
+          cwd,
           installationId,
           revision
         )
-        // Skip when the discovery flag is absent (avoids a pointless python spawn).
-        const desktopFlagArgs: string[] = []
-        if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
-          const registry = await getComfyFeatureFlagRegistry(
-            launchCmd.cmd,
-            mainPyAbs,
-            launchCmd.cwd,
-            installationId,
-            revision
-          )
-          const flagEntries = Object.entries(
-            desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
-          )
-          for (const [key, value] of flagEntries) {
-            if (key in registry) {
-              desktopFlagArgs.push('--feature-flag', `${key}=${value}`)
-            }
+        const flagEntries = Object.entries(
+          desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
+        )
+        for (const [key, value] of flagEntries) {
+          if (key in registry) {
+            desktopFlagArgs.push('--feature-flag', `${key}=${value}`)
           }
         }
-
-        const betaFlags = await getCoreBetaGrantsAsync()
-        // Opted-out launches skip it: the checks can reach the network and could grant nothing.
-        const coreCommits = betaEnabled
-          ? await resolveCoreCommitState(
-              comfyuiDir,
-              checkout,
-              commitGrantShas(betaFlags, userArgs),
-              abort.signal
-            )
-          : NO_CORE_COMMITS
-        // The gate's version, not the display label: the `[core-beta]` log line and the
-        // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
-        // an install whose label is unverified they name the lower ancestry-proven release.
-        const gate = coreGateVersion(inst)
-        const built = buildLaunchArgs({
-          prefixArgs,
-          userArgs,
-          desktopFlagArgs,
-          schema,
-          betaFlags,
-          coreVersion: gate.semver,
-          coreVersionExact: gate.exact,
-          coreVersionVerified: gate.verified,
-          coreVersionCurrent: coreRecordCurrent(inst, checkout),
-          coreCommits,
-          betaEnabled
-        })
-        launchCmd.args = built.args
-        coreBeta = built.beta
-      } catch {
-        // Discovery failed; launch the user's own args without injecting managed flags.
       }
+
+      const built = await assembleCoreBetaArgs({
+        inst,
+        split,
+        checkout,
+        schema,
+        desktopFlagArgs,
+        betaEnabled,
+        commits: { signal: abort.signal }
+      })
+      launchCmd.args = built.args
+      coreBeta = built.beta
+    } catch {
+      // Discovery failed; launch the user's own args without injecting managed flags.
     }
   }
   // Schema/feature-flag discovery spawns Python and can take seconds; another
@@ -1458,6 +1579,7 @@ async function runLaunch(
         mode,
         installationName: inst.name,
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
+        coreBetaArgs: coreBetaArgViews(coreBeta.applied),
         flushTelemetry: () => {
           execTap.flushSummary()
           hwTap.flushSummary()
@@ -2144,6 +2266,7 @@ async function runLaunch(
       mode,
       installationName: inst.name,
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
+      coreBetaArgs: coreBetaArgViews(coreBeta.applied),
       flushTelemetry: () => {
         execTap.flushSummary()
         hwTap.flushSummary()

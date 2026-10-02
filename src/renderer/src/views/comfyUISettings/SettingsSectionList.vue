@@ -70,6 +70,8 @@ const emit = defineEmits<{
   'update-field': [field: DetailField, value: unknown]
   'run-action': [action: ActionDef]
   'open-args-page': [field: DetailField]
+  /** An args field just ran schema discovery; see `ArgsBuilderField`. */
+  'schema-discovered': []
   /** Open a filesystem path in the OS file manager; the host wires the IPC
    *  (`window.api.openPath` in the panel, the bridge in the title popup). */
   'open-path': [path: string]
@@ -391,6 +393,7 @@ function fieldOwnsLabel(field: DetailField): boolean {
               :installation-id="props.installationId"
               @open="emit('open-args-page', field)"
               @update="(f, v) => emit('update-field', f, v)"
+              @schema-discovered="emit('schema-discovered')"
             />
 
             <ChannelPicker

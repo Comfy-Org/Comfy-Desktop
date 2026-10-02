@@ -330,20 +330,24 @@ function commitShortfall(flag: CoreBetaCommitGrant, commits: CoreCommitState): s
     .join(' | ')
 }
 
-function versionGateOpen(core: CoreVersionState, hasVersionGrants: boolean): boolean {
+function versionGateOpen(
+  core: CoreVersionState,
+  hasVersionGrants: boolean,
+  log: (message: string) => void
+): boolean {
   const version = core.semver
   if (version === null) return false
   if (!core.current) {
     // Before `verified`, which once the checkout has moved is a true statement about the wrong
     // commit — reporting that instead would name the less useful of the two faults.
     if (hasVersionGrants)
-      console.log(`[core-beta] refused: base ${version} from a record the checkout contradicts`)
+      log(`[core-beta] refused: base ${version} from a record the checkout contradicts`)
     return false
   }
   if (!core.verified) {
     // Echoed for the same reason as the per-flag windows below: this refusal drops grants an
     // operator can see in the payload, so it must not be silent.
-    if (hasVersionGrants) console.log(`[core-beta] refused: base ${version} not verified`)
+    if (hasVersionGrants) log(`[core-beta] refused: base ${version} not verified`)
     return false
   }
   return true
@@ -389,13 +393,18 @@ export function selectCoreBetaGrantArgs(
   betaEnabled: boolean,
   userArgs: readonly string[],
   commits: CoreCommitState = NO_CORE_COMMITS,
-  withheld?: string[]
+  withheld?: string[],
+  /** Drop the per-entry `[core-beta] window`/`commits` log lines, for a display-only resolution
+   *  that runs on every settings refresh. The selection itself is unchanged. */
+  quiet = false
 ): CoreBetaGrant[] {
   if (betaEnabled !== true) return []
+  const log = quiet ? () => {} : (message: string) => console.log(message)
   const version = core.semver
   const versionOpen = versionGateOpen(
     core,
-    flags.some((flag) => !isCommitGrant(flag))
+    flags.some((flag) => !isCommitGrant(flag)),
+    log
   )
   const presentArgs = new Set(userArgs)
   const selected: CoreBetaGrant[] = []
@@ -407,7 +416,7 @@ export function selectCoreBetaGrantArgs(
       const ranges = flag.commitRanges.map(formatCommitRange).join(' | ')
       const head = commits.head === null ? 'none' : commits.head.slice(0, 12)
       shortfall = commitShortfall(flag, commits)
-      console.log(
+      log(
         `[core-beta] commits ${arg}: ${ranges} head=${head} in-range=${shortfall === null ? 'yes' : 'no'}`
       )
     } else {
@@ -417,7 +426,7 @@ export function selectCoreBetaGrantArgs(
           maxCoreVersion === undefined
             ? `>=${minCoreVersion}`
             : `>=${minCoreVersion} <${maxCoreVersion}`
-        console.log(`[core-beta] window ${arg}: ${window} version=${version} exact=${core.exact}`)
+        log(`[core-beta] window ${arg}: ${window} version=${version} exact=${core.exact}`)
       }
       shortfall = versionShortfall(flag, core, versionOpen)
     }
