@@ -227,6 +227,7 @@ import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
+import { hashPath } from '../../dbLocationTelemetry'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
@@ -1223,6 +1224,77 @@ describe('core beta report placement', () => {
     expect(applied?.properties).toMatchObject({ core_commit: head, core_version_label: 'v0.3.81' })
     const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
     expect(boot?.properties).toMatchObject({ core_commit: head, core_version_label: 'v0.3.81' })
+  })
+
+  describe('database location on boot_started', () => {
+    const userDir = path.join(os.tmpdir(), 'db-location-user')
+
+    beforeEach(() => {
+      // Keep the hash key out of a real Desktop config dir on Linux.
+      vi.stubEnv('XDG_CONFIG_HOME', path.join(installDir, 'config'))
+      launchHarness.schemaNames = ['listen', 'user-directory', 'database-url']
+      launchHarness.waitForPort = async () => {}
+    })
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
+      telemetry.setConsentState('undecided')
+    })
+
+    const launchWith = async (id: string, extraArgs: string[] = []) => {
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen', ...extraArgs],
+        cwd: installDir,
+        skipPortWait: false,
+        port: 48234
+      }
+      await handleLaunch(ctxFor(id))
+      return events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')?.properties
+    }
+
+    it('reports it as keyed hashes only', async () => {
+      const props = await launchWith('harness-db-location')
+
+      const comfy = path.join(installDir, 'ComfyUI')
+      expect(props).toMatchObject({
+        db_path_hash: hashPath(path.join(comfy, 'user', 'comfyui.db')),
+        user_dir_hash: hashPath(path.join(comfy, 'user')),
+        base_dir_hash: hashPath(comfy),
+        db_url_source: 'install_local'
+      })
+      expect(props?.['db_path_hash']).toMatch(/^[0-9a-f]{16}$/)
+      expect(JSON.stringify(props)).not.toContain(installDir)
+    })
+
+    it('sends no database hash for a core without a database', async () => {
+      launchHarness.schemaNames = ['listen']
+      const props = await launchWith('harness-db-location-nodb')
+
+      expect(props?.['db_path_hash']).toBeNull()
+      expect(props?.['base_dir_hash']).toBe(hashPath(path.join(installDir, 'ComfyUI')))
+    })
+
+    it("reads the core's default from its record only while the record matches the checkout", async () => {
+      // The harness record sits exactly on v0.3.81: the fixed `<ComfyUI>/user` default.
+      const fixedDefault = hashPath(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db'))
+      const current = await launchWith('harness-db-location-current', ['--user-directory', userDir])
+      expect(current?.['db_path_hash']).toBe(fixedDefault)
+
+      events = []
+      gitInitComfyUI() // HEAD now contradicts the recorded commit
+      const stale = await launchWith('harness-db-location-stale', ['--user-directory', userDir])
+      expect(stale?.['db_path_hash']).toBeNull()
+      expect(stale?.['user_dir_hash']).toBe(hashPath(userDir))
+    })
+
+    it('computes nothing for a user who declined telemetry', async () => {
+      telemetry.setConsentState('denied')
+      const props = await launchWith('harness-db-location-denied')
+
+      expect(props).not.toHaveProperty('db_url_source')
+      expect(props).not.toHaveProperty('db_path_hash')
+    })
   })
 
   it('launches a legacy record whose version carries no commit', async () => {

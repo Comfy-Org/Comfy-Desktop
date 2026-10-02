@@ -101,6 +101,7 @@ import {
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
+import { dbLocationProps, defaultDbLayout } from '../../dbLocationTelemetry'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -769,6 +770,10 @@ async function runLaunch(
   // records and the beta telemetry - all after assembly, never before.
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
   let coreCommit: string | null = null
+  // What the location telemetry may assume about the core: whether its version record matches
+  // the live checkout, and whether it has a database at all (null when discovery failed).
+  let coreRecordIsCurrent = false
+  let coreHasDatabase: boolean | null = null
   // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
   // label must describe the same record as the `core_version` sent beside it.
   const coreVersionLabel = (): string | null =>
@@ -1164,6 +1169,7 @@ async function runLaunch(
       // record when HEAD is unreadable, which is the very disagreement being checked for.
       const checkout = resolveCoreCheckout(comfyuiDir)
       coreCommit = launchedCoreCommit(inst, checkout)
+      coreRecordIsCurrent = coreRecordCurrent(inst, checkout)
       // Take ownership of the array before anything downstream mutates it in place:
       // `applyStorageLaunchArgs` pushes onto `launchCmd.args`, and when discovery fails there is
       // no `built.args` to replace it, so those pushes would otherwise reach the array the
@@ -1177,6 +1183,7 @@ async function runLaunch(
           installationId,
           revision
         )
+        coreHasDatabase = schema.knownFlags.has('database-url')
         // Skip when the discovery flag is absent (avoids a pointless python spawn).
         const desktopFlagArgs: string[] = []
         if (schema.knownFlags.has('feature-flag') && schema.knownFlags.has('list-feature-flags')) {
@@ -1831,6 +1838,21 @@ async function runLaunch(
     }
   }
 
+  // Where this launch's database, user and base directories resolve to, as keyed hashes for
+  // `boot_started`. Computed from the final spawn args; retries don't change them. Skipped when
+  // telemetry is declined, so no key is created for a user whose events are all dropped.
+  const dbLocation =
+    telemetry.getConsentState() === 'denied'
+      ? {}
+      : dbLocationProps({
+          cwd: launchCmd.cwd,
+          args: launchCmd.args,
+          layout: coreRecordIsCurrent ? defaultDbLayout(inst) : null,
+          hasDatabase: coreHasDatabase,
+          adoptedBaseDir:
+            inst.adopted === true ? (inst.adoptedBaseDir as string | undefined) : undefined
+        })
+
   const PORT_RETRY_MAX = 3
   const REBOOT_RETRY_MAX = 5
   let portRetries = 0
@@ -1886,7 +1908,8 @@ async function runLaunch(
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries,
       port: launchCmd.port ?? null,
-      port_bumped_from: portBumpedFrom
+      port_bumped_from: portBumpedFrom,
+      ...dbLocation
     })
     // Begin (re)buffering per-phase timings for THIS attempt. On a port /
     // reboot retry this resets so the buffer reflects the attempt that

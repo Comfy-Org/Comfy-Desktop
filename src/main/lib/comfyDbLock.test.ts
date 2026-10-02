@@ -11,6 +11,7 @@ import {
   databaseCandidates,
   identifyDbLockHolder,
   isDbLockFailure,
+  resolveComfyPaths,
   runsMainPy
 } from './comfyDbLock'
 
@@ -54,6 +55,65 @@ describe('databaseCandidates', () => {
       []
     )
     expect(databaseCandidates(cwd, ['--database-url', 'postgresql://x'])).toEqual([])
+  })
+
+  it('reads a repeated flag as ComfyUI does: the last one wins', () => {
+    const pinned = path.resolve('/legacy/user')
+    const mine = path.resolve('/mine/user')
+    expect(
+      databaseCandidates(cwd, ['-s', main, '--user-directory', pinned, `--user-directory=${mine}`])
+    ).toEqual([path.join(mine, 'comfyui.db'), path.join(cwd, 'ComfyUI', 'user', 'comfyui.db')])
+  })
+})
+
+describe('resolveComfyPaths', () => {
+  const cwd = path.resolve('/installs/one')
+  const main = path.join('ComfyUI', 'main.py')
+  const comfy = path.join(cwd, 'ComfyUI')
+
+  it('defaults base and user to the ComfyUI folder', () => {
+    expect(resolveComfyPaths(cwd, ['-s', main], null)).toEqual({
+      baseDir: comfy,
+      userDir: path.join(comfy, 'user'),
+      dbPath: path.join(comfy, 'user', 'comfyui.db')
+    })
+  })
+
+  it('derives the user directory from --base-directory, relative to the launch folder', () => {
+    expect(resolveComfyPaths(cwd, ['-s', main, '--base-directory', 'data'], 'user_dir')).toEqual({
+      baseDir: path.join(cwd, 'data'),
+      userDir: path.join(cwd, 'data', 'user'),
+      dbPath: path.join(cwd, 'data', 'user', 'comfyui.db')
+    })
+  })
+
+  it("picks the default database by the core's layout when the two locations differ", () => {
+    const args = ['-s', main, '--user-directory', path.resolve('/data/user')]
+    expect(resolveComfyPaths(cwd, args, 'user_dir')?.dbPath).toBe(
+      path.resolve('/data/user/comfyui.db')
+    )
+    expect(resolveComfyPaths(cwd, args, 'comfy_dir')?.dbPath).toBe(
+      path.join(comfy, 'user', 'comfyui.db')
+    )
+    expect(resolveComfyPaths(cwd, args, null)?.dbPath).toBeNull()
+  })
+
+  it('takes a sqlite --database-url as given, relative to the launch folder', () => {
+    expect(
+      resolveComfyPaths(cwd, ['-s', main, '--database-url', 'sqlite:///db/x.db'], null)
+    ).toEqual({
+      baseDir: comfy,
+      userDir: path.join(comfy, 'user'),
+      dbPath: path.join(cwd, 'db', 'x.db')
+    })
+    expect(
+      resolveComfyPaths(cwd, ['-s', main, '--database-url=postgresql://x'], 'user_dir')?.dbPath
+    ).toBeNull()
+  })
+
+  it('has no answer without a main.py to anchor on', () => {
+    expect(resolveComfyPaths(cwd, ['--listen'], 'user_dir')).toBeNull()
+    expect(resolveComfyPaths(cwd, ['-s'], 'user_dir')).toBeNull()
   })
 })
 
