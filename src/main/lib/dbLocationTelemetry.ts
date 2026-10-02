@@ -1,6 +1,7 @@
 /**
  * Where a launched ComfyUI keeps its database, user directory and base directory, as telemetry
- * may carry it: keyed hashes only, never a path.
+ * may carry it: keyed hashes, and a path relative to a folder Desktop knows that keeps only fixed
+ * folder names. Never a path a user named.
  *
  * Two installs that share one asset database interfere (one install's startup prune marks the
  * other's rows missing), and nothing else in telemetry can tell that two launches opened the
@@ -110,12 +111,80 @@ export function defaultDbLayout(inst: InstallationRecord): DefaultDbLayout {
   return null
 }
 
+/** The answer for a location under no known root, or with any segment that is not fixed. */
+export const OUTSIDE_DEFAULT = 'outside_default'
+
+/** Folder names ComfyUI and Desktop choose, never the user; nothing else is ever sent. */
+const FIXED_SEGMENTS = ['ComfyUI', 'user', 'comfyui.db']
+
+/** Folders Desktop knows, against which a location can be named without naming the user. */
+export interface LocationRoots {
+  /** Parents of installs, whose child folder is named after the user's install name. */
+  installRoots: readonly (string | undefined)[]
+  /** Install folders themselves (the launching install's). */
+  installDirs: readonly (string | undefined)[]
+  /** Legacy Desktop base folders: its default, and an adopted install's own. */
+  legacyRoots: readonly (string | undefined)[]
+}
+
+/**
+ * A location as a readable path relative to the deepest known root, e.g.
+ * `<install-root>/<install>/ComfyUI/user/comfyui.db`. The install folder is always `<install>`
+ * (it is the user's install name), and every other segment must be a fixed name, or the whole
+ * answer is {@link OUTSIDE_DEFAULT}. Null only when there is no location to describe.
+ */
+export function relativeLocation(
+  p: string | null,
+  roots: LocationRoots,
+  platform: NodeJS.Platform = process.platform
+): string | null {
+  if (!p) return null
+  const target = canonicalPath(p, platform)
+  const anchors = [
+    ...roots.installRoots.map((root) => ({ root, label: ['<install-root>'], named: true })),
+    ...roots.installDirs.map((root) => ({
+      root,
+      label: ['<install-root>', '<install>'],
+      named: false
+    })),
+    ...roots.legacyRoots.map((root) => ({ root, label: ['<legacy-root>'], named: false }))
+  ]
+  let best: { rootLength: number; label: string[]; rest: string[]; named: boolean } | null = null
+  for (const anchor of anchors) {
+    if (!anchor.root) continue
+    const root = canonicalPath(anchor.root, platform)
+    const prefix = root.endsWith('/') ? root : `${root}/`
+    if (target !== root && !target.startsWith(prefix)) continue
+    if (best && best.rootLength >= root.length) continue
+    const rest = target === root ? [] : target.slice(prefix.length).split('/')
+    best = { rootLength: root.length, label: anchor.label, rest, named: anchor.named }
+  }
+  if (!best) return OUTSIDE_DEFAULT
+  const out = [...best.label]
+  const rest = [...best.rest]
+  if (best.named && rest.length > 0) {
+    rest.shift()
+    out.push('<install>')
+  }
+  for (const segment of rest) {
+    const fixed = FIXED_SEGMENTS.find(
+      (f) => (platform === 'win32' ? f.toLowerCase() : f) === segment
+    )
+    if (!fixed) return OUTSIDE_DEFAULT
+    out.push(fixed)
+  }
+  return out.join('/')
+}
+
 export type DbUrlSource = 'install_local' | 'adopted_legacy' | 'user_override' | 'unknown'
 
 export interface DbLocationProps {
   db_path_hash: string | null
   user_dir_hash: string | null
   base_dir_hash: string | null
+  db_path_rel: string | null
+  user_dir_rel: string | null
+  base_dir_rel: string | null
   db_url_source: DbUrlSource
 }
 
@@ -138,6 +207,7 @@ export function dbLocationProps(input: {
    *  its args could not be discovered. Only `true` lets a database hash out. */
   hasDatabase: boolean | null
   adoptedBaseDir: string | undefined
+  roots: LocationRoots
 }): DbLocationProps {
   const paths =
     input.cwd && input.args ? resolveComfyPaths(input.cwd, input.args, input.layout) : null
@@ -146,6 +216,9 @@ export function dbLocationProps(input: {
       db_path_hash: null,
       user_dir_hash: null,
       base_dir_hash: null,
+      db_path_rel: null,
+      user_dir_rel: null,
+      base_dir_rel: null,
       db_url_source: 'unknown'
     }
   }
@@ -160,10 +233,14 @@ export function dbLocationProps(input: {
       : LOCATION_FLAGS.some((f) => hasFlag(args, f))
         ? 'user_override'
         : 'install_local'
+  const dbPath = input.hasDatabase === true ? paths.dbPath : null
   return {
-    db_path_hash: input.hasDatabase === true ? hashPath(paths.dbPath) : null,
+    db_path_hash: hashPath(dbPath),
     user_dir_hash: hashPath(paths.userDir),
     base_dir_hash: hashPath(paths.baseDir),
+    db_path_rel: relativeLocation(dbPath, input.roots),
+    user_dir_rel: relativeLocation(paths.userDir, input.roots),
+    base_dir_rel: relativeLocation(paths.baseDir, input.roots),
     db_url_source: source
   }
 }

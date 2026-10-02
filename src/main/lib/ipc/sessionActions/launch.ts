@@ -101,7 +101,8 @@ import {
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
-import { dbLocationProps, defaultDbLayout } from '../../dbLocationTelemetry'
+import { dbLocationProps, defaultDbLayout, type DbLocationProps } from '../../dbLocationTelemetry'
+import { defaultInstallDir, legacyDesktopDefaultBase } from '../../paths'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -1838,20 +1839,31 @@ async function runLaunch(
     }
   }
 
-  // Where this launch's database, user and base directories resolve to, as keyed hashes for
-  // `boot_started`. Computed from the final spawn args; retries don't change them. Only under
-  // granted consent: `capture` drops the event otherwise, so no key is created for nothing.
-  const dbLocation =
-    telemetry.getConsentState() !== 'granted'
-      ? {}
-      : dbLocationProps({
-          cwd: launchCmd.cwd,
-          args: launchCmd.args,
-          layout: coreRecordIsCurrent ? defaultDbLayout(inst) : null,
-          hasDatabase: coreHasDatabase,
-          adoptedBaseDir:
-            inst.adopted === true ? (inst.adoptedBaseDir as string | undefined) : undefined
-        })
+  // Where this launch's database, user and base directories resolve to, for `boot_started`.
+  // Computed from the final spawn args; retries don't change them. Only under granted consent:
+  // `capture` drops the event otherwise, so no key is created for nothing. Telemetry must never
+  // fail a launch, and a throw here would skip the launch cleanup below.
+  const adoptedBaseDir =
+    inst.adopted === true ? (inst.adoptedBaseDir as string | undefined) : undefined
+  let dbLocation: Partial<DbLocationProps> = {}
+  try {
+    if (telemetry.getConsentState() === 'granted') {
+      dbLocation = dbLocationProps({
+        cwd: launchCmd.cwd,
+        args: launchCmd.args,
+        layout: coreRecordIsCurrent ? defaultDbLayout(inst) : null,
+        hasDatabase: coreHasDatabase,
+        adoptedBaseDir,
+        roots: {
+          installRoots: [defaultInstallDir()],
+          installDirs: [inst.installPath],
+          legacyRoots: [legacyDesktopDefaultBase(), adoptedBaseDir]
+        }
+      })
+    }
+  } catch (err) {
+    console.warn('[launch] database location for telemetry unavailable:', err)
+  }
 
   const PORT_RETRY_MAX = 3
   const REBOOT_RETRY_MAX = 5

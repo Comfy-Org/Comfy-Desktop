@@ -190,3 +190,23 @@ describe('windows system-drive defaults', () => {
     expect(JSON.parse(fs.readFileSync(markerPath, 'utf-8'))).toEqual({ mode: 'local-appdata' })
   })
 })
+
+describe('legacyDesktopDefaultBase', () => {
+  const documents = 'C:\\Users\\Ada\\OneDrive\\Documents'
+
+  beforeEach(() => {
+    vi.doMock('electron', () => ({ app: { getPath: () => documents } }))
+  })
+
+  it('drops a OneDrive segment on Windows, as the legacy app did', async () => {
+    stubPlatform('win32')
+    const { legacyDesktopDefaultBase } = await loadPaths()
+    expect(legacyDesktopDefaultBase()).toBe(path.join('C:\\Users\\Ada\\Documents', 'ComfyUI'))
+  })
+
+  it('keeps Documents as-is elsewhere', async () => {
+    stubPlatform('darwin')
+    const { legacyDesktopDefaultBase } = await loadPaths()
+    expect(legacyDesktopDefaultBase()).toBe(path.join(documents, 'ComfyUI'))
+  })
+})

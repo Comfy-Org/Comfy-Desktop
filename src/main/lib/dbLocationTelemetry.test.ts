@@ -12,7 +12,9 @@ import {
   canonicalPath,
   dbLocationProps,
   defaultDbLayout,
-  hashPath
+  hashPath,
+  relativeLocation,
+  type LocationRoots
 } from './dbLocationTelemetry'
 
 let tmp: string
@@ -132,14 +134,22 @@ describe('dbLocationProps', () => {
     '--database-url',
     `sqlite:///${path.join(legacy, 'user', 'comfyui.db')}`
   ]
+  const roots: LocationRoots = {
+    installRoots: [path.dirname(cwd)],
+    installDirs: [cwd],
+    legacyRoots: [legacy]
+  }
   const props = (args: string[] | undefined, adoptedBaseDir?: string) =>
-    dbLocationProps({ cwd, args, layout: null, hasDatabase: true, adoptedBaseDir })
+    dbLocationProps({ cwd, args, layout: null, hasDatabase: true, adoptedBaseDir, roots })
 
   it('hashes ComfyUI defaults for a managed install', () => {
     expect(props(['-s', main, '--listen'])).toEqual({
       db_path_hash: hashPath(path.join(comfy, 'user', 'comfyui.db')),
       user_dir_hash: hashPath(path.join(comfy, 'user')),
       base_dir_hash: hashPath(comfy),
+      db_path_rel: '<install-root>/<install>/ComfyUI/user/comfyui.db',
+      user_dir_rel: '<install-root>/<install>/ComfyUI/user',
+      base_dir_rel: '<install-root>/<install>/ComfyUI',
       db_url_source: 'install_local'
     })
   })
@@ -149,6 +159,9 @@ describe('dbLocationProps', () => {
       db_path_hash: hashPath(path.join(legacy, 'user', 'comfyui.db')),
       user_dir_hash: hashPath(path.join(legacy, 'user')),
       base_dir_hash: hashPath(legacy),
+      db_path_rel: '<legacy-root>/user/comfyui.db',
+      user_dir_rel: '<legacy-root>/user',
+      base_dir_rel: '<legacy-root>',
       db_url_source: 'adopted_legacy'
     })
   })
@@ -159,9 +172,11 @@ describe('dbLocationProps', () => {
       args: ['-s', main, ...adoptPins.slice(0, 4)],
       layout: null,
       hasDatabase: false,
-      adoptedBaseDir: legacy
+      adoptedBaseDir: legacy,
+      roots
     })
     expect(p.db_path_hash, 'no database to hash').toBeNull()
+    expect(p.db_path_rel).toBeNull()
     expect(p.user_dir_hash).toBe(hashPath(path.join(legacy, 'user')))
     expect(p.db_url_source).toBe('adopted_legacy')
   })
@@ -170,6 +185,7 @@ describe('dbLocationProps', () => {
     const mine = path.join(path.resolve('/'), 'mine.db')
     const p = props(['-s', main, ...adoptPins, '--database-url', `sqlite:///${mine}`], legacy)
     expect(p.db_path_hash).toBe(hashPath(mine))
+    expect(p.db_path_rel).toBe('outside_default')
     expect(p.db_url_source).toBe('user_override')
   })
 
@@ -180,9 +196,11 @@ describe('dbLocationProps', () => {
         args: ['-s', main],
         layout: null,
         hasDatabase,
-        adoptedBaseDir: undefined
+        adoptedBaseDir: undefined,
+        roots
       })
       expect(p.db_path_hash).toBeNull()
+      expect(p.db_path_rel).toBeNull()
       expect(p.base_dir_hash).toBe(hashPath(comfy))
     }
   })
@@ -219,7 +237,8 @@ describe('dbLocationProps', () => {
         args,
         layout: 'user_dir',
         hasDatabase: true,
-        adoptedBaseDir: undefined
+        adoptedBaseDir: undefined,
+        roots
       })
     ).toEqual(expect.objectContaining({ db_path_hash: hashPath(path.join(userDir, 'comfyui.db')) }))
   })
@@ -229,8 +248,85 @@ describe('dbLocationProps', () => {
       db_path_hash: null,
       user_dir_hash: null,
       base_dir_hash: null,
+      db_path_rel: null,
+      user_dir_rel: null,
+      base_dir_rel: null,
       db_url_source: 'unknown'
     })
     expect(props(undefined).db_url_source).toBe('unknown')
+  })
+})
+
+describe('relativeLocation', () => {
+  const top = path.resolve('/')
+  const installRoot = path.join(top, 'Users', 'Ada Lovelace', 'ComfyUI-Installs')
+  const legacyRoot = path.join(top, 'Users', 'Ada Lovelace', 'Documents', 'ComfyUI')
+  const roots: LocationRoots = {
+    installRoots: [installRoot],
+    installDirs: [undefined],
+    legacyRoots: [legacyRoot, undefined]
+  }
+
+  it('names the install folder <install> whatever the user called it', () => {
+    expect(
+      relativeLocation(
+        path.join(installRoot, 'My Secret Project', 'ComfyUI', 'user', 'comfyui.db'),
+        roots
+      )
+    ).toBe('<install-root>/<install>/ComfyUI/user/comfyui.db')
+    expect(relativeLocation(path.join(installRoot, 'Ada (2)'), roots)).toBe(
+      '<install-root>/<install>'
+    )
+    expect(relativeLocation(installRoot, roots)).toBe('<install-root>')
+  })
+
+  it('keeps only fixed names under the legacy Desktop folder', () => {
+    expect(relativeLocation(path.join(legacyRoot, 'user', 'comfyui.db'), roots)).toBe(
+      '<legacy-root>/user/comfyui.db'
+    )
+  })
+
+  it('sends outside_default for a location under no known root', () => {
+    expect(relativeLocation(path.join(top, 'Users', 'Ada Lovelace', 'comfyui.db'), roots)).toBe(
+      'outside_default'
+    )
+    expect(relativeLocation(`${installRoot}-other`, roots), 'a sibling sharing the prefix').toBe(
+      'outside_default'
+    )
+  })
+
+  it('sends outside_default for any segment that is not a fixed name', () => {
+    expect(
+      relativeLocation(path.join(installRoot, 'inst', 'ComfyUI', 'backups', 'comfyui.db'), roots)
+    ).toBe('outside_default')
+    expect(relativeLocation(path.join(legacyRoot, 'user', 'mine.db'), roots)).toBe(
+      'outside_default'
+    )
+  })
+
+  it("anchors on the deepest root, so the launching install's folder is <install> too", () => {
+    const custom = path.join(top, 'D', 'Ada stuff', 'comfy')
+    expect(
+      relativeLocation(path.join(custom, 'ComfyUI', 'user'), { ...roots, installDirs: [custom] })
+    ).toBe('<install-root>/<install>/ComfyUI/user')
+  })
+
+  it('prefers a legacy folder nested inside the install root', () => {
+    const nested = path.join(installRoot, 'old desktop')
+    expect(
+      relativeLocation(path.join(nested, 'user', 'comfyui.db'), { ...roots, legacyRoots: [nested] })
+    ).toBe('<legacy-root>/user/comfyui.db')
+  })
+
+  it('matches fixed names case-insensitively on Windows only', () => {
+    const p = path.join(installRoot, 'Inst', 'comfyui', 'User', 'ComfyUI.db')
+    expect(relativeLocation(p, roots, 'win32')).toBe(
+      '<install-root>/<install>/ComfyUI/user/comfyui.db'
+    )
+    expect(relativeLocation(p, roots, 'linux')).toBe('outside_default')
+  })
+
+  it('has nothing to say without a location', () => {
+    expect(relativeLocation(null, roots)).toBeNull()
   })
 })

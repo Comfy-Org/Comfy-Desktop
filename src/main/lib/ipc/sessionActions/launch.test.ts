@@ -1267,6 +1267,9 @@ describe('core beta report placement', () => {
         db_path_hash: hashPath(path.join(comfy, 'user', 'comfyui.db')),
         user_dir_hash: hashPath(path.join(comfy, 'user')),
         base_dir_hash: hashPath(comfy),
+        db_path_rel: '<install-root>/<install>/ComfyUI/user/comfyui.db',
+        user_dir_rel: '<install-root>/<install>/ComfyUI/user',
+        base_dir_rel: '<install-root>/<install>/ComfyUI',
         db_url_source: 'install_local'
       })
       expect(props?.['db_path_hash']).toMatch(/^[0-9a-f]{16}$/)
@@ -1295,6 +1298,18 @@ describe('core beta report placement', () => {
       expect(stale?.['user_dir_hash']).toBe(hashPath(userDir))
     })
 
+    it('launches without the fields when computing them throws', async () => {
+      // A directory on the key's temp name makes the cleanup of a failed key write throw.
+      fs.mkdirSync(path.join(`${keyFile()}.${process.pid}.tmp`, 'x'), { recursive: true })
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const props = await launchWith('harness-db-location-throws')
+
+      expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
+      expect(props, 'boot_started still fired').toBeDefined()
+      expect(props).not.toHaveProperty('db_url_source')
+    })
+
     it.each(['undecided', 'denied'] as const)(
       'computes nothing and creates no key while consent is %s',
       async (state) => {
@@ -1303,6 +1318,7 @@ describe('core beta report placement', () => {
 
         expect(props).not.toHaveProperty('db_url_source')
         expect(props).not.toHaveProperty('db_path_hash')
+        expect(props).not.toHaveProperty('db_path_rel')
         expect(fs.existsSync(keyFile())).toBe(false)
       }
     )
