@@ -22,7 +22,9 @@ import {
   installArtifact,
   buildLaunchSpec,
   launchArgsForManagerAnswer,
+  managerAllowedByGovernance,
   managerAllowedByPolicy,
+  readGovernance,
   venvPython,
   resolveModelManifest,
   normalizeSha256
@@ -31,6 +33,7 @@ import type {
   Artifact,
   ArtifactGpu,
   ArtifactOs,
+  Governance,
   InstallProgress,
   ModelManifest
 } from '../../comfybuilder'
@@ -71,19 +74,24 @@ const ENTRY_SWAP_MARKER = '.comfybuilder-entry-swap'
 const ACTIVE_CODE_MARKER = '.comfybuilder-active-code'
 const ROLLBACK_FIELD = 'comfybuilderRollback'
 /** Record field: false when the installed release's author turned
- *  ComfyUI-Manager off. Written once the release's environment has landed. */
+ *  ComfyUI-Manager off, or its governance policy is a custom-node allowlist.
+ *  Written once the release's environment has landed. */
 const MANAGER_ALLOWED_FIELD = 'comfybuilderManagerAllowed'
 
 /** The record fields that carry a release's manager answer: the answer itself
- *  (launch reads it) and the stored launch args rewritten to match it (the
- *  Startup Arguments field shows them). */
+ *  (launch reads it), the archive's governance policy if it carries one, and
+ *  the stored launch args rewritten to match (the Startup Arguments field shows
+ *  them). A release without a policy file clears `governance`. */
 function managerAnswerFields(
   installation: InstallationRecord,
   manifest: ModelManifest
 ): Record<string, unknown> {
-  const allowed = managerAllowedByPolicy(manifest.customNodePolicy)
+  const governance = readGovernance(installation.installPath) ?? undefined
+  const allowed =
+    managerAllowedByPolicy(manifest.customNodePolicy) && managerAllowedByGovernance(governance)
   return {
     [MANAGER_ALLOWED_FIELD]: allowed,
+    governance,
     launchArgs: launchArgsForManagerAnswer(
       (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS,
       allowed,
@@ -567,7 +575,8 @@ export const comfybuilder: SourcePlugin = {
       ),
       // Records written before this field existed have no answer; they keep
       // launching with the manager flag, as they always did.
-      managerAllowed: installation[MANAGER_ALLOWED_FIELD] !== false
+      managerAllowed: installation[MANAGER_ALLOWED_FIELD] !== false,
+      governance: installation.governance as Governance | undefined
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }

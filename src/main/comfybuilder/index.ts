@@ -29,10 +29,12 @@ export { resolveModelManifest } from './modelManifest'
 export {
   buildLaunchSpec,
   launchArgsForManagerAnswer,
+  managerAllowedByGovernance,
   managerAllowedByPolicy,
+  readGovernance,
   venvPython
 } from './launch'
-export type { LaunchOptions } from './launch'
+export type { Governance, LaunchOptions } from './launch'
 export type {
   Artifact,
   ArtifactGpu,

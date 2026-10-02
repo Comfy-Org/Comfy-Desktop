@@ -117,6 +117,14 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
     ...overrides
   }) as unknown as InstallationRecord
 
+/** Give an install directory a governed archive's policy file (signature unchecked). */
+function writePolicy(installPath: string, customNodeMode: string | null): void {
+  const file = path.join(installPath, 'ComfyUI', 'governance', 'policy.signed.json')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const payload = Buffer.from(JSON.stringify({ customNodeMode })).toString('base64url')
+  fs.writeFileSync(file, JSON.stringify({ schema: 1, payload, signature: 'sig' }))
+}
+
 function fakeTools(
   signal?: AbortSignal
 ): InstallTools & { sent: Array<{ phase: string; detail: unknown }> } {
@@ -294,6 +302,49 @@ describe('comfybuilder.install wiring', () => {
     expect(buildLaunchSpec).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ managerAllowed: expected })
+    )
+  })
+
+  it('records a governed allowlist and drops the manager flag even when the release said Yes', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-'))
+    try {
+      writePolicy(root, 'allowlist')
+      vi.mocked(resolveModelManifest).mockResolvedValueOnce({
+        models: [],
+        customNodePolicy: { mode: 'blocklist', list: [] }
+      } as never)
+      updateInstallation.mockClear()
+
+      await comfybuilder.install!(
+        record({ installPath: root, launchArgs: '--enable-manager --cpu' }),
+        fakeTools()
+      )
+
+      expect(updateInstallation).toHaveBeenCalledWith('i1', {
+        comfybuilderManagerAllowed: false,
+        governance: { kind: 'governed', customNodeMode: 'allowlist' },
+        launchArgs: '--cpu'
+      })
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('records no governance for an ordinary build', async () => {
+    updateInstallation.mockClear()
+    await comfybuilder.install!(record({ launchArgs: '--enable-manager --cpu' }), fakeTools())
+    const fields = updateInstallation.mock.calls[0]![1]
+    expect(fields.governance).toBeUndefined()
+    expect(fields.launchArgs).toBe('--enable-manager --cpu')
+  })
+
+  it('launches with the recorded governance', () => {
+    const governance = { kind: 'governed', customNodeMode: 'allowlist' }
+    vi.mocked(buildLaunchSpec).mockClear()
+    comfybuilder.getLaunchCommand!(record({ governance }))
+    expect(buildLaunchSpec).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ governance })
     )
   })
 
@@ -828,6 +879,38 @@ describe('comfybuilder update-comfyui', () => {
     // The environment is laid down for the NEW artifact, not the old one.
     const passed = vi.mocked(installArtifact).mock.calls[0]![0] as { artifact: { id: string } }
     expect(passed.artifact.id).toBe('art-9')
+  })
+
+  it.each([
+    ['records the policy of a release that carries one', true, null, 'allowlist'],
+    [
+      'clears the policy when the new release carries none',
+      false,
+      { kind: 'governed', customNodeMode: 'allowlist' },
+      undefined
+    ]
+  ])('%s', async (_name, governedRelease, recorded, expectedMode) => {
+    vi.mocked(resolveHostArtifactForVersion).mockResolvedValue({ artifact, version: 9 } as never)
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-update-'))
+    try {
+      if (governedRelease) writePolicy(root, 'allowlist')
+      const tools = actionTools()
+
+      await comfybuilder.handleAction(
+        'update-comfyui',
+        record({ installPath: root, governance: recorded ?? undefined }),
+        { version: 9 },
+        tools as never
+      )
+
+      const last = tools.updates.at(-1)!
+      expect(Object.keys(last)).toContain('governance')
+      expect(last.governance).toEqual(
+        expectedMode ? { kind: 'governed', customNodeMode: expectedMode } : undefined
+      )
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('restores the previous version when the install fails', async () => {

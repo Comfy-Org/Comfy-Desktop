@@ -257,6 +257,32 @@ describe('applyStorageLaunchArgs', () => {
     expect(state.manageModelFolders).toBe(false)
   })
 
+  it('never adds a model-paths config to a governed build', () => {
+    const shared = path.join(root, 'governed-shared')
+    fs.mkdirSync(shared, { recursive: true })
+    mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+    const launchCmd = makeLaunchCmd()
+
+    const state = applyStorageLaunchArgs(
+      makeInstall({
+        governance: { kind: 'governed', customNodeMode: 'blocklist' },
+        modelDirs: [path.join(root, 'governed-owned')]
+      }),
+      'governed',
+      launchCmd
+    )
+
+    expect(launchCmd.args).toEqual([
+      'main.py',
+      '--input-directory',
+      globalInput,
+      '--output-directory',
+      globalOutput
+    ])
+    expect(state.manageModelFolders).toBe(false)
+    expect(fs.existsSync(yamlPath('governed'))).toBe(false)
+  })
+
   it('falls back to the default input dir when the setting is empty', () => {
     mockSettings({ inputDir: '', outputDir: globalOutput, modelsDirs: [] })
     const launchCmd = makeLaunchCmd()
