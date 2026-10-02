@@ -665,3 +665,94 @@ describe('makeOpsFlag late results', () => {
     expect(fs.existsSync(flagsFilePath())).toBe(false)
   })
 })
+
+describe("makeOpsFlag lateValue: 'session'", () => {
+  function makeSessionFlag() {
+    return makeOpsFlag<'normal' | 'degraded' | 'disabled'>({
+      key: 'session-flag',
+      fallback: 'normal',
+      parse: (value) =>
+        value === 'degraded' || value === 'disabled' || value === 'normal' ? value : undefined,
+      lateValue: 'session'
+    })
+  }
+
+  const abandoned = (): unknown => ({ kind: 'unreachable', abandoned: true })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('applies a late value to later reads in the session, and writes nothing to disk', async () => {
+    const flag = makeSessionFlag()
+    getOpsFlagResult.mockResolvedValue(abandoned())
+    await flag.init({ distinctId: 'anon' })
+    expect(await flag.get()).toBe('normal')
+
+    lateCallback()?.(flagResult('disabled'))
+
+    expect(await flag.get()).toBe('disabled')
+    expect(fs.readdirSync(testConfigDir)).toEqual([])
+  })
+
+  it('ignores a late value from a fetch abandoned before a reset', async () => {
+    const flag = makeSessionFlag()
+    getOpsFlagResult.mockResolvedValue(abandoned())
+    await flag.init({ distinctId: 'anon' })
+    const stale = lateCallback()
+    flag._resetForTest()
+
+    stale?.(flagResult('disabled'))
+
+    expect(await flag.get()).toBe('normal')
+  })
+
+  it('getAllowingLate waits for a late answer, up to its cap', async () => {
+    vi.useFakeTimers()
+    const flag = makeSessionFlag()
+    getOpsFlagResult.mockResolvedValue(abandoned())
+    await flag.init({ distinctId: 'anon' })
+
+    const read = flag.getAllowingLate(5000)
+    await vi.advanceTimersByTimeAsync(3000)
+    lateCallback()?.(flagResult('degraded'))
+
+    expect(await read).toBe('degraded')
+  })
+
+  it('getAllowingLate gives up at the cap, and never waits again that session', async () => {
+    vi.useFakeTimers()
+    const flag = makeSessionFlag()
+    getOpsFlagResult.mockResolvedValue(abandoned())
+    await flag.init({ distinctId: 'anon' })
+
+    let settled = false
+    const read = flag.getAllowingLate(5000).then((v) => ((settled = true), v))
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await read).toBe('normal')
+
+    // The wait is spent: a second read answers without any timer advancing.
+    await expect(flag.getAllowingLate(5000)).resolves.toBe('normal')
+  })
+
+  it('getAllowingLate does not wait when nothing was abandoned', async () => {
+    vi.useFakeTimers()
+    const flag = makeSessionFlag()
+    getOpsFlagResult.mockResolvedValue(unreachable())
+    await flag.init({ distinctId: 'anon' })
+
+    await expect(flag.getAllowingLate(5000)).resolves.toBe('normal')
+  })
+
+  it('leaves flags without the option unchanged: no late callback, and no wait', async () => {
+    vi.useFakeTimers()
+    const flag = makeTestFlag()
+    getOpsFlagResult.mockResolvedValue(abandoned())
+    await flag.init({ distinctId: 'anon' })
+
+    expect(lateCallback()).toBeUndefined()
+    await expect(flag.getAllowingLate(5000)).resolves.toBe('normal')
+  })
+})

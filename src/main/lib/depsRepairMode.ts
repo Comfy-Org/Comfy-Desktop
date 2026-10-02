@@ -4,9 +4,10 @@
  * comma-separated string payload or value. Adopted installs repair after their
  * prompt, managed installs without asking; the rest only detect and report.
  * Names are trimmed and lowercased, unknown ones ignored; unset, unreachable,
- * empty or a malformed payload repairs nothing. Not persisted: each launch reads
- * the flag afresh, so an unreachable flag repairs nothing and an emergency
- * empty list (or deleting the flag) takes effect on the next launch.
+ * empty or a malformed payload repairs nothing. Never persisted: each Desktop
+ * start reads it afresh (unreachable repairs nothing), and an answer that misses
+ * the boot deadline still applies to later launches in that session. An
+ * emergency empty list, or deleting the flag, applies from the next start.
  */
 import type { FeatureFlagValue } from './telemetry'
 import { makeOpsFlag } from './opsFlag'
@@ -36,12 +37,21 @@ const flag = makeOpsFlag<DepsRepairFlag>({
   key: DEPS_REPAIR_MODE_FLAG_KEY,
   fallback: [],
   parse: parseDepsRepairKinds,
-  logLabel: 'deps-repair-mode'
+  logLabel: 'deps-repair-mode',
+  lateValue: 'session'
 })
 
 export const initDepsRepairMode = flag.init
 
 export const getDepsRepairModeAsync = flag.get
+
+/** How much longer a launch with drift waits for a boot fetch that missed its deadline. */
+export const DEPS_REPAIR_LATE_WAIT_MS = 5000
+
+/** For a launch that found drift: also waits for a late flag answer, once per session and
+ *  capped, since most sessions launch once and an answer that lands after it helps no one. */
+export const getDepsRepairModeForDrift = (): Promise<DepsRepairFlag> =>
+  flag.getAllowingLate(DEPS_REPAIR_LATE_WAIT_MS)
 
 /** @internal — exposed for tests. */
 export const _resetForTest = flag._resetForTest

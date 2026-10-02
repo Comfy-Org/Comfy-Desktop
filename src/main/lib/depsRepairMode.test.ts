@@ -1,15 +1,27 @@
 // Parsing and resolution of the requirements-repair install-kind list.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
 const getOpsFlagResult = vi.fn()
 vi.mock('./telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
 }))
 
+// Pinned to a temp dir so a regression that persisted this flag would be visible (and would not
+// land in the developer's own config).
+let testConfigDir = ''
+vi.mock('./paths', () => ({
+  configDir: () => testConfigDir
+}))
+
 import {
   initDepsRepairMode,
   getDepsRepairModeAsync,
+  getDepsRepairModeForDrift,
   parseDepsRepairKinds,
+  DEPS_REPAIR_LATE_WAIT_MS,
   DEPS_REPAIR_MODE_FLAG_KEY,
   _resetForTest
 } from './depsRepairMode'
@@ -25,6 +37,11 @@ const value = (v: unknown): unknown => ({ kind: 'value', value: v, payload: unde
 beforeEach(() => {
   _resetForTest()
   getOpsFlagResult.mockReset()
+  testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deps-repair-mode-'))
+})
+
+afterEach(() => {
+  fs.rmSync(testConfigDir, { recursive: true, force: true })
 })
 
 describe('parseDepsRepairKinds', () => {
@@ -87,15 +104,25 @@ describe('parseDepsRepairKinds', () => {
 })
 
 describe('depsRepairMode', () => {
-  it('reads deps_repair_mode fresh each launch, without persisting it', async () => {
+  /** A boot fetch that lost its deadline and is still in flight. */
+  async function bootLosingTheRace(): Promise<(result: unknown) => void> {
+    getOpsFlagResult.mockResolvedValue({ kind: 'unreachable', abandoned: true })
+    await initDepsRepairMode({ distinctId: 'anon' })
+    return getOpsFlagResult.mock.calls.at(-1)?.[3] as (result: unknown) => void
+  }
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('reads deps_repair_mode with a late-result callback', async () => {
     expect(DEPS_REPAIR_MODE_FLAG_KEY).toBe('deps_repair_mode')
     await resolveWithResult(value('adopted'))
-    // No late-result callback: a value that arrives after the deadline is not saved for later.
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       DEPS_REPAIR_MODE_FLAG_KEY,
       'anon',
       expect.any(Number),
-      undefined
+      expect.any(Function)
     )
   })
 
@@ -113,17 +140,59 @@ describe('depsRepairMode', () => {
     expect(await getDepsRepairModeAsync()).toEqual([])
   })
 
-  it('does not carry a fetched list into a later launch that cannot reach the flag', async () => {
+  it('applies a late answer to the next launch in the same session', async () => {
+    const late = await bootLosingTheRace()
+    expect(await getDepsRepairModeAsync()).toEqual([])
+
+    late({ kind: 'value', value: true, payload: ['adopted', 'managed'] })
+
+    expect(await getDepsRepairModeAsync()).toEqual(['adopted', 'managed'])
+  })
+
+  it.each([
+    ['an empty list', { kind: 'value', value: true, payload: [] }],
+    ['a disabled flag', { kind: 'value', value: false, payload: undefined }]
+  ])('applies a late revocation (%s)', async (_label, revocation) => {
+    const late = await bootLosingTheRace()
+    late(revocation)
+    expect(await getDepsRepairModeAsync()).toEqual([])
+  })
+
+  it('writes nothing to disk, in band or late', async () => {
+    await resolveWithResult(value('adopted'))
+    _resetForTest()
+    const late = await bootLosingTheRace()
+    late({ kind: 'value', value: true, payload: ['managed'] })
+    expect(fs.readdirSync(testConfigDir)).toEqual([])
+  })
+
+  it('starts from nothing again after a restart, whatever the last session read', async () => {
     expect(await resolveWithResult(value('adopted,managed'))).toEqual(['adopted', 'managed'])
     _resetForTest()
     expect(await resolveWithResult({ kind: 'unreachable' })).toEqual([])
   })
 
-  it('does not carry a fetched array payload into a later unreachable launch', async () => {
-    getOpsFlagResult.mockResolvedValue({ kind: 'value', value: true, payload: ['managed'] })
-    await initDepsRepairMode({ distinctId: 'anon' })
-    expect(await getDepsRepairModeAsync()).toEqual(['managed'])
-    _resetForTest()
-    expect(await resolveWithResult({ kind: 'unreachable' })).toEqual([])
+  it('a launch with drift waits for a slow flag (3 s) and repairs per the served list', async () => {
+    vi.useFakeTimers()
+    const late = await bootLosingTheRace()
+
+    const decided = getDepsRepairModeForDrift()
+    await vi.advanceTimersByTimeAsync(3000)
+    late({ kind: 'value', value: true, payload: ['managed'] })
+
+    expect(await decided).toEqual(['managed'])
+  })
+
+  it('a launch with drift gives up on a hung flag at the cap and repairs nothing', async () => {
+    vi.useFakeTimers()
+    await bootLosingTheRace()
+
+    let settled = false
+    const decided = getDepsRepairModeForDrift().then((v) => ((settled = true), v))
+    await vi.advanceTimersByTimeAsync(DEPS_REPAIR_LATE_WAIT_MS - 1)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await decided).toEqual([])
+    expect(DEPS_REPAIR_LATE_WAIT_MS).toBe(5000)
   })
 })
