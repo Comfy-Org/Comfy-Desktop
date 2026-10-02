@@ -91,14 +91,14 @@ export type DepsRepairOutcome =
  */
 export type DepsRepairMode = 'prompt' | 'auto' | 'off'
 
-/** Gated by the `deps_repair_mode` rollout scope: adopted installs ask first
- *  under `adopted` or `all`; managed installs repair without asking under `all`. */
+/** Gated by the `deps_repair_mode` list of install kinds: a listed adopted
+ *  install asks first, a listed managed install repairs without asking. */
 export function depsRepairPolicy(
   installation: InstallationRecord,
   flag: DepsRepairFlag
 ): DepsRepairMode {
-  if (installation.adopted === true) return flag === 'off' ? 'off' : 'prompt'
-  return flag === 'all' ? 'auto' : 'off'
+  if (installation.adopted === true) return flag.includes('adopted') ? 'prompt' : 'off'
+  return flag.includes('managed') ? 'auto' : 'off'
 }
 
 /** Mode `off`: log the drift and report it, without touching the venv. */

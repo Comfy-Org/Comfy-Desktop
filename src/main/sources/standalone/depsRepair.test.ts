@@ -987,14 +987,15 @@ describe('depsRepairPolicy', () => {
   const adopted = (): InstallationRecord => adoptedInstall([], 'blake3\n').inst
   const managed = (): InstallationRecord => managedInstall([], 'blake3\n').inst
 
-  // Unreachable and unrecognised flag values resolve to `off` before they get here
-  // (`depsRepairMode.test.ts`), so `off` covers them.
+  // Unreachable, empty and unknown flag values all resolve to `[]` before they get here
+  // (`depsRepairMode.test.ts`), so `[]` covers them.
   it.each([
-    ['off', 'off', 'off'],
-    ['adopted', 'prompt', 'off'],
-    ['all', 'prompt', 'auto']
+    [[], 'off', 'off'],
+    [['adopted'], 'prompt', 'off'],
+    [['managed'], 'off', 'auto'],
+    [['adopted', 'managed'], 'prompt', 'auto']
   ] as const)(
-    'under %s: adopted installs %s, managed installs %s',
+    'under %j: adopted installs %s, managed installs %s',
     (flag, forAdopted, forManaged) => {
       expect(depsRepairPolicy(adopted(), flag)).toBe(forAdopted)
       expect(depsRepairPolicy(managed(), flag)).toBe(forManaged)
