@@ -94,6 +94,8 @@ import { appendLog } from '../../logsBroadcast'
 import { reconcileManagerConfigForLaunch } from '../../managerConfigLaunch'
 import { recoverInterruptedComfyOp } from '../../opMarker'
 import { waitLaunchSpawnHold } from '../../e2eOverrides'
+import { trackExitWork } from '../../quitWait'
+import { isQuitInProgress } from '../../quit-state'
 import {
   holderIsInstall,
   resolvePriorProcess,
@@ -437,22 +439,32 @@ export function onProcessTerminated(
 ): void {
   let finished = false
   let fallbackTimer: NodeJS.Timeout | undefined
+  // From `'exit'` until the callback has run, a quit waits for it: the record clear and
+  // `comfyui.exited` happen there.
+  let handled!: () => void
+  const handledPromise = new Promise<void>((resolve) => {
+    handled = resolve
+  })
 
   const finish = (code: number | null, signal: NodeJS.Signals | null, pipesHeld: boolean): void => {
     if (finished) return
     finished = true
     if (fallbackTimer) clearTimeout(fallbackTimer)
     try {
-      void Promise.resolve(callback(code, signal, { pipesHeld })).catch((err) => {
-        console.error('Process termination callback failed:', err)
-      })
+      void Promise.resolve(callback(code, signal, { pipesHeld }))
+        .catch((err) => {
+          console.error('Process termination callback failed:', err)
+        })
+        .finally(handled)
     } catch (err) {
       console.error('Process termination callback failed:', err)
+      handled()
     }
   }
 
   proc.once('close', (code, signal) => finish(code, signal, false))
   proc.once('exit', (code, signal) => {
+    trackExitWork(handledPromise)
     if (finished) return
     fallbackTimer = setTimeout(() => finish(code, signal, true), PROCESS_CLOSE_GRACE_MS)
     fallbackTimer.unref()
@@ -721,6 +733,9 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   if (_runningSessions.has(sessionId)) {
     return { ok: false, message: i18n.t('errors.alreadyRunning') }
   }
+  // Quitting or installing an update: a ComfyUI started now would outlive the wait for the
+  // ones being stopped.
+  if (isQuitInProgress()) return { ok: false, cancelled: true }
   // No `_hasActiveLaunch` here: this guard, `_beginLaunch`, and runLaunch's
   // `_operationAborts.set` all run in one synchronous stretch, so a second
   // launch can never slip between them. Checking it would instead reject a
@@ -2263,7 +2278,10 @@ async function runLaunch(
         rebootModelCheckAbort = null
       }
 
-      if (pendingModelFolderRelaunch || checkRebootMarker(sessionPath)) {
+      // Never respawn while quitting: the new ComfyUI would outlive the quit's wait. The marker
+      // is still consumed, as before.
+      const relaunch = pendingModelFolderRelaunch || checkRebootMarker(sessionPath)
+      if (relaunch && !isQuitInProgress()) {
         const isModelRelaunch = pendingModelFolderRelaunch
         pendingModelFolderRelaunch = false
         if (!isModelRelaunch) {

@@ -13,6 +13,7 @@ import {
   readStartTimes,
   snapshotWindowsTree
 } from './processIdentity'
+import { trackExitWork } from './quitWait'
 
 /** Default timeout for waiting for ComfyUI to boot (5 minutes). */
 export const COMFY_BOOT_TIMEOUT_MS = 300_000
@@ -222,9 +223,31 @@ async function killWindowsTreeVerified(
   return { killed: true, members: pids, ...result }
 }
 
+/** Exited per Node: `'exit'` has been emitted (its listeners, the exit handlers, have run). */
+const hasExited = (proc: ChildProcess): boolean =>
+  proc.exitCode !== null || proc.signalCode !== null
+
 export function killProcessTree(proc: ChildProcess | null): Promise<KillResult> {
   const pid = proc?.pid
   if (!proc || !pid) return Promise.resolve({ exited: true, waitMs: 0 })
+  const kill = killTree(proc, pid)
+  if (!hasExited(proc)) {
+    // A quit waits for this stop, and past it for Node's `'exit'`, whose listeners register the
+    // exit bookkeeping (`onProcessTerminated`) before this entry settles. The tree being gone
+    // can be observed a little before Node reports it.
+    trackExitWork(
+      kill.then(({ exited }) =>
+        exited && !hasExited(proc)
+          ? new Promise<void>((resolve) => proc.once('exit', () => resolve()))
+          : undefined
+      ),
+      'stop'
+    )
+  }
+  return kill
+}
+
+function killTree(proc: ChildProcess, pid: number): Promise<KillResult> {
   const startedAt = monotonicNow()
   const done = (result: KillResult): KillResult => {
     proc.stdout?.destroy()

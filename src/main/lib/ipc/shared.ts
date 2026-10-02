@@ -55,6 +55,7 @@ import {
   removePortLock,
   COMFY_BOOT_TIMEOUT_MS
 } from '../process'
+import { trackExitWork } from '../quitWait'
 import {
   detectGPU,
   detectGPUCached,
@@ -391,7 +392,7 @@ interface ActiveLaunch {
 const _activeLaunches = new Map<string, ActiveLaunch>()
 
 /** Register a launch operation at handler entry. Caller must pair with `_endLaunch`. */
-export function _beginLaunch(installationId: string): { abort: AbortController } {
+export function _beginLaunch(installationId: string): ActiveLaunch {
   let resolveSettled!: () => void
   const settled = new Promise<void>((resolve) => {
     resolveSettled = resolve
@@ -402,17 +403,18 @@ export function _beginLaunch(installationId: string): { abort: AbortController }
     _resolveSettled: resolveSettled
   }
   _activeLaunches.set(installationId, launch)
+  // An aborted boot kills its process from its own teardown, a few ticks after the abort.
+  trackExitWork(settled)
   return launch
 }
 
 /** Unregister a launch operation; ownership-guarded and idempotent, so the
- *  success-path early end and the handler's finally can both call it. */
-export function _endLaunch(installationId: string, launch: { abort: AbortController }): void {
+ *  success-path early end and the handler's finally can both call it. A launch whose slot a
+ *  restart's relaunch has since taken still settles: a quit waits for it. */
+export function _endLaunch(installationId: string, launch: ActiveLaunch): void {
   const current = _activeLaunches.get(installationId)
-  if (current && current.abort === launch.abort) {
-    _activeLaunches.delete(installationId)
-    current._resolveSettled()
-  }
+  if (current && current.abort === launch.abort) _activeLaunches.delete(installationId)
+  launch._resolveSettled()
 }
 
 export function _hasActiveLaunch(installationId: string): boolean {
@@ -1722,12 +1724,14 @@ export function _test_clearRunningSessions(): void {
 
 export function cancelAll(): void {
   for (const [id, abort] of _operationAborts) {
-    // A booting launch's child is killed by its own abort handler, which quit does not wait
-    // for; the record says it was asked to stop.
+    // A booting launch's child is killed by its own abort handler (the quit waits for it
+    // within its bound); the record says it was asked to stop, in case it outlives Desktop.
     markStopRequested(id)
     abort.abort()
   }
   _operationAborts.clear()
+  // A launch still in its pre-spawn prep has not claimed `_operationAborts` yet.
+  for (const launch of _activeLaunches.values()) launch.abort.abort()
   // `before-quit` starts draining PostHog before asynchronous process kills
   // settle. Queue each session's final summary synchronously so shutdown cannot
   // clear the client before the process-exit handlers get a chance to flush.

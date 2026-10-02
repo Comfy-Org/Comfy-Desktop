@@ -1,5 +1,6 @@
 import { app, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs'
 import { release as osRelease } from 'node:os'
 import semver from 'semver'
 import todesktop from '@todesktop/runtime'
@@ -13,8 +14,15 @@ import {
   recordStartupAttemptOutcome,
   type StartupAttemptMarkerRead
 } from './startup-attempt-marker'
-import { clearQuitReason, getQuitReason, isSessionEnding, setQuitReason } from './quit-state'
-import { _broadcastToRenderer } from './ipc/shared'
+import {
+  clearQuitReason,
+  getQuitReason,
+  isSessionEnding,
+  isUpdateInstallQuit,
+  setQuitReason
+} from './quit-state'
+import { abandonQuitSequence, beginQuitSequence, waitForExitWork } from './quitWait'
+import { _broadcastToRenderer, cancelAll } from './ipc/shared'
 import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
 
@@ -164,6 +172,7 @@ function _setUpdateState(next: AppUpdateState): void {
 
 const NO_UPDATE_AVAILABLE_MESSAGE = 'No update available. Try checking for updates first.'
 const UPDATER_UNAVAILABLE_MESSAGE = 'ToDesktop auto-updater is unavailable.'
+const NO_STAGED_INSTALLER_MESSAGE = 'The downloaded update is no longer available.'
 
 /** Issue #488 — single source of truth for the auto-install flag.
  *  Default-on: any non-`false` value (including missing) is treated as
@@ -507,8 +516,13 @@ function bindUpdaterEvents(): void {
         (operation === 'download' ? (_autoDownloadTriggeredFor ?? _appUpdateState.version) : null),
       source: active ? `updater_event:${active.source}` : 'updater_event'
     })
+    // An install that failed after its stops: back out of it, so the next quit waits afresh.
+    // Only the install's own reason: a user quit that took over keeps its reason and its hold.
+    if (isUpdateInstallQuit()) {
+      abandonQuitSequence()
+      clearQuitReason()
+    }
     _activeUpdateOperation = null
-    clearQuitReason()
     _autoDownloadTriggeredFor = null
     _userInitiatedDownload = false
     // A failed download can't stay in `'downloading'`. Auto-on downloads
@@ -594,6 +608,10 @@ const USER_INITIATED_CHECK_TRIGGERS = new Set(['manual-check', 'download-button'
 async function checkForUpdate(
   source: string
 ): Promise<{ available: boolean; version?: string; error?: string }> {
+  // An install is stopping ComfyUI before it starts: a check now (the 10-minute auto-check) would
+  // replace the install's operation, and its error would be taken for the install's.
+  if (isUpdateInstallQuit())
+    return { available: true, version: _appUpdateState.version ?? undefined }
   const operation: DesktopUpdateOperation =
     source === 'download-button' || source === 'auto-download' ? 'download' : 'check'
   const activeOperation: ActiveUpdateOperation = {
@@ -745,13 +763,52 @@ export async function downloadUpdate(): Promise<void> {
 }
 
 /**
+ * Whether the installer `restartAndInstall` would spawn is known to be gone from disk. Checked
+ * before anything is stopped. Windows only: electron-updater (under ToDesktop) stages it under
+ * `%LOCALAPPDATA%\<app>-updater\pending\` and records the path in memory; `installerPath`
+ * is its own getter (protected in its typings). Without the getter it cannot tell, and the
+ * install goes ahead as it did before this check.
+ */
+function stagedInstallerMissing(): boolean {
+  if (process.platform !== 'win32') return false
+  const file = (electronAutoUpdater as unknown as { installerPath?: unknown }).installerPath
+  // null is electron-updater's own "nothing staged": its install fails on it.
+  if (file === null) return true
+  if (typeof file !== 'string') {
+    console.warn('[updater] staged installer path unknown; installing without the check')
+    return false
+  }
+  return !fs.existsSync(file)
+}
+
+function reportInstallFailure(err: unknown, userInitiated: boolean, source: string): void {
+  emitDesktopUpdateError('apply_restart', err, { userInitiated, source })
+  _broadcastToRenderer('app-update:user-action-failed', {
+    message: err instanceof Error ? err.message : String(err)
+  })
+}
+
+/** Back out of an install that did not go ahead after its stops: the app stays up. */
+function abandonInstall(): void {
+  _activeUpdateOperation = null
+  // A user quit may have taken over during the wait: its reason and its held quit stay.
+  if (isUpdateInstallQuit()) clearQuitReason()
+  abandonQuitSequence()
+}
+
+/**
  * Apply the pending downloaded update by restarting the app under the
  * silent installer. Failures broadcast `app-update:user-action-failed`
  * so the UI can surface them. Exported so both the renderer-facing
  * `install-update` IPC handler and main-process callers (e.g. the
  * system-modal "Restart" confirm) share a single implementation.
+ *
+ * electron-updater spawns the installer BEFORE it quits the app, so the quit's own wait comes
+ * too late: ComfyUI is stopped and waited for (bounded, `waitForExitWork`) here first. The
+ * check that an install can happen at all comes before that, so a doomed install never stops
+ * the user's sessions.
  */
-export function installUpdate(userInitiated = true): void {
+export async function installUpdate(userInitiated = true): Promise<void> {
   const updateSource = userInitiated ? 'install_call' : 'startup_install'
   if (isSessionEnding()) {
     // The OS is shutting down / logging off. Spawning the installer now risks
@@ -760,6 +817,8 @@ export function installUpdate(userInitiated = true): void {
     // applies on the next launch instead.
     return
   }
+  // Already installing (a double-clicked "Restart & Install" during the wait).
+  if (isUpdateInstallQuit()) return
   const updater = getAutoUpdater()
   if (!updater) {
     emitDesktopUpdateError('apply_restart', UPDATER_UNAVAILABLE_MESSAGE, {
@@ -769,19 +828,33 @@ export function installUpdate(userInitiated = true): void {
     _broadcastToRenderer('app-update:user-action-failed', { message: UPDATER_UNAVAILABLE_MESSAGE })
     return
   }
+  if (_appUpdateState.kind !== 'ready' || stagedInstallerMissing()) {
+    reportInstallFailure(new Error(NO_STAGED_INSTALLER_MESSAGE), userInitiated, updateSource)
+    return
+  }
   emitUpdateTelemetry('comfy.desktop.app_update.install_triggered', _appUpdateState.version, {
     version: _appUpdateState.version,
     auto_update_setting: isAutoInstallEnabled() ? 'on' : 'off'
   })
+  _activeUpdateOperation = {
+    operation: 'apply_restart',
+    source: updateSource,
+    targetVersion: _appUpdateState.version,
+    userInitiated,
+    startedAt: Date.now()
+  }
+  setQuitReason('update-install')
+  beginQuitSequence()
   try {
-    _activeUpdateOperation = {
-      operation: 'apply_restart',
-      source: updateSource,
-      targetVersion: _appUpdateState.version,
-      userInitiated,
-      startedAt: Date.now()
+    cancelAll()
+    await waitForExitWork()
+    // The session may have started ending during the wait (no installer the OS would kill), or
+    // an updater error during it already failed the install (it clears the reason). A user quit
+    // that took over meanwhile sets its own reason; the install the user asked for goes ahead.
+    if (isSessionEnding() || getQuitReason() === 'none') {
+      abandonInstall()
+      return
     }
-    setQuitReason('update-install')
     // macOS Squirrel quirk: if requestSingleInstanceLock is still held by
     // the quitting process, ShipIt swaps the .app bundle correctly but
     // the new Squirrel.Mac process cannot acquire the lock and exits
@@ -799,15 +872,8 @@ export function installUpdate(userInitiated = true): void {
     // macOS/Linux, where `isSilent` has no effect anyway.
     updater.restartAndInstall({ isSilent: !isInstallerUIEnabled() })
   } catch (err) {
-    _activeUpdateOperation = null
-    clearQuitReason()
-    emitDesktopUpdateError('apply_restart', err, {
-      userInitiated,
-      source: updateSource
-    })
-    _broadcastToRenderer('app-update:user-action-failed', {
-      message: err instanceof Error ? err.message : String(err)
-    })
+    abandonInstall()
+    reportInstallFailure(err, userInitiated, updateSource)
   }
 }
 
@@ -825,6 +891,8 @@ export function _test_setUpdateState(next: AppUpdateState): void {
 
 /** Record recovery when the startup installer did not enter Electron's quit path. */
 export function recordStartupInstallBackstopRecovered(): void {
+  // The install never quit the app: its sequence is abandoned like any install's.
+  abandonQuitSequence()
   emitUpdateTelemetry(
     'comfy.desktop.app_update.startup_install_backstop_recovered',
     _appUpdateState.version ?? settings.get('pendingDownloadedUpdateVersion') ?? null
@@ -1258,7 +1326,7 @@ export async function applyPendingUpdateOnStartup(hooks?: StartupInstallHooks): 
     // lets telemetry correlate install loops with filesystem interference.
     bakFallbacks: getSafeFileDiagnostics().bakFallbacks
   })
-  installUpdate(false)
+  await installUpdate(false)
   return true
 }
 
