@@ -78,20 +78,17 @@ const ROLLBACK_FIELD = 'comfybuilderRollback'
 const MANAGER_ALLOWED_FIELD = 'comfybuilderManagerAllowed'
 
 /** The record fields that carry a release's manager answer: the answer itself
- *  (launch reads it), the archive's governance policy if it carries one (launch
- *  re-reads the policy file rather than trusting this copy), and the stored
- *  launch args rewritten to match (the Startup Arguments field shows them). A
- *  release without a policy file clears `governance`. */
+ *  (launch reads it) and the stored launch args rewritten to match it (the
+ *  Startup Arguments field shows them). */
 function managerAnswerFields(
   installation: InstallationRecord,
   manifest: ModelManifest
 ): Record<string, unknown> {
-  const governance = readGovernance(installation.installPath) ?? undefined
   const allowed =
-    managerAllowedByPolicy(manifest.customNodePolicy) && managerAllowedByGovernance(governance)
+    managerAllowedByPolicy(manifest.customNodePolicy) &&
+    managerAllowedByGovernance(readGovernance(installation.installPath))
   return {
     [MANAGER_ALLOWED_FIELD]: allowed,
-    governance,
     launchArgs: launchArgsForManagerAnswer(
       (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS,
       allowed,
@@ -576,8 +573,8 @@ export const comfybuilder: SourcePlugin = {
       // Records written before this field existed have no answer; they keep
       // launching with the manager flag, as they always did.
       managerAllowed: installation[MANAGER_ALLOWED_FIELD] !== false,
-      // From the disk, not the record: a record can lag the installed archive
-      // (an update interrupted before its last write, an older Desktop).
+      // From the disk: the record's manager answer can lag the installed
+      // archive (an update interrupted before its last write, an older Desktop).
       governance: readGovernance(installation.installPath)
     })
     if (!spec) return null
