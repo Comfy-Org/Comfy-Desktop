@@ -1144,12 +1144,8 @@ async function runLaunch(
           preLaunchPhases.push('torchRepair')
           // The tracker's steps are fixed once armed, so register the
           // dependency repair below now if it will run too.
-          const { pendingDrift } = await import('../../../sources/standalone/depsRepair')
-          const { depsRepairPolicy } = await import('../../../sources/standalone/depsRepair')
-          if (
-            depsRepairPolicy(inst, await getDepsRepairModeAsync()) !== 'off' &&
-            pendingDrift(inst)
-          ) {
+          const { depsRepairPlan } = await import('../../../sources/standalone/depsRepair')
+          if ((await depsRepairPlan(inst, getDepsRepairModeAsync)).mode !== 'off') {
             preLaunchPhases.push('depsRepair')
           }
           await armLaunchTracker()
@@ -1179,8 +1175,7 @@ async function runLaunch(
     // Non-fatal: a failed or skipped repair launches exactly as before.
     try {
       const {
-        depsRepairPolicy,
-        pendingDrift,
+        depsRepairPlan,
         pruneMarker,
         reportDetectedOnly,
         reportPausedRepair,
@@ -1188,8 +1183,7 @@ async function runLaunch(
         warnIfSitePackagesEmpty
       } = await import('../../../sources/standalone/depsRepair')
       inst = await pruneMarker(inst, updateFn)
-      const mode = depsRepairPolicy(inst, await getDepsRepairModeAsync())
-      const drift = pendingDrift(inst)
+      const { drift, mode } = await depsRepairPlan(inst, getDepsRepairModeAsync)
       if (!drift && !reportPausedRepair(inst, makeSendOutput(event.sender, sessionId))) {
         warnIfSitePackagesEmpty(inst, makeSendOutput(event.sender, sessionId))
       }

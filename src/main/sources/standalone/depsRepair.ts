@@ -101,6 +101,16 @@ export function depsRepairPolicy(
   return flag.includes('managed') ? 'auto' : 'off'
 }
 
+/** Drift first: a launch with nothing to repair never waits on the rollout flag. */
+export async function depsRepairPlan(
+  installation: InstallationRecord,
+  readFlag: () => Promise<DepsRepairFlag>
+): Promise<{ drift: RequirementsDrift | null; mode: DepsRepairMode }> {
+  const drift = pendingDrift(installation)
+  if (!drift) return { drift, mode: 'off' }
+  return { drift, mode: depsRepairPolicy(installation, await readFlag()) }
+}
+
 /** Mode `off`: log the drift and report it, without touching the venv. */
 export function reportDetectedOnly(
   installation: InstallationRecord,

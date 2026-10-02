@@ -18,6 +18,7 @@ import {
   MAX_FAILED_ATTEMPTS,
   detectInstallDrift,
   pruneMarker,
+  depsRepairPlan,
   depsRepairPolicy,
   pausedRepairNote,
   reportDetectedOnly,
@@ -152,6 +153,25 @@ const SYNCED = [
   'comfy_aimdo-0.5.5.dist-info',
   'numpy-2.1.0.dist-info'
 ]
+
+describe('depsRepairPlan', () => {
+  it('does not read the flag when there is no drift, so a pending fetch cannot hold the launch', async () => {
+    const { inst } = managedInstall(SYNCED, REQS)
+    const readFlag = vi.fn(() => new Promise<never>(() => {}))
+    await expect(depsRepairPlan(inst, readFlag)).resolves.toEqual({ drift: null, mode: 'off' })
+    expect(readFlag).not.toHaveBeenCalled()
+  })
+
+  it('reads the flag when there is drift, and decides by it', async () => {
+    const { inst } = managedInstall(
+      SYNCED.filter((d) => !d.startsWith('blake3')),
+      REQS
+    )
+    const plan = await depsRepairPlan(inst, async () => ['managed'])
+    expect(plan.drift).not.toBeNull()
+    expect(plan.mode).toBe('auto')
+  })
+})
 
 describe('pendingDrift', () => {
   it('is null for a venv that satisfies the requirements', () => {
