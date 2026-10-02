@@ -90,45 +90,6 @@ function walkLoadNodes(nodes: unknown, out: string[]): void {
   }
 }
 
-function extractTemplateInputAssets(json: object): TemplateInputAsset[] {
-  const doc = json as { nodes?: unknown; definitions?: { subgraphs?: unknown } }
-  const declarations: string[] = []
-  walkLoadNodes(doc.nodes, declarations)
-  const subgraphs = doc.definitions?.subgraphs
-  if (Array.isArray(subgraphs)) {
-    for (const sg of subgraphs) {
-      if (sg && typeof sg === 'object') {
-        walkLoadNodes((sg as { nodes?: unknown }).nodes, declarations)
-      }
-    }
-  }
-
-  const seen = new Set<string>()
-  const result: TemplateInputAsset[] = []
-  for (const declaration of declarations) {
-    const filename = stripQueryParams(declaration)
-    const mediaType = mediaTypeForFilename(filename)
-    if (!isSafeInputAsset(filename) || !mediaType || seen.has(filename)) continue
-    seen.add(filename)
-    const url = `${TEMPLATE_INPUT_BASE}/${encodeURIComponent(filename)}`
-    result.push({
-      assetId: filename,
-      filename,
-      mediaType,
-      previewUrl: url,
-      url
-    })
-  }
-  return result
-}
-
-/**
- * Resolve the de-duplicated, validated set of sample input assets a template
- * declares. `null` means the workflow metadata could not be resolved; `[]`
- * means it resolved successfully and declares no supported input media. The
- * distinction matters to inspection UIs, which must not present an unknown
- * requirement set as an empty one.
- */
 export async function resolveTemplateInputAssetSnapshot(
   installation: InstallationRecord,
   templateId: string
@@ -138,15 +99,44 @@ export async function resolveTemplateInputAssetSnapshot(
 }
 
 /**
- * Compatibility helper for the best-effort install path. A metadata failure
- * remains “nothing to place” there; template-scoped inspection should use the
- * nullable snapshot above instead.
+ * Extract the de-duplicated, validated set of sample input assets a template
+ * needs. Scans every Load* node (including subgraph definitions), keeps only
+ * bare media filenames, and points each at the repo's `input/` dir. Returns `[]`
+ * for templates with no image/media input or when the JSON can't be resolved.
  */
 export async function resolveTemplateInputAssets(
   installation: InstallationRecord,
   templateId: string
 ): Promise<TemplateInputAsset[]> {
-  return (await resolveTemplateInputAssetSnapshot(installation, templateId)) ?? []
+  const json = await loadTemplateJson(installation, templateId)
+  return resolveTemplateInputAssetsFromJson(json)
+}
+
+/** Extract sample inputs from an already-resolved editor workflow. */
+function resolveTemplateInputAssetsFromJson(json: unknown): TemplateInputAsset[] {
+  if (!json || typeof json !== 'object') return []
+
+  const doc = json as { nodes?: unknown; definitions?: { subgraphs?: unknown } }
+  const names: string[] = []
+  walkLoadNodes(doc.nodes, names)
+  const subgraphs = doc.definitions?.subgraphs
+  if (Array.isArray(subgraphs)) {
+    for (const sg of subgraphs) {
+      if (sg && typeof sg === 'object') walkLoadNodes((sg as { nodes?: unknown }).nodes, names)
+    }
+  }
+
+  const seen = new Set<string>()
+  const result: TemplateInputAsset[] = []
+  for (const raw of names) {
+    const filename = stripQueryParams(raw)
+    const mediaType = mediaTypeForFilename(filename)
+    if (!isSafeInputAsset(filename) || !mediaType || seen.has(filename)) continue
+    seen.add(filename)
+    const url = `${TEMPLATE_INPUT_BASE}/${encodeURIComponent(filename)}`
+    result.push({ assetId: filename, filename, mediaType, previewUrl: url, url })
+  }
+  return result
 }
 
 /**
@@ -217,9 +207,12 @@ export async function downloadTemplateInputAssets(
   installation: InstallationRecord,
   templateId: string,
   log: (text: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  workflowJson?: unknown
 ): Promise<PlacedInputAsset[]> {
-  const assets = await resolveTemplateInputAssets(installation, templateId)
+  const assets = workflowJson
+    ? resolveTemplateInputAssetsFromJson(workflowJson)
+    : await resolveTemplateInputAssets(installation, templateId)
   if (assets.length === 0) return []
 
   let destDir: string

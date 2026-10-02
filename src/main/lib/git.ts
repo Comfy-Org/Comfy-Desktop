@@ -985,6 +985,73 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
   })
 }
 
+/** Exit code `git_operations.py merge-base` uses when the commits share no ancestor. */
+const MERGE_BASE_NONE = 5
+
+/**
+ * Like {@link findMergeBase}, but separates "no common ancestor" (`null`, a real answer) from
+ * "could not look" (`undefined`: a missing object, timeout or spawn failure).
+ */
+export function findMergeBaseOrNone(
+  repoPath: string,
+  ref1: string,
+  ref2: string
+): Promise<string | null | undefined> {
+  if (isPygit2Configured()) {
+    return runPygit2(['merge-base', repoPath, ref1, ref2]).then(({ exitCode, stdout }) => {
+      if (exitCode === MERGE_BASE_NONE) return null
+      return exitCode === 0 ? stdout.trim() || undefined : undefined
+    })
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['merge-base', ref1, ref2],
+      { cwd: repoPath, encoding: 'utf-8', windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      (error, stdout) => {
+        // `git merge-base` exits 1 for "no merge base" and 128 for a bad ref or repository.
+        if (error) {
+          resolve(error.code === 1 && !error.killed && error.signal == null ? null : undefined)
+          return
+        }
+        resolve(stdout.trim() || undefined)
+      }
+    )
+  })
+}
+
+/** Exit code `git_operations.py has-commit` uses for a definite miss. */
+const HAS_COMMIT_ABSENT = 3
+
+/**
+ * Whether `sha` names a commit in the local object store. `'absent'` only on a definite miss;
+ * `'unknown'` when the lookup itself failed (timeout, spawn error, unreadable repo), which
+ * `revParseRef` would fold into the same `undefined` as a miss.
+ */
+export function commitPresence(
+  repoPath: string,
+  sha: string
+): Promise<'present' | 'absent' | 'unknown'> {
+  if (isPygit2Configured()) {
+    return runPygit2(['has-commit', repoPath, sha]).then(({ exitCode }) =>
+      exitCode === 0 ? 'present' : exitCode === HAS_COMMIT_ABSENT ? 'absent' : 'unknown'
+    )
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['rev-parse', '--verify', '--quiet', '--end-of-options', `${sha}^{commit}`],
+      { cwd: repoPath, windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      (error) => {
+        if (!error) return resolve('present')
+        // `--verify --quiet` exits 1 for "not a valid object name" and 128 for real failures.
+        const miss = error.code === 1 && !error.killed && error.signal == null
+        resolve(miss ? 'absent' : 'unknown')
+      }
+    )
+  })
+}
+
 /**
  * Fetch all tags from the remote, unshallowing if needed so that
  * cherry-pick-aware version resolution has the full commit graph.

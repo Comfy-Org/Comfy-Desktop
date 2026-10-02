@@ -46,6 +46,9 @@ const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
 const currentId = ref<string | null>(null)
 const resolvingConflict = ref(false)
+/** The port a "Stop process and retry" just failed to free: said under the conflict, which
+ *  otherwise comes back unchanged. Cleared by anything that replaces the conflict. */
+const killFailedPort = ref<number | null>(null)
 
 const currentOp = computed(() => {
   const id = currentId.value ?? props.installationId
@@ -107,7 +110,14 @@ const finishedErrorMessage = computed<string | null>(() => {
   const op = currentOp.value
   if (!op?.finished) return null
   if (op.cancelRequested) return null
-  if (isPortConflictOpen.value) return op.result?.message ?? null
+  if (isPortConflictOpen.value) {
+    const message = op.result?.message ?? null
+    const port = op.result?.portConflict?.port
+    if (message && port != null && killFailedPort.value === port) {
+      return `${message}\n\n${t('errors.portConflictKillFailed', { port })}`
+    }
+    return message
+  }
   if (op.error) return op.error
   return null
 })
@@ -534,12 +544,51 @@ function handleUseNextPort(nextPort: number): void {
   })
 }
 
+// An earlier ComfyUI of this install still running a prompt: stopping goes back through launch,
+// which re-proves the process is ours before stopping it (never a kill by port).
+async function handleStopBusyPrior(): Promise<void> {
+  if (resolvingConflict.value) return
+  const id = displayId.value
+  if (!id) return
+  const op = progressStore.operations.get(id)
+  if (!op) return
+  const unknown = op.result?.portConflict?.priorUnknown === true
+  const survivors = op.result?.portConflict?.priorSurvivors === true
+  const confirmed = await modal.confirm({
+    title: t(
+      survivors
+        ? 'errors.priorSurvivorsTitle'
+        : unknown
+          ? 'errors.priorProcessUnknownTitle'
+          : 'errors.priorProcessBusyTitle'
+    ),
+    message: t(
+      survivors
+        ? 'errors.priorSurvivorsConfirmMessage'
+        : unknown
+          ? 'errors.priorProcessUnknownConfirmMessage'
+          : 'errors.priorProcessBusyConfirmMessage'
+    ),
+    confirmLabel: t(survivors ? 'errors.priorSurvivorsStop' : 'errors.priorProcessBusyStop'),
+    confirmStyle: 'danger'
+  })
+  if (!confirmed) return
+  resolvingConflict.value = true
+  startOperation({
+    installationId: id,
+    title: op.title,
+    apiCall: () => window.api.runAction(id, 'launch', { stopBusyPriorProcess: true }),
+    returnTo: op.returnTo
+  })
+}
+
 async function handleKillProcess(port: number): Promise<void> {
   if (resolvingConflict.value) return
   const id = displayId.value
   if (!id) return
   const op = progressStore.operations.get(id)
   if (!op) return
+  if (op.result?.portConflict?.priorBusy) return handleStopBusyPrior()
   const confirmed = await modal.confirm({
     title: t('errors.portConflictKillConfirmTitle'),
     message: t('errors.portConflictKillConfirmMessage'),
@@ -549,6 +598,7 @@ async function handleKillProcess(port: number): Promise<void> {
   if (!confirmed) return
   resolvingConflict.value = true
 
+  killFailedPort.value = null
   const killResult: KillResult = await window.api.killPortProcess(port)
   if (killResult.ok) {
     startOperation({
@@ -558,9 +608,17 @@ async function handleKillProcess(port: number): Promise<void> {
       returnTo: op.returnTo
     })
   } else {
+    killFailedPort.value = port
     resolvingConflict.value = false
   }
 }
+
+watch(
+  () => currentOp.value?.result,
+  () => {
+    killFailedPort.value = null
+  }
+)
 
 defineExpose({ startOperation, showOperation })
 </script>
@@ -615,7 +673,17 @@ defineExpose({ startOperation, showOperation })
                 aria-live="polite"
               >
                 <X :size="20" />
-                <span>{{ $t('errors.portConflictTitle') }}</span>
+                <span>{{
+                  currentOp.result?.portConflict?.priorBusy &&
+                  currentOp.result.portConflict.priorSurvivors
+                    ? $t('errors.priorSurvivorsTitle')
+                    : currentOp.result?.portConflict?.priorBusy &&
+                        currentOp.result.portConflict.priorUnknown
+                      ? $t('errors.priorProcessUnknownTitle')
+                      : currentOp.result?.portConflict?.priorBusy
+                        ? $t('errors.priorProcessBusyTitle')
+                        : $t('errors.portConflictTitle')
+                }}</span>
               </div>
               <div
                 v-else
@@ -732,7 +800,10 @@ defineExpose({ startOperation, showOperation })
             @click="handleReboot"
           >
             <RefreshCcw :size="14" />
-            {{ $t('progress.reboot') }}
+            <!-- A launch's retry restarts ComfyUI, not the computer some errors mention. -->
+            {{
+              currentOp.opKind === 'launch' ? $t('progress.restartComfyui') : $t('progress.reboot')
+            }}
           </button>
         </div>
       </div>
@@ -812,7 +883,13 @@ defineExpose({ startOperation, showOperation })
                 :data-testid="TID.progressPortConflictKill"
                 @click="handleKillProcess(currentOp.result.portConflict.port)"
               >
-                {{ $t('errors.portConflictKill') }}
+                {{
+                  currentOp.result.portConflict.priorBusy
+                    ? currentOp.result.portConflict.priorSurvivors
+                      ? $t('errors.priorSurvivorsStop')
+                      : $t('errors.priorProcessBusyStop')
+                    : $t('errors.portConflictKill')
+                }}
               </button>
             </template>
           </div>

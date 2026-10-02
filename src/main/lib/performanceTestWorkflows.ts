@@ -8,8 +8,8 @@ import type {
   PerformanceTestStatistics,
   SystemInfo
 } from '../../types/ipc'
+import { isPersistableTemplateId } from '../sources/standalone/curatedTemplates'
 
-const PERFORMANCE_TESTS_DIR = 'performance-tests'
 const PERFORMANCE_TEST_POLL_INTERVAL_MS = 1000
 const PERFORMANCE_TEST_TIMEOUT_MS = 4 * 60 * 60 * 1000
 
@@ -257,11 +257,27 @@ function formatPerformanceTestSessionId(date: Date): string {
     .join('')
 }
 
+async function createPerformanceTestSessionDir(benchmarksDir: string): Promise<string> {
+  await fs.promises.mkdir(benchmarksDir, { recursive: true })
+
+  for (let offsetSeconds = 0; ; offsetSeconds++) {
+    const sessionId = formatPerformanceTestSessionId(new Date(Date.now() + offsetSeconds * 1000))
+    const sessionDir = path.join(benchmarksDir, sessionId)
+    try {
+      await fs.promises.mkdir(sessionDir)
+      return sessionDir
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
+      throw error
+    }
+  }
+}
+
 function resolveManagedWorkflowPath(
   filePath: string,
-  userDataPath: string
+  benchmarksDir: string
 ): { filePath: string; sessionDir: string } {
-  const performanceTestsDir = path.resolve(userDataPath, PERFORMANCE_TESTS_DIR)
+  const performanceTestsDir = path.resolve(benchmarksDir)
   const resolvedPath = path.resolve(filePath)
   const relativePath = path.relative(performanceTestsDir, resolvedPath)
   const parts = relativePath.split(path.sep)
@@ -278,9 +294,9 @@ function resolveManagedWorkflowPath(
 
 async function readPerformanceTestWorkflow(
   filePath: string,
-  userDataPath: string
+  benchmarksDir: string
 ): Promise<object> {
-  const managedPath = resolveManagedWorkflowPath(filePath, userDataPath).filePath
+  const managedPath = resolveManagedWorkflowPath(filePath, benchmarksDir).filePath
   const contents = await fs.promises.readFile(managedPath, 'utf8')
   let parsed: unknown
   try {
@@ -297,9 +313,9 @@ async function readPerformanceTestWorkflow(
 /** Read and validate the persisted data used by the results UI and image export. */
 export async function readPerformanceTestResultsSummary(
   filePath: string,
-  userDataPath: string
+  benchmarksDir: string
 ): Promise<PerformanceTestResultsSummary> {
-  const managedPath = resolveManagedWorkflowPath(filePath, userDataPath).filePath
+  const managedPath = resolveManagedWorkflowPath(filePath, benchmarksDir).filePath
   if (path.basename(managedPath).toLowerCase() !== 'results.json') {
     throw new Error('Select a performance test results.json file.')
   }
@@ -340,7 +356,7 @@ export async function readPerformanceTestResultsSummary(
 /** Validate and persist a user-selected API workflow outside any installation. */
 export async function storePerformanceTestWorkflow(
   sourcePath: string,
-  userDataPath: string
+  benchmarksDir: string
 ): Promise<string> {
   if (path.extname(sourcePath).toLowerCase() !== '.json') {
     throw new Error('Select a .json workflow file.')
@@ -363,36 +379,47 @@ export async function storePerformanceTestWorkflow(
     throw new Error('The selected file is not a ComfyUI API-format workflow.')
   }
 
-  const performanceTestsDir = path.join(userDataPath, PERFORMANCE_TESTS_DIR)
-  await fs.promises.mkdir(performanceTestsDir, { recursive: true })
+  const sessionDir = await createPerformanceTestSessionDir(benchmarksDir)
+  const destinationPath = path.join(sessionDir, sourceFileName)
+  try {
+    await fs.promises.writeFile(destinationPath, contents)
+    return destinationPath
+  } catch (error) {
+    await fs.promises.rm(sessionDir, { recursive: true, force: true })
+    throw error
+  }
+}
 
-  for (let offsetSeconds = 0; ; offsetSeconds++) {
-    const sessionId = formatPerformanceTestSessionId(new Date(Date.now() + offsetSeconds * 1000))
-    const sessionDir = path.join(performanceTestsDir, sessionId)
-    try {
-      await fs.promises.mkdir(sessionDir)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
-      throw error
-    }
+/** Persist an example workflow's API prompt as a new session's runnable workflow. */
+export async function storePerformanceTestExampleWorkflow(
+  templateId: string,
+  apiWorkflow: unknown,
+  benchmarksDir: string
+): Promise<string> {
+  if (!isPersistableTemplateId(templateId)) {
+    throw new Error('Invalid example workflow ID.')
+  }
+  if (!isApiWorkflow(apiWorkflow)) {
+    throw new Error('The example workflow has no valid API-format prompt.')
+  }
 
-    const destinationPath = path.join(sessionDir, sourceFileName)
-    try {
-      await fs.promises.writeFile(destinationPath, contents)
-      return destinationPath
-    } catch (error) {
-      await fs.promises.rm(sessionDir, { recursive: true, force: true })
-      throw error
-    }
+  const sessionDir = await createPerformanceTestSessionDir(benchmarksDir)
+  const workflowFilePath = path.join(sessionDir, `${templateId}.json`)
+  try {
+    await fs.promises.writeFile(workflowFilePath, JSON.stringify(apiWorkflow))
+    return workflowFilePath
+  } catch (error) {
+    await fs.promises.rm(sessionDir, { recursive: true, force: true })
+    throw error
   }
 }
 
 /** Delete a workflow copy managed by the performance test page. */
 export async function deletePerformanceTestWorkflow(
   filePath: string,
-  userDataPath: string
+  benchmarksDir: string
 ): Promise<'deleted' | 'preserved'> {
-  const managedPath = resolveManagedWorkflowPath(filePath, userDataPath)
+  const managedPath = resolveManagedWorkflowPath(filePath, benchmarksDir)
   for (const outputName of ['jobs.json', 'results.json', 'logs.txt']) {
     try {
       await fs.promises.access(path.join(managedPath.sessionDir, outputName))
@@ -411,7 +438,7 @@ export async function deletePerformanceTestWorkflow(
 /** Queue warm-up requests followed by each measured run. */
 export async function submitPerformanceTestWorkflow(
   filePath: string,
-  userDataPath: string,
+  benchmarksDir: string,
   sessionUrl: string,
   measuredRuns: number,
   warmupRuns: number,
@@ -422,11 +449,11 @@ export async function submitPerformanceTestWorkflow(
   if (!Number.isInteger(measuredRuns) || measuredRuns < 1 || measuredRuns > 100) {
     throw new Error('Measured runs must be an integer between 1 and 100.')
   }
-  if (!Number.isInteger(warmupRuns) || warmupRuns < 1 || warmupRuns > 5) {
-    throw new Error('Warm-up runs must be an integer between 1 and 5.')
+  if (!Number.isInteger(warmupRuns) || warmupRuns < 0 || warmupRuns > 5) {
+    throw new Error('Warm-up runs must be an integer between 0 and 5.')
   }
 
-  let workflow = await readPerformanceTestWorkflow(filePath, userDataPath)
+  let workflow = await readPerformanceTestWorkflow(filePath, benchmarksDir)
   const endpoint = new URL('/prompt', sessionUrl)
   const promptIds: string[] = []
   const totalRuns = measuredRuns + warmupRuns
@@ -553,9 +580,9 @@ export async function waitForPerformanceTestJobs(
 export async function savePerformanceTestJobsResponse(
   response: PerformanceTestJobsResponse,
   workflowFilePath: string,
-  userDataPath: string
+  benchmarksDir: string
 ): Promise<string> {
-  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
+  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, benchmarksDir)
   const resultPath = path.join(sessionDir, 'jobs.json')
   await fs.promises.writeFile(resultPath, `${JSON.stringify(response, null, 2)}\n`, 'utf8')
   return resultPath
@@ -565,9 +592,9 @@ export async function savePerformanceTestJobsResponse(
 export async function savePerformanceTestLogs(
   logs: string,
   workflowFilePath: string,
-  userDataPath: string
+  benchmarksDir: string
 ): Promise<string> {
-  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
+  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, benchmarksDir)
   const logsPath = path.join(sessionDir, 'logs.txt')
   await fs.promises.writeFile(logsPath, logs, 'utf8')
   return logsPath
@@ -581,11 +608,11 @@ export async function savePerformanceTestResultsSummary(
   hardware: AcceleratorSnapshot | null,
   systemInfo: SystemInfo,
   workflowFilePath: string,
-  userDataPath: string,
+  benchmarksDir: string,
   successfulRunCount: number,
   failedRunCount: number
 ): Promise<string> {
-  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, userDataPath)
+  const { sessionDir } = resolveManagedWorkflowPath(workflowFilePath, benchmarksDir)
   const summary: PerformanceTestResultsSummary = {
     createdAt: new Date().toISOString(),
     instance,

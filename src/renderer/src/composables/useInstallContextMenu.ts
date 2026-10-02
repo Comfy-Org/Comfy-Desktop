@@ -187,6 +187,12 @@ export function useInstallContextMenu(
         label: promoting
           ? t('devPlatform.workspace.promoting', 'Creating...')
           : t('devPlatform.workspace.promoteToWorkspace', 'Create Build'),
+        hint: t(
+          'devPlatform.workspace.promoteToWorkspaceHint',
+          'Create a Build from this instance in Comfy Developer Platform.'
+        ),
+        hintUrl: 'https://platform.comfy.org/profile/deploy',
+        hintLinkLabel: t('devPlatform.workspace.readMore', 'Read more'),
         disabled: promoting
       })
     }
@@ -322,7 +328,7 @@ export function useInstallContextMenu(
             result.message ||
             t(
               'devPlatform.workspace.promoteFailedMessage',
-              'Could not create a draft in Comfy Builder.'
+              'Could not create a draft in Comfy Developer Platform.'
             )
         }
       } catch (err) {

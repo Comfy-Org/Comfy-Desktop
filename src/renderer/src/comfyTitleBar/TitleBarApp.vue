@@ -320,7 +320,7 @@ function handleResetZoom(): void {
 }
 
 // News bell with a subtle unread dot until the announcement is opened. Its state
-// lives in the `comfyRouterAnnouncementSeen` setting (shared with the panel view);
+// lives in the `comfyApiAnnouncementSeen` setting (shared with the panel view);
 // opening the modal writes it, and the settings-changed broadcast clears the
 // dot here without a dedicated channel.
 const announcementUnread = ref(false)
@@ -332,8 +332,7 @@ function handleAnnouncement(): void {
 
 async function refreshAnnouncementUnread(): Promise<void> {
   try {
-    announcementUnread.value =
-      (await window.api?.getSetting?.('comfyRouterAnnouncementSeen')) !== true
+    announcementUnread.value = (await window.api?.getSetting?.('comfyApiAnnouncementSeen')) !== true
   } catch {
     announcementUnread.value = false
   }
@@ -343,7 +342,7 @@ onMounted(() => {
   void refreshAnnouncementUnread()
   unsubAnnouncementSettings =
     window.api?.onSettingsChanged?.(({ key }) => {
-      if (key === 'comfyRouterAnnouncementSeen') void refreshAnnouncementUnread()
+      if (key === 'comfyApiAnnouncementSeen') void refreshAnnouncementUnread()
     }) ?? null
 })
 

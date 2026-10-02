@@ -64,7 +64,9 @@ describe('drive-aware defaults', () => {
 
       // HOME (/mock/home) parses to a non-C: drive; the old home-anchored logic
       // would have wrongly redirected to C:\Comfy-Desktop.
-      expect(p.defaultDataRoot()).toBe(path.join('C:\\Users\\me\\AppData\\Local', 'Comfy-Desktop'))
+      const dataRoot = path.join('C:\\Users\\me\\AppData\\Local', 'Comfy-Desktop')
+      expect(p.defaultDataRoot()).toBe(dataRoot)
+      expect(p.defaultBenchmarksDir()).toBe(path.join(dataRoot, 'ComfyUI-Shared', 'benchmarks'))
       expect(p.defaultDataRoot()).not.toBe(path.join('C:\\', 'Comfy-Desktop'))
     } finally {
       if (prevSystemDrive === undefined) delete process.env.SystemDrive
@@ -74,14 +76,18 @@ describe('drive-aware defaults', () => {
     }
   })
 
-  it('never redirects on non-Windows platforms', async () => {
-    stubPlatform('linux')
-    exePath = '/opt/Comfy Desktop/comfy-desktop'
-    const p = await loadPaths()
+  it.each(['linux', 'darwin'] satisfies NodeJS.Platform[])(
+    'uses the home data root on %s',
+    async (platform) => {
+      stubPlatform(platform)
+      exePath = platform === 'darwin' ? '/Applications/Comfy Desktop.app' : '/opt/comfy-desktop'
+      const p = await loadPaths()
 
-    expect(p.defaultDataRoot()).toBe(HOME)
-    expect(p.builtinDefaultInstallDir()).toBe(path.join(HOME, 'ComfyUI-Installs'))
-  })
+      expect(p.defaultDataRoot()).toBe(HOME)
+      expect(p.defaultBenchmarksDir()).toBe(path.join(HOME, 'ComfyUI-Shared', 'benchmarks'))
+      expect(p.builtinDefaultInstallDir()).toBe(path.join(HOME, 'ComfyUI-Installs'))
+    }
+  )
 })
 
 describe('windows system-drive defaults', () => {
@@ -137,6 +143,7 @@ describe('windows system-drive defaults', () => {
 
     const root = path.join(LOCAL, 'Comfy-Desktop')
     expect(p.defaultDataRoot()).toBe(root)
+    expect(p.defaultBenchmarksDir()).toBe(path.join(root, 'ComfyUI-Shared', 'benchmarks'))
     expect(p.builtinDefaultInstallDir()).toBe(path.join(root, 'ComfyUI-Installs'))
     expect(p.defaultDownloadCacheDir()).toBe(path.join(root, 'ComfyUI-Cache', 'download-cache'))
   })
@@ -146,6 +153,9 @@ describe('windows system-drive defaults', () => {
     const p = await import('./paths')
 
     expect(p.defaultDataRoot()).toBe(homeDir)
+    expect(p.defaultBenchmarksDir()).toBe(
+      path.join(LOCAL, 'Comfy-Desktop', 'ComfyUI-Shared', 'benchmarks')
+    )
     expect(p.builtinDefaultInstallDir()).toBe(path.join(homeDir, 'ComfyUI-Installs'))
     // Roaming userData/download-cache, not the grouped Comfy-Desktop cache.
     expect(p.defaultDownloadCacheDir()).toBe(path.join(userDataDir, 'download-cache'))

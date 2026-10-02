@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, toRef, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import CollapsibleSectionToggle from '../components/CollapsibleSectionToggle.vue'
+import InfoTooltip from '../components/InfoTooltip.vue'
+import TemplatePickerStep from '../components/TemplatePickerStep.vue'
+import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
+import { usePerformanceTestExampleWorkflow } from '../composables/usePerformanceTestExampleWorkflow'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -20,8 +24,16 @@ import {
   createPerformanceTestResultsSvg,
   type PerformanceTestImageMetric
 } from '../lib/performanceTestResultsSvg'
+import { emitTelemetryAction } from '../lib/telemetry'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
+
+interface PerformanceTestRunTelemetry {
+  readonly installationId: string
+  readonly warmupRuns: number
+  readonly measuredRuns: number
+  readonly startedAtMs: number
+}
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -52,6 +64,37 @@ const isWorkflowImporting = ref(false)
 const isWorkflowDeleting = ref(false)
 const isLaunching = ref(false)
 const isStopping = ref(false)
+const isWorkflowLocked = computed(() => isLaunching.value || isStopping.value)
+const {
+  options: exampleWorkflowOptions,
+  diskSpace: exampleDiskSpace,
+  selectedId: selectedExampleWorkflowId,
+  isPickerOpen: isExamplePickerOpen,
+  isPickerLoading: isExamplePickerLoading,
+  diskError: exampleDiskError,
+  pendingLabel: pendingExampleWorkflowLabel,
+  displayName: workflowDisplayName,
+  download: exampleDownload,
+  isForOtherInstallation: isExampleForOtherInstallation,
+  openPicker: openExampleWorkflowPicker,
+  prepare: prepareExampleWorkflow,
+  release: releaseExampleWorkflow,
+  clearState: clearExampleWorkflowState
+} = usePerformanceTestExampleWorkflow({
+  picker: useTemplateRef<InstanceType<typeof TemplatePickerStep>>('examplePicker'),
+  selectedInstallationId,
+  isSelectedInstallationInstalled: computed(
+    () =>
+      performanceTestInstallations.value.find(({ id }) => id === selectedInstallationId.value)
+        ?.status === 'installed'
+  ),
+  workflowFilePath,
+  workflowError: workflowImportError,
+  isWorkflowImporting,
+  isWorkflowLocked,
+  deleteWorkflow,
+  t
+})
 const isExportingResults = ref(false)
 const exportResultsError = ref<string | null>(null)
 const logsExpanded = ref(true)
@@ -115,7 +158,13 @@ const aggregateChart = computed(() => {
     width: maximum > 0 ? `${(aggregate.value / maximum) * 100}%` : '0%'
   }))
 })
-const workflowFileName = computed(() => workflowFilePath.value?.split(/[\\/]/).pop() ?? '')
+const workflowLabel = computed(
+  () =>
+    pendingExampleWorkflowLabel.value ??
+    workflowDisplayName.value ??
+    workflowFilePath.value?.split(/[\\/]/).pop() ??
+    ''
+)
 const performanceTestSessionId = (installationId: string): string =>
   `performance-test:${installationId}`
 const canRun = computed(() => {
@@ -126,6 +175,10 @@ const canRun = computed(() => {
     workflowFilePath.value &&
     !isLaunching.value &&
     !isStopping.value &&
+    !isWorkflowImporting.value &&
+    !isWorkflowDeleting.value &&
+    !exampleDownload.value &&
+    !isExampleForOtherInstallation.value &&
     !sessionStore.isLaunching(sessionId)
   )
 })
@@ -133,6 +186,7 @@ const canStop = computed(() => {
   return Boolean(performanceTestInstallationId.value && !isStopping.value)
 })
 let activeLaunchPromise: Promise<ActionResult> | null = null
+let activeRunTelemetry: PerformanceTestRunTelemetry | null = null
 let runToken = 0
 const unsubscribePerformanceTestProgress = window.api.onPerformanceTestProgress((progress) => {
   if (progress.sessionId !== progressSessionId.value) return
@@ -161,20 +215,25 @@ function correctRunCount(
 }
 
 function correctWarmupRuns(): void {
-  warmupRuns.value = correctRunCount(warmupRuns.value, 1, 5, 1)
+  warmupRuns.value = correctRunCount(warmupRuns.value, 0, 5, 1)
 }
 
 function correctMeasuredRuns(): void {
   measuredRuns.value = correctRunCount(measuredRuns.value, 1, 100, 5)
 }
 
+function secondsToMilliseconds(seconds: number | null | undefined): number | null {
+  return seconds == null ? null : seconds * 1000
+}
+
 async function importWorkflow(sourcePath?: string): Promise<void> {
-  if (isWorkflowImporting.value || isWorkflowDeleting.value) return
+  if (isWorkflowImporting.value || isWorkflowDeleting.value || isWorkflowLocked.value) return
   isWorkflowImporting.value = true
   workflowImportError.value = null
   try {
     const result = await window.api.importPerformanceTestWorkflow(sourcePath)
     if (result.ok && result.filePath) {
+      releaseExampleWorkflow()
       workflowFilePath.value = result.filePath
     } else if (!result.canceled) {
       workflowImportError.value = result.message || t('performanceTest.importFailed')
@@ -188,15 +247,19 @@ async function importWorkflow(sourcePath?: string): Promise<void> {
 
 async function deleteWorkflow(): Promise<void> {
   const filePath = workflowFilePath.value
-  if (!filePath || isWorkflowDeleting.value) return
+  if (!filePath || isWorkflowDeleting.value || isWorkflowLocked.value) return
   isWorkflowDeleting.value = true
   workflowImportError.value = null
   try {
     const result = await window.api.deletePerformanceTestWorkflow(filePath)
-    if (result.ok && result.status === 'deleted') {
-      if (workflowFilePath.value === filePath) workflowFilePath.value = null
-    } else if (result.ok && result.status === 'preserved') {
-      workflowImportError.value = result.message || t('performanceTest.deleteFailed')
+    if (result.ok) {
+      if (workflowFilePath.value === filePath) {
+        workflowFilePath.value = null
+        clearExampleWorkflowState()
+      }
+      if (result.status === 'preserved') {
+        workflowImportError.value = result.message || t('performanceTest.deleteFailed')
+      }
     } else {
       workflowImportError.value = result.message || t('performanceTest.deleteFailed')
     }
@@ -219,7 +282,15 @@ async function dropWorkflow(event: DragEvent): Promise<void> {
 async function runPerformanceTest(): Promise<void> {
   const installationId = selectedInstallationId.value
   const filePath = workflowFilePath.value
-  if (!installationId || !filePath || isLaunching.value) return
+  if (
+    !installationId ||
+    !filePath ||
+    isLaunching.value ||
+    isStopping.value ||
+    isWorkflowImporting.value ||
+    isWorkflowDeleting.value
+  )
+    return
 
   correctWarmupRuns()
   correctMeasuredRuns()
@@ -227,6 +298,19 @@ async function runPerformanceTest(): Promise<void> {
   const runs = Number(measuredRuns.value)
   const sessionId = performanceTestSessionId(installationId)
   const token = ++runToken
+  const runTelemetry: PerformanceTestRunTelemetry = {
+    installationId,
+    warmupRuns: warmups,
+    measuredRuns: runs,
+    startedAtMs: performance.now()
+  }
+  activeRunTelemetry = runTelemetry
+  emitTelemetryAction('comfy.desktop.performance_test.started', {
+    installation_id: installationId,
+    warmup_runs: warmups,
+    measured_runs: runs,
+    total_runs: warmups + runs
+  })
   isLaunching.value = true
   performanceTestResult.value = null
   progressSessionId.value = sessionId
@@ -270,6 +354,48 @@ async function runPerformanceTest(): Promise<void> {
       )
       if (submission.ok) {
         performanceTestResult.value = submission
+        if (activeRunTelemetry === runTelemetry) {
+          activeRunTelemetry = null
+          const summary = submission.resultsSummary
+          const statistics = submission.statistics
+          const hardware = submission.hardware
+          emitTelemetryAction('comfy.desktop.performance_test.completed', {
+            installation_id: runTelemetry.installationId,
+            warmup_runs: runTelemetry.warmupRuns,
+            measured_runs: runTelemetry.measuredRuns,
+            successful_runs:
+              summary?.measuredJobCount ??
+              statistics?.measuredJobCount ??
+              Math.max(0, submission.submitted - (submission.failedRuns ?? 0)),
+            failed_runs: summary?.failedRunCount ?? submission.failedRuns ?? 0,
+            duration_ms: performance.now() - runTelemetry.startedAtMs,
+            fastest_run_duration_ms: secondsToMilliseconds(
+              summary?.fastestJobDurationSeconds ?? statistics?.fastest.durationSeconds
+            ),
+            average_run_duration_ms: secondsToMilliseconds(
+              summary?.averageJobDurationSeconds ?? statistics?.averageDurationSeconds
+            ),
+            median_run_duration_ms: secondsToMilliseconds(
+              summary?.medianJobDurationSeconds ?? statistics?.medianDurationSeconds
+            ),
+            slowest_run_duration_ms: secondsToMilliseconds(
+              summary?.slowestJobDurationSeconds ?? statistics?.slowest.durationSeconds
+            ),
+            deviceType: hardware?.deviceType ?? null,
+            deviceIndex: hardware?.deviceIndex ?? null,
+            deviceName: hardware?.deviceName ?? null,
+            backend: hardware?.backend ?? null,
+            devicesDeviceType: hardware?.devices.map((device) => device.deviceType) ?? [],
+            devicesDeviceIndex: hardware?.devices.map((device) => device.deviceIndex) ?? [],
+            devicesDeviceName: hardware?.devices.map((device) => device.deviceName) ?? [],
+            devicesBackend: hardware?.devices.map((device) => device.backend) ?? [],
+            vramMb: hardware?.vramMb ?? null,
+            ramMb: hardware?.ramMb ?? null,
+            pytorchVersion: hardware?.pytorchVersion ?? null,
+            xformersVersion: hardware?.xformersVersion ?? null,
+            cudaDeviceSet: hardware?.cudaDeviceSet ?? null
+          })
+        }
       }
       sessionStore.appendOutput(
         sessionId,
@@ -307,6 +433,7 @@ async function runPerformanceTest(): Promise<void> {
       }
     }
     activeLaunchPromise = null
+    if (activeRunTelemetry === runTelemetry) activeRunTelemetry = null
     progressSessionId.value = null
     isLaunching.value = false
   }
@@ -454,6 +581,22 @@ async function stopPerformanceTest(): Promise<void> {
   }
 }
 
+async function stopPerformanceTestFromUser(): Promise<void> {
+  const telemetry = activeRunTelemetry
+  if (telemetry) {
+    activeRunTelemetry = null
+    emitTelemetryAction('comfy.desktop.performance_test.stopped', {
+      installation_id: telemetry.installationId,
+      warmup_runs: telemetry.warmupRuns,
+      measured_runs: telemetry.measuredRuns,
+      completed_runs: completedProgressRuns.value,
+      total_runs: telemetry.warmupRuns + telemetry.measuredRuns,
+      duration_ms: performance.now() - telemetry.startedAtMs
+    })
+  }
+  await stopPerformanceTest()
+}
+
 async function toggleLogs(): Promise<void> {
   logsExpanded.value = !logsExpanded.value
   if (logsExpanded.value) {
@@ -511,25 +654,47 @@ watch(performanceTestLogs, async () => {
             </section>
 
             <section class="performance-test__column">
-              <h2>{{ t('performanceTest.dropWorkflow') }}</h2>
+              <h2>{{ t('performanceTest.chooseWorkflow') }}</h2>
+              <button
+                class="performance-test__example-workflow brand-secondary"
+                type="button"
+                :disabled="
+                  !selectedInstallationId ||
+                  isWorkflowLocked ||
+                  isWorkflowImporting ||
+                  isExamplePickerLoading
+                "
+                @click="openExampleWorkflowPicker"
+              >
+                {{
+                  isExamplePickerLoading
+                    ? t('performanceTest.loadingExampleWorkflows')
+                    : t('performanceTest.chooseExampleWorkflow')
+                }}
+              </button>
+              <div class="performance-test__workflow-divider">
+                <span>{{ t('performanceTest.orImportApiWorkflow') }}</span>
+              </div>
               <div
                 class="performance-test__drop-zone"
                 :class="{
                   'performance-test__drop-zone--dragging': isWorkflowDragging,
-                  'performance-test__drop-zone--selected': workflowFilePath
+                  'performance-test__drop-zone--selected':
+                    workflowFilePath || pendingExampleWorkflowLabel
                 }"
                 :aria-busy="isWorkflowImporting || isWorkflowDeleting"
-                @dragenter.prevent="isWorkflowDragging = true"
-                @dragover.prevent="isWorkflowDragging = true"
+                @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
+                @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
                 @dragleave.prevent="isWorkflowDragging = false"
                 @drop.prevent="dropWorkflow"
               >
                 <button
                   class="performance-test__drop-content"
                   type="button"
+                  :disabled="isWorkflowLocked"
                   @click="importWorkflow()"
                 >
-                  <span v-if="!workflowFilePath">
+                  <span v-if="!workflowFilePath && !pendingExampleWorkflowLabel">
                     {{
                       isWorkflowImporting
                         ? t('performanceTest.importingWorkflow')
@@ -537,23 +702,55 @@ watch(performanceTestLogs, async () => {
                     }}
                   </span>
                   <span v-else class="performance-test__workflow-file">
-                    <strong>{{ workflowFileName }}</strong>
-                    <code>{{ workflowFilePath }}</code>
+                    <strong>{{ workflowLabel }}</strong>
+                    <code v-if="pendingExampleWorkflowLabel">
+                      {{ t('performanceTest.preparingExampleWorkflow') }}
+                    </code>
+                    <template v-else-if="exampleDownload">
+                      <code>{{ exampleDownload.message }}</code>
+                      <span
+                        class="performance-test__example-download-bar"
+                        role="progressbar"
+                        :aria-valuenow="
+                          exampleDownload.percent >= 0 ? exampleDownload.percent : undefined
+                        "
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        :aria-label="t('performanceTest.exampleModelsDownload')"
+                      >
+                        <span
+                          v-if="exampleDownload.percent >= 0"
+                          :style="{ width: `${exampleDownload.percent}%` }"
+                        />
+                        <span
+                          v-else
+                          class="performance-test__example-download-bar--indeterminate"
+                        />
+                      </span>
+                    </template>
+                    <code v-else>{{ workflowFilePath }}</code>
                   </span>
                 </button>
                 <button
-                  v-if="workflowFilePath"
+                  v-if="workflowFilePath && !isWorkflowLocked"
                   class="performance-test__delete-workflow"
                   type="button"
-                  :aria-label="t('performanceTest.deleteWorkflow')"
-                  :title="t('performanceTest.deleteWorkflow')"
+                  :aria-label="
+                    exampleDownload
+                      ? t('performanceTest.cancelExampleDownload')
+                      : t('performanceTest.deleteWorkflow')
+                  "
+                  :title="
+                    exampleDownload
+                      ? t('performanceTest.cancelExampleDownload')
+                      : t('performanceTest.deleteWorkflow')
+                  "
                   :disabled="isWorkflowDeleting"
                   @click="deleteWorkflow"
                 >
                   <Trash2 :size="18" aria-hidden="true" />
                 </button>
               </div>
-              <p class="performance-test__field-hint">{{ t('performanceTest.apiFormatHint') }}</p>
               <p v-if="workflowImportError" class="performance-test__workflow-error" role="alert">
                 {{ workflowImportError }}
               </p>
@@ -562,15 +759,18 @@ watch(performanceTestLogs, async () => {
             <section class="performance-test__column">
               <h2>{{ t('performanceTest.measurementSettings') }}</h2>
               <div class="performance-test__setting">
-                <label for="performance-test-warmup-runs">
-                  {{ t('performanceTest.warmupRuns') }}
-                </label>
+                <span class="performance-test__setting-label">
+                  <label for="performance-test-warmup-runs">
+                    {{ t('performanceTest.warmupRuns') }}
+                  </label>
+                  <InfoTooltip :text="t('performanceTest.warmupRunsHint')" icon="info" />
+                </span>
                 <div class="brand-input performance-test__setting-input">
                   <input
                     id="performance-test-warmup-runs"
                     v-model="warmupRuns"
                     type="number"
-                    min="1"
+                    min="0"
                     max="5"
                     step="1"
                     @change="correctWarmupRuns"
@@ -578,11 +778,13 @@ watch(performanceTestLogs, async () => {
                   />
                 </div>
               </div>
-              <p class="performance-test__field-hint">{{ t('performanceTest.warmupRunsHint') }}</p>
               <div class="performance-test__setting">
-                <label for="performance-test-measured-runs">
-                  {{ t('performanceTest.measuredRuns') }}
-                </label>
+                <span class="performance-test__setting-label">
+                  <label for="performance-test-measured-runs">
+                    {{ t('performanceTest.measuredRuns') }}
+                  </label>
+                  <InfoTooltip :text="t('performanceTest.measuredRunsHint')" icon="info" />
+                </span>
                 <div class="brand-input performance-test__setting-input">
                   <input
                     id="performance-test-measured-runs"
@@ -601,7 +803,7 @@ watch(performanceTestLogs, async () => {
                   class="danger-solid performance-test__stop"
                   type="button"
                   :disabled="!canStop"
-                  @click="stopPerformanceTest"
+                  @click="stopPerformanceTestFromUser"
                 >
                   {{ isStopping ? t('performanceTest.stopping') : t('performanceTest.stop') }}
                 </button>
@@ -840,6 +1042,46 @@ watch(performanceTestLogs, async () => {
         <DevPlatformAccountChip />
       </div>
     </div>
+
+    <BaseModal
+      :open="isExamplePickerOpen"
+      size="xl"
+      :aria-label="t('performanceTest.exampleWorkflowPickerTitle')"
+      content-class="performance-test__example-modal"
+      @close="isExamplePickerOpen = false"
+    >
+      <template #header>
+        <div>
+          <h2>{{ t('performanceTest.exampleWorkflowPickerTitle') }}</h2>
+          <p>{{ t('performanceTest.exampleWorkflowPickerDescription') }}</p>
+        </div>
+      </template>
+      <p v-if="exampleDiskError" class="performance-test__example-disk-error" role="alert">
+        {{ exampleDiskError }}
+      </p>
+      <TemplatePickerStep
+        ref="examplePicker"
+        :options="exampleWorkflowOptions"
+        :selected-value="selectedExampleWorkflowId"
+        :disk-space="exampleDiskSpace"
+        :disk-space-loading="false"
+        compact
+        @select="selectedExampleWorkflowId = $event.value"
+      />
+      <template #footer>
+        <button class="brand-secondary" type="button" @click="isExamplePickerOpen = false">
+          {{ t('common.cancel') }}
+        </button>
+        <button
+          class="brand-primary"
+          type="button"
+          :disabled="!selectedExampleWorkflowId || !!exampleDiskError"
+          @click="prepareExampleWorkflow"
+        >
+          {{ t('performanceTest.useExampleWorkflow') }}
+        </button>
+      </template>
+    </BaseModal>
   </BrandBackground>
 </template>
 
@@ -913,8 +1155,13 @@ watch(performanceTestLogs, async () => {
   width: 100%;
 }
 
+.performance-test__setting-label {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
 .performance-test__setting label {
-  flex: 0 0 68px;
   color: var(--neutral-200);
   font-size: 13px;
   white-space: nowrap;
@@ -967,6 +1214,79 @@ watch(performanceTestLogs, async () => {
 .performance-test__instance-select :deep(.ui-select-trigger) {
   height: 30px;
   padding: 4px 8px;
+}
+
+/* Same height and text size as the workspace and instance selectors beside it. */
+.performance-test__example-workflow {
+  box-sizing: border-box;
+  width: 100%;
+  height: 30px;
+  padding: 4px 8px;
+  font-size: var(--takeover-fs-caption);
+}
+
+.performance-test__workflow-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.performance-test__workflow-divider::before,
+.performance-test__workflow-divider::after {
+  flex: 1;
+  height: 1px;
+  background: var(--chooser-surface-border);
+  content: '';
+}
+
+.performance-test__example-modal h2 {
+  margin: 0;
+}
+
+.performance-test__example-modal h2 + p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.performance-test__example-disk-error {
+  margin: 0 0 12px;
+  color: var(--accent-danger, #d92d20);
+  font-size: 12px;
+}
+
+.performance-test__example-download-bar {
+  display: block;
+  overflow: hidden;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--chooser-surface-border);
+}
+
+.performance-test__example-download-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.performance-test__example-download-bar > .performance-test__example-download-bar--indeterminate {
+  width: 30%;
+  animation: performance-test-download-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes performance-test-download-pulse {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(333%);
+  }
 }
 
 .performance-test__drop-zone,
@@ -1321,13 +1641,6 @@ watch(performanceTestLogs, async () => {
 
 .performance-test__results-placeholder {
   margin: 0;
-}
-
-.performance-test__field-hint {
-  margin: 8px 0 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 .performance-test__account {

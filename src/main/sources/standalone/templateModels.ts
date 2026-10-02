@@ -168,6 +168,11 @@ export async function resolveTemplateModels(
   templateId: string
 ): Promise<TemplateModelDownload[]> {
   const json = await loadTemplateJson(installation, templateId)
+  return resolveTemplateModelsFromJson(json)
+}
+
+/** Extract model downloads from an already-resolved editor workflow. */
+export function resolveTemplateModelsFromJson(json: unknown): TemplateModelDownload[] {
   if (!json || typeof json !== 'object') return []
 
   const doc = json as {

@@ -93,19 +93,29 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // circuit_broken = stop-the-bleeding guard tripped.
   'comfy.desktop.pygit2.probe_failed',
   'comfy.desktop.pygit2.circuit_broken',
-  // Assets scan-pipeline failures: the eight failure names in assetsTap's
+  // Assets scan-pipeline failures: the fourteen failure names in assetsTap's
   // ALLOWED_EVENTS. Mirrored for failure-rate monitors; supersedes the
   // mirroring capability of Comfy-Desktop#1490. The paired
   // success/informational events (assets.enabled, seeder.scan_started/
   // scan_completed/scan_cancelled/marked_missing,
   // scanner.hash_discarded_modified) stay PostHog-only — the same split as
-  // every other group above.
+  // every other group above. Also PostHog-only: scanner.invalid_mtime counts
+  // files skipped for a pre-epoch mtime, a property of the user's files rather
+  // than a scanner fault; scanner.failure_bucket is a per-scan aggregate (one
+  // line per distinct failure classification) for triage, not a per-failure
+  // alerting signal.
   'comfy.desktop.comfyui.assets.scanner.hash_failed',
   'comfy.desktop.comfyui.assets.scanner.enrich_failed',
   'comfy.desktop.comfyui.assets.scanner.fast_scan_failed',
   'comfy.desktop.comfyui.assets.scanner.temp_sync_failed',
   'comfy.desktop.comfyui.assets.scanner.mark_missing_failed',
   'comfy.desktop.comfyui.assets.scanner.stat_failed',
+  'comfy.desktop.comfyui.assets.scanner.watch_stat_failed',
+  'comfy.desktop.comfyui.assets.scanner.watch_spec_failed',
+  'comfy.desktop.comfyui.assets.scanner.watch_seed_failed',
+  'comfy.desktop.comfyui.assets.scanner.root_unreachable',
+  'comfy.desktop.comfyui.assets.scanner.walk_failed',
+  'comfy.desktop.comfyui.assets.scanner.metadata_failed',
   'comfy.desktop.comfyui.assets.seeder.batch_insert_failed',
   'comfy.desktop.comfyui.assets.seeder.scan_failed'
 ])

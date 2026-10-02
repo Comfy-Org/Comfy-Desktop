@@ -35,7 +35,15 @@ const CORE_EVENTS = [
   'scanner.fast_scan_failed',
   'scanner.temp_sync_failed',
   'scanner.mark_missing_failed',
-  'scanner.stat_failed'
+  'scanner.stat_failed',
+  'scanner.invalid_mtime',
+  'scanner.watch_stat_failed',
+  'scanner.watch_spec_failed',
+  'scanner.watch_seed_failed',
+  'scanner.failure_bucket',
+  'scanner.root_unreachable',
+  'scanner.walk_failed',
+  'scanner.metadata_failed'
 ]
 
 const COUNTER_FIELDS = [
@@ -61,7 +69,25 @@ const FIELD_VALUES: Array<{ field: string; value: LogfmtValue }> = [
     value: 7
   })),
   { field: 'error_type', value: 'ValueError' },
-  { field: 'hashing_enabled', value: true }
+  { field: 'hashing_enabled', value: true },
+  { field: 'reason', value: 'network_unavailable' },
+  { field: 'errno_name', value: 'ESTALE' },
+  { field: 'winerror', value: 53 },
+  { field: 'exc_fp', value: '3f9a1c0b7d2e' },
+  { field: 'exc_class', value: 'sqlite3.OperationalError' },
+  { field: 'exc_site', value: 'assets.scanner.enrich_asset' },
+  { field: 'exc_line', value: 184 }
+]
+
+/** Fields core added with its failure classification. */
+const CLASSIFICATION_FIELDS = [
+  'reason',
+  'errno_name',
+  'winerror',
+  'exc_fp',
+  'exc_class',
+  'exc_site',
+  'exc_line'
 ]
 
 const BASE_CONTEXT_KEYS = ['installation_id', 'variant', 'release', 'core_beta_flags']
@@ -123,7 +149,8 @@ describe('assetsTap', () => {
           'site',
           ...COUNTER_FIELDS,
           'error_type',
-          'hashing_enabled'
+          'hashing_enabled',
+          ...CLASSIFICATION_FIELDS
         ].sort()
       )
     })
@@ -163,11 +190,26 @@ describe('assetsTap', () => {
         line: lines[2]!,
         event: 'scanner.stat_failed',
         fields: { error_type: 'PermissionError', site: 'discovery' }
+      },
+      {
+        line: lines[3]!,
+        event: 'scanner.failure_bucket',
+        fields: {
+          count: 5000,
+          errno_name: 'ESTALE',
+          exc_class: 'OSError',
+          exc_fp: '3f9a1c0b7d2e',
+          exc_line: 184,
+          exc_site: 'assets.scanner.observe_references_on_filesystem',
+          reason: 'network_unavailable',
+          site: 'reference',
+          winerror: -1
+        }
       }
     ]
 
-    it('holds three newline-terminated lines with no CRLF', () => {
-      expect(lines).toHaveLength(3)
+    it('holds four newline-terminated lines with no CRLF', () => {
+      expect(lines).toHaveLength(4)
       expect(raw.endsWith('\n')).toBe(true)
       expect(raw).not.toContain('\r')
     })
@@ -270,6 +312,26 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ error_type: 'PermissionError', site: 'discovery' })
     })
 
+    it('accepts scanner.invalid_mtime carrying a batch count', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('scanner.invalid_mtime', { count: 5 }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe('comfy.desktop.comfyui.assets.scanner.invalid_mtime')
+      expect(captured[0]!.ctx).toMatchObject({ count: 5 })
+    })
+
+    it.each([
+      'scanner.watch_stat_failed',
+      'scanner.watch_spec_failed',
+      'scanner.watch_seed_failed'
+    ])('accepts %s carrying error_type', (event) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine(event, { error_type: 'PermissionError' }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe(`comfy.desktop.comfyui.assets.${event}`)
+      expect(captured[0]!.ctx).toMatchObject({ error_type: 'PermissionError' })
+    })
+
     it('accepts an event carrying no fields at all', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] scanner.hash_discarded_modified\n', 'stdout')
@@ -322,6 +384,38 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ count: 2 })
       expect(JSON.stringify(captured[0]!.ctx)).not.toContain('exfiltrate')
       expect(JSON.stringify(captured[0]!.ctx)).not.toContain('scan_exploded')
+    })
+
+    it('reports omitted enum values as a bare count, never the values', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('scanner.stat_failed', { reason: 'quantum_flux', site: 'warp_core' }),
+        'stdout'
+      )
+      tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
+      // A line rejected for another reason contributes nothing.
+      tap.ingest(taggedLine('scanner.hash_failed', { reason: 'new_one', root: 'cache' }), 'stdout')
+      expect(captured).toHaveLength(2)
+
+      tap.flushSummary()
+      expect(captured).toHaveLength(3)
+      expect(captured[2]!.event).toBe('comfy.desktop.comfyui.assets.unknown_enum_values_omitted')
+      expect(captured[2]!.ctx).toMatchObject({ count: 3 })
+      const serialized = JSON.stringify(captured[2]!.ctx)
+      for (const value of ['quantum_flux', 'warp_core', 'new_one']) {
+        expect(serialized).not.toContain(value)
+      }
+
+      tap.flushSummary()
+      expect(captured).toHaveLength(3)
+    })
+
+    it('cannot forge the omitted-enum counter with a crafted line', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('unknown_enum_values_omitted', { count: 999 }), 'stdout')
+      tap.flushSummary()
+      expect(captured.map((c) => c.ctx.count)).toEqual([1])
+      expect(captured[0]!.event).toBe('comfy.desktop.comfyui.assets.unknown_events_dropped')
     })
 
     it('cannot have its dropped-event counter forged by a crafted line', () => {
@@ -439,6 +533,29 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
     })
 
+    // The line buffer splits on LF and CRLF, so only a lone CR can reach a
+    // value through ingest; LF is rejected too, for parity with core.
+    it('rejects a value carrying a lone carriage return', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_failed error_type=Value\rError\n', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_failed error_type=\rValueError\n', 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
+    it('rejects a string value carrying a control or line-separator character', () => {
+      const tap = createAssetsTap(baseOpts)
+      for (const value of [
+        'Value\tError',
+        'Value\u0000Error',
+        'Value\u2028Error',
+        'Value\u0085Error'
+      ]) {
+        tap.ingest(taggedLine('seeder.scan_failed', { error_type: value }), 'stdout')
+      }
+      tap.ingest(taggedLine('scanner.stat_failed', { errno_name: 'E\u2029IO' }), 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
     it('rejects an oversized string value', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_failed', { error_type: 'E'.repeat(65) }), 'stdout')
@@ -501,7 +618,13 @@ describe('assetsTap', () => {
       ['site', false],
       ...COUNTER_FIELDS.map((field): [string, LogfmtValue] => [field, true]),
       ['error_type', 404],
-      ['hashing_enabled', 1]
+      ['hashing_enabled', 1],
+      ['reason', 1],
+      ['errno_name', true],
+      ['winerror', 'ERROR_BAD_NETPATH'],
+      ['exc_class', 1],
+      ['exc_site', false],
+      ['exc_line', 'top']
     ])('rejects $0 with a value of the wrong type', (field, value) => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { [field]: value }), 'stdout')
@@ -512,11 +635,113 @@ describe('assetsTap', () => {
       ['root', 'cache'],
       ['phase', 'none'],
       ['stage', 'scan'],
-      ['site', 'finalize']
+      ['reason', 'Other'],
+      ['reason', 'no-space'],
+      ['site', `w${'x'.repeat(64)}`]
     ])('rejects invalid enum value $1 for $0', (field, value) => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { [field]: value }), 'stdout')
       expect(captured).toHaveLength(0)
+    })
+
+    // A newer core may add a reason or a call site; the event must survive it.
+    it.each([
+      ['site', 'finalize'],
+      ['reason', 'disk_on_fire']
+    ])('omits the unknown %s value %s but keeps the event', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('scanner.stat_failed', { error_type: 'OSError', [field]: value }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ error_type: 'OSError' })
+      expect(captured[0]!.ctx).not.toHaveProperty(field)
+    })
+
+    it('still rejects a repeated extensible enum field whose first value was omitted', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] scanner.stat_failed site=future site=hash\n', 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
+    it.each([
+      ['errno_name', 'WSAECONNRESET'],
+      ['errno_name', 'WSASYSNOTREADY'],
+      ['errno_name', 'WSAHOST_NOT_FOUND'],
+      ['errno_name', 'none'],
+      ['winerror', 0],
+      ['winerror', 65535],
+      ['exc_class', 'ext'],
+      ['exc_site', 'none'],
+      ['exc_line', 0],
+      ['site', 'seed_observation'],
+      ['site', 'watch_seed']
+    ])('accepts the boundary value $1 for $0', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('scanner.stat_failed', { [field]: value }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx[field]).toBe(value)
+    })
+
+    it.each<[string, LogfmtValue]>([
+      ['errno_name', 'estale'],
+      ['errno_name', 'EACCES1234567890ABCDEFGHI'],
+      ['errno_name', 'ENOENT.x'],
+      ['errno_name', 'NONE'],
+      ['winerror', -2],
+      ['winerror', 65536],
+      ['exc_fp', '3f9a1c0b7d2'],
+      ['exc_fp', '3f9a1c0b7d2ef'],
+      ['exc_fp', '3F9A1C0B7D2E'],
+      ['exc_fp', '3f9a1c0b7d2g'],
+      ['exc_class', '1Error'],
+      ['exc_class', 'Error-Type'],
+      ['exc_class', `E${'x'.repeat(64)}`],
+      ['exc_site', 'assets.scanner.<locals>'],
+      ['exc_line', -1]
+    ])('rejects the out-of-contract value $1 for $0', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('scanner.stat_failed', { [field]: value }), 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
+    it('accepts failure_bucket scoped to a phase and a root', () => {
+      const fields = { count: 3, phase: 'enrich', reason: 'locked', root: 'models', site: 'hash' }
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('scanner.failure_bucket', fields), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject(fields)
+    })
+
+    // One fingerprint in about 280 is all decimal digits; coercing it to a
+    // number would drop every line from that failure site.
+    it('keeps an all-digit exc_fp as a string', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('scanner.stat_failed', { exc_fp: '012345678901' }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.exc_fp).toBe('012345678901')
+    })
+
+    // Every event core sends through its failure classifier.
+    it.each([
+      ...CORE_EVENTS.filter((event) => event.endsWith('_failed')),
+      'scanner.root_unreachable'
+    ])('accepts the full classification on %s', (event) => {
+      const fields = {
+        error_type: 'OSError',
+        reason: 'io_error',
+        errno_name: 'EIO',
+        winerror: -1,
+        exc_fp: 'a1b2c3d4e5f6',
+        exc_class: 'OSError',
+        exc_site: 'assets.scanner.enrich_asset',
+        exc_line: 12
+      }
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine(event, fields), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject(fields)
     })
 
     it('handles numeric-looking exception names according to their parsed type', () => {
@@ -545,6 +770,29 @@ describe('assetsTap', () => {
       vi.advanceTimersByTime(60_000)
       tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
       expect(captured).toHaveLength(61)
+    })
+
+    // Pins the accepted limitation documented on PER_EVENT_HOURLY_CAP: a
+    // later scan's new classification waits for the next window.
+    it('hour-samples failure_bucket, so the first failing scan wins', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-09-03T10:00:00Z'))
+      const tap = createAssetsTap(baseOpts)
+      const bucket = (reason: string, exc_line: number): string =>
+        taggedLine('scanner.failure_bucket', { count: 1, exc_line, reason, site: 'hash' })
+      for (const scan of [0, 1]) {
+        for (let line = 0; line < 50; line++)
+          tap.ingest(bucket('locked', scan * 50 + line), 'stdout')
+      }
+      expect(captured).toHaveLength(60)
+
+      vi.advanceTimersByTime(30 * 60_000)
+      tap.ingest(bucket('no_space', 0), 'stdout')
+      expect(captured.some((c) => c.ctx.reason === 'no_space')).toBe(false)
+
+      vi.advanceTimersByTime(30 * 60_000)
+      tap.ingest(bucket('no_space', 0), 'stdout')
+      expect(captured.at(-1)!.ctx.reason).toBe('no_space')
     })
 
     it('keeps the caps independent per event name', () => {
