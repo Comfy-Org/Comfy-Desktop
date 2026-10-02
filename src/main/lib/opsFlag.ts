@@ -190,9 +190,8 @@ export function makeOpsFlag<T>(opts: {
    *  Disable the flag first (serve `false`) and let clients pick that up; delete it only
    *  afterwards.
    *
-   *  Only for flags whose fail direction is a downgrade a returning user would notice (or an
-   *  opt-in rollout meant to keep its last served value offline); a fail-closed guard must NOT
-   *  persist. */
+   *  Only for flags whose fail direction is a downgrade a returning user would notice; a
+   *  fail-closed guard must NOT persist. */
   persist?: true
 }): OpsFlag<T> {
   const { key, fallback, parse, logLabel, persist } = opts
@@ -227,8 +226,9 @@ export function makeOpsFlag<T>(opts: {
    *  `writePersistedResult` is a read-modify-write over a single shared `ops-flags.json`, and a
    *  late write is the first thing that makes concurrent writers structurally possible — it can
    *  now land after its own launch has moved on, so two overlapping launches could interleave.
-   *  Left unlocked on purpose: each read-modify-write is synchronous, so persisting flags in one
-   *  process can't interleave, and the loser of a cross-process race re-fetches next launch. */
+   *  Left unlocked on purpose: `coreBetaGrants` is the only flag that persists, so there is one
+   *  writer per process, and the loser of such a race re-fetches on the next launch anyway.
+   *  Revisit if a second `persist` flag is ever added. */
   function persistLate(generationAtInit: number, result: OpsFlagValueResult): void {
     if (generationAtInit !== generation) return
     try {

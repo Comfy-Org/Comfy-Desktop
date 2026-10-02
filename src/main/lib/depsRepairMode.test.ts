@@ -1,19 +1,9 @@
-// Parsing and persistence of the requirements-repair install-kind list.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
+// Parsing and resolution of the requirements-repair install-kind list.
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getOpsFlagResult = vi.fn()
 vi.mock('./telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
-}))
-
-// This flag persists, so a resolved value writes `ops-flags.json`: pin `configDir()` to a temp
-// dir (as `coreBetaGrants.test.ts` does) so it never lands in the developer's own config.
-let testConfigDir = ''
-vi.mock('./paths', () => ({
-  configDir: () => testConfigDir
 }))
 
 import {
@@ -35,11 +25,6 @@ const value = (v: unknown): unknown => ({ kind: 'value', value: v, payload: unde
 beforeEach(() => {
   _resetForTest()
   getOpsFlagResult.mockReset()
-  testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deps-repair-mode-'))
-})
-
-afterEach(() => {
-  fs.rmSync(testConfigDir, { recursive: true, force: true })
 })
 
 describe('parseDepsRepairKinds', () => {
@@ -102,29 +87,20 @@ describe('parseDepsRepairKinds', () => {
 })
 
 describe('depsRepairMode', () => {
-  it('reads deps_repair_mode as a persisted flag', async () => {
+  it('reads deps_repair_mode fresh each launch, without persisting it', async () => {
     expect(DEPS_REPAIR_MODE_FLAG_KEY).toBe('deps_repair_mode')
     await resolveWithResult(value('adopted'))
-    // The fourth argument is the late-result callback: present only for a persisted flag, so a
-    // served list still applies on later offline launches.
+    // No late-result callback: a value that arrives after the deadline is not saved for later.
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       DEPS_REPAIR_MODE_FLAG_KEY,
       'anon',
       expect.any(Number),
-      expect.any(Function)
+      undefined
     )
   })
 
   it('reads a served list', async () => {
     expect(await resolveWithResult(value('adopted,managed'))).toEqual(['adopted', 'managed'])
-  })
-
-  it('holds a fetched array payload through a later launch that cannot reach the flag', async () => {
-    getOpsFlagResult.mockResolvedValue({ kind: 'value', value: true, payload: ['managed'] })
-    await initDepsRepairMode({ distinctId: 'anon' })
-    expect(await getDepsRepairModeAsync()).toEqual(['managed'])
-    _resetForTest()
-    expect(await resolveWithResult({ kind: 'unreachable' })).toEqual(['managed'])
   })
 
   it('repairs nothing when the flag was never fetched (unreachable)', async () => {
@@ -137,16 +113,16 @@ describe('depsRepairMode', () => {
     expect(await getDepsRepairModeAsync()).toEqual([])
   })
 
-  it('holds a fetched list through a later launch that cannot reach the flag', async () => {
+  it('does not carry a fetched list into a later launch that cannot reach the flag', async () => {
     expect(await resolveWithResult(value('adopted,managed'))).toEqual(['adopted', 'managed'])
     _resetForTest()
-    expect(await resolveWithResult({ kind: 'unreachable' })).toEqual(['adopted', 'managed'])
+    expect(await resolveWithResult({ kind: 'unreachable' })).toEqual([])
   })
 
-  it('narrows to nothing once an empty list is served, and holds that offline too', async () => {
-    await resolveWithResult(value('adopted,managed'))
-    _resetForTest()
-    expect(await resolveWithResult(value(''))).toEqual([])
+  it('does not carry a fetched array payload into a later unreachable launch', async () => {
+    getOpsFlagResult.mockResolvedValue({ kind: 'value', value: true, payload: ['managed'] })
+    await initDepsRepairMode({ distinctId: 'anon' })
+    expect(await getDepsRepairModeAsync()).toEqual(['managed'])
     _resetForTest()
     expect(await resolveWithResult({ kind: 'unreachable' })).toEqual([])
   })

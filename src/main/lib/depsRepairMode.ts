@@ -4,8 +4,9 @@
  * comma-separated string payload or value. Adopted installs repair after their
  * prompt, managed installs without asking; the rest only detect and report.
  * Names are trimmed and lowercased, unknown ones ignored; unset, unreachable,
- * empty or a malformed payload repairs nothing. Persists the last fetched list;
- * deleting the flag does NOT revoke it - serve an empty list.
+ * empty or a malformed payload repairs nothing. Not persisted: each launch reads
+ * the flag afresh, so an unreachable flag repairs nothing and an emergency
+ * empty list (or deleting the flag) takes effect on the next launch.
  */
 import type { FeatureFlagValue } from './telemetry'
 import { makeOpsFlag } from './opsFlag'
@@ -35,8 +36,7 @@ const flag = makeOpsFlag<DepsRepairFlag>({
   key: DEPS_REPAIR_MODE_FLAG_KEY,
   fallback: [],
   parse: parseDepsRepairKinds,
-  logLabel: 'deps-repair-mode',
-  persist: true
+  logLabel: 'deps-repair-mode'
 })
 
 export const initDepsRepairMode = flag.init
