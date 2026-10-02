@@ -984,9 +984,17 @@ describe('relaxSpecifier', () => {
 })
 
 describe('depsRepairPolicy', () => {
-  it('asks adopted installs first and only reports drift on managed ones', () => {
-    expect(depsRepairPolicy(adoptedInstall([], 'blake3\n').inst)).toBe('prompt')
-    expect(depsRepairPolicy(managedInstall([], 'blake3\n').inst)).toBe('off')
+  const adopted = (): InstallationRecord => adoptedInstall([], 'blake3\n').inst
+  const managed = (): InstallationRecord => managedInstall([], 'blake3\n').inst
+
+  it('repairs managed installs without asking, and asks adopted installs first', () => {
+    expect(depsRepairPolicy(managed(), 'auto')).toBe('auto')
+    expect(depsRepairPolicy(adopted(), 'auto')).toBe('prompt')
+  })
+
+  it('turns every repair off under the kill switch, adopted installs included', () => {
+    expect(depsRepairPolicy(managed(), 'off')).toBe('off')
+    expect(depsRepairPolicy(adopted(), 'off')).toBe('off')
   })
 })
 

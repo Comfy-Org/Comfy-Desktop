@@ -20,6 +20,7 @@ import * as settings from '../../settings'
 import * as telemetry from '../../lib/telemetry'
 import { buildErrorFields } from '../../../shared/errorEvent'
 import type { InstallationRecord } from '../../installations'
+import type { DepsRepairFlag } from '../../lib/depsRepairMode'
 
 /**
  * Pre-launch repair for a Desktop-owned venv (managed standalone or adopted)
@@ -90,11 +91,14 @@ export type DepsRepairOutcome =
  */
 export type DepsRepairMode = 'prompt' | 'auto' | 'off'
 
-/** Adopted installs ask before their legacy venv is changed. Managed installs
- *  only report drift for now: whether Desktop repairs them is decided
- *  separately. */
-export function depsRepairPolicy(installation: InstallationRecord): DepsRepairMode {
-  return installation.adopted === true ? 'prompt' : 'off'
+/** Managed installs repair without asking, adopted installs ask first; the
+ *  `deps_repair_mode` kill switch turns both off. */
+export function depsRepairPolicy(
+  installation: InstallationRecord,
+  flag: DepsRepairFlag
+): DepsRepairMode {
+  if (flag === 'off') return 'off'
+  return installation.adopted === true ? 'prompt' : 'auto'
 }
 
 /** Mode `off`: log the drift and report it, without touching the venv. */

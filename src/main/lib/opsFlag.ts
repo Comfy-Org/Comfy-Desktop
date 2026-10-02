@@ -226,9 +226,8 @@ export function makeOpsFlag<T>(opts: {
    *  `writePersistedResult` is a read-modify-write over a single shared `ops-flags.json`, and a
    *  late write is the first thing that makes concurrent writers structurally possible — it can
    *  now land after its own launch has moved on, so two overlapping launches could interleave.
-   *  Left unlocked on purpose: `coreBetaGrants` is the only flag that persists, so there is one
-   *  writer per process, and the loser of such a race re-fetches on the next launch anyway.
-   *  Revisit if a second `persist` flag is ever added. */
+   *  Left unlocked on purpose: each read-modify-write is synchronous, so persisting flags in one
+   *  process can't interleave, and the loser of a cross-process race re-fetches next launch. */
   function persistLate(generationAtInit: number, result: OpsFlagValueResult): void {
     if (generationAtInit !== generation) return
     try {
