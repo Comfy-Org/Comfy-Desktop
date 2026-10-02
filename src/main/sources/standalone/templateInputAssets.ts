@@ -117,10 +117,13 @@ export async function resolveTemplateInputAssetSnapshot(
     const json = await loadTemplateJson(installation, templateId)
     return json && typeof json === 'object' ? resolveTemplateInputAssetsFromJson(json) : null
   })()
-  snapshotCache.set(key, { expiresAt: now + SNAPSHOT_TTL_MS, snapshot })
-  // A failed resolution must not be held: the next call should retry.
+  const entry = { expiresAt: now + SNAPSHOT_TTL_MS, snapshot }
+  snapshotCache.set(key, entry)
+  // A failed resolution must not be held: the next call should retry. Only
+  // evict this entry - a slow resolution can outlive its own TTL, by which
+  // point a later call owns the key.
   void snapshot.then((value) => {
-    if (value === null) snapshotCache.delete(key)
+    if (value === null && snapshotCache.get(key) === entry) snapshotCache.delete(key)
   })
   return snapshot
 }

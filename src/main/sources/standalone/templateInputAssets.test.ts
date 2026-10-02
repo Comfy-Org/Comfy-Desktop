@@ -137,6 +137,26 @@ describe('resolveTemplateInputAssets', () => {
     expect(b).toEqual(c)
   })
 
+  it('evicts only its own entry when a slow resolution fails late', async () => {
+    let settleFirst!: (value: unknown) => void
+    loadTemplateJson
+      .mockImplementationOnce(() => new Promise((resolve) => (settleFirst = resolve)))
+      .mockResolvedValue({ nodes: [{ type: 'LoadImage', widgets_values: ['subject.png'] }] })
+
+    const slow = resolveTemplateInputAssetSnapshot(inst, 'slow')
+    // The first resolution outlives its TTL, so a later call owns the key.
+    vi.setSystemTime(Date.now() + 31_000)
+    const second = resolveTemplateInputAssetSnapshot(inst, 'slow')
+    settleFirst(null)
+
+    await expect(slow).resolves.toBeNull()
+    await expect(second).resolves.toHaveLength(1)
+
+    // The newer entry must survive the older one's failure.
+    await expect(resolveTemplateInputAssetSnapshot(inst, 'slow')).resolves.toHaveLength(1)
+    expect(loadTemplateJson).toHaveBeenCalledTimes(2)
+  })
+
   it('retries after an unresolved template rather than caching the failure', async () => {
     loadTemplateJson.mockResolvedValueOnce(null).mockResolvedValue({
       nodes: [{ type: 'LoadImage', widgets_values: ['subject.png'] }]
