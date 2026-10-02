@@ -22,7 +22,7 @@ function readGitSha() {
     return execSync('git rev-parse --short=12 HEAD', {
       cwd: repoRoot,
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'ignore']
     }).trim()
   } catch {
     return ''
@@ -49,13 +49,13 @@ function resolveDatadogReleaseVersion(env = process.env) {
   const commitSha = String(env.GITHUB_SHA || env.VITE_GIT_SHA || readGitSha()).trim()
 
   return normalizeDatadogVersion(
-    commitSha ? `${packageVersion}-${commitSha.slice(0, 12)}` : packageVersion,
+    commitSha ? `${packageVersion}-${commitSha.slice(0, 12)}` : packageVersion
   )
 }
 
 module.exports = {
   normalizeDatadogVersion,
-  resolveDatadogReleaseVersion,
+  resolveDatadogReleaseVersion
 }
 
 if (require.main === module) {
