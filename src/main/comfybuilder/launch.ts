@@ -36,7 +36,9 @@ export function managerAllowedByPolicy(policy: ModelPolicy | null | undefined): 
   return policy?.mode !== 'allowlist'
 }
 
-/** Where a governed build's archive carries its signed policy. */
+/** Where a governed build's archive carries its signed policy. Must match
+ *  ComfyUI's `_POLICY_PATH` in `app/governance.py` (Comfy-Org/ComfyUI#16167 at
+ *  cd93b00, line 50); recheck it when that PR merges. */
 const GOVERNANCE_POLICY_RELATIVE = path.join('ComfyUI', 'governance', 'policy.signed.json')
 
 /**
