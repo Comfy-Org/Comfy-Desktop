@@ -8,6 +8,7 @@ import type {
   PerformanceTestStatistics,
   SystemInfo
 } from '../../types/ipc'
+import { isPersistableTemplateId } from '../sources/standalone/curatedTemplates'
 
 const PERFORMANCE_TEST_POLL_INTERVAL_MS = 1000
 const PERFORMANCE_TEST_TIMEOUT_MS = 4 * 60 * 60 * 1000
@@ -256,6 +257,22 @@ function formatPerformanceTestSessionId(date: Date): string {
     .join('')
 }
 
+async function createPerformanceTestSessionDir(benchmarksDir: string): Promise<string> {
+  await fs.promises.mkdir(benchmarksDir, { recursive: true })
+
+  for (let offsetSeconds = 0; ; offsetSeconds++) {
+    const sessionId = formatPerformanceTestSessionId(new Date(Date.now() + offsetSeconds * 1000))
+    const sessionDir = path.join(benchmarksDir, sessionId)
+    try {
+      await fs.promises.mkdir(sessionDir)
+      return sessionDir
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
+      throw error
+    }
+  }
+}
+
 function resolveManagedWorkflowPath(
   filePath: string,
   benchmarksDir: string
@@ -362,26 +379,38 @@ export async function storePerformanceTestWorkflow(
     throw new Error('The selected file is not a ComfyUI API-format workflow.')
   }
 
-  await fs.promises.mkdir(benchmarksDir, { recursive: true })
+  const sessionDir = await createPerformanceTestSessionDir(benchmarksDir)
+  const destinationPath = path.join(sessionDir, sourceFileName)
+  try {
+    await fs.promises.writeFile(destinationPath, contents)
+    return destinationPath
+  } catch (error) {
+    await fs.promises.rm(sessionDir, { recursive: true, force: true })
+    throw error
+  }
+}
 
-  for (let offsetSeconds = 0; ; offsetSeconds++) {
-    const sessionId = formatPerformanceTestSessionId(new Date(Date.now() + offsetSeconds * 1000))
-    const sessionDir = path.join(benchmarksDir, sessionId)
-    try {
-      await fs.promises.mkdir(sessionDir)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
-      throw error
-    }
+/** Persist an example workflow's API prompt as a new session's runnable workflow. */
+export async function storePerformanceTestExampleWorkflow(
+  templateId: string,
+  apiWorkflow: unknown,
+  benchmarksDir: string
+): Promise<string> {
+  if (!isPersistableTemplateId(templateId)) {
+    throw new Error('Invalid example workflow ID.')
+  }
+  if (!isApiWorkflow(apiWorkflow)) {
+    throw new Error('The example workflow has no valid API-format prompt.')
+  }
 
-    const destinationPath = path.join(sessionDir, sourceFileName)
-    try {
-      await fs.promises.writeFile(destinationPath, contents)
-      return destinationPath
-    } catch (error) {
-      await fs.promises.rm(sessionDir, { recursive: true, force: true })
-      throw error
-    }
+  const sessionDir = await createPerformanceTestSessionDir(benchmarksDir)
+  const workflowFilePath = path.join(sessionDir, `${templateId}.json`)
+  try {
+    await fs.promises.writeFile(workflowFilePath, JSON.stringify(apiWorkflow))
+    return workflowFilePath
+  } catch (error) {
+    await fs.promises.rm(sessionDir, { recursive: true, force: true })
+    throw error
   }
 }
 
@@ -420,8 +449,8 @@ export async function submitPerformanceTestWorkflow(
   if (!Number.isInteger(measuredRuns) || measuredRuns < 1 || measuredRuns > 100) {
     throw new Error('Measured runs must be an integer between 1 and 100.')
   }
-  if (!Number.isInteger(warmupRuns) || warmupRuns < 1 || warmupRuns > 5) {
-    throw new Error('Warm-up runs must be an integer between 1 and 5.')
+  if (!Number.isInteger(warmupRuns) || warmupRuns < 0 || warmupRuns > 5) {
+    throw new Error('Warm-up runs must be an integer between 0 and 5.')
   }
 
   let workflow = await readPerformanceTestWorkflow(filePath, benchmarksDir)

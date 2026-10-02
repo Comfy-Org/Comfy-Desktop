@@ -70,6 +70,7 @@ const FIELD_VALUES: Array<{ field: string; value: LogfmtValue }> = [
     value: 7
   })),
   { field: 'error_type', value: 'ValueError' },
+  { field: 'error_kind', value: 'database_locked' },
   { field: 'hashing_enabled', value: true },
   { field: 'reason', value: 'network_unavailable' },
   { field: 'errno_name', value: 'ESTALE' },
@@ -150,6 +151,7 @@ describe('assetsTap', () => {
           'site',
           ...COUNTER_FIELDS,
           'error_type',
+          'error_kind',
           'hashing_enabled',
           ...CLASSIFICATION_FIELDS
         ].sort()
@@ -1019,6 +1021,84 @@ describe('assetsTap', () => {
       tap.ingest(taggedLine('seeder.scan_completed', { recovered_count: 0 }), 'stdout')
       expect(captured[0]!.ctx.recovered_count).toBe(0)
     })
+  })
+
+  describe('error_kind', () => {
+    /** Mirror of ComfyUI `ERROR_KINDS`. */
+    const ERROR_KINDS = [
+      'expression_tree_too_large',
+      'too_many_variables',
+      'database_locked',
+      'disk_full',
+      'disk_io',
+      'unable_to_open',
+      'database_corrupt',
+      'permission_denied',
+      'file_locked',
+      'read_only',
+      'other'
+    ]
+    /** The core events that carry `error_kind`, always next to `error_type`. */
+    const ERROR_KIND_EVENTS = [
+      'seeder.scan_failed',
+      'scanner.fast_scan_failed',
+      'scanner.temp_sync_failed',
+      'scanner.mark_missing_failed',
+      'scanner.stat_failed',
+      'seeder.batch_insert_failed',
+      'scanner.watch_stat_failed',
+      'scanner.watch_seed_failed'
+    ]
+
+    it.each(ERROR_KINDS)('forwards error_kind=%s', (kind) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('seeder.scan_failed', { error_type: 'OperationalError', error_kind: kind }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ error_type: 'OperationalError', error_kind: kind })
+    })
+
+    it.each(ERROR_KIND_EVENTS)('forwards error_type and error_kind on %s', (event) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine(event, { error_type: 'OSError', error_kind: 'disk_full' }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe(`comfy.desktop.comfyui.assets.${event}`)
+      expect(captured[0]!.ctx).toMatchObject({ error_type: 'OSError', error_kind: 'disk_full' })
+    })
+
+    it('validates error_kind per field, so it forwards on any allowed event', () => {
+      // Like reason and site: core decides which events carry it.
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { error_kind: 'disk_full' }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.error_kind).toBe('disk_full')
+    })
+
+    it('omits and counts a well-shaped error_kind this build does not know', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('seeder.scan_failed', { error_type: 'OSError', error_kind: 'quota_exceeded' }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.error_type).toBe('OSError')
+      expect(captured[0]!.ctx).not.toHaveProperty('error_kind')
+      tap.flushSummary()
+      expect(captured[1]!.event).toBe('comfy.desktop.comfyui.assets.unknown_enum_values_omitted')
+      expect(captured[1]!.ctx).toMatchObject({ count: 1 })
+      expect(JSON.stringify(captured[1]!.ctx)).not.toContain('quota_exceeded')
+    })
+
+    it.each(['Disk_Full', 'disk/full', 'x'.repeat(65)])(
+      'rejects the line for a malformed error_kind %s',
+      (kind) => {
+        const tap = createAssetsTap(baseOpts)
+        tap.ingest(taggedLine('seeder.scan_failed', { error_kind: kind }), 'stdout')
+        expect(captured).toHaveLength(0)
+      }
+    )
   })
 
   describe('per-event rate cap', () => {

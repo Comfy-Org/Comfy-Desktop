@@ -32,6 +32,7 @@ import {
 import si from 'systeminformation'
 import type { RunPerformanceTestWorkflowResult, SystemInfo } from '../../../types/ipc'
 import type { FieldOption } from './shared'
+import type { InstallationRecord } from '../../installations'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
 import { getCachedWorkspaceName } from '../../cloud/tokenStore'
@@ -52,10 +53,18 @@ import {
   savePerformanceTestJobsResponse,
   savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
+  storePerformanceTestExampleWorkflow,
   storePerformanceTestWorkflow,
   submitPerformanceTestWorkflow,
   waitForPerformanceTestJobs
 } from '../performanceTestWorkflows'
+import {
+  cancelExampleModelDownload,
+  ExampleWorkflowFetchError,
+  getPerformanceTestExampleCatalog,
+  loadPerformanceTestExampleArtifacts,
+  startExampleModelDownload
+} from '../performanceTestExampleWorkflows'
 
 export function registerAppHandlers(): void {
   const benchmarksDir = defaultBenchmarksDir()
@@ -180,8 +189,61 @@ export function registerAppHandlers(): void {
     }
   })
 
+  /** Example workflows download models into a local, installed instance. */
+  async function findExampleWorkflowInstallation(
+    installationId: string
+  ): Promise<InstallationRecord | null> {
+    const installation = await installations.get(installationId)
+    if (!installation || installation.status !== 'installed') return null
+    const source = sourceMap[installation.sourceId]
+    return source && source.category !== 'cloud' ? installation : null
+  }
+
+  ipcMain.handle(
+    'get-performance-test-example-workflows',
+    async (_event, installationId: string) => {
+      const installation = await findExampleWorkflowInstallation(installationId)
+      if (!installation) return { options: [], diskSpace: null }
+      return getPerformanceTestExampleCatalog(installation.id)
+    }
+  )
+
+  ipcMain.handle(
+    'prepare-performance-test-example-workflow',
+    async (_event, installationId: string, templateId: string) => {
+      try {
+        const installation = await findExampleWorkflowInstallation(installationId)
+        if (!installation) {
+          throw new Error('Example workflows require an installed local instance.')
+        }
+        const artifacts = await loadPerformanceTestExampleArtifacts(templateId)
+        const workflowFilePath = await storePerformanceTestExampleWorkflow(
+          templateId,
+          artifacts.apiWorkflow,
+          benchmarksDir
+        )
+        // A page that goes away before the models arrive leaves nobody to run the example.
+        const download = startExampleModelDownload(
+          installation,
+          workflowFilePath,
+          artifacts,
+          _event.sender,
+          () => void deletePerformanceTestWorkflow(workflowFilePath, benchmarksDir).catch(() => {})
+        )
+        return { ok: true, filePath: workflowFilePath, download }
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error instanceof ExampleWorkflowFetchError ? error.reason : undefined,
+          message: (error as Error)?.message || String(error)
+        }
+      }
+    }
+  )
+
   ipcMain.handle('delete-performance-test-workflow', async (_event, filePath: string) => {
     try {
+      cancelExampleModelDownload(filePath)
       const status = await deletePerformanceTestWorkflow(filePath, benchmarksDir)
       return {
         ok: true,
