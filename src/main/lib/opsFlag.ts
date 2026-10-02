@@ -160,10 +160,6 @@ export interface OpsFlag<T> {
    *  caller so far reads from an IPC handler, where racing the boot fetch to the fallback is
    *  exactly the bug this exists to avoid. */
   get(): Promise<T>
-  /** `get`, but if the boot fetch lost its deadline and is still in flight, also wait for its
-   *  late answer, up to `maxMs`. The wait is spent once per session: a later call never waits
-   *  again. Only flags with `lateValue: 'session'` wait; others behave like `get`. */
-  getAllowingLate(maxMs: number): Promise<T>
   /** @internal — exposed for tests. */
   _resetForTest(): void
 }
@@ -197,25 +193,14 @@ export function makeOpsFlag<T>(opts: {
    *  Only for flags whose fail direction is a downgrade a returning user would notice; a
    *  fail-closed guard must NOT persist. */
   persist?: true
-  /** `'session'`: a value that answers after the deadline replaces the in-memory one, so later
-   *  reads in THIS session use it. Nothing is written to disk. For a fail-closed flag that is
-   *  read per action rather than once at boot: without it, a boot fetch that always misses the
-   *  deadline (see `persist`) would hold the fallback for the whole session. */
-  lateValue?: 'session'
 }): OpsFlag<T> {
-  const { key, fallback, parse, logLabel, persist, lateValue } = opts
+  const { key, fallback, parse, logLabel, persist } = opts
   let cached: T = fallback
   let initPromise: Promise<void> | null = null
   /** Captured by each `init`, bumped by `_resetForTest`. A fetch this flag abandoned at the
    *  deadline can still settle long after the launch (or the test) that started it moved on;
    *  without the token its write would land under whatever state replaced it. */
   let generation = 0
-  /** `lateValue: 'session'`: settles when a late answer is applied. Set only while a fetch the
-   *  deadline abandoned is still outstanding. */
-  let lateAnswer: Promise<void> | null = null
-  let settleLate: (() => void) | null = null
-  /** The one capped wait for `lateAnswer`, shared by every `getAllowingLate` this session. */
-  let lateWait: Promise<void> | null = null
 
   /** The `unreachable` path — `getOpsFlagResult` classifies timeout/network errors rather
    *  than rejecting, so this covers both that and a defensive rejection. Read-only: an
@@ -255,48 +240,23 @@ export function makeOpsFlag<T>(opts: {
     }
   }
 
-  /** `lateValue: 'session'`: the in-memory half of a late result. See that option. */
-  function applyLate(generationAtInit: number, result: OpsFlagValueResult): void {
-    if (generationAtInit !== generation) return
-    const parsed = parse(result.value, result.payload)
-    if (parsed !== undefined) cached = parsed
-    settleLate?.()
-    if (logLabel)
-      console.log(
-        `[${logLabel}] late: fetched=`,
-        result.value,
-        '→ cached=',
-        inspect(cached, { depth: null, breakLength: Infinity, compact: true })
-      )
-  }
-
-  const takesLate = persist || lateValue === 'session'
-
   return {
     init(initOpts) {
       if (initPromise) return initPromise
       const generationAtInit = generation
-      const pendingLate =
-        lateValue === 'session' ? new Promise<void>((resolve) => (settleLate = resolve)) : null
       initPromise = mainTelemetry
         .getOpsFlagResult(
           key,
           initOpts.distinctId,
           initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-          // Flags that neither persist nor take late values pass no callback at all, so they stay
-          // write-free structurally rather than by a guard inside one. (`getOpsFlagResult` still
-          // observes that fetch to report how it settled; reporting is not a write, and
-          // deliberately does not depend on whether the flag persists.)
-          takesLate
-            ? (late) => {
-                if (lateValue === 'session') applyLate(generationAtInit, late)
-                if (persist) persistLate(generationAtInit, late)
-              }
-            : undefined
+          // Non-persisting flags pass no callback at all, so they stay write-free structurally
+          // rather than by a guard inside one — no write path is attached to the abandoned fetch.
+          // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
+          // not a write, and deliberately does not depend on whether the flag persists.)
+          persist ? (late) => persistLate(generationAtInit, late) : undefined
         )
         .then((result) => {
           if (result.kind === 'unreachable') {
-            if (result.abandoned && generationAtInit === generation) lateAnswer = pendingLate
             if (!applyPersisted()) {
               const parsed = parse(undefined, undefined)
               if (parsed !== undefined) cached = parsed
@@ -341,23 +301,9 @@ export function makeOpsFlag<T>(opts: {
       }
       return cached
     },
-    async getAllowingLate(maxMs) {
-      await this.get()
-      if (lateAnswer) {
-        lateWait ??= Promise.race([
-          lateAnswer,
-          new Promise<void>((resolve) => setTimeout(resolve, maxMs).unref?.())
-        ])
-        await lateWait
-      }
-      return cached
-    },
     _resetForTest() {
       cached = fallback
       initPromise = null
-      lateAnswer = null
-      settleLate = null
-      lateWait = null
       // Strands any fetch still in flight, so a late result from the previous test cannot
       // write into the next one's config dir.
       generation += 1

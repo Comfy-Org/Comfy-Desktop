@@ -597,7 +597,7 @@ describe('telemetry anonymous flag reads', () => {
 
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 10)
-    ).resolves.toEqual({ kind: 'unreachable', abandoned: true })
+    ).resolves.toEqual({ kind: 'unreachable' })
   })
 })
 
@@ -795,7 +795,7 @@ describe('telemetry late ops-flag results', () => {
     posthogClientMock.featureFlagBehavior = 'defer'
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 0, onLate)
-    ).resolves.toEqual({ kind: 'unreachable', abandoned: true })
+    ).resolves.toEqual({ kind: 'unreachable' })
   }
 
   /** Let the detached continuation run. It is deliberately unawaited by production code, so a
@@ -928,7 +928,7 @@ describe('telemetry late ops-flag reporting', () => {
     captured.length = 0
     await expect(
       telemetry.getOpsFlagResult('desktop_core_beta_features', 'installation-id', 0, onLate)
-    ).resolves.toEqual({ kind: 'unreachable', abandoned: true })
+    ).resolves.toEqual({ kind: 'unreachable' })
   }
 
   function flush(): Promise<void> {

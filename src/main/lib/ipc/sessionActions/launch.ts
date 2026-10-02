@@ -76,7 +76,7 @@ import {
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
 import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
-import { getDepsRepairModeForDrift } from '../../depsRepairMode'
+import { getDepsRepairModeAsync } from '../../depsRepairMode'
 import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
@@ -1147,8 +1147,8 @@ async function runLaunch(
           const { pendingDrift } = await import('../../../sources/standalone/depsRepair')
           const { depsRepairPolicy } = await import('../../../sources/standalone/depsRepair')
           if (
-            pendingDrift(inst) &&
-            depsRepairPolicy(inst, await getDepsRepairModeForDrift()) !== 'off'
+            depsRepairPolicy(inst, await getDepsRepairModeAsync()) !== 'off' &&
+            pendingDrift(inst)
           ) {
             preLaunchPhases.push('depsRepair')
           }
@@ -1188,8 +1188,8 @@ async function runLaunch(
         warnIfSitePackagesEmpty
       } = await import('../../../sources/standalone/depsRepair')
       inst = await pruneMarker(inst, updateFn)
+      const mode = depsRepairPolicy(inst, await getDepsRepairModeAsync())
       const drift = pendingDrift(inst)
-      const mode = drift ? depsRepairPolicy(inst, await getDepsRepairModeForDrift()) : 'off'
       if (!drift && !reportPausedRepair(inst, makeSendOutput(event.sender, sessionId))) {
         warnIfSitePackagesEmpty(inst, makeSendOutput(event.sender, sessionId))
       }

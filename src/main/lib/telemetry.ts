@@ -119,10 +119,7 @@ export type FeatureFlagValue = string | boolean
 /** Every outcome of an ops-flag fetch, classified. See `getOpsFlagResult`. */
 export type OpsFlagFetchResult =
   | { kind: 'value'; value: FeatureFlagValue; payload: unknown }
-  /** `abandoned`: the deadline won while the fetch was still in flight, so a late answer may
-   *  yet arrive (via `onLateResult`). Absent when nothing is pending: no client, no result, an
-   *  error. */
-  | { kind: 'unreachable'; abandoned?: true }
+  | { kind: 'unreachable' }
 import {
   DEFAULT_POSTHOG_API_KEY,
   DEFAULT_POSTHOG_HOST,
@@ -1742,7 +1739,7 @@ export async function getOpsFlagResult(
       // when a caller registered for late values: a flag that never persists can still hit the
       // SDK's ceiling, and a timeout nobody can see is the state this reporting exists to end.
       observeAbandonedOpsFlagFetch({ key, startedAt, flagPromise, onLateResult })
-      return { kind: 'unreachable', abandoned: true }
+      return { kind: 'unreachable' }
     }
     // The fetch itself answered, with no result for the key. `unreachable` exactly as a timeout
     // is, but nothing was abandoned — so there is nothing to observe and nothing to report.
