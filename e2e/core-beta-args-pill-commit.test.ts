@@ -40,12 +40,26 @@ let repo: string
 const sha: Record<string, string> = {}
 let previousPosthogHost: string | undefined
 
+/** Git variables a test run can inherit (from a hook, say) that would point git at another repo. */
+const INHERITED_GIT_STATE = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_COMMON_DIR',
+  'GIT_CEILING_DIRECTORIES'
+]
+const gitEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !INHERITED_GIT_STATE.includes(key))
+)
+
 function git(...args: string[]): string {
   return execFileSync('git', args, {
     cwd: repo,
     encoding: 'utf-8',
     env: {
-      ...process.env,
+      ...gitEnv,
       GIT_AUTHOR_NAME: 't',
       GIT_AUTHOR_EMAIL: 't@example.com',
       GIT_COMMITTER_NAME: 't',

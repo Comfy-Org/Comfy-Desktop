@@ -233,6 +233,33 @@ describe('ArgsBuilderField — beta args pill', () => {
     expect(api.getComfyArgs).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps the newest schema when an older load resolves after it', async () => {
+    const api = stubElectronApi()
+    let resolveOld: (value: unknown) => void = () => {}
+    api.getComfyArgs
+      .mockReturnValueOnce(new Promise((resolve) => (resolveOld = resolve)))
+      .mockResolvedValueOnce({ args: SCHEMA })
+    const epoch = ref(1)
+    const wrapper = mount(ArgsBuilderField, {
+      props: { field: FIELD, installationId: 'inst-1' },
+      global: { plugins: [i18n], provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } },
+      attachTo: document.body
+    })
+    wrappers.push(wrapper)
+    epoch.value = 2
+    await flushPromises()
+    const before = api.getCoreBetaArgs.mock.calls.length
+    resolveOld({ args: [] })
+    await flushPromises()
+
+    // The stale load neither replaces the schema nor asks the pill to look again.
+    expect(api.getCoreBetaArgs.mock.calls.length).toBe(before)
+    await wrapper.get('input').trigger('focusin')
+    await wrapper.get('input').setValue('--lo')
+    await flushPromises()
+    expect(wrapper.find('.args-raw-input-ac').text()).toContain('--lowvram')
+  })
+
   it('has no pill without an install to ask about', async () => {
     const api = stubElectronApi(BETA)
     const wrapper = await mountField({ installationId: null })

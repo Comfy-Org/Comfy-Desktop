@@ -36,18 +36,18 @@ watch(stringValue, (v) => {
 const schema = ref<ComfyArgDef[]>([])
 /** Bumped as each schema load settles, for the beta pill's preview. */
 const schemaVersion = ref(0)
+let schemaSeq = 0
 
 async function loadSchema(id: string | undefined): Promise<void> {
+  const seq = ++schemaSeq
   if (!id) {
     schema.value = []
     return
   }
-  try {
-    const result = await window.api.getComfyArgs(id)
-    schema.value = result?.args ?? []
-  } catch {
-    schema.value = []
-  }
+  const result = await window.api.getComfyArgs(id).catch(() => null)
+  // A reopen can start a newer load while this one is pending; only the latest applies.
+  if (seq !== schemaSeq) return
+  schema.value = result?.args ?? []
   schemaVersion.value++
 }
 
