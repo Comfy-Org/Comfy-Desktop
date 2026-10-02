@@ -17,7 +17,7 @@ const DEFAULT_LAUNCH_ARGS = '--enable-manager'
 /** Every flag that turns ComfyUI-Manager on. */
 const MANAGER_ENABLING_ARGS = new Set(['--enable-manager', '--enable-manager-legacy-ui'])
 
-function isManagerEnablingArg(arg: string): boolean {
+export function isManagerEnablingArg(arg: string): boolean {
   return MANAGER_ENABLING_ARGS.has(arg)
 }
 

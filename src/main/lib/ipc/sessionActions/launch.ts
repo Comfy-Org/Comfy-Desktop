@@ -76,6 +76,7 @@ import {
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
 import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
+import { isManagerEnablingArg } from '../../../comfybuilder/launch'
 import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
@@ -104,7 +105,12 @@ import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
-import { describeUnsatisfied, type UnsatisfiedRequirement } from '../../requirementsDrift'
+import {
+  comfyuiDirForLaunch,
+  describeUnsatisfied,
+  unmanagedRequirementsWarning,
+  type UnsatisfiedRequirement
+} from '../../requirementsDrift'
 import { requestAdoptPromptButton } from './migrate'
 import type { WriteStream } from 'fs'
 import {
@@ -1222,6 +1228,29 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.noEnvFound') }
   }
   const launchCmd = launchCmdRaw
+
+  // Git and portable installs run a venv the user owns: never modify it, but
+  // say which requirements it's missing and how to install them, so an import
+  // crash at boot isn't the first sign.
+  // Best-effort, like the repairs above: it must never block the launch.
+  try {
+    const unmanagedComfyDir =
+      (inst.sourceId === 'git' || inst.sourceId === 'portable') && launchCmd.cmd
+        ? comfyuiDirForLaunch(launchCmd)
+        : null
+    if (unmanagedComfyDir && launchCmd.cmd) {
+      const warning = unmanagedRequirementsWarning(launchCmd.cmd, unmanagedComfyDir, {
+        isolated: inst.sourceId === 'portable',
+        withManager: launchCmd.args?.some(isManagerEnablingArg) === true
+      })
+      if (warning) {
+        console.warn(warning.trim())
+        makeSendOutput(event.sender, sessionId)(warning)
+      }
+    }
+  } catch (err) {
+    console.warn('Requirements check for an unmanaged install failed:', err)
+  }
 
   // Filter unsupported args, then inject desktop-managed feature flags.
   if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {
