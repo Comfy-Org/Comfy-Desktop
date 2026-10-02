@@ -689,6 +689,20 @@ function isImageAsset(pending: PendingDownload): boolean {
   return !!pending.outputDir && hasImageExtension(pending.savePath)
 }
 
+/**
+ * Whether a job is the exact-filename asset job for this destination. Only
+ * such a job can satisfy an `existingFilePolicy: 'skip'` request: a
+ * deduplicating job for the same URL may land as `name (1).png`, so treating
+ * it as the same work reports a completion the caller never asked for.
+ */
+function isExactAssetJobFor(pending: PendingDownload, destKey: string): boolean {
+  return (
+    pending.kind === 'asset' &&
+    pending.preserveRequestedFilename === true &&
+    canonicalDestKey(pending.requestedSavePath ?? pending.savePath) === destKey
+  )
+}
+
 function broadcastProgress(progress: DownloadProgress): void {
   // Send to the originating ComfyUI window and any subscribers
   const pending = progress.id !== undefined ? pendingDownloads.get(progress.id) : undefined
@@ -1509,10 +1523,7 @@ function joinActiveAssetDownload(
   const existing = activeJobsForUrl(url).find(
     (pending) =>
       pending.kind !== 'model' &&
-      (!requireExactDestination ||
-        (pending.kind === 'asset' &&
-          pending.preserveRequestedFilename === true &&
-          canonicalDestKey(pending.requestedSavePath ?? pending.savePath) === requestedDestKey))
+      (!requireExactDestination || isExactAssetJobFor(pending, requestedDestKey))
   )
   if (!existing) return undefined
 
@@ -1538,6 +1549,13 @@ export async function startManagedAssetDownload(
 ): Promise<AssetDownloadAdmission> {
   const safeFilename = sanitizeAssetFilename(filename, outputDir)
   if (!safeFilename) return { status: 'not-started' }
+  // A skip request promises this exact name. Windows path-length truncation
+  // would land the bytes somewhere the caller never looks, so it would report
+  // a completion while the file it asked for stays missing - and ask again on
+  // every open. Refuse instead.
+  if (existingFilePolicy === 'skip' && safeFilename !== filename) {
+    return { status: 'not-started' }
+  }
   const requestedSavePath = path.join(outputDir, safeFilename)
 
   const existing = joinActiveAssetDownload(
@@ -1703,10 +1721,8 @@ export function getActiveAssetDownload(
   const safeFilename = sanitizeAssetFilename(filename, outputDir)
   if (!safeFilename) return undefined
   const requestedDestKey = canonicalDestKey(path.join(outputDir, safeFilename))
-  const pending = activeJobsForUrl(url).find(
-    (candidate) =>
-      candidate.kind === 'asset' &&
-      canonicalDestKey(candidate.requestedSavePath ?? candidate.savePath) === requestedDestKey
+  const pending = activeJobsForUrl(url).find((candidate) =>
+    isExactAssetJobFor(candidate, requestedDestKey)
   )
   return pending ? { ...pending.lastProgress } : undefined
 }
@@ -2198,12 +2214,7 @@ export function retryDownload(ref: string): boolean {
   } else if (params.kind === 'asset' && params.existingFilePolicy === 'skip' && params.savePath) {
     const destKey = canonicalDestKey(params.savePath)
     for (const active of activeJobsForUrl(params.url)) {
-      if (
-        active.kind === 'asset' &&
-        canonicalDestKey(active.requestedSavePath ?? active.savePath) === destKey
-      ) {
-        return false
-      }
+      if (isExactAssetJobFor(active, destKey)) return false
     }
   } else {
     for (const active of activeJobsForUrl(params.url)) {

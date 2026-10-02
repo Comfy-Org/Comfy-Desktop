@@ -90,12 +90,39 @@ function walkLoadNodes(nodes: unknown, out: string[]): void {
   }
 }
 
+/**
+ * Short-lived snapshots, keyed by install and template. A template with four
+ * inputs means one listing plus one download call per asset, and for a
+ * template outside the installed packages each of those re-fetches the remote
+ * JSON uncached. Sharing one answer across that burst also keeps the set
+ * stable: without it an asset the view just listed can come back
+ * `not-declared` because the remote changed between calls.
+ */
+const SNAPSHOT_TTL_MS = 30_000
+const snapshotCache = new Map<
+  string,
+  { expiresAt: number; snapshot: Promise<TemplateInputAsset[] | null> }
+>()
+
 export async function resolveTemplateInputAssetSnapshot(
   installation: InstallationRecord,
   templateId: string
 ): Promise<TemplateInputAsset[] | null> {
-  const json = await loadTemplateJson(installation, templateId)
-  return json && typeof json === 'object' ? resolveTemplateInputAssetsFromJson(json) : null
+  const key = `${installation.id}\u0000${templateId}`
+  const now = Date.now()
+  const cached = snapshotCache.get(key)
+  if (cached && cached.expiresAt > now) return cached.snapshot
+
+  const snapshot = (async () => {
+    const json = await loadTemplateJson(installation, templateId)
+    return json && typeof json === 'object' ? resolveTemplateInputAssetsFromJson(json) : null
+  })()
+  snapshotCache.set(key, { expiresAt: now + SNAPSHOT_TTL_MS, snapshot })
+  // A failed resolution must not be held: the next call should retry.
+  void snapshot.then((value) => {
+    if (value === null) snapshotCache.delete(key)
+  })
+  return snapshot
 }
 
 /**
@@ -169,25 +196,30 @@ export async function resolveTemplateInputAssetAvailability(
 ): Promise<TemplateInputAssetAvailability[]> {
   const inputDir = resolveInputDir(installation)
   const seen = new Set<string>()
-  const result: TemplateInputAssetAvailability[] = []
+  const candidates: string[] = []
 
   for (const filename of filenames) {
     if (!isSafeInputAsset(filename) || seen.has(filename)) continue
     seen.add(filename)
-
-    try {
-      await access(path.join(inputDir, filename))
-      result.push({ filename, status: 'present' })
-    } catch (error) {
-      result.push({
-        filename,
-        status:
-          (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' ? 'missing' : 'unknown'
-      })
-    }
+    candidates.push(filename)
   }
 
-  return result
+  return Promise.all(
+    candidates.map(async (filename) => {
+      try {
+        await access(path.join(inputDir, filename))
+        return { filename, status: 'present' as const }
+      } catch (error) {
+        return {
+          filename,
+          status:
+            (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
+              ? ('missing' as const)
+              : ('unknown' as const)
+        }
+      }
+    })
+  )
 }
 
 export interface PlacedInputAsset {

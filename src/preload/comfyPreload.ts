@@ -165,7 +165,16 @@ function removeTemplateInputProgressHandler(): void {
   templateInputProgressHandler = undefined
 }
 
+/**
+ * A download invoke can resolve after its last subscriber has gone. Until it
+ * does, the handler has to stay attached and the identity maps have to keep
+ * their entries, or a transfer that finishes in that window loses its
+ * terminal event and the handler it re-attaches is never released.
+ */
+let templateInputInvokesInFlight = 0
+
 function maybeRemoveTemplateInputProgressHandler(): void {
+  if (templateInputInvokesInFlight > 0) return
   if (templateInputProgressCallbacks.size === 0 && templateInputsByDownloadId.size === 0) {
     removeTemplateInputProgressHandler()
   }
@@ -230,6 +239,7 @@ const downloadTemplateInputAsset: NonNullable<
   ComfyDesktop2BridgeImplementation['downloadTemplateInputAsset']
 > = async (templateId, assetId): Promise<ComfyTemplateInputAssetDownloadResult> => {
   ensureTemplateInputProgressHandler()
+  templateInputInvokesInFlight += 1
   try {
     const result = await ipcRenderer.invoke('desktop2-download-template-input-asset', {
       templateId,
@@ -240,6 +250,7 @@ const downloadTemplateInputAsset: NonNullable<
     }
     return result
   } finally {
+    templateInputInvokesInFlight -= 1
     maybeRemoveTemplateInputProgressHandler()
   }
 }
@@ -254,7 +265,7 @@ const onTemplateInputDownloadProgress: NonNullable<
     if (!subscribed) return
     subscribed = false
     templateInputProgressCallbacks.delete(callback)
-    if (templateInputProgressCallbacks.size === 0) {
+    if (templateInputProgressCallbacks.size === 0 && templateInputInvokesInFlight === 0) {
       // A future detail view reconstructs active ownership from its metadata
       // snapshot. Do not retain identities for a renderer with no consumers.
       templateInputsByDownloadId.clear()

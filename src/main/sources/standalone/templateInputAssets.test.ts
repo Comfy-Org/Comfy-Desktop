@@ -121,6 +121,32 @@ describe('resolveTemplateInputAssets', () => {
     expect(await resolveTemplateInputAssets(inst, 't')).toEqual([])
   })
 
+  it('resolves the workflow once across a burst for the same template', async () => {
+    loadTemplateJson.mockResolvedValue({
+      nodes: [{ type: 'LoadImage', widgets_values: ['subject.png'] }]
+    })
+
+    const [a, b, c] = await Promise.all([
+      resolveTemplateInputAssetSnapshot(inst, 'burst'),
+      resolveTemplateInputAssetSnapshot(inst, 'burst'),
+      resolveTemplateInputAssetSnapshot(inst, 'burst')
+    ])
+
+    expect(loadTemplateJson).toHaveBeenCalledOnce()
+    expect(a).toEqual(b)
+    expect(b).toEqual(c)
+  })
+
+  it('retries after an unresolved template rather than caching the failure', async () => {
+    loadTemplateJson.mockResolvedValueOnce(null).mockResolvedValue({
+      nodes: [{ type: 'LoadImage', widgets_values: ['subject.png'] }]
+    })
+
+    await expect(resolveTemplateInputAssetSnapshot(inst, 'retry')).resolves.toBeNull()
+    await expect(resolveTemplateInputAssetSnapshot(inst, 'retry')).resolves.toHaveLength(1)
+    expect(loadTemplateJson).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps unresolved metadata distinct from a resolved template with no inputs', async () => {
     loadTemplateJson.mockResolvedValue(null)
 
