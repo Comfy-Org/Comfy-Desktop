@@ -727,6 +727,27 @@ describe('peekBetaFeaturesEnabled', () => {
     settings.set('telemetryEnabled', !choice)
     expect(settings.peekBetaFeaturesEnabled()).toBe(choice)
   })
+
+  it.each([true, false])(
+    'reads a stored %s from settings.json.bak without restoring a missing settings.json',
+    (choice) => {
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+      fs.rmSync(settingsPath, { force: true })
+      fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ betaFeaturesEnabled: choice }))
+
+      expect(settings.peekBetaFeaturesEnabled()).toBe(choice)
+      expect(fs.existsSync(settingsPath)).toBe(false)
+    }
+  )
+
+  it('leaves a file that load-time normalization would rewrite untouched', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    const raw = JSON.stringify({ telemetryEnabled: true, maxCachedFiles: 3, onAppClose: 'tray' })
+    fs.writeFileSync(settingsPath, raw)
+
+    expect(settings.peekBetaFeaturesEnabled()).toBe(true)
+    expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(raw)
+  })
 })
 
 describe('resolveBetaFeaturesEnabled', () => {
