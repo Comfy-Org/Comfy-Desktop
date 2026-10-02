@@ -22,6 +22,8 @@ export function parseDepsRepairKinds(
   value: FeatureFlagValue | undefined,
   payload: unknown
 ): DepsRepairFlag {
+  // A disabled flag keeps its payload (`toOpsFlagValue`), and disabling must stop the repair.
+  if (value === false) return []
   const names = Array.isArray(payload)
     ? payload.filter((name): name is string => typeof name === 'string')
     : typeof payload === 'string'

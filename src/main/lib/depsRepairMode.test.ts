@@ -101,6 +101,13 @@ describe('parseDepsRepairKinds', () => {
   it('reads the value when the payload is null', () => {
     expect(parseDepsRepairKinds('managed', null)).toEqual(['managed'])
   })
+
+  it.each([[['adopted', 'managed']], ['adopted,managed']])(
+    'repairs nothing for a disabled flag, even with a supported payload %j',
+    (payload) => {
+      expect(parseDepsRepairKinds(false, payload)).toEqual([])
+    }
+  )
 })
 
 describe('depsRepairMode', () => {
