@@ -227,7 +227,8 @@ import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
-import { hashPath } from '../../dbLocationTelemetry'
+import { _resetKeyForTest, hashPath } from '../../dbLocationTelemetry'
+import { configDir } from '../../paths'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
@@ -1229,9 +1230,14 @@ describe('core beta report placement', () => {
   describe('database location on boot_started', () => {
     const userDir = path.join(os.tmpdir(), 'db-location-user')
 
+    // Keep the hash key out of a real Desktop config dir on Linux.
+    const keyFile = () => path.join(configDir(), 'telemetry-path-key')
+
     beforeEach(() => {
-      // Keep the hash key out of a real Desktop config dir on Linux.
       vi.stubEnv('XDG_CONFIG_HOME', path.join(installDir, 'config'))
+      _resetKeyForTest()
+      fs.rmSync(keyFile(), { force: true })
+      telemetry.setConsentState('granted')
       launchHarness.schemaNames = ['listen', 'user-directory', 'database-url']
       launchHarness.waitForPort = async () => {}
     })
@@ -1265,6 +1271,7 @@ describe('core beta report placement', () => {
       })
       expect(props?.['db_path_hash']).toMatch(/^[0-9a-f]{16}$/)
       expect(JSON.stringify(props)).not.toContain(installDir)
+      expect(fs.existsSync(keyFile()), 'the key is created under granted consent').toBe(true)
     })
 
     it('sends no database hash for a core without a database', async () => {
@@ -1288,13 +1295,17 @@ describe('core beta report placement', () => {
       expect(stale?.['user_dir_hash']).toBe(hashPath(userDir))
     })
 
-    it('computes nothing for a user who declined telemetry', async () => {
-      telemetry.setConsentState('denied')
-      const props = await launchWith('harness-db-location-denied')
+    it.each(['undecided', 'denied'] as const)(
+      'computes nothing and creates no key while consent is %s',
+      async (state) => {
+        telemetry.setConsentState(state)
+        const props = await launchWith(`harness-db-location-${state}`)
 
-      expect(props).not.toHaveProperty('db_url_source')
-      expect(props).not.toHaveProperty('db_path_hash')
-    })
+        expect(props).not.toHaveProperty('db_url_source')
+        expect(props).not.toHaveProperty('db_path_hash')
+        expect(fs.existsSync(keyFile())).toBe(false)
+      }
+    )
   })
 
   it('launches a legacy record whose version carries no commit', async () => {

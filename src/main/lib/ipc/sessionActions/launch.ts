@@ -1839,10 +1839,10 @@ async function runLaunch(
   }
 
   // Where this launch's database, user and base directories resolve to, as keyed hashes for
-  // `boot_started`. Computed from the final spawn args; retries don't change them. Skipped when
-  // telemetry is declined, so no key is created for a user whose events are all dropped.
+  // `boot_started`. Computed from the final spawn args; retries don't change them. Only under
+  // granted consent: `capture` drops the event otherwise, so no key is created for nothing.
   const dbLocation =
-    telemetry.getConsentState() === 'denied'
+    telemetry.getConsentState() !== 'granted'
       ? {}
       : dbLocationProps({
           cwd: launchCmd.cwd,
