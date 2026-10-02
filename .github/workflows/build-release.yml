@@ -377,6 +377,31 @@ jobs:
         env:
           EXPECTED_BUILD_ID: ${{ steps.build_id.outputs.build_id }}
 
+      - name: Smoke-test the published Linux x64 AppImage
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage_url="$(
+            jq -r '
+              .assets[]
+              | select(.platform == "Linux" and .format == "AppImage")
+              | select(.arch == "x64" or .arch == "n/a")
+              | .url
+            ' release-assets.json | head -1
+          )"
+          if [[ -z "${appimage_url}" || "${appimage_url}" == "null" ]]; then
+            echo "::error::ToDesktop metadata did not include a Linux x64 AppImage URL"
+            exit 1
+          fi
+
+          sudo apt-get update
+          sudo apt-get install --yes xvfb
+          curl --fail --location --retry 3 --output Comfy-Desktop-linux-x64.AppImage "${appimage_url}"
+          chmod +x Comfy-Desktop-linux-x64.AppImage
+          ./scripts/smoke-linux-appimage.sh \
+            Comfy-Desktop-linux-x64.AppImage \
+            "$(node -p "require('./package.json').version")"
+
       - name: Upload release metadata artifact
         uses: actions/upload-artifact@v7
         with:
