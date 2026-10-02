@@ -22,6 +22,9 @@ export interface WaitOptions {
   intervalMs?: number
   onPoll?: (info: { attempt: number; elapsedMs: number }) => void
   signal?: AbortSignal
+  /** Socket inactivity timeout of one probe request before the next poll (default 2 s); never
+   *  more than what is left of `timeoutMs`. Not a cap on the request's total duration. */
+  requestTimeoutMs?: number
 }
 
 export interface ProcessInfo {
@@ -363,10 +366,18 @@ export function killByPort(port: number): Promise<void> {
   })
 }
 
+/** A probe's socket timeout: the caller's (2 s when unusable: negative, NaN, infinite), and
+ *  never past the overall deadline, so one probe cannot hold the wait beyond it. At least 1 ms:
+ *  0 would turn the timeout off. */
+function probeTimeout(requested: number, remainingMs: number): number {
+  const wanted = Number.isFinite(requested) && requested > 0 ? requested : 2000
+  return Math.max(1, Math.min(wanted, Math.ceil(remainingMs)))
+}
+
 export function waitForPort(
   port: number,
   host: string = '127.0.0.1',
-  { timeoutMs = 60000, intervalMs = 500, onPoll, signal }: WaitOptions = {}
+  { timeoutMs = 60000, intervalMs = 500, onPoll, signal, requestTimeoutMs = 2000 }: WaitOptions = {}
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now()
@@ -420,12 +431,15 @@ export function waitForPort(
         attemptSettled = true
         retryTimer = setTimeout(poll, intervalMs)
       }
-      const req = http.get({ host, port, path: '/', timeout: 2000 }, (res) => {
-        res.resume()
-        if (attemptSettled || done) return
-        attemptSettled = true
-        settle(resolve)
-      })
+      const req = http.get(
+        { host, port, path: '/', timeout: probeTimeout(requestTimeoutMs, timeoutMs - elapsed) },
+        (res) => {
+          res.resume()
+          if (attemptSettled || done) return
+          attemptSettled = true
+          settle(resolve)
+        }
+      )
       activeReq = req
 
       req.on('error', retry)
@@ -441,7 +455,7 @@ export function waitForPort(
 
 export function waitForUrl(
   url: string,
-  { timeoutMs = 60000, intervalMs = 500, onPoll, signal }: WaitOptions = {}
+  { timeoutMs = 60000, intervalMs = 500, onPoll, signal, requestTimeoutMs = 2000 }: WaitOptions = {}
 ): Promise<void> {
   const client = url.startsWith('https') ? https : http
   return new Promise((resolve, reject) => {
@@ -493,12 +507,16 @@ export function waitForUrl(
         attemptSettled = true
         retryTimer = setTimeout(poll, intervalMs)
       }
-      const req = client.get(url, { timeout: 2000 }, (res) => {
-        res.resume()
-        if (attemptSettled || done) return
-        attemptSettled = true
-        settle(resolve)
-      })
+      const req = client.get(
+        url,
+        { timeout: probeTimeout(requestTimeoutMs, timeoutMs - elapsed) },
+        (res) => {
+          res.resume()
+          if (attemptSettled || done) return
+          attemptSettled = true
+          settle(resolve)
+        }
+      )
       activeReq = req
 
       req.on('error', retry)
