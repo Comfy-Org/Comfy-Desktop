@@ -25,12 +25,19 @@ import {
 
 const statePath = (): string => path.join(testConfigDir, 'window-state.json')
 
+type Rect = { x: number; y: number; width: number; height: number }
+
 function fakeWindow(
-  bounds: { x: number; y: number; width: number; height: number },
-  { maximized = false, fullScreen = false } = {}
+  bounds: Rect,
+  {
+    maximized = false,
+    fullScreen = false,
+    normalBounds = bounds
+  }: { maximized?: boolean; fullScreen?: boolean; normalBounds?: Rect } = {}
 ): BrowserWindow {
   return {
     getBounds: () => bounds,
+    getNormalBounds: () => normalBounds,
     isMaximized: () => maximized,
     isFullScreen: () => fullScreen
   } as unknown as BrowserWindow
@@ -79,11 +86,14 @@ describe('windowState', () => {
     })
   })
 
-  it('keeps the last windowed size while maximized', () => {
-    saveWindowBounds('install-1', fakeWindow({ x: 10, y: 20, width: 900, height: 700 }))
+  it('saves the restore size, not a mid-animation frame, while maximized', () => {
+    saveWindowBounds('install-1', fakeWindow({ x: 33, y: 53, width: 1607, height: 1028 }))
     saveWindowBounds(
       'install-1',
-      fakeWindow({ x: 0, y: 0, width: 1920, height: 1080 }, { maximized: true })
+      fakeWindow(
+        { x: 0, y: 0, width: 1920, height: 1080 },
+        { maximized: true, normalBounds: { x: 10, y: 20, width: 900, height: 700 } }
+      )
     )
 
     expect(getSavedBounds('install-1')).toEqual({

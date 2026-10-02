@@ -55,11 +55,9 @@ export function saveWindowBounds(installationId: string, window: BrowserWindow):
   if (window.isFullScreen()) return
   const state = getWindowStateCache()
   const maximized = window.isMaximized()
-  const bounds = window.getBounds()
-  state[installationId] = {
-    ...(maximized ? (state[installationId] ?? bounds) : bounds),
-    maximized
-  }
+  // getNormalBounds() is the restore size; earlier saves can hold mid-animation frames.
+  const bounds = maximized ? window.getNormalBounds() : window.getBounds()
+  state[installationId] = { ...bounds, maximized }
   if (flushTimer) clearTimeout(flushTimer)
   flushTimer = setTimeout(flushWindowState, 500)
 }
