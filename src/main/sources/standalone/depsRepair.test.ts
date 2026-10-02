@@ -20,6 +20,7 @@ import {
   pruneMarker,
   depsRepairPlan,
   depsRepairPolicy,
+  mayRepairDeps,
   pausedRepairNote,
   reportDetectedOnly,
   pendingDrift,
@@ -170,6 +171,31 @@ describe('depsRepairPlan', () => {
     const plan = await depsRepairPlan(inst, async () => ['managed'])
     expect(plan.drift).not.toBeNull()
     expect(plan.mode).toBe('auto')
+  })
+})
+
+describe('mayRepairDeps', () => {
+  it('registers the step for drift that is only held back, which the torch repair can release', async () => {
+    // spandrel waits on torchvision, so nothing is pending now - but a torch repair that brings
+    // torchvision back makes it installable within the same launch.
+    const { inst } = managedInstall(
+      ['numpy-2.1.0.dist-info', 'torch-2.10.0.dist-info'],
+      'spandrel\nnumpy\n'
+    )
+    expect(pendingDrift(inst)).toBeNull()
+    await expect(mayRepairDeps(inst, async () => ['managed'])).resolves.toBe(true)
+  })
+
+  it('does not register it while the flag leaves the install off', async () => {
+    const { inst } = managedInstall(['torch-2.10.0.dist-info'], 'spandrel\n')
+    await expect(mayRepairDeps(inst, async () => ['adopted'])).resolves.toBe(false)
+  })
+
+  it('does not read the flag when nothing is unsatisfied', async () => {
+    const { inst } = managedInstall(SYNCED, REQS)
+    const readFlag = vi.fn(() => new Promise<never>(() => {}))
+    await expect(mayRepairDeps(inst, readFlag)).resolves.toBe(false)
+    expect(readFlag).not.toHaveBeenCalled()
   })
 })
 

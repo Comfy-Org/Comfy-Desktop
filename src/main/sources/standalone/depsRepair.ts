@@ -111,6 +111,16 @@ export async function depsRepairPlan(
   return { drift, mode: depsRepairPolicy(installation, await readFlag()) }
 }
 
+/** Torch pre-arm: any unsatisfied line counts (the torch repair can release held-back ones);
+ *  a registered step that never runs is skipped past, an unregistered repair is not. */
+export async function mayRepairDeps(
+  installation: InstallationRecord,
+  readFlag: () => Promise<DepsRepairFlag>
+): Promise<boolean> {
+  if (!detectInstallDrift(installation)?.unsatisfied.length) return false
+  return depsRepairPolicy(installation, await readFlag()) !== 'off'
+}
+
 /** Mode `off`: log the drift and report it, without touching the venv. */
 export function reportDetectedOnly(
   installation: InstallationRecord,

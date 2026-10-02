@@ -1144,8 +1144,8 @@ async function runLaunch(
           preLaunchPhases.push('torchRepair')
           // The tracker's steps are fixed once armed, so register the
           // dependency repair below now if it will run too.
-          const { depsRepairPlan } = await import('../../../sources/standalone/depsRepair')
-          if ((await depsRepairPlan(inst, getDepsRepairModeAsync)).mode !== 'off') {
+          const { mayRepairDeps } = await import('../../../sources/standalone/depsRepair')
+          if (await mayRepairDeps(inst, getDepsRepairModeAsync)) {
             preLaunchPhases.push('depsRepair')
           }
           await armLaunchTracker()
