@@ -70,8 +70,34 @@ describe('parseDepsRepairKinds', () => {
     expect(parseDepsRepairKinds('managed', 'adopted')).toEqual(['adopted'])
   })
 
-  it('ignores a non-string payload and falls back to the value', () => {
-    expect(parseDepsRepairKinds('managed', { kinds: ['adopted'] })).toEqual(['managed'])
+  it.each([
+    [
+      ['adopted', 'managed'],
+      ['adopted', 'managed']
+    ],
+    [[' Managed '], ['managed']],
+    [['adopted', 'adopted'], ['adopted']],
+    [['adopted', 'portable'], ['adopted']],
+    [['adopted', 7, null, ['managed']], ['adopted']],
+    [[], []],
+    [['adopted,managed'], []]
+  ])('reads an array payload %j as %j', (payload, kinds) => {
+    expect(parseDepsRepairKinds(true, payload)).toEqual(kinds)
+  })
+
+  it('prefers an array payload to the value', () => {
+    expect(parseDepsRepairKinds('managed', ['adopted'])).toEqual(['adopted'])
+  })
+
+  it.each([[{ kinds: ['adopted'] }], [42], [true]])(
+    'repairs nothing for a malformed payload %j, whatever the value says',
+    (payload) => {
+      expect(parseDepsRepairKinds('adopted,managed', payload)).toEqual([])
+    }
+  )
+
+  it('reads the value when the payload is null', () => {
+    expect(parseDepsRepairKinds('managed', null)).toEqual(['managed'])
   })
 })
 
@@ -91,6 +117,14 @@ describe('depsRepairMode', () => {
 
   it('reads a served list', async () => {
     expect(await resolveWithResult(value('adopted,managed'))).toEqual(['adopted', 'managed'])
+  })
+
+  it('holds a fetched array payload through a later launch that cannot reach the flag', async () => {
+    getOpsFlagResult.mockResolvedValue({ kind: 'value', value: true, payload: ['managed'] })
+    await initDepsRepairMode({ distinctId: 'anon' })
+    expect(await getDepsRepairModeAsync()).toEqual(['managed'])
+    _resetForTest()
+    expect(await resolveWithResult({ kind: 'unreachable' })).toEqual(['managed'])
   })
 
   it('repairs nothing when the flag was never fetched (unreachable)', async () => {

@@ -1,11 +1,11 @@
 /**
- * Remote rollout for the pre-launch requirements repair: a comma-separated list
- * of the install kinds to repair, e.g. `adopted` or `adopted,managed`. Adopted
- * installs repair after their prompt, managed installs without asking; the rest
- * only detect and report. Names are trimmed and lowercased, unknown ones ignored;
- * unset, unreachable or empty repairs nothing. Read from a string payload, else a
- * string value. Persists the last fetched list; deleting the flag does NOT revoke
- * it - serve an empty list.
+ * Remote rollout for the pre-launch requirements repair: the install kinds to
+ * repair, as a JSON array payload (`["adopted", "managed"]`), else a
+ * comma-separated string payload or value. Adopted installs repair after their
+ * prompt, managed installs without asking; the rest only detect and report.
+ * Names are trimmed and lowercased, unknown ones ignored; unset, unreachable,
+ * empty or a malformed payload repairs nothing. Persists the last fetched list;
+ * deleting the flag does NOT revoke it - serve an empty list.
  */
 import type { FeatureFlagValue } from './telemetry'
 import { makeOpsFlag } from './opsFlag'
@@ -20,8 +20,14 @@ export function parseDepsRepairKinds(
   value: FeatureFlagValue | undefined,
   payload: unknown
 ): DepsRepairFlag {
-  const list = typeof payload === 'string' ? payload : typeof value === 'string' ? value : ''
-  const named = new Set(list.split(',').map((name) => name.trim().toLowerCase()))
+  const names = Array.isArray(payload)
+    ? payload.filter((name): name is string => typeof name === 'string')
+    : typeof payload === 'string'
+      ? payload.split(',')
+      : payload == null && typeof value === 'string'
+        ? value.split(',')
+        : []
+  const named = new Set(names.map((name) => name.trim().toLowerCase()))
   return KINDS.filter((kind) => named.has(kind))
 }
 
