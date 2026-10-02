@@ -76,7 +76,7 @@
  *
  *   *Exceptions* invert that split: Datadog is the sink, unconditionally and
  *   independently of the allow-list (which governs Actions only), and the
- *   PostHog copy is opt-in behind `POSTHOG_EXCEPTIONS` because both sinks
+ *   PostHog copy is opt-in behind `COMFY_DESKTOP_POSTHOG_EXCEPTIONS` because both sinks
  *   carry the same scrubbed error and PostHog bills per event.
  *
  * ## A/B experiments
@@ -223,10 +223,18 @@ interface PostHogConfig {
   enabled: boolean
 }
 
-function readPostHogConfig(): PostHogConfig {
-  const apiKey = (process.env['POSTHOG_API_KEY'] || DEFAULT_POSTHOG_API_KEY).trim()
-  const host = (process.env['POSTHOG_HOST'] || DEFAULT_POSTHOG_HOST).trim()
-  const enabled = !isFlagDisabled(process.env['POSTHOG_ENABLED']) && apiKey.length > 0
+function readPostHogConfig(isPackaged: boolean): PostHogConfig {
+  // Generic POSTHOG_* variables are commonly exported by developer tooling and CI. In a
+  // packaged app they belong to the launching shell, not Comfy Desktop; inheriting them can
+  // silently redirect flag reads and event writes to another project (or supply a personal
+  // `phx_` key to the public ingest endpoint). Keep the generic names as a dev convenience,
+  // but require a product-scoped name for intentional packaged overrides.
+  const envKey = isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'
+  const envHost = isPackaged ? 'COMFY_DESKTOP_POSTHOG_HOST' : 'POSTHOG_HOST'
+  const envEnabled = isPackaged ? 'COMFY_DESKTOP_POSTHOG_ENABLED' : 'POSTHOG_ENABLED'
+  const apiKey = (process.env[envKey] || DEFAULT_POSTHOG_API_KEY).trim()
+  const host = (process.env[envHost] || DEFAULT_POSTHOG_HOST).trim()
+  const enabled = !isFlagDisabled(process.env[envEnabled]) && apiKey.length > 0
   return { apiKey, host, enabled }
 }
 
@@ -633,7 +641,7 @@ export function initTelemetry(opts: InitOptions): void {
   // `registerPersonProperties`) bail when `suppressEmit` is set.
   suppressEmit = !opts.isPackaged
 
-  const cfg = readPostHogConfig()
+  const cfg = readPostHogConfig(opts.isPackaged)
   if (!cfg.enabled) return
 
   try {
@@ -1490,11 +1498,11 @@ function captureExceptionWrite(
  * Datadog is the alerting surface for exceptions; PostHog's copy is opt-in.
  *
  * Off by default because the two sinks carry the same scrubbed error and
- * PostHog is billed per event. Set `POSTHOG_EXCEPTIONS=1` to restore it for
+ * PostHog is billed per event. Set `COMFY_DESKTOP_POSTHOG_EXCEPTIONS=1` to restore it for
  * an investigation that wants the error alongside product events.
  */
 function isPostHogExceptionCaptureEnabled(): boolean {
-  return isFlagEnabled(process.env['POSTHOG_EXCEPTIONS'])
+  return isFlagEnabled(process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS'])
 }
 
 function deliverException(error: unknown, properties: TelemetryContext, forward: boolean): boolean {
