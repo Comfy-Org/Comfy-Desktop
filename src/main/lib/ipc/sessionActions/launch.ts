@@ -723,9 +723,9 @@ export function _cleanupFailedLaunchSetup(
   clearBetaActivationClaim(installationId)
 }
 
-/** Ask before installing packages into an adopted install's venv (Desktop
- *  doesn't own it outright). Resolves false - skip - on any delivery failure. */
-async function confirmAdoptedDepsRepair(
+/** Ask before installing packages into an install's venv (repair mode
+ *  `prompt`; adopted installs today). Rejects when the prompt can't be shown. */
+async function confirmDepsRepair(
   sender: Electron.WebContents,
   signal: AbortSignal,
   unsatisfied: UnsatisfiedRequirement[]
@@ -1150,7 +1150,10 @@ async function runLaunch(
           // The tracker's steps are fixed once armed, so register the
           // dependency repair below now if it will run too.
           const { pendingDrift } = await import('../../../sources/standalone/depsRepair')
-          if (pendingDrift(inst)) preLaunchPhases.push('depsRepair')
+          const { depsRepairPolicy } = await import('../../../sources/standalone/depsRepair')
+          if (depsRepairPolicy(inst) !== 'off' && pendingDrift(inst)) {
+            preLaunchPhases.push('depsRepair')
+          }
           await armLaunchTracker()
         }
         const repaired = await maybeRepairTorch(
@@ -1177,23 +1180,33 @@ async function runLaunch(
     // Managed installs repair automatically; adopted installs ask first.
     // Non-fatal: a failed or skipped repair launches exactly as before.
     try {
-      const { pendingDrift, pruneMarker, reportPausedRepair, repairDeps, warnIfSitePackagesEmpty } =
-        await import('../../../sources/standalone/depsRepair')
+      const {
+        depsRepairPolicy,
+        pendingDrift,
+        pruneMarker,
+        reportDetectedOnly,
+        reportPausedRepair,
+        repairDeps,
+        warnIfSitePackagesEmpty
+      } = await import('../../../sources/standalone/depsRepair')
       inst = await pruneMarker(inst, updateFn)
+      const mode = depsRepairPolicy(inst)
       const drift = pendingDrift(inst)
       if (!drift && !reportPausedRepair(inst, makeSendOutput(event.sender, sessionId))) {
         warnIfSitePackagesEmpty(inst, makeSendOutput(event.sender, sessionId))
       }
-      if (drift) {
+      if (drift && mode === 'off') {
+        reportDetectedOnly(inst, drift, makeSendOutput(event.sender, sessionId))
+      } else if (drift && mode !== 'off') {
         if (!preLaunchPhases.includes('depsRepair')) preLaunchPhases.push('depsRepair')
         await armLaunchTracker()
         sendProgress('depsRepair', { percent: -1 })
         await repairDeps(inst, drift, {
+          mode,
           sendOutput: makeSendOutput(event.sender, sessionId),
           update: updateFn,
           signal: abort.signal,
-          confirmAdoptedRepair: (unsatisfied) =>
-            confirmAdoptedDepsRepair(sender, abort.signal, unsatisfied)
+          confirmRepair: (unsatisfied) => confirmDepsRepair(sender, abort.signal, unsatisfied)
         })
         inst = (await installations.get(installationId)) || inst
       }

@@ -18,7 +18,9 @@ import {
   MAX_FAILED_ATTEMPTS,
   detectInstallDrift,
   pruneMarker,
+  depsRepairPolicy,
   pausedRepairNote,
+  reportDetectedOnly,
   pendingDrift,
   relaxSpecifier,
   reportPausedRepair,
@@ -122,12 +124,13 @@ function adoptedInstall(dists: string[], reqs: string, opts: { uv?: boolean } = 
 
 function tools(over: Partial<DepsRepairTools> = {}): DepsRepairTools & {
   update: ReturnType<typeof vi.fn>
-  confirmAdoptedRepair: ReturnType<typeof vi.fn>
+  confirmRepair: ReturnType<typeof vi.fn>
 } {
   return {
+    mode: 'auto',
     sendOutput: () => {},
     update: vi.fn(async () => {}),
-    confirmAdoptedRepair: vi.fn(async () => true),
+    confirmRepair: vi.fn(async () => true),
     ...over
   } as never
 }
@@ -177,13 +180,13 @@ describe('repairDeps', () => {
     const { inst, site } = adoptedInstall(['numpy-2.1.0.dist-info'], 'sqlalchemy>=2.0.0\n')
     const drift = pendingDrift(inst)!
     const uv = fakeUv(site, ['SQLAlchemy-2.0.36.dist-info'])
-    const t = tools()
+    const t = tools({ mode: 'prompt' })
 
     await expect(repairDeps(inst, drift, t, { freeze: noFreeze, runUvPip: uv })).resolves.toBe(
       'repaired'
     )
 
-    expect(t.confirmAdoptedRepair).toHaveBeenCalledWith(drift.unsatisfied)
+    expect(t.confirmRepair).toHaveBeenCalledWith(drift.unsatisfied)
     expect(uv.mock.calls[0]![0]).toBe(
       path.join(
         inst.adoptedBaseDir as string,
@@ -199,7 +202,7 @@ describe('repairDeps', () => {
   it('leaves an adopted venv untouched when the user skips', async () => {
     const { inst } = adoptedInstall(['numpy-2.1.0.dist-info'], 'sqlalchemy>=2.0.0\n')
     const uv = vi.fn()
-    const t = tools({ confirmAdoptedRepair: vi.fn(async () => false) })
+    const t = tools({ mode: 'prompt', confirmRepair: vi.fn(async () => false) })
 
     await expect(
       repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
@@ -221,7 +224,7 @@ describe('repairDeps', () => {
     for (let launch = 1; launch <= 2; launch++) {
       const drift = pendingDrift(inst)
       expect(drift).not.toBeNull()
-      const t = tools({ confirmAdoptedRepair: confirm })
+      const t = tools({ mode: 'prompt', confirmRepair: confirm })
       await expect(repairDeps(inst, drift!, t, { freeze: noFreeze, runUvPip: uv })).resolves.toBe(
         'declined'
       )
@@ -237,8 +240,9 @@ describe('repairDeps', () => {
     const uv = vi.fn()
     const output: string[] = []
     const t = tools({
+      mode: 'prompt',
       sendOutput: (s) => output.push(s),
-      confirmAdoptedRepair: vi.fn(async () => Promise.reject(new Error('adopt-prompt-unavailable')))
+      confirmRepair: vi.fn(async () => Promise.reject(new Error('adopt-prompt-unavailable')))
     })
 
     await expect(
@@ -257,13 +261,13 @@ describe('repairDeps', () => {
   it('does not prompt when an adopted venv has no uv to install with', async () => {
     const { inst } = adoptedInstall(['numpy-2.1.0.dist-info'], 'sqlalchemy>=2.0.0\n', { uv: false })
     const output: string[] = []
-    const t = tools({ sendOutput: (s) => output.push(s) })
+    const t = tools({ mode: 'prompt', sendOutput: (s) => output.push(s) })
 
     await expect(
       repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: vi.fn() })
     ).resolves.toBe('no_uv')
 
-    expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
+    expect(t.confirmRepair).not.toHaveBeenCalled()
     expect(output.join('')).toContain('Copy & Update')
     expect(output.join('')).toContain('sqlalchemy (missing)')
   })
@@ -338,12 +342,12 @@ describe('repairDeps', () => {
       'torchsde\nkornia\nsqlalchemy>=2.0.0\nnumpy\n'
     )
     const output: string[] = []
-    const t = tools({ sendOutput: (s) => output.push(s) })
+    const t = tools({ mode: 'prompt', sendOutput: (s) => output.push(s) })
     const uv = fakeUv(site, ['SQLAlchemy-2.0.36.dist-info'])
     await expect(
       repairDeps(inst, pendingDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
     ).resolves.toBe('partial')
-    expect(t.confirmAdoptedRepair.mock.calls[0]![0].map((r: { name: string }) => r.name)).toEqual([
+    expect(t.confirmRepair.mock.calls[0]![0].map((r: { name: string }) => r.name)).toEqual([
       'sqlalchemy'
     ])
     expect(output.join('')).toContain('Not installing torchsde (needs torch), kornia (needs torch)')
@@ -361,12 +365,12 @@ describe('repairDeps', () => {
     // Nothing is installable, so no repair is pending at all...
     expect(pendingDrift(inst)).toBeNull()
     // ...and even if one ran, it would neither prompt nor install.
-    const t = tools()
+    const t = tools({ mode: 'prompt' })
     const uv = vi.fn()
     await expect(
       repairDeps(inst, detectInstallDrift(inst)!, t, { freeze: noFreeze, runUvPip: uv })
     ).resolves.toBe('torch_missing')
-    expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
+    expect(t.confirmRepair).not.toHaveBeenCalled()
     expect(uv).not.toHaveBeenCalled()
     expect(emit).toHaveBeenCalledWith(
       'comfy.desktop.deps_repair',
@@ -621,7 +625,7 @@ describe('repair marker', () => {
         runUvPip: uv
       })
     ).resolves.toBe('repaired')
-    expect(t.confirmAdoptedRepair).not.toHaveBeenCalled()
+    expect(t.confirmRepair).not.toHaveBeenCalled()
     expect(uv.calls).toEqual([['blake3'], ['sqlalchemy>=2.0.0'], ['comfy-aimdo==0.5.5']])
     const args = uv.mock.calls[0]![1]
     expect(args).toContain('--python')
@@ -773,7 +777,7 @@ describe('repair marker', () => {
     for (let launch = 0; launch < 5; launch++) {
       const drift = pendingDrift(record)
       if (!drift) continue
-      const t = tools({ confirmAdoptedRepair: confirm })
+      const t = tools({ mode: 'prompt', confirmRepair: confirm })
       await repairDeps(record, drift, t, {
         freeze: async () => ({ torch: '2.10.0' }),
         runUvPip: uv
@@ -976,5 +980,30 @@ describe('relaxSpecifier', () => {
     expect(relaxSpecifier('>=1.4.2, ~=1.4')).toBe('>=1.4.2,>=1.4')
     // uv rejects a local version label with >=.
     expect(relaxSpecifier('==2.1.0+vendor')).toBe('>=2.1.0')
+  })
+})
+
+describe('depsRepairPolicy', () => {
+  it('asks adopted installs first and only reports drift on managed ones', () => {
+    expect(depsRepairPolicy(adoptedInstall([], 'blake3\n').inst)).toBe('prompt')
+    expect(depsRepairPolicy(managedInstall([], 'blake3\n').inst)).toBe('off')
+  })
+})
+
+describe('reportDetectedOnly', () => {
+  it('logs and reports drift without touching the venv', () => {
+    const { inst } = managedInstall(SYNCED.slice(2), REQS)
+    const output: string[] = []
+    reportDetectedOnly(inst, detectInstallDrift(inst)!, (s) => output.push(s))
+    expect(output.join('')).toContain('blake3 (missing), sqlalchemy (missing)')
+    expect(output.join('')).toContain('Not repaired automatically')
+    expect(emit).toHaveBeenCalledWith(
+      'comfy.desktop.deps_repair',
+      expect.objectContaining({
+        outcome: 'detected',
+        adopted: false,
+        packages: ['blake3', 'sqlalchemy']
+      })
+    )
   })
 })

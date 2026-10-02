@@ -81,16 +81,53 @@ export type DepsRepairOutcome =
   | 'cancelled'
   | 'site_packages_empty'
   | 'paused'
+  | 'detected'
+
+/**
+ * What a launch does about drift: ask the user and then repair, repair without
+ * asking, or only report it. The one place that decides it per install; the
+ * executor below just carries out the mode it is given.
+ */
+export type DepsRepairMode = 'prompt' | 'auto' | 'off'
+
+/** Adopted installs ask before their legacy venv is changed. Managed installs
+ *  only report drift for now: whether Desktop repairs them is decided
+ *  separately. */
+export function depsRepairPolicy(installation: InstallationRecord): DepsRepairMode {
+  return installation.adopted === true ? 'prompt' : 'off'
+}
+
+/** Mode `off`: log the drift and report it, without touching the venv. */
+export function reportDetectedOnly(
+  installation: InstallationRecord,
+  drift: RequirementsDrift,
+  sendOutput?: (text: string) => void
+): void {
+  sendOutput?.(
+    `\nComfyUI requirements not satisfied by this environment: ` +
+      `${describeUnsatisfied(drift.unsatisfied)}\n` +
+      `Not repaired automatically for this install; ComfyUI may fail to start.\n`
+  )
+  telemetry.emit('comfy.desktop.deps_repair', {
+    outcome: 'detected',
+    adopted: installation.adopted === true,
+    variant: (installation.variant as string | undefined) ?? null,
+    packages: drift.unsatisfied.map((r) => r.name),
+    missing_count: drift.unsatisfied.filter((r) => r.reason === 'missing').length,
+    outdated_count: drift.unsatisfied.filter((r) => r.reason === 'outdated').length
+  })
+}
 
 export interface DepsRepairTools {
+  /** `prompt` asks through `confirmRepair` first; `auto` repairs without asking. */
+  mode: 'prompt' | 'auto'
   sendOutput?: (text: string) => void
   update: (data: Record<string, unknown>) => Promise<unknown>
   signal?: AbortSignal
-  /** Ask before modifying an adopted install's venv. Resolves true to install,
-   *  false when the user skips; rejects when the prompt can't be shown (no
-   *  window to show it in, no acknowledgement), which changes nothing either.
-   *  Not called for managed installs. */
-  confirmAdoptedRepair: (unsatisfied: UnsatisfiedRequirement[]) => Promise<boolean>
+  /** Ask before modifying the venv (mode `prompt` only). Resolves true to
+   *  install, false when the user skips; rejects when the prompt can't be shown
+   *  (no window to show it in, no acknowledgement), which changes nothing either. */
+  confirmRepair: (unsatisfied: UnsatisfiedRequirement[]) => Promise<boolean>
 }
 
 export interface DepsRepairDeps {
@@ -364,10 +401,10 @@ export async function repairDeps(
   }
 
   // Asked only now, so the prompt never offers a package that won't install.
-  if (adopted) {
+  if (tools.mode === 'prompt') {
     let accepted: boolean
     try {
-      accepted = await tools.confirmAdoptedRepair(toInstall)
+      accepted = await tools.confirmRepair(toInstall)
     } catch {
       if (tools.signal?.aborted) return 'cancelled'
       // Not the user's choice: the prompt never reached them.
