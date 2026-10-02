@@ -121,6 +121,9 @@ interface PendingDownload {
   /** The webContents that initiated the download (may differ from window.webContents for WebContentsView). */
   senderContents?: Electron.WebContents
   subscriberWindows: Set<BrowserWindow>
+  /** Joiners deliver through their own contents: a ComfyUI view is a
+   *  WebContentsView, so its host window's contents is not where it listens. */
+  subscriberContents: Set<Electron.WebContents>
   item?: Electron.DownloadItem
   // --- managed model-job state (kind === 'model') ---
   /** Active transport; null while paused / awaiting session resolution. */
@@ -702,6 +705,13 @@ function broadcastProgress(progress: DownloadProgress): void {
         sub.webContents.send('desktop2-download-progress', progress)
       } else {
         pending.subscriberWindows.delete(sub)
+      }
+    }
+    for (const contents of pending.subscriberContents) {
+      if (contents.isDestroyed()) {
+        pending.subscriberContents.delete(contents)
+      } else if (contents !== target) {
+        contents.send('desktop2-download-progress', progress)
       }
     }
   }
@@ -1362,6 +1372,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
         ? opts.senderContents
         : undefined,
     subscriberWindows: new Set(),
+    subscriberContents: new Set(),
     transport: null,
     suspended: false,
     installationId: resolvedInstallId,
@@ -1491,7 +1502,8 @@ function joinActiveAssetDownload(
   win: BrowserWindow,
   url: string,
   requestedSavePath: string,
-  requireExactDestination: boolean
+  requireExactDestination: boolean,
+  senderContents?: Electron.WebContents
 ): PendingDownload | undefined {
   const requestedDestKey = canonicalDestKey(requestedSavePath)
   const existing = activeJobsForUrl(url).find(
@@ -1507,8 +1519,10 @@ function joinActiveAssetDownload(
   if (win !== existing.window) {
     existing.subscriberWindows.add(win)
   }
-  if (!win.isDestroyed()) {
-    win.webContents.send('desktop2-download-progress', existing.lastProgress)
+  const joiner = senderContents ?? (win.isDestroyed() ? undefined : win.webContents)
+  if (joiner && !joiner.isDestroyed()) {
+    if (joiner !== existing.senderContents) existing.subscriberContents.add(joiner)
+    joiner.send('desktop2-download-progress', existing.lastProgress)
   }
   return existing
 }
@@ -1530,7 +1544,8 @@ export async function startManagedAssetDownload(
     win,
     url,
     requestedSavePath,
-    existingFilePolicy === 'skip'
+    existingFilePolicy === 'skip',
+    senderContents
   )
   if (existing) return { status: 'joined', downloadId: existing.id }
 
@@ -1544,7 +1559,8 @@ export async function startManagedAssetDownload(
     win,
     url,
     requestedSavePath,
-    existingFilePolicy === 'skip'
+    existingFilePolicy === 'skip',
+    senderContents
   )
   if (reserved) return { status: 'joined', downloadId: reserved.id }
 
@@ -1567,6 +1583,7 @@ export async function startManagedAssetDownload(
     window: win,
     senderContents: senderContents !== win.webContents ? senderContents : undefined,
     subscriberWindows: new Set(),
+    subscriberContents: new Set(),
     lastProgress: {
       id,
       url,
@@ -1975,6 +1992,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
         savePath,
         window: fallbackWindow!,
         subscriberWindows: new Set(),
+        subscriberContents: new Set(),
         item,
         lastProgress: { id, url, filename, progress: 0, status: 'pending' },
         lastSpeedBytes: 0,
@@ -2678,6 +2696,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       directory: meta.directory,
       savePath: finalPath,
       subscriberWindows: new Set(),
+      subscriberContents: new Set(),
       transport: null,
       suspended: true,
       installationId: meta.installationId ?? null,
@@ -2903,6 +2922,7 @@ export function _test_setSeededTrayState(snapshot: DownloadsTrayState): void {
       directory: entry.directory ?? '',
       savePath: entry.savePath ?? '',
       subscriberWindows: new Set(),
+      subscriberContents: new Set(),
       lastProgress: { ...entry, id },
       lastSpeedBytes: 0,
       lastSpeedTime: Date.now()
