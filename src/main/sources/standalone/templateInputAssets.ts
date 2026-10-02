@@ -95,7 +95,7 @@ export async function resolveTemplateInputAssetSnapshot(
   templateId: string
 ): Promise<TemplateInputAsset[] | null> {
   const json = await loadTemplateJson(installation, templateId)
-  return json && typeof json === 'object' ? extractTemplateInputAssets(json) : null
+  return json && typeof json === 'object' ? resolveTemplateInputAssetsFromJson(json) : null
 }
 
 /**
