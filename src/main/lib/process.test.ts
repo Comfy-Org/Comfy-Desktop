@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect } from 'vitest'
+import http from 'http'
 import { EventEmitter } from 'events'
 import { _resetQuitWaitForTest, holdQuit, trackExitWork, type QuitWaitFields } from './quitWait'
 import { _resetQuitStateForTest } from './quit-state'
@@ -233,17 +234,17 @@ describe('waitForPort abort settlement', () => {
     const { close, port } = await listenHanging()
     const controller = new AbortController()
     try {
+      // The in-flight request never ends on its own, and no later poll pass can run: only the
+      // abort listener can settle this. Without it, the test times out instead of passing slowly,
+      // so no wall-clock bound is needed.
       const wait = waitForPort(port, '127.0.0.1', {
-        timeoutMs: 30000,
+        timeoutMs: 600_000,
+        requestTimeoutMs: 600_000,
         intervalMs: 100,
         signal: controller.signal
       })
       setTimeout(() => controller.abort(), 50)
-      const start = Date.now()
       await expect(wait).rejects.toThrow('Launch cancelled.')
-      // Settled by the abort listener, not by the 2s request timeout or a
-      // later poll pass.
-      expect(Date.now() - start).toBeLessThan(1500)
     } finally {
       await close()
     }
@@ -263,15 +264,15 @@ describe('waitForUrl abort settlement', () => {
     const { close, port } = await listenHanging()
     const controller = new AbortController()
     try {
+      // As for waitForPort: only the abort listener can settle this.
       const wait = waitForUrl(`http://127.0.0.1:${port}/`, {
-        timeoutMs: 30000,
+        timeoutMs: 600_000,
+        requestTimeoutMs: 600_000,
         intervalMs: 100,
         signal: controller.signal
       })
       setTimeout(() => controller.abort(), 50)
-      const start = Date.now()
       await expect(wait).rejects.toThrow('Launch cancelled.')
-      expect(Date.now() - start).toBeLessThan(1500)
     } finally {
       await close()
     }
@@ -494,6 +495,106 @@ describe.runIf(process.platform !== 'win32')('a quit waits for killProcessTree',
       try {
         process.kill(-proc.pid!, 'SIGKILL')
       } catch {}
+    }
+  })
+})
+
+describe('requestTimeoutMs reaches the probe request', () => {
+  // The abort tests rely on it: a probe that ignored the option would end at the 2 s default and
+  // let a later poll pass settle the wait, which is what those tests must rule out.
+  it.each([
+    ['waitForPort', 1234, 1234],
+    ['waitForPort', undefined, 2000],
+    ['waitForPort', Number.NaN, 2000],
+    ['waitForPort', -5, 2000],
+    ['waitForUrl', 1234, 1234],
+    ['waitForUrl', undefined, 2000],
+    ['waitForUrl', Number.POSITIVE_INFINITY, 2000]
+  ] as const)('%s with %s', async (fn, requestTimeoutMs, expected) => {
+    const { close, port } = await listenHanging()
+    const get = vi.spyOn(http, 'get')
+    const controller = new AbortController()
+    try {
+      const opts = {
+        timeoutMs: 600_000,
+        intervalMs: 100,
+        signal: controller.signal,
+        ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {})
+      }
+      const wait =
+        fn === 'waitForPort'
+          ? waitForPort(port, '127.0.0.1', opts)
+          : waitForUrl(`http://127.0.0.1:${port}/`, opts)
+      wait.catch(() => {}) // settled by the abort, in the test or in cleanup
+      await vi.waitFor(() => expect(get).toHaveBeenCalled())
+      const timeouts = get.mock.calls.map(
+        (call) =>
+          call.find(
+            (arg): arg is { timeout: number } =>
+              typeof arg === 'object' && arg !== null && 'timeout' in arg
+          )?.timeout
+      )
+      expect(timeouts).toContain(expected)
+      controller.abort()
+      await expect(wait).rejects.toThrow('Launch cancelled.')
+    } finally {
+      // Even when an assertion threw first: a live waiter would keep polling for minutes.
+      controller.abort()
+      get.mockRestore()
+      await close()
+    }
+  })
+})
+
+describe('a probe never outlasts the overall deadline', () => {
+  it.each(['waitForPort', 'waitForUrl'] as const)('%s', async (fn) => {
+    const { close, port } = await listenHanging()
+    const get = vi.spyOn(http, 'get')
+    const controller = new AbortController()
+    try {
+      const opts = {
+        timeoutMs: 3_000,
+        requestTimeoutMs: 600_000,
+        intervalMs: 100,
+        signal: controller.signal
+      }
+      const wait =
+        fn === 'waitForPort'
+          ? waitForPort(port, '127.0.0.1', opts)
+          : waitForUrl(`http://127.0.0.1:${port}/`, opts)
+      wait.catch(() => {}) // settled by the abort, in the test or in cleanup
+      await vi.waitFor(() => expect(get).toHaveBeenCalled())
+      const timeout = get.mock.calls[0]!.find(
+        (arg): arg is { timeout: number } =>
+          typeof arg === 'object' && arg !== null && 'timeout' in arg
+      )?.timeout
+      expect(timeout).toBeGreaterThan(0)
+      expect(timeout).toBeLessThanOrEqual(3_000)
+      controller.abort()
+      await expect(wait).rejects.toThrow('Launch cancelled.')
+    } finally {
+      // Even when an assertion threw first: a live waiter would keep polling for minutes.
+      controller.abort()
+      get.mockRestore()
+      await close()
+    }
+  })
+})
+
+describe('a spent budget still ends the wait', () => {
+  // With nothing left of timeoutMs the probe's timeout must not become 0, which Node reads as
+  // "no timeout": the probe would hang on a silent peer and the wait would never time out.
+  it.each(['waitForPort', 'waitForUrl'] as const)('%s with timeoutMs 0', async (fn) => {
+    const { close, port } = await listenHanging()
+    try {
+      const opts = { timeoutMs: 0, intervalMs: 10 }
+      const wait =
+        fn === 'waitForPort'
+          ? waitForPort(port, '127.0.0.1', opts)
+          : waitForUrl(`http://127.0.0.1:${port}/`, opts)
+      await expect(wait).rejects.toThrow('Timed out')
+    } finally {
+      await close()
     }
   })
 })
