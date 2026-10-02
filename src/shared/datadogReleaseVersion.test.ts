@@ -28,6 +28,12 @@ describe('Datadog release version', () => {
     expect(normalizeDatadogVersion('release/1.1.4-rc.1')).toBe('release/1.1.4-rc.1')
   })
 
+  it('preserves distinct Unicode release versions', () => {
+    expect(normalizeDatadogVersion('版本甲')).toBe('版本甲')
+    expect(normalizeDatadogVersion('版本乙')).toBe('版本乙')
+    expect(normalizeDatadogVersion('版本甲')).not.toBe(normalizeDatadogVersion('版本乙'))
+  })
+
   it("caps tags at Datadog's 200-character limit", () => {
     expect(normalizeDatadogVersion(`release-${'a'.repeat(250)}`)).toHaveLength(200)
   })

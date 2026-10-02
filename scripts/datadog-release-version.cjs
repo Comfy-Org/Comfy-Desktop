@@ -35,9 +35,9 @@ function readGitSha() {
 function normalizeDatadogVersion(value) {
   const normalized = String(value || '')
     .trim()
-    .replace(/[^A-Za-z0-9_.:/-]+/g, '_')
+    .replace(/[^\p{L}0-9_.:/-]+/gu, '_')
   if (!normalized) return 'v0.0.0'
-  const withLeadingLetter = /^[A-Za-z]/.test(normalized) ? normalized : `v${normalized}`
+  const withLeadingLetter = /^\p{L}/u.test(normalized) ? normalized : `v${normalized}`
   return withLeadingLetter.slice(0, 200)
 }
 
