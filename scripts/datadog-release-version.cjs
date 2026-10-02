@@ -29,17 +29,32 @@ function readGitSha() {
   }
 }
 
+/** Datadog unified-service tag values must begin with a letter and may only contain
+ * letters, numbers, underscores, minuses, colons, periods, and forward slashes. Keep
+ * release and sourcemap versions identical by normalizing once at their shared source. */
+function normalizeDatadogVersion(value) {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_.:/-]+/g, '_')
+  if (!normalized) return 'v0.0.0'
+  const withLeadingLetter = /^[A-Za-z]/.test(normalized) ? normalized : `v${normalized}`
+  return withLeadingLetter.slice(0, 200)
+}
+
 function resolveDatadogReleaseVersion(env = process.env) {
   const explicitVersion = String(env.VITE_DATADOG_RUM_VERSION || '').trim()
-  if (explicitVersion) return explicitVersion
+  if (explicitVersion) return normalizeDatadogVersion(explicitVersion)
 
   const packageVersion = String(env.npm_package_version || readPackageVersion()).trim() || '0.0.0'
   const commitSha = String(env.GITHUB_SHA || env.VITE_GIT_SHA || readGitSha()).trim()
 
-  return commitSha ? `${packageVersion}+${commitSha.slice(0, 12)}` : packageVersion
+  return normalizeDatadogVersion(
+    commitSha ? `${packageVersion}-${commitSha.slice(0, 12)}` : packageVersion,
+  )
 }
 
 module.exports = {
+  normalizeDatadogVersion,
   resolveDatadogReleaseVersion,
 }
 
