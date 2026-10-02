@@ -40,9 +40,11 @@ export function managerAllowedByPolicy(policy: ModelPolicy | null | undefined): 
 const GOVERNANCE_POLICY_RELATIVE = path.join('ComfyUI', 'governance', 'policy.signed.json')
 
 /**
- * A governed build's policy, as recorded on its install. ComfyUI enforces the
- * signed policy itself and exits at startup on a flag the policy forbids, so
- * launch leaves those flags out.
+ * A governed build's policy, read from the signed policy file its archive
+ * carries. ComfyUI enforces that policy itself and exits at startup on a flag
+ * it forbids, so launch leaves out the manager-enabling flags under a
+ * custom-node allowlist and the launcher's `--extra-model-paths-config` on any
+ * governed build.
  */
 export interface Governance {
   kind: 'governed'
@@ -146,7 +148,8 @@ export interface LaunchOptions {
    * Defaults to true.
    */
   managerAllowed?: boolean
-  /** The install's recorded governance; an allowlist drops the manager flags too. */
+  /** The install's governance, read from its policy file at launch; an
+   *  allowlist drops the manager flags too. */
   governance?: Governance | null
 }
 

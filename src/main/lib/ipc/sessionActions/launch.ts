@@ -76,7 +76,6 @@ import {
 } from '../../../sources/standalone/templateDownloadTask'
 import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
 import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
-import type { Governance } from '../../../comfybuilder'
 import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
@@ -356,10 +355,7 @@ export function applyStorageLaunchArgs(
   let modelDirsForLaunch: string[] | undefined
   let modelSyncOptions: ModelPathsOptions = {}
   let manageModelFolders = false
-  // A governed build's ComfyUI refuses an unsigned `--extra-model-paths-config`,
-  // so its models come only from its own tree.
-  const governed = (inst.governance as Governance | undefined)?.kind === 'governed'
-  if (argsAvailable && !governed) {
+  if (argsAvailable) {
     const sharedDirs = (settings.get('modelsDirs') as string[] | undefined) ?? []
     const { dirs, primaryDir } = resolveLauncherModelDirs(inst, sharedDirs)
     if (dirs.length > 0) {

@@ -33,7 +33,6 @@ import type {
   Artifact,
   ArtifactGpu,
   ArtifactOs,
-  Governance,
   InstallProgress,
   ModelManifest
 } from '../../comfybuilder'
@@ -79,9 +78,10 @@ const ROLLBACK_FIELD = 'comfybuilderRollback'
 const MANAGER_ALLOWED_FIELD = 'comfybuilderManagerAllowed'
 
 /** The record fields that carry a release's manager answer: the answer itself
- *  (launch reads it), the archive's governance policy if it carries one, and
- *  the stored launch args rewritten to match (the Startup Arguments field shows
- *  them). A release without a policy file clears `governance`. */
+ *  (launch reads it), the archive's governance policy if it carries one (launch
+ *  re-reads the policy file rather than trusting this copy), and the stored
+ *  launch args rewritten to match (the Startup Arguments field shows them). A
+ *  release without a policy file clears `governance`. */
 function managerAnswerFields(
   installation: InstallationRecord,
   manifest: ModelManifest
@@ -576,7 +576,9 @@ export const comfybuilder: SourcePlugin = {
       // Records written before this field existed have no answer; they keep
       // launching with the manager flag, as they always did.
       managerAllowed: installation[MANAGER_ALLOWED_FIELD] !== false,
-      governance: installation.governance as Governance | undefined
+      // From the disk, not the record: a record can lag the installed archive
+      // (an update interrupted before its last write, an older Desktop).
+      governance: readGovernance(installation.installPath)
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }

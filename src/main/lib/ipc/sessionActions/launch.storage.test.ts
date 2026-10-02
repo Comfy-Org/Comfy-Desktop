@@ -263,14 +263,14 @@ describe('applyStorageLaunchArgs', () => {
     mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
     const launchCmd = makeLaunchCmd()
 
-    const state = applyStorageLaunchArgs(
-      makeInstall({
-        governance: { kind: 'governed', customNodeMode: 'blocklist' },
-        modelDirs: [path.join(root, 'governed-owned')]
-      }),
-      'governed',
-      launchCmd
+    const inst = makeInstall({ modelDirs: [path.join(root, 'governed-owned')] })
+    fs.mkdirSync(path.join(inst.installPath, 'ComfyUI', 'governance'))
+    fs.writeFileSync(
+      path.join(inst.installPath, 'ComfyUI', 'governance', 'policy.signed.json'),
+      '{}'
     )
+
+    const state = applyStorageLaunchArgs(inst, 'governed', launchCmd)
 
     expect(launchCmd.args).toEqual([
       'main.py',

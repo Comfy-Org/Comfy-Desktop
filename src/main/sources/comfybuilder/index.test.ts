@@ -338,14 +338,26 @@ describe('comfybuilder.install wiring', () => {
     expect(fields.launchArgs).toBe('--enable-manager --cpu')
   })
 
-  it('launches with the recorded governance', () => {
-    const governance = { kind: 'governed', customNodeMode: 'allowlist' }
-    vi.mocked(buildLaunchSpec).mockClear()
-    comfybuilder.getLaunchCommand!(record({ governance }))
-    expect(buildLaunchSpec).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ governance })
-    )
+  it('drops the manager flag from the policy on disk when the record has no governance', async () => {
+    // A record can lag the archive: an update interrupted before its last
+    // write, or a record from an older Desktop.
+    const real = await vi.importActual<typeof ComfyBuilderModule>('../../comfybuilder')
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-launch-'))
+    try {
+      fs.mkdirSync(path.dirname(real.venvPython(root)), { recursive: true })
+      fs.writeFileSync(real.venvPython(root), '')
+      writePolicy(root, 'allowlist')
+      fs.writeFileSync(path.join(root, 'ComfyUI', 'main.py'), '')
+      vi.mocked(buildLaunchSpec).mockImplementationOnce(real.buildLaunchSpec)
+
+      const cmd = comfybuilder.getLaunchCommand!(
+        record({ installPath: root, launchArgs: '--enable-manager --cpu' })
+      )
+
+      expect(cmd?.args).toEqual(['-s', path.join('ComfyUI', 'main.py'), '--cpu'])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('installs the archive, resolves the manifest, then stages models in the background', async () => {
