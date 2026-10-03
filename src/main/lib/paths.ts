@@ -181,6 +181,16 @@ export function builtinDefaultInstallDir(): string {
   return path.join(defaultDataRoot(), 'ComfyUI-Installs')
 }
 
+/** The legacy Desktop app's suggested base folder, `<Documents>/ComfyUI`. On Windows it dropped
+ *  a OneDrive segment from the Documents path, so this does too. */
+export function legacyDesktopDefaultBase(): string {
+  const documents = app.getPath('documents')
+  return path.join(
+    process.platform === 'win32' ? documents.replace(/OneDrive\\/, '') : documents,
+    'ComfyUI'
+  )
+}
+
 /** Resolver for the user's configured install location, injected by settings.ts.
  *  Kept as injected state (not a direct `import`) so paths.ts has no dependency
  *  on settings — settings → models → paths is the only allowed direction, and

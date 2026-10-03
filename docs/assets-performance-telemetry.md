@@ -34,9 +34,36 @@ Segment by Core version and opt-in before comparing. Recorded release labels can
 checkout or describe a base tag rather than an exact release, so use known pinned releases when
 interpreting a version comparison. These fields do not identify every reason a grant was withheld.
 
-The normal telemetry consent gate still applies. No paths, filenames, asset names, prompts, model
-metadata, or other user content are added. This follows the telemetry privacy rules documented in
+The normal telemetry consent gate still applies. No raw paths, filenames, asset names, prompts,
+model metadata, or other user content are added. The database location fields below carry only
+hashes and fixed labels. This follows the telemetry privacy rules documented in
 [`src/main/lib/telemetry.ts`](../src/main/lib/telemetry.ts).
+
+## Database location fields
+
+`boot_started` also says where the launch keeps its asset database, user directory and base
+directory, so two installs sharing one database can be told apart
+(`src/main/lib/dbLocationTelemetry.ts`). They are computed only when telemetry consent is granted.
+
+- `db_path_hash`, `user_dir_hash`, `base_dir_hash`: a SHA-256 of the resolved, normalised path,
+  truncated to 16 hex characters, or null. Equal hashes on one machine mean the same location; across machines they only mean the same path spelling. The hash is
+  one-way but unkeyed: someone with telemetry access could confirm a guessed path, such as a
+  username and folder layout, by hashing it. That trade-off was chosen over keeping a per-user
+  key file.
+- `db_path_rel`, `user_dir_rel`, `base_dir_rel`: the location relative to a folder Desktop knows,
+  built only from placeholders (`<this-install>`, `<install-root>`, `<install>`, `<legacy-root>`)
+  and fixed names (`ComfyUI`, `user`, `comfyui.db`), e.g.
+  `<this-install>/ComfyUI/user/comfyui.db`. An install folder is always `<install>`, since it is
+  named after the user's install name. Any other location is `outside_default`; null when the
+  hash is null.
+- `db_url_source`: `install_local`, `adopted_legacy`, `user_override` or `unknown`. Derived from
+  the launch arguments alone.
+- `db_location_status`: `ok`; or `timeout` / `error`, in which case only `db_url_source` is
+  sent alongside it. A launch waits at most 500ms for the location, and lookups run one at a
+  time, so a launch queued behind a stalled lookup also reports `timeout`.
+
+A field is null rather than a guess when the location cannot be determined reliably, for example
+when the core's default database location depends on a version that cannot be established.
 
 ## Asset event-log fields
 
