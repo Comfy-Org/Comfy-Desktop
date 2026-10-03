@@ -570,7 +570,7 @@ async function classifyFromView(
  * and kept deliberately:
  *
  *   - The harm is bounded. This is cohort targeting, not authorization: the server evaluates the
- *     condition, and a grant only ever adds an arg from `CORE_BETA_GRANTABLE_ARGS`. The wrong
+ *     condition, and a grant only ever adds an arg from `POSTHOG_CONTROLLED_ARGS`. The wrong
  *     tie-break costs a missed or spurious beta arg, never access to anything.
  *   - It is already less order-dependent than what it replaces, where classification ran per view
  *     on `dom-ready` with no UID check at all, so the last document to load decided — including a
