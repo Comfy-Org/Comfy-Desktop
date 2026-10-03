@@ -16,6 +16,7 @@ import {
   recommendVariant,
   stripPlatform,
   variantAccel,
+  unsupportedHostReason,
   variantMatchesHost,
   variantMatchesHostArch
 } from './envPaths'
@@ -207,6 +208,31 @@ describe('architecture-specific vendor ids', () => {
       setHost('linux', 'arm')
       expect(variantMatchesHostArch('linux-nvidia')).toBe(false)
       expect(variantMatchesHostArch('linux-nvidia-arm64')).toBe(false)
+    })
+  })
+
+  describe('unsupportedHostReason', () => {
+    // The filter and the reason have to agree: a host the filter empties out
+    // must have something to say, or the wizard shows a bare "no options".
+    const CATALOG = ['win-nvidia', 'win-nvidia-arm64', 'mac-mps', 'linux-nvidia']
+
+    it('explains the ARM64 Linux gap the architecture filter creates', () => {
+      setHost('linux', 'arm64')
+      expect(CATALOG.some(variantMatchesHost)).toBe(false)
+      expect(unsupportedHostReason()).toMatch(/ARM64 Linux/)
+    })
+
+    it('stays silent on hosts the catalog serves', () => {
+      for (const [platform, arch] of [
+        ['win32', 'x64'],
+        ['win32', 'arm64'],
+        ['darwin', 'arm64'],
+        ['linux', 'x64']
+      ] as const) {
+        setHost(platform, arch)
+        expect(CATALOG.some(variantMatchesHost), `${platform}/${arch}`).toBe(true)
+        expect(unsupportedHostReason(), `${platform}/${arch}`).toBeNull()
+      }
     })
   })
 
