@@ -46,7 +46,7 @@ directory, so two installs sharing one database can be told apart
 (`src/main/lib/dbLocationTelemetry.ts`). They are computed only when telemetry consent is granted.
 
 - `db_path_hash`, `user_dir_hash`, `base_dir_hash`: a SHA-256 of the resolved, normalised path,
-  truncated to 16 hex characters, or null. Equal hashes mean the same location. The hash is
+  truncated to 16 hex characters, or null. Equal hashes on one machine mean the same location; across machines they only mean the same path spelling. The hash is
   one-way but unkeyed: someone with telemetry access could confirm a guessed path, such as a
   username and folder layout, by hashing it. That trade-off was chosen over keeping a per-user
   key file.

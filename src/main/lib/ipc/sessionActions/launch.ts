@@ -1820,9 +1820,9 @@ async function runLaunch(
 
   // Where this launch's database, user and base directories resolve to, for `boot_started`.
   // Computed from the final spawn args; retries don't change them. Only under granted consent:
-  // `capture` drops the event otherwise, so no key is created for nothing. Started here and
-  // awaited at the first attempt, bounded by a deadline: all of its I/O is asynchronous, so it
-  // delays a launch by at most the deadline and never fails one.
+  // `capture` drops the event otherwise, so no path is resolved, and no launch waits, for
+  // nothing. Started here and awaited at the first attempt, bounded by a deadline: all of its
+  // I/O is asynchronous, so it delays a launch by at most the deadline and never fails one.
   const adoptedBaseDir =
     inst.adopted === true ? (inst.adoptedBaseDir as string | undefined) : undefined
   const locationInput = {

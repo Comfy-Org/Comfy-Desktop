@@ -138,12 +138,13 @@ vi.mock('../shared', async (importOriginal) => {
   }
 })
 
-// The location deadline, made long so real key and path I/O never races it under load; the
+// The location deadline, made long so real path I/O never races it under load; the
 // hang test shortens it.
 const locationDeadline = vi.hoisted(() => ({
   ms: 60_000,
   fails: false,
-  passedByLaunch: undefined as number | undefined
+  passedByLaunch: undefined as number | undefined,
+  calls: 0
 }))
 vi.mock('../../dbLocationTelemetry', async (importOriginal) => {
   const orig = await importOriginal<typeof DbLocationModule>()
@@ -153,6 +154,7 @@ vi.mock('../../dbLocationTelemetry', async (importOriginal) => {
       compute: () => Promise<DbLocationModule.DbLocationProps>,
       deadlineMs?: number
     ) => {
+      locationDeadline.calls++
       locationDeadline.passedByLaunch = deadlineMs
       return orig.boundedDbLocation(
         locationDeadline.fails ? () => Promise.reject(new Error('lookup failed')) : compute,
@@ -1294,7 +1296,6 @@ describe('core beta report placement', () => {
     })
 
     afterEach(() => {
-      vi.unstubAllEnvs()
       telemetry.setConsentState('undecided')
     })
 
@@ -1332,7 +1333,7 @@ describe('core beta report placement', () => {
       return events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')?.properties
     }
 
-    it('reports it as keyed hashes only', async () => {
+    it('reports it as hashes and fixed labels only', async () => {
       const props = await launchWith('harness-db-location')
 
       const comfy = path.join(installDir, 'ComfyUI')
@@ -1497,7 +1498,10 @@ describe('core beta report placement', () => {
       'computes nothing while consent is %s',
       async (state) => {
         telemetry.setConsentState(state)
+        locationDeadline.calls = 0
         const props = await launchWith(`harness-db-location-${state}`)
+
+        expect(locationDeadline.calls, 'the location is never looked up').toBe(0)
 
         expect(props).not.toHaveProperty('db_url_source')
         expect(props).not.toHaveProperty('db_path_hash')

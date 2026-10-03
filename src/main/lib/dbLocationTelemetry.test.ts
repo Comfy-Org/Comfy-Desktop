@@ -65,7 +65,6 @@ describe('hashPath', () => {
     const canonical = spelling(p, process.platform)
     const expected = createHash('sha256').update(canonical).digest('hex').slice(0, 16)
     expect(await hashPath(p)).toBe(expected)
-    expect(fs.readdirSync(tmp), 'no key file is written').toEqual([])
   })
 })
 
