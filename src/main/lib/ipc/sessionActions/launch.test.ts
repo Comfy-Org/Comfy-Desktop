@@ -252,7 +252,7 @@ import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
-import { _resetKeyForTest, hashPath } from '../../dbLocationTelemetry'
+import { _resetKeyForTest, DB_LOCATION_DEADLINE_MS, hashPath } from '../../dbLocationTelemetry'
 import { adoptedPinArgs } from '../../comfyDbLock'
 import { configDir } from '../../paths'
 import type { LaunchCommand } from '../../../types/sources'
@@ -1276,8 +1276,8 @@ describe('core beta report placement', () => {
     })
 
     /** An expected hash, asserted real first: a dead `hashPath` must not make null === null pass. */
-    const hashed = (p: string): string => {
-      const h = hashPath(p)
+    const hashed = async (p: string): Promise<string> => {
+      const h = await hashPath(p)
       expect(h, `a hash for ${p}`).toMatch(/^[0-9a-f]{16}$/)
       return h!
     }
@@ -1309,13 +1309,14 @@ describe('core beta report placement', () => {
 
       const comfy = path.join(installDir, 'ComfyUI')
       expect(props).toMatchObject({
-        db_path_hash: hashed(path.join(comfy, 'user', 'comfyui.db')),
-        user_dir_hash: hashed(path.join(comfy, 'user')),
-        base_dir_hash: hashed(comfy),
+        db_path_hash: await hashed(path.join(comfy, 'user', 'comfyui.db')),
+        user_dir_hash: await hashed(path.join(comfy, 'user')),
+        base_dir_hash: await hashed(comfy),
         db_path_rel: '<this-install>/ComfyUI/user/comfyui.db',
         user_dir_rel: '<this-install>/ComfyUI/user',
         base_dir_rel: '<this-install>/ComfyUI',
-        db_url_source: 'install_local'
+        db_url_source: 'install_local',
+        db_location_status: 'ok'
       })
       expectNoNames(props, [path.basename(installDir)])
     })
@@ -1336,7 +1337,7 @@ describe('core beta report placement', () => {
       const props = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')?.properties
 
       expect(props).toMatchObject({
-        db_path_hash: hashed(path.join(legacy, 'user', 'comfyui.db')),
+        db_path_hash: await hashed(path.join(legacy, 'user', 'comfyui.db')),
         db_path_rel: '<legacy-root>/user/comfyui.db',
         base_dir_rel: '<legacy-root>',
         db_url_source: 'adopted_legacy'
@@ -1350,7 +1351,7 @@ describe('core beta report placement', () => {
       })
 
       expect(props?.['db_path_hash']).toBeNull()
-      expect(props?.['base_dir_hash']).toBe(hashed(path.join(installDir, 'ComfyUI')))
+      expect(props?.['base_dir_hash']).toBe(await hashed(path.join(installDir, 'ComfyUI')))
     })
 
     it('sends no database hash for a core without a database', async () => {
@@ -1358,7 +1359,7 @@ describe('core beta report placement', () => {
       const props = await launchWith('harness-db-location-nodb')
 
       expect(props?.['db_path_hash']).toBeNull()
-      expect(props?.['base_dir_hash']).toBe(hashed(path.join(installDir, 'ComfyUI')))
+      expect(props?.['base_dir_hash']).toBe(await hashed(path.join(installDir, 'ComfyUI')))
     })
 
     it('names a user directory in another install by fixed names only', async () => {
@@ -1371,7 +1372,7 @@ describe('core beta report placement', () => {
       ]).finally(() => settingsModule.set('installDir', previous))
 
       expect(props).toMatchObject({
-        user_dir_hash: hashed(path.join(sibling, 'ComfyUI', 'user')),
+        user_dir_hash: await hashed(path.join(sibling, 'ComfyUI', 'user')),
         user_dir_rel: '<install-root>/<install>/ComfyUI/user',
         base_dir_rel: '<this-install>/ComfyUI',
         db_url_source: 'user_override'
@@ -1384,13 +1385,13 @@ describe('core beta report placement', () => {
       const props = await launchWith('harness-db-location-named', ['--user-directory', named])
 
       expect(props?.['user_dir_rel']).toBe('outside_default')
-      expect(props?.['user_dir_hash']).toBe(hashed(named))
+      expect(props?.['user_dir_hash']).toBe(await hashed(named))
       expectNoNames(props, ['Ada Secret'])
     })
 
     it("reads the core's default from its record only while the record matches the checkout", async () => {
       // The harness record sits exactly on v0.3.81: the fixed `<ComfyUI>/user` default.
-      const fixedDefault = hashed(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db'))
+      const fixedDefault = await hashed(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db'))
       const current = await launchWith('harness-db-location-current', ['--user-directory', userDir])
       expect(current?.['db_path_hash']).toBe(fixedDefault)
       expect(current?.['db_url_source']).toBe('user_override')
@@ -1399,7 +1400,7 @@ describe('core beta report placement', () => {
       gitInitComfyUI() // HEAD now contradicts the recorded commit
       const stale = await launchWith('harness-db-location-stale', ['--user-directory', userDir])
       expect(stale?.['db_path_hash']).toBeNull()
-      expect(stale?.['user_dir_hash']).toBe(hashed(userDir))
+      expect(stale?.['user_dir_hash']).toBe(await hashed(userDir))
     })
 
     it('launches without the fields when computing them throws', async () => {
@@ -1413,6 +1414,22 @@ describe('core beta report placement', () => {
       expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
       expect(props, 'boot_started still fired').toBeDefined()
       expect(props).not.toHaveProperty('db_url_source')
+      expect(props?.['db_location_status'], 'the failure is countable').toBe('error')
+    })
+
+    it('launches on time, reporting a timeout, when resolving the location hangs', async () => {
+      // A stalled network mount: path resolution never answers.
+      vi.spyOn(fs.promises, 'realpath').mockImplementation(() => new Promise(() => {}))
+      const started = Date.now()
+
+      const props = await launchWith('harness-db-location-hangs')
+
+      expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
+      expect(Date.now() - started, 'waited no longer than the deadline allows').toBeLessThan(
+        DB_LOCATION_DEADLINE_MS + 2000
+      )
+      expect(props).toEqual(expect.objectContaining({ db_location_status: 'timeout' }))
+      expect(props).not.toHaveProperty('db_path_hash')
     })
 
     it.each(['undecided', 'denied'] as const)(

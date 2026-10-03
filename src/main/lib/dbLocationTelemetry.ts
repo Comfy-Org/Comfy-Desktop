@@ -88,15 +88,24 @@ const foldsCase = (platform: NodeJS.Platform): boolean =>
  * (the database may not exist before the first boot), `/` separators, and case-folded on
  * Windows and macOS, whose default filesystems ignore case. `platform` only selects the case
  * folding; resolution always follows the host.
+ *
+ * Asynchronous, so a stalled network mount never blocks the main process; callers bound it
+ * with a deadline. Null when a part cannot be resolved for any reason other than not existing
+ * yet (a permission error, a symlink loop): the location is then unknown, not guessed.
  */
-export function canonicalPath(p: string, platform: NodeJS.Platform = process.platform): string {
+export async function canonicalPath(
+  p: string,
+  platform: NodeJS.Platform = process.platform
+): Promise<string | null> {
   let head = path.resolve(p)
   const tail: string[] = []
   for (;;) {
     try {
-      head = fs.realpathSync.native(head)
+      head = await fs.promises.realpath(head)
       break
-    } catch {
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') return null
       const parent = path.dirname(head)
       if (parent === head) break
       tail.unshift(path.basename(head))
@@ -107,12 +116,16 @@ export function canonicalPath(p: string, platform: NodeJS.Platform = process.pla
   return foldsCase(platform) ? out.toLowerCase() : out
 }
 
-/** Keyed, truncated hash of a path; null when there is no key or no path. */
-export function hashPath(p: string | null): string | null {
-  if (!p) return null
+function hashCanonical(canonical: string | null): string | null {
+  if (!canonical) return null
   const key = pathHashKey()
   if (!key) return null
-  return createHmac('sha256', key).update(canonicalPath(p)).digest('hex').slice(0, 16)
+  return createHmac('sha256', key).update(canonical).digest('hex').slice(0, 16)
+}
+
+/** Keyed, truncated hash of a path; null when there is no key or no path. */
+export async function hashPath(p: string | null): Promise<string | null> {
+  return hashCanonical(p ? await canonicalPath(p) : null)
 }
 
 /**
@@ -158,13 +171,23 @@ export interface LocationRoots {
  * other segment must be a fixed name, or the whole answer is {@link OUTSIDE_DEFAULT}. Null only
  * when there is no location to describe.
  */
-export function relativeLocation(
+export async function relativeLocation(
   p: string | null,
   roots: LocationRoots,
   platform: NodeJS.Platform = process.platform
-): string | null {
+): Promise<string | null> {
+  return labelCanonical(p, roots, (q) => canonicalPath(q, platform), platform)
+}
+
+async function labelCanonical(
+  p: string | null,
+  roots: LocationRoots,
+  canonical: (p: string) => Promise<string | null>,
+  platform: NodeJS.Platform
+): Promise<string | null> {
   if (!p) return null
-  const target = canonicalPath(p, platform)
+  const target = await canonical(p)
+  if (!target) return null
   const anchors = [
     ...roots.installRoots.map((root) => ({ root, label: ['<install-root>'], named: true })),
     ...roots.installDirs.map((root) => ({ root, label: ['<this-install>'], named: false })),
@@ -173,7 +196,8 @@ export function relativeLocation(
   let best: { rootLength: number; label: string[]; rest: string[]; named: boolean } | null = null
   for (const anchor of anchors) {
     if (!anchor.root) continue
-    const root = canonicalPath(anchor.root, platform)
+    const root = await canonical(anchor.root)
+    if (!root) continue
     const prefix = root.endsWith('/') ? root : `${root}/`
     if (target !== root && !target.startsWith(prefix)) continue
     if (best && best.rootLength >= root.length) continue
@@ -216,7 +240,7 @@ export interface DbLocationProps {
  * came from the user, since Desktop sets none elsewhere. An abbreviated location flag makes the
  * whole location `unknown`.
  */
-export function dbLocationProps(input: {
+export async function dbLocationProps(input: {
   cwd: string | undefined
   args: readonly string[] | undefined
   layout: DefaultDbLayout
@@ -224,7 +248,7 @@ export function dbLocationProps(input: {
   hasDatabase: boolean
   adoptedBaseDir: string | undefined
   roots: LocationRoots
-}): DbLocationProps {
+}): Promise<DbLocationProps> {
   const args = input.args
   const paths =
     input.cwd && args && !abbreviatesLocationFlag(args)
@@ -258,13 +282,60 @@ export function dbLocationProps(input: {
         ? 'user_override'
         : 'install_local'
   const dbPath = input.hasDatabase ? paths.dbPath : null
+  // Each distinct path is resolved once, and one at a time: a stalled mount then holds a single
+  // filesystem worker thread rather than all of them.
+  const resolved = new Map<string, string | null>()
+  const canonical = async (q: string): Promise<string | null> => {
+    if (!resolved.has(q)) resolved.set(q, await canonicalPath(q))
+    return resolved.get(q)!
+  }
+  const hash = async (q: string | null) => hashCanonical(q ? await canonical(q) : null)
+  const label = (q: string | null) => labelCanonical(q, input.roots, canonical, process.platform)
   return {
-    db_path_hash: hashPath(dbPath),
-    user_dir_hash: hashPath(paths.userDir),
-    base_dir_hash: hashPath(paths.baseDir),
-    db_path_rel: relativeLocation(dbPath, input.roots),
-    user_dir_rel: relativeLocation(paths.userDir, input.roots),
-    base_dir_rel: relativeLocation(paths.baseDir, input.roots),
+    db_path_hash: await hash(dbPath),
+    user_dir_hash: await hash(paths.userDir),
+    base_dir_hash: await hash(paths.baseDir),
+    db_path_rel: await label(dbPath),
+    user_dir_rel: await label(paths.userDir),
+    base_dir_rel: await label(paths.baseDir),
     db_url_source: source
+  }
+}
+
+/**
+ * How long a launch waits for its location before `boot_started` goes without it. Resolving a
+ * handful of local paths takes milliseconds, and a healthy network share answers in tens of
+ * them; past half a second a mount is stalled, and a launch should not wait on telemetry longer
+ * than that. Timeouts are reported, so a rate worth revisiting shows up in the data.
+ */
+export const DB_LOCATION_DEADLINE_MS = 500
+
+export type DbLocationStatus = 'ok' | 'timeout' | 'error'
+
+/**
+ * The location fields, or only a `db_location_status` of `timeout` or `error` when they could
+ * not be had in time. Never rejects.
+ */
+export async function boundedDbLocation(
+  compute: () => Promise<DbLocationProps>,
+  deadlineMs: number = DB_LOCATION_DEADLINE_MS
+): Promise<Partial<DbLocationProps> & { db_location_status: DbLocationStatus }> {
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<{ db_location_status: 'timeout' }>((resolve) => {
+    timer = setTimeout(() => resolve({ db_location_status: 'timeout' }), deadlineMs)
+  })
+  const computed = Promise.resolve()
+    .then(compute)
+    .then(
+      (props) => ({ ...props, db_location_status: 'ok' as const }),
+      (err: unknown) => {
+        console.warn('[launch] database location for telemetry unavailable:', err)
+        return { db_location_status: 'error' as const }
+      }
+    )
+  try {
+    return await Promise.race([computed, timeout])
+  } finally {
+    clearTimeout(timer)
   }
 }

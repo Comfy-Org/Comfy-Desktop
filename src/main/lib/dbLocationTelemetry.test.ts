@@ -12,6 +12,7 @@ import {
   canonicalPath,
   dbLocationProps,
   defaultDbLayout,
+  boundedDbLocation,
   hashPath,
   relativeLocation,
   type LocationRoots
@@ -32,75 +33,75 @@ afterEach(() => {
 const keyFile = (): string => path.join(dirs.config, 'telemetry-path-key')
 
 /** An expected hash, asserted real first: a dead `hashPath` must not make null === null pass. */
-const hashed = (p: string): string => {
-  const h = hashPath(p)
+const hashed = async (p: string): Promise<string> => {
+  const h = await hashPath(p)
   expect(h, `a hash for ${p}`).toMatch(/^[0-9a-f]{16}$/)
   return h!
 }
 
 describe('hashPath', () => {
-  it('is a 16-hex keyed digest, stable for one path and distinct across paths', () => {
-    const a = hashPath(path.join(tmp, 'a', 'comfyui.db'))
+  it('is a 16-hex keyed digest, stable for one path and distinct across paths', async () => {
+    const a = await hashPath(path.join(tmp, 'a', 'comfyui.db'))
     expect(a).toMatch(/^[0-9a-f]{16}$/)
-    expect(hashPath(path.join(tmp, 'a', 'comfyui.db'))).toBe(a)
-    expect(hashPath(path.join(tmp, 'b', 'comfyui.db'))).not.toBe(a)
-    expect(hashPath(null)).toBeNull()
+    expect(await hashPath(path.join(tmp, 'a', 'comfyui.db'))).toBe(a)
+    expect(await hashPath(path.join(tmp, 'b', 'comfyui.db'))).not.toBe(a)
+    expect(await hashPath(null)).toBeNull()
   })
 
-  it('hashes every spelling of one location the same', () => {
+  it('hashes every spelling of one location the same', async () => {
     const real = path.join(tmp, 'install', 'user')
     fs.mkdirSync(real, { recursive: true })
     fs.symlinkSync(path.join(tmp, 'install'), path.join(tmp, 'link'), 'junction')
-    const h = hashPath(real)
-    expect(hashPath(`${real}${path.sep}`)).toBe(h)
-    expect(hashPath(path.join(tmp, 'install', 'x', '..', 'user'))).toBe(h)
-    expect(hashPath(path.join(tmp, 'link', 'user')), 'through a symlink').toBe(h)
+    const h = await hashPath(real)
+    expect(await hashPath(`${real}${path.sep}`)).toBe(h)
+    expect(await hashPath(path.join(tmp, 'install', 'x', '..', 'user'))).toBe(h)
+    expect(await hashPath(path.join(tmp, 'link', 'user')), 'through a symlink').toBe(h)
     expect(
-      hashPath(path.join(tmp, 'link', 'user', 'comfyui.db')),
+      await hashPath(path.join(tmp, 'link', 'user', 'comfyui.db')),
       'a file that does not exist yet, below a symlink'
-    ).toBe(hashPath(path.join(real, 'comfyui.db')))
+    ).toBe(await hashPath(path.join(real, 'comfyui.db')))
   })
 
-  it('creates the key once, private to the user, and reuses it after a restart', () => {
-    const h = hashPath(tmp)
+  it('creates the key once, private to the user, and reuses it after a restart', async () => {
+    const h = await hashPath(tmp)
     const key = fs.readFileSync(keyFile(), 'utf8')
     expect(key).toMatch(/^[0-9a-f]{64}$/)
     if (process.platform !== 'win32') expect(fs.statSync(keyFile()).mode & 0o777).toBe(0o600)
     _resetKeyForTest()
-    expect(hashPath(tmp)).toBe(h)
+    expect(await hashPath(tmp)).toBe(h)
     expect(fs.readFileSync(keyFile(), 'utf8')).toBe(key)
   })
 
-  it('changes with the key, so hashes cannot be compared across users', () => {
-    const h = hashPath(tmp)
+  it('changes with the key, so hashes cannot be compared across users', async () => {
+    const h = await hashPath(tmp)
     fs.rmSync(keyFile())
     _resetKeyForTest()
-    expect(hashPath(tmp)).not.toBe(h)
+    expect(await hashPath(tmp)).not.toBe(h)
   })
 
-  it('replaces a malformed key, which never produced a hash', () => {
+  it('replaces a malformed key, which never produced a hash', async () => {
     fs.mkdirSync(dirs.config, { recursive: true })
     fs.writeFileSync(keyFile(), 'not-a-key')
-    expect(hashPath(tmp)).toMatch(/^[0-9a-f]{16}$/)
+    expect(await hashPath(tmp)).toMatch(/^[0-9a-f]{16}$/)
     expect(fs.readFileSync(keyFile(), 'utf8')).toMatch(/^[0-9a-f]{64}$/)
   })
 
-  it('sends nothing when the key is unusable', () => {
+  it('sends nothing when the key is unusable', async () => {
     fs.mkdirSync(dirs.config, { recursive: true })
     const link = vi.spyOn(fs, 'linkSync').mockImplementationOnce(() => {
       throw Object.assign(new Error('no space'), { code: 'ENOSPC' })
     })
-    expect(hashPath(tmp), 'the key could not be stored').toBeNull()
+    expect(await hashPath(tmp), 'the key could not be stored').toBeNull()
     expect(fs.readdirSync(dirs.config), 'a failed write leaves nothing behind').toEqual([])
     link.mockRestore()
-    expect(hashPath(tmp), 'and the next launch creates the key').toMatch(/^[0-9a-f]{16}$/)
+    expect(await hashPath(tmp), 'and the next launch creates the key').toMatch(/^[0-9a-f]{16}$/)
 
     _resetKeyForTest()
     fs.rmSync(keyFile())
     const rm = vi.spyOn(fs, 'rmSync').mockImplementationOnce(() => {
       throw Object.assign(new Error('busy'), { code: 'EPERM' })
     })
-    expect(hashPath(tmp), 'a temp file that will not go away does not lose the key').toMatch(
+    expect(await hashPath(tmp), 'a temp file that will not go away does not lose the key').toMatch(
       /^[0-9a-f]{16}$/
     )
     rm.mockRestore()
@@ -108,16 +109,24 @@ describe('hashPath', () => {
     _resetKeyForTest()
     dirs.config = path.join(tmp, 'a-file')
     fs.writeFileSync(dirs.config, '')
-    expect(hashPath(tmp), 'the key cannot be created').toBeNull()
+    expect(await hashPath(tmp), 'the key cannot be created').toBeNull()
   })
 })
 
 describe('canonicalPath', () => {
-  it('folds case on Windows and macOS only', () => {
+  it('has no answer, rather than a guess, when a part cannot be resolved', async () => {
+    vi.spyOn(fs.promises, 'realpath').mockRejectedValueOnce(
+      Object.assign(new Error('denied'), { code: 'EACCES' })
+    )
+    expect(await canonicalPath(path.join(tmp, 'x'))).toBeNull()
+    vi.restoreAllMocks()
+  })
+
+  it('folds case on Windows and macOS only', async () => {
     const p = path.join(tmp, 'Missing', 'Comfy.DB')
-    expect(canonicalPath(p, 'win32')).toBe(p.replace(/\\/g, '/').toLowerCase())
-    expect(canonicalPath(p, 'darwin')).toBe(p.replace(/\\/g, '/').toLowerCase())
-    expect(canonicalPath(p, 'linux')).toBe(p.replace(/\\/g, '/'))
+    expect(await canonicalPath(p, 'win32')).toBe(p.replace(/\\/g, '/').toLowerCase())
+    expect(await canonicalPath(p, 'darwin')).toBe(p.replace(/\\/g, '/').toLowerCase())
+    expect(await canonicalPath(p, 'linux')).toBe(p.replace(/\\/g, '/'))
   })
 })
 
@@ -125,14 +134,14 @@ describe('defaultDbLayout', () => {
   const inst = (comfyVersion: object): InstallationRecord =>
     ({ comfyVersion }) as unknown as InstallationRecord
 
-  it('reads the user-directory default from a release the install provably contains', () => {
+  it('reads the user-directory default from a release the install provably contains', async () => {
     expect(defaultDbLayout(inst({ baseTag: 'v0.34.0', baseTagVerified: true }))).toBe('user_dir')
     expect(
       defaultDbLayout(inst({ baseTag: 'v0.35.1', ancestorTag: 'v0.34.2', commitsAhead: 3 }))
     ).toBe('user_dir')
   })
 
-  it('reads the fixed default only on an install sitting exactly on an older tag', () => {
+  it('reads the fixed default only on an install sitting exactly on an older tag', async () => {
     expect(
       defaultDbLayout(inst({ baseTag: 'v0.33.9', commitsAhead: 0, baseTagVerified: true }))
     ).toBe('comfy_dir')
@@ -170,11 +179,11 @@ describe('dbLocationProps', () => {
   const props = (args: string[] | undefined, adoptedBaseDir?: string) =>
     dbLocationProps({ cwd, args, layout: null, hasDatabase: true, adoptedBaseDir, roots })
 
-  it('hashes ComfyUI defaults for a managed install', () => {
-    expect(props(['-s', main, '--listen'])).toEqual({
-      db_path_hash: hashed(path.join(comfy, 'user', 'comfyui.db')),
-      user_dir_hash: hashed(path.join(comfy, 'user')),
-      base_dir_hash: hashed(comfy),
+  it('hashes ComfyUI defaults for a managed install', async () => {
+    expect(await props(['-s', main, '--listen'])).toEqual({
+      db_path_hash: await hashed(path.join(comfy, 'user', 'comfyui.db')),
+      user_dir_hash: await hashed(path.join(comfy, 'user')),
+      base_dir_hash: await hashed(comfy),
       db_path_rel: '<this-install>/ComfyUI/user/comfyui.db',
       user_dir_rel: '<this-install>/ComfyUI/user',
       base_dir_rel: '<this-install>/ComfyUI',
@@ -182,11 +191,11 @@ describe('dbLocationProps', () => {
     })
   })
 
-  it("recognises Desktop's own pin for an adopted install", () => {
-    expect(props(['-s', main, ...adoptPins], legacy)).toEqual({
-      db_path_hash: hashed(path.join(legacy, 'user', 'comfyui.db')),
-      user_dir_hash: hashed(path.join(legacy, 'user')),
-      base_dir_hash: hashed(legacy),
+  it("recognises Desktop's own pin for an adopted install", async () => {
+    expect(await props(['-s', main, ...adoptPins], legacy)).toEqual({
+      db_path_hash: await hashed(path.join(legacy, 'user', 'comfyui.db')),
+      user_dir_hash: await hashed(path.join(legacy, 'user')),
+      base_dir_hash: await hashed(legacy),
       db_path_rel: '<legacy-root>/user/comfyui.db',
       user_dir_rel: '<legacy-root>/user',
       base_dir_rel: '<legacy-root>',
@@ -194,8 +203,8 @@ describe('dbLocationProps', () => {
     })
   })
 
-  it('keeps the adopted label when a core without a database dropped the database pin', () => {
-    const p = dbLocationProps({
+  it('keeps the adopted label when a core without a database dropped the database pin', async () => {
+    const p = await dbLocationProps({
       cwd,
       args: ['-s', main, ...adoptPins.slice(0, 4)],
       layout: null,
@@ -205,22 +214,22 @@ describe('dbLocationProps', () => {
     })
     expect(p.db_path_hash, 'no database to hash').toBeNull()
     expect(p.db_path_rel).toBeNull()
-    expect(p.user_dir_hash).toBe(hashed(path.join(legacy, 'user')))
+    expect(p.user_dir_hash).toBe(await hashed(path.join(legacy, 'user')))
     expect(p.db_url_source).toBe('adopted_legacy')
   })
 
-  it("lets the user's own database URL win over the adopted pin", () => {
+  it("lets the user's own database URL win over the adopted pin", async () => {
     const mine = path.join(path.resolve('/'), 'mine.db')
-    const p = props(['-s', main, ...adoptPins, '--database-url', `sqlite:///${mine}`], legacy)
-    expect(p.db_path_hash).toBe(hashed(mine))
+    const p = await props(['-s', main, ...adoptPins, '--database-url', `sqlite:///${mine}`], legacy)
+    expect(p.db_path_hash).toBe(await hashed(mine))
     expect(p.db_path_rel).toBe('outside_default')
     expect(p.db_url_source).toBe('user_override')
   })
 
-  it('sends no database hash unless the core is known to have a database', () => {
+  it('sends no database hash unless the core is known to have a database', async () => {
     {
       const hasDatabase = false
-      const p = dbLocationProps({
+      const p = await dbLocationProps({
         cwd,
         args: ['-s', main],
         layout: null,
@@ -230,38 +239,38 @@ describe('dbLocationProps', () => {
       })
       expect(p.db_path_hash).toBeNull()
       expect(p.db_path_rel).toBeNull()
-      expect(p.base_dir_hash).toBe(hashed(comfy))
+      expect(p.base_dir_hash).toBe(await hashed(comfy))
     }
   })
 
-  it("lets the user's own location args win over the adopted pin", () => {
+  it("lets the user's own location args win over the adopted pin", async () => {
     const mine = path.join(path.resolve('/'), 'mine')
-    const p = props(['-s', main, ...adoptPins, `--base-directory=${mine}`], legacy)
-    expect(p.base_dir_hash).toBe(hashed(mine))
+    const p = await props(['-s', main, ...adoptPins, `--base-directory=${mine}`], legacy)
+    expect(p.base_dir_hash).toBe(await hashed(mine))
     expect(p.db_url_source).toBe('user_override')
   })
 
-  it("lets the user's own user directory win over the adopted pin", () => {
+  it("lets the user's own user directory win over the adopted pin", async () => {
     const mine = path.join(path.resolve('/'), 'mine', 'user')
-    const p = props(['-s', main, ...adoptPins, '--user-directory', mine], legacy)
-    expect(p.user_dir_hash).toBe(hashed(mine))
+    const p = await props(['-s', main, ...adoptPins, '--user-directory', mine], legacy)
+    expect(p.user_dir_hash).toBe(await hashed(mine))
     expect(p.db_url_source).toBe('user_override')
   })
 
-  it('marks a user database URL as an override and hashes no non-file database', () => {
-    const p = props(['-s', main, '--database-url', 'sqlite:///:memory:'])
+  it('marks a user database URL as an override and hashes no non-file database', async () => {
+    const p = await props(['-s', main, '--database-url', 'sqlite:///:memory:'])
     expect(p.db_path_hash).toBeNull()
-    expect(p.user_dir_hash).toBe(hashed(path.join(comfy, 'user')))
+    expect(p.user_dir_hash).toBe(await hashed(path.join(comfy, 'user')))
     expect(p.db_url_source).toBe('user_override')
   })
 
-  it('sends no database hash when the default depends on an unknown core version', () => {
+  it('sends no database hash when the default depends on an unknown core version', async () => {
     const userDir = path.join(path.resolve('/'), 'data', 'user')
     const args = ['-s', main, '--user-directory', userDir]
-    expect(props(args).db_path_hash).toBeNull()
-    expect(props(args).user_dir_hash).toBe(hashed(userDir))
+    expect((await props(args)).db_path_hash).toBeNull()
+    expect((await props(args)).user_dir_hash).toBe(await hashed(userDir))
     expect(
-      dbLocationProps({
+      await dbLocationProps({
         cwd,
         args,
         layout: 'user_dir',
@@ -269,18 +278,20 @@ describe('dbLocationProps', () => {
         adoptedBaseDir: undefined,
         roots
       })
-    ).toEqual(expect.objectContaining({ db_path_hash: hashed(path.join(userDir, 'comfyui.db')) }))
+    ).toEqual(
+      expect.objectContaining({ db_path_hash: await hashed(path.join(userDir, 'comfyui.db')) })
+    )
   })
 
-  it('reports an unknown location when a location flag is abbreviated', () => {
-    const p = props(['-s', main, '--user-dir', path.join(path.resolve('/'), 'x')])
+  it('reports an unknown location when a location flag is abbreviated', async () => {
+    const p = await props(['-s', main, '--user-dir', path.join(path.resolve('/'), 'x')])
     expect(p.db_url_source).toBe('unknown')
     expect(p.user_dir_hash).toBeNull()
-    expect(props(['-s', main, '--base=/x']).db_url_source).toBe('unknown')
+    expect((await props(['-s', main, '--base=/x'])).db_url_source).toBe('unknown')
   })
 
-  it('reports an unknown location when the launch has no ComfyUI entry point', () => {
-    expect(props(['--listen'])).toEqual({
+  it('reports an unknown location when the launch has no ComfyUI entry point', async () => {
+    expect(await props(['--listen'])).toEqual({
       db_path_hash: null,
       user_dir_hash: null,
       base_dir_hash: null,
@@ -289,7 +300,7 @@ describe('dbLocationProps', () => {
       base_dir_rel: null,
       db_url_source: 'unknown'
     })
-    expect(props(undefined).db_url_source).toBe('unknown')
+    expect((await props(undefined)).db_url_source).toBe('unknown')
   })
 })
 
@@ -303,86 +314,133 @@ describe('relativeLocation', () => {
     legacyRoots: [legacyRoot, undefined]
   }
 
-  it('names the install folder <install> whatever the user called it', () => {
+  it('names the install folder <install> whatever the user called it', async () => {
     expect(
-      relativeLocation(
+      await relativeLocation(
         path.join(installRoot, 'My Secret Project', 'ComfyUI', 'user', 'comfyui.db'),
         roots
       )
     ).toBe('<install-root>/<install>/ComfyUI/user/comfyui.db')
-    expect(relativeLocation(path.join(installRoot, 'Ada (2)'), roots)).toBe(
+    expect(await relativeLocation(path.join(installRoot, 'Ada (2)'), roots)).toBe(
       '<install-root>/<install>'
     )
-    expect(relativeLocation(installRoot, roots)).toBe('<install-root>')
+    expect(await relativeLocation(installRoot, roots)).toBe('<install-root>')
   })
 
-  it('keeps only fixed names under the legacy Desktop folder', () => {
-    expect(relativeLocation(path.join(legacyRoot, 'user', 'comfyui.db'), roots)).toBe(
+  it('keeps only fixed names under the legacy Desktop folder', async () => {
+    expect(await relativeLocation(path.join(legacyRoot, 'user', 'comfyui.db'), roots)).toBe(
       '<legacy-root>/user/comfyui.db'
     )
   })
 
-  it('sends outside_default for a location under no known root', () => {
-    expect(relativeLocation(path.join(top, 'Users', 'Ada Lovelace', 'comfyui.db'), roots)).toBe(
-      'outside_default'
-    )
-    expect(relativeLocation(`${installRoot}-other`, roots), 'a sibling sharing the prefix').toBe(
-      'outside_default'
-    )
-  })
-
-  it('sends outside_default for any segment that is not a fixed name', () => {
+  it('sends outside_default for a location under no known root', async () => {
     expect(
-      relativeLocation(path.join(installRoot, 'inst', 'ComfyUI', 'backups', 'comfyui.db'), roots)
+      await relativeLocation(path.join(top, 'Users', 'Ada Lovelace', 'comfyui.db'), roots)
     ).toBe('outside_default')
-    expect(relativeLocation(path.join(legacyRoot, 'user', 'mine.db'), roots)).toBe(
+    expect(
+      await relativeLocation(`${installRoot}-other`, roots),
+      'a sibling sharing the prefix'
+    ).toBe('outside_default')
+  })
+
+  it('sends outside_default for any segment that is not a fixed name', async () => {
+    expect(
+      await relativeLocation(
+        path.join(installRoot, 'inst', 'ComfyUI', 'backups', 'comfyui.db'),
+        roots
+      )
+    ).toBe('outside_default')
+    expect(await relativeLocation(path.join(legacyRoot, 'user', 'mine.db'), roots)).toBe(
       'outside_default'
     )
   })
 
-  it("names the launching install's own folder <this-install>, wherever it lives", () => {
+  it("names the launching install's own folder <this-install>, wherever it lives", async () => {
     const custom = path.join(top, 'D', 'Ada stuff', 'comfy')
     expect(
-      relativeLocation(path.join(custom, 'ComfyUI', 'user'), { ...roots, installDirs: [custom] })
+      await relativeLocation(path.join(custom, 'ComfyUI', 'user'), {
+        ...roots,
+        installDirs: [custom]
+      })
     ).toBe('<this-install>/ComfyUI/user')
     const own = path.join(installRoot, 'Mine')
     const withOwn = { ...roots, installDirs: [own] }
-    expect(relativeLocation(path.join(own, 'ComfyUI', 'user'), withOwn)).toBe(
+    expect(await relativeLocation(path.join(own, 'ComfyUI', 'user'), withOwn)).toBe(
       '<this-install>/ComfyUI/user'
     )
     expect(
-      relativeLocation(path.join(installRoot, 'Theirs', 'ComfyUI', 'user'), withOwn),
+      await relativeLocation(path.join(installRoot, 'Theirs', 'ComfyUI', 'user'), withOwn),
       'a sibling install reads differently'
     ).toBe('<install-root>/<install>/ComfyUI/user')
   })
 
-  it('picks the deepest matching folder whatever the order of the roots', () => {
+  it('picks the deepest matching folder whatever the order of the roots', async () => {
     const own = path.join(legacyRoot, 'inst')
     expect(
-      relativeLocation(path.join(own, 'ComfyUI'), { ...roots, installDirs: [own] }),
+      await relativeLocation(path.join(own, 'ComfyUI'), { ...roots, installDirs: [own] }),
       'the launching install inside the legacy folder, listed before it'
     ).toBe('<this-install>/ComfyUI')
   })
 
-  it('prefers a legacy folder nested inside the install root', () => {
+  it('prefers a legacy folder nested inside the install root', async () => {
     const nested = path.join(installRoot, 'old desktop')
     expect(
-      relativeLocation(path.join(nested, 'user', 'comfyui.db'), { ...roots, legacyRoots: [nested] })
+      await relativeLocation(path.join(nested, 'user', 'comfyui.db'), {
+        ...roots,
+        legacyRoots: [nested]
+      })
     ).toBe('<legacy-root>/user/comfyui.db')
   })
 
-  it('matches fixed names case-insensitively on Windows and macOS only', () => {
+  it('matches fixed names case-insensitively on Windows and macOS only', async () => {
     const p = path.join(installRoot, 'Inst', 'comfyui', 'User', 'ComfyUI.db')
-    expect(relativeLocation(p, roots, 'win32')).toBe(
+    expect(await relativeLocation(p, roots, 'win32')).toBe(
       '<install-root>/<install>/ComfyUI/user/comfyui.db'
     )
-    expect(relativeLocation(p, roots, 'darwin')).toBe(
+    expect(await relativeLocation(p, roots, 'darwin')).toBe(
       '<install-root>/<install>/ComfyUI/user/comfyui.db'
     )
-    expect(relativeLocation(p, roots, 'linux')).toBe('outside_default')
+    expect(await relativeLocation(p, roots, 'linux')).toBe('outside_default')
   })
 
-  it('has nothing to say without a location', () => {
-    expect(relativeLocation(null, roots)).toBeNull()
+  it('has nothing to say without a location', async () => {
+    expect(await relativeLocation(null, roots)).toBeNull()
+  })
+})
+
+describe('boundedDbLocation', () => {
+  const props = {
+    db_path_hash: 'a',
+    user_dir_hash: 'b',
+    base_dir_hash: 'c',
+    db_path_rel: null,
+    user_dir_rel: null,
+    base_dir_rel: null,
+    db_url_source: 'install_local' as const
+  }
+
+  it('passes the fields through, marked ok', async () => {
+    expect(await boundedDbLocation(async () => props)).toEqual({
+      ...props,
+      db_location_status: 'ok'
+    })
+  })
+
+  it('reports a timeout, and nothing else, when the fields are late', async () => {
+    expect(await boundedDbLocation(() => new Promise(() => {}), 10)).toEqual({
+      db_location_status: 'timeout'
+    })
+  })
+
+  it('reports an error, and never throws, when computing them fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const thrown = (): Promise<typeof props> => {
+      throw new Error('no documents folder')
+    }
+    expect(await boundedDbLocation(thrown)).toEqual({ db_location_status: 'error' })
+    expect(await boundedDbLocation(() => Promise.reject(new Error('x')))).toEqual({
+      db_location_status: 'error'
+    })
+    vi.restoreAllMocks()
   })
 })
