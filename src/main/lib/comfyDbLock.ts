@@ -37,6 +37,45 @@ function argValue(args: readonly string[], flag: string): string | null {
   return value
 }
 
+/** Whether a flag is set, in either the `--flag value` or the `--flag=value` form. */
+export function hasFlag(args: readonly string[], flag: string): boolean {
+  return args.some((a) => a === flag || a.startsWith(`${flag}=`))
+}
+
+/**
+ * Desktop's own location pins for an adopted install: its data stays in the legacy base folder.
+ * The database pin is left out when the user set their own `--database-url`.
+ */
+export function adoptedPinArgs(baseDir: string, withDatabaseUrl: boolean): string[] {
+  return [
+    '--base-directory',
+    baseDir,
+    '--user-directory',
+    path.join(baseDir, 'user'),
+    ...(withDatabaseUrl
+      ? ['--database-url', `sqlite:///${path.join(baseDir, 'user', 'comfyui.db')}`]
+      : [])
+  ]
+}
+
+const LOCATION_FLAGS = ['--database-url', '--user-directory', '--base-directory']
+
+/** Whether a location flag is set at all (in any form `hasFlag` reads). */
+export function hasLocationFlag(args: readonly string[]): boolean {
+  return LOCATION_FLAGS.some((f) => hasFlag(args, f))
+}
+
+/**
+ * Whether the args abbreviate a location flag (`--user-dir X`). ComfyUI's argparse accepts
+ * unambiguous abbreviations, so such a launch's location cannot be read from the full names.
+ */
+export function abbreviatesLocationFlag(args: readonly string[]): boolean {
+  return args.some((a) => {
+    const name = a.split('=', 1)[0]!
+    return name.length > 2 && LOCATION_FLAGS.some((f) => f !== name && f.startsWith(name))
+  })
+}
+
 /**
  * Which default database location the launched core uses. ComfyUI v0.34.0 moved it from the
  * fixed `<ComfyUI>/user/comfyui.db` to `comfyui.db` in the effective user directory; `null`

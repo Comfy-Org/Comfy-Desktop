@@ -136,9 +136,6 @@ vi.mock('../shared', async (importOriginal) => {
   }
 })
 
-/** The ownership record module, answered from here. Never the real one: records would land in
- *  the real state dir under invented pids, and a later launch could then "prove" an unrelated
- *  live process at one of those pids to be an orphan. */
 // Lets a test make the database-location computation throw mid-launch.
 const legacyBase = vi.hoisted(() => ({ throws: false }))
 vi.mock('../../paths', async (importOriginal) => {
@@ -152,6 +149,9 @@ vi.mock('../../paths', async (importOriginal) => {
   }
 })
 
+/** The ownership record module, answered from here. Never the real one: records would land in
+ *  the real state dir under invented pids, and a later launch could then "prove" an unrelated
+ *  live process at one of those pids to be an orphan. */
 const ownership = vi.hoisted(() => ({
   prior: null as null | Record<string, unknown>,
   priorCalls: [] as Array<{ sessionKey: string; opts: unknown }>,
@@ -1261,6 +1261,22 @@ describe('core beta report placement', () => {
       telemetry.setConsentState('undecided')
     })
 
+    /** An expected hash, asserted real first: a dead `hashPath` must not make null === null pass. */
+    const hashed = (p: string): string => {
+      const h = hashPath(p)
+      expect(h, `a hash for ${p}`).toMatch(/^[0-9a-f]{16}$/)
+      return h!
+    }
+
+    /** No sent value may carry a folder name the user chose. */
+    const expectNoNames = (props: Record<string, unknown> | undefined, names: string[]) => {
+      for (const value of Object.values(props ?? {})) {
+        for (const name of names) {
+          if (typeof value === 'string') expect(value).not.toContain(name)
+        }
+      }
+    }
+
     const launchWith = async (id: string, extraArgs: string[] = []) => {
       launchHarness.launchCommand = {
         cmd: process.execPath,
@@ -1278,16 +1294,15 @@ describe('core beta report placement', () => {
 
       const comfy = path.join(installDir, 'ComfyUI')
       expect(props).toMatchObject({
-        db_path_hash: hashPath(path.join(comfy, 'user', 'comfyui.db')),
-        user_dir_hash: hashPath(path.join(comfy, 'user')),
-        base_dir_hash: hashPath(comfy),
-        db_path_rel: '<install-root>/<install>/ComfyUI/user/comfyui.db',
-        user_dir_rel: '<install-root>/<install>/ComfyUI/user',
-        base_dir_rel: '<install-root>/<install>/ComfyUI',
+        db_path_hash: hashed(path.join(comfy, 'user', 'comfyui.db')),
+        user_dir_hash: hashed(path.join(comfy, 'user')),
+        base_dir_hash: hashed(comfy),
+        db_path_rel: '<this-install>/ComfyUI/user/comfyui.db',
+        user_dir_rel: '<this-install>/ComfyUI/user',
+        base_dir_rel: '<this-install>/ComfyUI',
         db_url_source: 'install_local'
       })
-      expect(props?.['db_path_hash']).toMatch(/^[0-9a-f]{16}$/)
-      expect(JSON.stringify(props)).not.toContain(installDir)
+      expectNoNames(props, [path.basename(installDir)])
       expect(fs.existsSync(keyFile()), 'the key is created under granted consent').toBe(true)
     })
 
@@ -1296,20 +1311,48 @@ describe('core beta report placement', () => {
       const props = await launchWith('harness-db-location-nodb')
 
       expect(props?.['db_path_hash']).toBeNull()
-      expect(props?.['base_dir_hash']).toBe(hashPath(path.join(installDir, 'ComfyUI')))
+      expect(props?.['base_dir_hash']).toBe(hashed(path.join(installDir, 'ComfyUI')))
+    })
+
+    it('names a user directory in another install by fixed names only', async () => {
+      const previous = settingsModule.get('installDir')
+      settingsModule.set('installDir', path.dirname(installDir))
+      const sibling = path.join(path.dirname(installDir), `Ada Secret ${path.basename(installDir)}`)
+      const props = await launchWith('harness-db-location-sibling', [
+        '--user-directory',
+        path.join(sibling, 'ComfyUI', 'user')
+      ]).finally(() => settingsModule.set('installDir', previous))
+
+      expect(props).toMatchObject({
+        user_dir_hash: hashed(path.join(sibling, 'ComfyUI', 'user')),
+        user_dir_rel: '<install-root>/<install>/ComfyUI/user',
+        base_dir_rel: '<this-install>/ComfyUI',
+        db_url_source: 'user_override'
+      })
+      expectNoNames(props, ['Ada Secret', path.basename(installDir)])
+    })
+
+    it('sends outside_default, never the name, for a user-named folder inside the install', async () => {
+      const named = path.join(installDir, 'Ada Secret', 'user')
+      const props = await launchWith('harness-db-location-named', ['--user-directory', named])
+
+      expect(props?.['user_dir_rel']).toBe('outside_default')
+      expect(props?.['user_dir_hash']).toBe(hashed(named))
+      expectNoNames(props, ['Ada Secret'])
     })
 
     it("reads the core's default from its record only while the record matches the checkout", async () => {
       // The harness record sits exactly on v0.3.81: the fixed `<ComfyUI>/user` default.
-      const fixedDefault = hashPath(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db'))
+      const fixedDefault = hashed(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db'))
       const current = await launchWith('harness-db-location-current', ['--user-directory', userDir])
       expect(current?.['db_path_hash']).toBe(fixedDefault)
+      expect(current?.['db_url_source']).toBe('user_override')
 
       events = []
       gitInitComfyUI() // HEAD now contradicts the recorded commit
       const stale = await launchWith('harness-db-location-stale', ['--user-directory', userDir])
       expect(stale?.['db_path_hash']).toBeNull()
-      expect(stale?.['user_dir_hash']).toBe(hashPath(userDir))
+      expect(stale?.['user_dir_hash']).toBe(hashed(userDir))
     })
 
     it('launches without the fields when computing them throws', async () => {

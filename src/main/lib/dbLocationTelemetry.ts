@@ -11,16 +11,24 @@
  * sent. Every install that this user's Desktop launches shares the key, so equal paths compare
  * equal across their installs. Without the key a hash can't be checked against a guessed path
  * (paths carry usernames), and hashes from two users can't be compared. A fixed salt in the
- * binary would allow both. If the key can't be read or created, no hash is sent.
+ * binary would allow both. If the key can't be read or created, no hash is sent; a malformed key
+ * is replaced.
  */
 import { createHmac, randomBytes } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import semver from 'semver'
 import type { InstallationRecord } from '../installations'
-import { resolveComfyPaths, type DefaultDbLayout } from './comfyDbLock'
+import {
+  abbreviatesLocationFlag,
+  adoptedPinArgs,
+  hasFlag,
+  hasLocationFlag,
+  resolveComfyPaths,
+  type DefaultDbLayout
+} from './comfyDbLock'
 import { configDir } from './paths'
-import { coreSemver, coreSemverExact, coreVerifiedSemver } from './version'
+import { coreSemver, coreSemverExact, coreSemverVerified, coreVerifiedSemver } from './version'
 
 const KEY_FILE = 'telemetry-path-key'
 const KEY_RE = /^[0-9a-f]{64}$/
@@ -45,7 +53,9 @@ function pathHashKey(): Buffer | null {
   const file = path.join(configDir(), KEY_FILE)
   try {
     cachedKey = readKey(file)
-    return cachedKey
+    if (cachedKey) return cachedKey
+    // A malformed key never produced a hash, so replacing it loses nothing.
+    fs.rmSync(file)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return null
   }
@@ -76,7 +86,8 @@ const foldsCase = (platform: NodeJS.Platform): boolean =>
 /**
  * One spelling per location: absolute, symlinks resolved through the deepest part that exists
  * (the database may not exist before the first boot), `/` separators, and case-folded on
- * Windows and macOS, whose default filesystems ignore case.
+ * Windows and macOS, whose default filesystems ignore case. `platform` only selects the case
+ * folding; resolution always follows the host.
  */
 export function canonicalPath(p: string, platform: NodeJS.Platform = process.platform): string {
   let head = path.resolve(p)
@@ -106,19 +117,26 @@ export function hashPath(p: string | null): string | null {
 
 /**
  * Which side of v0.34.0's database move the install's core is on. A tag the install provably
- * contains at or past it settles `user_dir`; only an install sitting exactly on an older tag
- * settles `comfy_dir`, because code past an older tag may already include the move.
+ * contains at or past it settles `user_dir`; only an install sitting exactly on a verified older
+ * tag settles `comfy_dir`, because code past an older tag may already include the move.
  */
 export function defaultDbLayout(inst: InstallationRecord): DefaultDbLayout {
   const floor = coreVerifiedSemver(inst)
   if (floor && semver.gte(floor, USER_DIR_DB_SINCE)) return 'user_dir'
   const label = coreSemver(inst)
-  if (label && coreSemverExact(inst) && semver.lt(label, USER_DIR_DB_SINCE)) return 'comfy_dir'
+  if (
+    label &&
+    coreSemverExact(inst) &&
+    coreSemverVerified(inst) &&
+    semver.lt(label, USER_DIR_DB_SINCE)
+  ) {
+    return 'comfy_dir'
+  }
   return null
 }
 
 /** The answer for a location under no known root, or with any segment that is not fixed. */
-export const OUTSIDE_DEFAULT = 'outside_default'
+const OUTSIDE_DEFAULT = 'outside_default'
 
 /** Folder names ComfyUI and Desktop choose, never the user; nothing else is ever sent. */
 const FIXED_SEGMENTS = ['ComfyUI', 'user', 'comfyui.db']
@@ -127,7 +145,7 @@ const FIXED_SEGMENTS = ['ComfyUI', 'user', 'comfyui.db']
 export interface LocationRoots {
   /** Parents of installs, whose child folder is named after the user's install name. */
   installRoots: readonly (string | undefined)[]
-  /** Install folders themselves (the launching install's). */
+  /** The launching install's own folder, named `<this-install>`. */
   installDirs: readonly (string | undefined)[]
   /** Legacy Desktop base folders: its default, and an adopted install's own. */
   legacyRoots: readonly (string | undefined)[]
@@ -135,9 +153,10 @@ export interface LocationRoots {
 
 /**
  * A location as a readable path relative to the deepest known root, e.g.
- * `<install-root>/<install>/ComfyUI/user/comfyui.db`. The install folder is always `<install>`
- * (it is the user's install name), and every other segment must be a fixed name, or the whole
- * answer is {@link OUTSIDE_DEFAULT}. Null only when there is no location to describe.
+ * `<this-install>/ComfyUI/user/comfyui.db`, or `<install-root>/<install>/...` for another
+ * install. That install folder is always `<install>` (it is the user's install name), and every
+ * other segment must be a fixed name, or the whole answer is {@link OUTSIDE_DEFAULT}. Null only
+ * when there is no location to describe.
  */
 export function relativeLocation(
   p: string | null,
@@ -148,11 +167,7 @@ export function relativeLocation(
   const target = canonicalPath(p, platform)
   const anchors = [
     ...roots.installRoots.map((root) => ({ root, label: ['<install-root>'], named: true })),
-    ...roots.installDirs.map((root) => ({
-      root,
-      label: ['<install-root>', '<install>'],
-      named: false
-    })),
+    ...roots.installDirs.map((root) => ({ root, label: ['<this-install>'], named: false })),
     ...roots.legacyRoots.map((root) => ({ root, label: ['<legacy-root>'], named: false }))
   ]
   let best: { rootLength: number; label: string[]; rest: string[]; named: boolean } | null = null
@@ -194,29 +209,27 @@ export interface DbLocationProps {
   db_url_source: DbUrlSource
 }
 
-const LOCATION_FLAGS = ['--database-url', '--user-directory', '--base-directory']
-
-const hasFlag = (args: readonly string[], flag: string): boolean =>
-  args.some((a) => a === flag || a.startsWith(`${flag}=`))
-
 /**
  * The `boot_started` location fields for the args a launch spawns with. `adopted_legacy` is
- * Desktop's own pin for an adopted install: base and user at the legacy data folder, and the
- * database either at the pinned file or unset (a core without a database drops that pin). Any
- * other location flag came from the user, since Desktop sets none elsewhere.
+ * Desktop's own pin for an adopted install ({@link adoptedPinArgs}), with the database either at
+ * the pinned file or unset (a core without a database drops that pin). Any other location flag
+ * came from the user, since Desktop sets none elsewhere. An abbreviated location flag makes the
+ * whole location `unknown`.
  */
 export function dbLocationProps(input: {
   cwd: string | undefined
   args: readonly string[] | undefined
   layout: DefaultDbLayout
-  /** Whether the core takes `--database-url` (ComfyUI had no database before it); null when
-   *  its args could not be discovered. Only `true` lets a database hash out. */
-  hasDatabase: boolean | null
+  /** Whether the core is known to take `--database-url` (ComfyUI had no database before it). */
+  hasDatabase: boolean
   adoptedBaseDir: string | undefined
   roots: LocationRoots
 }): DbLocationProps {
+  const args = input.args
   const paths =
-    input.cwd && input.args ? resolveComfyPaths(input.cwd, input.args, input.layout) : null
+    input.cwd && args && !abbreviatesLocationFlag(args)
+      ? resolveComfyPaths(input.cwd, args, input.layout)
+      : null
   if (!paths) {
     return {
       db_path_hash: null,
@@ -228,18 +241,23 @@ export function dbLocationProps(input: {
       db_url_source: 'unknown'
     }
   }
-  const args = input.args!
-  const adopted = input.adoptedBaseDir && path.resolve(input.adoptedBaseDir)
+  const pin =
+    input.adoptedBaseDir &&
+    resolveComfyPaths(
+      input.cwd!,
+      ['-s', 'main.py', ...adoptedPinArgs(input.adoptedBaseDir, true)],
+      null
+    )
   const source: DbUrlSource =
-    adopted &&
-    paths.baseDir === adopted &&
-    paths.userDir === path.join(adopted, 'user') &&
-    (!hasFlag(args, '--database-url') || paths.dbPath === path.join(adopted, 'user', 'comfyui.db'))
+    pin &&
+    paths.baseDir === pin.baseDir &&
+    paths.userDir === pin.userDir &&
+    (!hasFlag(args!, '--database-url') || paths.dbPath === pin.dbPath)
       ? 'adopted_legacy'
-      : LOCATION_FLAGS.some((f) => hasFlag(args, f))
+      : hasLocationFlag(args!)
         ? 'user_override'
         : 'install_local'
-  const dbPath = input.hasDatabase === true ? paths.dbPath : null
+  const dbPath = input.hasDatabase ? paths.dbPath : null
   return {
     db_path_hash: hashPath(dbPath),
     user_dir_hash: hashPath(paths.userDir),

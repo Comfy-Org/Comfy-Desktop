@@ -772,9 +772,9 @@ async function runLaunch(
   let coreBeta: CoreBetaLaunch = noCoreBeta(betaEnabled)
   let coreCommit: string | null = null
   // What the location telemetry may assume about the core: whether its version record matches
-  // the live checkout, and whether it has a database at all (null when discovery failed).
+  // the live checkout, and whether it is known to have a database at all.
   let coreRecordIsCurrent = false
-  let coreHasDatabase: boolean | null = null
+  let coreHasDatabase = false
   // Read at each use: launch prep (recovery, migration, torch repair) can replace `inst`, and the
   // label must describe the same record as the `core_version` sent beside it.
   const coreVersionLabel = (): string | null =>
@@ -1228,7 +1228,7 @@ async function runLaunch(
           coreVersion: gate.semver,
           coreVersionExact: gate.exact,
           coreVersionVerified: gate.verified,
-          coreVersionCurrent: coreRecordCurrent(inst, checkout),
+          coreVersionCurrent: coreRecordIsCurrent,
           coreCommits,
           betaEnabled
         })
