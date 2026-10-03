@@ -10,6 +10,7 @@ import { expectedPartitionFor } from '../host/partition'
 import { TEMP_DIR_NAME } from './models'
 import { _broadcastToRenderer } from './ipc/shared'
 import { ALLOWED_EXTENSIONS, stripQueryParams } from './downloadFilename'
+import type { ComfyTemplateInputReference } from '../../types/comfyDesktopBridge'
 import {
   buildExistenceCandidates,
   collectModelScanRoots,
@@ -94,6 +95,8 @@ export interface DownloadProgress {
   /** Set on a completed asset download whose file is an image, so the renderer
    *  knows to lazily request a thumbnail via `download-thumbnail`. */
   isImage?: boolean
+  /** Template inputs this transfer serves, when it serves any. */
+  templateInputs?: ComfyTemplateInputReference[]
 }
 
 interface PendingDownload {
@@ -110,6 +113,11 @@ interface PendingDownload {
    *  "name (1)" dedup. When the completed download is byte-identical to a
    *  file already at this path, the download is discarded in its favor. */
   requestedSavePath?: string
+  /** Exact-destination owners keep their requested filename and never replace
+   *  a file that appears there while the transfer is in flight. */
+  preserveRequestedFilename?: boolean
+  /** Set for a transfer serving a template input, so progress events name it. */
+  templateInput?: ComfyTemplateInputReference
   tempPath?: string
   outputDir?: string
   /** Presentation window. Optional: managed model jobs can run headless
@@ -118,6 +126,9 @@ interface PendingDownload {
   /** The webContents that initiated the download (may differ from window.webContents for WebContentsView). */
   senderContents?: Electron.WebContents
   subscriberWindows: Set<BrowserWindow>
+  /** Joiners deliver through their own contents: a ComfyUI view is a
+   *  WebContentsView, so its host window's contents is not where it listens. */
+  subscriberContents: Set<Electron.WebContents>
   item?: Electron.DownloadItem
   // --- managed model-job state (kind === 'model') ---
   /** Active transport; null while paused / awaiting session resolution. */
@@ -419,15 +430,18 @@ interface RetryParams {
   /** Install that initiated the download, so a retry resolves the same
    *  destination even after the originating comfy view is gone. */
   installationId?: string | null
-  /** Model jobs: the RESOLVED final destination of the original attempt.
-   *  Retry dedupe compares canonical destinations, never URL + directory -
-   *  two installs can share both while writing different files. */
+  /** Resolved final destination of the original attempt. Exact-destination
+   *  retries compare this path rather than the source URL. */
   savePath?: string
   /** Model jobs: expected sha256, so a retry keeps verifying integrity. */
   sha256?: string
   /** Model jobs: explicit destination root of the original attempt, so a
    *  retry resolves the same final path. */
   destinationBaseDir?: string
+  /** Asset jobs: preserve the original admission semantics on retry. */
+  existingFilePolicy?: 'deduplicate' | 'skip'
+  /** Asset jobs: the template input this served, so a retry keeps naming it. */
+  templateInput?: ComfyTemplateInputReference
 }
 const retryParamsById = new Map<string, RetryParams>()
 
@@ -682,10 +696,43 @@ function isImageAsset(pending: PendingDownload): boolean {
   return !!pending.outputDir && hasImageExtension(pending.savePath)
 }
 
+/**
+ * Whether a job is the exact-filename asset job for this destination. Only
+ * such a job can satisfy an `existingFilePolicy: 'skip'` request: a
+ * deduplicating job for the same URL may land as `name (1).png`, so treating
+ * it as the same work reports a completion the caller never asked for.
+ */
+function isExactAssetJobFor(pending: PendingDownload, destKey: string): boolean {
+  return (
+    pending.kind === 'asset' &&
+    pending.preserveRequestedFilename === true &&
+    canonicalDestKey(pending.requestedSavePath ?? pending.savePath) === destKey
+  )
+}
+
+/**
+ * Remove a staged download and the temp directory it sat in. Best effort: the
+ * file may already be gone, and the directory is shared only when a sibling
+ * transfer is still staging into it.
+ */
+function discardTempFile(tempPath: string): void {
+  try {
+    fs.unlinkSync(tempPath)
+  } catch {}
+  try {
+    fs.rmdirSync(path.dirname(tempPath))
+  } catch {}
+}
+
 function broadcastProgress(progress: DownloadProgress): void {
   // Send to the originating ComfyUI window and any subscribers
   const pending = progress.id !== undefined ? pendingDownloads.get(progress.id) : undefined
   if (pending) {
+    // The job names the template input it serves, so a renderer never has to
+    // map a job id it may not have seen - a retry mints a new one.
+    if (pending.templateInput) {
+      progress = { ...progress, templateInputs: [pending.templateInput] }
+    }
     pending.lastProgress = { ...progress, id: pending.id }
     const target =
       pending.senderContents ||
@@ -698,6 +745,13 @@ function broadcastProgress(progress: DownloadProgress): void {
         sub.webContents.send('desktop2-download-progress', progress)
       } else {
         pending.subscriberWindows.delete(sub)
+      }
+    }
+    for (const contents of pending.subscriberContents) {
+      if (contents.isDestroyed()) {
+        pending.subscriberContents.delete(contents)
+      } else if (contents !== target) {
+        contents.send('desktop2-download-progress', progress)
       }
     }
   }
@@ -1358,6 +1412,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
         ? opts.senderContents
         : undefined,
     subscriberWindows: new Set(),
+    subscriberContents: new Set(),
     transport: null,
     suspended: false,
     installationId: resolvedInstallId,
@@ -1473,29 +1528,89 @@ export async function startModelDownload(
   return settled.status === 'completed'
 }
 
-export async function startAssetDownload(
+export interface AssetDownloadOptions {
+  /** Keep the requested filename stable and treat an existing exact path as success. */
+  existingFilePolicy?: 'deduplicate' | 'skip'
+  /** The template input this transfer serves, carried on every progress event
+   *  so a renderer does not have to correlate by job id. A retry mints a new
+   *  id, and the renderer has already forgotten the old one. */
+  templateInput?: ComfyTemplateInputReference
+}
+
+export type AssetDownloadAdmission =
+  | { status: 'already-present' }
+  | { status: 'accepted' | 'joined'; downloadId: string }
+  | { status: 'not-started' }
+
+function joinActiveAssetDownload(
+  win: BrowserWindow,
+  url: string,
+  requestedSavePath: string,
+  requireExactDestination: boolean,
+  senderContents?: Electron.WebContents
+): PendingDownload | undefined {
+  const requestedDestKey = canonicalDestKey(requestedSavePath)
+  const existing = activeJobsForUrl(url).find(
+    (pending) =>
+      pending.kind !== 'model' &&
+      (!requireExactDestination || isExactAssetJobFor(pending, requestedDestKey))
+  )
+  if (!existing) return undefined
+
+  if (win !== existing.window) {
+    existing.subscriberWindows.add(win)
+  }
+  const joiner = senderContents ?? (win.isDestroyed() ? undefined : win.webContents)
+  if (joiner && !joiner.isDestroyed()) {
+    if (joiner !== existing.senderContents) existing.subscriberContents.add(joiner)
+    joiner.send('desktop2-download-progress', existing.lastProgress)
+  }
+  return existing
+}
+
+export async function startManagedAssetDownload(
   win: BrowserWindow,
   url: string,
   filename: string,
   outputDir: string,
   authToken?: string,
-  senderContents?: Electron.WebContents
-): Promise<boolean> {
+  senderContents?: Electron.WebContents,
+  { existingFilePolicy = 'deduplicate', templateInput }: AssetDownloadOptions = {}
+): Promise<AssetDownloadAdmission> {
   const safeFilename = sanitizeAssetFilename(filename, outputDir)
-  if (!safeFilename) return false
-
-  // Join an active asset/general download of the same URL. Managed model jobs
-  // sharing the URL are independent (different destination class entirely).
-  const existing = activeJobsForUrl(url).find((p) => p.kind !== 'model')
-  if (existing) {
-    if (win !== existing.window) {
-      existing.subscriberWindows.add(win)
-    }
-    if (!win.isDestroyed()) {
-      win.webContents.send('desktop2-download-progress', existing.lastProgress)
-    }
-    return true
+  if (!safeFilename) return { status: 'not-started' }
+  // A skip request promises this exact name. Windows path-length truncation
+  // would land the bytes somewhere the caller never looks, so it would report
+  // a completion while the file it asked for stays missing - and ask again on
+  // every open. Refuse instead.
+  if (existingFilePolicy === 'skip' && safeFilename !== filename) {
+    return { status: 'not-started' }
   }
+  const requestedSavePath = path.join(outputDir, safeFilename)
+
+  const existing = joinActiveAssetDownload(
+    win,
+    url,
+    requestedSavePath,
+    existingFilePolicy === 'skip',
+    senderContents
+  )
+  if (existing) return { status: 'joined', downloadId: existing.id }
+
+  if (existingFilePolicy === 'skip' && (await fileExists(requestedSavePath))) {
+    return { status: 'already-present' }
+  }
+
+  // The existence probe above yields. Recheck the registry before reserving so
+  // concurrent requests for the same exact destination still share one job.
+  const reserved = joinActiveAssetDownload(
+    win,
+    url,
+    requestedSavePath,
+    existingFilePolicy === 'skip',
+    senderContents
+  )
+  if (reserved) return { status: 'joined', downloadId: reserved.id }
 
   // Reserve the URL before the first await: the same URL can be requested
   // again while the async setup below is still in flight (e.g. an output
@@ -1509,12 +1624,15 @@ export async function startAssetDownload(
     url,
     filename: path.basename(safeFilename),
     directory: '',
-    savePath: path.join(outputDir, safeFilename),
-    requestedSavePath: path.join(outputDir, safeFilename),
+    savePath: requestedSavePath,
+    requestedSavePath,
+    preserveRequestedFilename: existingFilePolicy === 'skip',
+    templateInput,
     outputDir,
     window: win,
     senderContents: senderContents !== win.webContents ? senderContents : undefined,
     subscriberWindows: new Set(),
+    subscriberContents: new Set(),
     lastProgress: {
       id,
       url,
@@ -1534,7 +1652,8 @@ export async function startAssetDownload(
   // than an error row, unlike `startModelDownload`'s failure paths.
   let savePath: string
   try {
-    savePath = await deduplicatePath(path.join(outputDir, safeFilename))
+    savePath =
+      existingFilePolicy === 'skip' ? requestedSavePath : await deduplicatePath(requestedSavePath)
   } catch (err) {
     reportProgress({
       ...pending.lastProgress,
@@ -1542,7 +1661,7 @@ export async function startAssetDownload(
       error: `Failed to prepare save path: ${err instanceof Error ? err.message : String(err)}`
     })
     unregisterPending(pending)
-    return false
+    return { status: 'not-started' }
   }
   const savedFilename = path.basename(savePath)
   // Temp dir is a sibling of the output dir - same filesystem for atomic rename,
@@ -1565,12 +1684,12 @@ export async function startAssetDownload(
       error: `Failed to create download directory: ${err instanceof Error ? err.message : String(err)}`
     })
     unregisterPending(pending)
-    return false
+    return { status: 'not-started' }
   }
 
   if (win.isDestroyed()) {
     unregisterPending(pending)
-    return false
+    return { status: 'not-started' }
   }
 
   // Register retry params only once the download is viable: an earlier
@@ -1583,7 +1702,10 @@ export async function startAssetDownload(
     outputDir,
     authToken,
     window: win,
-    senderContents
+    senderContents,
+    savePath: requestedSavePath,
+    existingFilePolicy,
+    templateInput
   })
 
   const sess = (senderContents || win.webContents).session
@@ -1596,7 +1718,45 @@ export async function startAssetDownload(
   sess.downloadURL(url, downloadOptions)
 
   reportProgress(pending.lastProgress)
-  return true
+  return { status: 'accepted', downloadId: pending.id }
+}
+
+export async function startAssetDownload(
+  win: BrowserWindow,
+  url: string,
+  filename: string,
+  outputDir: string,
+  authToken?: string,
+  senderContents?: Electron.WebContents,
+  options?: AssetDownloadOptions
+): Promise<boolean> {
+  const admission = await startManagedAssetDownload(
+    win,
+    url,
+    filename,
+    outputDir,
+    authToken,
+    senderContents,
+    options
+  )
+  return admission.status !== 'not-started'
+}
+
+/** Return a read-only progress snapshot only when this exact asset destination
+ *  is currently owned by a managed job. URL alone is intentionally
+ *  insufficient because one source may be downloading into multiple installs. */
+export function getActiveAssetDownload(
+  url: string,
+  filename: string,
+  outputDir: string
+): DownloadProgress | undefined {
+  const safeFilename = sanitizeAssetFilename(filename, outputDir)
+  if (!safeFilename) return undefined
+  const requestedDestKey = canonicalDestKey(path.join(outputDir, safeFilename))
+  const pending = activeJobsForUrl(url).find((candidate) =>
+    isExactAssetJobFor(candidate, requestedDestKey)
+  )
+  return pending ? { ...pending.lastProgress } : undefined
 }
 
 async function deduplicatePath(filePath: string): Promise<string> {
@@ -1653,6 +1813,30 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
 
   item.once('done', (_ev, state) => {
     if (state === 'completed') {
+      // An exact-destination owner treats a file that appeared after admission
+      // as authoritative. `linkSync` is the claim and the test in one step:
+      // probing with `existsSync` first leaves a window for another writer,
+      // and `renameSync` would then replace that file on POSIX.
+      if (pending.preserveRequestedFilename && pending.tempPath) {
+        const tempPath = pending.tempPath
+        try {
+          fs.linkSync(tempPath, pending.savePath)
+          discardTempFile(tempPath)
+          pending.tempPath = undefined
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+            // Someone got there first; their file stands.
+            discardTempFile(tempPath)
+            pending.tempPath = undefined
+          } else {
+            // Anything else means the destination was never claimed, so fall
+            // through to the rename below rather than reporting a phantom
+            // success. Hard links fail across filesystems (EXDEV) and on some
+            // network shares.
+          }
+        }
+      }
+
       // If a byte-identical file already sits at the originally requested
       // destination, keep it and discard the temp copy instead of saving a
       // duplicate "name (1)" file. This is the normal case when the "remote"
@@ -1666,12 +1850,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         pending.requestedSavePath !== pending.savePath &&
         filesHaveEqualContent(pending.tempPath, pending.requestedSavePath)
       ) {
-        try {
-          fs.unlinkSync(pending.tempPath)
-        } catch {}
-        try {
-          fs.rmdirSync(path.dirname(pending.tempPath))
-        } catch {}
+        discardTempFile(pending.tempPath)
         pending.savePath = pending.requestedSavePath
         pending.filename = path.basename(pending.requestedSavePath)
         pending.tempPath = undefined
@@ -1715,12 +1894,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
       })
     } else if (state === 'cancelled') {
       if (pending.tempPath) {
-        try {
-          fs.unlinkSync(pending.tempPath)
-        } catch {}
-        try {
-          fs.rmdirSync(path.dirname(pending.tempPath))
-        } catch {}
+        discardTempFile(pending.tempPath)
       }
       reportProgress({
         id: pending.id,
@@ -1732,12 +1906,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
       })
     } else {
       if (pending.tempPath) {
-        try {
-          fs.unlinkSync(pending.tempPath)
-        } catch {}
-        try {
-          fs.rmdirSync(path.dirname(pending.tempPath))
-        } catch {}
+        discardTempFile(pending.tempPath)
       }
       reportProgress({
         id: pending.id,
@@ -1767,7 +1936,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       // Resolve a better asset filename from the server response: cloud uses
       // content hashes in the WebSocket message, so the human-readable name is
       // only available from the HTTP Content-Disposition.
-      if (pending.tempPath && pending.outputDir) {
+      if (pending.tempPath && pending.outputDir && !pending.preserveRequestedFilename) {
         const serverName = resolveServerFilename(item)
         if (serverName) {
           const baseDir = pending.outputDir
@@ -1863,6 +2032,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
         savePath,
         window: fallbackWindow!,
         subscriberWindows: new Set(),
+        subscriberContents: new Set(),
         item,
         lastProgress: { id, url, filename, progress: 0, status: 'pending' },
         lastSpeedBytes: 0,
@@ -2065,6 +2235,11 @@ export function retryDownload(ref: string): boolean {
     for (const active of pendingDownloads.values()) {
       if (active.kind === 'model' && canonicalDestKey(active.savePath) === destKey) return false
     }
+  } else if (params.kind === 'asset' && params.existingFilePolicy === 'skip' && params.savePath) {
+    const destKey = canonicalDestKey(params.savePath)
+    for (const active of activeJobsForUrl(params.url)) {
+      if (isExactAssetJobFor(active, destKey)) return false
+    }
   } else {
     for (const active of activeJobsForUrl(params.url)) {
       if ((active.directory ?? '') === (params.directory ?? '')) return false
@@ -2101,7 +2276,11 @@ export function retryDownload(ref: string): boolean {
       params.filename,
       params.outputDir!,
       params.authToken,
-      sender
+      sender,
+      {
+        existingFilePolicy: params.existingFilePolicy ?? 'deduplicate',
+        templateInput: params.templateInput
+      }
     )
   } else {
     void startManagedModelJob({
@@ -2555,6 +2734,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       directory: meta.directory,
       savePath: finalPath,
       subscriberWindows: new Set(),
+      subscriberContents: new Set(),
       transport: null,
       suspended: true,
       installationId: meta.installationId ?? null,
@@ -2780,6 +2960,7 @@ export function _test_setSeededTrayState(snapshot: DownloadsTrayState): void {
       directory: entry.directory ?? '',
       savePath: entry.savePath ?? '',
       subscriberWindows: new Set(),
+      subscriberContents: new Set(),
       lastProgress: { ...entry, id },
       lastSpeedBytes: 0,
       lastSpeedTime: Date.now()
