@@ -642,29 +642,47 @@ describe('standalone.getFieldOptions variant version display', () => {
     expect(card.description).toContain('ComfyUI 0.20.1')
   })
 
-  it('variant card shows the upstream version as a nightly (not the bundled one) when "Latest on GitHub" is selected', async () => {
+  it('variant card names the master branch (not a stable tag) when "Latest on GitHub" is selected', async () => {
     const { vendorId } = setupVersionGap()
     mockedGetLatestStableTag.mockResolvedValue('v0.22.3')
     const release = await getReleaseOption('latest')
 
     const variants = await standalone.getFieldOptions!('variant', { release }, {})
     const card = variants.find((o) => o.value === vendorId)!
-    // Picking 'latest' fast-forwards the install to master HEAD (a few commits
-    // past the latest stable tag), so the card advertises that as a nightly â€”
-    // not the much older ComfyUI baked into the bundle (issue #1068).
-    expect(card.description).toContain('ComfyUI 0.22.3 (nightly)')
-    expect(card.description).not.toContain('ComfyUI 0.20.1')
+    // Picking 'latest' fast-forwards the install to master HEAD, which is not
+    // the latest stable tag (patch releases can be cut on a branch master never
+    // merges) and not the older ComfyUI baked into the bundle (issue #1068).
+    expect(card.description).toMatch(/^ComfyUI master {2}·/)
+    expect(card.description).not.toContain('0.22.3')
+    expect(card.description).not.toContain('0.20.1')
   })
 
-  it('variant card falls back to the bundled version on "Latest on GitHub" when the upstream tag is unresolved', async () => {
+  it('variant card still names the master branch on "Latest on GitHub" when the stable tag is unresolved', async () => {
     const { vendorId } = setupVersionGap()
+    // The latest install resolves master HEAD on its own, so a failed (or
+    // cached-null) stable-tag lookup says nothing about where it lands.
     mockedGetLatestStableTag.mockResolvedValue(null)
     const release = await getReleaseOption('latest')
 
     const variants = await standalone.getFieldOptions!('variant', { release }, {})
     const card = variants.find((o) => o.value === vendorId)!
-    expect(card.description).toContain('ComfyUI 0.20.1')
-    expect(card.description).not.toContain('nightly')
+    expect(card.description).toMatch(/^ComfyUI master {2}·/)
+    expect(card.description).not.toContain('0.20.1')
+  })
+
+  it('variant card shows the picked stable version when one is chosen', async () => {
+    const { vendorId } = setupVersionGap()
+    mockedGetLatestStableTag.mockResolvedValue('v0.22.3')
+    const release = await getReleaseOption('stable')
+
+    const variants = await standalone.getFieldOptions!(
+      'variant',
+      { release, comfyVersion: { value: 'v0.21.0', label: 'v0.21.0' } },
+      {}
+    )
+    const card = variants.find((o) => o.value === vendorId)!
+    expect(card.description).toContain('ComfyUI 0.21.0')
+    expect(card.description).not.toContain('0.22.3')
   })
 })
 
