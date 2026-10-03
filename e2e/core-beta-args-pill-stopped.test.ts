@@ -214,7 +214,8 @@ async function clickBackdrop(): Promise<void> {
   await ctx.app.evaluate(({ webContents }) => {
     const wc = webContents
       .getAllWebContents()
-      .find((w) => w.getURL().startsWith('data:text/html') && w.getURL().includes('scrim'))
+      // The title popup's backdrop, by the dismiss channel in its inline script.
+      .find((w) => w.getURL().includes('comfy-popup-backdrop'))
     if (!wc) throw new Error('no popup backdrop')
     return wc.executeJavaScript(
       `document.getElementById('s').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`,

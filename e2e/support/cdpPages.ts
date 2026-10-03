@@ -343,33 +343,49 @@ export function isPopupVisible(
 export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<void> {
   const id = await findWebContentsId(app, 'comfyTitlePopup.html')
   if (id === null) return
-  // Twice at most: Desktop Settings opened from the picker returns to the picker on its first
-  // close, and only the second dismisses the popup.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return
-    // Retried: closing an already-closed popup is a no-op, so re-running the
-    // callback after a lost result is safe.
-    await evalWithRetry(() => app.evaluate(({ webContents }) => {
-      const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
-      if (!wc) return
-      return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
-    })).catch(() => {
-      // Popup dismissed between the visibility check and the close call -
-      // already in the desired state.
-    })
-    const closed = await expect
-      .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {
-        timeout: 3_000,
-        intervals: [100, 200],
-      })
-      .toBe(false)
-      .then(
-        () => true,
-        () => false,
-      )
-    if (closed) return
-  }
-  expect(await isPopupVisible(app, 'comfyTitlePopup.html'), 'the title popup would not close').toBe(false)
+  if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return
+  await requestTitlePopupClose(app)
+  // Desktop Settings opened from the picker goes back to the picker on its first close; only a
+  // second close dismisses it. Close again only in that case, so a popup that reappears for any
+  // other reason still fails here.
+  let outcome = 'open' as 'hidden' | 'picker' | 'open'
+  await expect
+    .poll(
+      async () => {
+        if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return (outcome = 'hidden')
+        return (outcome = (await titlePopupShowsPicker(app)) ? 'picker' : 'open')
+      },
+      { timeout: 3_000, intervals: [100, 200] },
+    )
+    .not.toBe('open')
+  if (outcome === 'hidden') return
+  await requestTitlePopupClose(app)
+  await expect.poll(
+    () => isPopupVisible(app, 'comfyTitlePopup.html'),
+    { timeout: 3_000, intervals: [100, 200] },
+  ).toBe(false)
+}
+
+async function requestTitlePopupClose(app: ElectronApplication): Promise<void> {
+  // Retried: closing an already-closed popup is a no-op, so re-running the
+  // callback after a lost result is safe.
+  await evalWithRetry(() => app.evaluate(({ webContents }) => {
+    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
+    if (!wc) return
+    return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
+  })).catch(() => {
+    // Popup dismissed between the visibility check and the close call -
+    // already in the desired state.
+  })
+}
+
+/** Whether the title popup is showing the instance picker. */
+async function titlePopupShowsPicker(app: ElectronApplication): Promise<boolean> {
+  return evalWithRetry(() => app.evaluate(({ webContents }) => {
+    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
+    if (!wc) return false
+    return wc.executeJavaScript(`!!document.querySelector('.picker-search-input')`)
+  })).catch(() => false)
 }
 
 /** Wait past the title bar's 100ms reopen-suppression debounce; padded

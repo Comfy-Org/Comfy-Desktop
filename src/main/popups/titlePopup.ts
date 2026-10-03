@@ -2398,6 +2398,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       parentEntry.titleBarView.webContents,
       { x: 0, y: TITLEBAR_HEIGHT },
       returnTo,
+      // The config tab: the only picker link into Desktop Settings lives there (Startup Arguments).
       'config'
     )
   }
@@ -3130,7 +3131,8 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const parentEntry = comfyWindows.get(entry.parentEntryId)
       if (!parentEntry || parentEntry.window.isDestroyed()) return
       const { initialTab, highlightFieldId } = parseGlobalSettingsTarget(payload)
-      const returnTo = entry.pickerSelectedInstallationId
+      // Only a picker has a selection to go back to; this channel is the picker settings'.
+      const returnTo = entry.kind === 'instance-picker' ? entry.pickerSelectedInstallationId : null
       openGlobalSettingsForHost(
         parentEntry,
         entry.parentEntryId,
