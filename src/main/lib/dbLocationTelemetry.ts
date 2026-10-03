@@ -58,10 +58,12 @@ async function readKey(file: string): Promise<Buffer | null> {
  * session hashing with a key that is not the one on disk.
  */
 function pathHashKey(): Promise<Buffer | null> {
-  keyLoad ??= loadKey().then((key) => {
-    if (!key) keyLoad = null
-    return key
-  })
+  keyLoad ??= loadKey()
+    .catch(() => null)
+    .then((key) => {
+      if (!key) keyLoad = null
+      return key
+    })
   return keyLoad
 }
 
@@ -101,8 +103,8 @@ const foldsCase = (platform: NodeJS.Platform): boolean =>
 /**
  * One spelling per location: absolute, symlinks resolved through the deepest part that exists
  * (the database may not exist before the first boot), `/` separators, and case-folded on
- * Windows and macOS, whose default filesystems ignore case. `platform` only selects the case
- * folding; resolution always follows the host.
+ * Windows and macOS, whose default filesystems ignore case. Resolution and separators follow
+ * the host; `platform` only selects the case folding.
  *
  * Asynchronous, so a stalled network mount never blocks the main process; callers bound it
  * with a deadline. Null when a part cannot be resolved for any reason other than not existing
@@ -131,11 +133,16 @@ export async function canonicalPath(
 }
 
 /**
- * @internal - exposed for tests. The resolved path in one spelling: `/` separators on Windows
- * (elsewhere `\\` is an ordinary name character), case-folded where the filesystem ignores case.
+ * @internal - exposed for tests. The resolved path in one spelling: `/` separators where the host
+ * separator is `\\` (elsewhere `\\` is an ordinary name character), and case-folded for a
+ * `platform` whose filesystems ignore case.
  */
-export function spelling(resolved: string, platform: NodeJS.Platform): string {
-  const out = platform === 'win32' ? resolved.replace(/\\/g, '/') : resolved
+export function spelling(
+  resolved: string,
+  platform: NodeJS.Platform,
+  separator: string = path.sep
+): string {
+  const out = separator === '\\' ? resolved.replace(/\\/g, '/') : resolved
   return foldsCase(platform) ? out.toLowerCase() : out
 }
 

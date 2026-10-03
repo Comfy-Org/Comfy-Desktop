@@ -140,18 +140,21 @@ vi.mock('../shared', async (importOriginal) => {
 
 // The location deadline, made long so real key and path I/O never races it under load; the
 // hang test shortens it.
-const locationDeadline = vi.hoisted(() => ({ ms: 60_000 }))
+const locationDeadline = vi.hoisted(() => ({ ms: 60_000, fails: false }))
 vi.mock('../../dbLocationTelemetry', async (importOriginal) => {
   const orig = await importOriginal<typeof DbLocationModule>()
   return {
     ...orig,
     boundedDbLocation: (compute: () => Promise<DbLocationModule.DbLocationProps>) =>
-      orig.boundedDbLocation(compute, locationDeadline.ms)
+      orig.boundedDbLocation(
+        locationDeadline.fails ? () => Promise.reject(new Error('lookup failed')) : compute,
+        locationDeadline.ms
+      )
   }
 })
 
 // Lets a test make one known folder unavailable mid-launch.
-const legacyBase = vi.hoisted(() => ({ throws: false }))
+const legacyBase = vi.hoisted(() => ({ throws: false, installDirThrows: false }))
 vi.mock('../../paths', async (importOriginal) => {
   const orig = await importOriginal<typeof PathsModule>()
   return {
@@ -159,6 +162,10 @@ vi.mock('../../paths', async (importOriginal) => {
     legacyDesktopDefaultBase: () => {
       if (legacyBase.throws) throw new Error('documents folder unavailable')
       return orig.legacyDesktopDefaultBase()
+    },
+    defaultInstallDir: () => {
+      if (legacyBase.installDirThrows) throw new Error('install location unavailable')
+      return orig.defaultInstallDir()
     }
   }
 })
@@ -1431,19 +1438,37 @@ describe('core beta report placement', () => {
       )
     })
 
-    it('keeps every other field when one known folder cannot be found', async () => {
-      legacyBase.throws = true
+    it.each(['throws', 'installDirThrows'] as const)(
+      'keeps every other field when one known folder cannot be found (%s)',
+      async (which) => {
+        legacyBase[which] = true
 
-      const props = await launchWith('harness-db-location-no-legacy').finally(() => {
-        legacyBase.throws = false
+        const props = await launchWith(`harness-db-location-no-root-${which}`).finally(() => {
+          legacyBase[which] = false
+        })
+
+        expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
+        expect(props).toMatchObject({
+          db_path_hash: await hashed(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db')),
+          base_dir_rel: '<this-install>/ComfyUI',
+          db_location_status: 'ok'
+        })
+      }
+    )
+
+    it('still launches, reporting an error, when the location lookup fails', async () => {
+      locationDeadline.fails = true
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const props = await launchWith('harness-db-location-fails').finally(() => {
+        locationDeadline.fails = false
       })
 
       expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
-      expect(props).toMatchObject({
-        db_path_hash: await hashed(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db')),
-        base_dir_rel: '<this-install>/ComfyUI',
-        db_location_status: 'ok'
-      })
+      expect(props).toEqual(
+        expect.objectContaining({ db_location_status: 'error', db_url_source: 'install_local' })
+      )
+      expect(props).not.toHaveProperty('db_path_hash')
     })
 
     it('still launches, reporting a timeout, when resolving the location hangs', async () => {

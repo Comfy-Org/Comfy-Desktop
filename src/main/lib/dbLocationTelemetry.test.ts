@@ -4,8 +4,13 @@ import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InstallationRecord } from '../installations'
 
-const dirs = vi.hoisted(() => ({ config: '' }))
-vi.mock('./paths', () => ({ configDir: () => dirs.config }))
+const dirs = vi.hoisted(() => ({ config: '', unavailable: false }))
+vi.mock('./paths', () => ({
+  configDir: () => {
+    if (dirs.unavailable) throw new Error('no config dir')
+    return dirs.config
+  }
+}))
 
 import {
   _resetForTest,
@@ -90,6 +95,13 @@ describe('hashPath', () => {
     read.mockRestore()
   })
 
+  it('retries a key load that threw, rather than remember the failure', async () => {
+    dirs.unavailable = true
+    expect(await hashPath(tmp)).toBeNull()
+    dirs.unavailable = false
+    expect(await hashPath(tmp)).toMatch(/^[0-9a-f]{16}$/)
+  })
+
   it('replaces a malformed key, which never produced a hash', async () => {
     fs.mkdirSync(dirs.config, { recursive: true })
     fs.writeFileSync(keyFile(), 'not-a-key')
@@ -138,9 +150,18 @@ describe('hashPath', () => {
 })
 
 describe('spelling', () => {
+  it('takes separators from the host and case folding from the platform', () => {
+    expect(spelling('C:\\Data\\X', 'linux', '\\'), 'a Windows host, a linux override').toBe(
+      'C:/Data/X'
+    )
+    expect(spelling('/Data/a\\b', 'win32', '/'), 'a POSIX host, a win32 override').toBe(
+      '/data/a\\b'
+    )
+  })
+
   it('turns backslashes into separators on Windows only', () => {
-    expect(spelling('C:\\Users\\Ada\\ComfyUI', 'win32')).toBe('c:/users/ada/comfyui')
-    expect(spelling('/data/a\\b/user', 'linux'), 'a literal backslash in a POSIX name').toBe(
+    expect(spelling('C:\\Users\\Ada\\ComfyUI', 'win32', '\\')).toBe('c:/users/ada/comfyui')
+    expect(spelling('/data/a\\b/user', 'linux', '/'), 'a literal backslash in a POSIX name').toBe(
       '/data/a\\b/user'
     )
   })
@@ -479,7 +500,7 @@ describe('boundedDbLocation', () => {
   }
 
   it('passes the fields through, marked ok', async () => {
-    expect(await boundedDbLocation(async () => props)).toEqual({
+    expect(await boundedDbLocation(async () => props, 60_000)).toEqual({
       ...props,
       db_location_status: 'ok'
     })
@@ -500,7 +521,10 @@ describe('boundedDbLocation', () => {
       running--
       return props
     }
-    const results = await Promise.all([boundedDbLocation(tracked), boundedDbLocation(tracked)])
+    const results = await Promise.all([
+      boundedDbLocation(tracked, 60_000),
+      boundedDbLocation(tracked, 60_000)
+    ])
     expect(results.map((r) => r.db_location_status)).toEqual(['ok', 'ok'])
     expect(most, 'never two at once').toBe(1)
   })
@@ -520,7 +544,9 @@ describe('boundedDbLocation', () => {
     await hung
     await new Promise((resolve) => setImmediate(resolve))
     expect(queued, 'not run late after its own deadline').not.toHaveBeenCalled()
-    expect((await boundedDbLocation(async () => props)).db_location_status, 'resumes').toBe('ok')
+    expect((await boundedDbLocation(async () => props, 60_000)).db_location_status, 'resumes').toBe(
+      'ok'
+    )
   })
 
   it('reports an error, and never throws, when computing them fails', async () => {
