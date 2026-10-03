@@ -66,23 +66,22 @@ import type {
 
 import { COMFYBUILDER_INSTALL_DEFAULTS, DEFAULT_LAUNCH_ARGS } from './constants'
 import { getDetailSections } from './detailSections'
+import { MANAGER_ALLOWED_FIELD, managerAllowedAtLaunch } from './manager'
 import { abortModelStaging, startModelStaging } from './modelStagingTask'
 
 const READY_MARKER = '.comfybuilder-environment-ready'
 const ENTRY_SWAP_MARKER = '.comfybuilder-entry-swap'
 const ACTIVE_CODE_MARKER = '.comfybuilder-active-code'
 const ROLLBACK_FIELD = 'comfybuilderRollback'
-/** Record field: false when the installed release's author turned
- *  ComfyUI-Manager off, or its governance policy is a custom-node allowlist.
- *  Written once the release's environment has landed. */
-const MANAGER_ALLOWED_FIELD = 'comfybuilderManagerAllowed'
 
 /** The record fields that carry a release's manager answer: the answer itself
  *  (launch reads it) and the stored launch args rewritten to match it (the
- *  Startup Arguments field shows them). */
+ *  Startup Arguments field shows them). `previouslyAllowed` is the answer the
+ *  install launched with before this release, the record's by default. */
 function managerAnswerFields(
   installation: InstallationRecord,
-  manifest: ModelManifest
+  manifest: ModelManifest,
+  previouslyAllowed = installation[MANAGER_ALLOWED_FIELD] as boolean | undefined
 ): Record<string, unknown> {
   const allowed =
     managerAllowedByPolicy(manifest.customNodePolicy) &&
@@ -92,7 +91,7 @@ function managerAnswerFields(
     launchArgs: launchArgsForManagerAnswer(
       (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS,
       allowed,
-      installation[MANAGER_ALLOWED_FIELD] as boolean | undefined
+      previouslyAllowed
     )
   }
 }
@@ -570,12 +569,7 @@ export const comfybuilder: SourcePlugin = {
         installation,
         (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS
       ),
-      // Records written before this field existed have no answer; they keep
-      // launching with the manager flag, as they always did.
-      managerAllowed: installation[MANAGER_ALLOWED_FIELD] !== false,
-      // From the disk: the record's manager answer can lag the installed
-      // archive (an update interrupted before its last write, an older Desktop).
-      governance: readGovernance(installation.installPath)
+      managerAllowed: managerAllowedAtLaunch(installation)
     })
     if (!spec) return null
     return { cmd: spec.cmd, args: spec.args, cwd: spec.cwd, port: spec.port }
@@ -696,6 +690,10 @@ async function updateBuildVersion(
     artifactAccelVariant: installation.artifactAccelVariant as string | undefined,
     artifactSha256: installation.artifactSha256 as string | undefined
   }
+  // Read before the new release replaces the policy on disk: a record written
+  // before Desktop dropped the manager under a blocklist still says Yes, but
+  // the install launched without it.
+  const previouslyAllowed = managerAllowedAtLaunch(installation)
   let environmentReady = false
 
   try {
@@ -735,7 +733,7 @@ async function updateBuildVersion(
     await tools.update({
       status: 'installed',
       modelsStaged: false,
-      ...managerAnswerFields(installation, manifest),
+      ...managerAnswerFields(installation, manifest, previouslyAllowed),
       [ROLLBACK_FIELD]: undefined
     })
     await finalizeEnvironmentTransaction(installation.installPath).catch(() => {})

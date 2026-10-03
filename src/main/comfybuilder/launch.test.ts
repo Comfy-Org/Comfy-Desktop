@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   buildLaunchSpec,
   launchArgsForManagerAnswer,
+  managerAllowedByGovernance,
   managerAllowedByPolicy,
   readGovernance,
   venvPython
@@ -151,6 +152,13 @@ describe('launch', () => {
     ],
     ['a No build removes a quoted manager flag', '"--enable-manager" --cpu', false, true, '--cpu'],
     [
+      'a No build loses an abbreviated legacy flag',
+      '--enable-manager-l --cpu',
+      false,
+      true,
+      '--cpu'
+    ],
+    [
       'a Yes build is left alone',
       '--enable-manager --cpu',
       true,
@@ -176,26 +184,114 @@ describe('launch', () => {
     expect(launchArgsForManagerAnswer(args, allowed, before)).toBe(expected)
   })
 
-  it('drops a typed manager flag on a governed allowlist build', () => {
+  // ComfyUI refuses `--enable-manager` under any custom-node policy, because
+  // Manager's prestartup runs scheduled pack installs before a pack is checked
+  // (Comfy-Org/ComfyUI#16167).
+  it.each([['allowlist'], ['blocklist']])(
+    'drops a typed manager flag on a governed %s build',
+    (mode) => {
+      const p = path.join(dir, 'install')
+      layout(p)
+      writePolicy(p, { activeForms: ['customNode'], customNodeMode: mode })
+      const spec = buildLaunchSpec(p, {
+        launchArgs: '--enable-manager --cpu --enable-manager-legacy-ui',
+        governance: readGovernance(p)
+      })
+      expect(spec?.args).toEqual(['-s', path.join('ComfyUI', 'main.py'), '--cpu'])
+    }
+  )
+
+  it.each([['allowlist'], ['blocklist']])(
+    'drops the default manager flag on a governed %s build',
+    (mode) => {
+      const p = path.join(dir, 'install')
+      layout(p)
+      writePolicy(p, { activeForms: ['customNode'], customNodeMode: mode })
+      expect(buildLaunchSpec(p, { governance: readGovernance(p) })?.args).toEqual([
+        '-s',
+        path.join('ComfyUI', 'main.py')
+      ])
+    }
+  )
+
+  // ComfyUI's parser accepts any unique prefix of an option (argparse's
+  // allow_abbrev), so these all turn Manager on. Checked against
+  // comfy/cli_args.py of Comfy-Org/ComfyUI#16167 on Python 3.9, 3.11, 3.13
+  // and 3.14.
+  it.each([
+    ['--enable-manager'],
+    ['--enable-manager-legacy-ui'],
+    ['--enable-manager-legacy-u'],
+    ['--enable-manager-legacy'],
+    ['--enable-manager-l'],
+    ['--enable-manager-']
+  ])('drops %s on a governed blocklist build', (flag) => {
     const p = path.join(dir, 'install')
     layout(p)
-    writePolicy(p, { activeForms: ['customNode'], customNodeMode: 'allowlist' })
+    writePolicy(p, { activeForms: ['customNode'], customNodeMode: 'blocklist' })
     const spec = buildLaunchSpec(p, {
-      launchArgs: '--enable-manager --cpu --enable-manager-legacy-ui',
+      launchArgs: `${flag} --cpu`,
       governance: readGovernance(p)
     })
     expect(spec?.args).toEqual(['-s', path.join('ComfyUI', 'main.py'), '--cpu'])
   })
 
-  it('keeps the manager flag on a governed blocklist build', () => {
+  // None of these turns Manager on. Ambiguous prefixes, `--flag=value` on an
+  // on/off flag and an unknown option all make ComfyUI's parser exit with an
+  // error on every build, governed or not, so launch leaves the typo for the
+  // user to see. The rest are other options that share the `--enable-` prefix.
+  it.each([
+    ['--enable-manage'],
+    ['--enable-m'],
+    ['--enable-manager=1'],
+    ['--enable-manager-l=1'],
+    ['--enable-manager-foo'],
+    ['--enable-manager-legacy-uix'],
+    ['-enable-manager'],
+    ['--enable-dynamic-vram'],
+    ['--enable-d'],
+    ['--enable-assets'],
+    ['--enable-cors-header']
+  ])('leaves %s alone on a governed blocklist build', (flag) => {
     const p = path.join(dir, 'install')
     layout(p)
     writePolicy(p, { activeForms: ['customNode'], customNodeMode: 'blocklist' })
+    const spec = buildLaunchSpec(p, {
+      launchArgs: `${flag} --cpu`,
+      governance: readGovernance(p)
+    })
+    expect(spec?.args).toEqual(['-s', path.join('ComfyUI', 'main.py'), flag, '--cpu'])
+  })
+
+  it('keeps the manager flag on a governed build whose custom nodes are not governed', () => {
+    const p = path.join(dir, 'install')
+    layout(p)
+    writePolicy(p, { activeForms: ['nodeId'], customNodeMode: null })
     expect(buildLaunchSpec(p, { governance: readGovernance(p) })?.args).toEqual([
       '-s',
       path.join('ComfyUI', 'main.py'),
       '--enable-manager'
     ])
+  })
+
+  it('keeps the manager flag on a build with no policy file', () => {
+    const p = path.join(dir, 'install')
+    layout(p)
+    expect(buildLaunchSpec(p, { governance: readGovernance(p) })?.args).toEqual([
+      '-s',
+      path.join('ComfyUI', 'main.py'),
+      '--enable-manager'
+    ])
+  })
+
+  it.each([
+    ['an allowlist', { kind: 'governed' as const, customNodeMode: 'allowlist' as const }, false],
+    ['a blocklist', { kind: 'governed' as const, customNodeMode: 'blocklist' as const }, false],
+    ['ungoverned custom nodes', { kind: 'governed' as const, customNodeMode: null }, true],
+    ['an ordinary build', null, true],
+    ['an absent governance', undefined, true]
+  ])('managerAllowedByGovernance reads %s', (_name, governance, expected) => {
+    expect(managerAllowedByGovernance(governance)).toBe(expected)
   })
 
   it('readGovernance returns null for an ordinary build', () => {

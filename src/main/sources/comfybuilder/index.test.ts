@@ -305,29 +305,32 @@ describe('comfybuilder.install wiring', () => {
     )
   })
 
-  it('drops the manager flag of a governed allowlist build even when the release said Yes', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-'))
-    try {
-      writePolicy(root, 'allowlist')
-      vi.mocked(resolveModelManifest).mockResolvedValueOnce({
-        models: [],
-        customNodePolicy: { mode: 'blocklist', list: [] }
-      } as never)
-      updateInstallation.mockClear()
+  it.each([['allowlist'], ['blocklist']])(
+    'drops the manager flag of a governed %s build even when the release said Yes',
+    async (mode) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-'))
+      try {
+        writePolicy(root, mode)
+        vi.mocked(resolveModelManifest).mockResolvedValueOnce({
+          models: [],
+          customNodePolicy: { mode: 'blocklist', list: [] }
+        } as never)
+        updateInstallation.mockClear()
 
-      await comfybuilder.install!(
-        record({ installPath: root, launchArgs: '--enable-manager --cpu' }),
-        fakeTools()
-      )
+        await comfybuilder.install!(
+          record({ installPath: root, launchArgs: '--enable-manager --cpu' }),
+          fakeTools()
+        )
 
-      expect(updateInstallation).toHaveBeenCalledWith('i1', {
-        comfybuilderManagerAllowed: false,
-        launchArgs: '--cpu'
-      })
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true })
+        expect(updateInstallation).toHaveBeenCalledWith('i1', {
+          comfybuilderManagerAllowed: false,
+          launchArgs: '--cpu'
+        })
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
     }
-  })
+  )
 
   it('drops the manager flag from the policy on disk when the record carries no manager answer', async () => {
     // A record can lag the archive: an update interrupted before its last
@@ -1065,6 +1068,38 @@ describe('comfybuilder update-comfyui', () => {
   it('restores the manager flag when the new release drops its allowlist policy', async () => {
     const updates = await updateAcrossPolicies('allowlist', null, {
       comfybuilderManagerAllowed: false,
+      launchArgs: '--cpu'
+    })
+
+    expect(updates.at(-1)).toMatchObject({
+      status: 'installed',
+      comfybuilderManagerAllowed: true,
+      launchArgs: '--enable-manager --cpu'
+    })
+  })
+
+  // A record written before Desktop dropped the manager flag under a
+  // blocklist still says Yes and stores the flag; launch and the Startup
+  // Arguments field drop it from the policy on disk.
+  it('drops the stale manager flag of a blocklist record when the new release keeps the blocklist', async () => {
+    const updates = await updateAcrossPolicies('blocklist', 'blocklist', {
+      comfybuilderManagerAllowed: true,
+      launchArgs: '--enable-manager --cpu'
+    })
+
+    expect(updates.at(-1)).toMatchObject({
+      status: 'installed',
+      comfybuilderManagerAllowed: false,
+      launchArgs: '--cpu'
+    })
+  })
+
+  it('restores the manager flag for a stale blocklist record when the new release drops its blocklist', async () => {
+    // The user saved the args the field showed (without the flag), so the
+    // record lost the flag but still says Yes. Manager was off at launch, so
+    // this is a No-to-Yes update like any other.
+    const updates = await updateAcrossPolicies('blocklist', null, {
+      comfybuilderManagerAllowed: true,
       launchArgs: '--cpu'
     })
 

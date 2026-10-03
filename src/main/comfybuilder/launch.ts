@@ -14,11 +14,25 @@ import type { LaunchSpec, ModelPolicy } from './types'
 
 const DEFAULT_LAUNCH_ARGS = '--enable-manager'
 
-/** Every flag that turns ComfyUI-Manager on. */
-const MANAGER_ENABLING_ARGS = new Set(['--enable-manager', '--enable-manager-legacy-ui'])
+/** The two ComfyUI options that turn ComfyUI-Manager on. */
+const ENABLE_MANAGER = '--enable-manager'
+const ENABLE_MANAGER_LEGACY_UI = '--enable-manager-legacy-ui'
 
+/**
+ * Whether ComfyUI's parser reads `arg` as one of the manager flags.
+ *
+ * The parser accepts any unique prefix of an option (argparse's
+ * `allow_abbrev`). In `comfy/cli_args.py` (Comfy-Org/ComfyUI#16167) only the
+ * two manager options start with `--enable-man`, so `--enable-manager` is the
+ * first (an exact name wins over a longer option it prefixes), and every
+ * prefix of `--enable-manager-legacy-ui` from `--enable-manager-` on is the
+ * second. A shorter prefix such as `--enable-manage` could be either, and
+ * `--enable-manager=1` gives an on/off flag a value; the parser rejects both
+ * and exits on every build, so they are left for the user to see. Recheck the
+ * prefix rule if ComfyUI adds another `--enable-manager-...` option.
+ */
 function isManagerEnablingArg(arg: string): boolean {
-  return MANAGER_ENABLING_ARGS.has(arg)
+  return arg.length >= ENABLE_MANAGER.length && ENABLE_MANAGER_LEGACY_UI.startsWith(arg)
 }
 
 /**
@@ -37,16 +51,16 @@ export function managerAllowedByPolicy(policy: ModelPolicy | null | undefined): 
 }
 
 /** Where a governed build's archive carries its signed policy. Must match
- *  ComfyUI's `_POLICY_PATH` in `app/governance.py` (Comfy-Org/ComfyUI#16167 at
- *  cd93b00, line 50); recheck it when that PR merges. */
+ *  `_POLICY_PATH` in ComfyUI's `app/governance.py` (Comfy-Org/ComfyUI#16167);
+ *  recheck it when that PR merges. */
 const GOVERNANCE_POLICY_RELATIVE = path.join('ComfyUI', 'governance', 'policy.signed.json')
 
 /**
  * A governed build's policy, read from the signed policy file its archive
  * carries. ComfyUI enforces that policy itself and exits at startup on a flag
- * it forbids, so launch leaves out the manager-enabling flags under a
- * custom-node allowlist and the launcher's `--extra-model-paths-config` on any
- * governed build.
+ * it forbids, so launch leaves out the manager-enabling flags under any
+ * custom-node policy (allowlist or blocklist) and the launcher's
+ * `--extra-model-paths-config` on any governed build.
  */
 export interface Governance {
   kind: 'governed'
@@ -58,8 +72,8 @@ export interface Governance {
  * Read the signed policy an installed archive carries, or null for an ordinary
  * build. The signature is not checked here; ComfyUI checks it at startup. A
  * policy file that cannot be read still marks the install governed, and a
- * custom-node mode that cannot be read counts as an allowlist, the stricter
- * answer.
+ * custom-node mode that cannot be read counts as an allowlist, so custom nodes
+ * stay governed and launch still leaves out the manager flags.
  */
 export function readGovernance(installPath: string): Governance | null {
   const file = path.join(installPath, GOVERNANCE_POLICY_RELATIVE)
@@ -78,10 +92,13 @@ export function readGovernance(installPath: string): Governance | null {
   }
 }
 
-/** False when a governed build's custom nodes are an allowlist, under which
- *  ComfyUI refuses to start with the manager enabled. */
+/** False when a governed build has a custom-node policy (allowlist or
+ *  blocklist), under which ComfyUI refuses to start with the manager enabled:
+ *  Manager's prestartup runs scheduled pack installs, a pack's `install.py`
+ *  included, before any pack is checked (Comfy-Org/ComfyUI#16167). True for an
+ *  ordinary build and for a governed one whose custom nodes are not governed. */
 export function managerAllowedByGovernance(governance: Governance | null | undefined): boolean {
-  return governance?.customNodeMode !== 'allowlist'
+  return !governance?.customNodeMode
 }
 
 /**
@@ -100,6 +117,13 @@ export function venvPython(installPath: string): string {
   if (process.platform !== 'win32') return path.join(installPath, 'venv', 'bin', 'python3')
   const staged = path.join(installPath, 'venv', 'base', 'python.exe')
   return fs.existsSync(staged) ? staged : path.join(installPath, 'venv', 'python.exe')
+}
+
+/** The launch args as they reach ComfyUI: without the manager-enabling flags
+ *  when `managerAllowed` is false. The Startup Arguments field shows these, so
+ *  it matches what launches. */
+export function launchArgsAsLaunched(launchArgs: string, managerAllowed: boolean): string {
+  return managerAllowed ? launchArgs : withoutManagerEnablingArgs(launchArgs)
 }
 
 function withoutManagerEnablingArgs(launchArgs: string): string {
@@ -150,8 +174,8 @@ export interface LaunchOptions {
    * Defaults to true.
    */
   managerAllowed?: boolean
-  /** The install's governance, read from its policy file at launch; an
-   *  allowlist drops the manager flags too. */
+  /** The install's governance, read from its policy file at launch; a
+   *  custom-node policy (allowlist or blocklist) drops the manager flags too. */
   governance?: Governance | null
 }
 
@@ -165,11 +189,10 @@ export function buildLaunchSpec(installPath: string, opts: LaunchOptions = {}): 
   const mainPy = path.join(installPath, 'ComfyUI', 'main.py')
   if (!fs.existsSync(mainPy)) return null
 
-  const raw = (opts.launchArgs ?? DEFAULT_LAUNCH_ARGS).trim()
-  const all = raw.length > 0 ? parseArgs(raw) : []
   const managerAllowed =
     opts.managerAllowed !== false && managerAllowedByGovernance(opts.governance)
-  const parsed = managerAllowed ? all : all.filter((arg) => !isManagerEnablingArg(arg))
+  const raw = launchArgsAsLaunched((opts.launchArgs ?? DEFAULT_LAUNCH_ARGS).trim(), managerAllowed)
+  const parsed = raw.length > 0 ? parseArgs(raw) : []
   return {
     cmd: python,
     args: ['-s', path.join('ComfyUI', 'main.py'), ...parsed],
