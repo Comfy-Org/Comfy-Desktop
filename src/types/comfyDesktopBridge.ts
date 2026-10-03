@@ -14,6 +14,13 @@ export interface ComfyDownloadProgress {
   status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
   error?: string
   isImage?: boolean
+  /**
+   * The template inputs this transfer serves, named by the host on every
+   * event. A retry mints a new job id, and a renderer that dropped the old
+   * mapping has no way back to it; naming the inputs here removes the need
+   * to correlate by id at all.
+   */
+  templateInputs?: ComfyTemplateInputReference[]
 }
 
 export interface ComfyTemplateInputReference {

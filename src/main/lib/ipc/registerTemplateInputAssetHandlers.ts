@@ -130,7 +130,7 @@ export function registerTemplateInputAssetHandlers({
         inputDir,
         undefined,
         event.sender,
-        { existingFilePolicy: 'skip' }
+        { existingFilePolicy: 'skip', templateInput: { templateId, assetId } }
       )
       if (admission.status === 'already-present')
         return { status: admission.status, filename: asset.filename }

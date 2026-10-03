@@ -195,10 +195,17 @@ function ensureTemplateInputProgressHandler(): void {
     if (!download) return
     const isTerminal = isTerminalTemplateInputDownload(download)
     if (isTerminal) rememberTerminalTemplateInputDownload(download)
-    const references = templateInputsByDownloadId.get(download.downloadId)
-    if (!references) return
+    // Prefer what the host named: a retry mints a new job id, and the mapping
+    // for the old one was dropped on its terminal event. The map remains for
+    // desktop builds that do not send `templateInputs`.
+    const named = data.templateInputs
+    const references =
+      named && named.length > 0
+        ? named
+        : [...(templateInputsByDownloadId.get(download.downloadId)?.values() ?? [])]
+    if (references.length === 0) return
     if (isTerminal) templateInputsByDownloadId.delete(download.downloadId)
-    emitTemplateInputProgress(download, [...references.values()])
+    emitTemplateInputProgress(download, references)
     maybeRemoveTemplateInputProgressHandler()
   }
   ipcRenderer.on('desktop2-download-progress', templateInputProgressHandler)

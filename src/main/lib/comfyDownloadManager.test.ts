@@ -680,7 +680,8 @@ describe('asset download retries', () => {
   function startExactAssetDownload(
     harness: ReturnType<typeof makeAssetHarness>,
     url: string,
-    outputDir: string
+    outputDir: string,
+    templateInput?: { templateId: string; assetId: string }
   ) {
     return mod.startManagedAssetDownload(
       harness.win,
@@ -689,7 +690,7 @@ describe('asset download retries', () => {
       outputDir,
       undefined,
       undefined,
-      { existingFilePolicy: 'skip' }
+      { existingFilePolicy: 'skip', templateInput }
     )
   }
 
@@ -848,6 +849,49 @@ describe('asset download retries', () => {
     }
   })
 
+  it('saves an exact destination that is still free when the transfer lands', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const destination = path.join(outputDir, 'sample.png')
+
+    try {
+      await startExactAssetDownload(h, url, outputDir)
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
+      item.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe('downloaded')
+      await expect(fs.promises.stat(item.tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('still saves when the destination cannot be hard-linked', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const destination = path.join(outputDir, 'sample.png')
+    // A hard link fails across filesystems and on some network shares; the
+    // claim is then simply unresolved, not lost.
+    const link = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('cross-device'), { code: 'EXDEV' })
+    })
+
+    try {
+      await startExactAssetDownload(h, url, outputDir)
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
+      item.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe('downloaded')
+    } finally {
+      link.mockRestore()
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
   it('does not overwrite an exact destination created while the download is in flight', async () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
     const url = 'https://remote.example/input/sample.png'
@@ -868,6 +912,44 @@ describe('asset download retries', () => {
         'created-during-download'
       )
       await expect(fs.promises.stat(item.tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps naming the template input a retried download serves', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const templateInput = { templateId: 'template-a', assetId: 'asset-a' }
+
+    try {
+      const admission = await startExactAssetDownload(h, url, outputDir, templateInput)
+      if (admission.status !== 'accepted') {
+        throw new Error('Expected an accepted asset download')
+      }
+
+      const first = bindAssetItem(h, url)
+      await fs.promises.writeFile(first.tempPath, 'partial')
+      first.getDone()!({}, 'interrupted')
+
+      expect(mod.retryDownload(admission.downloadId)).toBe(true)
+      await vi.waitFor(() => expect(h.session.downloadURL).toHaveBeenCalledTimes(2))
+
+      const retry = bindAssetItem(h, url)
+      await fs.promises.writeFile(retry.tempPath, 'complete')
+      retry.getDone()!({}, 'completed')
+
+      // The retry is a different job id, so the renderer can only follow it if
+      // the identity rode along in the retry params.
+      const named = h.send.mock.calls
+        .filter((call) => call[0] === 'desktop2-download-progress')
+        .map((call) => call[1] as { id?: string; templateInputs?: unknown })
+        .filter((progress) => progress.id !== admission.downloadId)
+      expect(named.length).toBeGreaterThan(0)
+      for (const progress of named) {
+        expect(progress.templateInputs).toEqual([templateInput])
+      }
     } finally {
       await fs.promises.rm(outputDir, { recursive: true, force: true })
     }

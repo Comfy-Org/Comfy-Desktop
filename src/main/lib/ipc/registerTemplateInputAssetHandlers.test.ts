@@ -243,7 +243,13 @@ describe('registerTemplateInputAssetHandlers', () => {
       '/comfy/input',
       undefined,
       sender,
-      { existingFilePolicy: 'skip' }
+      // The job is told which template input it serves, so its progress names
+      // it without the renderer having to map a job id - including after a
+      // retry, which mints a new one.
+      {
+        existingFilePolicy: 'skip',
+        templateInput: { templateId: 'template-1', assetId: declaredAsset.assetId }
+      }
     )
   })
 

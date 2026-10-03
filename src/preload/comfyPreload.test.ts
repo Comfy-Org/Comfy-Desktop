@@ -176,6 +176,35 @@ describe('comfyPreload template input asset bridge', () => {
     unsubscribe()
   })
 
+  it('follows a retry onto its new job id', async () => {
+    const bridge = hostedBridge()
+    const callback = vi.fn()
+    const unsubscribe = bridge.onTemplateInputDownloadProgress(callback)
+    mocks.invoke.mockResolvedValueOnce({
+      status: 'accepted',
+      download: downloadSnapshot('download-1')
+    })
+    await bridge.downloadTemplateInputAsset('template-a', 'asset-a')
+
+    // The first job fails, which is when the id mapping is dropped.
+    downloadProgressHandler()({}, downloadProgress('download-1', 'error'))
+    const callsBeforeRetry = callback.mock.calls.length
+
+    // A retry from the tray mints a new id this renderer has never seen. The
+    // host names the input on the event, so it still reaches the view.
+    downloadProgressHandler()({}, {
+      ...downloadProgress('download-2', 'completed', 1),
+      templateInputs: [{ templateId: 'template-a', assetId: 'asset-a' }]
+    })
+
+    expect(callback.mock.calls.length).toBe(callsBeforeRetry + 1)
+    expect(callback).toHaveBeenLastCalledWith({
+      ...downloadSnapshot('download-2', 'completed', 1),
+      templateInputs: [{ templateId: 'template-a', assetId: 'asset-a' }]
+    })
+    unsubscribe()
+  })
+
   it('reports an already-present file, which no job will announce', async () => {
     const bridge = hostedBridge()
     const callback = vi.fn()

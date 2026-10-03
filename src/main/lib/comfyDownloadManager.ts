@@ -10,6 +10,7 @@ import { expectedPartitionFor } from '../host/partition'
 import { TEMP_DIR_NAME } from './models'
 import { _broadcastToRenderer } from './ipc/shared'
 import { ALLOWED_EXTENSIONS, stripQueryParams } from './downloadFilename'
+import type { ComfyTemplateInputReference } from '../../types/comfyDesktopBridge'
 import {
   buildExistenceCandidates,
   collectModelScanRoots,
@@ -94,6 +95,8 @@ export interface DownloadProgress {
   /** Set on a completed asset download whose file is an image, so the renderer
    *  knows to lazily request a thumbnail via `download-thumbnail`. */
   isImage?: boolean
+  /** Template inputs this transfer serves, when it serves any. */
+  templateInputs?: ComfyTemplateInputReference[]
 }
 
 interface PendingDownload {
@@ -113,6 +116,8 @@ interface PendingDownload {
   /** Exact-destination owners keep their requested filename and never replace
    *  a file that appears there while the transfer is in flight. */
   preserveRequestedFilename?: boolean
+  /** Set for a transfer serving a template input, so progress events name it. */
+  templateInput?: ComfyTemplateInputReference
   tempPath?: string
   outputDir?: string
   /** Presentation window. Optional: managed model jobs can run headless
@@ -435,6 +440,8 @@ interface RetryParams {
   destinationBaseDir?: string
   /** Asset jobs: preserve the original admission semantics on retry. */
   existingFilePolicy?: 'deduplicate' | 'skip'
+  /** Asset jobs: the template input this served, so a retry keeps naming it. */
+  templateInput?: ComfyTemplateInputReference
 }
 const retryParamsById = new Map<string, RetryParams>()
 
@@ -703,10 +710,29 @@ function isExactAssetJobFor(pending: PendingDownload, destKey: string): boolean 
   )
 }
 
+/**
+ * Remove a staged download and the temp directory it sat in. Best effort: the
+ * file may already be gone, and the directory is shared only when a sibling
+ * transfer is still staging into it.
+ */
+function discardTempFile(tempPath: string): void {
+  try {
+    fs.unlinkSync(tempPath)
+  } catch {}
+  try {
+    fs.rmdirSync(path.dirname(tempPath))
+  } catch {}
+}
+
 function broadcastProgress(progress: DownloadProgress): void {
   // Send to the originating ComfyUI window and any subscribers
   const pending = progress.id !== undefined ? pendingDownloads.get(progress.id) : undefined
   if (pending) {
+    // The job names the template input it serves, so a renderer never has to
+    // map a job id it may not have seen - a retry mints a new one.
+    if (pending.templateInput) {
+      progress = { ...progress, templateInputs: [pending.templateInput] }
+    }
     pending.lastProgress = { ...progress, id: pending.id }
     const target =
       pending.senderContents ||
@@ -1505,6 +1531,10 @@ export async function startModelDownload(
 export interface AssetDownloadOptions {
   /** Keep the requested filename stable and treat an existing exact path as success. */
   existingFilePolicy?: 'deduplicate' | 'skip'
+  /** The template input this transfer serves, carried on every progress event
+   *  so a renderer does not have to correlate by job id. A retry mints a new
+   *  id, and the renderer has already forgotten the old one. */
+  templateInput?: ComfyTemplateInputReference
 }
 
 export type AssetDownloadAdmission =
@@ -1545,7 +1575,7 @@ export async function startManagedAssetDownload(
   outputDir: string,
   authToken?: string,
   senderContents?: Electron.WebContents,
-  { existingFilePolicy = 'deduplicate' }: AssetDownloadOptions = {}
+  { existingFilePolicy = 'deduplicate', templateInput }: AssetDownloadOptions = {}
 ): Promise<AssetDownloadAdmission> {
   const safeFilename = sanitizeAssetFilename(filename, outputDir)
   if (!safeFilename) return { status: 'not-started' }
@@ -1597,6 +1627,7 @@ export async function startManagedAssetDownload(
     savePath: requestedSavePath,
     requestedSavePath,
     preserveRequestedFilename: existingFilePolicy === 'skip',
+    templateInput,
     outputDir,
     window: win,
     senderContents: senderContents !== win.webContents ? senderContents : undefined,
@@ -1673,7 +1704,8 @@ export async function startManagedAssetDownload(
     window: win,
     senderContents,
     savePath: requestedSavePath,
-    existingFilePolicy
+    existingFilePolicy,
+    templateInput
   })
 
   const sess = (senderContents || win.webContents).session
@@ -1782,20 +1814,27 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
   item.once('done', (_ev, state) => {
     if (state === 'completed') {
       // An exact-destination owner treats a file that appeared after admission
-      // as authoritative. Discard the staged bytes instead of replacing it
-      // (rename would overwrite on POSIX and fail inconsistently on Windows).
-      if (
-        pending.preserveRequestedFilename &&
-        pending.tempPath &&
-        fs.existsSync(pending.savePath)
-      ) {
+      // as authoritative. `linkSync` is the claim and the test in one step:
+      // probing with `existsSync` first leaves a window for another writer,
+      // and `renameSync` would then replace that file on POSIX.
+      if (pending.preserveRequestedFilename && pending.tempPath) {
+        const tempPath = pending.tempPath
         try {
-          fs.unlinkSync(pending.tempPath)
-        } catch {}
-        try {
-          fs.rmdirSync(path.dirname(pending.tempPath))
-        } catch {}
-        pending.tempPath = undefined
+          fs.linkSync(tempPath, pending.savePath)
+          discardTempFile(tempPath)
+          pending.tempPath = undefined
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+            // Someone got there first; their file stands.
+            discardTempFile(tempPath)
+            pending.tempPath = undefined
+          } else {
+            // Anything else means the destination was never claimed, so fall
+            // through to the rename below rather than reporting a phantom
+            // success. Hard links fail across filesystems (EXDEV) and on some
+            // network shares.
+          }
+        }
       }
 
       // If a byte-identical file already sits at the originally requested
@@ -1811,12 +1850,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
         pending.requestedSavePath !== pending.savePath &&
         filesHaveEqualContent(pending.tempPath, pending.requestedSavePath)
       ) {
-        try {
-          fs.unlinkSync(pending.tempPath)
-        } catch {}
-        try {
-          fs.rmdirSync(path.dirname(pending.tempPath))
-        } catch {}
+        discardTempFile(pending.tempPath)
         pending.savePath = pending.requestedSavePath
         pending.filename = path.basename(pending.requestedSavePath)
         pending.tempPath = undefined
@@ -1860,12 +1894,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
       })
     } else if (state === 'cancelled') {
       if (pending.tempPath) {
-        try {
-          fs.unlinkSync(pending.tempPath)
-        } catch {}
-        try {
-          fs.rmdirSync(path.dirname(pending.tempPath))
-        } catch {}
+        discardTempFile(pending.tempPath)
       }
       reportProgress({
         id: pending.id,
@@ -1877,12 +1906,7 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
       })
     } else {
       if (pending.tempPath) {
-        try {
-          fs.unlinkSync(pending.tempPath)
-        } catch {}
-        try {
-          fs.rmdirSync(path.dirname(pending.tempPath))
-        } catch {}
+        discardTempFile(pending.tempPath)
       }
       reportProgress({
         id: pending.id,
@@ -2253,7 +2277,10 @@ export function retryDownload(ref: string): boolean {
       params.outputDir!,
       params.authToken,
       sender,
-      { existingFilePolicy: params.existingFilePolicy ?? 'deduplicate' }
+      {
+        existingFilePolicy: params.existingFilePolicy ?? 'deduplicate',
+        templateInput: params.templateInput
+      }
     )
   } else {
     void startManagedModelJob({
