@@ -104,7 +104,9 @@ import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../
 import {
   boundedDbLocation,
   dbLocationProps,
+  dbUrlSource,
   defaultDbLayout,
+  optionalRoot,
   type DbLocationProps
 } from '../../dbLocationTelemetry'
 import { defaultInstallDir, legacyDesktopDefaultBase } from '../../paths'
@@ -1823,23 +1825,30 @@ async function runLaunch(
   // delays a launch by at most the deadline and never fails one.
   const adoptedBaseDir =
     inst.adopted === true ? (inst.adoptedBaseDir as string | undefined) : undefined
-  const dbLocationPending: Promise<Partial<DbLocationProps>> =
-    telemetry.getConsentState() === 'granted'
-      ? boundedDbLocation(() =>
-          dbLocationProps({
-            cwd: launchCmd.cwd,
-            args: launchCmd.args,
-            layout: coreRecordIsCurrent ? defaultDbLayout(inst) : null,
-            hasDatabase: coreHasDatabase,
-            adoptedBaseDir,
-            roots: {
-              installRoots: [defaultInstallDir()],
-              installDirs: [inst.installPath],
-              legacyRoots: [legacyDesktopDefaultBase(), adoptedBaseDir]
-            }
-          })
-        )
-      : Promise.resolve({})
+  const locationInput = {
+    cwd: launchCmd.cwd,
+    args: launchCmd.args,
+    layout: coreRecordIsCurrent ? defaultDbLayout(inst) : null,
+    adoptedBaseDir
+  }
+  const consented = telemetry.getConsentState() === 'granted'
+  // Needs no I/O, so it is sent even when the location itself timed out.
+  const dbSource: Partial<DbLocationProps> = consented
+    ? { db_url_source: dbUrlSource(locationInput) }
+    : {}
+  const dbLocationPending: Promise<Partial<DbLocationProps>> = consented
+    ? boundedDbLocation(() =>
+        dbLocationProps({
+          ...locationInput,
+          hasDatabase: coreHasDatabase,
+          roots: {
+            installRoots: [optionalRoot(defaultInstallDir)],
+            installDirs: [inst.installPath],
+            legacyRoots: [optionalRoot(legacyDesktopDefaultBase), adoptedBaseDir]
+          }
+        })
+      ).then((location) => ({ ...dbSource, ...location }))
+    : Promise.resolve({})
 
   const PORT_RETRY_MAX = 3
   const REBOOT_RETRY_MAX = 5

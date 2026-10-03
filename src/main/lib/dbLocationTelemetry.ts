@@ -25,6 +25,7 @@ import {
   hasFlag,
   hasLocationFlag,
   resolveComfyPaths,
+  type ComfyPaths,
   type DefaultDbLayout
 } from './comfyDbLock'
 import { configDir } from './paths'
@@ -35,14 +36,15 @@ const KEY_RE = /^[0-9a-f]{64}$/
 /** The release that moved ComfyUI's default database into the effective user directory. */
 const USER_DIR_DB_SINCE = '0.34.0'
 
-let cachedKey: Buffer | null = null
-/** A location computation that outlived its deadline and has not settled yet. */
-let stuck: Promise<unknown> | null = null
+/** The key load every caller shares; cleared when it yields no key, so a later launch retries. */
+let keyLoad: Promise<Buffer | null> | null = null
+/** The most recently queued location computation. Computations run one at a time. */
+let lastComputation: Promise<unknown> = Promise.resolve()
 
 /** @internal - exposed for tests. */
-export function _resetKeyForTest(): void {
-  cachedKey = null
-  stuck = null
+export function _resetForTest(): void {
+  keyLoad = null
+  lastComputation = Promise.resolve()
 }
 
 async function readKey(file: string): Promise<Buffer | null> {
@@ -50,13 +52,24 @@ async function readKey(file: string): Promise<Buffer | null> {
   return KEY_RE.test(text) ? Buffer.from(text, 'hex') : null
 }
 
-/** The per-user key, created on first use. Null (and retried next time) when unavailable. */
-async function pathHashKey(): Promise<Buffer | null> {
-  if (cachedKey) return cachedKey
+/**
+ * The per-user key, created on first use. Null (and retried next time) when unavailable. One
+ * load is shared by every caller, so two can never both repair a malformed key and leave this
+ * session hashing with a key that is not the one on disk.
+ */
+function pathHashKey(): Promise<Buffer | null> {
+  keyLoad ??= loadKey().then((key) => {
+    if (!key) keyLoad = null
+    return key
+  })
+  return keyLoad
+}
+
+async function loadKey(): Promise<Buffer | null> {
   const file = path.join(configDir(), KEY_FILE)
   try {
-    cachedKey = await readKey(file)
-    if (cachedKey) return cachedKey
+    const existing = await readKey(file)
+    if (existing) return existing
     // A malformed key never produced a hash, so replacing it loses nothing.
     await fs.promises.rm(file)
   } catch (err) {
@@ -76,9 +89,10 @@ async function pathHashKey(): Promise<Buffer | null> {
     await fs.promises.rm(tmp, { force: true }).catch(() => {})
   }
   try {
-    cachedKey = await readKey(file)
-  } catch {}
-  return cachedKey
+    return await readKey(file)
+  } catch {
+    return null
+  }
 }
 
 const foldsCase = (platform: NodeJS.Platform): boolean =>
@@ -113,7 +127,15 @@ export async function canonicalPath(
       head = parent
     }
   }
-  const out = path.join(head, ...tail).replace(/\\/g, '/')
+  return spelling(path.join(head, ...tail), platform)
+}
+
+/**
+ * @internal - exposed for tests. The resolved path in one spelling: `/` separators on Windows
+ * (elsewhere `\\` is an ordinary name character), case-folded where the filesystem ignores case.
+ */
+export function spelling(resolved: string, platform: NodeJS.Platform): string {
+  const out = platform === 'win32' ? resolved.replace(/\\/g, '/') : resolved
   return foldsCase(platform) ? out.toLowerCase() : out
 }
 
@@ -154,6 +176,15 @@ const OUTSIDE_DEFAULT = 'outside_default'
 
 /** Folder names ComfyUI and Desktop choose, never the user; nothing else is ever sent. */
 const FIXED_SEGMENTS = ['ComfyUI', 'user', 'comfyui.db']
+
+/** A root, or none when it cannot be found: an unknown root only costs its label. */
+export function optionalRoot(get: () => string): string | undefined {
+  try {
+    return get()
+  } catch {
+    return undefined
+  }
+}
 
 /** Folders Desktop knows, against which a location can be named without naming the user. */
 export interface LocationRoots {
@@ -235,38 +266,28 @@ export interface DbLocationProps {
   db_url_source: DbUrlSource
 }
 
-/**
- * The `boot_started` location fields for the args a launch spawns with. `adopted_legacy` is
- * Desktop's own pin for an adopted install ({@link adoptedPinArgs}), with the database either at
- * the pinned file or unset (a core without a database drops that pin). Any other location flag
- * came from the user, since Desktop sets none elsewhere. An abbreviated location flag makes the
- * whole location `unknown`.
- */
-export async function dbLocationProps(input: {
+/** What a launch's location is worked out from: its final spawn args and Desktop's own pins. */
+export interface LocationInput {
   cwd: string | undefined
   args: readonly string[] | undefined
   layout: DefaultDbLayout
-  /** Whether the core is known to take `--database-url` (ComfyUI had no database before it). */
-  hasDatabase: boolean
   adoptedBaseDir: string | undefined
-  roots: LocationRoots
-}): Promise<DbLocationProps> {
+}
+
+/**
+ * The launch's paths, and where its location came from. No I/O. `adopted_legacy` is Desktop's own
+ * pin for an adopted install ({@link adoptedPinArgs}), with the database either at the pinned
+ * file or unset (a core without a database drops that pin). Any other location flag came from
+ * the user, since Desktop sets none elsewhere. Null (an `unknown` location) without a ComfyUI
+ * entry point, or when a location flag is abbreviated.
+ */
+function locate(input: LocationInput): { paths: ComfyPaths; source: DbUrlSource } | null {
   const args = input.args
   const paths =
     input.cwd && args && !abbreviatesLocationFlag(args)
       ? resolveComfyPaths(input.cwd, args, input.layout)
       : null
-  if (!paths) {
-    return {
-      db_path_hash: null,
-      user_dir_hash: null,
-      base_dir_hash: null,
-      db_path_rel: null,
-      user_dir_rel: null,
-      base_dir_rel: null,
-      db_url_source: 'unknown'
-    }
-  }
+  if (!paths) return null
   const pin =
     input.adoptedBaseDir &&
     resolveComfyPaths(
@@ -283,6 +304,42 @@ export async function dbLocationProps(input: {
       : hasLocationFlag(args!)
         ? 'user_override'
         : 'install_local'
+  return { paths, source }
+}
+
+/**
+ * `db_url_source` alone. It needs no I/O, so it is sent even when the rest timed out. Never
+ * throws: it runs on the launch path outside the deadline's error handling.
+ */
+export function dbUrlSource(input: LocationInput): DbUrlSource {
+  try {
+    return locate(input)?.source ?? 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+/** The `boot_started` location fields for the args a launch spawns with. */
+export async function dbLocationProps(
+  input: LocationInput & {
+    /** Whether the core is known to take `--database-url` (ComfyUI had no database before it). */
+    hasDatabase: boolean
+    roots: LocationRoots
+  }
+): Promise<DbLocationProps> {
+  const located = locate(input)
+  if (!located) {
+    return {
+      db_path_hash: null,
+      user_dir_hash: null,
+      base_dir_hash: null,
+      db_path_rel: null,
+      user_dir_rel: null,
+      base_dir_rel: null,
+      db_url_source: 'unknown'
+    }
+  }
+  const { paths, source } = located
   // SQLAlchemy reads `?…` as connection options, not part of the file name; rather than guess
   // which file such a URL opens, its database goes unreported.
   const dbPath = input.hasDatabase && !paths.dbPath?.includes('?') ? paths.dbPath : null
@@ -324,32 +381,33 @@ export async function boundedDbLocation(
   compute: () => Promise<DbLocationProps>,
   deadlineMs: number = DB_LOCATION_DEADLINE_MS
 ): Promise<Partial<DbLocationProps> & { db_location_status: DbLocationStatus }> {
-  // A timed-out computation keeps running: its filesystem call cannot be cancelled and holds a
-  // worker thread. While one is still stuck, later launches start none, so repeated launches
-  // against a stalled mount cannot exhaust the pool the rest of Desktop's file I/O shares.
-  if (stuck) return { db_location_status: 'timeout' }
+  // Computations run one at a time. A timed-out one keeps running, because its filesystem call
+  // cannot be cancelled and holds a worker thread; launches queued behind it time out without
+  // starting any filesystem work, and are skipped once their own deadline has passed. So a
+  // stalled mount holds at most one worker however many launches hit it.
+  let expired = false
   let timer: NodeJS.Timeout | undefined
   const timeout = new Promise<{ db_location_status: 'timeout' }>((resolve) => {
-    timer = setTimeout(() => resolve({ db_location_status: 'timeout' }), deadlineMs)
+    timer = setTimeout(() => {
+      expired = true
+      resolve({ db_location_status: 'timeout' })
+    }, deadlineMs)
   })
-  const computed = Promise.resolve()
-    .then(compute)
+  const computed = lastComputation
+    .then(() => (expired ? null : compute()))
     .then(
-      (props) => ({ ...props, db_location_status: 'ok' as const }),
+      (props) =>
+        props
+          ? { ...props, db_location_status: 'ok' as const }
+          : { db_location_status: 'timeout' as const },
       (err: unknown) => {
         console.warn('[launch] database location for telemetry unavailable:', err)
         return { db_location_status: 'error' as const }
       }
     )
+  lastComputation = computed
   try {
-    const result = await Promise.race([computed, timeout])
-    if (result.db_location_status === 'timeout') {
-      stuck = computed
-      void computed.finally(() => {
-        if (stuck === computed) stuck = null
-      })
-    }
-    return result
+    return await Promise.race([computed, timeout])
   } finally {
     clearTimeout(timer)
   }

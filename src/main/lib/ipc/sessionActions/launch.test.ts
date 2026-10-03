@@ -138,7 +138,19 @@ vi.mock('../shared', async (importOriginal) => {
   }
 })
 
-// Lets a test make the database-location computation throw mid-launch.
+// The location deadline, made long so real key and path I/O never races it under load; the
+// hang test shortens it.
+const locationDeadline = vi.hoisted(() => ({ ms: 60_000 }))
+vi.mock('../../dbLocationTelemetry', async (importOriginal) => {
+  const orig = await importOriginal<typeof DbLocationModule>()
+  return {
+    ...orig,
+    boundedDbLocation: (compute: () => Promise<DbLocationModule.DbLocationProps>) =>
+      orig.boundedDbLocation(compute, locationDeadline.ms)
+  }
+})
+
+// Lets a test make one known folder unavailable mid-launch.
 const legacyBase = vi.hoisted(() => ({ throws: false }))
 vi.mock('../../paths', async (importOriginal) => {
   const orig = await importOriginal<typeof PathsModule>()
@@ -252,7 +264,7 @@ import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
-import { _resetKeyForTest, hashPath } from '../../dbLocationTelemetry'
+import { _resetForTest, hashPath } from '../../dbLocationTelemetry'
 import { adoptedPinArgs } from '../../comfyDbLock'
 import { configDir } from '../../paths'
 import type { LaunchCommand } from '../../../types/sources'
@@ -275,6 +287,7 @@ import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as HardwareTapModule from '../../hardwareTap'
 import type * as PathsModule from '../../paths'
+import type * as DbLocationModule from '../../dbLocationTelemetry'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
 
@@ -1263,7 +1276,7 @@ describe('core beta report placement', () => {
 
     beforeEach(() => {
       vi.stubEnv('XDG_CONFIG_HOME', path.join(installDir, 'config'))
-      _resetKeyForTest()
+      _resetForTest()
       fs.rmSync(keyFile(), { force: true })
       telemetry.setConsentState('granted')
       launchHarness.schemaNames = ['listen', 'user-directory', 'database-url']
@@ -1291,7 +1304,11 @@ describe('core beta report placement', () => {
       }
     }
 
-    const launchWith = async (id: string, extraArgs: string[] = []) => {
+    const launchWith = async (
+      id: string,
+      extraArgs: string[] = [],
+      inst: Partial<InstallationRecord> = {}
+    ) => {
       launchHarness.launchCommand = {
         cmd: process.execPath,
         args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen', ...extraArgs],
@@ -1299,7 +1316,9 @@ describe('core beta report placement', () => {
         skipPortWait: false,
         port: 48234
       }
-      await handleLaunch(ctxFor(id))
+      const ctx = ctxFor(id)
+      ctx.inst = { ...ctx.inst, ...inst } as InstallationRecord
+      await handleLaunch(ctx)
       return events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')?.properties
     }
 
@@ -1397,35 +1416,50 @@ describe('core beta report placement', () => {
       expect(current?.['db_url_source']).toBe('user_override')
 
       events = []
-      gitInitComfyUI() // HEAD now contradicts the recorded commit
+      const head = gitInitComfyUI() // HEAD now contradicts the recorded commit
       const stale = await launchWith('harness-db-location-stale', ['--user-directory', userDir])
       expect(stale?.['db_path_hash']).toBeNull()
       expect(stale?.['user_dir_hash']).toBe(await hashed(userDir))
+
+      events = []
+      const record = ctxFor('x').inst.comfyVersion as unknown as Record<string, unknown>
+      const matching = await launchWith('harness-db-location-head', ['--user-directory', userDir], {
+        comfyVersion: { ...record, commit: head }
+      } as Partial<InstallationRecord>)
+      expect(matching?.['db_path_hash'], 'a record matching the real HEAD is trusted').toBe(
+        fixedDefault
+      )
     })
 
-    it('launches without the fields when computing them throws', async () => {
+    it('keeps every other field when one known folder cannot be found', async () => {
       legacyBase.throws = true
-      vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-      const props = await launchWith('harness-db-location-throws').finally(() => {
+      const props = await launchWith('harness-db-location-no-legacy').finally(() => {
         legacyBase.throws = false
       })
 
       expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
-      expect(props, 'boot_started still fired').toBeDefined()
-      expect(props).not.toHaveProperty('db_url_source')
-      expect(props?.['db_location_status'], 'the failure is countable').toBe('error')
+      expect(props).toMatchObject({
+        db_path_hash: await hashed(path.join(installDir, 'ComfyUI', 'user', 'comfyui.db')),
+        base_dir_rel: '<this-install>/ComfyUI',
+        db_location_status: 'ok'
+      })
     })
 
     it('still launches, reporting a timeout, when resolving the location hangs', async () => {
       // A stalled network mount: path resolution never answers.
       vi.spyOn(fs.promises, 'realpath').mockImplementation(() => new Promise(() => {}))
+      locationDeadline.ms = 10
 
-      const props = await launchWith('harness-db-location-hangs')
+      const props = await launchWith('harness-db-location-hangs').finally(() => {
+        locationDeadline.ms = 60_000
+      })
 
       expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
-      expect(props).toEqual(expect.objectContaining({ db_location_status: 'timeout' }))
-      expect(props).not.toHaveProperty('db_path_hash')
+      expect(props).toEqual(
+        expect.objectContaining({ db_location_status: 'timeout', db_url_source: 'install_local' })
+      )
+      expect(props, 'only what needs no disk access').not.toHaveProperty('db_path_hash')
     })
 
     it.each(['undecided', 'denied'] as const)(

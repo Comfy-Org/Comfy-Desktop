@@ -8,11 +8,13 @@ const dirs = vi.hoisted(() => ({ config: '' }))
 vi.mock('./paths', () => ({ configDir: () => dirs.config }))
 
 import {
-  _resetKeyForTest,
+  _resetForTest,
   canonicalPath,
   dbLocationProps,
   defaultDbLayout,
   boundedDbLocation,
+  dbUrlSource,
+  spelling,
   hashPath,
   relativeLocation,
   type LocationRoots
@@ -23,7 +25,7 @@ let tmp: string
 beforeEach(() => {
   tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'db-location-')))
   dirs.config = path.join(tmp, 'config')
-  _resetKeyForTest()
+  _resetForTest()
 })
 
 afterEach(() => {
@@ -67,7 +69,7 @@ describe('hashPath', () => {
     const key = fs.readFileSync(keyFile(), 'utf8')
     expect(key).toMatch(/^[0-9a-f]{64}$/)
     if (process.platform !== 'win32') expect(fs.statSync(keyFile()).mode & 0o777).toBe(0o600)
-    _resetKeyForTest()
+    _resetForTest()
     expect(await hashPath(tmp)).toBe(h)
     expect(fs.readFileSync(keyFile(), 'utf8')).toBe(key)
   })
@@ -75,8 +77,17 @@ describe('hashPath', () => {
   it('changes with the key, so hashes cannot be compared across users', async () => {
     const h = await hashPath(tmp)
     fs.rmSync(keyFile())
-    _resetKeyForTest()
+    _resetForTest()
     expect(await hashPath(tmp)).not.toBe(h)
+  })
+
+  it('shares one key load between concurrent callers', async () => {
+    const read = vi.spyOn(fs.promises, 'readFile')
+    const [a, b] = await Promise.all([hashPath(tmp), hashPath(tmp)])
+    expect(a).toBe(b)
+    const keyReads = read.mock.calls.filter(([f]) => String(f) === keyFile())
+    expect(keyReads.length, 'one load: the first read, plus the read-back after creating').toBe(2)
+    read.mockRestore()
   })
 
   it('replaces a malformed key, which never produced a hash', async () => {
@@ -109,7 +120,7 @@ describe('hashPath', () => {
     link.mockRestore()
     expect(await hashPath(tmp), 'and the next launch creates the key').toMatch(/^[0-9a-f]{16}$/)
 
-    _resetKeyForTest()
+    _resetForTest()
     fs.rmSync(keyFile())
     const rm = vi
       .spyOn(fs.promises, 'rm')
@@ -119,10 +130,19 @@ describe('hashPath', () => {
     )
     rm.mockRestore()
 
-    _resetKeyForTest()
+    _resetForTest()
     dirs.config = path.join(tmp, 'a-file')
     fs.writeFileSync(dirs.config, '')
     expect(await hashPath(tmp), 'the key cannot be created').toBeNull()
+  })
+})
+
+describe('spelling', () => {
+  it('turns backslashes into separators on Windows only', () => {
+    expect(spelling('C:\\Users\\Ada\\ComfyUI', 'win32')).toBe('c:/users/ada/comfyui')
+    expect(spelling('/data/a\\b/user', 'linux'), 'a literal backslash in a POSIX name').toBe(
+      '/data/a\\b/user'
+    )
   })
 })
 
@@ -429,6 +449,24 @@ describe('relativeLocation', () => {
   })
 })
 
+describe('dbUrlSource', () => {
+  const cwd = path.join(path.resolve('/'), 'installs', 'one')
+  const input = { cwd, layout: null, adoptedBaseDir: undefined }
+
+  it('classifies from the args alone', () => {
+    expect(dbUrlSource({ ...input, args: ['-s', 'main.py'] })).toBe('install_local')
+    expect(dbUrlSource({ ...input, args: ['-s', 'main.py', '--user-directory', cwd] })).toBe(
+      'user_override'
+    )
+    expect(dbUrlSource({ ...input, args: ['--listen'] })).toBe('unknown')
+  })
+
+  it('never throws on a malformed record', () => {
+    const adoptedBaseDir = 42 as unknown as string
+    expect(dbUrlSource({ ...input, args: ['-s', 'main.py'], adoptedBaseDir })).toBe('unknown')
+  })
+})
+
 describe('boundedDbLocation', () => {
   const props = {
     db_path_hash: 'a',
@@ -453,23 +491,36 @@ describe('boundedDbLocation', () => {
     })
   })
 
-  it('starts nothing new while a timed-out computation is still stuck', async () => {
+  it('runs computations one at a time, so overlapping launches never pile up work', async () => {
+    let running = 0
+    let most = 0
+    const tracked = async () => {
+      most = Math.max(most, ++running)
+      await new Promise((resolve) => setImmediate(resolve))
+      running--
+      return props
+    }
+    const results = await Promise.all([boundedDbLocation(tracked), boundedDbLocation(tracked)])
+    expect(results.map((r) => r.db_location_status)).toEqual(['ok', 'ok'])
+    expect(most, 'never two at once').toBe(1)
+  })
+
+  it('starts nothing behind a stuck computation, and drops what timed out waiting', async () => {
     let release: () => void = () => {}
     const hung = new Promise<typeof props>((resolve) => {
       release = () => resolve(props)
     })
     expect(await boundedDbLocation(() => hung, 10)).toEqual({ db_location_status: 'timeout' })
 
-    const compute = vi.fn(async () => props)
-    expect(await boundedDbLocation(compute)).toEqual({ db_location_status: 'timeout' })
-    expect(compute, 'no new filesystem work while one is stuck').not.toHaveBeenCalled()
+    const queued = vi.fn(async () => props)
+    expect(await boundedDbLocation(queued, 10)).toEqual({ db_location_status: 'timeout' })
+    expect(queued, 'no filesystem work while one is stuck').not.toHaveBeenCalled()
 
     release()
     await hung
     await new Promise((resolve) => setImmediate(resolve))
-    expect((await boundedDbLocation(compute)).db_location_status, 'resumes once it settles').toBe(
-      'ok'
-    )
+    expect(queued, 'not run late after its own deadline').not.toHaveBeenCalled()
+    expect((await boundedDbLocation(async () => props)).db_location_status, 'resumes').toBe('ok')
   })
 
   it('reports an error, and never throws, when computing them fails', async () => {
