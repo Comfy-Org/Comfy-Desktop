@@ -37,7 +37,7 @@ export function performanceTestWorkspace(baseDir: string, installationId: string
  *  Performance Test of the install to remove. */
 export function removePerformanceTestWorkspace(workspace: string): void {
   try {
-    fs.rmSync(workspace, { recursive: true, force: true })
+    fs.rmSync(workspace, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
   } catch {
     // retried before the next Performance Test of this install
   }

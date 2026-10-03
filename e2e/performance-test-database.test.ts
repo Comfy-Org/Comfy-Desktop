@@ -186,7 +186,8 @@ test('the install boots while a Performance Test is running @linux', async () =>
   // The install booted on its own database (its boot wrote to it), on a port of its own...
   expect((await dbBytes())?.split('scan by').length).toBe((before?.split('scan by').length ?? 1) + 1)
   const install = await getRunningSessionSnapshot(ctx!.app, INSTALL_ID)
-  expect(install!.port).not.toBe(perfSession!.port)
+  expect(install!.port, 'the install kept its configured port').toBe(port)
+  expect(perfSession!.port).not.toBe(port)
   // ...and the same Performance Test ComfyUI still runs its benchmark to results.
   expect(await getRunningSessionSnapshot(ctx!.app, PERF_SESSION)).toMatchObject({
     pid: perfSession!.pid,

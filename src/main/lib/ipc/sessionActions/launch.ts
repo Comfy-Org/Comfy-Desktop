@@ -1541,6 +1541,7 @@ async function runLaunch(
   // next port and die there). Runs before any port logic: a terminated orphan frees its port.
   // Only a PROVEN orphan (see comfyProcessRecord) is ever stopped without asking.
   let prior: PriorProcessOutcome | null = null
+  let priorCheckFailed = false
   try {
     prior = await resolvePriorProcess(sessionId, {
       stopBusy: actionData?.stopBusyPriorProcess === true,
@@ -1552,6 +1553,7 @@ async function runLaunch(
   } catch (err) {
     // Bookkeeping never costs a launch: no answer means today's behaviour.
     console.warn('[launch] prior-process check failed:', err)
+    priorCheckFailed = true
   }
   // After a cancel, only a stop that really happened is reported; anything else was cut short.
   if (prior && (!abort.signal.aborted || prior.action === 'terminated')) {
@@ -1615,10 +1617,24 @@ async function runLaunch(
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
   if (perfIsolated) {
-    perfWorkspace = performanceTestWorkspace(stateDir(), installationId)
-    // Left by a Performance Test that was killed before it could clean up; its process, if
-    // any survived, was stopped above.
-    removePerformanceTestWorkspace(perfWorkspace)
+    const workspace = performanceTestWorkspace(stateDir(), installationId)
+    // An earlier run of this workspace that may still be alive (left running unproven, or the
+    // check failed) must not lose its files under it, so this one does not start.
+    if (priorCheckFailed || prior?.action === 'left') {
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+      return {
+        ok: false,
+        message: i18n.t('errors.priorProcessUnverified', { pid: prior?.pid ?? '?' })
+      }
+    }
+    // Left by a Performance Test that was killed before it could clean up. Still there means a
+    // file is held open (Windows): starting on it would fail on its lock or reuse its catalogue.
+    removePerformanceTestWorkspace(workspace)
+    if (fs.existsSync(path.join(workspace, 'comfyui.db'))) {
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+      return { ok: false, message: i18n.t('errors.comfyDbLocked') }
+    }
+    perfWorkspace = workspace
     fs.mkdirSync(path.join(perfWorkspace, 'output'), { recursive: true })
     launchCmd.args = withPerformanceTestWorkspace(launchCmd.args!, perfWorkspace)
     appendLog(
@@ -2076,7 +2092,8 @@ async function runLaunch(
   )
   if (!launchResult.ok) {
     logStream.end()
-    // Every failure path has killed the tree by now; retries reused the workspace, this is final.
+    // Final (retries reused the workspace). A tree that outlived its SIGKILL writes nothing more;
+    // on Windows its held files stay, for the next Performance Test of the install to remove.
     if (perfWorkspace) removePerformanceTestWorkspace(perfWorkspace)
     _releasePort(launchCmd.port!)
     // Ownership-guarded: never evict a slot a newer operation already claimed.

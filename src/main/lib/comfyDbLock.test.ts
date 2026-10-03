@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 const dirs = vi.hoisted(() => ({ state: '' }))
 vi.mock('./paths', () => ({ stateDir: () => dirs.state }))
 
+import { writeRecord } from './comfyProcessRecord'
 import {
   databaseCandidates,
   identifyDbLockHolder,
@@ -129,4 +130,37 @@ describe.runIf(
     // Real lsof and ps against the whole process table: seconds on a loaded machine, so the
     // probe gets its own cap and the test more than the default 5 s.
   }, 60_000)
+})
+
+describe('identifyDbLockHolder and a Performance Test of the same install', () => {
+  it('never blames a running Performance Test for the install database: it has its own', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dblock-perf-'))
+    dirs.state = path.join(root, 'state')
+    try {
+      writeRecord({
+        v: 1,
+        sessionKey: 'performance-test:inst-1',
+        installationId: 'inst-1',
+        installPath: root,
+        port: 8189,
+        bootId: 'b',
+        spawnedAt: Date.now(),
+        desktopPid: process.pid,
+        desktopStartTime: null,
+        // Alive: this test process.
+        childPid: process.pid,
+        childStartTime: null
+      })
+      const found = await identifyDbLockHolder({
+        sessionKey: 'inst-1',
+        installationId: 'inst-1',
+        installPath: root,
+        cwd: root,
+        args: ['-s', 'main.py', '--database-url', `sqlite:///${path.join(root, 'none.db')}`]
+      })
+      expect(found?.source).not.toBe('desktop_record')
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

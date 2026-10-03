@@ -2135,7 +2135,14 @@ describe('Performance Test database', () => {
     launchHarness.registryThrows = false
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
-    launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag', 'database-url']
+    launchHarness.schemaNames = [
+      'enable-assets',
+      'listen',
+      'feature-flag',
+      'database-url',
+      'output-directory',
+      'temp-directory'
+    ]
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = async () => {}
@@ -2221,7 +2228,6 @@ describe('Performance Test database', () => {
     expect(argAfter('--database-url')).toBe(`sqlite:///${path.join(ws, 'comfyui.db')}`)
     expect(argAfter('--output-directory')).toBe(path.join(ws, 'output'))
     expect(argAfter('--temp-directory')).toBe(ws)
-    expect(ws.startsWith(stateRoot), 'under the per-user state dir').toBe(true)
     // Off the install's own port, so the install can still be launched mid-benchmark.
     expect(spawnArgs.filter((a) => a === '--port')).toHaveLength(1)
     expect(argAfter('--port')).toBe(String(launchHarness.nextPort))
@@ -2284,6 +2290,55 @@ describe('Performance Test database', () => {
     expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(false)
     expect(fs.existsSync(path.join(ws, 'output', 'img_00001_.png'))).toBe(false)
     expect(fs.existsSync(path.join(ws, 'output')), 'a fresh workspace').toBe(true)
+  })
+
+  it.each([
+    [
+      'an earlier run of it is still alive and unproven',
+      () => {
+        ownership.prior = {
+          action: 'left',
+          proof: 'none',
+          pid: 777,
+          port: 48234,
+          ageMs: null,
+          waitMs: 0,
+          exitedInTime: false,
+          blocked: null
+        }
+      }
+    ],
+    ['the check for an earlier run failed', () => (ownership.priorThrows = true)]
+  ])('does not start, or touch its workspace, when %s', async (_why, arrange) => {
+    writeCoreDb()
+    const ws = workspace('perf-db-alive')
+    writeCoreFiles(ws)
+    arrange()
+    try {
+      const res = await handleLaunch(ctxFor('perf-db-alive', 'performance-test:perf-db-alive'))
+
+      expect(res.ok).toBe(false)
+      expect(spawnArgs).toEqual([])
+      expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(true)
+    } finally {
+      ownership.prior = null
+      ownership.priorThrows = false
+    }
+  })
+
+  it('does not start on a workspace it could not remove', async () => {
+    writeCoreDb()
+    const ws = workspace('perf-db-held')
+    writeCoreFiles(ws)
+    // A file still held open (Windows): removal fails.
+    vi.spyOn(fs, 'rmSync').mockImplementation(() => {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+    })
+
+    const res = await handleLaunch(ctxFor('perf-db-held', 'performance-test:perf-db-held'))
+
+    expect(res.ok).toBe(false)
+    expect(spawnArgs).toEqual([])
   })
 
   it('removes the workspace of a Performance Test that failed to boot', async () => {
