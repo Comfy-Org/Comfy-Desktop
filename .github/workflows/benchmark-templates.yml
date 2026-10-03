@@ -1,0 +1,32 @@
+name: Benchmark templates
+
+# Guards `assets/benchmark-templates.json`, the example workflows the performance
+# test page offers. An example whose prompt or parent template is not on the
+# workflow_templates repo's `main` fails for every user who picks it.
+on:
+  pull_request:
+    paths:
+      - 'assets/benchmark-templates.json'
+      - 'scripts/benchmark-templates.mjs'
+      - '.github/workflows/benchmark-templates.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'assets/benchmark-templates.json'
+      - 'scripts/benchmark-templates.mjs'
+      - '.github/workflows/benchmark-templates.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Shape the app accepts, and every example downloadable from GitHub `main`.
+      - run: node scripts/benchmark-templates.mjs validate

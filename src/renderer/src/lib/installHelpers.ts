@@ -213,6 +213,11 @@ export function templateSizeBytes(option: FieldOption | null | undefined): numbe
   return typeof size === 'number' && size > 0 ? size : 0
 }
 
+/** Model bytes still to download: 0 when every model is already on disk. */
+export function templateDownloadBytes(option: FieldOption | null | undefined): number {
+  return option?.data?.modelsPresent === true ? 0 : templateSizeBytes(option)
+}
+
 /** Runs on API nodes: no models to download, but every run spends credits. */
 export function isApiNodeTemplate(option: FieldOption | null | undefined): boolean {
   return option?.data?.apiNode === true

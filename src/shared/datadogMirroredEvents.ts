@@ -159,3 +159,34 @@ export function stripDatadogDroppedKeys<T extends Record<string, unknown>>(conte
   }
   return out ?? context
 }
+
+/**
+ * Cohort keys the renderer sets as Datadog global context on every RUM event.
+ * `registerCohortContext` in `rendererBootstrap.ts` types its cohort object
+ * with these, so the list cannot drift from what it sets.
+ */
+export const RENDERER_COHORT_CONTEXT_KEYS = [
+  'app_version',
+  'app_channel',
+  'locale',
+  'theme',
+  'telemetry_enabled',
+  'first_use_completed',
+  'local_installation_count',
+  'has_launched_cloud',
+  'has_legacy_install'
+] as const
+
+export type RendererCohortContextKey = (typeof RENDERER_COHORT_CONTEXT_KEYS)[number]
+
+/**
+ * Every Datadog global-context key the renderer sets. An action's own context
+ * wins the merge with global context, so a forwarded event field of the same
+ * name would replace the facet on that action. Main-side taps that forward
+ * untrusted field names reserve these. Only the cohort keys are type-checked:
+ * a new `setGlobalContextProperty` key must be added here by hand.
+ */
+export const DATADOG_GLOBAL_CONTEXT_KEYS: ReadonlySet<string> = new Set([
+  ...RENDERER_COHORT_CONTEXT_KEYS,
+  'renderer_role'
+])

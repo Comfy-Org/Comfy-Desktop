@@ -1,5 +1,5 @@
 import { ipcMain, shell, dialog, WebContentsView, BrowserWindow } from 'electron'
-import { POPUP_KIND } from '../../types/ipc'
+import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
 import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
@@ -143,6 +143,10 @@ export interface InstancePickerSnapshot {
    *  Carried verbatim for copy/telemetry; navigation collapses it via `navClass`. */
   currentCategory: Category | null
   runningInstallationIds: string[]
+  /** `startedAt` of each running session, keyed by installation id. A restart replaces the session
+   *  but can land between two snapshots, leaving the id list unchanged; this is what tells the
+   *  picker's settings view its session-derived rows (the beta-args pill) went stale. */
+  runningSessionStartedAt: Record<string, number>
   /** Installs mid-launch — `instance-launching` fired, `instance-started`
    *  has not. Mirrors `_launchingInstances` in main so the picker
    *  popup can hydrate `sessionStore.launchingInstances` from the
@@ -263,6 +267,7 @@ interface BuildInstancePickerSnapshotArgs {
    *  `attachInstall` after `instance-started`. */
   previewInstallationId?: string | null
   runningInstallationIds: string[]
+  runningSessionStartedAt?: Record<string, number>
   launchingInstallationIds: string[]
   selectedInstallationId?: string | null
   pickerSelectionEpoch?: number
@@ -359,6 +364,7 @@ export function buildInstancePickerSnapshot(
     currentView,
     currentCategory,
     runningInstallationIds: args.runningInstallationIds,
+    runningSessionStartedAt: args.runningSessionStartedAt ?? {},
     launchingInstallationIds: args.launchingInstallationIds,
     selectedInstallationId: args.selectedInstallationId ?? null,
     pickerSelectionEpoch: args.pickerSelectionEpoch ?? 0,
@@ -785,7 +791,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   //     instead of detaching, so the running ComfyUI stays alive).
   //   - "Log in" sits in its own group above Desktop Settings while
   //     signed out, and is the app's ONLY sign-in affordance. Deliberately
-  //     NOT behind the Comfy Builder rollout flag: that flag gates
+  //     NOT behind the Comfy Developer Platform rollout flag: that flag gates
   //     what a signed-in account may do, and gating login itself
   //     would put it behind a decision that cannot be made until the
   //     user has logged in.
@@ -891,6 +897,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
   const installs = await bindings.getInstancePickerInstalls()
   if (mySeq !== pickerSnapshotBroadcastSeq) return
   const runningInstallationIds = bindings.getRunningInstallationIds()
+  const runningSessionStartedAt = bindings.getRunningSessionStartedAt?.() ?? {}
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'instance-picker') continue
@@ -924,6 +931,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
       hostInstallationId: parentEntry?.installationId ?? null,
       previewInstallationId: parentEntry?.previewInstallationId ?? null,
       runningInstallationIds,
+      runningSessionStartedAt,
       launchingInstallationIds,
       selectedInstallationId: selectedId,
       // Forward the current epoch verbatim — broadcasts NEVER bump it.
@@ -1640,6 +1648,8 @@ export interface TitlePopupHostBindings {
   /** Currently-running installation ids. Drives the picker's "running"
    *  row indicator and the focus-vs-launch decision in `pickInstall`. */
   getRunningInstallationIds: () => string[]
+  /** `startedAt` per running session; see `InstancePickerSnapshot.runningSessionStartedAt`. */
+  getRunningSessionStartedAt?: () => Record<string, number>
   /** Installs mid-launch (between `instance-launching` and
    *  `instance-started` / `instance-launch-failed`). Surfaced in the
    *  picker snapshot so the popup — whose preload doesn't expose the
@@ -1736,10 +1746,30 @@ export interface TitlePopupHostBindings {
   broadcastPickerSnapshot: () => void
 }
 
+/** Validate an `open-global-settings` payload from a renderer. Field ids are renderer-side
+ *  identifiers, so the highlight is forwarded as an opaque string rather than validated against a
+ *  list main would have to keep in sync; an id matching no row simply finds nothing to flash. */
+export function parseGlobalSettingsTarget(
+  payload: { tab?: unknown; highlightField?: unknown } | undefined
+): { initialTab: GlobalSettingsTab | null; highlightFieldId: string | null } {
+  const rawTab = payload?.tab
+  const initialTab: GlobalSettingsTab | null =
+    rawTab === 'general' ||
+    rawTab === 'updates' ||
+    rawTab === 'storage' ||
+    rawTab === 'advanced' ||
+    rawTab === 'logs'
+      ? rawTab
+      : null
+  const rawHighlight = payload?.highlightField
+  const highlightFieldId = typeof rawHighlight === 'string' && rawHighlight ? rawHighlight : null
+  return { initialTab, highlightFieldId }
+}
+
 /** Open the Global Settings popup for a specific host window. Shared
- *  by the hamburger menu's `id === 'settings'` handler and the panel
- *  renderer's `comfy-titlepopup:open-global-settings` IPC — both end up
- *  doing the same thing: build a desktop-only snapshot and open the
+ *  by the hamburger menu's `id === 'settings'` handler, the panel
+ *  renderer's `comfy-titlepopup:open-global-settings` IPC and the
+ *  instance picker's settings deep links — all end up doing the same thing: build a desktop-only snapshot and open the
  *  centred popup.
  *
  *  `parentEntry` is the host window's `ComfyWindowEntry`. Bail if the
@@ -1831,6 +1861,7 @@ function openInstancePickerForHost(
   if (parentEntry.window.isDestroyed()) return
   const installs: InstancePickerInstall[] = cachedInstallsForPicker.slice()
   const runningInstallationIds = bindings.getRunningInstallationIds()
+  const runningSessionStartedAt = bindings.getRunningSessionStartedAt?.() ?? {}
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   // A chooser host that already staked a claim (preview) reads as
   // owning the install for default-selection purposes.
@@ -1869,6 +1900,7 @@ function openInstancePickerForHost(
     hostInstallationId: parentEntry.installationId,
     previewInstallationId: parentEntry.previewInstallationId,
     runningInstallationIds,
+    runningSessionStartedAt,
     launchingInstallationIds,
     selectedInstallationId: initialSelectedId,
     pickerSelectionEpoch,
@@ -3030,21 +3062,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
         }
       }
       if (parentEntryId === undefined || !parentEntry) return
-      const rawTab = payload?.tab
-      const initialTab: GlobalSettingsTab | null =
-        rawTab === 'general' ||
-        rawTab === 'updates' ||
-        rawTab === 'storage' ||
-        rawTab === 'advanced' ||
-        rawTab === 'logs'
-          ? rawTab
-          : null
-      // Field ids are renderer-side identifiers, so this is forwarded as an opaque string
-      // rather than validated against a list main would have to keep in sync. A id matching
-      // no row simply finds nothing to flash.
-      const rawHighlight = payload?.highlightField
-      const highlightFieldId =
-        typeof rawHighlight === 'string' && rawHighlight ? rawHighlight : null
+      const { initialTab, highlightFieldId } = parseGlobalSettingsTarget(payload)
       openGlobalSettingsForHost(
         parentEntry,
         parentEntryId,
@@ -3067,6 +3085,28 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     }
     return entry
   }
+
+  // The per-install settings' deep links into Global Settings (e.g. the beta-args pill's "Manage
+  // beta features"). Swaps this popup to Global Settings for its host, like the hamburger entry.
+  ipcMain.on(
+    PICKER_SETTINGS_CHANNELS.openGlobalSettings,
+    (event, payload?: { tab?: unknown; highlightField?: unknown }) => {
+      recordIpcInvocation(PICKER_SETTINGS_CHANNELS.openGlobalSettings)
+      const entry = settingsEntryFor(event.sender.id)
+      if (!entry) return
+      const parentEntry = comfyWindows.get(entry.parentEntryId)
+      if (!parentEntry || parentEntry.window.isDestroyed()) return
+      const { initialTab, highlightFieldId } = parseGlobalSettingsTarget(payload)
+      openGlobalSettingsForHost(
+        parentEntry,
+        entry.parentEntryId,
+        bindings,
+        parentEntry.titleBarView.webContents,
+        initialTab,
+        highlightFieldId
+      )
+    }
+  )
 
   // Field update (Language / Theme / Cache / Advanced / Shared Dirs).
   // Same side-effects as the legacy `set-setting` handler, plus a

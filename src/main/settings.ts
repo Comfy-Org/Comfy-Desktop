@@ -70,6 +70,10 @@ export interface KnownSettings {
    *  as cloudNodesAnnouncementSeen: everyone who dismissed the previous
    *  announcement must still get the bell for this one. */
   comfyRouterAnnouncementSeen?: boolean
+  /** Seen-flag for the Comfy API (Developer Platform) announcement. New key
+   *  again, same reasoning as comfyRouterAnnouncementSeen: everyone who
+   *  dismissed the previous announcement must still get the bell for this one. */
+  comfyApiAnnouncementSeen?: boolean
   /** Core beta grants the activation notice has already announced, as the arg
    *  tokens themselves (`['--enable-assets']`). A list rather than a boolean so
    *  a beta feature granted later still gets its own heads-up; append-only, so
@@ -285,6 +289,7 @@ const SETTINGS_SCHEMA = {
   minimaxAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyRouterAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  comfyApiAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   betaNoticeAnnouncedArgs: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
@@ -714,13 +719,36 @@ export function getAll(): Settings {
  */
 export function resolveBetaFeaturesEnabled(): boolean {
   const { settings, unreadable } = loadOutcome()
+  const enabled = betaFeaturesEnabledIn(settings, unreadable)
+  if (typeof settings.betaFeaturesEnabled === 'boolean' || unreadable) return enabled
+  settings.betaFeaturesEnabled = enabled
+  save(settings)
+  return enabled
+}
+
+/** What {@link resolveBetaFeaturesEnabled} would return, without writing anything: no seed, no
+ *  `.bak` restore, and none of `loadOutcome`'s normalization, which can save. That normalization
+ *  never touches the two keys read here. */
+export function peekBetaFeaturesEnabled(): boolean {
+  maybeSeedFromEnv()
+  const read = readFileSafe(dataPath, { restore: false })
+  if (read.kind === 'unreadable') return false
+  let stored: Partial<Settings> = {}
+  if (read.kind === 'data') {
+    try {
+      const obj: unknown = JSON.parse(read.data)
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) stored = obj as Partial<Settings>
+    } catch {
+      // Unparseable reads as no stored settings, as in `loadOutcome`.
+    }
+  }
+  return betaFeaturesEnabledIn(stored, read.kind === 'data' && read.primaryUnreadable === true)
+}
+
+function betaFeaturesEnabledIn(settings: Partial<Settings>, unreadable: boolean): boolean {
   const stored = settings.betaFeaturesEnabled
   if (typeof stored === 'boolean') return stored
-  if (unreadable) return false
-  const seeded = settings.telemetryEnabled === true
-  settings.betaFeaturesEnabled = seeded
-  save(settings)
-  return seeded
+  return unreadable ? false : settings.telemetryEnabled === true
 }
 
 function camelToSnake(s: string): string {

@@ -17,8 +17,11 @@
 import fs from 'fs'
 import path from 'path'
 import semver from 'semver'
+import { filterUnsupportedArgs } from './comfy-args'
+import type { ComfyArgsSchema } from './comfy-args'
 import { makeOpsFlag } from './opsFlag'
 import type { FeatureFlagValue } from './telemetry'
+import type { BetaArgView } from '../../types/ipc'
 
 export const CORE_BETA_FEATURES_FLAG_KEY = 'desktop_core_beta_features'
 
@@ -339,20 +342,24 @@ function commitShortfall(flag: CoreBetaCommitGrant, commits: CoreCommitState): s
 }
 
 /** `logPrefix` is `null` when there is nothing to refuse, so an empty payload stays quiet. */
-function versionGateOpen(core: CoreVersionState, logPrefix: string | null): boolean {
+function versionGateOpen(
+  core: CoreVersionState,
+  logPrefix: string | null,
+  trace: (line: string) => void
+): boolean {
   const version = core.semver
   if (version === null) return false
   if (!core.current) {
     // Before `verified`, which once the checkout has moved is a true statement about the wrong
     // commit — reporting that instead would name the less useful of the two faults.
     if (logPrefix !== null)
-      console.log(`${logPrefix} refused: base ${version} from a record the checkout contradicts`)
+      trace(`${logPrefix} refused: base ${version} from a record the checkout contradicts`)
     return false
   }
   if (!core.verified) {
     // Echoed for the same reason as the per-flag windows below: this refusal drops grants an
     // operator can see in the payload, so it must not be silent.
-    if (logPrefix !== null) console.log(`${logPrefix} refused: base ${version} not verified`)
+    if (logPrefix !== null) trace(`${logPrefix} refused: base ${version} not verified`)
     return false
   }
   return true
@@ -398,13 +405,15 @@ export function selectCoreBetaGrantArgs(
   betaEnabled: boolean,
   userArgs: readonly string[],
   commits: CoreCommitState = NO_CORE_COMMITS,
-  withheld?: string[]
+  withheld?: string[],
+  trace: (line: string) => void = console.log
 ): CoreBetaGrant[] {
   if (betaEnabled !== true) return []
   const version = core.semver
   const versionOpen = versionGateOpen(
     core,
-    flags.some((flag) => !isCommitGrant(flag)) ? '[core-beta]' : null
+    flags.some((flag) => !isCommitGrant(flag)) ? '[core-beta]' : null,
+    trace
   )
   const presentArgs = new Set(userArgs)
   const selected: CoreBetaGrant[] = []
@@ -416,7 +425,7 @@ export function selectCoreBetaGrantArgs(
       const ranges = flag.commitRanges.map(formatCommitRange).join(' | ')
       const head = commits.head === null ? 'none' : commits.head.slice(0, 12)
       shortfall = commitShortfall(flag, commits)
-      console.log(
+      trace(
         `[core-beta] commits ${arg}: ${ranges} head=${head} in-range=${shortfall === null ? 'yes' : 'no'}`
       )
     } else {
@@ -426,7 +435,7 @@ export function selectCoreBetaGrantArgs(
           maxCoreVersion === undefined
             ? `>=${minCoreVersion}`
             : `>=${minCoreVersion} <${maxCoreVersion}`
-        console.log(`[core-beta] window ${arg}: ${window} version=${version} exact=${core.exact}`)
+        trace(`[core-beta] window ${arg}: ${window} version=${version} exact=${core.exact}`)
       }
       shortfall = versionShortfall(flag, core, versionOpen)
     }
@@ -644,7 +653,7 @@ export function selectCoreFrontendGrant(
 ): CoreFrontendGrant | null {
   if (grant === null || betaEnabled !== true) return null
   const version = core.semver
-  if (version === null || !versionGateOpen(core, '[core-beta] frontend')) return null
+  if (version === null || !versionGateOpen(core, '[core-beta] frontend', console.log)) return null
   const { minCoreVersion, maxCoreVersion } = grant
   const window =
     maxCoreVersion === undefined ? `>=${minCoreVersion}` : `>=${minCoreVersion} <${maxCoreVersion}`
@@ -663,6 +672,58 @@ export function selectCoreFrontendGrant(
     return withheld(`not newer than required frontend ${requiredFrontendVersion}`)
   }
   return grant
+}
+
+/** Everything a Core beta decision depends on; the launch and the settings preview each build one. */
+export interface CoreBetaFacts {
+  readonly grants: readonly CoreBetaGrant[]
+  readonly betaEnabled: boolean
+  readonly userArgs: readonly string[]
+  readonly core: CoreVersionState
+  readonly commits: CoreCommitState
+  readonly schema: ComfyArgsSchema
+}
+
+export interface CoreBetaPlan {
+  readonly applied: readonly CoreBetaGrant[]
+  readonly droppedUnsupported: readonly string[]
+  readonly withheld: readonly string[]
+  /** Selection's own explanation lines, which the launch logs. */
+  readonly trace: readonly string[]
+}
+
+/** The Core beta decision as a pure function: no I/O and no logging. */
+export function planCoreBetaArgs(facts: CoreBetaFacts): CoreBetaPlan {
+  const withheld: string[] = []
+  const trace: string[] = []
+  const selected = selectCoreBetaGrantArgs(
+    facts.grants,
+    facts.core,
+    facts.betaEnabled,
+    facts.userArgs,
+    facts.commits,
+    withheld,
+    (line) => trace.push(line)
+  )
+  const supported = new Set(
+    filterUnsupportedArgs(
+      selected.map((grant) => grant.arg),
+      facts.schema
+    )
+  )
+  return {
+    applied: selected.filter((grant) => supported.has(grant.arg)),
+    droppedUnsupported: selected
+      .filter((grant) => !supported.has(grant.arg))
+      .map((grant) => grant.arg),
+    withheld,
+    trace
+  }
+}
+
+/** A grant as the settings view lists it; silent grants too, since they are on the command line. */
+export function toBetaArgView(grant: CoreBetaGrant): BetaArgView {
+  return { arg: grant.arg, name: grant.notice?.description ?? null }
 }
 
 // Grants persist across launches, so revoking one is an ops SEQUENCE, not a deletion: serving

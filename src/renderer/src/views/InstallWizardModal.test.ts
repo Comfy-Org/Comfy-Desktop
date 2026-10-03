@@ -170,6 +170,56 @@ describe('InstallWizardModal heading', () => {
   })
 })
 
+describe('InstallWizardModal starter template disk gate', () => {
+  async function openTemplateStep(modelsPresent: boolean) {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'bundledTemplate', label: 'Starter Template', type: 'select' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'none', label: 'None' },
+      {
+        value: 'starter',
+        label: 'Starter Workflow',
+        recommended: true,
+        data: { modality: 'image', sizeBytes: 20_000_000_000, modelsPresent }
+      }
+    ])
+    ;(window.api.getDiskSpace as ReturnType<typeof vi.fn>).mockResolvedValue({
+      free: 1_000_000_000,
+      total: 1_000_000_000_000
+    })
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    await wrapper.get('.config-continue').trigger('click')
+    // The disk-space probe is debounced.
+    await vi.waitFor(() => expect(window.api.getDiskSpace).toHaveBeenCalled(), { timeout: 5000 })
+    await flushPromises()
+    // Nothing is pre-selected: the user picks the card.
+    await wrapper.get('.tps__card').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('blocks a template whose models do not fit on disk', async () => {
+    const wrapper = await openTemplateStep(false)
+
+    expect(wrapper.get('.template-install').attributes('aria-disabled')).toBe('true')
+    expect(wrapper.find('.template-alert--error').exists()).toBe(true)
+  })
+
+  it('lets a template whose models are already downloaded install on a full disk', async () => {
+    const wrapper = await openTemplateStep(true)
+
+    expect(wrapper.get('.template-install').attributes('aria-disabled')).toBe('false')
+    expect(wrapper.find('.template-alert--error').exists()).toBe(false)
+  })
+})
+
 describe('InstallWizardModal install-location field', () => {
   it('renders the default install location as a clickable path that opens the folder', async () => {
     const wrapper = mountModal()

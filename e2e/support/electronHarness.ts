@@ -39,6 +39,10 @@ export interface SeedOptions {
    *  creating and removing the dir. Not supported on macOS (Application
    *  Support ignores the HOME override). */
   profileDir?: string
+  /** CDP remote-debugging port, instead of the per-worker default. For a spec that relaunches
+   *  while a process from the previous launch still holds the default: a child Desktop spawned
+   *  inherits Electron's listening socket, so an orphan outlives the app holding it. */
+  cdpPort?: number
 }
 
 export interface SeedInstallation {
@@ -240,7 +244,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   // Expose a CDP remote-debugging port so tests can connect to non-BrowserWindow
   // webContents. Derive the port from the worker index to avoid collisions.
   const workerIndex = parseInt(process.env['TEST_WORKER_INDEX'] || '0', 10)
-  const cdpPort = 19200 + workerIndex
+  const cdpPort = options?.cdpPort ?? 19200 + workerIndex
 
   // Linux CI runners lack the SUID sandbox binary; disable it the same way linux-dev.sh does.
   const args = ['.', `--remote-debugging-port=${cdpPort}`]

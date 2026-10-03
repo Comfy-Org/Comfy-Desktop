@@ -48,6 +48,7 @@ import {
   computePopupHeight,
   decideFlowMenuItemTarget,
   isFlowMenuItemId,
+  parseGlobalSettingsTarget,
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
   type FlowMenuItemId,
@@ -263,7 +264,7 @@ describe('buildTitlePopupMenuItems', () => {
     ])
   })
 
-  // Login is the precondition for the account-scoped Comfy Builder rollout, so
+  // Login is the precondition for the account-scoped Comfy Developer Platform rollout, so
   // it is never gated on that rollout — only on whether you are already in.
   it('omits Log in once the user is signed in', () => {
     devPlatformMocks.isSignedInToCloud.mockReturnValue(true)
@@ -622,6 +623,26 @@ describe('buildInstancePickerSnapshot', () => {
     expect(snap.activeInstallationId).toBeNull()
   })
 
+  it("carries each running session's start time, defaulting to none", () => {
+    const withStarts = buildInstancePickerSnapshot({
+      installs: [],
+      hostInstallationId: null,
+      runningInstallationIds: ['a'],
+      runningSessionStartedAt: { a: 123 },
+      launchingInstallationIds: [],
+      storage: EMPTY_STORAGE
+    })
+    expect(withStarts.runningSessionStartedAt).toEqual({ a: 123 })
+    const without = buildInstancePickerSnapshot({
+      installs: [],
+      hostInstallationId: null,
+      runningInstallationIds: [],
+      launchingInstallationIds: [],
+      storage: EMPTY_STORAGE
+    })
+    expect(without.runningSessionStartedAt).toEqual({})
+  })
+
   it('flattens running ids into a stable string array', () => {
     const snap = buildInstancePickerSnapshot({
       installs: [],
@@ -705,6 +726,33 @@ describe('buildInstancePickerSnapshot', () => {
       storage: EMPTY_STORAGE
     })
     expect(snap.pickerSelectionEpoch).toBe(7)
+  })
+})
+
+describe('parseGlobalSettingsTarget', () => {
+  it.each(['general', 'updates', 'storage', 'advanced', 'logs'])('accepts the %s tab', (tab) => {
+    expect(parseGlobalSettingsTarget({ tab }).initialTab).toBe(tab)
+  })
+
+  it.each([undefined, 'beta', 7, null])('drops an unknown tab %j', (tab) => {
+    expect(parseGlobalSettingsTarget({ tab }).initialTab).toBeNull()
+  })
+
+  it('forwards a non-empty highlight field id as-is', () => {
+    expect(
+      parseGlobalSettingsTarget({ tab: 'general', highlightField: 'betaFeaturesEnabled' })
+    ).toEqual({ initialTab: 'general', highlightFieldId: 'betaFeaturesEnabled' })
+  })
+
+  it.each(['', 3, undefined])('drops an unusable highlight field %j', (highlightField) => {
+    expect(parseGlobalSettingsTarget({ highlightField }).highlightFieldId).toBeNull()
+  })
+
+  it('tolerates a missing payload', () => {
+    expect(parseGlobalSettingsTarget(undefined)).toEqual({
+      initialTab: null,
+      highlightFieldId: null
+    })
   })
 })
 
