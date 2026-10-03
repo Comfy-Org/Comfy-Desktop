@@ -22,25 +22,40 @@ function readGitSha() {
     return execSync('git rev-parse --short=12 HEAD', {
       cwd: repoRoot,
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'ignore']
     }).trim()
   } catch {
     return ''
   }
 }
 
+/** Datadog unified-service tag values must begin with a letter and may only contain
+ * letters, numbers, underscores, minuses, colons, periods, and forward slashes. Keep
+ * release and sourcemap versions identical by normalizing once at their shared source. */
+function normalizeDatadogVersion(value) {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/[^\p{L}0-9_.:/-]+/gu, '_')
+  if (!normalized) return 'v0.0.0'
+  const withLeadingLetter = /^\p{L}/u.test(normalized) ? normalized : `v${normalized}`
+  return withLeadingLetter.slice(0, 200)
+}
+
 function resolveDatadogReleaseVersion(env = process.env) {
   const explicitVersion = String(env.VITE_DATADOG_RUM_VERSION || '').trim()
-  if (explicitVersion) return explicitVersion
+  if (explicitVersion) return normalizeDatadogVersion(explicitVersion)
 
   const packageVersion = String(env.npm_package_version || readPackageVersion()).trim() || '0.0.0'
   const commitSha = String(env.GITHUB_SHA || env.VITE_GIT_SHA || readGitSha()).trim()
 
-  return commitSha ? `${packageVersion}+${commitSha.slice(0, 12)}` : packageVersion
+  return normalizeDatadogVersion(
+    commitSha ? `${packageVersion}-${commitSha.slice(0, 12)}` : packageVersion
+  )
 }
 
 module.exports = {
-  resolveDatadogReleaseVersion,
+  normalizeDatadogVersion,
+  resolveDatadogReleaseVersion
 }
 
 if (require.main === module) {
