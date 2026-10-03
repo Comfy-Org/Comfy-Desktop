@@ -158,7 +158,12 @@ export async function resetShellOpenExternalCalls(app: ElectronApplication): Pro
  *  `sessionStore.isRunning` fire without spawning a real ComfyUI process. */
 export async function seedRunningSession(
   app: ElectronApplication,
-  opts: { installationId: string; installationName: string },
+  opts: {
+    installationId: string
+    installationName: string
+    /** Core beta grants the seeded session reports as on its command line. */
+    coreBetaArgs?: { arg: string; name: string | null }[]
+  },
 ): Promise<void> {
   await evalWithRetry(() => app.evaluate((_electron, o) => {
     const helpers = (globalThis as unknown as {

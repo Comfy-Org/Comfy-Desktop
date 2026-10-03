@@ -27,9 +27,17 @@ import {
   getCoreBetaGrantsAsync,
   initCoreBetaGrants,
   parseCoreBetaGrants,
-  selectCoreBetaGrantArgs
+  planCoreBetaArgs,
+  selectCoreBetaGrantArgs,
+  toBetaArgView
 } from './coreBetaGrants'
-import type { CoreBetaGrant, CoreCommitState, CoreVersionState } from './coreBetaGrants'
+import type {
+  CoreBetaFacts,
+  CoreBetaGrant,
+  CoreCommitState,
+  CoreVersionState
+} from './coreBetaGrants'
+import type { ComfyArgsSchema } from './comfy-args'
 import { coreGateVersion, coreRecordCurrent } from './version'
 import type { ComfyVersion } from './version'
 import type { InstallationRecord } from '../installations'
@@ -1028,5 +1036,97 @@ describe('core beta grants fetch', () => {
     )
     expect(rendered, 'one line, so a [core-beta] grep catches all of it').not.toContain('\n')
     log.mockRestore()
+  })
+})
+
+describe('planCoreBetaArgs', () => {
+  const HEAD = 'e'.repeat(40)
+  const schemaOf = (...names: string[]): ComfyArgsSchema => ({
+    args: names.map((name) => ({
+      name,
+      flag: `--${name}`,
+      help: '',
+      type: 'boolean' as const,
+      category: 'other'
+    })),
+    knownFlags: new Set(names)
+  })
+  const assets: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.80' }
+  const hashing: CoreBetaGrant = { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }
+  const agent: CoreBetaGrant = { arg: '--enable-agent', commitRanges: [[SHA_A, null]] }
+  const facts = (overrides: Partial<CoreBetaFacts> = {}): CoreBetaFacts => ({
+    grants: [assets, hashing, agent],
+    betaEnabled: true,
+    userArgs: [],
+    core: { semver: '0.3.81', exact: true, verified: true, current: true },
+    commits: { head: HEAD, ancestry: new Map([[SHA_A, true]]) },
+    schema: schemaOf('enable-assets', 'enable-asset-hashing', 'enable-agent'),
+    ...overrides
+  })
+
+  it('applies every selected grant the schema accepts, in selection order', () => {
+    expect(planCoreBetaArgs(facts()).applied).toEqual([assets, hashing, agent])
+  })
+
+  it('drops a selected grant this core cannot parse, and reports it as unsupported', () => {
+    const plan = planCoreBetaArgs(facts({ schema: schemaOf('enable-assets', 'enable-agent') }))
+    expect(plan.applied).toEqual([assets, agent])
+    expect(plan.droppedUnsupported).toEqual(['--enable-asset-hashing'])
+  })
+
+  it('applies nothing when opted out', () => {
+    const plan = planCoreBetaArgs(facts({ betaEnabled: false }))
+    expect(plan.applied).toEqual([])
+    expect(plan.droppedUnsupported).toEqual([])
+  })
+
+  it("withholds what the user's own args decide, and says why", () => {
+    const plan = planCoreBetaArgs(facts({ userArgs: ['--disable-assets', '--enable-agent'] }))
+    expect(plan.applied).toEqual([hashing])
+    expect(plan.withheld).toEqual([
+      '[core-beta] --enable-assets withheld: the launch args contain --disable-assets',
+      '[core-beta] --enable-agent withheld: already in the launch args'
+    ])
+  })
+
+  it('withholds a commit grant whose ancestry is unproven', () => {
+    const plan = planCoreBetaArgs(facts({ commits: { head: HEAD, ancestry: new Map() } }))
+    expect(plan.applied).toEqual([assets, hashing])
+  })
+
+  it('withholds version grants when the record no longer describes the checkout', () => {
+    const plan = planCoreBetaArgs(
+      facts({ core: { semver: '0.3.81', exact: true, verified: true, current: false } })
+    )
+    expect(plan.applied).toEqual([agent])
+    expect(plan.trace).toContain(
+      '[core-beta] refused: base 0.3.81 from a record the checkout contradicts'
+    )
+  })
+
+  it('returns its explanation as trace lines instead of logging them', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const plan = planCoreBetaArgs(facts())
+    expect(log).not.toHaveBeenCalled()
+    expect(plan.trace).toEqual([
+      '[core-beta] window --enable-assets: >=0.3.80 version=0.3.81 exact=true',
+      '[core-beta] window --enable-asset-hashing: >=0.3.80 version=0.3.81 exact=true',
+      `[core-beta] commits --enable-agent: ${SHA_A.slice(0, 12)}.. head=${HEAD.slice(0, 12)} in-range=yes`
+    ])
+    log.mockRestore()
+  })
+})
+
+describe('toBetaArgView', () => {
+  it('names a grant by its payload description, and lists a silent grant too', () => {
+    expect(
+      toBetaArgView({
+        ...{ arg: '--enable-assets', minCoreVersion: '0.3.80' },
+        notice: { description: 'Asset library' }
+      })
+    ).toEqual({ arg: '--enable-assets', name: 'Asset library' })
+    expect(
+      toBetaArgView({ arg: '--enable-assets', minCoreVersion: '0.3.80', notice: { silent: true } })
+    ).toEqual({ arg: '--enable-assets', name: null })
   })
 })

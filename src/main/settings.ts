@@ -719,13 +719,36 @@ export function getAll(): Settings {
  */
 export function resolveBetaFeaturesEnabled(): boolean {
   const { settings, unreadable } = loadOutcome()
+  const enabled = betaFeaturesEnabledIn(settings, unreadable)
+  if (typeof settings.betaFeaturesEnabled === 'boolean' || unreadable) return enabled
+  settings.betaFeaturesEnabled = enabled
+  save(settings)
+  return enabled
+}
+
+/** What {@link resolveBetaFeaturesEnabled} would return, without writing anything: no seed, no
+ *  `.bak` restore, and none of `loadOutcome`'s normalization, which can save. That normalization
+ *  never touches the two keys read here. */
+export function peekBetaFeaturesEnabled(): boolean {
+  maybeSeedFromEnv()
+  const read = readFileSafe(dataPath, { restore: false })
+  if (read.kind === 'unreadable') return false
+  let stored: Partial<Settings> = {}
+  if (read.kind === 'data') {
+    try {
+      const obj: unknown = JSON.parse(read.data)
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) stored = obj as Partial<Settings>
+    } catch {
+      // Unparseable reads as no stored settings, as in `loadOutcome`.
+    }
+  }
+  return betaFeaturesEnabledIn(stored, read.kind === 'data' && read.primaryUnreadable === true)
+}
+
+function betaFeaturesEnabledIn(settings: Partial<Settings>, unreadable: boolean): boolean {
   const stored = settings.betaFeaturesEnabled
   if (typeof stored === 'boolean') return stored
-  if (unreadable) return false
-  const seeded = settings.telemetryEnabled === true
-  settings.betaFeaturesEnabled = seeded
-  save(settings)
-  return seeded
+  return unreadable ? false : settings.telemetryEnabled === true
 }
 
 function camelToSnake(s: string): string {

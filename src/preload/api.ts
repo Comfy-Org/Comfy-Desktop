@@ -184,6 +184,8 @@ export function buildElectronApi(): ElectronApi {
     getDetailSections: (installationId) =>
       ipcRenderer.invoke('get-detail-sections', installationId),
     getComfyArgs: (installationId) => ipcRenderer.invoke('get-comfy-args', installationId),
+    getCoreBetaArgs: (installationId, launchArgs) =>
+      ipcRenderer.invoke('get-core-beta-args', installationId, launchArgs),
     runAction: (installationId, actionId, actionData?) =>
       ipcRenderer.invoke('run-action', installationId, actionId, actionData),
 

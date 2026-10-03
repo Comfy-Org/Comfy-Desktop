@@ -387,6 +387,17 @@ export async function getComfyArgsSchema(
   return schema
 }
 
+/** The schema {@link getComfyArgsSchema} has cached for this revision, or `null`. Never spawns. */
+export function peekComfyArgsSchema(
+  mainPyPath: string,
+  installationId: string,
+  fallbackRevision?: string
+): ComfyArgsSchema | null {
+  const revision = readGitHead(path.dirname(mainPyPath)) ?? fallbackRevision
+  const cached = schemaCache.get(installationId)
+  return cached && revision && cached.revision === revision ? cached.schema : null
+}
+
 function runHelp(pythonPath: string, mainPyPath: string, cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const mainPyRel = path.relative(cwd, mainPyPath)

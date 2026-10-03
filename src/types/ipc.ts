@@ -253,6 +253,19 @@ export interface DetailFieldOption {
   data?: Record<string, unknown>
 }
 
+/** One Core beta grant as the settings view shows it. */
+export interface BetaArgView {
+  arg: string
+  /** Payload-supplied feature name, or `null` when the payload named none. */
+  name: string | null
+}
+
+/** The running session's grants, or while stopped those the next launch is eligible for. */
+export interface CoreBetaArgs {
+  timing: 'session' | 'next-launch'
+  args: BetaArgView[]
+}
+
 export interface ComfyArgDef {
   name: string
   flag: string
@@ -1587,6 +1600,7 @@ export interface ElectronApi {
   getListActions(installationId: string): Promise<ListAction[]>
   getDetailSections(installationId: string): Promise<DetailSection[]>
   getComfyArgs(installationId: string): Promise<{ args: ComfyArgDef[]; error?: string } | null>
+  getCoreBetaArgs(installationId: string, launchArgs?: string): Promise<CoreBetaArgs>
   runAction(
     installationId: string,
     actionId: string,
@@ -2024,11 +2038,13 @@ export const PICKER_SETTINGS_CHANNELS = {
   importSnapshotsConfirm: 'comfy-titlepopup:picker-settings-import-snapshots-confirm',
   previewSnapshotFile: 'comfy-titlepopup:picker-settings-preview-snapshot-file',
   getComfyArgs: 'comfy-titlepopup:picker-settings-get-comfy-args',
+  getCoreBetaArgs: 'comfy-titlepopup:picker-settings-get-core-beta-args',
   browseFolder: 'comfy-titlepopup:picker-settings-browse-folder',
   previewLocalMigration: 'comfy-titlepopup:picker-settings-preview-local-migration',
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',
   getLocale: 'comfy-titlepopup:picker-settings-get-locale',
   getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags',
-  getUniqueName: 'comfy-titlepopup:picker-settings-get-unique-name'
+  getUniqueName: 'comfy-titlepopup:picker-settings-get-unique-name',
+  openGlobalSettings: 'comfy-titlepopup:picker-settings-open-global-settings'
 } as const

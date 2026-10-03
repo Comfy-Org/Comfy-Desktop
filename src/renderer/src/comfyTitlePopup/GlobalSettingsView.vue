@@ -152,6 +152,9 @@ async function flashField(fieldId: string): Promise<void> {
   el.classList.remove('gs-field-flash')
   void el.offsetWidth
   el.classList.add('gs-field-flash')
+  // Keyboard focus follows the link to the control it points at, instead of dropping to <body>
+  // when the popup swaps to this view.
+  el.querySelector<HTMLElement>('button, input, select, textarea')?.focus({ preventScroll: true })
   highlightEl = el
   highlightTimer = setTimeout(() => {
     el.classList.remove('gs-field-flash')

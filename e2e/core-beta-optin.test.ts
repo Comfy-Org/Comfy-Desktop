@@ -28,7 +28,7 @@ test.describe.configure({ mode: 'serial' })
 
 /** `settings.betaFeaturesEnabled` in locales/en.json — also the switch's
  *  `aria-label`, since `BooleanToggle` labels itself from `field.label`. */
-const BETA_LABEL = 'Opt in to beta features'
+const BETA_LABEL = 'Opt-in to beta features'
 const BETA_SWITCH = `.global-settings button[role="switch"][aria-label="${BETA_LABEL}"]`
 /** `tooltips.betaFeaturesNeedTelemetry` in locales/en.json. */
 const NEEDS_TELEMETRY_TOOLTIP =

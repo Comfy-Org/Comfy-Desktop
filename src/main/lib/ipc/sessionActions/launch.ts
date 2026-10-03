@@ -112,13 +112,14 @@ import {
   commitGrantShas,
   getCoreBetaGrantsAsync,
   isCommitGrant,
-  selectCoreBetaGrantArgs
+  planCoreBetaArgs,
+  toBetaArgView
 } from '../../coreBetaGrants'
 import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
-import { coreGateVersion, coreRecordCurrent, coreSemver, formatComfyVersion } from '../../version'
+import { coreRecordCurrent, coreSemver, formatComfyVersion } from '../../version'
 import type { CoreCheckout } from '../../version'
-import { gitDirPresence, readGitHead, resolveGitDir } from '../../git'
+import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
@@ -140,29 +141,6 @@ export function desktopFeatureFlags(
     flags.enable_telemetry = 'true'
   }
   return flags
-}
-
-/** Establish what the launching checkout is, failing closed at every step, because each step
- *  has an absence meaning "we could not look" alongside the one meaning "there is nothing here".
- *  Exactly one state is the latter: no `.git` entry at all, i.e. the standalone/archive install
- *  with nothing to contradict the record. A `.git` that cannot be stat-ed, one that yields no
- *  git directory (a worktree/submodule pointer missing its `gitdir:` line), and a git directory
- *  whose HEAD would not read are all git-managed checkouts we failed to inspect.
- *  {@link coreRecordCurrent} grants on `not-git` and refuses `unreadable`, so collapsing any of
- *  the three into it — as a bare `readGitHead` call does, and as a bare `resolveGitDir(…) ===
- *  null` test does one layer below that — is what made the gate fail open. */
-function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
-  switch (gitDirPresence(comfyuiDir)) {
-    case 'absent':
-      return { kind: 'not-git' }
-    case 'indeterminate':
-      return { kind: 'unreadable' }
-    case 'present': {
-      if (resolveGitDir(comfyuiDir) === null) return { kind: 'unreadable' }
-      const head = readGitHead(comfyuiDir)
-      return head === null ? { kind: 'unreadable' } : { kind: 'head', commit: head }
-    }
-  }
 }
 
 /** `null`, not the record, for an unreadable git checkout: the record may be what went stale. */
@@ -251,41 +229,38 @@ export function buildLaunchArgs(input: {
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
   const filtered = filterUnsupportedArgs([...userArgs], schema)
-  const withheld: string[] = []
-  const selected = selectCoreBetaGrantArgs(
-    input.betaFlags,
-    {
+  const plan = planCoreBetaArgs({
+    grants: input.betaFlags,
+    betaEnabled: input.betaEnabled,
+    userArgs,
+    core: {
       semver: coreVersion,
       exact: input.coreVersionExact,
       verified: input.coreVersionVerified,
       current: input.coreVersionCurrent
     },
-    input.betaEnabled,
-    userArgs,
-    input.coreCommits,
-    withheld
-  )
-  const supported = new Set(
-    filterUnsupportedArgs(
-      selected.map((grant) => grant.arg),
-      schema
-    )
-  )
-  const applied = selected.filter((grant) => supported.has(grant.arg))
-  const betaArgs = applied.map((grant) => grant.arg)
+    commits: input.coreCommits,
+    schema
+  })
+  for (const line of plan.trace) console.log(line)
   return {
-    args: [...prefixArgs, ...desktopFlagArgs, ...betaArgs, ...filtered],
+    args: [
+      ...prefixArgs,
+      ...desktopFlagArgs,
+      ...plan.applied.map((grant) => grant.arg),
+      ...filtered
+    ],
     beta: {
-      applied,
-      droppedUnsupported: selected
-        .filter((grant) => !supported.has(grant.arg))
-        .map((grant) => grant.arg),
+      applied: plan.applied,
+      droppedUnsupported: plan.droppedUnsupported,
       logRecords: [
-        ...applied.map((grant) => coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)),
-        ...withheld.map((line) => `${line}\n`),
-        ...selected
-          .filter((grant) => !supported.has(grant.arg))
-          .map((grant) => `[core-beta] ${grant.arg} withheld: not supported by this core\n`)
+        ...plan.applied.map((grant) =>
+          coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)
+        ),
+        ...plan.withheld.map((line) => `${line}\n`),
+        ...plan.droppedUnsupported.map(
+          (arg) => `[core-beta] ${arg} withheld: not supported by this core\n`
+        )
       ],
       coreVersion,
       optedIn: input.betaEnabled
@@ -1158,14 +1133,10 @@ async function runLaunch(
 
   // Filter unsupported args, then inject desktop-managed feature flags.
   if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {
-    const sIdx = launchCmd.args.indexOf('-s')
-    if (sIdx !== -1 && sIdx + 1 < launchCmd.args.length) {
-      const mainPyRel = launchCmd.args[sIdx + 1]!
-      const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
+    const split = splitLaunchCommand(launchCmd)
+    if (split) {
+      const { prefixArgs, userArgs, mainPyAbs, comfyuiDir } = split
       const revision = inst.comfyVersion?.commit ?? (inst.version as string | undefined)
-      const prefixArgs = launchCmd.args.slice(0, sIdx + 2)
-      const userArgs = launchCmd.args.slice(sIdx + 2)
-      const comfyuiDir = path.dirname(mainPyAbs)
       // Read here rather than reused from `revision` above: that one falls back to the
       // record when HEAD is unreadable, which is the very disagreement being checked for.
       const checkout = resolveCoreCheckout(comfyuiDir)
@@ -1218,17 +1189,17 @@ async function runLaunch(
         // The gate's version, not the display label: the `[core-beta]` log line and the
         // `core_beta.applied` telemetry report the comparison that authorized the grant, so on
         // an install whose label is unverified they name the lower ancestry-proven release.
-        const gate = coreGateVersion(inst)
+        const core = coreVersionState(inst, checkout)
         const built = buildLaunchArgs({
           prefixArgs,
           userArgs,
           desktopFlagArgs,
           schema,
           betaFlags,
-          coreVersion: gate.semver,
-          coreVersionExact: gate.exact,
-          coreVersionVerified: gate.verified,
-          coreVersionCurrent: coreRecordIsCurrent,
+          coreVersion: core.semver,
+          coreVersionExact: core.exact,
+          coreVersionVerified: core.verified,
+          coreVersionCurrent: core.current,
           coreCommits,
           betaEnabled
         })
@@ -1465,6 +1436,7 @@ async function runLaunch(
         port: 0,
         mode,
         installationName: inst.name,
+        coreBetaArgs: coreBeta.applied.map(toBetaArgView),
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
@@ -2178,6 +2150,7 @@ async function runLaunch(
       port: launchCmd.port!,
       mode,
       installationName: inst.name,
+      coreBetaArgs: coreBeta.applied.map(toBetaArgView),
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()

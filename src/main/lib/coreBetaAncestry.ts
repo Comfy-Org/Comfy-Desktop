@@ -16,7 +16,7 @@ import type { CoreCheckout } from './version'
 
 const FULL_SHA_RE = /^[0-9a-f]{40}$/
 
-const MAX_RESOLVED_SHAS = 16
+export const MAX_RESOLVED_SHAS = 16
 
 // All git work for one launch, which runs before spawn; SHAs not reached in time stay unresolved.
 const RESOLVE_BUDGET_MS = 10_000
@@ -92,39 +92,73 @@ function scheduleFetch(repoPath: string, sha: string, head: string): boolean {
 
 type Relation = boolean | null
 
+/** `absentFromShallow` marks the one unproven case a fetch could settle; `notes` and `error` are
+ *  for the launch to log. */
+export interface CommitProof {
+  relation: Relation
+  absentFromShallow: boolean
+  notes: string[]
+  error?: unknown
+}
+
 // Not `isAncestorOf`: it answers `false` for "could not look", which would fail an upper bound open.
 async function commitAncestry(
   repoPath: string,
   sha: string,
   head: string,
   complete: boolean,
-  budget: { fetches: number; stopped: boolean }
-): Promise<Relation> {
+  notes: string[]
+): Promise<{ relation: Relation; absentFromShallow: boolean }> {
+  const unproven = { relation: null, absentFromShallow: false }
   const base = await findMergeBaseOrNone(repoPath, sha, head)
-  if (typeof base === 'string') return base.toLowerCase() === sha
+  if (typeof base === 'string')
+    return { relation: base.toLowerCase() === sha, absentFromShallow: false }
   // Both commits resolved and share nothing: on a complete graph HEAD cannot contain `sha`. A shallow
   // graph may just be cut short, and the graft rule cannot hold without a common ancestor.
   if (base === null && complete) {
-    console.log(
+    notes.push(
       `[core-beta] ancestry ${sha.slice(0, 12)}: no common ancestor with HEAD in a full clone`
     )
-    return false
+    return { relation: false, absentFromShallow: false }
   }
   // Absence counts only once the repository has been shown readable, by resolving HEAD itself.
-  if ((await revParseRef(repoPath, `${head}^{commit}`))?.toLowerCase() !== head) return null
-  if ((await commitPresence(repoPath, sha)) !== 'absent') return null
+  if ((await revParseRef(repoPath, `${head}^{commit}`))?.toLowerCase() !== head) return unproven
+  if ((await commitPresence(repoPath, sha)) !== 'absent') return unproven
   // A complete clone holds every ancestor of HEAD, so a commit it lacks is not one of them.
   if (complete) {
-    console.log(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
-    return false
+    notes.push(`[core-beta] ancestry ${sha.slice(0, 12)}: absent from a full clone`)
+    return { relation: false, absentFromShallow: false }
   }
-  if (budget.stopped) return null
-  if (budget.fetches >= MAX_FETCHES) {
-    console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
-  } else if (scheduleFetch(repoPath, sha, head)) {
-    budget.fetches += 1
+  return { relation: null, absentFromShallow: true }
+}
+
+/** Relate `sha` to `head` from the local repository only: no fetch, no logging. Anything that
+ *  cannot be proven, failures included, is `null`. */
+export async function proveCommitRelation(
+  repoPath: string,
+  sha: string,
+  head: string
+): Promise<CommitProof> {
+  const notes: string[] = []
+  // Re-read per SHA: a background fetch from an earlier launch can rewrite the boundaries.
+  const grafts = readShallowGrafts(repoPath)
+  let proof: { relation: Relation; absentFromShallow: boolean } = {
+    relation: null,
+    absentFromShallow: false
   }
-  return null
+  let error: unknown
+  try {
+    proof = await commitAncestry(repoPath, sha, head, grafts?.length === 0, notes)
+  } catch (err) {
+    error = err
+  }
+  if (proof.relation === false && grafts?.length !== 0) {
+    const provable =
+      grafts !== null &&
+      (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
+    if (!provable) proof.relation = null
+  }
+  return { ...proof, notes, ...(error === undefined ? {} : { error }) }
 }
 
 /** More boundaries than this and a shallow "not contained" is left unproven rather than paid for. */
@@ -203,20 +237,19 @@ export async function resolveCoreCommitState(
         )
         continue
       }
-      // Re-read per SHA: a background fetch from an earlier launch can rewrite the boundaries.
-      const grafts = readShallowGrafts(repoPath)
-      let related: Relation = null
-      try {
-        related = await commitAncestry(repoPath, sha, head, grafts?.length === 0, budget)
-      } catch (err) {
-        console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, err)
+      const proof = await proveCommitRelation(repoPath, sha, head)
+      if (proof.error !== undefined) {
+        console.warn(`[core-beta] ancestry check failed for ${sha.slice(0, 12)}:`, proof.error)
       }
-      if (related === false && grafts?.length !== 0) {
-        const provable =
-          grafts !== null &&
-          (await notContainedHoldsOnShallow(repoPath, sha, grafts).catch(() => false))
-        if (!provable) related = null
+      for (const note of proof.notes) console.log(note)
+      if (proof.absentFromShallow && !budget.stopped) {
+        if (budget.fetches >= MAX_FETCHES) {
+          console.log(`[core-beta] fetch ${sha.slice(0, 12)}: skipped, launch fetch budget spent`)
+        } else if (scheduleFetch(repoPath, sha, head)) {
+          budget.fetches += 1
+        }
       }
+      const related = proof.relation
       // A launch that has moved on takes no late answers: the map it was handed must not change.
       if (budget.stopped) return
       console.log(
