@@ -34,6 +34,7 @@
  * directly. Core's own emitter only sends names from its `ALLOWED_FIELDS`.
  */
 import * as telemetry from './telemetry'
+import type { DbMode, SessionKind } from './performanceTestDb'
 import type { TelemetryValue } from './telemetry'
 import { DATADOG_GLOBAL_CONTEXT_KEYS } from '../../shared/datadogMirroredEvents'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
@@ -443,6 +444,9 @@ export function createAssetsTap(opts: {
   variant?: string | null
   release?: string | null
   coreBetaFlags?: readonly string[]
+  /** Performance Test or the user's own session, and the database it runs on. */
+  sessionKind?: SessionKind
+  dbMode?: DbMode
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
@@ -452,7 +456,9 @@ export function createAssetsTap(opts: {
     installation_id: opts.installationId,
     variant: opts.variant ?? null,
     release: opts.release ?? null,
-    core_beta_flags: [...(opts.coreBetaFlags ?? [])]
+    core_beta_flags: [...(opts.coreBetaFlags ?? [])],
+    session_kind: opts.sessionKind ?? 'normal',
+    db_mode: opts.dbMode ?? 'file'
   }
   const baseKeys: ReadonlySet<string> = new Set(Object.keys(baseContext))
   // Telemetry's own defaults and the renderer's Datadog global context lose

@@ -251,8 +251,11 @@ import {
   _operationAborts,
   _pendingPorts,
   _runningSessions,
-  _reservePort
+  _reservePort,
+  _addSession,
+  setCallbacks
 } from '../shared'
+import type { InstanceStartedCallbackInfo } from '../shared'
 import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
@@ -2041,6 +2044,232 @@ describe('core beta report placement', () => {
       expect(preview).toEqual(_runningSessions.get('harness-equivalence')?.coreBetaArgs)
       expect(preview).toEqual([{ arg: '--enable-assets', name: 'Asset browser' }])
     })
+  })
+})
+
+describe('Performance Test database', () => {
+  let installDir = ''
+  let events: { event: string; properties?: Record<string, unknown> }[] = []
+  let spawnArgs: string[] = []
+  let child: FakeChild | null = null
+  let started: InstanceStartedCallbackInfo[] = []
+
+  const userDb = (): string => `sqlite:///${path.join(installDir, 'user', 'comfyui.db')}`
+
+  const ctxFor = (installationId: string, sessionId?: string): ActionContext => ({
+    event: {
+      sender: { isDestroyed: () => false, send: () => {} }
+    } as unknown as Electron.IpcMainInvokeEvent,
+    installationId,
+    sessionId,
+    inst: {
+      id: installationId,
+      name: 'Harness',
+      sourceId: 'harness-source',
+      installPath: installDir,
+      version: '0.17.0'
+    } as unknown as InstallationRecord,
+    actionData: {}
+  })
+
+  /** A Core checkout whose `db.py` builds (or, for an older Core, lacks) the in-memory path. */
+  function writeCoreDb(supportsMemory: boolean): void {
+    const dir = path.join(installDir, 'ComfyUI', 'app', 'database')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'db.py'),
+      supportsMemory
+        ? 'def _is_memory_db(db_url):\n    return db_url in ("sqlite:///:memory:", "sqlite://")\n'
+        : 'def init_db():\n    pass\n'
+    )
+  }
+
+  beforeEach(() => {
+    installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-db-launch-'))
+    started = []
+    setCallbacks({ onInstanceStarted: (info) => started.push(info) })
+    fs.mkdirSync(path.join(installDir, 'ComfyUI'), { recursive: true })
+    events = []
+    spawnArgs = []
+    launchHarness.schemaThrows = false
+    launchHarness.registryThrows = false
+    launchHarness.betaEnabled = true
+    launchHarness.betaEnabledThrows = false
+    launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag', 'database-url']
+    launchHarness.grants = []
+    launchHarness.duringResourceAcquire = null
+    launchHarness.waitForPort = async () => {}
+    launchHarness.spawn = (_cmd: unknown, args: unknown) => {
+      spawnArgs = args as string[]
+      const proc = new EventEmitter() as FakeChild
+      proc.stdout = new EventEmitter()
+      proc.stderr = new EventEmitter()
+      proc.pid = 4243
+      proc.killed = false
+      proc.kill = () => true
+      child = proc
+      return proc
+    }
+    // An adopted install's shape: the source pins the install's real database.
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: [
+        '-s',
+        path.join(installDir, 'ComfyUI', 'main.py'),
+        '--database-url',
+        userDb(),
+        '--enable-assets'
+      ],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48234
+    }
+    for (const kind of ['emit', 'capture'] as const) {
+      vi.spyOn(telemetry, kind).mockImplementation(((
+        event: string,
+        properties?: Record<string, unknown>
+      ) => {
+        events.push({ event, properties })
+      }) as unknown as typeof telemetry.emit)
+    }
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    setCallbacks({})
+    fs.rmSync(installDir, { recursive: true, force: true })
+    for (const key of [..._runningSessions.keys()]) {
+      if (key.startsWith('performance-test:perf-db-') || key.startsWith('perf-db-')) {
+        _runningSessions.delete(key)
+      }
+    }
+  })
+
+  const bootEvents = (): Record<string, unknown>[] =>
+    events
+      .filter((e) => /comfyui\.boot_(started|completed)$/.test(e.event))
+      .map((e) => e.properties ?? {})
+
+  it('runs a Performance Test on an in-memory database instead of the install database', async () => {
+    writeCoreDb(true)
+
+    const res = await handleLaunch(ctxFor('perf-db-memory', 'performance-test:perf-db-memory'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain(userDb())
+    expect(spawnArgs.filter((a) => a === '--database-url')).toHaveLength(1)
+    expect(spawnArgs[spawnArgs.indexOf('--database-url') + 1]).toBe('sqlite:///:memory:')
+    // Off the install's own port, so the install can still be launched mid-benchmark.
+    expect(spawnArgs.filter((a) => a === '--port')).toHaveLength(1)
+    expect(spawnArgs[spawnArgs.indexOf('--port') + 1]).toBe(String(launchHarness.nextPort))
+    expect(spawnArgs).toContain('--enable-assets')
+    expect(_runningSessions.get('performance-test:perf-db-memory')?.databaseMode).toBe('memory')
+    expect(started).toEqual([
+      expect.objectContaining({ sessionKind: 'performance_test', databaseMode: 'memory' })
+    ])
+    expect(bootEvents()).toHaveLength(2)
+    for (const boot of bootEvents()) {
+      expect(boot).toMatchObject({ session_kind: 'performance_test', db_mode: 'memory' })
+    }
+
+    // Core's own events, forwarded through the taps, are tagged too.
+    child!.stdout.emit('data', '[assets-event] assets.enabled hashing_enabled=false\n')
+    child!.stderr.emit(
+      'data',
+      '[WARNING] Asset scan error: phase=discovery_stat error_type=permission_denied\n'
+    )
+    for (const name of [
+      'comfy.desktop.comfyui.assets.assets.enabled',
+      'comfy.desktop.comfyui.asset_scan_error'
+    ]) {
+      expect(events.find((e) => e.event === name)?.properties, name).toMatchObject({
+        session_kind: 'performance_test',
+        db_mode: 'memory'
+      })
+    }
+
+    child!.emit('close', 0, null)
+    await vi.waitFor(() =>
+      expect(
+        events.find((e) => e.event === 'comfy.desktop.comfyui.exited')?.properties
+      ).toMatchObject({ session_kind: 'performance_test', db_mode: 'memory' })
+    )
+    expect(
+      events.find((e) => e.event === 'comfy.desktop.execution.session_summary')?.properties
+    ).toMatchObject({ session_kind: 'performance_test', db_mode: 'memory' })
+  })
+
+  it('tags the exit of a Performance Test that skips the port wait', async () => {
+    writeCoreDb(true)
+    launchHarness.launchCommand = { ...launchHarness.launchCommand!, skipPortWait: true }
+
+    const res = await handleLaunch(
+      ctxFor('perf-db-skip-port', 'performance-test:perf-db-skip-port')
+    )
+    expect(res.ok).toBe(true)
+    expect(started).toEqual([
+      expect.objectContaining({ sessionKind: 'performance_test', databaseMode: 'memory' })
+    ])
+    child!.emit('close', 0, null)
+
+    await vi.waitFor(() =>
+      expect(
+        events.find((e) => e.event === 'comfy.desktop.comfyui.exited')?.properties
+      ).toMatchObject({ session_kind: 'performance_test', db_mode: 'memory' })
+    )
+  })
+
+  it("leaves the user's own session on the install database", async () => {
+    writeCoreDb(true)
+
+    const res = await handleLaunch(ctxFor('perf-db-normal'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain(userDb())
+    expect(spawnArgs).not.toContain('sqlite:///:memory:')
+    expect(spawnArgs, 'kept the port the source chose').not.toContain('--port')
+    expect(started).toEqual([
+      expect.objectContaining({ sessionKind: 'normal', databaseMode: 'file' })
+    ])
+    expect(bootEvents()).toHaveLength(2)
+    for (const boot of bootEvents()) {
+      expect(boot).toMatchObject({ session_kind: 'normal', db_mode: 'file' })
+    }
+  })
+
+  it('keeps an older Core, which cannot build an in-memory database, on its file database', async () => {
+    writeCoreDb(false)
+
+    const res = await handleLaunch(ctxFor('perf-db-old-core', 'performance-test:perf-db-old-core'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain(userDb())
+    expect(spawnArgs).not.toContain('sqlite:///:memory:')
+    // On the install's database it keeps the install's port, so launching the install while it
+    // runs is refused rather than putting two ComfyUIs on one catalogue.
+    expect(spawnArgs, 'kept the port the source chose').not.toContain('--port')
+    expect(started).toEqual([
+      expect.objectContaining({ sessionKind: 'performance_test', databaseMode: 'file' })
+    ])
+    expect(bootEvents()).toHaveLength(2)
+    for (const boot of bootEvents()) {
+      expect(boot).toMatchObject({ session_kind: 'performance_test', db_mode: 'file' })
+    }
+  })
+
+  it('reports an unknown database for a session whose database Desktop cannot see', () => {
+    // A remote installation's session records no database mode.
+    _addSession(
+      'performance-test:perf-db-remote',
+      { proc: null, port: 48235, mode: 'window', installationName: 'Remote' },
+      0,
+      undefined,
+      'perf-db-remote'
+    )
+
+    expect(started).toEqual([
+      expect.objectContaining({ sessionKind: 'performance_test', databaseMode: null })
+    ])
   })
 })
 

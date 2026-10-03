@@ -861,6 +861,10 @@ export interface PerformanceTestResultsSummary {
   instance: {
     id: string
     name: string
+    /** The database ComfyUI ran on. A Performance Test runs on an in-memory one when its Core
+     *  supports it, which starts empty, so its first assets scan falls inside the run. Absent
+     *  from results written before this was recorded. */
+    databaseMode?: 'memory' | 'file'
   }
   workspace: {
     id: string | null

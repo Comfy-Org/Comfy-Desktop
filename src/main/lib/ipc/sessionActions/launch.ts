@@ -101,6 +101,14 @@ import {
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
+import {
+  coreSupportsMemoryDb,
+  databaseModeOf,
+  sessionKindOf,
+  withMemoryDatabase,
+  type DbMode,
+  type SessionKind
+} from '../../performanceTestDb'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -614,12 +622,9 @@ export function _resolvePortConflictPolicy(
  *  construction failures propagate and abort the launch: this tap is pure
  *  diagnostics for an off-by-default subsystem and must never cost a user their
  *  launch. Same shape, so downstream lifecycle sites need no null checks. */
-export function createAssetsTapSafe(base: {
-  installationId: string
-  variant: string | null
-  release: string | null
-  coreBetaFlags: string[]
-}): ReturnType<typeof createAssetsTap> {
+export function createAssetsTapSafe(
+  base: Parameters<typeof createAssetsTap>[0]
+): ReturnType<typeof createAssetsTap> {
   try {
     return createAssetsTap(base)
   } catch (err) {
@@ -898,6 +903,7 @@ async function runLaunch(
   }> {
     const logStream = await openLogStream(inst.installPath)
     const coreBetaFlags = coreBeta.applied.map((grant) => grant.arg)
+    const kind = launchKind()
     try {
       const execTap = createExecutionTap({
         installationId,
@@ -905,7 +911,9 @@ async function runLaunch(
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags,
         coreCommit,
-        coreVersionLabel: coreVersionLabel()
+        coreVersionLabel: coreVersionLabel(),
+        sessionKind: kind.session_kind,
+        dbMode: kind.db_mode
       })
       const hwTap = createHardwareTap({
         installationId,
@@ -913,13 +921,17 @@ async function runLaunch(
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags,
         coreCommit,
-        coreVersionLabel: coreVersionLabel()
+        coreVersionLabel: coreVersionLabel(),
+        sessionKind: kind.session_kind,
+        dbMode: kind.db_mode
       })
       const assetsTap = createAssetsTapSafe({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
         release: (inst.release as string | undefined) ?? null,
-        coreBetaFlags
+        coreBetaFlags,
+        sessionKind: kind.session_kind,
+        dbMode: kind.db_mode
       })
       const tracker = await armLaunchTracker()
       return { logStream, execTap, hwTap, assetsTap, tracker }
@@ -968,6 +980,8 @@ async function runLaunch(
     core_version: string | null
     core_commit: string | null
     core_version_label: string | null
+    session_kind: SessionKind
+    db_mode: DbMode
   } {
     return {
       core_beta_flags: coreBeta.applied.map((grant) => grant.arg),
@@ -975,8 +989,15 @@ async function runLaunch(
       core_beta_opted_in: coreBeta.optedIn,
       core_version: coreSemver(inst),
       core_commit: coreCommit,
-      core_version_label: coreVersionLabel()
+      core_version_label: coreVersionLabel(),
+      ...launchKind()
     }
+  }
+
+  /** Which session this is and which database it runs on, so Performance Test runs (and their
+   *  in-memory catalogue) can be split from the user's own sessions in every event. */
+  function launchKind(): { session_kind: SessionKind; db_mode: DbMode } {
+    return { session_kind: sessionKindOf(sessionId), db_mode: databaseModeOf(launchCmd.args) }
   }
 
   // Migrate legacy envs/default/ → ComfyUI/.venv/ for standalone installs.
@@ -1221,6 +1242,26 @@ async function runLaunch(
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd)
 
+  // A Performance Test runs beside the install's own session, often while that one is up. On
+  // the install's database the second of the two to boot fails on Core's lock, and a perf run
+  // would write its scan into the user's catalogue; an in-memory database does neither.
+  const perfComfyuiDir =
+    sessionKindOf(sessionId) === 'performance_test'
+      ? splitLaunchCommand(launchCmd)?.comfyuiDir
+      : null
+  const perfOnMemoryDb = !!(
+    launchCmd.args &&
+    perfComfyuiDir &&
+    coreSupportsMemoryDb(perfComfyuiDir)
+  )
+  if (perfOnMemoryDb) {
+    launchCmd.args = withMemoryDatabase(launchCmd.args!)
+    appendLog(
+      sessionId,
+      '[launch] Performance Test: in-memory database; the install database is not opened\n'
+    )
+  }
+
   /** Gates the `template-models` row: the bar derives "prior steps done" from
    *  the active phase index, so the row stays silent through the real phases and
    *  only shows the download once the server is reachable. Flipped true by
@@ -1429,6 +1470,7 @@ async function runLaunch(
         mode,
         installationName: inst.name,
         coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+        databaseMode: databaseModeOf(launchCmd.args),
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
@@ -1471,6 +1513,7 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
+        ...launchKind(),
         last_stderr: lastStderr ?? null,
         pipes_held_after_exit: pipesHeld
       })
@@ -1572,6 +1615,18 @@ async function runLaunch(
 
   if (actionData?.portOverride != null) {
     setPortArg(launchCmd as LaunchCmd, actionData.portOverride as number)
+  }
+  // A Performance Test on its own database leaves the install's port to the install, which the
+  // user may launch mid-benchmark: finding its port held by a ComfyUI of this install, that launch
+  // refuses. One on the install's database keeps that refusal: the two would share the catalogue.
+  if (perfOnMemoryDb && launchCmd.port) {
+    const free = await findAvailablePort(
+      '127.0.0.1',
+      launchCmd.port + 1,
+      launchCmd.port + 1000,
+      new Set(_pendingPorts.keys())
+    ).catch(() => null)
+    if (free) setPortArg(launchCmd as LaunchCmd, free)
   }
 
   const defaults = source.getDefaults ? source.getDefaults() : {}
@@ -2116,6 +2171,7 @@ async function runLaunch(
       mode,
       installationName: inst.name,
       coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+      databaseMode: databaseModeOf(launchCmd.args),
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()
@@ -2350,6 +2406,7 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
+        ...launchKind(),
         last_stderr: lastStderr ?? null,
         pipes_held_after_exit: pipesHeld
       })
