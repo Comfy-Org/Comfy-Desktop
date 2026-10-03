@@ -24,8 +24,11 @@ const PILL_SLOT = `${ARGS_FIELD} .beta-args-slot`
 export const MENU = '.beta-args-menu'
 export const MANAGE = `${MENU} .ui-menu-item:not([aria-disabled])`
 
-/** Answers each open's pill had applied before the open, so absence is read against a newer one. */
-const answersBefore = new WeakMap<WebContentsPage, number>()
+/** The pill each open started from and the answers it had applied, so absence is read against a
+ *  newer answer. A pill that remounted since (another install, or the picker returning from
+ *  Settings) is not the noted one, and any answer it has applied is newer. */
+const answersBefore = new WeakMap<WebContentsPage, { token: string; answers: number }>()
+let noteSeq = 0
 
 export function pillLabel(popup: WebContentsPage): Promise<string | null> {
   return popup.evaluate<string | null>(
@@ -33,10 +36,36 @@ export function pillLabel(popup: WebContentsPage): Promise<string | null> {
   )
 }
 
-function pillAnswers(popup: WebContentsPage): Promise<number> {
-  return popup.evaluate<number>(
-    `Number(document.querySelector(${JSON.stringify(PILL_SLOT)})?.getAttribute('data-answers') ?? -1)`
+/** The current pill's answer count, and whether it is the pill noted under `token`. */
+function pillAnswers(
+  popup: WebContentsPage,
+  token: string
+): Promise<{ answers: number; noted: boolean }> {
+  return popup.evaluate<{ answers: number; noted: boolean }>(
+    `(() => {
+      const slot = document.querySelector(${JSON.stringify(PILL_SLOT)})
+      return {
+        answers: Number(slot?.getAttribute('data-answers') ?? -1),
+        noted: slot?.__e2ePillNote === ${JSON.stringify(token)}
+      }
+    })()`
   )
+}
+
+/** Tag the current pill, if any, and record its answer count. */
+async function notePill(popup: WebContentsPage): Promise<{ token: string; answers: number }> {
+  const token = `note-${++noteSeq}`
+  const answers = await popup
+    .evaluate<number>(
+      `(() => {
+        const slot = document.querySelector(${JSON.stringify(PILL_SLOT)})
+        if (!slot) return -1
+        slot.__e2ePillNote = ${JSON.stringify(token)}
+        return Number(slot.getAttribute('data-answers'))
+      })()`
+    )
+    .catch(() => -1)
+  return { token, answers }
 }
 
 /** Open the picker on `installationId`'s Startup Arguments and wait for its args field. */
@@ -50,8 +79,8 @@ export async function openStartupArgs(
   // The picker stays mounted while hidden, so its pill may already hold earlier answers.
   const before =
     (await findWebContentsId(app, 'comfyTitlePopup.html')) === null
-      ? -1
-      : await pillAnswers(titlePopupPage(app)).catch(() => -1)
+      ? { token: '', answers: -1 }
+      : await notePill(titlePopupPage(app))
   await panel.evaluate(
     `window.api.openInstancePicker({ installationId: ${JSON.stringify(installationId)}, initialTab: 'config' })`
   )
@@ -66,7 +95,7 @@ export async function openStartupArgs(
 /** Count the pill's answers from now, for a pill that is about to (re)appear other than through
  *  `openStartupArgs`, such as the picker a Settings close returns to. */
 export async function notePillAnswers(popup: WebContentsPage): Promise<void> {
-  answersBefore.set(popup, await pillAnswers(popup).catch(() => -1))
+  answersBefore.set(popup, await notePill(popup))
 }
 
 /**
@@ -78,14 +107,20 @@ export async function expectAnsweredWithNoPill(
   popup: WebContentsPage,
   message: string
 ): Promise<void> {
-  const before = answersBefore.get(popup) ?? -1
+  const before = answersBefore.get(popup) ?? { token: '', answers: -1 }
   await expect
-    .poll(() => pillAnswers(popup), {
-      timeout: 20_000,
-      intervals: [100, 200],
-      message: `${message} (the pill never received its answer)`
-    })
-    .toBeGreaterThan(Math.max(before, 0))
+    .poll(
+      async () => {
+        const now = await pillAnswers(popup, before.token)
+        return now.answers > (now.noted ? Math.max(before.answers, 0) : 0)
+      },
+      {
+        timeout: 20_000,
+        intervals: [100, 200],
+        message: `${message} (the pill never received its answer)`
+      }
+    )
+    .toBe(true)
   expect(await pillLabel(popup), message).toBeNull()
   expect(await popup.exists(PILL_LOADING), message).toBe(false)
 }

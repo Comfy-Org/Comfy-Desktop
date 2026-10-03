@@ -735,27 +735,22 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   // Keyed on the session, not just "running": a restart can reach this window as running ->
   // running (the stop and relaunch landing between two snapshots), and the session-derived rows -
   // the port, the beta-args pill - belong to the old session.
-  const sessionNow = (): { id: string | null; session: string | null } => {
-    const id = toValue(opts.installation)?.id ?? null
-    return { id, session: id ? sessionStore.sessionKey(id) : null }
-  }
-  let watched = sessionNow()
   watch(
-    () => {
-      const { id, session } = sessionNow()
-      return `${id ?? ''}\0${session === null ? 'stopped' : `running:${session}`}`
-    },
-    () => {
-      const previous = watched
-      watched = sessionNow()
-      const inst = toValue(opts.installation)
+    [
+      () => toValue(opts.installation)?.id ?? null,
+      () => {
+        const id = toValue(opts.installation)?.id
+        return id ? sessionStore.sessionKey(id) : null
+      }
+    ],
+    ([id, session], [previousId, previousSession]) => {
       // A different install: the installation watcher above reloads for it, and its pending
       // state is its own.
-      if (!inst || watched.id !== previous.id) return
+      if (!id || id !== previousId) return
       // The same install's session replaced by a new one consumed the edited values, so nothing
       // is pending any more. The stop/launching edges below would clear this, but a restart seen
       // as running -> running shows neither (e.g. a picker that was hidden for the restart).
-      if (watched.session !== null && previous.session !== null) clearRestartAndErrors(inst.id)
+      if (session !== null && previousSession !== null) clearRestartAndErrors(id)
       // Refetch so the "Running details" port row follows the session: appears on launch,
       // clears on stop, renews on restart. Race-safe via reload()'s requestSeq.
       void reload()

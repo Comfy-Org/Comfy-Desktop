@@ -32,9 +32,10 @@ const loading = ref(false)
  *  show" from "not answered yet", which otherwise render identically. */
 const answers = ref(0)
 let requestSeq = 0
-/** After an install switch the field still shows the previous install's args until the new
- *  sections land, so they are not sent until the value changes; main then reads the stored ones. */
-let argsForInstall = true
+/** The pill remounts with each install (its pane is keyed by install), but the field can still
+ *  show the previous install's args until the new sections land. So args are sent only once the
+ *  value has changed since mount; until then main reads the stored ones. */
+let argsCommitted = false
 
 async function refresh(): Promise<void> {
   const seq = ++requestSeq
@@ -42,7 +43,7 @@ async function refresh(): Promise<void> {
     if (seq === requestSeq) loading.value = true
   }, LOADING_DELAY_MS)
   const next = await window.api
-    .getCoreBetaArgs(props.installationId, argsForInstall ? props.argsValue : undefined)
+    .getCoreBetaArgs(props.installationId, argsCommitted ? props.argsValue : undefined)
     .catch(() => null)
   clearTimeout(slow)
   if (seq !== requestSeq) return
@@ -51,20 +52,9 @@ async function refresh(): Promise<void> {
   answers.value++
 }
 
-// Never show one install's args while another's are on the way. The new install's schema load
-// bumps `schemaVersion`, which is what asks for its args.
-watch(
-  () => props.installationId,
-  () => {
-    requestSeq++
-    data.value = null
-    loading.value = false
-    argsForInstall = false
-  }
-)
 watch(
   () => props.argsValue,
-  () => (argsForInstall = true),
+  () => (argsCommitted = true),
   { flush: 'sync' }
 )
 watch(

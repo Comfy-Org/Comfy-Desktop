@@ -466,6 +466,31 @@ function load(): Settings {
   return loadOutcome().settings
 }
 
+/** settings.json as stored, before defaults or normalization. `readFailed`: neither it nor `.bak`
+ *  could be read; `unreadable` also covers `.bak` standing in for an unreadable primary. */
+function readStoredSettings(opts: { restore?: boolean } = {}): {
+  parsed: Record<string, unknown> | null
+  unreadable: boolean
+  readFailed: boolean
+  parseError?: Error
+} {
+  maybeSeedFromEnv()
+  const read = readFileSafe(dataPath, opts)
+  if (read.kind === 'unreadable') return { parsed: null, unreadable: true, readFailed: true }
+  if (read.kind !== 'data') return { parsed: null, unreadable: false, readFailed: false }
+  const unreadable = read.primaryUnreadable === true
+  try {
+    const obj: unknown = JSON.parse(read.data)
+    const parsed =
+      obj && typeof obj === 'object' && !Array.isArray(obj)
+        ? (obj as Record<string, unknown>)
+        : null
+    return { parsed, unreadable, readFailed: false }
+  } catch (err) {
+    return { parsed: null, unreadable, readFailed: false, parseError: err as Error }
+  }
+}
+
 /** Load settings plus whether settings.json must NOT be rewritten right now:
  *  it exists but could not be read (e.g. an AV lock outlasting the retry
  *  budget), so this call is serving bare defaults or stale `.bak` content in
@@ -473,30 +498,9 @@ function load(): Settings {
  *  content is unknown, so saving anything derived from the stand-in would
  *  overwrite the user's intact, newer settings (the failure environment of
  *  issue #1367). */
-/** settings.json as stored, before defaults or normalization. `readFailed`: neither it nor `.bak`
- *  could be read; `unreadable` also covers `.bak` standing in for an unreadable primary. */
-function readStoredSettings(opts: { restore?: boolean } = {}): {
-  parsed: Record<string, unknown> | null
-  unreadable: boolean
-  readFailed: boolean
-} {
-  maybeSeedFromEnv()
-  const read = readFileSafe(dataPath, opts)
-  if (read.kind === 'unreadable') return { parsed: null, unreadable: true, readFailed: true }
-  if (read.kind !== 'data') return { parsed: null, unreadable: false, readFailed: false }
-  let parsed: Record<string, unknown> | null = null
-  try {
-    const obj: unknown = JSON.parse(read.data)
-    if (obj && typeof obj === 'object' && !Array.isArray(obj))
-      parsed = obj as Record<string, unknown>
-  } catch (err) {
-    console.warn('Settings: failed to parse settings JSON:', (err as Error).message)
-  }
-  return { parsed, unreadable: read.primaryUnreadable === true, readFailed: false }
-}
-
 function loadOutcome(): { settings: Settings; unreadable: boolean } {
-  const { parsed, unreadable, readFailed } = readStoredSettings()
+  const { parsed, unreadable, readFailed, parseError } = readStoredSettings()
+  if (parseError) console.warn('Settings: failed to parse settings JSON:', parseError.message)
   if (readFailed) {
     return { settings: { ...defaults }, unreadable: true }
   }

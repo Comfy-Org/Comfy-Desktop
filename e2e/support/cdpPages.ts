@@ -344,10 +344,17 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
   const id = await findWebContentsId(app, 'comfyTitlePopup.html')
   if (id === null) return
   if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return
+  const wasPicker = await titlePopupShowsPicker(app)
   await requestTitlePopupClose(app)
+  const hidden = (): Promise<void> =>
+    expect.poll(
+      () => isPopupVisible(app, 'comfyTitlePopup.html'),
+      { timeout: 3_000, intervals: [100, 200] },
+    ).toBe(false)
+  // A picker closes on its first close; anything else reopening here still fails.
+  if (wasPicker) return hidden()
   // Desktop Settings opened from the picker goes back to the picker on its first close; only a
-  // second close dismisses it. Close again only in that case, so a popup that reappears for any
-  // other reason still fails here.
+  // second close dismisses it.
   let outcome = 'open' as 'hidden' | 'picker' | 'open'
   await expect
     .poll(
@@ -360,10 +367,7 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
     .not.toBe('open')
   if (outcome === 'hidden') return
   await requestTitlePopupClose(app)
-  await expect.poll(
-    () => isPopupVisible(app, 'comfyTitlePopup.html'),
-    { timeout: 3_000, intervals: [100, 200] },
-  ).toBe(false)
+  await hidden()
 }
 
 async function requestTitlePopupClose(app: ElectronApplication): Promise<void> {

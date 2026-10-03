@@ -669,6 +669,19 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
   })
 })
 
+/** settings.json throws EPERM on every read, as under an AV lock that outlasts the retries. */
+function lockPrimary(): void {
+  const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+  vi.spyOn(fs, 'readFileSync').mockImplementation(((p: fs.PathOrFileDescriptor, opts?: unknown) => {
+    if (p === settingsPath) {
+      const err = new Error('fake EPERM') as NodeJS.ErrnoException
+      err.code = 'EPERM'
+      throw err
+    }
+    return realRead(p, opts as BufferEncoding)
+  }) as typeof fs.readFileSync)
+}
+
 describe('locked settings.json served from .bak (issue #1367)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -679,18 +692,7 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({ pypiMirror: 'https://newer.example' }))
     fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ pypiMirror: 'https://stale.example' }))
 
-    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
-    vi.spyOn(fs, 'readFileSync').mockImplementation(((
-      p: fs.PathOrFileDescriptor,
-      opts?: unknown
-    ) => {
-      if (p === settingsPath) {
-        const err = new Error('fake EPERM') as NodeJS.ErrnoException
-        err.code = 'EPERM' // lock never clears
-        throw err
-      }
-      return realRead(p, opts as BufferEncoding)
-    }) as typeof fs.readFileSync)
+    lockPrimary()
 
     // Reads degrade to the backup content...
     expect(settings.get('pypiMirror')).toBe('https://stale.example')
@@ -709,6 +711,10 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
 // diagnostics exactly when they matter. Consent only ever seeds the initial
 // value, once.
 describe('peekBetaFeaturesEnabled', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it.each([
     ['a telemetry opt-in', { telemetryEnabled: true }, true],
     ['a telemetry opt-out', { telemetryEnabled: false }, false],
@@ -728,21 +734,6 @@ describe('peekBetaFeaturesEnabled', () => {
     expect(settings.peekBetaFeaturesEnabled()).toBe(choice)
   })
 
-  const lockPrimary = (): void => {
-    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
-    vi.spyOn(fs, 'readFileSync').mockImplementation(((
-      p: fs.PathOrFileDescriptor,
-      opts?: unknown
-    ) => {
-      if (p === settingsPath) {
-        const err = new Error('fake EPERM') as NodeJS.ErrnoException
-        err.code = 'EPERM'
-        throw err
-      }
-      return realRead(p, opts as BufferEncoding)
-    }) as typeof fs.readFileSync)
-  }
-
   it('keeps a stored choice from the backup when the primary is locked, but never seeds from it', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: false }))
@@ -754,7 +745,19 @@ describe('peekBetaFeaturesEnabled', () => {
     fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ telemetryEnabled: true }))
     lockPrimary()
     expect(settings.peekBetaFeaturesEnabled(), 'a stale backup must not enroll').toBe(false)
-    vi.restoreAllMocks()
+  })
+
+  it('reads malformed settings as opted out without logging, which loading still does', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, '{ not json')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(settings.peekBetaFeaturesEnabled()).toBe(false)
+    expect(warn).not.toHaveBeenCalled()
+    settings.get('pypiMirror')
+    expect(warn).toHaveBeenCalledWith(
+      'Settings: failed to parse settings JSON:',
+      expect.any(String)
+    )
   })
 
   it('reads as opted out when no copy of settings can be read', () => {
@@ -763,7 +766,6 @@ describe('peekBetaFeaturesEnabled', () => {
     fs.rmSync(settingsPath + '.bak', { force: true })
     lockPrimary()
     expect(settings.peekBetaFeaturesEnabled()).toBe(false)
-    vi.restoreAllMocks()
   })
 
   it.each([true, false])(

@@ -88,7 +88,6 @@ describe('BetaArgsPill', () => {
     api.getCoreBetaArgs.mockResolvedValue({ timing: 'next-launch', args: [] })
     const wrapper = await mountPill()
     const slot = wrapper.get('.beta-args-slot')
-    expect(slot.attributes('data-answers')).toBe('0')
     await flushPromises()
     expect(wrapper.find('.beta-args').exists()).toBe(false)
     expect(slot.text()).toBe('')
@@ -190,29 +189,19 @@ describe('BetaArgsPill', () => {
       expect(api.getCoreBetaArgs).not.toHaveBeenCalled()
       await wrapper.setProps({ schemaVersion: 1 })
       await flushPromises()
-      expect(api.getCoreBetaArgs).toHaveBeenCalledExactlyOnceWith('inst-1', '')
+      expect(api.getCoreBetaArgs).toHaveBeenCalledExactlyOnceWith('inst-1', undefined)
     })
 
-    it('sends the committed args, which main previews in place of a write still in flight', async () => {
+    it('sends no args until the value changes after mount, then sends the committed value', async () => {
+      // The field may still show the previous install's args when the pill mounts for a new one.
       const wrapper = await mountPill({ argsValue: '--port 8188' })
       await flushPromises()
       await wrapper.setProps({ argsValue: '--port 8188 --disable-assets' })
       await flushPromises()
       expect(api.getCoreBetaArgs.mock.calls).toEqual([
-        ['inst-1', '--port 8188'],
+        ['inst-1', undefined],
         ['inst-1', '--port 8188 --disable-assets']
       ])
-    })
-
-    it.each([
-      ['the committed args', { argsValue: '--disable-assets' }],
-      ['the schema version (an install change or a picker reopen reloads it)', { schemaVersion: 2 }]
-    ])('asks again when %s changes', async (_label, change) => {
-      const wrapper = await mountPill()
-      await flushPromises()
-      await wrapper.setProps(change)
-      await flushPromises()
-      expect(calls()).toBe(2)
     })
 
     it('does not ask again for a re-render with the same inputs', async () => {
@@ -252,39 +241,6 @@ describe('BetaArgsPill', () => {
       })
       await flushPromises()
       expect(calls()).toBe(1)
-    })
-
-    it("drops the previous install's pill as soon as another install is selected, without asking", async () => {
-      const wrapper = await mountPill()
-      await flushPromises()
-      expect(wrapper.text()).toContain('+2 beta')
-      await wrapper.setProps({ installationId: 'inst-2' })
-      await flushPromises()
-      expect(wrapper.find('.beta-args').exists()).toBe(false)
-      expect(calls()).toBe(1)
-    })
-
-    it("does not send the previous install's args for the next install", async () => {
-      const wrapper = await mountPill({ argsValue: '--disable-assets' })
-      await flushPromises()
-      await wrapper.setProps({ installationId: 'inst-2' })
-      await wrapper.setProps({ schemaVersion: 2 })
-      await flushPromises()
-      expect(api.getCoreBetaArgs).toHaveBeenLastCalledWith('inst-2', undefined)
-      // Its own sections land.
-      await wrapper.setProps({ argsValue: '--lowvram' })
-      await flushPromises()
-      expect(api.getCoreBetaArgs).toHaveBeenLastCalledWith('inst-2', '--lowvram')
-    })
-
-    it('ignores an answer for the previous install that arrives after the switch', async () => {
-      let resolveOld: (value: CoreBetaArgs) => void = () => {}
-      api.getCoreBetaArgs.mockReturnValueOnce(new Promise((r) => (resolveOld = r)))
-      const wrapper = await mountPill()
-      await wrapper.setProps({ installationId: 'inst-2' })
-      resolveOld(SESSION)
-      await flushPromises()
-      expect(wrapper.find('.beta-args').exists()).toBe(false)
     })
 
     it('keeps the newest answer when an older request resolves after it', async () => {
