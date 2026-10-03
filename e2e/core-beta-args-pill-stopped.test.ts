@@ -29,7 +29,7 @@ import {
 import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
 import {
-  ARGS_FIELD,
+  commitArgs,
   expectAnsweredWithNoPill,
   MANAGE,
   MENU,
@@ -169,16 +169,13 @@ test('an opt-in change made while the picker is hidden shows on reopen @linux', 
 const betaArgsRequests = async (): Promise<number> =>
   (await getIpcInvocations(ctx.app, 'get-core-beta-args')).length
 
-/** Commit a new args value through the input's own change event, as a blur would. */
-async function commitArgs(popup: WebContentsPage, value: string): Promise<void> {
-  await popup.evaluate(
-    `(() => {
-      const input = document.querySelector(${JSON.stringify(`${ARGS_FIELD} input`)})
-      input.value = ${JSON.stringify(value)}
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-    })()`,
-  )
+/** Fails if more than `expected` beta-args requests arrive over the next second and a half. */
+async function expectNoRequestsBeyond(expected: number, message: string): Promise<void> {
+  const deadline = Date.now() + 1_500
+  while (Date.now() < deadline) {
+    expect(await betaArgsRequests(), message).toBe(expected)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
 }
 
 test('only the pill asks: another field\'s save asks nothing, an args commit asks once @linux', async () => {
@@ -196,28 +193,18 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
       `window.api.getInstallations().then((all) => all.find((i) => i.id === ${JSON.stringify(INSTALL_ID)})?.portConflict ?? null)`,
     )
   await expect.poll(stored, { timeout: 10_000, intervals: [100, 200] }).not.toBeNull()
-  // The view re-reads its sections after a save; give that re-read time to land, then count.
-  await expect.poll(() => popup.exists(PILL), { timeout: 5_000 }).toBe(true)
-  expect(await betaArgsRequests(), 'a save of another field asked for beta args').toBe(0)
+  // A request would follow the save within milliseconds, so a quiet stretch after it is the answer.
+  await expectNoRequestsBeyond(0, 'a save of another field asked for beta args')
 
   await commitArgs(popup, `--port ${port} --lowvram`)
   await expect.poll(betaArgsRequests, { timeout: 10_000, intervals: [100, 200] }).toBe(1)
-  await popup.waitForVisible(PILL, { timeout: 10_000 })
-  expect(await betaArgsRequests()).toBe(1)
+  await expectNoRequestsBeyond(1, 'an args commit asked for beta args more than once')
 })
 
 test("adding the grant's opposite to the startup args removes it @linux", async () => {
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
-  // Commit through the input's own change event, as a blur would.
-  await popup.evaluate(
-    `(() => {
-      const input = document.querySelector(${JSON.stringify(`${ARGS_FIELD} input`)})
-      input.value = ${JSON.stringify(`--port ${port} --disable-assets`)}
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-    })()`,
-  )
+  await commitArgs(popup, `--port ${port} --disable-assets`)
   await popup.waitFor(async () => (await pillLabel(popup)) === null, {
     timeout: 10_000,
     message: 'the overridden grant was still shown after the args were committed',

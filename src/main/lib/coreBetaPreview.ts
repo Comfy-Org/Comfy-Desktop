@@ -4,7 +4,7 @@
  * the current HEAD and cached per (HEAD, commit), which never needs invalidating; a relation git
  * cannot prove is not cached, and its grant is not shown.
  */
-import { MAX_RESOLVED_SHAS, proveCommitRelation } from './coreBetaAncestry'
+import { FULL_SHA_RE, MAX_RESOLVED_SHAS, proveCommitRelation } from './coreBetaAncestry'
 import {
   NO_CORE_COMMITS,
   commitGrantShas,
@@ -27,10 +27,9 @@ import type { InstallationRecord } from '../installations'
 import type { LaunchCommand } from '../types/sources'
 import type { BetaArgView, CoreBetaArgs } from '../../types/ipc'
 
-/** A proof still running past this keeps going and caches its answer for the next request. */
+/** A proof still running past this finishes and caches its answer for the next request; no
+ *  further proofs start. */
 export const PREVIEW_PROOF_BUDGET_MS = 5_000
-
-const FULL_SHA_RE = /^[0-9a-f]{40}$/
 
 const relations = new Map<string, boolean>()
 const inFlight = new Map<string, Promise<boolean | null>>()
@@ -65,9 +64,11 @@ async function previewCommits(
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
   const ancestry = new Map<string, boolean>()
+  let overBudget = false
   // Sequential: concurrent pygit2 spawns into one repository only contend.
   const work = (async () => {
     for (const sha of shas.slice(0, MAX_RESOLVED_SHAS)) {
+      if (overBudget) return
       const relation = await relate(repoPath, head, sha)
       if (relation !== null) ancestry.set(sha, relation)
     }
@@ -80,6 +81,7 @@ async function previewCommits(
     })
   ])
   clearTimeout(timer)
+  overBudget = true
   return { head, ancestry: new Map(ancestry) }
 }
 

@@ -20,7 +20,7 @@ import { closeTitlePopupIfOpen, isPopupVisible, type WebContentsPage } from './s
 import { getRunningSessionSnapshot } from './support/devHooks'
 import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { byTestId, TID } from './support/testIds'
-import { ARGS_FIELD, PILL, pillLabel } from './support/betaArgsPill'
+import { ARGS_FIELD, commitArgs, PILL, pillLabel } from './support/betaArgsPill'
 
 // Two real launches do not fit the default budget.
 test.describe.configure({ mode: 'serial', timeout: 240_000 })
@@ -104,14 +104,7 @@ test('the pill follows the new session after a Restart that drops a grant @linux
   expect(await pillLabel(popup)).toBe('1 beta argument added for this session, show details')
 
   // The user passes the granted arg themselves, which overrides the grant for the next launch.
-  await popup.evaluate(
-    `(() => {
-      const input = document.querySelector(${JSON.stringify(`${ARGS_FIELD} input`)})
-      input.value = ${JSON.stringify(`--port ${port} --enable-assets`)}
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-    })()`,
-  )
+  await commitArgs(popup, `--port ${port} --enable-assets`)
   // The edit has landed once the field asks for a restart; the pill still shows the running
   // session's grant, which the edit cannot take back before the restart.
   await popup.waitForVisible(RESTART_TAG, { timeout: 10_000 })

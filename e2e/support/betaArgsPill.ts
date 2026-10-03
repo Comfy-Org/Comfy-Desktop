@@ -83,3 +83,15 @@ export async function expectAnsweredWithNoPill(
   expect(await pillLabel(popup), message).toBeNull()
   expect(await popup.exists(PILL_LOADING), message).toBe(false)
 }
+
+/** Commit a new args value through the input's own change event, as a blur would. */
+export async function commitArgs(popup: WebContentsPage, value: string): Promise<void> {
+  await popup.evaluate(
+    `(() => {
+      const input = document.querySelector(${JSON.stringify(`${ARGS_FIELD} input`)})
+      input.value = ${JSON.stringify(value)}
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })()`
+  )
+}

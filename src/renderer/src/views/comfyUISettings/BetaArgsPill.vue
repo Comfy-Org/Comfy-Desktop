@@ -32,6 +32,9 @@ const loading = ref(false)
  *  show" from "not answered yet", which otherwise render identically. */
 const answers = ref(0)
 let requestSeq = 0
+/** After an install switch the field still shows the previous install's args until the new
+ *  sections land, so they are not sent until the value changes; main then reads the stored ones. */
+let argsForInstall = true
 
 async function refresh(): Promise<void> {
   const seq = ++requestSeq
@@ -39,7 +42,7 @@ async function refresh(): Promise<void> {
     if (seq === requestSeq) loading.value = true
   }, LOADING_DELAY_MS)
   const next = await window.api
-    .getCoreBetaArgs(props.installationId, props.argsValue)
+    .getCoreBetaArgs(props.installationId, argsForInstall ? props.argsValue : undefined)
     .catch(() => null)
   clearTimeout(slow)
   if (seq !== requestSeq) return
@@ -56,7 +59,13 @@ watch(
     requestSeq++
     data.value = null
     loading.value = false
+    argsForInstall = false
   }
+)
+watch(
+  () => props.argsValue,
+  () => (argsForInstall = true),
+  { flush: 'sync' }
 )
 watch(
   [

@@ -728,6 +728,44 @@ describe('peekBetaFeaturesEnabled', () => {
     expect(settings.peekBetaFeaturesEnabled()).toBe(choice)
   })
 
+  const lockPrimary = (): void => {
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (p === settingsPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM'
+        throw err
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+  }
+
+  it('keeps a stored choice from the backup when the primary is locked, but never seeds from it', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: false }))
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ betaFeaturesEnabled: true }))
+    lockPrimary()
+    expect(settings.peekBetaFeaturesEnabled()).toBe(true)
+
+    vi.restoreAllMocks()
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ telemetryEnabled: true }))
+    lockPrimary()
+    expect(settings.peekBetaFeaturesEnabled(), 'a stale backup must not enroll').toBe(false)
+    vi.restoreAllMocks()
+  })
+
+  it('reads as opted out when no copy of settings can be read', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    fs.rmSync(settingsPath + '.bak', { force: true })
+    lockPrimary()
+    expect(settings.peekBetaFeaturesEnabled()).toBe(false)
+    vi.restoreAllMocks()
+  })
+
   it.each([true, false])(
     'reads a stored %s from settings.json.bak without restoring a missing settings.json',
     (choice) => {

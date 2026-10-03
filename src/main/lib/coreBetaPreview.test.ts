@@ -191,7 +191,7 @@ describe('previewCoreBetaArgs', () => {
     expect(h.prove).toHaveBeenCalledTimes(2)
   })
 
-  it('stops waiting at the budget, and caches the late answers for the next request', async () => {
+  it('stops at the budget: the proof in flight caches its answer, but no further proof starts', async () => {
     vi.useFakeTimers()
     let release: () => void = () => {}
     const gate = new Promise<void>((resolve) => (release = resolve))
@@ -205,10 +205,11 @@ describe('previewCoreBetaArgs', () => {
 
     release()
     await vi.advanceTimersByTimeAsync(0)
+    expect(h.prove.mock.calls.map((call) => call[1])).toEqual([SHA_A])
     h.prove.mockClear()
-    // The abandoned walk went on to prove SHA_B as well.
+    // SHA_A's late answer was cached; SHA_B was never started, so this request proves it.
     await expect(preview()).resolves.toHaveLength(2)
-    expect(h.prove).not.toHaveBeenCalled()
+    expect(h.prove.mock.calls.map((call) => call[1])).toEqual([SHA_B])
   })
 
   it.each([
@@ -280,6 +281,19 @@ describe('answerCoreBetaArgs', () => {
     await expect(
       answerCoreBetaArgs('inst-1', undefined, lookup({ sessionArgs: () => [] }))
     ).resolves.toEqual({ timing: 'session', args: [] })
+  })
+
+  it('builds the launch command from the committed args, not the stored ones', async () => {
+    const stored = { ...INST, launchArgs: '--port 8188' } as InstallationRecord
+    const fromRecord = (inst: InstallationRecord): LaunchCommand =>
+      launchCmd(...String(inst.launchArgs).split(' '))
+    await expect(
+      answerCoreBetaArgs('inst-1', '--port 8188 --disable-assets', {
+        sessionArgs: () => null,
+        record: async () => stored,
+        launchCommand: fromRecord
+      })
+    ).resolves.toEqual({ timing: 'next-launch', args: [{ arg: '--enable-agent', name: null }] })
   })
 
   it('previews a stopped install', async () => {

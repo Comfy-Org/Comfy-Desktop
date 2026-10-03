@@ -22,7 +22,14 @@ import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
 import type { WebContentsPage } from './support/cdpPages'
 import { clearRunningSessions, seedRunningSession } from './support/devHooks'
-import { MANAGE, MENU, openStartupArgs as openArgsFor, PILL } from './support/betaArgsPill'
+import {
+  expectAnsweredWithNoPill,
+  MANAGE,
+  MENU,
+  openStartupArgs as openArgsFor,
+  PILL,
+} from './support/betaArgsPill'
+import { opsFlagsGrantSeed } from './support/fakeComfyInstall'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -33,6 +40,9 @@ const MARKER_FILENAME = '.comfyui-desktop-2'
 
 let ctx: AppContext
 let installPath: string
+let previousPosthogHost: string | undefined
+/** Keeps telemetry, which the opt-in needs, from leaving the machine. */
+const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
 
 test.beforeAll(async () => {
   // Launching the app can run well past the 45s default on a loaded machine.
@@ -40,8 +50,12 @@ test.beforeAll(async () => {
   installPath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-beta-args-e2e-'))
   await mkdir(installPath, { recursive: true })
   await writeFile(path.join(installPath, MARKER_FILENAME), INSTALL_ID)
+  previousPosthogHost = process.env['POSTHOG_HOST']
+  process.env['POSTHOG_HOST'] = UNREACHABLE_POSTHOG_HOST
   ctx = await launchApp({
-    settings: { firstUseCompleted: true, telemetryEnabled: false },
+    // Opted in, with a grant this install's version qualifies for, so the only thing keeping the
+    // stopped pill away is that its next launch cannot be predicted.
+    settings: { firstUseCompleted: true, telemetryEnabled: true, betaFeaturesEnabled: true },
     installations: [
       {
         id: INSTALL_ID,
@@ -49,8 +63,15 @@ test.beforeAll(async () => {
         installPath,
         sourceId: 'standalone',
         status: 'installed',
+        comfyVersion: {
+          commit: 'b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2',
+          baseTag: 'v0.3.99',
+          commitsAhead: 0,
+          baseTagVerified: true,
+        },
       },
     ],
+    opsFlags: opsFlagsGrantSeed({ arg: '--enable-assets', minCoreVersion: '0.3.80' }),
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -59,6 +80,8 @@ test.afterAll(async () => {
   if (ctx) await clearRunningSessions(ctx.app).catch(() => {})
   await ctx?.cleanup()
   if (installPath) await rm(installPath, { recursive: true, force: true })
+  if (previousPosthogHost === undefined) delete process.env['POSTHOG_HOST']
+  else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
 const openStartupArgs = (): Promise<WebContentsPage> =>
@@ -69,10 +92,7 @@ const openStartupArgs = (): Promise<WebContentsPage> =>
 // guess. The predictable stopped case is `core-beta-args-pill-stopped.test.ts`.
 test('a stopped install whose next launch cannot be predicted shows no beta pill @windows @macos @linux', async () => {
   const popup = await openStartupArgs()
-  // The args field is on screen (waited above), so the pill's absence is a real answer.
-  expect(await popup.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(PILL)})`)).toBe(
-    false,
-  )
+  await expectAnsweredWithNoPill(popup, 'a stopped install with no launch command showed a pill')
 })
 
 test('a running install shows its grants and links to the beta opt-in @windows @macos @linux', async () => {

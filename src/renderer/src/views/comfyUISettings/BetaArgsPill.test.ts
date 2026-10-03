@@ -264,6 +264,19 @@ describe('BetaArgsPill', () => {
       expect(calls()).toBe(1)
     })
 
+    it("does not send the previous install's args for the next install", async () => {
+      const wrapper = await mountPill({ argsValue: '--disable-assets' })
+      await flushPromises()
+      await wrapper.setProps({ installationId: 'inst-2' })
+      await wrapper.setProps({ schemaVersion: 2 })
+      await flushPromises()
+      expect(api.getCoreBetaArgs).toHaveBeenLastCalledWith('inst-2', undefined)
+      // Its own sections land.
+      await wrapper.setProps({ argsValue: '--lowvram' })
+      await flushPromises()
+      expect(api.getCoreBetaArgs).toHaveBeenLastCalledWith('inst-2', '--lowvram')
+    })
+
     it('ignores an answer for the previous install that arrives after the switch', async () => {
       let resolveOld: (value: CoreBetaArgs) => void = () => {}
       api.getCoreBetaArgs.mockReturnValueOnce(new Promise((r) => (resolveOld = r)))

@@ -734,31 +734,33 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
 
   // Keyed on the session, not just "running": a restart can reach this window as running ->
   // running (the stop and relaunch landing between two snapshots), and the session-derived rows -
-  // the port, the beta-args pill - belong to the old session. Null while stopped, so moving
-  // between stopped installs does not fire.
-  const currentSession = (): string | null => {
-    const inst = toValue(opts.installation)
-    const session = inst ? sessionStore.sessionKey(inst.id) : null
-    return inst && session !== null ? `${inst.id}\0${session}` : null
+  // the port, the beta-args pill - belong to the old session.
+  const sessionNow = (): { id: string | null; session: string | null } => {
+    const id = toValue(opts.installation)?.id ?? null
+    return { id, session: id ? sessionStore.sessionKey(id) : null }
   }
-  let sessionInstallId: string | null = currentSession() ? toValue(opts.installation)!.id : null
-  watch(currentSession, (session, previous) => {
-    const inst = toValue(opts.installation)
-    const previousInstallId = sessionInstallId
-    sessionInstallId = session && inst ? inst.id : null
-    if (!inst) return
-    // The SAME install's session replaced by a new one consumed the edited values, so nothing
-    // is pending any more. The stop/launching edges below would clear this, but a restart seen
-    // as running -> running shows neither (e.g. a picker that was hidden for the restart).
-    // Switching between two running installs is not a restart: their pending state survives.
-    if (session && previous && previousInstallId === inst.id && session !== previous) {
-      clearRestartAndErrors(inst.id)
+  let watched = sessionNow()
+  watch(
+    () => {
+      const { id, session } = sessionNow()
+      return `${id ?? ''}\0${session === null ? 'stopped' : `running:${session}`}`
+    },
+    () => {
+      const previous = watched
+      watched = sessionNow()
+      const inst = toValue(opts.installation)
+      // A different install: the installation watcher above reloads for it, and its pending
+      // state is its own.
+      if (!inst || watched.id !== previous.id) return
+      // The same install's session replaced by a new one consumed the edited values, so nothing
+      // is pending any more. The stop/launching edges below would clear this, but a restart seen
+      // as running -> running shows neither (e.g. a picker that was hidden for the restart).
+      if (watched.session !== null && previous.session !== null) clearRestartAndErrors(inst.id)
+      // Refetch so the "Running details" port row follows the session: appears on launch,
+      // clears on stop, renews on restart. Race-safe via reload()'s requestSeq.
+      void reload()
     }
-    // Refetch so the "Running details" port row and the beta-args pill (sourced from main)
-    // follow the session: appear on launch, clear on stop, renew on restart. Race-safe via
-    // reload()'s requestSeq.
-    void reload()
-  })
+  )
 
   // Pending-restart cleanup is keyed on the session maps themselves (not the
   // selected install) so lifecycle edges of off-screen installs are not
