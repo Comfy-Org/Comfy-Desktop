@@ -733,8 +733,8 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   }
 
   // Keyed on the session, not just "running": a restart can reach this window as running ->
-  // running (the stop and relaunch landing between two snapshots), and the session-derived rows -
-  // the port, the beta-args pill - belong to the old session.
+  // running (the stop and relaunch landing between two snapshots), and the session-derived rows,
+  // such as the port, belong to the old session. (The beta-args pill watches the session itself.)
   watch(
     [
       () => toValue(opts.installation)?.id ?? null,

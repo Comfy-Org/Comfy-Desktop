@@ -43,7 +43,7 @@ function pillAnswers(popup: WebContentsPage): Promise<number> {
 }
 
 /** Wait until the pill has applied an answer newer than the note for `popup`. */
-async function waitForNewerAnswer(popup: WebContentsPage, message: string): Promise<void> {
+export async function waitForNewerAnswer(popup: WebContentsPage, message: string): Promise<void> {
   const before = answersBefore.get(popup)
   // Without a note, an answer from before the open would pass as the one asked for.
   if (before === undefined) throw new Error('note the pill first (openStartupArgs or notePillAnswers)')

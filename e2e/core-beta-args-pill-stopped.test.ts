@@ -256,7 +256,11 @@ async function clickBackdrop(): Promise<void> {
 }
 
 test('a backdrop click on Desktop Settings opened from Manage returns to Startup Arguments @linux', async () => {
-  const popup = await openStartupArgs()
+  // Opened on the decoy, then switched in the picker: the return goes to the install selected when
+  // Manage was clicked, not the one the picker opened on.
+  const popup = await openArgsFor(ctx.app, ctx.panel, DECOY_ID)
+  expect(await popup.clickByText('[role="option"]', 'Stopped Beta Fixture')).toBe(true)
+  await popup.waitFor(async () => (await shownInstallId(popup)) === INSTALL_ID, { timeout: 10_000 })
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await popup.clickUntilVisible(PILL, MANAGE, { timeout: 10_000 })
   expect(await popup.click(MANAGE)).toBe(true)
@@ -296,14 +300,13 @@ test('closing Desktop Settings opened from Manage returns to Startup Arguments @
 })
 
 test('closing Desktop Settings opened any other way just closes it @linux', async () => {
-  // A picker-originated open first, so a stale return target would show here.
+  // Desktop Settings from Manage is still showing, with its return target set, when the panel
+  // opens Desktop Settings over it: that open must not inherit the target.
   const picker = await openStartupArgs()
   await picker.waitForVisible(PILL, { timeout: 10_000 })
   await picker.clickUntilVisible(PILL, MANAGE, { timeout: 10_000 })
   expect(await picker.click(MANAGE)).toBe(true)
   await picker.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
-  await closeTitlePopupIfOpen(ctx.app)
-  await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
 
   await ctx.panel.evaluate(`window.api.openGlobalSettings('general')`)
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')

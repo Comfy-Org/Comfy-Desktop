@@ -3124,7 +3124,8 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const parentEntry = comfyWindows.get(entry.parentEntryId)
       if (!parentEntry || parentEntry.window.isDestroyed()) return
       const { initialTab, highlightFieldId } = parseGlobalSettingsTarget(payload)
-      // Only a picker has a selection to go back to; this channel is the picker settings'.
+      // Only a picker has a selection to go back to. Defensive: the beta-args pill, the only sender
+      // on this channel, renders only in the picker.
       const returnTo = entry.kind === 'instance-picker' ? entry.pickerSelectedInstallationId : null
       openGlobalSettingsForHost(
         parentEntry,
