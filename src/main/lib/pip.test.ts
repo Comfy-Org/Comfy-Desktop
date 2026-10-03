@@ -1,5 +1,21 @@
-import { describe, it, expect } from 'vitest'
-import { getPipIndexArgs, parsePipFreeze, uvEnv, PYPI_INDEX_URL, PYPI_MIRROR_URLS } from './pip'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { EventEmitter } from 'node:events'
+import { spawn } from 'child_process'
+import {
+  getPipIndexArgs,
+  parsePipFreeze,
+  runUvPipDetailed,
+  uvEnv,
+  PYPI_INDEX_URL,
+  PYPI_MIRROR_URLS
+} from './pip'
+import type * as ChildProcessModule from 'child_process'
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof ChildProcessModule>()
+  const spawn = vi.fn()
+  return { ...actual, spawn, default: { ...actual, spawn } }
+})
 
 /** Extract --index-url value from args. */
 function getIndexUrl(args: string[]): string | undefined {
@@ -230,5 +246,83 @@ describe('parsePipFreeze hardening', () => {
 
   it('parses a real distribution named like a prototype member', () => {
     expect(parsePipFreeze('constructor==1.2.3')).toEqual({ constructor: '1.2.3' })
+  })
+})
+
+describe('runUvPipDetailed onSpawn', () => {
+  /** Minimal stand-in for uv: the streams the runner attaches to and a pid. */
+  function fakeUv(pid = 4242): EventEmitter & { stdout: EventEmitter; stderr: EventEmitter } {
+    const proc = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter
+      stderr: EventEmitter
+      pid: number
+      killed: boolean
+      kill: () => boolean
+    }
+    proc.stdout = new EventEmitter()
+    proc.stderr = new EventEmitter()
+    proc.pid = pid
+    proc.killed = false
+    proc.kill = () => true
+    return proc
+  }
+
+  const spawnMock = vi.mocked(spawn)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('hands the caller the process it spawned', async () => {
+    const proc = fakeUv()
+    spawnMock.mockReturnValueOnce(proc as never)
+    let delivered: unknown = null
+
+    const running = runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      () => {},
+      undefined,
+      (p) => {
+        delivered = p
+      }
+    )
+    proc.emit('close', 0)
+
+    await expect(running).resolves.toEqual({ code: 0, output: '' })
+    expect(delivered).toBe(proc)
+  })
+
+  it('behaves exactly as before for a caller that passes no callback', async () => {
+    // The seam is additive: every existing call site omits it and must be
+    // indistinguishable from the code before it existed.
+    const proc = fakeUv()
+    spawnMock.mockReturnValueOnce(proc as never)
+
+    const running = runUvPipDetailed('uv', ['pip', 'install'], '/inst', () => {})
+    proc.stdout.emit('data', Buffer.from('Installed 1 package\n'))
+    proc.emit('close', 3)
+
+    await expect(running).resolves.toEqual({ code: 3, output: 'Installed 1 package\n' })
+  })
+
+  it('does not let a throwing callback take down the install', async () => {
+    const proc = fakeUv()
+    spawnMock.mockReturnValueOnce(proc as never)
+
+    const running = runUvPipDetailed(
+      'uv',
+      ['pip', 'install'],
+      '/inst',
+      () => {},
+      undefined,
+      () => {
+        throw new Error('caller bookkeeping blew up')
+      }
+    )
+    proc.emit('close', 0)
+
+    await expect(running).resolves.toEqual({ code: 0, output: '' })
   })
 })
