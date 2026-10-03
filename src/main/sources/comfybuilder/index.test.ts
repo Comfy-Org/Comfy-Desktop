@@ -1078,6 +1078,38 @@ describe('comfybuilder update-comfyui', () => {
     })
   })
 
+  // A record written before Desktop dropped the manager flag under a
+  // blocklist still says Yes and stores the flag; launch and the Startup
+  // Arguments field drop it from the policy on disk.
+  it('drops the stale manager flag of a blocklist record when the new release keeps the blocklist', async () => {
+    const updates = await updateAcrossPolicies('blocklist', 'blocklist', {
+      comfybuilderManagerAllowed: true,
+      launchArgs: '--enable-manager --cpu'
+    })
+
+    expect(updates.at(-1)).toMatchObject({
+      status: 'installed',
+      comfybuilderManagerAllowed: false,
+      launchArgs: '--cpu'
+    })
+  })
+
+  it('restores the manager flag for a stale blocklist record when the new release drops its blocklist', async () => {
+    // The user saved the args the field showed (without the flag), so the
+    // record lost the flag but still says Yes. Manager was off at launch, so
+    // this is a No-to-Yes update like any other.
+    const updates = await updateAcrossPolicies('blocklist', null, {
+      comfybuilderManagerAllowed: true,
+      launchArgs: '--cpu'
+    })
+
+    expect(updates.at(-1)).toMatchObject({
+      status: 'installed',
+      comfybuilderManagerAllowed: true,
+      launchArgs: '--enable-manager --cpu'
+    })
+  })
+
   it('refuses to update an install that is not ready', async () => {
     // The section disables the button, but an action id is reachable alone.
     const tools = actionTools()

@@ -31,11 +31,13 @@ import {
   untrackAction
 } from '../../lib/actions'
 import { buildLaunchSettingsFields } from '../common/launchSettingsFields'
+import { launchArgsAsLaunched } from '../../comfybuilder'
 import { getAvailableUpdate, getCachedVersions } from '../../devplatform/versionCache'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import type { InstallationRecord } from '../../installations'
 import { DEFAULT_LAUNCH_ARGS } from './constants'
+import { managerAllowedAtLaunch } from './manager'
 
 /** The build's own release. Stored in `version` because that IS what the
  *  builder versions; the ComfyUI build it pins is a separate fact. */
@@ -193,8 +195,19 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       title: t('common.launchSettings'),
       // Args stay open even where a build may ignore some of them -
       // the Jul 24 standup kept the field editable rather than second-guessing
-      // which flags a given build honours.
-      fields: buildLaunchSettingsFields(installation, { defaultLaunchArgs: DEFAULT_LAUNCH_ARGS })
+      // which flags a given build honours. The field shows what launches: the
+      // stored args can carry a manager flag launch drops (see
+      // managerAllowedAtLaunch).
+      fields: buildLaunchSettingsFields(
+        {
+          ...installation,
+          launchArgs: launchArgsAsLaunched(
+            (installation.launchArgs as string | undefined) ?? DEFAULT_LAUNCH_ARGS,
+            managerAllowedAtLaunch(installation)
+          )
+        },
+        { defaultLaunchArgs: DEFAULT_LAUNCH_ARGS }
+      )
     },
     {
       // No title: only `.actions` is read off a pinBottom section (the footer

@@ -10,6 +10,10 @@ vi.mock('electron', () => ({
   net: { request: vi.fn() }
 }))
 
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
 import { getDetailSections } from './detailSections'
 import {
   clearVersionCache,
@@ -102,6 +106,41 @@ describe('comfybuilder.getDetailSections', () => {
     expect(args).toBeDefined()
     expect(args?.editable).toBe(true)
   })
+
+  // The field shows what launches. A record can carry a manager flag launch
+  // drops: one written before a blocklist dropped it, or a flag the user typed
+  // into a build whose author turned Manager off.
+  it.each([
+    ['a governed blocklist build recorded as Yes', 'blocklist', true, '--cpu'],
+    ['a governed allowlist build recorded as Yes', 'allowlist', true, '--cpu'],
+    ['a No build', undefined, false, '--cpu'],
+    ['a governed build whose custom nodes are not governed', null, true, '--enable-manager --cpu'],
+    ['an ordinary Yes build', undefined, true, '--enable-manager --cpu']
+  ])(
+    'shows the startup arguments %s launches with',
+    (_name, customNodeMode, recorded, expected) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-detail-args-'))
+      try {
+        if (customNodeMode !== undefined) {
+          const file = path.join(root, 'ComfyUI', 'governance', 'policy.signed.json')
+          fs.mkdirSync(path.dirname(file), { recursive: true })
+          const payload = Buffer.from(JSON.stringify({ customNodeMode })).toString('base64url')
+          fs.writeFileSync(file, JSON.stringify({ schema: 1, payload, signature: 'sig' }))
+        }
+        const settings = sectionsFor(
+          record({
+            installPath: root,
+            comfybuilderManagerAllowed: recorded,
+            launchArgs: '--enable-manager --cpu'
+          })
+        ).find((s) => s.tab === 'settings')
+        const args = (settings?.fields ?? []).find((f) => f.id === 'launchArgs')
+        expect(args?.value).toBe(expected)
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    }
+  )
 
   it('labels the build version apart from the ComfyUI version', () => {
     // A bare "7" in a slot every other install fills with "v0.28.2" reads as a

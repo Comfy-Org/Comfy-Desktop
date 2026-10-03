@@ -28,6 +28,7 @@ export type { StageModelsOptions, StageModelsErrorKind, ModelJobSurface } from '
 export { resolveModelManifest } from './modelManifest'
 export {
   buildLaunchSpec,
+  launchArgsAsLaunched,
   launchArgsForManagerAnswer,
   managerAllowedByGovernance,
   managerAllowedByPolicy,
