@@ -71,8 +71,8 @@ describe('experiments', () => {
     captured.length = 0
     mockFlags = {}
     mockFlagsDelayMs = 0
-    process.env['POSTHOG_API_KEY'] = 'test-key'
-    process.env['POSTHOG_ENABLED'] = '1'
+    process.env['COMFY_DESKTOP_POSTHOG_API_KEY'] = 'test-key'
+    process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
 
     vi.resetModules()
     experiments = await import('./experiments')
@@ -85,8 +85,8 @@ describe('experiments', () => {
   })
 
   afterEach(() => {
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
+    delete process.env['COMFY_DESKTOP_POSTHOG_API_KEY']
+    delete process.env['COMFY_DESKTOP_POSTHOG_ENABLED']
     try {
       fs.rmSync(testUserData, { recursive: true, force: true })
     } catch {

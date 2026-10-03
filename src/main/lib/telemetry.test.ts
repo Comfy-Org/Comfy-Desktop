@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
 import type { TelemetryValue } from './telemetry'
+import { DEFAULT_POSTHOG_HOST } from '../../shared/posthogConfig'
 
 vi.mock('electron', () => ({
   app: {
@@ -265,6 +266,7 @@ interface SetupTelemetryOptions {
   bind?: string | null
   appVersion?: string
   appEnv?: string
+  isPackaged?: boolean
 }
 
 /**
@@ -279,21 +281,22 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
     consent = 'granted',
     bind = 'test-distinct-id',
     appVersion = '0.0.0',
-    appEnv = 'test'
+    appEnv = 'test',
+    isPackaged = true
   } = options
   captured.length = 0
   identifies.length = 0
   exceptions.length = 0
   featureFlagResultCalls.length = 0
   posthogConstructorCalls.length = 0
-  process.env['POSTHOG_API_KEY'] = 'test-key'
-  process.env['POSTHOG_ENABLED'] = '1'
+  process.env['COMFY_DESKTOP_POSTHOG_API_KEY'] ??= 'test-key'
+  process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] ??= '1'
   // Opt in by default here so tests that use the exception stream as an
   // observable keep working; the opt-out default is pinned by its own test.
-  process.env['POSTHOG_EXCEPTIONS'] = '1'
+  process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS'] = '1'
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
-  telemetry.initTelemetry({ appVersion, appEnv, isPackaged: true })
+  telemetry.initTelemetry({ appVersion, appEnv, isPackaged })
   if (consent) telemetry.setConsentState(consent)
   if (bind) bindTestAnonymous(bind)
   telemetry._test_resetVolumeGuards()
@@ -312,8 +315,12 @@ afterEach(() => {
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
   delete process.env['POSTHOG_API_KEY']
+  delete process.env['POSTHOG_HOST']
   delete process.env['POSTHOG_ENABLED']
-  delete process.env['POSTHOG_EXCEPTIONS']
+  delete process.env['COMFY_DESKTOP_POSTHOG_API_KEY']
+  delete process.env['COMFY_DESKTOP_POSTHOG_HOST']
+  delete process.env['COMFY_DESKTOP_POSTHOG_ENABLED']
+  delete process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS']
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
 })
@@ -531,6 +538,43 @@ describe('telemetry PostHog client options', () => {
     setupTelemetry()
 
     expect(constructorOptions()).not.toHaveProperty('requestTimeout')
+  })
+
+  it('ignores generic PostHog environment variables in packaged builds', () => {
+    process.env['POSTHOG_API_KEY'] = 'phx-unrelated-personal-key'
+    process.env['POSTHOG_HOST'] = 'https://unrelated-posthog.example'
+    process.env['POSTHOG_ENABLED'] = '0'
+
+    setupTelemetry()
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'test-key',
+      options: { host: DEFAULT_POSTHOG_HOST }
+    })
+  })
+
+  it('accepts product-scoped PostHog overrides in packaged builds', () => {
+    process.env['COMFY_DESKTOP_POSTHOG_API_KEY'] = 'scoped-key'
+    process.env['COMFY_DESKTOP_POSTHOG_HOST'] = 'https://scoped-posthog.example'
+
+    setupTelemetry()
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'scoped-key',
+      options: { host: 'https://scoped-posthog.example' }
+    })
+  })
+
+  it('keeps generic PostHog overrides available for unpackaged development', () => {
+    process.env['POSTHOG_API_KEY'] = 'dev-key'
+    process.env['POSTHOG_HOST'] = 'https://dev-posthog.example'
+
+    setupTelemetry({ isPackaged: false })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'dev-key',
+      options: { host: 'https://dev-posthog.example' }
+    })
   })
 })
 
@@ -983,8 +1027,8 @@ describe('telemetry late ops-flag results', () => {
 
   it('does not report late when the client is not initialised', async () => {
     // Given telemetry disabled, so there is no fetch to abandon in the first place
-    delete process.env['POSTHOG_API_KEY']
-    delete process.env['POSTHOG_ENABLED']
+    delete process.env['COMFY_DESKTOP_POSTHOG_API_KEY']
+    delete process.env['COMFY_DESKTOP_POSTHOG_ENABLED']
     telemetry._resetForTest()
     const late: unknown[] = []
 
@@ -2345,8 +2389,8 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     expect(forwardedContext).not.toHaveProperty('error_message')
   })
 
-  it('suppresses the PostHog exception copy unless POSTHOG_EXCEPTIONS opts in', () => {
-    delete process.env['POSTHOG_EXCEPTIONS']
+  it('suppresses the PostHog exception copy unless the product-scoped flag opts in', () => {
+    delete process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS']
     const target = makeStubWebContents()
     telemetry.registerTelemetryRelayTarget(target.wc)
 
