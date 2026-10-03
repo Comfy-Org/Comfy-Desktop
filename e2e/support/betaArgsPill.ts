@@ -18,17 +18,16 @@ import { byTestId, TID } from './testIds'
 export const ARGS_FIELD = '[data-field-id="launchArgs"]'
 export const PILL = `${ARGS_FIELD} .beta-args button`
 const PILL_LOADING = `${ARGS_FIELD} .beta-args-loading`
-/** Always rendered, carrying the number of answers the pill has applied. */
+/** Always rendered, carrying the document-wide number of the pill's latest answer. */
 const PILL_SLOT = `${ARGS_FIELD} .beta-args-slot`
 /** Teleported to <body>, so not under the field. */
 export const MENU = '.beta-args-menu'
 export const MANAGE = `${MENU} .ui-menu-item:not([aria-disabled])`
 
-/** The pill each open started from and the answers it had applied, so absence is read against a
- *  newer answer. A pill that remounted since (another install, or the picker returning from
- *  Settings) is not the noted one, and any answer it has applied is newer. */
-const answersBefore = new WeakMap<WebContentsPage, { token: string; answers: number }>()
-let noteSeq = 0
+/** The latest answer number when each page was noted. Answers are numbered across the document
+ *  and never reset, so any answer newer than the note has a higher number, even from a pill that
+ *  remounted since (another install, or the picker returning from Settings). */
+const answersBefore = new WeakMap<WebContentsPage, number>()
 
 export function pillLabel(popup: WebContentsPage): Promise<string | null> {
   return popup.evaluate<string | null>(
@@ -36,39 +35,31 @@ export function pillLabel(popup: WebContentsPage): Promise<string | null> {
   )
 }
 
-/** The current pill's answer count, and whether it is the pill noted under `token`. */
-function pillAnswers(
-  popup: WebContentsPage,
-  token: string
-): Promise<{ answers: number; noted: boolean }> {
-  return popup.evaluate<{ answers: number; noted: boolean }>(
-    `(() => {
-      const slot = document.querySelector(${JSON.stringify(PILL_SLOT)})
-      return {
-        answers: Number(slot?.getAttribute('data-answers') ?? -1),
-        noted: slot?.__e2ePillNote === ${JSON.stringify(token)}
-      }
-    })()`
+/** The number of the pill's latest answer; 0 with no pill or no answer yet. */
+function pillAnswers(popup: WebContentsPage): Promise<number> {
+  return popup.evaluate<number>(
+    `Number(document.querySelector(${JSON.stringify(PILL_SLOT)})?.getAttribute('data-answers') ?? 0)`
   )
 }
 
-/** Tag the current pill, if any, and record its answer count. */
-async function notePill(popup: WebContentsPage): Promise<{ token: string; answers: number }> {
-  const token = `note-${++noteSeq}`
-  const answers = await popup
-    .evaluate<number>(
-      `(() => {
-        const slot = document.querySelector(${JSON.stringify(PILL_SLOT)})
-        if (!slot) return -1
-        slot.__e2ePillNote = ${JSON.stringify(token)}
-        return Number(slot.getAttribute('data-answers'))
-      })()`
-    )
-    .catch(() => -1)
-  return { token, answers }
+/** Wait until the pill has applied an answer newer than the note for `popup`. */
+async function waitForNewerAnswer(popup: WebContentsPage, message: string): Promise<void> {
+  const before = answersBefore.get(popup)
+  // Without a note, an answer from before the open would pass as the one asked for.
+  if (before === undefined) throw new Error('note the pill first (openStartupArgs or notePillAnswers)')
+  await expect
+    .poll(() => pillAnswers(popup), {
+      timeout: 20_000,
+      intervals: [100, 200],
+      message: `${message} (the pill never received its answer)`
+    })
+    .toBeGreaterThan(before)
 }
 
-/** Open the picker on `installationId`'s Startup Arguments and wait for its args field. */
+/**
+ * Open the picker on `installationId`'s Startup Arguments and wait for this open's own answer, so
+ * nothing the open asked for is still in flight when the caller changes state or counts requests.
+ */
 export async function openStartupArgs(
   app: ElectronApplication,
   panel: WebContentsPage,
@@ -79,8 +70,8 @@ export async function openStartupArgs(
   // The picker stays mounted while hidden, so its pill may already hold earlier answers.
   const before =
     (await findWebContentsId(app, 'comfyTitlePopup.html')) === null
-      ? { token: '', answers: -1 }
-      : await notePill(titlePopupPage(app))
+      ? 0
+      : await pillAnswers(titlePopupPage(app))
   await panel.evaluate(
     `window.api.openInstancePicker({ installationId: ${JSON.stringify(installationId)}, initialTab: 'config' })`
   )
@@ -89,40 +80,25 @@ export async function openStartupArgs(
   await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
   await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
   answersBefore.set(popup, before)
+  await waitForNewerAnswer(popup, `opening ${installationId}'s Startup Arguments`)
   return popup
 }
 
-/** Count the pill's answers from now, for a pill that is about to (re)appear other than through
- *  `openStartupArgs`, such as the picker a Settings close returns to. */
+/** Count the pill's answers from now: call before the change whose answer is about to be read. */
 export async function notePillAnswers(popup: WebContentsPage): Promise<void> {
-  answersBefore.set(popup, await notePill(popup))
+  answersBefore.set(popup, await pillAnswers(popup))
 }
 
 /**
  * The pill renders nothing both before its answer and for an empty one, so absence means
- * something only once the pill has applied an answer newer than the open. Wait for that, however
+ * something only once the pill has applied an answer newer than the note. Wait for that, however
  * long the git work behind it takes; the pill's DOM then already reflects it.
  */
 export async function expectAnsweredWithNoPill(
   popup: WebContentsPage,
   message: string
 ): Promise<void> {
-  const before = answersBefore.get(popup)
-  // Without a note, an answer from before the open would pass as the one asked for.
-  if (!before) throw new Error('expectAnsweredWithNoPill: note the pill first (openStartupArgs or notePillAnswers)')
-  await expect
-    .poll(
-      async () => {
-        const now = await pillAnswers(popup, before.token)
-        return now.answers > (now.noted ? Math.max(before.answers, 0) : 0)
-      },
-      {
-        timeout: 20_000,
-        intervals: [100, 200],
-        message: `${message} (the pill never received its answer)`
-      }
-    )
-    .toBe(true)
+  await waitForNewerAnswer(popup, message)
   expect(await pillLabel(popup), message).toBeNull()
   expect(await popup.exists(PILL_LOADING), message).toBe(false)
 }

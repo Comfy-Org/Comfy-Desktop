@@ -51,7 +51,6 @@ import {
   parseGlobalSettingsTarget,
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
-  titlePopupReturnTarget,
   type FlowMenuItemId,
   type InstancePickerInstall,
   type TitlePopupEntry,
@@ -936,25 +935,4 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
   it('does not grant on an explicit opt-out', () => {
     expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
   })
-})
-
-describe('titlePopupReturnTarget', () => {
-  it('sends Desktop Settings opened from the picker back to that install', () => {
-    expect(
-      titlePopupReturnTarget({ kind: 'global-settings', returnToPickerInstallationId: 'inst-1' })
-    ).toBe('inst-1')
-  })
-
-  it('just closes Desktop Settings opened any other way', () => {
-    expect(
-      titlePopupReturnTarget({ kind: 'global-settings', returnToPickerInstallationId: null })
-    ).toBeNull()
-  })
-
-  it.each(['instance-picker', 'menu', 'downloads', 'downloads-full'] as const)(
-    'just closes a %s popup, even with a stale return target',
-    (kind) => {
-      expect(titlePopupReturnTarget({ kind, returnToPickerInstallationId: 'inst-1' })).toBeNull()
-    }
-  )
 })

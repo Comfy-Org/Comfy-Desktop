@@ -126,7 +126,13 @@ test('the pill follows the new session after a Restart that drops a grant @linux
         const after = await getRunningSessionSnapshot(ctx.app, INSTALL_ID)
         return (after?.startedAt ?? 0) > (before?.startedAt ?? 0)
       },
-      { timeout: 120_000, intervals: [500, 1_000] },
+      {
+        // A relaunch normally lands within about 2s of the first launch; 30s leaves room for a
+        // loaded machine and fails fast on the known stall (the fake ComfyUI stops accepting).
+        timeout: 30_000,
+        intervals: [500, 1_000],
+        message: 'restart never happened: startedAt did not advance after Restart',
+      },
     )
     .toBe(true)
 

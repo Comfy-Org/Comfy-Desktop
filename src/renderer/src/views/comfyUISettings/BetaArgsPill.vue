@@ -1,3 +1,9 @@
+<script lang="ts">
+/** Answers applied by every pill in this document, in order. Never resets, so a test can tell an
+ *  answer that arrived after it looked from any earlier one, even across a remount. */
+let answerSeq = 0
+</script>
+
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -28,8 +34,9 @@ const menu = useTemplateRef<InstanceType<typeof BaseMenu>>('menu')
 
 const data = ref<CoreBetaArgs | null>(null)
 const loading = ref(false)
-/** Answers applied so far. Rendered as `data-answers`, so a test can tell "answered: nothing to
- *  show" from "not answered yet", which otherwise render identically. */
+/** The document-wide number of this pill's latest answer (0 until it has one). Rendered as
+ *  `data-answers`, so a test can tell "answered: nothing to show" from "not answered yet", which
+ *  otherwise render identically. */
 const answers = ref(0)
 let requestSeq = 0
 /** The pill remounts with each install (its pane is keyed by install), but the field can still
@@ -53,7 +60,7 @@ async function refresh(): Promise<void> {
   data.value = next?.answer ?? null
   loading.value = false
   // A failed request shows nothing, but it is not an answer.
-  if (next) answers.value++
+  if (next) answers.value = ++answerSeq
 }
 
 watch(

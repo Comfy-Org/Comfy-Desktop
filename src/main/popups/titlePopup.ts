@@ -480,8 +480,9 @@ export interface TitlePopupEntry {
   /** Monotonic nonce stamped alongside `pickerAutoAction` so a repeat
    *  open with the same action id still reads as a fresh trigger. */
   pickerAutoActionNonce: number
-  /** Install whose picker settings opened this Desktop Settings popup. Closing Settings returns
-   *  there instead of dismissing. Cleared by every open, so only a picker-originated one sets it. */
+  /** Install whose picker settings opened this Desktop Settings popup through the beta-args pill's
+   *  Manage link. Closing Settings returns there instead of dismissing. Every open clears it, so
+   *  only that route sets it; the picker's Storage link into Settings just closes. */
   returnToPickerInstallationId: string | null
   /** JSON of the most recent `installs-changed` snapshot sent to this
    *  popup. Used by `broadcastInstancePickerSnapshotToTitlePopups` to
@@ -1815,14 +1816,6 @@ function openGlobalSettingsForHost(
   })()
 }
 
-/** Where a deliberate dismiss of `entry` goes: the install whose picker settings opened Desktop
- *  Settings, or `null` to just close. */
-export function titlePopupReturnTarget(
-  entry: Pick<TitlePopupEntry, 'kind' | 'returnToPickerInstallationId'>
-): string | null {
-  return entry.kind === 'global-settings' ? entry.returnToPickerInstallationId : null
-}
-
 /** Open the large centred "View All Downloads" popup. Reuses the tray popup's
  *  live download feed, so no snapshot is built here. */
 function openDownloadsFullForHost(
@@ -2385,7 +2378,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   /** A deliberate dismiss (Escape, close button, backdrop click). Desktop Settings opened from the
    *  picker's settings goes back there; everything else closes. */
   function dismissTitlePopup(entry: TitlePopupEntry): void {
-    const returnTo = titlePopupReturnTarget(entry)
+    const returnTo = entry.returnToPickerInstallationId
     const parentEntry = returnTo === null ? undefined : comfyWindows.get(entry.parentEntryId)
     if (returnTo === null || !parentEntry || parentEntry.window.isDestroyed()) {
       hideTitlePopup(entry, { releaseFocusToParent: true })
@@ -2398,7 +2391,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       parentEntry.titleBarView.webContents,
       { x: 0, y: TITLEBAR_HEIGHT },
       returnTo,
-      // The config tab: the only picker link into Desktop Settings lives there (Startup Arguments).
+      // The config tab: the Manage link that set the target lives there (Startup Arguments).
       'config'
     )
   }

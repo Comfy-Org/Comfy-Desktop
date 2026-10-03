@@ -743,8 +743,8 @@ export function resolveBetaFeaturesEnabled(): boolean {
  *  `.bak` restore, and none of `loadOutcome`'s normalization, which can save (and never touches the
  *  two keys read here). The E2E-only env seed still applies, as for every settings read. */
 export function peekBetaFeaturesEnabled(): boolean {
-  const { parsed, unreadable, readFailed } = readStoredSettings({ restore: false })
-  if (readFailed) return false
+  // A total read failure is unreadable with nothing parsed, which reads as opted out.
+  const { parsed, unreadable } = readStoredSettings({ restore: false })
   return betaFeaturesEnabledIn((parsed ?? {}) as Partial<Settings>, unreadable)
 }
 

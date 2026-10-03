@@ -91,7 +91,20 @@ describe('BetaArgsPill', () => {
     await flushPromises()
     expect(wrapper.find('.beta-args').exists()).toBe(false)
     expect(slot.text()).toBe('')
-    expect(slot.attributes('data-answers')).toBe('1')
+    expect(Number(slot.attributes('data-answers'))).toBeGreaterThan(0)
+  })
+
+  it("numbers answers across the document, so a remounted pill's are newer than an earlier pill's", async () => {
+    const answerOf = (w: VueWrapper): number =>
+      Number(w.get('.beta-args-slot').attributes('data-answers'))
+    const first = await mountPill()
+    await flushPromises()
+    const earlier = answerOf(first)
+    first.unmount()
+    const second = await mountPill()
+    expect(answerOf(second)).toBe(0)
+    await flushPromises()
+    expect(answerOf(second)).toBeGreaterThan(earlier)
   })
 
   it('renders nothing when the request fails, and does not count it as an answer', async () => {
@@ -220,12 +233,23 @@ describe('BetaArgsPill', () => {
       ])
     })
 
-    it('does not ask again for a re-render with the same inputs', async () => {
-      const wrapper = await mountPill()
+    it('does not ask again when the running entry is replaced within the same session', async () => {
+      await mountPill()
+      const store = useSessionStore()
+      const entry = (port: number) => ({
+        installationId: 'inst-1',
+        installationName: 'One',
+        mode: 'window',
+        port,
+        startedAt: 100
+      })
+      store.runningInstances.set('inst-1', entry(8188))
       await flushPromises()
-      await wrapper.setProps({ argsValue: '' })
+      const before = calls()
+      // A snapshot that rewrites the entry (here its port) is the same session.
+      store.runningInstances.set('inst-1', entry(8189))
       await flushPromises()
-      expect(calls()).toBe(1)
+      expect(calls()).toBe(before)
     })
 
     it('asks again when the session starts, and when a restart replaces it', async () => {

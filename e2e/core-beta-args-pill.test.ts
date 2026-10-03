@@ -43,6 +43,9 @@ let installPath: string
 let previousPosthogHost: string | undefined
 /** Keeps telemetry, which the opt-in needs, from leaving the machine. */
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
+/** macOS resolves the app's config dir to Electron's real userData, which ignores the harness's
+ *  isolated home, so an ops-flag seed there would stay in the real profile after the run. */
+const SEEDS_OPS_FLAGS = process.platform !== 'darwin'
 
 test.beforeAll(async () => {
   // Launching the app can run well past the 45s default on a loaded machine.
@@ -71,7 +74,9 @@ test.beforeAll(async () => {
         },
       },
     ],
-    opsFlags: opsFlagsGrantSeed({ arg: '--enable-assets', minCoreVersion: '0.3.80' }),
+    opsFlags: SEEDS_OPS_FLAGS
+      ? opsFlagsGrantSeed({ arg: '--enable-assets', minCoreVersion: '0.3.80' })
+      : undefined,
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -89,8 +94,9 @@ const openStartupArgs = (): Promise<WebContentsPage> =>
 
 // This fixture has no interpreter, so the settings view's schema discovery fails and the next-launch
 // preview (which only reads a cached schema) cannot be computed: the pill must stay away rather than
-// guess. The predictable stopped case is `core-beta-args-pill-stopped.test.ts`.
-test('a stopped install whose next launch cannot be predicted shows no beta pill @windows @macos @linux', async () => {
+// guess. The predictable stopped case is `core-beta-args-pill-stopped.test.ts`. Not on macOS: without
+// the grant seed there, no pill would be expected anyway.
+test('a stopped install whose next launch cannot be predicted shows no beta pill @windows @linux', async () => {
   const popup = await openStartupArgs()
   await expectAnsweredWithNoPill(popup, 'a stopped install with no launch command showed a pill')
 })

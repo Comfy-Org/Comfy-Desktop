@@ -371,8 +371,8 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
 }
 
 async function requestTitlePopupClose(app: ElectronApplication): Promise<void> {
-  // Retried: closing an already-closed popup is a no-op, so re-running the
-  // callback after a lost result is safe.
+  // Retried after a lost result. A retry can close once more (Desktop Settings opened from Manage
+  // returns to the picker on its first close); callers poll for the outcome they need.
   await evalWithRetry(() => app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) return

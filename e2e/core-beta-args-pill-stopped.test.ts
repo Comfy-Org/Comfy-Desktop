@@ -140,16 +140,20 @@ test('shows the grants the next launch is eligible for @linux', async () => {
   expect(text).toContain('Asset library')
 })
 
+/** The beta opt-in switch's state in Desktop Settings. */
+function betaSwitchChecked(popup: WebContentsPage): Promise<string | null> {
+  return popup.evaluate<string | null>(
+    `document.querySelector(${JSON.stringify(BETA_SWITCH)})?.getAttribute('aria-checked') ?? null`,
+  )
+}
+
 test('turning the beta opt-in off removes the pill on the next open, and on restores it @linux', async () => {
   let popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await popup.clickUntilVisible(PILL, MANAGE, { timeout: 10_000 })
   expect(await popup.click(MANAGE)).toBe(true)
   await popup.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
-  const checked = (): Promise<string | null> =>
-    popup.evaluate<string | null>(
-      `document.querySelector(${JSON.stringify(BETA_SWITCH)})?.getAttribute('aria-checked') ?? null`,
-    )
+  const checked = (): Promise<string | null> => betaSwitchChecked(popup)
   expect(await checked()).toBe('true')
   expect(await popup.click(BETA_SWITCH)).toBe(true)
   await popup.waitFor(async () => (await checked()) === 'false', { timeout: 5_000 })
@@ -272,10 +276,7 @@ test('closing Desktop Settings opened from Manage returns to Startup Arguments @
   await popup.clickUntilVisible(PILL, MANAGE, { timeout: 10_000 })
   expect(await popup.click(MANAGE)).toBe(true)
   await popup.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
-  const checked = (): Promise<string | null> =>
-    popup.evaluate<string | null>(
-      `document.querySelector(${JSON.stringify(BETA_SWITCH)})?.getAttribute('aria-checked') ?? null`,
-    )
+  const checked = (): Promise<string | null> => betaSwitchChecked(popup)
   expect(await popup.click(BETA_SWITCH)).toBe(true)
   await popup.waitFor(async () => (await checked()) === 'false', { timeout: 5_000 })
 
@@ -320,9 +321,7 @@ test('closing Desktop Settings opened any other way just closes it @linux', asyn
 test("adding the grant's opposite to the startup args removes it @linux", async () => {
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
+  await notePillAnswers(popup)
   await commitArgs(popup, `--port ${port} --disable-assets`)
-  await popup.waitFor(async () => (await pillLabel(popup)) === null, {
-    timeout: 10_000,
-    message: 'the overridden grant was still shown after the args were committed',
-  })
+  await expectAnsweredWithNoPill(popup, 'the overridden grant was still shown after the args were committed')
 })

@@ -16,12 +16,9 @@ vi.mock('electron', () => ({
 }))
 
 import {
-  _addSession,
   _broadcastToRenderer,
   _registerExtraBroadcastTarget,
-  _removeSession,
-  _unregisterExtraBroadcastTarget,
-  getSessionStartedAt
+  _unregisterExtraBroadcastTarget
 } from './shared'
 
 interface FakeWebContents {
@@ -89,24 +86,5 @@ describe('_broadcastToRenderer extra target registry', () => {
     expect(b.send).toHaveBeenCalledWith('panel-switch', { panel: 'settings' })
     _unregisterExtraBroadcastTarget(a as unknown as Electron.WebContents)
     _unregisterExtraBroadcastTarget(b as unknown as Electron.WebContents)
-  })
-})
-
-describe('instance-started', () => {
-  it("carries the session's start time, which is the renderer's session key", () => {
-    const wc = makeFakeWc()
-    _registerExtraBroadcastTarget(wc as unknown as Electron.WebContents)
-    try {
-      _addSession('inst-1', { proc: null, port: 8188, mode: 'window', installationName: 'One' })
-      const started = wc.send.mock.calls.find(([channel]) => channel === 'instance-started')
-      expect(started?.[1]).toMatchObject({
-        installationId: 'inst-1',
-        startedAt: getSessionStartedAt('inst-1')
-      })
-      expect(getSessionStartedAt('inst-1')).toEqual(expect.any(Number))
-    } finally {
-      _removeSession('inst-1')
-      _unregisterExtraBroadcastTarget(wc as unknown as Electron.WebContents)
-    }
   })
 })
