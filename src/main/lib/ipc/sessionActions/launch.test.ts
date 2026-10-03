@@ -2099,6 +2099,8 @@ describe('Performance Test database', () => {
     launchHarness.grants = []
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = async () => {}
+    // No real port probes: the install's port 48234 must read as free on any machine.
+    launchHarness.busyPorts = []
     launchHarness.spawn = (_cmd: unknown, args: unknown) => {
       spawnArgs = args as string[]
       const proc = new EventEmitter() as FakeChild
@@ -2136,6 +2138,7 @@ describe('Performance Test database', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    launchHarness.busyPorts = null
     setCallbacks({})
     fs.rmSync(installDir, { recursive: true, force: true })
     for (const key of [..._runningSessions.keys()]) {
@@ -2245,8 +2248,8 @@ describe('Performance Test database', () => {
     expect(res.ok).toBe(true)
     expect(spawnArgs).toContain(userDb())
     expect(spawnArgs).not.toContain('sqlite:///:memory:')
-    // On the install's database it keeps the install's port, so launching the install while it
-    // runs is refused rather than putting two ComfyUIs on one catalogue.
+    // On the install's database it keeps the install's port, so the same-install port check still
+    // stands between the two.
     expect(spawnArgs, 'kept the port the source chose').not.toContain('--port')
     expect(started).toEqual([
       expect.objectContaining({ sessionKind: 'performance_test', databaseMode: 'file' })

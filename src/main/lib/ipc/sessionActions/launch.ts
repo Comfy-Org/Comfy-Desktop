@@ -995,7 +995,8 @@ async function runLaunch(
   }
 
   /** Which session this is and which database it runs on, so Performance Test runs (and their
-   *  in-memory catalogue) can be split from the user's own sessions in every event. */
+   *  in-memory catalogue) can be split from the user's own sessions in the boot, exit and tap
+   *  events. */
   function launchKind(): { session_kind: SessionKind; db_mode: DbMode } {
     return { session_kind: sessionKindOf(sessionId), db_mode: databaseModeOf(launchCmd.args) }
   }

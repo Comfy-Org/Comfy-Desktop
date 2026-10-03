@@ -160,12 +160,31 @@ test('the install boots while a Performance Test is running @linux', async () =>
 
   const perf = await launch(PERF_SESSION)
   expect(perf, perf.message).toMatchObject({ ok: true })
+  const perfSession = await getRunningSessionSnapshot(ctx!.app, PERF_SESSION)
   expect(await dbBytes(), 'the Performance Test did not open the database').toBe(before)
   const second = await launch(INSTALL_ID)
   expect(second, second.message).toMatchObject({ ok: true })
 
-  expect(await getRunningSessionSnapshot(ctx!.app, PERF_SESSION)).not.toBeNull()
+  // The install booted on its own database (its boot wrote to it), on a port of its own...
+  expect((await dbBytes())?.split('scan by').length).toBe((before?.split('scan by').length ?? 1) + 1)
+  const install = await getRunningSessionSnapshot(ctx!.app, INSTALL_ID)
+  expect(install!.port).not.toBe(perfSession!.port)
+  // ...and the same Performance Test ComfyUI still runs its benchmark to results.
+  expect(await getRunningSessionSnapshot(ctx!.app, PERF_SESSION)).toMatchObject({
+    pid: perfSession!.pid,
+  })
+  const run = await ctx!.panel.evaluate<PerfRunResult>(
+    `window.api.runPerformanceTestWorkflow(${JSON.stringify(PERF_SESSION)}, ${JSON.stringify(
+      await writeWorkflow(),
+    )}, 1, 0)`,
+  )
+  expect(run, run.message).toMatchObject({ ok: true })
+  expect(run.resultsSummary?.instance.databaseMode).toBe('memory')
   expect(await events('comfy.desktop.comfyui.boot_failed')).toEqual([])
+  expect((await events('comfy.desktop.comfyui.boot_completed')).slice(-2)).toEqual([
+    expect.objectContaining({ session_kind: 'performance_test', db_mode: 'memory' }),
+    expect.objectContaining({ session_kind: 'normal', db_mode: 'file' }),
+  ])
   await stop(PERF_SESSION)
   await stop(INSTALL_ID)
 })
