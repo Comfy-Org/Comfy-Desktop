@@ -81,7 +81,7 @@ describe('emitInstanceStartedTelemetry — first_local_instance_started_at guard
 })
 
 describe('emitInstanceStartedTelemetry — session kind', () => {
-  it('says a Performance Test boot is one, and that it ran on an in-memory database', async () => {
+  it('says a Performance Test boot is one, and that it ran on a throwaway database', async () => {
     vi.clearAllMocks()
     mockCtx = baseCtx('local-src')
     mockSourceCategory = 'local'
@@ -89,12 +89,12 @@ describe('emitInstanceStartedTelemetry — session kind', () => {
     await emitInstanceStartedTelemetry({
       ...info,
       sessionKind: 'performance_test',
-      databaseMode: 'memory'
+      databaseMode: 'temp_file'
     })
 
     expect(telemetry.capture).toHaveBeenCalledWith(
       'comfy.desktop.session.instance_started',
-      expect.objectContaining({ session_kind: 'performance_test', db_mode: 'memory' })
+      expect.objectContaining({ session_kind: 'performance_test', db_mode: 'temp_file' })
     )
   })
 })

@@ -124,7 +124,7 @@ describe('assetsTap', () => {
     release: '1.0.47-rc.1',
     coreBetaFlags: ['--enable-assets'],
     sessionKind: 'performance_test' as const,
-    dbMode: 'memory' as const
+    dbMode: 'temp_file' as const
   }
 
   beforeEach(() => {
@@ -278,7 +278,7 @@ describe('assetsTap', () => {
         release: '1.0.47-rc.1',
         core_beta_flags: ['--enable-assets'],
         session_kind: 'performance_test',
-        db_mode: 'memory',
+        db_mode: 'temp_file',
         root: 'models',
         created: 12
       })
@@ -351,7 +351,7 @@ describe('assetsTap', () => {
         release: '1.0.47-rc.1',
         core_beta_flags: ['--enable-assets'],
         session_kind: 'performance_test',
-        db_mode: 'memory'
+        db_mode: 'temp_file'
       })
     })
   })

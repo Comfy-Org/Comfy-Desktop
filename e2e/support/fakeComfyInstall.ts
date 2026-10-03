@@ -94,43 +94,40 @@ const argValue = (flag) => {
 // Core's database contract, opted into with a \`core-db\` file beside this script (see
 // \`writeFakeComfyInstall\`'s \`coreDb\`). With assets on, a file database is held under an exclusive
 // \`<db>.lock\` for the process's life and the boot's scan writes into it; a second process on the
-// same file prints Core's refusal and exits 1. An in-memory URL touches neither file. The lock is
-// a pid file because Node has no flock; a holder that died without cleaning up counts as gone,
-// as the OS lock would be.
+// same file prints Core's refusal and exits 1. The lock is a pid file because Node has no flock;
+// a holder that died without cleaning up counts as gone, as the OS lock would be.
 if (assetsOn && fs.existsSync(path.join(__dirname, 'core-db'))) {
   const url = argValue('--database-url')
-  if (url !== 'sqlite:///:memory:' && url !== 'sqlite://') {
-    const userDir = argValue('--user-directory') || path.join(__dirname, 'ComfyUI', 'user')
-    const dbPath = url ? url.slice('sqlite:///'.length) : path.join(userDir, 'comfyui.db')
-    const lockPath = dbPath + '.lock'
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true })
-    const holder = (() => {
-      try {
-        const pid = Number(fs.readFileSync(lockPath, 'utf8'))
-        process.kill(pid, 0)
-        return pid
-      } catch {
-        return null
-      }
-    })()
-    if (holder !== null) {
-      console.error('Database lock is held; waiting up to 5s for it to be released')
-      console.error(
-        "RuntimeError: Could not acquire lock on database '" + dbPath + "'. " +
-          'Another ComfyUI process may already be using it.'
-      )
-      console.error('Database is locked. Another ComfyUI process is already using this database.')
-      process.exit(1)
+  const userDir = argValue('--user-directory') || path.join(__dirname, 'ComfyUI', 'user')
+  const dbPath = url ? url.slice('sqlite:///'.length) : path.join(userDir, 'comfyui.db')
+  const lockPath = dbPath + '.lock'
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true })
+  const holder = (() => {
+    try {
+      const pid = Number(fs.readFileSync(lockPath, 'utf8'))
+      process.kill(pid, 0)
+      return pid
+    } catch {
+      return null
     }
-    fs.writeFileSync(lockPath, String(process.pid))
-    process.on('exit', () => {
-      try {
-        if (fs.readFileSync(lockPath, 'utf8') === String(process.pid)) fs.unlinkSync(lockPath)
-      } catch {}
-    })
-    process.on('SIGTERM', () => process.exit(0))
-    fs.appendFileSync(dbPath, 'scan by ' + process.pid + '\\n')
+  })()
+  if (holder !== null) {
+    console.error('Database lock is held; waiting up to 5s for it to be released')
+    console.error(
+      "RuntimeError: Could not acquire lock on database '" + dbPath + "'. " +
+        'Another ComfyUI process may already be using it.'
+    )
+    console.error('Database is locked. Another ComfyUI process is already using this database.')
+    process.exit(1)
   }
+  fs.writeFileSync(lockPath, String(process.pid))
+  process.on('exit', () => {
+    try {
+      if (fs.readFileSync(lockPath, 'utf8') === String(process.pid)) fs.unlinkSync(lockPath)
+    } catch {}
+  })
+  process.on('SIGTERM', () => process.exit(0))
+  fs.appendFileSync(dbPath, 'scan by ' + process.pid + '\\n')
 }
 // ComfyUI's prompt queue, as far as a Performance Test reads it: every prompt completes at once
 // and takes 50ms.
@@ -240,8 +237,8 @@ export interface FakeComfyInstall {
 export async function writeFakeComfyInstall(opts: {
   installPath: string
   port: number
-  /** Model Core's database: the `<db>.lock` contract (see the stub), and a `db.py` that builds
-   *  an in-memory database, which is what Desktop reads to decide it may ask for one. */
+  /** Model Core's database: the `<db>.lock` contract (see the stub), and the `db.py` Desktop
+   *  looks for to decide the Core has a database (and so a `--database-url` flag). */
   coreDb?: boolean
 }): Promise<FakeComfyInstall> {
   const { installPath, port } = opts
@@ -251,7 +248,7 @@ export async function writeFakeComfyInstall(opts: {
     await mkdir(path.join(installPath, 'ComfyUI', 'app', 'database'), { recursive: true })
     await writeFile(
       path.join(installPath, 'ComfyUI', 'app', 'database', 'db.py'),
-      'def _is_memory_db(db_url):\n    return db_url in ("sqlite:///:memory:", "sqlite://")\n'
+      'def init_db():\n    pass\n'
     )
     await writeFile(path.join(installPath, 'core-db'), '')
   }

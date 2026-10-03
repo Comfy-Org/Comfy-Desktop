@@ -3,14 +3,17 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  coreSupportsMemoryDb,
-  databaseModeOf,
+  coreHasDatabase,
+  performanceTestDbPath,
   performanceTestSessionKey,
+  removePerformanceTestDb,
   sessionKindOf,
-  withMemoryDatabase
+  withDatabaseUrl
 } from './performanceTestDb'
 
-describe('withMemoryDatabase', () => {
+const URL = 'sqlite:///tmp/perf.db'
+
+describe('withDatabaseUrl', () => {
   it.each([
     [['-s', 'main.py', '--database-url', 'sqlite:///a.db', '--port', '1']],
     [['-s', 'main.py', '--database-url=sqlite:///a.db', '--port', '1']],
@@ -26,30 +29,15 @@ describe('withMemoryDatabase', () => {
       ]
     ],
     [['-s', 'main.py', '--port', '1']]
-  ])('replaces every database URL in %j with the in-memory one', (args) => {
-    expect(withMemoryDatabase(args)).toEqual([
+  ])('replaces every database URL in %j with the given one', (args) => {
+    expect(withDatabaseUrl(args, URL)).toEqual([
       '-s',
       'main.py',
       '--port',
       '1',
       '--database-url',
-      'sqlite:///:memory:'
+      URL
     ])
-  })
-})
-
-describe('databaseModeOf', () => {
-  it.each([
-    [undefined, 'file'],
-    [[], 'file'],
-    [['--database-url', 'sqlite:///a.db'], 'file'],
-    [['--database-url', 'sqlite:///:memory:'], 'memory'],
-    [['--database-url=sqlite://'], 'memory'],
-    // Core's argparse keeps the last value.
-    [['--database-url', 'sqlite:///:memory:', '--database-url', 'sqlite:///a.db'], 'file'],
-    [['--database-url', 'sqlite:///a.db', '--database-url=sqlite:///:memory:'], 'memory']
-  ] as const)('reads %j as %s', (args, mode) => {
-    expect(databaseModeOf(args)).toBe(mode)
   })
 })
 
@@ -60,7 +48,16 @@ describe('sessionKindOf', () => {
   })
 })
 
-describe('coreSupportsMemoryDb', () => {
+describe('performanceTestDbPath', () => {
+  it('is one file per install under the temp directory, whatever the id holds', () => {
+    const p = performanceTestDbPath('inst/../x:1')
+    expect(path.dirname(p)).toBe(path.join(os.tmpdir(), 'comfy-desktop-perf-db'))
+    expect(path.basename(p)).toBe('inst____x_1.db')
+    expect(performanceTestDbPath('a')).not.toBe(performanceTestDbPath('b'))
+  })
+})
+
+describe('coreHasDatabase and removePerformanceTestDb', () => {
   let dir = ''
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-db-core-'))
@@ -69,22 +66,24 @@ describe('coreSupportsMemoryDb', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
-  const writeDb = (text: string): void => {
+  it('finds the database module of a Core that has one', () => {
+    expect(coreHasDatabase(dir)).toBe(false)
     fs.mkdirSync(path.join(dir, 'app', 'database'), { recursive: true })
-    fs.writeFileSync(path.join(dir, 'app', 'database', 'db.py'), text)
-  }
-
-  it('is true for a Core that builds an in-memory database', () => {
-    writeDb('def _is_memory_db(db_url):\n    return True\n')
-    expect(coreSupportsMemoryDb(dir)).toBe(true)
+    fs.writeFileSync(path.join(dir, 'app', 'database', 'db.py'), '')
+    expect(coreHasDatabase(dir)).toBe(true)
   })
 
-  it('is false for a Core from before v0.17.0', () => {
-    writeDb('def init_db():\n    db_url = args.database_url\n')
-    expect(coreSupportsMemoryDb(dir)).toBe(false)
-  })
+  it('removes the database and every file SQLite and Core keep beside it, and nothing else', () => {
+    const db = path.join(dir, 'perf.db')
+    const side = ['', '-wal', '-shm', '-journal', '.lock', '.bkp']
+    for (const s of side) fs.writeFileSync(db + s, 'x')
+    fs.writeFileSync(path.join(dir, 'other.db'), 'x')
 
-  it('is false when the checkout has no database module', () => {
-    expect(coreSupportsMemoryDb(dir)).toBe(false)
+    removePerformanceTestDb(db)
+
+    for (const s of side) expect(fs.existsSync(db + s), s || 'db').toBe(false)
+    expect(fs.existsSync(path.join(dir, 'other.db'))).toBe(true)
+    // Nothing there is not an error.
+    expect(() => removePerformanceTestDb(db)).not.toThrow()
   })
 })

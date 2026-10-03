@@ -102,13 +102,15 @@ import {
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
 import {
-  coreSupportsMemoryDb,
-  databaseModeOf,
+  coreHasDatabase,
+  performanceTestDbPath,
+  removePerformanceTestDb,
   sessionKindOf,
-  withMemoryDatabase,
+  withDatabaseUrl,
   type DbMode,
   type SessionKind
 } from '../../performanceTestDb'
+import { extractPort, parseArgs } from '../../util'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -995,10 +997,10 @@ async function runLaunch(
   }
 
   /** Which session this is and which database it runs on, so Performance Test runs (and their
-   *  in-memory catalogue) can be split from the user's own sessions in the boot, exit and tap
+   *  throwaway catalogue) can be split from the user's own sessions in the boot, exit and tap
    *  events. */
   function launchKind(): { session_kind: SessionKind; db_mode: DbMode } {
-    return { session_kind: sessionKindOf(sessionId), db_mode: databaseModeOf(launchCmd.args) }
+    return { session_kind: sessionKindOf(sessionId), db_mode: perfDbPath ? 'temp_file' : 'file' }
   }
 
   // Migrate legacy envs/default/ → ComfyUI/.venv/ for standalone installs.
@@ -1146,6 +1148,8 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.noEnvFound') }
   }
   const launchCmd = launchCmdRaw
+  /** A Performance Test's own throwaway database, when it runs on one. */
+  let perfDbPath: string | null = null
 
   // Filter unsupported args, then inject desktop-managed feature flags.
   if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {
@@ -1245,21 +1249,22 @@ async function runLaunch(
 
   // A Performance Test runs beside the install's own session, often while that one is up. On
   // the install's database the second of the two to boot fails on Core's lock, and a perf run
-  // would write its scan into the user's catalogue; an in-memory database does neither.
+  // would write its scan into the user's catalogue; a throwaway database of its own does neither.
+  // A file, not Core's `:memory:`: that one shares a single connection across threads, and the
+  // scanner's writes then collide with the benchmark's own output registration.
   const perfComfyuiDir =
     sessionKindOf(sessionId) === 'performance_test'
       ? splitLaunchCommand(launchCmd)?.comfyuiDir
       : null
-  const perfOnMemoryDb = !!(
-    launchCmd.args &&
-    perfComfyuiDir &&
-    coreSupportsMemoryDb(perfComfyuiDir)
-  )
-  if (perfOnMemoryDb) {
-    launchCmd.args = withMemoryDatabase(launchCmd.args!)
+  if (launchCmd.args && perfComfyuiDir && coreHasDatabase(perfComfyuiDir)) {
+    perfDbPath = performanceTestDbPath(installationId)
+    // Left behind by a Performance Test that was killed before it could clean up.
+    removePerformanceTestDb(perfDbPath)
+    fs.mkdirSync(path.dirname(perfDbPath), { recursive: true })
+    launchCmd.args = withDatabaseUrl(launchCmd.args, `sqlite:///${perfDbPath}`)
     appendLog(
       sessionId,
-      '[launch] Performance Test: in-memory database; the install database is not opened\n'
+      `[launch] Performance Test: own database ${perfDbPath}; the install database is not opened\n`
     )
   }
 
@@ -1471,7 +1476,7 @@ async function runLaunch(
         mode,
         installationName: inst.name,
         coreBetaArgs: coreBeta.applied.map(toBetaArgView),
-        databaseMode: databaseModeOf(launchCmd.args),
+        databaseMode: perfDbPath ? 'temp_file' : 'file',
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
@@ -1486,6 +1491,7 @@ async function runLaunch(
 
     onProcessTerminated(proc, async (code, signal, { pipesHeld }) => {
       logStream.end()
+      if (perfDbPath) removePerformanceTestDb(perfDbPath)
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
       // lifecycle UI. PII scrubbing happens on the telemetry path
@@ -1617,15 +1623,19 @@ async function runLaunch(
   if (actionData?.portOverride != null) {
     setPortArg(launchCmd as LaunchCmd, actionData.portOverride as number)
   }
-  // A Performance Test on its own database leaves the install's port to the install, which the
-  // user may launch mid-benchmark: finding its port held by a ComfyUI of this install, that launch
-  // refuses. One on the install's database keeps that refusal: the two would share the catalogue.
-  if (perfOnMemoryDb && launchCmd.port) {
+  // A Performance Test on its own database leaves every install's port to that install, which
+  // the user may launch mid-benchmark: one with an explicit --port is refused when it is taken.
+  // One on the install's database keeps the same-install refusal: the two would share the
+  // catalogue.
+  if (perfDbPath && launchCmd.port) {
+    const installPorts = (await installations.list()).map((i) =>
+      extractPort(parseArgs(String(i.launchArgs ?? '')))
+    )
     const free = await findAvailablePort(
       '127.0.0.1',
       launchCmd.port + 1,
       launchCmd.port + 1000,
-      new Set(_pendingPorts.keys())
+      new Set([..._pendingPorts.keys(), ...installPorts])
     ).catch(() => null)
     if (free) setPortArg(launchCmd as LaunchCmd, free)
   }
@@ -2172,7 +2182,7 @@ async function runLaunch(
       mode,
       installationName: inst.name,
       coreBetaArgs: coreBeta.applied.map(toBetaArgView),
-      databaseMode: databaseModeOf(launchCmd.args),
+      databaseMode: perfDbPath ? 'temp_file' : 'file',
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()
@@ -2201,7 +2211,7 @@ async function runLaunch(
   if (!sender.isDestroyed()) {
     // Raw bootStderr — telemetry forwarders scrub it before it leaves the box.
     const bootStderr = lastNLines(launchResult.getStderr(), 50)
-    sender.send('comfy-boot-log', { installationId: sessionId, bootStderr })
+    sender.send('comfy-boot-log', { installationId: sessionId, bootStderr, ...launchKind() })
   }
 
   // Capture snapshot in background after successful launch
@@ -2381,6 +2391,7 @@ async function runLaunch(
         return
       }
       logStream.end()
+      if (perfDbPath) removePerformanceTestDb(perfDbPath)
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
