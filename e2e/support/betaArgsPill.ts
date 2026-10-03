@@ -63,6 +63,12 @@ export async function openStartupArgs(
   return popup
 }
 
+/** Count the pill's answers from now, for a pill that is about to (re)appear other than through
+ *  `openStartupArgs`, such as the picker a Settings close returns to. */
+export async function notePillAnswers(popup: WebContentsPage): Promise<void> {
+  answersBefore.set(popup, await pillAnswers(popup).catch(() => -1))
+}
+
 /**
  * The pill renders nothing both before its answer and for an empty one, so absence means
  * something only once the pill has applied an answer newer than the open. Wait for that, however

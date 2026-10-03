@@ -29,11 +29,14 @@ import {
 } from './support/cdpPages'
 import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
+import { byTestId, TID } from './support/testIds'
 import {
   commitArgs,
   expectAnsweredWithNoPill,
+  ARGS_FIELD,
   MANAGE,
   MENU,
+  notePillAnswers,
   openStartupArgs as openArgsFor,
   PILL,
   pillLabel,
@@ -42,6 +45,8 @@ import {
 test.describe.configure({ mode: 'serial' })
 
 const INSTALL_ID = 'inst-beta-args-stopped'
+/** Listed first, with the same Startup Arguments, so a return to the wrong install is visible. */
+const DECOY_ID = 'inst-beta-args-decoy'
 const BETA_SWITCH = '.global-settings [data-field-id="betaFeaturesEnabled"] button[role="switch"]'
 /** Keeps telemetry (needed so the opt-in can be turned back on) from leaving the machine. */
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
@@ -67,6 +72,22 @@ test.beforeAll(async () => {
       hasSeenCentralPillHint: true,
     },
     installations: [
+      {
+        id: DECOY_ID,
+        name: 'Decoy Fixture',
+        sourceId: 'comfybuilder',
+        sourceLabel: 'ComfyBuilder',
+        installPath,
+        status: 'installed',
+        launchArgs: `--port ${port}`,
+        seen: true,
+        comfyVersion: {
+          commit: 'b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2',
+          baseTag: 'v0.3.99',
+          commitsAhead: 0,
+          baseTagVerified: true,
+        },
+      },
       {
         id: INSTALL_ID,
         name: 'Stopped Beta Fixture',
@@ -202,6 +223,13 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
   await expectNoRequestsBeyond(1, 'an args commit asked for beta args more than once')
 })
 
+/** The install whose settings the picker is showing. */
+async function shownInstallId(popup: WebContentsPage): Promise<string | null> {
+  return popup.evaluate<string | null>(
+    `document.querySelector(${JSON.stringify(byTestId(TID.pickerSettingsSections))})?.getAttribute('data-install-id') ?? null`,
+  )
+}
+
 /** Press Escape in the title popup, the same path a user's key takes. */
 async function pressEscape(popup: WebContentsPage): Promise<void> {
   await popup.evaluate(
@@ -234,6 +262,7 @@ test('a backdrop click on Desktop Settings opened from Manage returns to Startup
   await clickBackdrop()
   await popup.waitForVisible(`${byTestId(TID.pickerSettingsSections)} ${PILL}`, { timeout: 10_000 })
   expect(await isPopupVisible(ctx.app, 'comfyTitlePopup.html')).toBe(true)
+  expect(await shownInstallId(popup)).toBe(INSTALL_ID)
   await closeTitlePopupIfOpen(ctx.app)
 })
 
@@ -250,7 +279,7 @@ test('closing Desktop Settings opened from Manage returns to Startup Arguments @
   expect(await popup.click(BETA_SWITCH)).toBe(true)
   await popup.waitFor(async () => (await checked()) === 'false', { timeout: 5_000 })
 
-  await resetIpcInvocations(ctx.app, 'get-core-beta-args')
+  await notePillAnswers(popup)
   await pressEscape(popup)
 
   // Back on the same install's Startup Arguments, and the pill reflects the opt-out.
@@ -258,13 +287,8 @@ test('closing Desktop Settings opened from Manage returns to Startup Arguments @
     timeout: 10_000,
   })
   expect(await isPopupVisible(ctx.app, 'comfyTitlePopup.html')).toBe(true)
-  await expect
-    .poll(betaArgsRequests, { timeout: 10_000, intervals: [100, 200] })
-    .toBeGreaterThanOrEqual(1)
-  await popup.waitFor(async () => (await pillAriaLabel(popup)) === null, {
-    timeout: 10_000,
-    message: 'the pill survived an opt-out made from Manage',
-  })
+  expect(await shownInstallId(popup)).toBe(INSTALL_ID)
+  await expectAnsweredWithNoPill(popup, 'the pill survived an opt-out made from Manage')
 
   await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', true)`)
   await closeTitlePopupIfOpen(ctx.app)
