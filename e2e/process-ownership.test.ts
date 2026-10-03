@@ -187,7 +187,8 @@ test.beforeAll(async () => {
   profileDir = await mkdtemp(path.join(os.tmpdir(), 'comfyui-process-ownership-profile-'))
   installPath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-process-ownership-install-'))
   port = await reserveFreePort()
-  await writeFakeComfyInstall({ installPath, port })
+  // The spec's subject is the orphan a killed Desktop leaves behind.
+  await writeFakeComfyInstall({ installPath, port, outlivesDesktop: true })
 })
 
 test.afterAll(async () => {

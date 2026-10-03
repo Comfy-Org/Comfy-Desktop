@@ -107,7 +107,9 @@ export async function expectAnsweredWithNoPill(
   popup: WebContentsPage,
   message: string
 ): Promise<void> {
-  const before = answersBefore.get(popup) ?? { token: '', answers: -1 }
+  const before = answersBefore.get(popup)
+  // Without a note, an answer from before the open would pass as the one asked for.
+  if (!before) throw new Error('expectAnsweredWithNoPill: note the pill first (openStartupArgs or notePillAnswers)')
   await expect
     .poll(
       async () => {
