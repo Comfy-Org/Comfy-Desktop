@@ -36,26 +36,29 @@ const KEY_RE = /^[0-9a-f]{64}$/
 const USER_DIR_DB_SINCE = '0.34.0'
 
 let cachedKey: Buffer | null = null
+/** A location computation that outlived its deadline and has not settled yet. */
+let stuck: Promise<unknown> | null = null
 
 /** @internal - exposed for tests. */
 export function _resetKeyForTest(): void {
   cachedKey = null
+  stuck = null
 }
 
-function readKey(file: string): Buffer | null {
-  const text = fs.readFileSync(file, 'utf8').trim()
+async function readKey(file: string): Promise<Buffer | null> {
+  const text = (await fs.promises.readFile(file, 'utf8')).trim()
   return KEY_RE.test(text) ? Buffer.from(text, 'hex') : null
 }
 
 /** The per-user key, created on first use. Null (and retried next time) when unavailable. */
-function pathHashKey(): Buffer | null {
+async function pathHashKey(): Promise<Buffer | null> {
   if (cachedKey) return cachedKey
   const file = path.join(configDir(), KEY_FILE)
   try {
-    cachedKey = readKey(file)
+    cachedKey = await readKey(file)
     if (cachedKey) return cachedKey
     // A malformed key never produced a hash, so replacing it loses nothing.
-    fs.rmSync(file)
+    await fs.promises.rm(file)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return null
   }
@@ -64,18 +67,16 @@ function pathHashKey(): Buffer | null {
   // linked first is never overwritten.
   const tmp = `${file}.${randomBytes(8).toString('hex')}.tmp`
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(tmp, randomBytes(32).toString('hex'), { flag: 'wx', mode: 0o600 })
-    fs.linkSync(tmp, file)
+    await fs.promises.mkdir(path.dirname(file), { recursive: true })
+    await fs.promises.writeFile(tmp, randomBytes(32).toString('hex'), { flag: 'wx', mode: 0o600 })
+    await fs.promises.link(tmp, file)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'EEXIST') return null
   } finally {
-    try {
-      fs.rmSync(tmp, { force: true })
-    } catch {}
+    await fs.promises.rm(tmp, { force: true }).catch(() => {})
   }
   try {
-    cachedKey = readKey(file)
+    cachedKey = await readKey(file)
   } catch {}
   return cachedKey
 }
@@ -116,9 +117,9 @@ export async function canonicalPath(
   return foldsCase(platform) ? out.toLowerCase() : out
 }
 
-function hashCanonical(canonical: string | null): string | null {
+async function hashCanonical(canonical: string | null): Promise<string | null> {
   if (!canonical) return null
-  const key = pathHashKey()
+  const key = await pathHashKey()
   if (!key) return null
   return createHmac('sha256', key).update(canonical).digest('hex').slice(0, 16)
 }
@@ -166,10 +167,11 @@ export interface LocationRoots {
 
 /**
  * A location as a readable path relative to the deepest known root, e.g.
- * `<this-install>/ComfyUI/user/comfyui.db`, or `<install-root>/<install>/...` for another
- * install. That install folder is always `<install>` (it is the user's install name), and every
- * other segment must be a fixed name, or the whole answer is {@link OUTSIDE_DEFAULT}. Null only
- * when there is no location to describe.
+ * `<this-install>/ComfyUI/user/comfyui.db`, or `<install-root>/<install>/...` under a folder
+ * directly in the install root (normally another install). That folder is always `<install>`,
+ * since Desktop names it after the user's install name, and every other segment must be a fixed
+ * name, or the whole answer is {@link OUTSIDE_DEFAULT}. Null only when there is no location to
+ * describe.
  */
 export async function relativeLocation(
   p: string | null,
@@ -281,7 +283,9 @@ export async function dbLocationProps(input: {
       : hasLocationFlag(args!)
         ? 'user_override'
         : 'install_local'
-  const dbPath = input.hasDatabase ? paths.dbPath : null
+  // SQLAlchemy reads `?…` as connection options, not part of the file name; rather than guess
+  // which file such a URL opens, its database goes unreported.
+  const dbPath = input.hasDatabase && !paths.dbPath?.includes('?') ? paths.dbPath : null
   // Each distinct path is resolved once, and one at a time: a stalled mount then holds a single
   // filesystem worker thread rather than all of them.
   const resolved = new Map<string, string | null>()
@@ -289,7 +293,7 @@ export async function dbLocationProps(input: {
     if (!resolved.has(q)) resolved.set(q, await canonicalPath(q))
     return resolved.get(q)!
   }
-  const hash = async (q: string | null) => hashCanonical(q ? await canonical(q) : null)
+  const hash = async (q: string | null) => await hashCanonical(q ? await canonical(q) : null)
   const label = (q: string | null) => labelCanonical(q, input.roots, canonical, process.platform)
   return {
     db_path_hash: await hash(dbPath),
@@ -320,6 +324,10 @@ export async function boundedDbLocation(
   compute: () => Promise<DbLocationProps>,
   deadlineMs: number = DB_LOCATION_DEADLINE_MS
 ): Promise<Partial<DbLocationProps> & { db_location_status: DbLocationStatus }> {
+  // A timed-out computation keeps running: its filesystem call cannot be cancelled and holds a
+  // worker thread. While one is still stuck, later launches start none, so repeated launches
+  // against a stalled mount cannot exhaust the pool the rest of Desktop's file I/O shares.
+  if (stuck) return { db_location_status: 'timeout' }
   let timer: NodeJS.Timeout | undefined
   const timeout = new Promise<{ db_location_status: 'timeout' }>((resolve) => {
     timer = setTimeout(() => resolve({ db_location_status: 'timeout' }), deadlineMs)
@@ -334,7 +342,14 @@ export async function boundedDbLocation(
       }
     )
   try {
-    return await Promise.race([computed, timeout])
+    const result = await Promise.race([computed, timeout])
+    if (result.db_location_status === 'timeout') {
+      stuck = computed
+      void computed.finally(() => {
+        if (stuck === computed) stuck = null
+      })
+    }
+    return result
   } finally {
     clearTimeout(timer)
   }

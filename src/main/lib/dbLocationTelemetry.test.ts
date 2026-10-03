@@ -86,11 +86,24 @@ describe('hashPath', () => {
     expect(fs.readFileSync(keyFile(), 'utf8')).toMatch(/^[0-9a-f]{64}$/)
   })
 
+  it('uses, and never overwrites, a key another process created first', async () => {
+    fs.mkdirSync(dirs.config, { recursive: true })
+    const theirs = 'ab'.repeat(32)
+    const link = vi.spyOn(fs.promises, 'link').mockImplementationOnce(async () => {
+      fs.writeFileSync(keyFile(), theirs)
+      throw Object.assign(new Error('exists'), { code: 'EEXIST' })
+    })
+    expect(await hashPath(tmp)).toMatch(/^[0-9a-f]{16}$/)
+    link.mockRestore()
+    expect(fs.readFileSync(keyFile(), 'utf8'), 'their key stands').toBe(theirs)
+    expect(fs.readdirSync(dirs.config), 'no temp file left').toEqual(['telemetry-path-key'])
+  })
+
   it('sends nothing when the key is unusable', async () => {
     fs.mkdirSync(dirs.config, { recursive: true })
-    const link = vi.spyOn(fs, 'linkSync').mockImplementationOnce(() => {
-      throw Object.assign(new Error('no space'), { code: 'ENOSPC' })
-    })
+    const link = vi
+      .spyOn(fs.promises, 'link')
+      .mockRejectedValueOnce(Object.assign(new Error('no space'), { code: 'ENOSPC' }))
     expect(await hashPath(tmp), 'the key could not be stored').toBeNull()
     expect(fs.readdirSync(dirs.config), 'a failed write leaves nothing behind').toEqual([])
     link.mockRestore()
@@ -98,9 +111,9 @@ describe('hashPath', () => {
 
     _resetKeyForTest()
     fs.rmSync(keyFile())
-    const rm = vi.spyOn(fs, 'rmSync').mockImplementationOnce(() => {
-      throw Object.assign(new Error('busy'), { code: 'EPERM' })
-    })
+    const rm = vi
+      .spyOn(fs.promises, 'rm')
+      .mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'EPERM' }))
     expect(await hashPath(tmp), 'a temp file that will not go away does not lose the key').toMatch(
       /^[0-9a-f]{16}$/
     )
@@ -254,6 +267,14 @@ describe('dbLocationProps', () => {
     const mine = path.join(path.resolve('/'), 'mine', 'user')
     const p = await props(['-s', main, ...adoptPins, '--user-directory', mine], legacy)
     expect(p.user_dir_hash).toBe(await hashed(mine))
+    expect(p.db_url_source).toBe('user_override')
+  })
+
+  it('reports no database for a URL with connection options, rather than guess the file', async () => {
+    const db = path.join(path.resolve('/'), 'shared', 'comfyui.db')
+    const p = await props(['-s', main, '--database-url', `sqlite:///${db}?timeout=30`])
+    expect(p.db_path_hash).toBeNull()
+    expect(p.db_path_rel).toBeNull()
     expect(p.db_url_source).toBe('user_override')
   })
 
@@ -430,6 +451,25 @@ describe('boundedDbLocation', () => {
     expect(await boundedDbLocation(() => new Promise(() => {}), 10)).toEqual({
       db_location_status: 'timeout'
     })
+  })
+
+  it('starts nothing new while a timed-out computation is still stuck', async () => {
+    let release: () => void = () => {}
+    const hung = new Promise<typeof props>((resolve) => {
+      release = () => resolve(props)
+    })
+    expect(await boundedDbLocation(() => hung, 10)).toEqual({ db_location_status: 'timeout' })
+
+    const compute = vi.fn(async () => props)
+    expect(await boundedDbLocation(compute)).toEqual({ db_location_status: 'timeout' })
+    expect(compute, 'no new filesystem work while one is stuck').not.toHaveBeenCalled()
+
+    release()
+    await hung
+    await new Promise((resolve) => setImmediate(resolve))
+    expect((await boundedDbLocation(compute)).db_location_status, 'resumes once it settles').toBe(
+      'ok'
+    )
   })
 
   it('reports an error, and never throws, when computing them fails', async () => {
