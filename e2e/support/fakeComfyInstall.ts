@@ -77,7 +77,7 @@ const http = require('node:http')
 // see "process exited with code 0" instead of a booted server. The launcher's own
 // killProcessTree ends it, and a leaked one dies with the profile's port anyway.
 const args = process.argv.slice(2)
-// argparse keeps the last value, and a launcher port bump may append a second \`--port\`.
+// argparse keeps the last value, so read the last \`--port\` as ComfyUI would.
 const portIndex = args.lastIndexOf('--port')
 const port = portIndex === -1 ? 8188 : Number(args[portIndex + 1])
 const assetsOn = args.includes('--enable-assets')

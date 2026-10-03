@@ -2326,6 +2326,32 @@ describe('Performance Test database', () => {
     }
   })
 
+  it('starts on a fresh workspace once a run a crashed Desktop left alive has been stopped', async () => {
+    writeCoreDb()
+    const ws = workspace('perf-db-stopped')
+    writeCoreFiles(ws)
+    // The prior-process check proved the orphan ours and stopped it.
+    ownership.prior = {
+      action: 'terminated',
+      proof: 'desktop_record',
+      pid: 777,
+      port: 48999,
+      ageMs: 1000,
+      waitMs: 10,
+      exitedInTime: true,
+      blocked: null
+    }
+    try {
+      const res = await handleLaunch(ctxFor('perf-db-stopped', 'performance-test:perf-db-stopped'))
+
+      expect(res.ok).toBe(true)
+      expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(false)
+      expect(argAfter('--database-url')).toBe(`sqlite:///${path.join(ws, 'comfyui.db')}`)
+    } finally {
+      ownership.prior = null
+    }
+  })
+
   it('does not start on a workspace it could not remove', async () => {
     writeCoreDb()
     const ws = workspace('perf-db-held')
@@ -2338,6 +2364,7 @@ describe('Performance Test database', () => {
     const res = await handleLaunch(ctxFor('perf-db-held', 'performance-test:perf-db-held'))
 
     expect(res.ok).toBe(false)
+    expect(res.message).toBe(i18nModule.t('errors.comfyDbLocked'))
     expect(spawnArgs).toEqual([])
   })
 
@@ -2357,7 +2384,7 @@ describe('Performance Test database', () => {
     expect(fs.existsSync(ws)).toBe(false)
   })
 
-  it("keeps clear of every install's configured port, in every port search", async () => {
+  it("keeps clear of every install's configured port, in its own and the busy-port search", async () => {
     writeCoreDb()
     // Another install on an explicit port, and one on Core's default.
     launchHarness.installList = [{ launchArgs: '--port 48235 --cpu' }, { launchArgs: '' }]
