@@ -1079,6 +1079,8 @@ export function _addSession(
   /** Durable installation identity when the runtime session uses an isolated key. */
   sourceInstallationId: string = installationId
 ): void {
+  // The renderer's session key: it changes on a restart even when no stop was seen.
+  const startedAt = Date.now()
   _runningSessions.set(installationId, {
     proc,
     port,
@@ -1089,7 +1091,7 @@ export function _addSession(
     flushTelemetry,
     getAcceleratorInfo,
     coreBetaArgs,
-    startedAt: Date.now()
+    startedAt
   })
   // Clear the launching marker first so subscribers never double-count this id across the
   // transition.
@@ -1102,7 +1104,8 @@ export function _addSession(
     installationName,
     bootTimeMs,
     portRetries: retries?.portRetries ?? 0,
-    rebootRetries: retries?.rebootRetries ?? 0
+    rebootRetries: retries?.rebootRetries ?? 0,
+    startedAt
   })
   sessionLifecycleEvents.emit('changed')
   // Per-instance-boot telemetry (instance_started / snapshot_history), emitted
@@ -1698,6 +1701,7 @@ export function _test_addRunningSession(
   flushTelemetry?: () => void,
   coreBetaArgs?: readonly BetaArgView[]
 ): void {
+  const startedAt = Date.now()
   _runningSessions.set(installationId, {
     proc: null,
     port: 0,
@@ -1706,14 +1710,15 @@ export function _test_addRunningSession(
     installationName,
     flushTelemetry,
     coreBetaArgs,
-    startedAt: Date.now()
+    startedAt
   })
   _broadcastToRenderer('instance-started', {
     installationId,
     port: 0,
     url: undefined,
     mode: 'window',
-    installationName
+    installationName,
+    startedAt
   })
 }
 

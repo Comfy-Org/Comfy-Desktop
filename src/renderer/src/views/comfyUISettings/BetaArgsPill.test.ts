@@ -94,11 +94,12 @@ describe('BetaArgsPill', () => {
     expect(slot.attributes('data-answers')).toBe('1')
   })
 
-  it('renders nothing when the request fails', async () => {
+  it('renders nothing when the request fails, and does not count it as an answer', async () => {
     api.getCoreBetaArgs.mockRejectedValue(new Error('ipc gone'))
     const wrapper = await mountPill()
     await flushPromises()
     expect(wrapper.find('.beta-args').exists()).toBe(false)
+    expect(wrapper.get('.beta-args-slot').attributes('data-answers')).toBe('0')
   })
 
   it('opens Global Settings on the beta opt-in from "Manage beta features"', async () => {
@@ -190,6 +191,21 @@ describe('BetaArgsPill', () => {
       await wrapper.setProps({ schemaVersion: 1 })
       await flushPromises()
       expect(api.getCoreBetaArgs).toHaveBeenCalledExactlyOnceWith('inst-1', undefined)
+    })
+
+    it('waits for the first schema load even when the args land first, then asks once with them', async () => {
+      // The pane's sections can arrive before the schema; main previews from the cached schema.
+      const wrapper = mount(BetaArgsPill, {
+        props: { installationId: 'inst-1', argsValue: '--port 1', schemaVersion: 0 },
+        global: { plugins: [i18n] }
+      })
+      wrappers.push(wrapper)
+      await wrapper.setProps({ argsValue: '--port 2' })
+      await flushPromises()
+      expect(api.getCoreBetaArgs).not.toHaveBeenCalled()
+      await wrapper.setProps({ schemaVersion: 1 })
+      await flushPromises()
+      expect(api.getCoreBetaArgs).toHaveBeenCalledExactlyOnceWith('inst-1', '--port 2')
     })
 
     it('sends no args until the value changes after mount, then sends the committed value', async () => {

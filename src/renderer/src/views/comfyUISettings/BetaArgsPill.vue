@@ -44,12 +44,16 @@ async function refresh(): Promise<void> {
   }, LOADING_DELAY_MS)
   const next = await window.api
     .getCoreBetaArgs(props.installationId, argsCommitted ? props.argsValue : undefined)
-    .catch(() => null)
+    .then(
+      (answer) => ({ answer }),
+      () => null
+    )
   clearTimeout(slow)
   if (seq !== requestSeq) return
-  data.value = next
+  data.value = next?.answer ?? null
   loading.value = false
-  answers.value++
+  // A failed request shows nothing, but it is not an answer.
+  if (next) answers.value++
 }
 
 watch(
@@ -63,7 +67,11 @@ watch(
     () => props.argsValue,
     () => props.schemaVersion
   ],
-  () => void refresh()
+  () => {
+    // Main previews from the cached schema, so a request before the field's first schema load
+    // settles would answer with nothing.
+    if (props.schemaVersion > 0) void refresh()
+  }
 )
 // A click in another WebContents never reaches this document's pointer listener.
 useEventListener(window, 'blur', () => menu.value?.close(false))
