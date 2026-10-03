@@ -217,10 +217,17 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
         return
       }
 
+      // The "build it" hint is for developers. A packaged app that reaches
+      // here ships no bootstrap for its platform (Linux ARM64 today), so the
+      // command does not exist for the user and the log would send whoever
+      // reads it — support included — after a packaging defect that isn't one.
       console.warn(
-        '[ipc] Bootstrap pygit2 not available — bootstrap-python/<platform>/ is missing. ' +
-          'Run "pnpm run bootstrap" (or "pnpm run bootstrap:fetch") to build it. ' +
-          'Falling back to standalone-install pygit2 / system git.'
+        app.isPackaged
+          ? `[ipc] No bundled bootstrap python for ${process.platform}-${process.arch}. ` +
+              'Falling back to standalone-install pygit2 / system git.'
+          : '[ipc] Bootstrap pygit2 not available — bootstrap-python/<platform>/ is missing. ' +
+              'Run "pnpm run bootstrap" (or "pnpm run bootstrap:fetch") to build it. ' +
+              'Falling back to standalone-install pygit2 / system git.'
       )
 
       if (forceBootstrap) {
