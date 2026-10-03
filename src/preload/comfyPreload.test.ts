@@ -192,10 +192,13 @@ describe('comfyPreload template input asset bridge', () => {
 
     // A retry from the tray mints a new id this renderer has never seen. The
     // host names the input on the event, so it still reaches the view.
-    downloadProgressHandler()({}, {
-      ...downloadProgress('download-2', 'completed', 1),
-      templateInputs: [{ templateId: 'template-a', assetId: 'asset-a' }]
-    })
+    downloadProgressHandler()(
+      {},
+      {
+        ...downloadProgress('download-2', 'completed', 1),
+        templateInputs: [{ templateId: 'template-a', assetId: 'asset-a' }]
+      }
+    )
 
     expect(callback.mock.calls.length).toBe(callsBeforeRetry + 1)
     expect(callback).toHaveBeenLastCalledWith({
