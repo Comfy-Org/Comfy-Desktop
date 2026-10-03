@@ -36,7 +36,7 @@ interpreting a version comparison. These fields do not identify every reason a g
 
 The normal telemetry consent gate still applies. No raw paths, filenames, asset names, prompts,
 model metadata, or other user content are added. The database location fields below carry only
-keyed hashes and fixed labels. This follows the telemetry privacy rules documented in
+hashes and fixed labels. This follows the telemetry privacy rules documented in
 [`src/main/lib/telemetry.ts`](../src/main/lib/telemetry.ts).
 
 ## Database location fields
@@ -45,10 +45,11 @@ keyed hashes and fixed labels. This follows the telemetry privacy rules document
 directory, so two installs sharing one database can be told apart
 (`src/main/lib/dbLocationTelemetry.ts`). They are computed only when telemetry consent is granted.
 
-- `db_path_hash`, `user_dir_hash`, `base_dir_hash`: an HMAC-SHA256 of the resolved, normalised
-  path, truncated to 16 hex characters, or null. The key is a random per-OS-user secret in
-  Desktop's config directory and is never sent. Equal hashes on one machine mean the same
-  location; they cannot be reversed or compared across users.
+- `db_path_hash`, `user_dir_hash`, `base_dir_hash`: a SHA-256 of the resolved, normalised path,
+  truncated to 16 hex characters, or null. Equal hashes mean the same location. The hash is
+  one-way but unkeyed: someone with telemetry access could confirm a guessed path, such as a
+  username and folder layout, by hashing it. That trade-off was chosen over keeping a per-user
+  key file.
 - `db_path_rel`, `user_dir_rel`, `base_dir_rel`: the location relative to a folder Desktop knows,
   built only from placeholders (`<this-install>`, `<install-root>`, `<install>`, `<legacy-root>`)
   and fixed names (`ComfyUI`, `user`, `comfyui.db`), e.g.

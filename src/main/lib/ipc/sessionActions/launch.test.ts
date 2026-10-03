@@ -282,7 +282,6 @@ import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
 import { _resetForTest, hashPath } from '../../dbLocationTelemetry'
 import { adoptedPinArgs } from '../../comfyDbLock'
-import { configDir } from '../../paths'
 import type { LaunchCommand } from '../../../types/sources'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
@@ -1287,13 +1286,8 @@ describe('core beta report placement', () => {
   describe('database location on boot_started', () => {
     const userDir = path.join(os.tmpdir(), 'db-location-user')
 
-    // Keep the hash key out of a real Desktop config dir on Linux.
-    const keyFile = () => path.join(configDir(), 'telemetry-path-key')
-
     beforeEach(() => {
-      vi.stubEnv('XDG_CONFIG_HOME', path.join(installDir, 'config'))
       _resetForTest()
-      fs.rmSync(keyFile(), { force: true })
       telemetry.setConsentState('granted')
       launchHarness.schemaNames = ['listen', 'user-directory', 'database-url']
       launchHarness.waitForPort = async () => {}
@@ -1340,7 +1334,6 @@ describe('core beta report placement', () => {
 
     it('reports it as keyed hashes only', async () => {
       const props = await launchWith('harness-db-location')
-      expect(fs.existsSync(keyFile()), 'the launch created the key').toBe(true)
 
       const comfy = path.join(installDir, 'ComfyUI')
       expect(props).toMatchObject({
@@ -1501,7 +1494,7 @@ describe('core beta report placement', () => {
     })
 
     it.each(['undecided', 'denied'] as const)(
-      'computes nothing and creates no key while consent is %s',
+      'computes nothing while consent is %s',
       async (state) => {
         telemetry.setConsentState(state)
         const props = await launchWith(`harness-db-location-${state}`)
@@ -1509,7 +1502,6 @@ describe('core beta report placement', () => {
         expect(props).not.toHaveProperty('db_url_source')
         expect(props).not.toHaveProperty('db_path_hash')
         expect(props).not.toHaveProperty('db_path_rel')
-        expect(fs.existsSync(keyFile())).toBe(false)
       }
     )
   })

@@ -1,20 +1,17 @@
 /**
  * Where a launched ComfyUI keeps its database, user directory and base directory, as telemetry
- * may carry it: keyed hashes, and a path relative to a folder Desktop knows that keeps only fixed
+ * may carry it: hashes, and a path relative to a folder Desktop knows that keeps only fixed
  * folder names. Never a path a user named.
  *
  * Two installs that share one asset database interfere (one install's startup prune marks the
  * other's rows missing), and nothing else in telemetry can tell that two launches opened the
  * same file. Equal hashes can.
  *
- * The hash is an HMAC keyed by a random secret kept in this OS user's config directory and never
- * sent. Every install that this user's Desktop launches shares the key, so equal paths compare
- * equal across their installs. Without the key a hash can't be checked against a guessed path
- * (paths carry usernames), and hashes from two users can't be compared. A fixed salt in the
- * binary would allow both. If the key can't be read or created, no hash is sent; a malformed key
- * is replaced.
+ * The hash is a plain SHA-256 of the canonical path, truncated. It is one-way, but unkeyed: anyone
+ * with telemetry access could confirm a guessed path, such as a username and folder layout, by
+ * hashing it. That trade-off was accepted over keeping a per-user key file.
  */
-import { createHmac, randomBytes } from 'crypto'
+import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import semver from 'semver'
@@ -28,73 +25,17 @@ import {
   type ComfyPaths,
   type DefaultDbLayout
 } from './comfyDbLock'
-import { configDir } from './paths'
 import { coreSemver, coreSemverExact, coreSemverVerified, coreVerifiedSemver } from './version'
 
-const KEY_FILE = 'telemetry-path-key'
-const KEY_RE = /^[0-9a-f]{64}$/
 /** The release that moved ComfyUI's default database into the effective user directory. */
 const USER_DIR_DB_SINCE = '0.34.0'
 
-/** The key load every caller shares; cleared when it yields no key, so a later launch retries. */
-let keyLoad: Promise<Buffer | null> | null = null
 /** The most recently queued location computation. Computations run one at a time. */
 let lastComputation: Promise<unknown> = Promise.resolve()
 
 /** @internal - exposed for tests. */
 export function _resetForTest(): void {
-  keyLoad = null
   lastComputation = Promise.resolve()
-}
-
-async function readKey(file: string): Promise<Buffer | null> {
-  const text = (await fs.promises.readFile(file, 'utf8')).trim()
-  return KEY_RE.test(text) ? Buffer.from(text, 'hex') : null
-}
-
-/**
- * The per-user key, created on first use. Null (and retried next time) when unavailable. One
- * load is shared by every caller, so two can never both repair a malformed key and leave this
- * session hashing with a key that is not the one on disk.
- */
-function pathHashKey(): Promise<Buffer | null> {
-  keyLoad ??= loadKey()
-    .catch(() => null)
-    .then((key) => {
-      if (!key) keyLoad = null
-      return key
-    })
-  return keyLoad
-}
-
-async function loadKey(): Promise<Buffer | null> {
-  const file = path.join(configDir(), KEY_FILE)
-  try {
-    const existing = await readKey(file)
-    if (existing) return existing
-    // A malformed key never produced a hash, so replacing it loses nothing.
-    await fs.promises.rm(file)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return null
-  }
-  // Written whole to a fresh, exclusively created name beside the key, then linked into place: a
-  // write that fails partway can never leave a partial key behind, and a key another process
-  // linked first is never overwritten.
-  const tmp = `${file}.${randomBytes(8).toString('hex')}.tmp`
-  try {
-    await fs.promises.mkdir(path.dirname(file), { recursive: true })
-    await fs.promises.writeFile(tmp, randomBytes(32).toString('hex'), { flag: 'wx', mode: 0o600 })
-    await fs.promises.link(tmp, file)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') return null
-  } finally {
-    await fs.promises.rm(tmp, { force: true }).catch(() => {})
-  }
-  try {
-    return await readKey(file)
-  } catch {
-    return null
-  }
 }
 
 const foldsCase = (platform: NodeJS.Platform): boolean =>
@@ -146,16 +87,14 @@ export function spelling(
   return foldsCase(platform) ? out.toLowerCase() : out
 }
 
-async function hashCanonical(canonical: string | null): Promise<string | null> {
+function hashCanonical(canonical: string | null): string | null {
   if (!canonical) return null
-  const key = await pathHashKey()
-  if (!key) return null
-  return createHmac('sha256', key).update(canonical).digest('hex').slice(0, 16)
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
 }
 
 /**
- * @internal - exposed for tests; the launch goes through {@link dbLocationProps}. Keyed, truncated
- * hash of a path; null when there is no key or no path.
+ * @internal - exposed for tests; the launch goes through {@link dbLocationProps}. Truncated
+ * SHA-256 of a path's canonical spelling; null when there is no path.
  */
 export async function hashPath(p: string | null): Promise<string | null> {
   return hashCanonical(p ? await canonicalPath(p) : null)
@@ -362,7 +301,7 @@ export async function dbLocationProps(
     if (!resolved.has(q)) resolved.set(q, await canonicalPath(q))
     return resolved.get(q)!
   }
-  const hash = async (q: string | null) => await hashCanonical(q ? await canonical(q) : null)
+  const hash = async (q: string | null) => hashCanonical(q ? await canonical(q) : null)
   const label = (q: string | null) => labelCanonical(q, input.roots, canonical, process.platform)
   return {
     db_path_hash: await hash(dbPath),

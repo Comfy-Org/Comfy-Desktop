@@ -1,16 +1,9 @@
+import { createHash } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InstallationRecord } from '../installations'
-
-const dirs = vi.hoisted(() => ({ config: '', unavailable: false }))
-vi.mock('./paths', () => ({
-  configDir: () => {
-    if (dirs.unavailable) throw new Error('no config dir')
-    return dirs.config
-  }
-}))
 
 import {
   _resetForTest,
@@ -30,16 +23,12 @@ let tmp: string
 
 beforeEach(() => {
   tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'db-location-')))
-  dirs.config = path.join(tmp, 'config')
-  dirs.unavailable = false
   _resetForTest()
 })
 
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true })
 })
-
-const keyFile = (): string => path.join(dirs.config, 'telemetry-path-key')
 
 /** An expected hash, asserted real first: a dead `hashPath` must not make null === null pass. */
 const hashed = async (p: string): Promise<string> => {
@@ -49,7 +38,7 @@ const hashed = async (p: string): Promise<string> => {
 }
 
 describe('hashPath', () => {
-  it('is a 16-hex keyed digest, stable for one path and distinct across paths', async () => {
+  it('is a 16-hex digest, stable for one path and distinct across paths', async () => {
     const a = await hashPath(path.join(tmp, 'a', 'comfyui.db'))
     expect(a).toMatch(/^[0-9a-f]{16}$/)
     expect(await hashPath(path.join(tmp, 'a', 'comfyui.db'))).toBe(a)
@@ -71,83 +60,12 @@ describe('hashPath', () => {
     ).toBe(await hashPath(path.join(real, 'comfyui.db')))
   })
 
-  it('creates the key once, private to the user, and reuses it after a restart', async () => {
-    const h = await hashPath(tmp)
-    const key = fs.readFileSync(keyFile(), 'utf8')
-    expect(key).toMatch(/^[0-9a-f]{64}$/)
-    if (process.platform !== 'win32') expect(fs.statSync(keyFile()).mode & 0o777).toBe(0o600)
-    _resetForTest()
-    expect(await hashPath(tmp)).toBe(h)
-    expect(fs.readFileSync(keyFile(), 'utf8')).toBe(key)
-  })
-
-  it('changes with the key, so hashes cannot be compared across users', async () => {
-    const h = await hashPath(tmp)
-    fs.rmSync(keyFile())
-    _resetForTest()
-    expect(await hashPath(tmp)).not.toBe(h)
-  })
-
-  it('shares one key load between concurrent callers', async () => {
-    const read = vi.spyOn(fs.promises, 'readFile')
-    const [a, b] = await Promise.all([hashPath(tmp), hashPath(tmp)])
-    expect(a).toBe(b)
-    const keyReads = read.mock.calls.filter(([f]) => String(f) === keyFile())
-    expect(keyReads.length, 'one load: the first read, plus the read-back after creating').toBe(2)
-    read.mockRestore()
-  })
-
-  it('retries a key load that threw, rather than remember the failure', async () => {
-    dirs.unavailable = true
-    expect(await hashPath(tmp)).toBeNull()
-    dirs.unavailable = false
-    expect(await hashPath(tmp)).toMatch(/^[0-9a-f]{16}$/)
-  })
-
-  it('replaces a malformed key, which never produced a hash', async () => {
-    fs.mkdirSync(dirs.config, { recursive: true })
-    fs.writeFileSync(keyFile(), 'not-a-key')
-    expect(await hashPath(tmp)).toMatch(/^[0-9a-f]{16}$/)
-    expect(fs.readFileSync(keyFile(), 'utf8')).toMatch(/^[0-9a-f]{64}$/)
-  })
-
-  it('uses, and never overwrites, a key another process created first', async () => {
-    fs.mkdirSync(dirs.config, { recursive: true })
-    const theirs = 'ab'.repeat(32)
-    const link = vi.spyOn(fs.promises, 'link').mockImplementationOnce(async () => {
-      fs.writeFileSync(keyFile(), theirs)
-      throw Object.assign(new Error('exists'), { code: 'EEXIST' })
-    })
-    expect(await hashPath(tmp)).toMatch(/^[0-9a-f]{16}$/)
-    link.mockRestore()
-    expect(fs.readFileSync(keyFile(), 'utf8'), 'their key stands').toBe(theirs)
-    expect(fs.readdirSync(dirs.config), 'no temp file left').toEqual(['telemetry-path-key'])
-  })
-
-  it('sends nothing when the key is unusable', async () => {
-    fs.mkdirSync(dirs.config, { recursive: true })
-    const link = vi
-      .spyOn(fs.promises, 'link')
-      .mockRejectedValueOnce(Object.assign(new Error('no space'), { code: 'ENOSPC' }))
-    expect(await hashPath(tmp), 'the key could not be stored').toBeNull()
-    expect(fs.readdirSync(dirs.config), 'a failed write leaves nothing behind').toEqual([])
-    link.mockRestore()
-    expect(await hashPath(tmp), 'and the next launch creates the key').toMatch(/^[0-9a-f]{16}$/)
-
-    _resetForTest()
-    fs.rmSync(keyFile())
-    const rm = vi
-      .spyOn(fs.promises, 'rm')
-      .mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'EPERM' }))
-    expect(await hashPath(tmp), 'a temp file that will not go away does not lose the key').toMatch(
-      /^[0-9a-f]{16}$/
-    )
-    rm.mockRestore()
-
-    _resetForTest()
-    dirs.config = path.join(tmp, 'a-file')
-    fs.writeFileSync(dirs.config, '')
-    expect(await hashPath(tmp), 'the key cannot be created').toBeNull()
+  it('is the truncated SHA-256 of the canonical path, and needs no key', async () => {
+    const p = path.join(tmp, 'a', 'comfyui.db')
+    const canonical = spelling(p, process.platform)
+    const expected = createHash('sha256').update(canonical).digest('hex').slice(0, 16)
+    expect(await hashPath(p)).toBe(expected)
+    expect(fs.readdirSync(tmp), 'no key file is written').toEqual([])
   })
 })
 
