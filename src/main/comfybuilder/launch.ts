@@ -44,9 +44,9 @@ const GOVERNANCE_POLICY_RELATIVE = path.join('ComfyUI', 'governance', 'policy.si
 /**
  * A governed build's policy, read from the signed policy file its archive
  * carries. ComfyUI enforces that policy itself and exits at startup on a flag
- * it forbids, so launch leaves out the manager-enabling flags under a
- * custom-node allowlist and the launcher's `--extra-model-paths-config` on any
- * governed build.
+ * it forbids, so launch leaves out the manager-enabling flags under any
+ * custom-node policy (allowlist or blocklist) and the launcher's
+ * `--extra-model-paths-config` on any governed build.
  */
 export interface Governance {
   kind: 'governed'
@@ -78,10 +78,13 @@ export function readGovernance(installPath: string): Governance | null {
   }
 }
 
-/** False when a governed build's custom nodes are an allowlist, under which
- *  ComfyUI refuses to start with the manager enabled. */
+/** False when a governed build has a custom-node policy (allowlist or
+ *  blocklist), under which ComfyUI refuses to start with the manager enabled:
+ *  Manager's prestartup runs scheduled pack installs, a pack's `install.py`
+ *  included, before any pack is checked (Comfy-Org/ComfyUI#16167). True for an
+ *  ordinary build and for a governed one whose custom nodes are not governed. */
 export function managerAllowedByGovernance(governance: Governance | null | undefined): boolean {
-  return governance?.customNodeMode !== 'allowlist'
+  return !governance?.customNodeMode
 }
 
 /**
@@ -150,8 +153,8 @@ export interface LaunchOptions {
    * Defaults to true.
    */
   managerAllowed?: boolean
-  /** The install's governance, read from its policy file at launch; an
-   *  allowlist drops the manager flags too. */
+  /** The install's governance, read from its policy file at launch; a
+   *  custom-node policy (allowlist or blocklist) drops the manager flags too. */
   governance?: Governance | null
 }
 
