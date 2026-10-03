@@ -36,11 +36,15 @@ const TIMEOUT_MS = 10000
  * Still best-effort - it can fail to get an answer - but it reports that
  * failure instead of folding it into an empty list.
  */
-export function findLockingProcesses(filePath: string): Promise<LockProbeResult> {
+export function findLockingProcesses(
+  filePath: string,
+  /** The probe's cap; tests on a loaded machine pass a longer one. */
+  timeoutMs: number = TIMEOUT_MS
+): Promise<LockProbeResult> {
   if (process.platform === 'win32') {
-    return findLockingProcessesWindows(filePath)
+    return findLockingProcessesWindows(filePath, timeoutMs)
   }
-  return findLockingProcessesUnix(filePath)
+  return findLockingProcessesUnix(filePath, timeoutMs)
 }
 
 /**
@@ -94,7 +98,10 @@ function classifyWindowsFailure(err: ExecFileException): LockProbeFailure {
 }
 
 // Windows: query the built-in Restart Manager API via inline C# in PowerShell.
-function findLockingProcessesWindows(filePath: string): Promise<LockProbeResult> {
+function findLockingProcessesWindows(
+  filePath: string,
+  timeoutMs: number
+): Promise<LockProbeResult> {
   // Escape single quotes for PowerShell string embedding.
   const escaped = filePath.replace(/'/g, "''")
   const script = `
@@ -166,7 +173,7 @@ Add-Type -TypeDefinition $code
     execFile(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-Command', script],
-      { timeout: TIMEOUT_MS, killSignal: 'SIGKILL', windowsHide: true },
+      { timeout: timeoutMs, killSignal: 'SIGKILL', windowsHide: true },
       (err, stdout) => {
         const failure = err ? classifyWindowsFailure(err) : null
         // A timeout kill can leave a partial scan behind. Reporting those
@@ -187,12 +194,12 @@ Add-Type -TypeDefinition $code
 
 // Linux/macOS: `lsof -F pc` gives machine-readable "p<pid>" / "c<command>"
 // line pairs, avoiding the column-shift parsing issues of the default format.
-function findLockingProcessesUnix(filePath: string): Promise<LockProbeResult> {
+function findLockingProcessesUnix(filePath: string, timeoutMs: number): Promise<LockProbeResult> {
   return new Promise((resolve) => {
     execFile(
       'lsof',
       ['-F', 'pc', '--', filePath],
-      { timeout: TIMEOUT_MS, killSignal: 'SIGKILL', windowsHide: true },
+      { timeout: timeoutMs, killSignal: 'SIGKILL', windowsHide: true },
       (err, stdout) => {
         const failure = err ? classifyUnixFailure(err) : null
         // A timeout kill can leave a partial scan in `stdout`. Reporting those

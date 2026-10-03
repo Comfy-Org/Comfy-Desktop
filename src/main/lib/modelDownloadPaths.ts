@@ -134,3 +134,38 @@ export async function areModelsPresent(
   )
   return checks.every(Boolean)
 }
+
+/**
+ * Which templates already have every model on disk, for the picker's
+ * "Downloaded" badge. Bounded by `budgetMs`: an id not settled in time is left
+ * out (unbadged) rather than reported absent, and late results are discarded.
+ */
+export async function resolveModelsPresence(
+  ids: readonly string[],
+  installationId: string | null,
+  resolveModels: (id: string) => Promise<ReadonlyArray<{ directory: string; filename: string }>>,
+  budgetMs: number
+): Promise<{ presence: Map<string, boolean>; timedOut: boolean }> {
+  let budgeted = false
+  const presence = new Map<string, boolean>()
+  const presencePass = Promise.all(
+    ids.map(async (id) => {
+      let present = false
+      try {
+        present = await areModelsPresent(installationId, await resolveModels(id))
+      } catch {
+        // an unresolvable template reads as "not downloaded"
+      }
+      if (!budgeted) presence.set(id, present)
+    })
+  )
+  let budgetTimer: NodeJS.Timeout | undefined
+  const timedOut = await Promise.race([
+    presencePass.then(() => false),
+    new Promise<boolean>((resolve) => {
+      budgetTimer = setTimeout(() => resolve(true), budgetMs)
+    })
+  ]).finally(() => clearTimeout(budgetTimer))
+  budgeted = timedOut
+  return { presence, timedOut }
+}

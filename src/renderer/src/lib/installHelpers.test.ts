@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   templateDiskRequiredBytes,
+  templateDownloadBytes,
   isTemplateDiskBlocked,
   minTemplateModelBytes
 } from './installHelpers'
@@ -17,6 +18,17 @@ describe('templateDiskRequiredBytes', () => {
     const required = templateDiskRequiredBytes(2 * GB)
     expect(required).toBeGreaterThan(2 * GB)
     expect(required).toBe(Math.ceil(2 * GB * 1.1))
+  })
+})
+
+describe('templateDownloadBytes', () => {
+  it('counts the model size until every model is on disk', () => {
+    const option = { value: 'a', label: 'A', data: { sizeBytes: 2 * GB } }
+    expect(templateDownloadBytes(option)).toBe(2 * GB)
+    expect(
+      templateDownloadBytes({ ...option, data: { ...option.data, modelsPresent: true } })
+    ).toBe(0)
+    expect(templateDownloadBytes(null)).toBe(0)
   })
 })
 

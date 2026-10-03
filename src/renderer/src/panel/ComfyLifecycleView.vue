@@ -68,6 +68,16 @@ const state = computed<LifecycleState>(() => {
 
 const errorInfo = computed(() => sessionStore.errorInstances.get(props.installationId) ?? null)
 
+// A launch that failed or was refused (e.g. an earlier ComfyUI still holds this install) is not
+// a crash: nothing exited. Crash entries never carry `message`; operation failures carry only
+// that, and it is the one thing worth showing.
+const launchFailedMessage = computed<string | null>(() => {
+  if (state.value !== 'crashed') return null
+  const info = errorInfo.value
+  if (!info?.message || info.exitCode != null || info.signal) return null
+  return info.message
+})
+
 const crashedLogs = computed<string | null>(() => {
   if (state.value !== 'crashed') return null
   return errorInfo.value?.lastStderr ?? null
@@ -214,7 +224,7 @@ function startLaunch(): void {
   // crash itself fires from main (`comfyui.exited` with crashed=true);
   // this complements it with "did the user actually re-launch after the
   // crash?" plus the crash-to-relaunch wall clock.
-  if (state.value === 'crashed') {
+  if (state.value === 'crashed' && !launchFailedMessage.value) {
     const errorInfoSnapshot = sessionStore.errorInstances.get(props.installationId)
     const crashedAtMs = errorInfoSnapshot?.crashedAtMs
     emitTelemetryAction('comfy.desktop.instance.relaunched_after_crash', {
@@ -275,10 +285,18 @@ const placeholderTitle = computed<string>(() => {
          shared chrome. -->
     <BrandFinishedSurface
       v-if="state === 'crashed'"
-      :title="$t('comfyLifecycle.crashedTitle')"
-      :message="crashedMessage ?? undefined"
+      :title="
+        launchFailedMessage
+          ? $t('comfyLifecycle.launchFailedTitle')
+          : $t('comfyLifecycle.crashedTitle')
+      "
+      :message="launchFailedMessage ?? crashedMessage ?? undefined"
       :logs="crashedLogs ?? undefined"
-      :aria-label="$t('comfyLifecycle.crashedTitle')"
+      :aria-label="
+        launchFailedMessage
+          ? $t('comfyLifecycle.launchFailedTitle')
+          : $t('comfyLifecycle.crashedTitle')
+      "
     >
       <template #actions>
         <button
