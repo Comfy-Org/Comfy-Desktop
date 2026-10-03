@@ -140,16 +140,25 @@ vi.mock('../shared', async (importOriginal) => {
 
 // The location deadline, made long so real key and path I/O never races it under load; the
 // hang test shortens it.
-const locationDeadline = vi.hoisted(() => ({ ms: 60_000, fails: false }))
+const locationDeadline = vi.hoisted(() => ({
+  ms: 60_000,
+  fails: false,
+  passedByLaunch: undefined as number | undefined
+}))
 vi.mock('../../dbLocationTelemetry', async (importOriginal) => {
   const orig = await importOriginal<typeof DbLocationModule>()
   return {
     ...orig,
-    boundedDbLocation: (compute: () => Promise<DbLocationModule.DbLocationProps>) =>
-      orig.boundedDbLocation(
+    boundedDbLocation: (
+      compute: () => Promise<DbLocationModule.DbLocationProps>,
+      deadlineMs?: number
+    ) => {
+      locationDeadline.passedByLaunch = deadlineMs
+      return orig.boundedDbLocation(
         locationDeadline.fails ? () => Promise.reject(new Error('lookup failed')) : compute,
         locationDeadline.ms
       )
+    }
   }
 })
 
@@ -1345,6 +1354,10 @@ describe('core beta report placement', () => {
         db_location_status: 'ok'
       })
       expectNoNames(props, [path.basename(installDir)])
+      expect(
+        locationDeadline.passedByLaunch,
+        'the launch uses the default deadline'
+      ).toBeUndefined()
     })
 
     it("reports Desktop's own pins on an adopted install as adopted_legacy", async () => {

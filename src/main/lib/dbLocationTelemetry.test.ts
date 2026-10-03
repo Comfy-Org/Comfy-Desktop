@@ -18,6 +18,7 @@ import {
   dbLocationProps,
   defaultDbLayout,
   boundedDbLocation,
+  DB_LOCATION_DEADLINE_MS,
   dbUrlSource,
   spelling,
   hashPath,
@@ -30,6 +31,7 @@ let tmp: string
 beforeEach(() => {
   tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'db-location-')))
   dirs.config = path.join(tmp, 'config')
+  dirs.unavailable = false
   _resetForTest()
 })
 
@@ -498,6 +500,21 @@ describe('boundedDbLocation', () => {
     base_dir_rel: null,
     db_url_source: 'install_local' as const
   }
+
+  it('waits 500ms by default, and not a moment longer', async () => {
+    vi.useFakeTimers()
+    try {
+      expect(DB_LOCATION_DEADLINE_MS).toBe(500)
+      let settled: unknown
+      void boundedDbLocation(() => new Promise(() => {})).then((r) => (settled = r))
+      await vi.advanceTimersByTimeAsync(499)
+      expect(settled, 'still waiting at 499ms').toBeUndefined()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(settled).toEqual({ db_location_status: 'timeout' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it('passes the fields through, marked ok', async () => {
     expect(await boundedDbLocation(async () => props, 60_000)).toEqual({

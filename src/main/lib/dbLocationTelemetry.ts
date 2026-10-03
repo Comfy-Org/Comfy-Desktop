@@ -153,7 +153,10 @@ async function hashCanonical(canonical: string | null): Promise<string | null> {
   return createHmac('sha256', key).update(canonical).digest('hex').slice(0, 16)
 }
 
-/** Keyed, truncated hash of a path; null when there is no key or no path. */
+/**
+ * @internal - exposed for tests; the launch goes through {@link dbLocationProps}. Keyed, truncated
+ * hash of a path; null when there is no key or no path.
+ */
 export async function hashPath(p: string | null): Promise<string | null> {
   return hashCanonical(p ? await canonicalPath(p) : null)
 }
@@ -204,6 +207,8 @@ export interface LocationRoots {
 }
 
 /**
+ * @internal - exposed for tests; the launch goes through {@link dbLocationProps}.
+ *
  * A location as a readable path relative to the deepest known root, e.g.
  * `<this-install>/ComfyUI/user/comfyui.db`, or `<install-root>/<install>/...` under a folder
  * directly in the install root (normally another install). That folder is always `<install>`,
