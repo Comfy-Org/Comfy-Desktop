@@ -21,6 +21,7 @@ import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
 import {
   closeTitlePopupIfOpen,
+  isPopupVisible,
   titlePopupPage,
   TITLE_REOPEN_SUPPRESSION_MS,
   waitForWebContents,
@@ -199,6 +200,96 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
   await commitArgs(popup, `--port ${port} --lowvram`)
   await expect.poll(betaArgsRequests, { timeout: 10_000, intervals: [100, 200] }).toBe(1)
   await expectNoRequestsBeyond(1, 'an args commit asked for beta args more than once')
+})
+
+/** Press Escape in the title popup, the same path a user's key takes. */
+async function pressEscape(popup: WebContentsPage): Promise<void> {
+  await popup.evaluate(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`,
+  )
+}
+
+/** Click the dimmed backdrop behind the title popup, as a click outside it would. */
+async function clickBackdrop(): Promise<void> {
+  await ctx.app.evaluate(({ webContents }) => {
+    const wc = webContents
+      .getAllWebContents()
+      .find((w) => w.getURL().startsWith('data:text/html') && w.getURL().includes('scrim'))
+    if (!wc) throw new Error('no popup backdrop')
+    return wc.executeJavaScript(
+      `document.getElementById('s').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`,
+    )
+  })
+}
+
+test('a backdrop click on Desktop Settings opened from Manage returns to Startup Arguments @linux', async () => {
+  const popup = await openStartupArgs()
+  await popup.waitForVisible(PILL, { timeout: 10_000 })
+  await popup.clickUntilVisible(PILL, MANAGE, { timeout: 10_000 })
+  expect(await popup.click(MANAGE)).toBe(true)
+  await popup.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
+  // Past the guard that ignores a backdrop click landing in the same instant as the open.
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  await clickBackdrop()
+  await popup.waitForVisible(`${byTestId(TID.pickerSettingsSections)} ${PILL}`, { timeout: 10_000 })
+  expect(await isPopupVisible(ctx.app, 'comfyTitlePopup.html')).toBe(true)
+  await closeTitlePopupIfOpen(ctx.app)
+})
+
+test('closing Desktop Settings opened from Manage returns to Startup Arguments @linux', async () => {
+  const popup = await openStartupArgs()
+  await popup.waitForVisible(PILL, { timeout: 10_000 })
+  await popup.clickUntilVisible(PILL, MANAGE, { timeout: 10_000 })
+  expect(await popup.click(MANAGE)).toBe(true)
+  await popup.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
+  const checked = (): Promise<string | null> =>
+    popup.evaluate<string | null>(
+      `document.querySelector(${JSON.stringify(BETA_SWITCH)})?.getAttribute('aria-checked') ?? null`,
+    )
+  expect(await popup.click(BETA_SWITCH)).toBe(true)
+  await popup.waitFor(async () => (await checked()) === 'false', { timeout: 5_000 })
+
+  await resetIpcInvocations(ctx.app, 'get-core-beta-args')
+  await pressEscape(popup)
+
+  // Back on the same install's Startup Arguments, and the pill reflects the opt-out.
+  await popup.waitForVisible(`${byTestId(TID.pickerSettingsSections)} ${ARGS_FIELD} .ui-input`, {
+    timeout: 10_000,
+  })
+  expect(await isPopupVisible(ctx.app, 'comfyTitlePopup.html')).toBe(true)
+  await expect
+    .poll(betaArgsRequests, { timeout: 10_000, intervals: [100, 200] })
+    .toBeGreaterThanOrEqual(1)
+  await popup.waitFor(async () => (await pillAriaLabel(popup)) === null, {
+    timeout: 10_000,
+    message: 'the pill survived an opt-out made from Manage',
+  })
+
+  await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', true)`)
+  await closeTitlePopupIfOpen(ctx.app)
+})
+
+test('closing Desktop Settings opened any other way just closes it @linux', async () => {
+  // A picker-originated open first, so a stale return target would show here.
+  const picker = await openStartupArgs()
+  await picker.waitForVisible(PILL, { timeout: 10_000 })
+  await picker.clickUntilVisible(PILL, MANAGE, { timeout: 10_000 })
+  expect(await picker.click(MANAGE)).toBe(true)
+  await picker.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
+  await closeTitlePopupIfOpen(ctx.app)
+  await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
+
+  await ctx.panel.evaluate(`window.api.openGlobalSettings('general')`)
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
+  await popup.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
+  await pressEscape(popup)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 5_000,
+      intervals: [100, 200],
+    })
+    .toBe(false)
 })
 
 test("adding the grant's opposite to the startup args removes it @linux", async () => {
