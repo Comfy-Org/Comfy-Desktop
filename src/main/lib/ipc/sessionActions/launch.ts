@@ -1624,7 +1624,7 @@ async function runLaunch(
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return {
         ok: false,
-        message: i18n.t('errors.priorProcessUnverified', { pid: prior?.pid ?? '?' })
+        message: i18n.t('errors.performanceTestStillRunning')
       }
     }
     // Left by a Performance Test that was killed before it could clean up. Still there means a
@@ -1632,7 +1632,7 @@ async function runLaunch(
     removePerformanceTestWorkspace(workspace)
     if (fs.existsSync(path.join(workspace, 'comfyui.db'))) {
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
-      return { ok: false, message: i18n.t('errors.comfyDbLocked') }
+      return { ok: false, message: i18n.t('errors.performanceTestStillRunning') }
     }
     perfWorkspace = workspace
     fs.mkdirSync(path.join(perfWorkspace, 'output'), { recursive: true })

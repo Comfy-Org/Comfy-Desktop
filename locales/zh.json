@@ -1412,6 +1412,7 @@
     "priorScanUnavailable": "Comfy Desktop 无法检查此安装之前的 ComfyUI 是否仍在运行（无法读取进程列表），而端口 {port} 正被占用。现在启动可能会失败，因为之前的 ComfyUI 可能占用此安装的数据库。如果该进程是之前的 ComfyUI，请结束它，或稍后重试。",
     "priorScanRecent": "Comfy Desktop 无法检查此安装刚刚退出的 ComfyUI 是否正在重新启动（无法读取进程列表）。现在启动可能会失败，因为正在重新启动的 ComfyUI 可能已经占用此安装的数据库。请几分钟后重试。",
     "priorProcessUnverified": "此安装之前的 ComfyUI（PID {pid}）仍在运行，且 Comfy Desktop 无法确认可以安全地停止它。现在启动会失败，因为它占用此安装的数据库。请结束该进程后重试。",
+    "performanceTestStillRunning": "之前的性能测试仍在运行，或未正常关闭。请稍候，或重启 Comfy Desktop，然后重试。",
     "duplicateName": "名为“{name}”的实例已存在。请选择其他名称。",
     "nameRequired": "请输入名称。",
     "unknownSource": "此实例的来源类型无法识别。它可能由其他版本创建。请删除并重新安装。",

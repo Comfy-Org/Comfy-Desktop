@@ -2318,6 +2318,7 @@ describe('Performance Test database', () => {
       const res = await handleLaunch(ctxFor('perf-db-alive', 'performance-test:perf-db-alive'))
 
       expect(res.ok).toBe(false)
+      expect(res.message).toBe(i18nModule.t('errors.performanceTestStillRunning'))
       expect(spawnArgs).toEqual([])
       expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(true)
     } finally {
@@ -2364,7 +2365,7 @@ describe('Performance Test database', () => {
     const res = await handleLaunch(ctxFor('perf-db-held', 'performance-test:perf-db-held'))
 
     expect(res.ok).toBe(false)
-    expect(res.message).toBe(i18nModule.t('errors.comfyDbLocked'))
+    expect(res.message).toBe(i18nModule.t('errors.performanceTestStillRunning'))
     expect(spawnArgs).toEqual([])
   })
 
