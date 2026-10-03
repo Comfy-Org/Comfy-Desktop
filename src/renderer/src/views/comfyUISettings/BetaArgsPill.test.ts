@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
-import { ref } from 'vue'
-import { SETTINGS_REOPEN_EPOCH } from './settingsReopenEpoch'
 import BetaArgsPill from './BetaArgsPill.vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import { en } from '../../lib/i18nMessages'
@@ -26,18 +24,20 @@ const NEXT: CoreBetaArgs = {
 let api: {
   getCoreBetaArgs: ReturnType<typeof vi.fn>
   openGlobalSettings: ReturnType<typeof vi.fn>
-  onSettingsChanged: ReturnType<typeof vi.fn>
 }
-let settingsListener: ((data: { key: string }) => void) | null = null
 const wrappers: VueWrapper[] = []
 
-function mountPill(props: Partial<InstanceType<typeof BetaArgsPill>['$props']> = {}): VueWrapper {
+/** Mounts the pill and settles the args field's first schema load, as the field does on mount. */
+async function mountPill(
+  props: Partial<InstanceType<typeof BetaArgsPill>['$props']> = {}
+): Promise<VueWrapper> {
   const wrapper = mount(BetaArgsPill, {
     props: { installationId: 'inst-1', argsValue: '', schemaVersion: 0, ...props },
     global: { plugins: [i18n] },
     attachTo: document.body
   })
   wrappers.push(wrapper)
+  await wrapper.setProps({ schemaVersion: 1 })
   return wrapper
 }
 
@@ -46,14 +46,9 @@ const menuText = (): string => document.body.querySelector('.beta-args-menu')?.t
 
 beforeEach(() => {
   setActivePinia(createPinia())
-  settingsListener = null
   api = {
     getCoreBetaArgs: vi.fn().mockResolvedValue(SESSION),
-    openGlobalSettings: vi.fn(),
-    onSettingsChanged: vi.fn((cb: (data: { key: string }) => void) => {
-      settingsListener = cb
-      return () => (settingsListener = null)
-    })
+    openGlobalSettings: vi.fn()
   }
   ;(window as unknown as { api: unknown }).api = api
 })
@@ -66,7 +61,7 @@ afterEach(() => {
 
 describe('BetaArgsPill', () => {
   it("shows the running session's args, named, under the session heading", async () => {
-    const wrapper = mountPill()
+    const wrapper = await mountPill()
     await flushPromises()
     expect(wrapper.text()).toContain('+2 beta')
     await wrapper.get('.beta-args button').trigger('click')
@@ -79,7 +74,7 @@ describe('BetaArgsPill', () => {
 
   it('says "eligible" for a stopped install, never that the args will be added', async () => {
     api.getCoreBetaArgs.mockResolvedValue(NEXT)
-    const wrapper = mountPill()
+    const wrapper = await mountPill()
     await flushPromises()
     expect(wrapper.get('.beta-args button').attributes('aria-label')).toBe(
       '1 beta argument eligible for the next launch, show details'
@@ -89,22 +84,26 @@ describe('BetaArgsPill', () => {
     expect(menuText()).toContain('Eligible for next launch')
   })
 
-  it('renders nothing when there are no args', async () => {
+  it('renders nothing visible when there are no args, but marks that it has its answer', async () => {
     api.getCoreBetaArgs.mockResolvedValue({ timing: 'next-launch', args: [] })
-    const wrapper = mountPill()
+    const wrapper = await mountPill()
+    const slot = wrapper.get('.beta-args-slot')
+    expect(slot.attributes('data-answers')).toBe('0')
     await flushPromises()
-    expect(wrapper.html()).toBe('<!--v-if-->')
+    expect(wrapper.find('.beta-args').exists()).toBe(false)
+    expect(slot.text()).toBe('')
+    expect(slot.attributes('data-answers')).toBe('1')
   })
 
   it('renders nothing when the request fails', async () => {
     api.getCoreBetaArgs.mockRejectedValue(new Error('ipc gone'))
-    const wrapper = mountPill()
+    const wrapper = await mountPill()
     await flushPromises()
     expect(wrapper.find('.beta-args').exists()).toBe(false)
   })
 
   it('opens Global Settings on the beta opt-in from "Manage beta features"', async () => {
-    const wrapper = mountPill()
+    const wrapper = await mountPill()
     await flushPromises()
     await wrapper.get('.beta-args button').trigger('click')
     await flushPromises()
@@ -118,7 +117,7 @@ describe('BetaArgsPill', () => {
   })
 
   it('treats the arg rows as information: picking one does nothing', async () => {
-    const wrapper = mountPill()
+    const wrapper = await mountPill()
     await flushPromises()
     const trigger = wrapper.get('.beta-args button')
     await trigger.trigger('click')
@@ -132,7 +131,7 @@ describe('BetaArgsPill', () => {
   })
 
   it('closes the menu when the window loses focus', async () => {
-    const wrapper = mountPill()
+    const wrapper = await mountPill()
     await flushPromises()
     await wrapper.get('.beta-args button').trigger('click')
     await flushPromises()
@@ -146,7 +145,7 @@ describe('BetaArgsPill', () => {
       vi.useFakeTimers()
       let resolve: (value: CoreBetaArgs) => void = () => {}
       api.getCoreBetaArgs.mockReturnValue(new Promise((r) => (resolve = r)))
-      const wrapper = mountPill()
+      const wrapper = await mountPill()
       await vi.advanceTimersByTimeAsync(149)
       expect(wrapper.find('.beta-args-loading').exists()).toBe(false)
       await vi.advanceTimersByTimeAsync(1)
@@ -158,9 +157,22 @@ describe('BetaArgsPill', () => {
       expect(wrapper.text()).toContain('+1 beta')
     })
 
+    it('keeps the pill, and its open menu, while a slow refresh is in flight', async () => {
+      const wrapper = await mountPill()
+      await flushPromises()
+      await wrapper.get('.beta-args button').trigger('click')
+      await flushPromises()
+      vi.useFakeTimers()
+      api.getCoreBetaArgs.mockReturnValue(new Promise(() => {}))
+      await wrapper.setProps({ argsValue: '--lowvram' })
+      await vi.advanceTimersByTimeAsync(500)
+      expect(wrapper.find('.beta-args-loading').exists()).toBe(false)
+      expect(document.body.querySelector('.beta-args-menu')).not.toBeNull()
+    })
+
     it('shows no placeholder for an answer that arrives in time', async () => {
       vi.useFakeTimers()
-      const wrapper = mountPill()
+      const wrapper = await mountPill()
       await vi.advanceTimersByTimeAsync(1000)
       expect(wrapper.find('.beta-args-loading').exists()).toBe(false)
       expect(wrapper.text()).toContain('+2 beta')
@@ -168,14 +180,21 @@ describe('BetaArgsPill', () => {
   })
 
   describe('when it asks', () => {
-    it('asks once on mount', async () => {
-      mountPill()
+    it('asks only once the schema first settles, and then once', async () => {
+      const wrapper = mount(BetaArgsPill, {
+        props: { installationId: 'inst-1', argsValue: '', schemaVersion: 0 },
+        global: { plugins: [i18n] }
+      })
+      wrappers.push(wrapper)
+      await flushPromises()
+      expect(api.getCoreBetaArgs).not.toHaveBeenCalled()
+      await wrapper.setProps({ schemaVersion: 1 })
       await flushPromises()
       expect(api.getCoreBetaArgs).toHaveBeenCalledExactlyOnceWith('inst-1', '')
     })
 
     it('sends the committed args, which main previews in place of a write still in flight', async () => {
-      const wrapper = mountPill({ argsValue: '--port 8188' })
+      const wrapper = await mountPill({ argsValue: '--port 8188' })
       await flushPromises()
       await wrapper.setProps({ argsValue: '--port 8188 --disable-assets' })
       await flushPromises()
@@ -186,11 +205,10 @@ describe('BetaArgsPill', () => {
     })
 
     it.each([
-      ['the install', { installationId: 'inst-2' }],
       ['the committed args', { argsValue: '--disable-assets' }],
-      ['the schema version', { schemaVersion: 1 }]
+      ['the schema version (an install change or a picker reopen reloads it)', { schemaVersion: 2 }]
     ])('asks again when %s changes', async (_label, change) => {
-      const wrapper = mountPill()
+      const wrapper = await mountPill()
       await flushPromises()
       await wrapper.setProps(change)
       await flushPromises()
@@ -198,7 +216,7 @@ describe('BetaArgsPill', () => {
     })
 
     it('does not ask again for a re-render with the same inputs', async () => {
-      const wrapper = mountPill()
+      const wrapper = await mountPill()
       await flushPromises()
       await wrapper.setProps({ argsValue: '' })
       await flushPromises()
@@ -206,7 +224,7 @@ describe('BetaArgsPill', () => {
     })
 
     it('asks again when the session starts, and when a restart replaces it', async () => {
-      mountPill()
+      await mountPill()
       await flushPromises()
       const store = useSessionStore()
       const running = (startedAt: number) => ({
@@ -224,7 +242,7 @@ describe('BetaArgsPill', () => {
     })
 
     it("ignores another install's session", async () => {
-      mountPill()
+      await mountPill()
       await flushPromises()
       useSessionStore().runningInstances.set('other', {
         installationId: 'other',
@@ -236,43 +254,22 @@ describe('BetaArgsPill', () => {
       expect(calls()).toBe(1)
     })
 
-    it('asks again when the beta opt-in or telemetry consent changes, and only then', async () => {
-      mountPill()
-      await flushPromises()
-      settingsListener!({ key: 'theme' })
-      settingsListener!({ key: 'betaFeaturesEnabled' })
-      settingsListener!({ key: 'telemetryEnabled' })
-      await flushPromises()
-      expect(calls()).toBe(3)
-    })
-
-    it('asks again each time a host that stays mounted is reopened', async () => {
-      const epoch = ref(1)
-      const wrapper = mount(BetaArgsPill, {
-        props: { installationId: 'inst-1', argsValue: '', schemaVersion: 0 },
-        global: { plugins: [i18n], provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } }
-      })
-      wrappers.push(wrapper)
-      await flushPromises()
-      epoch.value = 2
-      await flushPromises()
-      expect(calls()).toBe(2)
-    })
-
-    it('stops listening for settings changes once unmounted', async () => {
-      const wrapper = mountPill()
-      await flushPromises()
-      wrapper.unmount()
-      wrappers.length = 0
-      expect(settingsListener).toBeNull()
-    })
-
-    it("drops the previous install's pill as soon as another install is selected", async () => {
-      const wrapper = mountPill()
+    it("drops the previous install's pill as soon as another install is selected, without asking", async () => {
+      const wrapper = await mountPill()
       await flushPromises()
       expect(wrapper.text()).toContain('+2 beta')
-      api.getCoreBetaArgs.mockReturnValue(new Promise(() => {}))
       await wrapper.setProps({ installationId: 'inst-2' })
+      await flushPromises()
+      expect(wrapper.find('.beta-args').exists()).toBe(false)
+      expect(calls()).toBe(1)
+    })
+
+    it('ignores an answer for the previous install that arrives after the switch', async () => {
+      let resolveOld: (value: CoreBetaArgs) => void = () => {}
+      api.getCoreBetaArgs.mockReturnValueOnce(new Promise((r) => (resolveOld = r)))
+      const wrapper = await mountPill()
+      await wrapper.setProps({ installationId: 'inst-2' })
+      resolveOld(SESSION)
       await flushPromises()
       expect(wrapper.find('.beta-args').exists()).toBe(false)
     })
@@ -282,22 +279,12 @@ describe('BetaArgsPill', () => {
       api.getCoreBetaArgs
         .mockReturnValueOnce(new Promise((r) => (resolveFirst = r)))
         .mockResolvedValueOnce(NEXT)
-      const wrapper = mountPill()
+      const wrapper = await mountPill()
       await wrapper.setProps({ argsValue: '--lowvram' })
       await flushPromises()
       resolveFirst(SESSION)
       await flushPromises()
       expect(wrapper.text()).toContain('+1 beta')
-    })
-
-    it('works where the bridge has no settings-change event (the picker popup)', async () => {
-      ;(window as unknown as { api: Record<string, unknown> }).api = {
-        getCoreBetaArgs: api.getCoreBetaArgs,
-        openGlobalSettings: api.openGlobalSettings
-      }
-      const wrapper = mountPill()
-      await flushPromises()
-      expect(wrapper.text()).toContain('+2 beta')
     })
   })
 })

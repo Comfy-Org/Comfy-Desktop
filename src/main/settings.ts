@@ -473,23 +473,32 @@ function load(): Settings {
  *  content is unknown, so saving anything derived from the stand-in would
  *  overwrite the user's intact, newer settings (the failure environment of
  *  issue #1367). */
-function loadOutcome(): { settings: Settings; unreadable: boolean } {
+/** settings.json as stored, before defaults or normalization. `readFailed`: neither it nor `.bak`
+ *  could be read; `unreadable` also covers `.bak` standing in for an unreadable primary. */
+function readStoredSettings(opts: { restore?: boolean } = {}): {
+  parsed: Record<string, unknown> | null
+  unreadable: boolean
+  readFailed: boolean
+} {
   maybeSeedFromEnv()
+  const read = readFileSafe(dataPath, opts)
+  if (read.kind === 'unreadable') return { parsed: null, unreadable: true, readFailed: true }
+  if (read.kind !== 'data') return { parsed: null, unreadable: false, readFailed: false }
   let parsed: Record<string, unknown> | null = null
-  let unreadable = false
-  const read = readFileSafe(dataPath)
-  if (read.kind === 'unreadable') {
-    return { settings: { ...defaults }, unreadable: true }
+  try {
+    const obj: unknown = JSON.parse(read.data)
+    if (obj && typeof obj === 'object' && !Array.isArray(obj))
+      parsed = obj as Record<string, unknown>
+  } catch (err) {
+    console.warn('Settings: failed to parse settings JSON:', (err as Error).message)
   }
-  if (read.kind === 'data') {
-    unreadable = read.primaryUnreadable === true
-    try {
-      const obj: unknown = JSON.parse(read.data)
-      if (obj && typeof obj === 'object' && !Array.isArray(obj))
-        parsed = obj as Record<string, unknown>
-    } catch (err) {
-      console.warn('Settings: failed to parse settings JSON:', (err as Error).message)
-    }
+  return { parsed, unreadable: read.primaryUnreadable === true, readFailed: false }
+}
+
+function loadOutcome(): { settings: Settings; unreadable: boolean } {
+  const { parsed, unreadable, readFailed } = readStoredSettings()
+  if (readFailed) {
+    return { settings: { ...defaults }, unreadable: true }
   }
   if (parsed) {
     for (const key of KNOWN_SETTING_KEYS) {
@@ -726,23 +735,13 @@ export function resolveBetaFeaturesEnabled(): boolean {
   return enabled
 }
 
-/** What {@link resolveBetaFeaturesEnabled} would return, without writing anything: no seed, no
- *  `.bak` restore, and none of `loadOutcome`'s normalization, which can save. That normalization
- *  never touches the two keys read here. */
+/** What {@link resolveBetaFeaturesEnabled} would return, without writing settings.json: no seed, no
+ *  `.bak` restore, and none of `loadOutcome`'s normalization, which can save (and never touches the
+ *  two keys read here). The E2E-only env seed still applies, as for every settings read. */
 export function peekBetaFeaturesEnabled(): boolean {
-  maybeSeedFromEnv()
-  const read = readFileSafe(dataPath, { restore: false })
-  if (read.kind === 'unreadable') return false
-  let stored: Partial<Settings> = {}
-  if (read.kind === 'data') {
-    try {
-      const obj: unknown = JSON.parse(read.data)
-      if (obj && typeof obj === 'object' && !Array.isArray(obj)) stored = obj as Partial<Settings>
-    } catch {
-      // Unparseable reads as no stored settings, as in `loadOutcome`.
-    }
-  }
-  return betaFeaturesEnabledIn(stored, read.kind === 'data' && read.primaryUnreadable === true)
+  const { parsed, unreadable, readFailed } = readStoredSettings({ restore: false })
+  if (readFailed) return false
+  return betaFeaturesEnabledIn((parsed ?? {}) as Partial<Settings>, unreadable)
 }
 
 function betaFeaturesEnabledIn(settings: Partial<Settings>, unreadable: boolean): boolean {

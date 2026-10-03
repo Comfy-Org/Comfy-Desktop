@@ -363,6 +363,10 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
 
 const schemaCache = new Map<string, { schema: ComfyArgsSchema; revision: string }>()
 
+function schemaRevision(mainPyPath: string, fallbackRevision?: string): string | undefined {
+  return readGitHead(path.dirname(mainPyPath)) ?? fallbackRevision
+}
+
 /** Run `python main.py --help` and parse the output, cached per installation and source revision. */
 export async function getComfyArgsSchema(
   pythonPath: string,
@@ -371,12 +375,10 @@ export async function getComfyArgsSchema(
   installationId: string,
   fallbackRevision?: string
 ): Promise<ComfyArgsSchema> {
-  const revision = readGitHead(path.dirname(mainPyPath)) ?? fallbackRevision
-  const cached = schemaCache.get(installationId)
-  if (cached && revision && cached.revision === revision) {
-    return cached.schema
-  }
+  const cached = peekComfyArgsSchema(mainPyPath, installationId, fallbackRevision)
+  if (cached) return cached
 
+  const revision = schemaRevision(mainPyPath, fallbackRevision)
   const helpText = await runHelp(pythonPath, mainPyPath, cwd)
   const schema = parseHelpOutput(helpText)
 
@@ -393,7 +395,7 @@ export function peekComfyArgsSchema(
   installationId: string,
   fallbackRevision?: string
 ): ComfyArgsSchema | null {
-  const revision = readGitHead(path.dirname(mainPyPath)) ?? fallbackRevision
+  const revision = schemaRevision(mainPyPath, fallbackRevision)
   const cached = schemaCache.get(installationId)
   return cached && revision && cached.revision === revision ? cached.schema : null
 }

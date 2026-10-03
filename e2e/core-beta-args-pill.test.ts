@@ -20,15 +20,9 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
-import {
-  closeTitlePopupIfOpen,
-  titlePopupPage,
-  TITLE_REOPEN_SUPPRESSION_MS,
-  waitForWebContents,
-  type WebContentsPage,
-} from './support/cdpPages'
+import type { WebContentsPage } from './support/cdpPages'
 import { clearRunningSessions, seedRunningSession } from './support/devHooks'
-import { byTestId, TID } from './support/testIds'
+import { MANAGE, MENU, openStartupArgs as openArgsFor, PILL } from './support/betaArgsPill'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -36,11 +30,6 @@ const INSTALL_ID = 'inst-beta-args-pill'
 const INSTALL_NAME = 'Beta Args Install'
 const MARKER_FILENAME = '.comfyui-desktop-2'
 
-const ARGS_FIELD = '[data-field-id="launchArgs"]'
-const PILL = `${ARGS_FIELD} .beta-args button`
-/** Teleported to <body>, so not under the field. */
-const MENU = '.beta-args-menu'
-const MANAGE = `${MENU} .ui-menu-item:not([aria-disabled])`
 
 let ctx: AppContext
 let installPath: string
@@ -72,23 +61,8 @@ test.afterAll(async () => {
   if (installPath) await rm(installPath, { recursive: true, force: true })
 })
 
-/** Open the picker on the install's Startup Args and wait until its args field has rendered. */
-async function openStartupArgs(): Promise<WebContentsPage> {
-  await closeTitlePopupIfOpen(ctx.app)
-  await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
-  const opened = await ctx.panel.evaluate<boolean>(
-    `(() => {
-      window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })
-      return true
-    })()`,
-  )
-  expect(opened).toBe(true)
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
-  await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
-  return popup
-}
+const openStartupArgs = (): Promise<WebContentsPage> =>
+  openArgsFor(ctx.app, ctx.panel, INSTALL_ID)
 
 // This fixture has no interpreter, so the settings view's schema discovery fails and the next-launch
 // preview (which only reads a cached schema) cannot be computed: the pill must stay away rather than

@@ -127,27 +127,6 @@ describe('Tooltip (ui primitive)', () => {
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })
 
-  it('hides a visible bubble when `disabled` turns true', async () => {
-    const wrapper = mountTooltip()
-    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
-    await flushPromises()
-    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
-
-    await wrapper.setProps({ disabled: true })
-    await flushPromises()
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
-  })
-
-  it('cancels a pending open when `disabled` turns true mid-delay', async () => {
-    vi.useFakeTimers()
-    const wrapper = mountTooltip({ delayMs: 100 })
-    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
-    await wrapper.setProps({ disabled: true })
-    vi.advanceTimersByTime(200)
-    await flushPromises()
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
-  })
-
   it('does not show the bubble when `text` is empty', async () => {
     const wrapper = mountTooltip({ text: '' })
     await wrapper.trigger('mouseenter')

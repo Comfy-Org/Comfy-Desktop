@@ -13,7 +13,12 @@ import {
   toBetaArgView
 } from './coreBetaGrants'
 import type { CoreCommitState } from './coreBetaGrants'
-import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from './coreBetaInputs'
+import {
+  coreVersionState,
+  recordedRevision,
+  resolveCoreCheckout,
+  splitLaunchCommand
+} from './coreBetaInputs'
 import { peekComfyArgsSchema } from './comfy-args'
 import { withoutPygit2Breaker } from './git'
 import { peekBetaFeaturesEnabled } from '../settings'
@@ -98,11 +103,7 @@ export async function previewCoreBetaArgs(
   const grants = await getCoreBetaGrantsAsync()
   if (grants.length === 0) return []
   // A launch without a schema injects no managed args; the args field fills this cache.
-  const schema = peekComfyArgsSchema(
-    split.mainPyAbs,
-    installationId,
-    inst.comfyVersion?.commit ?? (inst.version as string | undefined)
-  )
+  const schema = peekComfyArgsSchema(split.mainPyAbs, installationId, recordedRevision(inst))
   if (!schema) return []
   const checkout = resolveCoreCheckout(split.comfyuiDir)
   const commits = await previewCommits(

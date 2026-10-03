@@ -20,14 +20,13 @@ import { closeTitlePopupIfOpen, isPopupVisible, type WebContentsPage } from './s
 import { getRunningSessionSnapshot } from './support/devHooks'
 import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { byTestId, TID } from './support/testIds'
+import { ARGS_FIELD, PILL, pillLabel } from './support/betaArgsPill'
 
 // Two real launches do not fit the default budget.
 test.describe.configure({ mode: 'serial', timeout: 240_000 })
 
 const INSTALL_ID = 'inst-beta-args-restart'
 const INSTALL_NAME = 'Restart Beta Fixture'
-const ARGS_FIELD = '[data-field-id="launchArgs"]'
-const PILL = `${ARGS_FIELD} .beta-args button`
 const RESTART_TAG = `${ARGS_FIELD} .settings-v2-restart-tag`
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
 
@@ -89,11 +88,6 @@ async function openStartupArgs(): Promise<WebContentsPage> {
   await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 15_000 })
   return popup
 }
-
-const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
-  popup.evaluate<string | null>(
-    `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
-  )
 
 test('the pill follows the new session after a Restart that drops a grant @linux', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)

@@ -27,17 +27,20 @@ import {
   type WebContentsPage,
 } from './support/cdpPages'
 import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
-import { byTestId, TID } from './support/testIds'
 import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
+import {
+  ARGS_FIELD,
+  expectAnsweredWithNoPill,
+  MANAGE,
+  MENU,
+  openStartupArgs as openArgsFor,
+  PILL,
+  pillLabel,
+} from './support/betaArgsPill'
 
 test.describe.configure({ mode: 'serial' })
 
 const INSTALL_ID = 'inst-beta-args-stopped'
-const ARGS_FIELD = '[data-field-id="launchArgs"]'
-const PILL = `${ARGS_FIELD} .beta-args button`
-/** Teleported to <body>, so not under the field. */
-const MENU = '.beta-args-menu'
-const MANAGE = `${MENU} .ui-menu-item:not([aria-disabled])`
 const BETA_SWITCH = '.global-settings [data-field-id="betaFeaturesEnabled"] button[role="switch"]'
 /** Keeps telemetry (needed so the opt-in can be turned back on) from leaving the machine. */
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
@@ -96,38 +99,14 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-async function openStartupArgs(): Promise<WebContentsPage> {
-  await closeTitlePopupIfOpen(ctx.app)
-  await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
-  await ctx.panel.evaluate(
-    `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`,
-  )
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
-  await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 10_000 })
-  return popup
-}
-
-async function pillAriaLabel(popup: WebContentsPage): Promise<string | null> {
-  return popup.evaluate<string | null>(
-    `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
-  )
-}
-
-/** Absence is a real answer only against a fresh sections read. Every caller reaches here from the
- *  Desktop Settings popup kind, which unmounts the picker, so the args field `openStartupArgs` waited
- *  for was rendered from this open's own response. The schema is already cached by then, so no
- *  discovery-driven re-read is still coming either. */
-async function expectNoPill(popup: WebContentsPage): Promise<void> {
-  expect(await pillAriaLabel(popup)).toBeNull()
-}
+const openStartupArgs = (): Promise<WebContentsPage> =>
+  openArgsFor(ctx.app, ctx.panel, INSTALL_ID)
 
 test('shows the grants the next launch is eligible for @linux', async () => {
   const popup = await openStartupArgs()
   // First open: the field's own schema discovery fills the cache, then the pill asks again.
   await popup.waitForVisible(PILL, { timeout: 15_000 })
-  expect(await pillAriaLabel(popup)).toBe(
+  expect(await pillLabel(popup)).toBe(
     '1 beta argument eligible for the next launch, show details',
   )
   await popup.clickUntilVisible(PILL, MENU, { timeout: 10_000 })
@@ -154,7 +133,7 @@ test('turning the beta opt-in off removes the pill on the next open, and on rest
   await popup.waitFor(async () => (await checked()) === 'false', { timeout: 5_000 })
 
   popup = await openStartupArgs()
-  await expectNoPill(popup)
+  await expectAnsweredWithNoPill(popup, 'the pill survived an opt-out')
 
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
@@ -179,10 +158,7 @@ test('an opt-in change made while the picker is hidden shows on reopen @linux', 
   await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', false)`)
 
   popup = await openStartupArgs()
-  await popup.waitFor(async () => (await pillAriaLabel(popup)) === null, {
-    timeout: 10_000,
-    message: 'the pill survived an opt-out made while the picker was hidden',
-  })
+  await expectAnsweredWithNoPill(popup, 'the pill survived an opt-out made while the picker was hidden')
 
   await closeTitlePopupIfOpen(ctx.app)
   await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', true)`)
@@ -242,7 +218,7 @@ test("adding the grant's opposite to the startup args removes it @linux", async 
       input.dispatchEvent(new Event('change', { bubbles: true }))
     })()`,
   )
-  await popup.waitFor(async () => (await pillAriaLabel(popup)) === null, {
+  await popup.waitFor(async () => (await pillLabel(popup)) === null, {
     timeout: 10_000,
     message: 'the overridden grant was still shown after the args were committed',
   })

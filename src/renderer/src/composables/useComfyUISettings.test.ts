@@ -715,6 +715,24 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     scope.stop()
   })
 
+  it('clears a pending restart on a restart of an install that was already running when the view mounted', async () => {
+    useSessionStore().runningInstances.set('a', {
+      installationId: 'a',
+      installationName: 'A',
+      mode: 'standalone',
+      startedAt: 1
+    })
+    const { composable, scope } = await mountWithField('a', 'window')
+    const store = useSessionStore()
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
+
+    store.runningInstances.set('a', { ...store.runningInstances.get('a')!, startedAt: 2 })
+    await nextTick()
+    expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(false)
+    scope.stop()
+  })
+
   it('keeps a pending restart when the selection moves between two running installs', async () => {
     const { composable, installation, scope } = await mountWithField('b', 'window')
     const store = useSessionStore()

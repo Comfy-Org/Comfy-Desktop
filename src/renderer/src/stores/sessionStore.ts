@@ -73,6 +73,13 @@ export const useSessionStore = defineStore('session', () => {
     return runningInstances.has(installationId)
   }
 
+  /** Identifies the install's current session, or `null` when it is not running. Changes on a
+   *  restart even when the picker only ever sees running -> running. */
+  function sessionKey(installationId: string): string | null {
+    const running = runningInstances.get(installationId)
+    return running ? String(running.startedAt ?? '') : null
+  }
+
   function isLaunching(installationId: string): boolean {
     return launchingInstances.has(installationId)
   }
@@ -309,6 +316,7 @@ export const useSessionStore = defineStore('session', () => {
     runningTabCount,
     hasErrors,
     isRunning,
+    sessionKey,
     isLaunching,
     stoppingInstances,
     isStopping,
