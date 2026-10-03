@@ -1,5 +1,5 @@
 import { ref, onUnmounted } from 'vue'
-import type { DiskSpaceInfo, FieldOption, PathIssue } from '../types/ipc'
+import type { DiskSpaceInfo, FieldOption, PathIssue, StarterTemplatesSelection } from '../types/ipc'
 import { emitTelemetryAction } from './telemetry'
 import { formatBytes } from './formatting'
 
@@ -216,6 +216,25 @@ export function templateSizeBytes(option: FieldOption | null | undefined): numbe
 /** Model bytes still to download: 0 when every model is already on disk. */
 export function templateDownloadBytes(option: FieldOption | null | undefined): number {
   return option?.data?.modelsPresent === true ? 0 : templateSizeBytes(option)
+}
+
+/** Model footprint of several picked templates. Coarse: a model shared between
+ *  picks is counted once per pick. */
+export function templatesSizeBytes(options: readonly FieldOption[]): number {
+  return options.reduce((sum, option) => sum + templateSizeBytes(option), 0)
+}
+
+/** Model bytes still to download across several picked templates. Coarse: a
+ *  model shared between picks is counted once per pick. */
+export function templatesDownloadBytes(options: readonly FieldOption[]): number {
+  return options.reduce((sum, option) => sum + templateDownloadBytes(option), 0)
+}
+
+/** What the wizard sends `buildInstallation` for the ticked starter templates. */
+export function starterTemplatesSelection(
+  picks: readonly FieldOption[]
+): StarterTemplatesSelection {
+  return { templateIds: picks.map((o) => o.value), downloadBytes: templatesDownloadBytes(picks) }
 }
 
 /** Runs on API nodes: no models to download, but every run spends credits. */

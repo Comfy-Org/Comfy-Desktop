@@ -151,61 +151,75 @@ describe('standalone.buildInstallation', () => {
       release: makeRelease('stable', 'v0.18.2-env1'),
       variant: makeVariant(VENDOR_ID)
     }
-    const template = (value: string, sizeBytes?: number): FieldOption => ({
-      value,
-      label: value,
-      ...(sizeBytes !== undefined ? { data: { sizeBytes } } : {})
+    /** The `bundledTemplate` selection the wizard sends for these picks. */
+    const picks = (templateIds: string[], downloadBytes = 0): FieldOption => ({
+      value: templateIds[0] ?? NO_TEMPLATE_VALUE,
+      label: templateIds.join(', '),
+      data: { templateIds, downloadBytes }
     })
 
     it('records an API-node pick for auto-open even though it downloads nothing', () => {
       const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode)!
       const result = standalone.buildInstallation({
         ...base,
-        bundledTemplate: template(apiTemplate.id, 0)
+        bundledTemplate: picks([apiTemplate.id], 0)
       })
-      expect(result.bundledTemplateId).toBe(apiTemplate.id)
+      expect(result.bundledTemplateIds).toEqual([apiTemplate.id])
       expect(result.pendingTemplateOpen).toBe(apiTemplate.id)
       // Zero bytes is what keeps the launch stepper from showing a model phase.
       expect(result.bundledTemplateSizeBytes).toBe(0)
     })
 
-    it('"Skip & Install" (template = none) builds NO model download', () => {
-      const result = standalone.buildInstallation({
-        ...base,
-        bundledTemplate: template(NO_TEMPLATE_VALUE)
-      })
-      expect(result.bundledTemplateId).toBeUndefined()
+    it('"Skip & Install" (nothing ticked) builds NO model download', () => {
+      const result = standalone.buildInstallation({ ...base, bundledTemplate: picks([]) })
+      expect(result.bundledTemplateIds).toBeUndefined()
       expect(result.pendingTemplateOpen).toBeUndefined()
       expect(result.downloadTemplateModels).toBeUndefined()
       expect(result.bundledTemplateSizeBytes).toBeUndefined()
     })
 
-    it('"Skip & Install" with no bundledTemplate selection at all builds no download', () => {
-      const result = standalone.buildInstallation(base)
-      expect(result.bundledTemplateId).toBeUndefined()
+    it('the bare "None" option (express installs) builds no download', () => {
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: { value: NO_TEMPLATE_VALUE, label: 'None' }
+      })
+      expect(result.bundledTemplateIds).toBeUndefined()
       expect(result.downloadTemplateModels).toBeUndefined()
     })
 
-    it('picking a real template records the id, one-shot open flag, and download opt-in', () => {
-      const realId = CURATED_TEMPLATES[0]!.id
-      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
-      expect(result.bundledTemplateId).toBe(realId)
-      expect(result.pendingTemplateOpen).toBe(realId)
-      expect(result.downloadTemplateModels).toBe(true)
+    it('no bundledTemplate selection at all builds no download', () => {
+      const result = standalone.buildInstallation(base)
+      expect(result.bundledTemplateIds).toBeUndefined()
+      expect(result.downloadTemplateModels).toBeUndefined()
     })
 
-    it('freezes the hydrated size on the record so the download estimate matches consent', () => {
+    it('records every pick in order, de-duplicated, and opens the first one', () => {
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: picks(['video_pick', 'audio_pick', 'video_pick'])
+      })
+      expect(result.bundledTemplateIds).toEqual(['video_pick', 'audio_pick'])
+      expect(result.pendingTemplateOpen).toBe('video_pick')
+      expect(result.downloadTemplateModels).toBe(true)
+      // The legacy single-pick field is never written any more.
+      expect(result.bundledTemplateId).toBeUndefined()
+    })
+
+    it('freezes the bytes the wizard disk-checked on the record', () => {
       const realId = CURATED_TEMPLATES[0]!.id
       const result = standalone.buildInstallation({
         ...base,
-        bundledTemplate: template(realId, 1234)
+        bundledTemplate: picks([realId], 1234)
       })
       expect(result.bundledTemplateSizeBytes).toBe(1234)
     })
 
-    it('defaults size to 0 when the selection carries no hydrated size', () => {
+    it('defaults the bytes to 0 when the selection carries none', () => {
       const realId = CURATED_TEMPLATES[0]!.id
-      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: { value: realId, label: realId, data: { templateIds: [realId] } }
+      })
       expect(result.bundledTemplateSizeBytes).toBe(0)
     })
 
@@ -216,19 +230,28 @@ describe('standalone.buildInstallation', () => {
       expect(CURATED_TEMPLATES.some((t) => t.id === substituteId)).toBe(false)
       const result = standalone.buildInstallation({
         ...base,
-        bundledTemplate: template(substituteId, 5)
+        bundledTemplate: picks([substituteId], 5)
       })
-      expect(result.bundledTemplateId).toBe(substituteId)
+      expect(result.bundledTemplateIds).toEqual([substituteId])
       expect(result.pendingTemplateOpen).toBe(substituteId)
       expect(result.downloadTemplateModels).toBe(true)
     })
 
-    it('rejects a forged id that could escape a path/URL', () => {
+    it('drops forged ids that could escape a path/URL, keeping the valid picks', () => {
       const result = standalone.buildInstallation({
         ...base,
-        bundledTemplate: template('../../etc/passwd')
+        bundledTemplate: picks(['../../etc/passwd', 'ok_id'])
       })
-      expect(result.bundledTemplateId).toBeUndefined()
+      expect(result.bundledTemplateIds).toEqual(['ok_id'])
+      expect(result.pendingTemplateOpen).toBe('ok_id')
+    })
+
+    it('builds nothing when every pick is forged', () => {
+      const result = standalone.buildInstallation({
+        ...base,
+        bundledTemplate: picks(['../../etc/passwd'])
+      })
+      expect(result.bundledTemplateIds).toBeUndefined()
       expect(result.downloadTemplateModels).toBeUndefined()
     })
   })

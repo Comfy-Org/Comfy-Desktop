@@ -1062,7 +1062,7 @@ watch(performanceTestLogs, async () => {
       <TemplatePickerStep
         ref="examplePicker"
         :options="exampleWorkflowOptions"
-        :selected-value="selectedExampleWorkflowId"
+        :selected-values="selectedExampleWorkflowId ? [selectedExampleWorkflowId] : []"
         :disk-space="exampleDiskSpace"
         :disk-space-loading="false"
         compact

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 
 import type { FieldOption } from '../types/ipc'
 import { useTemplateTabs } from './useTemplateTabs'
@@ -21,7 +21,7 @@ const AUD = opt('aud', 'audio')
 const THREED = opt('td', '3d')
 
 function setup(options: FieldOption[], selectedValue: string | null = null) {
-  return useTemplateTabs(ref(options), 'none', ref(selectedValue), t)
+  return useTemplateTabs(ref(options), 'none', ref(selectedValue ? [selectedValue] : []), t)
 }
 
 describe('useTemplateTabs', () => {
@@ -39,6 +39,21 @@ describe('useTemplateTabs', () => {
   it("defaults the active tab to the selected template's modality", () => {
     const { activeModality } = setup([NONE, IMG_A, IMG_B, VID], VID.value)
     expect(activeModality.value).toBe('video')
+  })
+
+  it("opens on the first selected template's modality when several are selected", () => {
+    const selected = ref<string[]>([AUD.value, IMG_A.value])
+    const { activeModality } = useTemplateTabs(ref([NONE, IMG_A, VID, AUD]), 'none', selected, t)
+    expect(activeModality.value).toBe('audio')
+  })
+
+  it('keeps the active tab when the selection changes', async () => {
+    const selected = ref<string[]>([])
+    const tabs = useTemplateTabs(ref([NONE, IMG_A, VID]), 'none', selected, t)
+    tabs.selectTab('image')
+    selected.value = [VID.value]
+    await nextTick()
+    expect(tabs.activeModality.value).toBe('image')
   })
 
   it('defaults to the first populated tab when nothing is selected', () => {
