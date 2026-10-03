@@ -103,13 +103,14 @@ import {
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
 import {
   coreHasDatabase,
-  performanceTestDbPath,
-  removePerformanceTestDb,
+  performanceTestWorkspace,
+  removePerformanceTestWorkspace,
   sessionKindOf,
-  withDatabaseUrl,
+  withPerformanceTestWorkspace,
   type DbMode,
   type SessionKind
-} from '../../performanceTestDb'
+} from '../../performanceTestWorkspace'
+import { stateDir } from '../../paths'
 import { extractPort, parseArgs } from '../../util'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
@@ -1000,7 +1001,7 @@ async function runLaunch(
    *  throwaway catalogue) can be split from the user's own sessions in the boot, exit and tap
    *  events. */
   function launchKind(): { session_kind: SessionKind; db_mode: DbMode } {
-    return { session_kind: sessionKindOf(sessionId), db_mode: perfDbPath ? 'temp_file' : 'file' }
+    return { session_kind: sessionKindOf(sessionId), db_mode: perfWorkspace ? 'temp_file' : 'file' }
   }
 
   // Migrate legacy envs/default/ → ComfyUI/.venv/ for standalone installs.
@@ -1148,8 +1149,10 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.noEnvFound') }
   }
   const launchCmd = launchCmdRaw
-  /** A Performance Test's own throwaway database, when it runs on one. */
-  let perfDbPath: string | null = null
+  /** A Performance Test's own throwaway workspace (database, outputs, temp), when it runs in one. */
+  let perfWorkspace: string | null = null
+  /** Ports a Performance Test in its own workspace stays off: every install's configured one. */
+  let perfExcludedPorts: number[] = []
 
   // Filter unsupported args, then inject desktop-managed feature flags.
   if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {
@@ -1249,24 +1252,16 @@ async function runLaunch(
 
   // A Performance Test runs beside the install's own session, often while that one is up. On
   // the install's database the second of the two to boot fails on Core's lock, and a perf run
-  // would write its scan into the user's catalogue; a throwaway database of its own does neither.
-  // A file, not Core's `:memory:`: that one shares a single connection across threads, and the
-  // scanner's writes then collide with the benchmark's own output registration.
+  // would write its scan into the user's catalogue; a throwaway workspace of its own does neither.
+  // A file database, not Core's `:memory:`: that one shares a single connection across threads,
+  // and the scanner's writes then collide with the benchmark's own output registration. Set up
+  // after the prior-process check below, which stops (or refuses to start beside) a Performance
+  // Test a crashed Desktop left running in this same workspace.
   const perfComfyuiDir =
     sessionKindOf(sessionId) === 'performance_test'
       ? splitLaunchCommand(launchCmd)?.comfyuiDir
       : null
-  if (launchCmd.args && perfComfyuiDir && coreHasDatabase(perfComfyuiDir)) {
-    perfDbPath = performanceTestDbPath(installationId)
-    // Left behind by a Performance Test that was killed before it could clean up.
-    removePerformanceTestDb(perfDbPath)
-    fs.mkdirSync(path.dirname(perfDbPath), { recursive: true })
-    launchCmd.args = withDatabaseUrl(launchCmd.args, `sqlite:///${perfDbPath}`)
-    appendLog(
-      sessionId,
-      `[launch] Performance Test: own database ${perfDbPath}; the install database is not opened\n`
-    )
-  }
+  const perfIsolated = !!(launchCmd.args && perfComfyuiDir && coreHasDatabase(perfComfyuiDir))
 
   /** Gates the `template-models` row: the bar derives "prior steps done" from
    *  the active phase index, so the row stays silent through the real phases and
@@ -1476,7 +1471,7 @@ async function runLaunch(
         mode,
         installationName: inst.name,
         coreBetaArgs: coreBeta.applied.map(toBetaArgView),
-        databaseMode: perfDbPath ? 'temp_file' : 'file',
+        databaseMode: 'file',
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
@@ -1491,7 +1486,6 @@ async function runLaunch(
 
     onProcessTerminated(proc, async (code, signal, { pipesHeld }) => {
       logStream.end()
-      if (perfDbPath) removePerformanceTestDb(perfDbPath)
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — this payload is shown to the user in the crashed-state
       // lifecycle UI. PII scrubbing happens on the telemetry path
@@ -1620,22 +1614,34 @@ async function runLaunch(
   if (prior?.exitedInTime) await waitForPortFree(prior.port)
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
+  if (perfIsolated) {
+    perfWorkspace = performanceTestWorkspace(stateDir(), installationId)
+    // Left by a Performance Test that was killed before it could clean up; its process, if
+    // any survived, was stopped above.
+    removePerformanceTestWorkspace(perfWorkspace)
+    fs.mkdirSync(path.join(perfWorkspace, 'output'), { recursive: true })
+    launchCmd.args = withPerformanceTestWorkspace(launchCmd.args!, perfWorkspace)
+    appendLog(
+      sessionId,
+      `[launch] Performance Test: own workspace ${perfWorkspace}; the install database is not opened\n`
+    )
+    perfExcludedPorts = (await installations.list()).map((i) =>
+      extractPort(parseArgs(String(i.launchArgs ?? '')))
+    )
+  }
+
   if (actionData?.portOverride != null) {
     setPortArg(launchCmd as LaunchCmd, actionData.portOverride as number)
   }
-  // A Performance Test on its own database leaves every install's port to that install, which
-  // the user may launch mid-benchmark: one with an explicit --port is refused when it is taken.
-  // One on the install's database keeps the same-install refusal: the two would share the
-  // catalogue.
-  if (perfDbPath && launchCmd.port) {
-    const installPorts = (await installations.list()).map((i) =>
-      extractPort(parseArgs(String(i.launchArgs ?? '')))
-    )
+  // A Performance Test in its own workspace leaves every install's port to that install, which
+  // the user may launch mid-benchmark: the install itself is refused when a ComfyUI of the same
+  // install holds its port, another install when its explicit --port is taken.
+  if (perfWorkspace && launchCmd.port) {
     const free = await findAvailablePort(
       '127.0.0.1',
       launchCmd.port + 1,
       launchCmd.port + 1000,
-      new Set([..._pendingPorts.keys(), ...installPorts])
+      new Set([..._pendingPorts.keys(), ...perfExcludedPorts])
     ).catch(() => null)
     if (free) setPortArg(launchCmd as LaunchCmd, free)
   }
@@ -1657,7 +1663,7 @@ async function runLaunch(
   let portBumpedFrom: number | null = null
 
   if (portOccupied) {
-    const reservedPorts = new Set(_pendingPorts.keys())
+    const reservedPorts = new Set([..._pendingPorts.keys(), ...perfExcludedPorts])
     let nextPort: number | null = null
     try {
       nextPort = await findAvailablePort(
@@ -1780,7 +1786,7 @@ async function runLaunch(
   // Synchronous re-check: TOCTOU gap
   const lateConflictOwner = _pendingPorts.get(launchCmd.port!)
   if (lateConflictOwner) {
-    const reservedPorts = new Set(_pendingPorts.keys())
+    const reservedPorts = new Set([..._pendingPorts.keys(), ...perfExcludedPorts])
     let nextPort: number | null = null
     try {
       nextPort = await findAvailablePort(
@@ -2030,7 +2036,7 @@ async function runLaunch(
       ) {
         portRetries++
         try {
-          const reservedPorts = new Set(_pendingPorts.keys())
+          const reservedPorts = new Set([..._pendingPorts.keys(), ...perfExcludedPorts])
           const retryPort = await findAvailablePort(
             '127.0.0.1',
             launchCmd.port! + 1,
@@ -2070,6 +2076,8 @@ async function runLaunch(
   )
   if (!launchResult.ok) {
     logStream.end()
+    // Every failure path has killed the tree by now; retries reused the workspace, this is final.
+    if (perfWorkspace) removePerformanceTestWorkspace(perfWorkspace)
     _releasePort(launchCmd.port!)
     // Ownership-guarded: never evict a slot a newer operation already claimed.
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
@@ -2182,7 +2190,7 @@ async function runLaunch(
       mode,
       installationName: inst.name,
       coreBetaArgs: coreBeta.applied.map(toBetaArgView),
-      databaseMode: perfDbPath ? 'temp_file' : 'file',
+      databaseMode: perfWorkspace ? 'temp_file' : 'file',
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()
@@ -2391,7 +2399,7 @@ async function runLaunch(
         return
       }
       logStream.end()
-      if (perfDbPath) removePerformanceTestDb(perfDbPath)
+      if (perfWorkspace) removePerformanceTestWorkspace(perfWorkspace)
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)

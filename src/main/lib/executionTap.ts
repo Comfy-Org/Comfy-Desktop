@@ -25,7 +25,7 @@
  */
 import * as installationsApi from '../installations'
 import * as telemetry from './telemetry'
-import type { DbMode, SessionKind } from './performanceTestDb'
+import type { DbMode, SessionKind } from './performanceTestWorkspace'
 import { stripAnsi, stripLogLevelPrefix } from './stderrTail'
 import { buildErrorFields } from '../../shared/errorEvent'
 import { scrubAll } from '../../shared/piiScrub'

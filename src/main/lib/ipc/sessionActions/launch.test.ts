@@ -74,8 +74,15 @@ const launchHarness = vi.hoisted(() => ({
   /** Every `findAvailablePort` call's arguments. */
   portSearches: [] as unknown[][],
   /** What `installations.list()` returns; null = the real store. */
-  installList: null as null | Array<{ launchArgs?: string }>
+  installList: null as null | Array<{ launchArgs?: string }>,
+  /** Where `stateDir()` points; null = the real one. */
+  stateDir: null as null | string
 }))
+
+vi.mock('../../paths', async (importOriginal) => {
+  const actual = await importOriginal<typeof PathsModule>()
+  return { ...actual, stateDir: () => launchHarness.stateDir ?? actual.stateDir() }
+})
 
 vi.mock('../shared', async (importOriginal) => {
   const actual = await importOriginal<typeof SharedModule>()
@@ -271,9 +278,10 @@ import {
   setCallbacks
 } from '../shared'
 import type { InstanceStartedCallbackInfo } from '../shared'
-import { performanceTestDbPath } from '../../performanceTestDb'
+import { performanceTestWorkspace } from '../../performanceTestWorkspace'
 import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
+import type * as PathsModule from '../../paths'
 import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as HardwareTapModule from '../../hardwareTap'
@@ -2065,6 +2073,7 @@ describe('core beta report placement', () => {
 
 describe('Performance Test database', () => {
   let installDir = ''
+  let stateRoot = ''
   let events: { event: string; properties?: Record<string, unknown> }[] = []
   let spawnArgs: string[] = []
   let child: FakeChild | null = null
@@ -2072,7 +2081,9 @@ describe('Performance Test database', () => {
   let bootLogs: Record<string, unknown>[] = []
 
   const userDb = (): string => `sqlite:///${path.join(installDir, 'user', 'comfyui.db')}`
-  const perfDb = (installationId: string): string => performanceTestDbPath(installationId)
+  const workspace = (installationId: string): string =>
+    performanceTestWorkspace(stateRoot, installationId)
+  const argAfter = (flag: string): string | undefined => spawnArgs[spawnArgs.indexOf(flag) + 1]
 
   const ctxFor = (installationId: string, sessionId?: string): ActionContext => ({
     event: {
@@ -2102,8 +2113,18 @@ describe('Performance Test database', () => {
     fs.writeFileSync(path.join(dir, 'db.py'), 'def init_db():\n    pass\n')
   }
 
+  /** What a running Core leaves in its workspace. */
+  function writeCoreFiles(ws: string): void {
+    fs.mkdirSync(path.join(ws, 'output'), { recursive: true })
+    for (const f of ['comfyui.db', 'comfyui.db-wal', 'comfyui.db.lock', 'output/img_00001_.png']) {
+      fs.writeFileSync(path.join(ws, f), 'x')
+    }
+  }
+
   beforeEach(() => {
     installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-db-launch-'))
+    stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-db-state-'))
+    launchHarness.stateDir = stateRoot
     started = []
     bootLogs = []
     setCallbacks({ onInstanceStarted: (info) => started.push(info) })
@@ -2122,6 +2143,8 @@ describe('Performance Test database', () => {
     launchHarness.installList = []
     // No real port probes: the install's port 48234 must read as free on any machine.
     launchHarness.busyPorts = []
+    ownership.prior = null
+    ownership.onResolve = null
     launchHarness.spawn = (_cmd: unknown, args: unknown) => {
       spawnArgs = args as string[]
       const proc = new EventEmitter() as FakeChild
@@ -2141,6 +2164,8 @@ describe('Performance Test database', () => {
         path.join(installDir, 'ComfyUI', 'main.py'),
         '--database-url',
         userDb(),
+        '--output-directory',
+        path.join(installDir, 'output'),
         '--enable-assets'
       ],
       cwd: installDir,
@@ -2161,8 +2186,11 @@ describe('Performance Test database', () => {
     vi.restoreAllMocks()
     launchHarness.busyPorts = null
     launchHarness.installList = null
+    launchHarness.stateDir = null
+    ownership.onResolve = null
     setCallbacks({})
     fs.rmSync(installDir, { recursive: true, force: true })
+    fs.rmSync(stateRoot, { recursive: true, force: true })
     for (const key of [..._runningSessions.keys()]) {
       if (key.startsWith('performance-test:perf-db-') || key.startsWith('perf-db-')) {
         _runningSessions.delete(key)
@@ -2175,20 +2203,28 @@ describe('Performance Test database', () => {
       .filter((e) => /comfyui\.boot_(started|completed)$/.test(e.event))
       .map((e) => e.properties ?? {})
 
-  it('runs a Performance Test on a throwaway database of its own and removes it on exit', async () => {
+  it('runs a Performance Test in a throwaway workspace of its own and removes it on exit', async () => {
     writeCoreDb()
+    const ws = workspace('perf-db-temp')
 
     const res = await handleLaunch(ctxFor('perf-db-temp', 'performance-test:perf-db-temp'))
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).not.toContain(userDb())
-    expect(spawnArgs.filter((a) => a === '--database-url')).toHaveLength(1)
-    expect(spawnArgs[spawnArgs.indexOf('--database-url') + 1]).toBe(
-      `sqlite:///${perfDb('perf-db-temp')}`
-    )
+    expect(spawnArgs).not.toContain(path.join(installDir, 'output'))
+    for (const flag of ['--database-url', '--output-directory', '--temp-directory']) {
+      expect(
+        spawnArgs.filter((a) => a === flag),
+        flag
+      ).toHaveLength(1)
+    }
+    expect(argAfter('--database-url')).toBe(`sqlite:///${path.join(ws, 'comfyui.db')}`)
+    expect(argAfter('--output-directory')).toBe(path.join(ws, 'output'))
+    expect(argAfter('--temp-directory')).toBe(ws)
+    expect(ws.startsWith(stateRoot), 'under the per-user state dir').toBe(true)
     // Off the install's own port, so the install can still be launched mid-benchmark.
     expect(spawnArgs.filter((a) => a === '--port')).toHaveLength(1)
-    expect(spawnArgs[spawnArgs.indexOf('--port') + 1]).toBe(String(launchHarness.nextPort))
+    expect(argAfter('--port')).toBe(String(launchHarness.nextPort))
     expect(spawnArgs).toContain('--enable-assets')
     expect(_runningSessions.get('performance-test:perf-db-temp')?.databaseMode).toBe('temp_file')
     expect(started).toEqual([
@@ -2219,9 +2255,7 @@ describe('Performance Test database', () => {
       })
     }
 
-    // What the running ComfyUI wrote; gone once it exits.
-    for (const suffix of ['', '-wal', '.lock'])
-      fs.writeFileSync(perfDb('perf-db-temp') + suffix, 'x')
+    writeCoreFiles(ws)
     child!.emit('close', 0, null)
     await vi.waitFor(() =>
       expect(
@@ -2231,44 +2265,63 @@ describe('Performance Test database', () => {
     expect(
       events.find((e) => e.event === 'comfy.desktop.execution.session_summary')?.properties
     ).toMatchObject({ session_kind: 'performance_test', db_mode: 'temp_file' })
-    for (const suffix of ['', '-wal', '.lock']) {
-      expect(fs.existsSync(perfDb('perf-db-temp') + suffix), suffix || 'db').toBe(false)
-    }
+    expect(fs.existsSync(ws)).toBe(false)
   })
 
-  it('removes a database left by a Performance Test that was killed', async () => {
+  it('removes a killed run’s workspace only after the check for a run still alive in it', async () => {
     writeCoreDb()
-    // A killed run never reached its exit cleanup.
-    fs.mkdirSync(path.dirname(perfDb('perf-db-leftover')), { recursive: true })
-    fs.writeFileSync(perfDb('perf-db-leftover'), 'stale catalogue')
-    fs.writeFileSync(perfDb('perf-db-leftover') + '-wal', 'stale')
+    const ws = workspace('perf-db-leftover')
+    writeCoreFiles(ws)
+    let presentDuringCheck: boolean | null = null
+    ownership.onResolve = () => {
+      presentDuringCheck = fs.existsSync(path.join(ws, 'comfyui.db'))
+    }
 
     const res = await handleLaunch(ctxFor('perf-db-leftover', 'performance-test:perf-db-leftover'))
 
     expect(res.ok).toBe(true)
-    expect(fs.existsSync(perfDb('perf-db-leftover'))).toBe(false)
-    expect(fs.existsSync(perfDb('perf-db-leftover') + '-wal')).toBe(false)
+    expect(presentDuringCheck, 'a surviving run keeps its files until it is dealt with').toBe(true)
+    expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(false)
+    expect(fs.existsSync(path.join(ws, 'output', 'img_00001_.png'))).toBe(false)
+    expect(fs.existsSync(path.join(ws, 'output')), 'a fresh workspace').toBe(true)
   })
 
-  it("keeps clear of every install's configured port", async () => {
+  it('removes the workspace of a Performance Test that failed to boot', async () => {
+    writeCoreDb()
+    const ws = workspace('perf-db-boot-fail')
+    launchHarness.waitForPort = async () => {
+      writeCoreFiles(ws)
+      throw new Error('ComfyUI did not start')
+    }
+
+    const res = await handleLaunch(
+      ctxFor('perf-db-boot-fail', 'performance-test:perf-db-boot-fail')
+    )
+
+    expect(res.ok).toBe(false)
+    expect(fs.existsSync(ws)).toBe(false)
+  })
+
+  it("keeps clear of every install's configured port, in every port search", async () => {
     writeCoreDb()
     // Another install on an explicit port, and one on Core's default.
     launchHarness.installList = [{ launchArgs: '--port 48235 --cpu' }, { launchArgs: '' }]
+    // The port the first search picks is taken by the time it is checked: a second search.
+    launchHarness.busyPorts = [launchHarness.nextPort]
 
-    const res = await handleLaunch(ctxFor('perf-db-ports', 'performance-test:perf-db-ports'))
+    await handleLaunch(ctxFor('perf-db-ports', 'performance-test:perf-db-ports'))
 
-    expect(res.ok).toBe(true)
-    const [, from, , exclude] = launchHarness.portSearches[0] as [
-      string,
-      number,
-      number,
-      ReadonlySet<number>
-    ]
+    expect(launchHarness.portSearches.length).toBeGreaterThanOrEqual(2)
+    const [, from] = launchHarness.portSearches[0] as [string, number]
     expect(from).toBe(48235)
-    expect([...exclude]).toEqual(expect.arrayContaining([48235, 8188]))
+    for (const search of launchHarness.portSearches) {
+      const exclude = (search as [string, number, number, ReadonlySet<number>])[3]
+      expect([...exclude]).toEqual(expect.arrayContaining([48235, 8188]))
+    }
   })
 
-  it('tags the exit of a Performance Test that skips the port wait', async () => {
+  it('gives a launch that skips the port wait no workspace', async () => {
+    // Only the legacy Desktop executable skips the port wait; it runs no ComfyUI of Desktop's.
     writeCoreDb()
     launchHarness.launchCommand = { ...launchHarness.launchCommand!, skipPortWait: true }
 
@@ -2276,18 +2329,17 @@ describe('Performance Test database', () => {
       ctxFor('perf-db-skip-port', 'performance-test:perf-db-skip-port')
     )
     expect(res.ok).toBe(true)
+    expect(spawnArgs).toContain(userDb())
     expect(started).toEqual([
-      expect.objectContaining({ sessionKind: 'performance_test', databaseMode: 'temp_file' })
+      expect.objectContaining({ sessionKind: 'performance_test', databaseMode: 'file' })
     ])
-    fs.writeFileSync(perfDb('perf-db-skip-port'), 'x')
     child!.emit('close', 0, null)
 
     await vi.waitFor(() =>
       expect(
         events.find((e) => e.event === 'comfy.desktop.comfyui.exited')?.properties
-      ).toMatchObject({ session_kind: 'performance_test', db_mode: 'temp_file' })
+      ).toMatchObject({ session_kind: 'performance_test', db_mode: 'file' })
     )
-    expect(fs.existsSync(perfDb('perf-db-skip-port'))).toBe(false)
   })
 
   it("leaves the user's own session on the install database", async () => {
@@ -2297,8 +2349,9 @@ describe('Performance Test database', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).toContain(userDb())
-    expect(spawnArgs.filter((a) => a === '--database-url')).toHaveLength(1)
+    expect(spawnArgs).not.toContain('--temp-directory')
     expect(spawnArgs, 'kept the port the source chose').not.toContain('--port')
+    expect(fs.existsSync(path.join(stateRoot, 'perf-test'))).toBe(false)
     expect(started).toEqual([
       expect.objectContaining({ sessionKind: 'normal', databaseMode: 'file' })
     ])
@@ -2308,8 +2361,8 @@ describe('Performance Test database', () => {
     }
   })
 
-  it('passes no database flag to a Core that has no database', async () => {
-    // Core before v0.3.41: no app/database, no --database-url flag to pass.
+  it('gives a Core that has no database no workspace flags', async () => {
+    // Core before v0.3.41: no app/database, and none of those flags to pass.
     launchHarness.launchCommand = {
       ...launchHarness.launchCommand!,
       args: ['-s', path.join(installDir, 'ComfyUI', 'main.py')]
@@ -2319,6 +2372,7 @@ describe('Performance Test database', () => {
 
     expect(res.ok).toBe(true)
     expect(spawnArgs).not.toContain('--database-url')
+    expect(spawnArgs).not.toContain('--temp-directory')
     expect(spawnArgs, 'kept the port the source chose').not.toContain('--port')
     expect(started).toEqual([
       expect.objectContaining({ sessionKind: 'performance_test', databaseMode: 'file' })

@@ -36,7 +36,7 @@
  * strips a leading `[LEVEL] ` tag before matching so both formats parse.
  */
 import * as telemetry from './telemetry'
-import type { DbMode, SessionKind } from './performanceTestDb'
+import type { DbMode, SessionKind } from './performanceTestWorkspace'
 import { createModelUsageSummary } from './modelUsageSummary'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 import type { AcceleratorInfo, AcceleratorSnapshot } from '../../types/ipc'

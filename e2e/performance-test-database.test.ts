@@ -1,7 +1,7 @@
 /**
- * E2E: a Performance Test runs ComfyUI on a throwaway database of its own, so it boots beside
- * the install's own session instead of failing on the database lock, never writes into the
- * install's catalogue, and leaves nothing behind.
+ * E2E: a Performance Test runs ComfyUI in a throwaway workspace of its own (database, outputs,
+ * temp), so it boots beside the install's own session instead of failing on the database lock,
+ * never writes into the install's catalogue, and leaves nothing behind.
  *
  * Users hit this by opening File > Performance Tests while the install is running (or by
  * launching the install mid-benchmark). With assets on, Core holds `<db>.lock` for its whole
@@ -16,7 +16,8 @@
 
 import os from 'node:os'
 import path from 'node:path'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
@@ -55,11 +56,10 @@ async function dbBytes(): Promise<string | null> {
   }
 }
 
-/** The Performance Test's own database: Desktop's temp directory, one file per install. */
-async function perfDbPath(): Promise<string> {
-  const temp = await ctx!.app.evaluate(({ app }) => app.getPath('temp'))
-  return path.join(temp, 'comfy-desktop-perf-db', `${INSTALL_ID}.db`)
-}
+/** The Performance Test's own workspace: Desktop's per-user state directory, which the harness
+ *  keeps inside this run's profile. */
+const perfWorkspace = (): string =>
+  path.join(profileDir, '.local', 'state', 'comfyui-desktop-2', 'perf-test', INSTALL_ID)
 
 async function launch(sessionKey: string): Promise<LaunchResult> {
   const actionData =
@@ -147,7 +147,7 @@ test('a Performance Test boots beside the running install and leaves its databas
   const perf = await launch(PERF_SESSION)
   expect(perf, perf.message).toMatchObject({ ok: true })
   // It booted on a database of its own, and held and wrote that one as Core does.
-  const ownDb = await perfDbPath()
+  const ownDb = path.join(perfWorkspace(), 'comfyui.db')
   expect(await readFile(ownDb, 'utf-8'), 'the Performance Test scanned into its own database').toContain(
     'scan by',
   )
@@ -168,10 +168,8 @@ test('a Performance Test boots beside the running install and leaves its databas
   ])
   await stop(PERF_SESSION)
   expect(await dbBytes()).toBe(before)
-  // Its throwaway database goes with it.
-  await expect
-    .poll(async () => (await readdir(path.dirname(ownDb))).filter((f) => f.startsWith(INSTALL_ID)))
-    .toEqual([])
+  // Its throwaway workspace goes with it.
+  await expect.poll(() => existsSync(perfWorkspace())).toBe(false)
 })
 
 test('the install boots while a Performance Test is running @linux', async () => {

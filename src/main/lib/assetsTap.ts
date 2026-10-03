@@ -34,7 +34,7 @@
  * directly. Core's own emitter only sends names from its `ALLOWED_FIELDS`.
  */
 import * as telemetry from './telemetry'
-import type { DbMode, SessionKind } from './performanceTestDb'
+import type { DbMode, SessionKind } from './performanceTestWorkspace'
 import type { TelemetryValue } from './telemetry'
 import { DATADOG_GLOBAL_CONTEXT_KEYS } from '../../shared/datadogMirroredEvents'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'

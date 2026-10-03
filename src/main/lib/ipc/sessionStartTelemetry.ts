@@ -9,7 +9,7 @@ import * as telemetry from '../telemetry'
 import * as settings from '../../settings'
 import { buildInstallationDdContext, sourceMap } from './shared'
 import { scrubAll } from '../../../shared/piiScrub'
-import type { DbMode, SessionKind } from '../performanceTestDb'
+import type { DbMode, SessionKind } from '../performanceTestWorkspace'
 
 // Mirror the bridge's large-`_json` ceiling: ship intact or omit + flag
 // `*_truncated`, never slice mid-string. Under PostHog's 1 MB event limit.
