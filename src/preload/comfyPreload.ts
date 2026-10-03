@@ -124,6 +124,14 @@ function templateInputReferenceKey({ templateId, assetId }: ComfyTemplateInputRe
   return `${templateId}\u0000${assetId}`
 }
 
+/**
+ * Stable per asset so a renderer that de-duplicates terminal events by id
+ * sees one completion per file, however often a template is reopened.
+ */
+function alreadyPresentDownloadId(templateId: string, assetId: string): string {
+  return `already-present:${templateId}:${assetId}`
+}
+
 function emitTemplateInputProgress(
   download: ComfyTemplateInputAssetDownload,
   templateInputs: ComfyTemplateInputReference[]
@@ -247,6 +255,19 @@ const downloadTemplateInputAsset: NonNullable<
     })
     if (result.status === 'accepted' || result.status === 'joined') {
       trackTemplateInputDownload({ templateId, assetId }, result.download, true)
+    } else if (result.status === 'already-present') {
+      // No job will ever report this file, so say so once here. Renderers
+      // watch this stream and nothing else, and a file that arrived between
+      // the availability answer and this call still needs rebinding.
+      emitTemplateInputProgress(
+        {
+          downloadId: alreadyPresentDownloadId(templateId, assetId),
+          filename: result.filename,
+          progress: 1,
+          status: 'completed'
+        },
+        [{ templateId, assetId }]
+      )
     }
     return result
   } finally {

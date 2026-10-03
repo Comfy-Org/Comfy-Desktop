@@ -176,6 +176,29 @@ describe('comfyPreload template input asset bridge', () => {
     unsubscribe()
   })
 
+  it('reports an already-present file, which no job will announce', async () => {
+    const bridge = hostedBridge()
+    const callback = vi.fn()
+    const unsubscribe = bridge.onTemplateInputDownloadProgress(callback)
+    mocks.invoke.mockResolvedValueOnce({
+      status: 'already-present',
+      filename: 'sample.png'
+    })
+
+    await expect(bridge.downloadTemplateInputAsset('template-a', 'asset-a')).resolves.toMatchObject(
+      { status: 'already-present' }
+    )
+
+    expect(callback).toHaveBeenCalledExactlyOnceWith({
+      downloadId: 'already-present:template-a:asset-a',
+      filename: 'sample.png',
+      progress: 1,
+      status: 'completed',
+      templateInputs: [{ templateId: 'template-a', assetId: 'asset-a' }]
+    })
+    unsubscribe()
+  })
+
   it('replays terminal progress that races ahead of the invoke response', async () => {
     const bridge = hostedBridge()
     const callback = vi.fn()

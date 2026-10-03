@@ -204,7 +204,12 @@ describe('registerTemplateInputAssetHandlers', () => {
     mocks.resolveSnapshot.mockResolvedValue([declaredAsset])
     mocks.resolveAvailability.mockResolvedValue([{ filename: 'sample.png', status: 'present' }])
 
-    await expect(downloadAsset()).resolves.toEqual({ status: 'already-present' })
+    // The filename travels with it so the host can report the one completion
+    // no job will ever emit for this file.
+    await expect(downloadAsset()).resolves.toEqual({
+      status: 'already-present',
+      filename: 'sample.png'
+    })
     expect(mocks.startManagedAssetDownload).not.toHaveBeenCalled()
   })
 

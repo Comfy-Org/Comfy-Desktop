@@ -116,7 +116,8 @@ export function registerTemplateInputAssetHandlers({
       const [availability] = await resolveTemplateInputAssetAvailability(context.installation, [
         asset.filename
       ])
-      if (availability?.status === 'present') return { status: 'already-present' as const }
+      if (availability?.status === 'present')
+        return { status: 'already-present' as const, filename: asset.filename }
       if (availability?.status !== 'missing') {
         return { status: 'not-started' as const, reason: 'unavailable' as const }
       }
@@ -131,7 +132,8 @@ export function registerTemplateInputAssetHandlers({
         event.sender,
         { existingFilePolicy: 'skip' }
       )
-      if (admission.status === 'already-present') return admission
+      if (admission.status === 'already-present')
+        return { status: admission.status, filename: asset.filename }
       if (admission.status === 'not-started') {
         return { status: 'not-started' as const, reason: 'unavailable' as const }
       }
