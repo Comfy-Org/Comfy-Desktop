@@ -209,7 +209,7 @@ jobs:
       - name: Fetch ToDesktop build metadata by ID
         env:
           BUILD_ID: ${{ steps.build_id.outputs.build_id }}
-        run: todesktop builds "${BUILD_ID}" --config=todesktop.json --exit > todesktop-build.raw 2>&1
+        run: todesktop builds "${BUILD_ID}" --config=todesktop.json --format=json --exit > todesktop-build.json
 
       - name: Extract build details
         id: extract
@@ -218,41 +218,15 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs')
 
-          const parseBuildOutput = (raw, expectedBuildId) => {
-            const buildIdPattern =
-              /https?:\/\/(?:app\.todesktop\.com\/apps|dl\.todesktop\.com)\/[^/\s]+\/builds\/([A-Za-z0-9_-]+)/g
-            const buildIds = [...new Set([...raw.matchAll(buildIdPattern)].map((match) => match[1]))].filter(
-              Boolean
-            )
-            if (expectedBuildId && buildIds.length > 0 && !buildIds.includes(expectedBuildId)) {
-              throw new Error(
-                `Build ID mismatch in raw CLI output. Expected ${expectedBuildId}, found ${buildIds.join(', ')}`
-              )
-            }
-
-            const buildId = expectedBuildId || buildIds[0] || ''
-            if (!buildId) {
-              throw new Error('Could not extract a ToDesktop build ID from metadata output.')
-            }
-
-            const appUrl = [...raw.matchAll(/https?:\/\/app\.todesktop\.com\/apps\/[^/\s]+\/builds\/[A-Za-z0-9_-]+/g)]
-              .map((match) => match[0])
-              .at(-1)
-            const downloadUrl = [...raw.matchAll(/https?:\/\/dl\.todesktop\.com\/[^/\s]+\/builds\/[A-Za-z0-9_-]+/g)]
-              .map((match) => match[0])
-              .at(-1)
-
-            return {
-              id: buildId,
-              status: /Build complete!/i.test(raw) ? 'succeeded' : 'unknown',
-              standardUniversalDownloadUrl: downloadUrl || '',
-              __appUrl: appUrl || ''
-            }
-          }
-
           const expectedBuildId = process.env.EXPECTED_BUILD_ID || ''
-          const rawBuildOutput = fs.readFileSync('todesktop-build.raw', 'utf8')
-          const build = parseBuildOutput(rawBuildOutput, expectedBuildId)
+          const metadata = JSON.parse(fs.readFileSync('todesktop-build.json', 'utf8'))
+          if (!Array.isArray(metadata)) {
+            throw new Error('Expected ToDesktop JSON metadata to be an array of builds')
+          }
+          const build = metadata.find((candidate) => String(candidate?.id || '') === expectedBuildId)
+          if (!build) {
+            throw new Error(`Could not find ToDesktop build ${expectedBuildId} in JSON metadata`)
+          }
           const safeUrl = (value) => (typeof value === 'string' ? value : '')
           const macUrl = safeUrl(build?.mac?.standardDownloadUrl)
           const windowsUrl = safeUrl(build?.windows?.standardDownloadUrl)
@@ -376,6 +350,31 @@ jobs:
           NODE
         env:
           EXPECTED_BUILD_ID: ${{ steps.build_id.outputs.build_id }}
+
+      - name: Smoke-test the published Linux x64 AppImage
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage_url="$(
+            jq -r '
+              .assets[]
+              | select(.platform == "Linux" and .format == "AppImage")
+              | select(.arch == "x64" or .arch == "n/a")
+              | .url
+            ' release-assets.json | head -1
+          )"
+          if [[ -z "${appimage_url}" || "${appimage_url}" == "null" ]]; then
+            echo "::error::ToDesktop metadata did not include a Linux x64 AppImage URL"
+            exit 1
+          fi
+
+          sudo apt-get update
+          sudo apt-get install --yes xvfb
+          curl --fail --location --retry 3 --output Comfy-Desktop-linux-x64.AppImage "${appimage_url}"
+          chmod +x Comfy-Desktop-linux-x64.AppImage
+          ./scripts/smoke-linux-appimage.sh \
+            Comfy-Desktop-linux-x64.AppImage \
+            "$(node -p "require('./package.json').version")"
 
       - name: Upload release metadata artifact
         uses: actions/upload-artifact@v7
