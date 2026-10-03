@@ -15,6 +15,7 @@ vi.mock('../../lib/comfyui-releases', () => ({
   getLatestStableTag: vi.fn()
 }))
 
+import { app } from 'electron'
 import { standalone, buildPinnedVariant } from './index'
 import { resetTemplateCatalogCache } from './templateCatalog'
 import { CURATED_TEMPLATES, NO_TEMPLATE_VALUE, INDEX_URL } from './curatedTemplates'
@@ -592,6 +593,87 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
     expect(cmd).not.toBeNull()
     expect(cmd!.args!.includes('--base-directory')).toBe(false)
     expect(cmd!.args!.includes('--user-directory')).toBe(false)
+  })
+})
+
+// --- getLaunchCommand: x64 Python on Windows on Arm ---
+
+describe('standalone.getLaunchCommand on Windows on Arm', () => {
+  const realPlatform = process.platform
+  const realArch = process.arch
+  const installPath = path.join('C:', 'fake', 'installs', 'spark')
+  const cliArgsPath = path.join(installPath, 'ComfyUI', 'comfy', 'cli_args.py')
+  let cliArgs: string
+  const mockedApp = app as { runningUnderARM64Translation?: boolean }
+
+  function setHost(arch: NodeJS.Architecture, translated: boolean): void {
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    Object.defineProperty(process, 'arch', { value: arch })
+    mockedApp.runningUnderARM64Translation = translated
+  }
+
+  function launchArgs(overrides: Partial<InstallationRecord> = {}): string[] {
+    const record = {
+      id: 'inst-1',
+      name: 'ComfyUI',
+      createdAt: new Date().toISOString(),
+      sourceId: 'standalone',
+      installPath,
+      variant: 'win-nvidia',
+      launchArgs: '--enable-manager',
+      ...overrides
+    } as InstallationRecord
+    return standalone.getLaunchCommand!(record)!.args!
+  }
+
+  beforeEach(() => {
+    cliArgs = 'parser.add_argument("--disable-dynamic-vram", action="store_true")'
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+    const realReadFileSync = fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, options) =>
+      file === cliArgsPath ? cliArgs : realReadFileSync(file, options)) as typeof fs.readFileSync)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    Object.defineProperty(process, 'platform', { value: realPlatform })
+    Object.defineProperty(process, 'arch', { value: realArch })
+    delete mockedApp.runningUnderARM64Translation
+  })
+
+  it('disables dynamic VRAM for an x64 bundle run by the x64 app under emulation', () => {
+    setHost('x64', true)
+    expect(launchArgs()).toContain('--disable-dynamic-vram')
+  })
+
+  it('disables dynamic VRAM for an x64 bundle run by the native ARM64 app', () => {
+    setHost('arm64', false)
+    expect(launchArgs()).toContain('--disable-dynamic-vram')
+  })
+
+  it('leaves dynamic VRAM on for the ARM64 bundle', () => {
+    setHost('arm64', false)
+    expect(launchArgs({ variant: 'beta-win-nvidia-arm64' })).not.toContain('--disable-dynamic-vram')
+  })
+
+  it('leaves dynamic VRAM on for an x64 machine', () => {
+    setHost('x64', false)
+    expect(launchArgs()).not.toContain('--disable-dynamic-vram')
+  })
+
+  it('respects a dynamic VRAM flag the user already set', () => {
+    setHost('x64', true)
+    expect(launchArgs({ launchArgs: '--enable-dynamic-vram' })).not.toContain(
+      '--disable-dynamic-vram'
+    )
+    const args = launchArgs({ launchArgs: '--disable-dynamic-vram' })
+    expect(args.filter((a) => a === '--disable-dynamic-vram')).toHaveLength(1)
+  })
+
+  it('skips the flag for ComfyUI that predates it', () => {
+    setHost('x64', true)
+    cliArgs = 'parser.add_argument("--lowvram", action="store_true")'
+    expect(launchArgs()).not.toContain('--disable-dynamic-vram')
   })
 })
 
