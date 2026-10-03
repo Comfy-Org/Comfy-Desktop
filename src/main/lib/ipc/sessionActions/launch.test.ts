@@ -253,6 +253,7 @@ import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
 import { _resetKeyForTest, hashPath } from '../../dbLocationTelemetry'
+import { adoptedPinArgs } from '../../comfyDbLock'
 import { configDir } from '../../paths'
 import type { LaunchCommand } from '../../../types/sources'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
@@ -1304,6 +1305,7 @@ describe('core beta report placement', () => {
 
     it('reports it as keyed hashes only', async () => {
       const props = await launchWith('harness-db-location')
+      expect(fs.existsSync(keyFile()), 'the launch created the key').toBe(true)
 
       const comfy = path.join(installDir, 'ComfyUI')
       expect(props).toMatchObject({
@@ -1316,7 +1318,39 @@ describe('core beta report placement', () => {
         db_url_source: 'install_local'
       })
       expectNoNames(props, [path.basename(installDir)])
-      expect(fs.existsSync(keyFile()), 'the key is created under granted consent').toBe(true)
+    })
+
+    it("reports Desktop's own pins on an adopted install as adopted_legacy", async () => {
+      const legacy = path.join(installDir, 'legacy base')
+      launchHarness.schemaNames = ['listen', 'base-directory', 'user-directory', 'database-url']
+      const ctx = ctxFor('harness-db-location-adopted')
+      ctx.inst = { ...ctx.inst, adopted: true, adoptedBaseDir: legacy } as InstallationRecord
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), ...adoptedPinArgs(legacy, true)],
+        cwd: installDir,
+        skipPortWait: false,
+        port: 48234
+      }
+      await handleLaunch(ctx)
+      const props = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')?.properties
+
+      expect(props).toMatchObject({
+        db_path_hash: hashed(path.join(legacy, 'user', 'comfyui.db')),
+        db_path_rel: '<legacy-root>/user/comfyui.db',
+        base_dir_rel: '<legacy-root>',
+        db_url_source: 'adopted_legacy'
+      })
+    })
+
+    it('sends no database hash when the core args could not be discovered', async () => {
+      launchHarness.schemaThrows = true
+      const props = await launchWith('harness-db-location-undiscovered').finally(() => {
+        launchHarness.schemaThrows = false
+      })
+
+      expect(props?.['db_path_hash']).toBeNull()
+      expect(props?.['base_dir_hash']).toBe(hashed(path.join(installDir, 'ComfyUI')))
     })
 
     it('sends no database hash for a core without a database', async () => {

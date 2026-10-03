@@ -20,7 +20,7 @@ import {
 let tmp: string
 
 beforeEach(() => {
-  tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'db-location-')))
+  tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'db-location-')))
   dirs.config = path.join(tmp, 'config')
   _resetKeyForTest()
 })
@@ -218,7 +218,8 @@ describe('dbLocationProps', () => {
   })
 
   it('sends no database hash unless the core is known to have a database', () => {
-    for (const hasDatabase of [false]) {
+    {
+      const hasDatabase = false
       const p = dbLocationProps({
         cwd,
         args: ['-s', main],
@@ -353,6 +354,14 @@ describe('relativeLocation', () => {
       relativeLocation(path.join(installRoot, 'Theirs', 'ComfyUI', 'user'), withOwn),
       'a sibling install reads differently'
     ).toBe('<install-root>/<install>/ComfyUI/user')
+  })
+
+  it('picks the deepest matching folder whatever the order of the roots', () => {
+    const own = path.join(legacyRoot, 'inst')
+    expect(
+      relativeLocation(path.join(own, 'ComfyUI'), { ...roots, installDirs: [own] }),
+      'the launching install inside the legacy folder, listed before it'
+    ).toBe('<this-install>/ComfyUI')
   })
 
   it('prefers a legacy folder nested inside the install root', () => {
