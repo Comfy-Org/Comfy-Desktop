@@ -36,7 +36,8 @@ const VIDEO: FieldOption = {
 function mountPicker(
   props: Partial<{
     options: FieldOption[]
-    selectedValue: string | null
+    selectedValues: string[]
+    multiple: boolean
     diskSpace: DiskSpaceInfo | null
     diskSpaceLoading: boolean
     compact: boolean
@@ -46,7 +47,7 @@ function mountPicker(
     props: {
       options: [NONE, IMAGE_REC, IMAGE_ALT, VIDEO],
       noneValue: 'none',
-      selectedValue: IMAGE_REC.value,
+      selectedValues: [IMAGE_REC.value],
       diskSpace: null,
       diskSpaceLoading: false,
       ...props
@@ -85,7 +86,7 @@ describe('TemplatePickerStep', () => {
 
   it('shows the recommended badge only on the recommended card', () => {
     // Select the non-recommended alt, so only one card can carry the badge.
-    const wrapper = mountPicker({ selectedValue: IMAGE_ALT.value })
+    const wrapper = mountPicker({ selectedValues: [IMAGE_ALT.value] })
     const tags = wrapper.findAll('.tps__recommended')
     expect(tags).toHaveLength(1)
     expect(wrapper.findAll('button[role="radio"]')[0]!.text()).toContain('Recommended')
@@ -122,7 +123,7 @@ describe('TemplatePickerStep', () => {
     }
     const row = mountPicker({
       options: [NONE, present],
-      selectedValue: present.value
+      selectedValues: [present.value]
     }).findAll('button[role="radio"]')[0]!
 
     expect(row.find('.tps__check').exists()).toBe(true)
@@ -143,7 +144,7 @@ describe('TemplatePickerStep', () => {
   })
 
   it('marks the selected row via aria-checked', () => {
-    const rows = mountPicker({ selectedValue: IMAGE_ALT.value }).findAll('button[role="radio"]')
+    const rows = mountPicker({ selectedValues: [IMAGE_ALT.value] }).findAll('button[role="radio"]')
     expect(rows[0]!.attributes('aria-checked')).toBe('false')
     expect(rows[1]!.attributes('aria-checked')).toBe('true')
   })
@@ -155,7 +156,7 @@ describe('TemplatePickerStep', () => {
   })
 
   it('leaves Enter/Space to native button activation (does not preventDefault)', () => {
-    const wrapper = mountPicker({ selectedValue: IMAGE_REC.value })
+    const wrapper = mountPicker({ selectedValues: [IMAGE_REC.value] })
     const row = wrapper.findAll('button[role="radio"]')[0]!
     for (const key of ['Enter', ' ']) {
       const ev = new KeyboardEvent('keydown', { key, cancelable: true, bubbles: true })
@@ -166,10 +167,59 @@ describe('TemplatePickerStep', () => {
 
   it('ArrowDown/ArrowRight move selection to the next card within the active tab', async () => {
     for (const key of ['ArrowDown', 'ArrowRight']) {
-      const wrapper = mountPicker({ selectedValue: IMAGE_REC.value })
+      const wrapper = mountPicker({ selectedValues: [IMAGE_REC.value] })
       await wrapper.findAll('button[role="radio"]')[0]!.trigger('keydown', { key })
       expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ value: IMAGE_ALT.value })
     }
+  })
+
+  describe('multiple', () => {
+    it('renders checkbox cards and checks every selected one', () => {
+      const wrapper = mountPicker({
+        multiple: true,
+        selectedValues: [IMAGE_REC.value, IMAGE_ALT.value]
+      })
+      expect(wrapper.find('[role="group"]').exists()).toBe(true)
+      const cards = wrapper.findAll('button[role="checkbox"]')
+      expect(cards).toHaveLength(2)
+      expect(cards.map((c) => c.attributes('aria-checked'))).toEqual(['true', 'true'])
+      expect(wrapper.findAll('.tps__check')).toHaveLength(2)
+    })
+
+    it('arrow keys move focus without changing the selection', async () => {
+      const wrapper = mountPicker({ multiple: true, selectedValues: [] })
+      await wrapper.findAll('button[role="checkbox"]')[0]!.trigger('keydown', { key: 'ArrowRight' })
+      expect(wrapper.emitted('select')).toBeUndefined()
+    })
+
+    it('opens on the first selected template and stays on the tab the user chose', async () => {
+      const wrapper = mountPicker({
+        multiple: true,
+        selectedValues: [VIDEO.value, IMAGE_REC.value]
+      })
+      expect(wrapper.findAll('button[role="checkbox"]')[0]!.text()).toContain('Wan Video')
+
+      await wrapper.findAll('[role="tab"]')[1]!.trigger('click') // Image
+      await wrapper.setProps({ selectedValues: [IMAGE_REC.value] })
+      expect(wrapper.findAll('button[role="checkbox"]')[0]!.text()).toContain('SDXL Turbo')
+      await wrapper.setProps({ selectedValues: [] })
+      expect(wrapper.findAll('button[role="checkbox"]')[0]!.text()).toContain('SDXL Turbo')
+    })
+
+    it('blocks on the combined size of every selected template', () => {
+      // 7 GB + 16 GB each fit in 20 GB free, but not together.
+      const diskSpace = { free: 20 * GB, total: 500 * GB }
+      expect(
+        mountPicker({ multiple: true, selectedValues: [VIDEO.value], diskSpace }).vm.shownDiskError
+      ).toBeNull()
+      expect(
+        mountPicker({
+          multiple: true,
+          selectedValues: [IMAGE_REC.value, VIDEO.value],
+          diskSpace
+        }).vm.shownDiskError
+      ).toBeTruthy()
+    })
   })
 
   it('shows the model name, task subtitle, and size on each card', () => {
@@ -178,7 +228,7 @@ describe('TemplatePickerStep', () => {
       label: 'Z-Image-Turbo Text to Image',
       data: { modality: 'image', sizeBytes: 19 * GB, name: 'Z-Image-Turbo', task: 'Text to Image' }
     }
-    const card = mountPicker({ options: [NONE, named], selectedValue: named.value }).findAll(
+    const card = mountPicker({ options: [NONE, named], selectedValues: [named.value] }).findAll(
       'button[role="radio"]'
     )[0]!
     expect(card.find('.tps__card-title').text()).toBe('Z-Image-Turbo')
@@ -199,7 +249,7 @@ describe('TemplatePickerStep', () => {
       }
     }
     const apiCard = (option: FieldOption = API_NODE) =>
-      mountPicker({ options: [NONE, option], selectedValue: option.value }).findAll(
+      mountPicker({ options: [NONE, option], selectedValues: [option.value] }).findAll(
         'button[role="radio"]'
       )[0]!
 
@@ -236,7 +286,7 @@ describe('TemplatePickerStep', () => {
     it('never blocks an API-node card on a full disk', () => {
       const wrapper = mountPicker({
         options: [NONE, API_NODE],
-        selectedValue: API_NODE.value,
+        selectedValues: [API_NODE.value],
         diskSpace: { total: 100 * GB, free: 1 * GB }
       })
       expect(wrapper.vm.shownDiskError).toBeNull()
@@ -252,7 +302,7 @@ describe('TemplatePickerStep', () => {
   it('hides the tab strip when only one modality has templates', () => {
     const wrapper = mountPicker({
       options: [NONE, IMAGE_REC, IMAGE_ALT],
-      selectedValue: IMAGE_REC.value
+      selectedValues: [IMAGE_REC.value]
     })
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(0)
     expect(wrapper.findAll('button[role="radio"]')).toHaveLength(2)
@@ -268,7 +318,7 @@ describe('TemplatePickerStep', () => {
   describe('disk hard-block', () => {
     it('exposes the block message when free space is below model + headroom', () => {
       const wrapper = mountPicker({
-        selectedValue: VIDEO.value, // 16GB model
+        selectedValues: [VIDEO.value], // 16GB model
         diskSpace: { free: 1 * GB, total: 500 * GB }
       })
       expect(vmOf(wrapper).shownDiskError).toBeTruthy()
@@ -276,7 +326,7 @@ describe('TemplatePickerStep', () => {
 
     it('does not block while disk space is still loading', () => {
       const wrapper = mountPicker({
-        selectedValue: VIDEO.value,
+        selectedValues: [VIDEO.value],
         diskSpace: { free: 1 * GB, total: 500 * GB },
         diskSpaceLoading: true
       })
@@ -285,7 +335,7 @@ describe('TemplatePickerStep', () => {
 
     it('does not block when free space covers the model', () => {
       const wrapper = mountPicker({
-        selectedValue: VIDEO.value,
+        selectedValues: [VIDEO.value],
         diskSpace: { free: 100 * GB, total: 500 * GB }
       })
       expect(vmOf(wrapper).shownDiskError).toBeNull()
@@ -295,7 +345,7 @@ describe('TemplatePickerStep', () => {
       const downloaded: FieldOption = { ...VIDEO, data: { ...VIDEO.data, modelsPresent: true } }
       const wrapper = mountPicker({
         options: [NONE, downloaded],
-        selectedValue: downloaded.value,
+        selectedValues: [downloaded.value],
         diskSpace: { free: 1 * GB, total: 500 * GB }
       })
       expect(vmOf(wrapper).shownDiskError).toBeNull()
@@ -303,7 +353,7 @@ describe('TemplatePickerStep', () => {
 
     it('never blocks the model-free none sentinel even on a full disk', () => {
       const wrapper = mountPicker({
-        selectedValue: NONE.value,
+        selectedValues: [NONE.value],
         diskSpace: { free: 0, total: 500 * GB }
       })
       expect(vmOf(wrapper).shownDiskError).toBeNull()
@@ -311,7 +361,7 @@ describe('TemplatePickerStep', () => {
   })
 
   it('falls back to the branded ComfyC tile when the thumbnail fails to load', async () => {
-    const wrapper = mountPicker({ selectedValue: IMAGE_REC.value })
+    const wrapper = mountPicker({ selectedValues: [IMAGE_REC.value] })
     const media = wrapper.findAll('.tps__card-media')[0]!
     expect(media.find('img').exists()).toBe(true)
     await media.find('img').trigger('error')
@@ -321,19 +371,19 @@ describe('TemplatePickerStep', () => {
 
   it('shows the ComfyC fallback tile for templates with no thumbnail (audio)', () => {
     // VIDEO fixture carries no thumbnailUrl → branded tile, not a broken image.
-    const wrapper = mountPicker({ options: [NONE, VIDEO], selectedValue: VIDEO.value })
+    const wrapper = mountPicker({ options: [NONE, VIDEO], selectedValues: [VIDEO.value] })
     const media = wrapper.findAll('.tps__card-media')[0]!
     expect(media.find('img').exists()).toBe(false)
     expect(media.find('.tps__card-fallback svg').exists()).toBe(true)
   })
 
   it('renders the preview src for a template thumbnail', () => {
-    const media = mountPicker({ selectedValue: IMAGE_REC.value }).findAll('.tps__card-media')[0]!
+    const media = mountPicker({ selectedValues: [IMAGE_REC.value] }).findAll('.tps__card-media')[0]!
     expect(media.find('img').attributes('src')).toBe('./x.webp')
   })
 
   it('fades the thumbnail in only once it has loaded', async () => {
-    const wrapper = mountPicker({ selectedValue: IMAGE_REC.value })
+    const wrapper = mountPicker({ selectedValues: [IMAGE_REC.value] })
     const img = wrapper.findAll('.tps__card-media')[0]!.find('img')
     expect(img.classes()).not.toContain('tps__card-img--ready')
     await img.trigger('load')

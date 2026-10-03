@@ -6,14 +6,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // so the poller's branching (terminal / skip / abort / absent) is exercised
 // end-to-end against real managed-job orchestration (issue #1322).
 
-const resolveTemplateModels = vi.fn<() => Promise<Array<Record<string, unknown>>>>()
+const resolveTemplateModels =
+  vi.fn<(installation: unknown, templateId: string) => Promise<Array<Record<string, unknown>>>>()
 const startManagedModelJob = vi.fn()
 const getDiskSpace = vi.fn(async (_dir: string) => ({ free: 1e15, total: 1e15 }))
 const resolveDownloadContextById = vi.fn(async (_id: string): Promise<unknown> => null)
 const areModelsPresent = vi.fn(async (_id: string, _models: unknown[]) => false)
 
-vi.mock('./templateModels', () => ({ resolveTemplateModels: () => resolveTemplateModels() }))
-vi.mock('./templateInputAssets', () => ({ downloadTemplateInputAssets: vi.fn(async () => []) }))
+vi.mock('./templateModels', () => ({
+  resolveTemplateModels: (installation: unknown, templateId: string) =>
+    resolveTemplateModels(installation, templateId)
+}))
+const downloadTemplateInputAssets = vi.fn(
+  async (_installation: unknown, _templateId: string): Promise<unknown[]> => []
+)
+vi.mock('./templateInputAssets', () => ({
+  downloadTemplateInputAssets: (installation: unknown, templateId: string) =>
+    downloadTemplateInputAssets(installation, templateId)
+}))
 vi.mock('../../lib/disk', () => ({ getDiskSpace: (dir: string) => getDiskSpace(dir) }))
 vi.mock('../../lib/comfyDownloadManager', () => ({
   startManagedModelJob: (...a: unknown[]) => startManagedModelJob(...a)
@@ -46,6 +56,7 @@ import {
 
 const sendOutput = vi.fn()
 
+/** A record in the legacy single-pick shape (`bundledTemplateId` only). */
 function makeInstall(id: string) {
   return {
     id,
@@ -84,6 +95,7 @@ describe('awaitTemplateDownloadSettled', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     resolveTemplateModels.mockReset()
+    downloadTemplateInputAssets.mockReset().mockResolvedValue([])
     startManagedModelJob.mockReset()
     jobReleases.clear()
     sendOutput.mockReset()
@@ -221,6 +233,74 @@ describe('awaitTemplateDownloadSettled', () => {
     )
   })
 
+  it('downloads the models of every picked template, sharing common files once', async () => {
+    resolveTemplateModels.mockImplementation(async (_installation, templateId) => [
+      { filename: 'shared.safetensors', directory: 'vae', url: 'shared' },
+      { filename: `${templateId}.safetensors`, directory: 'checkpoints', url: templateId }
+    ])
+    startManagedModelJob.mockImplementation(async ({ url }: { url: string }) => hangingJob(url))
+    const install = {
+      ...makeInstall('multi-1'),
+      bundledTemplateId: undefined,
+      bundledTemplateIds: ['a', 'b']
+    } as Parameters<typeof startTemplateDownload>[0]
+    startTemplateDownload(install, 0, { sendOutput })
+    await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalledTimes(3))
+
+    expect(resolveTemplateModels.mock.calls.map(([, id]) => id)).toEqual(['a', 'b'])
+    expect(getTemplateDownloadState('multi-1')?.files.map((f) => f.name)).toEqual([
+      'shared.safetensors',
+      'a.safetensors',
+      'b.safetensors'
+    ])
+    abortTemplateDownload('multi-1')
+  })
+
+  it("looks up every picked template's models without waiting on a slow one", async () => {
+    let releaseSlow!: () => void
+    resolveTemplateModels.mockImplementation((_installation, templateId) =>
+      templateId === 'slow'
+        ? new Promise((resolve) => (releaseSlow = () => resolve([])))
+        : Promise.resolve([])
+    )
+    const install = {
+      ...makeInstall('parallel-1'),
+      bundledTemplateId: undefined,
+      bundledTemplateIds: ['slow', 'fast']
+    } as Parameters<typeof startTemplateDownload>[0]
+    startTemplateDownload(install, 0, { sendOutput })
+    await vi.waitFor(() => expect(resolveTemplateModels).toHaveBeenCalledTimes(2))
+    expect(getTemplateDownloadState('parallel-1')?.status).toBe('resolving')
+
+    releaseSlow()
+    await flush()
+    expect(getTemplateDownloadState('parallel-1')?.status).toBe('done')
+  })
+
+  it('downloads input assets one template at a time, since picks can share a file', async () => {
+    let releaseFirst!: () => void
+    downloadTemplateInputAssets.mockImplementation((_installation, templateId) =>
+      templateId === 'a'
+        ? new Promise((resolve) => (releaseFirst = () => resolve([])))
+        : Promise.resolve([])
+    )
+    resolveTemplateModels.mockResolvedValue([])
+    const install = {
+      ...makeInstall('inputs-1'),
+      bundledTemplateId: undefined,
+      bundledTemplateIds: ['a', 'b']
+    } as Parameters<typeof startTemplateDownload>[0]
+    startTemplateDownload(install, 0, { sendOutput })
+    await vi.waitFor(() => expect(downloadTemplateInputAssets).toHaveBeenCalledTimes(1))
+    await flush()
+    expect(downloadTemplateInputAssets.mock.calls.map(([, id]) => id)).toEqual(['a'])
+
+    releaseFirst()
+    await flush()
+    expect(downloadTemplateInputAssets.mock.calls.map(([, id]) => id)).toEqual(['a', 'b'])
+    expect(getTemplateDownloadState('inputs-1')?.status).toBe('done')
+  })
+
   it("uses the install's effective primary models dir for preflight, not a global dir (#1376)", async () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
@@ -283,6 +363,7 @@ describe('subscribeTemplateDownload', () => {
     resolveTemplateModels
       .mockReset()
       .mockResolvedValue([{ filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }])
+    downloadTemplateInputAssets.mockReset().mockResolvedValue([])
     startManagedModelJob.mockReset().mockImplementation(async () => hangingJob('u'))
     jobReleases.clear()
     getDiskSpace.mockReset().mockResolvedValue({ free: 1e15, total: 1e15 })

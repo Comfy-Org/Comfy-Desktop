@@ -28,6 +28,7 @@ import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './
 import { handleAction } from './actions'
 import type { InstallationRecord } from '../../installations'
 import type { SourcePlugin, FieldOption, LaunchCommand } from '../../types/sources'
+import type { StarterTemplatesSelection } from '../../../types/ipc'
 
 export { getVariantLabel } from './envPaths'
 
@@ -198,18 +199,23 @@ export const standalone: SourcePlugin = {
         ? selections.comfyVersion.value
         : undefined
       : undefined
-    // Starter template: the chosen template id, or undefined when the user left
-    // the "None" option selected. Format-validated (not matched against the
-    // static curated set) so a live-index substitute still installs, while a
-    // stale/forged selection that could escape a path/URL is still rejected.
-    const tplValue = selections.bundledTemplate?.value
-    const bundledTemplateId = isPersistableTemplateId(tplValue) ? tplValue : undefined
-    // Freeze the hydrated size the user consented to, so the install-time
-    // download estimate matches the wizard label without re-hydrating the index.
+    // Starter templates: the wizard's `StarterTemplatesSelection`; anything else
+    // (the "None" option, express installs) picks nothing. Validated as it
+    // crosses IPC: ids are format-checked (not matched against the static
+    // curated set) so a live-index substitute still installs, while a
+    // stale/forged id that could escape a path/URL is rejected.
+    const picked = selections.bundledTemplate?.data as
+      | Partial<Record<keyof StarterTemplatesSelection, unknown>>
+      | undefined
+    const pickedIds = picked?.templateIds
+    const bundledTemplateIds = Array.isArray(pickedIds)
+      ? [...new Set(pickedIds.filter(isPersistableTemplateId))]
+      : []
+    // Freeze the bytes the wizard disk-checked, so the install-time disk check
+    // and download estimate match it without re-hydrating the index.
+    const pickedBytes = picked?.downloadBytes
     const bundledTemplateSizeBytes =
-      typeof selections.bundledTemplate?.data?.sizeBytes === 'number'
-        ? (selections.bundledTemplate.data.sizeBytes as number)
-        : 0
+      typeof pickedBytes === 'number' && pickedBytes > 0 ? pickedBytes : 0
     return {
       version: r2Release?.comfyui_version || manifest?.comfyui_ref || releaseTag,
       releaseTag,
@@ -231,15 +237,17 @@ export const standalone: SourcePlugin = {
       ...(isStable ? { updateChannel: 'stable' } : {}),
       ...(isLatest ? { updateChannel: 'latest' } : {}),
       ...(pickedComfyTag ? { comfyVersionTag: pickedComfyTag } : {}),
-      // POC starter template. `bundledTemplateId` is the durable record of the
-      // user's pick; `pendingTemplateOpen` is a one-shot flag the first launch
-      // consumes (appends `?template=` to the comfy URL, then clears) so the
-      // template only auto-opens once — not on every relaunch.
-      ...(bundledTemplateId
+      // Starter templates. `bundledTemplateIds` is the durable record of the
+      // user's picks; `pendingTemplateOpen` is a one-shot flag the first launch
+      // consumes (appends `?template=` to the comfy URL, then clears) so it
+      // only auto-opens once — not on every relaunch. The frontend deeplink
+      // opens a single template, so only the first pick auto-opens; every pick
+      // gets its models pre-downloaded.
+      ...(bundledTemplateIds.length > 0
         ? {
-            bundledTemplateId,
+            bundledTemplateIds,
             bundledTemplateSizeBytes,
-            pendingTemplateOpen: bundledTemplateId,
+            pendingTemplateOpen: bundledTemplateIds[0],
             downloadTemplateModels: true
           }
         : {})
@@ -557,9 +565,8 @@ export const standalone: SourcePlugin = {
     }
 
     if (fieldId === 'bundledTemplate') {
-      // "None" comes first as the skip option; the per-modality recommended
-      // picks carry `recommended` on their own option so the wizard auto-selects
-      // a real template (the lightest "wow"), not the skip.
+      // "None" comes first as the skip option. `recommended` only badges a
+      // card; nothing is auto-selected.
       const catalog = await loadTemplateCatalog()
 
       const installId = typeof context.installationId === 'string' ? context.installationId : null
