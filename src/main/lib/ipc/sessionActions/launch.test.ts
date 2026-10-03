@@ -139,6 +139,19 @@ vi.mock('../shared', async (importOriginal) => {
 /** The ownership record module, answered from here. Never the real one: records would land in
  *  the real state dir under invented pids, and a later launch could then "prove" an unrelated
  *  live process at one of those pids to be an orphan. */
+// Lets a test make the database-location computation throw mid-launch.
+const legacyBase = vi.hoisted(() => ({ throws: false }))
+vi.mock('../../paths', async (importOriginal) => {
+  const orig = await importOriginal<typeof PathsModule>()
+  return {
+    ...orig,
+    legacyDesktopDefaultBase: () => {
+      if (legacyBase.throws) throw new Error('documents folder unavailable')
+      return orig.legacyDesktopDefaultBase()
+    }
+  }
+})
+
 const ownership = vi.hoisted(() => ({
   prior: null as null | Record<string, unknown>,
   priorCalls: [] as Array<{ sessionKey: string; opts: unknown }>,
@@ -247,6 +260,7 @@ import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as HardwareTapModule from '../../hardwareTap'
+import type * as PathsModule from '../../paths'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
 
@@ -1299,11 +1313,12 @@ describe('core beta report placement', () => {
     })
 
     it('launches without the fields when computing them throws', async () => {
-      // A directory on the key's temp name makes the cleanup of a failed key write throw.
-      fs.mkdirSync(path.join(`${keyFile()}.${process.pid}.tmp`, 'x'), { recursive: true })
+      legacyBase.throws = true
       vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-      const props = await launchWith('harness-db-location-throws')
+      const props = await launchWith('harness-db-location-throws').finally(() => {
+        legacyBase.throws = false
+      })
 
       expect(spawnArgs.length, 'the launch still spawned').toBeGreaterThan(0)
       expect(props, 'boot_started still fired').toBeDefined()

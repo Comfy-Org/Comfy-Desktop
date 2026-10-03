@@ -88,6 +88,16 @@ describe('hashPath', () => {
     expect(hashPath(tmp), 'and the next launch creates the key').toMatch(/^[0-9a-f]{16}$/)
 
     _resetKeyForTest()
+    fs.rmSync(keyFile())
+    const rm = vi.spyOn(fs, 'rmSync').mockImplementationOnce(() => {
+      throw Object.assign(new Error('busy'), { code: 'EPERM' })
+    })
+    expect(hashPath(tmp), 'a temp file that will not go away does not lose the key').toMatch(
+      /^[0-9a-f]{16}$/
+    )
+    rm.mockRestore()
+
+    _resetKeyForTest()
     dirs.config = path.join(tmp, 'a-file')
     fs.writeFileSync(dirs.config, '')
     expect(hashPath(tmp), 'the key cannot be created').toBeNull()
@@ -95,9 +105,10 @@ describe('hashPath', () => {
 })
 
 describe('canonicalPath', () => {
-  it('folds case on Windows only', () => {
+  it('folds case on Windows and macOS only', () => {
     const p = path.join(tmp, 'Missing', 'Comfy.DB')
     expect(canonicalPath(p, 'win32')).toBe(p.replace(/\\/g, '/').toLowerCase())
+    expect(canonicalPath(p, 'darwin')).toBe(p.replace(/\\/g, '/').toLowerCase())
     expect(canonicalPath(p, 'linux')).toBe(p.replace(/\\/g, '/'))
   })
 })
@@ -318,9 +329,12 @@ describe('relativeLocation', () => {
     ).toBe('<legacy-root>/user/comfyui.db')
   })
 
-  it('matches fixed names case-insensitively on Windows only', () => {
+  it('matches fixed names case-insensitively on Windows and macOS only', () => {
     const p = path.join(installRoot, 'Inst', 'comfyui', 'User', 'ComfyUI.db')
     expect(relativeLocation(p, roots, 'win32')).toBe(
+      '<install-root>/<install>/ComfyUI/user/comfyui.db'
+    )
+    expect(relativeLocation(p, roots, 'darwin')).toBe(
       '<install-root>/<install>/ComfyUI/user/comfyui.db'
     )
     expect(relativeLocation(p, roots, 'linux')).toBe('outside_default')

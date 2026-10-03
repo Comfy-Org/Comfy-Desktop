@@ -49,17 +49,20 @@ function pathHashKey(): Buffer | null {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return null
   }
-  // Written whole beside the key, then linked into place: a write that fails partway can never
-  // leave a partial key behind, and a key another process linked first is never overwritten.
-  const tmp = `${file}.${process.pid}.tmp`
+  // Written whole to a fresh, exclusively created name beside the key, then linked into place: a
+  // write that fails partway can never leave a partial key behind, and a key another process
+  // linked first is never overwritten.
+  const tmp = `${file}.${randomBytes(8).toString('hex')}.tmp`
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(tmp, randomBytes(32).toString('hex'), { mode: 0o600 })
+    fs.writeFileSync(tmp, randomBytes(32).toString('hex'), { flag: 'wx', mode: 0o600 })
     fs.linkSync(tmp, file)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'EEXIST') return null
   } finally {
-    fs.rmSync(tmp, { force: true })
+    try {
+      fs.rmSync(tmp, { force: true })
+    } catch {}
   }
   try {
     cachedKey = readKey(file)
@@ -67,10 +70,13 @@ function pathHashKey(): Buffer | null {
   return cachedKey
 }
 
+const foldsCase = (platform: NodeJS.Platform): boolean =>
+  platform === 'win32' || platform === 'darwin'
+
 /**
  * One spelling per location: absolute, symlinks resolved through the deepest part that exists
  * (the database may not exist before the first boot), `/` separators, and case-folded on
- * Windows, whose filesystems ignore case.
+ * Windows and macOS, whose default filesystems ignore case.
  */
 export function canonicalPath(p: string, platform: NodeJS.Platform = process.platform): string {
   let head = path.resolve(p)
@@ -87,7 +93,7 @@ export function canonicalPath(p: string, platform: NodeJS.Platform = process.pla
     }
   }
   const out = path.join(head, ...tail).replace(/\\/g, '/')
-  return platform === 'win32' ? out.toLowerCase() : out
+  return foldsCase(platform) ? out.toLowerCase() : out
 }
 
 /** Keyed, truncated hash of a path; null when there is no key or no path. */
@@ -168,7 +174,7 @@ export function relativeLocation(
   }
   for (const segment of rest) {
     const fixed = FIXED_SEGMENTS.find(
-      (f) => (platform === 'win32' ? f.toLowerCase() : f) === segment
+      (f) => (foldsCase(platform) ? f.toLowerCase() : f) === segment
     )
     if (!fixed) return OUTSIDE_DEFAULT
     out.push(fixed)
