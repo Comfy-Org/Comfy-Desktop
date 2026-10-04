@@ -133,34 +133,43 @@ describe.runIf(
 })
 
 describe('identifyDbLockHolder and a Performance Test of the same install', () => {
-  it('never blames a running Performance Test for the install database: it has its own', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dblock-perf-'))
-    dirs.state = path.join(root, 'state')
-    try {
-      writeRecord({
-        v: 1,
-        sessionKey: 'performance-test:inst-1',
-        installationId: 'inst-1',
-        installPath: root,
-        port: 8189,
-        bootId: 'b',
-        spawnedAt: Date.now(),
-        desktopPid: process.pid,
-        desktopStartTime: null,
-        // Alive: this test process.
-        childPid: process.pid,
-        childStartTime: null
-      })
-      const found = await identifyDbLockHolder({
-        sessionKey: 'inst-1',
-        installationId: 'inst-1',
-        installPath: root,
-        cwd: root,
-        args: ['-s', 'main.py', '--database-url', `sqlite:///${path.join(root, 'none.db')}`]
-      })
-      expect(found?.source).not.toBe('desktop_record')
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true })
-    }
+  const record = (sessionKey: string, installPath: string) => ({
+    v: 1 as const,
+    sessionKey,
+    installationId: 'inst-1',
+    installPath,
+    port: 8189,
+    bootId: 'b',
+    spawnedAt: Date.now(),
+    desktopPid: process.pid,
+    desktopStartTime: null,
+    // Alive: this test process.
+    childPid: process.pid,
+    childStartTime: null
   })
+
+  it.each([
+    ['the install session', 'performance-test:inst-1', 'inst-1', false],
+    // Same kind, another session key: still blamed, so the filter is what decides.
+    ['a Performance Test', 'performance-test:inst-1', 'performance-test:inst-1-other', true]
+  ])(
+    'for %s, blames a live record of its own kind only',
+    async (_who, recorded, failing, blamed) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dblock-perf-'))
+      dirs.state = path.join(root, 'state')
+      try {
+        expect(writeRecord(record(recorded, root))).toBe(true)
+        const found = await identifyDbLockHolder({
+          sessionKey: failing,
+          installationId: 'inst-1',
+          installPath: root,
+          cwd: root,
+          args: ['-s', 'main.py', '--database-url', `sqlite:///${path.join(root, 'none.db')}`]
+        })
+        expect(found?.source === 'desktop_record').toBe(blamed)
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    }
+  )
 })

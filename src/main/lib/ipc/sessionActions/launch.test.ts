@@ -2292,37 +2292,51 @@ describe('Performance Test database', () => {
     expect(fs.existsSync(path.join(ws, 'output')), 'a fresh workspace').toBe(true)
   })
 
-  it.each([
-    [
-      'an earlier run of it is still alive and unproven',
-      () => {
-        ownership.prior = {
-          action: 'left',
-          proof: 'none',
-          pid: 777,
-          port: 48234,
-          ageMs: null,
-          waitMs: 0,
-          exitedInTime: false,
-          blocked: null
-        }
-      }
-    ],
-    ['the check for an earlier run failed', () => (ownership.priorThrows = true)]
-  ])('does not start, or touch its workspace, when %s', async (_why, arrange) => {
+  it('does not start, or touch its workspace, while an earlier run of it is left alive', async () => {
     writeCoreDb()
     const ws = workspace('perf-db-alive')
     writeCoreFiles(ws)
-    arrange()
+    // Alive, but the prior-process check could not prove it ours.
+    ownership.prior = {
+      action: 'left',
+      proof: 'none',
+      pid: 777,
+      port: 48234,
+      ageMs: null,
+      waitMs: 0,
+      exitedInTime: false,
+      blocked: null
+    }
+    const t = vi.spyOn(i18nModule, 't')
     try {
       const res = await handleLaunch(ctxFor('perf-db-alive', 'performance-test:perf-db-alive'))
 
       expect(res.ok).toBe(false)
-      expect(res.message).toBe(i18nModule.t('errors.performanceTestStillRunning'))
+      // Named, so the user can check what it is before ending it.
+      expect(t).toHaveBeenCalledWith(
+        'errors.priorProcessUnverified',
+        expect.objectContaining({ pid: expect.stringContaining('777') })
+      )
       expect(spawnArgs).toEqual([])
       expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(true)
     } finally {
       ownership.prior = null
+    }
+  })
+
+  it('starts as before when the check for an earlier run fails', async () => {
+    writeCoreDb()
+    const ws = workspace('perf-db-check-failed')
+    writeCoreFiles(ws)
+    ownership.priorThrows = true
+    try {
+      const res = await handleLaunch(
+        ctxFor('perf-db-check-failed', 'performance-test:perf-db-check-failed')
+      )
+
+      expect(res.ok).toBe(true)
+      expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(false)
+    } finally {
       ownership.priorThrows = false
     }
   })

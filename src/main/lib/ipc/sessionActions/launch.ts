@@ -1541,7 +1541,6 @@ async function runLaunch(
   // next port and die there). Runs before any port logic: a terminated orphan frees its port.
   // Only a PROVEN orphan (see comfyProcessRecord) is ever stopped without asking.
   let prior: PriorProcessOutcome | null = null
-  let priorCheckFailed = false
   try {
     prior = await resolvePriorProcess(sessionId, {
       stopBusy: actionData?.stopBusyPriorProcess === true,
@@ -1553,7 +1552,6 @@ async function runLaunch(
   } catch (err) {
     // Bookkeeping never costs a launch: no answer means today's behaviour.
     console.warn('[launch] prior-process check failed:', err)
-    priorCheckFailed = true
   }
   // After a cancel, only a stop that really happened is reported; anything else was cut short.
   if (prior && (!abort.signal.aborted || prior.action === 'terminated')) {
@@ -1618,13 +1616,17 @@ async function runLaunch(
 
   if (perfIsolated) {
     const workspace = performanceTestWorkspace(stateDir(), installationId)
-    // An earlier run of this workspace that may still be alive (left running unproven, or the
-    // check failed) must not lose its files under it, so this one does not start.
-    if (priorCheckFailed || prior?.action === 'left') {
+    // An earlier run of this workspace left running (alive, not proven ours) must not lose its
+    // files under it, so this one does not start. Named, with its executable when readable: the
+    // pid may have been recycled to something unrelated, which the user must not end blindly.
+    if (prior?.action === 'left') {
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+      const info = await getProcessInfo(prior.pid).catch(() => null)
       return {
         ok: false,
-        message: i18n.t('errors.performanceTestStillRunning')
+        message: i18n.t('errors.priorProcessUnverified', {
+          pid: info ? `${prior.pid}, ${info.name}` : String(prior.pid)
+        })
       }
     }
     // Left by a Performance Test that was killed before it could clean up. Still there means a
