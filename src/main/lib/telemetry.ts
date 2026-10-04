@@ -513,8 +513,11 @@ function _bypassRateLimit(event: string): boolean {
   return event.endsWith('.error') || event.startsWith('comfy.desktop.telemetry.')
 }
 
-function enforcePersonProcessingPolicy(properties: TelemetryContext): TelemetryContext {
-  if (boundUserId) return properties
+function enforcePersonProcessingPolicy(
+  properties: TelemetryContext,
+  signedIn = boundUserId !== null
+): TelemetryContext {
+  if (signedIn) return properties
   // Force this after all caller/default merges so no anonymous callsite can
   // accidentally opt back into person-profile creation.
   return { ...properties, $process_person_profile: false }
@@ -815,6 +818,9 @@ interface QuarantinedWrite {
   /** The anonymous D a write held for the installation id was captured under;
    *  it is delivered under that D even if the epoch rotated meanwhile. */
   distinctId?: string
+  /** Whether a user was bound when a held write was captured, so its
+   *  person-processing policy follows the identity it is delivered under. */
+  signedIn?: boolean
 }
 
 /**
@@ -852,7 +858,11 @@ function holdingForInstallationId(): boolean {
 
 function holdWrite(write: QuarantinedWrite): boolean {
   if (!heldUntilBound || heldUntilBound.length >= QUARANTINED_WRITES_CAP) return false
-  heldUntilBound.push({ ...write, distinctId: distinctId ?? undefined })
+  heldUntilBound.push({
+    ...write,
+    distinctId: distinctId ?? undefined,
+    signedIn: boundUserId !== null
+  })
   return true
 }
 
@@ -867,9 +877,22 @@ function replayHeldWrites(): void {
         : !!write.event && isAllowedToFire(write.event)
     if (!allowed) continue
     if (write.kind === 'exception') {
-      deliverException(write.error, write.properties, write.forward, write.distinctId)
+      deliverException(
+        write.error,
+        write.properties,
+        write.forward,
+        write.distinctId,
+        write.signedIn
+      )
     } else if (write.event) {
-      deliverEvent(write.event, write.properties, write.forward, write.timestamp, write.distinctId)
+      deliverEvent(
+        write.event,
+        write.properties,
+        write.forward,
+        write.timestamp,
+        write.distinctId,
+        write.signedIn
+      )
     }
   }
 }
@@ -1476,7 +1499,8 @@ function deliverEvent(
   properties: TelemetryContext,
   forward: boolean,
   timestamp: Date | null,
-  asDistinctId?: string
+  asDistinctId?: string,
+  asSignedIn?: boolean
 ): boolean {
   try {
     // Per-call properties override defaults on key collision - callers
@@ -1486,7 +1510,10 @@ function deliverEvent(
     // to derive country (`disableGeoip: false` at init). The raw IP and all
     // sub-country geo are then discarded by an ingestion transformation, so
     // only the country code/name is retained. See the init comment.
-    const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+    const merged = enforcePersonProcessingPolicy(
+      { ...defaultEventProperties, ...properties },
+      asSignedIn
+    )
     client!.capture({
       distinctId: asDistinctId ?? distinctId!,
       event,
@@ -1672,7 +1699,8 @@ function deliverException(
   error: unknown,
   properties: TelemetryContext,
   forward: boolean,
-  asDistinctId?: string
+  asDistinctId?: string,
+  asSignedIn?: boolean
 ): boolean {
   try {
     // Same default merge as capture() so exception events stay filterable by
@@ -1692,7 +1720,7 @@ function deliverException(
         safeError,
         asDistinctId ?? distinctId!,
         normalizeExceptionContext(
-          enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+          enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties }, asSignedIn)
         ) as TelemetryContext
       )
     }

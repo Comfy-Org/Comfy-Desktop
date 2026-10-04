@@ -392,6 +392,30 @@ describe('signInViaDesktopLoginCode', () => {
     expect(request).toMatchObject({ installation_id: 'machine-hash-late' })
   })
 
+  it('lets a sign-in superseded while waiting for the id end without creating a code', async () => {
+    h.settingsGet.mockReturnValue(true)
+    const id = deferred<string>()
+    h.deviceIdReady.mockReturnValueOnce(id.promise)
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+
+    const first = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    await vi.advanceTimersByTimeAsync(0)
+    const second = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    id.resolve('machine-hash-late')
+    await vi.runAllTimersAsync()
+
+    expect(await first).toBe('handled')
+    await second
+    // Only the second attempt reached code creation.
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
+  })
+
   it('omits installation_id when consent is withdrawn while waiting for it', async () => {
     h.settingsGet.mockReturnValueOnce(true).mockReturnValue(false)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)

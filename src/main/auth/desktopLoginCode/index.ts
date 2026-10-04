@@ -138,6 +138,12 @@ export async function signInViaDesktopLoginCode(
   // seconds of a slow launch waits for it.
   if (settings.get('telemetryEnabled') === true) {
     const installationId = await deviceIdReady()
+    // A newer attempt or a closed view may have superseded this one while it waited.
+    if (controller.signal.aborted || comfyContents.isDestroyed()) {
+      if (activeFlow === controller) activeFlow = null
+      releaseFirebaseSessionInjection(sessionInjection)
+      return 'handled'
+    }
     // Consent may have been withdrawn during the wait.
     if (installationId && settings.get('telemetryEnabled') === true) {
       request.installation_id = installationId

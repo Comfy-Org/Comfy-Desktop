@@ -209,7 +209,9 @@ const pendingIdentityMergeMock = vi.hoisted(() => ({
     personSet: Record<string, boolean | number | string | null>
     personSetOnce?: Record<string, boolean | number | string | null>
   }>,
-  nextId: 1
+  nextId: 1,
+  /** The last record handed to `reservePendingIdentityMerge`, as the caller built it. */
+  lastReserved: null as Record<string, unknown> | null
 }))
 
 vi.mock('./anonymousIdentity', () => ({
@@ -225,6 +227,7 @@ vi.mock('./pendingIdentityMerge', () => ({
   reservePendingIdentityMerge: (
     merge: Omit<(typeof pendingIdentityMergeMock.entries)[number], 'id' | 'nextAnonymousId'>
   ) => {
+    pendingIdentityMergeMock.lastReserved = merge
     if (anonymousIdentityMock.fail) return null
     const nextAnonymousId = anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
     if (!nextAnonymousId) return null
@@ -312,6 +315,7 @@ afterEach(() => {
   posthogClientMock.deferred = null
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
+  pendingIdentityMergeMock.lastReserved = null
   delete process.env['POSTHOG_API_KEY']
   delete process.env['POSTHOG_ENABLED']
   delete process.env['POSTHOG_EXCEPTIONS']
@@ -1901,11 +1905,33 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(ev?.properties).not.toHaveProperty('installation_id')
   })
 
-  it('reports shutdown once it has begun', async () => {
+  it('reports shutdown as soon as it has begun, before the drain finishes', async () => {
     telemetry.bindAnonymousId('anon-d', 'install-id')
     expect(telemetry.hasShutDown()).toBe(false)
-    await telemetry.shutdown('quit')
+    const draining = telemetry.shutdown('quit')
     expect(telemetry.hasShutDown()).toBe(true)
+    await draining
+  })
+
+  it('keeps an anonymous held write personless after a sign-in during the wait', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.capture('comfy.desktop.test.anonymous')
+    telemetry.bindUserId('user-a')
+    telemetry.setInstallationId('install-id')
+    const ev = captured.find((c) => c.event === 'comfy.desktop.test.anonymous')
+    expect(ev?.distinctId).toBe('anon-d')
+    expect(ev?.properties).toMatchObject({ $process_person_profile: false })
+  })
+
+  it('keeps a signed-in held write person-processed after a sign-out during the wait', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.capture('comfy.desktop.test.signed_in_write')
+    telemetry.applyFirebaseAnonymousConsensus()
+    telemetry.setInstallationId('install-id')
+    const ev = captured.find((c) => c.event === 'comfy.desktop.test.signed_in_write')
+    expect(ev?.distinctId).toBe('user-a')
+    expect(ev?.properties).not.toHaveProperty('$process_person_profile')
   })
 
   it('stops holding once the installation id is set', () => {
@@ -1925,6 +1951,9 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
       properties: { $anon_distinct_id: 'anon-d' }
     })
     expect(identifies[0]!.properties?.$set).not.toHaveProperty('installation_id')
+    // The persisted merge record omits the key rather than storing a value a reader rejects.
+    expect(pendingIdentityMergeMock.lastReserved).not.toBeNull()
+    expect(pendingIdentityMergeMock.lastReserved).not.toHaveProperty('installationId')
     telemetry.capture('comfy.desktop.test.signed_in')
     expect(captured.find((c) => c.event === 'comfy.desktop.test.signed_in')).toBeUndefined()
 
