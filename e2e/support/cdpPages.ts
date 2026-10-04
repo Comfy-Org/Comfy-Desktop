@@ -344,7 +344,7 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
   const id = await findWebContentsId(app, 'comfyTitlePopup.html')
   if (id === null) return
   if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return
-  const wasPicker = await titlePopupShowsPicker(app)
+  const wasPicker = await titlePopupShowsPicker(app, id)
   await requestTitlePopupClose(app)
   const hidden = (): Promise<void> =>
     expect.poll(
@@ -360,7 +360,7 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
     .poll(
       async () => {
         if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return (outcome = 'hidden')
-        return (outcome = (await titlePopupShowsPicker(app)) ? 'picker' : 'open')
+        return (outcome = (await titlePopupShowsPicker(app, id)) ? 'picker' : 'open')
       },
       { timeout: 3_000, intervals: [100, 200] },
     )
@@ -383,13 +383,14 @@ async function requestTitlePopupClose(app: ElectronApplication): Promise<void> {
   })
 }
 
-/** Whether the title popup is showing the instance picker. */
-async function titlePopupShowsPicker(app: ElectronApplication): Promise<boolean> {
-  return evalWithRetry(() => app.evaluate(({ webContents }) => {
-    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
-    if (!wc) return false
+/** Whether the title popup (by its webContents id) is showing the instance picker. By id, not by
+ *  scanning every WebContents for its URL: getURL on one mid-teardown can crash Electron. */
+async function titlePopupShowsPicker(app: ElectronApplication, id: number): Promise<boolean> {
+  return evalWithRetry(() => app.evaluate(({ webContents }, popupId) => {
+    const wc = webContents.fromId(popupId)
+    if (!wc || wc.isDestroyed()) return false
     return wc.executeJavaScript(`!!document.querySelector('.picker-search-input')`)
-  })).catch(() => false)
+  }, id)).catch(() => false)
 }
 
 /** Wait past the title bar's 100ms reopen-suppression debounce; padded
