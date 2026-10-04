@@ -195,10 +195,29 @@ test('an opt-in change made while the picker is hidden shows on reopen @linux', 
 const betaArgsRequests = async (): Promise<number> =>
   (await getIpcInvocations(ctx.app, 'get-core-beta-args')).length
 
-/** Wait until main has received `count` sections re-reads since the last reset. */
-async function waitForSectionsReread(count: number): Promise<void> {
+/**
+ * Count the sections responses the settings view has applied, by wrapping the popup's
+ * `getDetailSections`. The count ticks on a macrotask after the response, so the view has applied
+ * it and anything that reacts to it (the pill re-asking) has already been sent.
+ */
+async function countAppliedSectionsReads(popup: WebContentsPage): Promise<void> {
+  await popup.evaluate(`(() => {
+    window.__sectionsApplied = 0
+    if (window.__sectionsWrapped) return
+    window.__sectionsWrapped = true
+    const read = window.api.getDetailSections
+    window.api.getDetailSections = (...args) =>
+      read(...args).then((answer) => {
+        setTimeout(() => window.__sectionsApplied++, 0)
+        return answer
+      })
+  })()`)
+}
+
+/** Wait until the settings view has applied `count` sections responses since counting began. */
+async function waitForAppliedSectionsReads(popup: WebContentsPage, count: number): Promise<void> {
   await expect
-    .poll(async () => (await getIpcInvocations(ctx.app, 'get-detail-sections')).length, {
+    .poll(() => popup.evaluate<number>('window.__sectionsApplied ?? 0'), {
       timeout: 10_000,
       intervals: [100, 200],
     })
@@ -218,7 +237,7 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await resetIpcInvocations(ctx.app, 'get-core-beta-args')
-  await resetIpcInvocations(ctx.app, 'get-detail-sections')
+  await countAppliedSectionsReads(popup)
 
   // Save an unrelated field through the settings UI, and wait until main has stored it.
   const PORT_CONFLICT = '[data-field-id="portConflict"] .ui-select-trigger'
@@ -230,14 +249,14 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
       `window.api.getInstallations().then((all) => all.find((i) => i.id === ${JSON.stringify(INSTALL_ID)})?.portConflict ?? null)`,
     )
   await expect.poll(stored, { timeout: 10_000, intervals: [100, 200] }).not.toBeNull()
-  // The quiet stretch starts once the save's sections re-read has reached main: a request the
-  // re-read caused would follow its answer within milliseconds.
-  await waitForSectionsReread(1)
+  // The quiet stretch starts once the view has applied the save's sections re-read, so a request
+  // the re-read caused has already been sent by then.
+  await waitForAppliedSectionsReads(popup, 1)
   await expectNoRequestsBeyond(0, 'a save of another field asked for beta args')
 
   await commitArgs(popup, `--port ${port} --lowvram`)
   await expect.poll(betaArgsRequests, { timeout: 10_000, intervals: [100, 200] }).toBe(1)
-  await waitForSectionsReread(2)
+  await waitForAppliedSectionsReads(popup, 2)
   await expectNoRequestsBeyond(1, 'an args commit asked for beta args more than once')
 })
 
