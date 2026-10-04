@@ -344,8 +344,35 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
   const id = await findWebContentsId(app, 'comfyTitlePopup.html')
   if (id === null) return
   if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return
-  // Retried: closing an already-closed popup is a no-op, so re-running the
-  // callback after a lost result is safe.
+  const wasPicker = await titlePopupShowsPicker(app, id)
+  await requestTitlePopupClose(app)
+  const hidden = (): Promise<void> =>
+    expect.poll(
+      () => isPopupVisible(app, 'comfyTitlePopup.html'),
+      { timeout: 3_000, intervals: [100, 200] },
+    ).toBe(false)
+  // A picker closes on its first close; anything else reopening here still fails.
+  if (wasPicker) return hidden()
+  // Desktop Settings opened from the picker goes back to the picker on its first close; only a
+  // second close dismisses it.
+  let outcome = 'open' as 'hidden' | 'picker' | 'open'
+  await expect
+    .poll(
+      async () => {
+        if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return (outcome = 'hidden')
+        return (outcome = (await titlePopupShowsPicker(app, id)) ? 'picker' : 'open')
+      },
+      { timeout: 3_000, intervals: [100, 200] },
+    )
+    .not.toBe('open')
+  if (outcome === 'hidden') return
+  await requestTitlePopupClose(app)
+  await hidden()
+}
+
+async function requestTitlePopupClose(app: ElectronApplication): Promise<void> {
+  // Retried after a lost result. A retry can close once more (Desktop Settings opened from Manage
+  // returns to the picker on its first close); callers poll for the outcome they need.
   await evalWithRetry(() => app.evaluate(({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
     if (!wc) return
@@ -354,10 +381,16 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
     // Popup dismissed between the visibility check and the close call -
     // already in the desired state.
   })
-  await expect.poll(
-    () => isPopupVisible(app, 'comfyTitlePopup.html'),
-    { timeout: 3_000, intervals: [100, 200] },
-  ).toBe(false)
+}
+
+/** Whether the title popup (by its webContents id) is showing the instance picker. By id, not by
+ *  scanning every WebContents for its URL: getURL on one mid-teardown can crash Electron. */
+async function titlePopupShowsPicker(app: ElectronApplication, id: number): Promise<boolean> {
+  return evalWithRetry(() => app.evaluate(({ webContents }, popupId) => {
+    const wc = webContents.fromId(popupId)
+    if (!wc || wc.isDestroyed()) return false
+    return wc.executeJavaScript(`!!document.querySelector('.picker-search-input')`)
+  }, id)).catch(() => false)
 }
 
 /** Wait past the title bar's 100ms reopen-suppression debounce; padded

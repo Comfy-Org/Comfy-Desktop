@@ -59,7 +59,7 @@ describe('BaseMenu', () => {
     }
   })
 
-  it('skips disabled items when moving with the keyboard', async () => {
+  it('starts on the first enabled item, past disabled ones', async () => {
     await openMenu({
       items: [
         { id: 'a', label: 'A', disabled: true },

@@ -233,6 +233,21 @@ describe('ArgsBuilderField — beta args pill', () => {
     expect(api.getComfyArgs).toHaveBeenCalledTimes(2)
   })
 
+  it('asks for beta args once on mount and once per reopen, never twice', async () => {
+    const api = stubElectronApi()
+    const epoch = ref(1)
+    const wrapper = mount(ArgsBuilderField, {
+      props: { field: FIELD, installationId: 'inst-1' },
+      global: { plugins: [i18n], provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } }
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(api.getCoreBetaArgs).toHaveBeenCalledTimes(1)
+    epoch.value = 2
+    await flushPromises()
+    expect(api.getCoreBetaArgs).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps the newest schema when an older load resolves after it', async () => {
     const api = stubElectronApi()
     let resolveOld: (value: unknown) => void = () => {}

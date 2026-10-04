@@ -20,14 +20,21 @@ import { closeTitlePopupIfOpen, isPopupVisible, type WebContentsPage } from './s
 import { getRunningSessionSnapshot } from './support/devHooks'
 import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { byTestId, TID } from './support/testIds'
+import {
+  ARGS_FIELD,
+  commitArgs,
+  expectAnsweredWithNoPill,
+  notePillAnswers,
+  PILL,
+  pillLabel,
+  waitForNewerAnswer,
+} from './support/betaArgsPill'
 
 // Two real launches do not fit the default budget.
 test.describe.configure({ mode: 'serial', timeout: 240_000 })
 
 const INSTALL_ID = 'inst-beta-args-restart'
 const INSTALL_NAME = 'Restart Beta Fixture'
-const ARGS_FIELD = '[data-field-id="launchArgs"]'
-const PILL = `${ARGS_FIELD} .beta-args button`
 const RESTART_TAG = `${ARGS_FIELD} .settings-v2-restart-tag`
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
 
@@ -90,11 +97,6 @@ async function openStartupArgs(): Promise<WebContentsPage> {
   return popup
 }
 
-const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
-  popup.evaluate<string | null>(
-    `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
-  )
-
 test('the pill follows the new session after a Restart that drops a grant @linux', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
   let before: Awaited<ReturnType<typeof getRunningSessionSnapshot>> = null
@@ -110,17 +112,13 @@ test('the pill follows the new session after a Restart that drops a grant @linux
   expect(await pillLabel(popup)).toBe('1 beta argument added for this session, show details')
 
   // The user passes the granted arg themselves, which overrides the grant for the next launch.
-  await popup.evaluate(
-    `(() => {
-      const input = document.querySelector(${JSON.stringify(`${ARGS_FIELD} input`)})
-      input.value = ${JSON.stringify(`--port ${port} --enable-assets`)}
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-    })()`,
-  )
-  // The edit has landed once the field asks for a restart; the pill still shows the running
-  // session's grant, which the edit cannot take back before the restart.
+  await notePillAnswers(popup)
+  await commitArgs(popup, `--port ${port} --enable-assets`)
+  // The edit has landed once the field asks for a restart and the pill has answered for it; the
+  // pill still shows the running session's grant, which the edit cannot take back before the
+  // restart.
   await popup.waitForVisible(RESTART_TAG, { timeout: 10_000 })
+  await waitForNewerAnswer(popup, 'the pill never answered for the committed args')
   expect(await pillLabel(popup)).toBe('1 beta argument added for this session, show details')
 
   await expect
@@ -139,15 +137,22 @@ test('the pill follows the new session after a Restart that drops a grant @linux
         const after = await getRunningSessionSnapshot(ctx.app, INSTALL_ID)
         return (after?.startedAt ?? 0) > (before?.startedAt ?? 0)
       },
-      { timeout: 120_000, intervals: [500, 1_000] },
+      {
+        // A relaunch normally lands within about 2s of the first launch; 30s leaves room for a
+        // loaded machine and fails fast on the known stall (the fake ComfyUI stops accepting).
+        timeout: 30_000,
+        intervals: [500, 1_000],
+        message: 'restart never happened: startedAt did not advance after Restart',
+      },
     )
     .toBe(true)
 
+  // The hidden picker keeps its pill, so absence is read only from an answer after the reopen.
+  // (Pages resolve their webContents by URL on each call, so the note carries across the reopen.)
+  const hiddenPicker = popup
+  await notePillAnswers(hiddenPicker)
   popup = await openStartupArgs()
-  await popup.waitFor(async () => (await pillLabel(popup)) === null, {
-    timeout: 10_000,
-    message: "the pill still showed the previous session's grant after the restart",
-  })
+  await expectAnsweredWithNoPill(hiddenPicker, "the pill still showed the previous session's grant after the restart")
   // The new session consumed the edit, so nothing is pending any more.
   await popup.waitFor(async () => !(await popup.exists(RESTART_TAG)), {
     timeout: 10_000,

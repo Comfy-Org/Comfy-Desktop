@@ -74,7 +74,17 @@ const http = require('node:http')
 // Serve until killed. Deliberately no stdin-close guard: the launcher spawns this with stdio
 // pipes it does not write to, so watching stdin would fire immediately and the launch would
 // see "process exited with code 0" instead of a booted server. The launcher's own
-// killProcessTree ends it, and a leaked one dies with the profile's port anyway.
+// killProcessTree ends it.
+//
+// If Desktop dies first (a crash, or a SIGKILL), exit too: this process inherited Desktop's
+// listening CDP socket, so outliving it fails the next launch on that port. An
+// \`outlive-desktop\` file beside this script keeps it running, for specs that need an orphan.
+if (!require('node:fs').existsSync(require('node:path').join(__dirname, 'outlive-desktop'))) {
+  const desktop = process.ppid
+  setInterval(() => {
+    if (process.ppid !== desktop) process.exit(0)
+  }, 250).unref()
+}
 const args = process.argv.slice(2)
 const portIndex = args.indexOf('--port')
 const port = portIndex === -1 ? 8188 : Number(args[portIndex + 1])
@@ -168,6 +178,9 @@ export interface FakeComfyInstall {
 export async function writeFakeComfyInstall(opts: {
   installPath: string
   port: number
+  /** Keep serving after Desktop dies, as a real ComfyUI would; by default the stub exits with
+   *  it, so a crashed run cannot leave it holding the next run's CDP port. */
+  outlivesDesktop?: boolean
 }): Promise<FakeComfyInstall> {
   const { installPath, port } = opts
   await mkdir(path.join(installPath, 'ComfyUI'), { recursive: true })
@@ -175,6 +188,7 @@ export async function writeFakeComfyInstall(opts: {
 
   const serverPath = path.join(installPath, 'stub-server.cjs')
   await writeFile(serverPath, SERVER_JS)
+  if (opts.outlivesDesktop) await writeFile(path.join(installPath, 'outlive-desktop'), '')
 
   if (process.platform !== 'linux') {
     throw new Error(

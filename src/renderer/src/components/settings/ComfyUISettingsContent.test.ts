@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SETTINGS_SECTIONS_FRESH } from '../../views/comfyUISettings/settingsSectionsFresh'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
@@ -929,6 +930,14 @@ describe('ComfyUISettingsContent', () => {
       expect(paneAfter).toBeTruthy()
       expect(paneAfter).not.toBe(paneBefore)
     })
+  })
+
+  // The beta-args pill sends the args field's value only while the painted sections belong to
+  // this install, so the view must hand it the same freshness it uses itself.
+  it("provides the sections' freshness to the beta-args pill", async () => {
+    const w = await mountContent({ initialTab: 'status' })
+    const provides = (w.vm.$ as unknown as { provides: Record<symbol, unknown> }).provides
+    expect(provides[SETTINGS_SECTIONS_FRESH as symbol]).toBe(useComfyUISettingsState.sectionsFresh)
   })
 
   describe('op-event relay from SnapshotsView', () => {

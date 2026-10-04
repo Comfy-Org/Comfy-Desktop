@@ -14,7 +14,7 @@ import { NO_CORE_COMMITS } from './coreBetaGrants'
 import type { CoreCommitState } from './coreBetaGrants'
 import type { CoreCheckout } from './version'
 
-const FULL_SHA_RE = /^[0-9a-f]{40}$/
+export const FULL_SHA_RE = /^[0-9a-f]{40}$/
 
 export const MAX_RESOLVED_SHAS = 16
 

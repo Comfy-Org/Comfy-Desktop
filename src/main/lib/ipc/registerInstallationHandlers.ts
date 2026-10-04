@@ -53,6 +53,7 @@ import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { isInstallationVisibleToRenderer } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
+import { recordedRevision, splitLaunchCommand } from '../coreBetaInputs'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -683,19 +684,19 @@ export function registerInstallationHandlers(): void {
       if (!launchCmd?.cmd || !launchCmd.args || !launchCmd.cwd) {
         return { args: [], error: `No launch command available (source: ${inst.sourceId})` }
       }
-      const sIdx = launchCmd.args.indexOf('-s')
-      if (sIdx === -1 || sIdx + 1 >= launchCmd.args.length) {
+      // The same split and revision the launch and the beta-args preview use, so all three share
+      // one schema cache entry.
+      const split = splitLaunchCommand(launchCmd)
+      if (!split) {
         return { args: [], error: `No -s flag in launch args: [${launchCmd.args.join(', ')}]` }
       }
-      const mainPyRel = launchCmd.args[sIdx + 1]!
-      const mainPyAbs = path.resolve(launchCmd.cwd, mainPyRel)
       try {
         const schema = await getComfyArgsSchema(
           launchCmd.cmd,
-          mainPyAbs,
+          split.mainPyAbs,
           launchCmd.cwd,
           installationId,
-          inst.comfyVersion?.commit ?? (inst.version as string | undefined)
+          recordedRevision(inst)
         )
         return { args: schema.args }
       } catch (err) {
