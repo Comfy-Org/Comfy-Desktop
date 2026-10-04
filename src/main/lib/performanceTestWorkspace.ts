@@ -33,11 +33,12 @@ export function performanceTestWorkspace(baseDir: string, installationId: string
   return path.join(baseDir, 'perf-test', installationId.replace(/[^A-Za-z0-9_-]/g, '_'))
 }
 
-/** Delete a workspace. Best effort: a file still held open (Windows) is left for the next
- *  Performance Test of the install to remove. */
+/** Delete a workspace. One attempt, best effort: a file still held open (Windows) is left for a
+ *  retry. Synchronous, so a caller's ownership check and the delete cannot be split by a new
+ *  run; no built-in retries, which would sleep on Electron's main thread. */
 export function removePerformanceTestWorkspace(workspace: string): void {
   try {
-    fs.rmSync(workspace, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    fs.rmSync(workspace, { recursive: true, force: true })
   } catch {
     // retried before the next Performance Test of this install
   }
