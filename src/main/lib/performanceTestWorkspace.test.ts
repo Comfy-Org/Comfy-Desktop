@@ -91,6 +91,12 @@ describe('coreHasDatabase and removePerformanceTestWorkspace', () => {
     expect(() => removePerformanceTestWorkspace(ws)).not.toThrow()
   })
 
+  it('makes one attempt, never sleeping on the main thread between retries', () => {
+    const rm = vi.spyOn(fs, 'rmSync')
+    removePerformanceTestWorkspace(path.join(dir, 'ws'))
+    expect(rm).toHaveBeenCalledWith(path.join(dir, 'ws'), { recursive: true, force: true })
+  })
+
   it('leaves a workspace it cannot remove (a file still open on Windows) without throwing', () => {
     vi.spyOn(fs, 'rmSync').mockImplementation(() => {
       throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' })

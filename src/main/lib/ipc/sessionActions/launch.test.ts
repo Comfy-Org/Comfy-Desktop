@@ -2289,12 +2289,42 @@ describe('Performance Test database', () => {
       if (calls++ === 0) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
       return real(...args)
     })
-    _runningSessions.delete('performance-test:perf-db-held-exit')
-
     child!.emit('close', 0, null)
 
     await vi.waitFor(() => expect(fs.existsSync(ws)).toBe(false), { timeout: 3000 })
     expect(calls).toBeGreaterThan(1)
+  })
+
+  it('leaves the workspace to a new run started while the exited one is still being removed', async () => {
+    writeCoreDb()
+    const key = 'performance-test:perf-db-rerun'
+    const ws = workspace('perf-db-rerun')
+    await handleLaunch(ctxFor('perf-db-rerun', key))
+    writeCoreFiles(ws)
+    // The exited run's files are held at first, so its removal goes on retrying.
+    const real = fs.rmSync
+    let calls = 0
+    vi.spyOn(fs, 'rmSync').mockImplementation((...args) => {
+      if (calls++ === 0) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+      return real(...args)
+    })
+    child!.emit('close', 0, null)
+    await vi.waitFor(() => expect(_runningSessions.has(key)).toBe(false))
+
+    // The user runs it again straight away: the new run resets the workspace and takes it, and
+    // is still booting when the exited run's retries come round.
+    launchHarness.waitForPort = () => new Promise((resolve) => setTimeout(resolve, 1500))
+    const relaunch = handleLaunch(ctxFor('perf-db-rerun', key))
+    // Once the new run has reset it: the exited run's image gone, a fresh output folder.
+    await vi.waitFor(() => {
+      expect(fs.existsSync(path.join(ws, 'output', 'img_00001_.png'))).toBe(false)
+      expect(fs.existsSync(path.join(ws, 'output'))).toBe(true)
+    })
+    fs.writeFileSync(path.join(ws, 'output', 'new_00001_.png'), 'x')
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+
+    expect(fs.existsSync(path.join(ws, 'output', 'new_00001_.png'))).toBe(true)
+    expect((await relaunch).ok).toBe(true)
   })
 
   it('removes a killed run’s workspace only after the check for a run still alive in it', async () => {
