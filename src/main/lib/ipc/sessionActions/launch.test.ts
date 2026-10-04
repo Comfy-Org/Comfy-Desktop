@@ -2367,9 +2367,9 @@ describe('Performance Test database', () => {
       expect(res.ok).toBe(false)
       // Named, so the user can check what it is before ending it.
       expect(t).toHaveBeenCalledWith(
-        'errors.priorProcessUnverified',
+        'errors.performanceTestLeftRunning',
         // The executable too: the pid may have been recycled to something unrelated.
-        expect.objectContaining({ pid: '777, python' })
+        { process: 'PID 777, python' }
       )
       expect(spawnArgs).toEqual([])
       expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(true)

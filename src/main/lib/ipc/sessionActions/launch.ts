@@ -1634,8 +1634,8 @@ async function runLaunch(
       const info = await getProcessInfo(prior.pid).catch(() => null)
       return {
         ok: false,
-        message: i18n.t('errors.priorProcessUnverified', {
-          pid: info ? `${prior.pid}, ${info.name}` : String(prior.pid)
+        message: i18n.t('errors.performanceTestLeftRunning', {
+          process: info ? `PID ${prior.pid}, ${info.name}` : `PID ${prior.pid}`
         })
       }
     }
