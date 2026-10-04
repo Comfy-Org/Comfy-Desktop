@@ -2295,6 +2295,50 @@ describe('Performance Test database', () => {
     expect(calls).toBeGreaterThan(1)
   })
 
+  it('removes the workspace after a crash mid-benchmark, while the benchmark still holds its slot', async () => {
+    writeCoreDb()
+    const key = 'performance-test:perf-db-crash'
+    const ws = workspace('perf-db-crash')
+    expect((await handleLaunch(ctxFor('perf-db-crash', key))).ok).toBe(true)
+    writeCoreFiles(ws)
+    // The benchmark's workflow handler holds this until its next jobs poll.
+    const benchmark = new AbortController()
+    _operationAborts.set(key, benchmark)
+    const real = fs.rmSync
+    let calls = 0
+    vi.spyOn(fs, 'rmSync').mockImplementation((...args) => {
+      if (calls++ === 0) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+      return real(...args)
+    })
+    try {
+      child!.emit('close', 1, null)
+
+      await vi.waitFor(() => expect(fs.existsSync(ws)).toBe(false), { timeout: 3000 })
+    } finally {
+      if (_operationAborts.get(key) === benchmark) _operationAborts.delete(key)
+    }
+  })
+
+  it('starts a run straight after Stop, once the exited run’s files are released', async () => {
+    writeCoreDb()
+    const ws = workspace('perf-db-quick-rerun')
+    writeCoreFiles(ws)
+    // Still held for the first two attempts, as on Windows just after the old process exits.
+    const real = fs.rmSync
+    let calls = 0
+    vi.spyOn(fs, 'rmSync').mockImplementation((...args) => {
+      if (calls++ < 2) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+      return real(...args)
+    })
+
+    const res = await handleLaunch(
+      ctxFor('perf-db-quick-rerun', 'performance-test:perf-db-quick-rerun')
+    )
+
+    expect(res.ok).toBe(true)
+    expect(fs.existsSync(path.join(ws, 'output', 'img_00001_.png'))).toBe(false)
+  })
+
   it('leaves the workspace to a new run started while the exited one is still being removed', async () => {
     writeCoreDb()
     const key = 'performance-test:perf-db-rerun'
