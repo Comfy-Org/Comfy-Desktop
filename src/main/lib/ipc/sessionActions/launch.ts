@@ -1636,8 +1636,8 @@ async function runLaunch(
       const info = await getProcessInfo(prior.pid).catch(() => null)
       return {
         ok: false,
-        message: i18n.t('errors.priorProcessUnverified', {
-          pid: info ? `${prior.pid}, ${info.name}` : String(prior.pid)
+        message: i18n.t('errors.performanceTestLeftRunning', {
+          process: info ? `PID ${prior.pid}, ${info.name}` : `PID ${prior.pid}`
         })
       }
     }
@@ -1776,7 +1776,18 @@ async function runLaunch(
     } else {
       let message: string
       let isComfy: boolean
-      if (pendingPortOwner) {
+      // A Performance Test spawned here (a remote one's port is on another machine).
+      const perfHolder = [..._runningSessions].find(
+        ([key, s]) =>
+          s.proc && s.port === launchCmd.port && sessionKindOf(key) === 'performance_test'
+      )?.[1]
+      if (perfHolder) {
+        message = i18n.t('errors.portConflictPerformanceTest', {
+          port: launchCmd.port!,
+          name: perfHolder.installationName
+        })
+        isComfy = true
+      } else if (pendingPortOwner) {
         message = i18n.t('errors.portConflictLauncher', {
           port: launchCmd.port!,
           name: pendingPortOwner
