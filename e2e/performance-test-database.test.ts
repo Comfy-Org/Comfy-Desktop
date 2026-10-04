@@ -98,10 +98,13 @@ test.beforeAll(async () => {
   installPath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-perf-own-db-install-'))
   port = await reserveFreePort()
   await writeFakeComfyInstall({ installPath, port, coreDb: true })
+  // A CDP port of its own: the default is shared by every e2e run on the machine, and a
+  // concurrent run holding it hangs this launch. Not the fixture's port, which was released
+  // when reserved and could come back.
+  let cdpPort = await reserveFreePort()
+  while (cdpPort === port) cdpPort = await reserveFreePort()
   ctx = await launchApp({
-    // A CDP port of its own: the default is shared by every e2e run on the machine, and a
-    // concurrent run holding it hangs this launch.
-    cdpPort: await reserveFreePort(),
+    cdpPort,
     profileDir,
     settings: { firstUseCompleted: true, telemetryEnabled: false, hasSeenCentralPillHint: true },
     installations: [
