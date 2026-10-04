@@ -208,6 +208,7 @@ export function _resetForTest(): void {
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
+  shutdownStarted = false
   pendingIdentityMergeFlush = null
   pendingIdentityMergeFileDirty = true
   queuedPendingIdentityMergeIds.clear()
@@ -275,7 +276,7 @@ function canEmit(): boolean {
  * profile (PostHog person properties are joined at query time and are
  * point-in-time as of write - releasing a new app version while the user
  * still has events from the old one would mis-attribute without this).
- * `installation_id` is added by `bindAnonymousId()` once installation metadata is known
+ * `installation_id` is added by `setInstallationId()` once installation metadata is known
  * at boot, so renderer events (routed in over IPC) and main events share the
  * machine hash as the default join key. Call sites that override it per-call
  * with a per-install record id still split that key - #1159 moves those
@@ -406,6 +407,11 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
   flagEvaluationStaff = isStaff
 }
 
+/** The classification `setFlagEvaluationStaff` last bound. */
+export function getFlagEvaluationStaff(): boolean {
+  return flagEvaluationStaff
+}
+
 /**
  * Person properties for an ops-flag evaluation request.
  *
@@ -438,10 +444,10 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
  * form is equivalent for targeting and puts nothing on the wire for the
  * overwhelming majority of users.
  */
-function opsFlagPersonProperties(): Record<string, string> {
+function opsFlagPersonProperties(staff = flagEvaluationStaff): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
-  if (consentState === 'granted' && flagEvaluationStaff) properties['comfy_staff'] = 'true'
+  if (consentState === 'granted' && staff) properties['comfy_staff'] = 'true'
   return properties
 }
 
@@ -1100,6 +1106,9 @@ function queuePendingUserBinding(
   emitLoginEvent: boolean,
   properties: Record<string, TelemetryValue>
 ): void {
+  if (pendingUserBinding && pendingUserBinding.userId !== userId) {
+    retireAnonymousIdOfQueuedBinding()
+  }
   const existing = pendingUserBinding?.userId === userId ? pendingUserBinding : null
   pendingUserBinding = {
     userId,
@@ -1284,8 +1293,24 @@ export function releaseFirebasePendingConsensus(): void {
  * login attribution: during a switch that payload may belong to the
  * incoming user, and its fate is settled at their confirmation instead.
  */
+/**
+ * While the installation id is pending, a signed-in account only queues its
+ * binding, so its activity accrues on the anonymous id. If that account then
+ * signs out or is replaced before binding, rotate the anonymous id (as a bound
+ * sign-out does), so a later account's identify cannot merge that activity.
+ * Held writes keep the retired id.
+ */
+function retireAnonymousIdOfQueuedBinding(): void {
+  if (!pendingUserBinding || !holdingForInstallationId()) return
+  const safeAnonymousId = rotatePersistedAnonymousDistinctId()
+  nextAnonymousDistinctId = null
+  anonymousDistinctId = safeAnonymousId
+  distinctId = safeAnonymousId
+}
+
 function detachFromBoundUser(): void {
   endFirebaseWriteQuarantine('discard')
+  if (!boundUserId) retireAnonymousIdOfQueuedBinding()
   pendingUserBinding = null
   if (!boundUserId) return
   // Wiping the person buffers while unbound would permanently lose
@@ -1543,7 +1568,7 @@ export type InstallMethod = 'express' | 'manual' | 'adopt' | 'migrate'
  * than inlined at each completion site: express/manual, adopt, migrate) so
  * the event's property shape can't drift between the three call sites.
  *
- * `installation_id` is already an event-level default once `bindAnonymousId()` ran
+ * `installation_id` is already an event-level default once `setInstallationId()` ran
  * at boot; it's passed explicitly here too so the event is self-describing
  * even in queries that don't rely on the default (and so the value is the
  * specific install that completed, not just the device).
@@ -1857,7 +1882,9 @@ export async function getOpsFlagResult(
   key: string,
   distinctId: string,
   timeoutMs: number,
-  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void
+  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void,
+  /** Evaluate as this classification rather than the current one (see `opsFlag.init`). */
+  staff?: boolean
 ): Promise<OpsFlagFetchResult> {
   if (!client) return { kind: 'unreachable' }
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -1865,7 +1892,7 @@ export async function getOpsFlagResult(
   try {
     const flagPromise = client.getFeatureFlagResult(key, distinctId, {
       sendFeatureFlagEvents: false,
-      personProperties: opsFlagPersonProperties()
+      personProperties: opsFlagPersonProperties(staff)
     })
     const timeoutPromise = new Promise<typeof OPS_FLAG_DEADLINE>((resolve) => {
       timer = setTimeout(() => resolve(OPS_FLAG_DEADLINE), timeoutMs)
@@ -2045,6 +2072,7 @@ export function emit(event: string, context: TelemetryContext = {}): void {
  */
 export async function shutdown(reason: string): Promise<void> {
   if (!client) return
+  shutdownStarted = true
   const uptimeMs = Date.now() - bootstrapTimeMs
   try {
     // A quit mid-navigation must not strand quarantined writes (or the
@@ -2088,6 +2116,12 @@ export async function shutdown(reason: string): Promise<void> {
 
 let beforeQuitHooked = false
 let drainingForQuit = false
+let shutdownStarted = false
+
+/** Whether `shutdown()` has begun: nothing captured from here on can ship. */
+export function hasShutDown(): boolean {
+  return shutdownStarted
+}
 
 /**
  * Maximum time we'll block the quit on draining queued PostHog events.

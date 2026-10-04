@@ -18,7 +18,7 @@ const h = vi.hoisted(() => ({
   runBannerCleanup: vi.fn(),
   closeActiveBridge: vi.fn(),
   settingsGet: vi.fn(),
-  deviceIdWithin: vi.fn(async (_timeoutMs: number): Promise<string | null> => 'machine-hash-1234'),
+  deviceIdReady: vi.fn(async (): Promise<string> => 'machine-hash-1234'),
   createDesktopLoginCode: vi.fn(),
   exchangeDesktopLoginCode: vi.fn(),
   signInWithCustomToken: vi.fn(),
@@ -43,7 +43,7 @@ vi.mock('../../lib/telemetry', () => ({
   bucketError: h.bucketError
 }))
 
-vi.mock('../../lib/deviceId', () => ({ deviceIdWithin: h.deviceIdWithin }))
+vi.mock('../../lib/deviceId', () => ({ deviceIdReady: h.deviceIdReady }))
 
 vi.mock('../../settings', () => ({ get: h.settingsGet }))
 
@@ -123,6 +123,14 @@ function mockSignInChain(persistedUser: Record<string, unknown>): void {
   })
   h.lookupAccount.mockResolvedValue({ localId: 'uid-1' })
   h.buildPersistedUserFromCustomToken.mockReturnValue(persistedUser)
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
 }
 
 beforeEach(() => {
@@ -361,9 +369,10 @@ describe('signInViaDesktopLoginCode', () => {
     )
   })
 
-  it('omits installation_id when the id is not resolved within a second', async () => {
+  it('waits for the installation id before creating the code', async () => {
     h.settingsGet.mockReturnValue(true)
-    h.deviceIdWithin.mockResolvedValue(null)
+    const id = deferred<string>()
+    h.deviceIdReady.mockReturnValue(id.promise)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({
       status: 'complete',
@@ -373,12 +382,14 @@ describe('signInViaDesktopLoginCode', () => {
     const mod = await loadOrchestrator()
 
     const promise = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(h.createDesktopLoginCode).not.toHaveBeenCalled()
+
+    id.resolve('machine-hash-late')
     await vi.runAllTimersAsync()
     await promise
-
-    expect(h.deviceIdWithin).toHaveBeenCalledWith(1000)
     const request = h.createDesktopLoginCode.mock.lastCall![1] as Record<string, unknown>
-    expect(request).not.toHaveProperty('installation_id')
+    expect(request).toMatchObject({ installation_id: 'machine-hash-late' })
   })
 
   it('omits installation_id when consent is withdrawn while waiting for it', async () => {
@@ -395,7 +406,7 @@ describe('signInViaDesktopLoginCode', () => {
     await vi.runAllTimersAsync()
     await promise
 
-    expect(h.deviceIdWithin).toHaveBeenCalled()
+    expect(h.deviceIdReady).toHaveBeenCalled()
     const request = h.createDesktopLoginCode.mock.lastCall![1] as Record<string, unknown>
     expect(request).not.toHaveProperty('installation_id')
   })
@@ -417,7 +428,7 @@ describe('signInViaDesktopLoginCode', () => {
 
       const request = h.createDesktopLoginCode.mock.lastCall![1] as Record<string, unknown>
       expect(request).not.toHaveProperty('installation_id')
-      expect(h.deviceIdWithin).not.toHaveBeenCalled()
+      expect(h.deviceIdReady).not.toHaveBeenCalled()
     }
   })
 

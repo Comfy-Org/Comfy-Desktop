@@ -257,14 +257,13 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
 
 onMounted(async () => {
   // All best-effort and independently fail-safe, so the picker still
-  // works if any of them errors.
-  const [variant, freeRunsEnabled, userTier] = await Promise.all([
-    loadForkExperimentVariant(),
-    loadCloudFreeRunsEnabled(),
-    loadCloudUserTier()
-  ])
+  // works if any of them errors. The free-runs flag waits for the
+  // installation id on a first launch, so only its pill waits for it.
+  void loadCloudFreeRunsEnabled().then((enabled) => {
+    cloudFreeRunsEnabled.value = enabled
+  })
+  const [variant, userTier] = await Promise.all([loadForkExperimentVariant(), loadCloudUserTier()])
   forkExperimentVariant.value = variant
-  cloudFreeRunsEnabled.value = freeRunsEnabled
   cloudUserTier.value = userTier
   applyForkExperimentDefault(variant)
 })

@@ -33,22 +33,18 @@ vi.mock('systeminformation', () => ({
 
 const h = vi.hoisted(() => ({
   consent: 'granted' as 'granted' | 'undecided' | 'denied',
+  shutDown: false,
   telemetry: {
     bindAnonymousId: vi.fn(),
     setInstallationId: vi.fn(),
     registerPersonProperties: vi.fn(),
     captureFirstLaunch: vi.fn(),
-    getConsentState: vi.fn(() => h.consent)
+    getConsentState: vi.fn(() => h.consent),
+    hasShutDown: vi.fn(() => h.shutDown)
   },
   initExperiments: vi.fn((_opts: unknown) => Promise.resolve()),
-  initCloudFreeRuns: vi.fn(
-    (_opts: { distinctId: Promise<string>; idWaitMs: number; idFallback: string | null }) =>
-      Promise.resolve()
-  ),
-  initCoreBetaGrants: vi.fn(
-    (_opts: { distinctId: Promise<string>; idWaitMs: number; idFallback: string | null }) =>
-      Promise.resolve()
-  ),
+  initCloudFreeRuns: vi.fn((_opts: { distinctId: Promise<string> }) => Promise.resolve()),
+  initCoreBetaGrants: vi.fn((_opts: { distinctId: Promise<string> }) => Promise.resolve()),
   initStaffFlagTargeting: vi.fn(),
   getInitialAnonymousDistinctId: vi.fn((_existing: boolean) => 'anon-d'),
   recoverPendingIdentityRotation: vi.fn((id: string) => id)
@@ -89,6 +85,7 @@ describe('startBootIdentity', () => {
     lookupHangs = false
     lookupDelayMs = 0
     h.consent = 'granted'
+    h.shutDown = false
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
     vi.clearAllMocks()
     vi.useFakeTimers()
@@ -201,46 +198,33 @@ describe('startBootIdentity', () => {
     expect(h.getInitialAnonymousDistinctId).toHaveBeenCalledWith(existing)
   })
 
-  it('hands both ops flags the final id with a 2 s wait for this launch', async () => {
-    lookupDelayMs = 3000
+  it.each([
+    ['a fresh install', null],
+    ['an install with a stored id', 'stored']
+  ])('hands both ops flags only the final id, however long it takes, on %s', async (_l, stored) => {
+    if (stored) fs.writeFileSync(file('device-id.txt'), machineId())
+    lookupDelayMs = 14_000
     void mod.startBootIdentity(OPTIONS)
-    for (const init of [h.initCloudFreeRuns, h.initCoreBetaGrants]) {
-      expect(init.mock.calls[0]![0].idWaitMs).toBe(2000)
-      expect(init.mock.calls[0]![0].distinctId).toBe(
-        h.initCloudFreeRuns.mock.calls[0]![0].distinctId
-      )
-    }
     const cloud = h.initCloudFreeRuns.mock.calls[0]![0].distinctId
+    expect(h.initCoreBetaGrants.mock.calls[0]![0].distinctId).toBe(cloud)
     let early: string | null = null
     void cloud.then((id) => {
       early = id
     })
-    await vi.advanceTimersByTimeAsync(2999)
+    await vi.advanceTimersByTimeAsync(13_999)
     expect(early).toBeNull()
     await vi.advanceTimersByTimeAsync(1)
     expect(await cloud).toBe(machineId())
   })
 
-  it.each([
-    ['a stored installation id', () => machineId(), true],
-    ['no stored id', null, false],
-    ['a legacy UUID', () => 'f47ac10b-58cc-4372-a567-0e02b2c3d479', false],
-    [
-      'a shared placeholder hash',
-      () =>
-        createHash('sha256')
-          .update('03000200-0400-0500-0006-000700080009:comfy-installation-id-v1')
-          .digest('hex'),
-      false
-    ]
-  ])('gives both ops flags %s as the slow-lookup fallback', (_label, stored, kept) => {
-    const value = stored?.() ?? null
-    if (value !== null) fs.writeFileSync(file('device-id.txt'), value)
-    lookupHangs = true
-    void mod.startBootIdentity(OPTIONS)
-    for (const init of [h.initCloudFreeRuns, h.initCoreBetaGrants]) {
-      expect(init.mock.calls[0]![0]).toMatchObject({ idFallback: kept ? value : null })
-    }
+  it('leaves the first-launch guard for the next launch when the id resolves after telemetry shut down', async () => {
+    lookupDelayMs = 3000
+    const bound = mod.startBootIdentity(OPTIONS)
+    h.shutDown = true
+    await vi.advanceTimersByTimeAsync(3000)
+    await bound
+    expect(h.telemetry.captureFirstLaunch).not.toHaveBeenCalled()
+    expect(fs.existsSync(file('first-launch-completed'))).toBe(false)
   })
 
   it('removes the legacy alias retry marker once the id resolves', async () => {

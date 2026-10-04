@@ -461,10 +461,10 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
 /**
  * Synchronous accessor for the bound installation id.
  *
- * Must only be called after `initDeviceId()` has resolved. If called earlier,
- * falls back to a random UUID flagged as `'random_fallback'` so a misordered
- * call never throws and the data is still distinguishable from machine-derived
- * ids in PostHog.
+ * Must only be called after `initDeviceId()` has resolved; await
+ * `deviceIdReady()` otherwise. Called earlier, it returns the on-disk id or a
+ * random one, persisting neither, so a misordered call never throws and never
+ * fixes an id in place of the machine-derived one.
  */
 export function getDeviceId(): string {
   if (cached) return cached.installationId
@@ -485,37 +485,10 @@ export function getDeviceId(): string {
 
 let degradedId: string | null = null
 
-/**
- * The installation id already on disk, if it is one `initDeviceId()` would keep
- * when this launch's lookup times out: well formed and not a shared placeholder
- * hash. Read-only.
- */
-export function persistedInstallationId(): string | null {
-  try {
-    const raw = fs.readFileSync(deviceIdPath(), 'utf-8').trim()
-    return INSTALLATION_ID_RE.test(raw) && !isKnownPlaceholderInstallationId(raw) ? raw : null
-  } catch {
-    return null
-  }
-}
-
 /** The installation id once `initDeviceId()` resolves (it is started if it has not been). */
 export async function deviceIdReady(): Promise<string> {
   await initDeviceId()
   return getDeviceId()
-}
-
-/** `deviceIdReady()`, or `null` if it takes longer than `timeoutMs`. */
-export async function deviceIdWithin(timeoutMs: number): Promise<string | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), timeoutMs)
-  })
-  try {
-    return await Promise.race([deviceIdReady(), timeout])
-  } finally {
-    clearTimeout(timer)
-  }
 }
 
 export function getIdClass(): IdClass {

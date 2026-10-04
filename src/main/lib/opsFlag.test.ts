@@ -9,8 +9,10 @@ import path from 'path'
 import * as safeFile from './safe-file'
 
 const getOpsFlagResult = vi.fn()
+const staffClassification = { value: false }
 vi.mock('./telemetry', () => ({
-  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
+  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args),
+  getFlagEvaluationStaff: () => staffClassification.value
 }))
 
 /** The `onLateResult` callback `init` handed to the fetch, or `undefined` when it passed none.
@@ -51,6 +53,7 @@ function makeTestFlag() {
 
 beforeEach(() => {
   getOpsFlagResult.mockReset()
+  staffClassification.value = false
   // Every test, not just the persistence ones: an empty `configDir()` would resolve
   // `ops-flags.json` relative to cwd and drop a file in the repo root.
   testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-flag-'))
@@ -62,33 +65,15 @@ afterEach(() => {
 })
 
 describe('makeOpsFlag with a distinct id still resolving', () => {
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  function persistedOptions() {
-    return {
-      key: 'test-flag',
-      fallback: 'normal' as const,
-      parse: (value: unknown) =>
-        value === 'degraded' || value === 'normal' ? (value as 'degraded' | 'normal') : undefined,
-      persist: true as const
-    }
-  }
-
-  function deferredId(): { promise: Promise<string>; resolve: (id: string) => void } {
-    let resolve: (id: string) => void = () => {}
-    const promise = new Promise<string>((r) => {
-      resolve = r
-    })
-    return { promise, resolve }
-  }
-
   it('makes get() wait for the id and then the fetch', async () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('disabled'))
-    const id = deferredId()
-    void flag.init({ distinctId: id.promise, idWaitMs: 2000 })
+    let resolveId: (id: string) => void = () => {}
+    void flag.init({
+      distinctId: new Promise<string>((r) => {
+        resolveId = r
+      })
+    })
     let settled = false
     const value = flag.get().finally(() => {
       settled = true
@@ -97,90 +82,30 @@ describe('makeOpsFlag with a distinct id still resolving', () => {
     expect(getOpsFlagResult).not.toHaveBeenCalled()
     expect(settled).toBe(false)
 
-    id.resolve('final-id')
+    resolveId('final-id')
     expect(await value).toBe('disabled')
-    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'final-id', 2000, undefined)
+    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'final-id', 2000, undefined, false)
   })
 
-  it('reads an id later than idWaitMs as unreachable for this launch', async () => {
-    vi.useFakeTimers()
-    const flag = makeTestFlag()
-    const id = deferredId()
-    const init = flag.init({ distinctId: id.promise, idWaitMs: 2000 })
-    await vi.advanceTimersByTimeAsync(2000)
-    await init
-    expect(await flag.get()).toBe('normal')
-
-    id.resolve('final-id')
-    await vi.advanceTimersByTimeAsync(0)
-    // Not persisted, so nothing to fetch for: no request under any id.
-    expect(getOpsFlagResult).not.toHaveBeenCalled()
-  })
-
-  it('serves the persisted value this launch and fetches for the next once a late id arrives', async () => {
-    vi.useFakeTimers()
-    getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
-    const earlier = makeOpsFlag<'normal' | 'degraded'>(persistedOptions())
-    await earlier.init({ distinctId: 'final-id' })
-
-    getOpsFlagResult.mockReset()
-    getOpsFlagResult.mockResolvedValue(flagResult('normal'))
-    const flag = makeOpsFlag<'normal' | 'degraded'>(persistedOptions())
-    const id = deferredId()
-    const init = flag.init({ distinctId: id.promise, idWaitMs: 2000 })
-    await vi.advanceTimersByTimeAsync(2000)
-    await init
-    expect(await flag.get()).toBe('degraded')
-    expect(getOpsFlagResult).not.toHaveBeenCalled()
-
-    id.resolve('final-id')
-    await vi.advanceTimersByTimeAsync(0)
-    expect(getOpsFlagResult).toHaveBeenCalledWith(
-      'test-flag',
-      'final-id',
-      2000,
-      expect.any(Function)
-    )
-    // This launch keeps its value; the revocation lands for the next one.
-    expect(await flag.get()).toBe('degraded')
-    const next = makeOpsFlag<'normal' | 'degraded'>(persistedOptions())
-    getOpsFlagResult.mockResolvedValue(unreachable())
-    await next.init({ distinctId: 'final-id' })
-    expect(await next.get()).toBe('normal')
-  })
-
-  it('fetches under the fallback id when the id is late, and not again once it arrives', async () => {
-    vi.useFakeTimers()
-    getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
-    const flag = makeOpsFlag<'normal' | 'degraded'>(persistedOptions())
-    const id = deferredId()
-    const init = flag.init({ distinctId: id.promise, idWaitMs: 2000, idFallback: 'stored-id' })
-    await vi.advanceTimersByTimeAsync(2000)
-    await init
-    expect(await flag.get()).toBe('degraded')
-    expect(getOpsFlagResult).toHaveBeenCalledTimes(1)
-    expect(getOpsFlagResult).toHaveBeenCalledWith(
-      'test-flag',
-      'stored-id',
-      2000,
-      expect.any(Function)
-    )
-
-    id.resolve('final-id')
-    await vi.advanceTimersByTimeAsync(0)
-    expect(getOpsFlagResult).toHaveBeenCalledTimes(1)
-  })
-
-  it('ignores the fallback id when the id arrives in time', async () => {
+  it('evaluates with the staff classification bound at init, not one bound while waiting', async () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('normal'))
-    await flag.init({ distinctId: 'final-id', idWaitMs: 2000, idFallback: 'stored-id' })
-    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'final-id', 2000, undefined)
+    staffClassification.value = true
+    let resolveId: (id: string) => void = () => {}
+    void flag.init({
+      distinctId: new Promise<string>((r) => {
+        resolveId = r
+      })
+    })
+    staffClassification.value = false
+    resolveId('final-id')
+    await flag.get()
+    expect(getOpsFlagResult.mock.calls[0]![4]).toBe(true)
   })
 
   it('falls back when the id promise rejects', async () => {
     const flag = makeTestFlag()
-    await flag.init({ distinctId: Promise.reject(new Error('no id')), idWaitMs: 2000 })
+    await flag.init({ distinctId: Promise.reject(new Error('no id')) })
     expect(getOpsFlagResult).not.toHaveBeenCalled()
     expect(await flag.get()).toBe('normal')
   })
@@ -243,7 +168,8 @@ describe('makeOpsFlag', () => {
     // The trailing `undefined` is the late-result callback, which only a persisted flag gets —
     // see `makeOpsFlag late results`. Asserted rather than elided so a callback handed to a
     // non-persisting flag fails here.
-    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 50, undefined)
+    // The last argument is the boot staff classification (see the pending-id tests).
+    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 50, undefined, false)
   })
 
   it('defaults the timeout when the caller omits one', async () => {
@@ -254,7 +180,8 @@ describe('makeOpsFlag', () => {
       'test-flag',
       'anon',
       expect.any(Number),
-      undefined
+      undefined,
+      false
     )
   })
 

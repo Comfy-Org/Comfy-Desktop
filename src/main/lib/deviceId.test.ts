@@ -664,10 +664,13 @@ describe('deviceId', () => {
     it('persists nothing until the lookup resolves, whatever reads the id meanwhile', async () => {
       mockUuidHangs = true
       const ready = mod.deviceIdReady()
-      const within = mod.deviceIdWithin(1000)
+      let settled = false
+      void ready.then(() => {
+        settled = true
+      })
 
       await vi.advanceTimersByTimeAsync(1000)
-      expect(await within).toBeNull()
+      expect(settled).toBe(false)
       const early = mod.getDeviceId()
       expect(mod.getDeviceId()).toBe(early)
       await vi.advanceTimersByTimeAsync(CUTOFF_MS - 1001)
@@ -702,14 +705,6 @@ describe('deviceId', () => {
       await vi.advanceTimersByTimeAsync(14_000)
       expect(await ready).toBe(expectedIdFor(uuid))
       expect(mod.getIdClass()).toBe('machine_derived')
-    })
-
-    it('gives deviceIdWithin the id when it resolves in time', async () => {
-      mockSystemUuid = uuid
-      mockUuidDelayMs = 500
-      const within = mod.deviceIdWithin(1000)
-      await vi.advanceTimersByTimeAsync(500)
-      expect(await within).toBe(expectedIdFor(uuid))
     })
   })
 

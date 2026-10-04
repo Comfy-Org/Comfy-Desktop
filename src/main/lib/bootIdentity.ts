@@ -2,16 +2,17 @@
  * Boot wiring for the installation id.
  *
  * Boot does not wait for the id. The first window opens while the hardware
- * lookup is still running, and each consumer waits only when it needs the id:
+ * lookup is still running. The lookup is one promise, and every consumer that
+ * needs the id awaits it, with no wait or fallback of its own: the only
+ * timeout is `initDeviceId()`'s cutoff, after which the promise resolves to a
+ * random id minted once. So nothing ever runs under an id other than the one
+ * this launch binds:
  *
  *   - telemetry binds the anonymous id at once and holds captures until the
  *     installation id is set;
- *   - the ops flags wait up to `FLAG_ID_WAIT_MS` for the id, then fetch under
- *     the stored id (what a slow launch keeps) or, on a first launch, read as
- *     unreachable rather than fetch under a provisional id; a persisted flag
- *     still fetches once the id arrives, for the next launch;
- *   - the experiments refresh waits for the id when consent allows one;
- *     `getFlag()` serves the disk cache meanwhile;
+ *   - the ops flags fetch once the id resolves (`get()` waits for that);
+ *   - the experiments refresh does too, when consent allows one; `getFlag()`
+ *     serves the disk cache meanwhile;
  *   - `first_launch` and the legacy-id migration run once the id resolves.
  *
  * Nothing here persists an id; `initDeviceId()` does, once, when it resolves.
@@ -25,8 +26,7 @@ import {
   hasCompletedFirstLaunch,
   hasPersistedDeviceId,
   initDeviceId,
-  markIdentityMigrationCompleted,
-  persistedInstallationId
+  markIdentityMigrationCompleted
 } from './deviceId'
 import * as mainTelemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
@@ -36,13 +36,6 @@ import { initExperiments } from './experiments'
 import { initCloudFreeRuns } from './cloudFreeRuns'
 import { initCoreBetaGrants } from './coreBetaGrants'
 import { initStaffFlagTargeting } from './staffFlagTargeting'
-
-/**
- * How long the ops flags wait for the id. The first-use picker awaits
- * `cloudFreeRuns`, so this plus the fetch's own timeout is how long it can
- * wait; it matches the boot wait this replaces.
- */
-export const FLAG_ID_WAIT_MS = 2000
 
 export interface BootIdentityOptions {
   appVersion: string
@@ -59,7 +52,6 @@ export interface BootIdentityOptions {
 export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
   // Read before anything can write device-id.txt or the first-launch guard.
   const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
-  const storedId = persistedInstallationId()
   const anonymousDistinctId = recoverPendingIdentityRotation(
     getInitialAnonymousDistinctId(existingInstallation)
   )
@@ -95,14 +87,9 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
   // This ops-flag path is separate from consent-gated experiments: the
   // first-use picker renders while consent is still `'undecided'`, so the
   // experiments cache would never have a value to give it. See
-  // `cloudFreeRuns.ts`.
-  // A stored id is what the old boot fetched under when the lookup was slow: on
-  // a timeout `initDeviceId` keeps it, so it is the id this launch binds.
-  const flagId = {
-    distinctId: resolved.then(() => getDeviceId()),
-    idWaitMs: FLAG_ID_WAIT_MS,
-    idFallback: storedId
-  }
+  // `cloudFreeRuns.ts`. The first-use picker shows its free-runs pill once
+  // this resolves.
+  const flagId = { distinctId: resolved.then(() => getDeviceId()) }
   void initCloudFreeRuns(flagId)
   void initCoreBetaGrants(flagId)
 
@@ -121,9 +108,10 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
     // change in `applySettingSet`.
     mainTelemetry.registerPersonProperties(opts.trackedSettings())
 
-    // Consumed only now, so a quit before the id resolves leaves the guard in
-    // place and the next launch fires the event instead of losing it.
-    const isFirstLaunch = consumeFirstLaunch()
+    // Consumed only now, and not once telemetry has shut down, so a quit
+    // before the id resolves leaves the guard in place and the next launch
+    // fires the event instead of losing it.
+    const isFirstLaunch = !mainTelemetry.hasShutDown() && consumeFirstLaunch()
     if (legacyId) {
       // Historical random installation ids are reconciled directly in
       // PostHog, not by Desktop alias writes. Complete only the local migration.

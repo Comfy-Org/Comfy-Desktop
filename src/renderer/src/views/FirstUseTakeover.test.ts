@@ -452,6 +452,25 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     }
   )
 
+  it('applies the experiment default without waiting for the free-runs flag, whose pill follows', async () => {
+    const freeRuns = deferred<boolean>()
+    ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockResolvedValue('cloud')
+    ;(window.api.getCloudFreeRunsEnabled as ReturnType<typeof vi.fn>).mockReturnValue(
+      freeRuns.promise
+    )
+    const wrapper = mountTakeover()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="first-use-pick-cloud"]').attributes('data-selected')).toBe(
+      'true'
+    )
+    expect(wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists()).toBe(false)
+
+    freeRuns.resolve(true)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists()).toBe(true)
+  })
+
   it('keeps Local as the default when the flag is missing (control / fallback)', async () => {
     const wrapper = mountTakeover()
     await flushPromises()

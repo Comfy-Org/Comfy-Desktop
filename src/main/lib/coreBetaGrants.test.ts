@@ -5,7 +5,8 @@ import path from 'path'
 
 const getOpsFlagResult = vi.fn()
 vi.mock('./telemetry', () => ({
-  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
+  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args),
+  getFlagEvaluationStaff: () => false
 }))
 
 // `coreBetaGrants` is the one flag that persists, so resolving a value here writes `ops-flags.json`
@@ -1013,7 +1014,8 @@ describe('core beta grants fetch', () => {
       CORE_BETA_FEATURES_FLAG_KEY,
       'device-id',
       expect.any(Number),
-      expect.any(Function)
+      expect.any(Function),
+      false
     )
     await expect(getCoreBetaGrantsAsync()).resolves.toEqual([
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }

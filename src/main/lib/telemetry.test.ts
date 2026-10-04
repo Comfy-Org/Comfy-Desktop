@@ -634,6 +634,29 @@ describe('ops-flag person targeting', () => {
     expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
   })
 
+  it('evaluates as the classification it is given, not the one bound now', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(false)
+    await telemetry.getOpsFlagResult(
+      'desktop_core_beta_features',
+      'installation-id',
+      100,
+      undefined,
+      true
+    )
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
+
+    telemetry.setFlagEvaluationStaff(true)
+    await telemetry.getOpsFlagResult(
+      'desktop_core_beta_features',
+      'installation-id',
+      100,
+      undefined,
+      false
+    )
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
+  })
+
   it('leaves the distinct id the installation hash, so bucketing is unchanged', async () => {
     // The property decides whether a CONDITION matches; it must never become the evaluation
     // key, or a staff member would bucket differently from the install they are sitting at.
@@ -1863,6 +1886,59 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     const ev = captured.find((c) => c.event === 'comfy.desktop.test.early')
     expect(ev?.distinctId).toBe('anon-d')
     expect(ev?.properties).not.toHaveProperty('installation_id')
+  })
+
+  it('retires the anonymous id when a queued account signs out before the installation id', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.capture('comfy.desktop.test.as_a')
+    telemetry.applyFirebaseAnonymousConsensus()
+    telemetry.bindUserId('user-b')
+    telemetry.setInstallationId('install-id')
+
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.as_a')?.distinctId).toBe('anon-d')
+    const merge = identifies.find((i) => i.distinctId === 'user-b')
+    expect(merge?.properties?.$anon_distinct_id).toBeDefined()
+    expect(merge?.properties?.$anon_distinct_id).not.toBe('anon-d')
+  })
+
+  it('retires the anonymous id when a queued account is replaced before the installation id', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.bindUserId('user-b')
+    telemetry.setInstallationId('install-id')
+
+    const merge = identifies.find((i) => i.distinctId === 'user-b')
+    expect(merge?.properties?.$anon_distinct_id).toBeDefined()
+    expect(merge?.properties?.$anon_distinct_id).not.toBe('anon-d')
+    expect(identifies.find((i) => i.distinctId === 'user-a')).toBeUndefined()
+  })
+
+  it('keeps the anonymous id for a queued account that stays signed in', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.bindUserId('user-a')
+    telemetry.setInstallationId('install-id')
+
+    const merge = identifies.find((i) => i.distinctId === 'user-a')
+    expect(merge?.properties?.$anon_distinct_id).toBe('anon-d')
+  })
+
+  it('leaves the anonymous id alone when a binding queued outside the wait is dropped', () => {
+    telemetry.setConsentState('undecided')
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    telemetry.bindUserId('user-a')
+    telemetry.applyFirebaseAnonymousConsensus()
+    telemetry.setConsentState('granted')
+    telemetry.capture('comfy.desktop.test.after')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.after')?.distinctId).toBe('anon-d')
+  })
+
+  it('reports shutdown once it has begun', async () => {
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    expect(telemetry.hasShutDown()).toBe(false)
+    await telemetry.shutdown('quit')
+    expect(telemetry.hasShutDown()).toBe(true)
   })
 
   it('stops holding once the installation id is set', () => {
