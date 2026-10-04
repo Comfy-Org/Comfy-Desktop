@@ -1761,9 +1761,8 @@ async function runLaunch(
       return {
         ok: false,
         // A benchmark has its own database, so the same-database explanation would be wrong.
-        // Its own wording: this page offers no next port.
         message: perfHolder
-          ? i18n.t('errors.portConflictPerformanceTestSameInstall', {
+          ? i18n.t('errors.portConflictPerformanceTest', {
               port: launchCmd.port!,
               name: perfHolder.installationName
             })

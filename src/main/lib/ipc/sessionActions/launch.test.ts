@@ -2156,6 +2156,10 @@ describe('Performance Test database', () => {
     launchHarness.installList = []
     // No real port probes: the install's port 48234 must read as free on any machine.
     launchHarness.busyPorts = []
+    // Set by other describes in this file: who holds a busy port must not depend on test order.
+    launchHarness.busyPids = [31337]
+    launchHarness.portLockPid = null
+    ownership.holderIsInstall = false
     ownership.prior = null
     ownership.onResolve = null
     launchHarness.spawn = (_cmd: unknown, args: unknown) => {
@@ -2643,27 +2647,34 @@ describe('Performance Test database', () => {
     })
   })
 
-  it('does not blame a Performance Test that has exited but is still registered', async () => {
-    writeCoreDb()
-    // Crashed, with its crash still being diagnosed: the port is free for anything to take.
-    _runningSessions.set('performance-test:perf-db-holder', {
-      proc: { pid: 9001, exitCode: 3221225477, signalCode: null } as unknown as ChildProcess,
-      port: 48234,
-      mode: 'console',
-      installationName: 'Benchmarked',
-      startedAt: Date.now()
-    })
-    launchHarness.busyPorts = [48234]
-    const t = vi.spyOn(i18nModule, 't')
-    const ctx = ctxFor('perf-db-explicit-5')
-    ;(ctx.inst as unknown as Record<string, unknown>).launchArgs = '--port 48234'
+  // Crashed, with its crash still being diagnosed: the port is free for anything to take. Windows
+  // reports a crash as an exit code; Linux and macOS as a signal, with no exit code.
+  it.each([
+    ['an exit code', { exitCode: 3221225477, signalCode: null }],
+    ['a signal', { exitCode: null, signalCode: 'SIGSEGV' }]
+  ])(
+    'does not blame a Performance Test that has exited (%s) but is still registered',
+    async (_, exit) => {
+      writeCoreDb()
+      _runningSessions.set('performance-test:perf-db-holder', {
+        proc: { pid: 9001, ...exit } as unknown as ChildProcess,
+        port: 48234,
+        mode: 'console',
+        installationName: 'Benchmarked',
+        startedAt: Date.now()
+      })
+      launchHarness.busyPorts = [48234]
+      const t = vi.spyOn(i18nModule, 't')
+      const ctx = ctxFor('perf-db-explicit-5')
+      ;(ctx.inst as unknown as Record<string, unknown>).launchArgs = '--port 48234'
 
-    const res = await handleLaunch(ctx)
+      const res = await handleLaunch(ctx)
 
-    expect(res.ok).toBe(false)
-    expect(t).not.toHaveBeenCalledWith('errors.portConflictPerformanceTest', expect.anything())
-    expect(t).toHaveBeenCalledWith('errors.portConflictComfy', { port: 48234, process: 'python' })
-  })
+      expect(res.ok).toBe(false)
+      expect(t).not.toHaveBeenCalledWith('errors.portConflictPerformanceTest', expect.anything())
+      expect(t).toHaveBeenCalledWith('errors.portConflictComfy', { port: 48234, process: 'python' })
+    }
+  )
 
   it('does not blame a Performance Test on another port', async () => {
     writeCoreDb()
@@ -3258,11 +3269,16 @@ describe('prior ComfyUI process handling at launch', () => {
       startedAt: Date.now()
     })
 
+    const t = vi.spyOn(i18nModule, 't')
+
     const res = await handleLaunch(ctxFor('prior-same-install-perf'))
 
     expect(res.ok).toBe(false)
-    // Not the variant that offers the next port: this page has no such button.
-    expect(res.message).toBe('errors.portConflictPerformanceTestSameInstall')
+    expect(res.message).toBe('errors.portConflictPerformanceTest')
+    expect(t).toHaveBeenCalledWith('errors.portConflictPerformanceTest', {
+      port: PORT,
+      name: 'Benchmarked'
+    })
     // Only the wording changes: still no next port, still the stop action.
     expect(res.portConflict).toEqual({ port: PORT, pids: [31337], isComfy: true })
     expect(children).toHaveLength(0)
