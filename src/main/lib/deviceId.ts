@@ -424,6 +424,7 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
         : computeInstallationId(machineId)
 
     cached = { installationId: newId, idClass }
+    resolvedAt = performance.now()
 
     // If an older build recorded a legacy-id retry marker, surface it once so
     // boot can remove that obsolete state. Takes precedence because by
@@ -485,6 +486,18 @@ export function getDeviceId(): string {
 
 let degradedId: string | null = null
 
+/** `performance.now()` when `initDeviceId()` resolved; null before. */
+let resolvedAt: number | null = null
+
+/**
+ * How long something that began waiting at `start` (a `performance.now()`
+ * reading) waited for the id: 0 if it was already resolved, null if it has
+ * not resolved yet.
+ */
+export function idWaitSince(start: number): number | null {
+  return resolvedAt === null ? null : Math.max(0, Math.round(resolvedAt - start))
+}
+
 /** The installation id once `initDeviceId()` resolves (it is started if it has not been). */
 export async function deviceIdReady(): Promise<string> {
   await initDeviceId()
@@ -514,4 +527,5 @@ export function _resetForTest(): void {
   lookup = null
   lookupTiming = null
   degradedId = null
+  resolvedAt = null
 }

@@ -53,6 +53,8 @@ const launchHarness = vi.hoisted(() => ({
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
   grants: [] as CoreBetaGrant[],
+  /** What `idWaitSince` reports at the grants await: how long the launch waited for the id. */
+  idWait: null as number | null,
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -182,6 +184,11 @@ vi.mock('../../comfy-args', async (importOriginal) => {
   }
 })
 
+vi.mock('../../deviceId', async (importOriginal) => ({
+  ...(await importOriginal<typeof DeviceIdModule>()),
+  idWaitSince: () => launchHarness.idWait
+}))
+
 vi.mock('../../coreBetaGrants', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaGrantsModule>()
   return {
@@ -257,6 +264,7 @@ import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
+import type * as DeviceIdModule from '../../deviceId'
 import type * as HardwareTapModule from '../../hardwareTap'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
@@ -1216,6 +1224,27 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain(
       `[core-beta] --enable-assets (core ${head.slice(0, 12)} in a granted commit range`
     )
+  })
+
+  it.each([
+    ['how long the launch waited for the installation id', 1234],
+    ['null when the launch did not wait for it', null]
+  ])('reports on boot_started %s', async (_label, idWait) => {
+    launchHarness.idWait = idWait
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48234
+    }
+    launchHarness.waitForPort = async () => {}
+
+    await handleLaunch(ctxFor(`harness-launch-id-wait-${idWait}`))
+
+    const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
+    expect(boot?.properties).toMatchObject({ launch_waited_for_id_ms: idWait })
+    launchHarness.idWait = null
   })
 
   it('attributes the beta and boot events to the live HEAD, not the recorded commit', async () => {

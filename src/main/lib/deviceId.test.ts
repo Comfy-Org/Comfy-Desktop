@@ -708,6 +708,38 @@ describe('deviceId', () => {
     })
   })
 
+  describe('idWaitSince', () => {
+    beforeEach(() => {
+      setPlatform('win32')
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('is null before the id resolves', () => {
+      mockUuidHangs = true
+      void mod.initDeviceId()
+      expect(mod.idWaitSince(performance.now())).toBeNull()
+    })
+
+    it('is how long a wait that began before resolution lasted', async () => {
+      mockUuidDelayMs = 3000
+      void mod.initDeviceId()
+      await vi.advanceTimersByTimeAsync(1000)
+      const start = performance.now()
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(mod.idWaitSince(start)).toBe(2000)
+    })
+
+    it('is 0 for a wait that began after resolution', async () => {
+      await mod.initDeviceId()
+      await vi.advanceTimersByTimeAsync(500)
+      expect(mod.idWaitSince(performance.now())).toBe(0)
+    })
+  })
+
   describe('getIdLookupTiming', () => {
     beforeEach(() => {
       setPlatform('win32')
