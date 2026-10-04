@@ -2274,6 +2274,29 @@ describe('Performance Test database', () => {
     expect(fs.existsSync(ws)).toBe(false)
   })
 
+  it('removes the workspace once Windows releases the exited run’s files', async () => {
+    writeCoreDb()
+    const ws = workspace('perf-db-held-exit')
+    const res = await handleLaunch(
+      ctxFor('perf-db-held-exit', 'performance-test:perf-db-held-exit')
+    )
+    expect(res.ok).toBe(true)
+    writeCoreFiles(ws)
+    // The first removal after exit finds the files still held.
+    const real = fs.rmSync
+    let calls = 0
+    vi.spyOn(fs, 'rmSync').mockImplementation((...args) => {
+      if (calls++ === 0) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+      return real(...args)
+    })
+    _runningSessions.delete('performance-test:perf-db-held-exit')
+
+    child!.emit('close', 0, null)
+
+    await vi.waitFor(() => expect(fs.existsSync(ws)).toBe(false), { timeout: 3000 })
+    expect(calls).toBeGreaterThan(1)
+  })
+
   it('removes a killed run’s workspace only after the check for a run still alive in it', async () => {
     writeCoreDb()
     const ws = workspace('perf-db-leftover')

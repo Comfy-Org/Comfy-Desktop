@@ -7,6 +7,7 @@ import {
   performanceTestSessionKey,
   performanceTestWorkspace,
   removePerformanceTestWorkspace,
+  removePerformanceTestWorkspaceSoon,
   sessionKindOf,
   withPerformanceTestWorkspace
 } from './performanceTestWorkspace'
@@ -95,5 +96,40 @@ describe('coreHasDatabase and removePerformanceTestWorkspace', () => {
       throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' })
     })
     expect(() => removePerformanceTestWorkspace(path.join(dir, 'ws'))).not.toThrow()
+  })
+})
+
+describe('removePerformanceTestWorkspaceSoon', () => {
+  let dir = ''
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-ws-soon-'))
+    fs.mkdirSync(path.join(dir, 'output'))
+    fs.writeFileSync(path.join(dir, 'comfyui.db-wal'), 'x')
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  /** Files still held for the first `n` attempts, as Windows holds a just-exited process's. */
+  function heldFor(n: number): void {
+    const real = fs.rmSync
+    let calls = 0
+    vi.spyOn(fs, 'rmSync').mockImplementation((...args) => {
+      if (calls++ < n) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+      return real(...args)
+    })
+  }
+
+  it('retries until the files are released', async () => {
+    heldFor(2)
+    await removePerformanceTestWorkspaceSoon(dir, () => true, 1)
+    expect(fs.existsSync(dir)).toBe(false)
+  })
+
+  it('stops, leaving the workspace, once a new run owns it', async () => {
+    heldFor(1)
+    await removePerformanceTestWorkspaceSoon(dir, () => false, 1)
+    expect(fs.existsSync(path.join(dir, 'comfyui.db-wal'))).toBe(true)
   })
 })

@@ -105,6 +105,7 @@ import {
   coreHasDatabase,
   performanceTestWorkspace,
   removePerformanceTestWorkspace,
+  removePerformanceTestWorkspaceSoon,
   sessionKindOf,
   withPerformanceTestWorkspace,
   type DbMode,
@@ -995,6 +996,15 @@ async function runLaunch(
       core_version_label: coreVersionLabel(),
       ...launchKind()
     }
+  }
+
+  /** The run's workspace, once its process has exited: retried while Windows still holds its
+   *  files, until a new run of the same session starts and takes it over. */
+  function removeWorkspaceAfterExit(workspace: string): void {
+    void removePerformanceTestWorkspaceSoon(
+      workspace,
+      () => !_operationAborts.has(sessionId) && !_runningSessions.has(sessionId)
+    )
   }
 
   /** Which session this is and which database it runs on, so Performance Test runs (and their
@@ -2107,7 +2117,7 @@ async function runLaunch(
     logStream.end()
     // Final (retries reused the workspace). A tree that outlived its SIGKILL writes nothing more;
     // on Windows its held files stay, for the next Performance Test of the install to remove.
-    if (perfWorkspace) removePerformanceTestWorkspace(perfWorkspace)
+    if (perfWorkspace) removeWorkspaceAfterExit(perfWorkspace)
     _releasePort(launchCmd.port!)
     // Ownership-guarded: never evict a slot a newer operation already claimed.
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
@@ -2429,7 +2439,7 @@ async function runLaunch(
         return
       }
       logStream.end()
-      if (perfWorkspace) removePerformanceTestWorkspace(perfWorkspace)
+      if (perfWorkspace) removeWorkspaceAfterExit(perfWorkspace)
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
