@@ -308,10 +308,12 @@ test('closing Desktop Settings opened any other way just closes it @linux', asyn
   expect(await picker.click(MANAGE)).toBe(true)
   await picker.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
 
-  await ctx.panel.evaluate(`window.api.openGlobalSettings('general')`)
+  // On another tab than Manage's, so the switch shows the panel's open has landed before Escape:
+  // the two come from different renderers, with no ordering between them.
+  await ctx.panel.evaluate(`window.api.openGlobalSettings('storage')`)
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
+  await popup.waitForVisible('#gs-tab-storage[aria-selected="true"]', { timeout: 10_000 })
   await pressEscape(popup)
   await expect
     .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {

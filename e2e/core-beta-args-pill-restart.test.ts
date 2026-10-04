@@ -23,6 +23,7 @@ import { byTestId, TID } from './support/testIds'
 import {
   ARGS_FIELD,
   commitArgs,
+  expectAnsweredWithNoPill,
   notePillAnswers,
   PILL,
   pillLabel,
@@ -146,11 +147,12 @@ test('the pill follows the new session after a Restart that drops a grant @linux
     )
     .toBe(true)
 
+  // The hidden picker keeps its pill, so absence is read only from an answer after the reopen.
+  // (Pages resolve their webContents by URL on each call, so the note carries across the reopen.)
+  const hiddenPicker = popup
+  await notePillAnswers(hiddenPicker)
   popup = await openStartupArgs()
-  await popup.waitFor(async () => (await pillLabel(popup)) === null, {
-    timeout: 10_000,
-    message: "the pill still showed the previous session's grant after the restart",
-  })
+  await expectAnsweredWithNoPill(hiddenPicker, "the pill still showed the previous session's grant after the restart")
   // The new session consumed the edit, so nothing is pending any more.
   await popup.waitFor(async () => !(await popup.exists(RESTART_TAG)), {
     timeout: 10_000,

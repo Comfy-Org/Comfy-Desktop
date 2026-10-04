@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useId, useSlots } from 'vue'
+import { computed, onBeforeUnmount, ref, useId, useSlots, watch } from 'vue'
 import { useTooltip, type TooltipAlign, type TooltipSide } from '../../composables/useTooltip'
 
 interface Props {
@@ -79,6 +79,20 @@ function onKeydown(e: KeyboardEvent): void {
     hide()
   }
 }
+
+// Disabling hides a bubble that is already up (and cancels a pending open), not just future
+// ones: a trigger that opens its own popover disables its tooltip at the moment of the click.
+watch(
+  () => props.disabled,
+  (disabled) => {
+    if (!disabled) return
+    if (openTimer) {
+      clearTimeout(openTimer)
+      openTimer = null
+    }
+    hide()
+  }
+)
 
 onBeforeUnmount(() => {
   if (openTimer) clearTimeout(openTimer)

@@ -2380,7 +2380,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   function dismissTitlePopup(entry: TitlePopupEntry): void {
     const returnTo = entry.returnToPickerInstallationId
     const parentEntry = returnTo === null ? undefined : comfyWindows.get(entry.parentEntryId)
-    if (returnTo === null || !parentEntry || parentEntry.window.isDestroyed()) {
+    if (returnTo === null || !parentEntry) {
       hideTitlePopup(entry, { releaseFocusToParent: true })
       return
     }
@@ -3124,9 +3124,8 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const parentEntry = comfyWindows.get(entry.parentEntryId)
       if (!parentEntry || parentEntry.window.isDestroyed()) return
       const { initialTab, highlightFieldId } = parseGlobalSettingsTarget(payload)
-      // Only a picker has a selection to go back to. Defensive: the beta-args pill, the only sender
-      // on this channel, renders only in the picker.
-      const returnTo = entry.kind === 'instance-picker' ? entry.pickerSelectedInstallationId : null
+      // The picker's selection: the beta-args pill, this channel's only sender, renders only there.
+      const returnTo = entry.pickerSelectedInstallationId
       openGlobalSettingsForHost(
         parentEntry,
         entry.parentEntryId,
