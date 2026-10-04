@@ -44,6 +44,25 @@ export function removePerformanceTestWorkspace(workspace: string): void {
 }
 
 /**
+ * Remove a workspace now and, while anything in it is still held (Windows releases an exited
+ * process's files a moment late), retry for a few seconds. Stops as soon as `stillOwned()` is
+ * false: a new run of the install has started and resets the workspace itself.
+ */
+export async function removePerformanceTestWorkspaceSoon(
+  workspace: string,
+  stillOwned: () => boolean,
+  delayMs = 500,
+  attempts = 10
+): Promise<void> {
+  removePerformanceTestWorkspace(workspace)
+  for (let i = 0; i < attempts && fs.existsSync(workspace); i++) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+    if (!stillOwned()) return
+    removePerformanceTestWorkspace(workspace)
+  }
+}
+
+/**
  * `args` pointed at the workspace: its own database, so the install's is never opened; its own
  * output folder, so each prompt's output rescan walks a few files rather than the user's whole
  * library; its own temp folder, which Core clears at startup. Every earlier value of those flags
