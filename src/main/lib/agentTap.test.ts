@@ -41,6 +41,7 @@ const AGENT_EVENTS = [
   'package_missing',
   'install_hint',
   'agent_starting',
+  'agent_waiting',
   'agent_started',
   'node_found',
   'node_fetch_started',
@@ -113,6 +114,16 @@ describe('agentTap', () => {
             release: '1.0.47-rc.1',
             core_beta_flags: ['--enable-agent']
           }
+        }
+      ])
+    })
+
+    it('forwards agent_waiting with its elapsed duration', () => {
+      ingestLine('[agent-event] agent_waiting duration_ms=60000')
+      expect(captured).toEqual([
+        {
+          event: 'comfy.desktop.comfyui.agent.agent_waiting',
+          ctx: expect.objectContaining({ duration_ms: 60000, installation_id: 'inst-1' })
         }
       ])
     })

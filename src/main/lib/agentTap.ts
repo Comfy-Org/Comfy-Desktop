@@ -32,6 +32,7 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'package_missing',
   'install_hint',
   'agent_starting',
+  'agent_waiting',
   'agent_started',
   'node_found',
   'node_fetch_started',
