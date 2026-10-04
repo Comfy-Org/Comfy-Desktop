@@ -576,12 +576,15 @@ export function looksLikeComfyUI(info: ProcessInfo | null): boolean {
 }
 
 export function setPortArg(launchCmd: LaunchCmd, port: number): void {
-  const portIdx = launchCmd.args.indexOf('--port')
-  if (portIdx >= 0 && launchCmd.args[portIdx + 1] != null) {
-    launchCmd.args[portIdx + 1] = String(port)
-  } else {
-    launchCmd.args.push('--port', String(port))
+  // Every form goes: Core's argparse and `extractPort` both read the last `--port`, so rewriting
+  // only the first of two would leave ComfyUI on a port Desktop is not waiting on.
+  const args: string[] = []
+  for (let i = 0; i < launchCmd.args.length; i++) {
+    const a = launchCmd.args[i]!
+    if (a === '--port') i++
+    else if (!a.startsWith('--port=')) args.push(a)
   }
+  launchCmd.args = [...args, '--port', String(port)]
   launchCmd.port = port
 }
 

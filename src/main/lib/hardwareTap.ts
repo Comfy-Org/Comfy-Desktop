@@ -36,6 +36,7 @@
  * strips a leading `[LEVEL] ` tag before matching so both formats parse.
  */
 import * as telemetry from './telemetry'
+import type { DbMode, SessionKind } from './performanceTestWorkspace'
 import { createModelUsageSummary } from './modelUsageSummary'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 import type { AcceleratorInfo, AcceleratorSnapshot } from '../../types/ipc'
@@ -114,6 +115,9 @@ export function createHardwareTap(opts: {
   coreCommit?: string | null
   /** Display form of the RECORDED version; may lag `coreCommit`, which is what to order by. */
   coreVersionLabel?: string | null
+  /** Performance Test or the user's own session, and the database it runs on. */
+  sessionKind?: SessionKind
+  dbMode?: DbMode
 }): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
@@ -126,7 +130,9 @@ export function createHardwareTap(opts: {
     release: opts.release ?? null,
     core_beta_flags: [...(opts.coreBetaFlags ?? [])],
     core_commit: opts.coreCommit ?? null,
-    core_version_label: opts.coreVersionLabel ?? null
+    core_version_label: opts.coreVersionLabel ?? null,
+    session_kind: opts.sessionKind ?? 'normal',
+    db_mode: opts.dbMode ?? 'file'
   }
 
   // Accelerator accumulation: fields trickle in over several lines. ComfyUI

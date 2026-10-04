@@ -34,6 +34,7 @@ import {
   _markLaunching,
   _clearLaunchingFailed,
   _beginLaunch,
+  _hasActiveLaunch,
   _endLaunch,
   installDirStateAsync,
   captureSnapshotIfChanged,
@@ -101,6 +102,17 @@ import {
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
+import {
+  coreHasDatabase,
+  performanceTestWorkspace,
+  removePerformanceTestWorkspaceSoon,
+  sessionKindOf,
+  withPerformanceTestWorkspace,
+  type DbMode,
+  type SessionKind
+} from '../../performanceTestWorkspace'
+import { stateDir } from '../../paths'
+import { extractPort, parseArgs } from '../../util'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -614,12 +626,9 @@ export function _resolvePortConflictPolicy(
  *  construction failures propagate and abort the launch: this tap is pure
  *  diagnostics for an off-by-default subsystem and must never cost a user their
  *  launch. Same shape, so downstream lifecycle sites need no null checks. */
-export function createAssetsTapSafe(base: {
-  installationId: string
-  variant: string | null
-  release: string | null
-  coreBetaFlags: string[]
-}): ReturnType<typeof createAssetsTap> {
+export function createAssetsTapSafe(
+  base: Parameters<typeof createAssetsTap>[0]
+): ReturnType<typeof createAssetsTap> {
   try {
     return createAssetsTap(base)
   } catch (err) {
@@ -898,6 +907,7 @@ async function runLaunch(
   }> {
     const logStream = await openLogStream(inst.installPath)
     const coreBetaFlags = coreBeta.applied.map((grant) => grant.arg)
+    const kind = launchKind()
     try {
       const execTap = createExecutionTap({
         installationId,
@@ -905,7 +915,9 @@ async function runLaunch(
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags,
         coreCommit,
-        coreVersionLabel: coreVersionLabel()
+        coreVersionLabel: coreVersionLabel(),
+        sessionKind: kind.session_kind,
+        dbMode: kind.db_mode
       })
       const hwTap = createHardwareTap({
         installationId,
@@ -913,13 +925,17 @@ async function runLaunch(
         release: (inst.release as string | undefined) ?? null,
         coreBetaFlags,
         coreCommit,
-        coreVersionLabel: coreVersionLabel()
+        coreVersionLabel: coreVersionLabel(),
+        sessionKind: kind.session_kind,
+        dbMode: kind.db_mode
       })
       const assetsTap = createAssetsTapSafe({
         installationId,
         variant: (inst.variant as string | undefined) ?? null,
         release: (inst.release as string | undefined) ?? null,
-        coreBetaFlags
+        coreBetaFlags,
+        sessionKind: kind.session_kind,
+        dbMode: kind.db_mode
       })
       const tracker = await armLaunchTracker()
       return { logStream, execTap, hwTap, assetsTap, tracker }
@@ -968,6 +984,8 @@ async function runLaunch(
     core_version: string | null
     core_commit: string | null
     core_version_label: string | null
+    session_kind: SessionKind
+    db_mode: DbMode
   } {
     return {
       core_beta_flags: coreBeta.applied.map((grant) => grant.arg),
@@ -975,8 +993,27 @@ async function runLaunch(
       core_beta_opted_in: coreBeta.optedIn,
       core_version: coreSemver(inst),
       core_commit: coreCommit,
-      core_version_label: coreVersionLabel()
+      core_version_label: coreVersionLabel(),
+      ...launchKind()
     }
+  }
+
+  /** The run's workspace, once its process has exited: retried while Windows still holds its
+   *  files, until a new run of the same session starts and takes it over. */
+  function removeWorkspaceAfterExit(workspace: string): void {
+    void removePerformanceTestWorkspaceSoon(
+      workspace,
+      // A new launch of this session, not the benchmark's own operation slot, which outlives a
+      // crash until its next jobs poll.
+      () => !_hasActiveLaunch(sessionId) && !_runningSessions.has(sessionId)
+    )
+  }
+
+  /** Which session this is and which database it runs on, so Performance Test runs (and their
+   *  throwaway catalogue) can be split from the user's own sessions in the boot, exit and tap
+   *  events. */
+  function launchKind(): { session_kind: SessionKind; db_mode: DbMode } {
+    return { session_kind: sessionKindOf(sessionId), db_mode: perfWorkspace ? 'temp_file' : 'file' }
   }
 
   // Migrate legacy envs/default/ → ComfyUI/.venv/ for standalone installs.
@@ -1124,6 +1161,10 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.noEnvFound') }
   }
   const launchCmd = launchCmdRaw
+  /** A Performance Test's own throwaway workspace (database, outputs, temp), when it runs in one. */
+  let perfWorkspace: string | null = null
+  /** Ports a Performance Test in its own workspace stays off: every install's configured one. */
+  let perfExcludedPorts: number[] = []
 
   // Filter unsupported args, then inject desktop-managed feature flags.
   if (launchCmd.cmd && launchCmd.args && launchCmd.cwd) {
@@ -1220,6 +1261,19 @@ async function runLaunch(
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd)
+
+  // A Performance Test runs beside the install's own session, often while that one is up. On
+  // the install's database the second of the two to boot fails on Core's lock, and a perf run
+  // would write its scan into the user's catalogue; a throwaway workspace of its own does neither.
+  // A file database, not Core's `:memory:`: that one shares a single connection across threads,
+  // and the scanner's writes then collide with the benchmark's own output registration. Set up
+  // after the prior-process check below, which stops (or refuses to start beside) a Performance
+  // Test a crashed Desktop left running in this same workspace.
+  const perfComfyuiDir =
+    sessionKindOf(sessionId) === 'performance_test'
+      ? splitLaunchCommand(launchCmd)?.comfyuiDir
+      : null
+  const perfIsolated = !!(launchCmd.args && perfComfyuiDir && coreHasDatabase(perfComfyuiDir))
 
   /** Gates the `template-models` row: the bar derives "prior steps done" from
    *  the active phase index, so the row stays silent through the real phases and
@@ -1429,6 +1483,7 @@ async function runLaunch(
         mode,
         installationName: inst.name,
         coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+        databaseMode: 'file',
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
@@ -1471,6 +1526,7 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
+        ...launchKind(),
         last_stderr: lastStderr ?? null,
         pipes_held_after_exit: pipesHeld
       })
@@ -1570,8 +1626,56 @@ async function runLaunch(
   if (prior?.exitedInTime) await waitForPortFree(prior.port)
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
+  if (perfIsolated) {
+    const workspace = performanceTestWorkspace(stateDir(), installationId)
+    // An earlier run of this workspace left running (alive, not proven ours) must not lose its
+    // files under it, so this one does not start. Named, with its executable when readable: the
+    // pid may have been recycled to something unrelated, which the user must not end blindly.
+    if (prior?.action === 'left') {
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+      const info = await getProcessInfo(prior.pid).catch(() => null)
+      return {
+        ok: false,
+        message: i18n.t('errors.priorProcessUnverified', {
+          pid: info ? `${prior.pid}, ${info.name}` : String(prior.pid)
+        })
+      }
+    }
+    // Left by a Performance Test that was killed before it could clean up, or one that has just
+    // exited and whose files Windows has not released yet (a Run straight after Stop): retried
+    // briefly. Still there means a file is held open: starting on it would fail on its lock or
+    // reuse its catalogue.
+    await removePerformanceTestWorkspaceSoon(workspace, () => true, 200, 10)
+    if (fs.existsSync(path.join(workspace, 'comfyui.db'))) {
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+      return { ok: false, message: i18n.t('errors.performanceTestStillRunning') }
+    }
+    perfWorkspace = workspace
+    fs.mkdirSync(path.join(perfWorkspace, 'output'), { recursive: true })
+    launchCmd.args = withPerformanceTestWorkspace(launchCmd.args!, perfWorkspace)
+    appendLog(
+      sessionId,
+      `[launch] Performance Test: own workspace ${perfWorkspace}; the install database is not opened\n`
+    )
+    perfExcludedPorts = (await installations.list()).map((i) =>
+      extractPort(parseArgs(String(i.launchArgs ?? '')))
+    )
+  }
+
   if (actionData?.portOverride != null) {
     setPortArg(launchCmd as LaunchCmd, actionData.portOverride as number)
+  }
+  // A Performance Test in its own workspace leaves every install's port to that install, which
+  // the user may launch mid-benchmark: the install itself is refused when a ComfyUI of the same
+  // install holds its port, another install when its explicit --port is taken.
+  if (perfWorkspace && launchCmd.port) {
+    const free = await findAvailablePort(
+      '127.0.0.1',
+      launchCmd.port + 1,
+      launchCmd.port + 1000,
+      new Set([..._pendingPorts.keys(), ...perfExcludedPorts])
+    ).catch(() => null)
+    if (free) setPortArg(launchCmd as LaunchCmd, free)
   }
 
   const defaults = source.getDefaults ? source.getDefaults() : {}
@@ -1591,7 +1695,7 @@ async function runLaunch(
   let portBumpedFrom: number | null = null
 
   if (portOccupied) {
-    const reservedPorts = new Set(_pendingPorts.keys())
+    const reservedPorts = new Set([..._pendingPorts.keys(), ...perfExcludedPorts])
     let nextPort: number | null = null
     try {
       nextPort = await findAvailablePort(
@@ -1714,7 +1818,7 @@ async function runLaunch(
   // Synchronous re-check: TOCTOU gap
   const lateConflictOwner = _pendingPorts.get(launchCmd.port!)
   if (lateConflictOwner) {
-    const reservedPorts = new Set(_pendingPorts.keys())
+    const reservedPorts = new Set([..._pendingPorts.keys(), ...perfExcludedPorts])
     let nextPort: number | null = null
     try {
       nextPort = await findAvailablePort(
@@ -1964,7 +2068,7 @@ async function runLaunch(
       ) {
         portRetries++
         try {
-          const reservedPorts = new Set(_pendingPorts.keys())
+          const reservedPorts = new Set([..._pendingPorts.keys(), ...perfExcludedPorts])
           const retryPort = await findAvailablePort(
             '127.0.0.1',
             launchCmd.port! + 1,
@@ -2004,6 +2108,9 @@ async function runLaunch(
   )
   if (!launchResult.ok) {
     logStream.end()
+    // Final (retries reused the workspace). A tree that outlived its SIGKILL writes nothing more;
+    // on Windows its held files stay, for the next Performance Test of the install to remove.
+    if (perfWorkspace) removeWorkspaceAfterExit(perfWorkspace)
     _releasePort(launchCmd.port!)
     // Ownership-guarded: never evict a slot a newer operation already claimed.
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
@@ -2116,6 +2223,7 @@ async function runLaunch(
       mode,
       installationName: inst.name,
       coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+      databaseMode: perfWorkspace ? 'temp_file' : 'file',
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()
@@ -2144,7 +2252,7 @@ async function runLaunch(
   if (!sender.isDestroyed()) {
     // Raw bootStderr — telemetry forwarders scrub it before it leaves the box.
     const bootStderr = lastNLines(launchResult.getStderr(), 50)
-    sender.send('comfy-boot-log', { installationId: sessionId, bootStderr })
+    sender.send('comfy-boot-log', { installationId: sessionId, bootStderr, ...launchKind() })
   }
 
   // Capture snapshot in background after successful launch
@@ -2335,6 +2443,8 @@ async function runLaunch(
       // handler then resurrect the stale crash via recordCrash().
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(sessionId)
+      // After the session is released, so the retry guard sees only a new launch.
+      if (perfWorkspace) removeWorkspaceAfterExit(perfWorkspace)
       const exitedPayload = {
         installationId: sessionId,
         crashed,
@@ -2350,6 +2460,7 @@ async function runLaunch(
         installation_id: installationId,
         crashed,
         exit_code: code ?? null,
+        ...launchKind(),
         last_stderr: lastStderr ?? null,
         pipes_held_after_exit: pipesHeld
       })

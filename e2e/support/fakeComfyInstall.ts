@@ -46,6 +46,7 @@ const SUPPORTED_FLAGS = [
   ['--enable-manager', 'Enable ComfyUI-Manager.'],
   ['--enable-assets', 'Enable the assets subsystem.'],
   ['--user-directory USER_DIRECTORY', 'Set the ComfyUI user directory.'],
+  ['--database-url DATABASE_URL', 'Specify the database URL.'],
   ['--input-directory INPUT_DIRECTORY', 'Set the ComfyUI input directory.'],
   ['--output-directory OUTPUT_DIRECTORY', 'Set the ComfyUI output directory.'],
   ['--extra-model-paths-config PATH', 'Load extra model paths from a YAML file.'],
@@ -76,9 +77,61 @@ const http = require('node:http')
 // see "process exited with code 0" instead of a booted server. The launcher's own
 // killProcessTree ends it, and a leaked one dies with the profile's port anyway.
 const args = process.argv.slice(2)
-const portIndex = args.indexOf('--port')
+// argparse keeps the last value, so read the last \`--port\` as ComfyUI would.
+const portIndex = args.lastIndexOf('--port')
 const port = portIndex === -1 ? 8188 : Number(args[portIndex + 1])
 const assetsOn = args.includes('--enable-assets')
+const fs = require('node:fs')
+const path = require('node:path')
+const argValue = (flag) => {
+  let value = null
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === flag) value = args[i + 1]
+    else if (args[i].startsWith(flag + '=')) value = args[i].slice(flag.length + 1)
+  }
+  return value
+}
+// Core's database contract, opted into with a \`core-db\` file beside this script (see
+// \`writeFakeComfyInstall\`'s \`coreDb\`). With assets on, a file database is held under an exclusive
+// \`<db>.lock\` for the process's life and the boot's scan writes into it; a second process on the
+// same file prints Core's refusal and exits 1. The lock is a pid file because Node has no flock;
+// a holder that died without cleaning up counts as gone, as the OS lock would be.
+if (assetsOn && fs.existsSync(path.join(__dirname, 'core-db'))) {
+  const url = argValue('--database-url')
+  const userDir = argValue('--user-directory') || path.join(__dirname, 'ComfyUI', 'user')
+  const dbPath = url ? url.slice('sqlite:///'.length) : path.join(userDir, 'comfyui.db')
+  const lockPath = dbPath + '.lock'
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true })
+  const holder = (() => {
+    try {
+      const pid = Number(fs.readFileSync(lockPath, 'utf8'))
+      process.kill(pid, 0)
+      return pid
+    } catch {
+      return null
+    }
+  })()
+  if (holder !== null) {
+    console.error('Database lock is held; waiting up to 5s for it to be released')
+    console.error(
+      "RuntimeError: Could not acquire lock on database '" + dbPath + "'. " +
+        'Another ComfyUI process may already be using it.'
+    )
+    console.error('Database is locked. Another ComfyUI process is already using this database.')
+    process.exit(1)
+  }
+  fs.writeFileSync(lockPath, String(process.pid))
+  process.on('exit', () => {
+    try {
+      if (fs.readFileSync(lockPath, 'utf8') === String(process.pid)) fs.unlinkSync(lockPath)
+    } catch {}
+  })
+  process.on('SIGTERM', () => process.exit(0))
+  fs.appendFileSync(dbPath, 'scan by ' + process.pid + '\\n')
+}
+// ComfyUI's prompt queue, as far as a Performance Test reads it: every prompt completes at once
+// and takes 50ms.
+const jobs = []
 const body = \`<!doctype html><html><head><meta charset="utf-8"><title>ComfyUI (e2e stub)</title>
 <style>
   html,body{margin:0;height:100%;background:#16121a;color:#cfc8d6;
@@ -92,6 +145,22 @@ const body = \`<!doctype html><html><head><meta charset="utf-8"><title>ComfyUI (
 const server = http.createServer((req, res) => {
   // ComfyUI's queue endpoint, which Desktop asks before stopping an earlier ComfyUI. Reports a
   // prompt running while a \`queue-busy\` file sits beside this script.
+  if (req.method === 'POST' && req.url === '/prompt') {
+    req.resume()
+    req.on('end', () => {
+      const id = 'e2e-prompt-' + (jobs.length + 1)
+      const now = Date.now()
+      jobs.push({ id, status: 'completed', execution_start_time: now, execution_end_time: now + 50 })
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ prompt_id: id }))
+    })
+    return
+  }
+  if (req.url.startsWith('/api/jobs')) {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ jobs }))
+    return
+  }
   if (req.url === '/queue') {
     // A \`queue-hang\` file makes the stub never answer, like a ComfyUI stalled mid-prompt.
     if (require('node:fs').existsSync(require('node:path').join(__dirname, 'queue-hang'))) return
@@ -168,10 +237,21 @@ export interface FakeComfyInstall {
 export async function writeFakeComfyInstall(opts: {
   installPath: string
   port: number
+  /** Model Core's database: the `<db>.lock` contract (see the stub), and the `db.py` Desktop
+   *  looks for to decide the Core has a database (and so a `--database-url` flag). */
+  coreDb?: boolean
 }): Promise<FakeComfyInstall> {
   const { installPath, port } = opts
   await mkdir(path.join(installPath, 'ComfyUI'), { recursive: true })
   await writeFile(path.join(installPath, 'ComfyUI', 'main.py'), '# e2e stub\n')
+  if (opts.coreDb) {
+    await mkdir(path.join(installPath, 'ComfyUI', 'app', 'database'), { recursive: true })
+    await writeFile(
+      path.join(installPath, 'ComfyUI', 'app', 'database', 'db.py'),
+      'def init_db():\n    pass\n'
+    )
+    await writeFile(path.join(installPath, 'core-db'), '')
+  }
 
   const serverPath = path.join(installPath, 'stub-server.cjs')
   await writeFile(serverPath, SERVER_JS)
