@@ -34,6 +34,7 @@ import {
   _markLaunching,
   _clearLaunchingFailed,
   _beginLaunch,
+  _hasActiveLaunch,
   _endLaunch,
   installDirStateAsync,
   captureSnapshotIfChanged,
@@ -104,7 +105,6 @@ import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../
 import {
   coreHasDatabase,
   performanceTestWorkspace,
-  removePerformanceTestWorkspace,
   removePerformanceTestWorkspaceSoon,
   sessionKindOf,
   withPerformanceTestWorkspace,
@@ -1003,7 +1003,9 @@ async function runLaunch(
   function removeWorkspaceAfterExit(workspace: string): void {
     void removePerformanceTestWorkspaceSoon(
       workspace,
-      () => !_operationAborts.has(sessionId) && !_runningSessions.has(sessionId)
+      // A new launch of this session, not the benchmark's own operation slot, which outlives a
+      // crash until its next jobs poll.
+      () => !_hasActiveLaunch(sessionId) && !_runningSessions.has(sessionId)
     )
   }
 
@@ -1639,9 +1641,11 @@ async function runLaunch(
         })
       }
     }
-    // Left by a Performance Test that was killed before it could clean up. Still there means a
-    // file is held open (Windows): starting on it would fail on its lock or reuse its catalogue.
-    removePerformanceTestWorkspace(workspace)
+    // Left by a Performance Test that was killed before it could clean up, or one that has just
+    // exited and whose files Windows has not released yet (a Run straight after Stop): retried
+    // briefly. Still there means a file is held open: starting on it would fail on its lock or
+    // reuse its catalogue.
+    await removePerformanceTestWorkspaceSoon(workspace, () => true, 200, 10)
     if (fs.existsSync(path.join(workspace, 'comfyui.db'))) {
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return { ok: false, message: i18n.t('errors.performanceTestStillRunning') }
@@ -2439,7 +2443,6 @@ async function runLaunch(
         return
       }
       logStream.end()
-      if (perfWorkspace) removeWorkspaceAfterExit(perfWorkspace)
       const crashed = _runningSessions.has(sessionId) && isCrashedExit(code, signal)
       // Raw stderr — see note in the early-fail exit handler above.
       const lastStderr = lastNLines(currentGetStderr(), 100)
@@ -2451,6 +2454,8 @@ async function runLaunch(
       // handler then resurrect the stale crash via recordCrash().
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(sessionId)
+      // After the session is released, so the retry guard sees only a new launch.
+      if (perfWorkspace) removeWorkspaceAfterExit(perfWorkspace)
       const exitedPayload = {
         installationId: sessionId,
         crashed,
