@@ -196,13 +196,18 @@ export function writeFileSafe(
  *  startup-update loop-breaker marker). Locked reads are retried, then served
  *  from `.bak` WITHOUT restoring, tagged `primaryUnreadable` so callers about
  *  to write back must fail closed (see `SafeReadOutcome`). */
-export function readFileSafe(filePath: string): SafeReadOutcome {
+export function readFileSafe(
+  filePath: string,
+  /** `restore: false` serves `.bak` without copying it over an absent primary, for readers that
+   *  must not write. */
+  options: { restore?: boolean } = {}
+): SafeReadOutcome {
   const primary = readFileWithRetrySync(filePath)
   if (primary.kind === 'data') return primary
 
   const bakPath = filePath + '.bak'
   const { outcome, restoreBak } = resolveBakFallback(primary, readFileWithRetrySync(bakPath))
-  if (restoreBak) {
+  if (restoreBak && options.restore !== false) {
     try {
       fs.copyFileSync(bakPath, filePath)
     } catch {}

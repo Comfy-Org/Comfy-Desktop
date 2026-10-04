@@ -49,6 +49,7 @@ import {
   setPortArg,
   findAvailablePort,
   isPortListening,
+  waitForPortFree,
   writePortLock,
   readPortLock,
   removePortLock,
@@ -115,8 +116,9 @@ import type { SnapshotExportEnvelope, Snapshot } from '../snapshots'
 import { getVariantLabel, buildPinnedVariant } from '../../sources/standalone'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
 import { REQUIRES_STOPPED } from '../../../types/ipc'
-import type { Theme, ResolvedTheme, QuitActiveItem } from '../../../types/ipc'
+import type { Theme, ResolvedTheme, QuitActiveItem, BetaArgView } from '../../../types/ipc'
 import { findLockingProcesses } from '../file-lock-info'
+import { markStopRequested } from '../comfyProcessRecord'
 import type { LaunchCmd } from '../process'
 import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
@@ -175,6 +177,7 @@ export {
   setPortArg,
   findAvailablePort,
   isPortListening,
+  waitForPortFree,
   writePortLock,
   readPortLock,
   removePortLock,
@@ -284,6 +287,8 @@ export interface SessionInfo {
   flushTelemetry?: () => void
   /** Latest accelerator details parsed from this session's ComfyUI startup logs. */
   getAcceleratorInfo?: () => AcceleratorSnapshot | null
+  /** Core beta grants on this session's command line, for the settings view's beta-args pill. */
+  coreBetaArgs?: readonly BetaArgView[]
 }
 
 export interface LaunchCallbackInfo {
@@ -1062,7 +1067,8 @@ export function _addSession(
     mode,
     installationName,
     flushTelemetry,
-    getAcceleratorInfo
+    getAcceleratorInfo,
+    coreBetaArgs
   }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
@@ -1082,6 +1088,7 @@ export function _addSession(
     sourceInstallationId,
     flushTelemetry,
     getAcceleratorInfo,
+    coreBetaArgs,
     startedAt: Date.now()
   })
   // Clear the launching marker first so subscribers never double-count this id across the
@@ -1554,6 +1561,9 @@ export async function stopRunning(
     _broadcastToRenderer('instance-stopping', { installationId })
     onEnterStopping?.({ installationId })
     if (session.port) removePortLock(session.port)
+    // Before the kill: quit does not await it, so the record may outlive this Desktop and
+    // must say the process was already being stopped.
+    markStopRequested(installationId)
     _runningSessions.delete(installationId)
     if (session.proc && !session.proc.killed) {
       await killProcessTree(session.proc)
@@ -1571,11 +1581,12 @@ export async function stopRunning(
       _broadcastToRenderer('instance-stopping', { installationId: id })
       onEnterStopping?.({ installationId: id })
     }
-    for (const [, session] of sessions) {
+    for (const [id, session] of sessions) {
       if (session.port) removePortLock(session.port)
+      markStopRequested(id)
     }
     _runningSessions.clear()
-    const kills: Promise<void>[] = []
+    const kills: Promise<unknown>[] = []
     for (const [, session] of sessions) {
       if (session.proc && !session.proc.killed) {
         kills.push(killProcessTree(session.proc))
@@ -1684,7 +1695,8 @@ export async function getActiveDetails(): Promise<QuitActiveItem[]> {
 export function _test_addRunningSession(
   installationId: string,
   installationName: string,
-  flushTelemetry?: () => void
+  flushTelemetry?: () => void,
+  coreBetaArgs?: readonly BetaArgView[]
 ): void {
   _runningSessions.set(installationId, {
     proc: null,
@@ -1693,6 +1705,7 @@ export function _test_addRunningSession(
     mode: 'window',
     installationName,
     flushTelemetry,
+    coreBetaArgs,
     startedAt: Date.now()
   })
   _broadcastToRenderer('instance-started', {
@@ -1714,7 +1727,10 @@ export function _test_clearRunningSessions(): void {
 }
 
 export function cancelAll(): void {
-  for (const [_id, abort] of _operationAborts) {
+  for (const [id, abort] of _operationAborts) {
+    // A booting launch's child is killed by its own abort handler, which quit does not wait
+    // for; the record says it was asked to stop.
+    markStopRequested(id)
     abort.abort()
   }
   _operationAborts.clear()

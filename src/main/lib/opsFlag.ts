@@ -4,8 +4,10 @@
  * Ops flags are server config pushed TO the client (availability guards, rollout gates), not
  * analytics collected FROM the user, so they read through `getOpsFlagResult`, which deliberately
  * BYPASSES the consent gate — a user who declined telemetry still gets the override, and
- * pre-consent surfaces can still resolve a value. The evaluation request supplies only the
- * installation-stable key and the flag key; implicit flag events are disabled.
+ * pre-consent surfaces can still resolve a value. The evaluation request supplies the
+ * installation-stable key, the flag key and this build's `app_version` (plus `comfy_staff` for a
+ * consented staff install — see `opsFlagPersonProperties` in telemetry.ts); implicit flag events
+ * are disabled.
  *
  * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so an
  * operational override isn't accidentally consent-gated. Fetched once at boot; running apps

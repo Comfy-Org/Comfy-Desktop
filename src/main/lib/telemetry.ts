@@ -137,6 +137,7 @@ import {
   rotatePersistedAnonymousDistinctId
 } from './anonymousIdentity'
 import { normalizePostHogUserId } from './opaqueIdentifier'
+import { recordIpcInvocation } from './e2eOverrides'
 import {
   clearPendingIdentityMerges,
   type PendingIdentityProperties,
@@ -196,6 +197,7 @@ export function _resetForTest(): void {
   installationIdProperty = null
   consentState = 'undecided'
   flagEvaluationStaff = false
+  flagEvaluationAppVersion = null
   pendingSessionStart = null
   pendingFirstLaunch = null
   pendingPersonSet = null
@@ -283,6 +285,21 @@ function canEmit(): boolean {
 let defaultEventProperties: Record<string, TelemetryValue> = {}
 
 /**
+ * Every key `defaultEventProperties` can hold. A caller forwarding untrusted
+ * field names must reject these, since per-call properties win the merge.
+ */
+export const DEFAULT_EVENT_PROPERTY_NAMES: ReadonlySet<string> = new Set([
+  'app_version',
+  'app_channel',
+  'app_env',
+  'is_packaged',
+  'platform',
+  'arch',
+  'client',
+  'installation_id'
+])
+
+/**
  * The `deployment` analytics axis: which backend ran the work. Paired with
  * the `client` default event property (desktop | web | cli) to identify the
  * product surface (MAR-51). Shared by every site that tags `deployment` so
@@ -365,6 +382,20 @@ let consentState: ConsentState = 'undecided'
 let flagEvaluationStaff = false
 
 /**
+ * This build's version, sent with every ops-flag evaluation as `app_version` so
+ * a release condition can gate on it with PostHog's semver operators. Set once
+ * by `initTelemetry`; `null` until then, and no request goes out before it,
+ * because `getOpsFlagResult` needs the client that `initTelemetry` creates.
+ *
+ * Unlike `flagEvaluationStaff` it is NOT consent-gated. It describes the binary,
+ * not the person running it: every install of a release sends the same string.
+ * A grant that only newer builds can apply has to be gateable on the very first
+ * launch, and pre-consent is exactly when a version gate would otherwise
+ * evaluate differently from the same build after consent.
+ */
+let flagEvaluationAppVersion: string | null = null
+
+/**
  * Bind whether ops-flag evaluation should present this install as staff.
  *
  * Takes the classification, not the input to it: the caller owns what counts as
@@ -377,7 +408,23 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
 /**
  * Person properties for an ops-flag evaluation request.
  *
- * Empty unless consent is `'granted'` AND the account is staff. The flag FETCH
+ * `app_version` always (see `flagEvaluationAppVersion`). Builds from before it
+ * was added send none, and a semver condition does not match a missing
+ * property, so a `>=` gate evaluates closed for them — the direction a grant
+ * that older builds would reject needs. That covers the live evaluation only:
+ * `ops-flags.json` keeps the last answer without the version that earned it, so
+ * after a downgrade an `unreachable` launch still applies a grant a newer build
+ * persisted.
+ *
+ * PostHog orders prereleases by SemVer, so `1.1.5-rc.1` is below `1.1.5`; gate
+ * on `X-0` (e.g. `semver_gte 1.1.5-0`) to include X's prereleases. Unpackaged
+ * builds send `git describe` output (`1.1.4-5-gabc1234`, a prerelease of the
+ * last tag), or a bare commit id when no tag is reachable.
+ *
+ * The version is self-asserted, so a version gate is a compatibility gate, not
+ * a trust boundary: never gate anything a user could want withheld on it.
+ *
+ * `comfy_staff` only when consent is `'granted'` AND the account is staff. The flag FETCH
  * itself bypasses the consent gate on purpose — ops flags are config pushed TO
  * the client, and a user who declined telemetry still gets the override — but
  * that argument covers the installation-stable key and nothing else. Whether a
@@ -391,8 +438,10 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
  * overwhelming majority of users.
  */
 function opsFlagPersonProperties(): Record<string, string> {
-  if (consentState !== 'granted' || !flagEvaluationStaff) return {}
-  return { comfy_staff: 'true' }
+  const properties: Record<string, string> = {}
+  if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
+  if (consentState === 'granted' && flagEvaluationStaff) properties['comfy_staff'] = 'true'
+  return properties
 }
 
 const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
@@ -581,6 +630,8 @@ export interface InitOptions {
   appVersion: string
   appEnv: string
   isPackaged: boolean
+  /** Extra `session.started` properties known at boot (e.g. `prior_session_unclean`). */
+  sessionStartProps?: Record<string, TelemetryValue>
 }
 
 /**
@@ -594,6 +645,7 @@ export function initTelemetry(opts: InitOptions): void {
   if (initialized) return
   initialized = true
   bootstrapTimeMs = Date.now()
+  flagEvaluationAppVersion = opts.appVersion
 
   // Set the per-event defaults BEFORE the early-return so disabled
   // telemetry still gets a coherent snapshot (useful when tests stub
@@ -681,6 +733,7 @@ export function initTelemetry(opts: InitOptions): void {
   // The session-start payload duplicates the defaults so an event-only
   // reader (no defaults yet) still sees them on the first event.
   pendingSessionStart = {
+    ...opts.sessionStartProps,
     app_env: opts.appEnv,
     app_version: opts.appVersion,
     is_packaged: opts.isPackaged
@@ -1285,6 +1338,9 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
 }
 
 function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
+  // E2E only (no-op otherwise): lets a spec assert an event was raised without consent or a
+  // reachable PostHog.
+  recordIpcInvocation(`telemetry:${event}`, properties)
   if (!canEmit() || !distinctId) return false
   if (!isAllowedToFire(event)) return false
   if (!_checkRateLimit(event)) return false
@@ -1663,18 +1719,19 @@ const OPS_FLAG_DEADLINE: unique symbol = Symbol('ops-flag-deadline')
  * creates a PostHog person behind the capture policy.
  *
  * The evaluation call supplies the installation-stable evaluation key, the flag
- * key, and — only once consent is `'granted'` and the account is staff —
- * `comfy_staff`, via `opsFlagPersonProperties`. That property is
- * request-scoped: the SDK puts it in the `/flags` POST body as
- * `person_properties`, where the server evaluates release conditions against it
- * and nothing is stored. The `distinct_id` remains the installation hash, so
+ * key, `app_version`, and — only once consent is `'granted'` and the account is
+ * staff — `comfy_staff`, via `opsFlagPersonProperties`. Those properties are
+ * request-scoped: the SDK puts them in the `/flags` POST body as
+ * `person_properties`, where the server evaluates release conditions against
+ * them and nothing is stored. The `distinct_id` remains the installation hash, so
  * bucketing is unchanged and the machine is still not linked to any account in
  * the person store.
  *
  * It exists because the installation hash CANNOT be resolved to a person: a
  * condition on any person attribute can never match a machine-derived id, so
  * staff targeting silently returned nothing for every install. Supplying a
- * property on the request is what makes such a condition evaluable at all.
+ * property on the request is what makes such a condition evaluable at all. The
+ * same holds for `app_version`: it is what lets a grant be version-gated.
  *
  * This is the ONLY evaluation. An earlier design added a second, authenticated
  * one once a cloud view resolved auth; it could not work, because the

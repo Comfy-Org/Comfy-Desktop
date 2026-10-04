@@ -1,10 +1,14 @@
 import fs from 'fs'
 import path from 'path'
 import { startManagedModelJob, type ModelJobOutcome } from '../../lib/comfyDownloadManager'
-import { getModelsBaseDir, resolveDownloadContextById } from '../../lib/modelDownloadPaths'
+import {
+  areModelsPresent,
+  getModelsBaseDir,
+  resolveDownloadContextById
+} from '../../lib/modelDownloadPaths'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
-import { resolveTemplateModels } from './templateModels'
+import { resolveTemplateModels, resolveTemplateModelsFromJson } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
 import {
   isTerminal,
@@ -14,7 +18,9 @@ import {
   describeDownloadFailure,
   gbStr,
   DISK_SPACE_ERROR,
-  type TemplateDownloadState
+  summarizeTemplateState,
+  type TemplateDownloadState,
+  type TemplateDownloadSummary
 } from './templateDownloadCore'
 import type { InstallationRecord } from '../../installations'
 
@@ -180,8 +186,26 @@ export function startTemplateDownload(
   estimatedSizeBytes: number,
   opts: StartOpts
 ): void {
-  const installationId = installation.id
-  const existing = _templateDownloads.get(installationId)
+  const templateId = installation.bundledTemplateId
+  if (!templateId) return
+  startTemplateDownloadTask(installation.id, installation, templateId, estimatedSizeBytes, opts)
+}
+
+/**
+ * Run the same input/model staging used by first-install templates under an
+ * independent task key. Performance tests use a separate key so their staging
+ * cannot enter the installation launch gate, while managed model jobs still
+ * resolve paths and deduplicate by the real installation id.
+ */
+export function startTemplateDownloadTask(
+  taskId: string,
+  installation: InstallationRecord,
+  templateId: string,
+  estimatedSizeBytes: number,
+  opts: StartOpts,
+  workflowJson?: unknown
+): void {
+  const existing = _templateDownloads.get(taskId)
   if (existing && !isTerminal(existing.status)) return
 
   const state: TemplateDownloadState = {
@@ -191,25 +215,27 @@ export function startTemplateDownload(
     speedMBs: 0,
     etaSecs: -1
   }
-  _templateDownloads.set(installationId, state)
+  _templateDownloads.set(taskId, state)
   const abort = new AbortController()
   const jobLeases = new Set<() => void>()
-  _templateAborts.set(installationId, abort)
-  _templateJobLeases.set(installationId, jobLeases)
+  _templateAborts.set(taskId, abort)
+  _templateJobLeases.set(taskId, jobLeases)
 
   /** Tees every task log line to the main-process console as well, so the
    *  lifecycle shows in the `pnpm dev` terminal even if the renderer panel drops. */
   const log = (text: string): void => {
-    console.log(`[templateDownload:${installationId}] ${text.trimEnd()}`)
+    console.log(`[templateDownload:${taskId}] ${text.trimEnd()}`)
     opts.sendOutput(text)
   }
   const taskOpts: StartOpts = { sendOutput: log }
 
   log(
-    `[templates] Starting background download for "${installation.bundledTemplateId}" (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
+    `[templates] Starting background download for "${templateId}" (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
   )
 
-  void runTask(installation, state, abort.signal, taskOpts)
+  const publisher = setInterval(() => publishProgress(taskId, state), PROGRESS_PUBLISH_MS)
+
+  void runTask(taskId, installation, templateId, state, abort.signal, taskOpts, workflowJson)
     .catch((err) => {
       if (!isTerminal(state.status)) {
         state.status = 'error'
@@ -223,12 +249,73 @@ export function startTemplateDownload(
       // or replaced these entries - never delete a successor's controller or
       // leases. Any lease still tracked here (add-after-abort races) is
       // released so a parked job is not pinned by a dead task.
-      if (_templateAborts.get(installationId) === abort) _templateAborts.delete(installationId)
-      if (_templateJobLeases.get(installationId) === jobLeases) {
+      if (_templateAborts.get(taskId) === abort) _templateAborts.delete(taskId)
+      if (_templateJobLeases.get(taskId) === jobLeases) {
         for (const release of [...jobLeases]) release()
-        _templateJobLeases.delete(installationId)
+        _templateJobLeases.delete(taskId)
       }
+      clearInterval(publisher)
+      publishProgress(taskId, state)
     })
+}
+
+// --- Progress subscription: one paced publisher per task ----------------------
+// Formatting and delivery stay off the download hot path: while a task runs, a
+// single 500 ms timer summarizes its state for whoever listens (the launch
+// stepper, the performance test page), plus one final summary when it settles.
+
+const PROGRESS_PUBLISH_MS = 500
+type TemplateDownloadListener = (summary: TemplateDownloadSummary) => void
+const _templateListeners = new Map<string, Set<TemplateDownloadListener>>()
+
+function publishProgress(taskId: string, state: TemplateDownloadState): void {
+  const listeners = _templateListeners.get(taskId)
+  // Identity-guarded: a forgotten or restarted task must not report as its successor.
+  if (!listeners?.size || _templateDownloads.get(taskId) !== state) return
+  const summary = summarizeTemplateState(state)
+  // Listeners follow a task until it settles: the terminal summary is their last.
+  if (isTerminal(state.status)) _templateListeners.delete(taskId)
+  for (const listener of listeners) listener(summary)
+}
+
+/**
+ * Follow a task's progress. `listener` gets the current summary at once when the
+ * task exists, then one every 500 ms while it runs, and a final one when it
+ * settles, after which it is dropped. A task started later under the same id
+ * reports to it too. Returns the unsubscribe function.
+ */
+export function subscribeTemplateDownload(
+  taskId: string,
+  listener: TemplateDownloadListener
+): () => void {
+  const state = _templateDownloads.get(taskId)
+  if (state) {
+    listener(summarizeTemplateState(state))
+    if (isTerminal(state.status)) return () => {}
+  }
+  let listeners = _templateListeners.get(taskId)
+  if (!listeners) {
+    listeners = new Set()
+    _templateListeners.set(taskId, listeners)
+  }
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0 && _templateListeners.get(taskId) === listeners) {
+      _templateListeners.delete(taskId)
+    }
+  }
+}
+
+/**
+ * Drop a task's state and listeners once nobody will read them again, aborting it
+ * first if it is still running. For callers with per-use task ids (performance
+ * tests), whose entries would otherwise accumulate for the whole process.
+ */
+export function forgetTemplateDownload(taskId: string): void {
+  abortTemplateDownload(taskId)
+  _templateDownloads.delete(taskId)
+  _templateListeners.delete(taskId)
 }
 
 /** Thrown when the managed job reports 'cancelled' - never auto-retried. */
@@ -260,20 +347,24 @@ function raceCompletionWithAbort(
 }
 
 async function runTask(
+  taskId: string,
   installation: InstallationRecord,
+  templateId: string,
   state: TemplateDownloadState,
   signal: AbortSignal,
-  { sendOutput }: StartOpts
+  { sendOutput }: StartOpts,
+  workflowJson?: unknown
 ): Promise<void> {
-  const templateId = installation.bundledTemplateId as string
-  await downloadTemplateInputAssets(installation, templateId, sendOutput, signal)
+  await downloadTemplateInputAssets(installation, templateId, sendOutput, signal, workflowJson)
   if (signal.aborted) {
     state.status = 'cancelled'
     return
   }
 
   sendOutput(`[templates] Resolving model list for "${templateId}"...\n`)
-  const models = await resolveTemplateModels(installation, templateId)
+  const models = workflowJson
+    ? resolveTemplateModelsFromJson(workflowJson)
+    : await resolveTemplateModels(installation, templateId)
 
   if (signal.aborted) {
     state.status = 'cancelled'
@@ -303,8 +394,9 @@ async function runTask(
   const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
 
   // Pre-flight disk guard against the coarse estimate (+ headroom): a hard error
-  // beats N failed writes when there's clearly no room.
-  if (state.estimatedTotalBytes > 0) {
+  // beats N failed writes when there's clearly no room. Skipped when every model
+  // is already on disk - nothing will be written, however full the volume is.
+  if (state.estimatedTotalBytes > 0 && !(await areModelsPresent(installation.id, models))) {
     try {
       const { free } = await getDiskSpace(baseDir)
       if (free < state.estimatedTotalBytes * DISK_HEADROOM) {
@@ -322,7 +414,7 @@ async function runTask(
 
   state.status = 'downloading'
 
-  const activeJobLeases = _templateJobLeases.get(installation.id)
+  const activeJobLeases = _templateJobLeases.get(taskId)
 
   // Aggregate speed/ETA sampled from the per-file counters at most every
   // 500 ms (state.files is small - a handful of models per template).

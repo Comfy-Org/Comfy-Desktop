@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "templates": [
+    {
+      "id": "video_fastvideo_fasth3_t2v",
+      "modality": "video",
+      "snapshot": {
+        "title": "FastVideo FastH3: Text to Video",
+        "description": "Generate synchronized video and audio directly from text using a distilled eight-step model, producing one video output with no file inputs required. Ideal for rapid text-to-video prototyping, audio-visual content creation, and creative storytelling where fast generation matters more than maximum detail.",
+        "sizeBytes": 42949672960,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "video_hunyuan_video_1.5_720p_t2v",
+      "modality": "video",
+      "snapshot": {
+        "title": "Hunyuan Video 1.5 Text to Video",
+        "description": "Generate high-quality 720p videos from text prompts with cinematic camera control, emotional expressions, and physics simulation. Supports multiple styles including realistic, anime, and 3D with text rendering.",
+        "sizeBytes": 45419279155,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "video_minimax_h3_t2v",
+      "modality": "video",
+      "snapshot": {
+        "title": "MiniMax H3: Text to Video",
+        "description": "Generate video with native stereo audio directly from a text prompt using MiniMax H3, an omni-modal model that synthesizes voice, sound effects, and music in a single pass. Output is up to 2K resolution, 24fps, and roughly 15 seconds long, with no file inputs required — just a prompt to one video output. Ideal for rapid concept visualization, social media content creation, and audio-synced storytelling.",
+        "sizeBytes": 56908316672,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "video_wan2_2_14B_t2v",
+      "modality": "video",
+      "snapshot": {
+        "title": "Wan 2.2 14B Text to Video",
+        "description": "Generate high-quality videos from text prompts with cinematic aesthetic control and dynamic motion generation using Wan 2.2.",
+        "sizeBytes": 38031935406,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "image_ideogram4_t2i_int8",
+      "modality": "image",
+      "snapshot": {
+        "title": "Ideogram v4 Int8: Text to Image",
+        "description": "Generate images from text prompts using the Ideogram v4 model, a state-of-the-art open-weight text-to-image system with exceptional text rendering and layout control. No file inputs are required, producing 1 image output. Ideal for creating marketing visuals, generating design mockups with precise typography, and producing high-resolution artwork with controlled compositions.",
+        "sizeBytes": 30064771072,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "image_krea2_turbo_t2i_int8",
+      "modality": "image",
+      "snapshot": {
+        "title": "Krea-2 Int8: Text to Image",
+        "description": "Generate images with the Krea-2 Turbo distilled text-to-image model using the high-performance Int8 Convrot format, which delivers better quality than FP8 while generally running faster across most GPUs. This workflow accepts no file inputs and produces a single image output, with optional style LoRA support for creative customization. Ideal for rapid concept art iteration, batch asset generation for games or marketing, and exploring the speed-quality sweet spot of the Convrot Int8 quantization.",
+        "sizeBytes": 19112604467,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "image_qwen_image_2_1_t2i",
+      "modality": "image",
+      "snapshot": {
+        "title": "Qwen Image 2.1: Text to Image",
+        "description": "Generate images from text prompts with Qwen Image 2.1, the latest open-weight Qwen-Image model, producing a single 1024×1024 image over 25 sampling steps. Generation and instruction-based editing share one model with native 2K output, professional typography, and alpha-channel support. Ideal for poster and layout design, transparent asset creation, and rapid concept visualization.",
+        "sizeBytes": 26736171418,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "image_z_image_turbo",
+      "modality": "image",
+      "snapshot": {
+        "title": "Z-Image-Turbo: Text to Image",
+        "description": "An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.",
+        "sizeBytes": 20830591386,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "audio_ace_step1_5_xl_turbo",
+      "modality": "audio",
+      "snapshot": {
+        "title": "ACE-Step 1.5XL Turbo: Text to Music",
+        "description": "Generate high-quality music from text prompts using the distilled 4B ACE-Step model. Produces commercial-ready audio in just 8 inference steps without CFG.",
+        "sizeBytes": 19864223744,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "audio_minimax_music_3",
+      "modality": "audio",
+      "snapshot": {
+        "title": "MiniMax Music 3: Text to Music",
+        "description": "Create full-length songs from text prompts with MiniMax Music 3, generating complete 5-minute tracks with stable structure and high-fidelity audio. Input a structured caption describing lyrics, style, mood, and arrangement, and receive a finished song as output. Ideal for music producers prototyping demos, and content creators needing original background tracks.",
+        "sizeBytes": 15354508083,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "audio_stable_audio_3_medium",
+      "modality": "audio",
+      "snapshot": {
+        "title": "Stable Audio 3.0 Medium",
+        "description": "Input a short text idea, optional duration, seed, and category. Generate stereo audio (music, SFX, or instruments) using Stable Audio 3 with optional AI-driven text expansion.",
+        "sizeBytes": 15676630630,
+        "mediaSubtype": "webp"
+      }
+    },
+    {
+      "id": "audio_yue2_text2music",
+      "modality": "audio",
+      "snapshot": {
+        "title": "YuE2: Text to Music",
+        "description": "Generate complete songs from a music style and lyrics with YuE2. Use symbolic music planning to create structured melodies and harmonies, then turn them into full songs with vocals and instrumental accompaniment.",
+        "sizeBytes": 3972844749,
+        "mediaSubtype": "webp"
+      }
+    }
+  ]
+}

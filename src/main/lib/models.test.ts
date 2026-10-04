@@ -30,6 +30,13 @@ const {
 
 import type { InstallationRecord } from '../installations'
 
+/** Give an install a governed archive's policy file (contents unread here). */
+function writePolicy(installPath: string): void {
+  const dir = path.join(installPath, 'ComfyUI', 'governance')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'policy.signed.json'), '{}')
+}
+
 /**
  * Locks the YAML shape that `ensureModelPathsConfig` emits, with focus on the
  * legacy alias directories (`clip/`, `unet/`, `t2i_adapter/`) that ComfyUI
@@ -396,6 +403,20 @@ describe('resolveLauncherModelDirs', () => {
     const res = resolveLauncherModelDirs(makeInstall({ modelDirs: [own, ext] }), [own])
     expect(res.dirs).toEqual([path.resolve(ext)])
   })
+
+  it('gives a governed build no dirs and no primary', () => {
+    const shared = [path.join(tmp, 'shared')]
+    const ext = path.join(tmp, 'ext')
+    const inst = makeInstall({ modelDirs: [ext], modelDirsPrimary: ext })
+    expect(resolveLauncherModelDirs(inst, shared)).toEqual({
+      dirs: [path.resolve(shared[0]!), path.resolve(ext)],
+      primaryDir: path.resolve(ext)
+    })
+
+    writePolicy(inst.installPath)
+
+    expect(resolveLauncherModelDirs(inst, shared)).toEqual({ dirs: [], primaryDir: null })
+  })
 })
 
 describe('rehomeOwnModelsPrimary', () => {
@@ -494,6 +515,16 @@ describe('resolveInstallModelSearchPaths', () => {
     const inst = makeInstall({ useSharedModels: false, modelDirs: [ext], modelDirsPrimary: ext })
     const res = resolveInstallModelSearchPaths(inst, [])
     expect(res.downloadBaseDir).toBe(path.resolve(ext))
+  })
+
+  it('downloads into the own models dir of a governed build, its only root', () => {
+    const shared = [path.join(tmp, 'shared')]
+    const inst = makeInstall({ modelDirs: [path.join(tmp, 'ext')] })
+    writePolicy(inst.installPath)
+    const res = resolveInstallModelSearchPaths(inst, shared)
+    const own = path.resolve(path.join(inst.installPath, 'ComfyUI', 'models'))
+    expect(res.downloadBaseDir).toBe(own)
+    expect(res.modelRoots).toEqual([own])
   })
 
   it('includes the install own extra_model_paths.yaml dirs', () => {

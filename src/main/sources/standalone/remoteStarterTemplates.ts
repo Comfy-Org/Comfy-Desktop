@@ -28,8 +28,6 @@ const MAX_TEXT_LENGTH = 4096
  *  becomes unsatisfiable and no install can proceed. */
 const MAX_SIZE_BYTES = 2 * 1024 ** 4
 const MAX_ENTRIES = 256
-/** Clear `TEMPLATE_ID_PATTERN` but name a directory, not a template. */
-const RESERVED_IDS = new Set(['.', '..'])
 /** `fetchJSON` has no timeout and the picker blocks on this read. */
 const FETCH_TIMEOUT_MS = 5000
 
@@ -70,7 +68,6 @@ function parseEntry(value: unknown): CuratedTemplate | null {
 
   const { id } = r
   if (!isPersistableTemplateId(id) || id.length > MAX_ID_LENGTH) return null
-  if (RESERVED_IDS.has(id)) return null
   if (!isModality(r.modality)) return null
 
   const snapshot = parseSnapshot(r.snapshot)

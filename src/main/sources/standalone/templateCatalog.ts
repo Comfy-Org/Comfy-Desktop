@@ -11,6 +11,7 @@
  * non-empty and the picker always renders.
  */
 import { fetchJSON } from '../../lib/fetch'
+import type { FieldOption } from '../../types/sources'
 import { loadStarterTemplates, _resetStarterTemplatesForTest } from './remoteStarterTemplates'
 import {
   INDEX_URL,
@@ -285,6 +286,56 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
     }
   }
   return catalog.sort(byModalityOrder)
+}
+
+/** A hydrated template as a `TemplatePickerStep` card. */
+export function toTemplateFieldOption(
+  template: HydratedTemplate,
+  modelsPresent: boolean
+): FieldOption {
+  return {
+    value: template.id,
+    label: template.title,
+    description: template.description,
+    recommended: template.recommended,
+    data: {
+      modality: template.modality,
+      category: template.category,
+      name: template.name,
+      task: template.task,
+      thumbnailUrl: template.thumbnailUrl,
+      sizeBytes: template.sizeBytes,
+      modelsPresent,
+      apiNode: template.apiNode
+    }
+  }
+}
+
+/**
+ * Hydrate a fixed template list against the live index. Unlike the starter
+ * catalog, an id missing upstream keeps its snapshot instead of being swapped
+ * for another template, since callers pair each id with id-specific artifacts.
+ */
+export async function hydrateTemplates(
+  templates: ReadonlyArray<{
+    id: string
+    modality: TemplateModality
+    recommended?: boolean
+    snapshot: TemplateSnapshot
+  }>
+): Promise<HydratedTemplate[]> {
+  const index = await fetchJSON(INDEX_URL).catch(() => null)
+  const byId = index ? indexById(index) : new Map<string, IndexLocation>()
+  return templates.map(({ id, modality, recommended, snapshot }) =>
+    hydrateOne({
+      id,
+      modality,
+      recommended: recommended === true,
+      apiNode: false,
+      location: byId.get(id),
+      snapshot
+    })
+  )
 }
 
 /** First unused, locally-installable index template of `modality` — skips

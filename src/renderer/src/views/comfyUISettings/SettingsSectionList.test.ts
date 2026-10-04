@@ -223,7 +223,7 @@ describe('SettingsSectionList', () => {
     function betaField(value: boolean, turnOnDisabled: boolean): DetailField {
       return {
         id: 'betaFeaturesEnabled',
-        label: 'Opt in to beta features',
+        label: 'Opt-in to beta features',
         value,
         editable: true,
         editType: 'boolean',

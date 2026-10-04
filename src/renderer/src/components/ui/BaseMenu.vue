@@ -12,6 +12,8 @@ export interface BaseMenuItem {
   style?: 'default' | 'danger'
   /** Draws a divider above this item. */
   separator?: boolean
+  /** Secondary text after the label; wraps where the label does not. */
+  detail?: string
 }
 
 interface Props {
@@ -23,11 +25,17 @@ interface Props {
    *  the right edges, tucking trailing-side menus back into the viewport. */
   align?: 'start' | 'end'
   offset?: number
+  /** Non-interactive caption above the items. */
+  heading?: string
+  /** Class on the teleported list, which scoped consumer styles cannot reach. */
+  listClass?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   triggerAriaLabel: undefined,
   minWidth: undefined,
+  heading: undefined,
+  listClass: undefined,
   align: 'start',
   offset: 4
 })
@@ -187,6 +195,8 @@ function onMenuKeydown(event: KeyboardEvent): void {
       break
     case 'Escape':
       event.preventDefault()
+      // Keep a host popup, which listens on window, from closing too.
+      event.stopPropagation()
       closePanel()
       break
     case 'Tab':
@@ -249,13 +259,14 @@ defineExpose({ open: openPanel, close: closePanel, toggle })
         v-if="open"
         :id="menuId"
         ref="menu"
-        class="ui-menu-list"
+        :class="['ui-menu-list', listClass]"
         role="menu"
         tabindex="-1"
         :style="popoverStyle"
         :aria-label="triggerAriaLabel"
         @keydown="onMenuKeydown"
       >
+        <li v-if="heading" class="ui-menu-heading" role="presentation">{{ heading }}</li>
         <template v-for="(item, i) in items" :key="item.id">
           <li v-if="item.separator && i > 0" class="ui-menu-separator" role="separator" />
           <li
@@ -268,7 +279,8 @@ defineExpose({ open: openPanel, close: closePanel, toggle })
             @mousemove="activeIndex = i"
             @click="pickIndex(i)"
           >
-            {{ item.label }}
+            <span class="ui-menu-item-label">{{ item.label }}</span>
+            <span v-if="item.detail" class="ui-menu-item-detail">{{ item.detail }}</span>
           </li>
         </template>
       </ul>
@@ -349,6 +361,21 @@ defineExpose({ open: openPanel, close: closePanel, toggle })
 .ui-menu-item[aria-disabled='true'] {
   color: var(--text-muted);
   cursor: not-allowed;
+}
+
+.ui-menu-heading {
+  padding: 6px 14px 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ui-menu-item-detail {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
 }
 
 .ui-menu-separator {

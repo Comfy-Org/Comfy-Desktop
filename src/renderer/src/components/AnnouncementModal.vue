@@ -5,35 +5,38 @@ import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 /**
- * One-off announcement modal (currently the Comfy Router launch).
+ * One-off announcement modal (currently the Comfy API launch).
  * Deliberately mirrors `WhyTryCloudModal.vue`'s layout and styling so it feels
  * native. Swapping to the next announcement means changing ANNOUNCEMENT_ID, the
  * URLs, the hero media and the i18n namespace below, plus a new seen-flag in
  * settings so previously-dismissed users still get the bell.
  *
- * Strings live in `announcement.comfyRouter.*` (locales/en.json).
+ * Strings live in `announcement.comfyApi.*` (locales/en.json).
  */
 
 // Announcement id, carried in telemetry so this component can be reused for a
 // future announcement by swapping the id + copy.
-const ANNOUNCEMENT_ID = 'comfy_router'
+const ANNOUNCEMENT_ID = 'comfy_api'
 
 // CTA destination. The UTM tags clicks as Desktop-origin so they're
 // attributable in analytics.
-const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_router'
-const PRIMARY_CTA_URL = `https://comfy.org/platform/router${UTM}`
+const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_api'
+const PRIMARY_CTA_URL = `https://comfy.org/platform/comfy-api${UTM}`
 
-// Router launch hero on media.comfy.org. media.comfy.org caches for an hour, so
-// bump the version in the filename rather than re-uploading a key. Poster paints
-// immediately; the video muted-autoplays + loops.
-const HERO_VIDEO_URL = 'https://media.comfy.org/website/router/router-animatic-v019.mp4'
-const HERO_POSTER_URL = 'https://media.comfy.org/website/router/router-animatic-v019-poster.webp'
+// Comfy API launch hero on media.comfy.org. media.comfy.org caches for an
+// hour, so bump the version in the filename rather than re-uploading a key.
+// Poster paints immediately; the video muted-autoplays + loops.
+// TODO: no hero asset has been provided for Comfy API yet (tracked the same
+// way #1560 tracked the Router hero) - this path 404s until it's uploaded, so
+// the modal falls back to the `.announce-media` gradient in the meantime.
+const HERO_VIDEO_URL = 'https://media.comfy.org/website/comfy-api/hero_v1.mp4'
+const HERO_POSTER_URL = 'https://media.comfy.org/website/comfy-api/hero-poster_v1.webp'
 
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
 
 const highlights = computed<string[]>(() => {
-  const raw = tm('announcement.comfyRouter.highlights')
+  const raw = tm('announcement.comfyApi.highlights')
   return Array.isArray(raw) ? (raw as unknown as string[]) : []
 })
 
@@ -98,7 +101,7 @@ onUnmounted(() => {
         class="announce-overlay"
         role="dialog"
         aria-modal="true"
-        :aria-label="$t('announcement.comfyRouter.title')"
+        :aria-label="$t('announcement.comfyApi.title')"
         tabindex="-1"
         @mousedown="onOverlayMouseDown"
         @click="onOverlayClick"
@@ -123,7 +126,7 @@ onUnmounted(() => {
                 muted
                 loop
                 playsinline
-                :aria-label="$t('announcement.comfyRouter.imageAlt')"
+                :aria-label="$t('announcement.comfyApi.imageAlt')"
               >
                 <source :src="HERO_VIDEO_URL" type="video/mp4" />
               </video>
@@ -131,9 +134,7 @@ onUnmounted(() => {
                 class="announce-sound"
                 type="button"
                 :aria-label="
-                  isMuted
-                    ? $t('announcement.comfyRouter.unmute')
-                    : $t('announcement.comfyRouter.mute')
+                  isMuted ? $t('announcement.comfyApi.unmute') : $t('announcement.comfyApi.mute')
                 "
                 :aria-pressed="!isMuted"
                 data-testid="announcement-sound-toggle"
@@ -146,9 +147,9 @@ onUnmounted(() => {
             <div class="announce-body">
               <div class="announce-body-main">
                 <header class="announce-header">
-                  <h2 class="announce-title">{{ $t('announcement.comfyRouter.title') }}</h2>
+                  <h2 class="announce-title">{{ $t('announcement.comfyApi.title') }}</h2>
                 </header>
-                <p class="announce-lead">{{ $t('announcement.comfyRouter.lead') }}</p>
+                <p class="announce-lead">{{ $t('announcement.comfyApi.lead') }}</p>
                 <ul v-if="highlights.length" class="announce-list">
                   <li v-for="h in highlights" :key="h">
                     <Check :size="16" class="announce-check" />
@@ -163,7 +164,7 @@ onUnmounted(() => {
                   data-testid="announcement-primary-cta"
                   @click="openCta('learn_more', PRIMARY_CTA_URL)"
                 >
-                  {{ $t('announcement.comfyRouter.primaryCta') }}
+                  {{ $t('announcement.comfyApi.primaryCta') }}
                 </button>
               </footer>
             </div>

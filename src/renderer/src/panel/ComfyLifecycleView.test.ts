@@ -21,6 +21,7 @@ const messages = {
       launchingTitle: 'Starting ComfyUI…',
       stoppingTitle: 'Stopping ComfyUI…',
       crashedTitle: 'ComfyUI exited unexpectedly',
+      launchFailedTitle: 'ComfyUI could not start',
       crashedDesc: 'The ComfyUI process exited. You can restart it below.',
       crashedDescWithCode:
         'The ComfyUI process exited (exit code {code}). You can restart it below.',
@@ -251,6 +252,35 @@ describe('ComfyLifecycleView', () => {
     expect(wrapper.text()).toContain('The ComfyUI process exited.')
     expect(wrapper.text()).not.toContain('exit code')
     expect(wrapper.text()).not.toContain('terminated by')
+  })
+
+  it('shows a refused launch as a failed start with its own message, not as a crash', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      message: 'An earlier ComfyUI for this installation (PID 11944, 17348) did not exit.'
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('ComfyUI could not start')
+    expect(wrapper.text()).toContain('(PID 11944, 17348) did not exit.')
+    expect(wrapper.text()).not.toContain('ComfyUI exited unexpectedly')
+    expect(wrapper.text()).not.toContain('The ComfyUI process exited')
+    // Still recoverable from here.
+    expect(wrapper.find('button.brand-primary').exists()).toBe(true)
+  })
+
+  it('keeps crash copy for a crash even when a message is also recorded', async () => {
+    const wrapper = mountView()
+    const sessionStore = useSessionStore()
+    sessionStore.errorInstances.set('inst-1', {
+      installationName: 'My Local Install',
+      exitCode: 1,
+      message: 'irrelevant'
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('ComfyUI exited unexpectedly')
+    expect(wrapper.text()).not.toContain('ComfyUI could not start')
   })
 
   it('renders both signal and exit code in the crashed message when both are present', async () => {
