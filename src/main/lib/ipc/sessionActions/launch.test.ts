@@ -71,6 +71,8 @@ const launchHarness = vi.hoisted(() => ({
   portLockPid: null as null | number,
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
   killExits: true,
+  /** `getProcessInfo` finds nothing (the process is gone, or unreadable). */
+  processInfoNull: false,
   /** Every `findAvailablePort` call's arguments. */
   portSearches: [] as unknown[][],
   /** What `installations.list()` returns; null = the real store. */
@@ -152,7 +154,11 @@ vi.mock('../shared', async (importOriginal) => {
         : actual.readPortLock(...args),
     getProcessInfo: (...args: Parameters<typeof actual.getProcessInfo>) =>
       launchHarness.busyPorts
-        ? Promise.resolve({ name: 'python', commandLine: 'python -s ComfyUI/main.py' })
+        ? Promise.resolve(
+            launchHarness.processInfoNull
+              ? null
+              : { name: 'python', commandLine: 'python -s ComfyUI/main.py' }
+          )
         : actual.getProcessInfo(...args),
     // Never let a test reach the real one: the fake child's pid is invented, and killing it
     // would signal whatever real process happens to hold that pid.
@@ -2422,6 +2428,34 @@ describe('Performance Test database', () => {
     }
   })
 
+  it('names an earlier run left alive by pid alone when its process cannot be read', async () => {
+    writeCoreDb()
+    writeCoreFiles(workspace('perf-db-alive-unread'))
+    ownership.prior = {
+      action: 'left',
+      proof: 'none',
+      pid: 777,
+      port: 48234,
+      ageMs: null,
+      waitMs: 0,
+      exitedInTime: false,
+      blocked: null
+    }
+    launchHarness.processInfoNull = true
+    const t = vi.spyOn(i18nModule, 't')
+    try {
+      const res = await handleLaunch(
+        ctxFor('perf-db-alive-unread', 'performance-test:perf-db-alive-unread')
+      )
+
+      expect(res.ok).toBe(false)
+      expect(t).toHaveBeenCalledWith('errors.performanceTestLeftRunning', { process: 'PID 777' })
+    } finally {
+      ownership.prior = null
+      launchHarness.processInfoNull = false
+    }
+  })
+
   it('starts as before when the check for an earlier run fails', async () => {
     writeCoreDb()
     const ws = workspace('perf-db-check-failed')
@@ -2601,6 +2635,33 @@ describe('Performance Test database', () => {
       port: 48234,
       name: 'Benchmarked'
     })
+    // isComfy offers "Stop process and retry", which the message tells the user to do.
+    expect(res.portConflict).toMatchObject({
+      port: 48234,
+      isComfy: true,
+      nextPort: launchHarness.nextPort
+    })
+  })
+
+  it('does not blame a Performance Test on another port', async () => {
+    writeCoreDb()
+    _runningSessions.set('performance-test:perf-db-holder', {
+      proc: { pid: 9001 } as unknown as ChildProcess,
+      port: 48299,
+      mode: 'console',
+      installationName: 'Benchmarked',
+      startedAt: Date.now()
+    })
+    launchHarness.busyPorts = [48234]
+    const t = vi.spyOn(i18nModule, 't')
+    const ctx = ctxFor('perf-db-explicit-4')
+    ;(ctx.inst as unknown as Record<string, unknown>).launchArgs = '--port 48234'
+
+    const res = await handleLaunch(ctx)
+
+    expect(res.ok).toBe(false)
+    expect(t).not.toHaveBeenCalledWith('errors.portConflictPerformanceTest', expect.anything())
+    expect(t).toHaveBeenCalledWith('errors.portConflictComfy', { port: 48234, process: 'python' })
   })
 
   it("does not call another install's own session a Performance Test", async () => {
@@ -2621,6 +2682,9 @@ describe('Performance Test database', () => {
 
     expect(res.ok).toBe(false)
     expect(t).not.toHaveBeenCalledWith('errors.portConflictPerformanceTest', expect.anything())
+    // The ordinary report, unchanged.
+    expect(t).toHaveBeenCalledWith('errors.portConflictComfy', { port: 48234, process: 'python' })
+    expect(res.portConflict).toMatchObject({ port: 48234, isComfy: true })
   })
 
   it('does not blame a remote Performance Test for a local port', async () => {
@@ -2642,6 +2706,9 @@ describe('Performance Test database', () => {
 
     expect(res.ok).toBe(false)
     expect(t).not.toHaveBeenCalledWith('errors.portConflictPerformanceTest', expect.anything())
+    // The ordinary report, unchanged.
+    expect(t).toHaveBeenCalledWith('errors.portConflictComfy', { port: 48234, process: 'python' })
+    expect(res.portConflict).toMatchObject({ port: 48234, isComfy: true })
   })
 
   it('reports an unknown database for a session whose database Desktop cannot see', () => {
@@ -3155,6 +3222,27 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([
       expect.objectContaining({ action: 'left', proof: 'none', age_ms: null })
     ])
+  })
+
+  it('names its own running Performance Test rather than a second copy on its database', async () => {
+    launchHarness.busyPorts = [PORT]
+    // The benchmark runs this install's own ComfyUI, so the same-install check matches it.
+    ownership.holderIsInstall = true
+    _runningSessions.set('performance-test:prior-same-install-perf', {
+      proc: { pid: 31337 } as unknown as ChildProcess,
+      port: PORT,
+      mode: 'console',
+      installationName: 'Benchmarked',
+      startedAt: Date.now()
+    })
+
+    const res = await handleLaunch(ctxFor('prior-same-install-perf'))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.portConflictPerformanceTest')
+    // Only the wording changes: still no next port, still the stop action.
+    expect(res.portConflict).toEqual({ port: PORT, pids: [31337], isComfy: true })
+    expect(children).toHaveLength(0)
   })
 
   it("recognises this install's ComfyUI from a port lock when no listener can be listed", async () => {
