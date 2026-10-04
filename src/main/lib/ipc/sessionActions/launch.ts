@@ -1713,18 +1713,6 @@ async function runLaunch(
     // offer the next port either, for the same reason. Never grounds for stopping it.
     // Callers that asked for a port bump explicitly (`autoPortOnConflict`) keep it.
     // Every listener is checked: lsof lists each one, and this install's may not come first.
-    // A Performance Test spawned here (a remote one's port is on another machine) and still alive:
-    // an exited one stays registered while its crash is diagnosed or a restart respawns it, and
-    // naming it would offer to stop whatever took the port since. It runs this install's own
-    // ComfyUI, so the same-install check below matches it too.
-    const perfHolder = [..._runningSessions].find(
-      ([key, s]) =>
-        s.proc &&
-        s.proc.exitCode === null &&
-        s.proc.signalCode === null &&
-        s.port === launchCmd.port &&
-        sessionKindOf(key) === 'performance_test'
-    )?.[1]
     let sameInstallPid: number | null = null
     if (actionData?.autoPortOnConflict !== true && launchCmd.args!.includes('--enable-assets')) {
       // The listeners, plus the pid a Desktop's port lock names: the listener list can come back
@@ -1760,16 +1748,10 @@ async function runLaunch(
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return {
         ok: false,
-        // A benchmark has its own database, so the same-database explanation would be wrong.
-        message: perfHolder
-          ? i18n.t('errors.portConflictPerformanceTest', {
-              port: launchCmd.port!,
-              name: perfHolder.installationName
-            })
-          : i18n.t('errors.portConflictSameInstall', {
-              port: launchCmd.port!,
-              process: info ? info.name : `PID ${sameInstallPid}`
-            }),
+        message: i18n.t('errors.portConflictSameInstall', {
+          port: launchCmd.port!,
+          process: info ? info.name : `PID ${sameInstallPid}`
+        }),
         // No `nextPort`: offering the next port would offer the failure this avoids.
         portConflict: { port: launchCmd.port, pids: existingPids, isComfy: true }
       }
@@ -1794,13 +1776,7 @@ async function runLaunch(
     } else {
       let message: string
       let isComfy: boolean
-      if (perfHolder) {
-        message = i18n.t('errors.portConflictPerformanceTest', {
-          port: launchCmd.port!,
-          name: perfHolder.installationName
-        })
-        isComfy = true
-      } else if (pendingPortOwner) {
+      if (pendingPortOwner) {
         message = i18n.t('errors.portConflictLauncher', {
           port: launchCmd.port!,
           name: pendingPortOwner

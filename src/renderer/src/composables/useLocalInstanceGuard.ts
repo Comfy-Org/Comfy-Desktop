@@ -2,6 +2,7 @@ import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDialogs } from './useDialogs'
+import { sessionKindOf } from '../../../shared/performanceTestSession'
 
 // Prompts when another local instance is already running before a new launch.
 export function useLocalInstanceGuard() {
@@ -26,7 +27,7 @@ export function useLocalInstanceGuard() {
     const runningLocal: { id: string; name: string }[] = []
     // A running benchmark is listed as one, not under its install's name: "Close & Launch" stops it.
     const label = (id: string, name: string): string =>
-      id.startsWith('performance-test:')
+      sessionKindOf(id) === 'performance_test'
         ? t('launch.instanceRunningPerformanceTest', { name })
         : name
     for (const [id, instance] of sessionStore.runningInstances) {

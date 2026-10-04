@@ -1385,7 +1385,6 @@
     "launchCancelled": "启动已取消。",
     "cannotConnect": "无法连接到 {url}。请确认 ComfyUI 正在该地址运行。",
     "portConflictLauncher": "端口 {port} 已被另一个 Comfy Desktop 实例启动的“{name}”占用。你可以使用下一个可用端口、先停止它，或在启动参数中更改端口。",
-    "portConflictPerformanceTest": "端口 {port} 正被此 Comfy Desktop 中运行的“{name}”性能测试占用。请等待其完成或将其停止，或在启动参数中更改端口。",
     "portConflictComfy": "端口 {port} 已被 {process} 占用，它看起来是一个 ComfyUI 实例。你可以使用下一个可用端口、停止该进程，或在启动参数中更改端口。",
     "portConflictOther": "端口 {port} 已被 {process} 占用。你可以使用下一个可用端口，或在启动参数中更改端口。",
     "portConflictTitle": "端口已被占用",

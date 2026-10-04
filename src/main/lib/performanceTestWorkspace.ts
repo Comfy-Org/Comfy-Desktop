@@ -1,21 +1,16 @@
 import fs from 'fs'
 import path from 'path'
 
-/** Runtime session keys the Performance Test view launches under, one per installation. */
-export const PERFORMANCE_TEST_SESSION_PREFIX = 'performance-test:'
+export {
+  PERFORMANCE_TEST_SESSION_PREFIX,
+  performanceTestSessionKey,
+  sessionKindOf,
+  type SessionKind
+} from '../../shared/performanceTestSession'
 
-export type SessionKind = 'performance_test' | 'normal'
 /** `temp_file`: a Performance Test on its own throwaway database. `file`: anything else (the
  *  install's database, a user's own `--database-url`, or a Core with no database at all). */
 export type DbMode = 'temp_file' | 'file'
-
-export function performanceTestSessionKey(installationId: string): string {
-  return `${PERFORMANCE_TEST_SESSION_PREFIX}${installationId}`
-}
-
-export function sessionKindOf(sessionKey: string): SessionKind {
-  return sessionKey.startsWith(PERFORMANCE_TEST_SESSION_PREFIX) ? 'performance_test' : 'normal'
-}
 
 /**
  * Whether the Core about to be launched has a database at all, and so the flags a workspace

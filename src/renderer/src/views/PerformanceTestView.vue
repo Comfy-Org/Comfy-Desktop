@@ -25,6 +25,7 @@ import {
   type PerformanceTestImageMetric
 } from '../lib/performanceTestResultsSvg'
 import { emitTelemetryAction } from '../lib/telemetry'
+import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 
@@ -165,11 +166,9 @@ const workflowLabel = computed(
     workflowFilePath.value?.split(/[\\/]/).pop() ??
     ''
 )
-const performanceTestSessionId = (installationId: string): string =>
-  `performance-test:${installationId}`
 const canRun = computed(() => {
   const installationId = selectedInstallationId.value
-  const sessionId = installationId ? performanceTestSessionId(installationId) : ''
+  const sessionId = installationId ? performanceTestSessionKey(installationId) : ''
   return Boolean(
     installationId &&
     workflowFilePath.value &&
@@ -296,7 +295,7 @@ async function runPerformanceTest(): Promise<void> {
   correctMeasuredRuns()
   const warmups = Number(warmupRuns.value)
   const runs = Number(measuredRuns.value)
-  const sessionId = performanceTestSessionId(installationId)
+  const sessionId = performanceTestSessionKey(installationId)
   const token = ++runToken
   const runTelemetry: PerformanceTestRunTelemetry = {
     installationId,
@@ -560,7 +559,7 @@ async function exportResultsImage(): Promise<void> {
 async function stopPerformanceTest(): Promise<void> {
   const installationId = performanceTestInstallationId.value
   if (!installationId || !canStop.value) return
-  const sessionId = performanceTestSessionId(installationId)
+  const sessionId = performanceTestSessionKey(installationId)
   runToken += 1
 
   isStopping.value = true
