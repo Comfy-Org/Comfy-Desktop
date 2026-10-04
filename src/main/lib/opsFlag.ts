@@ -155,8 +155,12 @@ function writePersistedResult(key: string, entry: PersistedOpsFlagEntry): void {
 export interface OpsFlag<T> {
   /** Boot-time fetch. The returned promise is cached so the IPC handler can await it: a
    *  renderer query landing before the fetch settles sees the resolved value, not the
-   *  fallback. Idempotent within a process; never rejects. */
-  init(opts: { distinctId: string; timeoutMs?: number }): Promise<void>
+   *  fallback. Idempotent within a process; never rejects.
+   *
+   *  `distinctId` may still be pending at boot; the fetch waits for it. `null` means the id
+   *  is not available in time, which reads as `unreachable`: nothing is fetched under any
+   *  other id, so a sticky rollout only ever evaluates the final one. */
+  init(opts: { distinctId: string | Promise<string | null>; timeoutMs?: number }): Promise<void>
   /** Awaits the in-flight boot fetch so renderer queries landing before it settles still get
    *  the resolved value, not the fallback. No synchronous counterpart on purpose: every
    *  caller so far reads from an IPC handler, where racing the boot fetch to the fallback is
@@ -246,16 +250,21 @@ export function makeOpsFlag<T>(opts: {
     init(initOpts) {
       if (initPromise) return initPromise
       const generationAtInit = generation
-      initPromise = mainTelemetry
-        .getOpsFlagResult(
-          key,
-          initOpts.distinctId,
-          initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-          // Non-persisting flags pass no callback at all, so they stay write-free structurally
-          // rather than by a guard inside one — no write path is attached to the abandoned fetch.
-          // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
-          // not a write, and deliberately does not depend on whether the flag persists.)
-          persist ? (late) => persistLate(generationAtInit, late) : undefined
+      initPromise = Promise.resolve(initOpts.distinctId)
+        .then((distinctId): Promise<OpsFlagFetchResult> | OpsFlagFetchResult =>
+          distinctId === null
+            ? { kind: 'unreachable' }
+            : mainTelemetry.getOpsFlagResult(
+                key,
+                distinctId,
+                initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+                // Non-persisting flags pass no callback at all, so they stay write-free
+                // structurally rather than by a guard inside one — no write path is attached to
+                // the abandoned fetch. (`getOpsFlagResult` still observes that fetch to report how
+                // it settled; reporting is not a write, and deliberately does not depend on
+                // whether the flag persists.)
+                persist ? (late) => persistLate(generationAtInit, late) : undefined
+              )
         )
         .then((result) => {
           if (result.kind === 'unreachable') {

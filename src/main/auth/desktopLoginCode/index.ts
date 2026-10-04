@@ -36,12 +36,14 @@ import {
 } from '../firebaseBridge/inject'
 import { extractProviderId } from '../firebaseBridge/intercept'
 import { restoreParentWindow } from '../firebaseBridge/restoreParentWindow'
-import { getDeviceId } from '../../lib/deviceId'
+import { deviceIdWithin } from '../../lib/deviceId'
 import * as mainTelemetry from '../../lib/telemetry'
 import * as settings from '../../settings'
 
 /** Budget for the code-create POST; past this the legacy bridge takes over. */
 const CREATE_CODE_TIMEOUT_MS = 8000
+/** How long a sign-in waits for the installation id before omitting it. */
+const LOGIN_INSTALLATION_ID_WAIT_MS = 1000
 
 /** Random 0-500ms added to each poll so a fleet of desktops doesn't sync-poll. */
 const POLL_JITTER_MS = 500
@@ -134,8 +136,11 @@ export async function signInViaDesktopLoginCode(
   // installation_id enables the web->desktop identity stitch. Consent-gated
   // like every other telemetry write ('undecided' omits too); the auth
   // handoff itself works without it.
+  // Boot resolves the id in the background; a sign-in in the first seconds
+  // omits it rather than wait.
   if (settings.get('telemetryEnabled') === true) {
-    request.installation_id = getDeviceId()
+    const installationId = await deviceIdWithin(LOGIN_INSTALLATION_ID_WAIT_MS)
+    if (installationId) request.installation_id = installationId
   }
 
   let grant: DesktopLoginCodeGrant

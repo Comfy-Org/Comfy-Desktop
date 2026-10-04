@@ -28,6 +28,8 @@ const captured: CapturedCall[] = []
 
 let mockFlags: Record<string, string | boolean> = {}
 let mockFlagsDelayMs = 0
+/** Distinct ids the flag fetch was made with. */
+const flagRequestIds: string[] = []
 
 vi.mock('posthog-node', () => ({
   PostHog: class {
@@ -48,7 +50,8 @@ vi.mock('posthog-node', () => ({
     getFeatureFlag(): Promise<undefined> {
       return Promise.resolve(undefined)
     }
-    getAllFlags(_distinctId: string, _opts: unknown): Promise<Record<string, string | boolean>> {
+    getAllFlags(distinctId: string, _opts: unknown): Promise<Record<string, string | boolean>> {
+      flagRequestIds.push(distinctId)
       if (mockFlagsDelayMs > 0) {
         return new Promise((resolve) =>
           setTimeout(() => resolve({ ...mockFlags }), mockFlagsDelayMs)
@@ -71,6 +74,7 @@ describe('experiments', () => {
     captured.length = 0
     mockFlags = {}
     mockFlagsDelayMs = 0
+    flagRequestIds.length = 0
     process.env['POSTHOG_API_KEY'] = 'test-key'
     process.env['POSTHOG_ENABLED'] = '1'
 
@@ -109,6 +113,28 @@ describe('experiments', () => {
       expect(experiments.getFlag('flag.a')).toBe('treatment')
       expect(experiments.getFlag('flag.b')).toBe(true)
       await refresh
+    })
+
+    it('loads the cache at once and fetches with the id once it resolves', async () => {
+      fs.writeFileSync(
+        path.join(testUserData, 'experiment-flags.json'),
+        JSON.stringify({ 'flag.a': 'treatment' })
+      )
+      mockFlags = { 'flag.b': 'variant' }
+      let resolveIdentity: (identity: ExperimentsModule.ExperimentsIdentity) => void = () => {}
+      const refresh = experiments.initExperiments(
+        new Promise((r) => {
+          resolveIdentity = r
+        })
+      )
+      expect(experiments.getFlag('flag.a')).toBe('treatment')
+      await new Promise((r) => setImmediate(r))
+      expect(flagRequestIds).toEqual([])
+
+      resolveIdentity({ distinctId: 'final-id', personProperties: {} })
+      await refresh
+      expect(flagRequestIds).toEqual(['final-id'])
+      expect(experiments.getFlag('flag.b')).toBe('variant')
     })
 
     it('returns undefined for unknown flags', async () => {

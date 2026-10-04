@@ -18,7 +18,7 @@ const h = vi.hoisted(() => ({
   runBannerCleanup: vi.fn(),
   closeActiveBridge: vi.fn(),
   settingsGet: vi.fn(),
-  getDeviceId: vi.fn(() => 'machine-hash-1234'),
+  deviceIdWithin: vi.fn(async (_timeoutMs: number): Promise<string | null> => 'machine-hash-1234'),
   createDesktopLoginCode: vi.fn(),
   exchangeDesktopLoginCode: vi.fn(),
   signInWithCustomToken: vi.fn(),
@@ -43,7 +43,7 @@ vi.mock('../../lib/telemetry', () => ({
   bucketError: h.bucketError
 }))
 
-vi.mock('../../lib/deviceId', () => ({ getDeviceId: h.getDeviceId }))
+vi.mock('../../lib/deviceId', () => ({ deviceIdWithin: h.deviceIdWithin }))
 
 vi.mock('../../settings', () => ({ get: h.settingsGet }))
 
@@ -361,6 +361,26 @@ describe('signInViaDesktopLoginCode', () => {
     )
   })
 
+  it('omits installation_id when the id is not resolved within a second', async () => {
+    h.settingsGet.mockReturnValue(true)
+    h.deviceIdWithin.mockResolvedValue(null)
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(h.deviceIdWithin).toHaveBeenCalledWith(1000)
+    const request = h.createDesktopLoginCode.mock.lastCall![1] as Record<string, unknown>
+    expect(request).not.toHaveProperty('installation_id')
+  })
+
   it('omits installation_id when telemetry consent is off or undecided', async () => {
     for (const consent of [false, undefined]) {
       h.settingsGet.mockReturnValue(consent)
@@ -378,7 +398,7 @@ describe('signInViaDesktopLoginCode', () => {
 
       const request = h.createDesktopLoginCode.mock.lastCall![1] as Record<string, unknown>
       expect(request).not.toHaveProperty('installation_id')
-      expect(h.getDeviceId).not.toHaveBeenCalled()
+      expect(h.deviceIdWithin).not.toHaveBeenCalled()
     }
   })
 

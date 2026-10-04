@@ -1716,6 +1716,102 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
   })
 })
 
+describe('telemetry.holdUntilBound (installation id still resolving)', () => {
+  beforeEach(() => {
+    setupTelemetry({ bind: null })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('drops a capture before the bind when not holding', () => {
+    expect(telemetry.capture('comfy.desktop.test.early')).toBe(false)
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.early')).toBeUndefined()
+  })
+
+  it('holds a capture until the bind, then sends it with installation_id and its own time', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-04T12:00:00Z') })
+    telemetry.holdUntilBound()
+    expect(telemetry.capture('comfy.desktop.test.early', { n: 1 })).toBe(true)
+    expect(captured).toHaveLength(0)
+
+    vi.setSystemTime(new Date('2026-10-04T12:00:05Z'))
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.test.early')
+    expect(ev?.distinctId).toBe('anon-d')
+    expect(ev?.properties).toMatchObject({ n: 1, installation_id: 'install-id' })
+    expect(ev?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
+  })
+
+  it('sends held captures once, in order', () => {
+    telemetry.holdUntilBound()
+    telemetry.capture('comfy.desktop.test.a')
+    telemetry.capture('comfy.desktop.test.b')
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+
+    const events = captured.map((c) => c.event).filter((e) => e.startsWith('comfy.desktop.test.'))
+    expect(events).toEqual(['comfy.desktop.test.a', 'comfy.desktop.test.b'])
+  })
+
+  it('holds an exception until the bind', () => {
+    telemetry.holdUntilBound()
+    expect(telemetry.captureException(new Error('early'))).toBe(true)
+    expect(exceptions).toHaveLength(0)
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    expect(exceptions).toHaveLength(1)
+    expect(exceptions[0]!.distinctId).toBe('anon-d')
+  })
+
+  it('discards held captures when consent is withdrawn before the bind', () => {
+    telemetry.holdUntilBound()
+    telemetry.capture('comfy.desktop.test.early')
+    telemetry.setConsentState('denied')
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.early')).toBeUndefined()
+  })
+
+  it('does not send held captures after consent is withdrawn and granted again', () => {
+    telemetry.holdUntilBound()
+    telemetry.capture('comfy.desktop.test.early')
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.early')).toBeUndefined()
+  })
+
+  it('re-checks consent at the bind', () => {
+    telemetry.holdUntilBound()
+    telemetry.capture('comfy.desktop.test.early')
+    telemetry.setConsentState('undecided')
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.early')).toBeUndefined()
+  })
+
+  it('caps the hold at 200 captures', () => {
+    telemetry.holdUntilBound()
+    let accepted = 0
+    for (let i = 0; i < 201; i++) {
+      // Distinct names, so the per-event rate limit is not what refuses the last one.
+      if (telemetry.capture(`comfy.desktop.test.e${i}`)) accepted++
+    }
+    expect(accepted).toBe(200)
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    expect(captured.filter((c) => c.event.startsWith('comfy.desktop.test.e'))).toHaveLength(200)
+  })
+
+  it('stops holding after the bind', () => {
+    telemetry.holdUntilBound()
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    captured.length = 0
+    telemetry.capture('comfy.desktop.test.late')
+    expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.test.late'])
+  })
+})
+
 describe('telemetry Firebase consensus identity lifecycle', () => {
   beforeEach(() => {
     setupTelemetry({ bind: null })

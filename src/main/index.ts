@@ -103,24 +103,8 @@ import { update as updateInstallation, resolveAutoLaunchInstall } from './instal
 import { AUTO_LAUNCH_NONE } from './settings'
 import { lookupInstallUpdateOverride, recordIpcInvocation } from './lib/e2eOverrides'
 import * as mainTelemetry from './lib/telemetry'
-import {
-  clearLegacyIdentityRetryMarker,
-  consumeFirstLaunch,
-  getDeviceId,
-  getIdClass,
-  getIdLookupTiming,
-  hasCompletedFirstLaunch,
-  hasPersistedDeviceId,
-  initDeviceId,
-  markIdentityMigrationCompleted,
-  startMachineIdLookup
-} from './lib/deviceId'
-import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
-import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
-import { initExperiments } from './lib/experiments'
-import { initCloudFreeRuns } from './lib/cloudFreeRuns'
-import { initCoreBetaGrants } from './lib/coreBetaGrants'
-import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
+import { startMachineIdLookup } from './lib/deviceId'
+import { startBootIdentity } from './lib/bootIdentity'
 import { initUserTier } from './lib/userTier'
 
 import {
@@ -1480,70 +1464,22 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.setConsentState(initialConsent)
     mainTelemetry.installAppHooks()
 
-    // installation_id is an event/person property, never a PostHog identity.
-    const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
-    const { legacyId } = await initDeviceId()
-    clearLegacyIdentityRetryMarker()
-    const installationId = getDeviceId()
-    const anonymousDistinctId = recoverPendingIdentityRotation(
-      getInitialAnonymousDistinctId(existingInstallation)
-    )
+    const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
+    i18n.init(locale)
 
-    mainTelemetry.bindAnonymousId(anonymousDistinctId, installationId, {
-      app_version: APP_VERSION,
-      platform: process.platform,
-      arch: process.arch,
-      id_class: getIdClass()
-    })
-
-    // Durable snapshot of the tracked global settings as person properties
-    // (issues #1220/#1223), so adoption of every setting is queryable across the
-    // whole base. Consent-gated: queued until granted. Re-registered on change in
-    // `applySettingSet`.
-    mainTelemetry.registerPersonProperties(settings.getTrackedSettingsTelemetryProperties())
-
-    const isFirstLaunch = consumeFirstLaunch()
-    if (legacyId) {
-      // Historical random installation ids are reconciled directly in
-      // PostHog, not by Desktop alias writes. Complete only the local migration.
-      markIdentityMigrationCompleted()
-    }
-
-    // Boot the experiments cache. Synchronously loads the on-disk flag
-    // values for `getFlag()`, then kicks off a background refresh whose
-    // result lands on disk for the NEXT boot. Does not block boot.
-    void initExperiments({
-      distinctId: installationId,
-      personProperties: {
-        platform: process.platform,
-        arch: process.arch,
-        app_version: APP_VERSION,
-        id_class: getIdClass()
-      }
-    })
-
-    // Bind the stored staff classification BEFORE any ops flag is fetched. The
-    // boot evaluation is the only authoritative one, so a property that arrives
-    // after it cannot affect this launch — see `staffFlagTargeting.ts`. Also
-    // subscribes to the identity consensus, which is what reclassifies for the
-    // NEXT launch; this runs before any view exists, so no outcome is missed.
-    initStaffFlagTargeting()
-
-    // This ops-flag path is separate from consent-gated experiments: the first-use
-    // picker renders while consent is still `'undecided'`, so the
-    // experiments cache would never have a value to give it. See
-    // `cloudFreeRuns.ts`.
-    void initCloudFreeRuns({ distinctId: installationId })
-
-    void initCoreBetaGrants({ distinctId: installationId })
+    // The installation id resolves in the background: the window opens without
+    // waiting for the hardware lookup, and each consumer waits only when it
+    // needs the id. See `bootIdentity.ts`.
+    void startBootIdentity({
+      appVersion: APP_VERSION,
+      locale,
+      trackedSettings: () => settings.getTrackedSettingsTelemetryProperties()
+    }).catch((err) => console.error('[device-id] boot identity failed:', err))
 
     // Hydrate the persisted cloud user-tier cache for billing telemetry and
     // free-tier offer UI. `userTier.ts` refreshes it on every cloud
     // webContents `dom-ready` (see `attach.ts`).
     void initUserTier()
-
-    const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
-    i18n.init(locale)
 
     // Locale adoption + unsupported-locale demand. `effective_language` is read
     // after i18n.init so it's the locale the app actually renders (falls back to
@@ -1555,27 +1491,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       effective_language: i18n.getLocale()
     })
 
-    // Desktop-side anchor of the website → download → first-launch acquisition
-    // funnel. Fires exactly once per installation, ever (guard file alongside
-    // device-id.txt). app_version / app_channel / platform / arch ride in as
-    // default event properties; id_class, the id lookup timing and locale are
-    // added here.
-    //
-    // `captureFirstLaunch` (not plain `capture`) because this fires on a fresh
-    // install, when consent is still `'undecided'` — a plain capture would be
-    // dropped on the consent gate while the once-ever guard stays burned,
-    // losing the event forever. The deferred path ships it on the first
-    // `undecided → granted` transition and never on a decline.
-    if (isFirstLaunch) {
-      const timing = getIdLookupTiming()
-      mainTelemetry.captureFirstLaunch({
-        id_class: getIdClass(),
-        id_lookup_ms: timing?.idLookupMs ?? null,
-        id_lookup_timed_out: timing?.idLookupTimedOut ?? null,
-        boot_to_id_ms: timing?.bootToIdMs ?? null,
-        locale
-      })
-    }
     registerTitleTooltipIpc({
       findParentByTitleBarSender: (wc) => findEntryByTitleBarSender(wc)?.entry.window ?? null
     })

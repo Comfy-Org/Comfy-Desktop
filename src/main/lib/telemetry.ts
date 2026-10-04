@@ -204,6 +204,7 @@ export function _resetForTest(): void {
   pendingPersonSetOnce = null
   pendingUserBinding = null
   quarantinedWrites = []
+  heldUntilBound = null
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
@@ -825,6 +826,46 @@ function queueQuarantinedWrite(write: QuarantinedWrite): boolean {
 }
 
 /**
+ * Writes captured while boot is still resolving the installation id, held so
+ * the first window can open before the id exists without losing what happens
+ * in it or sending it without `installation_id`. `null` when not holding.
+ * `bindAnonymousId` replays them with their original timestamps; a quit before
+ * the bind drops them.
+ */
+let heldUntilBound: QuarantinedWrite[] | null = null
+
+/** Hold captures until `bindAnonymousId` instead of dropping them. */
+export function holdUntilBound(): void {
+  if (!distinctId) heldUntilBound ??= []
+}
+
+function holdWrite(write: QuarantinedWrite): boolean {
+  if (!heldUntilBound || heldUntilBound.length >= QUARANTINED_WRITES_CAP) return false
+  heldUntilBound.push(write)
+  return true
+}
+
+/** Deliver held writes now that an id is bound, re-checking consent, which may have changed. */
+function replayHeldWrites(): void {
+  const writes = heldUntilBound ?? []
+  heldUntilBound = null
+  for (const write of writes) {
+    const allowed =
+      write.kind === 'exception'
+        ? consentState === 'granted'
+        : !!write.event && isAllowedToFire(write.event)
+    // No quarantine to route through: it needs a bound user, and the bind
+    // that replays these has just cleared it.
+    if (!allowed) continue
+    if (write.kind === 'exception') {
+      deliverException(write.error, write.properties, write.forward)
+    } else if (write.event) {
+      deliverEvent(write.event, write.properties, write.forward, write.timestamp)
+    }
+  }
+}
+
+/**
  * Only call with the quarantine already lifted. Replays deliver directly,
  * bypassing the rate limiter — each write was already charged against it at
  * queue time, so a released burst cannot retro-drop acknowledged writes.
@@ -869,6 +910,7 @@ function discardDeferredTelemetry(): void {
   pendingUserBinding = null
   pendingLoginAttribution = null
   quarantinedWrites = []
+  if (heldUntilBound) heldUntilBound = []
 }
 
 function acknowledgeDeliveredIdentityMerges(messages: unknown): void {
@@ -1002,7 +1044,11 @@ export function bindAnonymousId(
       ...properties
     }
   }
-  if (!canEmit()) return
+  if (!canEmit()) {
+    heldUntilBound = null
+    return
+  }
+  replayHeldWrites()
   tryFlushDeferred()
 }
 
@@ -1341,9 +1387,15 @@ function captureEvent(event: string, properties: TelemetryContext, forward: bool
   // E2E only (no-op otherwise): lets a spec assert an event was raised without consent or a
   // reachable PostHog.
   recordIpcInvocation(`telemetry:${event}`, properties)
-  if (!canEmit() || !distinctId) return false
+  if (!canEmit() || (!distinctId && !heldUntilBound)) return false
   if (!isAllowedToFire(event)) return false
   if (!_checkRateLimit(event)) return false
+  if (!distinctId) {
+    if (!holdWrite({ kind: 'event', event, properties, forward, timestamp: new Date() }))
+      return false
+    _recordCapturedEvent(event)
+    return true
+  }
   if (firebaseWritesQuarantined()) {
     if (
       !queueQuarantinedWrite({ kind: 'event', event, properties, forward, timestamp: new Date() })
@@ -1512,10 +1564,16 @@ function captureExceptionWrite(
   properties: TelemetryContext,
   forward: boolean
 ): boolean {
-  if (!canEmit() || !distinctId) return false
+  if (!canEmit() || (!distinctId && !heldUntilBound)) return false
   // Exceptions are reliability data; suppress them outside `'granted'`.
   if (consentState !== 'granted') return false
   if (!_checkRateLimit('comfy.desktop.exception.error')) return false
+  if (!distinctId) {
+    if (!holdWrite({ kind: 'exception', error, properties, forward, timestamp: new Date() }))
+      return false
+    _recordCapturedEvent('comfy.desktop.exception.error')
+    return true
+  }
   if (firebaseWritesQuarantined()) {
     if (
       !queueQuarantinedWrite({

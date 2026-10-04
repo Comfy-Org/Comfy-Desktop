@@ -61,6 +61,62 @@ afterEach(() => {
   fs.rmSync(testConfigDir, { recursive: true, force: true })
 })
 
+describe('makeOpsFlag with a distinct id still resolving', () => {
+  it('makes get() wait for the id and then the fetch', async () => {
+    const flag = makeTestFlag()
+    getOpsFlagResult.mockResolvedValue(flagResult('disabled'))
+    let resolveId: (id: string | null) => void = () => {}
+    void flag.init({
+      distinctId: new Promise<string | null>((r) => {
+        resolveId = r
+      })
+    })
+    let settled = false
+    const value = flag.get().finally(() => {
+      settled = true
+    })
+    await new Promise((r) => setImmediate(r))
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+    expect(settled).toBe(false)
+
+    resolveId('final-id')
+    expect(await value).toBe('disabled')
+    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'final-id', 2000, undefined)
+  })
+
+  it('reads a null id as unreachable: no fetch, fallback value', async () => {
+    const flag = makeTestFlag()
+    await flag.init({ distinctId: Promise.resolve(null) })
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+    expect(await flag.get()).toBe('normal')
+  })
+
+  it('serves the persisted value when the id is not available in time', async () => {
+    const options = {
+      key: 'test-flag',
+      fallback: 'normal' as const,
+      parse: (value: unknown) => (value === 'degraded' ? ('degraded' as const) : undefined),
+      persist: true as const
+    }
+    getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
+    const earlier = makeOpsFlag<'normal' | 'degraded'>(options)
+    await earlier.init({ distinctId: 'final-id' })
+
+    getOpsFlagResult.mockClear()
+    const flag = makeOpsFlag<'normal' | 'degraded'>(options)
+    await flag.init({ distinctId: Promise.resolve(null) })
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+    expect(await flag.get()).toBe('degraded')
+  })
+
+  it('falls back when the id promise rejects', async () => {
+    const flag = makeTestFlag()
+    await flag.init({ distinctId: Promise.reject(new Error('no id')) })
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+    expect(await flag.get()).toBe('normal')
+  })
+})
+
 describe('makeOpsFlag', () => {
   it('resolves a recognised value', async () => {
     const flag = makeTestFlag()

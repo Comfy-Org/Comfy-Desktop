@@ -46,6 +46,8 @@ vi.mock('systeminformation', () => ({
 }))
 
 const SALT = 'comfy-installation-id-v1'
+// MACHINE_ID_TIMEOUT_MS: the cutoff for deciding the id.
+const CUTOFF_MS = 15_000
 
 const ETC_MACHINE_ID = '/etc/machine-id'
 const DBUS_MACHINE_ID = '/var/lib/dbus/machine-id'
@@ -545,7 +547,7 @@ describe('deviceId', () => {
         fs.writeFileSync(path.join(testUserData, 'device-id.txt'), machineDerived)
 
         const init = mod.initDeviceId()
-        await vi.advanceTimersByTimeAsync(2000)
+        await vi.advanceTimersByTimeAsync(CUTOFF_MS)
         await init
 
         expect(mod.getIdClass()).toBe('random_fallback')
@@ -557,7 +559,7 @@ describe('deviceId', () => {
         void mod.initDeviceId().then(() => {
           settled = true
         })
-        await vi.advanceTimersByTimeAsync(1999)
+        await vi.advanceTimersByTimeAsync(CUTOFF_MS - 1)
         expect(settled).toBe(false)
         await vi.advanceTimersByTimeAsync(1)
         expect(settled).toBe(true)
@@ -586,7 +588,7 @@ describe('deviceId', () => {
       void mod.initDeviceId().then(() => {
         settled = true
       })
-      await vi.advanceTimersByTimeAsync(499)
+      await vi.advanceTimersByTimeAsync(CUTOFF_MS - 1501)
       expect(settled).toBe(false)
       await vi.advanceTimersByTimeAsync(1)
       expect(settled).toBe(true)
@@ -603,14 +605,14 @@ describe('deviceId', () => {
       void mod.initDeviceId().then(() => {
         settled = true
       })
-      await vi.advanceTimersByTimeAsync(500)
+      await vi.advanceTimersByTimeAsync(CUTOFF_MS - 1500)
       expect(settled).toBe(true)
     })
 
     it('times out at once when the budget was spent before initDeviceId', async () => {
       mockUuidHangs = true
       mod.startMachineIdLookup()
-      await vi.advanceTimersByTimeAsync(5000)
+      await vi.advanceTimersByTimeAsync(CUTOFF_MS + 3000)
 
       const init = mod.initDeviceId()
       await vi.advanceTimersByTimeAsync(0)
@@ -640,6 +642,68 @@ describe('deviceId', () => {
       await mod.initDeviceId()
       expect(mod.getIdClass()).toBe('random_fallback')
       expect(mod.getIdLookupTiming()).toMatchObject({ idLookupMs: 0, idLookupTimedOut: false })
+    })
+  })
+
+  describe('resolving in the background', () => {
+    const uuid = 'aabbccdd-eeff-0011-2233-445566778899'
+
+    function deviceIdFile(): string {
+      return path.join(testUserData, 'device-id.txt')
+    }
+
+    beforeEach(() => {
+      setPlatform('win32')
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('persists nothing until the lookup resolves, whatever reads the id meanwhile', async () => {
+      mockUuidHangs = true
+      const ready = mod.deviceIdReady()
+      const within = mod.deviceIdWithin(1000)
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(await within).toBeNull()
+      const early = mod.getDeviceId()
+      expect(mod.getDeviceId()).toBe(early)
+      await vi.advanceTimersByTimeAsync(CUTOFF_MS - 1001)
+      expect(fs.existsSync(deviceIdFile())).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      const id = await ready
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(id)
+      expect(id).not.toBe(early)
+      expect(mod.getDeviceId()).toBe(id)
+    })
+
+    it('serves the stored id early without rewriting it', async () => {
+      const stored = expectedIdFor(uuid)
+      fs.writeFileSync(deviceIdFile(), stored)
+      mockUuidHangs = true
+      void mod.initDeviceId()
+      expect(mod.getDeviceId()).toBe(stored)
+      expect(mod.getIdClass()).toBe('random_fallback')
+    })
+
+    it('derives the machine id from a lookup that takes 14 s', async () => {
+      mockSystemUuid = uuid
+      mockUuidDelayMs = 14_000
+      const ready = mod.deviceIdReady()
+      await vi.advanceTimersByTimeAsync(14_000)
+      expect(await ready).toBe(expectedIdFor(uuid))
+      expect(mod.getIdClass()).toBe('machine_derived')
+    })
+
+    it('gives deviceIdWithin the id when it resolves in time', async () => {
+      mockSystemUuid = uuid
+      mockUuidDelayMs = 500
+      const within = mod.deviceIdWithin(1000)
+      await vi.advanceTimersByTimeAsync(500)
+      expect(await within).toBe(expectedIdFor(uuid))
     })
   })
 
@@ -676,7 +740,7 @@ describe('deviceId', () => {
     it('records a timeout as no duration', async () => {
       mockUuidHangs = true
       const init = mod.initDeviceId()
-      await vi.advanceTimersByTimeAsync(2000)
+      await vi.advanceTimersByTimeAsync(CUTOFF_MS)
       await init
 
       expect(mod.getIdLookupTiming()).toMatchObject({ idLookupMs: null, idLookupTimedOut: true })
@@ -723,10 +787,12 @@ describe('deviceId', () => {
       expect(mod.getIdClass()).toBe('random_fallback')
     })
 
-    it('produces a random UUID when no file exists and flags it as random_fallback', () => {
+    it('produces a random UUID when no file exists, without persisting it', () => {
       const id = mod.getDeviceId()
       expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+      expect(mod.getDeviceId()).toBe(id)
       expect(mod.getIdClass()).toBe('random_fallback')
+      expect(fs.existsSync(path.join(testUserData, 'device-id.txt'))).toBe(false)
     })
   })
 })

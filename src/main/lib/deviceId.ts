@@ -23,10 +23,11 @@
  * every such machine the same installation id, so a placeholder counts as
  * "no machine id" and the install keeps its own random id instead.
  *
- * Synchronous `getDeviceId()` is preserved for backward compatibility with
- * the existing IPC handler and main-process call sites. It must only be
- * called after `initDeviceId()` has resolved; if called earlier it falls back
- * to a random UUID flagged as `'random_fallback'` so dashboards can spot it.
+ * Boot does not wait for the id: consumers await `deviceIdReady()` when they
+ * need it. Nothing persists an id before `initDeviceId()` resolves, so a
+ * consumer that runs early cannot fix a random id in place of the machine's.
+ * Synchronous `getDeviceId()` must only be called after that; earlier, it
+ * returns the on-disk id or an unpersisted random one.
  */
 import { randomUUID, createHash } from 'crypto'
 import path from 'path'
@@ -139,15 +140,15 @@ function isLegacyUuid(value: string): boolean {
 }
 
 /**
- * Hard cap on how long we block boot waiting for `systeminformation`'s
- * platform-specific lookups (SMBIOS / WMI / `/sys/class/dmi/id/...`).
- * On VMs and certain firmwares this call can stall for several seconds;
- * past this budget we fall through to `random_fallback` so the splash
- * screen does not freeze on a slow `dmidecode` shell-out. Counted from
- * `startMachineIdLookup()`, so time the lookup spends overlapping Electron
- * start-up is not waited for again.
+ * Cutoff for `systeminformation`'s platform-specific lookups (SMBIOS / WMI /
+ * `/sys/class/dmi/id/...`), which can stall for seconds on cold starts, VMs
+ * and some firmware. Past it the id falls through to `random_fallback`, which
+ * is persisted, so a later launch that does read the hardware id switches
+ * once. Boot does not wait for it (the window opens first), so it is set long
+ * enough to cover slow cold starts; tune it from `first_launch`'s
+ * `id_lookup_ms`. Counted from `startMachineIdLookup()`.
  */
-const MACHINE_ID_TIMEOUT_MS = 2000
+const MACHINE_ID_TIMEOUT_MS = 15_000
 
 /**
  * On Windows `si.system()` runs three cold `powershell.exe` spawns in
@@ -469,21 +470,38 @@ export function getDeviceId(): string {
   if (cached) return cached.installationId
 
   // Degraded path — getDeviceId() was called before initDeviceId() resolved.
-  // Try the on-disk value first; if it's a previously-computed id, use it.
-  // Otherwise produce a random UUID (flagged) and persist it best-effort.
+  // Use the on-disk value if there is one, else a random UUID. Neither is
+  // cached or written: persisting here, while the lookup may still answer,
+  // would fix a random id in place of the machine-derived one.
   try {
     const raw = fs.readFileSync(deviceIdPath(), 'utf-8').trim()
-    if (raw.length > 0) {
-      cached = { installationId: raw, idClass: 'random_fallback' }
-      return raw
-    }
+    if (raw.length > 0) return raw
   } catch {
     // fall through
   }
-  const id = randomUUID()
-  cached = { installationId: id, idClass: 'random_fallback' }
-  writeIdFile(id)
-  return id
+  degradedId ??= randomUUID()
+  return degradedId
+}
+
+let degradedId: string | null = null
+
+/** The installation id once `initDeviceId()` resolves (it is started if it has not been). */
+export async function deviceIdReady(): Promise<string> {
+  await initDeviceId()
+  return getDeviceId()
+}
+
+/** `deviceIdReady()`, or `null` if it takes longer than `timeoutMs`. */
+export async function deviceIdWithin(timeoutMs: number): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), timeoutMs)
+  })
+  try {
+    return await Promise.race([deviceIdReady(), timeout])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export function getIdClass(): IdClass {
@@ -508,4 +526,5 @@ export function _resetForTest(): void {
   initPromise = null
   lookup = null
   lookupTiming = null
+  degradedId = null
 }
