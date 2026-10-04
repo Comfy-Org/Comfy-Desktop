@@ -50,6 +50,8 @@ export interface BootIdentityOptions {
  * Returns at once; the returned promise settles when the id is bound.
  */
 export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
+  // `first_launch` is stamped with when this launch started, not when the id resolved.
+  const launchedAt = new Date()
   // Read before anything can write device-id.txt or the first-launch guard.
   const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
   const anonymousDistinctId = recoverPendingIdentityRotation(
@@ -131,13 +133,16 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
     // first `undecided → granted` transition and never on a decline.
     if (isFirstLaunch) {
       const timing = getIdLookupTiming()
-      mainTelemetry.captureFirstLaunch({
-        id_class: getIdClass(),
-        id_lookup_ms: timing?.idLookupMs ?? null,
-        id_lookup_timed_out: timing?.idLookupTimedOut ?? null,
-        boot_to_id_ms: timing?.bootToIdMs ?? null,
-        locale: opts.locale
-      })
+      mainTelemetry.captureFirstLaunch(
+        {
+          id_class: getIdClass(),
+          id_lookup_ms: timing?.idLookupMs ?? null,
+          id_lookup_timed_out: timing?.idLookupTimedOut ?? null,
+          boot_to_id_ms: timing?.bootToIdMs ?? null,
+          locale: opts.locale
+        },
+        launchedAt
+      )
     }
   })
 }

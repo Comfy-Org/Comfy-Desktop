@@ -759,6 +759,8 @@ let pendingSessionStart: Record<string, TelemetryValue> | null = null
  * intended consent outcome.
  */
 let pendingFirstLaunch: TelemetryContext | null = null
+/** When the launch `pendingFirstLaunch` describes happened. */
+let pendingFirstLaunchAt: Date | null = null
 /** Person props collected before login and applied to Firebase UID at bind. */
 let pendingPersonSet: Record<string, TelemetryValue> | null = null
 /** Same, for write-once (`$set_once`) markers. */
@@ -782,21 +784,21 @@ const FIREBASE_LOGIN_ATTRIBUTION_EVENT = 'comfy.desktop.identity.login_attribute
  * else or to anonymous, and drained at shutdown when the quit outruns the
  * confirming re-report.
  */
-let pendingLoginAttribution: { userId: string; context: TelemetryContext } | null = null
+let pendingLoginAttribution: { userId: string; context: TelemetryContext; at: Date } | null = null
 
 export function stageLoginAttribution(userId: string, context: TelemetryContext): void {
   // A 'denied' choice never defers a login conversion for later.
   if (consentState === 'denied') return
-  pendingLoginAttribution = { userId, context }
+  pendingLoginAttribution = { userId, context, at: new Date() }
 }
 
 /** A confirmation for any user settles the staged attribution: emitted for
  *  the same UID, discarded as contradicted for any other. */
 function emitStagedLoginAttribution(confirmedUserId: string): void {
   if (!pendingLoginAttribution) return
-  const { userId, context } = pendingLoginAttribution
+  const { userId, context, at } = pendingLoginAttribution
   pendingLoginAttribution = null
-  if (userId === confirmedUserId) capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context)
+  if (userId === confirmedUserId) captureAt(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context, at)
 }
 
 interface QuarantinedWrite {
@@ -884,6 +886,11 @@ function flushQuarantinedWrites(): void {
   quarantinedWrites = []
   if (!canEmit() || !distinctId) return
   for (const write of writes) {
+    // Released while the installation id is still pending: hold them with the rest.
+    if (holdingForInstallationId()) {
+      holdWrite(write)
+      continue
+    }
     if (write.kind === 'exception') {
       if (consentState === 'granted') deliverException(write.error, write.properties, write.forward)
     } else if (write.event && isAllowedToFire(write.event)) {
@@ -1018,7 +1025,14 @@ function tryFlushDeferred(): void {
   if (pendingSessionStart && capture('comfy.desktop.session.started', pendingSessionStart)) {
     pendingSessionStart = null
   }
-  if (pendingFirstLaunch && capture('comfy.desktop.app.first_launch', pendingFirstLaunch)) {
+  if (
+    pendingFirstLaunch &&
+    captureAt(
+      'comfy.desktop.app.first_launch',
+      pendingFirstLaunch,
+      pendingFirstLaunchAt ?? new Date()
+    )
+  ) {
     pendingFirstLaunch = null
   }
   // The binding flush also waits on the raw flag: consensus can be pending
@@ -1066,7 +1080,8 @@ export function setInstallationId(
 ): void {
   installationIdProperty = installationId
   defaultEventProperties = { ...defaultEventProperties, installation_id: installationId }
-  if (consentState !== 'denied' && Object.keys(properties).length > 0) {
+  // Also reaches a person bound before the id resolved (see `applyFirebaseUserBinding`).
+  if (consentState !== 'denied') {
     pendingPersonSet = {
       ...(pendingPersonSet || {}),
       installation_id: installationId,
@@ -1106,9 +1121,6 @@ function queuePendingUserBinding(
   emitLoginEvent: boolean,
   properties: Record<string, TelemetryValue>
 ): void {
-  if (pendingUserBinding && pendingUserBinding.userId !== userId) {
-    retireAnonymousIdOfQueuedBinding()
-  }
   const existing = pendingUserBinding?.userId === userId ? pendingUserBinding : null
   pendingUserBinding = {
     userId,
@@ -1168,7 +1180,7 @@ function applyFirebaseUserBinding(
     return
   }
 
-  if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
+  if (!canEmit() || !anonymousDistinctId) {
     queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
     return
   }
@@ -1197,7 +1209,9 @@ function applyFirebaseUserBinding(
   const personSet = scrubProperties({
     ...(pendingPersonSet || {}),
     ...properties,
-    installation_id: installationIdProperty,
+    // Not yet known on a launch whose id lookup is still running; `setInstallationId`
+    // attaches it to the bound person when it resolves.
+    ...(installationIdProperty ? { installation_id: installationIdProperty } : {}),
     is_authenticated: true
   })
   const personSetOnce = pendingPersonSetOnce
@@ -1207,7 +1221,7 @@ function applyFirebaseUserBinding(
   const pendingMerge = reservePendingIdentityMerge({
     anonymousId,
     userId: normalizedUserId,
-    installationId: installationIdProperty,
+    ...(installationIdProperty ? { installationId: installationIdProperty } : {}),
     personSet: persistablePersonProperties(personSet),
     ...(personSetOnce ? { personSetOnce: persistablePersonProperties(personSetOnce) } : {})
   })
@@ -1293,24 +1307,8 @@ export function releaseFirebasePendingConsensus(): void {
  * login attribution: during a switch that payload may belong to the
  * incoming user, and its fate is settled at their confirmation instead.
  */
-/**
- * While the installation id is pending, a signed-in account only queues its
- * binding, so its activity accrues on the anonymous id. If that account then
- * signs out or is replaced before binding, rotate the anonymous id (as a bound
- * sign-out does), so a later account's identify cannot merge that activity.
- * Held writes keep the retired id.
- */
-function retireAnonymousIdOfQueuedBinding(): void {
-  if (!pendingUserBinding || !holdingForInstallationId()) return
-  const safeAnonymousId = rotatePersistedAnonymousDistinctId()
-  nextAnonymousDistinctId = null
-  anonymousDistinctId = safeAnonymousId
-  distinctId = safeAnonymousId
-}
-
 function detachFromBoundUser(): void {
   endFirebaseWriteQuarantine('discard')
-  if (!boundUserId) retireAnonymousIdOfQueuedBinding()
   pendingUserBinding = null
   if (!boundUserId) return
   // Wiping the person buffers while unbound would permanently lose
@@ -1431,28 +1429,44 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
   return captureEvent(event, properties, false)
 }
 
-function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
+/** `capture()` stamped with when the event happened rather than when it is sent. */
+function captureAt(event: string, properties: TelemetryContext, at: Date): boolean {
+  return captureEvent(event, properties, false, at)
+}
+
+function captureEvent(
+  event: string,
+  properties: TelemetryContext,
+  forward: boolean,
+  at?: Date
+): boolean {
   // E2E only (no-op otherwise): lets a spec assert an event was raised without consent or a
   // reachable PostHog.
   recordIpcInvocation(`telemetry:${event}`, properties)
   if (!canEmit() || !distinctId) return false
   if (!isAllowedToFire(event)) return false
   if (!_checkRateLimit(event)) return false
-  if (holdingForInstallationId()) {
-    if (!holdWrite({ kind: 'event', event, properties, forward, timestamp: new Date() }))
-      return false
-    _recordCapturedEvent(event)
-    return true
-  }
   if (firebaseWritesQuarantined()) {
     if (
-      !queueQuarantinedWrite({ kind: 'event', event, properties, forward, timestamp: new Date() })
+      !queueQuarantinedWrite({
+        kind: 'event',
+        event,
+        properties,
+        forward,
+        timestamp: at ?? new Date()
+      })
     )
       return false
     _recordCapturedEvent(event)
     return true
   }
-  if (!deliverEvent(event, properties, forward, null)) return false
+  if (holdingForInstallationId()) {
+    if (!holdWrite({ kind: 'event', event, properties, forward, timestamp: at ?? new Date() }))
+      return false
+    _recordCapturedEvent(event)
+    return true
+  }
+  if (!deliverEvent(event, properties, forward, at ?? null)) return false
   _recordCapturedEvent(event)
   return true
 }
@@ -1501,17 +1515,18 @@ function deliverEvent(
  * consent is already `'granted'` (returning user who reinstalled after opting
  * in, or the rare migrator), it captures immediately.
  */
-export function captureFirstLaunch(properties: TelemetryContext = {}): void {
+export function captureFirstLaunch(properties: TelemetryContext = {}, at = new Date()): void {
   if (consentState === 'denied') return
   if (
     !canEmit() ||
     !distinctId ||
     consentState !== 'granted' ||
-    !capture('comfy.desktop.app.first_launch', properties)
+    !captureAt('comfy.desktop.app.first_launch', properties, at)
   ) {
     // Not admitted (deferred or dropped): the on-disk guard is already
     // burned, so keep the payload queued for the next flush trigger.
     pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
+    pendingFirstLaunchAt = at
   }
 }
 
@@ -1617,12 +1632,6 @@ function captureExceptionWrite(
   // Exceptions are reliability data; suppress them outside `'granted'`.
   if (consentState !== 'granted') return false
   if (!_checkRateLimit('comfy.desktop.exception.error')) return false
-  if (holdingForInstallationId()) {
-    if (!holdWrite({ kind: 'exception', error, properties, forward, timestamp: new Date() }))
-      return false
-    _recordCapturedEvent('comfy.desktop.exception.error')
-    return true
-  }
   if (firebaseWritesQuarantined()) {
     if (
       !queueQuarantinedWrite({
@@ -1633,6 +1642,12 @@ function captureExceptionWrite(
         timestamp: new Date()
       })
     )
+      return false
+    _recordCapturedEvent('comfy.desktop.exception.error')
+    return true
+  }
+  if (holdingForInstallationId()) {
+    if (!holdWrite({ kind: 'exception', error, properties, forward, timestamp: new Date() }))
       return false
     _recordCapturedEvent('comfy.desktop.exception.error')
     return true
@@ -2086,10 +2101,10 @@ export async function shutdown(reason: string): Promise<void> {
     // Unbound is safe - the event lands on the anonymous id, which only
     // ever merges into the staged user if they are later confirmed.
     if (pendingLoginAttribution) {
-      const { userId, context } = pendingLoginAttribution
+      const { userId, context, at } = pendingLoginAttribution
       pendingLoginAttribution = null
       if (boundUserId === null || userId === boundUserId) {
-        capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context)
+        captureAt(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context, at)
       }
     }
     capture('comfy.desktop.session.ended', {

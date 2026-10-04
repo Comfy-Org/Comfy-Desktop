@@ -14,7 +14,10 @@ export interface PendingIdentityMerge {
   anonymousId: string
   userId: string
   nextAnonymousId: string
-  installationId: string
+  /** Absent for a sign-in bound before this launch resolved its installation id. Versions
+   *  before that change require it and skip such a record, so on a downgrade an unflushed
+   *  one is not replayed. */
+  installationId?: string
   personSet: PendingIdentityProperties
   personSetOnce?: PendingIdentityProperties
 }
@@ -32,10 +35,13 @@ function normalizeEntry(value: unknown): PendingIdentityMerge | null {
   const anonymousId = normalizeAnonymousDistinctId(entry.anonymousId)
   const userId = normalizeOpaqueIdentifier(entry.userId, 256)
   const nextAnonymousId = normalizeAnonymousDistinctId(entry.nextAnonymousId)
-  const installationId = normalizeOpaqueIdentifier(entry.installationId, 256)
-  if (!id || !anonymousId || !userId || !nextAnonymousId || !installationId) return null
+  const installationId =
+    entry.installationId === undefined
+      ? undefined
+      : normalizeOpaqueIdentifier(entry.installationId, 256)
+  if (!id || !anonymousId || !userId || !nextAnonymousId || installationId === null) return null
   const personSet = normalizeProperties(entry.personSet) ?? {
-    installation_id: installationId,
+    ...(installationId ? { installation_id: installationId } : {}),
     is_authenticated: true
   }
   const personSetOnce = normalizeProperties(entry.personSetOnce)
@@ -44,7 +50,7 @@ function normalizeEntry(value: unknown): PendingIdentityMerge | null {
     anonymousId,
     userId,
     nextAnonymousId,
-    installationId,
+    ...(installationId ? { installationId } : {}),
     personSet,
     ...(personSetOnce && Object.keys(personSetOnce).length > 0 ? { personSetOnce } : {})
   }

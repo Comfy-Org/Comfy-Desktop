@@ -1728,6 +1728,19 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
     expect(ev?.properties).toMatchObject({ id_class: 'machine_derived', locale: 'en' })
   })
 
+  it('stamps a deferred first_launch with the launch time, not the grant time', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-04T12:00:30Z') })
+    telemetry.setConsentState('undecided')
+    bindTestAnonymous('install-id')
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' }, new Date('2026-10-04T12:00:00Z'))
+    vi.setSystemTime(new Date('2026-10-04T12:05:00Z'))
+    telemetry.setConsentState('granted')
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(ev?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
+    vi.useRealTimers()
+  })
+
   it('captures immediately when consent is already granted', () => {
     telemetry.setConsentState('granted')
     bindTestAnonymous('install-id')
@@ -1888,52 +1901,6 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(ev?.properties).not.toHaveProperty('installation_id')
   })
 
-  it('retires the anonymous id when a queued account signs out before the installation id', () => {
-    telemetry.bindAnonymousId('anon-d', null)
-    telemetry.bindUserId('user-a')
-    telemetry.capture('comfy.desktop.test.as_a')
-    telemetry.applyFirebaseAnonymousConsensus()
-    telemetry.bindUserId('user-b')
-    telemetry.setInstallationId('install-id')
-
-    expect(captured.find((c) => c.event === 'comfy.desktop.test.as_a')?.distinctId).toBe('anon-d')
-    const merge = identifies.find((i) => i.distinctId === 'user-b')
-    expect(merge?.properties?.$anon_distinct_id).toBeDefined()
-    expect(merge?.properties?.$anon_distinct_id).not.toBe('anon-d')
-  })
-
-  it('retires the anonymous id when a queued account is replaced before the installation id', () => {
-    telemetry.bindAnonymousId('anon-d', null)
-    telemetry.bindUserId('user-a')
-    telemetry.bindUserId('user-b')
-    telemetry.setInstallationId('install-id')
-
-    const merge = identifies.find((i) => i.distinctId === 'user-b')
-    expect(merge?.properties?.$anon_distinct_id).toBeDefined()
-    expect(merge?.properties?.$anon_distinct_id).not.toBe('anon-d')
-    expect(identifies.find((i) => i.distinctId === 'user-a')).toBeUndefined()
-  })
-
-  it('keeps the anonymous id for a queued account that stays signed in', () => {
-    telemetry.bindAnonymousId('anon-d', null)
-    telemetry.bindUserId('user-a')
-    telemetry.bindUserId('user-a')
-    telemetry.setInstallationId('install-id')
-
-    const merge = identifies.find((i) => i.distinctId === 'user-a')
-    expect(merge?.properties?.$anon_distinct_id).toBe('anon-d')
-  })
-
-  it('leaves the anonymous id alone when a binding queued outside the wait is dropped', () => {
-    telemetry.setConsentState('undecided')
-    telemetry.bindAnonymousId('anon-d', 'install-id')
-    telemetry.bindUserId('user-a')
-    telemetry.applyFirebaseAnonymousConsensus()
-    telemetry.setConsentState('granted')
-    telemetry.capture('comfy.desktop.test.after')
-    expect(captured.find((c) => c.event === 'comfy.desktop.test.after')?.distinctId).toBe('anon-d')
-  })
-
   it('reports shutdown once it has begun', async () => {
     telemetry.bindAnonymousId('anon-d', 'install-id')
     expect(telemetry.hasShutDown()).toBe(false)
@@ -1949,12 +1916,86 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.test.late'])
   })
 
-  it('defers a Firebase identify until the installation id is set', () => {
+  it('binds a sign-in at once, then attaches the installation id to that person', () => {
     telemetry.bindAnonymousId('anon-d', null)
-    telemetry.bindUserId('firebase-uid')
-    expect(identifies).toHaveLength(0)
+    telemetry.bindUserId('user-a')
+    expect(identifies).toHaveLength(1)
+    expect(identifies[0]).toMatchObject({
+      distinctId: 'user-a',
+      properties: { $anon_distinct_id: 'anon-d' }
+    })
+    expect(identifies[0]!.properties?.$set).not.toHaveProperty('installation_id')
+    telemetry.capture('comfy.desktop.test.signed_in')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.signed_in')).toBeUndefined()
+
+    telemetry.setInstallationId('install-id', { id_class: 'machine_derived' })
+    const held = captured.find((c) => c.event === 'comfy.desktop.test.signed_in')
+    expect(held?.distinctId).toBe('user-a')
+    expect(held?.properties).toMatchObject({ installation_id: 'install-id' })
+    const personSet = captured.find((c) => c.event === 'comfy.desktop.person.set')
+    expect(personSet?.distinctId).toBe('user-a')
+    expect(personSet?.properties?.$set).toMatchObject({
+      installation_id: 'install-id',
+      id_class: 'machine_derived'
+    })
+  })
+
+  it('attaches the installation id to a bound person even with no other properties', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
     telemetry.setInstallationId('install-id')
-    expect(identifies.length).toBeGreaterThan(0)
+    const personSet = captured.find((c) => c.event === 'comfy.desktop.person.set')
+    expect(personSet?.properties?.$set).toMatchObject({ installation_id: 'install-id' })
+  })
+
+  it('discards writes quarantined during the wait when consensus resolves to another account', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('comfy.desktop.test.ambiguous')
+    telemetry.applyFirebaseUserConsensus('user-b')
+    telemetry.setInstallationId('install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.ambiguous')).toBeUndefined()
+  })
+
+  it('rotates the anonymous id when a sign-in made during the wait signs out', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.capture('comfy.desktop.test.before')
+    telemetry.bindUserId('user-a')
+    telemetry.applyFirebaseAnonymousConsensus()
+    telemetry.bindUserId('user-b')
+    telemetry.setInstallationId('install-id')
+
+    const merge = identifies.find((i) => i.distinctId === 'user-b')
+    expect(merge?.properties?.$anon_distinct_id).toBeDefined()
+    expect(merge?.properties?.$anon_distinct_id).not.toBe('anon-d')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.before')?.distinctId).toBe('anon-d')
+  })
+
+  it('holds writes a quarantine releases while the installation id is pending', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('comfy.desktop.test.quarantined')
+    telemetry.applyFirebaseUserConsensus('user-a')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.quarantined')).toBeUndefined()
+
+    telemetry.setInstallationId('install-id')
+    const ev = captured.find((c) => c.event === 'comfy.desktop.test.quarantined')
+    expect(ev?.distinctId).toBe('user-a')
+    expect(ev?.properties).toMatchObject({ installation_id: 'install-id' })
+  })
+
+  it('stamps login_attributed with when the sign-in was staged', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-04T12:00:00Z') })
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.stageLoginAttribution('user-a', { via: 'desktop_login_code' })
+    vi.setSystemTime(new Date('2026-10-04T12:00:09Z'))
+    telemetry.applyFirebaseUserConsensus('user-a')
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.identity.login_attributed')
+    expect(ev?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
   })
 })
 

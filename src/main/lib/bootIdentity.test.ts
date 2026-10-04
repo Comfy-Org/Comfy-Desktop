@@ -142,6 +142,7 @@ describe('startBootIdentity', () => {
 
   it('binds the resolved id and fires first_launch once it resolves', async () => {
     lookupDelayMs = 3000
+    const launchedAt = Date.now()
     const bound = mod.startBootIdentity(OPTIONS)
     await vi.advanceTimersByTimeAsync(3000)
     await bound
@@ -153,13 +154,17 @@ describe('startBootIdentity', () => {
       id_class: 'machine_derived'
     })
     expect(h.telemetry.registerPersonProperties).toHaveBeenCalledWith({ theme: 'dark' })
-    expect(h.telemetry.captureFirstLaunch).toHaveBeenCalledWith({
-      id_class: 'machine_derived',
-      id_lookup_ms: 3000,
-      id_lookup_timed_out: false,
-      boot_to_id_ms: expect.any(Number),
-      locale: 'en'
-    })
+    expect(h.telemetry.captureFirstLaunch).toHaveBeenCalledWith(
+      {
+        id_class: 'machine_derived',
+        id_lookup_ms: 3000,
+        id_lookup_timed_out: false,
+        boot_to_id_ms: expect.any(Number),
+        locale: 'en'
+      },
+      // Stamped with the launch, 3 s before the id resolved.
+      new Date(launchedAt)
+    )
     expect(fs.readFileSync(file('device-id.txt'), 'utf-8')).toBe(machineId())
     expect(fs.existsSync(file('first-launch-completed'))).toBe(true)
   })
@@ -177,7 +182,8 @@ describe('startBootIdentity', () => {
       expect.objectContaining({ id_class: 'random_fallback' })
     )
     expect(h.telemetry.captureFirstLaunch).toHaveBeenCalledWith(
-      expect.objectContaining({ id_lookup_ms: null, id_lookup_timed_out: true })
+      expect.objectContaining({ id_lookup_ms: null, id_lookup_timed_out: true }),
+      expect.any(Date)
     )
   })
 
