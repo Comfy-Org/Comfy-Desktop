@@ -2077,6 +2077,20 @@ describe('core beta report placement', () => {
   })
 })
 
+/** `t()` backed by the real en.json: the i18n module's relative `locales/` lookup does not resolve
+ *  under vitest, so this asserts real English copy and its interpolation. */
+const EN_MESSAGES = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), 'locales', 'en.json'), 'utf-8')
+) as Record<string, Record<string, string>>
+function enText(key: string, params?: Record<string, string | number>): string {
+  const [ns, k] = key.split('.')
+  const s = EN_MESSAGES[ns!]?.[k!]
+  if (typeof s !== 'string') return key
+  return s.replace(/\{(\w+)\}/g, (m, p: string) =>
+    params?.[p] !== undefined ? String(params[p]) : m
+  )
+}
+
 describe('Performance Test database', () => {
   let installDir = ''
   let stateRoot = ''
@@ -2156,7 +2170,8 @@ describe('Performance Test database', () => {
     launchHarness.installList = []
     // No real port probes: the install's port 48234 must read as free on any machine.
     launchHarness.busyPorts = []
-    // Set by other describes in this file: who holds a busy port must not depend on test order.
+    // Later describes in this file set these and don't restore them; who holds a busy port here
+    // must not depend on which describe ran first.
     launchHarness.busyPids = [31337]
     launchHarness.portLockPid = null
     ownership.holderIsInstall = false
@@ -2399,66 +2414,44 @@ describe('Performance Test database', () => {
     expect(fs.existsSync(path.join(ws, 'output')), 'a fresh workspace').toBe(true)
   })
 
-  it('does not start, or touch its workspace, while an earlier run of it is left alive', async () => {
-    writeCoreDb()
-    const ws = workspace('perf-db-alive')
-    writeCoreFiles(ws)
-    // Alive, but the prior-process check could not prove it ours.
-    ownership.prior = {
-      action: 'left',
-      proof: 'none',
-      pid: 777,
-      port: 48234,
-      ageMs: null,
-      waitMs: 0,
-      exitedInTime: false,
-      blocked: null
-    }
-    const t = vi.spyOn(i18nModule, 't')
-    try {
-      const res = await handleLaunch(ctxFor('perf-db-alive', 'performance-test:perf-db-alive'))
+  // Alive, but the prior-process check could not prove it ours: named, with its executable when
+  // it can be read (the pid may have been recycled to something unrelated), so the user can check
+  // what it is before ending it. Asserted on the English text the user reads.
+  it.each([
+    ['readable', false, 'PID 777, python'],
+    ['unreadable', true, 'PID 777']
+  ])(
+    'does not start, or touch its workspace, while an earlier run of it is left alive (process %s)',
+    async (_, processInfoNull, named) => {
+      writeCoreDb()
+      const ws = workspace('perf-db-alive')
+      writeCoreFiles(ws)
+      ownership.prior = {
+        action: 'left',
+        proof: 'none',
+        pid: 777,
+        port: 48234,
+        ageMs: null,
+        waitMs: 0,
+        exitedInTime: false,
+        blocked: null
+      }
+      launchHarness.processInfoNull = processInfoNull
+      vi.spyOn(i18nModule, 't').mockImplementation(enText)
+      try {
+        const res = await handleLaunch(ctxFor('perf-db-alive', 'performance-test:perf-db-alive'))
 
-      expect(res.ok).toBe(false)
-      // Named, so the user can check what it is before ending it.
-      expect(t).toHaveBeenCalledWith(
-        'errors.performanceTestLeftRunning',
-        // The executable too: the pid may have been recycled to something unrelated.
-        { process: 'PID 777, python' }
-      )
-      expect(spawnArgs).toEqual([])
-      expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(true)
-    } finally {
-      ownership.prior = null
+        expect(res.ok).toBe(false)
+        expect(res.message).toContain(`may still be running (${named})`)
+        expect(res.message, 'every placeholder filled').not.toMatch(/\{\w+\}/)
+        expect(spawnArgs).toEqual([])
+        expect(fs.existsSync(path.join(ws, 'comfyui.db'))).toBe(true)
+      } finally {
+        ownership.prior = null
+        launchHarness.processInfoNull = false
+      }
     }
-  })
-
-  it('names an earlier run left alive by pid alone when its process cannot be read', async () => {
-    writeCoreDb()
-    writeCoreFiles(workspace('perf-db-alive-unread'))
-    ownership.prior = {
-      action: 'left',
-      proof: 'none',
-      pid: 777,
-      port: 48234,
-      ageMs: null,
-      waitMs: 0,
-      exitedInTime: false,
-      blocked: null
-    }
-    launchHarness.processInfoNull = true
-    const t = vi.spyOn(i18nModule, 't')
-    try {
-      const res = await handleLaunch(
-        ctxFor('perf-db-alive-unread', 'performance-test:perf-db-alive-unread')
-      )
-
-      expect(res.ok).toBe(false)
-      expect(t).toHaveBeenCalledWith('errors.performanceTestLeftRunning', { process: 'PID 777' })
-    } finally {
-      ownership.prior = null
-      launchHarness.processInfoNull = false
-    }
-  })
+  )
 
   it('starts as before when the check for an earlier run fails', async () => {
     writeCoreDb()

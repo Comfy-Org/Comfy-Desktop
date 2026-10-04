@@ -1414,7 +1414,7 @@
     "priorScanRecent": "Comfy Desktop could not check whether an earlier ComfyUI for this installation, which exited moments ago, is starting up again (the process list could not be read). Launching now could fail because a restarting ComfyUI may already hold the installation's database. Try again in a few minutes.",
     "priorProcessUnverified": "An earlier ComfyUI for this installation (PID {pid}) is still running, and Comfy Desktop could not confirm it is safe to stop. Launching now would fail because it holds the installation's database. End the process, then try again.",
     "performanceTestStillRunning": "A previous Performance Test is still running or didn't shut down cleanly. Wait a moment, or restart Comfy Desktop, then try again.",
-    "performanceTestLeftRunning": "A previous Performance Test is still running ({process}) or didn't shut down cleanly. Wait a moment, or end that process, then try again.",
+    "performanceTestLeftRunning": "A previous Performance Test may still be running ({process}), or didn't shut down cleanly. Wait a moment, or end that process once you have checked it is the Performance Test, then try again.",
     "duplicateName": "An instance named \"{name}\" already exists. Please choose a different name.",
     "nameRequired": "Please enter a name.",
     "unknownSource": "This instance has an unrecognized source type. It may have been created by a different version. Delete it and reinstall.",

@@ -2,7 +2,6 @@ import fs from 'fs'
 import path from 'path'
 
 export {
-  PERFORMANCE_TEST_SESSION_PREFIX,
   performanceTestSessionKey,
   sessionKindOf,
   type SessionKind
