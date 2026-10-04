@@ -108,10 +108,12 @@ import {
   consumeFirstLaunch,
   getDeviceId,
   getIdClass,
+  getIdLookupTiming,
   hasCompletedFirstLaunch,
   hasPersistedDeviceId,
   initDeviceId,
-  markIdentityMigrationCompleted
+  markIdentityMigrationCompleted,
+  startMachineIdLookup
 } from './lib/deviceId'
 import { getInitialAnonymousDistinctId } from './lib/websiteAnonymousIdentity'
 import { recoverPendingIdentityRotation } from './lib/pendingIdentityMerge'
@@ -1331,6 +1333,10 @@ const hostReentryGate = createStartupReentryGate()
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  // The installation id's hardware lookup spawns cold processes (PowerShell
+  // on Windows); run it alongside Electron start-up rather than after it.
+  startMachineIdLookup()
+
   if (app.isPackaged) {
     app.on('second-instance', () => {
       // OS-level "open another instance" attempt - focus an existing
@@ -1551,7 +1557,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // Desktop-side anchor of the website → download → first-launch acquisition
     // funnel. Fires exactly once per installation, ever (guard file alongside
     // device-id.txt). app_version / app_channel / platform / arch ride in as
-    // default event properties; id_class + locale are added here.
+    // default event properties; id_class, the id lookup timing and locale are
+    // added here.
     //
     // `captureFirstLaunch` (not plain `capture`) because this fires on a fresh
     // install, when consent is still `'undecided'` — a plain capture would be
@@ -1559,8 +1566,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // losing the event forever. The deferred path ships it on the first
     // `undecided → granted` transition and never on a decline.
     if (isFirstLaunch) {
+      const timing = getIdLookupTiming()
       mainTelemetry.captureFirstLaunch({
         id_class: getIdClass(),
+        id_lookup_ms: timing?.idLookupMs ?? null,
+        id_lookup_timed_out: timing?.idLookupTimedOut ?? null,
+        boot_to_id_ms: timing?.bootToIdMs ?? null,
         locale
       })
     }

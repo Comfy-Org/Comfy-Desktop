@@ -143,7 +143,9 @@ function isLegacyUuid(value: string): boolean {
  * platform-specific lookups (SMBIOS / WMI / `/sys/class/dmi/id/...`).
  * On VMs and certain firmwares this call can stall for several seconds;
  * past this budget we fall through to `random_fallback` so the splash
- * screen does not freeze on a slow `dmidecode` shell-out.
+ * screen does not freeze on a slow `dmidecode` shell-out. Counted from
+ * `startMachineIdLookup()`, so time the lookup spends overlapping Electron
+ * start-up is not waited for again.
  */
 const MACHINE_ID_TIMEOUT_MS = 2000
 
@@ -166,6 +168,51 @@ async function lookupHardwareUuid(): Promise<{ uuid?: string }> {
     return { uuid: ids.hardware }
   }
   return si.system()
+}
+
+interface MachineIdLookup {
+  promise: Promise<{ uuid?: string }>
+  startedAt: number
+  /** Set when the lookup settles, whether or not anyone is waiting yet. */
+  durationMs: number | null
+}
+
+let lookup: MachineIdLookup | null = null
+
+/**
+ * Start the hardware UUID lookup ahead of `initDeviceId()`, so its cold
+ * process spawns overlap Electron start-up instead of the pre-window wait.
+ * Idempotent; `initDeviceId()` starts it itself if nobody did.
+ */
+export function startMachineIdLookup(): MachineIdLookup {
+  if (lookup) return lookup
+  const started: MachineIdLookup = {
+    promise: lookupHardwareUuid(),
+    startedAt: Date.now(),
+    durationMs: null
+  }
+  // Also keeps a rejection before `deriveMachineId` awaits it from being unhandled.
+  const record = (): void => {
+    started.durationMs = Date.now() - started.startedAt
+  }
+  started.promise.then(record, record)
+  lookup = started
+  return started
+}
+
+export interface IdLookupTiming {
+  /** Time from lookup start until it answered; null when it overran the budget. */
+  idLookupMs: number | null
+  idLookupTimedOut: boolean
+  /** Process uptime when boot started waiting on the id. */
+  bootToIdMs: number
+}
+
+let lookupTiming: IdLookupTiming | null = null
+
+/** Timing of this launch's lookup, once `initDeviceId()` has resolved. */
+export function getIdLookupTiming(): IdLookupTiming | null {
+  return lookupTiming
 }
 
 /**
@@ -216,13 +263,22 @@ interface DerivedMachineId {
 }
 
 async function deriveMachineId(): Promise<DerivedMachineId> {
+  const bootToIdMs = Math.round(process.uptime() * 1000)
+  const started = startMachineIdLookup()
+  let timedOut = false
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const sysPromise = lookupHardwareUuid()
+    const remainingMs = MACHINE_ID_TIMEOUT_MS - (Date.now() - started.startedAt)
     const timeoutPromise = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), MACHINE_ID_TIMEOUT_MS)
+      timer = setTimeout(
+        () => {
+          timedOut = true
+          resolve(null)
+        },
+        Math.max(0, remainingMs)
+      )
     })
-    const sys = await Promise.race([sysPromise, timeoutPromise])
+    const sys = await Promise.race([started.promise, timeoutPromise])
     if (sys) {
       const uuid = (sys.uuid || '').trim()
       // Reject anything that isn't the full 36-char UUID shape (covers
@@ -251,6 +307,12 @@ async function deriveMachineId(): Promise<DerivedMachineId> {
     // fall through to fallback
   } finally {
     if (timer !== undefined) clearTimeout(timer)
+    lookupTiming = {
+      // Null on a timeout: the lookup settles from a later process event.
+      idLookupMs: started.durationMs,
+      idLookupTimedOut: timedOut,
+      bootToIdMs
+    }
   }
   // Fallback: random UUID, flagged so dashboards can quarantine.
   return { machineId: randomUUID(), idClass: 'random_fallback' }
@@ -445,4 +507,6 @@ export function markIdentityMigrationCompleted(): void {
 export function _resetForTest(): void {
   cached = null
   initPromise = null
+  lookup = null
+  lookupTiming = null
 }

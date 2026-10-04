@@ -29,8 +29,11 @@ const siSystem = vi.fn(() =>
   mockSystemError ? Promise.reject(mockSystemError) : Promise.resolve({ uuid: mockSystemUuid })
 )
 let mockUuidHangs = false
-const siUuid = vi.fn(() => {
+// Delays the si.uuid() answer; the timer is faked where it matters.
+let mockUuidDelayMs = 0
+const siUuid = vi.fn(async () => {
   if (mockUuidHangs) return new Promise<never>(() => {})
+  if (mockUuidDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, mockUuidDelayMs))
   if (mockSystemError) return Promise.reject(mockSystemError)
   return Promise.resolve({ os: '', hardware: mockSystemUuid ?? '', macs: [] })
 })
@@ -68,6 +71,7 @@ describe('deviceId', () => {
     mockSystemUuid = 'aabbccdd-eeff-0011-2233-445566778899'
     mockSystemError = null
     mockUuidHangs = false
+    mockUuidDelayMs = 0
     siSystem.mockClear()
     siUuid.mockClear()
     mockMachineIdFiles = {}
@@ -558,6 +562,106 @@ describe('deviceId', () => {
         await vi.advanceTimersByTimeAsync(1)
         expect(settled).toBe(true)
       })
+    })
+  })
+
+  describe('startMachineIdLookup — lookup started ahead of initDeviceId', () => {
+    const uuid = 'aabbccdd-eeff-0011-2233-445566778899'
+
+    beforeEach(() => {
+      setPlatform('win32')
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('counts the budget from the early start, not from initDeviceId', async () => {
+      mockUuidHangs = true
+      mod.startMachineIdLookup()
+      await vi.advanceTimersByTimeAsync(1500)
+
+      let settled = false
+      void mod.initDeviceId().then(() => {
+        settled = true
+      })
+      await vi.advanceTimersByTimeAsync(499)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(settled).toBe(true)
+      expect(mod.getIdClass()).toBe('random_fallback')
+    })
+
+    it('times out at once when the budget was spent before initDeviceId', async () => {
+      mockUuidHangs = true
+      mod.startMachineIdLookup()
+      await vi.advanceTimersByTimeAsync(5000)
+
+      const init = mod.initDeviceId()
+      await vi.advanceTimersByTimeAsync(0)
+      await init
+      expect(mod.getIdClass()).toBe('random_fallback')
+    })
+
+    it('uses an answer that arrived before initDeviceId, with one lookup', async () => {
+      mockSystemUuid = uuid
+      mockUuidDelayMs = 1800
+      mod.startMachineIdLookup()
+      mod.startMachineIdLookup()
+      await vi.advanceTimersByTimeAsync(1900)
+
+      await mod.initDeviceId()
+      expect(siUuid).toHaveBeenCalledTimes(1)
+      expect(mod.getIdClass()).toBe('machine_derived')
+      expect(mod.getDeviceId()).toBe(expectedIdFor(uuid))
+      expect(mod.getIdLookupTiming()?.idLookupMs).toBe(1800)
+    })
+
+    it('falls back without an unhandled rejection when the early lookup throws', async () => {
+      mockSystemError = new Error('WMI failed')
+      mod.startMachineIdLookup()
+      await vi.advanceTimersByTimeAsync(100)
+
+      await mod.initDeviceId()
+      expect(mod.getIdClass()).toBe('random_fallback')
+      expect(mod.getIdLookupTiming()?.idLookupTimedOut).toBe(false)
+    })
+  })
+
+  describe('getIdLookupTiming', () => {
+    beforeEach(() => {
+      setPlatform('win32')
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('is null before initDeviceId resolves', () => {
+      expect(mod.getIdLookupTiming()).toBeNull()
+    })
+
+    it('records how long an answered lookup took', async () => {
+      mockUuidDelayMs = 1200
+      const init = mod.initDeviceId()
+      await vi.advanceTimersByTimeAsync(1200)
+      await init
+
+      const timing = mod.getIdLookupTiming()
+      expect(timing?.idLookupMs).toBe(1200)
+      expect(timing?.idLookupTimedOut).toBe(false)
+      expect(timing?.bootToIdMs).toBeGreaterThanOrEqual(0)
+    })
+
+    it('records a timeout as no duration', async () => {
+      mockUuidHangs = true
+      const init = mod.initDeviceId()
+      await vi.advanceTimersByTimeAsync(2000)
+      await init
+
+      expect(mod.getIdLookupTiming()).toMatchObject({ idLookupMs: null, idLookupTimedOut: true })
     })
   })
 
