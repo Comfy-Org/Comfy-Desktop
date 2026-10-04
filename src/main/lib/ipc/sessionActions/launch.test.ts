@@ -2481,6 +2481,72 @@ describe('Performance Test database', () => {
     }
   })
 
+  it("names this Desktop's own Performance Test when it holds the port", async () => {
+    writeCoreDb()
+    _runningSessions.set('performance-test:perf-db-holder', {
+      // Spawned here: a local process.
+      proc: { pid: 9001 } as unknown as ChildProcess,
+      port: 48234,
+      mode: 'console',
+      installationName: 'Benchmarked',
+      startedAt: Date.now()
+    })
+    launchHarness.busyPorts = [48234]
+    const t = vi.spyOn(i18nModule, 't')
+    const ctx = ctxFor('perf-db-explicit')
+    // An explicit --port: no automatic move, so the conflict is reported.
+    ;(ctx.inst as unknown as Record<string, unknown>).launchArgs = '--port 48234'
+
+    const res = await handleLaunch(ctx)
+
+    expect(res.ok).toBe(false)
+    expect(t).toHaveBeenCalledWith('errors.portConflictPerformanceTest', {
+      port: 48234,
+      name: 'Benchmarked'
+    })
+  })
+
+  it("does not call another install's own session a Performance Test", async () => {
+    writeCoreDb()
+    _runningSessions.set('perf-db-other-install', {
+      proc: { pid: 9002 } as unknown as ChildProcess,
+      port: 48234,
+      mode: 'window',
+      installationName: 'Other',
+      startedAt: Date.now()
+    })
+    launchHarness.busyPorts = [48234]
+    const t = vi.spyOn(i18nModule, 't')
+    const ctx = ctxFor('perf-db-explicit-2')
+    ;(ctx.inst as unknown as Record<string, unknown>).launchArgs = '--port 48234'
+
+    const res = await handleLaunch(ctx)
+
+    expect(res.ok).toBe(false)
+    expect(t).not.toHaveBeenCalledWith('errors.portConflictPerformanceTest', expect.anything())
+  })
+
+  it('does not blame a remote Performance Test for a local port', async () => {
+    writeCoreDb()
+    // Remote: no process here, and its port is on another machine.
+    _runningSessions.set('performance-test:perf-db-remote-holder', {
+      proc: null,
+      port: 48234,
+      mode: 'window',
+      installationName: 'Remote box',
+      startedAt: Date.now()
+    })
+    launchHarness.busyPorts = [48234]
+    const t = vi.spyOn(i18nModule, 't')
+    const ctx = ctxFor('perf-db-explicit-3')
+    ;(ctx.inst as unknown as Record<string, unknown>).launchArgs = '--port 48234'
+
+    const res = await handleLaunch(ctx)
+
+    expect(res.ok).toBe(false)
+    expect(t).not.toHaveBeenCalledWith('errors.portConflictPerformanceTest', expect.anything())
+  })
+
   it('reports an unknown database for a session whose database Desktop cannot see', () => {
     // A remote installation's session records no database mode.
     _addSession(

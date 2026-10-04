@@ -24,11 +24,16 @@ export function useLocalInstanceGuard() {
     if (target && target.sourceCategory !== 'local') return true
 
     const runningLocal: { id: string; name: string }[] = []
+    // A running benchmark is listed as one, not under its install's name: "Close & Launch" stops it.
+    const label = (id: string, name: string): string =>
+      id.startsWith('performance-test:')
+        ? t('launch.instanceRunningPerformanceTest', { name })
+        : name
     for (const [id, instance] of sessionStore.runningInstances) {
       if (id === targetId) continue
       const inst = installationStore.installations.find((i) => i.id === id)
       if (!inst || inst.sourceCategory === 'local') {
-        runningLocal.push({ id, name: instance.installationName })
+        runningLocal.push({ id, name: label(id, instance.installationName) })
       }
     }
     for (const [id, instance] of sessionStore.launchingInstances) {
@@ -38,7 +43,7 @@ export function useLocalInstanceGuard() {
       if (runningLocal.some((r) => r.id === id)) continue
       const inst = installationStore.installations.find((i) => i.id === id)
       if (!inst || inst.sourceCategory === 'local') {
-        runningLocal.push({ id, name: instance.installationName })
+        runningLocal.push({ id, name: label(id, instance.installationName) })
       }
     }
 
