@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  provide,
+  ref,
+  toRef,
+  useTemplateRef,
+  watch
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   CheckCircle,
@@ -40,6 +50,7 @@ import ArgsBuilderPage from '../../views/comfyUISettings/ArgsBuilderPage.vue'
 import SnapshotsView from '../../views/comfyUISettings/SnapshotsView.vue'
 import StatusFactPanel from '../../views/comfyUISettings/StatusFactPanel.vue'
 import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList.vue'
+import { SETTINGS_SECTIONS_FRESH } from '../../views/comfyUISettings/settingsSectionsFresh'
 import StoragePane, { type StorageSnapshot } from '../../views/comfyUISettings/StoragePane.vue'
 import ConsoleTerminalPane from '../../views/comfyUISettings/ConsoleTerminalPane.vue'
 import Tooltip from '../ui/Tooltip.vue'
@@ -183,6 +194,8 @@ const {
   onClose: () => emit('request-close'),
   onDismissPreview: () => emit('request-dismiss')
 })
+// The beta-args pill sends the args field's value only while it belongs to this install.
+provide(SETTINGS_SECTIONS_FRESH, sectionsFresh)
 
 // Fires the named action once per prop transition, after sections load.
 // Keyed on `autoAction` + `autoActionNonce` (not install id) so reloads

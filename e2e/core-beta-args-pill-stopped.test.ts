@@ -195,6 +195,16 @@ test('an opt-in change made while the picker is hidden shows on reopen @linux', 
 const betaArgsRequests = async (): Promise<number> =>
   (await getIpcInvocations(ctx.app, 'get-core-beta-args')).length
 
+/** Wait until main has received `count` sections re-reads since the last reset. */
+async function waitForSectionsReread(count: number): Promise<void> {
+  await expect
+    .poll(async () => (await getIpcInvocations(ctx.app, 'get-detail-sections')).length, {
+      timeout: 10_000,
+      intervals: [100, 200],
+    })
+    .toBeGreaterThanOrEqual(count)
+}
+
 /** Fails if more than `expected` beta-args requests arrive over the next second and a half. */
 async function expectNoRequestsBeyond(expected: number, message: string): Promise<void> {
   const deadline = Date.now() + 1_500
@@ -208,6 +218,7 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await resetIpcInvocations(ctx.app, 'get-core-beta-args')
+  await resetIpcInvocations(ctx.app, 'get-detail-sections')
 
   // Save an unrelated field through the settings UI, and wait until main has stored it.
   const PORT_CONFLICT = '[data-field-id="portConflict"] .ui-select-trigger'
@@ -219,11 +230,14 @@ test('only the pill asks: another field\'s save asks nothing, an args commit ask
       `window.api.getInstallations().then((all) => all.find((i) => i.id === ${JSON.stringify(INSTALL_ID)})?.portConflict ?? null)`,
     )
   await expect.poll(stored, { timeout: 10_000, intervals: [100, 200] }).not.toBeNull()
-  // A request would follow the save within milliseconds, so a quiet stretch after it is the answer.
+  // The quiet stretch starts once the save's sections re-read has reached main: a request the
+  // re-read caused would follow its answer within milliseconds.
+  await waitForSectionsReread(1)
   await expectNoRequestsBeyond(0, 'a save of another field asked for beta args')
 
   await commitArgs(popup, `--port ${port} --lowvram`)
   await expect.poll(betaArgsRequests, { timeout: 10_000, intervals: [100, 200] }).toBe(1)
+  await waitForSectionsReread(2)
   await expectNoRequestsBeyond(1, 'an args commit asked for beta args more than once')
 })
 

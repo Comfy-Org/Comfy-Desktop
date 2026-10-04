@@ -5,13 +5,14 @@ let answerSeq = 0
 </script>
 
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEventListener } from '@vueuse/core'
 import { FlaskConical, LoaderCircle } from 'lucide-vue-next'
 import BaseMenu, { type BaseMenuItem } from '../../components/ui/BaseMenu.vue'
 import { BETA_FEATURES_FIELD_ID } from '../../comfyTitleBar/useBetaActivationNotice'
 import { useSessionStore } from '../../stores/sessionStore'
+import { SETTINGS_SECTIONS_FRESH } from './settingsSectionsFresh'
 import type { CoreBetaArgs } from '../../types/ipc'
 
 /** "+N beta": the running session's Core beta args, or while stopped those the next launch is
@@ -39,10 +40,10 @@ const loading = ref(false)
  *  otherwise render identically. */
 const answers = ref(0)
 let requestSeq = 0
-/** The pill remounts with each install (its pane is keyed by install), but the field can still
- *  show the previous install's args until the new sections land. So args are sent only once the
- *  value has changed since mount; until then main reads the stored ones. */
-let argsCommitted = false
+/** After an install switch the field still shows the previous install's args until the new
+ *  sections land; until then main reads the stored ones. Otherwise the field's value is this
+ *  install's, including an edit whose save is still being written. */
+const sectionsFresh = inject(SETTINGS_SECTIONS_FRESH, null)
 
 async function refresh(): Promise<void> {
   const seq = ++requestSeq
@@ -50,7 +51,10 @@ async function refresh(): Promise<void> {
     if (seq === requestSeq) loading.value = true
   }, LOADING_DELAY_MS)
   const next = await window.api
-    .getCoreBetaArgs(props.installationId, argsCommitted ? props.argsValue : undefined)
+    .getCoreBetaArgs(
+      props.installationId,
+      sectionsFresh?.value === false ? undefined : props.argsValue
+    )
     .then(
       (answer) => ({ answer }),
       () => null
@@ -63,11 +67,6 @@ async function refresh(): Promise<void> {
   if (next) answers.value = ++answerSeq
 }
 
-watch(
-  () => props.argsValue,
-  () => (argsCommitted = true),
-  { flush: 'sync' }
-)
 watch(
   [
     () => sessionStore.sessionKey(props.installationId),

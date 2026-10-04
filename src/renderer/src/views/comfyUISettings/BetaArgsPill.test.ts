@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
+import { computed, ref, type ComputedRef } from 'vue'
 import BetaArgsPill from './BetaArgsPill.vue'
+import { SETTINGS_SECTIONS_FRESH } from './settingsSectionsFresh'
 import { useSessionStore } from '../../stores/sessionStore'
 import { en } from '../../lib/i18nMessages'
 import type { CoreBetaArgs } from '../../types/ipc'
@@ -29,11 +31,15 @@ const wrappers: VueWrapper[] = []
 
 /** Mounts the pill and settles the args field's first schema load, as the field does on mount. */
 async function mountPill(
-  props: Partial<InstanceType<typeof BetaArgsPill>['$props']> = {}
+  props: Partial<InstanceType<typeof BetaArgsPill>['$props']> = {},
+  sectionsFresh?: ComputedRef<boolean>
 ): Promise<VueWrapper> {
   const wrapper = mount(BetaArgsPill, {
     props: { installationId: 'inst-1', argsValue: '', schemaVersion: 0, ...props },
-    global: { plugins: [i18n] },
+    global: {
+      plugins: [i18n],
+      provide: sectionsFresh ? { [SETTINGS_SECTIONS_FRESH as symbol]: sectionsFresh } : {}
+    },
     attachTo: document.body
   })
   wrappers.push(wrapper)
@@ -101,8 +107,13 @@ describe('BetaArgsPill', () => {
     await flushPromises()
     const earlier = answerOf(first)
     first.unmount()
+    // The second pill's answer is held back, so "no answer yet" is set up rather than timed.
+    let answer: (value: unknown) => void = () => {}
+    api.getCoreBetaArgs.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
     const second = await mountPill()
+    await flushPromises()
     expect(answerOf(second)).toBe(0)
+    answer({ timing: 'next-launch', args: [] })
     await flushPromises()
     expect(answerOf(second)).toBeGreaterThan(earlier)
   })
@@ -203,7 +214,7 @@ describe('BetaArgsPill', () => {
       expect(api.getCoreBetaArgs).not.toHaveBeenCalled()
       await wrapper.setProps({ schemaVersion: 1 })
       await flushPromises()
-      expect(api.getCoreBetaArgs).toHaveBeenCalledExactlyOnceWith('inst-1', undefined)
+      expect(api.getCoreBetaArgs).toHaveBeenCalledExactlyOnceWith('inst-1', '')
     })
 
     it('waits for the first schema load even when the args land first, then asks once with them', async () => {
@@ -221,15 +232,32 @@ describe('BetaArgsPill', () => {
       expect(api.getCoreBetaArgs).toHaveBeenCalledExactlyOnceWith('inst-1', '--port 2')
     })
 
-    it('sends no args until the value changes after mount, then sends the committed value', async () => {
-      // The field may still show the previous install's args when the pill mounts for a new one.
-      const wrapper = await mountPill({ argsValue: '--port 8188' })
+    it("sends the field's args from the first ask, as after Back from the full args editor", async () => {
+      // The edit's save may still be on its way to disk, so main must preview from these.
+      await mountPill(
+        { argsValue: '--port 8188 --disable-assets' },
+        computed(() => true)
+      )
       await flushPromises()
-      await wrapper.setProps({ argsValue: '--port 8188 --disable-assets' })
+      expect(api.getCoreBetaArgs).toHaveBeenCalledExactlyOnceWith(
+        'inst-1',
+        '--port 8188 --disable-assets'
+      )
+    })
+
+    it("sends no args while another install's sections are still shown, then the field's own", async () => {
+      const fresh = ref(false)
+      const wrapper = await mountPill(
+        { argsValue: '--previous-install' },
+        computed(() => fresh.value)
+      )
+      await flushPromises()
+      fresh.value = true
+      await wrapper.setProps({ argsValue: '--port 8188' })
       await flushPromises()
       expect(api.getCoreBetaArgs.mock.calls).toEqual([
         ['inst-1', undefined],
-        ['inst-1', '--port 8188 --disable-assets']
+        ['inst-1', '--port 8188']
       ])
     })
 

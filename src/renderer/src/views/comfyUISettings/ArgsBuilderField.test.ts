@@ -191,7 +191,7 @@ describe('ArgsBuilderField — beta args pill', () => {
   it("shows the pill for the field's install", async () => {
     const api = stubElectronApi(BETA)
     const wrapper = await mountField()
-    expect(api.getCoreBetaArgs).toHaveBeenCalledWith('inst-1', undefined)
+    expect(api.getCoreBetaArgs).toHaveBeenCalledWith('inst-1', '')
     expect(wrapper.find('.beta-args').text()).toContain('betaArgsPill')
   })
 
