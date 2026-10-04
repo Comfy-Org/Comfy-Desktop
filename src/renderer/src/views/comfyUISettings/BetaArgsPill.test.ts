@@ -201,6 +201,15 @@ describe('BetaArgsPill', () => {
       expect(wrapper.find('.beta-args-loading').exists()).toBe(false)
       expect(wrapper.text()).toContain('+2 beta')
     })
+
+    it('leaves no placeholder behind after an empty answer that arrives in time', async () => {
+      // With nothing to show, a placeholder left by an uncancelled delay would never be hidden.
+      vi.useFakeTimers()
+      api.getCoreBetaArgs.mockResolvedValue({ timing: 'next-launch', args: [] })
+      const wrapper = await mountPill()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(wrapper.find('.beta-args-loading').exists()).toBe(false)
+    })
   })
 
   describe('when it asks', () => {
