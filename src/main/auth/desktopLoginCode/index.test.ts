@@ -381,6 +381,25 @@ describe('signInViaDesktopLoginCode', () => {
     expect(request).not.toHaveProperty('installation_id')
   })
 
+  it('omits installation_id when consent is withdrawn while waiting for it', async () => {
+    h.settingsGet.mockReturnValueOnce(true).mockReturnValue(false)
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(h.deviceIdWithin).toHaveBeenCalled()
+    const request = h.createDesktopLoginCode.mock.lastCall![1] as Record<string, unknown>
+    expect(request).not.toHaveProperty('installation_id')
+  })
+
   it('omits installation_id when telemetry consent is off or undecided', async () => {
     for (const consent of [false, undefined]) {
       h.settingsGet.mockReturnValue(consent)

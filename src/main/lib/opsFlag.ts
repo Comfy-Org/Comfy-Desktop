@@ -157,10 +157,18 @@ export interface OpsFlag<T> {
    *  renderer query landing before the fetch settles sees the resolved value, not the
    *  fallback. Idempotent within a process; never rejects.
    *
-   *  `distinctId` may still be pending at boot; the fetch waits for it. `null` means the id
-   *  is not available in time, which reads as `unreachable`: nothing is fetched under any
-   *  other id, so a sticky rollout only ever evaluates the final one. */
-  init(opts: { distinctId: string | Promise<string | null>; timeoutMs?: number }): Promise<void>
+   *  `distinctId` may still be pending at boot; the fetch waits for it, for at most
+   *  `idWaitMs` when given. Past that it uses `idFallback`, an id the caller knows the
+   *  launch keeps if its lookup is slow; without one the flag reads as `unreachable` for
+   *  this launch rather than fetch under a provisional id, and a persisted flag still
+   *  fetches once the id arrives, storing the answer for the NEXT launch exactly like a
+   *  late fetch result. */
+  init(opts: {
+    distinctId: string | Promise<string>
+    idWaitMs?: number
+    idFallback?: string | null
+    timeoutMs?: number
+  }): Promise<void>
   /** Awaits the in-flight boot fetch so renderer queries landing before it settles still get
    *  the resolved value, not the fallback. No synchronous counterpart on purpose: every
    *  caller so far reads from an IPC handler, where racing the boot fetch to the fallback is
@@ -168,6 +176,16 @@ export interface OpsFlag<T> {
   get(): Promise<T>
   /** @internal — exposed for tests. */
   _resetForTest(): void
+}
+
+/** `promise`'s value, or `null` if it takes longer than `ms`; no limit when `ms` is undefined. */
+function withinMs<T>(promise: Promise<T>, ms: number | undefined): Promise<T | null> {
+  if (ms === undefined) return promise
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
 
 export function makeOpsFlag<T>(opts: {
@@ -250,22 +268,30 @@ export function makeOpsFlag<T>(opts: {
     init(initOpts) {
       if (initPromise) return initPromise
       const generationAtInit = generation
-      initPromise = Promise.resolve(initOpts.distinctId)
-        .then((distinctId): Promise<OpsFlagFetchResult> | OpsFlagFetchResult =>
-          distinctId === null
-            ? { kind: 'unreachable' }
-            : mainTelemetry.getOpsFlagResult(
-                key,
-                distinctId,
-                initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-                // Non-persisting flags pass no callback at all, so they stay write-free
-                // structurally rather than by a guard inside one — no write path is attached to
-                // the abandoned fetch. (`getOpsFlagResult` still observes that fetch to report how
-                // it settled; reporting is not a write, and deliberately does not depend on
-                // whether the flag persists.)
-                persist ? (late) => persistLate(generationAtInit, late) : undefined
-              )
-        )
+      const timeoutMs = initOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+      // Non-persisting flags pass no callback at all, so they stay write-free structurally
+      // rather than by a guard inside one — no write path is attached to the abandoned fetch.
+      // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
+      // not a write, and deliberately does not depend on whether the flag persists.)
+      const onLate = persist
+        ? (late: OpsFlagValueResult) => persistLate(generationAtInit, late)
+        : undefined
+      const distinctId = Promise.resolve(initOpts.distinctId)
+      initPromise = withinMs(distinctId, initOpts.idWaitMs)
+        .then((id): Promise<OpsFlagFetchResult> | OpsFlagFetchResult => {
+          id ??= initOpts.idFallback ?? null
+          if (id !== null) return mainTelemetry.getOpsFlagResult(key, id, timeoutMs, onLate)
+          if (onLate) {
+            // Too late for this launch, but a revocation must still reach the next one.
+            void distinctId
+              .then((lateId) => mainTelemetry.getOpsFlagResult(key, lateId, timeoutMs, onLate))
+              .then((late) => {
+                if (late.kind === 'value') onLate(late)
+              })
+              .catch(() => {})
+          }
+          return { kind: 'unreachable' }
+        })
         .then((result) => {
           if (result.kind === 'unreachable') {
             if (!applyPersisted()) {

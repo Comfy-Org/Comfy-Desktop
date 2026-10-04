@@ -680,13 +680,19 @@ describe('deviceId', () => {
       expect(mod.getDeviceId()).toBe(id)
     })
 
-    it('serves the stored id early without rewriting it', async () => {
+    it('serves the stored id before resolution, and keeps it, without writing', async () => {
       const stored = expectedIdFor(uuid)
       fs.writeFileSync(deviceIdFile(), stored)
       mockUuidHangs = true
-      void mod.initDeviceId()
+      const write = vi.spyOn(fs, 'writeFileSync')
+      const ready = mod.deviceIdReady()
       expect(mod.getDeviceId()).toBe(stored)
-      expect(mod.getIdClass()).toBe('random_fallback')
+      await vi.advanceTimersByTimeAsync(CUTOFF_MS - 1)
+      expect(write).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await ready).toBe(stored)
+      expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(stored)
     })
 
     it('derives the machine id from a lookup that takes 14 s', async () => {

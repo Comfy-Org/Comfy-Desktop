@@ -485,6 +485,20 @@ export function getDeviceId(): string {
 
 let degradedId: string | null = null
 
+/**
+ * The installation id already on disk, if it is one `initDeviceId()` would keep
+ * when this launch's lookup times out: well formed and not a shared placeholder
+ * hash. Read-only.
+ */
+export function persistedInstallationId(): string | null {
+  try {
+    const raw = fs.readFileSync(deviceIdPath(), 'utf-8').trim()
+    return INSTALLATION_ID_RE.test(raw) && !isKnownPlaceholderInstallationId(raw) ? raw : null
+  } catch {
+    return null
+  }
+}
+
 /** The installation id once `initDeviceId()` resolves (it is started if it has not been). */
 export async function deviceIdReady(): Promise<string> {
   await initDeviceId()

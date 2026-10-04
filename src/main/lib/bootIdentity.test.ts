@@ -32,15 +32,23 @@ vi.mock('systeminformation', () => ({
 }))
 
 const h = vi.hoisted(() => ({
+  consent: 'granted' as 'granted' | 'undecided' | 'denied',
   telemetry: {
-    holdUntilBound: vi.fn(),
     bindAnonymousId: vi.fn(),
+    setInstallationId: vi.fn(),
     registerPersonProperties: vi.fn(),
-    captureFirstLaunch: vi.fn()
+    captureFirstLaunch: vi.fn(),
+    getConsentState: vi.fn(() => h.consent)
   },
   initExperiments: vi.fn((_opts: unknown) => Promise.resolve()),
-  initCloudFreeRuns: vi.fn((_opts: { distinctId: Promise<string | null> }) => Promise.resolve()),
-  initCoreBetaGrants: vi.fn((_opts: { distinctId: Promise<string | null> }) => Promise.resolve()),
+  initCloudFreeRuns: vi.fn(
+    (_opts: { distinctId: Promise<string>; idWaitMs: number; idFallback: string | null }) =>
+      Promise.resolve()
+  ),
+  initCoreBetaGrants: vi.fn(
+    (_opts: { distinctId: Promise<string>; idWaitMs: number; idFallback: string | null }) =>
+      Promise.resolve()
+  ),
   initStaffFlagTargeting: vi.fn(),
   getInitialAnonymousDistinctId: vi.fn((_existing: boolean) => 'anon-d'),
   recoverPendingIdentityRotation: vi.fn((id: string) => id)
@@ -80,6 +88,7 @@ describe('startBootIdentity', () => {
     testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'boot-identity-'))
     lookupHangs = false
     lookupDelayMs = 0
+    h.consent = 'granted'
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
     vi.clearAllMocks()
     vi.useFakeTimers()
@@ -100,13 +109,21 @@ describe('startBootIdentity', () => {
       bound = true
     })
 
-    expect(h.telemetry.holdUntilBound).toHaveBeenCalledTimes(1)
+    expect(h.telemetry.bindAnonymousId).toHaveBeenCalledWith('anon-d', null)
     expect(h.initExperiments).toHaveBeenCalledTimes(1)
     expect(h.initCloudFreeRuns).toHaveBeenCalledTimes(1)
     expect(h.initCoreBetaGrants).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(CUTOFF_MS - 1)
     expect(bound).toBe(false)
-    expect(h.telemetry.bindAnonymousId).not.toHaveBeenCalled()
+    expect(h.telemetry.setInstallationId).not.toHaveBeenCalled()
+  })
+
+  it('binds the anonymous id before anything else can capture', () => {
+    lookupHangs = true
+    void mod.startBootIdentity(OPTIONS)
+    const bind = h.telemetry.bindAnonymousId.mock.invocationCallOrder[0]!
+    expect(bind).toBeLessThan(h.initExperiments.mock.invocationCallOrder[0]!)
+    expect(bind).toBeLessThan(h.initStaffFlagTargeting.mock.invocationCallOrder[0]!)
   })
 
   it('binds the stored staff classification before either ops flag is initialised', () => {
@@ -132,7 +149,7 @@ describe('startBootIdentity', () => {
     await vi.advanceTimersByTimeAsync(3000)
     await bound
 
-    expect(h.telemetry.bindAnonymousId).toHaveBeenCalledWith('anon-d', machineId(), {
+    expect(h.telemetry.setInstallationId).toHaveBeenCalledWith(machineId(), {
       app_version: '9.9.9',
       platform: 'win32',
       arch: process.arch,
@@ -158,8 +175,7 @@ describe('startBootIdentity', () => {
 
     const id = fs.readFileSync(file('device-id.txt'), 'utf-8')
     expect(id).toMatch(/^[0-9a-f]{64}$/)
-    expect(h.telemetry.bindAnonymousId).toHaveBeenCalledWith(
-      'anon-d',
+    expect(h.telemetry.setInstallationId).toHaveBeenCalledWith(
       id,
       expect.objectContaining({ id_class: 'random_fallback' })
     )
@@ -185,23 +201,59 @@ describe('startBootIdentity', () => {
     expect(h.getInitialAnonymousDistinctId).toHaveBeenCalledWith(existing)
   })
 
-  it('hands the ops flags the id when it resolves within 2 s', async () => {
-    lookupDelayMs = 1500
-    void mod.startBootIdentity(OPTIONS)
-    const cloud = h.initCloudFreeRuns.mock.calls[0]![0].distinctId
-    const grants = h.initCoreBetaGrants.mock.calls[0]![0].distinctId
-    await vi.advanceTimersByTimeAsync(1500)
-    expect(await cloud).toBe(machineId())
-    expect(await grants).toBe(machineId())
-  })
-
-  it('hands the ops flags null, never a provisional id, when the id takes longer than 2 s', async () => {
+  it('hands both ops flags the final id with a 2 s wait for this launch', async () => {
     lookupDelayMs = 3000
     void mod.startBootIdentity(OPTIONS)
+    for (const init of [h.initCloudFreeRuns, h.initCoreBetaGrants]) {
+      expect(init.mock.calls[0]![0].idWaitMs).toBe(2000)
+      expect(init.mock.calls[0]![0].distinctId).toBe(
+        h.initCloudFreeRuns.mock.calls[0]![0].distinctId
+      )
+    }
     const cloud = h.initCloudFreeRuns.mock.calls[0]![0].distinctId
-    await vi.advanceTimersByTimeAsync(2000)
-    expect(await cloud).toBeNull()
-    expect(fs.existsSync(file('device-id.txt'))).toBe(false)
+    let early: string | null = null
+    void cloud.then((id) => {
+      early = id
+    })
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(early).toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await cloud).toBe(machineId())
+  })
+
+  it.each([
+    ['a stored installation id', () => machineId(), true],
+    ['no stored id', null, false],
+    ['a legacy UUID', () => 'f47ac10b-58cc-4372-a567-0e02b2c3d479', false],
+    [
+      'a shared placeholder hash',
+      () =>
+        createHash('sha256')
+          .update('03000200-0400-0500-0006-000700080009:comfy-installation-id-v1')
+          .digest('hex'),
+      false
+    ]
+  ])('gives both ops flags %s as the slow-lookup fallback', (_label, stored, kept) => {
+    const value = stored?.() ?? null
+    if (value !== null) fs.writeFileSync(file('device-id.txt'), value)
+    lookupHangs = true
+    void mod.startBootIdentity(OPTIONS)
+    for (const init of [h.initCloudFreeRuns, h.initCoreBetaGrants]) {
+      expect(init.mock.calls[0]![0]).toMatchObject({ idFallback: kept ? value : null })
+    }
+  })
+
+  it('removes the legacy alias retry marker once the id resolves', async () => {
+    fs.writeFileSync(file('pending-identity-alias.txt'), 'legacy')
+    await mod.startBootIdentity(OPTIONS)
+    expect(fs.existsSync(file('pending-identity-alias.txt'))).toBe(false)
+  })
+
+  it('skips the experiments fetch, without waiting for the id, when consent is not granted', () => {
+    h.consent = 'undecided'
+    lookupHangs = true
+    void mod.startBootIdentity(OPTIONS)
+    expect(h.initExperiments).toHaveBeenCalledWith(null)
   })
 
   it('hands experiments the resolved id and its class', async () => {

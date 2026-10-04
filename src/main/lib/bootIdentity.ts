@@ -4,12 +4,14 @@
  * Boot does not wait for the id. The first window opens while the hardware
  * lookup is still running, and each consumer waits only when it needs the id:
  *
- *   - telemetry holds captures until the id is bound (`holdUntilBound`);
- *   - the ops flags wait up to `FLAG_ID_WAIT_MS`, then read as unreachable
- *     rather than fetch under any other id, so a sticky rollout only ever
- *     evaluates the final one;
- *   - the experiments refresh waits for the id; `getFlag()` serves the disk
- *     cache meanwhile;
+ *   - telemetry binds the anonymous id at once and holds captures until the
+ *     installation id is set;
+ *   - the ops flags wait up to `FLAG_ID_WAIT_MS` for the id, then fetch under
+ *     the stored id (what a slow launch keeps) or, on a first launch, read as
+ *     unreachable rather than fetch under a provisional id; a persisted flag
+ *     still fetches once the id arrives, for the next launch;
+ *   - the experiments refresh waits for the id when consent allows one;
+ *     `getFlag()` serves the disk cache meanwhile;
  *   - `first_launch` and the legacy-id migration run once the id resolves.
  *
  * Nothing here persists an id; `initDeviceId()` does, once, when it resolves.
@@ -17,14 +19,14 @@
 import {
   clearLegacyIdentityRetryMarker,
   consumeFirstLaunch,
-  deviceIdWithin,
   getDeviceId,
   getIdClass,
   getIdLookupTiming,
   hasCompletedFirstLaunch,
   hasPersistedDeviceId,
   initDeviceId,
-  markIdentityMigrationCompleted
+  markIdentityMigrationCompleted,
+  persistedInstallationId
 } from './deviceId'
 import * as mainTelemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
@@ -57,24 +59,30 @@ export interface BootIdentityOptions {
 export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
   // Read before anything can write device-id.txt or the first-launch guard.
   const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
+  const storedId = persistedInstallationId()
   const anonymousDistinctId = recoverPendingIdentityRotation(
     getInitialAnonymousDistinctId(existingInstallation)
   )
-  mainTelemetry.holdUntilBound()
+  // installation_id is an event/person property, never a PostHog identity.
+  mainTelemetry.bindAnonymousId(anonymousDistinctId, null)
   const resolved = initDeviceId()
 
   // Boot the experiments cache. Synchronously loads the on-disk flag values
   // for `getFlag()`; the background refresh lands on disk for the NEXT boot.
+  // Without consent the fetch returns nothing (as it did when boot waited for
+  // the id), so skip it rather than make readers wait for the id.
   void initExperiments(
-    resolved.then(() => ({
-      distinctId: getDeviceId(),
-      personProperties: {
-        platform: process.platform,
-        arch: process.arch,
-        app_version: opts.appVersion,
-        id_class: getIdClass()
-      }
-    }))
+    mainTelemetry.getConsentState() === 'granted'
+      ? resolved.then(() => ({
+          distinctId: getDeviceId(),
+          personProperties: {
+            platform: process.platform,
+            arch: process.arch,
+            app_version: opts.appVersion,
+            id_class: getIdClass()
+          }
+        }))
+      : null
   )
 
   // Bind the stored staff classification BEFORE any ops flag is fetched. The
@@ -88,14 +96,19 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
   // first-use picker renders while consent is still `'undecided'`, so the
   // experiments cache would never have a value to give it. See
   // `cloudFreeRuns.ts`.
-  const flagDistinctId = deviceIdWithin(FLAG_ID_WAIT_MS)
-  void initCloudFreeRuns({ distinctId: flagDistinctId })
-  void initCoreBetaGrants({ distinctId: flagDistinctId })
+  // A stored id is what the old boot fetched under when the lookup was slow: on
+  // a timeout `initDeviceId` keeps it, so it is the id this launch binds.
+  const flagId = {
+    distinctId: resolved.then(() => getDeviceId()),
+    idWaitMs: FLAG_ID_WAIT_MS,
+    idFallback: storedId
+  }
+  void initCloudFreeRuns(flagId)
+  void initCoreBetaGrants(flagId)
 
   return resolved.then(({ legacyId }) => {
     clearLegacyIdentityRetryMarker()
-    // installation_id is an event/person property, never a PostHog identity.
-    mainTelemetry.bindAnonymousId(anonymousDistinctId, getDeviceId(), {
+    mainTelemetry.setInstallationId(getDeviceId(), {
       app_version: opts.appVersion,
       platform: process.platform,
       arch: process.arch,

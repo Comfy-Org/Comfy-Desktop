@@ -804,6 +804,9 @@ interface QuarantinedWrite {
   /** Original capture time, restored on replay (events only - the SDK's
    *  captureException accepts no timestamp). */
   timestamp: Date
+  /** The anonymous D a write held for the installation id was captured under;
+   *  it is delivered under that D even if the epoch rotated meanwhile. */
+  distinctId?: string
 }
 
 /**
@@ -826,26 +829,26 @@ function queueQuarantinedWrite(write: QuarantinedWrite): boolean {
 }
 
 /**
- * Writes captured while boot is still resolving the installation id, held so
- * the first window can open before the id exists without losing what happens
- * in it or sending it without `installation_id`. `null` when not holding.
- * `bindAnonymousId` replays them with their original timestamps; a quit before
- * the bind drops them.
+ * Writes captured after the anonymous D is bound but before the installation
+ * id is known (`bindAnonymousId(d, null)`), held so the first window can open
+ * before the id exists without sending what happens in it without
+ * `installation_id`. `null` when not holding. `setInstallationId` replays them
+ * with their original timestamps and D; a quit before it sends them without
+ * `installation_id`.
  */
 let heldUntilBound: QuarantinedWrite[] | null = null
 
-/** Hold captures until `bindAnonymousId` instead of dropping them. */
-export function holdUntilBound(): void {
-  if (!distinctId) heldUntilBound ??= []
+function holdingForInstallationId(): boolean {
+  return heldUntilBound !== null && installationIdProperty === null
 }
 
 function holdWrite(write: QuarantinedWrite): boolean {
   if (!heldUntilBound || heldUntilBound.length >= QUARANTINED_WRITES_CAP) return false
-  heldUntilBound.push(write)
+  heldUntilBound.push({ ...write, distinctId: distinctId ?? undefined })
   return true
 }
 
-/** Deliver held writes now that an id is bound, re-checking consent, which may have changed. */
+/** Deliver held writes now that the installation id is known, re-checking consent. */
 function replayHeldWrites(): void {
   const writes = heldUntilBound ?? []
   heldUntilBound = null
@@ -854,13 +857,11 @@ function replayHeldWrites(): void {
       write.kind === 'exception'
         ? consentState === 'granted'
         : !!write.event && isAllowedToFire(write.event)
-    // No quarantine to route through: it needs a bound user, and the bind
-    // that replays these has just cleared it.
     if (!allowed) continue
     if (write.kind === 'exception') {
-      deliverException(write.error, write.properties, write.forward)
+      deliverException(write.error, write.properties, write.forward, write.distinctId)
     } else if (write.event) {
-      deliverEvent(write.event, write.properties, write.forward, write.timestamp)
+      deliverEvent(write.event, write.properties, write.forward, write.timestamp, write.distinctId)
     }
   }
 }
@@ -1025,16 +1026,38 @@ function tryFlushDeferred(): void {
   void flushPendingIdentityMerges()
 }
 
-/** Bind W/D for captures and a separate installation property. No SDK identify. */
+/**
+ * Bind W/D for captures and a separate installation property. No SDK identify.
+ * A `null` installation id binds D now and holds captures until
+ * `setInstallationId`, for a boot that has not resolved the id yet.
+ */
 export function bindAnonymousId(
   anonymousId: string,
-  installationId: string,
+  installationId: string | null,
   properties: Record<string, TelemetryValue> = {}
 ): void {
   distinctId = anonymousId
   anonymousDistinctId = anonymousId
   nextAnonymousDistinctId = null
   boundUserId = null
+  if (installationId === null) {
+    installationIdProperty = null
+    heldUntilBound ??= []
+    tryFlushDeferred()
+    return
+  }
+  setInstallationId(installationId, properties)
+}
+
+/**
+ * Attach the installation id to every capture and the person, and send what
+ * was held waiting for it. Leaves the anonymous D as bound (an epoch rotation
+ * during the wait stands).
+ */
+export function setInstallationId(
+  installationId: string,
+  properties: Record<string, TelemetryValue> = {}
+): void {
   installationIdProperty = installationId
   defaultEventProperties = { ...defaultEventProperties, installation_id: installationId }
   if (consentState !== 'denied' && Object.keys(properties).length > 0) {
@@ -1387,10 +1410,10 @@ function captureEvent(event: string, properties: TelemetryContext, forward: bool
   // E2E only (no-op otherwise): lets a spec assert an event was raised without consent or a
   // reachable PostHog.
   recordIpcInvocation(`telemetry:${event}`, properties)
-  if (!canEmit() || (!distinctId && !heldUntilBound)) return false
+  if (!canEmit() || !distinctId) return false
   if (!isAllowedToFire(event)) return false
   if (!_checkRateLimit(event)) return false
-  if (!distinctId) {
+  if (holdingForInstallationId()) {
     if (!holdWrite({ kind: 'event', event, properties, forward, timestamp: new Date() }))
       return false
     _recordCapturedEvent(event)
@@ -1413,7 +1436,8 @@ function deliverEvent(
   event: string,
   properties: TelemetryContext,
   forward: boolean,
-  timestamp: Date | null
+  timestamp: Date | null,
+  asDistinctId?: string
 ): boolean {
   try {
     // Per-call properties override defaults on key collision - callers
@@ -1425,7 +1449,7 @@ function deliverEvent(
     // only the country code/name is retained. See the init comment.
     const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
     client!.capture({
-      distinctId: distinctId!,
+      distinctId: asDistinctId ?? distinctId!,
       event,
       properties: scrubProperties(merged),
       ...(timestamp ? { timestamp } : {})
@@ -1564,11 +1588,11 @@ function captureExceptionWrite(
   properties: TelemetryContext,
   forward: boolean
 ): boolean {
-  if (!canEmit() || (!distinctId && !heldUntilBound)) return false
+  if (!canEmit() || !distinctId) return false
   // Exceptions are reliability data; suppress them outside `'granted'`.
   if (consentState !== 'granted') return false
   if (!_checkRateLimit('comfy.desktop.exception.error')) return false
-  if (!distinctId) {
+  if (holdingForInstallationId()) {
     if (!holdWrite({ kind: 'exception', error, properties, forward, timestamp: new Date() }))
       return false
     _recordCapturedEvent('comfy.desktop.exception.error')
@@ -1604,7 +1628,12 @@ function isPostHogExceptionCaptureEnabled(): boolean {
   return isFlagEnabled(process.env['POSTHOG_EXCEPTIONS'])
 }
 
-function deliverException(error: unknown, properties: TelemetryContext, forward: boolean): boolean {
+function deliverException(
+  error: unknown,
+  properties: TelemetryContext,
+  forward: boolean,
+  asDistinctId?: string
+): boolean {
   try {
     // Same default merge as capture() so exception events stay filterable by
     // the shared axes (app_version, client, ...) instead of arriving bare.
@@ -1621,7 +1650,7 @@ function deliverException(error: unknown, properties: TelemetryContext, forward:
     if (isPostHogExceptionCaptureEnabled()) {
       client!.captureException(
         safeError,
-        distinctId!,
+        asDistinctId ?? distinctId!,
         normalizeExceptionContext(
           enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
         ) as TelemetryContext
@@ -2040,6 +2069,9 @@ export async function shutdown(reason: string): Promise<void> {
       uptime_ms: uptimeMs,
       uptime_seconds: Math.round(uptimeMs / 1000)
     })
+    // A quit before the installation id resolved: send what was held under
+    // its anonymous id, without `installation_id`, rather than lose it.
+    if (holdingForInstallationId()) replayHeldWrites()
   } catch {
     // ignore
   }

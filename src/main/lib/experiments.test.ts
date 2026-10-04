@@ -137,6 +137,15 @@ describe('experiments', () => {
       expect(experiments.getFlag('flag.b')).toBe('variant')
     })
 
+    it('answers a boot-cached key at once while the identity is still pending', async () => {
+      fs.writeFileSync(
+        path.join(testUserData, 'experiment-flags.json'),
+        JSON.stringify({ 'flag.a': 'treatment' })
+      )
+      void experiments.initExperiments(new Promise<never>(() => {}))
+      expect(await experiments.getFlagAsync('flag.a')).toBe('treatment')
+    })
+
     it('returns undefined for unknown flags', async () => {
       await experiments.initExperiments({
         distinctId: 'test-distinct-id',

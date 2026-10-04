@@ -140,7 +140,10 @@ export async function signInViaDesktopLoginCode(
   // omits it rather than wait.
   if (settings.get('telemetryEnabled') === true) {
     const installationId = await deviceIdWithin(LOGIN_INSTALLATION_ID_WAIT_MS)
-    if (installationId) request.installation_id = installationId
+    // Consent may have been withdrawn during the wait.
+    if (installationId && settings.get('telemetryEnabled') === true) {
+      request.installation_id = installationId
+    }
   }
 
   let grant: DesktopLoginCodeGrant

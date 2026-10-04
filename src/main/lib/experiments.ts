@@ -119,12 +119,12 @@ export interface ExperimentsIdentity {
  * value instead of falling back to control.
  *
  * The identity may still be pending at boot: the cache loads at once and the
- * fetch waits for it.
+ * fetch waits for it. `null` loads the cache without fetching.
  *
  * Idempotent within a process.
  */
 export function initExperiments(
-  opts: ExperimentsIdentity | Promise<ExperimentsIdentity>
+  opts: ExperimentsIdentity | Promise<ExperimentsIdentity> | null
 ): Promise<void> {
   // Idempotent within a process: repeated calls return the same in-flight
   // promise without re-running the cache load or fetch. The `opts.distinctId`
@@ -133,6 +133,10 @@ export function initExperiments(
   // rotation and Firebase consensus changes cannot move experiment arms.
   if (initPromise) return initPromise
   cached = readCacheSync() ?? {}
+  if (opts === null) {
+    initPromise = Promise.resolve()
+    return initPromise
+  }
   initPromise = Promise.resolve(opts)
     .then((identity) =>
       mainTelemetry.loadFeatureFlagsImmediate(
@@ -172,6 +176,10 @@ export function getFlag(key: string): FeatureFlagValue | undefined {
  * `getFlag()` stays for hot sync reads.
  */
 export async function getFlagAsync(key: string): Promise<FeatureFlagValue | undefined> {
+  // A key loaded at boot is locked for the session; the refresh cannot change
+  // it, so there is nothing to wait for (and the refresh may be waiting on the
+  // installation id).
+  if (cached && key in cached) return cached[key]
   if (initPromise) {
     try {
       await initPromise
