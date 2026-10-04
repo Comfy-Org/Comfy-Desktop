@@ -1829,10 +1829,20 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
             discardTempFile(tempPath)
             pending.tempPath = undefined
           } else {
-            // Anything else means the destination was never claimed, so fall
-            // through to the rename below rather than reporting a phantom
-            // success. Hard links fail across filesystems (EXDEV) and on some
-            // network shares.
+            // Hard links fail across filesystems (EXDEV) and on some network
+            // shares. Copying with COPYFILE_EXCL keeps the same no-clobber
+            // guarantee there; falling through to the rename below would not,
+            // because rename replaces an existing file on POSIX.
+            try {
+              fs.copyFileSync(tempPath, pending.savePath, fs.constants.COPYFILE_EXCL)
+              discardTempFile(tempPath)
+              pending.tempPath = undefined
+            } catch (copyError) {
+              if ((copyError as NodeJS.ErrnoException).code === 'EEXIST') {
+                discardTempFile(tempPath)
+                pending.tempPath = undefined
+              }
+            }
           }
         }
       }

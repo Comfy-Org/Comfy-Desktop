@@ -892,6 +892,34 @@ describe('asset download retries', () => {
     }
   })
 
+  it('does not overwrite a destination that appears while the hard link is failing', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const destination = path.join(outputDir, 'sample.png')
+    // The fallback has to keep the no-clobber guarantee the link gave us: a
+    // plain rename would replace this file on POSIX.
+    const link = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('cross-device'), { code: 'EXDEV' })
+    })
+
+    try {
+      await startExactAssetDownload(h, url, outputDir)
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
+      await fs.promises.writeFile(destination, 'created-during-download')
+      item.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe(
+        'created-during-download'
+      )
+      await expect(fs.promises.stat(item.tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      link.mockRestore()
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
   it('does not overwrite an exact destination created while the download is in flight', async () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
     const url = 'https://remote.example/input/sample.png'
