@@ -1713,10 +1713,17 @@ async function runLaunch(
     // offer the next port either, for the same reason. Never grounds for stopping it.
     // Callers that asked for a port bump explicitly (`autoPortOnConflict`) keep it.
     // Every listener is checked: lsof lists each one, and this install's may not come first.
-    // A Performance Test spawned here (a remote one's port is on another machine). It runs this
-    // install's own ComfyUI, so the same-install check below matches it too.
+    // A Performance Test spawned here (a remote one's port is on another machine) and still alive:
+    // an exited one stays registered while its crash is diagnosed or a restart respawns it, and
+    // naming it would offer to stop whatever took the port since. It runs this install's own
+    // ComfyUI, so the same-install check below matches it too.
     const perfHolder = [..._runningSessions].find(
-      ([key, s]) => s.proc && s.port === launchCmd.port && sessionKindOf(key) === 'performance_test'
+      ([key, s]) =>
+        s.proc &&
+        s.proc.exitCode === null &&
+        s.proc.signalCode === null &&
+        s.port === launchCmd.port &&
+        sessionKindOf(key) === 'performance_test'
     )?.[1]
     let sameInstallPid: number | null = null
     if (actionData?.autoPortOnConflict !== true && launchCmd.args!.includes('--enable-assets')) {
@@ -1754,8 +1761,9 @@ async function runLaunch(
       return {
         ok: false,
         // A benchmark has its own database, so the same-database explanation would be wrong.
+        // Its own wording: this page offers no next port.
         message: perfHolder
-          ? i18n.t('errors.portConflictPerformanceTest', {
+          ? i18n.t('errors.portConflictPerformanceTestSameInstall', {
               port: launchCmd.port!,
               name: perfHolder.installationName
             })

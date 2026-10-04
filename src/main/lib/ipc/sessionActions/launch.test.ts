@@ -2616,7 +2616,7 @@ describe('Performance Test database', () => {
     writeCoreDb()
     _runningSessions.set('performance-test:perf-db-holder', {
       // Spawned here: a local process.
-      proc: { pid: 9001 } as unknown as ChildProcess,
+      proc: { pid: 9001, exitCode: null, signalCode: null } as unknown as ChildProcess,
       port: 48234,
       mode: 'console',
       installationName: 'Benchmarked',
@@ -2643,10 +2643,32 @@ describe('Performance Test database', () => {
     })
   })
 
+  it('does not blame a Performance Test that has exited but is still registered', async () => {
+    writeCoreDb()
+    // Crashed, with its crash still being diagnosed: the port is free for anything to take.
+    _runningSessions.set('performance-test:perf-db-holder', {
+      proc: { pid: 9001, exitCode: 3221225477, signalCode: null } as unknown as ChildProcess,
+      port: 48234,
+      mode: 'console',
+      installationName: 'Benchmarked',
+      startedAt: Date.now()
+    })
+    launchHarness.busyPorts = [48234]
+    const t = vi.spyOn(i18nModule, 't')
+    const ctx = ctxFor('perf-db-explicit-5')
+    ;(ctx.inst as unknown as Record<string, unknown>).launchArgs = '--port 48234'
+
+    const res = await handleLaunch(ctx)
+
+    expect(res.ok).toBe(false)
+    expect(t).not.toHaveBeenCalledWith('errors.portConflictPerformanceTest', expect.anything())
+    expect(t).toHaveBeenCalledWith('errors.portConflictComfy', { port: 48234, process: 'python' })
+  })
+
   it('does not blame a Performance Test on another port', async () => {
     writeCoreDb()
     _runningSessions.set('performance-test:perf-db-holder', {
-      proc: { pid: 9001 } as unknown as ChildProcess,
+      proc: { pid: 9001, exitCode: null, signalCode: null } as unknown as ChildProcess,
       port: 48299,
       mode: 'console',
       installationName: 'Benchmarked',
@@ -2667,7 +2689,7 @@ describe('Performance Test database', () => {
   it("does not call another install's own session a Performance Test", async () => {
     writeCoreDb()
     _runningSessions.set('perf-db-other-install', {
-      proc: { pid: 9002 } as unknown as ChildProcess,
+      proc: { pid: 9002, exitCode: null, signalCode: null } as unknown as ChildProcess,
       port: 48234,
       mode: 'window',
       installationName: 'Other',
@@ -3229,7 +3251,7 @@ describe('prior ComfyUI process handling at launch', () => {
     // The benchmark runs this install's own ComfyUI, so the same-install check matches it.
     ownership.holderIsInstall = true
     _runningSessions.set('performance-test:prior-same-install-perf', {
-      proc: { pid: 31337 } as unknown as ChildProcess,
+      proc: { pid: 31337, exitCode: null, signalCode: null } as unknown as ChildProcess,
       port: PORT,
       mode: 'console',
       installationName: 'Benchmarked',
@@ -3239,7 +3261,8 @@ describe('prior ComfyUI process handling at launch', () => {
     const res = await handleLaunch(ctxFor('prior-same-install-perf'))
 
     expect(res.ok).toBe(false)
-    expect(res.message).toBe('errors.portConflictPerformanceTest')
+    // Not the variant that offers the next port: this page has no such button.
+    expect(res.message).toBe('errors.portConflictPerformanceTestSameInstall')
     // Only the wording changes: still no next port, still the stop action.
     expect(res.portConflict).toEqual({ port: PORT, pids: [31337], isComfy: true })
     expect(children).toHaveLength(0)
