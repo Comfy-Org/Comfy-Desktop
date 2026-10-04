@@ -182,18 +182,19 @@ let lookup: MachineIdLookup | null = null
 /**
  * Start the hardware UUID lookup ahead of `initDeviceId()`, so its cold
  * process spawns overlap Electron start-up instead of the pre-window wait.
- * Idempotent; `initDeviceId()` starts it itself if nobody did.
+ * Boot does this on Windows only. Idempotent; `initDeviceId()` starts it
+ * itself if nobody did.
  */
 export function startMachineIdLookup(): MachineIdLookup {
   if (lookup) return lookup
   const started: MachineIdLookup = {
     promise: lookupHardwareUuid(),
-    startedAt: Date.now(),
+    startedAt: performance.now(),
     durationMs: null
   }
   // Also keeps a rejection before `deriveMachineId` awaits it from being unhandled.
   const record = (): void => {
-    started.durationMs = Date.now() - started.startedAt
+    started.durationMs = Math.round(performance.now() - started.startedAt)
   }
   started.promise.then(record, record)
   lookup = started
@@ -268,15 +269,13 @@ async function deriveMachineId(): Promise<DerivedMachineId> {
   let timedOut = false
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const remainingMs = MACHINE_ID_TIMEOUT_MS - (Date.now() - started.startedAt)
+    // Monotonic, so a wall-clock correction cannot stretch the wait.
+    const remainingMs = Math.max(0, MACHINE_ID_TIMEOUT_MS - (performance.now() - started.startedAt))
     const timeoutPromise = new Promise<null>((resolve) => {
-      timer = setTimeout(
-        () => {
-          timedOut = true
-          resolve(null)
-        },
-        Math.max(0, remainingMs)
-      )
+      timer = setTimeout(() => {
+        timedOut = true
+        resolve(null)
+      }, remainingMs)
     })
     const sys = await Promise.race([started.promise, timeoutPromise])
     if (sys) {

@@ -1333,9 +1333,10 @@ const hostReentryGate = createStartupReentryGate()
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  // The installation id's hardware lookup spawns cold processes (PowerShell
-  // on Windows); run it alongside Electron start-up rather than after it.
-  startMachineIdLookup()
+  // On Windows the installation id's hardware lookup spawns a cold
+  // PowerShell; run it alongside Electron start-up rather than after it.
+  // macOS and Linux keep starting it from `initDeviceId()`.
+  if (process.platform === 'win32') startMachineIdLookup()
 
   if (app.isPackaged) {
     app.on('second-instance', () => {

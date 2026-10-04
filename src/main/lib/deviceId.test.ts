@@ -482,7 +482,6 @@ describe('deviceId', () => {
 
     it.each<NodeJS.Platform>(['win32', 'darwin'])('is not consulted on %s', async (platform) => {
       setPlatform(platform)
-      mockSystemUuid = undefined
       mockSystemUuid = ''
       mockMachineIdFiles = { [ETC_MACHINE_ID]: machineId }
 
@@ -514,6 +513,7 @@ describe('deviceId', () => {
       mockSystemUuid = uuid
       const { legacyId } = await mod.initDeviceId()
       expect(legacyId).toBeNull()
+      expect(mod.getIdClass()).toBe('machine_derived')
       expect(mod.getDeviceId()).toBe(expectedIdFor(uuid))
     })
 
@@ -593,6 +593,20 @@ describe('deviceId', () => {
       expect(mod.getIdClass()).toBe('random_fallback')
     })
 
+    it('is not stretched by the wall clock stepping back', async () => {
+      mockUuidHangs = true
+      mod.startMachineIdLookup()
+      await vi.advanceTimersByTimeAsync(1500)
+      vi.setSystemTime(Date.now() - 5000)
+
+      let settled = false
+      void mod.initDeviceId().then(() => {
+        settled = true
+      })
+      await vi.advanceTimersByTimeAsync(500)
+      expect(settled).toBe(true)
+    })
+
     it('times out at once when the budget was spent before initDeviceId', async () => {
       mockUuidHangs = true
       mod.startMachineIdLookup()
@@ -625,7 +639,7 @@ describe('deviceId', () => {
 
       await mod.initDeviceId()
       expect(mod.getIdClass()).toBe('random_fallback')
-      expect(mod.getIdLookupTiming()?.idLookupTimedOut).toBe(false)
+      expect(mod.getIdLookupTiming()).toMatchObject({ idLookupMs: 0, idLookupTimedOut: false })
     })
   })
 
@@ -644,6 +658,9 @@ describe('deviceId', () => {
     })
 
     it('records how long an answered lookup took', async () => {
+      // Uptime follows the fake clock, starting 3 s into the process.
+      const t0 = performance.now()
+      vi.spyOn(process, 'uptime').mockImplementation(() => 3 + (performance.now() - t0) / 1000)
       mockUuidDelayMs = 1200
       const init = mod.initDeviceId()
       await vi.advanceTimersByTimeAsync(1200)
@@ -652,7 +669,8 @@ describe('deviceId', () => {
       const timing = mod.getIdLookupTiming()
       expect(timing?.idLookupMs).toBe(1200)
       expect(timing?.idLookupTimedOut).toBe(false)
-      expect(timing?.bootToIdMs).toBeGreaterThanOrEqual(0)
+      // Sampled when boot starts waiting, not when the lookup answers.
+      expect(timing?.bootToIdMs).toBe(3000)
     })
 
     it('records a timeout as no duration', async () => {
