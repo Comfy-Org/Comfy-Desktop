@@ -237,9 +237,8 @@ def cmd_rev_parse(repo_path, ref):
 def cmd_tracked_changes(repo_path):
     """Print tracked paths that differ from HEAD (untracked files ignored)."""
     repo = open_repo(repo_path)
-    for path, flags in repo.status(untracked_files="no").items():
-        if flags != pygit2.GIT_STATUS_CURRENT:
-            print(path)
+    for path in repo.status(untracked_files="no"):
+        print(path)
 
 
 HAS_COMMIT_ABSENT = 3

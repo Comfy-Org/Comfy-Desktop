@@ -156,12 +156,14 @@ def main():
     # symlink the user lacks the privilege to create (see disable_symlinks).
     disable_symlinks(repo)
 
-    # A kill mid-update can leave git's lock files behind, failing every later
-    # update. Desktop runs one operation per install, so an old one is stale.
+    # Desktop runs one operation per install, so an old lock was left by a killed update.
     for name in ("HEAD.lock", "index.lock", "packed-refs.lock", "refs/heads/master.lock"):
         lock = os.path.join(git_dir, name)
-        if os.path.exists(lock) and time.time() - os.path.getmtime(lock) > 60:
-            os.remove(lock)
+        try:
+            if time.time() - os.path.getmtime(lock) > 60:
+                os.remove(lock)
+        except OSError:
+            pass  # gone already, or still held open: git reports it below
 
     # Emit pre-update HEAD
     pre_head = str(repo.head.target)

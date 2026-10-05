@@ -471,7 +471,8 @@ export async function runComfyUIUpdate(
   } catch {}
 
   // Fail fast: skip the manager requirements sync if the main one already failed.
-  if (!depFailure && !signal?.aborted && preMgrReqs !== postMgrReqs && postMgrReqs.length > 0) {
+  const mgrReqsChanged = preMgrReqs !== postMgrReqs || repairing
+  if (!depFailure && !signal?.aborted && mgrReqsChanged && postMgrReqs.length > 0) {
     const uvPath = getActiveUvPath(installation)
     const activeEnvPython = getActivePythonPath(installation)
 

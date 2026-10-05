@@ -258,6 +258,20 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assert_clean_at(self.sha["v2"], V2)
 
+    @NEEDS_PERMISSIONS
+    def test_a_stale_lock_that_cannot_be_removed_fails_cleanly(self):
+        # Windows: a lock still held open cannot be deleted. Stand-in: a
+        # read-only refs/heads/ keeps an old master.lock in place.
+        lock = os.path.join(self.repo, ".git", "refs", "heads", "master.lock")
+        open(lock, "w").close()
+        old = time.time() - 3600
+        os.utime(lock, (old, old))
+        self.lock(".git/refs/heads")
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertIn("[ERROR] Update checkout failed", r.stdout)
+
     def test_a_fresh_git_lock_is_respected(self):
         open(os.path.join(self.repo, ".git", "HEAD.lock"), "w").close()
         self.assertEqual(self.update("--stable").returncode, 1)
