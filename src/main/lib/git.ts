@@ -1280,18 +1280,20 @@ function makeRunGit(
  * Check out a specific commit. Tries a direct checkout first (works for
  * full clones where the commit is already local). If the commit isn't
  * available, fetches all refs from origin (unshallowing if needed) and
- * retries.
+ * retries. `force` overwrites modified tracked files instead of refusing.
  */
 export function gitCheckoutCommit(
   repoPath: string,
   commit: string,
   sendOutput: (text: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  { force = false }: { force?: boolean } = {}
 ): Promise<ProcessResult> {
   if (signal?.aborted) return Promise.resolve({ exitCode: 1, stderr: '', stdout: '' })
+  const checkoutArgs = force ? ['checkout', '-f', commit] : ['checkout', commit]
   const systemGitCheckout = (): Promise<ProcessResult> => {
     const runGit = makeRunGit(repoPath, sendOutput, signal)
-    return runGit(['checkout', commit]).then((directResult) => {
+    return runGit(checkoutArgs).then((directResult) => {
       if (directResult.exitCode === 0) return directResult
       return runGit(['fetch', '--unshallow', 'origin'])
         .then((result) => {
@@ -1300,7 +1302,7 @@ export function gitCheckoutCommit(
         })
         .then((fetchResult) => {
           if (fetchResult.exitCode !== 0) return fetchResult
-          return runGit(['checkout', commit])
+          return runGit(checkoutArgs)
         })
     })
   }
@@ -1308,7 +1310,7 @@ export function gitCheckoutCommit(
     const runPygit2Spawn = makeRunPygit2(sendOutput, signal)
     return withSystemGitFallback(
       'checkout',
-      () => runPygit2Spawn(['checkout', repoPath, commit]),
+      () => runPygit2Spawn(['checkout', repoPath, commit, ...(force ? ['--force'] : [])]),
       systemGitCheckout,
       sendOutput
     )
@@ -1321,8 +1323,11 @@ export function gitCheckoutCommit(
  * the git move when a dependency sync or snapshot restore fails partway, so we
  * never leave new source + stale packages (the half-applied state that crashes
  * on import, e.g. `comfy_aimdo.vram_buffer`). Deliberately ignores any abort
- * signal - rollback must run even when the user cancelled. Returns true if HEAD
- * ends up at the target (or was already there).
+ * signal - rollback must run even when the user cancelled. Forced: a checkout
+ * that failed partway leaves files that differ from HEAD, which a safe checkout
+ * refuses to overwrite. The update and restore checkouts it undoes are forced
+ * too, and the update script saves local changes to a backup branch first.
+ * Returns true if HEAD ends up at the target (or was already there).
  */
 export async function rollbackComfySource(
   comfyuiDir: string,
@@ -1335,7 +1340,8 @@ export async function rollbackComfySource(
     comfyuiDir,
     targetHead,
     sendOutput ?? (() => {}),
-    undefined
+    undefined,
+    { force: true }
   )
   const head = readGitHead(comfyuiDir)
   const ok = result.exitCode === 0 && !!head && head.startsWith(targetHead.slice(0, 7))

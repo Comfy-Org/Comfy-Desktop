@@ -226,7 +226,32 @@ def main():
                     print("Check your internet connection and try again.")
                 sys.exit(1)
 
-    # Hard-reset master to origin/master.
+    # Resolve the tag before anything moves, so a missing tag exits untouched.
+    tag_name = None
+    if stable:
+        tag = find_latest_stable_tag(repo)
+        if tag is not None:
+            print("Checking out stable tag: %s" % tag)
+            tag_name = tag.replace("refs/tags/", "")
+        else:
+            print("No stable tags found, staying on master.")
+    elif explicit_tag is not None:
+        ref_name = "refs/tags/%s" % explicit_tag
+        try:
+            ref = repo.lookup_reference(ref_name)
+        except (KeyError, pygit2.GitError):
+            ref = None
+        if ref is None:
+            print("Error: tag %s not found in repository. The fetch step "
+                  "above pulls +refs/tags/*; if this persists the tag may "
+                  "have been deleted upstream or the remote is unreachable."
+                  % explicit_tag)
+            sys.exit(3)
+        print("Checking out tag: %s" % explicit_tag)
+        tag_name = explicit_tag
+
+    # Hard-reset master to origin/master and check out the target (the tag, or
+    # master) in one forced checkout, never master first and then the tag.
     # Launcher-managed installations should not have local modifications to
     # tracked files. Using a hard reset instead of merge/stash avoids merge
     # conflicts and stash-pop conflict markers that can corrupt working-tree
@@ -234,6 +259,8 @@ def main():
     print("Resetting to origin/master…")
     remote_ref = repo.lookup_reference("refs/remotes/origin/master")
     remote_id = remote_ref.target
+    target_id = remote_id if tag_name is None else repo.lookup_reference(
+        "refs/tags/%s" % tag_name).peel(pygit2.Commit).id
     branch = repo.lookup_branch("master")
     # Snapshot the pre-update state so a failed checkout/reset can be undone. The
     # branch ref is advanced *before* the working-tree checkout below, so without
@@ -253,16 +280,18 @@ def main():
             repo.create_branch("master", repo.get(remote_id))
         else:
             branch.set_target(remote_id)
-        ref = repo.lookup_reference("refs/heads/master")
-        repo.checkout(ref, strategy=pygit2.GIT_CHECKOUT_FORCE)
-        repo.reset(remote_id, pygit2.GIT_RESET_HARD)
+        repo.set_head("refs/heads/master" if tag_name is None else target_id)
+        repo.checkout_tree(repo.get(target_id), strategy=pygit2.GIT_CHECKOUT_FORCE)
     except Exception as exc:
         # Roll the source back to the pre-update commit so a failed update never
         # leaves the installation in an inconsistent (new-code/old-deps) state.
-        # Restore master to its original tip and HEAD to its original position
-        # and attachment, then hard-reset the working tree to the pre-update HEAD.
+        # Restore the working tree first, then master and HEAD: if the write
+        # fails again (the file is still locked), HEAD stays off the pre-update
+        # commit, which is what makes Desktop's rollback retry the repair.
         print("[ERROR] Update checkout failed: %s" % exc)
         try:
+            repo.checkout_tree(repo.get(pre_reset_head),
+                               strategy=pygit2.GIT_CHECKOUT_FORCE)
             restore_branch = repo.lookup_branch("master")
             if pre_master_target is not None:
                 if restore_branch is None:
@@ -273,38 +302,14 @@ def main():
                 repo.set_head(pre_reset_head)
             else:
                 repo.set_head(pre_head_ref)
-            repo.reset(pre_reset_head, pygit2.GIT_RESET_HARD)
             print("Restored ComfyUI source to pre-update commit %s"
                   % str(pre_reset_head)[:7])
         except Exception as restore_exc:
             print("[ERROR] Failed to restore pre-update state: %s" % restore_exc)
         sys.exit(1)
 
-    # Checkout stable tag if requested
-    if stable:
-        tag = find_latest_stable_tag(repo)
-        if tag is not None:
-            print("Checking out stable tag: %s" % tag)
-            repo.checkout(tag)
-            tag_name = tag.replace("refs/tags/", "")
-            print("[CHECKED_OUT_TAG] %s" % tag_name)
-        else:
-            print("No stable tags found, staying on master.")
-    elif explicit_tag is not None:
-        ref_name = "refs/tags/%s" % explicit_tag
-        try:
-            ref = repo.lookup_reference(ref_name)
-        except (KeyError, pygit2.GitError):
-            ref = None
-        if ref is None:
-            print("Error: tag %s not found in repository. The fetch step "
-                  "above pulls +refs/tags/*; if this persists the tag may "
-                  "have been deleted upstream or the remote is unreachable."
-                  % explicit_tag)
-            sys.exit(3)
-        print("Checking out tag: %s" % explicit_tag)
-        repo.checkout(ref)
-        print("[CHECKED_OUT_TAG] %s" % explicit_tag)
+    if tag_name is not None:
+        print("[CHECKED_OUT_TAG] %s" % tag_name)
 
     # Emit post-update HEAD
     post_head = str(repo.head.target)

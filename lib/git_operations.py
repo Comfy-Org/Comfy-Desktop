@@ -20,7 +20,7 @@ Subcommands:
   fetch-tags         <repo_path>
   fetch-commit       <repo_path> <sha>
   clone              <url> <dest>
-  checkout           <repo_path> <commit>
+  checkout           <repo_path> <commit> [--force]
   fetch-and-checkout <repo_path> <commit>
   ls-remote-tags     <url>
   ls-remote-ref      <url> <ref>
@@ -673,8 +673,10 @@ def _try_checkout_existing(repo, commit, strategy):
     return str(oid)
 
 
-def cmd_checkout(repo_path, commit):
+def cmd_checkout(repo_path, commit, force=False):
     """Checkout a specific commit.
+
+    `force` overwrites modified tracked files (rollback of a half-written tree).
 
     If the commit is not available locally, fetch from origin first
     (preferring an explicit SHA refspec, then unshallow, then plain
@@ -685,7 +687,8 @@ def cmd_checkout(repo_path, commit):
 
     # Try direct checkout first (works for full clones where the commit
     # is already local).
-    existing = _try_checkout_existing(repo, commit, pygit2.GIT_CHECKOUT_SAFE)
+    strategy = pygit2.GIT_CHECKOUT_FORCE if force else pygit2.GIT_CHECKOUT_SAFE
+    existing = _try_checkout_existing(repo, commit, strategy)
     if existing is not None:
         print("Checked out %s" % existing, file=sys.stderr)
         return
@@ -706,7 +709,7 @@ def cmd_checkout(repo_path, commit):
     try:
         oid = resolve_ref(repo, commit)
         commit_obj = repo.get(oid)
-        repo.checkout_tree(commit_obj, strategy=pygit2.GIT_CHECKOUT_SAFE)
+        repo.checkout_tree(commit_obj, strategy=strategy)
         repo.set_head(oid)
         print("Checked out %s" % str(oid), file=sys.stderr)
     except Exception as e:
@@ -864,7 +867,7 @@ Subcommands:
   fetch-tags         <repo_path>
   fetch-commit       <repo_path> <sha>
   clone              <url> <dest>
-  checkout           <repo_path> <commit>
+  checkout           <repo_path> <commit> [--force]
   fetch-and-checkout <repo_path> <commit>
   ls-remote-tags     <url>
   ls-remote-ref      <url> <ref>
@@ -958,9 +961,9 @@ if __name__ == "__main__":
 
         elif subcmd == "checkout":
             if len(sys.argv) < 4:
-                print("Usage: git_operations.py checkout <repo_path> <commit>", file=sys.stderr)
+                print("Usage: git_operations.py checkout <repo_path> <commit> [--force]", file=sys.stderr)
                 sys.exit(1)
-            cmd_checkout(sys.argv[2], sys.argv[3])
+            cmd_checkout(sys.argv[2], sys.argv[3], force="--force" in sys.argv[4:])
 
         elif subcmd == "fetch-and-checkout":
             if len(sys.argv) < 4:

@@ -36,6 +36,7 @@ import {
   gitClone,
   gitCheckoutCommit,
   gitFetchAndCheckout,
+  rollbackComfySource,
   isPygit2AuthFailure,
   isForcePygit2,
   isSystemGitAvailable
@@ -460,6 +461,19 @@ describe('gitCheckoutCommit (system git)', () => {
     const result = await gitCheckoutCommit('/repo', 'abc123', () => {}, controller.signal)
     expect(result.exitCode).toBe(1)
     expect(mockedSpawn).not.toHaveBeenCalled()
+  })
+
+  it('rollbackComfySource forces the checkout over a half-written tree', async () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-'))
+    try {
+      fs.mkdirSync(path.join(repo, '.git'))
+      fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'def456\n')
+      mockSpawn(0)
+      await rollbackComfySource(repo, 'abc123')
+      expect(mockedSpawn.mock.calls[0]![1]).toEqual(['checkout', '-f', 'abc123'])
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true })
+    }
   })
 })
 
@@ -947,6 +961,19 @@ describe('pygit2 fallback', () => {
       const result = await gitCheckoutCommit('/repo', 'abc123', () => {}, controller.signal)
       expect(result.exitCode).toBe(1)
       expect(mockedSpawn).not.toHaveBeenCalled()
+    })
+
+    it('rollbackComfySource passes --force', async () => {
+      const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-'))
+      try {
+        fs.mkdirSync(path.join(repo, '.git'))
+        fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'def456\n')
+        mockSpawn(0, '', 'Checked out abc123\n')
+        await rollbackComfySource(repo, 'abc123')
+        expect(expectPygit2SpawnCall()).toEqual(['checkout', repo, 'abc123', '--force'])
+      } finally {
+        fs.rmSync(repo, { recursive: true, force: true })
+      }
     })
   })
 
