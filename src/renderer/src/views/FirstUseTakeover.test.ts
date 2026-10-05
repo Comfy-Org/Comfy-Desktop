@@ -471,6 +471,22 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     expect(wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists()).toBe(true)
   })
 
+  it.each([
+    ['shows it for an unknown tier', 'unknown', true],
+    ['never shows it to a paid user', 'paid', false]
+  ])('holds the free-runs pill until the tier loads, then %s', async (_label, tier, shown) => {
+    const userTier = deferred<string>()
+    ;(window.api.getCloudFreeRunsEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(true)
+    ;(window.api.getCloudUserTier as ReturnType<typeof vi.fn>).mockReturnValue(userTier.promise)
+    const wrapper = mountTakeover()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists()).toBe(false)
+
+    userTier.resolve(tier)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists()).toBe(shown)
+  })
+
   it('keeps Local as the default when the flag is missing (control / fallback)', async () => {
     const wrapper = mountTakeover()
     await flushPromises()

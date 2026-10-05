@@ -1905,6 +1905,13 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(ev?.properties).not.toHaveProperty('installation_id')
   })
 
+  it('reports shutdown for a launch that never started a telemetry client', async () => {
+    telemetry._resetForTest()
+    expect(telemetry.hasShutDown()).toBe(false)
+    await telemetry.shutdown('quit')
+    expect(telemetry.hasShutDown()).toBe(true)
+  })
+
   it('reports shutdown as soon as it has begun, before the drain finishes', async () => {
     telemetry.bindAnonymousId('anon-d', 'install-id')
     expect(telemetry.hasShutDown()).toBe(false)
