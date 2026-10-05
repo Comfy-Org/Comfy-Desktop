@@ -674,9 +674,7 @@ def _try_checkout_existing(repo, commit, strategy):
 
 
 def cmd_checkout(repo_path, commit, force=False):
-    """Checkout a specific commit.
-
-    `force` overwrites modified tracked files (rollback of a half-written tree).
+    """Checkout a specific commit (`force` overwrites modified tracked files).
 
     If the commit is not available locally, fetch from origin first
     (preferring an explicit SHA refspec, then unshallow, then plain

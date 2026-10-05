@@ -248,14 +248,13 @@ def main():
                   % explicit_tag)
             sys.exit(3)
         print("Checking out tag: %s" % explicit_tag)
-    tag_name = ref.shorthand if ref is not None else None
 
     # Point master at origin/master and check out the target (the tag, or
     # master) in one forced checkout, never master first and then the tag.
     # Launcher-managed installations should not have local modifications to
-    # tracked files. Forcing instead of merge/stash avoids merge conflicts and
-    # stash-pop conflict markers that can corrupt working-tree files (see issue
-    # #245).
+    # tracked files. Using a hard reset instead of merge/stash avoids merge
+    # conflicts and stash-pop conflict markers that can corrupt working-tree
+    # files (see issue #245).
     print("Resetting to origin/master…")
     remote_ref = repo.lookup_reference("refs/remotes/origin/master")
     remote_id = remote_ref.target
@@ -279,18 +278,16 @@ def main():
             repo.create_branch("master", repo.get(remote_id))
         else:
             branch.set_target(remote_id)
-        repo.set_head("refs/heads/master" if tag_name is None else target_id)
+        repo.set_head("refs/heads/master" if ref is None else target_id)
         repo.checkout_tree(repo.get(target_id), strategy=pygit2.GIT_CHECKOUT_FORCE)
     except Exception as exc:
         # Roll the source back to the pre-update commit so a failed update never
         # leaves the installation in an inconsistent (new-code/old-deps) state.
-        # Restore the working tree first, then master and HEAD: if the write
-        # fails again (the file is still locked), HEAD stays off the pre-update
-        # commit, which is what makes Desktop's rollback retry the repair.
+        # Restore the working tree first, then master and HEAD, so a failed write
+        # leaves HEAD off the pre-update commit and Desktop's rollback retries.
         print("[ERROR] Update checkout failed: %s" % exc)
         try:
-            repo.checkout_tree(repo.get(pre_reset_head),
-                               strategy=pygit2.GIT_CHECKOUT_FORCE)
+            repo.checkout_tree(repo.get(pre_reset_head), strategy=pygit2.GIT_CHECKOUT_FORCE)
             restore_branch = repo.lookup_branch("master")
             if pre_master_target is not None:
                 if restore_branch is None:
@@ -307,8 +304,8 @@ def main():
             print("[ERROR] Failed to restore pre-update state: %s" % restore_exc)
         sys.exit(1)
 
-    if tag_name is not None:
-        print("[CHECKED_OUT_TAG] %s" % tag_name)
+    if ref is not None:
+        print("[CHECKED_OUT_TAG] %s" % ref.shorthand)
 
     # Emit post-update HEAD
     post_head = str(repo.head.target)
