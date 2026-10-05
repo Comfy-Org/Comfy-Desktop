@@ -283,11 +283,11 @@ def main():
     except Exception as exc:
         # Roll the source back to the pre-update commit so a failed update never
         # leaves the installation in an inconsistent (new-code/old-deps) state.
-        # Restore the working tree first, then master and HEAD, so a failed write
-        # leaves HEAD off the pre-update commit and Desktop's rollback retries.
+        # Restore master to its original tip and HEAD to its original position
+        # and attachment, then hard-reset the working tree to the pre-update HEAD.
+        # If that fails, HEAD goes back to the target so Desktop's rollback retries.
         print("[ERROR] Update checkout failed: %s" % exc)
         try:
-            repo.checkout_tree(repo.get(pre_reset_head), strategy=pygit2.GIT_CHECKOUT_FORCE)
             restore_branch = repo.lookup_branch("master")
             if pre_master_target is not None:
                 if restore_branch is None:
@@ -298,10 +298,12 @@ def main():
                 repo.set_head(pre_reset_head)
             else:
                 repo.set_head(pre_head_ref)
+            repo.reset(pre_reset_head, pygit2.GIT_RESET_HARD)
             print("Restored ComfyUI source to pre-update commit %s"
                   % str(pre_reset_head)[:7])
         except Exception as restore_exc:
             print("[ERROR] Failed to restore pre-update state: %s" % restore_exc)
+            repo.set_head(target_id)
         sys.exit(1)
 
     if ref is not None:

@@ -468,24 +468,25 @@ describe('gitCheckoutCommit (system git)', () => {
     try {
       fs.mkdirSync(path.join(repo, '.git'))
       fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'def456\n')
-      mockSpawnSequence([{ exitCode: 0 }, { exitCode: 0 }, { exitCode: 0 }])
+      mockSpawnSequence([{ exitCode: 0 }, { exitCode: 0 }, { exitCode: 0 }, { exitCode: 0 }])
       await rollbackComfySource(repo, 'abc123', undefined, { force: true })
       expect(mockedSpawn.mock.calls.map((c) => c[1])).toEqual([
         ['checkout', '--detach'],
+        ['reset', '-q'],
         ['reset', '--hard', 'abc123']
       ])
       await rollbackComfySource(repo, 'abc123')
-      expect(mockedSpawn.mock.calls[2]![1]).toEqual(['checkout', 'abc123'])
+      expect(mockedSpawn.mock.calls[3]![1]).toEqual(['checkout', 'abc123'])
     } finally {
       fs.rmSync(repo, { recursive: true, force: true })
     }
   })
 
   it('does not fetch after a failed forced checkout (a locked file, not a missing commit)', async () => {
-    mockSpawnSequence([{ exitCode: 0 }, { exitCode: 128 }])
+    mockSpawnSequence([{ exitCode: 0 }, { exitCode: 0 }, { exitCode: 128 }])
     const result = await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
     expect(result.exitCode).toBe(128)
-    expect(mockedSpawn).toHaveBeenCalledTimes(2)
+    expect(mockedSpawn).toHaveBeenCalledTimes(3)
   })
 })
 

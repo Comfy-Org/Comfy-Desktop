@@ -1292,13 +1292,13 @@ export function gitCheckoutCommit(
   if (signal?.aborted) return Promise.resolve({ exitCode: 1, stderr: '', stdout: '' })
   const systemGitCheckout = (): Promise<ProcessResult> => {
     const runGit = makeRunGit(repoPath, sendOutput, signal)
-    // A forced `git checkout` that fails on a locked file still moves HEAD; a
-    // hard reset of a detached HEAD moves it only once the tree is written.
+    // `checkout -f` moves HEAD even when a locked file fails it; a detached hard
+    // reset doesn't. The mixed reset indexes HEAD so the hard one drops its extras.
     const checkout = (): Promise<ProcessResult> =>
       force
-        ? runGit(['checkout', '--detach']).then((r) =>
-            r.exitCode === 0 ? runGit(['reset', '--hard', commit]) : r
-          )
+        ? runGit(['checkout', '--detach'])
+            .then((r) => (r.exitCode === 0 ? runGit(['reset', '-q']) : r))
+            .then((r) => (r.exitCode === 0 ? runGit(['reset', '--hard', commit]) : r))
         : runGit(['checkout', commit])
     return checkout().then((directResult) => {
       if (directResult.exitCode === 0 || force) return directResult

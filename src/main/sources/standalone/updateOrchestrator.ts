@@ -33,6 +33,7 @@ import {
   writeOpMarker,
   completeOpMarker,
   readOpMarker,
+  recoverInterruptedComfyOp,
   rollbackStatusMessage
 } from '../../lib/opMarker'
 import type { InstallationRecord } from '../../installations'
@@ -219,6 +220,11 @@ export async function runComfyUIUpdate(
     : channel === 'stable'
       ? ['--stable']
       : []
+
+  // An earlier update whose rollback failed (a file still locked) left the source
+  // moved; repair it first, or this update would start from that half-updated HEAD.
+  const recovery = await recoverInterruptedComfyOp(installPath, sendOutput).catch((e: Error) => e)
+  if (recovery instanceof Error) return { ok: false, message: recovery.message, installation }
 
   const reqPath = path.join(comfyuiDir, 'requirements.txt')
   let preReqs = ''

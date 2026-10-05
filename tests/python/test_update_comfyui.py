@@ -208,6 +208,18 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assert_clean_at(self.sha["v1"], V1)
 
     @NEEDS_PERMISSIONS
+    def test_file_locked_before_the_update_does_not_block_the_restore(self):
+        # main/main.py differs between v1 and v2 and is held open from the
+        # start: the update fails on it, and the restore must not need it.
+        main_dir = self.lock("main")
+        os.chmod(os.path.join(main_dir, "main.py"), stat.S_IRUSR)
+        self.addCleanup(os.chmod, os.path.join(main_dir, "main.py"), stat.S_IRUSR | stat.S_IWUSR)
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("Restored ComfyUI source to pre-update commit", r.stdout)
+        self.assert_clean_at(self.sha["v1"], V1)
+
+    @NEEDS_PERMISSIONS
     def test_failed_latest_update_reattaches_master(self):
         git(self.repo, "checkout", "-q", "master")
         self.lock("main")

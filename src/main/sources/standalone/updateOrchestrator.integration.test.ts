@@ -95,7 +95,6 @@ vi.mock('child_process', async (importOriginal) => {
 
 // Import the SUT after all vi.mock declarations.
 import { runComfyUIUpdate } from './updateOrchestrator'
-import { recoverInterruptedComfyOp } from '../../lib/opMarker'
 import type { UpdateOrchestrationOptions } from './updateOrchestrator'
 import { clearVersionCache } from '../../lib/version-resolve'
 import { formatComfyVersion } from '../../lib/version'
@@ -511,14 +510,17 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     // The repo root is made read-only so git cannot replace requirements.txt:
     // a lock that outlasts the update and its immediate rollback.
     it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
-      'keeps HEAD off the pre-update commit when the rollback fails, so recovery repairs it',
+      'keeps HEAD off the pre-update commit when the rollback fails; the next update repairs it first',
       async () => {
+        const git = (...args: string[]): string =>
+          execFileSync('git', args, { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' })
+            .toString()
+            .trim()
+        // Like a failed pygit2 checkout: HEAD on v0.2.0, some of its files
+        // written (one only v0.2.0 has), and the index still v0.1.0's.
         spawnState.pythonHandler = (_args: string[]) => {
-          execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
-            cwd: comfyuiDir,
-            windowsHide: true,
-            stdio: 'pipe'
-          })
+          git('update-ref', '--no-deref', 'HEAD', repoShas.v2Sha)
+          fs.writeFileSync(path.join(comfyuiDir, 'manager_requirements.txt'), 'baz==1.0\n')
           fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==')
           fs.chmodSync(comfyuiDir, 0o555)
           return fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
@@ -531,14 +533,20 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           fs.chmodSync(comfyuiDir, 0o755)
         }
 
-        expect(await recoverInterruptedComfyOp(installPath)).toBe(true)
-        expect(headSha()).toBe(repoShas.v1Sha)
-        const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
-          cwd: comfyuiDir,
-          windowsHide: true,
-          stdio: 'pipe'
-        }).toString()
-        expect(status).toBe('')
+        // Retried without a relaunch: the update repairs the source before its
+        // own script runs, so it starts from v0.1.0 and syncs dependencies.
+        const atStart: string[] = []
+        const succeed = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
+        spawnState.pythonHandler = (args: string[]) => {
+          atStart.push(headSha(), git('status', '--porcelain'))
+          return succeed(args)
+        }
+        spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
+        const retry = await runComfyUIUpdate(makeBaseOpts(installPath))
+
+        expect(atStart).toEqual([repoShas.v1Sha, ''])
+        expect(retry.ok).toBe(true)
+        expect(spawnState.uvCalls.some((a) => a.includes('install'))).toBe(true)
       }
     )
   })
