@@ -83,6 +83,7 @@ const GRANT = {
 }
 
 function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
+  isDestroyed: ReturnType<typeof vi.fn>
   executeJavaScript: ReturnType<typeof vi.fn>
   getURL: ReturnType<typeof vi.fn>
   mainFrame: {
@@ -102,6 +103,7 @@ function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
     executeJavaScript: vi.fn(() => Promise.resolve()),
     mainFrame
   } as unknown as WebContents & {
+    isDestroyed: ReturnType<typeof vi.fn>
     executeJavaScript: ReturnType<typeof vi.fn>
     getURL: ReturnType<typeof vi.fn>
     mainFrame: typeof mainFrame
@@ -414,6 +416,23 @@ describe('signInViaDesktopLoginCode', () => {
     await second
     // Only the second attempt reached code creation.
     expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops without creating a code when the view closes while waiting for the id', async () => {
+    h.settingsGet.mockReturnValue(true)
+    const id = deferred<string>()
+    h.deviceIdReady.mockReturnValueOnce(id.promise)
+    const mod = await loadOrchestrator()
+    const contents = fakeContents()
+
+    const attempt = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
+    await vi.advanceTimersByTimeAsync(0)
+    contents.isDestroyed.mockReturnValue(true)
+    id.resolve('machine-hash-late')
+    await vi.runAllTimersAsync()
+
+    expect(await attempt).toBe('handled')
+    expect(h.createDesktopLoginCode).not.toHaveBeenCalled()
   })
 
   it('omits installation_id when consent is withdrawn while waiting for it', async () => {

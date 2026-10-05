@@ -55,6 +55,10 @@ const launchHarness = vi.hoisted(() => ({
   grants: [] as CoreBetaGrant[],
   /** What `idWaitSince` reports at the grants await: how long the launch waited for the id. */
   idWait: null as number | null,
+  /** `performance.now()` readings: the `start` handed to `idWaitSince`, and when the grants
+   *  fetch was called. */
+  idWaitStart: null as number | null,
+  grantsCalledAt: null as number | null,
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -186,14 +190,22 @@ vi.mock('../../comfy-args', async (importOriginal) => {
 
 vi.mock('../../deviceId', async (importOriginal) => ({
   ...(await importOriginal<typeof DeviceIdModule>()),
-  idWaitSince: () => launchHarness.idWait
+  idWaitSince: (start: number) => {
+    launchHarness.idWaitStart = start
+    return launchHarness.idWait
+  }
 }))
 
 vi.mock('../../coreBetaGrants', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaGrantsModule>()
   return {
     ...actual,
-    getCoreBetaGrantsAsync: async () => launchHarness.grants,
+    getCoreBetaGrantsAsync: async () => {
+      launchHarness.grantsCalledAt = performance.now()
+      // A real gap, so a start sampled after the await is strictly later than this call.
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      return launchHarness.grants
+    },
     planCoreBetaArgs: (facts: Parameters<typeof actual.planCoreBetaArgs>[0]) => {
       launchHarness.plans.push(facts)
       return actual.planCoreBetaArgs(facts)
@@ -1128,6 +1140,9 @@ describe('core beta report placement', () => {
     launchHarness.schemaThrows = false
     launchHarness.registryThrows = false
     launchHarness.registryCalls = 0
+    launchHarness.idWait = null
+    launchHarness.idWaitStart = null
+    launchHarness.grantsCalledAt = null
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
@@ -1228,7 +1243,8 @@ describe('core beta report placement', () => {
 
   it.each([
     ['how long the launch waited for the installation id', 1234],
-    ['null when the launch did not wait for it', null]
+    ['0 when the id was already resolved', 0],
+    ['null when the id had not resolved', null]
   ])('reports on boot_started %s', async (_label, idWait) => {
     launchHarness.idWait = idWait
     launchHarness.launchCommand = {
@@ -1244,7 +1260,10 @@ describe('core beta report placement', () => {
 
     const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
     expect(boot?.properties).toMatchObject({ launch_waited_for_id_ms: idWait })
-    launchHarness.idWait = null
+    // Started on the monotonic clock, before the grants fetch was called.
+    expect(launchHarness.idWaitStart).not.toBeNull()
+    expect(launchHarness.idWaitStart!).toBeLessThanOrEqual(launchHarness.grantsCalledAt!)
+    expect(launchHarness.idWaitStart!).toBeLessThan(1e10)
   })
 
   it('attributes the beta and boot events to the live HEAD, not the recorded commit', async () => {

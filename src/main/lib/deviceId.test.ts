@@ -730,6 +730,8 @@ describe('deviceId', () => {
       await vi.advanceTimersByTimeAsync(1000)
       const start = performance.now()
       await vi.advanceTimersByTimeAsync(2000)
+      // Read later than the resolution: the wait still ends when the id resolved.
+      await vi.advanceTimersByTimeAsync(500)
       expect(mod.idWaitSince(start)).toBe(2000)
     })
 

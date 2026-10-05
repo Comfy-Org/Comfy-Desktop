@@ -1923,6 +1923,16 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(ev?.properties).toMatchObject({ $process_person_profile: false })
   })
 
+  it('keeps an anonymous held exception personless after a sign-in during the wait', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.captureException(new Error('early'))
+    telemetry.bindUserId('user-a')
+    telemetry.setInstallationId('install-id')
+    expect(exceptions).toHaveLength(1)
+    expect(exceptions[0]!.distinctId).toBe('anon-d')
+    expect(exceptions[0]!.properties).toMatchObject({ $process_person_profile: false })
+  })
+
   it('keeps a signed-in held write person-processed after a sign-out during the wait', () => {
     telemetry.bindAnonymousId('anon-d', null)
     telemetry.bindUserId('user-a')
