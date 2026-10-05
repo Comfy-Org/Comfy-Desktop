@@ -243,12 +243,24 @@ describe('startBootIdentity', () => {
   it('drops first_launch, as a launch-time one would be, when consent is denied during the wait', async () => {
     lookupDelayMs = 3000
     const bound = mod.startBootIdentity(OPTIONS)
+    // Denied, then granted again (h.consent stays 'granted') before the id resolves.
     h.denials = 1
     await vi.advanceTimersByTimeAsync(3000)
     await bound
     expect(h.telemetry.captureFirstLaunch).not.toHaveBeenCalled()
     // The guard is still consumed, as the denial discarded this launch's event.
     expect(fs.existsSync(file('first-launch-completed'))).toBe(true)
+  })
+
+  it('keeps first_launch for a launch whose consent was denied before it started', async () => {
+    // A stored denial is applied before boot identity starts; a grant during the wait
+    // is not a denial during the wait, so the event still ships.
+    h.denials = 1
+    lookupDelayMs = 3000
+    const bound = mod.startBootIdentity(OPTIONS)
+    await vi.advanceTimersByTimeAsync(3000)
+    await bound
+    expect(h.telemetry.captureFirstLaunch).toHaveBeenCalledTimes(1)
   })
 
   it('removes the legacy alias retry marker once the id resolves', async () => {

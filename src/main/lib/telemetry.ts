@@ -596,10 +596,6 @@ export function _test_resetVolumeGuards(): void {
   _sessionCapWarned = false
 }
 
-/**
- * Set the current consent state. Undecided data may fire on grant; denied data
- * is discarded.
- */
 let consentDenials = 0
 
 /**
@@ -611,6 +607,10 @@ export function getConsentDenials(): number {
   return consentDenials
 }
 
+/**
+ * Set the current consent state. Undecided data may fire on grant; denied data
+ * is discarded.
+ */
 export function setConsentState(state: ConsentState): void {
   const previous = consentState
   consentState = state

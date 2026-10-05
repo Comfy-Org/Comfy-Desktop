@@ -148,6 +148,7 @@ describe('experiments', () => {
 
     it('makes an uncached key wait for the identity and the fetch', async () => {
       mockFlags = { 'flag.c': 'variant' }
+      mockFlagsDelayMs = 50
       let resolveIdentity: (identity: ExperimentsModule.ExperimentsIdentity) => void = () => {}
       void experiments.initExperiments(
         new Promise((r) => {
@@ -162,6 +163,9 @@ describe('experiments', () => {
       expect(value).toBe('pending')
 
       resolveIdentity({ distinctId: 'final-id', personProperties: {} })
+      // The identity alone is not enough: the read also waits for the fetch.
+      await new Promise((r) => setImmediate(r))
+      expect(value).toBe('pending')
       await read
       expect(value).toBe('variant')
     })

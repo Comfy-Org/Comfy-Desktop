@@ -1725,6 +1725,10 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
     setupTelemetry({ consent: null, bind: null })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('queues on a fresh install (undecided) and ships on the grant transition', () => {
     // This is the real first-boot path: consent undecided, guard already
     // consumed. A plain capture would be dropped here and never re-fire.
