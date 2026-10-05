@@ -800,8 +800,7 @@ defineExpose({ startOperation, showOperation })
             @click="handleReboot"
           >
             <RefreshCcw :size="14" />
-            <!-- A launch's retry restarts ComfyUI, not the computer some errors mention;
-                 an update's re-runs the update, which repairs a half-written tree. -->
+            <!-- A launch's retry restarts ComfyUI, not the computer some errors mention. -->
             {{
               currentOp.opKind === 'launch'
                 ? $t('progress.restartComfyui')

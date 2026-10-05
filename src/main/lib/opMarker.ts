@@ -122,8 +122,7 @@ export async function completeOpMarker(installPath: string): Promise<void> {
  * Roll ComfyUI's source back if a previous update/restore was interrupted by a
  * hard process kill (the marker survived because no in-process cleanup ran).
  * Idempotent — a no-op when HEAD already matches the recorded pre-operation
- * commit (the common case: the op concluded but the marker lingered), unless an
- * update left tracked files changed, which blocks the launch until Update. Returns
+ * commit (the common case: the op concluded but the marker lingered). Returns
  * true when a marker was found and consumed. Throws if a rollback was needed but
  * failed, leaving the marker in place so the next launch can retry — until
  * MAX_RECOVERY_ATTEMPTS is reached, after which it gives up and drops the marker
@@ -188,10 +187,8 @@ export async function recoverInterruptedComfyOp(
     telemetry.emit('comfy.desktop.recovery.rolled_back', { op: marker.op })
     onRollback?.()
   } else if (marker.op === 'update' && (await hasTrackedChanges(comfyuiDir)) !== false) {
-    // An update that began writing and whose restore couldn't finish (a file
-    // held open, or Desktop killed) leaves HEAD at the old commit over a mix of
-    // old and new files; if git can't tell, assume so. Keep the marker until an
-    // update succeeds: it rewrites every file.
+    // A restore that couldn't finish (a held file, a kill) leaves mixed files under
+    // the old HEAD, or git can't tell. Keep the marker until an update succeeds.
     throw new Error('The last update did not finish. Run Update to repair.')
   }
   await clearOpMarker(installPath)

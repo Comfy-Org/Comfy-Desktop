@@ -248,6 +248,9 @@ export async function runComfyUIUpdate(
   // mid-update is recovered on the next launch — see recoverInterruptedComfyOp.
   // The marker is cleared once source + packages are consistent below.
   const preOpHead = readGitHead(comfyuiDir)
+  // An earlier update left the tree half-written: only a success clears it; resync deps.
+  const pending = readOpMarker(installPath)
+  const repairing = pending?.op === 'update' && !pending.postHead
   if (preOpHead) {
     await writeOpMarker(installPath, { op: 'update', preHead: preOpHead, startedAt: Date.now() })
   }
@@ -283,10 +286,9 @@ export async function runComfyUIUpdate(
     }
   }
 
-  // The script stopped before writing anything (a fetch failure, a missing tag, a
-  // cancel): the update never started, so launch must not look for its damage.
+  // The script stopped before writing (fetch failure, missing tag, cancel): nothing changed.
   const wroteNothing = !result.markers.WRITING_TARGET && readGitHead(comfyuiDir) === preOpHead
-  if (result.exitCode !== 0 && wroteNothing) await clearOpMarker(installPath)
+  if (result.exitCode !== 0 && wroteNothing && !repairing) await clearOpMarker(installPath)
 
   // A failed or cancelled git step can leave the source moved: the update script
   // advances the branch ref before the working-tree checkout, so a checkout failure
@@ -345,9 +347,10 @@ export async function runComfyUIUpdate(
   // between aimdo bumps), OR when the caller demands it (first-run auto-update
   // reconciling the bundled venv against the bundled requirements.txt).
   const headMoved = !!(
-    markers.PRE_UPDATE_HEAD &&
-    markers.POST_UPDATE_HEAD &&
-    markers.PRE_UPDATE_HEAD !== markers.POST_UPDATE_HEAD
+    repairing ||
+    (markers.PRE_UPDATE_HEAD &&
+      markers.POST_UPDATE_HEAD &&
+      markers.PRE_UPDATE_HEAD !== markers.POST_UPDATE_HEAD)
   )
   const reqsChanged = preReqs !== postReqs
   const shouldSyncDeps = (reqsChanged || headMoved || !!opts.forceDepsSync) && postReqs.length > 0

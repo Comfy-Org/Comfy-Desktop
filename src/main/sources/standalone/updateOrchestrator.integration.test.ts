@@ -503,6 +503,13 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       )
       expect(markerExists()).toBe(true)
 
+      // An Update retried offline fails before writing: the earlier damage must
+      // stay on record, so the launch is still blocked.
+      spawnState.pythonHandler = () =>
+        fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
+      await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow('Run Update to repair')
+
       // Running Update again rewrites the tree (the updater hard-resets) and
       // clears the marker.
       const succeed = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
@@ -514,6 +521,34 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
       expect(markerExists()).toBe(false)
       expect(await recoverInterruptedComfyOp(installPath)).toBe(false)
+    })
+  })
+
+  describe('repairing update', () => {
+    it('resyncs dependencies even when HEAD and requirements already match the target', async () => {
+      // Desktop was killed mid-update after HEAD and requirements.txt reached
+      // v0.2.0; the packages are still v0.1.0's.
+      execFileSync('git', ['checkout', '-q', 'v0.2.0', '--detach'], {
+        cwd: comfyuiDir,
+        stdio: 'pipe'
+      })
+      fs.writeFileSync(
+        path.join(installPath, '.comfyui-op-in-progress.json'),
+        JSON.stringify({ op: 'update', preHead: repoShas.v1Sha, startedAt: 1 })
+      )
+      spawnState.pythonHandler = () =>
+        fakeProc({
+          stdout: [
+            `[PRE_UPDATE_HEAD] ${repoShas.v2Sha}\n`,
+            `[POST_UPDATE_HEAD] ${repoShas.v2Sha}\n`
+          ],
+          exitCode: 0
+        })
+      spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
+
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
+      expect(spawnState.uvCalls.some((a) => a.includes('install'))).toBe(true)
+      expect(markerExists()).toBe(false)
     })
   })
 

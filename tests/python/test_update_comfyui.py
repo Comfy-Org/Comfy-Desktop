@@ -219,9 +219,9 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assert_clean_at(self.sha["v1"], V1)
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
 
-    def test_failed_fetch_reports_no_write_and_leaves_untracked_files_untracked(self):
-        # Desktop clears its update marker when the run never printed
-        # [WRITING_TARGET]; launch then only sees the user's own edit.
+    def test_failed_fetch_reports_no_write_and_changes_nothing(self):
+        # A run that never printed [WRITING_TARGET] moved nothing; Desktop then
+        # drops its update marker, so the user's own files never block launch.
         with open(os.path.join(self.repo, "notes.txt"), "w") as f:
             f.write("mine\n")
         with open(os.path.join(self.repo, "app", "db.py"), "w") as f:
@@ -230,7 +230,19 @@ class UpdateComfyUITest(unittest.TestCase):
         r = self.update("--stable")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertNotIn("[WRITING_TARGET]", r.stdout)
-        self.assertEqual(self.tracked_changes(), ["app/db.py"])
+        self.assertEqual(self.head(), self.sha["v1"])
+        self.assertEqual(read_tree(self.repo)["app/db.py"], "edited\n")
+
+    def test_update_removes_untracked_files_kept_on_the_backup_branch(self):
+        # As in 1.1.6: the backup step stages everything, so the reset removes
+        # a stray untracked file; the backup branch keeps it.
+        with open(os.path.join(self.repo, "notes.txt"), "w") as f:
+            f.write("mine\n")
+        self.assertEqual(self.update("--stable").returncode, 0)
+        self.assert_clean_at(self.sha["v2"], V2)
+        backup = git(self.repo, "branch", "--list", "backup_branch_*",
+                     "--format=%(refname:short)")
+        self.assertEqual(git(self.repo, "show", "%s:notes.txt" % backup), "mine")
 
     def test_stable_without_tags_lands_on_master_attached(self):
         for repo in (self.repo, self.origin):
@@ -287,6 +299,14 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assert_clean_at(self.sha["v1"], V1)
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
+
+    @NEEDS_PERMISSIONS
+    def test_failed_latest_update_stays_detached_when_it_started_detached(self):
+        self.lock("main")
+        self.assertEqual(self.update().returncode, 1)
+        self.assertEqual(git(self.repo, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD")
+        self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
+        self.assert_clean_at(self.sha["v1"], V1)
 
     @NEEDS_PERMISSIONS
     def test_failed_latest_update_reattaches_master(self):
