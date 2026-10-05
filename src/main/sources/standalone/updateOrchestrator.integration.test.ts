@@ -95,6 +95,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 // Import the SUT after all vi.mock declarations.
 import { runComfyUIUpdate } from './updateOrchestrator'
+import { recoverInterruptedComfyOp } from '../../lib/opMarker'
 import type { UpdateOrchestrationOptions } from './updateOrchestrator'
 import { clearVersionCache } from '../../lib/version-resolve'
 import { formatComfyVersion } from '../../lib/version'
@@ -478,95 +479,39 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       )
       expect(marker.backupBranch).toBe('backup_branch_test')
     })
+  })
 
-    it('repairs a half-written tree the safe checkout would refuse to overwrite', async () => {
-      // A checkout that failed partway (a file held open on Windows): HEAD on the
-      // new commit and a file that matches neither commit.
-      spawnState.pythonHandler = (_args: string[]) => {
-        execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
-          cwd: comfyuiDir,
-          windowsHide: true,
-          stdio: 'pipe'
-        })
-        fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==')
-        return fakeProc({
-          stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`, '[BACKUP_BRANCH] backup_branch_test\n'],
-          exitCode: 1
-        })
+  describe('half-updated tree', () => {
+    it('blocks the next launch until an update repairs it', async () => {
+      // The update failed and its restore could not finish (a file held open):
+      // HEAD is back at v0.1.0, but requirements.txt still has v0.2.0's content.
+      spawnState.pythonHandler = () => {
+        fs.writeFileSync(
+          path.join(comfyuiDir, 'requirements.txt'),
+          'torch==2.0\nfoo==2.0\nbar==1.0\n'
+        )
+        return fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
       }
-
-      const result = await runComfyUIUpdate(makeBaseOpts(installPath))
-
-      expect(result.ok).toBe(false)
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
       expect(headSha()).toBe(repoShas.v1Sha)
-      const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
-        cwd: comfyuiDir,
-        windowsHide: true,
-        stdio: 'pipe'
-      }).toString()
-      expect(status).toBe('')
-    })
 
-    // The repo root is made read-only so git cannot replace requirements.txt:
-    // a lock that outlasts the update and its immediate rollback.
-    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
-      'keeps HEAD off the pre-update commit when the rollback fails; the next update repairs it first',
-      async () => {
-        const git = (...args: string[]): string =>
-          execFileSync('git', args, { cwd: comfyuiDir, windowsHide: true, stdio: 'pipe' })
-            .toString()
-            .trim()
-        // Like a failed pygit2 checkout: HEAD on v0.2.0, some of its files
-        // written (one only v0.2.0 has), and the index still v0.1.0's.
-        spawnState.pythonHandler = (_args: string[]) => {
-          git('update-ref', '--no-deref', 'HEAD', repoShas.v2Sha)
-          fs.writeFileSync(path.join(comfyuiDir, 'manager_requirements.txt'), 'baz==1.0\n')
-          fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==')
-          fs.chmodSync(comfyuiDir, 0o555)
-          return fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
-        }
-        try {
-          const result = await runComfyUIUpdate(makeBaseOpts(installPath))
-          expect(result.ok).toBe(false)
-          expect(headSha()).toBe(repoShas.v2Sha)
+      await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
+        'The last update did not finish'
+      )
+      expect(markerExists()).toBe(true)
 
-          // Retried while the lock is still held: the repair fails, so the
-          // update refuses to start and keeps the marker's pre-update commit.
-          let scriptRan = false
-          spawnState.pythonHandler = () => {
-            scriptRan = true
-            return fakeProc({ exitCode: 0 })
-          }
-          const blocked = await runComfyUIUpdate(makeBaseOpts(installPath))
-          expect(blocked.ok).toBe(false)
-          expect(scriptRan).toBe(false)
-          const marker = JSON.parse(
-            fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8')
-          )
-          expect(marker.preHead).toBe(repoShas.v1Sha)
-        } finally {
-          fs.chmodSync(comfyuiDir, 0o755)
-        }
-
-        // Retried without a relaunch: the update repairs the source before its
-        // own script runs, so it starts from v0.1.0 and syncs dependencies.
-        const atStart: string[] = []
-        const succeed = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
-        spawnState.pythonHandler = (args: string[]) => {
-          atStart.push(headSha(), git('status', '--porcelain'))
-          return succeed(args)
-        }
-        spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
-        const retry = await runComfyUIUpdate(makeBaseOpts(installPath))
-
-        expect(atStart).toEqual([repoShas.v1Sha, ''])
-        expect(retry.ok).toBe(true)
-        // Both requirement files are reinstalled, the manager one included: it
-        // only exists at v0.2.0, so its baseline must be read after the repair.
-        const installed = spawnState.uvCalls.filter((a) => a.includes('install')).flat()
-        expect(installed.some((a) => a.endsWith('.post-install-mgr-reqs.txt'))).toBe(true)
+      // Running Update again rewrites the tree (the updater hard-resets) and
+      // clears the marker.
+      const succeed = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
+      spawnState.pythonHandler = (args: string[]) => {
+        execFileSync('git', ['reset', '-q', '--hard'], { cwd: comfyuiDir, stdio: 'pipe' })
+        return succeed(args)
       }
-    )
+      spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
+      expect(markerExists()).toBe(false)
+      expect(await recoverInterruptedComfyOp(installPath)).toBe(false)
+    })
   })
 
   describe('cancellation', () => {

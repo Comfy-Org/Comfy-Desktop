@@ -6,14 +6,15 @@ import path from 'path'
 
 vi.mock('./git', () => ({
   readGitHead: vi.fn(),
-  rollbackComfySource: vi.fn()
+  rollbackComfySource: vi.fn(),
+  hasTrackedChanges: vi.fn()
 }))
 
 vi.mock('./telemetry', () => ({
   emit: vi.fn()
 }))
 
-import { readGitHead, rollbackComfySource } from './git'
+import { hasTrackedChanges, readGitHead, rollbackComfySource } from './git'
 import * as telemetry from './telemetry'
 import {
   writeOpMarker,
@@ -26,6 +27,7 @@ import {
 const mockedReadGitHead = vi.mocked(readGitHead)
 const mockedRollback = vi.mocked(rollbackComfySource)
 const mockedEmit = vi.mocked(telemetry.emit)
+const mockedTrackedChanges = vi.mocked(hasTrackedChanges)
 
 const MARKER_NAME = '.comfyui-op-in-progress.json'
 
@@ -93,26 +95,10 @@ describe('recoverInterruptedComfyOp', () => {
     expect(mockedRollback).toHaveBeenCalledWith(
       path.join(installPath, 'ComfyUI'),
       'OLDHEAD',
-      undefined,
-      { force: true }
+      undefined
     )
     expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
     expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.rolled_back', { op: 'update' })
-  })
-
-  it('does not force the rollback of an interrupted snapshot restore (no backup branch)', async () => {
-    await writeOpMarker(installPath, { op: 'restore', preHead: 'OLDHEAD', startedAt: 1 })
-    mockedReadGitHead.mockReturnValueOnce('NEWHEAD').mockReturnValue('OLDHEAD')
-    mockedRollback.mockResolvedValue(true)
-
-    await recoverInterruptedComfyOp(installPath)
-
-    expect(mockedRollback).toHaveBeenCalledWith(
-      path.join(installPath, 'ComfyUI'),
-      'OLDHEAD',
-      undefined,
-      { force: false }
-    )
   })
 
   it('fires onRollback only when an actual rollback runs, not on a benign cleanup', async () => {
@@ -141,6 +127,38 @@ describe('recoverInterruptedComfyOp', () => {
     expect(recovered).toBe(true)
     expect(mockedRollback).not.toHaveBeenCalled()
     expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
+  })
+
+  it('blocks the launch, keeping the marker, when an update left tracked files changed', async () => {
+    // A failed update whose restore could not finish: HEAD is back at the old
+    // commit, files are a mix. Only another update repairs it.
+    await writeOpMarker(installPath, { op: 'update', preHead: 'SAME', startedAt: 1 })
+    mockedReadGitHead.mockReturnValue('SAME')
+    mockedTrackedChanges.mockResolvedValue(true)
+
+    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
+      'The last update did not finish. Run Update to repair.'
+    )
+    expect(mockedRollback).not.toHaveBeenCalled()
+    expect(readOpMarker(installPath)?.preHead).toBe('SAME')
+  })
+
+  it('clears the marker when the update left the tree clean, or git cannot tell', async () => {
+    for (const changes of [false, null]) {
+      await writeOpMarker(installPath, { op: 'update', preHead: 'SAME', startedAt: 1 })
+      mockedReadGitHead.mockReturnValue('SAME')
+      mockedTrackedChanges.mockResolvedValue(changes)
+      expect(await recoverInterruptedComfyOp(installPath)).toBe(true)
+      expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
+    }
+  })
+
+  it('does not check tracked files for a snapshot-restore marker', async () => {
+    await writeOpMarker(installPath, { op: 'restore', preHead: 'SAME', startedAt: 1 })
+    mockedReadGitHead.mockReturnValue('SAME')
+    mockedTrackedChanges.mockResolvedValue(true)
+    expect(await recoverInterruptedComfyOp(installPath)).toBe(true)
+    expect(mockedTrackedChanges).not.toHaveBeenCalled()
   })
 
   it('never rolls back a completed marker (success whose unlink failed)', async () => {

@@ -996,6 +996,23 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
   })
 }
 
+/** Whether tracked files differ from HEAD (untracked files ignored); null if git failed. */
+export function hasTrackedChanges(repoPath: string): Promise<boolean | null> {
+  if (isPygit2Configured()) {
+    return runPygit2(['tracked-changes', repoPath]).then(({ exitCode, stdout }) =>
+      exitCode === 0 ? stdout.trim() !== '' : null
+    )
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['status', '--porcelain', '--untracked-files=no'],
+      { cwd: repoPath, encoding: 'utf-8', windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      (error, stdout) => resolve(error ? null : stdout.trim() !== '')
+    )
+  })
+}
+
 /** Exit code `git_operations.py merge-base` uses when the commits share no ancestor. */
 const MERGE_BASE_NONE = 5
 
@@ -1280,28 +1297,19 @@ function makeRunGit(
  * Check out a specific commit. Tries a direct checkout first (works for
  * full clones where the commit is already local). If the commit isn't
  * available, fetches all refs from origin (unshallowing if needed) and
- * retries. `force` overwrites modified tracked files (and, on system git, skips the fetch).
+ * retries.
  */
 export function gitCheckoutCommit(
   repoPath: string,
   commit: string,
   sendOutput: (text: string) => void,
-  signal?: AbortSignal,
-  { force = false }: { force?: boolean } = {}
+  signal?: AbortSignal
 ): Promise<ProcessResult> {
   if (signal?.aborted) return Promise.resolve({ exitCode: 1, stderr: '', stdout: '' })
   const systemGitCheckout = (): Promise<ProcessResult> => {
     const runGit = makeRunGit(repoPath, sendOutput, signal)
-    // `checkout -f` moves HEAD even when a locked file fails it; a detached hard
-    // reset doesn't. The mixed reset indexes HEAD so the hard one drops its extras.
-    const checkout = (): Promise<ProcessResult> =>
-      force
-        ? runGit(['checkout', '--detach'])
-            .then((r) => (r.exitCode === 0 ? runGit(['reset', '-q']) : r))
-            .then((r) => (r.exitCode === 0 ? runGit(['reset', '--hard', commit]) : r))
-        : runGit(['checkout', commit])
-    return checkout().then((directResult) => {
-      if (directResult.exitCode === 0 || force) return directResult
+    return runGit(['checkout', commit]).then((directResult) => {
+      if (directResult.exitCode === 0) return directResult
       return runGit(['fetch', '--unshallow', 'origin'])
         .then((result) => {
           if (result.exitCode !== 0) return runGit(['fetch', 'origin'])
@@ -1309,7 +1317,7 @@ export function gitCheckoutCommit(
         })
         .then((fetchResult) => {
           if (fetchResult.exitCode !== 0) return fetchResult
-          return checkout()
+          return runGit(['checkout', commit])
         })
     })
   }
@@ -1317,7 +1325,7 @@ export function gitCheckoutCommit(
     const runPygit2Spawn = makeRunPygit2(sendOutput, signal)
     return withSystemGitFallback(
       'checkout',
-      () => runPygit2Spawn(['checkout', repoPath, commit, ...(force ? ['--force'] : [])]),
+      () => runPygit2Spawn(['checkout', repoPath, commit]),
       systemGitCheckout,
       sendOutput
     )
@@ -1330,17 +1338,13 @@ export function gitCheckoutCommit(
  * the git move when a dependency sync or snapshot restore fails partway, so we
  * never leave new source + stale packages (the half-applied state that crashes
  * on import, e.g. `comfy_aimdo.vram_buffer`). Deliberately ignores any abort
- * signal - rollback must run even when the user cancelled. A failed update script
- * passes `force`: its partial checkout leaves files a safe checkout refuses to
- * overwrite, and the update script saves local changes to a backup branch first.
- * Snapshot restores make no backup, so theirs stays safe. Returns true if HEAD
+ * signal - rollback must run even when the user cancelled. Returns true if HEAD
  * ends up at the target (or was already there).
  */
 export async function rollbackComfySource(
   comfyuiDir: string,
   targetHead: string,
-  sendOutput?: (text: string) => void,
-  { force = false }: { force?: boolean } = {}
+  sendOutput?: (text: string) => void
 ): Promise<boolean> {
   if (readGitHead(comfyuiDir) === targetHead) return true
   sendOutput?.(`\nRolling back ComfyUI source to ${targetHead.slice(0, 7)}...\n`)
@@ -1348,8 +1352,7 @@ export async function rollbackComfySource(
     comfyuiDir,
     targetHead,
     sendOutput ?? (() => {}),
-    undefined,
-    { force }
+    undefined
   )
   const head = readGitHead(comfyuiDir)
   const ok = result.exitCode === 0 && !!head && head.startsWith(targetHead.slice(0, 7))

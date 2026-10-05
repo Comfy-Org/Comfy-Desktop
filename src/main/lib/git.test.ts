@@ -22,6 +22,7 @@ import {
   isAncestorOf,
   findMergeBase,
   revParseRef,
+  hasTrackedChanges,
   commitPresence,
   findMergeBaseOrNone,
   fetchTags,
@@ -36,7 +37,6 @@ import {
   gitClone,
   gitCheckoutCommit,
   gitFetchAndCheckout,
-  rollbackComfySource,
   isPygit2AuthFailure,
   isForcePygit2,
   isSystemGitAvailable
@@ -240,6 +240,27 @@ describe('revParseRef', () => {
       cb(new Error('bad ref'), '', '')
     })
     expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
+  })
+})
+
+describe('hasTrackedChanges', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it('reports tracked changes from git status, ignoring untracked files', async () => {
+    mockExecFile((_cmd, args, _opts, cb) => {
+      expect(args).toEqual(['status', '--porcelain', '--untracked-files=no'])
+      cb(null, ' M main.py\n', '')
+    })
+    expect(await hasTrackedChanges('/repo')).toBe(true)
+    mockExecFile((_cmd, _args, _opts, cb) => cb(null, '', ''))
+    expect(await hasTrackedChanges('/repo')).toBe(false)
+  })
+
+  it('returns null when git fails', async () => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(new Error('not a repo'), '', ''))
+    expect(await hasTrackedChanges('/repo')).toBeNull()
   })
 })
 
@@ -461,42 +482,6 @@ describe('gitCheckoutCommit (system git)', () => {
     const result = await gitCheckoutCommit('/repo', 'abc123', () => {}, controller.signal)
     expect(result.exitCode).toBe(1)
     expect(mockedSpawn).not.toHaveBeenCalled()
-  })
-
-  it('rollbackComfySource forces the checkout only when asked', async () => {
-    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-'))
-    try {
-      fs.mkdirSync(path.join(repo, '.git'))
-      fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'def456\n')
-      mockSpawnSequence([{ exitCode: 0 }, { exitCode: 0 }, { exitCode: 0 }, { exitCode: 0 }])
-      await rollbackComfySource(repo, 'abc123', undefined, { force: true })
-      expect(mockedSpawn.mock.calls.map((c) => c[1])).toEqual([
-        ['checkout', '--detach'],
-        ['reset', '-q'],
-        ['reset', '--hard', 'abc123']
-      ])
-      await rollbackComfySource(repo, 'abc123')
-      expect(mockedSpawn.mock.calls[3]![1]).toEqual(['checkout', 'abc123'])
-    } finally {
-      fs.rmSync(repo, { recursive: true, force: true })
-    }
-  })
-
-  it('stops a forced checkout at the first failing step', async () => {
-    mockSpawnSequence([{ exitCode: 1 }])
-    await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
-    expect(mockedSpawn).toHaveBeenCalledTimes(1)
-    vi.resetAllMocks()
-    mockSpawnSequence([{ exitCode: 0 }, { exitCode: 1 }])
-    await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
-    expect(mockedSpawn).toHaveBeenCalledTimes(2)
-  })
-
-  it('does not fetch after a failed forced checkout (a locked file, not a missing commit)', async () => {
-    mockSpawnSequence([{ exitCode: 0 }, { exitCode: 0 }, { exitCode: 128 }])
-    const result = await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
-    expect(result.exitCode).toBe(128)
-    expect(mockedSpawn).toHaveBeenCalledTimes(3)
   })
 })
 
@@ -866,6 +851,24 @@ describe('pygit2 fallback', () => {
     })
   })
 
+  describe('hasTrackedChanges', () => {
+    it('reports the paths the script prints as changes', async () => {
+      mockExecFile((_cmd, _args, _opts, cb) => cb(null, 'main.py\n', ''))
+      expect(await hasTrackedChanges('/repo')).toBe(true)
+      expect(expectPygit2Call()).toEqual(['tracked-changes', '/repo'])
+      vi.resetAllMocks()
+      configurePygit2('/usr/bin/python3', '/path/to/git_operations.py')
+      mockExecFile((_cmd, _args, _opts, cb) => cb(null, '', ''))
+      expect(await hasTrackedChanges('/repo')).toBe(false)
+    })
+
+    it('returns null when the script fails', async () => {
+      const err = Object.assign(new Error('boom'), { code: 1 })
+      mockExecFile((_cmd, _args, _opts, cb) => cb(err, '', ''))
+      expect(await hasTrackedChanges('/repo')).toBeNull()
+    })
+  })
+
   describe('findMergeBaseOrNone', () => {
     it.each([
       [5, null],
@@ -984,19 +987,6 @@ describe('pygit2 fallback', () => {
       const result = await gitCheckoutCommit('/repo', 'abc123', () => {}, controller.signal)
       expect(result.exitCode).toBe(1)
       expect(mockedSpawn).not.toHaveBeenCalled()
-    })
-
-    it('rollbackComfySource passes --force when asked', async () => {
-      const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-'))
-      try {
-        fs.mkdirSync(path.join(repo, '.git'))
-        fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'def456\n')
-        mockSpawn(0, '', 'Checked out abc123\n')
-        await rollbackComfySource(repo, 'abc123', undefined, { force: true })
-        expect(expectPygit2SpawnCall()).toEqual(['checkout', repo, 'abc123', '--force'])
-      } finally {
-        fs.rmSync(repo, { recursive: true, force: true })
-      }
     })
   })
 

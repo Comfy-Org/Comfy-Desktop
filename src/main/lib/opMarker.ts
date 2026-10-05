@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { readGitHead, rollbackComfySource } from './git'
+import { hasTrackedChanges, readGitHead, rollbackComfySource } from './git'
 import * as telemetry from './telemetry'
 
 // Sentinel written to the install dir while an update/restore is moving ComfyUI's
@@ -122,7 +122,8 @@ export async function completeOpMarker(installPath: string): Promise<void> {
  * Roll ComfyUI's source back if a previous update/restore was interrupted by a
  * hard process kill (the marker survived because no in-process cleanup ran).
  * Idempotent — a no-op when HEAD already matches the recorded pre-operation
- * commit (the common case: the op concluded but the marker lingered). Returns
+ * commit (the common case: the op concluded but the marker lingered), unless an
+ * update left tracked files changed, which blocks the launch until Update. Returns
  * true when a marker was found and consumed. Throws if a rollback was needed but
  * failed, leaving the marker in place so the next launch can retry — until
  * MAX_RECOVERY_ATTEMPTS is reached, after which it gives up and drops the marker
@@ -153,9 +154,7 @@ export async function recoverInterruptedComfyOp(
     sendOutput?.(
       `\nDetected an interrupted ${marker.op}; rolling ComfyUI source back to keep it consistent…\n`
     )
-    const ok = await rollbackComfySource(comfyuiDir, marker.preHead, sendOutput, {
-      force: marker.op === 'update'
-    })
+    const ok = await rollbackComfySource(comfyuiDir, marker.preHead, sendOutput)
     if (!ok || readGitHead(comfyuiDir) !== marker.preHead) {
       const attempts = (marker.recoveryAttempts ?? 0) + 1
       const gaveUp = attempts >= MAX_RECOVERY_ATTEMPTS
@@ -188,6 +187,11 @@ export async function recoverInterruptedComfyOp(
     // Successfully recovered a hard-killed op — informational signal (PostHog).
     telemetry.emit('comfy.desktop.recovery.rolled_back', { op: marker.op })
     onRollback?.()
+  } else if (marker.op === 'update' && (await hasTrackedChanges(comfyuiDir))) {
+    // An update whose restore couldn't finish (a file held open) leaves HEAD at
+    // the old commit over a mix of old and new files. Keep the marker until an
+    // update succeeds: it rewrites every file.
+    throw new Error('The last update did not finish. Run Update to repair.')
   }
   await clearOpMarker(installPath)
   return true

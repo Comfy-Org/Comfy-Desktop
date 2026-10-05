@@ -1,7 +1,7 @@
-"""Real-pygit2 tests for lib/update_comfyui.py and the rollback checkout in
-lib/git_operations.py, against a local origin with a master + tags layout.
+"""Real-pygit2 tests for lib/update_comfyui.py and `git_operations.py
+tracked-changes`, against a local origin with a master + tags layout.
 
-A mid-checkout write failure is forced with a read-only directory, standing in
+A mid-update write failure is forced with a read-only directory, standing in
 for a file held open by antivirus or another process on Windows.
 
 Run: python -m unittest discover -s tests/python
@@ -19,22 +19,45 @@ LIB = os.path.join(os.path.dirname(__file__), "..", "..", "lib")
 UPDATE = os.path.join(LIB, "update_comfyui.py")
 GIT_OPS = os.path.join(LIB, "git_operations.py")
 
-# Runs update_comfyui.py, and when a checkout fails, makes argv[1] (a file) and
-# its directory read-only: a file the update just wrote gets locked before the
-# restore can rewrite it.
+# Runs update_comfyui.py, and when the update's reset fails, makes argv[1] (a
+# file) and its directory read-only: a file the update just wrote gets locked
+# before the restore can rewrite it.
 LOCK_ON_FAILURE = """
 import os, runpy, stat, sys, pygit2
 lock_file = sys.argv.pop(1)
 sys.argv.pop(0)  # "-c": the script then sees its usual argv
-real = pygit2.Repository.checkout_tree
-def checkout_tree(self, *args, **kwargs):
+real = pygit2.Repository.reset
+def reset(self, *args):
     try:
-        return real(self, *args, **kwargs)
+        return real(self, *args)
     except Exception:
         os.chmod(lock_file, stat.S_IRUSR)
         os.chmod(os.path.dirname(lock_file), stat.S_IRUSR | stat.S_IXUSR)
         raise
-pygit2.Repository.checkout_tree = checkout_tree
+pygit2.Repository.reset = reset
+sys.path.insert(0, os.path.dirname(sys.argv[0]))
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+# Windows: an exclusively locked file can't be read, so libgit2's restore may
+# report success while skipping it. Simulated: the restore (the second reset)
+# runs, then argv[1] is put back at the target's content and made unreadable.
+SILENT_SKIP = """
+import os, runpy, stat, sys, pygit2
+skipped = sys.argv.pop(1)
+sys.argv.pop(0)
+real = pygit2.Repository.reset
+calls = []
+def reset(self, *args):
+    calls.append(args)
+    if len(calls) == 1:
+        return real(self, *args)
+    os.chmod(os.path.dirname(skipped), stat.S_IRWXU)
+    real(self, *args)
+    with open(skipped, "w") as f:
+        f.write("v2\\n")
+    os.chmod(skipped, 0)
+pygit2.Repository.reset = reset
 sys.path.insert(0, os.path.dirname(sys.argv[0]))
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
@@ -55,6 +78,25 @@ GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1"
 NEEDS_PERMISSIONS = unittest.skipIf(
     os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
     "read-only directories force the failure; root and Windows ignore them")
+
+
+# Kills the updater as its restore starts (the second reset): what a kill -9 of
+# Desktop during the restore leaves behind.
+KILL_IN_RESTORE = """
+import os, runpy, sys, pygit2
+sys.argv.pop(1)
+sys.argv.pop(0)
+real = pygit2.Repository.reset
+calls = []
+def reset(self, *args):
+    calls.append(args)
+    if len(calls) == 2:
+        os._exit(9)
+    return real(self, *args)
+pygit2.Repository.reset = reset
+sys.path.insert(0, os.path.dirname(sys.argv[0]))
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
 
 
 def git(cwd, *args):
@@ -122,15 +164,16 @@ class UpdateComfyUITest(unittest.TestCase):
         self.addCleanup(os.chmod, path, stat.S_IRWXU)
         return path
 
-    def update(self, *args, lock_on_failure=None):
-        driver = ["-c", LOCK_ON_FAILURE, lock_on_failure] if lock_on_failure else []
-        return subprocess.run([sys.executable, *driver, UPDATE, self.repo, *args],
+    def update(self, *args, driver=None, driver_arg=None):
+        pre = ["-c", driver, driver_arg] if driver else []
+        return subprocess.run([sys.executable, *pre, UPDATE, self.repo, *args],
                               capture_output=True, text=True, env=GIT_ENV)
 
-    def git_ops_checkout(self, commit, *flags):
-        return subprocess.run([sys.executable, GIT_OPS, "checkout", self.repo,
-                               commit, *flags], capture_output=True, text=True,
-                              env=GIT_ENV)
+    def tracked_changes(self):
+        r = subprocess.run([sys.executable, GIT_OPS, "tracked-changes", self.repo],
+                           capture_output=True, text=True, env=GIT_ENV)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.split()
 
     def head(self):
         return git(self.repo, "rev-parse", "HEAD")
@@ -241,48 +284,80 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual(git(self.repo, "symbolic-ref", "HEAD"), "refs/heads/master")
         self.assert_clean_at(self.sha["v1"], V1)
 
+    def assert_update_repairs(self):
+        # The fix for a half-updated install: run the same update again.
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assert_clean_at(self.sha["v2"], V2)
+
     @NEEDS_PERMISSIONS
-    def test_failed_restore_leaves_head_moved_and_rollback_repairs(self):
-        # The update writes app/db.py, fails in main/, and app/ is locked
-        # before the restore can put app/db.py back: the field's mixed tree.
+    def test_restore_blocked_by_a_lock_leaves_a_tree_update_repairs(self):
+        # The update writes app/db.py, fails in main/, and app/db.py is locked
+        # before the restore can put it back.
         main_dir = self.lock("main")
         app_dir = os.path.join(self.repo, "app")
         self.addCleanup(os.chmod, app_dir, stat.S_IRWXU)
-        r = self.update("--stable", lock_on_failure=os.path.join(app_dir, "db.py"))
-        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        r = self.update("--stable", driver=LOCK_ON_FAILURE,
+                        driver_arg=os.path.join(app_dir, "db.py"))
         self.assertIn("Failed to restore pre-update state", r.stdout)
-        tree = read_tree(self.repo)
-        self.assertEqual((tree["app/db.py"], tree["main/main.py"]), ("v2\n", "v1\n"))
-        # HEAD must not read as the pre-update commit over a mixed tree, or
-        # Desktop would treat the install as healthy and skip the rollback.
-        self.assertNotEqual(self.head(), self.sha["v1"])
-        # Desktop's forced rollback while the lock is still held fails the same
-        # way, and must not move HEAD either.
-        held = self.git_ops_checkout(self.sha["v1"], "--force")
-        self.assertNotEqual(held.returncode, 0)
-        self.assertNotEqual(self.head(), self.sha["v1"])
-
         os.chmod(main_dir, stat.S_IRWXU)
         os.chmod(app_dir, stat.S_IRWXU)
         os.chmod(os.path.join(app_dir, "db.py"), stat.S_IRUSR | stat.S_IWUSR)
-        repaired = self.git_ops_checkout(self.sha["v1"], "--force")
-        self.assertEqual(repaired.returncode, 0, repaired.stderr)
-        self.assert_clean_at(self.sha["v1"], V1)
+        self.assertEqual(read_tree(self.repo)["app/db.py"], "v2\n")
+        self.assertIn("app/db.py", self.tracked_changes())
+        self.assert_update_repairs()
 
-    def test_forced_rollback_repairs_a_tree_left_by_the_old_updater(self):
-        # The old updater went to master first, then failed partway back to
-        # the tag: HEAD on master, app/db.py at the tag, main/main.py master's.
+    @NEEDS_PERMISSIONS
+    def test_update_repairs_after_a_file_locked_from_the_start(self):
+        main_dir = self.lock("main")
+        os.chmod(os.path.join(main_dir, "main.py"), stat.S_IRUSR)
+        self.assertEqual(self.update("--stable").returncode, 1)
+        os.chmod(main_dir, stat.S_IRWXU)
+        os.chmod(os.path.join(main_dir, "main.py"), stat.S_IRUSR | stat.S_IWUSR)
+        self.assert_update_repairs()
+
+    @NEEDS_PERMISSIONS
+    def test_silently_skipped_restore_leaves_a_tree_update_repairs(self):
+        self.lock("main")
+        main_py = os.path.join(self.repo, "main", "main.py")
+        r = self.update("--stable", driver=SILENT_SKIP, driver_arg=main_py)
+        self.assertIn("Restored ComfyUI source", r.stdout)
+        os.chmod(main_py, stat.S_IRUSR | stat.S_IWUSR)
+        # HEAD reads as the old commit over a new main.py: the launch-time check
+        # sees it through tracked-changes.
+        self.assertEqual(self.head(), self.sha["v1"])
+        self.assertEqual(self.tracked_changes(), ["main/main.py"])
+        self.assert_update_repairs()
+
+    @NEEDS_PERMISSIONS
+    def test_kill_during_restore_leaves_a_tree_update_repairs(self):
+        # Desktop killed mid-restore: HEAD is already back at the old commit
+        # (the restore moves refs first), the files are still the target's.
+        self.lock("main")
+        r = self.update("--stable", driver=KILL_IN_RESTORE, driver_arg="-")
+        self.assertEqual(r.returncode, 9, r.stdout + r.stderr)
+        os.chmod(os.path.join(self.repo, "main"), stat.S_IRWXU)
+        self.assertEqual(self.head(), self.sha["v1"])
+        self.assertIn("app/db.py", self.tracked_changes())
+        self.assert_update_repairs()
+
+    def test_update_repairs_a_tree_left_by_the_old_updater(self):
+        # The previous updater went to master, then failed partway back to the
+        # tag: HEAD on master, app/db.py at the tag's content.
         git(self.repo, "checkout", "-q", "-f", "master")
-        git(self.repo, "reset", "-q", "--hard", self.sha["master"])
         with open(os.path.join(self.repo, "app", "db.py"), "w") as f:
             f.write(V2["app/db.py"])
-        refused = self.git_ops_checkout(self.sha["v1"])
-        self.assertNotEqual(refused.returncode, 0)
-        self.assertIn("conflict", refused.stderr)
-        repaired = self.git_ops_checkout(self.sha["v1"], "--force")
-        self.assertEqual(repaired.returncode, 0, repaired.stderr)
-        self.assert_clean_at(self.sha["v1"], V1)
+        self.assert_update_repairs()
 
+    def test_tracked_changes_ignores_untracked_files(self):
+        self.assertEqual(self.tracked_changes(), [])
+        with open(os.path.join(self.repo, "untracked.txt"), "w") as f:
+            f.write("x\n")
+        self.assertEqual(self.tracked_changes(), [])
+        with open(os.path.join(self.repo, "app", "db.py"), "w") as f:
+            f.write("edited\n")
+        os.remove(os.path.join(self.repo, "only_v1.txt"))
+        self.assertEqual(sorted(self.tracked_changes()), ["app/db.py", "only_v1.txt"])
 
 if __name__ == "__main__":
     unittest.main()
