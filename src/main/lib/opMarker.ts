@@ -38,7 +38,9 @@ export interface OpMarker {
 // drop the marker. This bounds transient failures (git index lock, AV holding a
 // file) to a few retries while preventing an unrecoverable rollback (e.g. the
 // pre-op commit is gone) from locking the user out of launching forever.
+// Restores only: an update's mixed tree crashes on import, so Update must repair it.
 const MAX_RECOVERY_ATTEMPTS = 3
+const UPDATE_UNFINISHED = 'The last update did not finish. Run Update to repair.'
 
 function markerPath(installPath: string): string {
   return path.join(installPath, MARKER_NAME)
@@ -125,7 +127,7 @@ export async function completeOpMarker(installPath: string): Promise<void> {
  * commit (the common case: the op concluded but the marker lingered). Returns
  * true when a marker was found and consumed. Throws if a rollback was needed but
  * failed, leaving the marker in place so the next launch can retry — until
- * MAX_RECOVERY_ATTEMPTS is reached, after which it gives up and drops the marker
+ * MAX_RECOVERY_ATTEMPTS is reached (restores only), after which it gives up and drops the marker
  * rather than locking the user out of launching forever.
  *
  * `onRollback` fires only when an ACTUAL source rollback ran (HEAD had moved) —
@@ -156,7 +158,6 @@ export async function recoverInterruptedComfyOp(
     const ok = await rollbackComfySource(comfyuiDir, marker.preHead, sendOutput)
     if (!ok || readGitHead(comfyuiDir) !== marker.preHead) {
       const attempts = (marker.recoveryAttempts ?? 0) + 1
-      // Never for an update: its half-written tree crashes on import; Update repairs it.
       const gaveUp = attempts >= MAX_RECOVERY_ATTEMPTS && marker.op !== 'update'
       // Reliability signal (mirrored to Datadog): how often a hard-killed op
       // leaves source we can't roll back, and how often we give up entirely.
@@ -182,17 +183,18 @@ export async function recoverInterruptedComfyOp(
       await writeOpMarker(installPath, { ...marker, recoveryAttempts: attempts })
       throw new Error(
         marker.op === 'update'
-          ? `The last update did not finish. Run Update to repair.${backupHint}`
+          ? `${UPDATE_UNFINISHED}${backupHint}`
           : `could not roll ComfyUI source back to ${marker.preHead.slice(0, 7)} after an interrupted ${marker.op}.${backupHint}`
       )
     }
     // Successfully recovered a hard-killed op — informational signal (PostHog).
     telemetry.emit('comfy.desktop.recovery.rolled_back', { op: marker.op })
     onRollback?.()
-  } else if (marker.op === 'update' && (await hasTrackedChanges(comfyuiDir)) !== false) {
-    // A restore that couldn't finish (a held file, a kill) leaves mixed files under
-    // the old HEAD, or git can't tell. Keep the marker until an update succeeds.
-    throw new Error('The last update did not finish. Run Update to repair.')
+  }
+  if (marker.op === 'update' && (await hasTrackedChanges(comfyuiDir)) !== false) {
+    // A restore or rollback that couldn't finish (a held file, a kill) leaves mixed
+    // files under the old HEAD, or git can't tell. Keep the marker until Update.
+    throw new Error(`${UPDATE_UNFINISHED}${backupBranchHint(marker.backupBranch)}`)
   }
   await clearOpMarker(installPath)
   return true

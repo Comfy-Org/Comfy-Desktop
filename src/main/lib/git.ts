@@ -1006,7 +1006,7 @@ export function hasTrackedChanges(repoPath: string): Promise<boolean | null> {
   return new Promise((resolve) => {
     execFile(
       'git',
-      ['status', '--porcelain', '--untracked-files=no'],
+      ['-c', 'safe.directory=*', 'status', '--porcelain', '--untracked-files=no'],
       { cwd: repoPath, encoding: 'utf-8', windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
       (error, stdout) => resolve(error ? null : stdout.trim() !== '')
     )

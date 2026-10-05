@@ -36,6 +36,7 @@ let installPath: string
 beforeEach(() => {
   installPath = fs.mkdtempSync(path.join(os.tmpdir(), 'opmarker-'))
   vi.clearAllMocks()
+  mockedTrackedChanges.mockResolvedValue(false)
 })
 
 afterEach(() => {
@@ -200,6 +201,33 @@ describe('recoverInterruptedComfyOp', () => {
       attempts: 1,
       gave_up: false
     })
+  })
+
+  it('blocks when a rollback reaches the old HEAD but leaves tracked files changed', async () => {
+    await writeOpMarker(installPath, {
+      op: 'update',
+      preHead: 'OLD',
+      startedAt: 1,
+      backupBranch: 'bb'
+    })
+    mockedReadGitHead.mockReturnValueOnce('NEW').mockReturnValue('OLD')
+    mockedRollback.mockResolvedValue(true)
+    mockedTrackedChanges.mockResolvedValue(true)
+
+    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
+      /Run Update to repair.*bb/s
+    )
+    expect(readOpMarker(installPath)?.preHead).toBe('OLD')
+  })
+
+  it('reports a failed snapshot-restore rollback as a rollback failure', async () => {
+    await writeOpMarker(installPath, { op: 'restore', preHead: 'OLD', startedAt: 1 })
+    mockedReadGitHead.mockReturnValue('NEW')
+    mockedRollback.mockResolvedValue(false)
+
+    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
+      /could not roll ComfyUI source back to OLD after an interrupted restore/
+    )
   })
 
   it('names the local backup branch in the failure message when one was recorded', async () => {

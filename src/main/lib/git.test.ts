@@ -249,8 +249,15 @@ describe('hasTrackedChanges', () => {
   })
 
   it('reports tracked changes from git status, ignoring untracked files', async () => {
-    mockExecFile((_cmd, args, _opts, cb) => {
-      expect(args).toEqual(['status', '--porcelain', '--untracked-files=no'])
+    mockExecFile((_cmd, args, opts, cb) => {
+      expect(args).toEqual([
+        '-c',
+        'safe.directory=*',
+        'status',
+        '--porcelain',
+        '--untracked-files=no'
+      ])
+      expect(opts.cwd).toBe('/repo')
       cb(null, ' M main.py\n', '')
     })
     expect(await hasTrackedChanges('/repo')).toBe(true)

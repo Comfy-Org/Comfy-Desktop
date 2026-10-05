@@ -208,6 +208,7 @@ class UpdateComfyUITest(unittest.TestCase):
     def test_missing_tag_leaves_the_install_untouched(self):
         r = self.update("--tag", "v9.9.9")
         self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assertNotIn("[WRITING_TARGET]", r.stdout)
         self.assert_clean_at(self.sha["v1"], V1)
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
 
@@ -247,7 +248,7 @@ class UpdateComfyUITest(unittest.TestCase):
 
     def test_stale_git_locks_from_a_killed_update_are_cleared(self):
         old = time.time() - 3600
-        for name in ("HEAD.lock", "index.lock", "refs/heads/master.lock"):
+        for name in ("HEAD.lock", "index.lock", "packed-refs.lock", "refs/heads/master.lock"):
             lock = os.path.join(self.repo, ".git", name)
             open(lock, "w").close()
             os.utime(lock, (old, old))
