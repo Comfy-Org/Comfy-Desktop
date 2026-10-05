@@ -190,7 +190,7 @@ describe('recoverInterruptedComfyOp', () => {
     mockedRollback.mockResolvedValue(false)
 
     await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow(
-      /roll ComfyUI source back/i
+      'The last update did not finish. Run Update to repair.'
     )
     const marker = readOpMarker(installPath)
     expect(marker).not.toBeNull()
@@ -219,10 +219,29 @@ describe('recoverInterruptedComfyOp', () => {
     expect(readOpMarker(installPath)!.backupBranch).toBe('backup_branch_2026-07-06_19_11_34')
   })
 
-  it('gives up and drops the marker after MAX_RECOVERY_ATTEMPTS so launch is never bricked', async () => {
-    // Pre-seed the marker as if two prior launches already failed to roll back.
+  it('never gives up on an update: its tree stays blocked until Update repairs it', async () => {
     await writeOpMarker(installPath, {
       op: 'update',
+      preHead: 'OLD',
+      startedAt: 1,
+      recoveryAttempts: 5
+    })
+    mockedReadGitHead.mockReturnValue('NEW')
+    mockedRollback.mockResolvedValue(false)
+
+    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow('Run Update to repair')
+    expect(readOpMarker(installPath)!.recoveryAttempts).toBe(6)
+    expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.failed', {
+      op: 'update',
+      attempts: 6,
+      gave_up: false
+    })
+  })
+
+  it('gives up on a snapshot restore after MAX_RECOVERY_ATTEMPTS so launch is never bricked', async () => {
+    // Pre-seed the marker as if two prior launches already failed to roll back.
+    await writeOpMarker(installPath, {
+      op: 'restore',
       preHead: 'OLD',
       startedAt: 1,
       recoveryAttempts: 2
@@ -235,7 +254,7 @@ describe('recoverInterruptedComfyOp', () => {
     expect(recovered).toBe(true)
     expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
     expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.failed', {
-      op: 'update',
+      op: 'restore',
       attempts: 3,
       gave_up: true
     })

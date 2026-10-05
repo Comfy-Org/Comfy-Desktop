@@ -52,7 +52,6 @@ const messages = {
       returnToDashboard: 'Return to Dashboard',
       reboot: 'Reboot',
       restartComfyui: 'Restart ComfyUI',
-      retry: 'Retry',
       phaseLabel: {
         cleanup: 'Tidying up dependencies...',
         download: 'Downloading ComfyUI…',
@@ -594,16 +593,6 @@ describe('ProgressModal — brand branch state transitions', () => {
       opKind: 'launch'
     })
     expect(body.selectorText('.brand-progress__error-actions')).toContain('Restart ComfyUI')
-    expect(body.selectorText('.brand-progress__error-actions')).not.toContain('Reboot')
-  })
-
-  it('labels a failed update\'s re-run "Retry", not "Reboot"', async () => {
-    const { body } = await mountWithOp('inst-1', {
-      finished: true,
-      error: 'Update process failed with exit code 1.',
-      opKind: 'update'
-    })
-    expect(body.selectorText('.brand-progress__error-actions')).toContain('Retry')
     expect(body.selectorText('.brand-progress__error-actions')).not.toContain('Reboot')
   })
 

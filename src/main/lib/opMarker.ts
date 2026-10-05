@@ -156,7 +156,8 @@ export async function recoverInterruptedComfyOp(
     const ok = await rollbackComfySource(comfyuiDir, marker.preHead, sendOutput)
     if (!ok || readGitHead(comfyuiDir) !== marker.preHead) {
       const attempts = (marker.recoveryAttempts ?? 0) + 1
-      const gaveUp = attempts >= MAX_RECOVERY_ATTEMPTS
+      // Never for an update: its half-written tree crashes on import; Update repairs it.
+      const gaveUp = attempts >= MAX_RECOVERY_ATTEMPTS && marker.op !== 'update'
       // Reliability signal (mirrored to Datadog): how often a hard-killed op
       // leaves source we can't roll back, and how often we give up entirely.
       telemetry.emit('comfy.desktop.recovery.failed', { op: marker.op, attempts, gave_up: gaveUp })
@@ -180,7 +181,9 @@ export async function recoverInterruptedComfyOp(
       // Persist the attempt count and block this launch so the next one retries.
       await writeOpMarker(installPath, { ...marker, recoveryAttempts: attempts })
       throw new Error(
-        `could not roll ComfyUI source back to ${marker.preHead.slice(0, 7)} after an interrupted ${marker.op}.${backupHint}`
+        marker.op === 'update'
+          ? `The last update did not finish. Run Update to repair.${backupHint}`
+          : `could not roll ComfyUI source back to ${marker.preHead.slice(0, 7)} after an interrupted ${marker.op}.${backupHint}`
       )
     }
     // Successfully recovered a hard-killed op — informational signal (PostHog).

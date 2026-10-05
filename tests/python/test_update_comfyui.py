@@ -13,6 +13,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 LIB = os.path.join(os.path.dirname(__file__), "..", "..", "lib")
@@ -243,6 +244,21 @@ class UpdateComfyUITest(unittest.TestCase):
         backup = git(self.repo, "branch", "--list", "backup_branch_*",
                      "--format=%(refname:short)")
         self.assertEqual(git(self.repo, "show", "%s:notes.txt" % backup), "mine")
+
+    def test_stale_git_locks_from_a_killed_update_are_cleared(self):
+        old = time.time() - 3600
+        for name in ("HEAD.lock", "index.lock", "refs/heads/master.lock"):
+            lock = os.path.join(self.repo, ".git", name)
+            open(lock, "w").close()
+            os.utime(lock, (old, old))
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assert_clean_at(self.sha["v2"], V2)
+
+    def test_a_fresh_git_lock_is_respected(self):
+        open(os.path.join(self.repo, ".git", "HEAD.lock"), "w").close()
+        self.assertEqual(self.update("--stable").returncode, 1)
+        self.assertEqual(self.head(), self.sha["v1"])
 
     def test_stable_without_tags_lands_on_master_attached(self):
         for repo in (self.repo, self.origin):

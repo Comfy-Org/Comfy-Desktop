@@ -26,6 +26,7 @@ import pygit2
 import re
 from datetime import datetime
 import sys
+import time
 
 from pygit2_compat import harden_pygit2_config, disable_symlinks
 
@@ -154,6 +155,13 @@ def main():
     # Force core.symlinks=false on Windows so the checkout below can't fail on a
     # symlink the user lacks the privilege to create (see disable_symlinks).
     disable_symlinks(repo)
+
+    # A kill mid-update can leave git's lock files behind, failing every later
+    # update. Desktop runs one operation per install, so an old one is stale.
+    for name in ("HEAD.lock", "index.lock", "packed-refs.lock", "refs/heads/master.lock"):
+        lock = os.path.join(git_dir, name)
+        if os.path.exists(lock) and time.time() - os.path.getmtime(lock) > 60:
+            os.remove(lock)
 
     # Emit pre-update HEAD
     pre_head = str(repo.head.target)
