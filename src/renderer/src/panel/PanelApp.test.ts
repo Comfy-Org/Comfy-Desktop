@@ -1086,6 +1086,7 @@ describe('PanelApp', () => {
         actionName: 'comfy.desktop.performance_test.started',
         context: {
           installation_id: 'workspace-install',
+          workflow_name: 'custom',
           warmup_runs: 3,
           measured_runs: 5,
           total_runs: 8
@@ -1101,6 +1102,7 @@ describe('PanelApp', () => {
         actionName: 'comfy.desktop.performance_test.completed',
         context: {
           installation_id: 'workspace-install',
+          workflow_name: 'custom',
           warmup_runs: 3,
           measured_runs: 5,
           successful_runs: 5,
@@ -1546,6 +1548,47 @@ describe('PanelApp', () => {
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('.performance-test__workflow-file').text()).toContain(EXAMPLE_PATH)
     expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+  })
+
+  it('reports a bundled example workflow by its file name in telemetry', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await chooseExampleWorkflow(wrapper)
+    const telemetryEvents = captureTelemetry()
+
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    expect(
+      telemetryEvents.find((event) => event.actionName === 'comfy.desktop.performance_test.started')
+        ?.context?.workflow_name
+    ).toBe('image_z_image_int8.json')
+  })
+
+  it('reports a workflow imported over a bundled example as custom in telemetry', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await chooseExampleWorkflow(wrapper)
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain('cat-workflow.json')
+    const telemetryEvents = captureTelemetry()
+
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    expect(
+      telemetryEvents.find((event) => event.actionName === 'comfy.desktop.performance_test.started')
+        ?.context?.workflow_name
+    ).toBe('custom')
   })
 
   it('ignores download progress for a workflow the page no longer shows', async () => {
@@ -2107,6 +2150,7 @@ describe('PanelApp', () => {
         actionName: 'comfy.desktop.performance_test.stopped',
         context: {
           installation_id: 'workspace-install',
+          workflow_name: 'custom',
           warmup_runs: 1,
           measured_runs: 5,
           completed_runs: 2,
