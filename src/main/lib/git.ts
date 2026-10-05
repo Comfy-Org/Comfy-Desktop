@@ -1280,7 +1280,7 @@ function makeRunGit(
  * Check out a specific commit. Tries a direct checkout first (works for
  * full clones where the commit is already local). If the commit isn't
  * available, fetches all refs from origin (unshallowing if needed) and
- * retries. `force` overwrites modified tracked files and skips the fetch.
+ * retries. `force` overwrites modified tracked files (and, on system git, skips the fetch).
  */
 export function gitCheckoutCommit(
   repoPath: string,

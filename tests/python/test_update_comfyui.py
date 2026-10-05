@@ -41,11 +41,12 @@ runpy.run_path(sys.argv[0], run_name="__main__")
 
 # Path order matters: libgit2 writes app/ before main/, so a failure in main/
 # lands after app/db.py has already been written, as in the field crash.
-V1 = {"app/db.py": "v1\n", "main/main.py": "v1\n", "only_v1.txt": "x\n"}
+V1 = {"app/db.py": "v1\n", "main/main.py": "v1\n", "only_v1.txt": "x\n",
+      "tag/release.py": "dev\n"}
 V2 = {"app/db.py": "v2\n", "app/new.py": "v2\n", "main/main.py": "v2\n",
-      "main/extra.py": "v2\n"}
+      "main/extra.py": "v2\n", "tag/release.py": "v2\n"}
 MASTER = {"app/db.py": "m\n", "app/new.py": "m\n", "main/main.py": "m\n",
-          "main/extra.py": "m\n", "only_master.txt": "m\n"}
+          "main/extra.py": "m\n", "only_master.txt": "m\n", "tag/release.py": "dev\n"}
 
 # Fixture git and the helpers under test ignore the developer's config (signing,
 # hooks, an http.proxy that would reroute the refused-connection fetch).
@@ -209,8 +210,8 @@ class UpdateComfyUITest(unittest.TestCase):
 
     @NEEDS_PERMISSIONS
     def test_file_locked_before_the_update_does_not_block_the_restore(self):
-        # main/main.py differs between v1 and v2 and is held open from the
-        # start: the update fails on it, and the restore must not need it.
+        # main/ is held from the start (main/extra.py can't be created,
+        # main/main.py can't be rewritten): the restore must not need it.
         main_dir = self.lock("main")
         os.chmod(os.path.join(main_dir, "main.py"), stat.S_IRUSR)
         self.addCleanup(os.chmod, os.path.join(main_dir, "main.py"), stat.S_IRUSR | stat.S_IWUSR)
@@ -218,6 +219,18 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("Restored ComfyUI source to pre-update commit", r.stdout)
         self.assert_clean_at(self.sha["v1"], V1)
+
+    @NEEDS_PERMISSIONS
+    def test_failure_only_the_tag_needs_restores_the_install(self):
+        # tag/release.py is the same in v1 and master and differs only in v2:
+        # the field failure, where only the step from master to the tag failed.
+        tag_dir = self.lock("tag")
+        os.chmod(os.path.join(tag_dir, "release.py"), stat.S_IRUSR)
+        self.addCleanup(os.chmod, os.path.join(tag_dir, "release.py"), stat.S_IRUSR | stat.S_IWUSR)
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assert_clean_at(self.sha["v1"], V1)
+        self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
 
     @NEEDS_PERMISSIONS
     def test_failed_latest_update_reattaches_master(self):

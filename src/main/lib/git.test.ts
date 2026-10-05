@@ -482,6 +482,16 @@ describe('gitCheckoutCommit (system git)', () => {
     }
   })
 
+  it('stops a forced checkout at the first failing step', async () => {
+    mockSpawnSequence([{ exitCode: 1 }])
+    await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
+    expect(mockedSpawn).toHaveBeenCalledTimes(1)
+    vi.resetAllMocks()
+    mockSpawnSequence([{ exitCode: 0 }, { exitCode: 1 }])
+    await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
+    expect(mockedSpawn).toHaveBeenCalledTimes(2)
+  })
+
   it('does not fetch after a failed forced checkout (a locked file, not a missing commit)', async () => {
     mockSpawnSequence([{ exitCode: 0 }, { exitCode: 0 }, { exitCode: 128 }])
     const result = await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })

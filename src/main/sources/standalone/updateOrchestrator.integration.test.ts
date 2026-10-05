@@ -529,6 +529,21 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           const result = await runComfyUIUpdate(makeBaseOpts(installPath))
           expect(result.ok).toBe(false)
           expect(headSha()).toBe(repoShas.v2Sha)
+
+          // Retried while the lock is still held: the repair fails, so the
+          // update refuses to start and keeps the marker's pre-update commit.
+          let scriptRan = false
+          spawnState.pythonHandler = () => {
+            scriptRan = true
+            return fakeProc({ exitCode: 0 })
+          }
+          const blocked = await runComfyUIUpdate(makeBaseOpts(installPath))
+          expect(blocked.ok).toBe(false)
+          expect(scriptRan).toBe(false)
+          const marker = JSON.parse(
+            fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8')
+          )
+          expect(marker.preHead).toBe(repoShas.v1Sha)
         } finally {
           fs.chmodSync(comfyuiDir, 0o755)
         }
@@ -546,7 +561,10 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
         expect(atStart).toEqual([repoShas.v1Sha, ''])
         expect(retry.ok).toBe(true)
-        expect(spawnState.uvCalls.some((a) => a.includes('install'))).toBe(true)
+        // Both requirement files are reinstalled, the manager one included: it
+        // only exists at v0.2.0, so its baseline must be read after the repair.
+        const installed = spawnState.uvCalls.filter((a) => a.includes('install')).flat()
+        expect(installed.some((a) => a.endsWith('.post-install-mgr-reqs.txt'))).toBe(true)
       }
     )
   })
