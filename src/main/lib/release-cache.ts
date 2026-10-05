@@ -11,6 +11,7 @@ import { writeFileSafe } from './safe-file'
 import { fetchLatestRelease, getLatestStableTag, truncateNotes } from './comfyui-releases'
 import { fetchTags, countCommitsAhead, fetchCommitSha, findNearestTag } from './git'
 import { formatComfyVersion, tagsEqual } from './version'
+import { readOpMarker } from './opMarker'
 import type { ComfyVersion } from './version'
 
 export interface ReleaseCacheEntry {
@@ -346,6 +347,9 @@ export function isUpdateAvailable(
   info: ReleaseCacheEntry | null
 ): boolean {
   if (!info || !info.latestTag) return false
+  // An update that did not finish leaves the tree for another update to repair.
+  const marker = installation.installPath ? readOpMarker(installation.installPath as string) : null
+  if (marker?.op === 'update' && !marker.postHead) return true
   // On stable: any commits ahead means installed is newer than stable. When commitsAhead is
   // undefined (API failure) but the commit differs, conservatively report an update.
   const cv = installation.comfyVersion as ComfyVersion | undefined

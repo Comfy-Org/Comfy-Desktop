@@ -96,6 +96,7 @@ vi.mock('child_process', async (importOriginal) => {
 // Import the SUT after all vi.mock declarations.
 import { runComfyUIUpdate } from './updateOrchestrator'
 import { recoverInterruptedComfyOp } from '../../lib/opMarker'
+import { isUpdateAvailable } from '../../lib/release-cache'
 import type { UpdateOrchestrationOptions } from './updateOrchestrator'
 import { clearVersionCache } from '../../lib/version-resolve'
 import { formatComfyVersion } from '../../lib/version'
@@ -502,6 +503,14 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
         'The last update did not finish'
       )
       expect(markerExists()).toBe(true)
+      // The block says "Run Update": the Update tab must offer it even though the
+      // install already reports the channel's latest version.
+      const atLatest = {
+        installPath,
+        comfyVersion: { commit: repoShas.v1Sha, baseTag: 'v0.1.0', commitsAhead: 0 }
+      }
+      const latest = { latestTag: 'v0.1.0', commitSha: repoShas.v1Sha }
+      expect(isUpdateAvailable(atLatest, 'stable', latest)).toBe(true)
 
       // An Update retried offline fails before writing: the earlier damage must
       // stay on record, so the launch is still blocked.
@@ -521,6 +530,7 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
       expect(markerExists()).toBe(false)
       expect(await recoverInterruptedComfyOp(installPath)).toBe(false)
+      expect(isUpdateAvailable(atLatest, 'stable', latest)).toBe(false)
     })
   })
 
