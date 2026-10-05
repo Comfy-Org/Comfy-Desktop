@@ -97,18 +97,21 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
 
   return resolved.then(({ legacyId }) => {
     clearLegacyIdentityRetryMarker()
-    mainTelemetry.setInstallationId(getDeviceId(), {
-      app_version: opts.appVersion,
-      platform: process.platform,
-      arch: process.arch,
-      id_class: getIdClass()
-    })
+    // Nothing new is captured once telemetry has started shutting down.
+    if (!mainTelemetry.hasShutDown()) {
+      mainTelemetry.setInstallationId(getDeviceId(), {
+        app_version: opts.appVersion,
+        platform: process.platform,
+        arch: process.arch,
+        id_class: getIdClass()
+      })
 
-    // Durable snapshot of the tracked global settings as person properties
-    // (issues #1220/#1223), so adoption of every setting is queryable across
-    // the whole base. Consent-gated: queued until granted. Re-registered on
-    // change in `applySettingSet`.
-    mainTelemetry.registerPersonProperties(opts.trackedSettings())
+      // Durable snapshot of the tracked global settings as person properties
+      // (issues #1220/#1223), so adoption of every setting is queryable across
+      // the whole base. Consent-gated: queued until granted. Re-registered on
+      // change in `applySettingSet`.
+      mainTelemetry.registerPersonProperties(opts.trackedSettings())
+    }
 
     // Consumed only now, and not once telemetry has shut down, so a quit
     // before the id resolves leaves the guard in place and the next launch

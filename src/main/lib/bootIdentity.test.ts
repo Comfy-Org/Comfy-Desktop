@@ -230,7 +230,11 @@ describe('startBootIdentity', () => {
     await vi.advanceTimersByTimeAsync(3000)
     await bound
     expect(h.telemetry.captureFirstLaunch).not.toHaveBeenCalled()
+    expect(h.telemetry.setInstallationId).not.toHaveBeenCalled()
+    expect(h.telemetry.registerPersonProperties).not.toHaveBeenCalled()
     expect(fs.existsSync(file('first-launch-completed'))).toBe(false)
+    // Local identity work still runs: the id is persisted.
+    expect(fs.readFileSync(file('device-id.txt'), 'utf-8')).toBe(machineId())
   })
 
   it('removes the legacy alias retry marker once the id resolves', async () => {
