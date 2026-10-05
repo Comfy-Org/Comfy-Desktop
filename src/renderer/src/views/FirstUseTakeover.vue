@@ -258,15 +258,17 @@ function applyForkExperimentDefault(variant: ForkVariant): void {
 onMounted(async () => {
   // All best-effort and independently fail-safe, so the picker still
   // works if any of them errors. The free-runs flag waits for the
-  // installation id on a first launch, so only its pill waits for it; the
-  // pill also waits for the tier, so a paid user never sees it flash.
-  const userTierLoaded = loadCloudUserTier()
+  // installation id on a first launch, so only its pill waits for it. The
+  // tier is applied as soon as it loads and the pill waits for it, so a paid
+  // user never sees the pill flash, whatever order the requests finish in.
+  const userTierLoaded = loadCloudUserTier().then((tier) => {
+    cloudUserTier.value = tier
+  })
   void Promise.all([loadCloudFreeRunsEnabled(), userTierLoaded]).then(([enabled]) => {
     cloudFreeRunsEnabled.value = enabled
   })
-  const [variant, userTier] = await Promise.all([loadForkExperimentVariant(), userTierLoaded])
+  const [variant] = await Promise.all([loadForkExperimentVariant(), userTierLoaded])
   forkExperimentVariant.value = variant
-  cloudUserTier.value = userTier
   applyForkExperimentDefault(variant)
 })
 /** Express-install opt-in modifier on the start screen. Defaults OFF

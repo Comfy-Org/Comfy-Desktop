@@ -2114,9 +2114,8 @@ export function emit(event: string, context: TelemetryContext = {}): void {
  * Drain queued events. Safe to await during `app.before-quit`.
  */
 export async function shutdown(reason: string): Promise<void> {
-  // Before the client check: a launch without telemetry is shutting down too.
-  shutdownStarted = true
   if (!client) return
+  shutdownStarted = true
   const uptimeMs = Date.now() - bootstrapTimeMs
   try {
     // A quit mid-navigation must not strand quarantined writes (or the
@@ -2193,7 +2192,12 @@ export function installAppHooks(): void {
   beforeQuitHooked = true
 
   app.on('before-quit', (event) => {
-    if (drainingForQuit || !client) return
+    if (drainingForQuit) return
+    if (!client) {
+      // Nothing to drain, but the quit has begun (see `hasShutDown`).
+      shutdownStarted = true
+      return
+    }
     drainingForQuit = true
     event.preventDefault()
     const drainPromise = shutdown('quit').catch(() => {})

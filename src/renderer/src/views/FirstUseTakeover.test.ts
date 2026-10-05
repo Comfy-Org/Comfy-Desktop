@@ -476,6 +476,11 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     ['never shows it to a paid user', 'paid', false]
   ])('holds the free-runs pill until the tier loads, then %s', async (_label, tier, shown) => {
     const userTier = deferred<string>()
+    // The experiment variant stays pending: the pill must not depend on it.
+    const variant = deferred<string | undefined>()
+    ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockReturnValue(
+      variant.promise
+    )
     ;(window.api.getCloudFreeRunsEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(true)
     ;(window.api.getCloudUserTier as ReturnType<typeof vi.fn>).mockReturnValue(userTier.promise)
     const wrapper = mountTakeover()
@@ -483,6 +488,10 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     expect(wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists()).toBe(false)
 
     userTier.resolve(tier)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists()).toBe(shown)
+
+    variant.resolve(undefined)
     await flushPromises()
     expect(wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists()).toBe(shown)
   })

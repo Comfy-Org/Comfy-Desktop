@@ -5,11 +5,16 @@ import path from 'path'
 import { EventEmitter } from 'events'
 import type { TelemetryValue } from './telemetry'
 
+/** Handlers registered with `app.on`, so a test can fire `before-quit`. */
+const electronAppHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => void>())
+
 vi.mock('electron', () => ({
   app: {
     getPath: () => path.join(os.tmpdir(), 'launcher-test'),
     isPackaged: true,
-    on: () => {}
+    on: (event: string, handler: (...args: unknown[]) => void) => {
+      electronAppHandlers.set(event, handler)
+    }
   },
   BrowserWindow: { getAllWindows: () => [] }
 }))
@@ -1905,11 +1910,16 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(ev?.properties).not.toHaveProperty('installation_id')
   })
 
-  it('reports shutdown for a launch that never started a telemetry client', async () => {
+  it('marks shutdown when the app quits without a telemetry client', () => {
+    telemetry.installAppHooks()
     telemetry._resetForTest()
-    expect(telemetry.hasShutDown()).toBe(false)
-    await telemetry.shutdown('quit')
+    const beforeQuit = electronAppHandlers.get('before-quit')
+    expect(beforeQuit).toBeDefined()
+    const preventDefault = vi.fn()
+    beforeQuit!({ preventDefault })
     expect(telemetry.hasShutDown()).toBe(true)
+    // Nothing to drain, so the quit is not held.
+    expect(preventDefault).not.toHaveBeenCalled()
   })
 
   it('reports shutdown as soon as it has begun, before the drain finishes', async () => {
