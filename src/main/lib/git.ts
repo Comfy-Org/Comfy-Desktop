@@ -1290,10 +1290,17 @@ export function gitCheckoutCommit(
   { force = false }: { force?: boolean } = {}
 ): Promise<ProcessResult> {
   if (signal?.aborted) return Promise.resolve({ exitCode: 1, stderr: '', stdout: '' })
-  const checkoutArgs = force ? ['checkout', '-f', commit] : ['checkout', commit]
   const systemGitCheckout = (): Promise<ProcessResult> => {
     const runGit = makeRunGit(repoPath, sendOutput, signal)
-    return runGit(checkoutArgs).then((directResult) => {
+    // A forced `git checkout` that fails on a locked file still moves HEAD; a
+    // hard reset of a detached HEAD moves it only once the tree is written.
+    const checkout = (): Promise<ProcessResult> =>
+      force
+        ? runGit(['checkout', '--detach']).then((r) =>
+            r.exitCode === 0 ? runGit(['reset', '--hard', commit]) : r
+          )
+        : runGit(['checkout', commit])
+    return checkout().then((directResult) => {
       if (directResult.exitCode === 0) return directResult
       return runGit(['fetch', '--unshallow', 'origin'])
         .then((result) => {
@@ -1302,7 +1309,7 @@ export function gitCheckoutCommit(
         })
         .then((fetchResult) => {
           if (fetchResult.exitCode !== 0) return fetchResult
-          return runGit(checkoutArgs)
+          return checkout()
         })
     })
   }

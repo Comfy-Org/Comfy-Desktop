@@ -468,21 +468,30 @@ describe('gitCheckoutCommit (system git)', () => {
     try {
       fs.mkdirSync(path.join(repo, '.git'))
       fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'def456\n')
-      mockSpawn(0)
+      mockSpawnSequence([{ exitCode: 0 }, { exitCode: 0 }, { exitCode: 0 }])
       await rollbackComfySource(repo, 'abc123', undefined, { force: true })
-      expect(mockedSpawn.mock.calls[0]![1]).toEqual(['checkout', '-f', 'abc123'])
-      mockSpawn(0)
+      expect(mockedSpawn.mock.calls.map((c) => c[1])).toEqual([
+        ['checkout', '--detach'],
+        ['reset', '--hard', 'abc123']
+      ])
       await rollbackComfySource(repo, 'abc123')
-      expect(mockedSpawn.mock.calls[1]![1]).toEqual(['checkout', 'abc123'])
+      expect(mockedSpawn.mock.calls[2]![1]).toEqual(['checkout', 'abc123'])
     } finally {
       fs.rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  it('keeps -f on the retry after fetching a missing commit', async () => {
-    mockSpawnSequence([{ exitCode: 1 }, { exitCode: 0 }, { exitCode: 0 }])
-    await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
-    expect(mockedSpawn.mock.calls[2]![1]).toEqual(['checkout', '-f', 'abc123'])
+  it('keeps the forced reset on the retry after fetching a missing commit', async () => {
+    mockSpawnSequence([
+      { exitCode: 0 }, // checkout --detach
+      { exitCode: 128 }, // reset --hard: commit not local
+      { exitCode: 0 }, // fetch --unshallow
+      { exitCode: 0 }, // checkout --detach
+      { exitCode: 0 } // reset --hard
+    ])
+    const result = await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
+    expect(result.exitCode).toBe(0)
+    expect(mockedSpawn.mock.calls[4]![1]).toEqual(['reset', '--hard', 'abc123'])
   })
 })
 

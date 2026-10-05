@@ -95,6 +95,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 // Import the SUT after all vi.mock declarations.
 import { runComfyUIUpdate } from './updateOrchestrator'
+import { recoverInterruptedComfyOp } from '../../lib/opMarker'
 import type { UpdateOrchestrationOptions } from './updateOrchestrator'
 import { clearVersionCache } from '../../lib/version-resolve'
 import { formatComfyVersion } from '../../lib/version'
@@ -506,6 +507,40 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       }).toString()
       expect(status).toBe('')
     })
+
+    // The repo root is made read-only so git cannot replace requirements.txt:
+    // a lock that outlasts the update and its immediate rollback.
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+      'keeps HEAD off the pre-update commit when the rollback fails, so recovery repairs it',
+      async () => {
+        spawnState.pythonHandler = (_args: string[]) => {
+          execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
+            cwd: comfyuiDir,
+            windowsHide: true,
+            stdio: 'pipe'
+          })
+          fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==')
+          fs.chmodSync(comfyuiDir, 0o555)
+          return fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
+        }
+        try {
+          const result = await runComfyUIUpdate(makeBaseOpts(installPath))
+          expect(result.ok).toBe(false)
+          expect(headSha()).toBe(repoShas.v2Sha)
+        } finally {
+          fs.chmodSync(comfyuiDir, 0o755)
+        }
+
+        expect(await recoverInterruptedComfyOp(installPath)).toBe(true)
+        expect(headSha()).toBe(repoShas.v1Sha)
+        const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+          cwd: comfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
+        }).toString()
+        expect(status).toBe('')
+      }
+    )
   })
 
   describe('cancellation', () => {
