@@ -559,8 +559,9 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
       expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
       expect(spawnState.uvCalls.some((a) => a.includes('install'))).toBe(true)
-      // manager_requirements.txt is unchanged too, but its packages may be stale.
+      // Both requirement files are unchanged, but their packages may be stale.
       const installed = spawnState.uvCalls.filter((a) => a.includes('install')).flat()
+      expect(installed.some((a) => a.endsWith('.post-install-reqs.txt'))).toBe(true)
       expect(installed.some((a) => a.endsWith('.post-install-mgr-reqs.txt'))).toBe(true)
       expect(markerExists()).toBe(false)
     })
