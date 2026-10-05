@@ -536,6 +536,17 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
         path.join(installPath, '.comfyui-op-in-progress.json'),
         JSON.stringify({ op: 'update', preHead: repoShas.v1Sha, startedAt: 1 })
       )
+      // A retry that fails before writing (offline) keeps the original pre-update
+      // commit, so the next launch still rolls back instead of launching v0.2.0
+      // source on v0.1.0 packages.
+      spawnState.pythonHandler = () =>
+        fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v2Sha}\n`], exitCode: 1 })
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
+      const kept = JSON.parse(
+        fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8')
+      )
+      expect(kept.preHead).toBe(repoShas.v1Sha)
+
       spawnState.pythonHandler = () =>
         fakeProc({
           stdout: [

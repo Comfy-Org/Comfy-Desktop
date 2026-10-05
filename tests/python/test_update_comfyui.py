@@ -222,8 +222,10 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
 
     def test_failed_fetch_reports_no_write_and_changes_nothing(self):
-        # A run that never printed [WRITING_TARGET] moved nothing; Desktop then
-        # drops its update marker, so the user's own files never block launch.
+        # A run that never printed [WRITING_TARGET] moved nothing; when Desktop
+        # sees it exit, it drops its update marker, so the user's own files don't
+        # block launch. (A hard kill of Desktop here leaves the marker: a known
+        # limitation.)
         with open(os.path.join(self.repo, "notes.txt"), "w") as f:
             f.write("mine\n")
         with open(os.path.join(self.repo, "app", "db.py"), "w") as f:

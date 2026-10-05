@@ -251,7 +251,7 @@ export async function runComfyUIUpdate(
   // An earlier update left the tree half-written: only a success clears it; resync deps.
   const pending = readOpMarker(installPath)
   const repairing = pending?.op === 'update' && !pending.postHead
-  if (preOpHead) {
+  if (preOpHead && !repairing) {
     await writeOpMarker(installPath, { op: 'update', preHead: preOpHead, startedAt: Date.now() })
   }
 

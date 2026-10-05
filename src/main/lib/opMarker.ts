@@ -192,8 +192,7 @@ export async function recoverInterruptedComfyOp(
     onRollback?.()
   }
   if (marker.op === 'update' && (await hasTrackedChanges(comfyuiDir)) !== false) {
-    // A restore or rollback that couldn't finish (a held file, a kill) leaves mixed
-    // files under the old HEAD, or git can't tell. Keep the marker until Update.
+    // A restore/rollback that couldn't finish leaves mixed files, or git can't tell.
     throw new Error(`${UPDATE_UNFINISHED}${backupBranchHint(marker.backupBranch)}`)
   }
   await clearOpMarker(installPath)
