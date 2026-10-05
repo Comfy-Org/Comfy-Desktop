@@ -7,6 +7,7 @@ import type { TelemetryValue } from './telemetry'
 
 /** Handlers registered with `app.on`, so a test can fire `before-quit`. */
 const electronAppHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => void>())
+const electronAppQuit = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   app: {
@@ -14,7 +15,8 @@ vi.mock('electron', () => ({
     isPackaged: true,
     on: (event: string, handler: (...args: unknown[]) => void) => {
       electronAppHandlers.set(event, handler)
-    }
+    },
+    quit: electronAppQuit
   },
   BrowserWindow: { getAllWindows: () => [] }
 }))
@@ -90,6 +92,8 @@ const featureFlagResultCalls: Array<{
 const posthogConstructorCalls: Array<{ apiKey: string; options: Record<string, unknown> }> = []
 
 const posthogClientMock = vi.hoisted(() => ({
+  /** When set, `shutdown()` settles only when this does, holding a quit's drain open. */
+  shutdownGate: null as Promise<void> | null,
   failNextCaptures: 0,
   failNextFlushes: 0,
   autoFailNextIdentifies: 0,
@@ -171,7 +175,7 @@ vi.mock('posthog-node', () => ({
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
-      return Promise.resolve()
+      return posthogClientMock.shutdownGate ?? Promise.resolve()
     }
     getFeatureFlagResult(
       key: string,
@@ -313,6 +317,7 @@ afterEach(() => {
   anonymousIdentityMock.fail = false
   posthogClientMock.failNextCaptures = 0
   posthogClientMock.failNextFlushes = 0
+  posthogClientMock.shutdownGate = null
   posthogClientMock.autoFailNextIdentifies = 0
   posthogClientMock.featureFlagResult = undefined
   posthogClientMock.featureFlagBehavior = 'resolve'
@@ -1908,6 +1913,29 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     const ev = captured.find((c) => c.event === 'comfy.desktop.test.early')
     expect(ev?.distinctId).toBe('anon-d')
     expect(ev?.properties).not.toHaveProperty('installation_id')
+  })
+
+  it('holds a quit once to drain a live client, then lets the re-issued quit through', async () => {
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    telemetry.installAppHooks()
+    electronAppQuit.mockClear()
+    let releaseDrain: () => void = () => {}
+    posthogClientMock.shutdownGate = new Promise<void>((resolve) => {
+      releaseDrain = resolve
+    })
+    const beforeQuit = electronAppHandlers.get('before-quit')!
+    const first = { preventDefault: vi.fn() }
+    beforeQuit(first)
+    expect(first.preventDefault).toHaveBeenCalledTimes(1)
+    expect(telemetry.hasShutDown()).toBe(true)
+
+    // A quit re-fired while the drain is still running must not be held again.
+    const second = { preventDefault: vi.fn() }
+    beforeQuit(second)
+    expect(second.preventDefault).not.toHaveBeenCalled()
+
+    releaseDrain()
+    await vi.waitFor(() => expect(electronAppQuit).toHaveBeenCalledTimes(1))
   })
 
   it('marks shutdown when the app quits without a telemetry client', () => {

@@ -2161,7 +2161,7 @@ let beforeQuitHooked = false
 let drainingForQuit = false
 let shutdownStarted = false
 
-/** Whether `shutdown()` has begun: nothing captured from here on can ship. */
+/** Whether the app has begun quitting (the quit hook, or `shutdown()`): nothing captured from here on can ship. */
 export function hasShutDown(): boolean {
   return shutdownStarted
 }
