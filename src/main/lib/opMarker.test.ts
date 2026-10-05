@@ -93,10 +93,26 @@ describe('recoverInterruptedComfyOp', () => {
     expect(mockedRollback).toHaveBeenCalledWith(
       path.join(installPath, 'ComfyUI'),
       'OLDHEAD',
-      undefined
+      undefined,
+      { force: true }
     )
     expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
     expect(mockedEmit).toHaveBeenCalledWith('comfy.desktop.recovery.rolled_back', { op: 'update' })
+  })
+
+  it('does not force the rollback of an interrupted snapshot restore (no backup branch)', async () => {
+    await writeOpMarker(installPath, { op: 'restore', preHead: 'OLDHEAD', startedAt: 1 })
+    mockedReadGitHead.mockReturnValueOnce('NEWHEAD').mockReturnValue('OLDHEAD')
+    mockedRollback.mockResolvedValue(true)
+
+    await recoverInterruptedComfyOp(installPath)
+
+    expect(mockedRollback).toHaveBeenCalledWith(
+      path.join(installPath, 'ComfyUI'),
+      'OLDHEAD',
+      undefined,
+      { force: false }
+    )
   })
 
   it('fires onRollback only when an actual rollback runs, not on a benign cleanup', async () => {

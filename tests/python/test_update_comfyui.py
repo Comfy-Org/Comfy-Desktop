@@ -42,15 +42,22 @@ runpy.run_path(sys.argv[0], run_name="__main__")
 # Path order matters: libgit2 writes app/ before main/, so a failure in main/
 # lands after app/db.py has already been written, as in the field crash.
 V1 = {"app/db.py": "v1\n", "main/main.py": "v1\n", "only_v1.txt": "x\n"}
-V2 = {"app/db.py": "v2\n", "main/main.py": "v2\n", "main/extra.py": "v2\n"}
-MASTER = {"app/db.py": "m\n", "main/main.py": "m\n", "main/extra.py": "m\n",
-          "only_master.txt": "m\n"}
+V2 = {"app/db.py": "v2\n", "app/new.py": "v2\n", "main/main.py": "v2\n",
+      "main/extra.py": "v2\n"}
+MASTER = {"app/db.py": "m\n", "app/new.py": "m\n", "main/main.py": "m\n",
+          "main/extra.py": "m\n", "only_master.txt": "m\n"}
+
+# Fixture git ignores the developer's config (signing, hooks, templates).
+GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+NEEDS_PERMISSIONS = unittest.skipIf(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    "root ignores the read-only directory used to force a failure")
 
 
 def git(cwd, *args):
     return subprocess.run(
         ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-C", cwd, *args],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, env=GIT_ENV,
     ).stdout.strip()
 
 
@@ -77,8 +84,6 @@ def read_tree(root):
     return out
 
 
-@unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
-                 "root ignores the read-only directory used to force a failure")
 class UpdateComfyUITest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -156,6 +161,25 @@ class UpdateComfyUITest(unittest.TestCase):
         r = self.update("--tag", "v9.9.9")
         self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
         self.assert_clean_at(self.sha["v1"], V1)
+        self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
+
+    def test_unreachable_origin_leaves_the_install_untouched(self):
+        # Nothing listens on port 1: the connection is refused, as offline.
+        git(self.repo, "remote", "set-url", "origin", "http://127.0.0.1:1/x.git")
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("[ERROR] Failed to fetch from origin:", r.stdout)
+        self.assert_clean_at(self.sha["v1"], V1)
+        self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
+
+    def test_stable_without_tags_lands_on_master_attached(self):
+        for repo in (self.repo, self.origin):
+            git(repo, "tag", "-d", "v0.1.0", "v0.2.0")
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assert_clean_at(self.sha["master"], MASTER)
+        self.assertEqual(git(self.repo, "symbolic-ref", "HEAD"), "refs/heads/master")
+        self.assertNotIn("[CHECKED_OUT_TAG]", r.stdout)
 
     def test_local_changes_are_kept_on_the_backup_branch(self):
         with open(os.path.join(self.repo, "app", "db.py"), "w") as f:
@@ -167,9 +191,11 @@ class UpdateComfyUITest(unittest.TestCase):
                      "--format=%(refname:short)")
         self.assertEqual(git(self.repo, "show", "%s:app/db.py" % backup), "edited")
 
+    @NEEDS_PERMISSIONS
     def test_failed_checkout_restores_the_install(self):
-        # main/extra.py (target only) sorts first in main/ and cannot be
-        # created, so main/main.py is never touched and the restore succeeds.
+        # app/ is written first (app/new.py is created), then main/extra.py
+        # (target only, first in main/) cannot be created. main/main.py is never
+        # touched, so the restore succeeds and must delete app/new.py again.
         self.lock("main")
         r = self.update("--stable")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
@@ -178,6 +204,7 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
         self.assert_clean_at(self.sha["v1"], V1)
 
+    @NEEDS_PERMISSIONS
     def test_failed_restore_leaves_head_moved_and_rollback_repairs(self):
         # The update writes app/db.py, fails in main/, and app/ is locked
         # before the restore can put app/db.py back: the field's mixed tree.

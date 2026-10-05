@@ -227,12 +227,12 @@ def main():
                 sys.exit(1)
 
     # Resolve the tag before anything moves, so a missing tag exits untouched.
-    tag_name = None
+    ref = None
     if stable:
         tag = find_latest_stable_tag(repo)
         if tag is not None:
             print("Checking out stable tag: %s" % tag)
-            tag_name = tag.replace("refs/tags/", "")
+            ref = repo.lookup_reference(tag)
         else:
             print("No stable tags found, staying on master.")
     elif explicit_tag is not None:
@@ -248,19 +248,18 @@ def main():
                   % explicit_tag)
             sys.exit(3)
         print("Checking out tag: %s" % explicit_tag)
-        tag_name = explicit_tag
+    tag_name = ref.shorthand if ref is not None else None
 
-    # Hard-reset master to origin/master and check out the target (the tag, or
+    # Point master at origin/master and check out the target (the tag, or
     # master) in one forced checkout, never master first and then the tag.
     # Launcher-managed installations should not have local modifications to
-    # tracked files. Using a hard reset instead of merge/stash avoids merge
-    # conflicts and stash-pop conflict markers that can corrupt working-tree
-    # files (see issue #245).
+    # tracked files. Forcing instead of merge/stash avoids merge conflicts and
+    # stash-pop conflict markers that can corrupt working-tree files (see issue
+    # #245).
     print("Resetting to origin/master…")
     remote_ref = repo.lookup_reference("refs/remotes/origin/master")
     remote_id = remote_ref.target
-    target_id = remote_id if tag_name is None else repo.lookup_reference(
-        "refs/tags/%s" % tag_name).peel(pygit2.Commit).id
+    target_id = remote_id if ref is None else ref.peel(pygit2.Commit).id
     branch = repo.lookup_branch("master")
     # Snapshot the pre-update state so a failed checkout/reset can be undone. The
     # branch ref is advanced *before* the working-tree checkout below, so without

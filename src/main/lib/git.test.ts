@@ -463,17 +463,26 @@ describe('gitCheckoutCommit (system git)', () => {
     expect(mockedSpawn).not.toHaveBeenCalled()
   })
 
-  it('rollbackComfySource forces the checkout over a half-written tree', async () => {
+  it('rollbackComfySource forces the checkout only when asked', async () => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-'))
     try {
       fs.mkdirSync(path.join(repo, '.git'))
       fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'def456\n')
       mockSpawn(0)
-      await rollbackComfySource(repo, 'abc123')
+      await rollbackComfySource(repo, 'abc123', undefined, { force: true })
       expect(mockedSpawn.mock.calls[0]![1]).toEqual(['checkout', '-f', 'abc123'])
+      mockSpawn(0)
+      await rollbackComfySource(repo, 'abc123')
+      expect(mockedSpawn.mock.calls[1]![1]).toEqual(['checkout', 'abc123'])
     } finally {
       fs.rmSync(repo, { recursive: true, force: true })
     }
+  })
+
+  it('keeps -f on the retry after fetching a missing commit', async () => {
+    mockSpawnSequence([{ exitCode: 1 }, { exitCode: 0 }, { exitCode: 0 }])
+    await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
+    expect(mockedSpawn.mock.calls[2]![1]).toEqual(['checkout', '-f', 'abc123'])
   })
 })
 
@@ -963,13 +972,13 @@ describe('pygit2 fallback', () => {
       expect(mockedSpawn).not.toHaveBeenCalled()
     })
 
-    it('rollbackComfySource passes --force', async () => {
+    it('rollbackComfySource passes --force when asked', async () => {
       const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-'))
       try {
         fs.mkdirSync(path.join(repo, '.git'))
         fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'def456\n')
         mockSpawn(0, '', 'Checked out abc123\n')
-        await rollbackComfySource(repo, 'abc123')
+        await rollbackComfySource(repo, 'abc123', undefined, { force: true })
         expect(expectPygit2SpawnCall()).toEqual(['checkout', repo, 'abc123', '--force'])
       } finally {
         fs.rmSync(repo, { recursive: true, force: true })

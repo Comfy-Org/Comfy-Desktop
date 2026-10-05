@@ -293,7 +293,9 @@ export async function runComfyUIUpdate(
     preOpHead &&
     readGitHead(comfyuiDir) !== preOpHead
   ) {
-    const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput)
+    const rolledBack = await rollbackComfySource(comfyuiDir, preOpHead, sendOutput, {
+      force: true
+    })
     rollbackNote = `\n\n${rollbackStatusMessage(rolledBack, preOpHead, result.markers.BACKUP_BRANCH)}`
   }
 
@@ -508,7 +510,7 @@ export async function runComfyUIUpdate(
     const sourceMoved = !!preHead && readGitHead(comfyuiDir) !== preHead
     let rolledBack = true
     if (sourceMoved) {
-      rolledBack = await rollbackComfySource(comfyuiDir, preHead!, sendOutput)
+      rolledBack = await rollbackComfySource(comfyuiDir, preHead!, sendOutput, { force: true })
     }
     const reason = signal?.aborted ? 'Cancelled' : depFailure!
     const message = sourceMoved

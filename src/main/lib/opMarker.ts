@@ -153,7 +153,9 @@ export async function recoverInterruptedComfyOp(
     sendOutput?.(
       `\nDetected an interrupted ${marker.op}; rolling ComfyUI source back to keep it consistent…\n`
     )
-    const ok = await rollbackComfySource(comfyuiDir, marker.preHead, sendOutput)
+    const ok = await rollbackComfySource(comfyuiDir, marker.preHead, sendOutput, {
+      force: marker.op === 'update'
+    })
     if (!ok || readGitHead(comfyuiDir) !== marker.preHead) {
       const attempts = (marker.recoveryAttempts ?? 0) + 1
       const gaveUp = attempts >= MAX_RECOVERY_ATTEMPTS

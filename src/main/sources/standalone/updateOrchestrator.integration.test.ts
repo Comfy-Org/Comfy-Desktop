@@ -478,6 +478,34 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       )
       expect(marker.backupBranch).toBe('backup_branch_test')
     })
+
+    it('repairs a half-written tree the safe checkout would refuse to overwrite', async () => {
+      // A checkout that failed partway (a file held open on Windows): HEAD on the
+      // new commit and a file that matches neither commit.
+      spawnState.pythonHandler = (_args: string[]) => {
+        execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
+          cwd: comfyuiDir,
+          windowsHide: true,
+          stdio: 'pipe'
+        })
+        fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==')
+        return fakeProc({
+          stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`, '[BACKUP_BRANCH] backup_branch_test\n'],
+          exitCode: 1
+        })
+      }
+
+      const result = await runComfyUIUpdate(makeBaseOpts(installPath))
+
+      expect(result.ok).toBe(false)
+      expect(headSha()).toBe(repoShas.v1Sha)
+      const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+        cwd: comfyuiDir,
+        windowsHide: true,
+        stdio: 'pipe'
+      }).toString()
+      expect(status).toBe('')
+    })
   })
 
   describe('cancellation', () => {
