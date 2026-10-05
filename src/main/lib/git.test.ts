@@ -481,17 +481,11 @@ describe('gitCheckoutCommit (system git)', () => {
     }
   })
 
-  it('keeps the forced reset on the retry after fetching a missing commit', async () => {
-    mockSpawnSequence([
-      { exitCode: 0 }, // checkout --detach
-      { exitCode: 128 }, // reset --hard: commit not local
-      { exitCode: 0 }, // fetch --unshallow
-      { exitCode: 0 }, // checkout --detach
-      { exitCode: 0 } // reset --hard
-    ])
+  it('does not fetch after a failed forced checkout (a locked file, not a missing commit)', async () => {
+    mockSpawnSequence([{ exitCode: 0 }, { exitCode: 128 }])
     const result = await gitCheckoutCommit('/repo', 'abc123', () => {}, undefined, { force: true })
-    expect(result.exitCode).toBe(0)
-    expect(mockedSpawn.mock.calls[4]![1]).toEqual(['reset', '--hard', 'abc123'])
+    expect(result.exitCode).toBe(128)
+    expect(mockedSpawn).toHaveBeenCalledTimes(2)
   })
 })
 

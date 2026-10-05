@@ -52,8 +52,8 @@ MASTER = {"app/db.py": "m\n", "app/new.py": "m\n", "main/main.py": "m\n",
 GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1",
                HOME=tempfile.gettempdir(), XDG_CONFIG_HOME=os.devnull)
 NEEDS_PERMISSIONS = unittest.skipIf(
-    hasattr(os, "geteuid") and os.geteuid() == 0,
-    "root ignores the read-only directory used to force a failure")
+    os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    "read-only directories force the failure; root and Windows ignore them")
 
 
 def git(cwd, *args):
@@ -230,6 +230,11 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual((tree["app/db.py"], tree["main/main.py"]), ("v2\n", "v1\n"))
         # HEAD must not read as the pre-update commit over a mixed tree, or
         # Desktop would treat the install as healthy and skip the rollback.
+        self.assertNotEqual(self.head(), self.sha["v1"])
+        # Desktop's forced rollback while the lock is still held fails the same
+        # way, and must not move HEAD either.
+        held = self.git_ops_checkout(self.sha["v1"], "--force")
+        self.assertNotEqual(held.returncode, 0)
         self.assertNotEqual(self.head(), self.sha["v1"])
 
         os.chmod(main_dir, stat.S_IRWXU)

@@ -1280,7 +1280,7 @@ function makeRunGit(
  * Check out a specific commit. Tries a direct checkout first (works for
  * full clones where the commit is already local). If the commit isn't
  * available, fetches all refs from origin (unshallowing if needed) and
- * retries. `force` overwrites modified tracked files instead of refusing.
+ * retries. `force` overwrites modified tracked files and skips the fetch.
  */
 export function gitCheckoutCommit(
   repoPath: string,
@@ -1301,7 +1301,7 @@ export function gitCheckoutCommit(
           )
         : runGit(['checkout', commit])
     return checkout().then((directResult) => {
-      if (directResult.exitCode === 0) return directResult
+      if (directResult.exitCode === 0 || force) return directResult
       return runGit(['fetch', '--unshallow', 'origin'])
         .then((result) => {
           if (result.exitCode !== 0) return runGit(['fetch', 'origin'])
@@ -1330,8 +1330,8 @@ export function gitCheckoutCommit(
  * the git move when a dependency sync or snapshot restore fails partway, so we
  * never leave new source + stale packages (the half-applied state that crashes
  * on import, e.g. `comfy_aimdo.vram_buffer`). Deliberately ignores any abort
- * signal - rollback must run even when the user cancelled. Updates pass `force`:
- * a checkout that failed partway leaves files a safe checkout refuses to
+ * signal - rollback must run even when the user cancelled. A failed update script
+ * passes `force`: its partial checkout leaves files a safe checkout refuses to
  * overwrite, and the update script saves local changes to a backup branch first.
  * Snapshot restores make no backup, so theirs stays safe. Returns true if HEAD
  * ends up at the target (or was already there).
