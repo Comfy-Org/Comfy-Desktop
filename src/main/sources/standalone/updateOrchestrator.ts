@@ -33,6 +33,7 @@ import {
   writeOpMarker,
   completeOpMarker,
   readOpMarker,
+  clearOpMarker,
   rollbackStatusMessage
 } from '../../lib/opMarker'
 import type { InstallationRecord } from '../../installations'
@@ -281,6 +282,11 @@ export async function runComfyUIUpdate(
       })
     }
   }
+
+  // The script stopped before writing anything (a fetch failure, a missing tag, a
+  // cancel): the update never started, so launch must not look for its damage.
+  const wroteNothing = !result.markers.WRITING_TARGET && readGitHead(comfyuiDir) === preOpHead
+  if (result.exitCode !== 0 && wroteNothing) await clearOpMarker(installPath)
 
   // A failed or cancelled git step can leave the source moved: the update script
   // advances the branch ref before the working-tree checkout, so a checkout failure

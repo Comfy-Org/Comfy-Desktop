@@ -490,7 +490,10 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           path.join(comfyuiDir, 'requirements.txt'),
           'torch==2.0\nfoo==2.0\nbar==1.0\n'
         )
-        return fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
+        return fakeProc({
+          stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`, `[WRITING_TARGET] ${repoShas.v2Sha}\n`],
+          exitCode: 1
+        })
       }
       expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
       expect(headSha()).toBe(repoShas.v1Sha)
@@ -509,6 +512,19 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       }
       spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
       expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
+      expect(markerExists()).toBe(false)
+      expect(await recoverInterruptedComfyOp(installPath)).toBe(false)
+    })
+  })
+
+  describe('update that fails before writing', () => {
+    it('clears its marker, so a user edit does not block the next launch', async () => {
+      // A failed fetch: nothing written, but the user had edited a tracked file.
+      fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==1.0\n# mine\n')
+      spawnState.pythonHandler = () =>
+        fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
+
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
       expect(markerExists()).toBe(false)
       expect(await recoverInterruptedComfyOp(installPath)).toBe(false)
     })

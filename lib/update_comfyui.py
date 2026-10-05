@@ -182,6 +182,9 @@ def main():
                 tree, [repo.head.target],
             )
             print("Uncommitted changes saved to backup branch.")
+        # Unstage again: a failed fetch must leave untracked files untracked.
+        repo.index.read_tree(repo.head.peel().tree)
+        repo.index.write()
     except Exception:
         print("Warning: could not create backup branch.")
 
@@ -274,6 +277,8 @@ def main():
     # original branch (not assumed to be master) on rollback.
     pre_head_ref = None if was_detached else repo.head.name
     pre_master_target = branch.target if branch is not None else None
+    # Desktop treats a failure before this line as "nothing changed".
+    print("[WRITING_TARGET] %s" % target_id)
     try:
         if branch is None:
             repo.create_branch("master", repo.get(remote_id))

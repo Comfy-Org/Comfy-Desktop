@@ -219,6 +219,19 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assert_clean_at(self.sha["v1"], V1)
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
 
+    def test_failed_fetch_reports_no_write_and_leaves_untracked_files_untracked(self):
+        # Desktop clears its update marker when the run never printed
+        # [WRITING_TARGET]; launch then only sees the user's own edit.
+        with open(os.path.join(self.repo, "notes.txt"), "w") as f:
+            f.write("mine\n")
+        with open(os.path.join(self.repo, "app", "db.py"), "w") as f:
+            f.write("edited\n")
+        git(self.repo, "remote", "set-url", "origin", "http://127.0.0.1:1/x.git")
+        r = self.update("--stable")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertNotIn("[WRITING_TARGET]", r.stdout)
+        self.assertEqual(self.tracked_changes(), ["app/db.py"])
+
     def test_stable_without_tags_lands_on_master_attached(self):
         for repo in (self.repo, self.origin):
             git(repo, "tag", "-d", "v0.1.0", "v0.2.0")
@@ -300,6 +313,7 @@ class UpdateComfyUITest(unittest.TestCase):
         r = self.update("--stable", driver=LOCK_ON_FAILURE,
                         driver_arg=os.path.join(app_dir, "db.py"))
         self.assertIn("Failed to restore pre-update state", r.stdout)
+        self.assertIn("[WRITING_TARGET] %s" % self.sha["v2"], r.stdout)
         os.chmod(main_dir, stat.S_IRWXU)
         os.chmod(app_dir, stat.S_IRWXU)
         os.chmod(os.path.join(app_dir, "db.py"), stat.S_IRUSR | stat.S_IWUSR)

@@ -143,14 +143,20 @@ describe('recoverInterruptedComfyOp', () => {
     expect(readOpMarker(installPath)?.preHead).toBe('SAME')
   })
 
-  it('clears the marker when the update left the tree clean, or git cannot tell', async () => {
-    for (const changes of [false, null]) {
-      await writeOpMarker(installPath, { op: 'update', preHead: 'SAME', startedAt: 1 })
-      mockedReadGitHead.mockReturnValue('SAME')
-      mockedTrackedChanges.mockResolvedValue(changes)
-      expect(await recoverInterruptedComfyOp(installPath)).toBe(true)
-      expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
-    }
+  it('clears the marker when the update left the tree clean', async () => {
+    await writeOpMarker(installPath, { op: 'update', preHead: 'SAME', startedAt: 1 })
+    mockedReadGitHead.mockReturnValue('SAME')
+    mockedTrackedChanges.mockResolvedValue(false)
+    expect(await recoverInterruptedComfyOp(installPath)).toBe(true)
+    expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(false)
+  })
+
+  it('blocks the launch when git cannot tell whether the update left changes', async () => {
+    await writeOpMarker(installPath, { op: 'update', preHead: 'SAME', startedAt: 1 })
+    mockedReadGitHead.mockReturnValue('SAME')
+    mockedTrackedChanges.mockResolvedValue(null)
+    await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow('Run Update to repair')
+    expect(fs.existsSync(path.join(installPath, MARKER_NAME))).toBe(true)
   })
 
   it('does not check tracked files for a snapshot-restore marker', async () => {

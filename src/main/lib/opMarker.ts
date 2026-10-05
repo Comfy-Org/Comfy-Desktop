@@ -187,9 +187,10 @@ export async function recoverInterruptedComfyOp(
     // Successfully recovered a hard-killed op — informational signal (PostHog).
     telemetry.emit('comfy.desktop.recovery.rolled_back', { op: marker.op })
     onRollback?.()
-  } else if (marker.op === 'update' && (await hasTrackedChanges(comfyuiDir))) {
-    // An update whose restore couldn't finish (a file held open) leaves HEAD at
-    // the old commit over a mix of old and new files. Keep the marker until an
+  } else if (marker.op === 'update' && (await hasTrackedChanges(comfyuiDir)) !== false) {
+    // An update that began writing and whose restore couldn't finish (a file
+    // held open, or Desktop killed) leaves HEAD at the old commit over a mix of
+    // old and new files; if git can't tell, assume so. Keep the marker until an
     // update succeeds: it rewrites every file.
     throw new Error('The last update did not finish. Run Update to repair.')
   }
