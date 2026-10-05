@@ -252,7 +252,7 @@ def main():
     # Point master at origin/master and check out the target (the tag, or
     # master) in one forced checkout, never master first and then the tag.
     # Launcher-managed installations should not have local modifications to
-    # tracked files. Using a hard reset instead of merge/stash avoids merge
+    # tracked files. A forced checkout instead of merge/stash avoids merge
     # conflicts and stash-pop conflict markers that can corrupt working-tree
     # files (see issue #245).
     print("Resetting to origin/master…")

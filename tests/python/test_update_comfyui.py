@@ -47,8 +47,10 @@ V2 = {"app/db.py": "v2\n", "app/new.py": "v2\n", "main/main.py": "v2\n",
 MASTER = {"app/db.py": "m\n", "app/new.py": "m\n", "main/main.py": "m\n",
           "main/extra.py": "m\n", "only_master.txt": "m\n"}
 
-# Fixture git ignores the developer's config (signing, hooks, templates).
-GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+# Fixture git and the helpers under test ignore the developer's config (signing,
+# hooks, an http.proxy that would reroute the refused-connection fetch).
+GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1",
+               HOME=tempfile.gettempdir(), XDG_CONFIG_HOME=os.devnull)
 NEEDS_PERMISSIONS = unittest.skipIf(
     hasattr(os, "geteuid") and os.geteuid() == 0,
     "root ignores the read-only directory used to force a failure")
@@ -122,11 +124,12 @@ class UpdateComfyUITest(unittest.TestCase):
     def update(self, *args, lock_on_failure=None):
         driver = ["-c", LOCK_ON_FAILURE, lock_on_failure] if lock_on_failure else []
         return subprocess.run([sys.executable, *driver, UPDATE, self.repo, *args],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, env=GIT_ENV)
 
     def git_ops_checkout(self, commit, *flags):
         return subprocess.run([sys.executable, GIT_OPS, "checkout", self.repo,
-                               commit, *flags], capture_output=True, text=True)
+                               commit, *flags], capture_output=True, text=True,
+                              env=GIT_ENV)
 
     def head(self):
         return git(self.repo, "rev-parse", "HEAD")
@@ -202,6 +205,15 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertIn("Restored ComfyUI source to pre-update commit", r.stdout)
         self.assertEqual(git(self.repo, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD")
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
+        self.assert_clean_at(self.sha["v1"], V1)
+
+    @NEEDS_PERMISSIONS
+    def test_failed_latest_update_reattaches_master(self):
+        git(self.repo, "checkout", "-q", "master")
+        self.lock("main")
+        r = self.update()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(git(self.repo, "symbolic-ref", "HEAD"), "refs/heads/master")
         self.assert_clean_at(self.sha["v1"], V1)
 
     @NEEDS_PERMISSIONS
