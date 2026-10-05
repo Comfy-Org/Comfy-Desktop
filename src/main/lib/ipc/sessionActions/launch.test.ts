@@ -59,6 +59,9 @@ const launchHarness = vi.hoisted(() => ({
    *  fetch was called. */
   idWaitStart: null as number | null,
   grantsCalledAt: null as number | null,
+  /** Whether the grants fetch had settled when `idWaitSince` was read. */
+  grantsSettled: false,
+  idWaitReadAfterGrants: null as boolean | null,
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -192,6 +195,7 @@ vi.mock('../../deviceId', async (importOriginal) => ({
   ...(await importOriginal<typeof DeviceIdModule>()),
   idWaitSince: (start: number) => {
     launchHarness.idWaitStart = start
+    launchHarness.idWaitReadAfterGrants = launchHarness.grantsSettled
     return launchHarness.idWait
   }
 }))
@@ -202,8 +206,10 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
     ...actual,
     getCoreBetaGrantsAsync: async () => {
       launchHarness.grantsCalledAt = performance.now()
+      launchHarness.grantsSettled = false
       // A real gap, so a start sampled after the await is strictly later than this call.
       await new Promise((resolve) => setTimeout(resolve, 5))
+      launchHarness.grantsSettled = true
       return launchHarness.grants
     },
     planCoreBetaArgs: (facts: Parameters<typeof actual.planCoreBetaArgs>[0]) => {
@@ -1143,6 +1149,8 @@ describe('core beta report placement', () => {
     launchHarness.idWait = null
     launchHarness.idWaitStart = null
     launchHarness.grantsCalledAt = null
+    launchHarness.grantsSettled = false
+    launchHarness.idWaitReadAfterGrants = null
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
@@ -1264,6 +1272,8 @@ describe('core beta report placement', () => {
     expect(launchHarness.idWaitStart).not.toBeNull()
     expect(launchHarness.idWaitStart!).toBeLessThanOrEqual(launchHarness.grantsCalledAt!)
     expect(launchHarness.idWaitStart!).toBeLessThan(1e10)
+    // Read once the grants fetch, and so the id, has settled.
+    expect(launchHarness.idWaitReadAfterGrants).toBe(true)
   })
 
   it('attributes the beta and boot events to the live HEAD, not the recorded commit', async () => {

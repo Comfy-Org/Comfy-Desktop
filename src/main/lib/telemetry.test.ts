@@ -1755,6 +1755,25 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
     vi.useRealTimers()
   })
 
+  it('stamps first_launch with the launch time when consent is already granted', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-04T12:00:30Z') })
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('install-id')
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' }, new Date('2026-10-04T12:00:00Z'))
+    const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(ev?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
+    vi.useRealTimers()
+  })
+
+  it('counts consent denials', () => {
+    const before = telemetry.getConsentDenials()
+    telemetry.setConsentState('undecided')
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+    telemetry.setConsentState('denied')
+    expect(telemetry.getConsentDenials()).toBe(before + 2)
+  })
+
   it('captures immediately when consent is already granted', () => {
     telemetry.setConsentState('granted')
     bindTestAnonymous('install-id')

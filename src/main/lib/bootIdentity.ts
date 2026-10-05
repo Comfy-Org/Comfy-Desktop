@@ -54,6 +54,9 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
   const launchedAt = new Date()
   // Read before anything can write device-id.txt or the first-launch guard.
   const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
+  // A denial while the id is pending would have discarded a first_launch
+  // staged at boot, so one staged later must not survive it either.
+  const consentDenialsAtLaunch = mainTelemetry.getConsentDenials()
   const anonymousDistinctId = recoverPendingIdentityRotation(
     getInitialAnonymousDistinctId(existingInstallation)
   )
@@ -134,7 +137,7 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
     // would be dropped on the consent gate while the once-ever guard stays
     // burned, losing the event forever. The deferred path ships it on the
     // first `undecided → granted` transition and never on a decline.
-    if (isFirstLaunch) {
+    if (isFirstLaunch && mainTelemetry.getConsentDenials() === consentDenialsAtLaunch) {
       const timing = getIdLookupTiming()
       mainTelemetry.captureFirstLaunch(
         {

@@ -34,13 +34,15 @@ vi.mock('systeminformation', () => ({
 const h = vi.hoisted(() => ({
   consent: 'granted' as 'granted' | 'undecided' | 'denied',
   shutDown: false,
+  denials: 0,
   telemetry: {
     bindAnonymousId: vi.fn(),
     setInstallationId: vi.fn(),
     registerPersonProperties: vi.fn(),
     captureFirstLaunch: vi.fn(),
     getConsentState: vi.fn(() => h.consent),
-    hasShutDown: vi.fn(() => h.shutDown)
+    hasShutDown: vi.fn(() => h.shutDown),
+    getConsentDenials: vi.fn(() => h.denials)
   },
   initExperiments: vi.fn((_opts: unknown) => Promise.resolve()),
   initCloudFreeRuns: vi.fn((_opts: { distinctId: Promise<string> }) => Promise.resolve()),
@@ -86,6 +88,7 @@ describe('startBootIdentity', () => {
     lookupDelayMs = 0
     h.consent = 'granted'
     h.shutDown = false
+    h.denials = 0
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
     vi.clearAllMocks()
     vi.useFakeTimers()
@@ -235,6 +238,17 @@ describe('startBootIdentity', () => {
     expect(fs.existsSync(file('first-launch-completed'))).toBe(false)
     // Local identity work still runs: the id is persisted.
     expect(fs.readFileSync(file('device-id.txt'), 'utf-8')).toBe(machineId())
+  })
+
+  it('drops first_launch, as a launch-time one would be, when consent is denied during the wait', async () => {
+    lookupDelayMs = 3000
+    const bound = mod.startBootIdentity(OPTIONS)
+    h.denials = 1
+    await vi.advanceTimersByTimeAsync(3000)
+    await bound
+    expect(h.telemetry.captureFirstLaunch).not.toHaveBeenCalled()
+    // The guard is still consumed, as the denial discarded this launch's event.
+    expect(fs.existsSync(file('first-launch-completed'))).toBe(true)
   })
 
   it('removes the legacy alias retry marker once the id resolves', async () => {

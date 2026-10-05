@@ -188,6 +188,7 @@ export function _resetTelemetryRelayTargets(): void {
  * close an in-flight PostHog client - tests bring their own mocked one.
  */
 export function _resetForTest(): void {
+  consentDenials = 0
   client = null
   distinctId = null
   anonymousDistinctId = null
@@ -599,6 +600,17 @@ export function _test_resetVolumeGuards(): void {
  * Set the current consent state. Undecided data may fire on grant; denied data
  * is discarded.
  */
+let consentDenials = 0
+
+/**
+ * How many times consent has been set to `'denied'` in this process. A caller
+ * that stages deferred telemetry late compares it against a reading taken
+ * earlier: a denial in between would have discarded that telemetry.
+ */
+export function getConsentDenials(): number {
+  return consentDenials
+}
+
 export function setConsentState(state: ConsentState): void {
   const previous = consentState
   consentState = state
@@ -606,7 +618,10 @@ export function setConsentState(state: ConsentState): void {
     // Best-effort flush so already-queued events still go out before we
     // start suppressing.
     void client?.flush().catch(() => {})
-    if (state === 'denied') discardDeferredTelemetry()
+    if (state === 'denied') {
+      consentDenials++
+      discardDeferredTelemetry()
+    }
     return
   }
   // Transitioned to granted. Ship anything we held back.

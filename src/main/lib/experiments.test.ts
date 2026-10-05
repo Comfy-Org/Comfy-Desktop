@@ -146,6 +146,26 @@ describe('experiments', () => {
       expect(await experiments.getFlagAsync('flag.a')).toBe('treatment')
     })
 
+    it('makes an uncached key wait for the identity and the fetch', async () => {
+      mockFlags = { 'flag.c': 'variant' }
+      let resolveIdentity: (identity: ExperimentsModule.ExperimentsIdentity) => void = () => {}
+      void experiments.initExperiments(
+        new Promise((r) => {
+          resolveIdentity = r
+        })
+      )
+      let value: unknown = 'pending'
+      const read = experiments.getFlagAsync('flag.c').then((v) => {
+        value = v
+      })
+      await new Promise((r) => setImmediate(r))
+      expect(value).toBe('pending')
+
+      resolveIdentity({ distinctId: 'final-id', personProperties: {} })
+      await read
+      expect(value).toBe('variant')
+    })
+
     it('returns undefined for unknown flags', async () => {
       await experiments.initExperiments({
         distinctId: 'test-distinct-id',
