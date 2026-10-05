@@ -45,8 +45,7 @@ const GOVERNANCE_POLICY_RELATIVE = path.join('ComfyUI', 'governance', 'policy.si
  * A governed build's policy, read from the signed policy file its archive
  * carries. ComfyUI enforces that policy itself and exits at startup on a flag
  * it forbids, so launch leaves out the manager-enabling flags under a
- * custom-node allowlist and the launcher's `--extra-model-paths-config` on any
- * governed build.
+ * custom-node allowlist.
  */
 export interface Governance {
   kind: 'governed'

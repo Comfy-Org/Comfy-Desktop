@@ -404,18 +404,16 @@ describe('resolveLauncherModelDirs', () => {
     expect(res.dirs).toEqual([path.resolve(ext)])
   })
 
-  it('gives a governed build no dirs and no primary', () => {
+  it('gives a governed build the same shared and per-install dirs', () => {
     const shared = [path.join(tmp, 'shared')]
     const ext = path.join(tmp, 'ext')
     const inst = makeInstall({ modelDirs: [ext], modelDirsPrimary: ext })
+    writePolicy(inst.installPath)
+
     expect(resolveLauncherModelDirs(inst, shared)).toEqual({
       dirs: [path.resolve(shared[0]!), path.resolve(ext)],
       primaryDir: path.resolve(ext)
     })
-
-    writePolicy(inst.installPath)
-
-    expect(resolveLauncherModelDirs(inst, shared)).toEqual({ dirs: [], primaryDir: null })
   })
 })
 
@@ -517,14 +515,16 @@ describe('resolveInstallModelSearchPaths', () => {
     expect(res.downloadBaseDir).toBe(path.resolve(ext))
   })
 
-  it('downloads into the own models dir of a governed build, its only root', () => {
+  it('searches and downloads into the shared dirs of a governed build', () => {
     const shared = [path.join(tmp, 'shared')]
-    const inst = makeInstall({ modelDirs: [path.join(tmp, 'ext')] })
+    const ext = path.join(tmp, 'ext')
+    const inst = makeInstall({ modelDirs: [ext] })
     writePolicy(inst.installPath)
     const res = resolveInstallModelSearchPaths(inst, shared)
-    const own = path.resolve(path.join(inst.installPath, 'ComfyUI', 'models'))
-    expect(res.downloadBaseDir).toBe(own)
-    expect(res.modelRoots).toEqual([own])
+    expect(res.downloadBaseDir).toBe(path.resolve(shared[0]!))
+    expect(res.modelRoots).toContain(path.resolve(shared[0]!))
+    expect(res.modelRoots).toContain(path.resolve(ext))
+    expect(res.modelRoots).toContain(path.resolve(path.join(inst.installPath, 'ComfyUI', 'models')))
   })
 
   it('includes the install own extra_model_paths.yaml dirs', () => {
