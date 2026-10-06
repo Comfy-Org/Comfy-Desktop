@@ -127,16 +127,11 @@ describe('makeOpsFlag', () => {
     expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 50, undefined)
   })
 
-  it('defaults the timeout when the caller omits one', async () => {
+  it('defaults the timeout to 2 s when neither the caller nor the flag sets one', async () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('normal'))
     await flag.init({ distinctId: 'anon' })
-    expect(getOpsFlagResult).toHaveBeenCalledWith(
-      'test-flag',
-      'anon',
-      expect.any(Number),
-      undefined
-    )
+    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 2000, undefined)
   })
 
   it('hands the matched JSON payload to parse alongside the value', async () => {
@@ -746,13 +741,21 @@ describe('makeOpsFlag deadline and expiry', () => {
     expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 3000, expect.any(Function))
   })
 
-  it('lets an explicit init timeout win over the computed deadline', async () => {
-    seedGrant({ value: true, payload: null, fetchedAt: NOW })
-    const flag = makeGrantFlag()
-    getOpsFlagResult.mockResolvedValue(unreachable())
-    await flag.init({ distinctId: 'anon', timeoutMs: 50 })
-    expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 50, expect.any(Function))
-  })
+  it.each([[50], [10_000]])(
+    'passes an explicit init timeout of %i through unchanged, over the computed deadline',
+    async (timeoutMs) => {
+      seedGrant({ value: true, payload: null, fetchedAt: NOW })
+      const flag = makeGrantFlag()
+      getOpsFlagResult.mockResolvedValue(unreachable())
+      await flag.init({ distinctId: 'anon', timeoutMs })
+      expect(getOpsFlagResult).toHaveBeenCalledWith(
+        'grant-flag',
+        'anon',
+        timeoutMs,
+        expect.any(Function)
+      )
+    }
+  )
 
   it('holds a saved treatment for exactly seven days', async () => {
     seedGrant({ value: true, payload: null, fetchedAt: NOW - 7 * DAY_MS })
@@ -762,13 +765,34 @@ describe('makeOpsFlag deadline and expiry', () => {
   it.each([
     ['older than seven days', { value: true, payload: null, fetchedAt: NOW - 7 * DAY_MS - 1 }],
     ['written before entries were stamped', { value: true, payload: null }],
-    ['stamped with a non-number', { value: true, payload: null, fetchedAt: String(NOW) }]
+    ['stamped with a non-number', { value: true, payload: null, fetchedAt: String(NOW) }],
+    // A clock that ran ahead, since corrected: the cap still applies, measured from either side.
+    [
+      'stamped over seven days ahead',
+      { value: true, payload: null, fetchedAt: NOW + 7 * DAY_MS + 1 }
+    ]
   ])('treats a treatment %s as nothing saved', async (_, entry) => {
     seedGrant(entry)
     // An unreachable client drops the grant instead of holding it forever
     expect(await launchOffline()).toBeUndefined()
     // And the shorter no-treatment deadline applies
     expect(deadlineMs).toHaveBeenCalledWith(undefined)
+  })
+
+  it('holds a treatment stamped slightly ahead of the clock', async () => {
+    // A small backwards clock step (NTP) after the write must not cost an offline launch its grant.
+    seedGrant({ value: true, payload: null, fetchedAt: NOW + 60_000 })
+    expect(await launchOffline()).toBe('granted')
+  })
+
+  it('treats an overflowing stamp as nothing saved', async () => {
+    // `JSON.parse` reads `1e400` as Infinity, which would otherwise never expire.
+    fs.writeFileSync(
+      flagsFilePath(),
+      '{"grant-flag":{"value":true,"payload":null,"fetchedAt":1e400}}',
+      'utf-8'
+    )
+    expect(await launchOffline()).toBeUndefined()
   })
 
   it('replaces an expired treatment with a fresh fetch, stamped now', async () => {

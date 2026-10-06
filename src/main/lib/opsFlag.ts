@@ -128,13 +128,15 @@ interface PersistedOpsFlagEntry {
   payload: unknown
 }
 
-/** An entry without `fetchedAt` (written before it existed) reads as expired. */
+/** An entry without `fetchedAt` (written before it existed) reads as expired. Two-sided, so a
+ *  stamp from a clock that ran ahead cannot outlive the cap by more than its own skew. */
 function readPersistedResult(key: string): PersistedOpsFlagEntry | undefined {
   const entry = readPersistedFile().entries[key]
   if (!entry || typeof entry !== 'object') return undefined
   const { value, payload, fetchedAt } = entry as PersistedOpsFlagEntry & { fetchedAt?: unknown }
   if (typeof value !== 'string' && typeof value !== 'boolean') return undefined
-  if (typeof fetchedAt !== 'number' || Date.now() - fetchedAt > PERSIST_MAX_AGE_MS) return undefined
+  if (typeof fetchedAt !== 'number' || Math.abs(Date.now() - fetchedAt) > PERSIST_MAX_AGE_MS)
+    return undefined
   return { value, payload }
 }
 

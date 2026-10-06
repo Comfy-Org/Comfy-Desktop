@@ -1266,13 +1266,18 @@ describe('late ops-flag results reaching real persistence', () => {
     seedGrant()
     const flag = await launchLosingTheRace()
 
+    const answeredAt = Date.now()
     posthogClientMock.deferred?.resolve({ enabled: false, payload: null })
     await flush()
 
     expect(lateEventOutcome()).toBe('value')
-    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual({
+    const stored = JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))
+    expect(stored).toEqual({
       [KEY]: { value: false, payload: null, fetchedAt: expect.any(Number) }
     })
+    // Stamped when the late answer was written, not carried over or zeroed
+    expect(stored[KEY].fetchedAt).toBeGreaterThanOrEqual(answeredAt)
+    expect(stored[KEY].fetchedAt).toBeLessThanOrEqual(Date.now())
     // And this launch keeps what the deadline decided — convergence happens on the NEXT one
     expect(await flag.get()).toBe('granted')
   })

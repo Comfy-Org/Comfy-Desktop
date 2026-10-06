@@ -697,7 +697,7 @@ export function initTelemetry(opts: InitOptions): void {
       // revocation is silently held forever, the exact failure late persistence exists to end.
       //
       // This does NOT slow boot. The launch decision is governed by each flag's deadline race
-      // inside `getOpsFlagResult` (at most 5 s), so the app never waits this long. All a
+      // inside `getOpsFlagResult`, which is shorter; the app never waits this long. All a
       // longer flag timeout buys is keeping the ALREADY-ABANDONED background fetch alive long
       // enough for a slow cold answer to be captured and persisted for the NEXT launch.
       //

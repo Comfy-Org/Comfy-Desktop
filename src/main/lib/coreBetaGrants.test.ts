@@ -1027,7 +1027,7 @@ describe('core beta grants fetch', () => {
     ],
     ['a saved revocation', { value: false, payload: null }, 3000],
     ['nothing saved', undefined, 3000]
-  ])('waits longer with %s on disk, so a cut lands on this launch', async (_, entry, deadline) => {
+  ])('picks the boot deadline from %s on disk', async (_, entry, deadline) => {
     if (entry) {
       fs.writeFileSync(
         path.join(testConfigDir, 'ops-flags.json'),
