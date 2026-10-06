@@ -69,11 +69,12 @@ jobs:
         shell: bash
         run: |
           release_version="$(node ./scripts/datadog-release-version.cjs)"
-          if [[ -z "${release_version}" ]]; then
-            echo "Unable to resolve Datadog release version" >&2
-            exit 1
-          fi
-          echo "release_version=${release_version}" >> "$GITHUB_OUTPUT"
+          delimiter="datadog_release_$(openssl rand -hex 8)"
+          {
+            echo "release_version<<${delimiter}"
+            echo "${release_version}"
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
 
       # Fetch the proprietary PP Formula font into the renderer public dir
       # before the build. It is gitignored (never committed to this public

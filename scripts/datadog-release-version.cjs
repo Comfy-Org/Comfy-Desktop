@@ -5,6 +5,7 @@ const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
 const repoRoot = path.resolve(__dirname, '..')
+const DATADOG_VERSION_MAX_LENGTH = 192
 
 function readPackageVersion() {
   try {
@@ -23,7 +24,8 @@ function readGitSha() {
     return execSync('git rev-parse --short=12 HEAD', {
       cwd: repoRoot,
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2_000
     }).trim()
   } catch {
     return ''
@@ -34,24 +36,26 @@ function readGitSha() {
  * may only contain those letters, numbers, underscores, minuses, colons, periods, and
  * forward slashes. Keep release and sourcemap versions identical by normalizing once at
  * their shared source. Reserve eight characters for the `version:` tag prefix. */
-function normalizeDatadogVersion(value, maxLength = 192) {
+function normalizeDatadogVersion(value, maxLength = DATADOG_VERSION_MAX_LENGTH) {
   if (maxLength < 12) throw new Error('Datadog version length budget is too small')
-  const raw = String(value || '')
-    .trim()
-    .toLowerCase()
-  if (!raw) throw new Error('Datadog release version cannot be empty')
+  const source = String(value || '').trim()
+  if (!source) throw new Error('Datadog release version cannot be empty')
+  const raw = source.toLowerCase()
 
   // A SemVer build-metadata suffix containing a commit is the same release spelling used by
   // our self-resolved path. Other lossy changes receive a deterministic hash suffix below.
   const canonical = raw.replace(/\+([a-f0-9]{7,40})$/i, '-$1')
   let normalized = ''
-  let changed = false
+  let changed = raw !== source || canonical !== raw
   for (const character of canonical) {
     const replacement = /^[\p{Ll}\p{Lo}0-9_.:/-]$/u.test(character) ? character : '_'
     if (replacement !== character) changed = true
     if (normalized.length <= maxLength) normalized += replacement
   }
-  if (!/^[\p{Ll}\p{Lo}]/u.test(normalized)) normalized = `v${normalized}`
+  if (!/^[\p{Ll}\p{Lo}]/u.test(normalized)) {
+    normalized = `v${normalized}`
+    changed = true
+  }
 
   const truncate = (input, budget) => {
     let output = ''
@@ -64,7 +68,7 @@ function normalizeDatadogVersion(value, maxLength = 192) {
   const truncated = truncate(normalized, maxLength)
   if (!changed && truncated === normalized) return truncated
 
-  const suffix = `-h${createHash('sha256').update(canonical).digest('hex').slice(0, 8)}`
+  const suffix = `-h${createHash('sha256').update(source).digest('hex').slice(0, 8)}`
   return `${truncate(normalized, maxLength - suffix.length)}${suffix}`
 }
 
@@ -82,12 +86,9 @@ function resolveDatadogReleaseVersion(env = process.env) {
 
   if (!commitSha) return normalizeDatadogVersion(packageVersion)
 
-  if (!/^[a-f0-9]{7,40}$/i.test(commitSha)) {
-    throw new Error('Datadog release commit must be a 7-40 character hexadecimal SHA')
-  }
+  if (!/^[a-f0-9]{7,64}$/i.test(commitSha)) return normalizeDatadogVersion(packageVersion)
   const normalizedSha = commitSha.toLowerCase().slice(0, 12)
-  const suffix = `-${normalizedSha}`
-  return `${normalizeDatadogVersion(packageVersion, 192 - suffix.length)}${suffix}`
+  return normalizeDatadogVersion(`${packageVersion}+${normalizedSha}`)
 }
 
 module.exports = {

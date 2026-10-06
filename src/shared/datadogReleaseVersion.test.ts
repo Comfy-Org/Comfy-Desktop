@@ -14,18 +14,25 @@ describe('Datadog release version', () => {
     tag.length <= 200 && /^[\p{Ll}\p{Lo}][\p{Ll}\p{Lo}0-9_.:/-]*$/u.test(tag)
 
   it('creates a valid version tag from the package version and commit', () => {
-    expect(
-      resolveDatadogReleaseVersion({
-        npm_package_version: '1.1.4',
-        GITHUB_SHA: 'dce2b8a977d40ecd25c67f2fecf0a686d1d60961'
-      })
-    ).toBe('v1.1.4-dce2b8a977d4')
+    const version = resolveDatadogReleaseVersion({
+      npm_package_version: '1.1.4',
+      GITHUB_SHA: 'dce2b8a977d40ecd25c67f2fecf0a686d1d60961'
+    })
+
+    expect(version).toMatch(/^v1\.1\.4-dce2b8a977d4-h[a-f0-9]{8}$/)
+    expect(isValidPinnedSdkTag(`version:${version}`)).toBe(true)
   })
 
   it('normalizes explicit versions used by renderer builds and sourcemap uploads', () => {
-    expect(resolveDatadogReleaseVersion({ VITE_DATADOG_RUM_VERSION: '1.1.4+dce2b8a977d4' })).toBe(
-      'v1.1.4-dce2b8a977d4'
-    )
+    const explicit = resolveDatadogReleaseVersion({
+      VITE_DATADOG_RUM_VERSION: '1.1.4+dce2b8a977d4'
+    })
+    const selfResolved = resolveDatadogReleaseVersion({
+      npm_package_version: '1.1.4',
+      GITHUB_SHA: 'dce2b8a977d4'
+    })
+
+    expect(explicit).toBe(selfResolved)
   })
 
   it('does not collapse different rejected characters onto one release', () => {
@@ -39,8 +46,19 @@ describe('Datadog release version', () => {
   it('normalizes uppercase versions to the pinned SDK character set', () => {
     const version = normalizeDatadogVersion('release/1.1.4-RC.1')
 
-    expect(version).toBe('release/1.1.4-rc.1')
+    expect(version).toMatch(/^release\/1\.1\.4-rc\.1-h[a-f0-9]{8}$/)
     expect(isValidPinnedSdkTag(`version:${version}`)).toBe(true)
+    expect(version).not.toBe(normalizeDatadogVersion('release/1.1.4-rc.1'))
+  })
+
+  it('does not collide when adding the required leading letter', () => {
+    expect(normalizeDatadogVersion('1.1.4')).not.toBe(normalizeDatadogVersion('v1.1.4'))
+  })
+
+  it('distinguishes SemVer build metadata from a prerelease spelling', () => {
+    expect(normalizeDatadogVersion('1.0.0+deadbee')).not.toBe(
+      normalizeDatadogVersion('1.0.0-deadbee')
+    )
   })
 
   it('preserves distinct Unicode release versions', () => {
@@ -72,16 +90,24 @@ describe('Datadog release version', () => {
     )
   })
 
-  it('rejects malformed commit identifiers instead of fabricating a SHA', () => {
-    expect(() =>
-      resolveDatadogReleaseVersion({ npm_package_version: '1.1.4', GITHUB_SHA: 'refs/heads/main' })
-    ).toThrow('hexadecimal SHA')
+  it('falls back to the package version for a malformed commit identifier', () => {
+    expect(
+      resolveDatadogReleaseVersion({
+        npm_package_version: 'release',
+        GITHUB_SHA: 'refs/heads/main'
+      })
+    ).toBe('release')
   })
 
   it('falls back from a whitespace npm version to package metadata', () => {
     expect(
       resolveDatadogReleaseVersion({ npm_package_version: ' ', GITHUB_SHA: 'dce2b8a977d4' })
-    ).toBe(`v${packageVersion}-dce2b8a977d4`)
+    ).toBe(
+      resolveDatadogReleaseVersion({
+        npm_package_version: packageVersion,
+        GITHUB_SHA: 'dce2b8a977d4'
+      })
+    )
   })
 
   it('reserves room for the commit suffix when the package version is long', () => {
@@ -91,7 +117,7 @@ describe('Datadog release version', () => {
     })
 
     expect(version).toHaveLength(192)
-    expect(version).toMatch(/-dce2b8a977d4$/)
+    expect(version).toMatch(/-h[a-f0-9]{8}$/)
     expect(isValidPinnedSdkTag(`version:${version}`)).toBe(true)
   })
 })
