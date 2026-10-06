@@ -79,7 +79,7 @@ env \
   XDG_CONFIG_HOME="$smoke_dir/config" \
   XDG_CACHE_HOME="$smoke_dir/cache" \
   E2E=1 \
-  xvfb-run -a "$appimage" --no-sandbox --enable-logging=stderr >"$log" 2>&1 &
+  xvfb-run -a "$appdir/AppRun" --no-sandbox --enable-logging=stderr >"$log" 2>&1 &
 app_pid=$!
 
 ready=0
