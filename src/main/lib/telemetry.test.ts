@@ -267,7 +267,27 @@ interface SetupTelemetryOptions {
   appVersion?: string
   appEnv?: string
   isPackaged?: boolean
+  env?: Partial<Record<PostHogEnvName, string | undefined>>
 }
+
+type PostHogEnvName =
+  | 'POSTHOG_API_KEY'
+  | 'POSTHOG_HOST'
+  | 'POSTHOG_ENABLED'
+  | 'COMFY_DESKTOP_POSTHOG_API_KEY'
+  | 'COMFY_DESKTOP_POSTHOG_HOST'
+  | 'COMFY_DESKTOP_POSTHOG_ENABLED'
+  | 'COMFY_DESKTOP_POSTHOG_EXCEPTIONS'
+
+const postHogEnvNames: PostHogEnvName[] = [
+  'POSTHOG_API_KEY',
+  'POSTHOG_HOST',
+  'POSTHOG_ENABLED',
+  'COMFY_DESKTOP_POSTHOG_API_KEY',
+  'COMFY_DESKTOP_POSTHOG_HOST',
+  'COMFY_DESKTOP_POSTHOG_ENABLED',
+  'COMFY_DESKTOP_POSTHOG_EXCEPTIONS'
+]
 
 /**
  * Reset module state and the capture buffers, then run the standard boot
@@ -282,18 +302,24 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
     bind = 'test-distinct-id',
     appVersion = '0.0.0',
     appEnv = 'test',
-    isPackaged = true
+    isPackaged = true,
+    env = {}
   } = options
   captured.length = 0
   identifies.length = 0
   exceptions.length = 0
   featureFlagResultCalls.length = 0
   posthogConstructorCalls.length = 0
-  process.env['COMFY_DESKTOP_POSTHOG_API_KEY'] ??= 'test-key'
-  process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] ??= '1'
+  for (const name of postHogEnvNames) delete process.env[name]
+  process.env['COMFY_DESKTOP_POSTHOG_API_KEY'] = 'test-key'
+  process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
   // Opt in by default here so tests that use the exception stream as an
   // observable keep working; the opt-out default is pinned by its own test.
   process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS'] = '1'
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined) delete process.env[name]
+    else process.env[name] = value
+  }
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
   telemetry.initTelemetry({ appVersion, appEnv, isPackaged })
@@ -314,13 +340,7 @@ afterEach(() => {
   posthogClientMock.deferred = null
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
-  delete process.env['POSTHOG_API_KEY']
-  delete process.env['POSTHOG_HOST']
-  delete process.env['POSTHOG_ENABLED']
-  delete process.env['COMFY_DESKTOP_POSTHOG_API_KEY']
-  delete process.env['COMFY_DESKTOP_POSTHOG_HOST']
-  delete process.env['COMFY_DESKTOP_POSTHOG_ENABLED']
-  delete process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS']
+  for (const name of postHogEnvNames) delete process.env[name]
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
 })
@@ -532,12 +552,13 @@ describe('telemetry PostHog client options', () => {
     expect(constructorOptions()).not.toHaveProperty('requestTimeout')
   })
 
-  it('ignores generic PostHog environment variables in packaged builds', () => {
-    process.env['POSTHOG_API_KEY'] = 'phx-unrelated-personal-key'
-    process.env['POSTHOG_HOST'] = 'https://unrelated-posthog.example'
-    process.env['POSTHOG_ENABLED'] = '0'
-
-    setupTelemetry()
+  it('ignores generic PostHog key and host environment variables in packaged builds', () => {
+    setupTelemetry({
+      env: {
+        POSTHOG_API_KEY: 'phx-unrelated-personal-key',
+        POSTHOG_HOST: 'https://unrelated-posthog.example'
+      }
+    })
 
     expect(posthogConstructorCalls[0]).toMatchObject({
       apiKey: 'test-key',
@@ -546,10 +567,12 @@ describe('telemetry PostHog client options', () => {
   })
 
   it('accepts product-scoped PostHog overrides in packaged builds', () => {
-    process.env['COMFY_DESKTOP_POSTHOG_API_KEY'] = 'scoped-key'
-    process.env['COMFY_DESKTOP_POSTHOG_HOST'] = 'https://scoped-posthog.example'
-
-    setupTelemetry()
+    setupTelemetry({
+      env: {
+        COMFY_DESKTOP_POSTHOG_API_KEY: 'scoped-key',
+        COMFY_DESKTOP_POSTHOG_HOST: 'https://scoped-posthog.example'
+      }
+    })
 
     expect(posthogConstructorCalls[0]).toMatchObject({
       apiKey: 'scoped-key',
@@ -558,10 +581,13 @@ describe('telemetry PostHog client options', () => {
   })
 
   it('keeps generic PostHog overrides available for unpackaged development', () => {
-    process.env['POSTHOG_API_KEY'] = 'dev-key'
-    process.env['POSTHOG_HOST'] = 'https://dev-posthog.example'
-
-    setupTelemetry({ isPackaged: false })
+    setupTelemetry({
+      isPackaged: false,
+      env: {
+        POSTHOG_API_KEY: 'dev-key',
+        POSTHOG_HOST: 'https://dev-posthog.example'
+      }
+    })
 
     expect(posthogConstructorCalls[0]).toMatchObject({
       apiKey: 'dev-key',
