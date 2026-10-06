@@ -23,8 +23,13 @@ describe('Datadog release version', () => {
 
   it('normalizes explicit versions used by renderer builds and sourcemap uploads', () => {
     expect(resolveDatadogReleaseVersion({ VITE_DATADOG_RUM_VERSION: '1.1.4+dce2b8a977d4' })).toBe(
-      'v1.1.4_dce2b8a977d4'
+      'v1.1.4-dce2b8a977d4'
     )
+  })
+
+  it('does not collapse different rejected characters onto one release', () => {
+    expect(normalizeDatadogVersion('1.1.4 5')).toBe('v1.1.4_u20_5')
+    expect(normalizeDatadogVersion('1.1.4@5')).toBe('v1.1.4_u40_5')
   })
 
   it('normalizes uppercase versions to the pinned SDK character set', () => {
@@ -54,6 +59,17 @@ describe('Datadog release version', () => {
 
     expect(version).toBe('a'.repeat(191))
     expect(version).not.toMatch(/[\uD800-\uDFFF]/u)
+    expect(isValidPinnedSdkTag(`version:${version}`)).toBe(true)
+  })
+
+  it('reserves room for the commit suffix when the package version is long', () => {
+    const version = resolveDatadogReleaseVersion({
+      npm_package_version: `release-${'a'.repeat(250)}`,
+      GITHUB_SHA: 'dce2b8a977d40ecd25c67f2fecf0a686d1d60961'
+    })
+
+    expect(version).toHaveLength(192)
+    expect(version).toMatch(/-dce2b8a977d4$/)
     expect(isValidPinnedSdkTag(`version:${version}`)).toBe(true)
   })
 })
