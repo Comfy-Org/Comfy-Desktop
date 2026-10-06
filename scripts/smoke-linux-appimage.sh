@@ -14,22 +14,36 @@ if [[ ! -x "$appimage" ]]; then
 fi
 appimage="$(readlink -f "$appimage")"
 
-if ! file "$appimage" | grep -q 'ELF 64-bit.*x86-64'; then
+file_description="$(file -- "$appimage")"
+if [[ ! "$file_description" =~ ELF\ 64-bit.*x86-64 ]]; then
   echo "AppImage is not a 64-bit x86-64 ELF executable" >&2
-  file "$appimage" >&2
+  echo "$file_description" >&2
   exit 1
 fi
 
 smoke_dir="$(mktemp -d)"
 app_pid=''
 cleanup() {
-  if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
+  if [[ -n "$app_pid" ]]; then
     kill -- "-$app_pid" 2>/dev/null || true
+    for _ in $(seq 1 20); do
+      if ! kill -0 -- "-$app_pid" 2>/dev/null; then break; fi
+      sleep 0.25
+    done
+    if kill -0 -- "-$app_pid" 2>/dev/null; then
+      kill -KILL -- "-$app_pid" 2>/dev/null || true
+    fi
     wait "$app_pid" 2>/dev/null || true
+    app_pid=''
   fi
   rm -rf "$smoke_dir" || true
 }
+handle_signal() {
+  cleanup
+  exit 130
+}
 trap cleanup EXIT
+trap handle_signal INT TERM
 
 (
   cd "$smoke_dir"
@@ -82,6 +96,9 @@ done
 
 mkdir -p "$smoke_dir/home" "$smoke_dir/config" "$smoke_dir/cache"
 log="$smoke_dir/app.log"
+dump_log() {
+  sed "s|$smoke_dir|<smoke-dir>|g" "$log" | tail -n 120 >&2
+}
 setsid env -i \
   PATH="$PATH" \
   HOME="$smoke_dir/home" \
@@ -99,19 +116,19 @@ for _ in $(seq 1 30); do
   fi
   if ! kill -0 "$app_pid" 2>/dev/null; then
     echo "AppImage exited before startup completed" >&2
-    sed -n '1,240p' "$log" >&2
+    dump_log
     exit 1
   fi
 done
 
 if [[ "$ready" -ne 1 ]]; then
   echo "AppImage did not report startup within 30 seconds" >&2
-  sed -n '1,240p' "$log" >&2
+  dump_log
   exit 1
 fi
 if [[ -n "$expected_version" ]] && ! grep -Fq "App started v${expected_version} pid=" "$log"; then
   echo "AppImage startup log does not contain expected version ${expected_version}" >&2
-  sed -n '1,120p' "$log" >&2
+  dump_log
   exit 1
 fi
 # The startup marker is emitted before window and host initialization. Keep the production-mode
@@ -119,7 +136,7 @@ fi
 sleep 5
 if ! kill -0 "$app_pid" 2>/dev/null; then
   echo "AppImage did not remain running after startup" >&2
-  sed -n '1,240p' "$log" >&2
+  dump_log
   exit 1
 fi
 

@@ -219,7 +219,14 @@ jobs:
           const fs = require('node:fs')
 
           const expectedBuildId = process.env.EXPECTED_BUILD_ID || ''
+          if (!expectedBuildId) throw new Error('Expected ToDesktop build ID is empty')
           const rawMetadata = fs.readFileSync('todesktop-build.json', 'utf8')
+          const asBuilds = (value) => {
+            if (Array.isArray(value)) return value
+            if (Array.isArray(value?.builds)) return value.builds
+            if (value && typeof value === 'object' && value.id) return [value]
+            return null
+          }
           let metadata
           try {
             metadata = JSON.parse(rawMetadata)
@@ -227,20 +234,27 @@ jobs:
             const candidates = [
               [rawMetadata.indexOf('['), rawMetadata.lastIndexOf(']')],
               [rawMetadata.indexOf('{'), rawMetadata.lastIndexOf('}')]
-            ]
+            ].sort((a, b) => a[0] - b[0])
             for (const [start, end] of candidates) {
               if (start < 0 || end < start) continue
               try {
-                metadata = JSON.parse(rawMetadata.slice(start, end + 1))
-                break
+                const candidate = JSON.parse(rawMetadata.slice(start, end + 1))
+                if (asBuilds(candidate)) {
+                  metadata = candidate
+                  break
+                }
               } catch {}
             }
             if (metadata === undefined) {
-              console.error('Raw ToDesktop metadata output:\n', rawMetadata)
+              const excerpt = rawMetadata
+                .replace(/https?:\/\/\S+/g, '<redacted-url>')
+                .slice(0, 500)
+              console.error('Could not parse ToDesktop metadata. Redacted excerpt:\n', excerpt)
               throw error
             }
           }
-          const builds = Array.isArray(metadata) ? metadata : [metadata]
+          const builds = asBuilds(metadata)
+          if (!builds) throw new Error('ToDesktop JSON did not contain build metadata')
           const build = builds.find((candidate) => String(candidate?.id || '') === expectedBuildId)
           if (!build) {
             throw new Error(`Could not find ToDesktop build ${expectedBuildId} in JSON metadata`)
@@ -355,19 +369,27 @@ jobs:
 
           const output = process.env.GITHUB_OUTPUT
           if (!output) throw new Error('GITHUB_OUTPUT not set')
-          fs.appendFileSync(output, `build_id=${buildId}\n`)
-          fs.appendFileSync(output, `build_status=${status}\n`)
-          fs.appendFileSync(output, `mac_url=${macUrl}\n`)
-          fs.appendFileSync(output, `windows_url=${windowsUrl}\n`)
-          fs.appendFileSync(output, `linux_url=${linuxUrl}\n`)
+          const appendOutput = (name, value) => {
+            const text = String(value)
+            if (/[\r\n]/.test(text)) throw new Error(`Unsafe newline in ${name} output`)
+            fs.appendFileSync(output, `${name}=${text}\n`)
+          }
+          appendOutput('build_id', buildId)
+          appendOutput('build_status', status)
+          appendOutput('mac_url', macUrl)
+          appendOutput('windows_url', windowsUrl)
+          appendOutput('linux_url', linuxUrl)
 
-          // The targeted CLI command uses --exit and fails unless this exact build completes;
-          // status is retained as metadata rather than duplicating the CLI's evolving vocabulary.
+          const succeededStatus = /^(succeeded|success|finished|complete|completed|ready|done|published)$/i
+          if (!succeededStatus.test(String(status))) {
+            throw new Error(`ToDesktop build did not succeed (status=${status || 'missing'})`)
+          }
           NODE
         env:
           EXPECTED_BUILD_ID: ${{ steps.build_id.outputs.build_id }}
 
       - name: Smoke-test the published Linux x64 AppImage
+        timeout-minutes: 20
         shell: bash
         run: |
           set -euo pipefail
@@ -390,7 +412,7 @@ jobs:
 
           sudo apt-get update
           sudo apt-get install --yes xvfb
-          curl \
+          download_effective_url="$(curl \
             --fail \
             --location \
             --retry 3 \
@@ -402,7 +424,12 @@ jobs:
             --proto '=https' \
             --proto-redir '=https' \
             --output Comfy-Desktop-linux-x64.AppImage \
-            --url "${appimage_url}"
+            --write-out '%{url_effective}' \
+            --url "${appimage_url}")"
+          if [[ ! "${download_effective_url}" =~ ^https://dl\.todesktop\.com/ ]]; then
+            echo "::error::Refusing AppImage redirected outside dl.todesktop.com"
+            exit 1
+          fi
           chmod +x Comfy-Desktop-linux-x64.AppImage
           ./scripts/smoke-linux-appimage.sh \
             Comfy-Desktop-linux-x64.AppImage \
