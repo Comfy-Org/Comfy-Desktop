@@ -726,7 +726,6 @@ export interface ComfyBootLogData {
   installationId: string
   bootStderr: string
   session_kind?: 'performance_test' | 'normal'
-  db_mode?: 'temp_file' | 'file'
 }
 
 export interface GPUInfo {
@@ -863,10 +862,6 @@ export interface PerformanceTestResultsSummary {
   instance: {
     id: string
     name: string
-    /** The database ComfyUI ran on. A Performance Test runs on a throwaway one of its own when
-     *  its Core has a database, which starts empty, so its first assets scan falls inside the
-     *  run. Absent from results written before this was recorded. */
-    databaseMode?: 'temp_file' | 'file'
   }
   workspace: {
     id: string | null

@@ -368,7 +368,6 @@ async function runPerformanceTest(): Promise<void> {
               statistics?.measuredJobCount ??
               Math.max(0, submission.submitted - (submission.failedRuns ?? 0)),
             failed_runs: summary?.failedRunCount ?? submission.failedRuns ?? 0,
-            db_mode: summary?.instance.databaseMode ?? null,
             duration_ms: performance.now() - runTelemetry.startedAtMs,
             fastest_run_duration_ms: secondsToMilliseconds(
               summary?.fastestJobDurationSeconds ?? statistics?.fastest.durationSeconds

@@ -42,8 +42,7 @@ const info = {
   installationId: 'inst-1',
   portRetries: 0,
   rebootRetries: 0,
-  sessionKind: 'normal' as const,
-  databaseMode: 'file' as const
+  sessionKind: 'normal' as const
 }
 
 describe('emitInstanceStartedTelemetry — first_local_instance_started_at guard', () => {
@@ -81,20 +80,19 @@ describe('emitInstanceStartedTelemetry — first_local_instance_started_at guard
 })
 
 describe('emitInstanceStartedTelemetry — session kind', () => {
-  it('says a Performance Test boot is one, and that it ran on a throwaway database', async () => {
+  it('says a Performance Test boot is one', async () => {
     vi.clearAllMocks()
     mockCtx = baseCtx('local-src')
     mockSourceCategory = 'local'
 
     await emitInstanceStartedTelemetry({
       ...info,
-      sessionKind: 'performance_test',
-      databaseMode: 'temp_file'
+      sessionKind: 'performance_test'
     })
 
     expect(telemetry.capture).toHaveBeenCalledWith(
       'comfy.desktop.session.instance_started',
-      expect.objectContaining({ session_kind: 'performance_test', db_mode: 'temp_file' })
+      expect.objectContaining({ session_kind: 'performance_test' })
     )
   })
 })

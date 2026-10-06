@@ -123,8 +123,7 @@ describe('assetsTap', () => {
     variant: 'desktop',
     release: '1.0.47-rc.1',
     coreBetaFlags: ['--enable-assets'],
-    sessionKind: 'performance_test' as const,
-    dbMode: 'temp_file' as const
+    sessionKind: 'performance_test' as const
   }
 
   beforeEach(() => {
@@ -278,7 +277,6 @@ describe('assetsTap', () => {
         release: '1.0.47-rc.1',
         core_beta_flags: ['--enable-assets'],
         session_kind: 'performance_test',
-        db_mode: 'temp_file',
         root: 'models',
         created: 12
       })
@@ -293,7 +291,6 @@ describe('assetsTap', () => {
         release: null,
         core_beta_flags: [],
         session_kind: 'normal',
-        db_mode: 'file',
         hashing_enabled: true
       })
     })
@@ -350,8 +347,7 @@ describe('assetsTap', () => {
         variant: 'desktop',
         release: '1.0.47-rc.1',
         core_beta_flags: ['--enable-assets'],
-        session_kind: 'performance_test',
-        db_mode: 'temp_file'
+        session_kind: 'performance_test'
       })
     })
   })

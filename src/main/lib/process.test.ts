@@ -7,7 +7,6 @@ import {
   killPidTree,
   isSafeToSignal,
   killProcessTree,
-  setPortArg,
   spawnProcess,
   waitForPortFree,
   waitForPort,
@@ -501,20 +500,5 @@ describe('a spent budget still ends the wait', () => {
     } finally {
       await close()
     }
-  })
-})
-
-describe('setPortArg', () => {
-  it.each([
-    [['-s', 'main.py', '--port', '8188']],
-    [['-s', 'main.py', '--port', '8188', '--port', '9000']],
-    [['-s', 'main.py', '--port=8188', '--port', '9000']],
-    [['-s', 'main.py', '--port', '9000', '--port=8188']],
-    [['-s', 'main.py']]
-  ])('leaves %j with exactly one --port, the new one', (args) => {
-    const launchCmd = { args: [...args], port: 0 }
-    setPortArg(launchCmd, 9001)
-    expect(launchCmd.args).toEqual(['-s', 'main.py', '--port', '9001'])
-    expect(launchCmd.port).toBe(9001)
   })
 })

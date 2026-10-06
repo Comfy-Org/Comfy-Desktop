@@ -453,8 +453,7 @@ export function registerAppHandlers(): void {
           statistics,
           {
             id: sourceInstallationId,
-            name: session.installationName,
-            databaseMode: session.databaseMode
+            name: session.installationName
           },
           workspace,
           hardware,

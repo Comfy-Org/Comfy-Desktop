@@ -2,7 +2,6 @@ import fs from 'fs'
 import path from 'path'
 import { findLockingProcesses } from './file-lock-info'
 import { holderIsInstall, listRecords } from './comfyProcessRecord'
-import { sessionKindOf } from './performanceTestWorkspace'
 import {
   commandLinesOf,
   isPidAlive,
@@ -96,8 +95,6 @@ export async function identifyDbLockHolder(input: {
     (r) =>
       r.sessionKey !== input.sessionKey &&
       r.installationId === input.installationId &&
-      // A Performance Test and the install's own session never share a database.
-      sessionKindOf(r.sessionKey) === sessionKindOf(input.sessionKey) &&
       isPidAlive(r.childPid)
   )
   if (recorded) {
