@@ -10,7 +10,9 @@ export const DEFAULT_POSTHOG_API_KEY = 'phc_iKfK86id4xVYws9LybMje0h44eGtfwFgRPIB
 export const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
 
 export function isPostHogFlagDisabled(value: string | undefined): boolean {
-  return ['0', 'false', 'off', 'no', 'disabled'].includes((value || '').trim().toLowerCase())
+  const normalized = (value || '').trim().toLowerCase()
+  if (!normalized) return false
+  return !['1', 'true', 'on', 'yes', 'enabled'].includes(normalized)
 }
 
 /** Opt-in counterpart: unset means off, rather than `isPostHogFlagDisabled`'s unset means on. */

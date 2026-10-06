@@ -73,7 +73,7 @@ describe('experiments', () => {
     'COMFY_DESKTOP_POSTHOG_HOST',
     'COMFY_DESKTOP_POSTHOG_ENABLED'
   ] as const
-  let previousPostHogEnv: Partial<Record<(typeof postHogEnvNames)[number], string>>
+  let previousPostHogEnv: Partial<Record<(typeof postHogEnvNames)[number], string>> = {}
 
   beforeEach(async () => {
     testUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'experiments-test-'))

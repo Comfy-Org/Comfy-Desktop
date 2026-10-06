@@ -290,6 +290,15 @@ const postHogEnvNames: PostHogEnvName[] = [
   'COMFY_DESKTOP_POSTHOG_EXCEPTIONS',
   'POSTHOG_EXCEPTIONS'
 ]
+let previousPostHogEnv: Partial<Record<PostHogEnvName, string>> = {}
+
+beforeEach(() => {
+  previousPostHogEnv = Object.fromEntries(
+    postHogEnvNames.flatMap((name) =>
+      process.env[name] === undefined ? [] : [[name, process.env[name]!]]
+    )
+  )
+})
 
 /**
  * Reset module state and the capture buffers, then run the standard boot
@@ -312,7 +321,11 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   exceptions.length = 0
   featureFlagResultCalls.length = 0
   posthogConstructorCalls.length = 0
-  for (const name of postHogEnvNames) delete process.env[name]
+  for (const name of postHogEnvNames) {
+    const previous = previousPostHogEnv[name]
+    if (previous === undefined) delete process.env[name]
+    else process.env[name] = previous
+  }
   process.env[isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'] = 'test-key'
   process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
   // Opt in by default here so tests that use the exception stream as an
