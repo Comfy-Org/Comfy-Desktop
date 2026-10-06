@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
 import type { TelemetryValue } from './telemetry'
-import { DEFAULT_POSTHOG_HOST } from '../../shared/posthogConfig'
+import { DEFAULT_POSTHOG_API_KEY, DEFAULT_POSTHOG_HOST } from '../../shared/posthogConfig'
 
 vi.mock('electron', () => ({
   app: {
@@ -562,6 +562,22 @@ describe('telemetry PostHog client options', () => {
 
     expect(posthogConstructorCalls[0]).toMatchObject({
       apiKey: 'test-key',
+      options: { host: DEFAULT_POSTHOG_HOST }
+    })
+  })
+
+  it('uses packaged defaults when the scoped key and host are absent', () => {
+    setupTelemetry({
+      env: {
+        POSTHOG_API_KEY: 'phx-unrelated-personal-key',
+        POSTHOG_HOST: 'https://unrelated-posthog.example',
+        COMFY_DESKTOP_POSTHOG_API_KEY: undefined,
+        COMFY_DESKTOP_POSTHOG_HOST: undefined
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: DEFAULT_POSTHOG_API_KEY,
       options: { host: DEFAULT_POSTHOG_HOST }
     })
   })
