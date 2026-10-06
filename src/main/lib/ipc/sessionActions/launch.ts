@@ -699,8 +699,9 @@ export function _cleanupFailedLaunchSetup(
  * starting, or stopping (a session leaves `_runningSessions` before its process is killed). A
  * Performance Test runs alone, so nothing competes with it for the GPU, memory or the
  * installation's database. Remote and cloud sessions run elsewhere and do not count.
+ * Synchronous, so the caller can decide and register its launch with nothing in between.
  */
-export async function otherLocalComfyUIs(sessionId: string): Promise<string[]> {
+export function otherLocalComfyUIs(sessionId: string, records: InstallationRecord[]): string[] {
   const ids = new Set([
     ..._runningSessions.keys(),
     ..._getActiveLaunchIds(),
@@ -710,9 +711,8 @@ export async function otherLocalComfyUIs(sessionId: string): Promise<string[]> {
   const names: string[] = []
   for (const id of ids) {
     const perf = sessionKindOf(id) === 'performance_test'
-    const inst = await installations.get(
-      perf ? id.slice(PERFORMANCE_TEST_SESSION_PREFIX.length) : id
-    )
+    const sourceId = perf ? id.slice(PERFORMANCE_TEST_SESSION_PREFIX.length) : id
+    const inst = records.find((r) => r.id === sourceId)
     if (inst && sourceMap[inst.sourceId]?.category !== 'local') continue
     const name = inst?.name ?? _runningSessions.get(id)?.installationName ?? id
     names.push(perf ? i18n.t('launch.instanceRunningPerformanceTest', { name }) : name)
@@ -723,9 +723,11 @@ export async function otherLocalComfyUIs(sessionId: string): Promise<string[]> {
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   const { installationId } = ctx
   const sessionId = ctx.sessionId ?? installationId
-  // Before the synchronous stretch below, which must not be split by an await.
   if (sessionKindOf(sessionId) === 'performance_test') {
-    const others = await otherLocalComfyUIs(sessionId)
+    // The last await before `_beginLaunch`: from here the check and the registration below run
+    // in one synchronous stretch, so two Performance Tests can never both pass it.
+    const records = await installations.list()
+    const others = otherLocalComfyUIs(sessionId, records)
     if (others.length > 0) {
       appendLog(sessionId, `[launch] Performance Test refused: also running ${others.join(', ')}\n`)
       return {
@@ -2193,11 +2195,7 @@ async function runLaunch(
   if (!sender.isDestroyed()) {
     // Raw bootStderr — telemetry forwarders scrub it before it leaves the box.
     const bootStderr = lastNLines(launchResult.getStderr(), 50)
-    sender.send('comfy-boot-log', {
-      installationId: sessionId,
-      bootStderr,
-      session_kind: sessionKind
-    })
+    sender.send('comfy-boot-log', { installationId: sessionId, bootStderr })
   }
 
   // Capture snapshot in background after successful launch

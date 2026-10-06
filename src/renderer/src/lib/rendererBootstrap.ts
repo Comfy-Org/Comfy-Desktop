@@ -41,6 +41,7 @@ import {
 // `src/shared/datadogMirroredEvents.ts`.
 import { normalizeExceptionContext, scrubAll } from '../../../shared/piiScrub'
 import { ERROR_MESSAGE_MAX, ERROR_STACK_MAX } from '../../../shared/errorEvent'
+import { sessionKindOf } from '../../../shared/performanceTestSession'
 import {
   isDatadogMirroredEvent,
   stripDatadogDroppedKeys,
@@ -674,7 +675,7 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
       trackTelemetryAction('comfy.desktop.comfyui.boot_log', {
         installation_id: data.installationId,
         boot_stderr: data.bootStderr,
-        session_kind: data.session_kind ?? null
+        session_kind: sessionKindOf(data.installationId)
       })
     })
   }

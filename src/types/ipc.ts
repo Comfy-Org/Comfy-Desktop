@@ -725,7 +725,6 @@ export interface ComfyExitedData {
 export interface ComfyBootLogData {
   installationId: string
   bootStderr: string
-  session_kind?: 'performance_test' | 'normal'
 }
 
 export interface GPUInfo {
