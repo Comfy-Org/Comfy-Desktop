@@ -144,6 +144,12 @@ export function registerPickerSettingsIpc(options: PickerSettingsIpcOptions): vo
     dispatchInvoke('get-comfy-args', event, payload?.installationId)
   )
 
+  ipcMain.handle(
+    CH.getCoreBetaArgs,
+    (event, payload: { installationId?: unknown; launchArgs?: unknown }) =>
+      dispatchInvoke('get-core-beta-args', event, payload?.installationId, payload?.launchArgs)
+  )
+
   ipcMain.handle(CH.browseFolder, (event, payload: { defaultPath?: unknown }) =>
     dispatchInvoke('browse-folder', event, payload?.defaultPath)
   )

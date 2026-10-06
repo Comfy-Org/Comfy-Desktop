@@ -42,6 +42,8 @@ vi.mock('../../comfyDownloadManager', async (importOriginal) => {
  *  test can park the launch at an exact point and observe what was reported by then. */
 const launchHarness = vi.hoisted(() => ({
   launchCommand: null as null | Record<string, unknown>,
+  /** Every `planCoreBetaArgs` input, from the launch and the preview alike. */
+  plans: [] as unknown[],
   schemaNames: ['enable-assets', 'listen', 'feature-flag'] as string[],
   schemaThrows: false,
   registryThrows: false,
@@ -178,13 +180,22 @@ vi.mock('../../comfy-args', async (importOriginal) => {
       if (launchHarness.schemaThrows) throw new Error('schema discovery unavailable')
       return schemaOf(...launchHarness.schemaNames)
     },
-    getComfyFeatureFlagRegistry: async () => ({})
+    getComfyFeatureFlagRegistry: async () => ({}),
+    peekComfyArgsSchema: () =>
+      launchHarness.schemaThrows ? null : schemaOf(...launchHarness.schemaNames)
   }
 })
 
 vi.mock('../../coreBetaGrants', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaGrantsModule>()
-  return { ...actual, getCoreBetaGrantsAsync: async () => launchHarness.grants }
+  return {
+    ...actual,
+    getCoreBetaGrantsAsync: async () => launchHarness.grants,
+    planCoreBetaArgs: (facts: Parameters<typeof actual.planCoreBetaArgs>[0]) => {
+      launchHarness.plans.push(facts)
+      return actual.planCoreBetaArgs(facts)
+    }
+  }
 })
 
 vi.mock('../../hardwareTap', async (importOriginal) => {
@@ -227,12 +238,14 @@ import {
   peekBetaActivationNotice
 } from '../../betaActivationNotice'
 import * as settingsModule from '../../../settings'
+import { previewCoreBetaArgs } from '../../coreBetaPreview'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
+import type { LaunchCommand } from '../../../types/sources'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
@@ -2019,6 +2032,103 @@ describe('core beta report placement', () => {
     const optState = events.find((e) => e.event === 'comfy.desktop.core_beta.opt_state')
     expect(optState?.properties).toMatchObject({ opted_in: true })
     expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.applied')
+  })
+
+  describe('session record of the applied grants (settings beta-args pill)', () => {
+    const launched: string[] = []
+    const launch = async (id: string): Promise<void> => {
+      launched.push(id)
+      const res = await handleLaunch(ctxFor(id))
+      expect(res.ok).toBe(true)
+    }
+    const recorded = (id: string): unknown => _runningSessions.get(id)?.coreBetaArgs
+
+    afterEach(() => {
+      while (launched.length) _runningSessions.delete(launched.pop()!)
+    })
+
+    it('still prints the selection trace that explains each grant', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+      await launch('harness-session-trace')
+      expect(log.mock.calls.map((call) => String(call[0]))).toContain(
+        '[core-beta] window --enable-assets: >=0.3.80 version=0.3.81 exact=true'
+      )
+    })
+
+    it('records each applied grant with its payload name on the skip-port spawn', async () => {
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset browser' } }]
+      await launch('harness-session-skip-port')
+      expect(recorded('harness-session-skip-port')).toEqual([
+        { arg: '--enable-assets', name: 'Asset browser' }
+      ])
+    })
+
+    it('records the grants on the port-wait spawn too', async () => {
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset browser' } }]
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+        cwd: installDir,
+        skipPortWait: false,
+        port: 48236
+      }
+      launchHarness.waitForPort = async () => {}
+      await launch('harness-session-port-wait')
+      expect(recorded('harness-session-port-wait')).toEqual([
+        { arg: '--enable-assets', name: 'Asset browser' }
+      ])
+    })
+
+    it('records a silent grant, since it is still on the command line', async () => {
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { silent: true } }]
+      await launch('harness-session-silent')
+      expect(recorded('harness-session-silent')).toEqual([{ arg: '--enable-assets', name: null }])
+    })
+
+    it('records no grants for an opted-out launch', async () => {
+      launchHarness.betaEnabled = false
+      await launch('harness-session-opted-out')
+      expect(recorded('harness-session-opted-out')).toEqual([])
+    })
+
+    it("omits a grant the user's own args override", async () => {
+      launchHarness.schemaNames = ['enable-assets', 'disable-assets', 'listen', 'feature-flag']
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--disable-assets'],
+        cwd: installDir,
+        skipPortWait: true
+      }
+      await launch('harness-session-user-override')
+      expect(spawnArgs).not.toContain('--enable-assets')
+      expect(recorded('harness-session-user-override')).toEqual([])
+    })
+  })
+
+  describe('the next-launch preview decides from the facts the launch uses', () => {
+    afterEach(() => {
+      _runningSessions.delete('harness-equivalence')
+    })
+
+    it('hands planCoreBetaArgs the same facts as the launch that follows it', async () => {
+      settingsModule.set('betaFeaturesEnabled', true)
+      launchHarness.grants = [{ ...HARNESS_GRANT, notice: { description: 'Asset browser' } }]
+      launchHarness.plans = []
+
+      const preview = await previewCoreBetaArgs(
+        'harness-equivalence',
+        harnessInstall(),
+        launchHarness.launchCommand as LaunchCommand
+      )
+      const res = await handleLaunch(ctxFor('harness-equivalence'))
+      expect(res.ok).toBe(true)
+
+      expect(launchHarness.plans).toHaveLength(2)
+      const [previewFacts, launchFacts] = launchHarness.plans
+      expect(previewFacts).toEqual(launchFacts)
+      expect(preview).toEqual(_runningSessions.get('harness-equivalence')?.coreBetaArgs)
+      expect(preview).toEqual([{ arg: '--enable-assets', name: 'Asset browser' }])
+    })
   })
 })
 

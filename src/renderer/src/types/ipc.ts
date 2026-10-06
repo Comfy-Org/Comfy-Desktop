@@ -2,6 +2,8 @@
 export type {
   Unsubscribe,
   BetaActivationNotice,
+  BetaArgView,
+  CoreBetaArgs,
   Installation,
   RunningInstance,
   PerformanceTestBenchmark,

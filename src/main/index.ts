@@ -77,6 +77,7 @@ import {
 import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/templateDownloadCore'
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
+import { registerTemplateInputAssetHandlers } from './lib/ipc/registerTemplateInputAssetHandlers'
 import { emitInstanceStartedTelemetry } from './lib/ipc/sessionStartTelemetry'
 import { emitStorageTelemetry } from './lib/ipc/storageTelemetry'
 import {
@@ -2007,6 +2008,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         return enriched as unknown as InstancePickerInstall[]
       },
       getRunningInstallationIds: () => Array.from(_runningSessions.keys()),
+      getRunningSessionStartedAt: () =>
+        Object.fromEntries(Array.from(_runningSessions, ([id, s]) => [id, s.startedAt])),
       getLaunchingInstallationIds: () => _getLaunchingInstallationIds(),
       // Per-install Settings + Snapshots payload for the picker's
       // right-pane accordions. Both reads route through the same
@@ -2208,6 +2211,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
+    registerTemplateInputAssetHandlers({
+      findInstallationIdForWindow,
+      isLocalInstallation: (installation) => sourceMap[installation.sourceId]?.category === 'local'
+    })
     cleanupTempDownloads()
     await ipc.register({
       onLaunch,

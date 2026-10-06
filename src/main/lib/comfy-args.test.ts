@@ -14,6 +14,7 @@ import {
   clearSchemaCache,
   filterUnsupportedArgs,
   getComfyArgsSchema,
+  peekComfyArgsSchema,
   parseHelpOutput,
   validateArgs
 } from './comfy-args'
@@ -308,6 +309,37 @@ describe('getComfyArgsSchema', () => {
     )
     expect(mockedExecFile).toHaveBeenCalledTimes(2)
     expect(updatedSchema.knownFlags.has('use-ck-attention')).toBe(true)
+  })
+})
+
+describe('peekComfyArgsSchema', () => {
+  const installationId = 'peek-comfy-install'
+
+  beforeEach(() => {
+    clearSchemaCache(installationId)
+    mockedExecFile.mockReset()
+    mockedReadGitHead.mockReset()
+  })
+
+  it('returns only what discovery cached for the same revision, and never spawns', async () => {
+    mockHelpOutput(() => SAMPLE_HELP)
+    mockedReadGitHead.mockReturnValue('commit-1')
+    expect(peekComfyArgsSchema('main.py', installationId, 'stored')).toBeNull()
+
+    const schema = await getComfyArgsSchema('python', 'main.py', '.', installationId, 'stored')
+    expect(peekComfyArgsSchema('main.py', installationId, 'stored')).toBe(schema)
+
+    mockedReadGitHead.mockReturnValue('commit-2')
+    expect(peekComfyArgsSchema('main.py', installationId, 'stored')).toBeNull()
+    expect(mockedExecFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to the recorded revision when HEAD is unreadable, as discovery does', async () => {
+    mockHelpOutput(() => SAMPLE_HELP)
+    mockedReadGitHead.mockReturnValue(null)
+    const schema = await getComfyArgsSchema('python', 'main.py', '.', installationId, 'stored')
+    expect(peekComfyArgsSchema('main.py', installationId, 'stored')).toBe(schema)
+    expect(peekComfyArgsSchema('main.py', installationId, 'other')).toBeNull()
   })
 })
 

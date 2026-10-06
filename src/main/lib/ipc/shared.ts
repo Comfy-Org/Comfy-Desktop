@@ -117,7 +117,7 @@ import type { SnapshotExportEnvelope, Snapshot } from '../snapshots'
 import { getVariantLabel, buildPinnedVariant } from '../../sources/standalone'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
 import { REQUIRES_STOPPED } from '../../../types/ipc'
-import type { Theme, ResolvedTheme, QuitActiveItem } from '../../../types/ipc'
+import type { Theme, ResolvedTheme, QuitActiveItem, BetaArgView } from '../../../types/ipc'
 import { findLockingProcesses } from '../file-lock-info'
 import { markStopRequested } from '../comfyProcessRecord'
 import type { LaunchCmd } from '../process'
@@ -288,6 +288,8 @@ export interface SessionInfo {
   flushTelemetry?: () => void
   /** Latest accelerator details parsed from this session's ComfyUI startup logs. */
   getAcceleratorInfo?: () => AcceleratorSnapshot | null
+  /** Core beta grants on this session's command line, for the settings view's beta-args pill. */
+  coreBetaArgs?: readonly BetaArgView[]
 }
 
 export interface LaunchCallbackInfo {
@@ -1067,7 +1069,8 @@ export function _addSession(
     mode,
     installationName,
     flushTelemetry,
-    getAcceleratorInfo
+    getAcceleratorInfo,
+    coreBetaArgs
   }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
@@ -1087,6 +1090,7 @@ export function _addSession(
     sourceInstallationId,
     flushTelemetry,
     getAcceleratorInfo,
+    coreBetaArgs,
     startedAt: Date.now()
   })
   // Clear the launching marker first so subscribers never double-count this id across the
@@ -1693,7 +1697,8 @@ export async function getActiveDetails(): Promise<QuitActiveItem[]> {
 export function _test_addRunningSession(
   installationId: string,
   installationName: string,
-  flushTelemetry?: () => void
+  flushTelemetry?: () => void,
+  coreBetaArgs?: readonly BetaArgView[]
 ): void {
   _runningSessions.set(installationId, {
     proc: null,
@@ -1702,6 +1707,7 @@ export function _test_addRunningSession(
     mode: 'window',
     installationName,
     flushTelemetry,
+    coreBetaArgs,
     startedAt: Date.now()
   })
   _broadcastToRenderer('instance-started', {

@@ -103,6 +103,15 @@ describe('readFileSafe', () => {
     expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'primary' })
   })
 
+  it('serves .bak for an absent primary without restoring it when asked not to', () => {
+    fs.writeFileSync(bakPath, 'backup')
+    expect(readFileSafe(filePath, { restore: false })).toEqual({ kind: 'data', data: 'backup' })
+    expect(fs.existsSync(filePath)).toBe(false)
+    // The default still restores.
+    expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'backup' })
+    expect(fs.readFileSync(filePath, 'utf-8')).toBe('backup')
+  })
+
   it('retries a transiently locked primary and returns its (newer) content', () => {
     fs.writeFileSync(filePath, 'newer primary')
     fs.writeFileSync(bakPath, 'stale backup')

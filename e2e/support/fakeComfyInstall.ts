@@ -210,7 +210,10 @@ export async function writeFakeComfyInstall(opts: {
  *  read on Linux and silently ignored everywhere else. */
 export function opsFlagsGrantSeed(opts: {
   arg: string
-  minCoreVersion: string
+  /** A version-window grant from this release up... */
+  minCoreVersion?: string
+  /** ...or a commit-range grant, `[lower, upper | null]` per lineage. Exactly one is given. */
+  commitRanges?: [string, string | null][]
   /** Optional per-flag notice wording, written in the payload's own wire shape so the fixture
    *  exercises the real parser rather than the already-parsed type. */
   description?: string
@@ -223,7 +226,9 @@ export function opsFlagsGrantSeed(opts: {
         flags: [
           {
             arg: opts.arg,
-            min_core_version: opts.minCoreVersion,
+            ...(opts.commitRanges === undefined
+              ? { min_core_version: opts.minCoreVersion }
+              : { commit_ranges: opts.commitRanges }),
             ...(opts.description === undefined ? {} : { description: opts.description }),
             ...(opts.notice === undefined ? {} : { notice: opts.notice }),
           },

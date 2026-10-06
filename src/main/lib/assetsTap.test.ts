@@ -15,6 +15,7 @@ vi.mock('electron', () => ({
 const { createAssetsTap, ASSETS_EVENT_LINE, ALLOWED_EVENTS, ALLOWED_FIELD_NAMES } =
   await import('./assetsTap')
 const telemetry = await import('./telemetry')
+const { DATADOG_GLOBAL_CONTEXT_KEYS } = await import('../../shared/datadogMirroredEvents')
 
 // Resolved against cwd (not import.meta.url, which happy-dom can mangle) — the
 // same idiom ProgressModal.test.ts uses for reading a source file.
@@ -491,6 +492,75 @@ describe('assetsTap', () => {
       expect([...ALLOWED_FIELD_NAMES].filter((key) => BASE_CONTEXT_KEYS.includes(key))).toEqual([])
     })
 
+    it('omits a key colliding with a telemetry default property but keeps the event', () => {
+      // Per-event fields win telemetry's merge over its defaults, and
+      // `is_packaged` fits the `is_*` convention, so without this a forged
+      // `is_packaged=false` would relabel a packaged build's event.
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { is_packaged: false }), 'stdout')
+      for (const key of telemetry.DEFAULT_EVENT_PROPERTY_NAMES) {
+        if (key === 'installation_id') continue // base context: rejects the line
+        tap.ingest(taggedLine('seeder.scan_completed', { phase: 'fast', [key]: 1 }), 'stdout')
+      }
+      expect(captured).toHaveLength(telemetry.DEFAULT_EVENT_PROPERTY_NAMES.size)
+      for (const { ctx } of captured) {
+        expect(ctx.is_packaged).toBeUndefined()
+        for (const key of telemetry.DEFAULT_EVENT_PROPERTY_NAMES) {
+          if (key !== 'installation_id') expect(ctx).not.toHaveProperty(key)
+        }
+      }
+    })
+
+    it('omits a key colliding with Datadog global context but keeps the event', () => {
+      // Mirrored failure events reach datadogRum.addAction, where the action's
+      // context wins over the renderer's global cohort context.
+      const forged = {
+        telemetry_enabled: false,
+        has_launched_cloud: true,
+        has_legacy_install: true,
+        local_installation_count: 0
+      }
+      for (const key of Object.keys(forged)) expect(DATADOG_GLOBAL_CONTEXT_KEYS.has(key)).toBe(true)
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('scanner.walk_failed', { root: 'input', ...forged }), 'stdout')
+      tap.ingest(taggedLine('scanner.walk_failed', { renderer_role: 'panel' }), 'stdout')
+      expect(captured).toHaveLength(2)
+      expect(captured[0]!.ctx.root).toBe('input')
+      for (const { ctx } of captured) {
+        for (const key of DATADOG_GLOBAL_CONTEXT_KEYS) expect(ctx).not.toHaveProperty(key)
+      }
+    })
+
+    it('rejects a repeated reserved name that fits a convention, like any repeated convention name', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        '[assets-event] seeder.scan_completed cpu_ms=1 is_packaged=true is_packaged=false\n',
+        'stdout'
+      )
+      tap.ingest(
+        '[assets-event] scanner.walk_failed telemetry_enabled=true telemetry_enabled=true\n',
+        'stdout'
+      )
+      expect(captured).toHaveLength(0)
+    })
+
+    it('omits a repeated reserved name outside the conventions, like any unknown field', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed cpu_ms=1 platform=a platform=b\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.cpu_ms).toBe(1)
+      expect(captured[0]!.ctx).not.toHaveProperty('platform')
+    })
+
+    it('keeps the field vocabulary disjoint from the telemetry defaults and Datadog context', () => {
+      expect(
+        [...ALLOWED_FIELD_NAMES].filter(
+          (key) =>
+            telemetry.DEFAULT_EVENT_PROPERTY_NAMES.has(key) || DATADOG_GLOBAL_CONTEXT_KEYS.has(key)
+        )
+      ).toEqual([])
+    })
+
     it('rejects a base-context collision the field allowlist would otherwise admit', () => {
       // The two vocabularies are disjoint today, so the collision guard is only
       // reachable once they overlap. Simulate that future to prove the guard —
@@ -752,6 +822,204 @@ describe('assetsTap', () => {
       tap.ingest(taggedLine('seeder.scan_failed', { error_type: 'Error404' }), 'stdout')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx.error_type).toBe('Error404')
+    })
+  })
+
+  describe('typed-field naming conventions', () => {
+    it.each<[string, LogfmtValue]>([
+      ['cpu_ms', 1250],
+      ['cpu_ms', 0],
+      ['dir_count', 42],
+      ['read_bytes', 9_007_199_254_740_991],
+      ['cache_hit_pct', 0],
+      ['cache_hit_pct', 100],
+      ['watcher_enabled', true],
+      ['watcher_enabled', false],
+      ['is_network_drive', true],
+      ['has_symlinks', false]
+    ])('forwards the unlisted field %s=%s', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { phase: 'fast', [field]: value }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ phase: 'fast', [field]: value })
+    })
+
+    it.each<[string, LogfmtValue]>([
+      ['cpu_ms', true],
+      ['cpu_ms', -1],
+      ['cpu_ms', '12ms'],
+      ['dir_count', -3],
+      ['dir_count', false],
+      ['read_bytes', 9_007_199_254_740_992],
+      ['read_bytes', '1.5'],
+      ['cache_hit_pct', 101],
+      ['cache_hit_pct', -1],
+      ['cache_hit_pct', true],
+      ['watcher_enabled', 1],
+      ['watcher_enabled', 'yes'],
+      ['is_network_drive', 3],
+      ['has_symlinks', 'true_ish']
+    ])('omits %s=%s, a value of the wrong type or range, but keeps the event', (field, value) => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { phase: 'fast', [field]: value }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ phase: 'fast' })
+      expect(captured[0]!.ctx).not.toHaveProperty(field)
+    })
+
+    it('never forwards an unlisted string value, even under a convention name', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('seeder.scan_completed', {
+          model_dir_count: 'checkpoints',
+          is_path: 'models',
+          last_ms: 'none'
+        }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      for (const field of ['model_dir_count', 'is_path', 'last_ms']) {
+        expect(captured[0]!.ctx).not.toHaveProperty(field)
+      }
+    })
+
+    it('accepts a 48-character name and omits a 49-character one', () => {
+      const atLimit = `${'x'.repeat(42)}_bytes`
+      const overLimit = `${'x'.repeat(43)}_bytes`
+      expect(atLimit).toHaveLength(48)
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { [atLimit]: 1, [overLimit]: 2 }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx[atLimit]).toBe(1)
+      expect(captured[0]!.ctx).not.toHaveProperty(overLimit)
+    })
+
+    it('still rejects a repeated convention field', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed cpu_ms=1 cpu_ms=2\n', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_completed is_x=3 is_x=true\n', 'stdout')
+      expect(captured).toHaveLength(0)
+    })
+
+    it('silently omits new names past 64 per tap, but keeps forwarding seen ones', () => {
+      // `aa_count`, `ab_count`, ...: distinct and digit-free.
+      const nameFor = (i: number): string =>
+        `${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}_count`
+      const tap = createAssetsTap(baseOpts)
+      for (let line = 0; line < 8; line++) {
+        const names = Array.from({ length: 8 }, (_, i) => [nameFor(line * 8 + i), 1])
+        tap.ingest(taggedLine('seeder.scan_completed', Object.fromEntries(names)), 'stdout')
+      }
+      expect(captured).toHaveLength(8)
+      expect(captured[7]!.ctx[nameFor(63)]).toBe(1)
+      // Survives a core restart; a new name is dropped, a seen one still forwards.
+      tap.beginBoot()
+      tap.ingest(
+        taggedLine('seeder.scan_completed', { [nameFor(64)]: 1, [nameFor(0)]: 2, phase: 'fast' }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(9)
+      expect(captured[8]!.ctx).not.toHaveProperty(nameFor(64))
+      expect(captured[8]!.ctx).toMatchObject({ [nameFor(0)]: 2, phase: 'fast' })
+      // Silent: no counter event.
+      tap.flushSummary()
+      expect(captured).toHaveLength(9)
+    })
+
+    describe('name budget is spent only by lines that are sent', () => {
+      const sixtyFourNames = Object.fromEntries(
+        Array.from({ length: 64 }, (_, i) => [
+          `${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}_count`,
+          1
+        ])
+      )
+
+      it('not by a line rejected after its convention fields', () => {
+        const tap = createAssetsTap(baseOpts)
+        // `installation_id` sorts last and rejects the whole line.
+        tap.ingest(
+          taggedLine('seeder.scan_completed', { ...sixtyFourNames, installation_id: 'forged' }),
+          'stdout'
+        )
+        tap.ingest(taggedLine('seeder.scan_completed', { cpu_ms: 7 }), 'stdout')
+        expect(captured).toHaveLength(1)
+        expect(captured[0]!.ctx.cpu_ms).toBe(7)
+      })
+
+      it('not by a rate-capped line', () => {
+        const tap = createAssetsTap(baseOpts)
+        for (let i = 0; i < 60; i++) tap.ingest(taggedLine('seeder.scan_started', {}), 'stdout')
+        tap.ingest(taggedLine('seeder.scan_started', sixtyFourNames), 'stdout')
+        tap.ingest(taggedLine('seeder.scan_completed', { cpu_ms: 7 }), 'stdout')
+        expect(captured).toHaveLength(61)
+        expect(captured[60]!.ctx.cpu_ms).toBe(7)
+      })
+    })
+
+    it('leaves allowlisted fields that fit a convention on their own validators', () => {
+      const tap = createAssetsTap(baseOpts)
+      // A negative elapsed_ms passes its own (signed) validator...
+      tap.ingest(taggedLine('seeder.scan_completed', { elapsed_ms: -5 }), 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx.elapsed_ms).toBe(-5)
+      // ...and a wrong-typed allowlisted value still rejects the line.
+      tap.ingest(taggedLine('seeder.scan_completed', { elapsed_ms: true }), 'stdout')
+      tap.ingest(taggedLine('assets.enabled', { hashing_enabled: 1 }), 'stdout')
+      expect(captured).toHaveLength(1)
+    })
+
+    it('still drops an unknown event that carries only convention fields', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_exploded', { cpu_ms: 1, is_x: true }), 'stdout')
+      expect(captured).toHaveLength(0)
+      tap.flushSummary()
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.event).toBe('comfy.desktop.comfyui.assets.unknown_events_dropped')
+      expect(captured[0]!.ctx.count).toBe(1)
+    })
+
+    it('omits a -0 under a non-negative convention', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed dir_count=-0 phase=fast\n', 'stdout')
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).not.toHaveProperty('dir_count')
+    })
+
+    it('does not count omitted convention fields as unknown enum values', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { cpu_ms: true }), 'stdout')
+      tap.flushSummary()
+      expect(captured.map(({ event }) => event)).toEqual([
+        'comfy.desktop.comfyui.assets.seeder.scan_completed'
+      ])
+    })
+  })
+
+  describe('scan performance fields', () => {
+    it('forwards the scan performance counters by the naming convention', () => {
+      const perf = {
+        cpu_ms: 4210,
+        paused_ms: 150,
+        dirs_listed_count: 312,
+        files_statted_count: 9876,
+        recovered_count: 3,
+        missing_marked_count: 1
+      }
+      // Not allowlisted: they reach telemetry through the convention alone.
+      for (const field of Object.keys(perf)) expect(ALLOWED_FIELD_NAMES.has(field)).toBe(false)
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        taggedLine('seeder.scan_completed', { ...perf, elapsed_ms: 8123, phase: 'fast' }),
+        'stdout'
+      )
+      expect(captured).toHaveLength(1)
+      expect(captured[0]!.ctx).toMatchObject({ ...perf, elapsed_ms: 8123, phase: 'fast' })
+    })
+
+    it('forwards recovered_count=0, the value that shows nothing needed recovering', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(taggedLine('seeder.scan_completed', { recovered_count: 0 }), 'stdout')
+      expect(captured[0]!.ctx.recovered_count).toBe(0)
     })
   })
 

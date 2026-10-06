@@ -38,6 +38,42 @@ The normal telemetry consent gate still applies. No paths, filenames, asset name
 metadata, or other user content are added. This follows the telemetry privacy rules documented in
 [`src/main/lib/telemetry.ts`](../src/main/lib/telemetry.ts).
 
+## Asset event-log fields
+
+Core's assets system writes `[assets-event] <event> key=value ...` lines, which Desktop forwards as
+`comfy.desktop.comfyui.assets.<event>` (`src/main/lib/assetsTap.ts`). Events and string fields are
+a closed vocabulary mirrored from Core's `app/assets/event_log.py`; adding one needs a change on
+both sides. Numeric and boolean metrics can skip the Desktop change by following a naming
+convention:
+
+| Field name                   | Value forwarded        |
+| ---------------------------- | ---------------------- |
+| `*_ms`, `*_count`, `*_bytes` | integer, 0 to 2^53 - 1 |
+| `*_pct`                      | integer, 0 to 100      |
+| `*_enabled`, `is_*`, `has_*` | `true` / `false`       |
+
+- Names use lowercase letters and underscores only. A digit anywhere in a field name (`p95_ms`)
+  drops the WHOLE line, not just that field. Names over 48 characters are omitted. Suffixes are
+  checked before prefixes, so `is_cache_hit_pct` is a percentage.
+- Fractions are not forwarded; send an integer.
+- A value of the wrong type or range is omitted, and the rest of the event still forwards.
+- Names Desktop attaches to every event itself (such as `platform`, `is_packaged` or
+  `telemetry_enabled`) are never forwarded.
+- The same convention name twice on one line drops the line, reserved names included.
+- At most 64 distinct convention names are forwarded per ComfyUI launch session. Later new names
+  are silently omitted, and names already forwarded keep forwarding.
+
+**Accepted risk: the field name is free text.** The value can only be a number or a boolean,
+but the name is chosen by whoever writes the line. A convention-shaped name becomes a PostHog
+property key, and a Datadog action-context key on the failure events mirrored to Datadog. So
+anything that can print to Core's stdout, such as a custom node, can put up to 48 lowercase
+characters into a key, at most 64 distinct names per launch session. This is accepted: such code can
+already send arbitrary data over the network directly. Core's own emitter only sends names from
+its reviewed allowlist.
+
+The shared line fixture (`src/main/lib/__fixtures__/assets-event-lines.txt`, a byte-identical copy
+of Core's) gains a convention example when Core next changes its copy.
+
 ## PostHog queries
 
 Boot duration by Desktop version, recorded Core version, beta opt-in and Assets argument:
