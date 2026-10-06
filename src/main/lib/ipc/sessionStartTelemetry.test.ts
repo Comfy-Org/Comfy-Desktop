@@ -80,19 +80,16 @@ describe('emitInstanceStartedTelemetry — first_local_instance_started_at guard
 })
 
 describe('emitInstanceStartedTelemetry — session kind', () => {
-  it('says a Performance Test boot is one', async () => {
+  it.each(['performance_test', 'normal'] as const)('says a %s boot is one', async (kind) => {
     vi.clearAllMocks()
     mockCtx = baseCtx('local-src')
     mockSourceCategory = 'local'
 
-    await emitInstanceStartedTelemetry({
-      ...info,
-      sessionKind: 'performance_test'
-    })
+    await emitInstanceStartedTelemetry({ ...info, sessionKind: kind })
 
     expect(telemetry.capture).toHaveBeenCalledWith(
       'comfy.desktop.session.instance_started',
-      expect.objectContaining({ session_kind: 'performance_test' })
+      expect.objectContaining({ session_kind: kind })
     )
   })
 })

@@ -2099,7 +2099,8 @@ describe('Performance Test guardrail', () => {
     launchHarness.installRecords = {
       'guard-bench': { name: 'Bench', sourceId: 'standalone' },
       'guard-other': { name: 'Other Install', sourceId: 'standalone' },
-      'guard-remote': { name: 'Remote Box', sourceId: 'remote' }
+      'guard-remote': { name: 'Remote Box', sourceId: 'remote' },
+      'guard-cloud': { name: 'Cloud', sourceId: 'cloud' }
     }
     launchHarness.schemaThrows = false
     launchHarness.registryThrows = false
@@ -2223,12 +2224,15 @@ describe('Performance Test guardrail', () => {
     await expectRefused('Bench')
   })
 
-  it('does not count a remote installation, which runs on another machine', async () => {
-    _runningSessions.set('guard-remote', {
+  it.each([
+    ['remote', 'guard-remote'],
+    ['cloud', 'guard-cloud']
+  ])('does not count a %s installation, which runs elsewhere', async (_category, id) => {
+    _runningSessions.set(id, {
       proc: null,
       port: 8188,
       mode: 'window',
-      installationName: 'Remote Box',
+      installationName: 'Elsewhere',
       startedAt: Date.now()
     })
 
@@ -2310,15 +2314,32 @@ describe('Performance Test guardrail', () => {
     await expectRefused('Other Install, Bench')
   })
 
-  it("tags the user's own session as normal", async () => {
+  it.each([
+    ['waits for its port', false],
+    ['skips the port wait', true]
+  ])("tags the user's own session as normal when it %s", async (_label, skipPortWait) => {
+    launchHarness.launchCommand = { ...launchHarness.launchCommand!, skipPortWait }
+    const createAssetsTap = vi.spyOn(assetsTapModule, 'createAssetsTap')
     const res = await handleLaunch(ctxFor('guard-bench'))
     expect(res.ok).toBe(true)
 
     const boots = events.filter((e) => /comfyui\.boot_(started|completed)$/.test(e.event))
-    expect(boots).toHaveLength(2)
+    expect(boots).toHaveLength(skipPortWait ? 0 : 2)
     for (const boot of boots) expect(boot.properties).toMatchObject({ session_kind: 'normal' })
-    expect(started).toEqual([expect.objectContaining({ sessionKind: 'normal' })])
+    if (!skipPortWait) expect(started).toEqual([expect.objectContaining({ sessionKind: 'normal' })])
+    expect(createAssetsTap).toHaveBeenCalledWith(expect.objectContaining({ sessionKind: 'normal' }))
+    child!.stdout.emit('data', 'got prompt\n')
     child!.emit('close', 0, null)
+    await vi.waitFor(() => {
+      for (const name of [
+        'comfy.desktop.comfyui.exited',
+        'comfy.desktop.execution.session_summary'
+      ]) {
+        expect(events.find((e) => e.event === name)?.properties, name).toMatchObject({
+          session_kind: 'normal'
+        })
+      }
+    })
   })
 })
 
