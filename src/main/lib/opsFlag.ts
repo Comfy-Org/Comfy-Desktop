@@ -271,7 +271,7 @@ export function makeOpsFlag<T>(opts: {
         )
         .then((result) => {
           if (result.kind === 'unreachable') {
-            const parsed = saved ?? parse(undefined, undefined)
+            const parsed = saved !== undefined ? saved : parse(undefined, undefined)
             if (parsed !== undefined) cached = parsed
           } else {
             const parsed = parse(result.value, result.payload)

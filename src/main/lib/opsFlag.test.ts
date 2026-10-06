@@ -785,6 +785,20 @@ describe('makeOpsFlag deadline and expiry', () => {
     expect(await launchOffline()).toBe('granted')
   })
 
+  it('holds a saved treatment that parses to null', async () => {
+    // Only `undefined` means "nothing usable"; a flag whose type includes null keeps it offline.
+    seedGrant({ value: false, payload: null, fetchedAt: NOW })
+    const flag = makeOpsFlag<'granted' | null | undefined>({
+      key: 'grant-flag',
+      fallback: undefined,
+      parse: (value) => (value === true ? 'granted' : value === false ? null : undefined),
+      persist: true
+    })
+    getOpsFlagResult.mockResolvedValue(unreachable())
+    await flag.init({ distinctId: 'anon' })
+    expect(await flag.get()).toBeNull()
+  })
+
   it('treats an overflowing stamp as nothing saved', async () => {
     // `JSON.parse` reads `1e400` as Infinity, which would otherwise never expire.
     fs.writeFileSync(
