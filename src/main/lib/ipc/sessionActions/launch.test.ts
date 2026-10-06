@@ -74,7 +74,9 @@ const launchHarness = vi.hoisted(() => ({
   /** Installation records `installations.list` answers with, by id; null = the real store. */
   installRecords: null as null | Record<string, { name: string; sourceId: string }>,
   /** Holds every `installations.list` call until it resolves; null = answer at once. */
-  listGate: null as null | Promise<void>
+  listGate: null as null | Promise<void>,
+  /** Stands in for a remote server's URL poll; null = the real one. */
+  waitForUrl: null as null | (() => Promise<void>)
 }))
 
 vi.mock('../shared', async (importOriginal) => {
@@ -102,6 +104,8 @@ vi.mock('../shared', async (importOriginal) => {
       }
     }),
     spawnProcess: (...args: unknown[]) => launchHarness.spawn?.(...args),
+    waitForUrl: (...args: Parameters<typeof actual.waitForUrl>) =>
+      launchHarness.waitForUrl ? launchHarness.waitForUrl() : actual.waitForUrl(...args),
     waitForPort: (...args: Parameters<typeof actual.waitForPort>) =>
       launchHarness.waitForPort ? launchHarness.waitForPort() : actual.waitForPort(...args),
     getComfyFeatureFlagRegistry: async () => {
@@ -2100,7 +2104,8 @@ describe('Performance Test guardrail', () => {
       'guard-bench': { name: 'Bench', sourceId: 'standalone' },
       'guard-other': { name: 'Other Install', sourceId: 'standalone' },
       'guard-remote': { name: 'Remote Box', sourceId: 'remote' },
-      'guard-cloud': { name: 'Cloud', sourceId: 'cloud' }
+      'guard-cloud': { name: 'Cloud', sourceId: 'cloud' },
+      'guard-unknown': { name: 'Unknown Source', sourceId: 'no-such-source' }
     }
     launchHarness.schemaThrows = false
     launchHarness.registryThrows = false
@@ -2151,6 +2156,7 @@ describe('Performance Test guardrail', () => {
     launchHarness.busyPorts = null
     launchHarness.installRecords = null
     launchHarness.listGate = null
+    launchHarness.waitForUrl = null
     setCallbacks({})
     for (const [id, launch] of launches.splice(0)) _endLaunch(id, launch)
     _runningSessions.clear()
@@ -2200,6 +2206,11 @@ describe('Performance Test guardrail', () => {
     )
   })
 
+  it('counts an installation of an unknown source as local', async () => {
+    runSession('guard-unknown', 'Unknown Source')
+    await expectRefused('Unknown Source')
+  })
+
   it('counts a session whose installation record is gone, by its session name', async () => {
     runSession('guard-gone', 'Gone Install')
     await expectRefused('Gone Install')
@@ -2244,13 +2255,15 @@ describe('Performance Test guardrail', () => {
 
   it('does not guard a Performance Test of a remote installation', async () => {
     runSession('guard-other', 'Other Install')
+    // The remote server answers at once: no real request leaves the test.
+    launchHarness.waitForUrl = async () => {}
 
     const res = await handleLaunch({
       ...ctxFor('guard-remote', 'performance-test:guard-remote'),
       inst: { id: 'guard-remote', name: 'Remote Box', sourceId: 'remote' } as InstallationRecord
     })
 
-    expect(res.message ?? '').not.toContain('performanceTestOtherInstanceRunning')
+    expect(res).toMatchObject({ ok: true })
   })
 
   it('does not count its own earlier run', async () => {

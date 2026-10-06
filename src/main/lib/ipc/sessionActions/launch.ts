@@ -701,6 +701,10 @@ export function _cleanupFailedLaunchSetup(
  * installation's database. Remote and cloud sessions run elsewhere and do not count.
  * Synchronous, so the caller can decide and register its launch with nothing in between.
  */
+/** Runs on this machine. An unknown source counts as local, as in the instance-already-running prompt. */
+const isLocalSource = (sourceId: string): boolean =>
+  (sourceMap[sourceId]?.category ?? 'local') === 'local'
+
 export function otherLocalComfyUIs(sessionId: string, records: InstallationRecord[]): string[] {
   const ids = new Set([
     ..._runningSessions.keys(),
@@ -713,7 +717,7 @@ export function otherLocalComfyUIs(sessionId: string, records: InstallationRecor
     const perf = sessionKindOf(id) === 'performance_test'
     const sourceId = perf ? id.slice(PERFORMANCE_TEST_SESSION_PREFIX.length) : id
     const inst = records.find((r) => r.id === sourceId)
-    if (inst && sourceMap[inst.sourceId]?.category !== 'local') continue
+    if (inst && !isLocalSource(inst.sourceId)) continue
     const name = inst?.name ?? _runningSessions.get(id)?.installationName ?? id
     names.push(perf ? i18n.t('launch.instanceRunningPerformanceTest', { name }) : name)
   }
@@ -724,8 +728,7 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   const { installationId } = ctx
   const sessionId = ctx.sessionId ?? installationId
   // A Performance Test of a remote or cloud installation runs elsewhere, so nothing here competes.
-  const localTarget = (sourceMap[ctx.inst.sourceId]?.category ?? 'local') === 'local'
-  if (sessionKindOf(sessionId) === 'performance_test' && localTarget) {
+  if (sessionKindOf(sessionId) === 'performance_test' && isLocalSource(ctx.inst.sourceId)) {
     // The last await before `_beginLaunch`: from here the check and the registration below run
     // in one synchronous stretch, so two Performance Tests can never both pass it.
     const records = await installations.list()
