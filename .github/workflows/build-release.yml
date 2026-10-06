@@ -219,7 +219,27 @@ jobs:
           const fs = require('node:fs')
 
           const expectedBuildId = process.env.EXPECTED_BUILD_ID || ''
-          const metadata = JSON.parse(fs.readFileSync('todesktop-build.json', 'utf8'))
+          const rawMetadata = fs.readFileSync('todesktop-build.json', 'utf8')
+          let metadata
+          try {
+            metadata = JSON.parse(rawMetadata)
+          } catch (error) {
+            const candidates = [
+              [rawMetadata.indexOf('['), rawMetadata.lastIndexOf(']')],
+              [rawMetadata.indexOf('{'), rawMetadata.lastIndexOf('}')]
+            ]
+            for (const [start, end] of candidates) {
+              if (start < 0 || end < start) continue
+              try {
+                metadata = JSON.parse(rawMetadata.slice(start, end + 1))
+                break
+              } catch {}
+            }
+            if (metadata === undefined) {
+              console.error('Raw ToDesktop metadata output:\n', rawMetadata)
+              throw error
+            }
+          }
           const builds = Array.isArray(metadata) ? metadata : [metadata]
           const build = builds.find((candidate) => String(candidate?.id || '') === expectedBuildId)
           if (!build) {
@@ -341,10 +361,8 @@ jobs:
           fs.appendFileSync(output, `windows_url=${windowsUrl}\n`)
           fs.appendFileSync(output, `linux_url=${linuxUrl}\n`)
 
-          const successStatuses = new Set(['succeeded', 'success', 'finished', 'complete', 'completed'])
-          if (!successStatuses.has(String(status).toLowerCase())) {
-            throw new Error(`ToDesktop build did not succeed (status=${status})`)
-          }
+          // The targeted CLI command uses --exit and fails unless this exact build completes;
+          // status is retained as metadata rather than duplicating the CLI's evolving vocabulary.
           NODE
         env:
           EXPECTED_BUILD_ID: ${{ steps.build_id.outputs.build_id }}
@@ -376,9 +394,13 @@ jobs:
             --fail \
             --location \
             --retry 3 \
+            --retry-all-errors \
+            --retry-delay 2 \
             --connect-timeout 15 \
             --max-time 900 \
             --max-filesize 2147483648 \
+            --proto '=https' \
+            --proto-redir '=https' \
             --output Comfy-Desktop-linux-x64.AppImage \
             --url "${appimage_url}"
           chmod +x Comfy-Desktop-linux-x64.AppImage

@@ -24,16 +24,16 @@ smoke_dir="$(mktemp -d)"
 app_pid=''
 cleanup() {
   if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
-    kill "$app_pid" 2>/dev/null || true
+    kill -- "-$app_pid" 2>/dev/null || true
     wait "$app_pid" 2>/dev/null || true
   fi
-  rm -rf "$smoke_dir"
+  rm -rf "$smoke_dir" || true
 }
 trap cleanup EXIT
 
 (
   cd "$smoke_dir"
-  "$appimage" --appimage-extract >/dev/null
+  env -i PATH="$PATH" HOME="$smoke_dir" "$appimage" --appimage-extract >/dev/null
 )
 appdir="$smoke_dir/squashfs-root"
 
@@ -54,7 +54,15 @@ if [[ ! -f "$desktop_file" ]]; then
   echo "Desktop entry is missing: $desktop_file" >&2
   exit 1
 fi
-if ! grep -Eq '^Exec=AppRun .*--no-sandbox|^Exec=AppRun --no-sandbox' "$desktop_file"; then
+desktop_exec="$(
+  awk '
+    /^\[Desktop Entry\]$/ { in_desktop = 1; next }
+    /^\[/ { if (in_desktop) exit }
+    in_desktop && /^Exec=/ { print; exit }
+  ' "$desktop_file"
+)"
+if [[ ! "$desktop_exec" =~ ^Exec=AppRun([[:space:]]|$) ]] ||
+  [[ ! "$desktop_exec" =~ (^|[[:space:]])--no-sandbox([[:space:]]|$) ]]; then
   echo "Desktop entry does not carry the AppImage's required --no-sandbox launch flag" >&2
   sed -n '1,120p' "$desktop_file" >&2
   exit 1
@@ -74,7 +82,7 @@ done
 
 mkdir -p "$smoke_dir/home" "$smoke_dir/config" "$smoke_dir/cache"
 log="$smoke_dir/app.log"
-env -i \
+setsid env -i \
   PATH="$PATH" \
   HOME="$smoke_dir/home" \
   XDG_CONFIG_HOME="$smoke_dir/config" \
@@ -101,7 +109,7 @@ if [[ "$ready" -ne 1 ]]; then
   sed -n '1,240p' "$log" >&2
   exit 1
 fi
-if [[ -n "$expected_version" ]] && ! grep -Fq "App started v${expected_version}" "$log"; then
+if [[ -n "$expected_version" ]] && ! grep -Fq "App started v${expected_version} pid=" "$log"; then
   echo "AppImage startup log does not contain expected version ${expected_version}" >&2
   sed -n '1,120p' "$log" >&2
   exit 1
