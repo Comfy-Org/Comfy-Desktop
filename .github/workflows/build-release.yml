@@ -10,7 +10,7 @@ on:
         default: ''
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
   contents: write
@@ -68,7 +68,12 @@ jobs:
         id: datadog
         shell: bash
         run: |
-          echo "release_version=$(node ./scripts/datadog-release-version.cjs)" >> "$GITHUB_OUTPUT"
+          release_version="$(node ./scripts/datadog-release-version.cjs)"
+          if [[ -z "${release_version}" ]]; then
+            echo "Unable to resolve Datadog release version" >&2
+            exit 1
+          fi
+          echo "release_version=${release_version}" >> "$GITHUB_OUTPUT"
 
       # Fetch the proprietary PP Formula font into the renderer public dir
       # before the build. It is gitignored (never committed to this public

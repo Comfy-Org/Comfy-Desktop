@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { execSync } = require('node:child_process')
+const { createHash } = require('node:crypto')
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
@@ -22,8 +23,7 @@ function readGitSha() {
     return execSync('git rev-parse --short=12 HEAD', {
       cwd: repoRoot,
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 2_000
+      stdio: ['ignore', 'pipe', 'ignore']
     }).trim()
   } catch {
     return ''
@@ -35,35 +35,45 @@ function readGitSha() {
  * forward slashes. Keep release and sourcemap versions identical by normalizing once at
  * their shared source. Reserve eight characters for the `version:` tag prefix. */
 function normalizeDatadogVersion(value, maxLength = 192) {
-  const normalized = Array.from(
-    String(value || '')
-      .trim()
-      .toLowerCase()
-  )
-    .map((character) => {
-      if (/^[\p{Ll}\p{Lo}0-9_.:/-]$/u.test(character)) return character
-      // A plus commonly joins SemVer build metadata to its commit and is equivalent to the
-      // hyphen used by our self-resolved path. Encode every other rejected code point so
-      // different source versions do not silently collapse onto one release.
-      if (character === '+') return '-'
-      return `_u${character.codePointAt(0).toString(16)}_`
-    })
-    .join('')
-  if (!normalized) return 'v0.0.0'
-  const withLeadingLetter = /^[\p{Ll}\p{Lo}]/u.test(normalized) ? normalized : `v${normalized}`
-  let truncated = ''
-  for (const character of withLeadingLetter) {
-    if (truncated.length + character.length > maxLength) break
-    truncated += character
+  if (maxLength < 12) throw new Error('Datadog version length budget is too small')
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (!raw) throw new Error('Datadog release version cannot be empty')
+
+  // A SemVer build-metadata suffix containing a commit is the same release spelling used by
+  // our self-resolved path. Other lossy changes receive a deterministic hash suffix below.
+  const canonical = raw.replace(/\+([a-f0-9]{7,40})$/i, '-$1')
+  let normalized = ''
+  let changed = false
+  for (const character of canonical) {
+    const replacement = /^[\p{Ll}\p{Lo}0-9_.:/-]$/u.test(character) ? character : '_'
+    if (replacement !== character) changed = true
+    if (normalized.length <= maxLength) normalized += replacement
   }
-  return truncated
+  if (!/^[\p{Ll}\p{Lo}]/u.test(normalized)) normalized = `v${normalized}`
+
+  const truncate = (input, budget) => {
+    let output = ''
+    for (const character of input) {
+      if (output.length + character.length > budget) break
+      output += character
+    }
+    return output
+  }
+  const truncated = truncate(normalized, maxLength)
+  if (!changed && truncated === normalized) return truncated
+
+  const suffix = `-h${createHash('sha256').update(canonical).digest('hex').slice(0, 8)}`
+  return `${truncate(normalized, maxLength - suffix.length)}${suffix}`
 }
 
 function resolveDatadogReleaseVersion(env = process.env) {
   const explicitVersion = String(env.VITE_DATADOG_RUM_VERSION || '').trim()
   if (explicitVersion) return normalizeDatadogVersion(explicitVersion)
 
-  const packageVersion = String(env.npm_package_version || readPackageVersion()).trim()
+  const envPackageVersion = String(env.npm_package_version || '').trim()
+  const packageVersion = envPackageVersion || readPackageVersion()
   const commitSha = String(env.GITHUB_SHA || env.VITE_GIT_SHA || readGitSha()).trim()
 
   if (!packageVersion) {
@@ -72,11 +82,10 @@ function resolveDatadogReleaseVersion(env = process.env) {
 
   if (!commitSha) return normalizeDatadogVersion(packageVersion)
 
-  const normalizedSha = commitSha
-    .toLowerCase()
-    .replace(/[^a-f0-9]/g, '')
-    .slice(0, 12)
-  if (!normalizedSha) return normalizeDatadogVersion(packageVersion)
+  if (!/^[a-f0-9]{7,40}$/i.test(commitSha)) {
+    throw new Error('Datadog release commit must be a 7-40 character hexadecimal SHA')
+  }
+  const normalizedSha = commitSha.toLowerCase().slice(0, 12)
   const suffix = `-${normalizedSha}`
   return `${normalizeDatadogVersion(packageVersion, 192 - suffix.length)}${suffix}`
 }

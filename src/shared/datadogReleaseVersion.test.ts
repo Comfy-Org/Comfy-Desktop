@@ -28,8 +28,11 @@ describe('Datadog release version', () => {
   })
 
   it('does not collapse different rejected characters onto one release', () => {
-    expect(normalizeDatadogVersion('1.1.4 5')).toBe('v1.1.4_u20_5')
-    expect(normalizeDatadogVersion('1.1.4@5')).toBe('v1.1.4_u40_5')
+    const space = normalizeDatadogVersion('1.1.4 5')
+    const atSign = normalizeDatadogVersion('1.1.4@5')
+
+    expect(space).not.toBe(atSign)
+    expect(space).not.toBe(normalizeDatadogVersion('1.1.4_5'))
   })
 
   it('normalizes uppercase versions to the pinned SDK character set', () => {
@@ -57,9 +60,27 @@ describe('Datadog release version', () => {
   it('truncates at a Unicode code-point boundary', () => {
     const version = normalizeDatadogVersion(`${'a'.repeat(191)}𠀀`)
 
-    expect(version).toBe('a'.repeat(191))
+    expect(version).toMatch(/^a+-h[a-f0-9]{8}$/)
     expect(version).not.toMatch(/[\uD800-\uDFFF]/u)
     expect(isValidPinnedSdkTag(`version:${version}`)).toBe(true)
+  })
+
+  it('does not collide when truncation follows different rejected characters', () => {
+    expect(normalizeDatadogVersion(`${'a'.repeat(189)}…`)).not.toBe(
+      normalizeDatadogVersion(`${'a'.repeat(189)}${String.fromCodePoint(0x2028)}`)
+    )
+  })
+
+  it('rejects malformed commit identifiers instead of fabricating a SHA', () => {
+    expect(() =>
+      resolveDatadogReleaseVersion({ npm_package_version: '1.1.4', GITHUB_SHA: 'refs/heads/main' })
+    ).toThrow('hexadecimal SHA')
+  })
+
+  it('falls back from a whitespace npm version to package metadata', () => {
+    expect(
+      resolveDatadogReleaseVersion({ npm_package_version: ' ', GITHUB_SHA: 'dce2b8a977d4' })
+    ).toBe('v1.1.4-dce2b8a977d4')
   })
 
   it('reserves room for the commit suffix when the package version is long', () => {
