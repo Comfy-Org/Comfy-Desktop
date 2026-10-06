@@ -206,8 +206,10 @@ jobs:
           fs.appendFileSync(output, `build_id=${buildIds[0]}\n`)
           NODE
 
-      - name: Fetch ToDesktop build metadata
-        run: todesktop builds --config=todesktop.json --format=json --exit > todesktop-build.json
+      - name: Fetch ToDesktop build metadata by ID
+        env:
+          BUILD_ID: ${{ steps.build_id.outputs.build_id }}
+        run: todesktop builds "${BUILD_ID}" --config=todesktop.json --format=json --exit > todesktop-build.json
 
       - name: Extract build details
         id: extract
@@ -218,10 +220,8 @@ jobs:
 
           const expectedBuildId = process.env.EXPECTED_BUILD_ID || ''
           const metadata = JSON.parse(fs.readFileSync('todesktop-build.json', 'utf8'))
-          if (!Array.isArray(metadata)) {
-            throw new Error('Expected ToDesktop JSON metadata to be an array of builds')
-          }
-          const build = metadata.find((candidate) => String(candidate?.id || '') === expectedBuildId)
+          const builds = Array.isArray(metadata) ? metadata : [metadata]
+          const build = builds.find((candidate) => String(candidate?.id || '') === expectedBuildId)
           if (!build) {
             throw new Error(`Could not find ToDesktop build ${expectedBuildId} in JSON metadata`)
           }
@@ -354,21 +354,33 @@ jobs:
         run: |
           set -euo pipefail
           appimage_url="$(
-            jq -r '
+            jq -r 'first(
               .assets[]
               | select(.platform == "Linux" and .format == "AppImage")
               | select(.arch == "x64" or .arch == "n/a")
               | .url
-            ' release-assets.json | head -1
+            ) // empty' release-assets.json
           )"
           if [[ -z "${appimage_url}" || "${appimage_url}" == "null" ]]; then
             echo "::error::ToDesktop metadata did not include a Linux x64 AppImage URL"
             exit 1
           fi
+          if [[ ! "${appimage_url}" =~ ^https://dl\.todesktop\.com/ ]]; then
+            echo "::error::Refusing unexpected AppImage download URL: ${appimage_url}"
+            exit 1
+          fi
 
           sudo apt-get update
           sudo apt-get install --yes xvfb
-          curl --fail --location --retry 3 --output Comfy-Desktop-linux-x64.AppImage "${appimage_url}"
+          curl \
+            --fail \
+            --location \
+            --retry 3 \
+            --connect-timeout 15 \
+            --max-time 900 \
+            --max-filesize 2147483648 \
+            --output Comfy-Desktop-linux-x64.AppImage \
+            --url "${appimage_url}"
           chmod +x Comfy-Desktop-linux-x64.AppImage
           ./scripts/smoke-linux-appimage.sh \
             Comfy-Desktop-linux-x64.AppImage \

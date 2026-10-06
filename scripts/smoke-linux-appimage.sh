@@ -74,17 +74,18 @@ done
 
 mkdir -p "$smoke_dir/home" "$smoke_dir/config" "$smoke_dir/cache"
 log="$smoke_dir/app.log"
-env \
+env -i \
+  PATH="$PATH" \
   HOME="$smoke_dir/home" \
   XDG_CONFIG_HOME="$smoke_dir/config" \
   XDG_CACHE_HOME="$smoke_dir/cache" \
-  E2E=1 \
   xvfb-run -a "$appdir/AppRun" --no-sandbox --enable-logging=stderr >"$log" 2>&1 &
 app_pid=$!
 
 ready=0
 for _ in $(seq 1 30); do
-  if grep -q 'App started v' "$log"; then
+  sleep 1
+  if grep -Fq 'App started v' "$log"; then
     ready=1
     break
   fi
@@ -93,7 +94,6 @@ for _ in $(seq 1 30); do
     sed -n '1,240p' "$log" >&2
     exit 1
   fi
-  sleep 1
 done
 
 if [[ "$ready" -ne 1 ]]; then
@@ -101,11 +101,14 @@ if [[ "$ready" -ne 1 ]]; then
   sed -n '1,240p' "$log" >&2
   exit 1
 fi
-if [[ -n "$expected_version" ]] && ! grep -q "App started v${expected_version} " "$log"; then
+if [[ -n "$expected_version" ]] && ! grep -Fq "App started v${expected_version}" "$log"; then
   echo "AppImage startup log does not contain expected version ${expected_version}" >&2
   sed -n '1,120p' "$log" >&2
   exit 1
 fi
+# The startup marker is emitted before window and host initialization. Keep the production-mode
+# process alive long enough for immediate initialization crashes to surface.
+sleep 5
 if ! kill -0 "$app_pid" 2>/dev/null; then
   echo "AppImage did not remain running after startup" >&2
   sed -n '1,240p' "$log" >&2
