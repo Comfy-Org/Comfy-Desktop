@@ -71,6 +71,16 @@ describe('experiments', () => {
     captured.length = 0
     mockFlags = {}
     mockFlagsDelayMs = 0
+    for (const name of [
+      'POSTHOG_API_KEY',
+      'POSTHOG_HOST',
+      'POSTHOG_ENABLED',
+      'COMFY_DESKTOP_POSTHOG_API_KEY',
+      'COMFY_DESKTOP_POSTHOG_HOST',
+      'COMFY_DESKTOP_POSTHOG_ENABLED'
+    ]) {
+      delete process.env[name]
+    }
     process.env['COMFY_DESKTOP_POSTHOG_API_KEY'] = 'test-key'
     process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
 

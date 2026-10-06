@@ -642,6 +642,12 @@ describe('telemetry PostHog client options', () => {
     expect(posthogConstructorCalls).toHaveLength(0)
   })
 
+  it('preserves the generic disable switch during unpackaged development', () => {
+    setupTelemetry({ isPackaged: false, env: { POSTHOG_ENABLED: '0' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
   it('falls back from whitespace-only overrides to packaged defaults', () => {
     setupTelemetry({
       env: {
@@ -654,6 +660,12 @@ describe('telemetry PostHog client options', () => {
       apiKey: DEFAULT_POSTHOG_API_KEY,
       options: { host: DEFAULT_POSTHOG_HOST }
     })
+  })
+
+  it('rejects a non-HTTPS packaged host override', () => {
+    setupTelemetry({ env: { COMFY_DESKTOP_POSTHOG_HOST: 'http://posthog.example' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
   })
 })
 
