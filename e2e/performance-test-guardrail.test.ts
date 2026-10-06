@@ -121,6 +121,9 @@ test('a Performance Test is refused while another installation runs, and named @
 
   expect(perf.ok).toBe(false)
   expect(perf.message).toContain('Stop Other Install in Comfy Desktop')
+  expect(await events('comfy.desktop.performance_test.refused')).toEqual([
+    expect.objectContaining({ installation_id: BENCH_ID, other_count: 1 })
+  ])
   expect(await getRunningSessionSnapshot(ctx!.app, PERF_SESSION)).toBeNull()
   expect(
     (await events('comfy.desktop.comfyui.boot_started')).filter(

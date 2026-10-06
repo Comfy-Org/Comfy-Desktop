@@ -2173,6 +2173,12 @@ describe('Performance Test guardrail', () => {
       message: `errors.performanceTestOtherInstanceRunning ${JSON.stringify({ names })}`
     })
     expect(spawned, 'no ComfyUI was started').toBe(0)
+    expect(events).toEqual([
+      {
+        event: 'comfy.desktop.performance_test.refused',
+        properties: { installation_id: 'guard-bench', other_count: names.split(', ').length }
+      }
+    ])
     expect(_operationAborts.has(PERF), 'no operation slot claimed').toBe(false)
     expect(_getLaunchingInstallationIds()).not.toContain(PERF)
   }
@@ -2226,6 +2232,12 @@ describe('Performance Test guardrail', () => {
     const results = await Promise.all([first, second])
 
     expect(results.map((r) => r.ok)).toEqual([true, false])
+    expect(events.filter((e) => e.event === 'comfy.desktop.performance_test.refused')).toEqual([
+      {
+        event: 'comfy.desktop.performance_test.refused',
+        properties: { installation_id: 'guard-other', other_count: 1 }
+      }
+    ])
     expect(results[1]!.message).toContain('instanceRunningPerformanceTest')
     expect(spawned).toBe(1)
   })

@@ -694,6 +694,10 @@ export function _cleanupFailedLaunchSetup(
   clearBetaActivationClaim(installationId)
 }
 
+/** Runs on this machine. An unknown source counts as local, as in the instance-already-running prompt. */
+const isLocalSource = (sourceId: string): boolean =>
+  (sourceMap[sourceId]?.category ?? 'local') === 'local'
+
 /**
  * Every other local ComfyUI Desktop knows about, by display name: running, still preparing or
  * starting, or stopping (a session leaves `_runningSessions` before its process is killed). A
@@ -701,10 +705,6 @@ export function _cleanupFailedLaunchSetup(
  * installation's database. Remote and cloud sessions run elsewhere and do not count.
  * Synchronous, so the caller can decide and register its launch with nothing in between.
  */
-/** Runs on this machine. An unknown source counts as local, as in the instance-already-running prompt. */
-const isLocalSource = (sourceId: string): boolean =>
-  (sourceMap[sourceId]?.category ?? 'local') === 'local'
-
 export function otherLocalComfyUIs(sessionId: string, records: InstallationRecord[]): string[] {
   const ids = new Set([
     ..._runningSessions.keys(),
@@ -735,6 +735,11 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
     const others = otherLocalComfyUIs(sessionId, records)
     if (others.length > 0) {
       appendLog(sessionId, `[launch] Performance Test refused: also running ${others.join(', ')}\n`)
+      // How often the guardrail stops a run. A count only: installation names never leave the machine.
+      telemetry.emit('comfy.desktop.performance_test.refused', {
+        installation_id: installationId,
+        other_count: others.length
+      })
       return {
         ok: false,
         message: i18n.t('errors.performanceTestOtherInstanceRunning', { names: others.join(', ') })
