@@ -89,7 +89,13 @@ test.beforeAll(async () => {
   ctx = await launchApp({
     cdpPort,
     profileDir,
-    settings: { firstUseCompleted: true, telemetryEnabled: false, hasSeenCentralPillHint: true },
+    settings: {
+      firstUseCompleted: true,
+      telemetryEnabled: false,
+      hasSeenCentralPillHint: true,
+      // The refusal is asserted in English.
+      language: 'en'
+    },
     installations: [
       installation(BENCH_ID, 'Bench Install'),
       installation(OTHER_ID, 'Other Install')
@@ -114,8 +120,7 @@ test('a Performance Test is refused while another installation runs, and named @
   const perf = await launch(BENCH_ID, PERF_SESSION)
 
   expect(perf.ok).toBe(false)
-  expect(perf.message).toContain('Other Install')
-  expect(perf.message).toContain('Stop it in Comfy Desktop')
+  expect(perf.message).toContain('Stop Other Install in Comfy Desktop')
   expect(await getRunningSessionSnapshot(ctx!.app, PERF_SESSION)).toBeNull()
   expect(
     (await events('comfy.desktop.comfyui.boot_started')).filter(
