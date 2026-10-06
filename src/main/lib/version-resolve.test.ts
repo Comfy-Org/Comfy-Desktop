@@ -453,6 +453,82 @@ describe('resolveLocalVersion', () => {
     })
   })
 
+  describe('concurrent callers', () => {
+    it('share one resolution for the same commit', async () => {
+      mockedFindNearestTag.mockResolvedValue('v0.17.0')
+      mockedFindLatestVersionTag.mockResolvedValue('v0.17.0')
+      mockedCountCommitsAhead.mockResolvedValue(0)
+
+      const results = await Promise.all([
+        resolveLocalVersion('/repo', 'abc1234'),
+        resolveLocalVersion('/repo', 'abc1234'),
+        resolveLocalVersion('/repo', 'abc1234', 'v0.14.0')
+      ])
+
+      expect(mockedFindNearestTag).toHaveBeenCalledTimes(1)
+      expect(mockedCountCommitsAhead).toHaveBeenCalledTimes(1)
+      expect(results.map((r) => r.baseTag)).toEqual(['v0.17.0', 'v0.17.0', 'v0.17.0'])
+    })
+
+    it('apply each caller its own fallbackTag over a shared resolution', async () => {
+      mockedFindNearestTag.mockResolvedValue(undefined)
+      mockedFindLatestVersionTag.mockResolvedValue(undefined)
+
+      const [plain, withFallback] = await Promise.all([
+        resolveLocalVersion('/repo', 'abc1234'),
+        resolveLocalVersion('/repo', 'abc1234', 'v0.14.0')
+      ])
+
+      expect(mockedFindNearestTag).toHaveBeenCalledTimes(1)
+      expect(plain.baseTag).toBeUndefined()
+      expect(withFallback).toMatchObject({ baseTag: 'v0.14.0', baseTagVerified: false })
+    })
+
+    it('share one latest-tag lookup across different commits', async () => {
+      mockedFindNearestTag.mockResolvedValue('v0.16.4')
+      mockedFindLatestVersionTag.mockResolvedValue('v0.17.1')
+      mockedCountCommitsAhead.mockResolvedValue(0)
+
+      await Promise.all(
+        ['aaa1111', 'bbb2222', 'ccc3333'].map((c) => resolveLocalVersion('/repo', c))
+      )
+
+      expect(mockedFindLatestVersionTag).toHaveBeenCalledTimes(1)
+      expect(mockedFindNearestTag).toHaveBeenCalledTimes(3)
+    })
+
+    it('do not repopulate the cache from a resolution started before clearVersionCache', async () => {
+      let release!: (tag: string) => void
+      mockedFindNearestTag.mockImplementationOnce(
+        () => new Promise<string | undefined>((resolve) => (release = resolve))
+      )
+      mockedFindLatestVersionTag.mockResolvedValue('v0.17.0')
+      mockedCountCommitsAhead.mockResolvedValue(0)
+
+      const stale = resolveLocalVersion('/repo', 'abc1234')
+      await vi.waitFor(() => expect(mockedFindNearestTag).toHaveBeenCalledTimes(1))
+      clearVersionCache()
+      release('v0.16.0')
+      expect((await stale).baseTag).toBe('v0.16.0')
+
+      mockedFindNearestTag.mockResolvedValue('v0.17.0')
+      const fresh = await resolveLocalVersion('/repo', 'abc1234')
+      expect(fresh.baseTag).toBe('v0.17.0')
+      expect(mockedFindNearestTag).toHaveBeenCalledTimes(2)
+    })
+
+    it('let a failed resolution be retried', async () => {
+      mockedFindNearestTag.mockRejectedValueOnce(new Error('spawn failed'))
+      mockedFindLatestVersionTag.mockResolvedValue('v0.17.0')
+      mockedCountCommitsAhead.mockResolvedValue(0)
+
+      await expect(resolveLocalVersion('/repo', 'abc1234')).rejects.toThrow('spawn failed')
+
+      mockedFindNearestTag.mockResolvedValue('v0.17.0')
+      expect((await resolveLocalVersion('/repo', 'abc1234')).baseTag).toBe('v0.17.0')
+    })
+  })
+
   describe('latest tag caching', () => {
     it('reuses findLatestVersionTag result for same repo within TTL', async () => {
       mockedFindNearestTag.mockResolvedValue('v0.16.4')
