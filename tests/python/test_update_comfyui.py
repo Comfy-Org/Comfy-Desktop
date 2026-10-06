@@ -403,6 +403,8 @@ class UpdateComfyUITest(unittest.TestCase):
         self.lock("main")
         r = self.update("--stable", driver=KILL_IN_RESTORE, driver_arg="-")
         self.assertEqual(r.returncode, 9, r.stdout + r.stderr)
+        # Flushed before anything moves, so Desktop sees it even after a kill.
+        self.assertIn("[WRITING_TARGET] %s" % self.sha["v2"], r.stdout)
         os.chmod(os.path.join(self.repo, "main"), stat.S_IRWXU)
         self.assertEqual(self.head(), self.sha["v1"])
         self.assertIn("app/db.py", self.tracked_changes())

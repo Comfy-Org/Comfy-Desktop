@@ -347,9 +347,8 @@ export function isUpdateAvailable(
   info: ReleaseCacheEntry | null
 ): boolean {
   if (!info || !info.latestTag) return false
-  // An update that did not finish leaves the tree for another update to repair.
   const marker = installation.installPath ? readOpMarker(installation.installPath as string) : null
-  if (marker?.op === 'update' && !marker.postHead) return true
+  if (marker?.op === 'update' && !marker.postHead) return true // unfinished: Update repairs it
   // On stable: any commits ahead means installed is newer than stable. When commitsAhead is
   // undefined (API failure) but the commit differs, conservatively report an update.
   const cv = installation.comfyVersion as ComfyVersion | undefined

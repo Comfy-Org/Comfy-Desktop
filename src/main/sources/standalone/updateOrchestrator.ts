@@ -276,7 +276,7 @@ export async function runComfyUIUpdate(
   // Record the local backup branch (created by the update script at the pre-op
   // HEAD) in the op marker so a failed launch-time recovery can point the user at
   // an offline restore point. Diagnostics only — the rollback target stays preHead.
-  if (result.markers.BACKUP_BRANCH && preOpHead) {
+  if (result.markers.BACKUP_BRANCH && preOpHead && !repairing) {
     const existingMarker = readOpMarker(installPath)
     if (existingMarker && !existingMarker.postHead) {
       await writeOpMarker(installPath, {
