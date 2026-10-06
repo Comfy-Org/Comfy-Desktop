@@ -1841,6 +1841,24 @@ function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDo
               if ((copyError as NodeJS.ErrnoException).code === 'EEXIST') {
                 discardTempFile(tempPath)
                 pending.tempPath = undefined
+              } else {
+                // Any other copy failure must end the download here. Leaving
+                // `tempPath` set falls through to the rename below, which
+                // replaces an existing file on POSIX - the clobber this whole
+                // branch exists to prevent.
+                discardTempFile(tempPath)
+                pending.tempPath = undefined
+                reportProgress({
+                  id: pending.id,
+                  url: pending.url,
+                  filename: pending.filename,
+                  directory: pending.directory,
+                  progress: 0,
+                  status: 'error',
+                  error: 'Failed to move downloaded file to final location'
+                })
+                unregisterPending(pending)
+                return
               }
             }
           }

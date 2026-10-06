@@ -920,6 +920,41 @@ describe('asset download retries', () => {
     }
   })
 
+  it('does not fall back to rename when the copy fails for any other reason', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const destination = path.join(outputDir, 'sample.png')
+    const link = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('cross-device'), { code: 'EXDEV' })
+    })
+    const copy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('no space'), { code: 'ENOSPC' })
+    })
+    const rename = vi.spyOn(fs, 'renameSync')
+
+    try {
+      await startExactAssetDownload(h, url, outputDir)
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
+      await fs.promises.writeFile(destination, 'created-during-download')
+      item.getDone()!({}, 'completed')
+
+      // Rename replaces an existing file on POSIX, so reaching it at all would
+      // undo the guarantee the link and the exclusive copy are here to give.
+      expect(rename).not.toHaveBeenCalled()
+      await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe(
+        'created-during-download'
+      )
+      await expect(fs.promises.stat(item.tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      rename.mockRestore()
+      copy.mockRestore()
+      link.mockRestore()
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
   it('does not overwrite an exact destination created while the download is in flight', async () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
     const url = 'https://remote.example/input/sample.png'
