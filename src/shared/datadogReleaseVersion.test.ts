@@ -9,6 +9,9 @@ const { normalizeDatadogVersion, resolveDatadogReleaseVersion } =
   }
 
 describe('Datadog release version', () => {
+  const isValidPinnedSdkTag = (tag: string): boolean =>
+    tag.length <= 200 && /^[\p{Ll}\p{Lo}][\p{Ll}\p{Lo}0-9_.:/-]*$/u.test(tag)
+
   it('creates a valid version tag from the package version and commit', () => {
     expect(
       resolveDatadogReleaseVersion({
@@ -24,8 +27,11 @@ describe('Datadog release version', () => {
     )
   })
 
-  it('preserves already-valid version tags', () => {
-    expect(normalizeDatadogVersion('release/1.1.4-rc.1')).toBe('release/1.1.4-rc.1')
+  it('normalizes uppercase versions to the pinned SDK character set', () => {
+    const version = normalizeDatadogVersion('release/1.1.4-RC.1')
+
+    expect(version).toBe('release/1.1.4-rc.1')
+    expect(isValidPinnedSdkTag(`version:${version}`)).toBe(true)
   })
 
   it('preserves distinct Unicode release versions', () => {

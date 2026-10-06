@@ -29,15 +29,17 @@ function readGitSha() {
   }
 }
 
-/** Datadog unified-service tag values must begin with a letter and may only contain
- * letters, numbers, underscores, minuses, colons, periods, and forward slashes. Keep
- * release and sourcemap versions identical by normalizing once at their shared source. */
+/** Datadog unified-service tag values must begin with a lowercase or uncased letter and
+ * may only contain those letters, numbers, underscores, minuses, colons, periods, and
+ * forward slashes. Keep release and sourcemap versions identical by normalizing once at
+ * their shared source. */
 function normalizeDatadogVersion(value) {
   const normalized = String(value || '')
     .trim()
-    .replace(/[^\p{L}0-9_.:/-]+/gu, '_')
+    .toLowerCase()
+    .replace(/[^\p{Ll}\p{Lo}0-9_.:/-]+/gu, '_')
   if (!normalized) return 'v0.0.0'
-  const withLeadingLetter = /^\p{L}/u.test(normalized) ? normalized : `v${normalized}`
+  const withLeadingLetter = /^[\p{Ll}\p{Lo}]/u.test(normalized) ? normalized : `v${normalized}`
   return withLeadingLetter.slice(0, 200)
 }
 
