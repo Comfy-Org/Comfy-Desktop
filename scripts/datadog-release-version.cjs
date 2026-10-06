@@ -40,7 +40,8 @@ function normalizeDatadogVersion(value) {
     .replace(/[^\p{Ll}\p{Lo}0-9_.:/-]+/gu, '_')
   if (!normalized) return 'v0.0.0'
   const withLeadingLetter = /^[\p{Ll}\p{Lo}]/u.test(normalized) ? normalized : `v${normalized}`
-  return withLeadingLetter.slice(0, 192)
+  const truncated = withLeadingLetter.slice(0, 192)
+  return /[\uD800-\uDBFF]$/.test(truncated) ? truncated.slice(0, -1) : truncated
 }
 
 function resolveDatadogReleaseVersion(env = process.env) {

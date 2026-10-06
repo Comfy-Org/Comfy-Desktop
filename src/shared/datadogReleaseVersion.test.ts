@@ -48,4 +48,12 @@ describe('Datadog release version', () => {
     expect(tag).toHaveLength(200)
     expect(isValidPinnedSdkTag(tag)).toBe(true)
   })
+
+  it('truncates at a Unicode code-point boundary', () => {
+    const version = normalizeDatadogVersion(`${'a'.repeat(191)}𠀀`)
+
+    expect(version).toBe('a'.repeat(191))
+    expect(version).not.toMatch(/[\uD800-\uDFFF]/u)
+    expect(isValidPinnedSdkTag(`version:${version}`)).toBe(true)
+  })
 })
