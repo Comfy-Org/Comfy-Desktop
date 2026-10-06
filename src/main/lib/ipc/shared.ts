@@ -124,7 +124,7 @@ import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
 import { getComfyFeatureFlagRegistry } from '../comfy-feature-flags'
 import type { FeatureFlagRegistry } from '../comfy-feature-flags'
-import { sessionKindOf, type DbMode, type SessionKind } from '../performanceTestWorkspace'
+import { sessionKindOf, type SessionKind } from '../../../shared/performanceTestSession'
 
 // Re-export frequently used imports so handler modules can import from shared
 export {
@@ -290,8 +290,6 @@ export interface SessionInfo {
   getAcceleratorInfo?: () => AcceleratorSnapshot | null
   /** Core beta grants on this session's command line, for the settings view's beta-args pill. */
   coreBetaArgs?: readonly BetaArgView[]
-  /** The database this session's ComfyUI was launched on. */
-  databaseMode?: DbMode
 }
 
 export interface LaunchCallbackInfo {
@@ -326,8 +324,6 @@ export interface InstanceStartedCallbackInfo {
   portRetries: number
   rebootRetries: number
   sessionKind: SessionKind
-  /** Null when not recorded (a remote session): Desktop cannot see that server's database. */
-  databaseMode: DbMode | null
 }
 
 export type LaunchCallback = (info: LaunchCallbackInfo) => void
@@ -425,6 +421,10 @@ export function _endLaunch(installationId: string, launch: { abort: AbortControl
 
 export function _hasActiveLaunch(installationId: string): boolean {
   return _activeLaunches.has(installationId)
+}
+
+export function _getActiveLaunchIds(): string[] {
+  return Array.from(_activeLaunches.keys())
 }
 
 /**
@@ -1074,8 +1074,7 @@ export function _addSession(
     installationName,
     flushTelemetry,
     getAcceleratorInfo,
-    coreBetaArgs,
-    databaseMode
+    coreBetaArgs
   }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
@@ -1096,7 +1095,6 @@ export function _addSession(
     flushTelemetry,
     getAcceleratorInfo,
     coreBetaArgs,
-    databaseMode,
     startedAt: Date.now()
   })
   // Clear the launching marker first so subscribers never double-count this id across the
@@ -1122,8 +1120,7 @@ export function _addSession(
       bootTimeMs,
       portRetries: retries?.portRetries ?? 0,
       rebootRetries: retries?.rebootRetries ?? 0,
-      sessionKind: sessionKindOf(installationId),
-      databaseMode: databaseMode ?? null
+      sessionKind: sessionKindOf(installationId)
     })
   }
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.

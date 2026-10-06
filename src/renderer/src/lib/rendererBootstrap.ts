@@ -674,8 +674,7 @@ export function initializeRendererBootstrap(role: RendererRole = 'panel'): void 
       trackTelemetryAction('comfy.desktop.comfyui.boot_log', {
         installation_id: data.installationId,
         boot_stderr: data.bootStderr,
-        session_kind: data.session_kind ?? null,
-        db_mode: data.db_mode ?? null
+        session_kind: data.session_kind ?? null
       })
     })
   }

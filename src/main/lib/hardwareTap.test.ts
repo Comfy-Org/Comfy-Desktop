@@ -190,7 +190,6 @@ describe('createHardwareTap', () => {
           core_commit: null,
           core_version_label: null,
           session_kind: 'normal',
-          db_mode: 'file',
           scan_phase: 'discovery_stat',
           error_type: 'permission_denied'
         }

@@ -367,7 +367,7 @@ function installMockApi(initial?: {
   }
   const persistedResultsSummary = {
     createdAt: '2026-09-07T22:56:00.000Z',
-    instance: { id: 'workspace-install', name: 'Workspace Install', databaseMode: 'temp_file' },
+    instance: { id: 'workspace-install', name: 'Workspace Install' },
     workspace: { id: 'workspace-1', name: 'Workspace One' },
     workflowName: 'cat-workflow.json',
     fastestJobDurationSeconds: 1.25,
@@ -1105,7 +1105,6 @@ describe('PanelApp', () => {
           measured_runs: 5,
           successful_runs: 5,
           failed_runs: 0,
-          db_mode: 'temp_file',
           duration_ms: expect.any(Number),
           fastest_run_duration_ms: 1250,
           average_run_duration_ms: 2000,
