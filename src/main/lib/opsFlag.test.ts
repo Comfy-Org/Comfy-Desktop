@@ -785,7 +785,10 @@ describe('makeOpsFlag deadline and expiry', () => {
     expect(await launchOffline()).toBe('granted')
   })
 
-  it('holds a saved treatment that parses to null', async () => {
+  it.each([
+    ['answers unreachable', () => getOpsFlagResult.mockResolvedValue(unreachable())],
+    ['rejects', () => getOpsFlagResult.mockRejectedValue(new Error('network'))]
+  ])('holds a saved treatment that parses to null when the fetch %s', async (_, stage) => {
     // Only `undefined` means "nothing usable"; a flag whose type includes null keeps it offline.
     seedGrant({ value: false, payload: null, fetchedAt: NOW })
     const flag = makeOpsFlag<'granted' | null | undefined>({
@@ -794,7 +797,7 @@ describe('makeOpsFlag deadline and expiry', () => {
       parse: (value) => (value === true ? 'granted' : value === false ? null : undefined),
       persist: true
     })
-    getOpsFlagResult.mockResolvedValue(unreachable())
+    stage()
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBeNull()
   })
