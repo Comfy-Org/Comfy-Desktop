@@ -90,13 +90,13 @@ describe('Datadog release version', () => {
     )
   })
 
-  it('falls back to the package version for a malformed commit identifier', () => {
+  it('folds a malformed commit identifier into a unique normalized release', () => {
     expect(
       resolveDatadogReleaseVersion({
         npm_package_version: 'release',
         GITHUB_SHA: 'refs/heads/main'
       })
-    ).toBe('release')
+    ).toMatch(/^release_refs\/heads\/main-h[a-f0-9]{8}$/)
   })
 
   it('falls back from a whitespace npm version to package metadata', () => {
@@ -117,7 +117,15 @@ describe('Datadog release version', () => {
     })
 
     expect(version).toHaveLength(192)
-    expect(version).toMatch(/-h[a-f0-9]{8}$/)
+    expect(version).toMatch(/-dce2b8a977d4-h[a-f0-9]{8}$/)
     expect(isValidPinnedSdkTag(`version:${version}`)).toBe(true)
+  })
+
+  it('canonicalizes long and uppercase explicit SHAs like self-resolution', () => {
+    const sha = 'DCE2B8A977D40ECD25C67F2FECF0A686D1D60961'
+
+    expect(resolveDatadogReleaseVersion({ VITE_DATADOG_RUM_VERSION: `1.1.4+${sha}` })).toBe(
+      resolveDatadogReleaseVersion({ npm_package_version: '1.1.4', GITHUB_SHA: sha })
+    )
   })
 })
