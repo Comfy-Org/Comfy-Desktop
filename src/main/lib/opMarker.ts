@@ -38,7 +38,7 @@ export interface OpMarker {
 // drop the marker. This bounds transient failures (git index lock, AV holding a
 // file) to a few retries while preventing an unrecoverable rollback (e.g. the
 // pre-op commit is gone) from locking the user out of launching forever.
-// Restores only: an update's mixed tree crashes on import, so Update must repair it.
+// Restores only: an update never gives up (its mixed tree crashes on import; Update repairs it).
 const MAX_RECOVERY_ATTEMPTS = 3
 const UPDATE_UNFINISHED = 'The last update did not finish. Run Update to repair.'
 

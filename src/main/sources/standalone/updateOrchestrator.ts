@@ -347,13 +347,14 @@ export async function runComfyUIUpdate(
   // between aimdo bumps), OR when the caller demands it (first-run auto-update
   // reconciling the bundled venv against the bundled requirements.txt).
   const headMoved = !!(
-    repairing ||
-    (markers.PRE_UPDATE_HEAD &&
-      markers.POST_UPDATE_HEAD &&
-      markers.PRE_UPDATE_HEAD !== markers.POST_UPDATE_HEAD)
+    markers.PRE_UPDATE_HEAD &&
+    markers.POST_UPDATE_HEAD &&
+    markers.PRE_UPDATE_HEAD !== markers.POST_UPDATE_HEAD
   )
   const reqsChanged = preReqs !== postReqs
-  const shouldSyncDeps = (reqsChanged || headMoved || !!opts.forceDepsSync) && postReqs.length > 0
+  // A repair resyncs too: the interrupted update may have moved HEAD already.
+  const forceDeps = repairing || !!opts.forceDepsSync
+  const shouldSyncDeps = (reqsChanged || headMoved || forceDeps) && postReqs.length > 0
 
   // Tracks a dependency-sync failure so the transactional guard below can roll
   // ComfyUI's source back instead of leaving new source + stale packages.
