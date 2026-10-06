@@ -250,12 +250,17 @@ function readPostHogConfig(isPackaged: boolean): PostHogConfig {
       return false
     }
   })()
+  if (!packagedHostIsSafe) {
+    console.warn('Ignoring unsafe COMFY_DESKTOP_POSTHOG_HOST; PostHog is disabled')
+  }
   if (
     isPackaged &&
-    (process.env['POSTHOG_API_KEY']?.trim() || process.env['POSTHOG_HOST']?.trim())
+    (process.env['POSTHOG_API_KEY']?.trim() ||
+      process.env['POSTHOG_HOST']?.trim() ||
+      process.env['POSTHOG_ENABLED']?.trim())
   ) {
     console.warn(
-      'Ignoring generic POSTHOG_API_KEY/POSTHOG_HOST in packaged Comfy Desktop; use COMFY_DESKTOP_POSTHOG_* overrides'
+      'Packaged Comfy Desktop ignores generic PostHog routing variables but preserves POSTHOG_ENABLED as a one-way opt-out; use COMFY_DESKTOP_POSTHOG_* overrides'
     )
   }
   // The generic switch remains a one-way emergency opt-out in packaged builds for backwards
@@ -263,7 +268,8 @@ function readPostHogConfig(isPackaged: boolean): PostHogConfig {
   const enabled =
     !isFlagDisabled(process.env['COMFY_DESKTOP_POSTHOG_ENABLED']) &&
     !isFlagDisabled(process.env['POSTHOG_ENABLED']) &&
-    packagedHostIsSafe
+    packagedHostIsSafe &&
+    apiKey.length > 0
   return { apiKey, host, enabled }
 }
 

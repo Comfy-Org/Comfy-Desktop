@@ -642,6 +642,12 @@ describe('telemetry PostHog client options', () => {
     expect(posthogConstructorCalls).toHaveLength(0)
   })
 
+  it('accepts common privacy opt-out spellings', () => {
+    setupTelemetry({ env: { COMFY_DESKTOP_POSTHOG_ENABLED: 'disabled' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
   it('preserves the generic disable switch during unpackaged development', () => {
     setupTelemetry({ isPackaged: false, env: { POSTHOG_ENABLED: '0' } })
 
