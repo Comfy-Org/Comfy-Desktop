@@ -30,6 +30,7 @@ import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSele
 
 interface PerformanceTestRunTelemetry {
   readonly installationId: string
+  readonly workflowName: string
   readonly warmupRuns: number
   readonly measuredRuns: number
   readonly startedAtMs: number
@@ -300,6 +301,10 @@ async function runPerformanceTest(): Promise<void> {
   const token = ++runToken
   const runTelemetry: PerformanceTestRunTelemetry = {
     installationId,
+    // Bundled examples send their stored file name (`<templateId>.json`, as in results.json);
+    // imported workflows are user-named files, so they are reported only as 'custom'.
+    workflowName:
+      workflowDisplayName.value === null ? 'custom' : (filePath.split(/[\\/]/).pop() ?? ''),
     warmupRuns: warmups,
     measuredRuns: runs,
     startedAtMs: performance.now()
@@ -307,6 +312,7 @@ async function runPerformanceTest(): Promise<void> {
   activeRunTelemetry = runTelemetry
   emitTelemetryAction('comfy.desktop.performance_test.started', {
     installation_id: installationId,
+    workflow_name: runTelemetry.workflowName,
     warmup_runs: warmups,
     measured_runs: runs,
     total_runs: warmups + runs
@@ -361,6 +367,7 @@ async function runPerformanceTest(): Promise<void> {
           const hardware = submission.hardware
           emitTelemetryAction('comfy.desktop.performance_test.completed', {
             installation_id: runTelemetry.installationId,
+            workflow_name: runTelemetry.workflowName,
             warmup_runs: runTelemetry.warmupRuns,
             measured_runs: runTelemetry.measuredRuns,
             successful_runs:
@@ -587,6 +594,7 @@ async function stopPerformanceTestFromUser(): Promise<void> {
     activeRunTelemetry = null
     emitTelemetryAction('comfy.desktop.performance_test.stopped', {
       installation_id: telemetry.installationId,
+      workflow_name: telemetry.workflowName,
       warmup_runs: telemetry.warmupRuns,
       measured_runs: telemetry.measuredRuns,
       completed_runs: completedProgressRuns.value,
