@@ -582,6 +582,12 @@ describe('telemetry PostHog client options', () => {
     })
   })
 
+  it('preserves the generic PostHog disable switch in packaged builds', () => {
+    setupTelemetry({ env: { POSTHOG_ENABLED: '0' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
   it('accepts product-scoped PostHog overrides in packaged builds', () => {
     setupTelemetry({
       env: {

@@ -231,10 +231,14 @@ function readPostHogConfig(isPackaged: boolean): PostHogConfig {
   // but require a product-scoped name for intentional packaged overrides.
   const envKey = isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'
   const envHost = isPackaged ? 'COMFY_DESKTOP_POSTHOG_HOST' : 'POSTHOG_HOST'
-  const envEnabled = isPackaged ? 'COMFY_DESKTOP_POSTHOG_ENABLED' : 'POSTHOG_ENABLED'
   const apiKey = (process.env[envKey] || DEFAULT_POSTHOG_API_KEY).trim()
   const host = (process.env[envHost] || DEFAULT_POSTHOG_HOST).trim()
-  const enabled = !isFlagDisabled(process.env[envEnabled]) && apiKey.length > 0
+  const enabled =
+    !isFlagDisabled(
+      process.env[isPackaged ? 'COMFY_DESKTOP_POSTHOG_ENABLED' : 'POSTHOG_ENABLED']
+    ) &&
+    (!isPackaged || !isFlagDisabled(process.env['POSTHOG_ENABLED'])) &&
+    apiKey.length > 0
   return { apiKey, host, enabled }
 }
 
