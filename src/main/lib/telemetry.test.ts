@@ -321,11 +321,7 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   exceptions.length = 0
   featureFlagResultCalls.length = 0
   posthogConstructorCalls.length = 0
-  for (const name of postHogEnvNames) {
-    const previous = previousPostHogEnv[name]
-    if (previous === undefined) delete process.env[name]
-    else process.env[name] = previous
-  }
+  for (const name of postHogEnvNames) delete process.env[name]
   process.env[isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'] = 'test-key'
   process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
   // Opt in by default here so tests that use the exception stream as an
@@ -355,7 +351,11 @@ afterEach(() => {
   posthogClientMock.deferred = null
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
-  for (const name of postHogEnvNames) delete process.env[name]
+  for (const name of postHogEnvNames) {
+    const previous = previousPostHogEnv[name]
+    if (previous === undefined) delete process.env[name]
+    else process.env[name] = previous
+  }
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
 })
@@ -659,6 +659,12 @@ describe('telemetry PostHog client options', () => {
     setupTelemetry({ env: { COMFY_DESKTOP_POSTHOG_ENABLED: 'disabled' } })
 
     expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('does not let an unrelated inherited spelling disable telemetry', () => {
+    setupTelemetry({ env: { POSTHOG_ENABLED: 'unrelated-tool-value' } })
+
+    expect(posthogConstructorCalls).toHaveLength(1)
   })
 
   it('preserves the generic disable switch during unpackaged development', () => {
