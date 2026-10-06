@@ -723,7 +723,9 @@ export function otherLocalComfyUIs(sessionId: string, records: InstallationRecor
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   const { installationId } = ctx
   const sessionId = ctx.sessionId ?? installationId
-  if (sessionKindOf(sessionId) === 'performance_test') {
+  // A Performance Test of a remote or cloud installation runs elsewhere, so nothing here competes.
+  const localTarget = (sourceMap[ctx.inst.sourceId]?.category ?? 'local') === 'local'
+  if (sessionKindOf(sessionId) === 'performance_test' && localTarget) {
     // The last await before `_beginLaunch`: from here the check and the registration below run
     // in one synchronous stretch, so two Performance Tests can never both pass it.
     const records = await installations.list()

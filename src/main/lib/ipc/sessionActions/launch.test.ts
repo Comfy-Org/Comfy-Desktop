@@ -2242,6 +2242,17 @@ describe('Performance Test guardrail', () => {
     expect(spawned).toBe(1)
   })
 
+  it('does not guard a Performance Test of a remote installation', async () => {
+    runSession('guard-other', 'Other Install')
+
+    const res = await handleLaunch({
+      ...ctxFor('guard-remote', 'performance-test:guard-remote'),
+      inst: { id: 'guard-remote', name: 'Remote Box', sourceId: 'remote' } as InstallationRecord
+    })
+
+    expect(res.message ?? '').not.toContain('performanceTestOtherInstanceRunning')
+  })
+
   it('does not count its own earlier run', async () => {
     runSession(PERF, 'Bench')
 
