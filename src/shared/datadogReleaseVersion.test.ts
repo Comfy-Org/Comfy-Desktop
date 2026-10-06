@@ -40,7 +40,12 @@ describe('Datadog release version', () => {
     expect(normalizeDatadogVersion('版本甲')).not.toBe(normalizeDatadogVersion('版本乙'))
   })
 
-  it("caps tags at Datadog's 200-character limit", () => {
-    expect(normalizeDatadogVersion(`release-${'a'.repeat(250)}`)).toHaveLength(200)
+  it("reserves the version prefix within Datadog's 200-character tag limit", () => {
+    const version = normalizeDatadogVersion(`release-${'a'.repeat(250)}`)
+    const tag = `version:${version}`
+
+    expect(version).toHaveLength(192)
+    expect(tag).toHaveLength(200)
+    expect(isValidPinnedSdkTag(tag)).toBe(true)
   })
 })
