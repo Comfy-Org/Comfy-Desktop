@@ -28,6 +28,7 @@ function readGitSha() {
       timeout: 2_000
     }).trim()
   } catch {
+    console.warn('Unable to resolve git SHA for Datadog release; using package version only')
     return ''
   }
 }
@@ -37,24 +38,24 @@ function readGitSha() {
  * forward slashes. Keep release and sourcemap versions identical by normalizing once at
  * their shared source. Reserve eight characters for the `version:` tag prefix. */
 function normalizeDatadogVersion(value, maxLength = DATADOG_VERSION_MAX_LENGTH) {
-  if (maxLength < 12) throw new Error('Datadog version length budget is too small')
-  const untrimmedSource = String(value || '')
-  const source = untrimmedSource.trim()
+  if (maxLength < 24) throw new Error('Datadog version length budget is too small')
+  const source = String(value || '').trim()
   if (!source) throw new Error('Datadog release version cannot be empty')
   const raw = source.toLowerCase()
 
   // A SemVer build-metadata suffix containing a commit is the same release spelling used by
   // our self-resolved path. Other lossy changes receive a deterministic hash suffix below.
-  const commitMatch = raw.match(/^(.*)\+([a-f0-9]{7,64})$/i)
+  const commitMatch = raw.match(/^([^+]+)\+([a-f0-9]{7,64})$/i)
+  const sourceCommitMatch = source.match(/^([^+]+)\+([a-f0-9]{7,64})$/i)
   const commitSuffix = commitMatch ? `-${commitMatch[2].toLowerCase().slice(0, 12)}` : ''
   const canonical = commitMatch ? `${commitMatch[1]}${commitSuffix}` : raw
   const normalizationInput = commitMatch ? commitMatch[1] : canonical
   let normalized = ''
-  let changed = untrimmedSource !== source || raw !== source || canonical !== raw
+  let changed = raw !== source || canonical !== raw
   for (const character of normalizationInput) {
     const replacement = /^[\p{Ll}\p{Lo}0-9_.:/-]$/u.test(character) ? character : '_'
     if (replacement !== character) changed = true
-    if (normalized.length <= maxLength) normalized += replacement
+    if (normalized.length < maxLength) normalized += replacement
   }
   if (!/^[\p{Ll}\p{Lo}]/u.test(normalized)) {
     normalized = `v${normalized}`
@@ -73,7 +74,10 @@ function normalizeDatadogVersion(value, maxLength = DATADOG_VERSION_MAX_LENGTH) 
   const truncated = truncate(completeNormalized, maxLength)
   if (!changed && truncated === completeNormalized) return truncated
 
-  const suffix = `-h${createHash('sha256').update(source).digest('hex').slice(0, 8)}`
+  const hashSource = sourceCommitMatch
+    ? `${sourceCommitMatch[1]}+${sourceCommitMatch[2].toLowerCase().slice(0, 12)}`
+    : source
+  const suffix = `-h${createHash('sha256').update(hashSource).digest('hex').slice(0, 8)}`
   if (commitSuffix) {
     return `${truncate(normalized, maxLength - commitSuffix.length - suffix.length)}${commitSuffix}${suffix}`
   }

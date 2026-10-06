@@ -69,7 +69,7 @@ jobs:
         shell: bash
         run: |
           release_version="$(node ./scripts/datadog-release-version.cjs)"
-          delimiter="DATADOG_RELEASE_${GITHUB_RUN_ID}_${RANDOM}"
+          delimiter="DATADOG_RELEASE_$(node -p "require('node:crypto').randomUUID()")"
           {
             echo "release_version<<${delimiter}"
             echo "${release_version}"

@@ -85,8 +85,8 @@ describe('Datadog release version', () => {
   })
 
   it('does not collide when truncation follows different rejected characters', () => {
-    expect(normalizeDatadogVersion(`${'a'.repeat(189)}…`)).not.toBe(
-      normalizeDatadogVersion(`${'a'.repeat(189)}${String.fromCodePoint(0x2028)}`)
+    expect(normalizeDatadogVersion(`${'a'.repeat(188)}…x`)).not.toBe(
+      normalizeDatadogVersion(`${'a'.repeat(188)}${String.fromCodePoint(0x2028)}x`)
     )
   })
 
@@ -126,6 +126,14 @@ describe('Datadog release version', () => {
 
     expect(resolveDatadogReleaseVersion({ VITE_DATADOG_RUM_VERSION: `1.1.4+${sha}` })).toBe(
       resolveDatadogReleaseVersion({ npm_package_version: '1.1.4', GITHUB_SHA: sha })
+    )
+  })
+
+  it('canonicalizes a short explicit SHA like a full self-resolved SHA', () => {
+    const fullSha = 'dce2b8a977d40ecd25c67f2fecf0a686d1d60961'
+
+    expect(resolveDatadogReleaseVersion({ VITE_DATADOG_RUM_VERSION: '1.1.4+dce2b8a977d4' })).toBe(
+      resolveDatadogReleaseVersion({ npm_package_version: '1.1.4', GITHUB_SHA: fullSha })
     )
   })
 })
