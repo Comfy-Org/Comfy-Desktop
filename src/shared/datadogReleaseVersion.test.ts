@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const packageVersion = (require('../../package.json') as { version: string }).version
 const { normalizeDatadogVersion, resolveDatadogReleaseVersion } =
   require('../../scripts/datadog-release-version.cjs') as {
     normalizeDatadogVersion: (value: string) => string
@@ -80,7 +81,7 @@ describe('Datadog release version', () => {
   it('falls back from a whitespace npm version to package metadata', () => {
     expect(
       resolveDatadogReleaseVersion({ npm_package_version: ' ', GITHUB_SHA: 'dce2b8a977d4' })
-    ).toBe('v1.1.4-dce2b8a977d4')
+    ).toBe(`v${packageVersion}-dce2b8a977d4`)
   })
 
   it('reserves room for the commit suffix when the package version is long', () => {
