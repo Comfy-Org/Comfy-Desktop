@@ -673,6 +673,14 @@ describe('telemetry PostHog client options', () => {
 
     expect(posthogConstructorCalls).toHaveLength(0)
   })
+
+  it('rejects credentials embedded in a packaged host override', () => {
+    setupTelemetry({
+      env: { COMFY_DESKTOP_POSTHOG_HOST: 'https://user:password@posthog.example' }
+    })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
 })
 
 // Revocation semantics hang off this classification: a `value` (including an explicit

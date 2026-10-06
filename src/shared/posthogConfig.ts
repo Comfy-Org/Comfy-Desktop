@@ -15,5 +15,5 @@ export function isPostHogFlagDisabled(value: string | undefined): boolean {
 
 /** Opt-in counterpart: unset means off, rather than `isPostHogFlagDisabled`'s unset means on. */
 export function isPostHogFlagEnabled(value: string | undefined): boolean {
-  return ['1', 'true', 'on'].includes((value || '').trim().toLowerCase())
+  return ['1', 'true', 'on', 'yes', 'enabled'].includes((value || '').trim().toLowerCase())
 }

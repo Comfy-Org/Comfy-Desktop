@@ -245,23 +245,25 @@ function readPostHogConfig(isPackaged: boolean): PostHogConfig {
   const packagedHostIsSafe = (() => {
     if (!isPackaged || !process.env['COMFY_DESKTOP_POSTHOG_HOST']?.trim()) return true
     try {
-      return new URL(host).protocol === 'https:'
+      const url = new URL(host)
+      return url.protocol === 'https:' && !url.username && !url.password
     } catch {
       return false
     }
   })()
   if (!packagedHostIsSafe) {
-    console.warn('Ignoring unsafe COMFY_DESKTOP_POSTHOG_HOST; PostHog is disabled')
+    console.warn('Rejecting unsafe COMFY_DESKTOP_POSTHOG_HOST; PostHog is disabled')
   }
   if (
     isPackaged &&
-    (process.env['POSTHOG_API_KEY']?.trim() ||
-      process.env['POSTHOG_HOST']?.trim() ||
-      process.env['POSTHOG_ENABLED']?.trim())
+    (process.env['POSTHOG_API_KEY']?.trim() || process.env['POSTHOG_HOST']?.trim())
   ) {
     console.warn(
-      'Packaged Comfy Desktop ignores generic PostHog routing variables but preserves POSTHOG_ENABLED as a one-way opt-out; use COMFY_DESKTOP_POSTHOG_* overrides'
+      'Packaged Comfy Desktop ignores generic POSTHOG_API_KEY/POSTHOG_HOST; use COMFY_DESKTOP_POSTHOG_* overrides'
     )
+  }
+  if (isPackaged && isFlagDisabled(process.env['POSTHOG_ENABLED'])) {
+    console.warn('Packaged Comfy Desktop was disabled by the inherited POSTHOG_ENABLED opt-out')
   }
   // The generic switch remains a one-way emergency opt-out in packaged builds for backwards
   // compatibility. A scoped "1" intentionally cannot override an inherited generic "0".
