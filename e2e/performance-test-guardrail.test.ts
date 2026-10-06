@@ -117,6 +117,7 @@ test('a Performance Test is refused while another installation runs, and named @
   const other = await launch(OTHER_ID, OTHER_ID)
   expect(other, other.message).toMatchObject({ ok: true })
 
+  const bootsBefore = (await events('comfy.desktop.comfyui.boot_started')).length
   const perf = await launch(BENCH_ID, PERF_SESSION)
 
   expect(perf.ok).toBe(false)
@@ -126,11 +127,9 @@ test('a Performance Test is refused while another installation runs, and named @
   ])
   expect(await getRunningSessionSnapshot(ctx!.app, PERF_SESSION)).toBeNull()
   expect(
-    (await events('comfy.desktop.comfyui.boot_started')).filter(
-      (e) => e.session_kind === 'performance_test'
-    ),
-    'no Performance Test ComfyUI was started'
-  ).toEqual([])
+    (await events('comfy.desktop.comfyui.boot_started')).length,
+    'no ComfyUI was started'
+  ).toBe(bootsBefore)
   // The installation that was running is untouched.
   expect(await getRunningSessionSnapshot(ctx!.app, OTHER_ID)).not.toBeNull()
 })

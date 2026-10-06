@@ -36,7 +36,7 @@ import {
   _beginLaunch,
   _endLaunch,
   _getActiveLaunchIds,
-  _stoppingInstallationIds,
+  _getStoppingInstallationIds,
   installDirStateAsync,
   captureSnapshotIfChanged,
   getSnapshotCount,
@@ -709,7 +709,7 @@ export function otherLocalComfyUIs(sessionId: string, records: InstallationRecor
   const ids = new Set([
     ..._runningSessions.keys(),
     ..._getActiveLaunchIds(),
-    ..._stoppingInstallationIds
+    ..._getStoppingInstallationIds()
   ])
   ids.delete(sessionId)
   const names: string[] = []
