@@ -278,6 +278,7 @@ type PostHogEnvName =
   | 'COMFY_DESKTOP_POSTHOG_HOST'
   | 'COMFY_DESKTOP_POSTHOG_ENABLED'
   | 'COMFY_DESKTOP_POSTHOG_EXCEPTIONS'
+  | 'POSTHOG_EXCEPTIONS'
 
 const postHogEnvNames: PostHogEnvName[] = [
   'POSTHOG_API_KEY',
@@ -286,7 +287,8 @@ const postHogEnvNames: PostHogEnvName[] = [
   'COMFY_DESKTOP_POSTHOG_API_KEY',
   'COMFY_DESKTOP_POSTHOG_HOST',
   'COMFY_DESKTOP_POSTHOG_ENABLED',
-  'COMFY_DESKTOP_POSTHOG_EXCEPTIONS'
+  'COMFY_DESKTOP_POSTHOG_EXCEPTIONS',
+  'POSTHOG_EXCEPTIONS'
 ]
 
 /**
@@ -311,7 +313,7 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   featureFlagResultCalls.length = 0
   posthogConstructorCalls.length = 0
   for (const name of postHogEnvNames) delete process.env[name]
-  process.env['COMFY_DESKTOP_POSTHOG_API_KEY'] = 'test-key'
+  process.env[isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'] = 'test-key'
   process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
   // Opt in by default here so tests that use the exception stream as an
   // observable keep working; the opt-out default is pinned by its own test.
@@ -614,6 +616,43 @@ describe('telemetry PostHog client options', () => {
     expect(posthogConstructorCalls[0]).toMatchObject({
       apiKey: 'dev-key',
       options: { host: 'https://dev-posthog.example' }
+    })
+  })
+
+  it('prefers product-scoped PostHog overrides during unpackaged development', () => {
+    setupTelemetry({
+      isPackaged: false,
+      env: {
+        POSTHOG_API_KEY: 'generic-key',
+        POSTHOG_HOST: 'https://generic-posthog.example',
+        COMFY_DESKTOP_POSTHOG_API_KEY: 'scoped-key',
+        COMFY_DESKTOP_POSTHOG_HOST: 'https://scoped-posthog.example'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: 'scoped-key',
+      options: { host: 'https://scoped-posthog.example' }
+    })
+  })
+
+  it('honors the product-scoped disable switch during unpackaged development', () => {
+    setupTelemetry({ isPackaged: false, env: { COMFY_DESKTOP_POSTHOG_ENABLED: '0' } })
+
+    expect(posthogConstructorCalls).toHaveLength(0)
+  })
+
+  it('falls back from whitespace-only overrides to packaged defaults', () => {
+    setupTelemetry({
+      env: {
+        COMFY_DESKTOP_POSTHOG_API_KEY: '  ',
+        COMFY_DESKTOP_POSTHOG_HOST: '\t'
+      }
+    })
+
+    expect(posthogConstructorCalls[0]).toMatchObject({
+      apiKey: DEFAULT_POSTHOG_API_KEY,
+      options: { host: DEFAULT_POSTHOG_HOST }
     })
   })
 })

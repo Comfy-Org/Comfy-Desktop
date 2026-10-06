@@ -205,6 +205,8 @@ export function _resetForTest(): void {
   quarantinedWrites = []
   defaultEventProperties = {}
   initialized = false
+  suppressEmit = false
+  telemetryIsPackaged = true
   drainingForQuit = false
   pendingIdentityMergeFlush = null
   pendingIdentityMergeFileDirty = true
@@ -229,14 +231,22 @@ function readPostHogConfig(isPackaged: boolean): PostHogConfig {
   // silently redirect flag reads and event writes to another project (or supply a personal
   // `phx_` key to the public ingest endpoint). Keep the generic names as a dev convenience,
   // but require a product-scoped name for intentional packaged overrides.
-  const envKey = isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'
-  const envHost = isPackaged ? 'COMFY_DESKTOP_POSTHOG_HOST' : 'POSTHOG_HOST'
-  const apiKey = (process.env[envKey] || DEFAULT_POSTHOG_API_KEY).trim()
-  const host = (process.env[envHost] || DEFAULT_POSTHOG_HOST).trim()
+  const nonBlank = (...values: Array<string | undefined>): string | undefined =>
+    values.map((value) => value?.trim()).find((value) => Boolean(value))
+  const apiKey =
+    (isPackaged
+      ? nonBlank(process.env['COMFY_DESKTOP_POSTHOG_API_KEY'])
+      : nonBlank(process.env['COMFY_DESKTOP_POSTHOG_API_KEY'], process.env['POSTHOG_API_KEY'])) ??
+    DEFAULT_POSTHOG_API_KEY
+  const host =
+    (isPackaged
+      ? nonBlank(process.env['COMFY_DESKTOP_POSTHOG_HOST'])
+      : nonBlank(process.env['COMFY_DESKTOP_POSTHOG_HOST'], process.env['POSTHOG_HOST'])) ??
+    DEFAULT_POSTHOG_HOST
+  // The generic switch remains a one-way emergency opt-out in packaged builds for backwards
+  // compatibility. A scoped "1" intentionally cannot override an inherited generic "0".
   const enabled =
-    !isFlagDisabled(
-      process.env[isPackaged ? 'COMFY_DESKTOP_POSTHOG_ENABLED' : 'POSTHOG_ENABLED']
-    ) &&
+    !isFlagDisabled(process.env['COMFY_DESKTOP_POSTHOG_ENABLED']) &&
     (!isPackaged || !isFlagDisabled(process.env['POSTHOG_ENABLED'])) &&
     apiKey.length > 0
   return { apiKey, host, enabled }
@@ -252,6 +262,7 @@ let initialized = false
  *  `loadFeatureFlagsImmediate`, `shutdown`) deliberately ignore this
  *  so devs can still resolve feature flags in `pnpm dev`. */
 let suppressEmit = false
+let telemetryIsPackaged = true
 
 /**
  * A trusted auth reporter is between authoritative documents. Keep the
@@ -644,6 +655,7 @@ export function initTelemetry(opts: InitOptions): void {
   // (`capture`, `identify`, `captureException`,
   // `registerPersonProperties`) bail when `suppressEmit` is set.
   suppressEmit = !opts.isPackaged
+  telemetryIsPackaged = opts.isPackaged
 
   const cfg = readPostHogConfig(opts.isPackaged)
   if (!cfg.enabled) return
@@ -1506,7 +1518,10 @@ function captureExceptionWrite(
  * an investigation that wants the error alongside product events.
  */
 function isPostHogExceptionCaptureEnabled(): boolean {
-  return isFlagEnabled(process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS'])
+  return (
+    isFlagEnabled(process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS']) ||
+    (!telemetryIsPackaged && isFlagEnabled(process.env['POSTHOG_EXCEPTIONS']))
+  )
 }
 
 function deliverException(error: unknown, properties: TelemetryContext, forward: boolean): boolean {
