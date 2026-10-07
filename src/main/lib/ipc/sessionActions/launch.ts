@@ -307,9 +307,13 @@ export function recordCampaignEnrolments(
       try {
         writeCampaignRecord(key, grant.arg, epoch, now)
       } catch (err) {
-        console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
-        misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
-        continue
+        // The backup is written first, so a failed primary write can still leave the record
+        // readable; that enrolment holds from now on, so it is counted like any other.
+        if (readCampaignRecords()[key]?.[grant.arg]?.epoch !== epoch) {
+          console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
+          misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
+          continue
+        }
       }
       telemetry.emit('comfy.desktop.core_beta.enrolled', {
         key,

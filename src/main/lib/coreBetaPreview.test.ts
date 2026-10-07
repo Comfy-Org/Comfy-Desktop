@@ -151,6 +151,36 @@ describe('previewCoreBetaArgs', () => {
     ])
   })
 
+  it('proves a campaign commit range before listing its arg', async () => {
+    h.grants = [versionGrant]
+    h.campaigns = {
+      registry: [{ key: CAMPAIGN, args: ['--enable-agent'] }],
+      answers: new Map([
+        [
+          CAMPAIGN,
+          parseCampaignAnswer(
+            'enrol',
+            {
+              grants: [
+                {
+                  arg: '--enable-agent',
+                  commit_ranges: [[SHA_A, null]],
+                  enrolment: { epoch: 1, epochs: [1] }
+                }
+              ]
+            },
+            Date.now()
+          )
+        ]
+      ])
+    }
+    await expect(preview()).resolves.toEqual([
+      { arg: '--enable-assets', name: 'Asset library' },
+      { arg: '--enable-agent', name: null }
+    ])
+    expect(h.prove).toHaveBeenCalledWith(expect.anything(), SHA_A, HEAD)
+  })
+
   it('lists a held campaign arg when slot #0 grants nothing and the user passes assets', async () => {
     h.grants = []
     serveCampaign('hold')

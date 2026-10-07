@@ -180,15 +180,45 @@ describe('initCoreBetaCampaigns', () => {
     expect((await getCoreBetaCampaigns()).answers.size).toBe(0)
   })
 
-  it('lists nothing once the saved registry itself has expired', async () => {
+  it('an expired saved registry lists nothing offline, but still discovers its keys', async () => {
     seed('campaign-flags.json', {
       desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 8 * DAY_MS },
-      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW }
+      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - 8 * DAY_MS }
     })
     serve({})
     await initCoreBetaCampaigns({ distinctId: 'id' })
-    expect(fetchedKeys(), 'an expired registry discovers no key').toEqual(['desktop_campaigns'])
+    expect(fetchedKeys().sort()).toEqual(['desktop_campaigns', KEY].sort())
     expect(await getCoreBetaCampaigns()).toEqual({ registry: [], answers: new Map() })
+  })
+
+  it('a machine back after more than 7 days gets its campaign answer on the first boot online', async () => {
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 30 * DAY_MS },
+      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - 30 * DAY_MS }
+    })
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('hold', AGENT) })
+    await initCoreBetaCampaigns({ distinctId: 'id' })
+    expect((await getCoreBetaCampaigns()).answers.get(KEY)).toMatchObject({ fetchedAt: NOW })
+  })
+
+  it('writes a campaign answer that arrives after the deadline to campaign-flags.json only', async () => {
+    seed('ops-flags.json', {
+      desktop_core_beta_features: { value: true, payload: ASSETS, fetchedAt: NOW }
+    })
+    fs.writeFileSync(file('ops-flags.json.bak'), fs.readFileSync(file('ops-flags.json')))
+    const before = fs.readFileSync(file('ops-flags.json'))
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW }
+    })
+    serve({})
+    await initCoreBetaCampaigns({ distinctId: 'id' })
+    const late = getOpsFlagResult.mock.calls.find((call) => call[0] === KEY)?.[3] as (
+      result: unknown
+    ) => void
+    late(value('enrol', AGENT))
+    expect(readJson('campaign-flags.json')[KEY]).toMatchObject({ value: 'enrol', fetchedAt: NOW })
+    expect(fs.readFileSync(file('ops-flags.json'))).toEqual(before)
+    expect(fs.readFileSync(file('ops-flags.json.bak'))).toEqual(before)
   })
 
   it('a key absent from the response (a disabled flag) holds the saved answer', async () => {

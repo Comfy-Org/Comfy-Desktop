@@ -133,7 +133,7 @@ interface PersistedOpsFlagEntry {
 
 /** An entry without `fetchedAt` (written before it existed) reads as expired. Two-sided, so a
  *  stamp from a clock that ran ahead cannot outlive the cap by more than its own skew. */
-export function readPersistedResult(
+function readPersistedResult(
   file: string,
   key: string
 ): (PersistedOpsFlagEntry & { fetchedAt: number }) | undefined {

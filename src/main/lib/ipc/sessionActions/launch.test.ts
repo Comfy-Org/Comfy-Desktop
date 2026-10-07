@@ -79,6 +79,7 @@ const launchHarness = vi.hoisted(() => ({
   /** Every enrolment written, as `[key, arg, epoch]`. */
   recordWrites: [] as Array<[string, string, number]>,
   recordWriteThrows: false,
+  recordWriteRecovers: false,
   idClass: 'machine_derived' as string,
   campaignFetches: 0
 }))
@@ -90,6 +91,11 @@ vi.mock('../../coreBetaCampaignFlags', () => ({
   },
   readCampaignRecords: () => launchHarness.campaignRecords,
   writeCampaignRecord: (key: string, arg: string, epoch: number) => {
+    if (launchHarness.recordWriteRecovers) {
+      // The backup landed before the primary write failed: the record reads back.
+      launchHarness.campaignRecords = { [key]: { [arg]: { epoch, enrolledAt: 1 } } }
+      throw new Error('ENOSPC')
+    }
     if (launchHarness.recordWriteThrows) throw new Error('EIO')
     launchHarness.recordWrites.push([key, arg, epoch])
   }
@@ -1161,6 +1167,7 @@ describe('core beta report placement', () => {
     launchHarness.campaignRecords = {}
     launchHarness.recordWrites = []
     launchHarness.recordWriteThrows = false
+    launchHarness.recordWriteRecovers = false
     launchHarness.idClass = 'machine_derived'
     launchHarness.campaignFetches = 0
     launchHarness.duringResourceAcquire = null
@@ -1261,7 +1268,7 @@ describe('core beta report placement', () => {
         key: KEY,
         arg: '--enable-agent',
         epoch: 1,
-        lag_ms: expect.any(Number)
+        lag_ms: expect.toSatisfy((lag: number) => lag >= 0 && lag < 60_000)
       })
       expect(appliedEvent()).toMatchObject({
         args: ['--enable-assets', '--enable-agent'],
@@ -1377,6 +1384,15 @@ describe('core beta report placement', () => {
       }
       await handleLaunch(ctxFor('campaign-commit-range'))
       expect(spawnArgs).toContain('--enable-agent')
+    })
+
+    it('counts an enrolment whose record reads back after a failed write', async () => {
+      launchHarness.recordWriteRecovers = true
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-write-recovers'))
+      expect(reportedEvents()).toContain('comfy.desktop.core_beta.enrolled')
+      expect(appliedEvent()).toMatchObject({ campaign_args: [`${KEY}:--enable-agent:1`] })
+      expect(missedEvent()).toBeUndefined()
     })
 
     it('fetches no campaign answer and applies none when beta is off', async () => {

@@ -15,8 +15,9 @@ import {
   parseCampaignRegistry
 } from './coreBetaCampaigns'
 import type { CampaignAnswer, CampaignRecords, CampaignRegistryEntry } from './coreBetaCampaigns'
-import { makeOpsFlag, readPersistedFile, readPersistedResult, writePersistedEntry } from './opsFlag'
+import { makeOpsFlag, readPersistedFile, writePersistedEntry } from './opsFlag'
 import type { OpsFlag } from './opsFlag'
+import type { FeatureFlagValue } from './telemetry'
 
 const CAMPAIGN_FLAGS_FILE = 'campaign-flags.json'
 const ENROLMENTS_FILE = 'campaign-enrolments.json'
@@ -45,7 +46,11 @@ let campaigns = new Map<string, OpsFlag<CampaignAnswer | null>>()
 /** Starts the registry and every campaign key the saved registry lists, in parallel, under one
  *  id. A beta-off boot calls nothing: campaigns never apply to it. */
 export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promise<void> {
-  const saved = readPersistedResult(CAMPAIGN_FLAGS_FILE, CAMPAIGN_REGISTRY_KEY)
+  // Discovery reads the saved registry whatever its age: an expired one still names the keys
+  // worth asking about, and only the live registry and fresh answers decide what applies.
+  const saved = readPersistedFile(CAMPAIGN_FLAGS_FILE).entries[CAMPAIGN_REGISTRY_KEY] as
+    | { value?: FeatureFlagValue; payload?: unknown }
+    | undefined
   const listed = (saved && parseCampaignRegistry(saved.value, saved.payload)) ?? []
   for (const { key } of listed) {
     if (campaigns.has(key)) continue
