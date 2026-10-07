@@ -1254,7 +1254,7 @@ async function handleUpdateComfyUI(
   if (!result.ok) {
     return { ok: false, message: result.message }
   }
-  if (repair && (await hasTrackedChanges(comfyuiDir)) !== false) {
+  if (repair && (await hasTrackedChanges(comfyuiDir)) === true) {
     return { ok: false, message: t('standalone.repairIncomplete') }
   }
 

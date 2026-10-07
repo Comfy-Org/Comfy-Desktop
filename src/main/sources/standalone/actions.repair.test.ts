@@ -96,14 +96,14 @@ describe('standalone handleAction(repair-comfyui)', () => {
     expect(runComfyUIUpdate).not.toHaveBeenCalled()
   })
 
-  it('reports a failure when tracked files still differ, or git cannot tell', async () => {
-    for (const changed of [true, null]) {
-      vi.mocked(hasTrackedChanges).mockResolvedValue(changed)
-      expect(await run('repair-comfyui')).toMatchObject({
-        ok: false,
-        message: 'standalone.repairIncomplete'
-      })
-    }
+  it('reports a failure only when tracked files still differ, not when git cannot tell', async () => {
+    vi.mocked(hasTrackedChanges).mockResolvedValue(true)
+    expect(await run('repair-comfyui')).toMatchObject({
+      ok: false,
+      message: 'standalone.repairIncomplete'
+    })
+    vi.mocked(hasTrackedChanges).mockResolvedValue(null)
+    expect((await run('repair-comfyui')).ok).toBe(true)
   })
 
   it('stops a running ComfyUI first and relaunches it afterwards, like an update', () => {
