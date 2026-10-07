@@ -120,7 +120,7 @@ import type { CoreCheckout } from '../../version'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
 import { campaignCandidateGrants, planCampaignArgs } from '../../coreBetaCampaigns'
-import type { CampaignFacts, CampaignPlan } from '../../coreBetaCampaigns'
+import type { CampaignFacts, CampaignPlan, CampaignRecords } from '../../coreBetaCampaigns'
 import {
   campaignRecordSaved,
   getCoreBetaCampaigns,
@@ -292,6 +292,24 @@ export function buildLaunchArgs(input: {
       coreVersion,
       optedIn: input.betaEnabled
     }
+  }
+}
+
+async function loadCampaignInputs(): Promise<
+  | (Awaited<ReturnType<typeof getCoreBetaCampaigns>> & {
+      records: CampaignRecords
+      grants: CoreBetaGrant[]
+    })
+  | null
+> {
+  try {
+    const campaigns = await getCoreBetaCampaigns()
+    const records = readCampaignRecords()
+    const grants = campaignCandidateGrants(campaigns.registry, campaigns.answers, records)
+    return { ...campaigns, records, grants }
+  } catch (err) {
+    console.warn('[core-campaign] inputs unavailable; no campaign args this launch:', err)
+    return null
   }
 }
 
@@ -1255,12 +1273,9 @@ async function runLaunch(
 
         // Opted out, the grants select nothing, so the launch does not wait on the boot fetch.
         const [betaFlags, campaigns] = betaEnabled
-          ? await Promise.all([getCoreBetaGrantsAsync(), getCoreBetaCampaigns()])
+          ? await Promise.all([getCoreBetaGrantsAsync(), loadCampaignInputs()])
           : [[], null]
-        const records = campaigns ? readCampaignRecords() : {}
-        const campaignGrants = campaigns
-          ? campaignCandidateGrants(campaigns.registry, campaigns.answers, records)
-          : []
+        const campaignGrants = campaigns?.grants ?? []
         // Opted-out launches skip it: the checks can reach the network and could grant nothing.
         const coreCommits = betaEnabled
           ? await resolveCoreCommitState(
@@ -1288,8 +1303,9 @@ async function runLaunch(
           betaEnabled,
           ...(campaigns && {
             campaign: {
-              ...campaigns,
-              records,
+              registry: campaigns.registry,
+              answers: campaigns.answers,
+              records: campaigns.records,
               idClass: getIdClass(),
               now: Date.now()
             }

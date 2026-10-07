@@ -79,12 +79,14 @@ const launchHarness = vi.hoisted(() => ({
   recordWriteThrows: false,
   recordWriteRecovers: false,
   idClass: 'machine_derived' as string,
-  campaignFetches: 0
+  campaignFetches: 0,
+  campaignsReject: false
 }))
 
 vi.mock('../../coreBetaCampaignFlags', () => ({
   getCoreBetaCampaigns: async () => {
     launchHarness.campaignFetches++
+    if (launchHarness.campaignsReject) throw new Error('campaign fetch failed')
     return launchHarness.campaigns
   },
   readCampaignRecords: () => launchHarness.campaignRecords,
@@ -1229,6 +1231,7 @@ describe('core beta report placement', () => {
     launchHarness.recordWriteRecovers = false
     launchHarness.idClass = 'machine_derived'
     launchHarness.campaignFetches = 0
+    launchHarness.campaignsReject = false
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
     // Both halves of the activation-notice state: the in-process pending queue and the
@@ -1487,7 +1490,7 @@ describe('core beta report placement', () => {
         launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 7 } } }
         const result = recordCampaignEnrolments({ applied: [enrolment], misses: [] })
         expect(launchHarness.recordWrites).toEqual([])
-        expect(reportedEvents(), 'one enrolled event per enrolment').not.toContain(
+        expect(reportedEvents(), 'no second enrolled event').not.toContain(
           'comfy.desktop.core_beta.enrolled'
         )
         expect(result).toEqual({ applied: [enrolment], misses: [] })
@@ -1507,6 +1510,23 @@ describe('core beta report placement', () => {
           misses: []
         })
       })
+    })
+
+    it("keeps slot #0's args when the campaign fetch fails", async () => {
+      launchHarness.campaignsReject = true
+      await handleLaunch(ctxFor('campaign-fetch-fails'))
+      expect(spawnArgs, 'a campaign failure never costs slot #0').toContain('--enable-assets')
+      expect(spawnArgs).not.toContain('--enable-agent')
+    })
+
+    it("keeps slot #0's args when a campaign answer is malformed", async () => {
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map([[KEY, { enrol: true, grants: null, payload: null }]])
+      }
+      await handleLaunch(ctxFor('campaign-malformed'))
+      expect(spawnArgs, 'a campaign failure never costs slot #0').toContain('--enable-assets')
+      expect(spawnArgs).not.toContain('--enable-agent')
     })
 
     it('fetches no campaign answer and applies none when beta is off', async () => {

@@ -116,6 +116,14 @@ describe('initCoreBetaFlags', () => {
       expect(call[1], 'the boot id').toBe('machine-hash')
   })
 
+  it('a first-time beta user with no saved registry gets campaigns from the next boot', async () => {
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
+    const { registry, answers } = await getCoreBetaCampaigns()
+    expect(registry, 'the registry itself arrives this session').toEqual(REGISTRY)
+    expect(answers.size, 'its keys are discovered one boot late').toBe(0)
+  })
+
   it('fetches no campaign flag on a beta-off boot', async () => {
     serve({})
     await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
