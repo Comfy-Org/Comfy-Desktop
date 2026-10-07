@@ -36,48 +36,6 @@ export function managerAllowedByPolicy(policy: ModelPolicy | null | undefined): 
   return policy?.mode !== 'allowlist'
 }
 
-/** Where a governed build's archive carries its signed policy. Must match
- *  ComfyUI's `_POLICY_PATH` in `app/governance.py` (master 3d9b2d5, line 60). */
-const GOVERNANCE_POLICY_RELATIVE = path.join('ComfyUI', 'governance', 'policy.signed.json')
-
-/**
- * A governed build's policy, read from the signed policy file its archive
- * carries. ComfyUI master 3d9b2d5 (#16167) enforces that policy itself:
- * under any custom-node policy it turns ComfyUI-Manager off with a warning,
- * so launch passes the manager flags as the author's answer says.
- * `resolveLauncherModelDirs` in `lib/models.ts` reads it to give a governed
- * install no extra model folders.
- */
-export interface Governance {
-  kind: 'governed'
-  /** The signed payload's `customNodeMode`; null when custom nodes are not governed. */
-  customNodeMode: 'allowlist' | 'blocklist' | null
-}
-
-/**
- * Read the signed policy an installed archive carries, or null for an ordinary
- * build. The signature is not checked here; ComfyUI checks it at startup. A
- * policy file that cannot be read still marks the install governed, and a
- * custom-node mode that cannot be read counts as an allowlist, the stricter
- * answer.
- */
-export function readGovernance(installPath: string): Governance | null {
-  const file = path.join(installPath, GOVERNANCE_POLICY_RELATIVE)
-  if (!fs.existsSync(file)) return null
-  let mode: unknown
-  try {
-    const envelope = JSON.parse(fs.readFileSync(file, 'utf-8')) as { payload: unknown }
-    const payload = Buffer.from(String(envelope.payload), 'base64url').toString('utf-8')
-    mode = (JSON.parse(payload) as { customNodeMode: unknown }).customNodeMode
-  } catch {
-    mode = undefined
-  }
-  return {
-    kind: 'governed',
-    customNodeMode: mode === 'blocklist' || mode === null ? mode : 'allowlist'
-  }
-}
-
 /**
  * The archive's bundled interpreter.
  *

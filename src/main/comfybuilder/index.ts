@@ -30,7 +30,6 @@ export {
   buildLaunchSpec,
   launchArgsForManagerAnswer,
   managerAllowedByPolicy,
-  readGovernance,
   venvPython
 } from './launch'
 export type { LaunchOptions } from './launch'

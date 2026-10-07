@@ -7,7 +7,6 @@ import {
   buildLaunchSpec,
   launchArgsForManagerAnswer,
   managerAllowedByPolicy,
-  readGovernance,
   venvPython
 } from './launch'
 
@@ -28,12 +27,6 @@ function layout(
 }
 
 /** Write a policy envelope shaped like a governed archive's (signature unchecked). */
-function writePolicy(installPath: string, payload: unknown, raw?: string): void {
-  const file = path.join(installPath, 'ComfyUI', 'governance', 'policy.signed.json')
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url')
-  fs.writeFileSync(file, raw ?? JSON.stringify({ schema: 1, payload: encoded, signature: 'sig' }))
-}
 
 describe('launch', () => {
   let dir: string
@@ -174,24 +167,6 @@ describe('launch', () => {
     ]
   ])('launchArgsForManagerAnswer: %s', (_name, args, allowed, before, expected) => {
     expect(launchArgsForManagerAnswer(args, allowed, before)).toBe(expected)
-  })
-
-  it('readGovernance returns null for an ordinary build', () => {
-    layout(dir)
-    expect(readGovernance(dir)).toBeNull()
-  })
-
-  it.each([
-    ['an allowlist', { customNodeMode: 'allowlist' }, undefined, 'allowlist'],
-    ['a blocklist', { customNodeMode: 'blocklist' }, undefined, 'blocklist'],
-    ['ungoverned custom nodes', { activeForms: ['nodeId'], customNodeMode: null }, undefined, null],
-    ['a payload without a mode', { activeForms: ['customNode'] }, undefined, 'allowlist'],
-    ['an unknown mode', { customNodeMode: 'everything' }, undefined, 'allowlist'],
-    ['an envelope that is not JSON', {}, 'not json', 'allowlist'],
-    ['a payload that is not base64url JSON', {}, '{"payload":"!!"}', 'allowlist']
-  ])('readGovernance reads %s', (_name, payload, raw, expected) => {
-    writePolicy(dir, payload, raw)
-    expect(readGovernance(dir)).toEqual({ kind: 'governed', customNodeMode: expected })
   })
 
   it.each([
