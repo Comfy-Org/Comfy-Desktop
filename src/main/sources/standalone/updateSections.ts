@@ -3,7 +3,7 @@ import path from 'path'
 import * as releaseCache from '../../lib/release-cache'
 import { buildChannelCards, buildChannelLabelMap } from '../../lib/channel-cards'
 import type { ChannelDef } from '../../lib/channel-cards'
-import { coreSemverExact, coreSemverVerified, formatComfyVersion } from '../../lib/version'
+import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { truncateNotes } from '../../lib/comfyui-releases'
 import {
@@ -467,8 +467,8 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
   const channelDefs = getChannelDefs()
   const baseCards = buildChannelCards(COMFYUI_REPO, channelDefs, installation)
 
-  const onTag = coreSemverExact(installation) && coreSemverVerified(installation)
-  const installedTag = onTag ? (installation.comfyVersion as ComfyVersion).baseTag : undefined
+  const ver = installation.comfyVersion as ComfyVersion | undefined
+  const installedTag = ver?.commitsAhead === 0 && ver.baseTagVerified ? ver.baseTag : undefined
   const channelOptions = baseCards.map((card) => {
     const actions: Record<string, unknown>[] = []
     if (card.data?.updateAvailable && hasGit) {
