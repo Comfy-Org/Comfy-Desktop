@@ -554,8 +554,7 @@ export function registerInstallationHandlers(): void {
       if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
       const sections = source.getDetailSections(inst)
       const allowedIds = new Set(['name', 'seen'])
-      // What each field showed: an unset field displays its default, so that is the
-      // value a user edit changes from.
+      // An unset field shows its default, which is what a user edit changes from.
       const shown = new Map<string, unknown>()
       for (const section of sections) {
         const fields = (section as Record<string, unknown>).fields as
@@ -597,15 +596,9 @@ export function registerInstallationHandlers(): void {
       }
       const updated = await installations.update(installationId, filtered)
       for (const [key, value] of Object.entries(filtered)) {
-        // `seen` is bookkeeping and `name` a rename, not a setting. `updated` is null
-        // when the install was removed before the queued write ran.
+        // Not settings: `seen`, a rename. `updated` is null if the install was removed meanwhile.
         if (updated && key !== 'seen' && key !== 'name') {
-          captureSettingChanged(
-            key,
-            shown.has(key) ? shown.get(key) : inst[key],
-            value,
-            installationId
-          )
+          captureSettingChanged(key, shown.get(key), value, installationId)
         }
       }
       return { ok: true }

@@ -1,14 +1,7 @@
 import * as telemetry from './telemetry'
 
-/**
- * `comfy.desktop.settings.changed` - one event per user-driven setting change,
- * global or per-install. Person properties already say what a setting IS; only
- * an event says WHEN it changed, which is what lets a later failure be lined up
- * against the user's own edit.
- *
- * PRIVACY: the key and, for booleans, the new value. Nothing else - folder
- * settings hold paths, and other strings can hold mirror URLs or credentials.
- */
+/** `comfy.desktop.settings.changed`: a user's own setting edit, global or per-install.
+ *  Sends the key and, for booleans, the new value - never a path or other value. */
 export function captureSettingChanged(
   key: string,
   before: unknown,
@@ -17,9 +10,7 @@ export function captureSettingChanged(
 ): void {
   if (JSON.stringify(before) === JSON.stringify(after)) return
   telemetry.capture('comfy.desktop.settings.changed', {
-    // Set only for a per-install change. Not `installation_id`: that is the device id
-    // every event carries by default.
-    install_id: installId,
+    install_id: installId, // per-install only; `installation_id` is the default device id
     setting_key: key,
     bool_value: typeof after === 'boolean' ? after : undefined
   })

@@ -280,9 +280,7 @@ export function buildMediaSections(): SettingsSection[] {
 
 // Write a setting and run its side-effect branches (theme/locale/telemetry
 // broadcasts, updater hint, settings-changed) plus the Global Settings refresh.
-// `userEdit` marks a write from the Global Settings UI; only those raise
-// `settings.changed`, since the bare `set-setting` IPC also carries app state
-// (first-use, announcement and coachmark flags, the dashboard workspace).
+// `userEdit` (Global Settings UI only) raises `settings.changed`; set-setting also carries app state.
 export function applySettingSet(key: string, value: unknown, userEdit = false): void {
   if (
     key === 'betaFeaturesEnabled' &&
@@ -325,8 +323,7 @@ export function applySettingSet(key: string, value: unknown, userEdit = false): 
   if (Object.keys(trackedProps).length > 0) {
     mainTelemetry.registerPersonProperties(trackedProps)
   }
-  // Not for the consent toggle: consent has already flipped above, so an opt-in would be
-  // reported and an opt-out dropped; neither is reported instead.
+  // Consent has flipped above, so only an opt-in would be reported; report neither.
   if (userEdit && key !== 'telemetryEnabled') {
     captureSettingChanged(key, before, settings.get(key))
   }
