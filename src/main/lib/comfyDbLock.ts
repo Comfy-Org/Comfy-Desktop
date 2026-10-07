@@ -89,6 +89,9 @@ interface HolderRecord {
   main: string
 }
 
+/** Record reads still running, by database: a dead mount holds one pool thread, not one a launch. */
+const pendingReads = new Map<string, Promise<HolderRecord | null>>()
+
 /** How long reading a holder record may take before it counts as absent. */
 const RECORD_READ_MS = 2000
 
@@ -121,7 +124,12 @@ async function samePath(a: string, b: string): Promise<boolean> {
 export async function readHolderRecord(dbPath: string): Promise<HolderRecord | null> {
   // A slow or unreachable path must not hold the launch: past the cap there is no record.
   const timeout = new Promise<null>((r) => setTimeout(() => r(null), RECORD_READ_MS).unref?.())
-  const record = await Promise.race([readRecordFile(dbPath), timeout])
+  let read = pendingReads.get(dbPath)
+  if (!read) {
+    read = readRecordFile(dbPath).finally(() => pendingReads.delete(dbPath))
+    pendingReads.set(dbPath, read)
+  }
+  const record = await Promise.race([read, timeout])
   if (!record) return null
   return (await holderStartToken(record.pid).catch(() => null)) === record.started ? record : null
 }

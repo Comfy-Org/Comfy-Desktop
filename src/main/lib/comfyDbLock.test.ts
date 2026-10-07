@@ -281,6 +281,27 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       }
     }, 20_000)
 
+    it('leaves one read, not one a launch, waiting on a path that does not answer', async () => {
+      await hold()
+      let answer!: (v: never) => void
+      const stat = vi
+        .spyOn(fs.promises, 'stat')
+        .mockReturnValue(new Promise((_r, reject) => (answer = reject as (v: never) => void)))
+      try {
+        expect(await readHolderRecord(db)).toBeNull()
+        expect(await readHolderRecord(db)).toBeNull()
+        // Each launch gave up after its own cap; the one stuck read was reused.
+        expect(stat).toHaveBeenCalledTimes(1)
+        answer(new Error('the share answered at last') as never)
+        await new Promise((r) => setImmediate(r))
+        stat.mockRestore()
+        // Settled: the next launch reads afresh (and now finds the live record).
+        expect(await readHolderRecord(db)).not.toBeNull()
+      } finally {
+        stat.mockRestore()
+      }
+    }, 20_000)
+
     it('reads no record that is not a small regular file, without blocking on a FIFO', async () => {
       const { pid } = await hold()
       const file = `${db}.lock.json`
