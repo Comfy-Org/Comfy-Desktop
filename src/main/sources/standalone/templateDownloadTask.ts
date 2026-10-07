@@ -8,7 +8,11 @@ import {
 } from '../../lib/modelDownloadPaths'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
-import { resolveTemplateModels, resolveTemplateModelsFromJson } from './templateModels'
+import {
+  resolveTemplateModels,
+  resolveTemplateModelsFromJson,
+  type TemplateModelDownload
+} from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
 import {
   isTerminal,
@@ -19,6 +23,7 @@ import {
   gbStr,
   DISK_SPACE_ERROR,
   summarizeTemplateState,
+  templateModelKey,
   type TemplateDownloadState,
   type TemplateDownloadSummary
 } from './templateDownloadCore'
@@ -186,9 +191,25 @@ export function startTemplateDownload(
   estimatedSizeBytes: number,
   opts: StartOpts
 ): void {
-  const templateId = installation.bundledTemplateId
-  if (!templateId) return
-  startTemplateDownloadTask(installation.id, installation, templateId, estimatedSizeBytes, opts)
+  // Records written before multi-pick carry only `bundledTemplateId`.
+  const templateIds =
+    installation.bundledTemplateIds ??
+    (installation.bundledTemplateId ? [installation.bundledTemplateId] : [])
+  if (templateIds.length === 0) return
+  startTemplateDownloadTask(
+    installation.id,
+    installation,
+    templateIds.map((id) => ({ id })),
+    estimatedSizeBytes,
+    opts
+  )
+}
+
+/** A template to stage. `workflowJson`, when the caller already has it, stands
+ *  in for resolving the template's JSON by id. */
+export interface TemplateToStage {
+  id: string
+  workflowJson?: unknown
 }
 
 /**
@@ -200,10 +221,9 @@ export function startTemplateDownload(
 export function startTemplateDownloadTask(
   taskId: string,
   installation: InstallationRecord,
-  templateId: string,
+  templates: readonly TemplateToStage[],
   estimatedSizeBytes: number,
-  opts: StartOpts,
-  workflowJson?: unknown
+  opts: StartOpts
 ): void {
   const existing = _templateDownloads.get(taskId)
   if (existing && !isTerminal(existing.status)) return
@@ -230,12 +250,12 @@ export function startTemplateDownloadTask(
   const taskOpts: StartOpts = { sendOutput: log }
 
   log(
-    `[templates] Starting background download for "${templateId}" (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
+    `[templates] Starting background download for ${templates.map(({ id }) => `"${id}"`).join(', ')} (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
   )
 
   const publisher = setInterval(() => publishProgress(taskId, state), PROGRESS_PUBLISH_MS)
 
-  void runTask(taskId, installation, templateId, state, abort.signal, taskOpts, workflowJson)
+  void runTask(taskId, installation, templates, state, abort.signal, taskOpts)
     .catch((err) => {
       if (!isTerminal(state.status)) {
         state.status = 'error'
@@ -349,26 +369,44 @@ function raceCompletionWithAbort(
 async function runTask(
   taskId: string,
   installation: InstallationRecord,
-  templateId: string,
+  templates: readonly TemplateToStage[],
   state: TemplateDownloadState,
   signal: AbortSignal,
-  { sendOutput }: StartOpts,
-  workflowJson?: unknown
+  { sendOutput }: StartOpts
 ): Promise<void> {
-  await downloadTemplateInputAssets(installation, templateId, sendOutput, signal, workflowJson)
+  // Look up every template's models at once, so one slow template JSON fetch
+  // doesn't hold back the others. Input assets download one template at a
+  // time: picks can share an input file, and `download` writes straight to the
+  // destination, so concurrent fetches of the same file would collide.
+  const [modelLists] = await Promise.all([
+    Promise.all(
+      templates.map(({ id, workflowJson }) => {
+        sendOutput(`[templates] Resolving model list for "${id}"...\n`)
+        return workflowJson
+          ? resolveTemplateModelsFromJson(workflowJson)
+          : resolveTemplateModels(installation, id)
+      })
+    ),
+    (async () => {
+      for (const { id, workflowJson } of templates) {
+        if (signal.aborted) return
+        await downloadTemplateInputAssets(installation, id, sendOutput, signal, workflowJson)
+      }
+    })()
+  ])
   if (signal.aborted) {
     state.status = 'cancelled'
     return
   }
 
-  sendOutput(`[templates] Resolving model list for "${templateId}"...\n`)
-  const models = workflowJson
-    ? resolveTemplateModelsFromJson(workflowJson)
-    : await resolveTemplateModels(installation, templateId)
-
-  if (signal.aborted) {
-    state.status = 'cancelled'
-    return
+  // Templates often share models (same encoder/VAE); download each file once.
+  const models: TemplateModelDownload[] = []
+  const seen = new Set<string>()
+  for (const model of modelLists.flat()) {
+    const key = templateModelKey(model)
+    if (seen.has(key)) continue
+    seen.add(key)
+    models.push(model)
   }
   if (models.length === 0) {
     state.status = 'done'

@@ -825,10 +825,10 @@ async function runLaunch(
     restageBuildModelsIfNeeded(inst)
   }
 
-  /** Show template model-download phase for first launch if needed. */
+  /** Show template model-download phase for first launch if needed (a task
+   *  exists only for an install that picked templates). */
   const showTemplatePhase =
     inst.sourceId === 'standalone' &&
-    !!inst.bundledTemplateId &&
     inst.downloadTemplateModels === true &&
     (inst.bundledTemplateSizeBytes ?? 0) > 0 &&
     !!inst.pendingTemplateOpen &&

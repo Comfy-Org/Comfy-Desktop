@@ -220,6 +220,107 @@ describe('InstallWizardModal starter template disk gate', () => {
   })
 })
 
+describe('InstallWizardModal starter template multi-pick', () => {
+  type Wrapper = ReturnType<typeof mountModal>
+
+  /** Open the wizard on Standalone. With the picker step on, Continue moves to
+   *  it; with it opted out, the picker renders inline on Configure. */
+  async function openWizard({ pickerStep = true } = {}): Promise<Wrapper> {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [
+          { id: 'bundledTemplate', label: 'Starter Template', type: 'select', renderAs: 'cards' }
+        ]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'none', label: 'None' },
+      { value: 'img_a', label: 'Image A', data: { modality: 'image', sizeBytes: 3 } },
+      {
+        value: 'img_b',
+        label: 'Image B',
+        data: { modality: 'image', sizeBytes: 4, modelsPresent: true }
+      },
+      { value: 'vid_a', label: 'Video A', data: { modality: 'video', sizeBytes: 5 } }
+    ])
+    ;(window.api.getSetting as ReturnType<typeof vi.fn>).mockImplementation(
+      async (key: string) => key === 'skipTemplatePickerStep' && !pickerStep
+    )
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    if (pickerStep) {
+      await wrapper.get('.config-continue').trigger('click')
+      await flushPromises()
+    }
+    return wrapper
+  }
+
+  const tab = (wrapper: Wrapper, label: string) =>
+    wrapper.findAll('[role="tab"]').find((t) => t.text().includes(label))!
+  const card = (wrapper: Wrapper, label: string) =>
+    wrapper.findAll('.tps__card').find((c) => c.text().includes(label))!
+  const sentTemplates = () =>
+    (window.api.buildInstallation as ReturnType<typeof vi.fn>).mock.calls[0]![1].bundledTemplate
+
+  it('installs every template ticked across tabs, in pick order', async () => {
+    const wrapper = await openWizard()
+
+    await card(wrapper, 'Video A').trigger('click')
+    await tab(wrapper, 'Image').trigger('click')
+    await card(wrapper, 'Image B').trigger('click')
+    await card(wrapper, 'Image A').trigger('click')
+    await card(wrapper, 'Image B').trigger('click') // untick
+    await wrapper.get('.template-install').trigger('click')
+    await flushPromises()
+
+    expect(sentTemplates()).toMatchObject({
+      value: 'vid_a',
+      data: { templateIds: ['vid_a', 'img_a'], downloadBytes: 8 }
+    })
+  })
+
+  it('leaves picks whose models are already on disk out of the bytes to download', async () => {
+    const wrapper = await openWizard()
+
+    await card(wrapper, 'Video A').trigger('click')
+    await tab(wrapper, 'Image').trigger('click')
+    await card(wrapper, 'Image B').trigger('click')
+    await wrapper.get('.template-install').trigger('click')
+    await flushPromises()
+
+    expect(sentTemplates().data).toEqual({ templateIds: ['vid_a', 'img_b'], downloadBytes: 5 })
+  })
+
+  it('"Skip & Install" drops every ticked template', async () => {
+    const wrapper = await openWizard()
+
+    await card(wrapper, 'Video A').trigger('click')
+    await wrapper.get('.template-skip').trigger('click')
+    await flushPromises()
+
+    expect(sentTemplates()).toMatchObject({
+      value: 'none',
+      data: { templateIds: [], downloadBytes: 0 }
+    })
+  })
+
+  it('offers the same multi-pick inline on Configure when the picker step is opted out', async () => {
+    const wrapper = await openWizard({ pickerStep: false })
+
+    expect(wrapper.find('.template-shell').exists()).toBe(false)
+    await card(wrapper, 'Video A').trigger('click')
+    await tab(wrapper, 'Image').trigger('click')
+    await card(wrapper, 'Image A').trigger('click')
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(sentTemplates().data).toEqual({ templateIds: ['vid_a', 'img_a'], downloadBytes: 8 })
+  })
+})
+
 describe('InstallWizardModal install-location field', () => {
   it('renders the default install location as a clickable path that opens the folder', async () => {
     const wrapper = mountModal()

@@ -64,12 +64,17 @@ export interface InstallationRecord {
   inputDir?: string
   /** Per-install output dir, used only when `useSharedOutput === false`. */
   outputDir?: string
-  /** POC: starter template id the user picked in the install wizard. Durable
-   *  record of intent; survives relaunches. */
+  /** Legacy: the single starter template picked before multi-pick. Read only
+   *  as a fallback for `bundledTemplateIds`; never written any more. */
   bundledTemplateId?: string
-  /** Coarse model-download estimate (bytes) for `bundledTemplateId`, frozen from
-   *  the wizard's hydrated value so the background download's progress denominator
-   *  matches the consent label without re-fetching the template index. */
+  /** Every starter template the user picked in the install wizard, in pick
+   *  order. Durable record of intent; all of them get their models
+   *  pre-downloaded, and the first is auto-opened on first launch. */
+  bundledTemplateIds?: string[]
+  /** Coarse bytes still to download for `bundledTemplateIds`, frozen from the
+   *  wizard (picks whose models were already on disk count as 0), so the
+   *  background download's disk check and progress denominator match what the
+   *  wizard checked, without re-fetching the template index. */
   bundledTemplateSizeBytes?: number
   /** One-shot flag consumed by the first launch — when set, the comfy URL is
    *  decorated with `?template=<id>` so the frontend auto-opens it, then this is
@@ -77,7 +82,7 @@ export interface InstallationRecord {
   pendingTemplateOpen?: string | null
   /** When true, the install's `template-models` phase pre-downloads the chosen
    *  template's required models into the shared models dir. Set from the wizard
-   *  consent checkbox; only meaningful alongside `bundledTemplateId`. */
+   *  consent checkbox; only meaningful alongside `bundledTemplateIds`. */
   downloadTemplateModels?: boolean
   [key: string]: unknown
 }
