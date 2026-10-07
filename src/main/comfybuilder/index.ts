@@ -29,7 +29,6 @@ export { resolveModelManifest } from './modelManifest'
 export {
   buildLaunchSpec,
   launchArgsForManagerAnswer,
-  managerAllowedByGovernance,
   managerAllowedByPolicy,
   readGovernance,
   venvPython

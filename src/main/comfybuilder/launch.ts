@@ -37,16 +37,15 @@ export function managerAllowedByPolicy(policy: ModelPolicy | null | undefined): 
 }
 
 /** Where a governed build's archive carries its signed policy. Must match
- *  ComfyUI's `_POLICY_PATH` in `app/governance.py` (Comfy-Org/ComfyUI#16167 at
- *  cd93b00, line 50); recheck it when that PR merges. */
+ *  ComfyUI's `_POLICY_PATH` in `app/governance.py` (master 3d9b2d5, line 60). */
 const GOVERNANCE_POLICY_RELATIVE = path.join('ComfyUI', 'governance', 'policy.signed.json')
 
 /**
  * A governed build's policy, read from the signed policy file its archive
- * carries. ComfyUI enforces that policy itself and exits at startup on a flag
- * it forbids, so launch leaves out the manager-enabling flags under a
- * custom-node allowlist and the launcher's `--extra-model-paths-config` on any
- * governed build.
+ * carries. ComfyUI enforces that policy itself: under any custom-node policy
+ * it turns ComfyUI-Manager off with a warning, so launch passes the manager
+ * flags as the author's answer says. `resolveLauncherModelDirs` in
+ * `lib/models.ts` reads it to give a governed install no extra model folders.
  */
 export interface Governance {
   kind: 'governed'
@@ -76,12 +75,6 @@ export function readGovernance(installPath: string): Governance | null {
     kind: 'governed',
     customNodeMode: mode === 'blocklist' || mode === null ? mode : 'allowlist'
   }
-}
-
-/** False when a governed build's custom nodes are an allowlist, under which
- *  ComfyUI refuses to start with the manager enabled. */
-export function managerAllowedByGovernance(governance: Governance | null | undefined): boolean {
-  return governance?.customNodeMode !== 'allowlist'
 }
 
 /**
@@ -150,9 +143,6 @@ export interface LaunchOptions {
    * Defaults to true.
    */
   managerAllowed?: boolean
-  /** The install's governance, read from its policy file at launch; an
-   *  allowlist drops the manager flags too. */
-  governance?: Governance | null
 }
 
 /**
@@ -167,8 +157,7 @@ export function buildLaunchSpec(installPath: string, opts: LaunchOptions = {}): 
 
   const raw = (opts.launchArgs ?? DEFAULT_LAUNCH_ARGS).trim()
   const all = raw.length > 0 ? parseArgs(raw) : []
-  const managerAllowed =
-    opts.managerAllowed !== false && managerAllowedByGovernance(opts.governance)
+  const managerAllowed = opts.managerAllowed !== false
   const parsed = managerAllowed ? all : all.filter((arg) => !isManagerEnablingArg(arg))
   return {
     cmd: python,
