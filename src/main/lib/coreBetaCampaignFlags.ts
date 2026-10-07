@@ -84,19 +84,24 @@ export async function getCoreBetaCampaigns(): Promise<{
 }
 
 export function readCampaignRecords(): CampaignRecords {
-  return parseCampaignRecords(readPersistedFile(ENROLMENTS_FILE).entries)
+  return parseCampaignRecords(readPersistedFile(ENROLMENTS_FILE, true).entries)
 }
 
 /** `.bak` standing in for an unreadable primary doesn't count: the next launch rereads the primary. */
 export function campaignRecordSaved(key: string, arg: string, epoch: number): boolean {
-  const { entries, primaryUnreadable } = readPersistedFile(ENROLMENTS_FILE)
+  const { entries, primaryUnreadable } = readPersistedFile(ENROLMENTS_FILE, true)
   return !primaryUnreadable && parseCampaignRecords(entries)[key]?.[arg]?.epoch === epoch
 }
 
 /** Throws when the file cannot be safely rewritten. */
 export function writeCampaignRecord(key: string, arg: string, epoch: number, now: number): void {
   const existing = readCampaignRecords()[key] ?? {}
-  writePersistedEntry(ENROLMENTS_FILE, key, { ...existing, [arg]: { epoch, enrolledAt: now } })
+  writePersistedEntry(
+    ENROLMENTS_FILE,
+    key,
+    { ...existing, [arg]: { epoch, enrolledAt: now } },
+    true
+  )
 }
 
 export function _resetForTest(): void {

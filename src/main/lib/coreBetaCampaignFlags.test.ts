@@ -23,7 +23,12 @@ import {
   readCampaignRecords,
   writeCampaignRecord
 } from './coreBetaCampaignFlags'
-import { _resetForTest as resetCoreBetaGrants, getCoreBetaGrantsAsync } from './coreBetaGrants'
+import {
+  NO_CORE_COMMITS,
+  _resetForTest as resetCoreBetaGrants,
+  getCoreBetaGrantsAsync
+} from './coreBetaGrants'
+import { parseCampaignAnswer, planCampaignArgs } from './coreBetaCampaigns'
 
 const KEY = 'desktop_core_beta_agent'
 const NOW = Date.UTC(2026, 9, 7)
@@ -373,6 +378,42 @@ describe('enrolment records', () => {
       primaryUnreadable: true
     } as ReturnType<typeof safeFile.readFileSafe>)
     expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(false)
+  })
+
+  describe('an unparseable primary next to a valid backup', () => {
+    beforeEach(() => {
+      writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
+      fs.writeFileSync(file('campaign-enrolments.json'), 'not json{')
+    })
+
+    it('hold: the backup record still makes the machine a member', () => {
+      const plan = planCampaignArgs({
+        registry: REGISTRY,
+        answers: new Map([[KEY, parseCampaignAnswer('hold', AGENT, NOW)!]]),
+        records: readCampaignRecords(),
+        betaEnabled: true,
+        presentArgs: ['--enable-assets'],
+        core: { semver: '0.3.61', exact: true, verified: true, current: true },
+        commits: NO_CORE_COMMITS,
+        schema: { args: [], knownFlags: new Set(['enable-agent', 'enable-assets']) },
+        idClass: 'machine_derived',
+        now: NOW
+      })
+      expect(plan.applied, 'garbage must not read as "no enrolments"').toMatchObject([
+        { key: KEY, epoch: 1, enrolledNow: false }
+      ])
+    })
+
+    it('enrol: the write is refused and nothing counts, so no second enrolled event', () => {
+      expect(() => writeCampaignRecord(KEY, '--enable-agent', 2, NOW + 1)).toThrow(
+        /refusing to modify/
+      )
+      expect(campaignRecordSaved(KEY, '--enable-agent', 2)).toBe(false)
+      expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')
+      expect(readJson('campaign-enrolments.json.bak')[KEY]).toEqual({
+        '--enable-agent': { epoch: 1, enrolledAt: NOW }
+      })
+    })
   })
 
   it('reads nothing from a missing or corrupt file', () => {
