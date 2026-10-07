@@ -53,6 +53,8 @@ const launchHarness = vi.hoisted(() => ({
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
   grants: [] as CoreBetaGrant[],
+  /** The boot fetch never settles, as on a link that hangs until its deadline. */
+  grantsPending: false,
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -186,7 +188,10 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaGrantsModule>()
   return {
     ...actual,
-    getCoreBetaGrantsAsync: async () => launchHarness.grants,
+    getCoreBetaGrantsAsync: () =>
+      launchHarness.grantsPending
+        ? new Promise<CoreBetaGrant[]>(() => {})
+        : Promise.resolve(launchHarness.grants),
     planCoreBetaArgs: (facts: Parameters<typeof actual.planCoreBetaArgs>[0]) => {
       launchHarness.plans.push(facts)
       return actual.planCoreBetaArgs(facts)
@@ -1178,6 +1183,7 @@ describe('core beta report placement', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
+    launchHarness.grantsPending = false
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
     // Both halves of the activation-notice state: the in-process pending queue and the
@@ -1420,6 +1426,16 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(peekBetaActivationNotice(id)).toBeNull()
+  })
+
+  it('does not wait on the grant fetch for an install that opted out', async () => {
+    launchHarness.betaEnabled = false
+    launchHarness.grantsPending = true
+
+    const res = await handleLaunch(ctxFor('harness-opted-out-pending'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
   })
 
   it('arms nothing when the payload asked for a silent grant', async () => {
@@ -1880,7 +1896,7 @@ describe('core beta report placement', () => {
     expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.opt_state')
   })
 
-  it('reports once and drains both assets tails before a port-conflict retry without resetting caps', async () => {
+  it('reports once and drops both unterminated assets tails before a port-conflict retry without resetting caps', async () => {
     // The only test that proves the latch: the report site lives INSIDE the recursing
     // `tryLaunch`, so an unlatched report fires once per attempt.
     const children: FakeChild[] = []
@@ -1894,12 +1910,13 @@ describe('core beta report placement', () => {
     }
     launchHarness.spawn = () => {
       if (children.length === 1) {
+        // The killed attempt's unterminated lines may be cut short, so they are never parsed.
         expect(
           events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled')
-        ).toHaveLength(1)
+        ).toHaveLength(0)
         expect(
           events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed')
-        ).toHaveLength(1)
+        ).toHaveLength(0)
       }
       const child = fakeChild()
       children.push(child)
@@ -1936,6 +1953,17 @@ describe('core beta report placement', () => {
       'data',
       Buffer.from('[assets-event] seeder.scan_started root=models\n')
     )
+    // A newline from the new process would complete the killed attempt's tails had
+    // beginBoot not dropped them: both are valid records once terminated.
+    children[1]!.stdout.emit('data', Buffer.from('\n'))
+    children[1]!.stderr.emit('data', Buffer.from('\n'))
+    expect(
+      events.filter(
+        (e) =>
+          e.event === 'comfy.desktop.comfyui.assets.assets.enabled' ||
+          e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed'
+      )
+    ).toEqual([])
     expect(
       events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.seeder.scan_started')
     ).toHaveLength(60)

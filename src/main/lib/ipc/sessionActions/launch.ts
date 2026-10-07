@@ -1191,7 +1191,8 @@ async function runLaunch(
           }
         }
 
-        const betaFlags = await getCoreBetaGrantsAsync()
+        // Opted out, the grants select nothing, so the launch does not wait on the boot fetch.
+        const betaFlags = betaEnabled ? await getCoreBetaGrantsAsync() : []
         // Opted-out launches skip it: the checks can reach the network and could grant nothing.
         const coreCommits = betaEnabled
           ? await resolveCoreCommitState(
@@ -1813,7 +1814,7 @@ async function runLaunch(
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected.
     hwTap.beginBoot()
-    // Drain the previous attempt's unterminated records before resetting its buffers.
+    // Emit the previous attempt's summary before resetting its buffers.
     assetsTap.flushSummary()
     assetsTap.beginBoot()
     // The agent tap never drains a partial line; this reports its dropped-event count.
