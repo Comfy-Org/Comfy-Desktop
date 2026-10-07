@@ -631,7 +631,7 @@ export function createAssetsTapSafe(base: {
 
 /** The agent tap, with the same never-cost-a-launch contract as `createAssetsTapSafe`. */
 export function createAgentTapSafe(
-  base: Parameters<typeof createAssetsTapSafe>[0]
+  base: Parameters<typeof createAgentTap>[0]
 ): ReturnType<typeof createAgentTap> {
   try {
     return createAgentTap(base)
@@ -1815,8 +1815,9 @@ async function runLaunch(
     hwTap.beginBoot()
     // Drain the previous attempt's unterminated records before resetting its buffers.
     assetsTap.flushSummary()
-    agentTap.flushSummary()
     assetsTap.beginBoot()
+    // The agent tap never drains a partial line; this reports its dropped-event count.
+    agentTap.flushSummary()
     agentTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {
       showWindow: launchCmd.showWindow

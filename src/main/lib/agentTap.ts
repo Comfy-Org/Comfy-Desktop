@@ -85,27 +85,16 @@ const BASE_CONTEXT_KEYS: ReadonlySet<string> = new Set([
  */
 const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+.]?[0-9A-Za-z][0-9A-Za-z.+-]{0,39})?$/
 
-function coerceValue(rawValue: string): TelemetryValue {
-  if (/^-?\d+$/.test(rawValue)) return Number(rawValue)
-  if (rawValue === 'true') return true
-  if (rawValue === 'false') return false
-  return rawValue
-}
-
-function normalizeFieldValue(key: string, value: TelemetryValue): TelemetryValue {
-  if (key === 'reason' && !(typeof value === 'string' && REASONS.has(value))) return 'unknown'
-  return value
-}
-
-function isAllowedFieldValue(key: string, value: unknown): value is TelemetryValue {
-  if (key === 'code') return typeof value === 'number' && Number.isSafeInteger(value)
-  if (key === 'duration_ms') {
-    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+/** The value to forward for an allowlisted field, or `undefined` to reject the line. */
+function fieldValue(key: string, rawValue: string): TelemetryValue | undefined {
+  if (key === 'reason') return REASONS.has(rawValue) ? rawValue : 'unknown'
+  if (key === 'agent_version' || key === 'node_version') {
+    return VERSION.test(rawValue) ? rawValue : undefined
   }
-  if (typeof value !== 'string') return false
-  if (key === 'agent_version' || key === 'node_version') return VERSION.test(value)
-  if (key === 'reason') return REASONS.has(value)
-  return false
+  // `code` and `duration_ms`: integers only, and a duration is never negative.
+  const value = /^-?\d+$/.test(rawValue) ? Number(rawValue) : NaN
+  if (!Number.isSafeInteger(value) || (key === 'duration_ms' && value < 0)) return undefined
+  return value
 }
 
 function parseFields(tail: string): Record<string, TelemetryValue> | null {
@@ -123,8 +112,8 @@ function parseFields(tail: string): Record<string, TelemetryValue> | null {
       continue
     }
     if (Object.hasOwn(fields, key)) return null
-    const value = normalizeFieldValue(key, coerceValue(rawValue))
-    if (!isAllowedFieldValue(key, value)) return null
+    const value = fieldValue(key, rawValue)
+    if (value === undefined) return null
     fields[key] = value
   }
   return fields

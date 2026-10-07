@@ -660,7 +660,7 @@ describe('createAgentTapSafe', () => {
   })
 })
 
-describe('attachLaunchStreams assets tap wiring', () => {
+describe('attachLaunchStreams event-log tap wiring', () => {
   function fakeTap() {
     return { ingest: vi.fn(), beginBoot: vi.fn(), flushSummary: vi.fn() }
   }
@@ -1717,6 +1717,13 @@ describe('core beta report placement', () => {
       ['comfy.desktop.comfyui.agent.agent_started', expect.objectContaining({ duration_ms: 12 })],
       ['comfy.desktop.comfyui.agent.agent_exited', expect.objectContaining({ code: 1 })]
     ])
+    // The launch's own attribution, not a default.
+    for (const { properties } of agentEvents) {
+      expect(properties).toMatchObject({
+        installation_id: 'harness-agent-events',
+        core_beta_flags: ['--enable-assets']
+      })
+    }
   })
 
   it("drops a killed attempt's unterminated agent line before a port-conflict retry", async () => {

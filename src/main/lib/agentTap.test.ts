@@ -100,10 +100,6 @@ describe('agentTap', () => {
       expect(m?.[1]).toBe('agent_started')
       expect(m?.[2]).toBe(' duration_ms=12')
     })
-
-    it('never forwards the tap-generated counter name as a parsed event', () => {
-      expect(ALLOWED_EVENTS.has('unknown_events_dropped')).toBe(false)
-    })
   })
 
   describe('accepted lines', () => {
@@ -151,6 +147,27 @@ describe('agentTap', () => {
     ])('accepts the version string %s', (version) => {
       ingestLine(`[agent-event] node_found node_version=${version}`)
       expect(captured[0]?.ctx['node_version']).toBe(version)
+    })
+
+    it('exposes exactly the agent reason set', () => {
+      expect([...REASONS].sort()).toEqual(
+        [
+          'timeout',
+          'not_found',
+          'not_executable',
+          'unsupported_platform',
+          'spawn_failed',
+          'crashed',
+          'signal',
+          'connection_refused',
+          'http_error',
+          'network_error',
+          'checksum_mismatch',
+          'permission_denied',
+          'disabled',
+          'unknown'
+        ].sort()
+      )
     })
 
     it.each([...REASONS])('accepts the reason %s', (reason) => {
@@ -206,6 +223,8 @@ describe('agentTap', () => {
       expect(captured[0]?.event).toBe('comfy.desktop.comfyui.agent.unknown_events_dropped')
       expect(captured[0]?.ctx['count']).toBe(2)
       expect(JSON.stringify(captured[0]?.ctx)).not.toContain('prompt_submitted')
+      tap.flushSummary()
+      expect(captured).toHaveLength(1)
     })
 
     it('cannot have its dropped-event counter forged by a crafted line', () => {
@@ -314,6 +333,20 @@ describe('agentTap', () => {
     })
   })
 
+  describe('rate cap buckets', () => {
+    it('caps each event separately, and keeps the cap across beginBoot', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(0)
+      const tap = createAgentTap(baseOpts)
+      tap.ingest('[agent-event] health_check_failed\n'.repeat(60), 'stdout')
+      tap.ingest('[agent-event] agent_starting\n', 'stdout')
+      expect(captured).toHaveLength(61)
+      tap.beginBoot()
+      tap.ingest('[agent-event] health_check_failed\n', 'stdout')
+      expect(captured).toHaveLength(61)
+    })
+  })
+
   describe('stream buffering', () => {
     it('handles a line split across chunk boundaries', () => {
       const tap = createAgentTap(baseOpts)
@@ -338,11 +371,23 @@ describe('agentTap', () => {
       expect(captured.map((c) => c.ctx['code'])).toEqual([12])
     })
 
+    it('buffers stdout and stderr separately', () => {
+      const tap = createAgentTap(baseOpts)
+      tap.ingest('[agent-event] agent_exited code=1', 'stdout')
+      tap.ingest('[agent-event] agent_started\n', 'stderr')
+      tap.ingest('2\n', 'stdout')
+      expect(captured.map((c) => [c.event, c.ctx['code']])).toEqual([
+        ['comfy.desktop.comfyui.agent.agent_started', undefined],
+        ['comfy.desktop.comfyui.agent.agent_exited', 12]
+      ])
+    })
+
     it('drops a partial line from a dead process on beginBoot', () => {
       const tap = createAgentTap(baseOpts)
       tap.ingest('[agent-event] agent_exited code=0', 'stdout')
       tap.beginBoot()
-      tap.flushSummary()
+      // Would complete the dead process's line had the buffer survived.
+      tap.ingest('\n', 'stdout')
       expect(captured).toEqual([])
     })
   })
@@ -359,6 +404,15 @@ describe('agentTap', () => {
         tap.ingest('[agent-event] agent_started\n[agent-event] agent_exited code=0\n', 'stdout')
       ).not.toThrow()
       expect(calls).toBe(2)
+    })
+
+    it('contains a telemetry.emit failure in flushSummary', () => {
+      vi.spyOn(telemetry, 'emit').mockImplementation(() => {
+        throw new Error('emit exploded')
+      })
+      const tap = createAgentTap(baseOpts)
+      tap.ingest('[agent-event] mystery\n', 'stdout')
+      expect(() => tap.flushSummary()).not.toThrow()
     })
   })
 })
