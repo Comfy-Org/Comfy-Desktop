@@ -2842,6 +2842,37 @@ describe('prior ComfyUI process handling at launch', () => {
         expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([])
       }
     )
+
+    it.each([
+      ['assets are off', [], {}],
+      ['the caller asked for a bump', ['--enable-assets'], { autoPortOnConflict: true }]
+    ] as const)(
+      'bumps past a busy port when %s, record or not',
+      async (_why, extra, actionData) => {
+        setArgs(...extra)
+        launchHarness.busyPorts = [PORT]
+        ownership.holderIsInstall = true
+        lockRecord.offer = offer(ourDb())
+
+        const res = await handleLaunch(ctxFor('db-record-port-bump', { ...actionData }))
+
+        expect(res.ok).toBe(true)
+        expect(res.port).toBe(launchHarness.nextPort)
+        expect(lockRecord.asked).toEqual([])
+      }
+    )
+
+    it('reports a holder the prior-process check already left only once', async () => {
+      ownership.prior = { ...terminated, pid: 9084, action: 'left', exitedInTime: false }
+      launchHarness.busyPorts = [PORT]
+      launchHarness.busyPids = [9084]
+      lockRecord.offer = offer(ourDb())
+
+      const res = await handleLaunch(ctxFor('db-record-port-left'))
+
+      expect(res.dbLockHolder).toEqual(offer(ourDb()))
+      expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toHaveLength(1)
+    })
   })
 })
 

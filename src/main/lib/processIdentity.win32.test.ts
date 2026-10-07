@@ -93,7 +93,7 @@ describe('holderStartToken on Windows', () => {
     expect(await holderStartToken(9084)).toBe('134358000923463901')
     const script = fake.calls[0]!.args.join(' ')
     expect(script).toContain('Get-Process -Id 9084')
-    expect(script).toContain('ToFileTimeUtc()')
+    expect(script).toContain('.ToUniversalTime().ToFileTimeUtc()')
     expect(script).not.toContain('Cim')
   })
 

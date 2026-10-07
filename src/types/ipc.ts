@@ -552,8 +552,6 @@ export interface DbLockOffer {
   dbPath: string
   process: string
   sameInstall: boolean
-  /** The install the failed launch was for (the relaunch's target). */
-  installationId: string
 }
 
 export interface KillResult {

@@ -16,7 +16,7 @@ import path from 'node:path'
 import http from 'node:http'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
@@ -65,28 +65,10 @@ test.beforeAll(async () => {
   await mkdir(path.dirname(lockFile()), { recursive: true })
   const script = path.join(installPath, 'ComfyUI', 'restarted', 'main.py')
   await mkdir(path.dirname(script), { recursive: true })
-  // What a ComfyUI that writes the holder record does: take the lock, then record itself
-  // beside it (Linux start token: boot id and /proc start ticks).
-  await writeFile(
-    script,
-    [
-      'import fcntl, json, os, sys, time',
-      'lock = sys.argv[1]',
-      'fd = os.open(lock, os.O_RDWR | os.O_CREAT)',
-      'fcntl.flock(fd, fcntl.LOCK_EX)',
-      "boot = open('/proc/sys/kernel/random/boot_id').read().strip()",
-      "stat = open('/proc/self/stat').read()",
-      "ticks = stat[stat.rindex(')') + 2:].split()[19]",
-      "record = {'version': 1, 'pid': os.getpid(), 'started': boot + ':' + ticks,",
-      "          'db': os.path.abspath(lock[:-len('.lock')]),",
-      "          'main': os.path.abspath(sys.argv[0]), 'argv': sys.argv}",
-      "tmp = lock + '.json.' + str(os.getpid()) + '.tmp'",
-      "with open(tmp, 'w') as f:",
-      '    json.dump(record, f)',
-      "os.replace(tmp, lock + '.json')",
-      'time.sleep(600)',
-      '',
-    ].join('\n'),
+  // A ComfyUI of this install that writes the holder record (the unit tests' stand-in).
+  await copyFile(
+    path.join(__dirname, '..', 'src', 'main', 'lib', '__fixtures__', 'db-lock-recording-holder.py'),
+    script
   )
   holder = spawn('python3', [script, lockFile()], { detached: true, stdio: 'ignore' })
   await expect.poll(lockHeld, { timeout: 10_000 }).toBe(true)
@@ -124,10 +106,10 @@ test('offers to stop a restarted ComfyUI of this install holding the lock, and l
           commit: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
           baseTag: 'v0.3.99',
           commitsAhead: 0,
-          baseTagVerified: true,
-        },
-      },
-    ],
+          baseTagVerified: true
+        }
+      }
+    ]
   })
   await expectChooserVisible(ctx.panel)
   await clickInstallTile(ctx.panel, INSTALL_NAME)

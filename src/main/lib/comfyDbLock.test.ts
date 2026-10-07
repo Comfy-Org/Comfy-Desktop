@@ -143,32 +143,8 @@ describe.runIf(
   }, 60_000)
 })
 
-/**
- * A stand-in ComfyUI holding the lock on argv[1] and writing its holder record exactly as the
- * record contract says (Linux start token: boot id and /proc start ticks), then printing its pid.
- * argv[2] == 'child' also starts a child, in the holder's own process group, that does not have
- * the file open.
- */
-const RECORDING_HOLDER = `import fcntl, json, os, subprocess, sys, time
-lock = sys.argv[1]
-fd = os.open(lock, os.O_RDWR | os.O_CREAT)
-fcntl.flock(fd, fcntl.LOCK_EX)
-boot = open('/proc/sys/kernel/random/boot_id').read().strip()
-stat = open('/proc/self/stat').read()
-ticks = stat[stat.rindex(')') + 2:].split()[19]
-record = {'version': 1, 'pid': os.getpid(), 'started': boot + ':' + ticks,
-          'db': os.path.realpath(lock[:-len('.lock')]),
-          'main': os.path.abspath(sys.argv[0]), 'argv': sys.argv}
-tmp = lock + '.json.' + str(os.getpid()) + '.tmp'
-with open(tmp, 'w') as f:
-    json.dump(record, f)
-os.replace(tmp, lock + '.json')
-child = subprocess.Popen(['sleep', '60']).pid if sys.argv[2:] == ['child'] else 0
-print(os.getpid(), child, flush=True)
-if sys.argv[2:] == ['exit']:
-    sys.exit(0)
-time.sleep(60)
-`
+/** A stand-in ComfyUI writing the holder record contract (see the fixture's own header). */
+const RECORDING_HOLDER = path.join(__dirname, '__fixtures__', 'db-lock-recording-holder.py')
 
 describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
   'database-lock holder records (real holder writing the record contract)',
@@ -184,7 +160,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       const dir = opts.outside ? path.join(root, 'elsewhere') : path.join(install, 'ComfyUI')
       const script = path.join(dir, 'main.py')
       fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(script, RECORDING_HOLDER)
+      fs.copyFileSync(RECORDING_HOLDER, script)
       const args = [script, `${db}.lock`, ...(opts.child ? ['child'] : opts.exit ? ['exit'] : [])]
       // With `sh` as the parent, it execs into sleep, which never reaps the holder it started.
       const h =
@@ -230,8 +206,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
         startTime: expect.stringMatching(/^[0-9a-f-]+:\d+$/),
         dbPath: db,
         process: 'ComfyUI',
-        sameInstall: true,
-        installationId: 'inst-1'
+        sameInstall: true
       })
       expect(await stopDbLockOffer(offer!)).toBe(true)
       // The stop waited for it: no longer running the moment it answers.

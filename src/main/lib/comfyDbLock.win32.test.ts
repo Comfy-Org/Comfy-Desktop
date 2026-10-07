@@ -99,8 +99,7 @@ describe('findDbLockOffer on Windows', () => {
       startTime: STARTED,
       dbPath: db,
       process: 'ComfyUI',
-      sameInstall: true,
-      installationId: 'inst-1'
+      sameInstall: true
     })
   })
 
@@ -166,6 +165,20 @@ describe('findDbLockOffer: a record is about its own database', () => {
     expect(await find()).toBeNull()
   })
 
+  it('offers nothing for a ComfyUI this Desktop runs as this install, wherever its record says it is', async () => {
+    // The install was moved or is reached another way: only its id ties the session to it.
+    write(record('D:\\moved\\ComfyUI\\main.py'))
+    fake.records = [
+      {
+        installationId: 'inst-1',
+        childPid: 7001,
+        desktopPid: process.pid,
+        installPath: 'D:\\other'
+      }
+    ]
+    expect(await find()).toBeNull()
+  })
+
   it('offers nothing for a ComfyUI this Desktop runs as another install sharing the database', async () => {
     write(record('C:\\c\\two\\ComfyUI\\main.py'))
     fake.records = [
@@ -189,8 +202,7 @@ describe('stopDbLockOffer on Windows', () => {
       startTime: STARTED,
       dbPath: db,
       process: 'ComfyUI',
-      sameInstall: true,
-      installationId: 'inst-1'
+      sameInstall: true
     }
   })
 

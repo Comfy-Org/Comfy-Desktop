@@ -90,17 +90,10 @@ interface HolderRecord {
 }
 
 /**
- * Whether two paths name the same file, as the file system says: by identity (device and inode),
- * which sees through symlinks, junctions, 8.3 names and the volume's own case rules. Before the
- * file exists (or where there is no inode), by canonical path, never folding case.
+ * Whether two paths name the same file: compared where they lead (the real path sees through
+ * symlinks, junctions and 8.3 names, and spells case as the volume stores it), never folding case.
  */
 function samePath(a: string, b: string): boolean {
-  try {
-    const [x, y] = [fs.statSync(a, { bigint: true }), fs.statSync(b, { bigint: true })]
-    if (x.ino !== 0n && y.ino !== 0n) return x.dev === y.dev && x.ino === y.ino
-  } catch {
-    // Not there yet: compare where the paths lead.
-  }
   const canonical = (p: string): string => {
     try {
       return fs.realpathSync.native(p)
@@ -156,8 +149,7 @@ export async function findDbLockOffer(input: {
   const sameInstall = commandLineIsInstall(['python', record.main], input.installPath)
   const shown = sameInstall ? 'ComfyUI' : record.main
   const { pid, started: startTime } = record
-  const { installationId, dbPath } = input
-  return { pid, startTime, dbPath, process: shown, sameInstall, installationId }
+  return { pid, startTime, dbPath: input.dbPath, process: shown, sameInstall }
 }
 
 /**

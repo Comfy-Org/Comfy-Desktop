@@ -639,10 +639,7 @@ async function handleStopDbLockHolder(): Promise<void> {
     apiCall: () => {
       const once = offer
       offer = null
-      // The install that failed (a migration shows another id than the one it launches).
-      return once
-        ? window.api.runAction(once.installationId, 'launch', { stopDbLockHolder: once })
-        : retry()
+      return once ? window.api.runAction(id, 'launch', { stopDbLockHolder: once }) : retry()
     },
     returnTo: op.returnTo,
     opKind: op.opKind

@@ -493,8 +493,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       startTime: '134358000923463901',
       dbPath: '/i/ComfyUI/user/comfyui.db',
       process: sameInstall ? 'ComfyUI' : '/other/ComfyUI/main.py',
-      sameInstall,
-      installationId: 'inst-1'
+      sameInstall
     })
     const locked = (sameInstall: boolean): Partial<Operation> => ({
       title: 'Launching',
@@ -536,22 +535,6 @@ describe('ProgressModal — brand branch state transitions', () => {
         expect(api.runAction).toHaveBeenCalledTimes(1)
       }
     )
-
-    it('relaunches the install that failed, not the one on screen (a migration shows another)', async () => {
-      const api = installMockApi()
-      const adopted = { ...holder(true), installationId: 'adopted-1' }
-      const { body } = await mountWithOp('legacy-1', {
-        ...locked(true),
-        result: { ok: false, message: 'locked', dbLockHolder: adopted } as ActionResult
-      })
-
-      expect(await stop(body)).toBe(true)
-      await flushPromises()
-
-      expect(api.runAction).toHaveBeenCalledWith('adopted-1', 'launch', {
-        stopDbLockHolder: adopted
-      })
-    })
 
     it('stops nothing when the user declines', async () => {
       const api = installMockApi()
