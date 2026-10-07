@@ -122,6 +122,7 @@ import { resolveCoreCommitState } from '../../coreBetaAncestry'
 import { campaignCandidateGrants, planCampaignArgs } from '../../coreBetaCampaigns'
 import type { CampaignApplied, CampaignFacts, CampaignPlan } from '../../coreBetaCampaigns'
 import {
+  campaignRecordSaved,
   getCoreBetaCampaigns,
   readCampaignRecords,
   writeCampaignRecord
@@ -307,9 +308,9 @@ export function recordCampaignEnrolments(
       try {
         writeCampaignRecord(key, grant.arg, epoch, now)
       } catch (err) {
-        // The backup is written first, so a failed primary write can still leave the record
-        // readable; that enrolment holds from now on, so it is counted like any other.
-        if (readCampaignRecords()[key]?.[grant.arg]?.epoch !== epoch) {
+        // The backup is written first, so on a first enrolment (no primary yet) a failed primary
+        // write still leaves the record readable from now on; that one is counted like any other.
+        if (!campaignRecordSaved(key, grant.arg, epoch)) {
           console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
           misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
           continue

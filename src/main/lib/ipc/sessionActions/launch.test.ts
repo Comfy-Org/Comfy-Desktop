@@ -90,6 +90,8 @@ vi.mock('../../coreBetaCampaignFlags', () => ({
     return launchHarness.campaigns
   },
   readCampaignRecords: () => launchHarness.campaignRecords,
+  campaignRecordSaved: (key: string, arg: string, epoch: number) =>
+    launchHarness.campaignRecords[key]?.[arg]?.epoch === epoch,
   writeCampaignRecord: (key: string, arg: string, epoch: number) => {
     if (launchHarness.recordWriteRecovers) {
       // The backup landed before the primary write failed: the record reads back.
@@ -1237,7 +1239,8 @@ describe('core beta report placement', () => {
             }
           ]
         },
-        Date.now()
+        // Fetched 5 s before the launch, so `lag_ms` has a known floor.
+        Date.now() - 5_000
       )
     const serveCampaign = (variant: string): void => {
       launchHarness.campaigns = {
@@ -1268,7 +1271,7 @@ describe('core beta report placement', () => {
         key: KEY,
         arg: '--enable-agent',
         epoch: 1,
-        lag_ms: expect.toSatisfy((lag: number) => lag >= 0 && lag < 60_000)
+        lag_ms: expect.toSatisfy((lag: number) => lag >= 5_000 && lag < 65_000)
       })
       expect(appliedEvent()).toMatchObject({
         args: ['--enable-assets', '--enable-agent'],

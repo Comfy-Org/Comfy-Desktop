@@ -16,6 +16,7 @@ vi.mock('./paths', () => ({
 
 import {
   _resetForTest,
+  campaignRecordSaved,
   getCoreBetaCampaigns,
   initCoreBetaCampaigns,
   initCoreBetaFlags,
@@ -335,6 +336,45 @@ describe('enrolment records', () => {
       '--enable-agent': { epoch: 1, enrolledAt: NOW },
       '--enable-other': { epoch: 2, enrolledAt: NOW + 2 }
     })
+  })
+
+  it('a first enrolment whose primary write fails is still saved, via the backup', () => {
+    const write = safeFile.writeFileSafe
+    vi.spyOn(safeFile, 'writeFileSafe').mockImplementation((target, ...rest) => {
+      if (String(target).endsWith('campaign-enrolments.json')) throw new Error('ENOSPC')
+      return write(target, ...rest)
+    })
+    expect(() => writeCampaignRecord(KEY, '--enable-agent', 1, NOW)).toThrow('ENOSPC')
+    vi.mocked(safeFile.writeFileSafe).mockRestore()
+    expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(true)
+    expect(readCampaignRecords()[KEY]?.['--enable-agent']?.epoch).toBe(1)
+  })
+
+  it('a failed write over an intact older primary is not saved', () => {
+    writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
+    const write = safeFile.writeFileSafe
+    vi.spyOn(safeFile, 'writeFileSafe').mockImplementation((target, ...rest) => {
+      if (String(target).endsWith('campaign-enrolments.json')) throw new Error('EPERM')
+      return write(target, ...rest)
+    })
+    expect(() => writeCampaignRecord(KEY, '--enable-agent', 2, NOW)).toThrow('EPERM')
+    vi.mocked(safeFile.writeFileSafe).mockRestore()
+    expect(campaignRecordSaved(KEY, '--enable-agent', 2)).toBe(false)
+    expect(campaignRecordSaved(KEY, '--enable-agent', 1), 'the old epoch is no match').toBe(true)
+  })
+
+  it('a record behind an unreadable primary is not saved', () => {
+    writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
+    fs.writeFileSync(
+      file('campaign-enrolments.json.bak'),
+      fs.readFileSync(file('campaign-enrolments.json'))
+    )
+    vi.spyOn(safeFile, 'readFileSafe').mockReturnValue({
+      kind: 'data',
+      data: fs.readFileSync(file('campaign-enrolments.json.bak'), 'utf-8'),
+      primaryUnreadable: true
+    } as ReturnType<typeof safeFile.readFileSafe>)
+    expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(false)
   })
 
   it('reads nothing from a missing or corrupt file', () => {
