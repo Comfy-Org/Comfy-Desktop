@@ -15,15 +15,17 @@ import {
   parseCampaignRegistry
 } from './coreBetaCampaigns'
 import type { CampaignAnswer, CampaignRecords, CampaignRegistryEntry } from './coreBetaCampaigns'
-import { makeOpsFlag, readPersistedFile, readPersistedResult, writePersistedEntry } from './opsFlag'
+import { makeOpsFlag, readPersistedFile, writePersistedEntry } from './opsFlag'
 import type { OpsFlag } from './opsFlag'
+import type { FeatureFlagValue } from './telemetry'
 
 const CAMPAIGN_FLAGS_FILE = 'campaign-flags.json'
 const ENROLMENTS_FILE = 'campaign-enrolments.json'
 
-/** #1649's budget for 898480: wait longer while something is saved, so a cut lands this launch. */
-function deadlineMs(saved: boolean): number {
-  return saved ? 5000 : 3000
+/** #1649's budget for 898480: wait longer while this machine holds something, so a cut lands
+ *  this launch. Holding is a record here, not a saved answer: every machine saves the answer. */
+function deadlineMs(enrolled: boolean): number {
+  return enrolled ? 5000 : 3000
 }
 
 function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
@@ -32,7 +34,7 @@ function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
     fallback: [],
     parse: parseCampaignRegistry,
     logLabel: 'core-campaigns',
-    deadlineMs: (saved) => deadlineMs(Boolean(saved?.length)),
+    deadlineMs: () => deadlineMs(Object.keys(readCampaignRecords()).length > 0),
     persist: true,
     persistFile: CAMPAIGN_FLAGS_FILE
   })
@@ -44,7 +46,11 @@ let campaigns = new Map<string, OpsFlag<CampaignAnswer | null>>()
 /** Starts the registry and every campaign key the saved registry lists, in parallel, under one
  *  id. A beta-off boot calls nothing: campaigns never apply to it. */
 export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promise<void> {
-  const saved = readPersistedResult(CAMPAIGN_FLAGS_FILE, CAMPAIGN_REGISTRY_KEY)
+  // Discovery reads the saved registry whatever its age: an expired one still names the keys
+  // worth asking about, and only the live registry and fresh answers decide what applies.
+  const saved = readPersistedFile(CAMPAIGN_FLAGS_FILE).entries[CAMPAIGN_REGISTRY_KEY] as
+    | { value?: FeatureFlagValue; payload?: unknown }
+    | undefined
   const listed = (saved && parseCampaignRegistry(saved.value, saved.payload)) ?? []
   for (const { key } of listed) {
     if (campaigns.has(key)) continue
@@ -55,7 +61,7 @@ export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promi
         fallback: null,
         parse: parseCampaignAnswer,
         logLabel: `core-campaign ${key}`,
-        deadlineMs: (answer) => deadlineMs(Boolean(answer?.grants.length)),
+        deadlineMs: () => deadlineMs(readCampaignRecords()[key] !== undefined),
         persist: true,
         persistFile: CAMPAIGN_FLAGS_FILE
       })
@@ -93,6 +99,13 @@ export async function getCoreBetaCampaigns(): Promise<{
 
 export function readCampaignRecords(): CampaignRecords {
   return parseCampaignRecords(readPersistedFile(ENROLMENTS_FILE).entries)
+}
+
+/** Whether the enrolment file's PRIMARY holds this record. `.bak` standing in for an unreadable
+ *  primary doesn't count: the next launch reads the primary again, without the record. */
+export function campaignRecordSaved(key: string, arg: string, epoch: number): boolean {
+  const { entries, primaryUnreadable } = readPersistedFile(ENROLMENTS_FILE)
+  return !primaryUnreadable && parseCampaignRecords(entries)[key]?.[arg]?.epoch === epoch
 }
 
 /** Records an enrolment. Throws when the file cannot be safely rewritten; the caller still

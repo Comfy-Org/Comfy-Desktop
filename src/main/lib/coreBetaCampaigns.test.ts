@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   ENROL_MAX_AGE_MS,
+  HOLD_MAX_AGE_MS,
   appliedPassThrough,
+  campaignCandidateGrants,
   parseCampaignAnswer,
   parseCampaignRecords,
   parseCampaignRegistry,
@@ -181,6 +183,27 @@ describe('parseCampaignAnswer', () => {
   })
 })
 
+describe('campaignCandidateGrants', () => {
+  const registry = [{ key: KEY, args: ['--enable-agent'] }]
+  const grantOf = (variant: string, payload: unknown = agentPayload()) =>
+    new Map([[KEY, answer(variant, payload)]])
+
+  it('lists an enrol draw and a held member, and nothing for a non-member on hold', () => {
+    expect(campaignCandidateGrants(registry, grantOf('enrol'), {})).toHaveLength(1)
+    expect(campaignCandidateGrants(registry, grantOf('hold'), member)).toHaveLength(1)
+    expect(campaignCandidateGrants(registry, grantOf('hold'), {})).toEqual([])
+  })
+
+  it('skips a void record, an unlisted arg and an unlisted key', () => {
+    const voided = grantOf('hold', agentPayload({ epoch: 2, epochs: [2] }))
+    expect(campaignCandidateGrants(registry, voided, member)).toEqual([])
+    expect(
+      campaignCandidateGrants([{ key: KEY, args: ['--enable-assets'] }], grantOf('enrol'), {})
+    ).toEqual([])
+    expect(campaignCandidateGrants([], grantOf('enrol'), {})).toEqual([])
+  })
+})
+
 describe('parseCampaignRecords', () => {
   it('keeps well-formed records only', () => {
     expect(
@@ -318,6 +341,29 @@ describe('planCampaignArgs: hold', () => {
       hold({ idClass: 'random_fallback', answers: new Map([[KEY, old]]) })
     )
     expect(plan.applied).toMatchObject([{ key: KEY, epoch: 1, enrolledNow: false }])
+  })
+
+  it('drops a held grant once its answer is more than 7 days old, in the same process', () => {
+    const sixDaysOld = answer('hold', agentPayload(), NOW - 6 * 24 * HOUR_MS)
+    const facts6 = hold({ answers: new Map([[KEY, sixDaysOld]]) })
+    expect(args(planCampaignArgs(facts6))).toEqual(['--enable-agent'])
+    // The same cached answer, two days later: Desktop never restarted, so nothing reloaded it.
+    const later = planCampaignArgs({ ...facts6, now: NOW + 2 * 24 * HOUR_MS })
+    expect(later.applied).toEqual([])
+    expect(later.misses).toEqual([
+      { key: KEY, arg: '--enable-agent', member: true, reason: 'stale_answer' }
+    ])
+  })
+
+  it.each([
+    ['exactly 7 days old', NOW - HOLD_MAX_AGE_MS, true],
+    ['7 days in the future', NOW + HOLD_MAX_AGE_MS, true],
+    ['more than 7 days in the future', NOW + HOLD_MAX_AGE_MS + 1, false]
+  ])('holds on an answer %s: %s', (_label, fetchedAt, holds) => {
+    const plan = planCampaignArgs(
+      hold({ answers: new Map([[KEY, answer('hold', agentPayload(), fetchedAt)]]) })
+    )
+    expect(plan.applied.length > 0).toBe(holds)
   })
 
   it('holds on an enrol answer too, without re-enrolling', () => {

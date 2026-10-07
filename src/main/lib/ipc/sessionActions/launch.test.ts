@@ -79,15 +79,27 @@ const launchHarness = vi.hoisted(() => ({
   /** Every enrolment written, as `[key, arg, epoch]`. */
   recordWrites: [] as Array<[string, string, number]>,
   recordWriteThrows: false,
+  recordWriteRecovers: false,
   idClass: 'machine_derived' as string,
+  campaignFetches: 0,
   /** Install records the launch reads back and writes, keyed by id; null = the real store. */
   records: null as null | Map<string, Record<string, unknown>>
 }))
 
 vi.mock('../../coreBetaCampaignFlags', () => ({
-  getCoreBetaCampaigns: async () => launchHarness.campaigns,
+  getCoreBetaCampaigns: async () => {
+    launchHarness.campaignFetches++
+    return launchHarness.campaigns
+  },
   readCampaignRecords: () => launchHarness.campaignRecords,
+  campaignRecordSaved: (key: string, arg: string, epoch: number) =>
+    launchHarness.campaignRecords[key]?.[arg]?.epoch === epoch,
   writeCampaignRecord: (key: string, arg: string, epoch: number) => {
+    if (launchHarness.recordWriteRecovers) {
+      // The backup landed before the primary write failed: the record reads back.
+      launchHarness.campaignRecords = { [key]: { [arg]: { epoch, enrolledAt: 1 } } }
+      throw new Error('ENOSPC')
+    }
     if (launchHarness.recordWriteThrows) throw new Error('EIO')
     launchHarness.recordWrites.push([key, arg, epoch])
   }
@@ -1195,6 +1207,13 @@ describe('core beta report placement', () => {
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
     launchHarness.grantsPending = false
+    launchHarness.campaigns = { registry: [], answers: new Map() }
+    launchHarness.campaignRecords = {}
+    launchHarness.recordWrites = []
+    launchHarness.recordWriteThrows = false
+    launchHarness.recordWriteRecovers = false
+    launchHarness.idClass = 'machine_derived'
+    launchHarness.campaignFetches = 0
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
     // Both halves of the activation-notice state: the in-process pending queue and the
@@ -1262,7 +1281,8 @@ describe('core beta report placement', () => {
             }
           ]
         },
-        Date.now()
+        // Fetched 5 s before the launch, so `lag_ms` has a known floor.
+        Date.now() - 5_000
       )
     const serveCampaign = (variant: string): void => {
       launchHarness.campaigns = {
@@ -1273,18 +1293,17 @@ describe('core beta report placement', () => {
     const appliedEvent = (): Record<string, unknown> | undefined =>
       events.filter((e) => e.event === 'comfy.desktop.core_beta.applied').at(-1)?.properties
 
+    const missedEvent = (): Record<string, unknown> | undefined =>
+      events.find((e) => e.event === 'comfy.desktop.core_beta.campaign_missed')?.properties
+
     beforeEach(() => {
       launchHarness.schemaNames = ['enable-assets', 'enable-agent', 'listen', 'feature-flag']
-      launchHarness.campaigns = { registry: [], answers: new Map() }
-      launchHarness.campaignRecords = {}
-      launchHarness.recordWrites = []
-      launchHarness.recordWriteThrows = false
-      launchHarness.idClass = 'machine_derived'
     })
 
-    it('enrols an assets-on machine on enrol: arg after slot #0, record, then the event', async () => {
+    it('enrols an assets-on machine on enrol: arg after slot #0, a record, and the enrolled event', async () => {
       serveCampaign('enrol')
-      expect((await handleLaunch(ctxFor('campaign-enrol'))).ok).toBe(true)
+      const id = 'campaign-enrol'
+      expect((await handleLaunch(ctxFor(id))).ok).toBe(true)
       expect(spawnArgs).toEqual(expect.arrayContaining(['--enable-assets', '--enable-agent']))
       expect(spawnArgs.indexOf('--enable-agent')).toBe(spawnArgs.indexOf('--enable-assets') + 1)
       expect(launchHarness.recordWrites).toEqual([[KEY, '--enable-agent', 1]])
@@ -1294,14 +1313,20 @@ describe('core beta report placement', () => {
         key: KEY,
         arg: '--enable-agent',
         epoch: 1,
-        lag_ms: expect.any(Number)
+        lag_ms: expect.toSatisfy((lag: number) => lag >= 5_000 && lag < 65_000)
       })
       expect(appliedEvent()).toMatchObject({
         args: ['--enable-assets', '--enable-agent'],
-        campaign_args: [`${KEY}:--enable-agent:1`],
-        campaign_idle: [],
-        campaign_enrol_refused: []
+        campaign_args: [`${KEY}:--enable-agent:1`]
       })
+      expect(missedEvent()).toBeUndefined()
+      // The user-visible surfaces see the campaign grant like any other beta grant.
+      expect(_runningSessions.get(id)?.coreBetaArgs?.map((view) => view.arg)).toEqual([
+        '--enable-assets',
+        '--enable-agent'
+      ])
+      expect(peekBetaActivationNotice(id)?.args).toEqual(['--enable-assets', '--enable-agent'])
+      expect(sent.join('')).toContain('[core-beta] --enable-agent')
     })
 
     it('holds for an enrolled machine on hold, writing nothing new', async () => {
@@ -1311,6 +1336,8 @@ describe('core beta report placement', () => {
       expect(spawnArgs).toContain('--enable-agent')
       expect(launchHarness.recordWrites).toEqual([])
       expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+      expect(appliedEvent()).toMatchObject({ campaign_args: [`${KEY}:--enable-agent:1`] })
+      expect(missedEvent()).toBeUndefined()
     })
 
     it('refuses enrolment while assets is off, and reports why', async () => {
@@ -1319,8 +1346,10 @@ describe('core beta report placement', () => {
       await handleLaunch(ctxFor('campaign-assets-off'))
       expect(spawnArgs).not.toContain('--enable-agent')
       expect(launchHarness.recordWrites).toEqual([])
-      expect(appliedEvent()).toMatchObject({
-        campaign_enrol_refused: [`${KEY}:--enable-agent:requires_args`]
+      expect(appliedEvent(), 'nothing applied, so the applied event stays silent').toBeUndefined()
+      expect(missedEvent()).toEqual({
+        idle: [],
+        enrol_refused: [`${KEY}:--enable-agent:requires_args`]
       })
     })
 
@@ -1330,9 +1359,9 @@ describe('core beta report placement', () => {
       launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
       await handleLaunch(ctxFor('campaign-idle'))
       expect(spawnArgs).not.toContain('--enable-agent')
-      expect(appliedEvent()).toMatchObject({
-        campaign_idle: [`${KEY}:--enable-agent:requires_args`],
-        campaign_enrol_refused: []
+      expect(missedEvent()).toEqual({
+        idle: [`${KEY}:--enable-agent:requires_args`],
+        enrol_refused: []
       })
     })
 
@@ -1366,6 +1395,13 @@ describe('core beta report placement', () => {
       await handleLaunch(ctxFor('campaign-write-fails'))
       expect(spawnArgs).toContain('--enable-agent')
       expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+      expect(appliedEvent(), 'running, but not counted as active').not.toHaveProperty(
+        'campaign_args'
+      )
+      expect(missedEvent()).toEqual({
+        idle: [],
+        enrol_refused: [`${KEY}:--enable-agent:record_failed`]
+      })
     })
 
     it('proves a campaign commit range against the live HEAD', async () => {
@@ -1395,12 +1431,22 @@ describe('core beta report placement', () => {
       expect(spawnArgs).toContain('--enable-agent')
     })
 
+    it('counts an enrolment whose record reads back after a failed write', async () => {
+      launchHarness.recordWriteRecovers = true
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-write-recovers'))
+      expect(reportedEvents()).toContain('comfy.desktop.core_beta.enrolled')
+      expect(appliedEvent()).toMatchObject({ campaign_args: [`${KEY}:--enable-agent:1`] })
+      expect(missedEvent()).toBeUndefined()
+    })
+
     it('fetches no campaign answer and applies none when beta is off', async () => {
       launchHarness.betaEnabled = false
       serveCampaign('enrol')
       await handleLaunch(ctxFor('campaign-beta-off'))
       expect(spawnArgs).not.toContain('--enable-agent')
       expect(launchHarness.recordWrites).toEqual([])
+      expect(launchHarness.campaignFetches, 'an opted-out launch never waits on campaigns').toBe(0)
     })
   })
 

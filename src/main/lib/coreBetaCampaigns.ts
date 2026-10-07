@@ -43,8 +43,13 @@ const CAMPAIGN_KEY_RE = /^[a-z][a-z0-9_]{0,63}$/
 export const ENROL_MAX_AGE_MS = 48 * 60 * 60 * 1000
 /** Allowance for a clock that ran slightly ahead when the answer was saved. */
 const ENROL_FUTURE_SKEW_MS = 60 * 60 * 1000
+/** A held grant drops once its answer is older than this, two-sided like `opsFlag`'s
+ *  `PERSIST_MAX_AGE_MS`. That one is only checked when Desktop boots; this is checked at every
+ *  launch, so a session that stays open past the bound drops the grant too. */
+export const HOLD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
-/** The payload field handed, untouched, to the agent requirements override. */
+/** The payload field handed, untouched, to the agent requirements override (OBL-018), which
+ *  reads it through `appliedPassThrough` at #1559's install step. */
 const AGENT_PASS_THROUGH_FIELD = 'agent_requirements_override'
 
 export interface CampaignRegistryEntry {
@@ -152,18 +157,49 @@ export function parseCampaignAnswer(
   return { ...answer, grants: args.size === grants.length ? grants : [] }
 }
 
-/** The enrolment file's content, keeping only well-formed records. */
+/** The enrolment file's content, keeping only well-formed records. Prototype-free, so a key such
+ *  as `__proto__` or `constructor` in the file is just a key. */
 export function parseCampaignRecords(entries: Record<string, unknown>): CampaignRecords {
-  const records: Record<string, Record<string, CampaignRecord>> = {}
+  const records: Record<string, Record<string, CampaignRecord>> = Object.create(null)
   for (const [key, byArg] of Object.entries(entries)) {
     if (!byArg || typeof byArg !== 'object') continue
     for (const [arg, record] of Object.entries(byArg)) {
       const { epoch, enrolledAt } = (record ?? {}) as { epoch?: unknown; enrolledAt?: unknown }
       if (!isEpoch(epoch) || typeof enrolledAt !== 'number') continue
-      ;(records[key] ??= {})[arg] = { epoch, enrolledAt }
+      ;(records[key] ??= Object.create(null))[arg] = { epoch, enrolledAt }
     }
   }
   return records
+}
+
+/** The record for (key, arg) when `candidate` still accepts its epoch. */
+function heldRecord(
+  records: CampaignRecords,
+  key: string,
+  candidate: CampaignGrant
+): CampaignRecord | undefined {
+  const record = records[key]?.[candidate.grant.arg]
+  return record !== undefined && candidate.epochs.includes(record.epoch) ? record : undefined
+}
+
+/** The grants that can apply on this machine: listed for their campaign, and either drawn `enrol`
+ *  or held by an accepted record. Only these are worth proving commit ranges for. */
+export function campaignCandidateGrants(
+  registry: readonly CampaignRegistryEntry[],
+  answers: ReadonlyMap<string, CampaignAnswer>,
+  records: CampaignRecords
+): CoreBetaGrant[] {
+  return registry.flatMap(({ key, args }) => {
+    const answer = answers.get(key)
+    if (!answer) return []
+    return answer.grants
+      .filter(
+        (candidate) =>
+          args.includes(candidate.grant.arg) &&
+          (answer.enrol || heldRecord(records, key, candidate) !== undefined)
+      )
+      .map((candidate) => candidate.grant)
+  })
 }
 
 export interface CampaignFacts {
@@ -199,6 +235,8 @@ export type CampaignMissReason =
   | 'unsupported'
   | 'stale_answer'
   | 'id_class'
+  /** Enrolled this launch, but the record could not be written: running, not counted. */
+  | 'record_failed'
 
 /** A grant that did not apply on a machine that is enrolled (`member`) or drew `enrol`. */
 export interface CampaignMiss {
@@ -214,10 +252,15 @@ export interface CampaignPlan {
   readonly trace: readonly string[]
 }
 
-function enrolAnswerFresh(answer: CampaignAnswer, now: number): boolean {
+function answerFresh(
+  answer: CampaignAnswer,
+  now: number,
+  maxAgeMs: number,
+  skewMs: number
+): boolean {
   if (answer.fetchedAt === undefined) return false
   const age = now - answer.fetchedAt
-  return age <= ENROL_MAX_AGE_MS && age >= -ENROL_FUTURE_SKEW_MS
+  return age <= maxAgeMs && age >= -skewMs
 }
 
 /** Campaign keys in registry order, each grant held or enrolled at most once per arg. */
@@ -236,8 +279,8 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         trace.push(`[core-campaign] ${key}: ${arg} refused: not listed for this campaign`)
         continue
       }
-      const record = facts.records[key]?.[arg]
-      const member = record !== undefined && candidate.epochs.includes(record.epoch)
+      const record = heldRecord(facts.records, key, candidate)
+      const member = record !== undefined
       if (!member && !answer.enrol) continue
 
       const miss = (reason: CampaignMissReason, detail: string): void => {
@@ -272,8 +315,12 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         miss('unsupported', 'not supported by this core')
         continue
       }
+      if (member && !answerFresh(answer, facts.now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)) {
+        miss('stale_answer', 'the answer holding it is older than 7 days')
+        continue
+      }
       if (!member) {
-        if (!enrolAnswerFresh(answer, facts.now)) {
+        if (!answerFresh(answer, facts.now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS)) {
           miss('stale_answer', 'the enrol answer is missing a fetch time or older than 48 h')
           continue
         }
@@ -282,7 +329,7 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
           continue
         }
       }
-      const epoch = member ? record.epoch : candidate.epoch
+      const epoch = record?.epoch ?? candidate.epoch
       trace.push(`[core-campaign] ${key}: ${arg} ${member ? 'held' : 'enrolled'}, epoch ${epoch}`)
       present.add(arg)
       applied.push({

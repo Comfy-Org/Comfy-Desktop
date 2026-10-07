@@ -131,9 +131,14 @@ import { coreSemver, formatComfyVersion } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
-import { appliedPassThrough, planCampaignArgs } from '../../coreBetaCampaigns'
+import {
+  appliedPassThrough,
+  campaignCandidateGrants,
+  planCampaignArgs
+} from '../../coreBetaCampaigns'
 import type { CampaignApplied, CampaignFacts, CampaignPlan } from '../../coreBetaCampaigns'
 import {
+  campaignRecordSaved,
   getCoreBetaCampaigns,
   readCampaignRecords,
   writeCampaignRecord
@@ -303,34 +308,40 @@ export function buildLaunchArgs(input: {
   }
 }
 
-function readCampaignRecordsSafe(): ReturnType<typeof readCampaignRecords> {
-  try {
-    return readCampaignRecords()
-  } catch (err) {
-    console.warn('[core-campaign] enrolment records unreadable:', err)
-    return {}
-  }
-}
-
 /** Writes each enrolment this launch made, and counts it only once it is on disk: the
- *  `enrolled` event is the campaign's gate count, so it must never outnumber the records. */
-export function recordCampaignEnrolments(applied: readonly CampaignApplied[]): void {
+ *  `enrolled` event is the campaign's gate count, so it must never outnumber the records. An
+ *  enrolment that could not be recorded still runs this launch, but is reported as a
+ *  `record_failed` miss rather than as active. */
+export function recordCampaignEnrolments(
+  campaign: CoreBetaLaunch['campaign']
+): CoreBetaLaunch['campaign'] {
   const now = Date.now()
-  for (const { key, grant, epoch, enrolledNow, fetchedAt } of applied) {
-    if (!enrolledNow) continue
-    try {
-      writeCampaignRecord(key, grant.arg, epoch, now)
-    } catch (err) {
-      console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
-      continue
+  const applied: CampaignApplied[] = []
+  const misses = [...campaign.misses]
+  for (const entry of campaign.applied) {
+    const { key, grant, epoch, enrolledNow, fetchedAt } = entry
+    if (enrolledNow) {
+      try {
+        writeCampaignRecord(key, grant.arg, epoch, now)
+      } catch (err) {
+        // The backup is written first, so on a first enrolment (no primary yet) a failed primary
+        // write still leaves the record readable from now on; that one is counted like any other.
+        if (!campaignRecordSaved(key, grant.arg, epoch)) {
+          console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
+          misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
+          continue
+        }
+      }
+      telemetry.emit('comfy.desktop.core_beta.enrolled', {
+        key,
+        arg: grant.arg,
+        epoch,
+        lag_ms: fetchedAt === undefined ? null : now - fetchedAt
+      })
     }
-    telemetry.emit('comfy.desktop.core_beta.enrolled', {
-      key,
-      arg: grant.arg,
-      epoch,
-      lag_ms: fetchedAt === undefined ? null : now - fetchedAt
-    })
+    applied.push(entry)
   }
+  return { applied, misses }
 }
 
 /** Put each record in the on-disk log (bug reports) and the user-visible output. */
@@ -365,33 +376,33 @@ export function emitCoreBetaTelemetry(input: {
   campaign?: CoreBetaLaunch['campaign']
 }): void {
   const campaign = input.campaign ?? { applied: [], misses: [] }
-  if (
-    input.appliedArgs.length > 0 ||
-    input.droppedUnsupported.length > 0 ||
-    campaign.misses.length > 0
-  ) {
-    // Flat `key:arg:detail` strings: event properties carry no nested objects.
-    const misses = (member: boolean): string[] =>
-      campaign.misses
-        .filter((miss) => miss.member === member)
-        .map(({ key, arg, reason }) => `${key}:${arg}:${reason}`)
+  if (input.appliedArgs.length > 0 || input.droppedUnsupported.length > 0) {
     telemetry.emit('comfy.desktop.core_beta.applied', {
       args: [...input.appliedArgs],
       core_version: input.coreVersion,
       core_commit: input.coreCommit,
       core_version_label: input.coreVersionLabel,
       dropped_unsupported: [...input.droppedUnsupported],
-      // Only on launches a campaign touched, so every other launch reports exactly as before.
-      ...((campaign.applied.length > 0 || campaign.misses.length > 0) && {
-        // Enrolled machines running the arg (`key:arg:epoch`): the campaign's active count.
+      // Enrolled machines running the arg, as `key:arg:epoch`: the campaign's active count. Only
+      // on launches a campaign applied something, so every other launch reports as before.
+      ...(campaign.applied.length > 0 && {
         campaign_args: campaign.applied.map(
           ({ key, grant, epoch }) => `${key}:${grant.arg}:${epoch}`
-        ),
-        // Enrolled machines whose arg did not apply this launch, and why.
-        campaign_idle: misses(true),
-        // Machines that drew `enrol` and did not enrol, and why.
-        campaign_enrol_refused: misses(false)
+        )
       })
+    })
+  }
+  if (campaign.misses.length > 0) {
+    // Flat `key:arg:reason` strings: event properties carry no nested objects.
+    const misses = (member: boolean): string[] =>
+      campaign.misses
+        .filter((miss) => miss.member === member)
+        .map(({ key, arg, reason }) => `${key}:${arg}:${reason}`)
+    telemetry.emit('comfy.desktop.core_beta.campaign_missed', {
+      // Enrolled machines whose arg did not apply this launch, and why.
+      idle: misses(true),
+      // Machines that drew `enrol` and did not enrol, and why.
+      enrol_refused: misses(false)
     })
   }
   telemetry.emit('comfy.desktop.core_beta.opt_state', { opted_in: input.optedIn })
@@ -1323,9 +1334,10 @@ async function runLaunch(
         const [betaFlags, campaigns] = betaEnabled
           ? await Promise.all([getCoreBetaGrantsAsync(), getCoreBetaCampaigns()])
           : [[], null]
-        const campaignGrants = [...(campaigns?.answers.values() ?? [])].flatMap((answer) =>
-          answer.grants.map((candidate) => candidate.grant)
-        )
+        const records = campaigns ? readCampaignRecords() : {}
+        const campaignGrants = campaigns
+          ? campaignCandidateGrants(campaigns.registry, campaigns.answers, records)
+          : []
         // Opted-out launches skip it: the checks can reach the network and could grant nothing.
         const coreCommits = betaEnabled
           ? await resolveCoreCommitState(
@@ -1354,7 +1366,7 @@ async function runLaunch(
           ...(campaigns && {
             campaign: {
               ...campaigns,
-              records: readCampaignRecordsSafe(),
+              records,
               idClass: getIdClass(),
               now: Date.now()
             }
@@ -1362,7 +1374,7 @@ async function runLaunch(
         })
         launchCmd.args = built.args
         coreBeta = built.beta
-        recordCampaignEnrolments(built.beta.campaign.applied)
+        coreBeta = { ...coreBeta, campaign: recordCampaignEnrolments(coreBeta.campaign) }
       } catch {
         // Discovery failed; launch the user's own args without injecting managed flags.
       }
