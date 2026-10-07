@@ -48,6 +48,9 @@ import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderr
 export const ASSETS_EVENT_LINE =
   /^\[assets-event\] ([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)((?: [a-z_]+=[^ =]+)*)$/
 
+/** A tqdm frame (`… 50%|███  | 3/6 [00:01<00:01, 2.0it/s]`), its padding, and an optional level tag. */
+const TQDM_FRAME = /^[^|]*\|[^|]*\|[^[]*\[[^\]]*\] *(?:\[[A-Z]+\] +)?$/
+
 /** Namespace for the forwarded events. */
 const EVENT_PREFIX = 'comfy.desktop.comfyui.assets.'
 
@@ -489,11 +492,13 @@ export function createAssetsTap(opts: {
   function handleLine(line: string): void {
     // Strip ANSI then a leading `[LEVEL] ` tag (Desktop's bundled build) so the
     // anchored grammar matches both the prefixed and bare log formats.
-    const text = stripLogLevelPrefix(stripAnsi(line).trim())
-    const tagAt = text.lastIndexOf('[assets-event] ')
-    // tqdm redraws with \r and no \n: a line logged mid-bar arrives behind a frame ending in `]`.
-    const behindBar = line.includes('\r') && /\] ?$/.test(text.slice(0, tagAt))
-    const match = text.slice(behindBar ? tagAt : 0).match(ASSETS_EVENT_LINE)
+    // tqdm redraws with \r and no \n, so a line logged mid-bar arrives behind the latest frame.
+    const raw = stripAnsi(line)
+    const tagAt = raw.lastIndexOf('[assets-event] ')
+    const crAt = tagAt > 0 ? raw.lastIndexOf('\r', tagAt) : -1
+    const behindBar = crAt >= 0 && TQDM_FRAME.test(raw.slice(crAt + 1, tagAt))
+    const text = behindBar ? raw.slice(tagAt).trim() : stripLogLevelPrefix(raw.trim())
+    const match = text.match(ASSETS_EVENT_LINE)
     if (!match) return
     const [, event, tail] = match
     if (!event || tail === undefined) return

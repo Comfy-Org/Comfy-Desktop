@@ -162,10 +162,18 @@ describe('assetsTap', () => {
         'a \\r and non-bar text before the tag',
         'foo\rprefix [assets-event] seeder.scan_started phase=fast\n'
       ],
-      ['a trailing \\r', 'prefix [assets-event] seeder.scan_started phase=fast\r\r\n'],
+      [
+        'a \\r and a `]` that is not a frame',
+        'foo\rprefix] [assets-event] seeder.scan_started phase=fast\n'
+      ],
+      ['a trailing \\r after the tag', 'done] [assets-event] seeder.scan_started phase=fast\r\r\n'],
       [
         'a \\r, then text after the bar frame',
         `${bar}junk [assets-event] seeder.scan_started phase=fast\n`
+      ],
+      [
+        'a \\r, then a `]` after the bar frame',
+        `${bar}junk] [assets-event] seeder.scan_started phase=fast\n`
       ]
     ])('still rejects text before the tag on a line with %s', (_case, input) => {
       const tap = createAssetsTap(baseOpts)
@@ -173,10 +181,43 @@ describe('assetsTap', () => {
       expect(captured).toEqual([])
     })
 
+    it('parses the event behind a padded (shorter) redraw', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        `${bar}\r 67%|██████▋   | 4/6 [00:00<00:00, 9.9it/s]     [assets-event] seeder.scan_started phase=fast\n`,
+        'stderr'
+      )
+      expect(captured).toHaveLength(1)
+    })
+
+    it('parses the event behind the first frame, whose only \\r leads the line', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        '\r  0%|          | 0/6 [00:00<?, ?it/s][assets-event] seeder.scan_started phase=fast\n',
+        'stderr'
+      )
+      expect(captured).toHaveLength(1)
+    })
+
     it('still rejects a `]` before the tag on a line with no \\r', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('done] [assets-event] seeder.scan_started phase=fast\n', 'stdout')
       expect(captured).toEqual([])
+    })
+
+    it('still rejects frame-shaped text before the tag on a line with no \\r', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(
+        ' 50%|█████     | 3/6 [00:00<00:00, 19.92it/s][assets-event] seeder.scan_started phase=fast\n',
+        'stdout'
+      )
+      expect(captured).toEqual([])
+    })
+
+    it('reads the bar from the last \\r before the tag, not one after it', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(`${bar}[assets-event] seeder.scan_started phase=fast x_extra=a\rb\n`, 'stderr')
+      expect(captured).toHaveLength(1)
     })
 
     it('still parses the event when the bar and the line arrive in separate chunks', () => {
