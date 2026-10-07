@@ -308,6 +308,9 @@ export function applySettingSet(key: string, value: unknown, userEdit = false): 
   }
   const before = userEdit ? shownGlobalValue(key) : undefined
   settings.set(key, value)
+  // Read before the side effects below: switching the locale would change what an unset
+  // Language shows even when the write was refused.
+  const after = userEdit ? shownGlobalValue(key) : undefined
   if (key === 'theme') {
     _broadcastToRenderer('theme-changed', resolveTheme())
     updateTitleBarOverlay()
@@ -341,7 +344,7 @@ export function applySettingSet(key: string, value: unknown, userEdit = false): 
   }
   // Consent has flipped above, so only an opt-in would be reported; report neither.
   if (userEdit && key !== 'telemetryEnabled') {
-    captureSettingChanged(key, before, shownGlobalValue(key))
+    captureSettingChanged(key, before, after)
   }
   _broadcastToRenderer('settings-changed', { key })
   globalSettingsEvents.emit('changed')

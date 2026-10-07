@@ -28,7 +28,7 @@ vi.mock('./shared', async () => {
     },
     i18n: {
       t: (key: string) => lookupEnMessage(key),
-      getLocale: () => 'en',
+      getLocale: vi.fn(() => 'en'),
       init: vi.fn(),
       getMessages: () => ({}),
       getAvailableLocales: () => [{ value: 'en', label: 'English' }]
@@ -56,7 +56,7 @@ vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
 vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: 'last' }))
 
 import * as mainTelemetry from '../telemetry'
-import { settings } from './shared'
+import { i18n, settings } from './shared'
 import { applySettingSet, buildSettingsSections } from './registerSettingsHandlers'
 
 function resetMockSettings(): void {
@@ -273,6 +273,24 @@ describe('applySettingSet settings.changed telemetry', () => {
     mockSettingsSet.mockImplementationOnce(() => {})
 
     applySettingSet(key, value, true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('emits nothing for a refused Language write even though the locale switches', () => {
+    // i18n.init runs after the refused write; an unset Language would then show the new locale.
+    let locale = 'en'
+    vi.mocked(i18n.getLocale).mockImplementation(() => locale)
+    vi.mocked(i18n.init).mockImplementationOnce((next?: string) => {
+      locale = next ?? locale
+    })
+    mockSettingsSet.mockImplementationOnce(() => {})
+
+    try {
+      applySettingSet('language', 'zh', true)
+    } finally {
+      vi.mocked(i18n.getLocale).mockImplementation(() => 'en')
+    }
 
     expect(changedEvents()).toEqual([])
   })
