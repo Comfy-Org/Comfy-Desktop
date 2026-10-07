@@ -226,6 +226,18 @@ describe('agentTap', () => {
       ).toEqual(['comfy.desktop.comfyui.agent.agent_started'])
     })
 
+    it('loses a record behind a progress bar that has redrawn past the 16 KiB line buffer', () => {
+      const tap = createAgentTap(baseOpts)
+      const redraw = '\r 50%|#####| 3/6 [00:01<00:01,  2.95it/s]'
+      tap.ingest(redraw.repeat(Math.ceil(16_384 / redraw.length) + 1), 'stderr')
+      tap.ingest('[INFO] [agent-event] agent_started duration_ms=5\n', 'stderr')
+      tap.ingest('[agent-event] agent_exited code=0\n', 'stderr')
+      expect(
+        captured.map((c) => c.event),
+        'accepted limitation: an overflowing line is discarded through its newline'
+      ).toEqual(['comfy.desktop.comfyui.agent.agent_exited'])
+    })
+
     it('forwards a record redrawn after a carriage return', () => {
       ingestLine('tqdm 50%|#####|\r[agent-event] agent_exited code=108')
       expect(captured.map((c) => c.ctx['code'])).toEqual([108])
@@ -491,6 +503,14 @@ describe('agentTap', () => {
       tap.ingest('[agent-event] mystery\n', 'stdout')
       expect(() => tap.flushSummary()).not.toThrow()
     })
+
+    it('contains a throw while reading consent, never failing the stream handler', () => {
+      vi.spyOn(telemetry, 'getConsentState').mockImplementation(() => {
+        throw new Error('consent exploded')
+      })
+      const tap = createAgentTap(baseOpts)
+      expect(() => tap.ingest('[agent-event] mystery\n', 'stdout')).not.toThrow()
+    })
   })
 })
 
@@ -529,6 +549,17 @@ describe('agentTap consent gating', () => {
     tap.ingest('[agent-event] agent_started\n[agent-event] mystery\n', 'stdout')
     tap.flushSummary()
     expect(agentCaptures()).toEqual([])
+  })
+
+  it('ships the dropped-event count when consent was granted throughout', () => {
+    telemetry.setConsentState('granted')
+    telemetry.bindAnonymousId('anon-1', 'anon-1', {})
+    const tap = createAgentTap({ installationId: 'inst-1' })
+    tap.ingest('[agent-event] mystery\n', 'stdout')
+    tap.flushSummary()
+    expect(agentCaptures(), 'the negative cases below are only meaningful if this arrives').toEqual(
+      ['comfy.desktop.comfyui.agent.unknown_events_dropped']
+    )
   })
 
   it.each(['denied', 'undecided'] as const)(
