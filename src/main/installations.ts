@@ -39,8 +39,7 @@ export interface InstallationRecord {
   lastLaunchedAtByCategory?: Record<string, number>
   /** When true (default), the global `modelsDirs` are included in the
    *  `--extra-model-paths-config` YAML so this install sees the shared model
-   *  library. Per-install `modelDirs` apply regardless of this flag. A governed
-   *  build (its archive carries a signed policy) gets neither. */
+   *  library. Per-install `modelDirs` apply regardless of this flag. */
   useSharedModels?: boolean
   /** When true (default), launch injects `--input-directory` from the global
    *  settings; else uses the per-install `inputDir` below or ComfyUI's
@@ -53,7 +52,7 @@ export interface InstallationRecord {
   /** Per-install extra (external) model directories, applied in addition to
    *  the shared dirs (when those are enabled). Never includes the install's own
    *  models dir. Written to the per-install `--extra-model-paths-config` YAML at
-   *  launch, except on a governed build, which gets no launcher model dirs. */
+   *  launch. */
   modelDirs?: string[]
   /** Effective dir promoted to primary (`is_default`); may point at a shared
    *  or per-install dir. Null/absent means the first shared dir when shared

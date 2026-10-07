@@ -376,3 +376,43 @@ describe('comfyPreload template input asset bridge', () => {
     )
   })
 })
+
+describe('comfyPreload auth bridge', () => {
+  beforeEach(() => {
+    mocks.invoke.mockReset().mockResolvedValue(null)
+    mocks.on.mockClear()
+    mocks.removeListener.mockClear()
+  })
+
+  it('reads the session over the desktop2-auth channels', async () => {
+    const { Auth } = hostedBridge()
+
+    await Auth.getState()
+    await Auth.getWorkspaceToken('ws-1')
+    await Auth.requestSignIn()
+    await Auth.signOut()
+
+    expect(mocks.invoke.mock.calls).toEqual([
+      ['desktop2-auth:get-state'],
+      ['desktop2-auth:get-workspace-token', 'ws-1'],
+      ['desktop2-auth:request-sign-in'],
+      ['desktop2-auth:sign-out']
+    ])
+  })
+
+  it('delivers session changes until unsubscribed', () => {
+    const { Auth } = hostedBridge()
+    const callback = vi.fn()
+
+    const stop = Auth.onChanged(callback)
+    const [channel, handler] = mocks.on.mock.calls.find(
+      ([name]) => name === 'desktop2-auth:changed'
+    )!
+    handler({}, { status: 'signed_out' })
+    stop()
+
+    expect(channel).toBe('desktop2-auth:changed')
+    expect(callback).toHaveBeenCalledWith({ status: 'signed_out' })
+    expect(mocks.removeListener).toHaveBeenCalledWith('desktop2-auth:changed', handler)
+  })
+})
