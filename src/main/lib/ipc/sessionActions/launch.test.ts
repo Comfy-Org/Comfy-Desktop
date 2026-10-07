@@ -2315,6 +2315,12 @@ describe('Performance Test guardrail', () => {
     expect(res).toMatchObject({ ok: true })
   })
 
+  it('refuses while its own earlier run is still stopping', async () => {
+    // Another Performance Test window of the same installation stopped it; it has not exited yet.
+    _stoppingInstallationIds.add(PERF)
+    await expectRefused(refusalOne(perfLabel('Bench')))
+  })
+
   it('does not count its own earlier run', async () => {
     runSession(PERF, 'Bench')
 

@@ -710,10 +710,12 @@ export function otherLocalComfyUIs(sessionId: string, records: InstallationRecor
     ..._runningSessions.keys(),
     // Still preparing: a handler that outlives its stopped session (the template-model gate)
     // has given up its operation slot and blocks nothing.
-    ..._getActiveLaunchIds().filter((id) => _operationAborts.has(id)),
-    ..._getStoppingInstallationIds()
+    ..._getActiveLaunchIds().filter((id) => _operationAborts.has(id))
   ])
   ids.delete(sessionId)
+  // Its own earlier run counts while stopping (another Performance Test window stopped it): that
+  // process is still alive, and nothing else would wait for it.
+  for (const id of _getStoppingInstallationIds()) ids.add(id)
   const names: string[] = []
   // Listed after the installations, so "the Performance Test of “A”, “B” and “C”" can't read as
   // one Performance Test of all three.
