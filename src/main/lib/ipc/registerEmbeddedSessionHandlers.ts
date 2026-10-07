@@ -6,14 +6,23 @@ import { ipcMain } from 'electron'
 
 import { findEntryByComfySender } from '../../host/registry'
 import type { ComfyDesktop2AuthState } from '../../../types/comfyDesktopBridge'
-import { EMBEDDED_SESSION_CHANNELS, accessTokenForSender, stateForSender } from '../embeddedSession'
+import {
+  EMBEDDED_SESSION_CHANNELS,
+  identityTokenForSender,
+  stateForSender,
+  workspaceTokenForSender
+} from '../embeddedSession'
 import { signInToCloud, signOutOfCloud } from './registerDevPlatformHandlers'
 
 export function registerEmbeddedSessionHandlers(): void {
   ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getState, (event) => stateForSender(event))
 
-  ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getAccessToken, (event, workspaceId: unknown) =>
-    accessTokenForSender(event, workspaceId)
+  ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getWorkspaceToken, (event, workspaceId: unknown) =>
+    workspaceTokenForSender(event, workspaceId)
+  )
+
+  ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getIdentityToken, (event) =>
+    identityTokenForSender(event)
   )
 
   ipcMain.handle(

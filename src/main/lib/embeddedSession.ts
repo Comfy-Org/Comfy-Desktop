@@ -19,7 +19,8 @@ import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 
 export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
-  getAccessToken: 'desktop2-auth:get-access-token',
+  getWorkspaceToken: 'desktop2-auth:get-workspace-token',
+  getIdentityToken: 'desktop2-auth:get-identity-token',
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
   changed: 'desktop2-auth:changed'
@@ -83,19 +84,31 @@ export async function stateForSender(
 }
 
 /**
- * The access token for a trusted view, only when it is scoped to the
- * workspace the view asks for. A mismatch fails closed: the view never runs
- * as a workspace it did not select. No workspace asked means the session's own.
+ * The workspace credential for a trusted view: released only for an exact,
+ * non-empty workspace that Desktop's session is scoped to. Absent, malformed
+ * or mismatched scope gets nothing, so a view never runs as a workspace it
+ * did not name.
  */
-export async function accessTokenForSender(
+export async function workspaceTokenForSender(
   event: EmbeddedSessionSender,
-  workspaceId?: unknown
+  workspaceId: unknown
 ): Promise<string | null> {
+  if (typeof workspaceId !== 'string' || workspaceId === '') return null
+  const token = await trustedSessionToken(event)
+  return token && identityOf(token)?.workspaceId === workspaceId ? token : null
+}
+
+/**
+ * The account token for user-identity calls that name no workspace (account
+ * and workspace listing). Never the credential for API-node execution.
+ */
+export function identityTokenForSender(event: EmbeddedSessionSender): Promise<string | null> {
+  return trustedSessionToken(event)
+}
+
+async function trustedSessionToken(event: EmbeddedSessionSender): Promise<string | null> {
   if (!isTrustedSender(event) || !(await isEmbeddedSessionEnabled())) return null
-  if (workspaceId !== undefined && typeof workspaceId !== 'string') return null
-  const token = await getCloudSession().getAccessToken()
-  if (!token || workspaceId === undefined) return token
-  return identityOf(token)?.workspaceId === workspaceId ? token : null
+  return getCloudSession().getAccessToken()
 }
 
 /** Push the current session to every comfyView Desktop would serve. No-op while disabled. */
