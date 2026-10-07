@@ -504,6 +504,11 @@ export async function deviceIdReady(): Promise<string> {
   return getDeviceId()
 }
 
+/** The installation id if `initDeviceId()` has resolved, else null. Never waits. */
+export function resolvedDeviceId(): string | null {
+  return cached?.installationId ?? null
+}
+
 export function getIdClass(): IdClass {
   return cached?.idClass ?? 'random_fallback'
 }

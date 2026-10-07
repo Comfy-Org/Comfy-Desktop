@@ -698,6 +698,19 @@ describe('deviceId', () => {
       expect(fs.readFileSync(deviceIdFile(), 'utf-8')).toBe(stored)
     })
 
+    it('reports no resolved id before resolution, even with one stored', async () => {
+      fs.writeFileSync(deviceIdFile(), expectedIdFor('stale-machine'))
+      mockSystemUuid = uuid
+      mockUuidDelayMs = 3000
+      const ready = mod.deviceIdReady()
+      expect(mod.resolvedDeviceId()).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(3000)
+      const id = await ready
+      expect(id).toBe(expectedIdFor(uuid))
+      expect(mod.resolvedDeviceId()).toBe(id)
+    })
+
     it('derives the machine id from a lookup that takes 14 s', async () => {
       mockSystemUuid = uuid
       mockUuidDelayMs = 14_000

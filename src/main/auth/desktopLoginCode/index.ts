@@ -36,7 +36,7 @@ import {
 } from '../firebaseBridge/inject'
 import { extractProviderId } from '../firebaseBridge/intercept'
 import { restoreParentWindow } from '../firebaseBridge/restoreParentWindow'
-import { deviceIdReady } from '../../lib/deviceId'
+import { resolvedDeviceId } from '../../lib/deviceId'
 import * as mainTelemetry from '../../lib/telemetry'
 import * as settings from '../../settings'
 
@@ -134,20 +134,12 @@ export async function signInViaDesktopLoginCode(
   // installation_id enables the web->desktop identity stitch. Consent-gated
   // like every other telemetry write ('undecided' omits too); the auth
   // handoff itself works without it.
-  // Boot resolves the id in the background, so a sign-in in the first
-  // seconds of a slow launch waits for it.
-  if (settings.get('telemetryEnabled') === true) {
-    const installationId = await deviceIdReady()
-    // A newer attempt or a closed view may have superseded this one while it waited.
-    if (controller.signal.aborted || comfyContents.isDestroyed()) {
-      if (activeFlow === controller) activeFlow = null
-      releaseFirebaseSessionInjection(sessionInjection)
-      return 'handled'
-    }
-    // Consent may have been withdrawn during the wait.
-    if (installationId && settings.get('telemetryEnabled') === true) {
-      request.installation_id = installationId
-    }
+  // Boot resolves the id in the background. A sign-in in the first seconds
+  // of a slow launch goes without it rather than waiting; the desktop's own
+  // sign-in binding attaches the id to the user once it resolves.
+  const installationId = resolvedDeviceId()
+  if (installationId && settings.get('telemetryEnabled') === true) {
+    request.installation_id = installationId
   }
 
   let grant: DesktopLoginCodeGrant
