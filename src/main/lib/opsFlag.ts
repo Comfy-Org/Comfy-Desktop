@@ -92,22 +92,28 @@ function maybeSeedFromEnv(): void {
   }
 }
 
-export function readPersistedFile(file: string): PersistedFileRead {
+function parseEntries(data: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(data)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+/** `durable`: a record file, where garbage is lost state, so it reads as unreadable, not empty. */
+export function readPersistedFile(file: string, durable = false): PersistedFileRead {
   if (file === OPS_FLAGS_FILE) maybeSeedFromEnv()
   const outcome = readFileSafe(persistFilePath(file))
   if (outcome.kind === 'unreadable') return { entries: {}, primaryUnreadable: true }
   if (outcome.kind !== 'data') return { entries: {}, primaryUnreadable: false }
 
   const primaryUnreadable = outcome.primaryUnreadable === true
-  try {
-    const parsed: unknown = JSON.parse(outcome.data)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { entries: {}, primaryUnreadable }
-    }
-    return { entries: parsed as Record<string, unknown>, primaryUnreadable }
-  } catch {
-    return { entries: {}, primaryUnreadable }
-  }
+  const entries = parseEntries(outcome.data)
+  if (entries !== null || !durable) return { entries: entries ?? {}, primaryUnreadable }
+  const bak = readFileSafe(persistFilePath(file) + '.bak', { restore: false })
+  return { entries: (bak.kind === 'data' && parseEntries(bak.data)) || {}, primaryUnreadable: true }
 }
 
 /** Load for a read-modify-write. Throws when the primary exists but its entries cannot be
@@ -116,8 +122,8 @@ export function readPersistedFile(file: string): PersistedFileRead {
  *  from the backup, resurrecting entries the primary had already superseded. Read-only callers
  *  use `readPersistedFile`, which degrades to "no cache". Mirrors `installations.ts`'
  *  `loadForWrite` (issue #1367). */
-function readPersistedFileForWrite(file: string): Record<string, unknown> {
-  const { entries, primaryUnreadable } = readPersistedFile(file)
+function readPersistedFileForWrite(file: string, durable = false): Record<string, unknown> {
+  const { entries, primaryUnreadable } = readPersistedFile(file, durable)
   if (primaryUnreadable) {
     throw new Error(
       `${file} exists but its entries cannot be recovered right now; refusing to modify it`
@@ -162,10 +168,14 @@ function writePersistedResult(file: string, key: string, entry: PersistedOpsFlag
   writePersistedEntry(file, key, { ...entry, fetchedAt: Date.now() })
 }
 
-/** `writePersistedResult`'s read-modify-write for any JSON entry, with the same refusal and the
- *  same backup-first ordering. */
-export function writePersistedEntry(file: string, key: string, entry: unknown): void {
-  const all = readPersistedFileForWrite(file)
+/** `writePersistedResult`'s refusal and backup-first ordering, for any JSON entry. */
+export function writePersistedEntry(
+  file: string,
+  key: string,
+  entry: unknown,
+  durable = false
+): void {
+  const all = readPersistedFileForWrite(file, durable)
   all[key] = entry
   const contents = JSON.stringify(all)
   const filePath = persistFilePath(file)
@@ -192,9 +202,7 @@ export function makeOpsFlag<T>(opts: {
   /** Value held before the fetch resolves, and kept when it fails or returns something
    *  `parse` doesn't recognise. This is the flag's fail direction. */
   fallback: T
-  /** Return `undefined` to retain the fallback. `fetchedAt` is when the server produced the
-   *  answer being parsed: now for a live one, the saved stamp for a stored one, and absent when
-   *  there is no answer at all. */
+  /** Return `undefined` to retain the fallback; `fetchedAt` is absent when there is no answer. */
   parse: (
     value: FeatureFlagValue | undefined,
     payload: unknown,
@@ -228,7 +236,6 @@ export function makeOpsFlag<T>(opts: {
    *  Only for flags whose fail direction is a downgrade a returning user would notice; a
    *  fail-closed guard must NOT persist. */
   persist?: true
-  /** The file under `configDir()` that `persist` writes. Defaults to `ops-flags.json`. */
   persistFile?: string
 }): OpsFlag<T> {
   const { key, fallback, parse, logLabel, deadlineMs, persist } = opts

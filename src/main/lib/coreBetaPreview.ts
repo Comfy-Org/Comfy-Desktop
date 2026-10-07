@@ -124,7 +124,7 @@ export async function previewCoreBetaArgs(
     commits,
     schema
   })
-  // What the next launch would apply, enrolments included; only a launch writes a record.
+  // Enrolments included; only a launch writes a record.
   const campaign = planCampaignArgs({
     ...campaigns,
     records,

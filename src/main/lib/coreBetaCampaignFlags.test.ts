@@ -23,7 +23,12 @@ import {
   readCampaignRecords,
   writeCampaignRecord
 } from './coreBetaCampaignFlags'
-import { _resetForTest as resetCoreBetaGrants, getCoreBetaGrantsAsync } from './coreBetaGrants'
+import {
+  NO_CORE_COMMITS,
+  _resetForTest as resetCoreBetaGrants,
+  getCoreBetaGrantsAsync
+} from './coreBetaGrants'
+import { parseCampaignAnswer, planCampaignArgs } from './coreBetaCampaigns'
 
 const KEY = 'desktop_core_beta_agent'
 const NOW = Date.UTC(2026, 9, 7)
@@ -45,7 +50,6 @@ type Answer = { kind: 'value'; value: unknown; payload?: unknown } | { kind: 'un
 const value = (v: unknown, payload?: unknown): Answer => ({ kind: 'value', value: v, payload })
 const UNREACHABLE: Answer = { kind: 'unreachable' }
 
-/** Answers by flag key; anything unlisted is unreachable. */
 function serve(answers: Record<string, Answer>): void {
   getOpsFlagResult.mockImplementation((key: string) => Promise.resolve(answers[key] ?? UNREACHABLE))
 }
@@ -181,6 +185,16 @@ describe('initCoreBetaCampaigns', () => {
     expect((await getCoreBetaCampaigns()).answers.size).toBe(0)
   })
 
+  it.each([[0], [false], ['x'], [null]])(
+    'a saved registry entry of %j discovers nothing and does not throw',
+    async (entry) => {
+      seed('campaign-flags.json', { desktop_campaigns: entry })
+      serve({})
+      await expect(initCoreBetaCampaigns({ distinctId: 'id' })).resolves.toBeUndefined()
+      expect(fetchedKeys()).toEqual(['desktop_campaigns'])
+    }
+  )
+
   it('an expired saved registry lists nothing offline, but still discovers its keys', async () => {
     seed('campaign-flags.json', {
       desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 8 * DAY_MS },
@@ -289,7 +303,6 @@ describe('two cache files', () => {
       [KEY]: value('enrol', AGENT)
     })
     await initCoreBetaFlags({ distinctId: 'id', betaEnabled: true })
-    // Slot #0 rewrote its own file with the same answer and a fresh stamp; nothing else moved.
     const after = JSON.parse(fs.readFileSync(file('ops-flags.json'), 'utf-8'))
     expect(after).toEqual(JSON.parse(before.toString()))
     expect(fs.existsSync(file('campaign-flags.json.bak'))).toBe(false)
@@ -375,6 +388,42 @@ describe('enrolment records', () => {
       primaryUnreadable: true
     } as ReturnType<typeof safeFile.readFileSafe>)
     expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(false)
+  })
+
+  describe('an unparseable primary next to a valid backup', () => {
+    beforeEach(() => {
+      writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
+      fs.writeFileSync(file('campaign-enrolments.json'), 'not json{')
+    })
+
+    it('hold: the backup record still makes the machine a member', () => {
+      const plan = planCampaignArgs({
+        registry: REGISTRY,
+        answers: new Map([[KEY, parseCampaignAnswer('hold', AGENT, NOW)!]]),
+        records: readCampaignRecords(),
+        betaEnabled: true,
+        presentArgs: ['--enable-assets'],
+        core: { semver: '0.3.61', exact: true, verified: true, current: true },
+        commits: NO_CORE_COMMITS,
+        schema: { args: [], knownFlags: new Set(['enable-agent', 'enable-assets']) },
+        idClass: 'machine_derived',
+        now: NOW
+      })
+      expect(plan.applied, 'garbage must not read as "no enrolments"').toMatchObject([
+        { key: KEY, epoch: 1, enrolledNow: false }
+      ])
+    })
+
+    it('enrol: the write is refused and nothing counts, so no second enrolled event', () => {
+      expect(() => writeCampaignRecord(KEY, '--enable-agent', 2, NOW + 1)).toThrow(
+        /unreadable; not writing/
+      )
+      expect(campaignRecordSaved(KEY, '--enable-agent', 2)).toBe(false)
+      expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')
+      expect(readJson('campaign-enrolments.json.bak')[KEY]).toEqual({
+        '--enable-agent': { epoch: 1, enrolledAt: NOW }
+      })
+    })
   })
 
   it('reads nothing from a missing or corrupt file', () => {
