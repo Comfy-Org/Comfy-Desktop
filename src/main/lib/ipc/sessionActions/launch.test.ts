@@ -1150,6 +1150,8 @@ describe('core beta report placement', () => {
       cwd: installDir,
       skipPortWait: true
     }
+    // The assets tap ignores lines seen without consent, so these record events as a consenting user.
+    vi.spyOn(telemetry, 'getConsentState').mockReturnValue('granted')
     vi.spyOn(telemetry, 'emit').mockImplementation(((
       event: string,
       properties?: Record<string, unknown>
