@@ -264,12 +264,15 @@ describe('applySettingSet settings.changed telemetry', () => {
     expect(mockSettingsSet).toHaveBeenCalledWith('autoUpdate', false)
   })
 
-  it('emits nothing when the store refuses the write', () => {
-    // An unreadable settings.json makes `set` a no-op; nothing changed, so nothing is reported.
-    mockSettings.autoUpdate = true
+  it.each([
+    ['language', 'en'],
+    ['confirmBeforeClosingWindow', true],
+    ['pypiMirror', 'https://mirror.example/simple']
+  ])('emits nothing when the store refuses a write to unset %s', (key, value) => {
+    // An unreadable settings.json makes `set` a no-op; the field still shows what it showed.
     mockSettingsSet.mockImplementationOnce(() => {})
 
-    applySettingSet('autoUpdate', false, true)
+    applySettingSet(key, value, true)
 
     expect(changedEvents()).toEqual([])
   })
