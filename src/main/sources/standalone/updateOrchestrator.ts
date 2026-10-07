@@ -62,6 +62,8 @@ export interface UpdateOrchestrationOptions {
    *  by the post-install auto-update in `install.ts` to reconcile the
    *  pre-extracted standalone bundle's venv against ComfyUI's pinned deps. */
   forceDepsSync?: boolean
+  /** Repair: resync both requirement files (incl. Manager) even if unchanged. */
+  resyncAllDeps?: boolean
   /** Optional explicit ComfyUI release tag (e.g. `v1.19.4`). Set by the
    *  install-wizard / IPP version picker. When present, `update_comfyui.py`
    *  is invoked with `--tag <ref>` instead of `--stable` / no flag, so the
@@ -353,7 +355,7 @@ export async function runComfyUIUpdate(
   )
   const reqsChanged = preReqs !== postReqs
   // A repair resyncs too: the interrupted update may have moved HEAD already.
-  const forceDeps = repairing || !!opts.forceDepsSync
+  const forceDeps = repairing || !!opts.forceDepsSync || !!opts.resyncAllDeps
   const shouldSyncDeps = (reqsChanged || headMoved || forceDeps) && postReqs.length > 0
 
   // Tracks a dependency-sync failure so the transactional guard below can roll
@@ -472,7 +474,7 @@ export async function runComfyUIUpdate(
   } catch {}
 
   // Fail fast: skip the manager requirements sync if the main one already failed.
-  const mgrReqsChanged = preMgrReqs !== postMgrReqs || repairing
+  const mgrReqsChanged = preMgrReqs !== postMgrReqs || repairing || !!opts.resyncAllDeps
   if (!depFailure && !signal?.aborted && mgrReqsChanged && postMgrReqs.length > 0) {
     const uvPath = getActiveUvPath(installation)
     const activeEnvPython = getActivePythonPath(installation)

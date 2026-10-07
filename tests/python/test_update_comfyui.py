@@ -418,6 +418,21 @@ class UpdateComfyUITest(unittest.TestCase):
             f.write(V2["app/db.py"])
         self.assert_update_repairs()
 
+    def test_repair_at_the_installed_tag_rewrites_stale_files(self):
+        # The D4 state Desktop's "Repair ComfyUI files" targets: HEAD already on
+        # the release, an older db.py left behind, no marker.
+        git(self.repo, "checkout", "-q", "--detach", self.sha["v2"])
+        with open(os.path.join(self.repo, "app", "db.py"), "w") as f:
+            f.write(V1["app/db.py"])
+        self.assertEqual(self.tracked_changes(), ["app/db.py"])
+        r = self.update("--tag", "v0.2.0")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assert_clean_at(self.sha["v2"], V2)
+        # The confirm dialog promises the replaced file is kept on a backup branch.
+        backup = git(self.repo, "branch", "--list", "backup_branch_*",
+                     "--format=%(refname:short)")
+        self.assertEqual(git(self.repo, "show", "%s:app/db.py" % backup), V1["app/db.py"].strip())
+
     def test_tracked_changes_ignores_untracked_files(self):
         self.assertEqual(self.tracked_changes(), [])
         with open(os.path.join(self.repo, "untracked.txt"), "w") as f:

@@ -451,3 +451,34 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     expect((emitted![0]![0] as { id: string }).id).toBe('copy-pytorch')
   })
 })
+
+describe('ChannelPicker - repair-comfyui footer action', () => {
+  const repairField = field([
+    {
+      value: 'stable',
+      label: 'Stable',
+      data: {
+        productName: 'ComfyUI',
+        installedVersion: 'v0.39.1',
+        updateAvailable: false,
+        actions: [
+          {
+            id: 'repair-comfyui',
+            label: 'Repair ComfyUI files',
+            style: 'default',
+            enabled: true,
+            data: { channel: 'stable', targetTag: 'v0.39.1' }
+          }
+        ]
+      }
+    }
+  ])
+
+  it('shows Repair on an up-to-date card and emits it when clicked', async () => {
+    const wrapper = mountPicker(repairField)
+    const button = wrapper.find('[data-testid="update-action-repair-comfyui"]')
+    expect(button.text()).toContain('Repair ComfyUI files')
+    await button.trigger('click')
+    expect((wrapper.emitted('action')![0]![0] as { id: string }).id).toBe('repair-comfyui')
+  })
+})

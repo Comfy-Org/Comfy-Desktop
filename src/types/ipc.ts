@@ -1981,7 +1981,12 @@ export interface ElectronApi {
 
 /** Action IDs that auto-relaunch ComfyUI after completing (stop→op→launch).
  *  Shared between main and renderer so both sides agree on the relaunch contract. */
-export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
+export const IN_PLACE_RELAUNCH = new Set([
+  'update-comfyui',
+  'repair-comfyui',
+  'snapshot-restore',
+  'change-pytorch'
+])
 
 /** Action IDs that require the installation to be stopped before running.
  *  Shared between main and renderer processes. */
@@ -1994,6 +1999,7 @@ export const REQUIRES_STOPPED = new Set([
   'migrate-to-standalone',
   'snapshot-restore',
   'update-comfyui',
+  'repair-comfyui',
   'migrate-from',
   'change-pytorch'
 ])

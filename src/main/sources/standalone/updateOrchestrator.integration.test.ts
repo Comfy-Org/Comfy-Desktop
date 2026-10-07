@@ -534,6 +534,37 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     })
   })
 
+  describe('repair of the installed version', () => {
+    it('reinstalls both requirement files even though nothing changed, and only when asked', async () => {
+      // HEAD and both requirement files already at v0.2.0: only `repair` forces a sync.
+      execFileSync('git', ['checkout', '-q', 'v0.2.0', '--detach'], {
+        cwd: comfyuiDir,
+        stdio: 'pipe'
+      })
+      spawnState.pythonHandler = () =>
+        fakeProc({
+          stdout: [
+            `[PRE_UPDATE_HEAD] ${repoShas.v2Sha}\n`,
+            `[POST_UPDATE_HEAD] ${repoShas.v2Sha}\n`
+          ],
+          exitCode: 0
+        })
+      spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
+      // The Repair action runs with the conflict dry run, so count only real installs.
+      const installed = (): string[] =>
+        spawnState.uvCalls.filter((a) => a.includes('install') && !a.includes('--dry-run')).flat()
+      const opts = (extra: Partial<UpdateOrchestrationOptions> = {}): UpdateOrchestrationOptions =>
+        makeBaseOpts(installPath, { dryRunConflictCheck: true, ...extra })
+
+      expect((await runComfyUIUpdate(opts())).ok).toBe(true)
+      expect(spawnState.uvCalls.filter((a) => a.includes('install'))).toEqual([])
+
+      expect((await runComfyUIUpdate(opts({ resyncAllDeps: true }))).ok).toBe(true)
+      expect(installed().some((a) => a.endsWith('.comfyui-reqs-filtered.txt'))).toBe(true)
+      expect(installed().some((a) => a.endsWith('.manager-reqs-filtered.txt'))).toBe(true)
+    })
+  })
+
   describe('repairing update', () => {
     it('resyncs dependencies even when HEAD and requirements already match the target', async () => {
       // Desktop was killed mid-update after HEAD and requirements.txt reached

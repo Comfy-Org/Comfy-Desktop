@@ -5,7 +5,7 @@ import * as releaseCache from '../../lib/release-cache'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { resolveLocalVersion } from '../../lib/version-resolve'
-import { readGitHead, rollbackComfySource } from '../../lib/git'
+import { hasTrackedChanges, readGitHead, revParseRef, rollbackComfySource } from '../../lib/git'
 import { writeOpMarker, completeOpMarker } from '../../lib/opMarker'
 import { installFilteredRequirementsDetailed } from '../../lib/pip'
 import { withOutputTail } from '../../lib/logged-process'
@@ -63,6 +63,7 @@ const VENV_MUTATING_ACTIONS = new Set([
   'snapshot-restore',
   'change-pytorch',
   'update-comfyui',
+  'repair-comfyui',
   'migrate-from'
 ])
 
@@ -1149,12 +1150,13 @@ export async function handleAction(
     return result
   }
 
-  if (actionId === 'update-comfyui') {
+  if (actionId === 'update-comfyui' || actionId === 'repair-comfyui') {
     return handleUpdateComfyUI(installation, actionData, {
       update,
       sendProgress,
       sendOutput,
-      signal
+      signal,
+      repair: actionId === 'repair-comfyui'
     })
   }
 
@@ -1168,7 +1170,7 @@ export async function handleAction(
 async function handleUpdateComfyUI(
   installation: InstallationRecord,
   actionData: Record<string, unknown> | undefined,
-  { update, sendProgress, sendOutput, signal }: ActionTools
+  { update, sendProgress, sendOutput, signal, repair = false }: ActionTools & { repair?: boolean }
 ): Promise<ActionResult> {
   const installPath = installation.installPath
   const comfyuiDir = path.join(installPath, 'ComfyUI')
@@ -1217,6 +1219,11 @@ async function handleUpdateComfyUI(
   // reach the spawn.
   const rawTargetTag = typeof actionData?.targetTag === 'string' ? actionData.targetTag : undefined
   const targetTag = rawTargetTag && /^v\d+\.\d+\.\d+$/.test(rawTargetTag) ? rawTargetTag : undefined
+  // A repair rewrites the installed commit; a pin that is not HEAD would move it.
+  const pin = repair && targetTag && (await revParseRef(comfyuiDir, `${targetTag}^{commit}`))
+  if (repair && (!pin || pin !== readGitHead(comfyuiDir))) {
+    return { ok: false, message: t('standalone.repairNotOnTag') }
+  }
 
   sendProgress('steps', {
     steps: [
@@ -1240,11 +1247,15 @@ async function handleUpdateComfyUI(
     signal,
     dryRunConflictCheck: true,
     saveRollback: true,
-    preUpdateSnapshot: true
+    preUpdateSnapshot: true,
+    resyncAllDeps: repair
   })
 
   if (!result.ok) {
     return { ok: false, message: result.message }
+  }
+  if (repair && (await hasTrackedChanges(comfyuiDir)) === true) {
+    return { ok: false, message: t('standalone.repairIncomplete') }
   }
 
   // Reconcile installedTag against the new comfyVersion so the "up to date"

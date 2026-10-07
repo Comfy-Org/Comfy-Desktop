@@ -3,7 +3,7 @@ import path from 'path'
 import * as releaseCache from '../../lib/release-cache'
 import { buildChannelCards, buildChannelLabelMap } from '../../lib/channel-cards'
 import type { ChannelDef } from '../../lib/channel-cards'
-import { formatComfyVersion } from '../../lib/version'
+import { coreSemverExact, coreSemverVerified, formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { truncateNotes } from '../../lib/comfyui-releases'
 import {
@@ -467,6 +467,8 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
   const channelDefs = getChannelDefs()
   const baseCards = buildChannelCards(COMFYUI_REPO, channelDefs, installation)
 
+  const onTag = coreSemverExact(installation) && coreSemverVerified(installation)
+  const installedTag = onTag ? (installation.comfyVersion as ComfyVersion).baseTag : undefined
   const channelOptions = baseCards.map((card) => {
     const actions: Record<string, unknown>[] = []
     if (card.data?.updateAvailable && hasGit) {
@@ -578,6 +580,22 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         style: 'default',
         enabled: installed,
         data: { channel: card.value }
+      })
+    } else if (hasGit && installedTag) {
+      // Nothing newer: rewrite the installed release's files. Only offered exactly
+      // on a verified tag; the handler re-checks the tag is HEAD.
+      actions.push({
+        id: 'repair-comfyui',
+        label: t('standalone.repairFiles'),
+        style: 'default',
+        enabled: installed,
+        showProgress: true,
+        progressTitle: t('standalone.repairingFiles'),
+        data: { channel, targetTag: installedTag },
+        confirm: {
+          title: t('standalone.repairFilesTitle'),
+          message: t('standalone.repairFilesMessage')
+        }
       })
     }
     return {
