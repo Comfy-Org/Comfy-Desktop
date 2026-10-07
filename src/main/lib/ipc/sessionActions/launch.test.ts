@@ -1327,11 +1327,11 @@ describe('core beta report placement', () => {
     })
 
     it('leaves a non-member launch exactly as a launch without campaigns', async () => {
-      const command = structuredClone(launchHarness.launchCommand)
+      const commandBeforeLaunchMutatesIt = structuredClone(launchHarness.launchCommand)
       await handleLaunch(ctxFor('campaign-none'))
       const without = spawnArgs
       const withoutApplied = appliedEvent()
-      launchHarness.launchCommand = command
+      launchHarness.launchCommand = commandBeforeLaunchMutatesIt
       serveCampaign('hold')
       await handleLaunch(ctxFor('campaign-non-member'))
       const normalise = (args: string[]): string[] =>
