@@ -1086,7 +1086,7 @@
     "updateConfirmTitle": "更新 ComfyUI",
     "repairFiles": "修复 ComfyUI 文件",
     "repairFilesTitle": "修复 ComfyUI 文件？",
-    "repairFilesMessage": "将已安装版本自带的 ComfyUI 文件恢复原样，并重新检查其依赖项。如果更新后 ComfyUI 无法启动，请使用此功能。您对 ComfyUI 文件的修改会保存在备份分支中。",
+    "repairFilesMessage": "将已安装版本自带的 ComfyUI 文件恢复原样，并重新检查其依赖项。如果更新后 ComfyUI 无法启动，请使用此功能。修复前会尝试将您对 ComfyUI 文件的修改保存到备份分支。",
     "repairingFiles": "正在修复 ComfyUI 文件…",
     "repairNotOnTag": "ComfyUI 已不在提供此修复时的版本上。请重新打开此页面后再试。",
     "repairIncomplete": "部分 ComfyUI 文件仍与已安装版本不一致。请重新运行修复；如果仍然失败，请先关闭正在使用 ComfyUI 文件夹的程序。",
