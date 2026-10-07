@@ -87,6 +87,31 @@ describe('Tooltip (ui primitive)', () => {
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })
 
+  it('keeps an interactive bubble open while the pointer moves onto its content', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(Tooltip, {
+      props: { text: 'Learn more', delayMs: 0, interactive: true },
+      slots: {
+        default: '<button data-testid="trigger">trigger</button>',
+        content: '<a href="https://example.com">Read more</a>'
+      },
+      attachTo: document.body
+    })
+    wrappers.push(wrapper)
+
+    await wrapper.trigger('mouseenter')
+    await flushPromises()
+    const bubble = document.querySelector('.tooltip-bubble') as HTMLElement
+    wrapper.element.dispatchEvent(new Event('mouseleave'))
+    bubble.dispatchEvent(new Event('mouseenter'))
+    await vi.advanceTimersByTimeAsync(100)
+    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
+
+    bubble.dispatchEvent(new Event('mouseleave'))
+    await vi.advanceTimersByTimeAsync(100)
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
+
   it('teleports the bubble to document.body (outside any overflow:hidden parent)', async () => {
     const wrapper = mountTooltip()
     await wrapper.trigger('mouseenter')
@@ -98,6 +123,27 @@ describe('Tooltip (ui primitive)', () => {
   it('does not show the bubble when `disabled` is true', async () => {
     const wrapper = mountTooltip({ disabled: true })
     await wrapper.trigger('mouseenter')
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
+
+  it('hides a visible bubble when `disabled` turns true', async () => {
+    const wrapper = mountTooltip()
+    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
+
+    await wrapper.setProps({ disabled: true })
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
+
+  it('cancels a pending open when `disabled` turns true mid-delay', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountTooltip({ delayMs: 100 })
+    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
+    await wrapper.setProps({ disabled: true })
+    vi.advanceTimersByTime(200)
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })

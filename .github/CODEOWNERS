@@ -1,5 +1,23 @@
+# Code owners for Comfy-Desktop.
+#
+# Order matters — last matching rule wins.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: desktop admins own everything; standard approver may also approve.
+* @Comfy-Org/comfy_desktop_admins @Comfy-Org/comfy-standard-approver
+
+# Auto-update and packaging determine which binaries reach users.
+/src/main/lib/updater.ts @Comfy-Org/comfy_desktop_admins
+/src/main/sources/standalone/updateOrchestrator.ts @Comfy-Org/comfy_desktop_admins
+/src/main/sources/standalone/updateSections.ts @Comfy-Org/comfy_desktop_admins
+/lib/update_comfyui.py @Comfy-Org/comfy_desktop_admins
+/electron-builder.yml @Comfy-Org/comfy_desktop_admins
+
+# Desktop login and token sign-in.
+/src/main/auth/ @Comfy-Org/comfy_desktop_admins
+
 # Agent instructions
-**/AGENTS.md                                      @benceruleanlu @deepme987 @Kosinkadink
+**/AGENTS.md                                      @Comfy-Org/comfy_desktop_admins
 # Root-anchored rule so the top-level AGENTS.md has an explicit DRI (a bare
 # `**/`-prefixed pattern doesn't match a repo-root file in every CODEOWNERS
 # reader).

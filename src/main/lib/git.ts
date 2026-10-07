@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'async_hooks'
 import { execFile, spawn, type ExecFileException } from 'child_process'
 import fs from 'fs'
 import path from 'path'
@@ -94,7 +95,16 @@ function disablePygit2(reason: string): void {
   _pygit2 = { status: 'disabled', reason }
 }
 
+const _breakerExempt = new AsyncLocalStorage<true>()
+
+/** Run `work` with its pygit2 calls, across awaits, kept out of the circuit breaker: their
+ *  failures do not count toward disabling the fallback and their successes do not reset it. */
+export function withoutPygit2Breaker<T>(work: () => Promise<T>): Promise<T> {
+  return _breakerExempt.run(true, work)
+}
+
 function recordPygit2Failure(reason: string): void {
+  if (_breakerExempt.getStore()) return
   if (_pygit2.status !== 'healthy') return
   const failures = _pygit2.failures + 1
   _pygit2 = { ..._pygit2, failures }
@@ -104,6 +114,7 @@ function recordPygit2Failure(reason: string): void {
 }
 
 function recordPygit2Success(): void {
+  if (_breakerExempt.getStore()) return
   if (_pygit2.status !== 'healthy' || _pygit2.failures === 0) return
   _pygit2 = { ..._pygit2, failures: 0 }
 }

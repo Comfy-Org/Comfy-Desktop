@@ -30,7 +30,11 @@ vi.mock('./git', () => ({
 vi.mock('./paths', () => ({ configDir: () => git.configDir }))
 vi.mock('./telemetry', () => ({ getOpsFlagResult: vi.fn() }))
 
-import { _backgroundFetchesForTest, resolveCoreCommitState } from './coreBetaAncestry'
+import {
+  _backgroundFetchesForTest,
+  proveCommitRelation,
+  resolveCoreCommitState
+} from './coreBetaAncestry'
 import { NO_CORE_COMMITS } from './coreBetaGrants'
 
 const REPO = '/installs/comfy/ComfyUI'
@@ -535,5 +539,46 @@ describe('resolveCoreCommitState', () => {
         'one shallow-marker read per checked SHA, none for skipped ones'
       ).toBe(16)
     })
+  })
+})
+
+describe('proveCommitRelation', () => {
+  it('proves from the local repository only: an absent SHA on a shallow clone is not fetched', async () => {
+    makeShallow()
+    const log = vi.mocked(console.log)
+    log.mockClear()
+
+    const proof = await proveCommitRelation(REPO, UPPER, HEAD)
+
+    expect(proof).toEqual({ relation: null, absentFromShallow: true, notes: [] })
+    expect(git.fetchCommitSha).not.toHaveBeenCalled()
+    expect(log).not.toHaveBeenCalled()
+    await _backgroundFetchesForTest()
+    expect(git.fetchCommitSha).not.toHaveBeenCalled()
+  })
+
+  it('returns what it would log as notes instead of logging it', async () => {
+    const log = vi.mocked(console.log)
+    log.mockClear()
+
+    const proof = await proveCommitRelation(REPO, UPPER, HEAD)
+
+    expect(proof.relation).toBe(false)
+    expect(proof.notes).toEqual([
+      `[core-beta] ancestry ${UPPER.slice(0, 12)}: absent from a full clone`
+    ])
+    expect(log).not.toHaveBeenCalled()
+  })
+
+  it('reads a thrown git call as unproven, and returns the error instead of logging it', async () => {
+    const failure = new Error('spawn EAGAIN')
+    git.findMergeBase.mockRejectedValue(failure)
+    const warn = vi.mocked(console.warn)
+    warn.mockClear()
+    await expect(proveCommitRelation(REPO, LOWER, HEAD)).resolves.toMatchObject({
+      relation: null,
+      error: failure
+    })
+    expect(warn).not.toHaveBeenCalled()
   })
 })

@@ -75,13 +75,20 @@ function handleChange(value: string): void {
   emit('change', value)
 }
 
-function onFocus(): void {
-  focused.value = true
+// The wrapper also hosts the trailing slot's buttons (gear, beta-args pill). Only the text
+// input drives autocomplete: Enter on one of those buttons must press it, not complete a
+// partially typed flag and persist the rewritten args.
+function fromTextInput(e: Event): boolean {
+  return e.target instanceof HTMLInputElement
+}
+function onFocus(e: FocusEvent): void {
+  if (fromTextInput(e)) focused.value = true
 }
 function onBlur(): void {
   focused.value = false
 }
 function onKeydown(e: KeyboardEvent): void {
+  if (!fromTextInput(e)) return
   if (autocomplete.handleKeydown(e.key) === 'consumed') e.preventDefault()
 }
 </script>

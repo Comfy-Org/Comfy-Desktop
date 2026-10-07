@@ -95,6 +95,8 @@ export const NO_TEMPLATE_VALUE = 'none'
  *  pattern (`^[a-zA-Z0-9_.-]+$`). No `/` or `\`, so it can't escape the templates
  *  dir when joined into a filesystem path or interpolated into a fetch URL. */
 const TEMPLATE_ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
+/** Match the pattern but name a directory, not a template. */
+const RESERVED_TEMPLATE_IDS = new Set(['.', '..'])
 
 /**
  * Whether `value` is a persistable starter-template id. Accepts any
@@ -104,7 +106,12 @@ const TEMPLATE_ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
  * degrades gracefully downstream (the template JSON just 404s).
  */
 export function isPersistableTemplateId(value: unknown): value is string {
-  return typeof value === 'string' && value !== NO_TEMPLATE_VALUE && TEMPLATE_ID_PATTERN.test(value)
+  return (
+    typeof value === 'string' &&
+    value !== NO_TEMPLATE_VALUE &&
+    !RESERVED_TEMPLATE_IDS.has(value) &&
+    TEMPLATE_ID_PATTERN.test(value)
+  )
 }
 
 /**

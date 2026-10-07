@@ -74,6 +74,7 @@ import {
 import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/templateDownloadCore'
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
+import { registerTemplateInputAssetHandlers } from './lib/ipc/registerTemplateInputAssetHandlers'
 import { emitInstanceStartedTelemetry } from './lib/ipc/sessionStartTelemetry'
 import { emitStorageTelemetry } from './lib/ipc/storageTelemetry'
 import {
@@ -153,6 +154,7 @@ import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
 import { applyAttachHostPreview, clearAttachHostPreview } from './host/attachHostPreview'
+import { takePriorSessionUnclean } from './lib/comfyProcessRecord'
 import {
   _detachInstallImpl,
   confirmAndCloseAllHostWindows,
@@ -1453,12 +1455,21 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const telemetrySetting = settings.get('telemetryEnabled') as boolean | undefined
     const initialConsent: mainTelemetry.ConsentState =
       telemetrySetting === true ? 'granted' : telemetrySetting === false ? 'denied' : 'undecided'
+    // A ComfyUI record left by a Desktop that died without stopping it: read before anything
+    // can launch (and rewrite the records).
+    let priorSessionUnclean = false
+    try {
+      priorSessionUnclean = takePriorSessionUnclean()
+    } catch (err) {
+      console.warn('[comfy-procs] startup scan failed:', err)
+    }
     // initTelemetry first so the client exists before setConsentState's
     // grant-transition flush has a chance to run.
     mainTelemetry.initTelemetry({
       appVersion: APP_VERSION,
       appEnv: app.isPackaged ? 'prod-v2' : 'dev',
-      isPackaged: app.isPackaged
+      isPackaged: app.isPackaged,
+      sessionStartProps: { prior_session_unclean: priorSessionUnclean }
     })
     mainTelemetry.setConsentState(initialConsent)
     mainTelemetry.installAppHooks()
@@ -1993,6 +2004,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         return enriched as unknown as InstancePickerInstall[]
       },
       getRunningInstallationIds: () => Array.from(_runningSessions.keys()),
+      getRunningSessionStartedAt: () =>
+        Object.fromEntries(Array.from(_runningSessions, ([id, s]) => [id, s.startedAt])),
       getLaunchingInstallationIds: () => _getLaunchingInstallationIds(),
       // Per-install Settings + Snapshots payload for the picker's
       // right-pane accordions. Both reads route through the same
@@ -2194,6 +2207,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
+    registerTemplateInputAssetHandlers({
+      findInstallationIdForWindow,
+      isLocalInstallation: (installation) => sourceMap[installation.sourceId]?.category === 'local'
+    })
     cleanupTempDownloads()
     await ipc.register({
       onLaunch,

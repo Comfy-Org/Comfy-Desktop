@@ -1,5 +1,6 @@
 import { formatTime } from '../../lib/util'
 import { t } from '../../lib/i18n'
+import type { TemplateDownloadStatus } from '../../../types/ipc'
 
 /**
  * Pure core of the template-download feature: state shape, the read-side
@@ -22,7 +23,7 @@ export interface FileProgress {
   failed: boolean
 }
 
-export type TemplateDownloadStatus = 'resolving' | 'downloading' | 'done' | 'error' | 'cancelled'
+export type { TemplateDownloadStatus }
 
 export interface TemplateDownloadState {
   status: TemplateDownloadStatus

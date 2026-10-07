@@ -14,6 +14,7 @@ import {
   savePerformanceTestJobsResponse,
   savePerformanceTestLogs,
   savePerformanceTestResultsSummary,
+  storePerformanceTestExampleWorkflow,
   storePerformanceTestWorkflow,
   submitPerformanceTestWorkflow,
   waitForPerformanceTestJobs
@@ -290,17 +291,16 @@ describe('renamePerformanceTestBenchmark', () => {
 })
 
 describe('storePerformanceTestWorkflow', () => {
-  it('copies an API-format workflow into the app user-data directory', async () => {
+  it('copies an API-format workflow into the benchmarks directory', async () => {
     const root = await makeTempDir()
     const sourcePath = path.join(root, 'performanceTest.json')
     const contents = JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
     await fs.promises.writeFile(sourcePath, contents)
 
-    const storedPath = await storePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data'))
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
 
-    expect(path.dirname(path.dirname(storedPath))).toBe(
-      path.join(root, 'user-data', 'performance-tests')
-    )
+    expect(path.dirname(path.dirname(storedPath))).toBe(path.join(root, 'user-data', 'benchmarks'))
     expect(path.basename(path.dirname(storedPath))).toMatch(/^\d{14}$/)
     expect(path.basename(storedPath)).toBe('performanceTest.json')
     expect(await fs.promises.readFile(storedPath, 'utf8')).toBe(contents)
@@ -315,8 +315,9 @@ describe('storePerformanceTestWorkflow', () => {
       JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
     )
 
-    const firstPath = await storePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data'))
-    const secondPath = await storePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data'))
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
+    const firstPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
+    const secondPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
 
     expect(path.basename(secondPath)).toBe('performanceTest.json')
     expect(path.basename(path.dirname(secondPath))).toMatch(/^\d{14}$/)
@@ -334,7 +335,7 @@ describe('storePerformanceTestWorkflow', () => {
       )
 
       await expect(
-        storePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data'))
+        storePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data', 'benchmarks'))
       ).rejects.toThrow(`${name} is reserved`)
     }
   )
@@ -345,25 +346,80 @@ describe('storePerformanceTestWorkflow', () => {
     await fs.promises.writeFile(sourcePath, JSON.stringify({ nodes: [], links: [] }))
 
     await expect(
-      storePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data'))
+      storePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data', 'benchmarks'))
     ).rejects.toThrow('not a ComfyUI API-format workflow')
+  })
+})
+
+describe('storePerformanceTestExampleWorkflow', () => {
+  it('stores the API prompt alone in a new managed session', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'benchmarks')
+    const apiWorkflow = { '1': { class_type: 'KSampler', inputs: { seed: 7 } } }
+
+    const workflowFilePath = await storePerformanceTestExampleWorkflow(
+      'image_z_image_turbo',
+      apiWorkflow,
+      benchmarksDir
+    )
+
+    expect(path.basename(workflowFilePath)).toBe('image_z_image_turbo.json')
+    await expect(fs.promises.readdir(path.dirname(workflowFilePath))).resolves.toEqual([
+      'image_z_image_turbo.json'
+    ])
+    await expect(fs.promises.readFile(workflowFilePath, 'utf8')).resolves.toBe(
+      JSON.stringify(apiWorkflow)
+    )
+  })
+
+  it('rejects unsafe IDs and invalid API prompts before creating a session', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'benchmarks')
+    const apiWorkflow = { '1': { class_type: 'KSampler', inputs: {} } }
+
+    await expect(
+      storePerformanceTestExampleWorkflow('../escape', apiWorkflow, benchmarksDir)
+    ).rejects.toThrow('Invalid example workflow ID')
+    await expect(
+      storePerformanceTestExampleWorkflow('..', apiWorkflow, benchmarksDir)
+    ).rejects.toThrow('Invalid example workflow ID')
+    await expect(
+      storePerformanceTestExampleWorkflow('safe', { nodes: [] }, benchmarksDir)
+    ).rejects.toThrow('no valid API-format prompt')
+    await expect(fs.promises.stat(benchmarksDir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
 
 describe('deletePerformanceTestWorkflow', () => {
   it('deletes a managed performance test workflow copy', async () => {
     const root = await makeTempDir()
-    const userDataPath = path.join(root, 'user-data')
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
     const sourcePath = path.join(root, 'performanceTest.json')
     await fs.promises.writeFile(
       sourcePath,
       JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
     )
-    const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
 
-    await expect(deletePerformanceTestWorkflow(storedPath, userDataPath)).resolves.toBe('deleted')
+    await expect(deletePerformanceTestWorkflow(storedPath, benchmarksDir)).resolves.toBe('deleted')
 
     await expect(fs.promises.stat(storedPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('deletes an uncompleted example workflow session', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'benchmarks')
+    const workflowFilePath = await storePerformanceTestExampleWorkflow(
+      'image_z_image_turbo',
+      { '1': { class_type: 'KSampler', inputs: {} } },
+      benchmarksDir
+    )
+    const sessionDir = path.dirname(workflowFilePath)
+
+    await expect(deletePerformanceTestWorkflow(workflowFilePath, benchmarksDir)).resolves.toBe(
+      'deleted'
+    )
+    await expect(fs.promises.stat(sessionDir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('refuses to delete files outside the managed directory', async () => {
@@ -372,7 +428,7 @@ describe('deletePerformanceTestWorkflow', () => {
     await fs.promises.writeFile(sourcePath, '{}')
 
     await expect(
-      deletePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data'))
+      deletePerformanceTestWorkflow(sourcePath, path.join(root, 'user-data', 'benchmarks'))
     ).rejects.toThrow('outside a managed performance test session directory')
     expect(await fs.promises.readFile(sourcePath, 'utf8')).toBe('{}')
   })
@@ -381,17 +437,17 @@ describe('deletePerformanceTestWorkflow', () => {
     'preserves a completed session with %s when clearing its workflow from the page',
     async (outputName) => {
       const root = await makeTempDir()
-      const userDataPath = path.join(root, 'user-data')
+      const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
       const sourcePath = path.join(root, 'performanceTest.json')
       await fs.promises.writeFile(
         sourcePath,
         JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
       )
-      const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+      const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
       const outputPath = path.join(path.dirname(storedPath), outputName)
       await fs.promises.writeFile(outputPath, '{}')
 
-      await expect(deletePerformanceTestWorkflow(storedPath, userDataPath)).resolves.toBe(
+      await expect(deletePerformanceTestWorkflow(storedPath, benchmarksDir)).resolves.toBe(
         'preserved'
       )
 
@@ -404,11 +460,11 @@ describe('deletePerformanceTestWorkflow', () => {
 describe('submitPerformanceTestWorkflow', () => {
   it('posts warm-up requests before the measured runs with incremented seeds', async () => {
     const root = await makeTempDir()
-    const userDataPath = path.join(root, 'user-data')
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
     const sourcePath = path.join(root, 'performanceTest.json')
     const workflow = { '1': { class_type: 'KSampler', inputs: { seed: 1 } } }
     await fs.promises.writeFile(sourcePath, JSON.stringify(workflow))
-    const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
     let requestCount = 0
     const fetchMock = vi.fn<typeof fetch>(async () => {
       requestCount++
@@ -417,7 +473,7 @@ describe('submitPerformanceTestWorkflow', () => {
 
     const promptIds = await submitPerformanceTestWorkflow(
       storedPath,
-      userDataPath,
+      benchmarksDir,
       'http://127.0.0.1:8189/base',
       3,
       2,
@@ -439,15 +495,45 @@ describe('submitPerformanceTestWorkflow', () => {
     expect(JSON.parse(await fs.promises.readFile(storedPath, 'utf8'))).toEqual(workflow)
   })
 
-  it('stops submitting when ComfyUI rejects a request', async () => {
+  it('submits only the measured runs when warm-up is disabled, and rejects out-of-range warm-ups', async () => {
     const root = await makeTempDir()
-    const userDataPath = path.join(root, 'user-data')
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
     const sourcePath = path.join(root, 'performanceTest.json')
     await fs.promises.writeFile(
       sourcePath,
       JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
     )
-    const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
+    let requestCount = 0
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      requestCount++
+      return new Response(JSON.stringify({ prompt_id: `prompt-${requestCount}` }))
+    })
+    const submit = (warmupRuns: number) =>
+      submitPerformanceTestWorkflow(
+        storedPath,
+        benchmarksDir,
+        'http://127.0.0.1:8189',
+        2,
+        warmupRuns,
+        fetchMock
+      )
+
+    await expect(submit(0)).resolves.toEqual(['prompt-1', 'prompt-2'])
+    await expect(submit(-1)).rejects.toThrow('between 0 and 5')
+    await expect(submit(6)).rejects.toThrow('between 0 and 5')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops submitting when ComfyUI rejects a request', async () => {
+    const root = await makeTempDir()
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
+    const sourcePath = path.join(root, 'performanceTest.json')
+    await fs.promises.writeFile(
+      sourcePath,
+      JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
+    )
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: 'prompt-1' })))
@@ -457,7 +543,7 @@ describe('submitPerformanceTestWorkflow', () => {
     await expect(
       submitPerformanceTestWorkflow(
         storedPath,
-        userDataPath,
+        benchmarksDir,
         'http://127.0.0.1:8189',
         3,
         1,
@@ -472,19 +558,19 @@ describe('submitPerformanceTestWorkflow', () => {
 
   it('rejects a successful response without a prompt ID', async () => {
     const root = await makeTempDir()
-    const userDataPath = path.join(root, 'user-data')
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
     const sourcePath = path.join(root, 'performanceTest.json')
     await fs.promises.writeFile(
       sourcePath,
       JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
     )
-    const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
     const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}'))
 
     await expect(
       submitPerformanceTestWorkflow(
         storedPath,
-        userDataPath,
+        benchmarksDir,
         'http://127.0.0.1:8189',
         1,
         1,
@@ -581,16 +667,16 @@ describe('waitForPerformanceTestJobs', () => {
 describe('savePerformanceTestJobsResponse', () => {
   it('writes the final jobs response beside the session workflow', async () => {
     const root = await makeTempDir()
-    const userDataPath = path.join(root, 'user-data')
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
     const sourcePath = path.join(root, 'performanceTest.json')
     await fs.promises.writeFile(
       sourcePath,
       JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
     )
-    const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
     const response = { jobs: [{ id: 'prompt-1', status: 'completed' }] }
 
-    const resultPath = await savePerformanceTestJobsResponse(response, storedPath, userDataPath)
+    const resultPath = await savePerformanceTestJobsResponse(response, storedPath, benchmarksDir)
 
     expect(resultPath).toBe(path.join(path.dirname(storedPath), 'jobs.json'))
     expect(JSON.parse(await fs.promises.readFile(resultPath, 'utf8'))).toEqual(response)
@@ -600,18 +686,18 @@ describe('savePerformanceTestJobsResponse', () => {
 describe('savePerformanceTestLogs', () => {
   it('writes the displayed instance logs beside the session workflow', async () => {
     const root = await makeTempDir()
-    const userDataPath = path.join(root, 'user-data')
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
     const sourcePath = path.join(root, 'performanceTest.json')
     await fs.promises.writeFile(
       sourcePath,
       JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
     )
-    const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
 
     const logsPath = await savePerformanceTestLogs(
       'launching\ncompleted\n',
       storedPath,
-      userDataPath
+      benchmarksDir
     )
 
     expect(logsPath).toBe(path.join(path.dirname(storedPath), 'logs.txt'))
@@ -622,13 +708,13 @@ describe('savePerformanceTestLogs', () => {
 describe('savePerformanceTestResultsSummary', () => {
   it('writes every value needed by the image export beside the raw results', async () => {
     const root = await makeTempDir()
-    const userDataPath = path.join(root, 'user-data')
+    const benchmarksDir = path.join(root, 'user-data', 'benchmarks')
     const sourcePath = path.join(root, 'performanceTest.json')
     await fs.promises.writeFile(
       sourcePath,
       JSON.stringify({ '1': { class_type: 'KSampler', inputs: {} } })
     )
-    const storedPath = await storePerformanceTestWorkflow(sourcePath, userDataPath)
+    const storedPath = await storePerformanceTestWorkflow(sourcePath, benchmarksDir)
 
     const hardware = {
       deviceType: 'cuda',
@@ -664,7 +750,7 @@ describe('savePerformanceTestResultsSummary', () => {
       hardware,
       systemInfo,
       storedPath,
-      userDataPath,
+      benchmarksDir,
       2,
       1
     )
@@ -689,7 +775,7 @@ describe('savePerformanceTestResultsSummary', () => {
 
     savedSummary.workflowName = 'renamed-after-test.json'
     await fs.promises.writeFile(summaryPath, JSON.stringify(savedSummary))
-    await expect(readPerformanceTestResultsSummary(summaryPath, userDataPath)).resolves.toEqual(
+    await expect(readPerformanceTestResultsSummary(summaryPath, benchmarksDir)).resolves.toEqual(
       expect.objectContaining({ workflowName: 'renamed-after-test.json' })
     )
   })
