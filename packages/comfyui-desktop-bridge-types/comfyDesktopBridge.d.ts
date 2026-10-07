@@ -130,9 +130,6 @@ export interface ComfyDesktop2AuthBridge {
    *  is scoped to; null when signed out, disabled, or the scope is missing,
    *  malformed or different. The refresh token never leaves Desktop. */
   getWorkspaceToken(workspaceId: string): Promise<string | null>
-  /** The account token for user-identity calls that name no workspace
-   *  (account and workspace listing). Not an API-node credential. */
-  getIdentityToken(): Promise<string | null>
   /** Runs Desktop's browser sign-in and resolves with the resulting state. */
   requestSignIn(): Promise<ComfyDesktop2AuthState>
   /** Signs Desktop out of its account (every view follows) and resolves with

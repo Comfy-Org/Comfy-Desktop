@@ -20,7 +20,6 @@ import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
   getWorkspaceToken: 'desktop2-auth:get-workspace-token',
-  getIdentityToken: 'desktop2-auth:get-identity-token',
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
   changed: 'desktop2-auth:changed'
@@ -96,14 +95,6 @@ export async function workspaceTokenForSender(
   if (typeof workspaceId !== 'string' || workspaceId === '') return null
   const token = await trustedSessionToken(event)
   return token && identityOf(token)?.workspaceId === workspaceId ? token : null
-}
-
-/**
- * The account token for user-identity calls that name no workspace (account
- * and workspace listing). Never the credential for API-node execution.
- */
-export function identityTokenForSender(event: EmbeddedSessionSender): Promise<string | null> {
-  return trustedSessionToken(event)
 }
 
 async function trustedSessionToken(event: EmbeddedSessionSender): Promise<string | null> {

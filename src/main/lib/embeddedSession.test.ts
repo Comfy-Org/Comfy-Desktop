@@ -25,7 +25,6 @@ vi.mock('../host/registry', () => ({
 
 import {
   EMBEDDED_SESSION_CHANNELS,
-  identityTokenForSender,
   workspaceTokenForSender,
   broadcastEmbeddedSessionChanged,
   stateForSender
@@ -84,7 +83,6 @@ describe('embeddedSession', () => {
       email: 'a@example.com',
       workspaceId: 'ws-1'
     })
-    await expect(identityTokenForSender(event)).resolves.toBe(ACCESS)
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBe(ACCESS)
   })
 
@@ -98,7 +96,6 @@ describe('embeddedSession', () => {
     const { event } = view(comfyUrl, options)
 
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
-    await expect(identityTokenForSender(event)).resolves.toBeNull()
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     expect(mocks.getAccessToken).not.toHaveBeenCalled()
   })
@@ -125,7 +122,7 @@ describe('embeddedSession', () => {
     } as unknown as EmbeddedSessionSender
 
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
-    await expect(identityTokenForSender(event)).resolves.toBeNull()
+    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
   })
 
   it('stays disabled while the ops flag is off', async () => {
@@ -133,7 +130,6 @@ describe('embeddedSession', () => {
     const { event } = view('http://127.0.0.1:8000')
 
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
-    await expect(identityTokenForSender(event)).resolves.toBeNull()
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     expect(mocks.getAccessToken).not.toHaveBeenCalled()
   })
