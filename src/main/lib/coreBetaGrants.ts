@@ -736,11 +736,14 @@ export function toBetaArgView(grant: CoreBetaGrant): BetaArgView {
 // outruns the boot deadline used to lose the revocation on every launch and hold the grant
 // forever. It now persists the late `false` and picks it up on the next launch, so expect a
 // retraction to take one extra restart rather than never arriving.
+//
+// The deadline is longer while a grant is saved, so a cut usually lands on the launch it is made.
 const flag = makeOpsFlag<CoreBetaPayload>({
   key: CORE_BETA_FEATURES_FLAG_KEY,
   fallback: { flags: [], frontend: null },
   parse: parseCoreBetaPayload,
   logLabel: 'core-beta',
+  deadlineMs: (saved) => (saved?.flags.length || saved?.frontend ? 5000 : 3000),
   persist: true
 })
 

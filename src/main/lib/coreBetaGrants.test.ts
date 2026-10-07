@@ -1245,6 +1245,38 @@ describe('core beta grants fetch', () => {
     ])
     await expect(getCoreFrontendGrantAsync()).resolves.toBeNull()
   })
+  it.each([
+    [
+      'a saved grant',
+      { value: true, payload: { flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }] } },
+      5000
+    ],
+    [
+      'a saved frontend grant',
+      {
+        value: true,
+        payload: { flags: [], frontend: { version: '1.54.7', min_core_version: '0.37.0' } }
+      },
+      5000
+    ],
+    ['a saved revocation', { value: false, payload: null }, 3000],
+    ['nothing saved', undefined, 3000]
+  ])('picks the boot deadline from %s on disk', async (_, entry, deadline) => {
+    if (entry) {
+      fs.writeFileSync(
+        path.join(testConfigDir, 'ops-flags.json'),
+        JSON.stringify({ [CORE_BETA_FEATURES_FLAG_KEY]: { ...entry, fetchedAt: Date.now() } })
+      )
+    }
+    getOpsFlagResult.mockResolvedValue({ kind: 'unreachable' })
+    await initCoreBetaGrants({ distinctId: 'device-id' })
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      CORE_BETA_FEATURES_FLAG_KEY,
+      'device-id',
+      deadline,
+      expect.any(Function)
+    )
+  })
 
   it('serves the frontend grant from the same flag and payload', async () => {
     getOpsFlagResult.mockResolvedValue({

@@ -53,6 +53,8 @@ const launchHarness = vi.hoisted(() => ({
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
   grants: [] as CoreBetaGrant[],
+  /** The boot fetch never settles, as on a link that hangs until its deadline. */
+  grantsPending: false,
   frontend: null as null | { version: string; minCoreVersion: string },
   /** What `cachedFrontendDir` answers: the cached build's directory, or `null` if not there. */
   frontendDir: null as null | string,
@@ -190,7 +192,10 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaGrantsModule>()
   return {
     ...actual,
-    getCoreBetaGrantsAsync: async () => launchHarness.grants,
+    getCoreBetaGrantsAsync: () =>
+      launchHarness.grantsPending
+        ? new Promise<CoreBetaGrant[]>(() => {})
+        : Promise.resolve(launchHarness.grants),
     getCoreFrontendGrantAsync: async () => launchHarness.frontend,
     planCoreBetaArgs: (facts: Parameters<typeof actual.planCoreBetaArgs>[0]) => {
       launchHarness.plans.push(facts)
@@ -1264,6 +1269,7 @@ describe('core beta report placement', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
+    launchHarness.grantsPending = false
     launchHarness.frontend = null
     launchHarness.frontendDir = null
     launchHarness.prefetched = []
@@ -1509,6 +1515,16 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(peekBetaActivationNotice(id)).toBeNull()
+  })
+
+  it('does not wait on the grant fetch for an install that opted out', async () => {
+    launchHarness.betaEnabled = false
+    launchHarness.grantsPending = true
+
+    const res = await handleLaunch(ctxFor('harness-opted-out-pending'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
   })
 
   it('arms nothing when the payload asked for a silent grant', async () => {

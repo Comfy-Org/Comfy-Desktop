@@ -1266,7 +1266,8 @@ async function runLaunch(
           }
         }
 
-        const betaFlags = await getCoreBetaGrantsAsync()
+        // Opted out, the grants select nothing, so the launch does not wait on the boot fetch.
+        const betaFlags = betaEnabled ? await getCoreBetaGrantsAsync() : []
         // Opted-out launches skip it: the checks can reach the network and could grant nothing.
         const coreCommits = betaEnabled
           ? await resolveCoreCommitState(
