@@ -1733,9 +1733,8 @@ describe('core beta report placement', () => {
       ['comfy.desktop.comfyui.agent.agent_started', expect.objectContaining({ duration_ms: 12 })],
       ['comfy.desktop.comfyui.agent.agent_exited', expect.objectContaining({ code: 1 })]
     ])
-    // The launch's own attribution, not a default.
     for (const { properties } of agentEvents) {
-      expect(properties).toMatchObject({
+      expect(properties, "the launch's own attribution, not a default").toMatchObject({
         installation_id: 'harness-agent-events',
         core_beta_flags: ['--enable-assets']
       })
@@ -1812,11 +1811,11 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(children).toHaveLength(2)
-    // Would complete the cut-off line as `code=12` had the buffer survived the respawn.
     children[1]!.stdout.emit('data', Buffer.from('2\n'))
     children[1]!.stdout.emit('data', Buffer.from('[agent-event] agent_started\n'))
     expect(
-      events.filter((e) => e.event.startsWith('comfy.desktop.comfyui.agent.')).map((e) => e.event)
+      events.filter((e) => e.event.startsWith('comfy.desktop.comfyui.agent.')).map((e) => e.event),
+      'the cut-off code=1 must not complete as code=12 after the respawn'
     ).toEqual(['comfy.desktop.comfyui.agent.agent_started'])
   })
 
