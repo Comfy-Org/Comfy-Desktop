@@ -17,7 +17,7 @@ import type { TelemetryValue } from './telemetry'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 /**
- * CROSS-REPO CONTRACT with core's emitter (ComfyUI `app/local_agent.py`): the
+ * CROSS-REPO CONTRACT with core's emitter: the
  * grammar and the vocabulary below change on both sides or not at all.
  */
 export const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
