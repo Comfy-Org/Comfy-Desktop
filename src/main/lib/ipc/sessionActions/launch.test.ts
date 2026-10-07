@@ -1428,8 +1428,15 @@ describe('core beta report placement', () => {
         vi.mocked(telemetry.emit).mockImplementation(() => {
           throw new Error('sink down')
         })
-        expect(() => recordCampaignEnrolments({ applied: [enrolment], misses: [] })).not.toThrow()
+        let result: ReturnType<typeof recordCampaignEnrolments> | undefined
+        expect(() => {
+          result = recordCampaignEnrolments({ applied: [enrolment], misses: [] })
+        }).not.toThrow()
         expect(launchHarness.recordWrites).toEqual([[KEY, '--enable-agent', 1]])
+        expect(result, 'a recorded enrolment is not record_failed').toEqual({
+          applied: [enrolment],
+          misses: []
+        })
       })
     })
 

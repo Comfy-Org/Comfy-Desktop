@@ -102,8 +102,8 @@ function parseEntries(data: string): Record<string, unknown> | null {
   }
 }
 
-/** `durable`: a record file, where garbage is lost state, so it reads as unreadable, not empty. */
-export function readPersistedFile(file: string, durable = false): PersistedFileRead {
+/** `strict`: a record file, where garbage is lost state, so it reads as unreadable, not empty. */
+export function readPersistedFile(file: string, strict = false): PersistedFileRead {
   if (file === OPS_FLAGS_FILE) maybeSeedFromEnv()
   const outcome = readFileSafe(persistFilePath(file))
   if (outcome.kind === 'unreadable') return { entries: {}, primaryUnreadable: true }
@@ -111,9 +111,19 @@ export function readPersistedFile(file: string, durable = false): PersistedFileR
 
   const primaryUnreadable = outcome.primaryUnreadable === true
   const entries = parseEntries(outcome.data)
-  if (entries !== null || !durable) return { entries: entries ?? {}, primaryUnreadable }
-  const bak = readFileSafe(persistFilePath(file) + '.bak', { restore: false })
-  return { entries: (bak.kind === 'data' && parseEntries(bak.data)) || {}, primaryUnreadable: true }
+  if (entries !== null || !strict) return { entries: entries ?? {}, primaryUnreadable }
+  const filePath = persistFilePath(file)
+  const bak = readFileSafe(filePath + '.bak', { restore: false })
+  const fromBak = bak.kind === 'data' ? parseEntries(bak.data) : null
+  if (fromBak === null || primaryUnreadable)
+    return { entries: fromBak ?? {}, primaryUnreadable: true }
+  // `.bak` is written before the primary, so it is never older: restoring it loses nothing.
+  try {
+    fs.copyFileSync(filePath + '.bak', filePath)
+    return { entries: fromBak, primaryUnreadable: false }
+  } catch {
+    return { entries: fromBak, primaryUnreadable: true }
+  }
 }
 
 /** Load for a read-modify-write. Throws when the primary exists but its entries cannot be
@@ -122,8 +132,8 @@ export function readPersistedFile(file: string, durable = false): PersistedFileR
  *  from the backup, resurrecting entries the primary had already superseded. Read-only callers
  *  use `readPersistedFile`, which degrades to "no cache". Mirrors `installations.ts`'
  *  `loadForWrite` (issue #1367). */
-function readPersistedFileForWrite(file: string, durable = false): Record<string, unknown> {
-  const { entries, primaryUnreadable } = readPersistedFile(file, durable)
+function readPersistedFileForWrite(file: string, strict = false): Record<string, unknown> {
+  const { entries, primaryUnreadable } = readPersistedFile(file, strict)
   if (primaryUnreadable) {
     throw new Error(
       `${file} exists but its entries cannot be recovered right now; refusing to modify it`
@@ -173,9 +183,9 @@ export function writePersistedEntry(
   file: string,
   key: string,
   entry: unknown,
-  durable = false
+  strict = false
 ): void {
-  const all = readPersistedFileForWrite(file, durable)
+  const all = readPersistedFileForWrite(file, strict)
   all[key] = entry
   const contents = JSON.stringify(all)
   const filePath = persistFilePath(file)

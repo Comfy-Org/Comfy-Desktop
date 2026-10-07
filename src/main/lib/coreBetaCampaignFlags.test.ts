@@ -414,16 +414,32 @@ describe('enrolment records', () => {
       ])
     })
 
-    it('enrol: the write is refused and nothing counts, so no second enrolled event', () => {
-      expect(() => writeCampaignRecord(KEY, '--enable-agent', 2, NOW + 1)).toThrow(
-        /unreadable; not writing/
-      )
-      expect(campaignRecordSaved(KEY, '--enable-agent', 2)).toBe(false)
-      expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')
-      expect(readJson('campaign-enrolments.json.bak')[KEY]).toEqual({
+    it('the read restores the backup over the garbage, so later writes keep the record', () => {
+      expect(campaignRecordSaved(KEY, '--enable-agent', 1), 'a member, so no re-enrol').toBe(true)
+      expect(readJson('campaign-enrolments.json')[KEY]).toEqual({
         '--enable-agent': { epoch: 1, enrolledAt: NOW }
       })
+      writeCampaignRecord(KEY, '--enable-other', 1, NOW + 1)
+      expect(readCampaignRecords()[KEY]).toEqual({
+        '--enable-agent': { epoch: 1, enrolledAt: NOW },
+        '--enable-other': { epoch: 1, enrolledAt: NOW + 1 }
+      })
     })
+  })
+
+  it('refuses to write over an unparseable primary with no usable backup', () => {
+    fs.writeFileSync(file('campaign-enrolments.json'), 'not json{')
+    fs.writeFileSync(file('campaign-enrolments.json.bak'), 'also not json')
+    expect(() => writeCampaignRecord(KEY, '--enable-agent', 1, NOW)).toThrow(/refusing to modify/)
+    expect(campaignRecordSaved(KEY, '--enable-agent', 1)).toBe(false)
+    expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')
+  })
+
+  it('a corrupt ops-flags.json still reads as an empty cache and is repaired by the next answer', async () => {
+    fs.writeFileSync(file('ops-flags.json'), 'not json{')
+    serve({ desktop_core_beta_features: value(true, ASSETS) })
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
+    expect(readJson('ops-flags.json')['desktop_core_beta_features']).toMatchObject({ value: true })
   })
 
   it('reads nothing from a missing or corrupt file', () => {

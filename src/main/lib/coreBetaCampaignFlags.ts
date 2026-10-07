@@ -97,9 +97,7 @@ export function campaignRecordSaved(key: string, arg: string, epoch: number): bo
 
 /** Throws when the file cannot be safely rewritten. */
 export function writeCampaignRecord(key: string, arg: string, epoch: number, now: number): void {
-  const { entries, primaryUnreadable } = readPersistedFile(ENROLMENTS_FILE, true)
-  if (primaryUnreadable) throw new Error('campaign-enrolments.json is unreadable; not writing')
-  const existing = parseCampaignRecords(entries)[key] ?? {}
+  const existing = parseCampaignRecords(readPersistedFile(ENROLMENTS_FILE, true).entries)[key] ?? {}
   writePersistedEntry(
     ENROLMENTS_FILE,
     key,
