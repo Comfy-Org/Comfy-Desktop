@@ -2054,6 +2054,7 @@ describe('Performance Test guardrail', () => {
   let child: FakeChild | null = null
   let started: InstanceStartedCallbackInfo[] = []
   let installDir = ''
+  let bootLogs: unknown[] = []
   const launches: [string, { abort: AbortController }][] = []
   // Sessions earlier tests in this file left registered would all count as running here.
   let leftRunning: [string, SessionInfo][] = []
@@ -2063,7 +2064,12 @@ describe('Performance Test guardrail', () => {
 
   const ctxFor = (installationId: string, sessionId?: string): ActionContext => ({
     event: {
-      sender: { isDestroyed: () => false, send: () => {} }
+      sender: {
+        isDestroyed: () => false,
+        send: (channel: string, payload: unknown) => {
+          if (channel === 'comfy-boot-log') bootLogs.push(payload)
+        }
+      }
     } as unknown as Electron.IpcMainInvokeEvent,
     installationId,
     sessionId,
@@ -2099,6 +2105,7 @@ describe('Performance Test guardrail', () => {
     spawned = 0
     child = null
     started = []
+    bootLogs = []
     setCallbacks({ onInstanceStarted: (info) => started.push(info) })
     launchHarness.installRecords = {
       'guard-bench': { name: 'Bench', sourceId: 'standalone' },
@@ -2158,7 +2165,10 @@ describe('Performance Test guardrail', () => {
     launchHarness.listGate = null
     launchHarness.waitForUrl = null
     setCallbacks({})
-    for (const [id, launch] of launches.splice(0)) _endLaunch(id, launch)
+    for (const [id, launch] of launches.splice(0)) {
+      _endLaunch(id, launch)
+      if (_operationAborts.get(id) === launch.abort) _operationAborts.delete(id)
+    }
     _runningSessions.clear()
     _stoppingInstallationIds.clear()
     for (const [key, session] of leftRunning) _runningSessions.set(key, session)
@@ -2191,9 +2201,26 @@ describe('Performance Test guardrail', () => {
     await expectRefused(refusalOne('“Other Install”'))
   })
 
+  /** A launch still preparing: registered, and holding its operation slot. */
+  function preparing(id: string): void {
+    const launch = _beginLaunch(id)
+    _operationAborts.set(id, launch.abort)
+    launches.push([id, launch])
+  }
+
   it('refuses while another installation is still preparing or starting', async () => {
-    launches.push(['guard-other', _beginLaunch('guard-other')])
+    preparing('guard-other')
     await expectRefused(refusalOne('“Other Install”'))
+  })
+
+  it('does not count a launch handler still running after its session was stopped', async () => {
+    // Past registration (slot released) and no longer running: e.g. waiting on the
+    // template-model download after the user stopped the instance.
+    launches.push(['guard-other', _beginLaunch('guard-other')])
+
+    const res = await handleLaunch(ctxFor('guard-bench', PERF))
+
+    expect(res.ok).toBe(true)
   })
 
   it('refuses while another installation is stopping', async () => {
@@ -2207,7 +2234,7 @@ describe('Performance Test guardrail', () => {
   })
 
   it("names another installation's Performance Test that is still starting by that installation", async () => {
-    launches.push(['performance-test:guard-other', _beginLaunch('performance-test:guard-other')])
+    preparing('performance-test:guard-other')
     await expectRefused(refusalOne(perfLabel('Other Install')))
   })
 
@@ -2237,7 +2264,7 @@ describe('Performance Test guardrail', () => {
         properties: { installation_id: 'guard-other', other_count: 1 }
       }
     ])
-    expect(results[1]!.message).toContain('performanceTestOfInstallation')
+    expect(results[1]!.message).toBe(refusalOne(perfLabel('Bench')))
     expect(spawned).toBe(1)
   })
 
@@ -2304,6 +2331,8 @@ describe('Performance Test guardrail', () => {
     for (const boot of boots)
       expect(boot.properties).toMatchObject({ session_kind: 'performance_test' })
     expect(started).toEqual([expect.objectContaining({ sessionKind: 'performance_test' })])
+    // The renderer tags boot_log from this key, so it must be the Performance Test's own.
+    expect(bootLogs).toEqual([{ installationId: PERF, bootStderr: expect.any(String) }])
     expect(createAssetsTap).toHaveBeenCalledWith(
       expect.objectContaining({ sessionKind: 'performance_test' })
     )

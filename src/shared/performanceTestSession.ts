@@ -1,5 +1,5 @@
 /** Runtime session keys the Performance Test view launches under, one per installation. */
-export const PERFORMANCE_TEST_SESSION_PREFIX = 'performance-test:'
+const PERFORMANCE_TEST_SESSION_PREFIX = 'performance-test:'
 
 export type SessionKind = 'performance_test' | 'normal'
 

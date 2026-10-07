@@ -708,7 +708,9 @@ const isLocalSource = (sourceId: string): boolean =>
 export function otherLocalComfyUIs(sessionId: string, records: InstallationRecord[]): string[] {
   const ids = new Set([
     ..._runningSessions.keys(),
-    ..._getActiveLaunchIds(),
+    // Still preparing: a handler that outlives its stopped session (the template-model gate)
+    // has given up its operation slot and blocks nothing.
+    ..._getActiveLaunchIds().filter((id) => _operationAborts.has(id)),
     ..._getStoppingInstallationIds()
   ])
   ids.delete(sessionId)

@@ -140,7 +140,12 @@ test('once that is stopped, the Performance Test boots on its installation, on i
   const perf = await launch(BENCH_ID, PERF_SESSION)
 
   expect(perf, perf.message).toMatchObject({ ok: true })
-  expect((await getRunningSessionSnapshot(ctx!.app, PERF_SESSION))?.port).toBe(ports[BENCH_ID])
+  // It started from the installation's own configured port. Checked through boot_started: if
+  // another process took that port after the fixture released it, the launcher rightly moves on.
+  const boot = (await events('comfy.desktop.comfyui.boot_started')).at(-1)!
+  expect(boot).toMatchObject({ session_kind: 'performance_test' })
+  expect(boot.port_bumped_from ?? boot.port).toBe(ports[BENCH_ID])
+  expect((await getRunningSessionSnapshot(ctx!.app, PERF_SESSION))?.port).toBe(boot.port)
   expect((await events('comfy.desktop.comfyui.boot_completed')).at(-1)).toMatchObject({
     session_kind: 'performance_test'
   })
