@@ -97,7 +97,9 @@ describe('holderStartToken on Windows', () => {
     fake.answers.powershell = { stdout: '134358000923463901\r\n' }
     expect(await holderStartToken(9084)).toBe('134358000923463901')
     const script = fake.calls[0]!.args.join(' ')
-    expect(script).toContain('Get-Process -Id 9084')
+    expect(script).toContain('Get-Process -Id 9084 -ErrorAction Stop')
+    // Opening the handle asks for the access a stop needs: an elevated holder throws here.
+    expect(script).toContain('$null = $p.Handle')
     expect(script).toContain('.ToUniversalTime().ToFileTimeUtc()')
     expect(script).not.toContain('Cim')
   })

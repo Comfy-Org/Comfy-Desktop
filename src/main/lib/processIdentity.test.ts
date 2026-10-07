@@ -10,6 +10,7 @@ import {
   parseLinuxStatPgid,
   parseWinProcessRows,
   parseWinProcessRowsWithCommand,
+  holderStartToken,
   readStartTimes,
   startTokenToEpochMs
 } from './processIdentity'
@@ -150,6 +151,20 @@ describe.runIf(process.platform !== 'win32')('groupHasLiveMembers (real processe
     }
   })
 })
+
+describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0)(
+  'holderStartToken (real processes)',
+  () => {
+    it("names no holder Desktop may not stop: another user's or root's process", async () => {
+      // pid 1 is root's: its start time reads fine, but Desktop could not signal it.
+      expect((await readStartTimes([1]))?.get(1)).toBeTruthy()
+      expect(await holderStartToken(1)).toBeNull()
+      expect(await holderStartToken(process.pid)).toBe(
+        (await readStartTimes([process.pid]))?.get(process.pid)
+      )
+    })
+  }
+)
 
 describe('startTokenToEpochMs', () => {
   it('converts a Windows FILETIME', () => {

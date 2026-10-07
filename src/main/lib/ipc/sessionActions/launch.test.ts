@@ -2840,6 +2840,9 @@ describe('prior ComfyUI process handling at launch', () => {
       // The stop itself saw the cancel, so it could refuse to kill.
       expect(lockRecord.stops.map((s) => s.aborted)).toEqual([true])
       expect(children).toHaveLength(0)
+      const log = getLogsBuffer('db-record-cancel').join('')
+      expect(log).toContain('stopping pid 9084 (confirmed)')
+      expect(log).toContain('stopping pid 9084 was cancelled')
     })
 
     it('launches nothing when the stop could not re-prove or stop it', async () => {
@@ -2850,6 +2853,9 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(t).toHaveBeenCalledWith('errors.dbLockStopFailed', { pid: 9084 })
       expect(children).toHaveLength(0)
       expect(lockRecord.stops).toHaveLength(1)
+      const log = getLogsBuffer('db-record-refused').join('')
+      expect(log).toContain('stopping pid 9084 (confirmed)')
+      expect(log).toContain('could not stop pid 9084')
     })
 
     it.each([true, false])(

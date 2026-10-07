@@ -1521,11 +1521,18 @@ async function runLaunch(
   // just before the kill. A cancel withdraws the go-ahead.
   const lockOffer = asDbLockOffer(actionData?.stopDbLockHolder)
   if (lockOffer) {
+    appendLog(
+      sessionId,
+      `[launch] stopping pid ${lockOffer.pid} (confirmed): it holds the database lock\n`
+    )
     const stopped = !!dbPath && (await stopDbLockOffer(lockOffer, dbPath, abort.signal))
     // A stop that happened is logged even if the user cancelled while it ran.
     if (stopped)
       appendLog(sessionId, `[launch] pid ${lockOffer.pid}, which held the database lock, is gone\n`)
-    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    if (abort.signal.aborted) {
+      if (!stopped) appendLog(sessionId, `[launch] stopping pid ${lockOffer.pid} was cancelled\n`)
+      return { ok: false, cancelled: true }
+    }
     if (!stopped) {
       appendLog(sessionId, `[launch] could not stop pid ${lockOffer.pid}\n`)
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)

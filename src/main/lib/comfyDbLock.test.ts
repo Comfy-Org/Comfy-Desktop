@@ -269,6 +269,18 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(await readHolderRecord(viaLink)).toMatchObject({ pid })
     }, 20_000)
 
+    it('counts a record it could not read within its cap (a slow or dead mount) as none', async () => {
+      await hold()
+      const stat = vi.spyOn(fs.promises, 'stat').mockReturnValue(new Promise(() => {}))
+      try {
+        const t0 = Date.now()
+        expect(await readHolderRecord(db)).toBeNull()
+        expect(Date.now() - t0).toBeLessThan(5_000)
+      } finally {
+        stat.mockRestore()
+      }
+    }, 20_000)
+
     it('reads no record that is not a small regular file, without blocking on a FIFO', async () => {
       const { pid } = await hold()
       const file = `${db}.lock.json`
@@ -282,7 +294,10 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       fs.rmdirSync(file)
       // Opening a FIFO with no writer would block forever: it is never opened.
       execFileSync('mkfifo', [file])
+      // Rejected outright, not left blocked until the read's 2 s cap.
+      const t0 = Date.now()
       expect(await readHolderRecord(db)).toBeNull()
+      expect(Date.now() - t0).toBeLessThan(1_000)
     }, 20_000)
 
     it('matches a record that names the database through a symlink (an explicit path)', async () => {

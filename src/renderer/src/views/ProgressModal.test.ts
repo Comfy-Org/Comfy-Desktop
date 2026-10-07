@@ -576,10 +576,21 @@ describe('ProgressModal — brand branch state transitions', () => {
       expect(api.runAction).not.toHaveBeenCalled()
     })
 
-    it('offers no stop for a lock failure without a record', async () => {
+    it('offers no stop for a lock failure without a record, and Restart stays the primary action', async () => {
       installMockApi()
       await mountWithOp('inst-1', { ...locked(true), result: { ok: false, message: 'locked' } })
       expect(document.body.querySelector(`[data-testid="${TID.progressDbLockStop}"]`)).toBeNull()
+      const reboot = document.body.querySelector(`[data-testid="${TID.progressReboot}"]`)!
+      expect(reboot.classList.contains('brand-primary')).toBe(true)
+    })
+
+    it('leads with the stop, not a restart that would meet the same lock', async () => {
+      installMockApi()
+      await mountWithOp('inst-1', locked(true))
+      const stopBtn = document.body.querySelector(`[data-testid="${TID.progressDbLockStop}"]`)!
+      const reboot = document.body.querySelector(`[data-testid="${TID.progressReboot}"]`)!
+      expect(stopBtn.classList.contains('brand-primary')).toBe(true)
+      expect(reboot.classList.contains('brand-primary')).toBe(false)
     })
   })
 

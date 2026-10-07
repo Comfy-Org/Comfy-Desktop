@@ -501,9 +501,19 @@ export function parseNetstatListeners(stdout: string, port: number): number[] {
  */
 export async function holderStartToken(pid: number): Promise<string | null> {
   if (!Number.isInteger(pid) || pid <= 0) return null
-  if (process.platform !== 'win32') return (await readStartTimes([pid]))?.get(pid) ?? null
+  // Only a process Desktop may stop counts: another user's or root's (POSIX), or an elevated one
+  // seen from a normal Desktop (Windows, where opening its handle asks for that access), does not.
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return null
+    }
+    return (await readStartTimes([pid]))?.get(pid) ?? null
+  }
   const stdout = await powershell(
-    `(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).StartTime.ToUniversalTime().ToFileTimeUtc()`
+    `$p = Get-Process -Id ${pid} -ErrorAction Stop; $null = $p.Handle; ` +
+      `$p.StartTime.ToUniversalTime().ToFileTimeUtc()`
   )
   return /^\d+$/.test(stdout?.trim() ?? '') ? stdout!.trim() : null
 }

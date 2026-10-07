@@ -828,16 +828,21 @@ defineExpose({ startOperation, showOperation })
           <button
             v-if="currentOp.result?.dbLockHolder"
             type="button"
-            class="brand-ghost brand-progress__footer-btn brand-progress__footer-btn--danger"
+            class="brand-primary brand-progress__footer-btn"
             :data-testid="TID.progressDbLockStop"
             @click="handleStopDbLockHolder"
           >
             {{ $t('errors.portConflictKill') }}
           </button>
+          <!-- With a holder to stop, a plain restart only meets the same lock: Stop leads. -->
           <button
             v-if="!currentOp.destroysInstance"
             type="button"
-            class="brand-primary brand-progress__footer-btn"
+            :class="
+              currentOp.result?.dbLockHolder
+                ? 'brand-ghost brand-progress__footer-btn'
+                : 'brand-primary brand-progress__footer-btn'
+            "
             :data-testid="TID.progressReboot"
             @click="handleReboot"
           >
