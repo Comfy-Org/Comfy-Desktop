@@ -82,7 +82,6 @@ const launchHarness = vi.hoisted(() => ({
   recordWriteRecovers: false,
   idClass: 'machine_derived' as string,
   campaignFetches: 0,
-  /** Install records the launch reads back and writes, keyed by id; null = the real store. */
   records: null as null | Map<string, Record<string, unknown>>
 }))
 
@@ -253,9 +252,7 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
 const pipHarness = vi.hoisted(() => ({
   calls: [] as unknown[][],
   result: { code: 0, output: '' },
-  /** Per-call outcome, when a test needs dry runs and installs to differ. */
   respond: null as null | ((args: unknown[]) => { code: number; output: string }),
-  /** `uv pip list --format json` of the environment under test. */
   installed: '[]',
   duringInstall: null as null | (() => void)
 }))
@@ -269,7 +266,6 @@ vi.mock('../../pip', async (importOriginal) => {
       pipHarness.duringInstall?.()
       return pipHarness.respond?.(args) ?? pipHarness.result
     },
-    /** The override's `uv pip list`; nothing else in a launch under test calls it. */
     runUvPipDetailed: async () => ({ code: 0, output: pipHarness.installed })
   }
 })
@@ -2645,12 +2641,10 @@ describe('agent requirements at launch', () => {
     const CORE_FILE = 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'
     const OVERRIDDEN = 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'
     let proc: FakeChild | null = null
-    /** Let the record read-modify-write behind a start outcome land. */
     const settle = async (): Promise<void> => {
       for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve))
     }
 
-    /** Serve the agent campaign as `enrol`, carrying `override` as its pass-through field. */
     const serveCampaign = (override: unknown): void => {
       const answer = parseCampaignAnswer(
         'enrol',
@@ -2672,7 +2666,6 @@ describe('agent requirements at launch', () => {
       }
     }
 
-    /** The requirements text of each uv install, read while the overridden copy still exists. */
     let installed: string[] = []
     const overrideEvents = (): Record<string, unknown>[] =>
       vi
@@ -2681,7 +2674,6 @@ describe('agent requirements at launch', () => {
         .map(([, props]) => props as Record<string, unknown>)
     const overrideState = (): unknown => launchHarness.records!.get(ID)?.agentRequirementsOverride
 
-    /** A fresh command per launch: the launch appends to `args` in place. */
     const launchCommand = (...extra: string[]): Record<string, unknown> => ({
       cmd: process.execPath,
       args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), ...extra, '--listen'],
@@ -2689,7 +2681,6 @@ describe('agent requirements at launch', () => {
       skipPortWait: true
     })
 
-    /** One launch of the record in the store, then the agent lines core prints on `stream`. */
     const launchAndPrint = async (
       opts: { lines?: string[]; stream?: 'stdout' | 'stderr'; handTyped?: boolean } = {}
     ): Promise<void> => {
@@ -2702,9 +2693,7 @@ describe('agent requirements at launch', () => {
       for (const line of opts.lines ?? []) {
         proc![opts.stream ?? 'stderr'].emit('data', Buffer.from(`[INFO] ${line}\n`))
       }
-      // The outcome is folded into the record asynchronously.
       await settle()
-      // A clean exit releases the session, so the next launch of the same install can start.
       proc!.emit('exit', 0, null)
       proc!.emit('close', 0, null)
       await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
@@ -2757,8 +2746,6 @@ describe('agent requirements at launch', () => {
     })
 
     it('ignores the campaign override when the user typed the flag themselves', async () => {
-      // The campaign is served and would carry an override, but the flag is already the user's,
-      // so the campaign's grant does not apply and neither does its pass-through.
       serveCampaign({ 'comfy-agent': '0.2.3' })
 
       await launchAndPrint({ handTyped: true })
@@ -2796,7 +2783,6 @@ describe('agent requirements at launch', () => {
     })
 
     it('reads the agent lines core logs to stdout too', async () => {
-      // `--log-stdout` sends core's INFO lines to stdout.
       serveCampaign({ 'comfy-agent': '0.2.3' })
 
       await launchAndPrint({
@@ -2825,7 +2811,6 @@ describe('agent requirements at launch', () => {
     })
 
     it('counts no start failure against an override that did not go in', async () => {
-      // Refused with pins: core's own agent is what fails here, not the override.
       fs.writeFileSync(agentReqPath(), 'comfy-agent\ncomfy-cli==1.21.0\n')
       serveCampaign({ 'comfy-agent': '0.2.3' })
 

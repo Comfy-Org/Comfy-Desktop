@@ -358,7 +358,6 @@ const OVERRIDE_TIMEOUT_MS = 90_000
 
 const MIN_FALLBACK_TIMEOUT_MS = 30_000
 
-/** Where the overridden copy of core's file is written, and the helper's filtered copy of it. */
 const OVERRIDE_REQS = '.launch-agent-reqs-override-src.txt'
 const OVERRIDE_FILTERED_REQS = '.launch-agent-reqs-override.txt'
 const OVERRIDE_CONSTRAINTS = '.launch-agent-reqs-override-constraints.txt'
@@ -370,7 +369,6 @@ type BoundedRun = (
   extraArgs?: string[]
 ) => Promise<{ ok: boolean; output: string }>
 
-/** Anything but `applied` means core's file still has to run. */
 async function tryOverride(
   plan: AgentRequirementsInstall,
   raw: unknown,
@@ -424,7 +422,6 @@ async function tryOverride(
   }
 }
 
-/** `uv pip list` of the install's environment, or null if it failed or outran `timeoutMs`. */
 async function listInstalled(
   plan: AgentRequirementsInstall,
   timeoutMs: number,

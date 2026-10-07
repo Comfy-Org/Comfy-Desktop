@@ -424,8 +424,7 @@ export function agentInstallStatusText(status: AgentInstallStatus): string {
   }
 }
 
-/** Fold how an overridden agent's start went into the install's record. Never throws: it runs
- *  from ComfyUI's output stream. */
+/** Never throws: it runs from ComfyUI's output stream. */
 async function recordAgentStartOutcome(
   installationId: string,
   pins: OverridePins,
@@ -450,7 +449,6 @@ async function recordAgentStartOutcome(
   }
 }
 
-/** Watch this launch's output for how the overridden agent's start goes. */
 function watchOverriddenAgentStart(installationId: string, pins: OverridePins): AgentStartWatch {
   return createAgentStartWatcher(
     (outcome) => void recordAgentStartOutcome(installationId, pins, outcome)
@@ -1416,8 +1414,7 @@ async function runLaunch(
           percent: -1,
           status: agentInstallStatusText(status)
         }),
-      // Only the campaign that applied the flag may carry an override; a hand-typed or slot #0
-      // flag never does.
+      // Only the campaign that applied the flag may carry an override; a hand-typed one never does.
       appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
       readOverrideState(inst)
     )

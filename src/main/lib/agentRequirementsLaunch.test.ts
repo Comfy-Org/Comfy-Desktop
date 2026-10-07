@@ -667,8 +667,6 @@ describe('installAgentRequirements with a version override', () => {
     { name: 'requests', version: '2.32.0' }
   ])
   let plan: { reqPath: string; uvPath: string; pythonPath: string; installPath: string }
-  /** What each fake uv install was given: the file and constraints are read at call time, since
-   *  the override's copies are deleted afterwards. */
   let calls: { content: string; constraints: string | null; timeoutAt?: number }[] = []
   let respond: (call: { content: string; constraints: string | null }) => {
     code: number
@@ -775,7 +773,6 @@ describe('installAgentRequirements with a version override', () => {
   })
 
   it('falls back to core file when the override cannot install without moving another package', async () => {
-    // A constraint conflict is uv failing to resolve, like any other failed install.
     respond = ({ constraints }) => (constraints ? { code: 1, output: '' } : { code: 0, output: '' })
     const statuses: AgentInstallStatus[] = []
 
@@ -829,7 +826,6 @@ describe('installAgentRequirements with a version override', () => {
   describe('the time budget', () => {
     beforeEach(() => {
       waiting = 0
-      // Date too, so the remaining budget is computed from the same clock the timers run on.
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     })
 
@@ -837,10 +833,8 @@ describe('installAgentRequirements with a version override', () => {
       vi.useRealTimers()
     })
 
-    /** Installs currently waiting on uv; time only moves while one is. */
     let waiting = 0
 
-    /** Each install hangs until its own deadline aborts it; records when that was. */
     const hangUntilAborted = (startedAt: number) =>
       mockInstall.mockImplementation(async (file, ...rest) => {
         const signal = rest[5] as AbortSignal
@@ -859,8 +853,6 @@ describe('installAgentRequirements with a version override', () => {
         )
       })
 
-    /** Let real file I/O run, and jump to the next timer only while a fake uv is waiting, so
-     *  the I/O itself takes no fake time. */
     const settle = async <T>(pending: Promise<T>): Promise<T> => {
       let done = false
       void pending.then(() => (done = true))
@@ -897,7 +889,6 @@ describe('installAgentRequirements with a version override', () => {
       const filtered = path.join(installDir, '.launch-agent-reqs-override.txt')
       mockInstall.mockImplementation(async (_file, ...rest) => {
         const extraArgs = rest[7] as string[] | undefined
-        // The helper's filtered copy exists while uv runs; this uv never exits.
         if (extraArgs) {
           fs.writeFileSync(filtered, '')
           waiting++

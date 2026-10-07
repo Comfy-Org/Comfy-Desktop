@@ -109,12 +109,10 @@ describe('effectiveAgentRequirements', () => {
   })
 
   it('refuses an override for a line core did not pin exactly', () => {
-    // Core shipping a bare `comfy-agent` is why: going back to it would leave the override in place.
     for (const core of [
       'comfy-agent\n',
       'comfy-agent>=0.2\n',
       'comfy-agent[extra]==0.2\n',
-      // A wildcard keeps an overridden 0.2.3 installed, so going back would not go back.
       'comfy-agent==0.2.*\n'
     ])
       expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' }))).toEqual({
@@ -163,7 +161,6 @@ describe('installedConstraints', () => {
   })
 
   it('finds the list among the lines uv prints on stderr, before or after it', () => {
-    // stdout and stderr share one capture, so their order is not fixed.
     const after = `${JSON.stringify([{ name: 'comfy-cli', version: '1.21.0' }])}\nwarning: cache is stale\n`
     expect(installedConstraints(LIST, '')).toContain('comfy-cli==1.21.0')
     expect(installedConstraints(after, '')).toBe('comfy-cli==1.21.0\n')
@@ -197,7 +194,6 @@ describe('agent start classification', () => {
   })
 
   it('ignores an exit, a missing package and a slow start', () => {
-    // agent_exited follows a good start too, and a stopped slow start ends in it.
     for (const line of [
       '[agent-event] agent_exited code=0',
       '[agent-event] agent_exited code=3',
