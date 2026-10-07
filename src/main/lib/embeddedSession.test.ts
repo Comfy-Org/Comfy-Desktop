@@ -100,6 +100,17 @@ describe('embeddedSession', () => {
     expect(mocks.getAccessToken).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['its own workspace', 'ws-1', ACCESS],
+    ['no workspace', undefined, ACCESS],
+    ['another workspace', 'ws-2', null],
+    ['a non-string workspace', 42, null]
+  ])('hands over the token for %s only when it matches', async (_name, workspaceId, expected) => {
+    const { event } = view('http://127.0.0.1:8000')
+
+    await expect(accessTokenForSender(event, workspaceId)).resolves.toBe(expected)
+  })
+
   it('refuses an unregistered sender', async () => {
     const event = {
       sender: { mainFrame: { processId: 1, routingId: 1 } },

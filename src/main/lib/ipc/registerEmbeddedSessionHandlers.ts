@@ -12,7 +12,9 @@ import { signInToCloud, signOutOfCloud } from './registerDevPlatformHandlers'
 export function registerEmbeddedSessionHandlers(): void {
   ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getState, (event) => stateForSender(event))
 
-  ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getAccessToken, (event) => accessTokenForSender(event))
+  ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getAccessToken, (event, workspaceId: unknown) =>
+    accessTokenForSender(event, workspaceId)
+  )
 
   ipcMain.handle(
     EMBEDDED_SESSION_CHANNELS.requestSignIn,

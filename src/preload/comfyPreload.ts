@@ -308,7 +308,8 @@ const onTemplateInputDownloadProgress: NonNullable<
 /** Read-only view of Desktop's account session. Main decides trust and never sends a refresh token. */
 const Auth: ComfyDesktop2AuthBridge = {
   getState: () => ipcRenderer.invoke('desktop2-auth:get-state'),
-  getAccessToken: () => ipcRenderer.invoke('desktop2-auth:get-access-token'),
+  getAccessToken: (workspaceId) =>
+    ipcRenderer.invoke('desktop2-auth:get-access-token', workspaceId),
   requestSignIn: () => ipcRenderer.invoke('desktop2-auth:request-sign-in'),
   signOut: () => ipcRenderer.invoke('desktop2-auth:sign-out'),
   onChanged: (callback) => {

@@ -82,9 +82,20 @@ export async function stateForSender(
   return isTrustedSender(event) ? sessionState() : DISABLED
 }
 
-export async function accessTokenForSender(event: EmbeddedSessionSender): Promise<string | null> {
+/**
+ * The access token for a trusted view, only when it is scoped to the
+ * workspace the view asks for. A mismatch fails closed: the view never runs
+ * as a workspace it did not select. No workspace asked means the session's own.
+ */
+export async function accessTokenForSender(
+  event: EmbeddedSessionSender,
+  workspaceId?: unknown
+): Promise<string | null> {
   if (!isTrustedSender(event) || !(await isEmbeddedSessionEnabled())) return null
-  return getCloudSession().getAccessToken()
+  if (workspaceId !== undefined && typeof workspaceId !== 'string') return null
+  const token = await getCloudSession().getAccessToken()
+  if (!token || workspaceId === undefined) return token
+  return identityOf(token)?.workspaceId === workspaceId ? token : null
 }
 
 /** Push the current session to every comfyView Desktop would serve. No-op while disabled. */

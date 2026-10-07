@@ -127,8 +127,9 @@ export type ComfyDesktop2AuthState =
 export interface ComfyDesktop2AuthBridge {
   getState(): Promise<ComfyDesktop2AuthState>
   /** A current access token (Desktop refreshes it when due), or null when
-   *  signed out or disabled. The refresh token never leaves Desktop. */
-  getAccessToken(): Promise<string | null>
+   *  signed out, disabled, or scoped to a workspace other than `workspaceId`.
+   *  The refresh token never leaves Desktop. */
+  getAccessToken(workspaceId?: string): Promise<string | null>
   /** Runs Desktop's browser sign-in and resolves with the resulting state. */
   requestSignIn(): Promise<ComfyDesktop2AuthState>
   /** Signs Desktop out of its account (every view follows) and resolves with
