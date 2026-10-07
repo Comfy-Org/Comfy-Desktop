@@ -193,6 +193,9 @@ type SettingEmitter<K extends keyof KnownSettings> =
  *                  own `prop`.
  *  - `'omit'`    — internal bookkeeping / dead settings; never emitted.
  * For `value`/`presence`, `prop` overrides the default `setting_<snake_case_key>`.
+ * This policy governs the `setting_*` person properties only. The
+ * `comfy.desktop.settings.changed` event reports any user edit from Global Settings,
+ * `omit` keys included (theme, autoUpdate, betaFeaturesEnabled), by key and boolean only.
  */
 type SettingTelemetryPolicy<K extends keyof KnownSettings> =
   | { policy: 'omit' }
