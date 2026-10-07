@@ -396,7 +396,7 @@ describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0 && rootO
   () => {
     it('says the OS refused, at once, instead of waiting for an exit', async () => {
       const t0 = Date.now()
-      expect(await killPid(1)).toBe('denied')
+      expect(await killPid(1, 'x:1')).toBe('denied')
       expect(Date.now() - t0).toBeLessThan(1_000)
     })
   }

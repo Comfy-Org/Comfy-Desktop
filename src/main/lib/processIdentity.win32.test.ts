@@ -27,7 +27,12 @@ vi.mock('child_process', async (importOriginal) => {
   }
 })
 
-import { holderStartToken, parseNetstatListeners } from './processIdentity'
+import {
+  holderStartToken,
+  isPidAlive as isPidAliveReal,
+  parseNetstatListeners,
+  terminateWindowsPid
+} from './processIdentity'
 import { findPidsByPort, killPid } from './process'
 
 const realPlatform = process.platform
@@ -117,11 +122,32 @@ describe('killPid on Windows', () => {
   it('ends the one pid with TerminateProcess, asking only for PROCESS_TERMINATE, not taskkill', async () => {
     fake.answers.powershell = { stdout: 'OK\r\n' }
     // Gone at once: nothing runs at this pid.
-    expect(await killPid(2_147_480_000)).toBe('exited')
+    expect(await killPid(2_147_480_000, '134358000923463901')).toBe('exited')
     const script = fake.calls.find((c) => c.cmd === 'powershell')!.args.join(' ')
-    expect(script).toContain('OpenProcess(1, $false, 2147480000)')
+    // Terminate + limited query only, and the start time proven on that same handle.
+    expect(script).toContain('OpenProcess(0x1001, $false, 2147480000)')
+    expect(script).toContain('GetProcessTimes')
+    expect(script).toContain("-ne '134358000923463901'")
     expect(script).toContain('TerminateProcess')
     expect(fake.calls.some((c) => c.cmd === 'taskkill')).toBe(false)
+  })
+
+  it('touches nothing whose creation time is not the confirmed one (its pid was reused)', async () => {
+    const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+    try {
+      fake.answers.powershell = { stdout: 'GONE\r\n' }
+      // The confirmed process is gone: nothing left to stop, and no wait for an exit.
+      expect(await killPid(victim.pid!, '134358000923463901')).toBe('exited')
+      expect(isPidAliveReal(victim.pid!)).toBe(true)
+    } finally {
+      victim.kill('SIGKILL')
+    }
+  })
+
+  it('never builds a script around a start time that is not a FILETIME', async () => {
+    fake.answers.powershell = { stdout: 'OK\r\n' }
+    expect(await terminateWindowsPid(4242, "1'; Remove-Item x; '")).toBeNull()
+    expect(fake.calls.some((c) => c.cmd === 'powershell')).toBe(false)
   })
 
   it('says at once that Windows refused the stop, without waiting for an exit', async () => {
@@ -129,7 +155,7 @@ describe('killPid on Windows', () => {
     try {
       fake.answers.powershell = { stdout: 'E5\r\n' }
       const t0 = Date.now()
-      expect(await killPid(victim.pid!)).toBe('denied')
+      expect(await killPid(victim.pid!, '134358000923463901')).toBe('denied')
       expect(Date.now() - t0).toBeLessThan(1_000)
     } finally {
       victim.kill('SIGKILL')
@@ -141,7 +167,7 @@ describe('killPid on Windows', () => {
     try {
       // CIM can list a process without its creation time (e.g. a protected one).
       fake.answers.powershell = { stdout: `${victim.pid} 1 \r\n` }
-      expect(await killPid(victim.pid!)).toBe('alive')
+      expect(await killPid(victim.pid!, '134358000923463901')).toBe('alive')
     } finally {
       victim.kill('SIGKILL')
     }

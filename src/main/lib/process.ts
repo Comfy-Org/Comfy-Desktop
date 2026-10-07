@@ -227,10 +227,17 @@ async function killWindowsTreeVerified(
 /** Kill `pid` alone (not its tree or group) and wait for it to be gone. For a caller that has
  *  checked `isSafeToSignal`, just re-proven whose pid it is, and had the user confirm that
  *  process. A zombie its parent has not reaped yet has exited (and released its files), so it
- *  counts as gone. */
-export async function killPid(pid: number): Promise<'exited' | 'denied' | 'alive'> {
+ *  counts as gone. On Windows `startTime` is proven again on the very handle that
+ *  terminates, so a pid reused since the caller's proof is never touched. */
+export async function killPid(
+  pid: number,
+  startTime: string
+): Promise<'exited' | 'denied' | 'alive'> {
   if (process.platform === 'win32') {
-    if ((await terminateWindowsPid(pid)) === 'denied') return 'denied'
+    const answer = await terminateWindowsPid(pid, startTime)
+    // No longer the confirmed process (its pid reused since the proof): it is gone, nothing to do.
+    if (answer === 'gone') return 'exited'
+    if (answer === 'denied') return 'denied'
   } else {
     try {
       process.kill(pid, 'SIGKILL')

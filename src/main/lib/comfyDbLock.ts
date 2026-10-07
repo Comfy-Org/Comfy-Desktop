@@ -200,7 +200,7 @@ export async function stopDbLockOffer(
   if (record?.pid !== offer.pid || record.started !== offer.startTime || signal?.aborted) {
     return 'failed'
   }
-  const killed = await killPid(offer.pid)
+  const killed = await killPid(offer.pid, offer.startTime)
   return killed === 'exited' ? 'stopped' : killed === 'denied' ? 'denied' : 'failed'
 }
 

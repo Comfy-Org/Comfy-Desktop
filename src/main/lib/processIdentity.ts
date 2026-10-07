@@ -497,24 +497,34 @@ export function parseNetstatListeners(stdout: string, port: number): number[] {
 const TERMINATE_API =
   '[DllImport("kernel32.dll",SetLastError=true)] public static extern IntPtr OpenProcess(uint a,bool i,uint p);' +
   '[DllImport("kernel32.dll",SetLastError=true)] public static extern bool TerminateProcess(IntPtr h,uint c);' +
+  '[DllImport("kernel32.dll",SetLastError=true)] public static extern bool GetProcessTimes(IntPtr h,out long c,out long x,out long k,out long u);' +
   '[DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);'
 
 /**
- * Windows only: end `pid` with TerminateProcess, asking only for PROCESS_TERMINATE. That much a
- * same-user process grants even when it runs elevated; taskkill asks for more and is refused.
+ * Windows only: end `pid` with TerminateProcess, asking only for PROCESS_TERMINATE and
+ * PROCESS_QUERY_LIMITED_INFORMATION. That much a same-user process grants even when it runs
+ * elevated; taskkill asks for more and is refused. The creation time is proven on the same handle
+ * that terminates, so a pid reused since the caller's proof is never touched: 'gone'.
  * 'denied' when Windows refuses (another user's or a system process), null when it could not tell.
  */
-export async function terminateWindowsPid(pid: number): Promise<'ok' | 'denied' | null> {
-  if (!Number.isInteger(pid) || pid <= 0) return null
+export async function terminateWindowsPid(
+  pid: number,
+  startTime: string
+): Promise<'ok' | 'gone' | 'denied' | null> {
+  if (!Number.isInteger(pid) || pid <= 0 || !/^\d+$/.test(startTime)) return null
   const out = await powershell(
     `$k = Add-Type -MemberDefinition '${TERMINATE_API}' -Name T -Namespace DbLock -PassThru; ` +
-      `$h = $k::OpenProcess(1, $false, ${pid}); ` +
+      `$h = $k::OpenProcess(0x1001, $false, ${pid}); ` +
       `if ($h -eq [IntPtr]::Zero) { 'E' + [Runtime.InteropServices.Marshal]::GetLastWin32Error(); exit } ` +
+      `$c = 0; $x = 0; $kt = 0; $u = 0; ` +
+      `if (-not $k::GetProcessTimes($h, [ref]$c, [ref]$x, [ref]$kt, [ref]$u) -or "$c" -ne '${startTime}') ` +
+      `{ [void]$k::CloseHandle($h); 'GONE'; exit } ` +
       `$ok = $k::TerminateProcess($h, 1); $e = [Runtime.InteropServices.Marshal]::GetLastWin32Error(); ` +
       `[void]$k::CloseHandle($h); if ($ok) { 'OK' } else { 'E' + $e }`
   )
   const answer = out?.trim()
-  return answer === 'OK' ? 'ok' : answer === 'E5' ? 'denied' : null
+  if (answer === 'OK' || answer === 'GONE') return answer === 'OK' ? 'ok' : 'gone'
+  return answer === 'E5' ? 'denied' : null
 }
 
 /**
