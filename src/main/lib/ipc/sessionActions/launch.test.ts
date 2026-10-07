@@ -2769,6 +2769,7 @@ describe('agent requirements at launch', () => {
       launchHarness.recordWriteThrows = false
       launchHarness.recordsUpdateThrows = false
       launchHarness.waitForPort = null
+      launchHarness.records = null
       pipHarness.installed = '[]'
     })
 
@@ -2896,6 +2897,63 @@ describe('agent requirements at launch', () => {
       expect(overrideEvents().at(-1)).toEqual(
         expect.objectContaining({ decision: 'reverted', reason: 'previously_failed' })
       )
+    })
+
+    it('reports the fallback, then the latch, on the launch that trips it', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.respond = (args) => ({
+        code: (args[8] as string[] | undefined) ? 1 : 0,
+        output: ''
+      })
+
+      await launchAndPrint()
+      await launchAndPrint()
+
+      expect(overrideEvents().map((e) => [e.decision, e.reason, e.failures])).toEqual([
+        ['reverted', 'install_failed', null],
+        ['reverted', 'install_failed', null],
+        ['reverted', 'install_failed', 2]
+      ])
+    })
+
+    it('watches no agent start for an override that failed to install', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.respond = (args) => ({
+        code: (args[8] as string[] | undefined) ? 1 : 0,
+        output: ''
+      })
+
+      await launchAndPrint({ lines: ['[agent-event] agent_started duration_ms=1'] })
+
+      expect(
+        overrideState(),
+        "core's own agent starting must not reset the failed version's count"
+      ).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+    })
+
+    it('leaves the latch alone when the launch is cancelled during the override', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.launchCommand = launchCommand()
+      pipHarness.duringInstall = () => _operationAborts.get(ID)?.abort()
+      pipHarness.respond = () => ({ code: 1, output: '' })
+      const ctx = ctxFor(ID)
+      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+
+      expect(await handleLaunch(ctx)).toEqual({ ok: false, cancelled: true })
+      expect(overrideState(), 'a cancel is not a failed install').toBeUndefined()
+    })
+
+    it('still launches when an install failure cannot be recorded', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.recordsUpdateThrows = true
+      pipHarness.respond = (args) => ({
+        code: (args[8] as string[] | undefined) ? 1 : 0,
+        output: ''
+      })
+
+      await launchAndPrint()
+
+      expect(spawnArgs).toContain('--enable-agent')
     })
 
     it('still launches when the outcome cannot be recorded', async () => {

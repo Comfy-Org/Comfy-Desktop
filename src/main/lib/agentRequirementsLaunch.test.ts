@@ -716,6 +716,38 @@ describe('installAgentRequirements with a version override', () => {
     ])
   })
 
+  it("lists the install's own environment as JSON, from the install dir", async () => {
+    await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(mockUvPip).toHaveBeenCalledWith(
+      '/uv',
+      ['pip', 'list', '--format', 'json', '--python', '/py'],
+      installDir,
+      expect.any(Function),
+      expect.any(AbortSignal)
+    )
+  })
+
+  it('adds nothing to the override run but the constraints, and keeps the mirrors', async () => {
+    await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    const args = mockInstall.mock.calls[0]!
+    expect(args[7], "the user's mirror setting still applies").toBe(mirrors)
+    expect(args[8]).toEqual(['--constraint', '.launch-agent-reqs-override-constraints.txt'])
+  })
+
+  it('stops waiting on the package listing as soon as the launch is cancelled', async () => {
+    const abort = new AbortController()
+    mockUvPip.mockImplementationOnce(() => {
+      queueMicrotask(() => abort.abort())
+      return new Promise(() => {})
+    })
+
+    await installAgentRequirements(plan, vi.fn(), abort.signal, undefined, OVERRIDE)
+
+    expect(calls).toEqual([])
+  })
+
   it("passes the constraints relative to the install dir, which is uv's cwd", async () => {
     await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
 
@@ -921,6 +953,17 @@ describe('installAgentRequirements with a version override', () => {
       await settle(installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE))
 
       expect(calls.at(-1)!.timeoutAt, 'the 30 s floor is a minimum, not the budget').toBe(120_000)
+    })
+
+    it("says core's versions follow when the override times out", async () => {
+      hangUntilAborted(Date.now())
+      const sendOutput = vi.fn()
+
+      await settle(installAgentRequirements(plan, sendOutput, undefined, undefined, OVERRIDE))
+
+      const output = sendOutput.mock.calls.join('')
+      expect(output).toContain("exceeded 90s; falling back to core's versions")
+      expect(output).toContain('exceeded 30s; starting ComfyUI without it')
     })
 
     it('stops waiting for a package listing that never answers, and refuses', async () => {

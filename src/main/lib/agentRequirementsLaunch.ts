@@ -445,16 +445,19 @@ async function listInstalled(
   timeoutMs: number,
   signal: AbortSignal | undefined
 ): Promise<string | null> {
+  if (signal?.aborted) return null
   const abort = new AbortController()
-  const onLaunchAbort = (): void => abort.abort()
-  signal?.addEventListener('abort', onLaunchAbort, { once: true })
   let timer: ReturnType<typeof setTimeout> | undefined
-  const timedOut = new Promise<null>((resolve) => {
-    timer = setTimeout(() => {
+  let onLaunchAbort = (): void => {}
+  const stopped = new Promise<null>((resolve) => {
+    const stop = (): void => {
       abort.abort()
       resolve(null)
-    }, timeoutMs)
+    }
+    onLaunchAbort = stop
+    timer = setTimeout(stop, timeoutMs)
   })
+  signal?.addEventListener('abort', onLaunchAbort, { once: true })
   try {
     const listed = runUvPipDetailed(
       plan.uvPath,
@@ -463,7 +466,7 @@ async function listInstalled(
       () => {},
       abort.signal
     ).then((result) => (result.code === 0 ? result.output : null))
-    return await Promise.race([listed, timedOut])
+    return await Promise.race([listed, stopped])
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', onLaunchAbort)
