@@ -269,6 +269,22 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(await readHolderRecord(viaLink)).toMatchObject({ pid })
     }, 20_000)
 
+    it('reads no record that is not a small regular file, without blocking on a FIFO', async () => {
+      const { pid } = await hold()
+      const file = `${db}.lock.json`
+      const good = fs.readFileSync(file, 'utf8')
+      expect(await readHolderRecord(db)).toMatchObject({ pid })
+      fs.writeFileSync(file, good.replace('}', `, "pad": "${'x'.repeat(70 * 1024)}"}`))
+      expect(await readHolderRecord(db)).toBeNull()
+      fs.rmSync(file)
+      fs.mkdirSync(file)
+      expect(await readHolderRecord(db)).toBeNull()
+      fs.rmdirSync(file)
+      // Opening a FIFO with no writer would block forever: it is never opened.
+      execFileSync('mkfifo', [file])
+      expect(await readHolderRecord(db)).toBeNull()
+    }, 20_000)
+
     it('matches a record that names the database through a symlink (an explicit path)', async () => {
       const link = path.join(root, 'linked')
       fs.symlinkSync(install, link)
@@ -351,7 +367,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(await readHolderRecord(db)).toMatchObject({ pid })
     }, 20_000)
 
-    it('stops nothing once another ComfyUI took the lock, or after a cancel', async () => {
+    it('kills nothing once another ComfyUI took the lock, or after a cancel', async () => {
       const first = await hold()
       const offer = (await find()) as DbLockOffer
       const cancelled = new AbortController()
@@ -361,8 +377,9 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       process.kill(-first.pid, 'SIGKILL')
       expect(await gone(first.pid)).toBe(true)
       const second = await hold()
-      expect(await stopDbLockOffer(offer, db)).toBe(false)
-      expect(await stopDbLockOffer({ ...offer, pid: second.pid }, db)).toBe(false)
+      // The confirmed one is gone (nothing left to stop); the new holder is never touched.
+      expect(await stopDbLockOffer(offer, db)).toBe(true)
+      expect(await stopDbLockOffer({ ...offer, pid: second.pid }, db)).toBe(true)
       expect(isPidAlive(second.pid)).toBe(true)
     }, 20_000)
 

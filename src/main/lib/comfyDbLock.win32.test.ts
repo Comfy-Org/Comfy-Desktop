@@ -17,6 +17,8 @@ const fake = vi.hoisted(() => ({
   steps: [] as string[],
   dead: new Set<number>(),
   safe: true,
+  /** Runs after each start-time read (to change what the next one answers). */
+  afterProof: null as null | (() => void),
   records: [] as Array<{
     installationId: string
     childPid: number
@@ -43,7 +45,9 @@ vi.mock('./processIdentity', async (importOriginal) => ({
   ...(await importOriginal<typeof ProcessIdentity>()),
   holderStartToken: async (pid: number) => {
     fake.steps.push('proof')
-    return fake.starts.get(pid) ?? null
+    const token = fake.starts.get(pid) ?? null
+    fake.afterProof?.()
+    return token
   },
   isPidAlive: (pid: number) => !fake.dead.has(pid)
 }))
@@ -87,6 +91,7 @@ beforeEach(() => {
   fake.killOk = true
   fake.steps = []
   fake.safe = true
+  fake.afterProof = null
   fake.dead = new Set()
   fake.records = []
 })
@@ -212,22 +217,37 @@ describe('stopDbLockOffer on Windows', () => {
     write(record())
     expect(await stopDbLockOffer(offer, db)).toBe(true)
     expect(fake.kills).toEqual([9084])
-    // Nothing slow (the first safety probe) sits between the proof and the signal.
-    expect(fake.steps).toEqual(['safety', 'proof'])
+    // Nothing slow (the first safety probe) sits between the final proof and the signal.
+    expect(fake.steps).toEqual(['proof', 'safety', 'proof'])
   })
 
-  it('stops nothing when the record now names another process, or none', async () => {
+  it('stops nothing while it runs but its record now names another process, or none', async () => {
     write({ ...record(), pid: 4242 })
     fake.starts.set(4242, STARTED)
     expect(await stopDbLockOffer(offer, db)).toBe(false)
-    write(record())
-    fake.starts.set(9084, '134358999999999999')
-    expect(await stopDbLockOffer(offer, db)).toBe(false)
-    // The pid was reused by a new ComfyUI that wrote its own, live record.
-    write({ ...record(), started: '134358999999999999' })
-    expect(await stopDbLockOffer(offer, db)).toBe(false)
     fs.rmSync(`${db}.lock.json`)
     expect(await stopDbLockOffer(offer, db)).toBe(false)
+    expect(fake.kills).toEqual([])
+  })
+
+  it('kills nothing when the pid is reused between the first look and the final proof', async () => {
+    const NEW = '134358999999999999'
+    // The newcomer at the same pid wrote its own, live record.
+    write({ ...record(), started: NEW })
+    fake.afterProof = () => fake.starts.set(9084, NEW)
+    expect(await stopDbLockOffer(offer, db)).toBe(false)
+    expect(fake.kills).toEqual([])
+  })
+
+  it('has nothing to stop once the confirmed ComfyUI exited, even if its pid was reused', async () => {
+    write(record())
+    fake.starts.set(9084, '134358999999999999')
+    expect(await stopDbLockOffer(offer, db)).toBe(true)
+    // The pid's new owner wrote its own, live record: still not the process the user confirmed.
+    write({ ...record(), started: '134358999999999999' })
+    expect(await stopDbLockOffer(offer, db)).toBe(true)
+    fake.starts.delete(9084)
+    expect(await stopDbLockOffer(offer, db)).toBe(true)
     expect(fake.kills).toEqual([])
   })
 

@@ -89,23 +89,21 @@ interface HolderRecord {
   main: string
 }
 
+/** A holder record is a few hundred bytes; anything far larger is not one. */
+const MAX_RECORD_BYTES = 64 * 1024
+
 /**
  * Whether two paths name the same file: compared where they lead (the real path sees through
  * symlinks, junctions and 8.3 names, and spells case as the volume stores it), never folding case.
  * A file not created yet is compared by where its folder leads; a path whose folder cannot be
  * resolved names nothing.
  */
-function samePath(a: string, b: string): boolean {
-  const real = (p: string): string => fs.realpathSync.native(p)
-  const canonical = (p: string): string => {
-    try {
-      return real(p)
-    } catch {
-      return path.join(real(path.dirname(p)), path.basename(p))
-    }
-  }
+async function samePath(a: string, b: string): Promise<boolean> {
+  const real = fs.promises.realpath
+  const canonical = async (p: string): Promise<string> =>
+    real(p).catch(async () => path.join(await real(path.dirname(p)), path.basename(p)))
   try {
-    return canonical(a) === canonical(b)
+    return (await canonical(a)) === (await canonical(b))
   } catch {
     return false
   }
@@ -118,16 +116,20 @@ function samePath(a: string, b: string): boolean {
  * is not).
  */
 export async function readHolderRecord(dbPath: string): Promise<HolderRecord | null> {
+  const file = `${dbPath}.lock.json`
   let record: Partial<HolderRecord> | null
   try {
-    record = JSON.parse(fs.readFileSync(`${dbPath}.lock.json`, 'utf-8'))
+    // Read off the main thread, and only a small regular file (never a FIFO or a huge one).
+    const st = await fs.promises.stat(file)
+    if (!st.isFile() || st.size > MAX_RECORD_BYTES) return null
+    record = JSON.parse(await fs.promises.readFile(file, 'utf-8'))
   } catch {
     return null
   }
   if (typeof record !== 'object' || record === null) return null
   const { pid, started, db, main } = record
   if (!Number.isInteger(pid) || typeof started !== 'string' || typeof main !== 'string') return null
-  if (typeof db !== 'string' || !samePath(db, dbPath)) return null
+  if (typeof db !== 'string' || !(await samePath(db, dbPath))) return null
   return (await holderStartToken(pid!).catch(() => null)) === started
     ? (record as HolderRecord)
     : null
@@ -169,6 +171,8 @@ export async function stopDbLockOffer(
   dbPath: string,
   signal?: AbortSignal
 ): Promise<boolean> {
+  // It exited while the user decided: nothing left to stop.
+  if ((await holderStartToken(offer.pid).catch(() => null)) !== offer.startTime) return true
   // Anything slow (the first safety probe runs `ps`) comes before the proof, not between it and
   // the signal.
   if (!(await isSafeToSignal(offer.pid))) return false

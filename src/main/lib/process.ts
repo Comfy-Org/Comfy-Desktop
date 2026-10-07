@@ -237,7 +237,10 @@ export async function killPid(pid: number): Promise<boolean> {
       process.kill(pid, 'SIGKILL')
     } catch {}
   }
-  const zombie = async (): Promise<boolean> => (await readStartTimes([pid]))?.has(pid) === false
+  // Off Windows only: there a live process can be listed without a creation time (and so be
+  // absent here), and no process lingers as a zombie.
+  const zombie = async (): Promise<boolean> =>
+    process.platform !== 'win32' && (await readStartTimes([pid]))?.has(pid) === false
   return (await waitUntil(() => !isPidAlive(pid), monotonicNow(), KILL_WAIT_MS, zombie)).exited
 }
 
@@ -330,7 +333,9 @@ export async function killPidTree(pid: number, expectedStart: string): Promise<V
 export function findPidsByPort(port: number): Promise<number[]> {
   return new Promise((resolve) => {
     if (process.platform === 'win32') {
-      execFile('netstat', ['-ano'], { windowsHide: true }, (err, stdout) => {
+      // Every protocol's rows: a large socket table outgrows the default 1 MiB buffer.
+      const opts = { windowsHide: true, maxBuffer: 32 * 1024 * 1024 }
+      execFile('netstat', ['-ano'], opts, (err, stdout) => {
         resolve(err ? [] : parseNetstatListeners(stdout, port))
       })
     } else {

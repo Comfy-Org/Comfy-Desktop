@@ -8,7 +8,7 @@ import type * as ChildProcessModule from 'child_process'
 type Answer = { err?: { code?: string; killed?: boolean; signal?: string }; stdout?: string }
 const fake = vi.hoisted(() => ({
   answers: {} as Record<string, Answer>,
-  calls: [] as Array<{ cmd: string; args: string[] }>
+  calls: [] as Array<{ cmd: string; args: string[]; opts: unknown }>
 }))
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof ChildProcessModule>()
@@ -17,10 +17,10 @@ vi.mock('child_process', async (importOriginal) => {
     execFile: (
       cmd: string,
       args: string[],
-      _opts: unknown,
+      opts: unknown,
       cb: (err: unknown, stdout: string) => void
     ) => {
-      fake.calls.push({ cmd, args })
+      fake.calls.push({ cmd, args, opts })
       const a = fake.answers[cmd] ?? { err: { code: 'ENOENT' } }
       setImmediate(() => cb(a.err ? Object.assign(new Error('x'), a.err) : null, a.stdout ?? ''))
     }
@@ -79,7 +79,11 @@ describe('findPidsByPort on Windows', () => {
   it('reads localised netstat, every protocol, without PowerShell', async () => {
     fake.answers.netstat = { stdout: netstat('ABHÖREN') }
     expect((await findPidsByPort(8188)).sort()).toEqual([9084, 9090])
-    expect(fake.calls).toEqual([{ cmd: 'netstat', args: ['-ano'] }])
+    expect(fake.calls.map(({ cmd, args }) => ({ cmd, args }))).toEqual([
+      { cmd: 'netstat', args: ['-ano'] }
+    ])
+    // Every protocol's rows: well past the default 1 MiB buffer on a busy machine.
+    expect(fake.calls[0]!.opts).toMatchObject({ maxBuffer: 32 * 1024 * 1024 })
   })
 
   it('names nobody when netstat cannot run', async () => {
@@ -125,6 +129,18 @@ describe('killPid on Windows', () => {
       // Still in the process table: not a zombie either.
       fake.answers.powershell = { stdout: `${victim.pid} 1 134358000923463901\r\n` }
       // taskkill is faked, so it never exits.
+      expect(await killPid(victim.pid!)).toBe(false)
+    } finally {
+      victim.kill('SIGKILL')
+    }
+  }, 20_000)
+
+  it('does not take a live process listed without a creation time for one that exited', async () => {
+    const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+    try {
+      fake.answers.taskkill = { stdout: '' }
+      // CIM can list a process without its creation time (e.g. a protected one).
+      fake.answers.powershell = { stdout: `${victim.pid} 1 \r\n` }
       expect(await killPid(victim.pid!)).toBe(false)
     } finally {
       victim.kill('SIGKILL')
