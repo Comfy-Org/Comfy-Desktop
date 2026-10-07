@@ -428,6 +428,10 @@ class UpdateComfyUITest(unittest.TestCase):
         r = self.update("--tag", "v0.2.0")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assert_clean_at(self.sha["v2"], V2)
+        # The confirm dialog promises the replaced file is kept on a backup branch.
+        backup = git(self.repo, "branch", "--list", "backup_branch_*",
+                     "--format=%(refname:short)")
+        self.assertEqual(git(self.repo, "show", "%s:app/db.py" % backup), V1["app/db.py"].strip())
 
     def test_tracked_changes_ignores_untracked_files(self):
         self.assertEqual(self.tracked_changes(), [])

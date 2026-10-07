@@ -550,15 +550,18 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           exitCode: 0
         })
       spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
+      // The Repair action runs with the conflict dry run, so count only real installs.
       const installed = (): string[] =>
-        spawnState.uvCalls.filter((a) => a.includes('install')).flat()
+        spawnState.uvCalls.filter((a) => a.includes('install') && !a.includes('--dry-run')).flat()
+      const opts = (extra: Partial<UpdateOrchestrationOptions> = {}): UpdateOrchestrationOptions =>
+        makeBaseOpts(installPath, { dryRunConflictCheck: true, ...extra })
 
-      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
-      expect(installed()).toEqual([])
+      expect((await runComfyUIUpdate(opts())).ok).toBe(true)
+      expect(spawnState.uvCalls.filter((a) => a.includes('install'))).toEqual([])
 
-      expect((await runComfyUIUpdate(makeBaseOpts(installPath, { repair: true }))).ok).toBe(true)
-      expect(installed().some((a) => a.endsWith('.post-install-reqs.txt'))).toBe(true)
-      expect(installed().some((a) => a.endsWith('.post-install-mgr-reqs.txt'))).toBe(true)
+      expect((await runComfyUIUpdate(opts({ repair: true }))).ok).toBe(true)
+      expect(installed().some((a) => a.endsWith('.comfyui-reqs-filtered.txt'))).toBe(true)
+      expect(installed().some((a) => a.endsWith('.manager-reqs-filtered.txt'))).toBe(true)
     })
   })
 

@@ -868,4 +868,9 @@ describe('updateSections — Repair ComfyUI files', () => {
     expect(repairAction(baseInstall(), 'stable')).toBeUndefined()
     expect(getUpdateAction(baseInstall(), 'stable')).toBeDefined()
   })
+
+  it('offers no repair without a git checkout', () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => !String(p).endsWith('.git'))
+    expect(repairAction(baseInstall(), 'stable')).toBeUndefined()
+  })
 })

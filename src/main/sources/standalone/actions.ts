@@ -5,7 +5,7 @@ import * as releaseCache from '../../lib/release-cache'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { resolveLocalVersion } from '../../lib/version-resolve'
-import { hasTrackedChanges, readGitHead, rollbackComfySource } from '../../lib/git'
+import { hasTrackedChanges, readGitHead, revParseRef, rollbackComfySource } from '../../lib/git'
 import { writeOpMarker, completeOpMarker } from '../../lib/opMarker'
 import { installFilteredRequirementsDetailed } from '../../lib/pip'
 import { withOutputTail } from '../../lib/logged-process'
@@ -1219,6 +1219,14 @@ async function handleUpdateComfyUI(
   // reach the spawn.
   const rawTargetTag = typeof actionData?.targetTag === 'string' ? actionData.targetTag : undefined
   const targetTag = rawTargetTag && /^v\d+\.\d+\.\d+$/.test(rawTargetTag) ? rawTargetTag : undefined
+  // A repair rewrites the installed commit; a pin that is not HEAD would move it.
+  if (
+    repair &&
+    (!targetTag ||
+      (await revParseRef(comfyuiDir, `${targetTag}^{commit}`)) !== readGitHead(comfyuiDir))
+  ) {
+    return { ok: false, message: t('standalone.repairNotOnTag') }
+  }
 
   sendProgress('steps', {
     steps: [

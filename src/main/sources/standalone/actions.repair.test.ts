@@ -24,7 +24,9 @@ vi.mock('./envPaths', () => ({ getMasterPythonPath: () => masterPython }))
 vi.mock('../../lib/release-cache', () => ({ checkForUpdate: vi.fn(async () => ({ ok: true })) }))
 vi.mock('../../lib/git', async (importOriginal) => ({
   ...(await importOriginal<typeof GitModule>()),
-  hasTrackedChanges: vi.fn()
+  hasTrackedChanges: vi.fn(),
+  readGitHead: vi.fn(() => 'c0ffee'),
+  revParseRef: vi.fn(async () => 'c0ffee')
 }))
 vi.mock('./updateOrchestrator', () => ({
   runComfyUIUpdate: vi.fn(async (opts: UpdateOrchestrationOptions) => ({
@@ -34,7 +36,7 @@ vi.mock('./updateOrchestrator', () => ({
 }))
 
 import { handleAction } from './actions'
-import { hasTrackedChanges } from '../../lib/git'
+import { hasTrackedChanges, revParseRef } from '../../lib/git'
 import { runComfyUIUpdate } from './updateOrchestrator'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../../../types/ipc'
 
@@ -52,7 +54,10 @@ afterEach(() => {
   fs.rmSync(masterPython, { force: true })
 })
 
-function run(actionId: string): ReturnType<typeof handleAction> {
+function run(
+  actionId: string,
+  data: Record<string, unknown> = { channel: 'stable', targetTag: 'v0.39.1' }
+): ReturnType<typeof handleAction> {
   const installation = {
     id: 'inst',
     name: 'inst',
@@ -61,12 +66,11 @@ function run(actionId: string): ReturnType<typeof handleAction> {
     installPath,
     updateChannel: 'stable'
   } as unknown as InstallationRecord
-  return handleAction(
-    actionId,
-    installation,
-    { channel: 'stable', targetTag: 'v0.39.1' },
-    { update: async () => {}, sendProgress: () => {}, sendOutput: () => {} }
-  )
+  return handleAction(actionId, installation, data, {
+    update: async () => {},
+    sendProgress: () => {},
+    sendOutput: () => {}
+  })
 }
 
 const lastRunOptions = (): Partial<UpdateOrchestrationOptions> =>
@@ -77,6 +81,19 @@ describe('standalone handleAction(repair-comfyui)', () => {
     vi.mocked(hasTrackedChanges).mockResolvedValue(false)
     expect((await run('repair-comfyui')).ok).toBe(true)
     expect(lastRunOptions()).toMatchObject({ targetTag: 'v0.39.1', repair: true })
+  })
+
+  it('refuses, without running anything, unless the pin is the installed commit', async () => {
+    vi.mocked(revParseRef).mockResolvedValueOnce('another-commit')
+    expect(await run('repair-comfyui')).toMatchObject({ message: 'standalone.repairNotOnTag' })
+    expect(await run('repair-comfyui', { channel: 'stable' })).toMatchObject({
+      message: 'standalone.repairNotOnTag'
+    })
+    expect(await run('repair-comfyui', { channel: 'stable', targetTag: 'latest' })).toMatchObject({
+      message: 'standalone.repairNotOnTag'
+    })
+    expect(revParseRef).toHaveBeenCalledWith(expect.any(String), 'v0.39.1^{commit}')
+    expect(runComfyUIUpdate).not.toHaveBeenCalled()
   })
 
   it('reports a failure when tracked files still differ, or git cannot tell', async () => {
