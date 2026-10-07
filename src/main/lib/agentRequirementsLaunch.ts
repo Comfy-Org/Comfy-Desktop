@@ -3,17 +3,16 @@ import path from 'path'
 import { execFile } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import * as settings from '../settings'
-import { installFilteredRequirementsDetailed } from './pip'
+import { installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
 import type { UvPipResult } from './pip'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
 import {
   effectiveAgentRequirements,
+  installedConstraints,
   isRevertedFor,
-  overrideChangesOthers,
   overrideSignature,
-  parseAgentRequirementsOverride,
-  parseDryRun
+  parseAgentRequirementsOverride
 } from './agentRequirementsOverride'
 import type {
   AgentOverrideState,
@@ -343,21 +342,12 @@ export async function installAgentRequirements(
 ): Promise<OverrideDecision | undefined> {
   sendOutput('\nInstalling agent requirements…\n')
   const run: BoundedRun = (reqPath, tempName, timeoutMs, extraArgs) =>
-    extraArgs
-      ? runBoundedInstall(
-          plan,
-          reqPath,
-          tempName,
-          timeoutMs,
-          () => {},
-          signal,
-          undefined,
-          extraArgs
-        )
-      : runBoundedInstall(plan, reqPath, tempName, timeoutMs, sendOutput, signal, onStatus)
+    runBoundedInstall(plan, reqPath, tempName, timeoutMs, sendOutput, signal, onStatus, extraArgs)
   const startedAt = Date.now()
-  const decision = await tryOverride(plan, override, overrideState, run, sendOutput)
+  const decision = await tryOverride(plan, override, overrideState, run, sendOutput, signal)
   if (signal?.aborted || decision?.decision === 'applied') return decision
+  // A failed override left the row on its terminal status; the fallback is a fresh install.
+  if (decision) onStatus?.({ kind: 'installing' })
   const remaining = Math.max(MIN_FALLBACK_TIMEOUT_MS, INSTALL_TIMEOUT_MS - (Date.now() - startedAt))
   await run(plan.reqPath, FILTERED_REQS, remaining)
   return decision
@@ -371,6 +361,7 @@ const MIN_FALLBACK_TIMEOUT_MS = 30_000
 /** Where the overridden copy of core's file is written, and the helper's filtered copy of it. */
 const OVERRIDE_REQS = '.launch-agent-reqs-override-src.txt'
 const OVERRIDE_FILTERED_REQS = '.launch-agent-reqs-override.txt'
+const OVERRIDE_CONSTRAINTS = '.launch-agent-reqs-override-constraints.txt'
 
 type BoundedRun = (
   reqPath: string,
@@ -385,7 +376,8 @@ async function tryOverride(
   raw: unknown,
   state: AgentOverrideState | null,
   run: BoundedRun,
-  sendOutput: (text: string) => void
+  sendOutput: (text: string) => void,
+  signal: AbortSignal | undefined
 ): Promise<OverrideDecision | undefined> {
   const parsed = parseAgentRequirementsOverride(raw)
   if (parsed.kind === 'none') return undefined
@@ -407,25 +399,59 @@ async function tryOverride(
   if (effective.kind === 'refused') return refuse(sendOutput, effective.reason, pins)
 
   const overridePath = path.join(plan.installPath, OVERRIDE_REQS)
+  const constraintsPath = path.join(plan.installPath, OVERRIDE_CONSTRAINTS)
   const deadline = Date.now() + OVERRIDE_TIMEOUT_MS
   const left = (): number => Math.max(0, deadline - Date.now())
   try {
+    const listed = await listInstalled(plan, left(), signal)
+    const constraints = listed === null ? null : installedConstraints(listed, effective.text)
+    if (constraints === null) return refuse(sendOutput, 'check_failed', pins)
     await fs.promises.writeFile(overridePath, effective.text, 'utf-8')
-    const coreDry = await run(plan.reqPath, FILTERED_REQS, left(), ['--dry-run'])
-    if (!coreDry.ok) return refuse(sendOutput, 'check_failed', pins)
-    const overrideDry = await run(overridePath, OVERRIDE_FILTERED_REQS, left(), ['--dry-run'])
-    if (!overrideDry.ok) return revertOnInstall(sendOutput, pins)
-    if (overrideChangesOthers(parseDryRun(overrideDry.output), parseDryRun(coreDry.output), pins)) {
-      return refuse(sendOutput, 'would_change_other', pins)
-    }
+    await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
-    const installed = await run(overridePath, OVERRIDE_FILTERED_REQS, left())
+    // Relative to uv's cwd (the install dir): uv splits an absolute --constraint path on spaces.
+    const installed = await run(overridePath, OVERRIDE_FILTERED_REQS, left(), [
+      '--constraint',
+      OVERRIDE_CONSTRAINTS
+    ])
     if (!installed.ok) return revertOnInstall(sendOutput, pins)
     return { decision: 'applied', pins }
   } catch {
     return revertOnInstall(sendOutput, pins)
   } finally {
     await fs.promises.unlink(overridePath).catch(() => {})
+    await fs.promises.unlink(constraintsPath).catch(() => {})
+  }
+}
+
+/** `uv pip list` of the install's environment, or null if it failed or outran `timeoutMs`. */
+async function listInstalled(
+  plan: AgentRequirementsInstall,
+  timeoutMs: number,
+  signal: AbortSignal | undefined
+): Promise<string | null> {
+  const abort = new AbortController()
+  const onLaunchAbort = (): void => abort.abort()
+  signal?.addEventListener('abort', onLaunchAbort, { once: true })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      abort.abort()
+      resolve(null)
+    }, timeoutMs)
+  })
+  try {
+    const listed = runUvPipDetailed(
+      plan.uvPath,
+      ['pip', 'list', '--format', 'json', '--python', plan.pythonPath],
+      plan.installPath,
+      () => {},
+      abort.signal
+    ).then((result) => (result.code === 0 ? result.output : null))
+    return await Promise.race([listed, timedOut])
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onLaunchAbort)
   }
 }
 

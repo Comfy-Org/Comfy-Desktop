@@ -4,12 +4,11 @@ import {
   classifyAgentEvent,
   createAgentStartWatcher,
   effectiveAgentRequirements,
+  installedConstraints,
   isRevertedFor,
   nextOverrideState,
-  overrideChangesOthers,
   overrideSignature,
   parseAgentRequirementsOverride,
-  parseDryRun,
   readOverrideState
 } from './agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from './agentRequirementsOverride'
@@ -56,9 +55,12 @@ describe('parseAgentRequirementsOverride', () => {
     })
   })
 
-  it('refuses more entries than there are overridable packages', () => {
+  it('refuses a fourth entry, which can only be a package outside the allowlist', () => {
     const raw = { 'comfy-agent': '1', 'comfy-cli': '1', 'nodejs-wheel-binaries': '1', x: '1' }
-    expect(parseAgentRequirementsOverride(raw)).toEqual({ kind: 'refused', reason: 'too_many' })
+    expect(parseAgentRequirementsOverride(raw)).toEqual({
+      kind: 'refused',
+      reason: 'unknown_package'
+    })
   })
 
   it('refuses anything but an exact public version, including smuggled options', () => {
@@ -108,7 +110,13 @@ describe('effectiveAgentRequirements', () => {
 
   it('refuses an override for a line core did not pin exactly', () => {
     // Core shipping a bare `comfy-agent` is why: going back to it would leave the override in place.
-    for (const core of ['comfy-agent\n', 'comfy-agent>=0.2\n', 'comfy-agent[extra]==0.2\n'])
+    for (const core of [
+      'comfy-agent\n',
+      'comfy-agent>=0.2\n',
+      'comfy-agent[extra]==0.2\n',
+      // A wildcard keeps an overridden 0.2.3 installed, so going back would not go back.
+      'comfy-agent==0.2.*\n'
+    ])
       expect(effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' }))).toEqual({
         kind: 'refused',
         reason: 'unsupported_line'
@@ -138,63 +146,38 @@ describe('effectiveAgentRequirements', () => {
   })
 })
 
-describe('the dry-run check', () => {
-  const OVERRIDE_DRY = [
-    'Resolved 50 packages in 251ms',
-    'Would uninstall 2 packages',
-    ' - comfy-cli==1.21.0',
-    ' + comfy-cli==1.20.0',
-    ' + new-dep==1.0.0'
-  ].join('\n')
+describe('installedConstraints', () => {
+  const LIST =
+    'Using Python 3.12.4 environment at: .venv\n' +
+    JSON.stringify([
+      { name: 'comfy-cli', version: '1.21.0' },
+      { name: 'requests', version: '2.32.0' },
+      { name: 'my-node-dep', version: '0.1.0', editable_project_location: '/x' },
+      { name: 'Nodejs_Wheel_Binaries', version: '24.19.0' }
+    ])
 
-  it('reads targets and replacements out of uv output', () => {
-    expect(parseDryRun(OVERRIDE_DRY)).toEqual({
-      installs: new Map([
-        ['comfy-cli', '1.20.0'],
-        ['new-dep', '1.0.0']
-      ]),
-      replaces: new Set(['comfy-cli'])
-    })
+  it('holds every installed package the file does not name at its installed version', () => {
+    const effective =
+      '# agent\ncomfy-agent==0.2.3\ncomfy-cli==1.21.0\nnodejs-wheel-binaries==24.19.0\n'
+    expect(installedConstraints(LIST, effective)).toBe('requests==2.32.0\nmy-node-dep==0.1.0\n')
   })
 
-  it('reads coloured output', () => {
-    expect(parseDryRun('\u001b[31m - \u001b[0mrequests==2.0.0').replaces).toEqual(
-      new Set(['requests'])
-    )
+  it('finds the list among the lines uv prints on stderr, before or after it', () => {
+    // stdout and stderr share one capture, so their order is not fixed.
+    const after = `${JSON.stringify([{ name: 'comfy-cli', version: '1.21.0' }])}\nwarning: cache is stale\n`
+    expect(installedConstraints(LIST, '')).toContain('comfy-cli==1.21.0')
+    expect(installedConstraints(after, '')).toBe('comfy-cli==1.21.0\n')
   })
 
-  it('allows changes to the overridden packages and packages only the override adds', () => {
-    const core = parseDryRun('Would make no changes')
-    expect(
-      overrideChangesOthers(parseDryRun(OVERRIDE_DRY), core, pins({ 'comfy-cli': '1.20.0' }))
-    ).toBe(false)
-  })
-
-  it('flags an installed package the override would move and core would not', () => {
-    const effective = parseDryRun(' - requests==2.32.0\n + requests==2.31.0')
-    const core = parseDryRun('Would make no changes')
-    expect(overrideChangesOthers(effective, core, pins({ 'comfy-cli': '1.20.0' }))).toBe(true)
-  })
-
-  it('flags an installed package core would move and the override would leave behind', () => {
-    const effective = parseDryRun('Would make no changes')
-    const core = parseDryRun(' - requests==2.31.0\n + requests==2.32.0')
-    expect(overrideChangesOthers(effective, core, pins({ 'comfy-cli': '1.20.0' }))).toBe(true)
-  })
-
-  it('allows a move core itself makes to the same version', () => {
-    const lines = ' - requests==2.31.0\n + requests==2.32.0'
-    expect(
-      overrideChangesOthers(parseDryRun(lines), parseDryRun(lines), pins({ 'comfy-cli': '1.20.0' }))
-    ).toBe(false)
+  it('cannot be read from anything but a list of named, versioned packages', () => {
+    expect(installedConstraints('error: no virtual environment found', '')).toBeNull()
+    expect(installedConstraints('[{"name": "requests"}]', '')).toBeNull()
+    expect(installedConstraints('{"name": "requests", "version": "1"}', '')).toBeNull()
   })
 })
 
 describe('agent start classification', () => {
-  const outcome = (line: string): AgentStartOutcome | undefined => {
-    const event = classifyAgentEvent(line)
-    return event && 'outcome' in event ? event.outcome : undefined
-  }
+  const outcome = (line: string): AgentStartOutcome | null => classifyAgentEvent(line)
 
   it('reads a start, with or without the log-level prefix', () => {
     expect(outcome('[agent-event] agent_started duration_ms=4300 agent_version=0.2.3')).toBe(
@@ -214,7 +197,7 @@ describe('agent start classification', () => {
   })
 
   it('ignores an exit, a missing package and a slow start', () => {
-    // Core prints agent_exited on every stop, including a user quitting during a slow start.
+    // agent_exited follows a good start too, and a stopped slow start ends in it.
     for (const line of [
       '[agent-event] agent_exited code=0',
       '[agent-event] agent_exited code=3',
@@ -228,22 +211,12 @@ describe('agent start classification', () => {
     expect(classifyAgentEvent('note: [agent-event] agent_started')).toBeNull()
     expect(classifyAgentEvent('[agent-event] agent_started  extra')).toBeNull()
   })
-
-  it('reads the version the agent is starting', () => {
-    expect(classifyAgentEvent('[agent-event] agent_starting agent_version=0.2.3')).toEqual({
-      agentVersion: '0.2.3'
-    })
-  })
 })
 
 describe('createAgentStartWatcher', () => {
   it('settles once, on the first verdict, across chunk boundaries', () => {
     const outcomes: AgentStartOutcome[] = []
-    const versions: string[] = []
-    const watch = createAgentStartWatcher({
-      onOutcome: (o) => outcomes.push(o),
-      onAgentVersion: (v) => versions.push(v)
-    })
+    const watch = createAgentStartWatcher((o) => outcomes.push(o))
     watch.ingest(
       '[agent-event] agent_starting agent_version=0.2.3\n[agent-event] health_che',
       'stderr'
@@ -251,13 +224,12 @@ describe('createAgentStartWatcher', () => {
     expect(outcomes).toEqual([])
     watch.ingest('ck_failed reason=crashed\n[agent-event] agent_started\n', 'stderr')
     watch.ingest('[agent-event] agent_error reason=crashed\n', 'stdout')
-    expect(versions).toEqual(['0.2.3'])
     expect(outcomes).toEqual(['failed'])
   })
 
   it('decides nothing for a session that ends before a verdict', () => {
     const outcomes: AgentStartOutcome[] = []
-    const watch = createAgentStartWatcher({ onOutcome: (o) => outcomes.push(o) })
+    const watch = createAgentStartWatcher((o) => outcomes.push(o))
     watch.ingest('[agent-event] agent_starting\n[agent-event] agent_exited code=0\n', 'stderr')
     expect(outcomes).toEqual([])
   })
@@ -269,12 +241,15 @@ describe('the start-failure latch', () => {
   it(`reverts on the ${START_FAILURES_TO_REVERT}nd consecutive failure, and reports it once`, () => {
     const first = nextOverrideState(null, p, 'failed')!
     expect(first).toEqual({
-      state: { signature: 'comfy-agent==0.2.3', failures: 1, reverted: false },
+      state: { signature: 'comfy-agent==0.2.3', failures: 1 },
       reverted: false
     })
     const second = nextOverrideState(first.state, p, 'failed')!
     expect(second.reverted).toBe(true)
     expect(isRevertedFor(second.state, p)).toBe(true)
+    const third = nextOverrideState(second.state, p, 'failed')!
+    expect(third.reverted, 'only the tipping failure reports the revert').toBe(false)
+    expect(isRevertedFor(third.state, p)).toBe(true)
   })
 
   it('resets the count on a successful start', () => {
@@ -296,11 +271,11 @@ describe('the start-failure latch', () => {
   })
 
   it('reads its state back off the install record, ignoring anything malformed', () => {
-    const state = { signature: overrideSignature(p), failures: 1, reverted: false }
+    const state = { signature: overrideSignature(p), failures: 1 }
     const record = (value: unknown): InstallationRecord =>
       ({ id: 'i', agentRequirementsOverride: value }) as unknown as InstallationRecord
     expect(readOverrideState(record(state))).toEqual(state)
     expect(readOverrideState(record(undefined))).toBeNull()
-    expect(readOverrideState(record({ signature: 'x', failures: '1', reverted: false }))).toBeNull()
+    expect(readOverrideState(record({ signature: 'x', failures: '1' }))).toBeNull()
   })
 })

@@ -450,18 +450,11 @@ async function recordAgentStartOutcome(
   }
 }
 
-/** Watch this launch's output for the overridden agent's start. A version other than the pinned
- *  one means the override did not take, which is reported but decides nothing. */
+/** Watch this launch's output for how the overridden agent's start goes. */
 function watchOverriddenAgentStart(installationId: string, pins: OverridePins): AgentStartWatch {
-  const expected = pins.get('comfy-agent')
-  return createAgentStartWatcher({
-    onAgentVersion: (agentVersion) => {
-      if (expected !== undefined && agentVersion !== expected) {
-        reportOverrideDecision(installationId, { decision: 'version_mismatch', pins, agentVersion })
-      }
-    },
-    onOutcome: (outcome) => void recordAgentStartOutcome(installationId, pins, outcome)
-  })
+  return createAgentStartWatcher(
+    (outcome) => void recordAgentStartOutcome(installationId, pins, outcome)
+  )
 }
 
 type AgentStartWatch = ReturnType<typeof createAgentStartWatcher>

@@ -255,6 +255,8 @@ const pipHarness = vi.hoisted(() => ({
   result: { code: 0, output: '' },
   /** Per-call outcome, when a test needs dry runs and installs to differ. */
   respond: null as null | ((args: unknown[]) => { code: number; output: string }),
+  /** `uv pip list --format json` of the environment under test. */
+  installed: '[]',
   duringInstall: null as null | (() => void)
 }))
 
@@ -266,7 +268,9 @@ vi.mock('../../pip', async (importOriginal) => {
       pipHarness.calls.push(args)
       pipHarness.duringInstall?.()
       return pipHarness.respond?.(args) ?? pipHarness.result
-    }
+    },
+    /** The override's `uv pip list`; nothing else in a launch under test calls it. */
+    runUvPipDetailed: async () => ({ code: 0, output: pipHarness.installed })
   }
 })
 
@@ -2639,8 +2643,8 @@ describe('agent requirements at launch', () => {
     const KEY = 'desktop_core_beta_agent'
     const ID = 'agent-override-inst'
     const CORE_FILE = 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'
+    const OVERRIDDEN = 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'
     let proc: FakeChild | null = null
-    let handTyped = false
     /** Let the record read-modify-write behind a start outcome land. */
     const settle = async (): Promise<void> => {
       for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve))
@@ -2668,29 +2672,36 @@ describe('agent requirements at launch', () => {
       }
     }
 
-    /** What each uv call was given, read while the overridden copy still exists. */
-    let installed: { content: string; dryRun: boolean }[] = []
+    /** The requirements text of each uv install, read while the overridden copy still exists. */
+    let installed: string[] = []
     const overrideEvents = (): Record<string, unknown>[] =>
       vi
         .mocked(telemetry.emit)
         .mock.calls.filter(([event]) => event === 'comfy.desktop.agent_requirements_override')
         .map(([, props]) => props as Record<string, unknown>)
+    const overrideState = (): unknown => launchHarness.records!.get(ID)?.agentRequirementsOverride
 
     /** A fresh command per launch: the launch appends to `args` in place. */
-    const grantedLaunchCommand = (): Record<string, unknown> => ({
+    const launchCommand = (...extra: string[]): Record<string, unknown> => ({
       cmd: process.execPath,
-      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), ...extra, '--listen'],
       cwd: installDir,
       skipPortWait: true
     })
 
-    /** One launch of the record in the store, then the agent lines core prints. */
-    const launchAndPrint = async (...lines: string[]): Promise<void> => {
-      if (!handTyped) launchHarness.launchCommand = grantedLaunchCommand()
+    /** One launch of the record in the store, then the agent lines core prints on `stream`. */
+    const launchAndPrint = async (
+      opts: { lines?: string[]; stream?: 'stdout' | 'stderr'; handTyped?: boolean } = {}
+    ): Promise<void> => {
+      launchHarness.launchCommand = opts.handTyped
+        ? launchCommand('--enable-agent')
+        : launchCommand()
       const ctx = ctxFor(ID)
       ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
       expect((await handleLaunch(ctx)).ok).toBe(true)
-      for (const line of lines) proc!.stderr.emit('data', Buffer.from(`[INFO] ${line}\n`))
+      for (const line of opts.lines ?? []) {
+        proc![opts.stream ?? 'stderr'].emit('data', Buffer.from(`[INFO] ${line}\n`))
+      }
       // The outcome is folded into the record asynchronously.
       await settle()
       // A clean exit releases the session, so the next launch of the same install can start.
@@ -2706,25 +2717,22 @@ describe('agent requirements at launch', () => {
       launchHarness.recordWrites = []
       launchHarness.idClass = 'machine_derived'
       launchHarness.records = new Map([[ID, { id: ID }]])
-      handTyped = false
       const spawn = launchHarness.spawn!
       launchHarness.spawn = (...args: unknown[]) => {
         proc = spawn(...args) as FakeChild
         return proc
       }
       installed = []
+      pipHarness.installed = JSON.stringify([{ name: 'requests', version: '2.32.0' }])
       pipHarness.respond = (args) => {
-        const extra = args[8] as string[] | undefined
-        installed.push({
-          content: fs.readFileSync(args[0] as string, 'utf-8'),
-          dryRun: extra?.includes('--dry-run') ?? false
-        })
-        return { code: 0, output: 'Would make no changes\n' }
+        installed.push(fs.readFileSync(args[0] as string, 'utf-8'))
+        return { code: 0, output: '' }
       }
     })
 
     afterEach(() => {
       launchHarness.campaigns = { registry: [], answers: new Map() }
+      pipHarness.installed = '[]'
     })
 
     it('installs the overridden version the campaign applied, and reports it', async () => {
@@ -2733,9 +2741,7 @@ describe('agent requirements at launch', () => {
       await launchAndPrint()
 
       expect(spawnArgs).toContain('--enable-agent')
-      expect(installed.filter((c) => !c.dryRun).map((c) => c.content)).toEqual([
-        'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'
-      ])
+      expect(installed).toEqual([OVERRIDDEN])
       expect(overrideEvents()).toEqual([
         expect.objectContaining({ decision: 'applied', pins: 'comfy-agent==0.2.3' })
       ])
@@ -2746,22 +2752,20 @@ describe('agent requirements at launch', () => {
 
       await launchAndPrint()
 
-      expect(installed).toEqual([{ content: CORE_FILE, dryRun: false }])
+      expect(installed).toEqual([CORE_FILE])
       expect(overrideEvents()).toEqual([])
     })
 
-    it('ignores an override when the flag was typed by hand rather than granted', async () => {
+    it('ignores the campaign override when the user typed the flag themselves', async () => {
+      // The campaign is served and would carry an override, but the flag is already the user's,
+      // so the campaign's grant does not apply and neither does its pass-through.
       serveCampaign({ 'comfy-agent': '0.2.3' })
-      launchHarness.campaigns = { registry: [], answers: new Map() }
-      handTyped = true
-      launchHarness.launchCommand = {
-        ...grantedLaunchCommand(),
-        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--enable-agent', '--listen']
-      }
 
-      await launchAndPrint()
+      await launchAndPrint({ handTyped: true })
 
-      expect(installed).toEqual([{ content: CORE_FILE, dryRun: false }])
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(installed).toEqual([CORE_FILE])
+      expect(overrideEvents()).toEqual([])
     })
 
     it('refuses an invalid override and installs core file', async () => {
@@ -2769,7 +2773,7 @@ describe('agent requirements at launch', () => {
 
       await launchAndPrint()
 
-      expect(installed).toEqual([{ content: CORE_FILE, dryRun: false }])
+      expect(installed).toEqual([CORE_FILE])
       expect(overrideEvents()).toEqual([
         expect.objectContaining({ decision: 'refused', reason: 'bad_version' })
       ])
@@ -2778,49 +2782,59 @@ describe('agent requirements at launch', () => {
     it('goes back to core file after two failed starts of the same version', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
 
-      await launchAndPrint('[agent-event] health_check_failed reason=crashed')
-      expect(launchHarness.records!.get(ID)?.agentRequirementsOverride).toEqual({
-        signature: 'comfy-agent==0.2.3',
-        failures: 1,
-        reverted: false
-      })
+      await launchAndPrint({ lines: ['[agent-event] health_check_failed reason=crashed'] })
+      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
 
-      await launchAndPrint('[agent-event] agent_error reason=spawn_failed')
+      await launchAndPrint({ lines: ['[agent-event] agent_error reason=spawn_failed'] })
       expect(overrideEvents().at(-1)).toEqual(
         expect.objectContaining({ decision: 'reverted', reason: 'start_failed', failures: 2 })
       )
 
       installed = []
       await launchAndPrint()
-      expect(installed).toEqual([{ content: CORE_FILE, dryRun: false }])
+      expect(installed).toEqual([CORE_FILE])
     })
 
-    it('does not count an agent that exits during a slow start, as a quit does on POSIX', async () => {
+    it('reads the agent lines core logs to stdout too', async () => {
+      // `--log-stdout` sends core's INFO lines to stdout.
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint({
+        lines: ['[agent-event] health_check_failed reason=crashed'],
+        stream: 'stdout'
+      })
+
+      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+    })
+
+    it('does not count an agent that exits during a slow start', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
 
       for (let i = 0; i < 3; i++) {
-        await launchAndPrint(
-          '[agent-event] agent_starting agent_version=0.2.3',
-          '[agent-event] agent_waiting duration_ms=60000',
-          '[agent-event] agent_exited code=0'
-        )
+        await launchAndPrint({
+          lines: [
+            '[agent-event] agent_starting agent_version=0.2.3',
+            '[agent-event] agent_waiting duration_ms=60000',
+            '[agent-event] agent_exited code=0'
+          ]
+        })
       }
 
-      expect(launchHarness.records!.get(ID)?.agentRequirementsOverride).toBeUndefined()
-      expect(installed.filter((c) => !c.dryRun).at(-1)?.content).toContain('0.2.3')
+      expect(overrideState()).toBeUndefined()
+      expect(installed.at(-1)).toBe(OVERRIDDEN)
     })
 
-    it('reports an agent that starts at a version other than the pinned one', async () => {
+    it('counts no start failure against an override that did not go in', async () => {
+      // Refused with pins: core's own agent is what fails here, not the override.
+      fs.writeFileSync(agentReqPath(), 'comfy-agent\ncomfy-cli==1.21.0\n')
       serveCampaign({ 'comfy-agent': '0.2.3' })
 
-      await launchAndPrint(
-        '[agent-event] agent_starting agent_version=0.2.0',
-        '[agent-event] agent_started duration_ms=4000 agent_version=0.2.0'
-      )
+      await launchAndPrint({ lines: ['[agent-event] agent_error reason=spawn_failed'] })
 
-      expect(overrideEvents().at(-1)).toEqual(
-        expect.objectContaining({ decision: 'version_mismatch', agent_version: '0.2.0' })
-      )
+      expect(overrideEvents()).toEqual([
+        expect.objectContaining({ decision: 'refused', reason: 'unsupported_line' })
+      ])
+      expect(overrideState()).toBeUndefined()
     })
   })
 })

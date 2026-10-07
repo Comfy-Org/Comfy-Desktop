@@ -34,12 +34,10 @@ export const START_FAILURES_TO_REVERT = 2
 
 export type OverrideRefusal =
   | 'not_object'
-  | 'too_many'
   | 'unknown_package'
   | 'bad_version'
   | 'not_in_core_file'
   | 'unsupported_line'
-  | 'would_change_other'
   | 'check_failed'
 
 /** Normalised package name → exact version. */
@@ -62,7 +60,6 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
     return { kind: 'refused', reason: 'not_object' }
   const entries = Object.entries(raw)
   if (entries.length === 0) return { kind: 'none' }
-  if (entries.length > OVERRIDABLE.size) return { kind: 'refused', reason: 'too_many' }
   const pins = new Map<string, string>()
   for (const [name, version] of entries) {
     const normalized = normalizePackageName(name)
@@ -100,7 +97,7 @@ export function effectiveAgentRequirements(
     const version = pins.get(normalized)
     if (version === undefined) continue
     const line = lines[i]!.match(REQUIREMENT_LINE)
-    if (!line || line[2] === undefined || seen.has(normalized)) {
+    if (!line || !EXACT_VERSION.test(line[2] ?? '') || seen.has(normalized)) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
     seen.add(normalized)
@@ -110,69 +107,61 @@ export function effectiveAgentRequirements(
   return { kind: 'text', text: lines.join('\n') }
 }
 
-/** What a `uv pip install --dry-run` would do: target version per package, and which installed
- *  packages it would replace. */
-export interface DryRunPlan {
-  installs: ReadonlyMap<string, string>
-  replaces: ReadonlySet<string>
-}
-
-const DRY_RUN_LINE = /^\s*([+-])\s+([A-Za-z0-9][A-Za-z0-9._-]*)==(\S+)\s*$/
-
-export function parseDryRun(output: string): DryRunPlan {
-  const installs = new Map<string, string>()
-  const replaces = new Set<string>()
-  for (const raw of stripAnsi(output).split(/\r?\n/)) {
-    const match = raw.match(DRY_RUN_LINE)
-    if (!match) continue
-    const name = normalizePackageName(match[2]!)
-    if (match[1] === '+') installs.set(name, match[3]!)
-    else replaces.add(name)
+/**
+ * Constraints holding every installed package at its current version, except the ones the
+ * effective file names itself, so an override that would move anything else fails to resolve and
+ * falls back to core's file. Null when uv's package list can't be read.
+ */
+export function installedConstraints(pipListOutput: string, effectiveText: string): string | null {
+  // uv's stderr ("Using Python … environment at") shares the captured stream.
+  const json = pipListOutput
+    .split(/\r?\n/)
+    .reverse()
+    .find((line) => line.startsWith('['))
+  let installed: unknown
+  try {
+    installed = JSON.parse(json ?? '')
+  } catch {
+    return null
   }
-  return { installs, replaces }
-}
-
-/** True when the override would leave an installed package outside the payload at a different
- *  version than core's own file would (comfy-cli brings a broad dependency set). Packages only
- *  the override adds are allowed: nothing ComfyUI already runs on changes. */
-export function overrideChangesOthers(
-  effective: DryRunPlan,
-  core: DryRunPlan,
-  pins: OverridePins
-): boolean {
-  const target = (plan: DryRunPlan, name: string): string | null =>
-    plan.installs.get(name) ?? (plan.replaces.has(name) ? null : 'unchanged')
-  const names = new Set([...effective.replaces, ...core.replaces])
-  for (const name of names) {
-    if (pins.has(name)) continue
-    if (target(effective, name) !== target(core, name)) return true
+  if (!Array.isArray(installed)) return null
+  const named = new Set(
+    effectiveText
+      .split(/\r?\n/)
+      .map((line) => line.match(LEADING_NAME)?.[1])
+      .filter((name): name is string => name !== undefined)
+      .map(normalizePackageName)
+  )
+  const lines: string[] = []
+  for (const entry of installed) {
+    const { name, version } = (entry ?? {}) as { name?: unknown; version?: unknown }
+    if (typeof name !== 'string' || typeof version !== 'string') return null
+    if (!named.has(normalizePackageName(name))) lines.push(`${name}==${version}`)
   }
-  return false
+  return lines.join('\n') + '\n'
 }
 
 /** Per-install record of the last override that went in, for the start-failure latch. */
 export interface AgentOverrideState {
   signature: string
   failures: number
-  reverted: boolean
 }
 
 export function readOverrideState(installation: InstallationRecord): AgentOverrideState | null {
-  const state = (installation as { agentRequirementsOverride?: unknown }).agentRequirementsOverride
+  const state = installation.agentRequirementsOverride
   if (!state || typeof state !== 'object') return null
-  const { signature, failures, reverted } = state as Record<string, unknown>
-  if (
-    typeof signature !== 'string' ||
-    typeof failures !== 'number' ||
-    typeof reverted !== 'boolean'
-  )
-    return null
-  return { signature, failures, reverted }
+  const { signature, failures } = state as Record<string, unknown>
+  if (typeof signature !== 'string' || typeof failures !== 'number') return null
+  return { signature, failures }
 }
 
 /** True when this install already gave up on these pins; a different version is a fresh try. */
 export function isRevertedFor(state: AgentOverrideState | null, pins: OverridePins): boolean {
-  return state !== null && state.reverted && state.signature === overrideSignature(pins)
+  return (
+    state !== null &&
+    state.failures >= START_FAILURES_TO_REVERT &&
+    state.signature === overrideSignature(pins)
+  )
 }
 
 export type OverrideDecision =
@@ -184,7 +173,6 @@ export type OverrideDecision =
       pins: OverridePins
       failures?: number
     }
-  | { decision: 'version_mismatch'; pins: OverridePins; agentVersion: string }
 
 export function reportOverrideDecision(installationId: string, d: OverrideDecision): void {
   try {
@@ -194,8 +182,7 @@ export function reportOverrideDecision(installationId: string, d: OverrideDecisi
       decision: d.decision,
       reason: 'reason' in d ? d.reason : null,
       pins,
-      failures: 'failures' in d ? (d.failures ?? null) : null,
-      agent_version: 'agentVersion' in d ? d.agentVersion : null
+      failures: 'failures' in d ? (d.failures ?? null) : null
     })
   } catch {
     // Telemetry must never reach the launch.
@@ -212,9 +199,7 @@ export type AgentStartOutcome = 'started' | 'failed' | 'inconclusive'
 /** Same grammar as the agent telemetry tap: a cross-repo contract with core's emitter. */
 const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
 
-export function classifyAgentEvent(
-  line: string
-): { outcome: AgentStartOutcome } | { agentVersion: string } | null {
+export function classifyAgentEvent(line: string): AgentStartOutcome | null {
   const match = stripLogLevelPrefix(stripAnsi(line).trim()).match(AGENT_EVENT_LINE)
   if (!match) return null
   const fields = new Map(
@@ -225,16 +210,12 @@ export function classifyAgentEvent(
       .map((pair) => pair.split('=') as [string, string])
   )
   switch (match[1]) {
-    case 'agent_starting': {
-      const version = fields.get('agent_version')
-      return version ? { agentVersion: version } : null
-    }
     case 'agent_started':
-      return { outcome: 'started' }
+      return 'started'
     case 'health_check_failed':
-      return { outcome: 'failed' }
+      return 'failed'
     case 'agent_error':
-      return { outcome: fields.get('reason') === 'permission_denied' ? 'inconclusive' : 'failed' }
+      return fields.get('reason') === 'permission_denied' ? 'inconclusive' : 'failed'
     default:
       return null
   }
@@ -242,24 +223,19 @@ export function classifyAgentEvent(
 
 /** Watch one launch's output for the agent's first start. Independent of the consent-gated
  *  telemetry tap, since this has to work without consent. Settles once per launch. */
-export function createAgentStartWatcher(opts: {
-  onOutcome: (outcome: AgentStartOutcome) => void
-  onAgentVersion?: (version: string) => void
-}): { ingest: (text: string, source: StreamSource) => void } {
+export function createAgentStartWatcher(onOutcome: (outcome: AgentStartOutcome) => void): {
+  ingest: (text: string, source: StreamSource) => void
+} {
   const buffer = createStreamLineBuffer()
   let settled = false
   return {
     ingest(text, source) {
       if (settled) return
       for (const line of buffer.append(source, text)) {
-        const event = classifyAgentEvent(line)
-        if (!event) continue
-        if ('agentVersion' in event) {
-          opts.onAgentVersion?.(event.agentVersion)
-          continue
-        }
+        const outcome = classifyAgentEvent(line)
+        if (!outcome) continue
         settled = true
-        opts.onOutcome(event.outcome)
+        onOutcome(outcome)
         return
       }
     }
@@ -277,6 +253,5 @@ export function nextOverrideState(
   const signature = overrideSignature(pins)
   const base = previous?.signature === signature ? previous.failures : 0
   const failures = outcome === 'started' ? 0 : base + 1
-  const reverted = failures >= START_FAILURES_TO_REVERT
-  return { state: { signature, failures, reverted }, reverted }
+  return { state: { signature, failures }, reverted: failures === START_FAILURES_TO_REVERT }
 }
