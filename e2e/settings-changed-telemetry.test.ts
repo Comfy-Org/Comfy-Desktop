@@ -51,7 +51,8 @@ test.beforeAll(async () => {
         sourceId: 'standalone',
         installPath,
         status: 'installed',
-        seen: true,
+        // Unseen, so the update below also carries the first-open `seen` write.
+        seen: false,
         useSharedInput: true,
         inputDir: '/tmp/private-in'
       }
@@ -86,21 +87,22 @@ test('a Global Settings edit raises the event; an app-state write does not @wind
   // Exactly the edit: the earlier app-state write would show up here as a second event.
   await expect
     .poll(() => getIpcInvocations(ctx.app, EVENT), { timeout: 5_000 })
-    .toEqual([{ scope: 'global', setting_key: 'betaFeaturesEnabled', bool_value: false }])
+    .toEqual([{ setting_key: 'betaFeaturesEnabled', bool_value: false }])
 })
 
 test('a per-install edit names the install, sends no path, and skips unchanged fields @windows @macos @linux', async () => {
   await resetIpcInvocations(ctx.app, EVENT)
 
   const result = await ctx.panel.evaluate<{ ok: boolean }>(
-    `window.api.updateInstallation(${JSON.stringify(INSTALL_ID)}, { useSharedInput: false, inputDir: '/tmp/private-in', name: 'Renamed' })`
+    `window.api.updateInstallation(${JSON.stringify(INSTALL_ID)}, { useSharedInput: false, useSharedOutput: true, inputDir: '/tmp/private-in', name: 'Renamed', seen: true })`
   )
 
   expect(result.ok).toBe(true)
   const events = await getIpcInvocations(ctx.app, EVENT)
-  // inputDir is re-sent unchanged and the rename is not a setting, so only the toggle counts.
+  // inputDir is re-sent unchanged, useSharedOutput is unset but already shows as on, and the
+  // rename and `seen` are not settings, so only the toggle counts.
   expect(events).toEqual([
-    { scope: 'install', install_id: INSTALL_ID, setting_key: 'useSharedInput', bool_value: false }
+    { install_id: INSTALL_ID, setting_key: 'useSharedInput', bool_value: false }
   ])
   expect(JSON.stringify(events)).not.toContain('private-in')
 })

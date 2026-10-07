@@ -231,7 +231,7 @@ describe('applySettingSet settings.changed telemetry', () => {
     expect(changedEvents()).toEqual([
       [
         'comfy.desktop.settings.changed',
-        { scope: 'global', install_id: undefined, setting_key: 'autoUpdate', bool_value: false }
+        { install_id: undefined, setting_key: 'autoUpdate', bool_value: false }
       ]
     ])
   })

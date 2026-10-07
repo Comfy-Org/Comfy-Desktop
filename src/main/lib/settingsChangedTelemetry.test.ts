@@ -14,7 +14,6 @@ describe('captureSettingChanged', () => {
     captureSettingChanged('autoUpdate', true, false)
 
     expect(capture).toHaveBeenCalledWith('comfy.desktop.settings.changed', {
-      scope: 'global',
       install_id: undefined,
       setting_key: 'autoUpdate',
       bool_value: false
@@ -25,7 +24,6 @@ describe('captureSettingChanged', () => {
     captureSettingChanged('useSharedInput', undefined, false, 'inst-1')
 
     expect(capture).toHaveBeenCalledWith('comfy.desktop.settings.changed', {
-      scope: 'install',
       install_id: 'inst-1',
       setting_key: 'useSharedInput',
       bool_value: false

@@ -325,7 +325,8 @@ export function applySettingSet(key: string, value: unknown, userEdit = false): 
   if (Object.keys(trackedProps).length > 0) {
     mainTelemetry.registerPersonProperties(trackedProps)
   }
-  // Not for the consent toggle: an opt-out would otherwise be reported, and an opt-in would not.
+  // Not for the consent toggle: consent has already flipped above, so an opt-in would be
+  // reported and an opt-out dropped; neither is reported instead.
   if (userEdit && key !== 'telemetryEnabled') {
     captureSettingChanged(key, before, settings.get(key))
   }

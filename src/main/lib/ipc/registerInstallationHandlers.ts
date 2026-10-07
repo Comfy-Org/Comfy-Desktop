@@ -554,6 +554,9 @@ export function registerInstallationHandlers(): void {
       if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
       const sections = source.getDetailSections(inst)
       const allowedIds = new Set(['name', 'seen'])
+      // What each field showed: an unset field displays its default, so that is the
+      // value a user edit changes from.
+      const shown = new Map<string, unknown>()
       for (const section of sections) {
         const fields = (section as Record<string, unknown>).fields as
           | Record<string, unknown>[]
@@ -562,6 +565,7 @@ export function registerInstallationHandlers(): void {
         for (const f of fields) {
           if ((f as Record<string, unknown>).editable && (f as Record<string, unknown>).id) {
             allowedIds.add((f as Record<string, unknown>).id as string)
+            shown.set((f as Record<string, unknown>).id as string, f.value)
           }
         }
       }
@@ -591,11 +595,17 @@ export function registerInstallationHandlers(): void {
           }
         }
       }
-      await installations.update(installationId, filtered)
+      const updated = await installations.update(installationId, filtered)
       for (const [key, value] of Object.entries(filtered)) {
-        // `seen` is bookkeeping and `name` a rename, not a setting.
-        if (key !== 'seen' && key !== 'name') {
-          captureSettingChanged(key, inst[key], value, installationId)
+        // `seen` is bookkeeping and `name` a rename, not a setting. `updated` is null
+        // when the install was removed before the queued write ran.
+        if (updated && key !== 'seen' && key !== 'name') {
+          captureSettingChanged(
+            key,
+            shown.has(key) ? shown.get(key) : inst[key],
+            value,
+            installationId
+          )
         }
       }
       return { ok: true }
