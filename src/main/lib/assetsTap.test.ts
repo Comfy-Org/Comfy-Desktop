@@ -410,6 +410,24 @@ describe('assetsTap', () => {
         expect(captured.map((c) => c.event)).not.toContain(
           'comfy.desktop.comfyui.assets.unknown_enum_values_omitted'
         )
+
+        // The same tap counts again from the grant on: consent is read per line, not at creation.
+        tap.ingest(taggedLine('seeder.scan_exploded', { phase: 'fast' }), 'stdout')
+        tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
+        tap.flushSummary()
+        const counts = Object.fromEntries(
+          captured
+            .filter(
+              (c) =>
+                c.event.endsWith('unknown_events_dropped') ||
+                c.event.endsWith('unknown_enum_values_omitted')
+            )
+            .map((c) => [c.event, c.ctx.count])
+        )
+        expect(counts).toEqual({
+          'comfy.desktop.comfyui.assets.unknown_events_dropped': 1,
+          'comfy.desktop.comfyui.assets.unknown_enum_values_omitted': 1
+        })
       }
     )
 
