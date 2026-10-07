@@ -162,8 +162,7 @@ function writePersistedResult(file: string, key: string, entry: PersistedOpsFlag
   writePersistedEntry(file, key, { ...entry, fetchedAt: Date.now() })
 }
 
-/** `writePersistedResult`'s read-modify-write for any JSON entry, with the same refusal and the
- *  same backup-first ordering. */
+/** `writePersistedResult`'s refusal and backup-first ordering, for any JSON entry. */
 export function writePersistedEntry(file: string, key: string, entry: unknown): void {
   const all = readPersistedFileForWrite(file)
   all[key] = entry
@@ -192,9 +191,7 @@ export function makeOpsFlag<T>(opts: {
   /** Value held before the fetch resolves, and kept when it fails or returns something
    *  `parse` doesn't recognise. This is the flag's fail direction. */
   fallback: T
-  /** Return `undefined` to retain the fallback. `fetchedAt` is when the server produced the
-   *  answer being parsed: now for a live one, the saved stamp for a stored one, and absent when
-   *  there is no answer at all. */
+  /** Return `undefined` to retain the fallback; `fetchedAt` is absent when there is no answer. */
   parse: (
     value: FeatureFlagValue | undefined,
     payload: unknown,
@@ -228,7 +225,6 @@ export function makeOpsFlag<T>(opts: {
    *  Only for flags whose fail direction is a downgrade a returning user would notice; a
    *  fail-closed guard must NOT persist. */
   persist?: true
-  /** The file under `configDir()` that `persist` writes. Defaults to `ops-flags.json`. */
   persistFile?: string
 }): OpsFlag<T> {
   const { key, fallback, parse, logLabel, deadlineMs, persist } = opts

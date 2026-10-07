@@ -73,10 +73,8 @@ const launchHarness = vi.hoisted(() => ({
   portLockPid: null as null | number,
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
   killExits: true,
-  /** The campaign registry and answers this launch reads. */
   campaigns: { registry: [] as unknown[], answers: new Map<string, unknown>() },
   campaignRecords: {} as Record<string, Record<string, { epoch: number; enrolledAt: number }>>,
-  /** Every enrolment written, as `[key, arg, epoch]`. */
   recordWrites: [] as Array<[string, string, number]>,
   recordWriteThrows: false,
   recordWriteRecovers: false,
@@ -94,7 +92,6 @@ vi.mock('../../coreBetaCampaignFlags', () => ({
     launchHarness.campaignRecords[key]?.[arg]?.epoch === epoch,
   writeCampaignRecord: (key: string, arg: string, epoch: number) => {
     if (launchHarness.recordWriteRecovers) {
-      // The backup landed before the primary write failed: the record reads back.
       launchHarness.campaignRecords = { [key]: { [arg]: { epoch, enrolledAt: 1 } } }
       throw new Error('ENOSPC')
     }
@@ -1239,7 +1236,6 @@ describe('core beta report placement', () => {
             }
           ]
         },
-        // Fetched 5 s before the launch, so `lag_ms` has a known floor.
         Date.now() - 5_000
       )
     const serveCampaign = (variant: string): void => {
@@ -1278,7 +1274,6 @@ describe('core beta report placement', () => {
         campaign_args: [`${KEY}:--enable-agent:1`]
       })
       expect(missedEvent()).toBeUndefined()
-      // The user-visible surfaces see the campaign grant like any other beta grant.
       expect(_runningSessions.get(id)?.coreBetaArgs?.map((view) => view.arg)).toEqual([
         '--enable-assets',
         '--enable-agent'
@@ -1332,7 +1327,6 @@ describe('core beta report placement', () => {
     })
 
     it('leaves a non-member launch exactly as a launch without campaigns', async () => {
-      // The launch writes its final args back onto the command, so each launch gets a fresh one.
       const command = structuredClone(launchHarness.launchCommand)
       await handleLaunch(ctxFor('campaign-none'))
       const without = spawnArgs

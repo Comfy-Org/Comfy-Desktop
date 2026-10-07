@@ -45,7 +45,6 @@ type Answer = { kind: 'value'; value: unknown; payload?: unknown } | { kind: 'un
 const value = (v: unknown, payload?: unknown): Answer => ({ kind: 'value', value: v, payload })
 const UNREACHABLE: Answer = { kind: 'unreachable' }
 
-/** Answers by flag key; anything unlisted is unreachable. */
 function serve(answers: Record<string, Answer>): void {
   getOpsFlagResult.mockImplementation((key: string) => Promise.resolve(answers[key] ?? UNREACHABLE))
 }
@@ -289,7 +288,6 @@ describe('two cache files', () => {
       [KEY]: value('enrol', AGENT)
     })
     await initCoreBetaFlags({ distinctId: 'id', betaEnabled: true })
-    // Slot #0 rewrote its own file with the same answer and a fresh stamp; nothing else moved.
     const after = JSON.parse(fs.readFileSync(file('ops-flags.json'), 'utf-8'))
     expect(after).toEqual(JSON.parse(before.toString()))
     expect(fs.existsSync(file('campaign-flags.json.bak'))).toBe(false)

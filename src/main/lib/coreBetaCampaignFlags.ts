@@ -1,12 +1,3 @@
-/**
- * The Core beta campaigns' flags and enrolment records on disk. The decision itself is
- * `planCampaignArgs` in `coreBetaCampaigns.ts`.
- *
- * Campaign answers persist in their own `campaign-flags.json`, never `ops-flags.json`, so a
- * campaign write can never rebuild or resurrect slot #0's (898480's) saved answer. Each campaign
- * key is its own ops flag, fetched alongside the registry; a key first listed by this launch's
- * registry answer is fetched from the next launch on.
- */
 import { initCoreBetaGrants } from './coreBetaGrants'
 import {
   CAMPAIGN_REGISTRY_KEY,
@@ -19,11 +10,11 @@ import { makeOpsFlag, readPersistedFile, writePersistedEntry } from './opsFlag'
 import type { OpsFlag } from './opsFlag'
 import type { FeatureFlagValue } from './telemetry'
 
+// Never ops-flags.json: a campaign write must not be able to rebuild or resurrect slot #0's answer.
 const CAMPAIGN_FLAGS_FILE = 'campaign-flags.json'
 const ENROLMENTS_FILE = 'campaign-enrolments.json'
 
-/** #1649's budget for 898480: wait longer while this machine holds something, so a cut lands
- *  this launch. Holding is a record here, not a saved answer: every machine saves the answer. */
+/** Holding means a record here, not a saved answer as for slot #0: every machine saves one. */
 function deadlineMs(enrolled: boolean): number {
   return enrolled ? 5000 : 3000
 }
@@ -43,11 +34,8 @@ function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
 let registry = makeRegistryFlag()
 let campaigns = new Map<string, OpsFlag<CampaignAnswer | null>>()
 
-/** Starts the registry and every campaign key the saved registry lists, in parallel, under one
- *  id. A beta-off boot calls nothing: campaigns never apply to it. */
 export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promise<void> {
-  // Discovery reads the saved registry whatever its age: an expired one still names the keys
-  // worth asking about, and only the live registry and fresh answers decide what applies.
+  // Whatever its age: an expired registry still names the keys; only fresh answers decide.
   const saved = readPersistedFile(CAMPAIGN_FLAGS_FILE).entries[CAMPAIGN_REGISTRY_KEY] as
     | { value?: FeatureFlagValue; payload?: unknown }
     | undefined
@@ -70,8 +58,7 @@ export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promi
   await Promise.all([registry, ...campaigns.values()].map((flag) => flag.init(opts)))
 }
 
-/** The boot fetch for every flag a Core beta decision reads, under ONE id, so slot #0 and the
- *  campaigns can never draw on different ids. `distinctId` may still be resolving. */
+/** Slot #0 and the campaigns under ONE id, so they can never draw on different ids. */
 export async function initCoreBetaFlags(opts: {
   distinctId: string | Promise<string>
   betaEnabled: boolean
@@ -83,7 +70,6 @@ export async function initCoreBetaFlags(opts: {
   ])
 }
 
-/** This launch's registry and the answers for the keys it lists. */
 export async function getCoreBetaCampaigns(): Promise<{
   registry: CampaignRegistryEntry[]
   answers: Map<string, CampaignAnswer>
@@ -101,21 +87,18 @@ export function readCampaignRecords(): CampaignRecords {
   return parseCampaignRecords(readPersistedFile(ENROLMENTS_FILE).entries)
 }
 
-/** Whether the enrolment file's PRIMARY holds this record. `.bak` standing in for an unreadable
- *  primary doesn't count: the next launch reads the primary again, without the record. */
+/** `.bak` standing in for an unreadable primary doesn't count: the next launch rereads the primary. */
 export function campaignRecordSaved(key: string, arg: string, epoch: number): boolean {
   const { entries, primaryUnreadable } = readPersistedFile(ENROLMENTS_FILE)
   return !primaryUnreadable && parseCampaignRecords(entries)[key]?.[arg]?.epoch === epoch
 }
 
-/** Records an enrolment. Throws when the file cannot be safely rewritten; the caller still
- *  applies the arg this launch, and the machine re-enrols while it draws `enrol`. */
+/** Throws when the file cannot be safely rewritten. */
 export function writeCampaignRecord(key: string, arg: string, epoch: number, now: number): void {
   const existing = readCampaignRecords()[key] ?? {}
   writePersistedEntry(ENROLMENTS_FILE, key, { ...existing, [arg]: { epoch, enrolledAt: now } })
 }
 
-/** @internal */
 export function _resetForTest(): void {
   registry._resetForTest()
   registry = makeRegistryFlag()

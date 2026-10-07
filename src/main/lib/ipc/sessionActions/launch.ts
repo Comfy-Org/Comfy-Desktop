@@ -179,7 +179,6 @@ export function launchedCoreCommit(
 export interface CoreBetaLaunch {
   /** Slot #0's applied grants, then the campaigns'. */
   readonly applied: readonly CoreBetaGrant[]
-  /** The campaign grants among `applied`, with their campaign, and the ones that missed. */
   readonly campaign: Pick<CampaignPlan, 'applied' | 'misses'>
   readonly droppedUnsupported: readonly string[]
   readonly logRecords: readonly string[]
@@ -237,7 +236,6 @@ export function buildLaunchArgs(input: {
   coreVersionCurrent: boolean
   coreCommits: CoreCommitState
   betaEnabled: boolean
-  /** This launch's campaign inputs; absent means no campaigns. */
   campaign?: Pick<CampaignFacts, 'registry' | 'answers' | 'records' | 'idClass' | 'now'>
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
@@ -292,10 +290,7 @@ export function buildLaunchArgs(input: {
   }
 }
 
-/** Writes each enrolment this launch made, and counts it only once it is on disk: the
- *  `enrolled` event is the campaign's gate count, so it must never outnumber the records. An
- *  enrolment that could not be recorded still runs this launch, but is reported as a
- *  `record_failed` miss rather than as active. */
+/** The `enrolled` event fires only once the record is on disk, so it never outnumbers records. */
 export function recordCampaignEnrolments(
   campaign: CoreBetaLaunch['campaign']
 ): CoreBetaLaunch['campaign'] {
@@ -308,8 +303,7 @@ export function recordCampaignEnrolments(
       try {
         writeCampaignRecord(key, grant.arg, epoch, now)
       } catch (err) {
-        // The backup is written first, so on a first enrolment (no primary yet) a failed primary
-        // write still leaves the record readable from now on; that one is counted like any other.
+        // On a first enrolment the backup lands first, so the record survives a failed primary write.
         if (!campaignRecordSaved(key, grant.arg, epoch)) {
           console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
           misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
@@ -367,8 +361,7 @@ export function emitCoreBetaTelemetry(input: {
       core_commit: input.coreCommit,
       core_version_label: input.coreVersionLabel,
       dropped_unsupported: [...input.droppedUnsupported],
-      // Enrolled machines running the arg, as `key:arg:epoch`: the campaign's active count. Only
-      // on launches a campaign applied something, so every other launch reports as before.
+      // The active count; only on launches a campaign applied something, so others report as before.
       ...(campaign.applied.length > 0 && {
         campaign_args: campaign.applied.map(
           ({ key, grant, epoch }) => `${key}:${grant.arg}:${epoch}`
@@ -383,9 +376,7 @@ export function emitCoreBetaTelemetry(input: {
         .filter((miss) => miss.member === member)
         .map(({ key, arg, reason }) => `${key}:${arg}:${reason}`)
     telemetry.emit('comfy.desktop.core_beta.campaign_missed', {
-      // Enrolled machines whose arg did not apply this launch, and why.
       idle: misses(true),
-      // Machines that drew `enrol` and did not enrol, and why.
       enrol_refused: misses(false)
     })
   }

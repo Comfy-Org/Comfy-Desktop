@@ -1,15 +1,4 @@
 /**
- * Sticky, volume-gated Core beta campaigns: the pure decision.
- *
- * A campaign is its own PostHog flag with two variants. `enrol` (p% of machines) may enrol this
- * machine into a grant; every other machine (`hold`) gets the grant only if it enrolled on an
- * earlier launch. Closing a rollout is setting `enrol` to 0%: nobody new enrols, and enrolled
- * machines keep the arg. A registry flag lists the live campaign keys in order, with the args each
- * may grant, so a new campaign needs no Desktop release.
- *
- * Slot #0, the beta key (`coreBetaGrants.ts`), is decided first and untouched: its applied args
- * count as already on the command line here, so a campaign can neither repeat nor contradict one.
- *
  * KILLING a campaign: drop the record's epoch from `epochs`, remove the grant, unlist the key from
  * the registry, or serve `false` from a flag that stays ENABLED (a 0% release condition). Never
  * disable or delete a campaign flag or the registry: PostHog omits a disabled flag from `/flags`,
@@ -29,7 +18,6 @@ import type { FeatureFlagValue } from './telemetry'
 
 export const CAMPAIGN_REGISTRY_KEY = 'desktop_campaigns'
 
-/** The variant that may enrol. Any other answer only holds. */
 const ENROL_VARIANT = 'enrol'
 
 const MAX_CAMPAIGNS = 8
@@ -37,43 +25,30 @@ const MAX_GRANTS = 32
 const MAX_EPOCHS = 16
 const CAMPAIGN_KEY_RE = /^[a-z][a-z0-9_]{0,63}$/
 
-/** How old an `enrol` answer may be and still enrol. Bounds the tail after a close: a machine
- *  that fetched `enrol` before it can still enrol from its saved answer for this long. Holding
- *  never checks it. */
 export const ENROL_MAX_AGE_MS = 48 * 60 * 60 * 1000
-/** Allowance for a clock that ran slightly ahead when the answer was saved. */
 const ENROL_FUTURE_SKEW_MS = 60 * 60 * 1000
-/** A held grant drops once its answer is older than this, two-sided like `opsFlag`'s
- *  `PERSIST_MAX_AGE_MS`. That one is only checked when Desktop boots; this is checked at every
- *  launch, so a session that stays open past the bound drops the grant too. */
+/** Checked at every launch, unlike `opsFlag`'s boot-only `PERSIST_MAX_AGE_MS`. */
 export const HOLD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
-/** The payload field handed, untouched, to the agent requirements override (OBL-018), which
- *  reads it through `appliedPassThrough` at #1559's install step. */
+/** Read by the agent requirements override through `appliedPassThrough`, at #1559's install step. */
 const AGENT_PASS_THROUGH_FIELD = 'agent_requirements_override'
 
 export interface CampaignRegistryEntry {
   readonly key: string
-  /** The only args this campaign may grant. */
   readonly args: readonly string[]
 }
 
 export interface CampaignGrant {
   readonly grant: CoreBetaGrant
-  /** The epoch an `enrol` answer enrols into. */
   readonly epoch: number
-  /** The epochs whose records still apply. Always contains `epoch`. */
   readonly epochs: readonly number[]
-  /** Args that must already be on the command line, for enrolling and holding alike. */
   readonly requiresArgs: readonly string[]
 }
 
 export interface CampaignAnswer {
   readonly enrol: boolean
   readonly grants: readonly CampaignGrant[]
-  /** The raw payload, for pass-through fields this layer never reads. */
   readonly payload: unknown
-  /** When the server produced this answer. */
   readonly fetchedAt?: number
 }
 
@@ -82,7 +57,6 @@ export interface CampaignRecord {
   readonly enrolledAt: number
 }
 
-/** Enrolments by campaign key, then arg. */
 export type CampaignRecords = Readonly<Record<string, Readonly<Record<string, CampaignRecord>>>>
 
 function isEnableArg(arg: unknown): arg is string {
@@ -93,8 +67,7 @@ function isEpoch(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1
 }
 
-/** The registry's ordered campaign list. Anything malformed lists nothing, which deactivates every
- *  campaign and keeps every record. */
+/** Anything malformed lists nothing: every campaign deactivates and every record is kept. */
 export function parseCampaignRegistry(
   value: FeatureFlagValue | undefined,
   payload: unknown
@@ -132,10 +105,7 @@ function parseCampaignGrant(candidate: unknown): CampaignGrant | null {
   return { grant, epoch, epochs: [...epochs], requiresArgs }
 }
 
-/**
- * One campaign key's answer. A malformed grant is dropped rather than degraded to a plain grant,
- * which would apply on every `hold` machine; a payload naming one arg twice grants nothing.
- */
+/** A malformed grant is dropped, never degraded to a plain grant that would apply on every `hold`. */
 export function parseCampaignAnswer(
   value: FeatureFlagValue | undefined,
   payload: unknown,
@@ -157,8 +127,7 @@ export function parseCampaignAnswer(
   return { ...answer, grants: args.size === grants.length ? grants : [] }
 }
 
-/** The enrolment file's content, keeping only well-formed records. Prototype-free, so a key such
- *  as `__proto__` or `constructor` in the file is just a key. */
+/** Prototype-free, so `__proto__` or `constructor` in the file is just a key. */
 export function parseCampaignRecords(entries: Record<string, unknown>): CampaignRecords {
   const records: Record<string, Record<string, CampaignRecord>> = Object.create(null)
   for (const [key, byArg] of Object.entries(entries)) {
@@ -172,7 +141,6 @@ export function parseCampaignRecords(entries: Record<string, unknown>): Campaign
   return records
 }
 
-/** The record for (key, arg) when `candidate` still accepts its epoch. */
 function heldRecord(
   records: CampaignRecords,
   key: string,
@@ -182,8 +150,7 @@ function heldRecord(
   return record !== undefined && candidate.epochs.includes(record.epoch) ? record : undefined
 }
 
-/** The grants that can apply on this machine: listed for their campaign, and either drawn `enrol`
- *  or held by an accepted record. Only these are worth proving commit ranges for. */
+/** Only these grants are worth proving commit ranges for. */
 export function campaignCandidateGrants(
   registry: readonly CampaignRegistryEntry[],
   answers: ReadonlyMap<string, CampaignAnswer>,
@@ -219,12 +186,9 @@ export interface CampaignFacts {
 export interface CampaignApplied {
   readonly key: string
   readonly grant: CoreBetaGrant
-  /** The record's epoch, or the new one when this launch enrolled. */
   readonly epoch: number
-  /** This launch wrote the record. */
   readonly enrolledNow: boolean
   readonly payload: unknown
-  /** When the answer that enrolled or held it was fetched. */
   readonly fetchedAt?: number
 }
 
@@ -235,10 +199,9 @@ export type CampaignMissReason =
   | 'unsupported'
   | 'stale_answer'
   | 'id_class'
-  /** Enrolled this launch, but the record could not be written: running, not counted. */
+  /** Enrolled this launch but unrecorded: running, not counted. */
   | 'record_failed'
 
-/** A grant that did not apply on a machine that is enrolled (`member`) or drew `enrol`. */
 export interface CampaignMiss {
   readonly key: string
   readonly arg: string
@@ -263,7 +226,6 @@ function answerFresh(
   return age <= maxAgeMs && age >= -skewMs
 }
 
-/** Campaign keys in registry order, each grant held or enrolled at most once per arg. */
 export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
   const applied: CampaignApplied[] = []
   const misses: CampaignMiss[] = []
@@ -345,8 +307,7 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
   return { applied, misses, trace }
 }
 
-/** The raw `agent_requirements_override` of the campaign that applied `arg` this launch, or
- *  `undefined` when no campaign did. Opaque here: the override module validates it. */
+/** Opaque here: the override module validates the value. */
 export function appliedPassThrough(applied: readonly CampaignApplied[], arg: string): unknown {
   const payload = applied.find((entry) => entry.grant.arg === arg)?.payload
   if (!payload || typeof payload !== 'object') return undefined
