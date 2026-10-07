@@ -55,6 +55,7 @@ import { getDetailSections, getEffectiveChannel } from './updateSections'
 
 interface UpdateAction {
   id: string
+  style?: string
   progressTitle: string
   data?: {
     channel?: string
@@ -845,32 +846,54 @@ describe('updateSections — Repair ComfyUI files', () => {
 
   const repairAction = (inst: InstallationRecord, channel: 'stable' | 'latest') =>
     getChannelAction(inst, channel, 'repair-comfyui')
+  const onTag = (overrides: Partial<InstallationRecord> = {}): InstallationRecord =>
+    baseInstall({
+      comfyVersion: {
+        commit: 'abc1234',
+        baseTag: 'v0.3.20',
+        commitsAhead: 0,
+        baseTagVerified: true
+      },
+      ...overrides
+    } as Partial<InstallationRecord>)
 
   it('offers a repair pinned to the installed tag on the current channel when nothing is newer', () => {
-    const action = repairAction(baseInstall(), 'stable')
+    const action = repairAction(onTag(), 'stable')
     expect(action?.data).toEqual({ channel: 'stable', targetTag: 'v0.3.20' })
+    // A default-style action is what the picker renders in the card footer.
+    expect(action?.style).toBe('default')
     expect(action?.confirm?.title).toBe('standalone.repairFilesTitle')
     // Its own id, so the renderer never promotes it as the channel's update.
-    expect(getUpdateAction(baseInstall(), 'stable')).toBeUndefined()
+    expect(getUpdateAction(onTag(), 'stable')).toBeUndefined()
+  })
+
+  it('offers no repair on a tag the resolver could not verify is HEAD', () => {
+    // The backport fallback can report 0 commits ahead for a different commit.
+    expect(repairAction(baseInstall(), 'stable')).toBeUndefined()
   })
 
   it('offers no repair between tags, where it could not pin the installed version', () => {
     const install = baseInstall({
       updateChannel: 'latest',
-      comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 3 }
+      comfyVersion: {
+        commit: 'abc1234',
+        baseTag: 'v0.3.20',
+        commitsAhead: 3,
+        baseTagVerified: true
+      }
     } as Partial<InstallationRecord>)
     expect(repairAction(install, 'latest')).toBeUndefined()
   })
 
   it('offers no repair on another channel, or when an update is available', () => {
-    expect(repairAction(baseInstall(), 'latest')).toBeUndefined()
+    expect(repairAction(onTag(), 'latest')).toBeUndefined()
     vi.mocked(releaseCache.isUpdateAvailable).mockReturnValue(true)
-    expect(repairAction(baseInstall(), 'stable')).toBeUndefined()
-    expect(getUpdateAction(baseInstall(), 'stable')).toBeDefined()
+    expect(repairAction(onTag(), 'stable')).toBeUndefined()
+    expect(getUpdateAction(onTag(), 'stable')).toBeDefined()
   })
 
   it('offers no repair without a git checkout', () => {
     vi.mocked(fs.existsSync).mockImplementation((p) => !String(p).endsWith('.git'))
-    expect(repairAction(baseInstall(), 'stable')).toBeUndefined()
+    expect(repairAction(onTag(), 'stable')).toBeUndefined()
   })
 })
