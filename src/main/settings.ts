@@ -499,6 +499,7 @@ function loadOutcome(): {
   }
   // Before the null cleanup below, so a stored `null` is logged as `null`, not as unset.
   const persisted: Record<string, unknown> = { ...(parsed ?? {}) }
+  if (read.kind === 'data' && !parsed) unparseableBaselines.set(persisted, read.data.length)
   if (parsed) {
     for (const key of KNOWN_SETTING_KEYS) {
       if (parsed[key] === null && !isNullableKnownSettingKey(key)) {
@@ -530,7 +531,9 @@ function loadOutcome(): {
   // silently take effect the moment docking is restored. Preserves a `'quit'`
   // choice.
   if (result.onAppClose === 'tray') {
-    delete (result as Record<string, unknown>).onAppClose
+    // The default, not a delete: every later save writes it back, and would be logged
+    // as that writer's change.
+    result.onAppClose = defaults.onAppClose
     changed = true
   }
 
@@ -666,6 +669,10 @@ function describeForLog(v: unknown): string {
   return `<${typeof v}>`
 }
 
+/** Baselines read from a file that held data but no settings object, with its length: the
+ *  next write drops whatever it held, which a key-by-key diff against `{}` cannot show. */
+const unparseableBaselines = new WeakMap<object, number>()
+
 /** One line per key whose value on disk changed, with the stack that wrote it. `before` is
  *  what was parsed from disk, not the defaults-merged view, so a key a sparse file gains is
  *  logged too. Writers that bypass `save` are not logged: the `.bak` restore in
@@ -681,6 +688,10 @@ function logPersistedChanges(
       changes.push(
         `${JSON.stringify(key)}: ${describeForLog(before[key])} -> ${describeForLog(after[key])}`
       )
+    }
+    const discarded = unparseableBaselines.get(before)
+    if (discarded !== undefined) {
+      changes.unshift(`(previous file unparseable, ${discarded} bytes discarded)`)
     }
     if (changes.length === 0) return
     // Stack lines 1-2 are this helper and `save`; the writer starts at line 3. The app's own

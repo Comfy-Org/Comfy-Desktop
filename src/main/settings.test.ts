@@ -902,6 +902,34 @@ describe('persisted-write logging', () => {
     expect(readPersistedSettings().betaFeaturesEnabled).toBe(false)
   })
 
+  it('logs a stale tray close setting repaired once, not again under the next writer', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ onAppClose: 'tray' }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.get('onAppClose')
+    settings.set('hideCloudFromPicker', true)
+
+    const lines = writeLines(log).filter((l) => l.includes('onAppClose'))
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('loadOutcome')
+    expect(settings.get('onAppClose')).toBe('quit')
+  })
+
+  it('says when the previous file was unparseable, so dropped keys are not invisible', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    const corrupt = '{"telemetryEnabled": true, "betaFeaturesEnabled": fals'
+    fs.writeFileSync(settingsPath, corrupt)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('hideCloudFromPicker', true)
+
+    expect(writeLines(log).join('\n')).toContain(
+      `(previous file unparseable, ${corrupt.length} bytes discarded)`
+    )
+  })
+
   it('does not log a write that never reached disk', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
