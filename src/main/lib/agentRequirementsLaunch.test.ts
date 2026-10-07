@@ -656,3 +656,203 @@ describe('force-stopping an abandoned install', () => {
     }
   })
 })
+
+describe('installAgentRequirements with a version override', () => {
+  let plan: {
+    reqPath: string
+    uvPath: string
+    pythonPath: string
+    installPath: string
+  }
+  /** What each fake uv call saw: the file it was given (read at call time, since the
+   *  overridden copy is deleted afterwards) and whether it was a dry run. */
+  let calls: { file: string; content: string; dryRun: boolean }[] = []
+  /** Outcome per call kind; a test overrides the ones it is about. */
+  let respond: (call: { content: string; dryRun: boolean }) => { code: number; output: string }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-override-'))
+    const reqPath = path.join(installDir, 'ComfyUI', 'agent_requirements.txt')
+    fs.mkdirSync(path.dirname(reqPath), { recursive: true })
+    fs.writeFileSync(reqPath, 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n')
+    plan = { reqPath, uvPath: '/uv', pythonPath: '/py', installPath: installDir }
+    calls = []
+    respond = () => ({ code: 0, output: 'Would make no changes\n' })
+    mockInstall.mockImplementation(async (file, ...rest) => {
+      const extraArgs = rest[7] as string[] | undefined
+      const call = {
+        file,
+        content: fs.readFileSync(file, 'utf-8'),
+        dryRun: extraArgs?.includes('--dry-run') ?? false
+      }
+      calls.push(call)
+      return respond(call)
+    })
+  })
+
+  afterEach(() => {
+    mockInstall.mockReset()
+    mockInstall.mockResolvedValue({ code: 0, output: '' })
+    fs.rmSync(installDir, { recursive: true, force: true })
+  })
+
+  const OVERRIDE = { 'comfy-agent': '0.2.3' }
+
+  it('checks both files, then installs only the overridden one', async () => {
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toEqual({ decision: 'applied', pins: new Map([['comfy-agent', '0.2.3']]) })
+    expect(calls.map((c) => [c.dryRun, c.content])).toEqual([
+      [true, 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'],
+      [true, 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'],
+      [false, 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n']
+    ])
+  })
+
+  it('leaves no overridden copy behind', async () => {
+    await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(fs.readdirSync(installDir)).toEqual(['ComfyUI'])
+  })
+
+  it('installs core file alone, exactly as before, when there is no override', async () => {
+    const decision = await installAgentRequirements(plan, vi.fn())
+
+    expect(decision).toBeUndefined()
+    expect(calls).toEqual([
+      { file: plan.reqPath, content: 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n', dryRun: false }
+    ])
+  })
+
+  it('refuses an invalid payload and installs core file', async () => {
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, {
+      'comfy-agent': '0.2.3 --index-url https://evil.example/simple'
+    })
+
+    expect(decision).toEqual({ decision: 'refused', reason: 'bad_version' })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.file).toBe(plan.reqPath)
+    expect(calls[0]!.dryRun).toBe(false)
+  })
+
+  it('refuses an override of a package core does not pin exactly', async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'refused', reason: 'unsupported_line' })
+    expect(calls.map((c) => c.content)).toEqual(['comfy-agent\ncomfy-cli==1.21.0\n'])
+  })
+
+  it('refuses an override that would move a package ComfyUI already has', async () => {
+    respond = ({ content, dryRun }) =>
+      dryRun && content.includes('0.2.3')
+        ? { code: 0, output: ' - requests==2.32.0\n + requests==2.31.0\n' }
+        : { code: 0, output: 'Would make no changes\n' }
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'refused', reason: 'would_change_other' })
+    expect(calls.filter((c) => !c.dryRun).map((c) => c.content)).toEqual([
+      'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'
+    ])
+  })
+
+  it('refuses when core file itself cannot be checked', async () => {
+    respond = ({ content, dryRun }) =>
+      dryRun && content.includes('0.2.0') ? { code: 1, output: '' } : { code: 0, output: '' }
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'refused', reason: 'check_failed' })
+  })
+
+  it('falls back to core file when the overridden version does not resolve', async () => {
+    respond = ({ content }) =>
+      content.includes('0.2.3') ? { code: 1, output: '' } : { code: 0, output: '' }
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
+    expect(calls.at(-1)).toMatchObject({ file: plan.reqPath, dryRun: false })
+  })
+
+  it('falls back to core file when the overridden install fails', async () => {
+    respond = ({ content, dryRun }) =>
+      !dryRun && content.includes('0.2.3') ? { code: 1, output: '' } : { code: 0, output: '' }
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
+    expect(calls.map((c) => [c.dryRun, c.content.includes('0.2.3')])).toEqual([
+      [true, false],
+      [true, true],
+      [false, true],
+      [false, false]
+    ])
+  })
+
+  it('installs core file for a version this install already gave up on', async () => {
+    const state = { signature: 'comfy-agent==0.2.3', failures: 2, reverted: true }
+
+    const decision = await installAgentRequirements(
+      plan,
+      vi.fn(),
+      undefined,
+      undefined,
+      OVERRIDE,
+      state
+    )
+
+    expect(decision).toMatchObject({ decision: 'reverted', reason: 'start_failed' })
+    expect(calls).toEqual([
+      { file: plan.reqPath, content: 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n', dryRun: false }
+    ])
+  })
+
+  it('tries a new version even after an earlier one was reverted', async () => {
+    const state = { signature: 'comfy-agent==0.2.3', failures: 2, reverted: true }
+
+    const decision = await installAgentRequirements(
+      plan,
+      vi.fn(),
+      undefined,
+      undefined,
+      { 'comfy-agent': '0.2.4' },
+      state
+    )
+
+    expect(decision?.decision).toBe('applied')
+  })
+
+  it('gives the fallback what is left of the ceiling after an override that timed out', async () => {
+    // Only the timers: the fake uv reads real files, which needs real I/O turns.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      // The overridden install never settles; its own budget ends it.
+      respond = () => ({ code: 0, output: '' })
+      mockInstall.mockImplementation(async (file, ...rest) => {
+        const signal = rest[5] as AbortSignal
+        const extraArgs = rest[7] as string[] | undefined
+        const content = fs.readFileSync(file, 'utf-8')
+        calls.push({ file, content, dryRun: extraArgs?.includes('--dry-run') ?? false })
+        if (!extraArgs && content.includes('0.2.3')) {
+          return new Promise((resolve) =>
+            signal.addEventListener('abort', () => resolve({ code: 1, output: '' }))
+          )
+        }
+        return { code: 0, output: '' }
+      })
+      const pending = installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+      while (!calls.some((c) => !c.dryRun)) await new Promise((r) => setImmediate(r))
+      await vi.advanceTimersByTimeAsync(90_000)
+      const decision = await pending
+
+      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
+      expect(calls.at(-1)).toMatchObject({ file: plan.reqPath, dryRun: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

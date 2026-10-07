@@ -7,6 +7,20 @@ import { installFilteredRequirementsDetailed } from './pip'
 import type { UvPipResult } from './pip'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import type { InstallationRecord } from '../installations'
+import {
+  effectiveAgentRequirements,
+  isRevertedFor,
+  overrideChangesOthers,
+  overrideSignature,
+  parseAgentRequirementsOverride,
+  parseDryRun
+} from './agentRequirementsOverride'
+import type {
+  AgentOverrideState,
+  OverrideDecision,
+  OverridePins,
+  OverrideRefusal
+} from './agentRequirementsOverride'
 
 /** The Core flag that starts ComfyUI with the agent enabled. */
 const ENABLE_AGENT_ARG = '--enable-agent'
@@ -123,7 +137,8 @@ function runBounded(cmd: string, args: string[]): Promise<void> {
  */
 async function forceStopAgentInstall(
   proc: ChildProcess | null,
-  installPath: string
+  installPath: string,
+  tempName: string
 ): Promise<void> {
   const pid = proc?.pid
   if (pid) {
@@ -143,7 +158,7 @@ async function forceStopAgentInstall(
     }
   }
   try {
-    await fs.promises.unlink(path.join(installPath, FILTERED_REQS))
+    await fs.promises.unlink(path.join(installPath, tempName))
   } catch {}
 }
 
@@ -192,10 +207,11 @@ export function planAgentRequirementsInstall(
 }
 
 /**
- * Install the planned requirements, streaming uv's output into the launch.
+ * Run one `uv pip install -r`, streaming uv's output into the launch. True when it exited 0,
+ * with what it printed; a dry run is driven with no `onStatus` and a silent `sendOutput`.
  *
- * Bounded and fail-open. Never throws and reports nothing back: neither a
- * failure nor a timeout here may stop the launch. ComfyUI still starts with the
+ * Bounded and fail-open. Never throws: neither a failure nor a timeout here may
+ * stop the launch. ComfyUI still starts with the
  * flag, prints its own install hint and disables the agent itself, which beats
  * refusing to start.
  *
@@ -205,13 +221,16 @@ export function planAgentRequirementsInstall(
  * the ceiling asks it to stop, and `KILL_GRACE_MS` later the launch stops
  * waiting whether or not it did. Nothing downstream depends on which happened.
  */
-export async function installAgentRequirements(
+async function runBoundedInstall(
   plan: AgentRequirementsInstall,
+  reqPath: string,
+  tempName: string,
+  timeoutMs: number,
   sendOutput: (text: string) => void,
   signal?: AbortSignal,
-  onStatus?: (status: AgentInstallStatus) => void
-): Promise<void> {
-  sendOutput('\nInstalling agent requirements…\n')
+  onStatus?: (status: AgentInstallStatus) => void,
+  extraArgs?: string[]
+): Promise<{ ok: boolean; output: string }> {
   // uv's own output is the only progress signal available: the download is a
   // single opaque stretch otherwise, and the row would sit on one caption for
   // its whole duration.
@@ -244,7 +263,7 @@ export async function installAgentRequirements(
   const deadline = setTimeout(() => {
     timedOut = true
     uvAbort.abort()
-  }, INSTALL_TIMEOUT_MS)
+  }, timeoutMs)
 
   // Settled into a value rather than awaited directly: losing the race leaves
   // this pending, and a later rejection with nothing awaiting it would surface
@@ -253,15 +272,15 @@ export async function installAgentRequirements(
   // stop exactly this install rather than looking for it.
   let uvProc: ChildProcess | null = null
   const install: Promise<InstallOutcome> = installFilteredRequirementsDetailed(
-    plan.reqPath,
+    reqPath,
     plan.uvPath,
     plan.pythonPath,
     plan.installPath,
-    FILTERED_REQS,
+    tempName,
     stream,
     uvAbort.signal,
     settings.getMirrorConfig(),
-    undefined,
+    extraArgs,
     (proc) => {
       uvProc = proc
     }
@@ -274,12 +293,12 @@ export async function installAgentRequirements(
     const outcome = await Promise.race([install, abandoned])
     // A cancelled launch kills uv mid-install, so whatever it reports is the
     // cancellation rather than a failure worth showing.
-    if (signal?.aborted) return
+    if (signal?.aborted) return { ok: false, output: '' }
     if (outcome.kind === 'abandoned') {
       onStatus?.({ kind: 'failed' })
-      await forceStopAgentInstall(uvProc, plan.installPath)
+      await forceStopAgentInstall(uvProc, plan.installPath, tempName)
       sendOutput(
-        `\n⚠ agent requirements install exceeded ${INSTALL_TIMEOUT_MS / 1000}s and uv did not stop; hard-stopped it and starting ComfyUI anyway\n`
+        `\n⚠ agent requirements install exceeded ${Math.round(timeoutMs / 1000)}s and uv did not stop; hard-stopped it and starting ComfyUI anyway\n`
       )
     } else if (outcome.kind === 'failed') {
       onStatus?.({ kind: 'failed' })
@@ -295,13 +314,140 @@ export async function installAgentRequirements(
       // error a second time in the log.
       sendOutput(
         timedOut
-          ? `\n⚠ agent requirements install exceeded ${INSTALL_TIMEOUT_MS / 1000}s; starting ComfyUI without it\n`
+          ? `\n⚠ agent requirements install exceeded ${Math.round(timeoutMs / 1000)}s; starting ComfyUI without it\n`
           : `\n⚠ agent requirements install exited with code ${outcome.result.code}\n`
       )
     }
+    return outcome.kind === 'settled' && outcome.result.code === 0
+      ? { ok: true, output: outcome.result.output }
+      : { ok: false, output: '' }
   } finally {
     clearTimeout(deadline)
     if (graceTimer !== undefined) clearTimeout(graceTimer)
     signal?.removeEventListener('abort', onLaunchAbort)
   }
+}
+
+/**
+ * Install the planned requirements. Bounded and fail-open, never throws.
+ *
+ * `override` is the raw `agent_requirements_override` the agent campaign passed through, and
+ * `overrideState` this install's record of the last one. An override that validates and passes
+ * its check is installed within `OVERRIDE_TIMEOUT_MS`; otherwise core's own file runs, in what
+ * is left of the ceiling. Returns the override decision to report, or undefined when no
+ * override was in play.
+ */
+export async function installAgentRequirements(
+  plan: AgentRequirementsInstall,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal,
+  onStatus?: (status: AgentInstallStatus) => void,
+  override?: unknown,
+  overrideState: AgentOverrideState | null = null
+): Promise<OverrideDecision | undefined> {
+  sendOutput('\nInstalling agent requirements…\n')
+  const run: BoundedRun = (reqPath, tempName, timeoutMs, extraArgs) =>
+    extraArgs
+      ? runBoundedInstall(
+          plan,
+          reqPath,
+          tempName,
+          timeoutMs,
+          () => {},
+          signal,
+          undefined,
+          extraArgs
+        )
+      : runBoundedInstall(plan, reqPath, tempName, timeoutMs, sendOutput, signal, onStatus)
+  const startedAt = Date.now()
+  const decision = await tryOverride(plan, override, overrideState, run, sendOutput)
+  if (signal?.aborted || decision?.decision === 'applied') return decision
+  const remaining = Math.max(MIN_FALLBACK_TIMEOUT_MS, INSTALL_TIMEOUT_MS - (Date.now() - startedAt))
+  await run(plan.reqPath, FILTERED_REQS, remaining)
+  return decision
+}
+
+/** Share of the ceiling the override gets: its dry-run checks plus the install. What is left
+ *  stays for core's file, so a slow link that times the override out still gets a fallback. */
+const OVERRIDE_TIMEOUT_MS = 90_000
+
+/** Floor for core's file after an override, so a check that ran long cannot leave it nothing. */
+const MIN_FALLBACK_TIMEOUT_MS = 30_000
+
+/** Where the overridden copy of core's file is written, and the helper's filtered copy of it. */
+const OVERRIDE_REQS = '.launch-agent-reqs-override-src.txt'
+const OVERRIDE_FILTERED_REQS = '.launch-agent-reqs-override.txt'
+
+type BoundedRun = (
+  reqPath: string,
+  tempName: string,
+  timeoutMs: number,
+  extraArgs?: string[]
+) => Promise<{ ok: boolean; output: string }>
+
+/** Validate, check and install the override. Undefined when there is none; otherwise the decision,
+ *  where anything but `applied` means core's file still has to run. */
+async function tryOverride(
+  plan: AgentRequirementsInstall,
+  raw: unknown,
+  state: AgentOverrideState | null,
+  run: BoundedRun,
+  sendOutput: (text: string) => void
+): Promise<OverrideDecision | undefined> {
+  const parsed = parseAgentRequirementsOverride(raw)
+  if (parsed.kind === 'none') return undefined
+  if (parsed.kind === 'refused') return refuse(sendOutput, parsed.reason)
+  const { pins } = parsed
+  if (isRevertedFor(state, pins)) {
+    sendOutput(
+      `agent version override ${overrideSignature(pins)} failed to start before; using core's versions\n`
+    )
+    return { decision: 'reverted', reason: 'start_failed', pins }
+  }
+  let coreText: string
+  try {
+    coreText = await fs.promises.readFile(plan.reqPath, 'utf-8')
+  } catch {
+    return refuse(sendOutput, 'check_failed', pins)
+  }
+  const effective = effectiveAgentRequirements(coreText, pins)
+  if (effective.kind === 'refused') return refuse(sendOutput, effective.reason, pins)
+
+  const overridePath = path.join(plan.installPath, OVERRIDE_REQS)
+  const deadline = Date.now() + OVERRIDE_TIMEOUT_MS
+  const left = (): number => Math.max(0, deadline - Date.now())
+  try {
+    await fs.promises.writeFile(overridePath, effective.text, 'utf-8')
+    const coreDry = await run(plan.reqPath, FILTERED_REQS, left(), ['--dry-run'])
+    if (!coreDry.ok) return refuse(sendOutput, 'check_failed', pins)
+    const overrideDry = await run(overridePath, OVERRIDE_FILTERED_REQS, left(), ['--dry-run'])
+    if (!overrideDry.ok) return revertOnInstall(sendOutput, pins)
+    if (overrideChangesOthers(parseDryRun(overrideDry.output), parseDryRun(coreDry.output), pins)) {
+      return refuse(sendOutput, 'would_change_other', pins)
+    }
+    sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
+    const installed = await run(overridePath, OVERRIDE_FILTERED_REQS, left())
+    if (!installed.ok) return revertOnInstall(sendOutput, pins)
+    return { decision: 'applied', pins }
+  } catch {
+    return revertOnInstall(sendOutput, pins)
+  } finally {
+    await fs.promises.unlink(overridePath).catch(() => {})
+  }
+}
+
+function refuse(
+  sendOutput: (text: string) => void,
+  reason: OverrideRefusal,
+  pins?: OverridePins
+): OverrideDecision {
+  sendOutput(`agent version override refused (${reason}); using core's versions\n`)
+  return { decision: 'refused', reason, ...(pins ? { pins } : {}) }
+}
+
+function revertOnInstall(sendOutput: (text: string) => void, pins: OverridePins): OverrideDecision {
+  sendOutput(
+    `agent version override ${overrideSignature(pins)} did not install; using core's versions\n`
+  )
+  return { decision: 'reverted', reason: 'install_failed', pins }
 }
