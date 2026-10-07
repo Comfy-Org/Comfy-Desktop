@@ -494,6 +494,29 @@ export function parseNetstatListeners(stdout: string, port: number): number[] {
   return [...pids]
 }
 
+const TERMINATE_API =
+  '[DllImport("kernel32.dll",SetLastError=true)] public static extern IntPtr OpenProcess(uint a,bool i,uint p);' +
+  '[DllImport("kernel32.dll",SetLastError=true)] public static extern bool TerminateProcess(IntPtr h,uint c);' +
+  '[DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);'
+
+/**
+ * Windows only: end `pid` with TerminateProcess, asking only for PROCESS_TERMINATE. That much a
+ * same-user process grants even when it runs elevated; taskkill asks for more and is refused.
+ * 'denied' when Windows refuses (another user's or a system process), null when it could not tell.
+ */
+export async function terminateWindowsPid(pid: number): Promise<'ok' | 'denied' | null> {
+  if (!Number.isInteger(pid) || pid <= 0) return null
+  const out = await powershell(
+    `$k = Add-Type -MemberDefinition '${TERMINATE_API}' -Name T -Namespace DbLock -PassThru; ` +
+      `$h = $k::OpenProcess(1, $false, ${pid}); ` +
+      `if ($h -eq [IntPtr]::Zero) { 'E' + [Runtime.InteropServices.Marshal]::GetLastWin32Error(); exit } ` +
+      `$ok = $k::TerminateProcess($h, 1); $e = [Runtime.InteropServices.Marshal]::GetLastWin32Error(); ` +
+      `[void]$k::CloseHandle($h); if ($ok) { 'OK' } else { 'E' + $e }`
+  )
+  const answer = out?.trim()
+  return answer === 'OK' ? 'ok' : answer === 'E5' ? 'denied' : null
+}
+
 /**
  * `pid`'s start token in the form a ComfyUI writes into its database-lock record: on Windows the
  * exact creation FILETIME from Get-Process (readable where CIM is not), elsewhere the usual token.
@@ -501,8 +524,7 @@ export function parseNetstatListeners(stdout: string, port: number): number[] {
  */
 export async function holderStartToken(pid: number): Promise<string | null> {
   if (!Number.isInteger(pid) || pid <= 0) return null
-  // Only a process Desktop may stop counts: another user's or root's (POSIX), or an elevated one
-  // seen from a normal Desktop (Windows, where opening its handle asks for that access), does not.
+  // On POSIX, only a process Desktop may signal counts (not another user's or root's).
   if (process.platform !== 'win32') {
     try {
       process.kill(pid, 0)
@@ -512,8 +534,7 @@ export async function holderStartToken(pid: number): Promise<string | null> {
     return (await readStartTimes([pid]))?.get(pid) ?? null
   }
   const stdout = await powershell(
-    `$p = Get-Process -Id ${pid} -ErrorAction Stop; $null = $p.Handle; ` +
-      `$p.StartTime.ToUniversalTime().ToFileTimeUtc()`
+    `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToFileTimeUtc()`
   )
   return /^\d+$/.test(stdout?.trim() ?? '') ? stdout!.trim() : null
 }

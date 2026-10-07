@@ -12,7 +12,8 @@ import {
   parseNetstatListeners,
   processGroupOf,
   readStartTimes,
-  snapshotWindowsTree
+  snapshotWindowsTree,
+  terminateWindowsPid
 } from './processIdentity'
 
 /** Default timeout for waiting for ComfyUI to boot (5 minutes). */
@@ -227,21 +228,22 @@ async function killWindowsTreeVerified(
  *  checked `isSafeToSignal`, just re-proven whose pid it is, and had the user confirm that
  *  process. A zombie its parent has not reaped yet has exited (and released its files), so it
  *  counts as gone. */
-export async function killPid(pid: number): Promise<boolean> {
+export async function killPid(pid: number): Promise<'exited' | 'denied' | 'alive'> {
   if (process.platform === 'win32') {
-    await new Promise<void>((resolve) => {
-      execFile('taskkill', ['/F', '/PID', String(pid)], { windowsHide: true }, () => resolve())
-    })
+    if ((await terminateWindowsPid(pid)) === 'denied') return 'denied'
   } else {
     try {
       process.kill(pid, 'SIGKILL')
-    } catch {}
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'EPERM') return 'denied'
+    }
   }
   // Off Windows only: there a live process can be listed without a creation time (and so be
   // absent here), and no process lingers as a zombie.
   const zombie = async (): Promise<boolean> =>
     process.platform !== 'win32' && (await readStartTimes([pid]))?.has(pid) === false
-  return (await waitUntil(() => !isPidAlive(pid), monotonicNow(), KILL_WAIT_MS, zombie)).exited
+  const { exited } = await waitUntil(() => !isPidAlive(pid), monotonicNow(), KILL_WAIT_MS, zombie)
+  return exited ? 'exited' : 'alive'
 }
 
 export function killProcessTree(proc: ChildProcess | null): Promise<KillResult> {

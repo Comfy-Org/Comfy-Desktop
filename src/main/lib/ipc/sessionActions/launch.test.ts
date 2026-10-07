@@ -184,6 +184,7 @@ const lockRecord = vi.hoisted(() => ({
   /** Whether the stop killed it even though the cancel fired meanwhile (null: it refused). */
   stoppedDespiteCancel: null as null | boolean,
   lookupThrows: false,
+  stopDenied: false,
   duringStop: null as null | (() => void),
   duringLookup: null as null | (() => void),
   children: { count: 0 }
@@ -204,9 +205,10 @@ vi.mock('../../comfyDbLock', async (importOriginal) => ({
       spawned: lockRecord.children.count,
       aborted: signal?.aborted
     })
+    if (lockRecord.stopDenied) return 'denied'
     if (signal?.aborted && lockRecord.stoppedDespiteCancel !== null)
-      return lockRecord.stoppedDespiteCancel
-    return lockRecord.stopOk && !signal?.aborted
+      return lockRecord.stoppedDespiteCancel ? 'stopped' : 'failed'
+    return lockRecord.stopOk && !signal?.aborted ? 'stopped' : 'failed'
   }
 }))
 
@@ -2744,6 +2746,7 @@ describe('prior ComfyUI process handling at launch', () => {
       lockRecord.duringLookup = null
       lockRecord.stoppedDespiteCancel = null
       lockRecord.lookupThrows = false
+      lockRecord.stopDenied = false
       launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     })
 
@@ -2843,6 +2846,18 @@ describe('prior ComfyUI process handling at launch', () => {
       const log = getLogsBuffer('db-record-cancel').join('')
       expect(log).toContain('stopping pid 9084 (confirmed)')
       expect(log).toContain('stopping pid 9084 was cancelled')
+    })
+
+    it('says Windows (or the OS) would not let it stop the holder, and launches nothing', async () => {
+      lockRecord.stopDenied = true
+      const t = vi.spyOn(i18nModule, 't')
+      const res = await handleLaunch(ctxFor('db-record-denied', { stopDbLockHolder: offer() }))
+      expect(res.ok).toBe(false)
+      expect(t).toHaveBeenCalledWith('errors.dbLockStopDenied', { pid: 9084 })
+      expect(getLogsBuffer('db-record-denied').join('')).toContain(
+        'could not stop pid 9084 (denied)'
+      )
+      expect(children).toHaveLength(0)
     })
 
     it('launches nothing when the stop could not re-prove or stop it', async () => {

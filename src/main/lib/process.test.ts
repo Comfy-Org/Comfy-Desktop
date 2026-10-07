@@ -4,6 +4,7 @@ import type { ChildProcess } from 'child_process'
 import {
   findAvailablePort,
   isPortListening,
+  killPid,
   killPidTree,
   isSafeToSignal,
   killProcessTree,
@@ -91,6 +92,17 @@ async function listenConsecutive(
     await closeServers(servers)
   }
   throw new Error(`could not bind ${count} consecutive ports on ${host}`, { cause: lastError })
+}
+
+import { statSync } from 'fs'
+
+/** pid 1 is root's here, not (in a pid namespace) a sandbox's own init we must never signal. */
+const rootOwnsPid1 = (): boolean => {
+  try {
+    return statSync('/proc/1').uid === 0
+  } catch {
+    return false
+  }
 }
 
 describe('findAvailablePort', () => {
@@ -378,6 +390,17 @@ describe.runIf(process.platform !== 'win32')('kills that wait for exit (real pro
     }
   })
 })
+
+describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0 && rootOwnsPid1())(
+  'killPid on a process Desktop may not signal',
+  () => {
+    it('says the OS refused, at once, instead of waiting for an exit', async () => {
+      const t0 = Date.now()
+      expect(await killPid(1)).toBe('denied')
+      expect(Date.now() - t0).toBeLessThan(1_000)
+    })
+  }
+)
 
 describe('isSafeToSignal (never signal what a forged record names)', () => {
   it.each([0, 1, -5, 1.5])('refuses pid %s', async (pid) => {

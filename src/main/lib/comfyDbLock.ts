@@ -174,25 +174,26 @@ export async function findDbLockOffer(input: {
 /**
  * Stops the ComfyUI the user confirmed in `offer`, and only it: the record beside `dbPath` (this
  * launch's database) must still name it, with the same start time, and `signal` must not have
- * aborted. True when it exited.
+ * aborted. 'stopped' when it is gone; 'denied' when the OS would not let Desktop stop it.
  */
 export async function stopDbLockOffer(
   offer: DbLockOffer,
   dbPath: string,
   signal?: AbortSignal
-): Promise<boolean> {
+): Promise<'stopped' | 'denied' | 'failed'> {
   // It exited (or its pid was reused) while the user decided: nothing left to stop. A start time
   // that could not be read proves nothing while the pid lives: the proof below decides.
   const now = await holderStartToken(offer.pid).catch(() => null)
-  if (now !== offer.startTime && (now !== null || !isPidAlive(offer.pid))) return true
+  if (now !== offer.startTime && (now !== null || !isPidAlive(offer.pid))) return 'stopped'
   // Anything slow (the first safety probe runs `ps`) comes before the proof, not between it and
   // the signal.
-  if (!(await isSafeToSignal(offer.pid))) return false
+  if (!(await isSafeToSignal(offer.pid))) return 'failed'
   const record = await readHolderRecord(dbPath)
   if (record?.pid !== offer.pid || record.started !== offer.startTime || signal?.aborted) {
-    return false
+    return 'failed'
   }
-  return killPid(offer.pid)
+  const killed = await killPid(offer.pid)
+  return killed === 'exited' ? 'stopped' : killed === 'denied' ? 'denied' : 'failed'
 }
 
 /** `value` as a `DbLockOffer` (it crossed IPC), or null. */

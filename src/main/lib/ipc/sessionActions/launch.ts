@@ -1525,7 +1525,8 @@ async function runLaunch(
       sessionId,
       `[launch] stopping pid ${lockOffer.pid} (confirmed): it holds the database lock\n`
     )
-    const stopped = !!dbPath && (await stopDbLockOffer(lockOffer, dbPath, abort.signal))
+    const outcome = dbPath ? await stopDbLockOffer(lockOffer, dbPath, abort.signal) : 'failed'
+    const stopped = outcome === 'stopped'
     // A stop that happened is logged even if the user cancelled while it ran.
     if (stopped)
       appendLog(sessionId, `[launch] pid ${lockOffer.pid}, which held the database lock, is gone\n`)
@@ -1534,9 +1535,10 @@ async function runLaunch(
       return { ok: false, cancelled: true }
     }
     if (!stopped) {
-      appendLog(sessionId, `[launch] could not stop pid ${lockOffer.pid}\n`)
+      appendLog(sessionId, `[launch] could not stop pid ${lockOffer.pid} (${outcome})\n`)
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
-      return { ok: false, message: i18n.t('errors.dbLockStopFailed', { pid: lockOffer.pid }) }
+      const key = outcome === 'denied' ? 'errors.dbLockStopDenied' : 'errors.dbLockStopFailed'
+      return { ok: false, message: i18n.t(key, { pid: lockOffer.pid }) }
     }
     // Its listening socket can outlive it by a few milliseconds.
     await waitForPortFree(launchCmd.port!)

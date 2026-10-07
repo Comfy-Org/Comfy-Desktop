@@ -15,6 +15,17 @@ import {
   startTokenToEpochMs
 } from './processIdentity'
 
+import { statSync } from 'fs'
+
+/** pid 1 is root's here, not (in a pid namespace) a sandbox's own init we must never signal. */
+const rootOwnsPid1 = (): boolean => {
+  try {
+    return statSync('/proc/1').uid === 0
+  } catch {
+    return false
+  }
+}
+
 describe('parseLinuxStat', () => {
   // Fields after the command: state(3) ... starttime(22) is the 20th.
   const tail = (state: string, start: string): string =>
@@ -152,7 +163,7 @@ describe.runIf(process.platform !== 'win32')('groupHasLiveMembers (real processe
   })
 })
 
-describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0)(
+describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0 && rootOwnsPid1())(
   'holderStartToken (real processes)',
   () => {
     it("names no holder Desktop may not stop: another user's or root's process", async () => {

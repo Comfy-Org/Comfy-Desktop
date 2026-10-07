@@ -12,7 +12,8 @@ const fake = vi.hoisted(() => ({
   /** pid -> start token Get-Process reads now. */
   starts: new Map<number, string>(),
   kills: [] as number[],
-  killOk: true,
+  /** What killPid answers. */
+  killResult: 'exited' as 'exited' | 'denied' | 'alive',
   /** What the stop did, in order: the safety check, then the proof (start-time read). */
   steps: [] as string[],
   dead: new Set<number>(),
@@ -30,7 +31,7 @@ vi.mock('./process', async (importOriginal) => ({
   ...(await importOriginal<typeof ProcessModule>()),
   killPid: async (pid: number) => {
     fake.kills.push(pid)
-    return fake.killOk
+    return fake.killResult
   },
   isSafeToSignal: async () => {
     fake.steps.push('safety')
@@ -88,7 +89,7 @@ beforeEach(() => {
   fs.rmSync(`${db}.lock.json`, { force: true })
   fake.starts = new Map([[9084, STARTED]])
   fake.kills = []
-  fake.killOk = true
+  fake.killResult = 'exited'
   fake.steps = []
   fake.safe = true
   fake.afterProof = null
@@ -215,7 +216,7 @@ describe('stopDbLockOffer on Windows', () => {
 
   it('stops the confirmed ComfyUI once its record still names it, pid and start time', async () => {
     write(record())
-    expect(await stopDbLockOffer(offer, db)).toBe(true)
+    expect(await stopDbLockOffer(offer, db)).toBe('stopped')
     expect(fake.kills).toEqual([9084])
     // Nothing slow (the first safety probe) sits between the final proof and the signal.
     expect(fake.steps).toEqual(['proof', 'safety', 'proof'])
@@ -224,9 +225,9 @@ describe('stopDbLockOffer on Windows', () => {
   it('stops nothing while it runs but its record now names another process, or none', async () => {
     write({ ...record(), pid: 4242 })
     fake.starts.set(4242, STARTED)
-    expect(await stopDbLockOffer(offer, db)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe('failed')
     fs.rmSync(`${db}.lock.json`)
-    expect(await stopDbLockOffer(offer, db)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe('failed')
     expect(fake.kills).toEqual([])
   })
 
@@ -235,20 +236,20 @@ describe('stopDbLockOffer on Windows', () => {
     // The newcomer at the same pid wrote its own, live record.
     write({ ...record(), started: NEW })
     fake.afterProof = () => fake.starts.set(9084, NEW)
-    expect(await stopDbLockOffer(offer, db)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe('failed')
     expect(fake.kills).toEqual([])
   })
 
   it('has nothing to stop once the confirmed ComfyUI exited, even if its pid was reused', async () => {
     write(record())
     fake.starts.set(9084, '134358999999999999')
-    expect(await stopDbLockOffer(offer, db)).toBe(true)
+    expect(await stopDbLockOffer(offer, db)).toBe('stopped')
     // The pid's new owner wrote its own, live record: still not the process the user confirmed.
     write({ ...record(), started: '134358999999999999' })
-    expect(await stopDbLockOffer(offer, db)).toBe(true)
+    expect(await stopDbLockOffer(offer, db)).toBe('stopped')
     fake.starts.delete(9084)
     fake.dead.add(9084)
-    expect(await stopDbLockOffer(offer, db)).toBe(true)
+    expect(await stopDbLockOffer(offer, db)).toBe('stopped')
     expect(fake.kills).toEqual([])
   })
 
@@ -256,20 +257,20 @@ describe('stopDbLockOffer on Windows', () => {
     write(record())
     // Get-Process failed or timed out: the record can't be re-proven either, so nothing stops.
     fake.starts.delete(9084)
-    expect(await stopDbLockOffer(offer, db)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe('failed')
     expect(fake.kills).toEqual([])
   })
 
   it("stops nothing the safety check refuses (Desktop's own pid, the System process)", async () => {
     write(record())
     fake.safe = false
-    expect(await stopDbLockOffer(offer, db)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe('failed')
     expect(fake.kills).toEqual([])
   })
 
   it('stops nothing for a record that is not an object', async () => {
     fs.writeFileSync(`${db}.lock.json`, 'null')
-    expect(await stopDbLockOffer(offer, db)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe('failed')
     expect(fake.kills).toEqual([])
   })
 
@@ -277,10 +278,19 @@ describe('stopDbLockOffer on Windows', () => {
     write(record())
     const cancelled = new AbortController()
     cancelled.abort()
-    expect(await stopDbLockOffer(offer, db, cancelled.signal)).toBe(false)
+    expect(await stopDbLockOffer(offer, db, cancelled.signal)).toBe('failed')
     expect(fake.kills).toEqual([])
-    fake.killOk = false
-    expect(await stopDbLockOffer(offer, db)).toBe(false)
+    fake.killResult = 'alive'
+    expect(await stopDbLockOffer(offer, db)).toBe('failed')
+  })
+})
+
+describe('stopDbLockOffer when Windows refuses the stop', () => {
+  it("says the stop was denied (another user's or a system process), not that it failed", async () => {
+    write(record())
+    fake.killResult = 'denied'
+    const offer = { pid: 9084, startTime: STARTED, process: 'ComfyUI', sameInstall: true }
+    expect(await stopDbLockOffer(offer, db)).toBe('denied')
   })
 })
 

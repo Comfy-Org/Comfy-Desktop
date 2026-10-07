@@ -98,8 +98,6 @@ describe('holderStartToken on Windows', () => {
     expect(await holderStartToken(9084)).toBe('134358000923463901')
     const script = fake.calls[0]!.args.join(' ')
     expect(script).toContain('Get-Process -Id 9084 -ErrorAction Stop')
-    // Opening the handle asks for the access a stop needs: an elevated holder throws here.
-    expect(script).toContain('$null = $p.Handle')
     expect(script).toContain('.ToUniversalTime().ToFileTimeUtc()')
     expect(script).not.toContain('Cim')
   })
@@ -116,20 +114,34 @@ describe('holderStartToken on Windows', () => {
 })
 
 describe('killPid on Windows', () => {
-  it('kills the one pid, not its tree (no /T)', async () => {
-    fake.answers.taskkill = { stdout: '' }
+  it('ends the one pid with TerminateProcess, asking only for PROCESS_TERMINATE, not taskkill', async () => {
+    fake.answers.powershell = { stdout: 'OK\r\n' }
     // Gone at once: nothing runs at this pid.
-    expect(await killPid(2_147_480_000)).toBe(true)
-    expect(fake.calls.find((c) => c.cmd === 'taskkill')!.args).toEqual(['/F', '/PID', '2147480000'])
+    expect(await killPid(2_147_480_000)).toBe('exited')
+    const script = fake.calls.find((c) => c.cmd === 'powershell')!.args.join(' ')
+    expect(script).toContain('OpenProcess(1, $false, 2147480000)')
+    expect(script).toContain('TerminateProcess')
+    expect(fake.calls.some((c) => c.cmd === 'taskkill')).toBe(false)
+  })
+
+  it('says at once that Windows refused the stop, without waiting for an exit', async () => {
+    const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+    try {
+      fake.answers.powershell = { stdout: 'E5\r\n' }
+      const t0 = Date.now()
+      expect(await killPid(victim.pid!)).toBe('denied')
+      expect(Date.now() - t0).toBeLessThan(1_000)
+    } finally {
+      victim.kill('SIGKILL')
+    }
   })
 
   it('says a process that would not exit did not, even one listed without a creation time', async () => {
     const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
     try {
-      fake.answers.taskkill = { stdout: '' }
       // CIM can list a process without its creation time (e.g. a protected one).
       fake.answers.powershell = { stdout: `${victim.pid} 1 \r\n` }
-      expect(await killPid(victim.pid!)).toBe(false)
+      expect(await killPid(victim.pid!)).toBe('alive')
     } finally {
       victim.kill('SIGKILL')
     }

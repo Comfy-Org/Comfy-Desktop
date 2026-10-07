@@ -225,7 +225,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
         process: 'ComfyUI',
         sameInstall: true
       })
-      expect(await stopDbLockOffer(offer!, db)).toBe(true)
+      expect(await stopDbLockOffer(offer!, db)).toBe('stopped')
       // The stop waited for it: no longer running the moment it answers.
       expect((await readStartTimes([pid]))?.has(pid)).toBe(false)
       // Still running, not a zombie (which `isPidAlive` would also count).
@@ -294,10 +294,14 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       fs.rmdirSync(file)
       // Opening a FIFO with no writer would block forever: it is never opened.
       execFileSync('mkfifo', [file])
-      // Rejected outright, not left blocked until the read's 2 s cap.
-      const t0 = Date.now()
-      expect(await readHolderRecord(db)).toBeNull()
-      expect(Date.now() - t0).toBeLessThan(1_000)
+      // Rejected outright: never opened (which would block a thread until a writer appears).
+      const readFile = vi.spyOn(fs.promises, 'readFile')
+      try {
+        expect(await readHolderRecord(db)).toBeNull()
+        expect(readFile).not.toHaveBeenCalled()
+      } finally {
+        readFile.mockRestore()
+      }
     }, 20_000)
 
     it('matches a record that names the database through a symlink (an explicit path)', async () => {
@@ -387,14 +391,14 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       const offer = (await find()) as DbLockOffer
       const cancelled = new AbortController()
       cancelled.abort()
-      expect(await stopDbLockOffer(offer, db, cancelled.signal)).toBe(false)
+      expect(await stopDbLockOffer(offer, db, cancelled.signal)).toBe('failed')
       expect(isPidAlive(first.pid)).toBe(true)
       process.kill(-first.pid, 'SIGKILL')
       expect(await gone(first.pid)).toBe(true)
       const second = await hold()
       // The confirmed one is gone (nothing left to stop); the new holder is never touched.
-      expect(await stopDbLockOffer(offer, db)).toBe(true)
-      expect(await stopDbLockOffer({ ...offer, pid: second.pid }, db)).toBe(true)
+      expect(await stopDbLockOffer(offer, db)).toBe('stopped')
+      expect(await stopDbLockOffer({ ...offer, pid: second.pid }, db)).toBe('stopped')
       expect(isPidAlive(second.pid)).toBe(true)
     }, 20_000)
 
@@ -407,7 +411,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
         const started = (await readStartTimes([other.pid!]))!.get(other.pid!)!
         const record = JSON.parse(fs.readFileSync(`${db}.lock.json`, 'utf8'))
         fs.writeFileSync(`${db}.lock.json`, JSON.stringify({ ...record, pid: other.pid, started }))
-        expect(await stopDbLockOffer(offer, db)).toBe(false)
+        expect(await stopDbLockOffer(offer, db)).toBe('failed')
         expect(isPidAlive(first.pid)).toBe(true)
         expect(isPidAlive(other.pid!)).toBe(true)
       } finally {
@@ -419,7 +423,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       const { pid } = await hold({ parent: 'sh' })
       const offer = (await find()) as DbLockOffer
       expect(offer.pid).toBe(pid)
-      expect(await stopDbLockOffer(offer, db)).toBe(true)
+      expect(await stopDbLockOffer(offer, db)).toBe('stopped')
       expect(fs.readFileSync(`/proc/${pid}/stat`, 'utf-8').split(' ')[2]).toBe('Z')
     }, 15_000)
   }
