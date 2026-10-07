@@ -1723,7 +1723,9 @@ describe('core beta report placement', () => {
     const child = fakeChild()
     launchHarness.spawn = () => child
 
-    const res = await handleLaunch(ctxFor('harness-agent-events'))
+    const ctx = ctxFor('harness-agent-events')
+    Object.assign(ctx.inst, { variant: 'harness-variant', release: 'harness-release' })
+    const res = await handleLaunch(ctx)
     expect(res.ok).toBe(true)
     child.stdout.emit('data', Buffer.from('[agent-event] agent_started duration_ms=12\n'))
     child.stderr.emit('data', Buffer.from('[agent-event] agent_exited code=1\n'))
@@ -1736,6 +1738,8 @@ describe('core beta report placement', () => {
     for (const { properties } of agentEvents) {
       expect(properties, "the launch's own attribution, not a default").toMatchObject({
         installation_id: 'harness-agent-events',
+        variant: 'harness-variant',
+        release: 'harness-release',
         core_beta_flags: ['--enable-assets']
       })
     }

@@ -53,12 +53,25 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'reason'
 ])
 
-const BASE_CONTEXT_KEYS: ReadonlySet<string> = new Set([
-  'installation_id',
-  'variant',
-  'release',
-  'core_beta_flags'
-])
+type AgentTapOptions = {
+  installationId: string
+  variant?: string | null
+  release?: string | null
+  coreBetaFlags?: readonly string[]
+}
+
+function baseContextOf(opts: AgentTapOptions) {
+  return {
+    installation_id: opts.installationId,
+    variant: opts.variant ?? null,
+    release: opts.release ?? null,
+    core_beta_flags: [...(opts.coreBetaFlags ?? [])]
+  }
+}
+
+const BASE_CONTEXT_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(baseContextOf({ installationId: '' }))
+)
 
 const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+.]?[0-9A-Za-z][0-9A-Za-z.+-]{0,39})?$/
 
@@ -133,24 +146,14 @@ export function parseAgentEventLine(line: string): AgentEvent | null {
 const PER_EVENT_HOURLY_CAP = 60
 const RATE_WINDOW_MS = 60 * 60_000
 
-export function createAgentTap(opts: {
-  installationId: string
-  variant?: string | null
-  release?: string | null
-  coreBetaFlags?: readonly string[]
-}): {
+export function createAgentTap(opts: AgentTapOptions): {
   ingest: (chunk: string, source: 'stdout' | 'stderr') => void
   beginBoot: () => void
   flushSummary: () => void
 } {
-  const baseContext = {
-    installation_id: opts.installationId,
-    variant: opts.variant ?? null,
-    release: opts.release ?? null,
-    core_beta_flags: [...(opts.coreBetaFlags ?? [])]
-  }
+  const baseContext = baseContextOf(opts)
 
-  // Not reset by beginBoot: a restart loop is when the cap matters.
+  // Not reset by beginBoot, so the port-conflict relaunch loop shares one cap.
   const rateBuckets = new Map<string, { windowStart: number; count: number }>()
 
   let unknownEventsDropped = 0
