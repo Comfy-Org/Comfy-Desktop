@@ -98,7 +98,8 @@ describe('resolveLocalVersion', () => {
       commit: 'abc1234',
       baseTag: 'v0.17.1',
       commitsAhead: 8,
-      baseTagVerified: false
+      baseTagVerified: false,
+      ancestorTag: 'v0.17.0'
     })
     expect(mockedFindMergeBase).not.toHaveBeenCalled()
   })
@@ -134,7 +135,8 @@ describe('resolveLocalVersion', () => {
       commit: 'abc1234',
       baseTag: 'v0.17.2',
       commitsAhead: 10,
-      baseTagVerified: false
+      baseTagVerified: false,
+      ancestorTag: 'v0.17.0'
     })
   })
 
@@ -202,7 +204,56 @@ describe('resolveLocalVersion', () => {
       commit: 'abc1234',
       baseTag: 'v0.17.2',
       commitsAhead: 12,
-      baseTagVerified: false
+      baseTagVerified: false,
+      ancestorTag: 'v0.17.0'
+    })
+  })
+
+  it('keeps the verified ancestor when upstream publishes a patch tag the unchanged install never reached', async () => {
+    // ComfyUI 2026-09-22: install b0f4b7b2 is master, v0.37.0+5. v0.37.1 was then cut on a release
+    // branch (3 commits: two cherry-picks of master PRs not in the install, plus the version bump),
+    // so it is never an ancestor of master. Nothing in the checkout changed.
+    mockedFindNearestTag.mockImplementation(async (_repo, ref) => {
+      if (ref === 'b0f4b7b2') return 'v0.37.0'
+      if (ref === 'v0.37.1') return 'v0.37.1'
+      if (ref === 'v0.37.1~1') return 'v0.37.0'
+      return undefined
+    })
+    mockedCountCommitsAhead.mockImplementation(async (_repo, base, target) => {
+      if (base === 'v0.37.0' && target === 'v0.37.1') return 3
+      if (base === 'v0.37.0' && target === 'b0f4b7b2') return 5
+      return undefined
+    })
+    mockedIsAncestorOf.mockImplementation(async (_repo, ancestor, descendant) => {
+      if (ancestor === 'v0.37.0' && descendant === 'v0.37.1') return true
+      return false
+    })
+    mockedCountUniqueCommits.mockImplementation(async (_repo, ref1, ref2) => {
+      if (ref1 === 'v0.37.1' && ref2 === 'b0f4b7b2') return 3
+      if (ref1 === 'b0f4b7b2' && ref2 === 'v0.37.1') return 5
+      return undefined
+    })
+
+    mockedFindLatestVersionTag.mockResolvedValue('v0.37.0')
+    const before = await resolveLocalVersion('/repo', 'b0f4b7b2')
+    expect(before).toEqual({
+      commit: 'b0f4b7b2',
+      baseTag: 'v0.37.0',
+      commitsAhead: 5,
+      baseTagVerified: true
+    })
+
+    clearVersionCache()
+    mockedFindLatestVersionTag.mockResolvedValue('v0.37.1')
+    const after = await resolveLocalVersion('/repo', 'b0f4b7b2')
+    // The label still moves (display behaviour is unchanged), but the tag the install provably
+    // contains survives beside it for the gate.
+    expect(after).toEqual({
+      commit: 'b0f4b7b2',
+      baseTag: 'v0.37.1',
+      commitsAhead: 5,
+      baseTagVerified: false,
+      ancestorTag: 'v0.37.0'
     })
   })
 

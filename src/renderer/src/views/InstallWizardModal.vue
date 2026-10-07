@@ -27,6 +27,7 @@ import {
   isTemplateDiskBlocked,
   minTemplateModelBytes,
   isApiNodeTemplate,
+  templateDownloadBytes,
   templateSizeBytes
 } from '../lib/installHelpers'
 import TakeoverBack from '../components/TakeoverBack.vue'
@@ -276,7 +277,7 @@ function installHandoffProps(): Record<string, string | boolean | null> {
   const variantId = selections.value.variant?.data?.variantId as string | undefined
   return {
     entrypoint: entrypoint.value,
-    source_id: managedBuildMode.value ? 'comfybuilder' : (currentSource.value?.id ?? null),
+    source_id: managedBuildMode.value ? 'platform' : (currentSource.value?.id ?? null),
     variant: variantId ? toVariantBucket(variantId) : null,
     express: false
   }
@@ -303,8 +304,7 @@ const templateIsApiNode = computed(() => isApiNodeTemplate(selectedTemplate.valu
  *  drift. */
 const templateInstallBlocked = computed(() => {
   if (diskSpaceLoading.value) return false
-  const modelBytes = (selectedTemplate.value?.data?.sizeBytes as number | undefined) ?? 0
-  return isTemplateDiskBlocked(diskSpace.value, modelBytes)
+  return isTemplateDiskBlocked(diskSpace.value, templateDownloadBytes(selectedTemplate.value))
 })
 
 const pickerRef = ref<InstanceType<typeof TemplatePickerStep> | null>(null)
@@ -1223,11 +1223,10 @@ async function handleSave(): Promise<void> {
 
   // Hard-block when the volume can't hold the selected template's models.
   if (instPath.value && templateHasModels.value) {
-    const modelBytes = (selectedTemplate.value?.data?.sizeBytes as number | undefined) ?? 0
     if (
       !(await checkTemplateDiskOrBlock({
         path: instPath.value,
-        estimatedModelBytes: modelBytes,
+        estimatedModelBytes: templateDownloadBytes(selectedTemplate.value),
         flow: 'wizard',
         alert: modal.alert,
         t

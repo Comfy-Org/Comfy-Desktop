@@ -187,6 +187,12 @@ export function useInstallContextMenu(
         label: promoting
           ? t('devPlatform.workspace.promoting', 'Creating...')
           : t('devPlatform.workspace.promoteToWorkspace', 'Create Build'),
+        hint: t(
+          'devPlatform.workspace.promoteToWorkspaceHint',
+          'Create a Build from this instance in Comfy Developer Platform.'
+        ),
+        hintUrl: 'https://platform.comfy.org/profile/deploy',
+        hintLinkLabel: t('devPlatform.workspace.readMore', 'Read more'),
         disabled: promoting
       })
     }
@@ -322,7 +328,7 @@ export function useInstallContextMenu(
             result.message ||
             t(
               'devPlatform.workspace.promoteFailedMessage',
-              'Could not create a draft in Comfy Builder.'
+              'Could not create a draft in Comfy Developer Platform.'
             )
         }
       } catch (err) {
@@ -383,6 +389,36 @@ export function useInstallContextMenu(
     ctxMenu.value.open = false
   }
 
+  /** Surface either an operation failure or a crashed instance's details. */
+  function viewError(inst: Installation): void {
+    const err = sessionStore.errorInstances.get(inst.id)
+    if (!err) return
+    let message = err.message
+    if (!message) {
+      if (err.signal && err.exitCode != null) {
+        message = t('comfyLifecycle.crashedDescWithCodeAndSignal', {
+          code: err.exitCode,
+          signal: err.signal
+        })
+      } else if (err.signal) {
+        message = t('comfyLifecycle.crashedDescWithSignal', { signal: err.signal })
+      } else if (err.exitCode != null) {
+        message = t('comfyLifecycle.crashedDescWithCode', { code: err.exitCode })
+      } else {
+        message = t('comfyLifecycle.crashedDesc')
+      }
+    }
+    if (err.lastStderr) message = `${message}\n\n${err.lastStderr}`
+    void modal.alert({ title: t('chooser.errorTitle'), message })
+  }
+
+  /** Surface the full explanation for a backend-provided danger status. */
+  function viewDanger(inst: Installation): void {
+    const tag = inst.statusTag
+    if (!tag || tag.style !== 'danger') return
+    void modal.alert({ title: tag.label, message: tag.detail || tag.label })
+  }
+
   return {
     ctxMenu,
     ctxMenuItems,
@@ -391,6 +427,8 @@ export function useInstallContextMenu(
     handleCtxMenuSelect,
     closeMenu,
     triggerAction,
+    viewError,
+    viewDanger,
     isStoppedActionGated,
     isPromotingToWorkspace
   }

@@ -117,6 +117,14 @@ const record = (overrides: Record<string, unknown> = {}): InstallationRecord =>
     ...overrides
   }) as unknown as InstallationRecord
 
+/** Give an install directory a governed archive's policy file (signature unchecked). */
+function writePolicy(installPath: string, customNodeMode: string | null): void {
+  const file = path.join(installPath, 'ComfyUI', 'governance', 'policy.signed.json')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const payload = Buffer.from(JSON.stringify({ customNodeMode })).toString('base64url')
+  fs.writeFileSync(file, JSON.stringify({ schema: 1, payload, signature: 'sig' }))
+}
+
 function fakeTools(
   signal?: AbortSignal
 ): InstallTools & { sent: Array<{ phase: string; detail: unknown }> } {
@@ -295,6 +303,52 @@ describe('comfybuilder.install wiring', () => {
       expect.any(String),
       expect.objectContaining({ managerAllowed: expected })
     )
+  })
+
+  it('drops the manager flag of a governed allowlist build even when the release said Yes', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-'))
+    try {
+      writePolicy(root, 'allowlist')
+      vi.mocked(resolveModelManifest).mockResolvedValueOnce({
+        models: [],
+        customNodePolicy: { mode: 'blocklist', list: [] }
+      } as never)
+      updateInstallation.mockClear()
+
+      await comfybuilder.install!(
+        record({ installPath: root, launchArgs: '--enable-manager --cpu' }),
+        fakeTools()
+      )
+
+      expect(updateInstallation).toHaveBeenCalledWith('i1', {
+        comfybuilderManagerAllowed: false,
+        launchArgs: '--cpu'
+      })
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('drops the manager flag from the policy on disk when the record carries no manager answer', async () => {
+    // A record can lag the archive: an update interrupted before its last
+    // write, or a record from an older Desktop.
+    const real = await vi.importActual<typeof ComfyBuilderModule>('../../comfybuilder')
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-governed-launch-'))
+    try {
+      fs.mkdirSync(path.dirname(real.venvPython(root)), { recursive: true })
+      fs.writeFileSync(real.venvPython(root), '')
+      writePolicy(root, 'allowlist')
+      fs.writeFileSync(path.join(root, 'ComfyUI', 'main.py'), '')
+      vi.mocked(buildLaunchSpec).mockImplementationOnce(real.buildLaunchSpec)
+
+      const cmd = comfybuilder.getLaunchCommand!(
+        record({ installPath: root, launchArgs: '--enable-manager --cpu' })
+      )
+
+      expect(cmd?.args).toEqual(['-s', path.join('ComfyUI', 'main.py'), '--cpu'])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('installs the archive, resolves the manifest, then stages models in the background', async () => {
@@ -945,6 +999,80 @@ describe('comfybuilder update-comfyui', () => {
     } finally {
       await fsp.rm(root, { recursive: true, force: true })
     }
+  })
+
+  /** Update a real install tree from a release with `oldMode`'s policy file
+   *  (none when null) to one whose archive carries `newMode`'s, with the
+   *  release manifest saying Yes. Returns the record writes. */
+  async function updateAcrossPolicies(
+    oldMode: string | null,
+    newMode: string | null,
+    overrides: Record<string, unknown>
+  ): Promise<Record<string, unknown>[]> {
+    access.mockImplementation(realFsp.access)
+    mkdir.mockImplementation(realFsp.mkdir)
+    rename.mockImplementation(realFsp.rename)
+    rm.mockImplementation(realFsp.rm)
+    writeFile.mockImplementation(realFsp.writeFile)
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comfybuilder-update-policy-'))
+    try {
+      fs.mkdirSync(path.join(root, 'venv'), { recursive: true })
+      fs.mkdirSync(path.join(root, 'ComfyUI'), { recursive: true })
+      fs.writeFileSync(path.join(root, 'ComfyUI', 'main.py'), 'old code')
+      if (oldMode) writePolicy(root, oldMode)
+
+      vi.mocked(resolveHostArtifactForVersion).mockResolvedValue({ artifact, version: 9 } as never)
+      vi.mocked(installArtifact).mockImplementationOnce(async ({ installPath }) => {
+        fs.mkdirSync(path.join(installPath, 'venv'), { recursive: true })
+        fs.mkdirSync(path.join(installPath, 'ComfyUI'), { recursive: true })
+        fs.writeFileSync(path.join(installPath, 'ComfyUI', 'main.py'), 'new code')
+        if (newMode) writePolicy(installPath, newMode)
+      })
+      vi.mocked(resolveModelManifest).mockResolvedValueOnce({
+        models: [],
+        customNodePolicy: { mode: 'blocklist', list: [] }
+      } as never)
+      const tools = actionTools()
+
+      const result = await comfybuilder.handleAction(
+        'update-comfyui',
+        record({ installPath: root, ...overrides }),
+        { version: 9 },
+        tools as never
+      )
+
+      expect(result.ok).toBe(true)
+      expect(fs.readFileSync(path.join(root, 'ComfyUI', 'main.py'), 'utf8')).toBe('new code')
+      return tools.updates
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  it('drops the manager flag when the new release carries an allowlist policy', async () => {
+    const updates = await updateAcrossPolicies(null, 'allowlist', {
+      comfybuilderManagerAllowed: true,
+      launchArgs: '--enable-manager --cpu'
+    })
+
+    expect(updates.at(-1)).toMatchObject({
+      status: 'installed',
+      comfybuilderManagerAllowed: false,
+      launchArgs: '--cpu'
+    })
+  })
+
+  it('restores the manager flag when the new release drops its allowlist policy', async () => {
+    const updates = await updateAcrossPolicies('allowlist', null, {
+      comfybuilderManagerAllowed: false,
+      launchArgs: '--cpu'
+    })
+
+    expect(updates.at(-1)).toMatchObject({
+      status: 'installed',
+      comfybuilderManagerAllowed: true,
+      launchArgs: '--enable-manager --cpu'
+    })
   })
 
   it('refuses to update an install that is not ready', async () => {

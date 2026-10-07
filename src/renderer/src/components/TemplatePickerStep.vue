@@ -8,6 +8,7 @@ import {
   templateDiskRequiredBytes,
   isTemplateDiskBlocked,
   isApiNodeTemplate,
+  templateDownloadBytes,
   templateSizeBytes
 } from '../lib/installHelpers'
 import { useTemplateTabs } from '../composables/useTemplateTabs'
@@ -20,13 +21,18 @@ import Tooltip from './ui/Tooltip.vue'
  * gallery of image cards, each with a name/task/size info bar below the preview.
  * The disk alert is surfaced to (and rendered by) the host wizard.
  */
-const props = defineProps<{
-  options: FieldOption[]
-  noneValue: string
-  selectedValue: string | null
-  diskSpace: DiskSpaceInfo | null
-  diskSpaceLoading: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    options: FieldOption[]
+    /** Value of the "no template" option to hide from the cards, when the list has one. */
+    noneValue?: string
+    selectedValue: string | null
+    diskSpace: DiskSpaceInfo | null
+    diskSpaceLoading: boolean
+    compact?: boolean
+  }>(),
+  { noneValue: '', compact: false }
+)
 
 const emit = defineEmits<{
   select: [option: FieldOption]
@@ -93,12 +99,12 @@ function isThumbLoading(option: FieldOption): boolean {
 const diskBlocked = computed(
   () =>
     !props.diskSpaceLoading &&
-    isTemplateDiskBlocked(props.diskSpace, sizeBytesOf(selectedOption.value))
+    isTemplateDiskBlocked(props.diskSpace, templateDownloadBytes(selectedOption.value))
 )
 
 const shownDiskError = computed<string | null>(() => {
   if (!diskBlocked.value || !props.diskSpace) return null
-  const required = templateDiskRequiredBytes(sizeBytesOf(selectedOption.value))
+  const required = templateDiskRequiredBytes(templateDownloadBytes(selectedOption.value))
   return t('diskSpace.templateBlockMessage', {
     required: formatBytesCoarse(required),
     free: formatBytesCoarse(props.diskSpace.free)
@@ -136,7 +142,7 @@ defineExpose({ shownDiskError })
 </script>
 
 <template>
-  <div class="tps">
+  <div :class="['tps', { 'tps--compact': compact }]">
     <div
       v-if="tabs.length > 1"
       class="tps__tabs"
@@ -257,6 +263,11 @@ defineExpose({ shownDiskError })
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: clamp(12px, 1.4vw, 20px);
   width: 100%;
+}
+
+.tps--compact .tps__grid {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 220px));
+  justify-content: center;
 }
 
 .tps__card {

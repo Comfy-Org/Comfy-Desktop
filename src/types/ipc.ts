@@ -18,6 +18,25 @@ export type { AuthStatus, Workspace }
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
+/** Payload of `comfy-titletooltip:set-beak`: where the coachmark card and its beak belong.
+ *
+ *  Declared here because three processes have to agree on it — main sends it, the preload
+ *  validates it, the renderer applies it — and an IPC boundary gives no compile error when
+ *  they drift. `ipcMain.send` is untyped and `ipcRenderer.on` hands back `unknown`, so
+ *  independent declarations would disagree silently and the card would land in the wrong
+ *  place with everything still building.
+ */
+export interface CoachmarkBeakPayload {
+  /** Where the beak sits along the card, 0..1 from its left edge. */
+  beakFraction: number
+  /** Where the card's midpoint belongs within its view, in CSS px.
+   *
+   *  A centre rather than an edge so it holds at whatever width the card actually renders,
+   *  and `null` when main did not send one — the renderer then falls back to CSS centring
+   *  rather than to a guess. */
+  cardCentreInView: number | null
+}
+
 /** Every renderer-safe Build catalog state. */
 export type DevPlatformBuildState =
   | 'installable'
@@ -232,6 +251,19 @@ export interface DetailFieldOption {
    *  (two or more groups); absent = today's flat single dropdown. */
   groupPath?: DetailOptionGroup[]
   data?: Record<string, unknown>
+}
+
+/** One Core beta grant as the settings view shows it. */
+export interface BetaArgView {
+  arg: string
+  /** Payload-supplied feature name, or `null` when the payload named none. */
+  name: string | null
+}
+
+/** The running session's grants, or while stopped those the next launch is eligible for. */
+export interface CoreBetaArgs {
+  timing: 'session' | 'next-launch'
+  args: BetaArgView[]
 }
 
 export interface ComfyArgDef {
@@ -493,6 +525,14 @@ export interface PortConflictInfo {
   pids?: number[]
   nextPort?: number
   isComfy?: boolean
+  /** The holder is this install's ComfyUI left running by an earlier Desktop, and it is still
+   *  running a prompt. "Stop" relaunches with `stopBusyPriorProcess`, which re-proves ownership
+   *  and stops it through the launch path rather than by port. */
+  priorBusy?: boolean
+  /** With `priorBusy`: it never answered whether it is working, so nothing may claim it is. */
+  priorUnknown?: boolean
+  /** With `priorBusy`: it is not the earlier ComfyUI but processes it left behind (`pids`). */
+  priorSurvivors?: boolean
 }
 
 export interface AddResult {
@@ -709,6 +749,18 @@ export interface NvidiaDriverCheck {
   supported: boolean
 }
 
+export type TemplateDownloadStatus = 'resolving' | 'downloading' | 'done' | 'error' | 'cancelled'
+
+/** Model download progress for a prepared performance-test example workflow. */
+export interface ExampleWorkflowDownload {
+  status: TemplateDownloadStatus
+  /** 0–100, or -1 while the total is unknown. */
+  percent: number
+  /** Localized progress line, e.g. "model.safetensors (1 of 3) — 2.1 / 14 GB …". */
+  message: string
+  error?: string
+}
+
 export interface DiskSpaceInfo {
   free: number
   total: number
@@ -802,6 +854,119 @@ export interface SystemInfo {
     update_channel: string
     status: string
   }>
+}
+
+export interface PerformanceTestResultsSummary {
+  createdAt: string
+  instance: {
+    id: string
+    name: string
+  }
+  workspace: {
+    id: string | null
+    name: string | null
+  }
+  workflowName: string
+  fastestJobDurationSeconds: number | null
+  slowestJobDurationSeconds: number | null
+  averageJobDurationSeconds: number | null
+  medianJobDurationSeconds: number | null
+  measuredJobCount: number
+  failedRunCount: number
+  hardware: {
+    deviceType: string
+    deviceIndex: number | null
+    deviceName: string | null
+    backend: string | null
+    devices: Array<{
+      deviceType: string
+      deviceIndex: number | null
+      deviceName: string | null
+      backend: string | null
+    }>
+    vramMb: number | null
+    ramMb: number | null
+    pytorchVersion: string | null
+    xformersVersion: string | null
+    cudaDeviceSet: number | null
+  } | null
+  systemInfo: SystemInfo
+}
+
+export interface AcceleratorInfo {
+  deviceType: string
+  deviceIndex: number | null
+  deviceName: string | null
+  backend: string | null
+}
+
+export interface AcceleratorSnapshot extends AcceleratorInfo {
+  devices: AcceleratorInfo[]
+  vramMb: number | null
+  ramMb: number | null
+  pytorchVersion: string | null
+  xformersVersion: string | null
+  cudaDeviceSet: number | null
+}
+
+export interface PerformanceTestDurationResult {
+  jobId: string
+  durationSeconds: number
+}
+
+export interface PerformanceTestStatistics {
+  fastest: PerformanceTestDurationResult
+  slowest: PerformanceTestDurationResult
+  averageDurationSeconds: number
+  medianDurationSeconds: number
+  measuredJobCount: number
+}
+
+export interface RunPerformanceTestWorkflowResult {
+  ok: boolean
+  submitted: number
+  preparationRuns: number
+  totalSubmitted: number
+  promptIds?: string[]
+  resultPath?: string
+  resultsSummaryPath?: string
+  failedRuns?: number
+  statistics?: PerformanceTestStatistics | null
+  hardware?: AcceleratorSnapshot | null
+  systemInfo?: SystemInfo
+  resultsSummary?: PerformanceTestResultsSummary
+  cancelled?: boolean
+  message?: string
+}
+
+export type PerformanceTestResultValue =
+  | string
+  | number
+  | boolean
+  | null
+  | PerformanceTestResultValue[]
+  | { [key: string]: PerformanceTestResultValue }
+
+export interface PerformanceTestBenchmark {
+  id: string
+  createdAt: string | null
+  instance: {
+    id: string
+    name: string
+  }
+  workspace: {
+    id: string | null
+    name: string | null
+  }
+  workflowName: string
+  fastestJobDurationSeconds: number | null
+  slowestJobDurationSeconds: number | null
+  averageJobDurationSeconds: number | null
+  medianJobDurationSeconds: number | null
+  measuredJobCount: number
+  hardwareName: string | null
+  /** Complete results.json payload used to discover configurable table columns. */
+  result: Record<string, PerformanceTestResultValue>
 }
 
 export interface SnapshotDiffEntry {
@@ -1118,6 +1283,61 @@ export interface ElectronApi {
 
   // File/URL
   browseFolder(defaultPath?: string): Promise<string | null>
+  importPerformanceTestWorkflow(filePath?: string): Promise<{
+    ok: boolean
+    filePath?: string
+    message?: string
+    canceled?: boolean
+  }>
+  getPerformanceTestExampleWorkflows(
+    installationId: string
+  ): Promise<{ options: FieldOption[]; diskSpace: DiskSpaceInfo | null }>
+  /** Stores the workflow and starts its model download in the background; later
+   *  progress arrives through `onPerformanceTestExampleDownload`. */
+  preparePerformanceTestExampleWorkflow(
+    installationId: string,
+    templateId: string
+  ): Promise<{
+    ok: boolean
+    filePath?: string
+    /** Model download progress at start. */
+    download?: ExampleWorkflowDownload
+    /** `offline`: the workflow repository was unreachable. `unavailable`: it has no such example. */
+    reason?: 'offline' | 'unavailable'
+    message?: string
+  }>
+  deletePerformanceTestWorkflow(
+    filePath: string
+  ): Promise<{ ok: boolean; status?: 'deleted' | 'preserved'; message?: string }>
+  savePerformanceTestLogs(
+    filePath: string,
+    logs: string
+  ): Promise<{ ok: boolean; logsPath?: string; message?: string }>
+  listPerformanceTestBenchmarks(folderPath?: string): Promise<{
+    folderPath: string
+    benchmarks: PerformanceTestBenchmark[]
+  }>
+  deletePerformanceTestBenchmark(
+    folderPath: string,
+    sessionId: string
+  ): Promise<{ ok: boolean; message?: string }>
+  renamePerformanceTestBenchmark(
+    folderPath: string,
+    sessionId: string,
+    newSessionId: string
+  ): Promise<{ ok: boolean; sessionId?: string; message?: string }>
+  runPerformanceTestWorkflow(
+    sessionId: string,
+    filePath: string,
+    measuredRuns: number,
+    warmupRuns: number
+  ): Promise<RunPerformanceTestWorkflowResult>
+  readPerformanceTestResultsSummary(filePath: string): Promise<PerformanceTestResultsSummary>
+  exportResultsImage(
+    png: ArrayBuffer,
+    imageType: 'performance-test' | 'benchmark-comparison',
+    defaultPath?: string
+  ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
@@ -1380,6 +1600,7 @@ export interface ElectronApi {
   getListActions(installationId: string): Promise<ListAction[]>
   getDetailSections(installationId: string): Promise<DetailSection[]>
   getComfyArgs(installationId: string): Promise<{ args: ComfyArgDef[]; error?: string } | null>
+  getCoreBetaArgs(installationId: string, launchArgs?: string): Promise<CoreBetaArgs>
   runAction(
     installationId: string,
     actionId: string,
@@ -1551,6 +1772,13 @@ export interface ElectronApi {
   // Event listeners (return unsubscribe functions)
   onInstallProgress(callback: (data: ProgressData) => void): Unsubscribe
   onComfyOutput(callback: (data: ComfyOutputData) => void): Unsubscribe
+  onPerformanceTestProgress(
+    callback: (data: { sessionId: string; completedRuns: number; totalRuns: number }) => void
+  ): Unsubscribe
+  /** Model download progress of a prepared example workflow, until it settles. */
+  onPerformanceTestExampleDownload(
+    callback: (data: { filePath: string; download: ExampleWorkflowDownload }) => void
+  ): Unsubscribe
   onComfyExited(callback: (data: ComfyExitedData) => void): Unsubscribe
   /** Crash broadcast to every renderer (unlike `onComfyExited`, which only
    *  reaches the launching window). Lets any open dashboard show the red
@@ -1810,11 +2038,13 @@ export const PICKER_SETTINGS_CHANNELS = {
   importSnapshotsConfirm: 'comfy-titlepopup:picker-settings-import-snapshots-confirm',
   previewSnapshotFile: 'comfy-titlepopup:picker-settings-preview-snapshot-file',
   getComfyArgs: 'comfy-titlepopup:picker-settings-get-comfy-args',
+  getCoreBetaArgs: 'comfy-titlepopup:picker-settings-get-core-beta-args',
   browseFolder: 'comfy-titlepopup:picker-settings-browse-folder',
   previewLocalMigration: 'comfy-titlepopup:picker-settings-preview-local-migration',
   relaunchApp: 'comfy-titlepopup:picker-settings-relaunch-app',
   getLocaleMessages: 'comfy-titlepopup:picker-settings-get-locale-messages',
   getLocale: 'comfy-titlepopup:picker-settings-get-locale',
   getStableTags: 'comfy-titlepopup:picker-settings-get-stable-tags',
-  getUniqueName: 'comfy-titlepopup:picker-settings-get-unique-name'
+  getUniqueName: 'comfy-titlepopup:picker-settings-get-unique-name',
+  openGlobalSettings: 'comfy-titlepopup:picker-settings-open-global-settings'
 } as const

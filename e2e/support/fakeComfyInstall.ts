@@ -89,7 +89,17 @@ const body = \`<!doctype html><html><head><meta charset="utf-8"><title>ComfyUI (
   <p>ComfyUI stub &mdash; e2e fixture canvas</p>
   <p>launched with <code>\${assetsOn ? '--enable-assets' : 'no beta grant'}</code></p>
 </div></body></html>\`
-const server = http.createServer((_req, res) => {
+const server = http.createServer((req, res) => {
+  // ComfyUI's queue endpoint, which Desktop asks before stopping an earlier ComfyUI. Reports a
+  // prompt running while a \`queue-busy\` file sits beside this script.
+  if (req.url === '/queue') {
+    // A \`queue-hang\` file makes the stub never answer, like a ComfyUI stalled mid-prompt.
+    if (require('node:fs').existsSync(require('node:path').join(__dirname, 'queue-hang'))) return
+    const busy = require('node:fs').existsSync(require('node:path').join(__dirname, 'queue-busy'))
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ queue_running: busy ? [[0, 'e2e-prompt']] : [], queue_pending: [] }))
+    return
+  }
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
   res.end(body)
 })
@@ -200,7 +210,10 @@ export async function writeFakeComfyInstall(opts: {
  *  read on Linux and silently ignored everywhere else. */
 export function opsFlagsGrantSeed(opts: {
   arg: string
-  minCoreVersion: string
+  /** A version-window grant from this release up... */
+  minCoreVersion?: string
+  /** ...or a commit-range grant, `[lower, upper | null]` per lineage. Exactly one is given. */
+  commitRanges?: [string, string | null][]
   /** Optional per-flag notice wording, written in the payload's own wire shape so the fixture
    *  exercises the real parser rather than the already-parsed type. */
   description?: string
@@ -213,7 +226,9 @@ export function opsFlagsGrantSeed(opts: {
         flags: [
           {
             arg: opts.arg,
-            min_core_version: opts.minCoreVersion,
+            ...(opts.commitRanges === undefined
+              ? { min_core_version: opts.minCoreVersion }
+              : { commit_ranges: opts.commitRanges }),
             ...(opts.description === undefined ? {} : { description: opts.description }),
             ...(opts.notice === undefined ? {} : { notice: opts.notice }),
           },

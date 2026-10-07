@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, toRef, watch } from 'vue'
+import { computed, provide, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LayoutDashboard, Plus, Search, X } from 'lucide-vue-next'
 import BaseInput from '../components/ui/BaseInput.vue'
@@ -10,6 +10,7 @@ import type { NavDecision } from '../../../shared/navigation/navDecision'
 import type { Category, ViewKind } from '../../../shared/viewKind'
 import { useSessionStore } from '../stores/sessionStore'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
+import { SETTINGS_REOPEN_EPOCH } from '../views/comfyUISettings/settingsReopenEpoch'
 import InfoTooltip from '../components/InfoTooltip.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import InstanceRow from './instancePicker/InstanceRow.vue'
@@ -68,6 +69,8 @@ interface PickerSnapshot {
   currentView?: ViewKind
   currentCategory?: Category | null
   runningInstallationIds: string[]
+  /** `startedAt` per running session; changes on a restart the id list cannot show. */
+  runningSessionStartedAt?: Record<string, number>
   /** Installs launching but not yet started. Hydrated into
    *  sessionStore because the popup preload has no onInstanceLaunching. */
   launchingInstallationIds: string[]
@@ -90,20 +93,33 @@ const props = defineProps<{
   snapshot: PickerSnapshot
 }>()
 
+// The popup is hidden, not unmounted, between opens, and every open bumps this epoch.
+provide(
+  SETTINGS_REOPEN_EPOCH,
+  computed(() => props.snapshot.pickerSelectionEpoch ?? 0)
+)
+
 const sessionStore = useSessionStore()
 function hydrateSessionStoreFromSnapshot(): void {
   const next = new Set(props.snapshot.runningInstallationIds)
   for (const id of Array.from(sessionStore.runningInstances.keys())) {
     if (!next.has(id)) sessionStore.runningInstances.delete(id)
   }
+  const startedAt = props.snapshot.runningSessionStartedAt ?? {}
   for (const id of next) {
-    if (!sessionStore.runningInstances.has(id)) {
+    const current = sessionStore.runningInstances.get(id)
+    if (!current) {
       const placeholder: RunningInstance = {
         installationId: id,
         installationName: '',
-        mode: ''
+        mode: '',
+        startedAt: startedAt[id]
       }
       sessionStore.runningInstances.set(id, placeholder)
+    } else if (startedAt[id] !== undefined && current.startedAt !== startedAt[id]) {
+      // A restart that landed between two snapshots: same id, new session. Replaced rather than
+      // mutated so the settings view's session watch sees a new value.
+      sessionStore.runningInstances.set(id, { ...current, startedAt: startedAt[id] })
     }
   }
   // The snapshot is the only path that brings launching state in (the
@@ -342,7 +358,9 @@ const initialExpandedTab = computed<PickerTab>(() =>
 watch(
   [
     () => props.snapshot.runningInstallationIds.join('\0'),
-    () => (props.snapshot.launchingInstallationIds ?? []).join('\0')
+    () => (props.snapshot.launchingInstallationIds ?? []).join('\0'),
+    // A restart between two snapshots changes only this.
+    () => JSON.stringify(props.snapshot.runningSessionStartedAt ?? {})
   ],
   () => hydrateSessionStoreFromSnapshot(),
   { immediate: true }

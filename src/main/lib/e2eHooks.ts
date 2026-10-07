@@ -10,6 +10,7 @@ import {
   getDownloadsTrayState,
   type DownloadsTrayState
 } from './comfyDownloadManager'
+import type { BetaArgView } from '../../types/ipc'
 import { _test_setUpdateState, type AppUpdateState } from './updater'
 import {
   get as _releaseCacheGet,
@@ -77,8 +78,13 @@ export interface E2EHelpers {
   /** URLs `shell.openExternal(...)` was called with via the launcher's wrapper. */
   getShellOpenExternalCalls(): string[]
   resetShellOpenExternalCalls(): void
-  /** Register a synthetic running session without spawning a real ComfyUI process. */
-  seedRunningSession(opts: { installationId: string; installationName: string }): void
+  /** Register a synthetic running session without spawning a real ComfyUI process.
+   *  `coreBetaArgs` stands in for the Core beta grants a real launch would record. */
+  seedRunningSession(opts: {
+    installationId: string
+    installationName: string
+    coreBetaArgs?: BetaArgView[]
+  }): void
   clearRunningSessions(): void
   /** Snapshot the live `_runningSessions` entry (real or seeded), or `null` if none. */
   getRunningSessionSnapshot(installationId: string): RunningSessionSnapshot | null
@@ -142,7 +148,12 @@ export function registerE2EHooks(): void {
     getShellOpenExternalCalls,
     resetShellOpenExternalCalls,
     seedRunningSession(opts) {
-      _test_addRunningSession(opts.installationId, opts.installationName)
+      _test_addRunningSession(
+        opts.installationId,
+        opts.installationName,
+        undefined,
+        opts.coreBetaArgs
+      )
     },
     clearRunningSessions: _test_clearRunningSessions,
     getRunningSessionSnapshot(installationId) {

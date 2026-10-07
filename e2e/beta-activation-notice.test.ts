@@ -224,40 +224,71 @@ test('the card is anchored on the bell it points at @linux', async () => {
   // A single read can land in that window, which is a flaky test rather than a real failure,
   // and this repo does not tolerate those. Reading until it settles asserts the same property
   // without racing the resize.
-  const beakCentre = async (): Promise<number> =>
-    coachmarkPopup(ctx.app).evaluate<number>(`(() => {
-      const card = document.querySelector('.coachmark')
-      const beak = document.querySelector('.coachmark-beak')
-      if (!card || !beak) return -1
-      const b = beak.getBoundingClientRect()
-      return (b.left + b.right) / 2
-    })()`)
-
-  /** Everything the offset is computed from, for the failure message.
+  /** One complete, self-consistent reading: the bell, the popup's bounds, and the card's own
+   *  rects — all re-read together so the asserted offset and the printed terms describe the
+   *  same moment.
    *
-   *  A bare "expected <= 2, received 8" cannot say WHICH term is wrong, and this assertion
-   *  has already failed on a runner where it passes locally at the same window size. The
-   *  offset is `view.x + beak - bell`, so a failure is one of: the view not centred on the
-   *  bell, the card not centred in the view, or the beak not centred in the card. Each has a
-   *  different cause and a different fix, and one CI failure should be enough to tell them
-   *  apart instead of costing another round trip. */
-  const geometry = async (): Promise<string> => {
-    const card = await coachmarkPopup(ctx.app).evaluate<string>(`(() => {
-      const c = document.querySelector('.coachmark')
-      const b = document.querySelector('.coachmark-beak')
-      if (!c || !b) return 'card=<absent>'
-      const cr = c.getBoundingClientRect(), br = b.getBoundingClientRect()
-      return 'cardLeft=' + cr.left + ' cardWidth=' + cr.width +
-             ' beakInCard=' + ((br.left + br.right) / 2 - cr.left) +
-             ' beakInlineStyle=' + (b.style.left || '<none>') +
-             ' pageWidth=' + window.innerWidth
-    })()`)
-    return (
-      `bell=${bellCentre} viewX=${popup!.x} viewWidth=${popup!.width} ${card}` +
-      ` | viewCentreVsBell=${popup!.x + popup!.width / 2 - bellCentre}`
-    )
+   *  Every part of that matters here. Holding the view bounds from before the loop while
+   *  re-reading the beak mixes a stale origin with a live measurement, and the reposition this
+   *  loop waits out is exactly what invalidates those bounds. Reading the card's rects in a
+   *  separate round trip from the beak lets the two straddle a layout change. Either way the
+   *  numbers stop reconciling, which defeats the point: a diagnostic that describes a
+   *  different moment than the failure is worse than none, because it reads as evidence.
+   *
+   *  The offset is `view.x + beak - bell`, so a failure is one of three things: the view not
+   *  centred on the bell, the card not centred in the view, or the beak not centred in the
+   *  card. `viewCentreVsBell` and `cardLeft` separate them, and `pageWidth` catches the case
+   *  where the page is still laid out at its previous width and centres the card against a
+   *  viewport that no longer exists. */
+  const sample = async (): Promise<{ offset: number; detail: string } | null> => {
+    try {
+      const bell = await ctx.titleBar.evaluate<number>(`(() => {
+        const el = document.querySelector('.title-announcement-button')
+        if (!el) return -1
+        const r = el.getBoundingClientRect()
+        return (r.left + r.right) / 2
+      })()`)
+      const view = await ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
+        const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.isVisible())
+        if (!win) return null
+        for (const child of win.contentView.children) {
+          if (!(child instanceof WebContentsView)) continue
+          if (!child.webContents.getURL().includes('comfyTitleTooltip')) continue
+          const b = child.getBounds()
+          return { x: b.x, width: b.width }
+        }
+        return null
+      })
+      const raw = await coachmarkPopup(ctx.app).evaluate<string>(`(() => {
+        const c = document.querySelector('.coachmark')
+        const b = document.querySelector('.coachmark-beak')
+        if (!c || !b) return JSON.stringify({ beak: -1, card: 'card=<absent>' })
+        const cr = c.getBoundingClientRect(), br = b.getBoundingClientRect()
+        const beak = (br.left + br.right) / 2
+        return JSON.stringify({
+          beak,
+          card: 'cardLeft=' + cr.left + ' cardWidth=' + cr.width +
+                ' beakInCard=' + (beak - cr.left) +
+                ' beakInlineStyle=' + (b.style.left || '<none>') +
+                ' pageWidth=' + window.innerWidth
+        })
+      })()`)
+      const card = JSON.parse(raw) as { beak: number; card: string }
+      if (bell < 0 || !view || card.beak < 0) return null
+      return {
+        offset: Math.abs(view.x + card.beak - bell),
+        detail:
+          `bell=${bell} viewX=${view.x} viewWidth=${view.width} ${card.card}` +
+          ` | viewCentreVsBell=${view.x + view.width / 2 - bell}`
+      }
+    } catch {
+      // A renderer torn down or replaced mid-read. `expect.poll` would have retried this; a
+      // hand-rolled loop has to do it explicitly, or a transient becomes a test failure.
+      return null
+    }
   }
-  expect(await beakCentre(), 'no beak found on the card').toBeGreaterThanOrEqual(0)
+
+  expect(await sample(), 'could not read the card geometry at all').not.toBeNull()
 
   // When nothing clamped it, the beak must land ON the bell. Asserted only in the unclamped
   // case: with the bell too close to a window edge the card cannot centre, and the beak's
@@ -269,14 +300,29 @@ test('the card is anchored on the bell it points at @linux', async () => {
   })
   const clamped = popup!.x <= 0 || popup!.right >= windowWidth
   if (!clamped) {
-    await expect
-      .poll(async () => Math.abs(popup!.x + (await beakCentre()) - bellCentre), {
-        timeout: 10_000,
-        message:
-          'the beak must point at the bell, not merely sit in a view that is centred on it. ' +
-          (await geometry()),
-      })
-      .toBeLessThanOrEqual(2)
+    // Sampled in a loop rather than through `expect.poll`, because poll's `message` is built
+    // ONCE while the options object is constructed — so a failure ten seconds later reports
+    // the geometry from before polling began. That is the opposite of what this diagnostic is
+    // for: the numbers we need are the ones from the sample that actually failed, and on an
+    // intermittent failure the two need not agree.
+    // Budget started AFTER the first reading, and bounded by iterations too: on a loaded
+    // runner the round trips alone can eat a wall-clock deadline, which would silently
+    // degrade this back to the single mid-resize read it exists to avoid.
+    let taken = await sample()
+    const deadline = Date.now() + 10_000
+    for (let i = 0; i < 40 && (taken === null || taken.offset > 2); i++) {
+      if (Date.now() >= deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const next = await sample()
+      if (next !== null) taken = next
+    }
+    expect(taken, 'never read the card geometry within the budget').not.toBeNull()
+    const offset = taken!.offset
+    const detail = taken!.detail
+    expect(
+      offset,
+      'the beak must point at the bell, not merely sit in a view that is centred on it. ' + detail,
+    ).toBeLessThanOrEqual(2)
   }
 })
 

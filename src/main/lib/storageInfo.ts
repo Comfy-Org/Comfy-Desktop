@@ -233,7 +233,8 @@ const KNOWN_FS_TYPES = new Set([
   'nfs4',
   'cifs',
   'smb',
-  'smbfs'
+  'smbfs',
+  'webdav'
 ])
 
 function normalizeFsType(raw: string | null | undefined): string | null {
@@ -370,13 +371,17 @@ function classify(
   }
 }
 
-function networkInfo(volume: Systeminformation.FsSizeData | null, key: string): DriveInfo {
+function networkInfo(
+  volume: Systeminformation.FsSizeData | null,
+  key: string,
+  fsType: string | null = normalizeFsType(volume?.type)
+): DriveInfo {
   return {
     storageClass: 'network',
     bus: 'network',
     external: null,
     removable: null,
-    fsType: normalizeFsType(volume?.type),
+    fsType,
     driveModel: null,
     driveVendor: null,
     driveSizeGb: null,
@@ -405,6 +410,31 @@ const UNRESOLVED: DriveInfo = {
   driveKey: null
 }
 
+/**
+ * Protocol behind a UNC path, inferred from its shape since no volume row
+ * describes it. The WebDAV redirector's UNC forms carry `@` in the host
+ * (`\\host@SSL@443\...`) or use the `DavWWWRoot` share. WSL, RDP drive
+ * redirection and hypervisor shared folders use fixed host names and are not
+ * SMB, so they stay unknown, as do `\\.\` device paths and a path with no host
+ * or share. Any other share is assumed SMB, by far the common case, though the
+ * shape alone cannot rule out another network provider.
+ */
+const NON_SMB_UNC_HOSTS: ReadonlySet<string> = new Set([
+  '.',
+  'wsl$',
+  'wsl.localhost',
+  'tsclient',
+  'vboxsvr',
+  'vboxsrv',
+  'vmware-host',
+  'mac'
+])
+
+function uncFsType(host: string, share: string): string | null {
+  if (host === '' || share === '' || NON_SMB_UNC_HOSTS.has(host.toLowerCase())) return null
+  return host.includes('@') || share.toLowerCase() === 'davwwwroot' ? 'webdav' : 'smb'
+}
+
 function resolveWindows(p: string, snap: StorageSnapshot): DriveInfo {
   let resolved = path.win32.resolve(p)
   // Strip the extended-length prefix so \\?\C:\... resolves as a local path
@@ -412,10 +442,11 @@ function resolveWindows(p: string, snap: StorageSnapshot): DriveInfo {
   if (resolved.startsWith('\\\\?\\UNC\\')) resolved = `\\\\${resolved.slice(8)}`
   else if (resolved.startsWith('\\\\?\\')) resolved = resolved.slice(4)
   // UNC share - network, keyed per share root so same-share paths group.
+  // No volume row describes a UNC path, so the fs type comes from its shape.
   if (resolved.startsWith('\\\\')) {
     const parts = resolved.slice(2).split('\\')
     const shareRoot = `\\\\${parts.slice(0, 2).join('\\')}`.toLowerCase()
-    return networkInfo(null, `net:${shareRoot}`)
+    return networkInfo(null, `net:${shareRoot}`, uncFsType(parts[0] ?? '', parts[1] ?? ''))
   }
   const root = path.win32.parse(resolved).root // "C:\"
   if (!/^[a-z]:[\\/]?$/i.test(root)) return UNRESOLVED

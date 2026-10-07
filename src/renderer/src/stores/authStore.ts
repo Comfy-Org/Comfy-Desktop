@@ -2,7 +2,7 @@ import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import type { AuthStatus, ElectronApi, Workspace } from '../../../types/ipc'
-import { isPersonalWorkspace } from '../../../shared/workspaces'
+import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import type { Build } from '../devplatform/types'
 
 /**
@@ -20,6 +20,8 @@ export const useAuthStore = defineStore('auth', () => {
   const statusLoaded = ref(false)
   const workspaces = ref<Workspace[]>([])
   const builds = ref<Build[]>([])
+  /** Workspace currently selected in workspace-scoped renderer surfaces. */
+  const selectedWorkspaceId = ref(PERSONAL_WORKSPACE_ID)
   const loadingWorkspaces = ref(false)
   /** Distinguishes unknown membership from a successfully fetched empty catalog. */
   const workspacesLoaded = ref(false)
@@ -36,6 +38,18 @@ export const useAuthStore = defineStore('auth', () => {
   /** Bumped on every authoritative status change (push, sign-in, switch,
    *  sign-out) so a slower in-flight pull can never overwrite a newer status. */
   let revision = 0
+  let workspaceContextInitialized = false
+
+  function initializeWorkspaceContext(workspaceId?: string): void {
+    if (workspaceContextInitialized) return
+    selectedWorkspaceId.value = workspaceId ?? PERSONAL_WORKSPACE_ID
+    workspaceContextInitialized = true
+  }
+
+  function resetWorkspaceContext(): void {
+    selectedWorkspaceId.value = PERSONAL_WORKSPACE_ID
+    workspaceContextInitialized = false
+  }
 
   /** Advance the revision on an authoritative status change. Every in-flight
    *  fetch becomes stale, and a stale fetch's guarded `finally` refuses to
@@ -71,8 +85,10 @@ export const useAuthStore = defineStore('auth', () => {
     }
     advanceRevision()
     status.value = next
-    if (!next.signedIn) resetScopedState()
-    else {
+    if (!next.signedIn) {
+      resetScopedState()
+      resetWorkspaceContext()
+    } else {
       builds.value = []
       buildsLoaded.value = false
     }
@@ -197,6 +213,7 @@ export const useAuthStore = defineStore('auth', () => {
     statusLoaded,
     workspaces,
     builds,
+    selectedWorkspaceId,
     loadingWorkspaces,
     workspacesLoaded,
     loadingBuilds,
@@ -205,6 +222,8 @@ export const useAuthStore = defineStore('auth', () => {
     buildsError,
     isSignedIn,
     personalWorkspace,
+    initializeWorkspaceContext,
+    resetWorkspaceContext,
     fetchStatus,
     whenReady: () => initialStatus,
     signIn,

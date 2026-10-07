@@ -103,7 +103,7 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
       // a legacy install with nothing stored arrives seeded, never blank.
       {
         id: 'betaFeaturesEnabled',
-        label: 'Opt in to beta features',
+        label: 'Opt-in to beta features',
         value: true,
         editable: true,
         editType: 'boolean'
@@ -221,6 +221,15 @@ describe('GlobalSettingsView', () => {
       await flushPromises()
       expect(wrapper.find('.gs-tab.active').text()).toBe('General')
       expect(row('betaFeaturesEnabled')?.classList.contains('gs-field-flash')).toBe(true)
+    })
+
+    it("moves keyboard focus to the flashed field's control", async () => {
+      installMockBridge()
+      mountView(makeSnapshot({ initialTab: 'general', highlightFieldId: 'betaFeaturesEnabled' }))
+      await flushPromises()
+      const control = row('betaFeaturesEnabled')?.querySelector('button')
+      expect(control).toBeTruthy()
+      expect(document.activeElement).toBe(control)
     })
 
     it('flashes nothing when the snapshot names no field', async () => {
@@ -695,7 +704,7 @@ describe('GlobalSettingsView', () => {
   })
 
   describe('beta features opt-in row', () => {
-    const BETA_LABEL = 'Opt in to beta features'
+    const BETA_LABEL = 'Opt-in to beta features'
     const TELEMETRY_LABEL = 'Send anonymous telemetry'
 
     function toggleFor(wrapper: ReturnType<typeof mountView>, label: string) {

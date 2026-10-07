@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Settings } from 'lucide-vue-next'
 import ArgsRawInput from './ArgsRawInput.vue'
+import BetaArgsPill from './BetaArgsPill.vue'
+import { SETTINGS_REOPEN_EPOCH } from './settingsReopenEpoch'
 import type { ComfyArgDef, DetailField } from '../../types/ipc'
 
 /**
  * Compact summary row for the `launchArgs` field. Shows the current
  * arg string with inline autocomplete and a gear icon that opens the
- * full `ArgsBuilderPage` sub-page.
+ * full `ArgsBuilderPage` sub-page, after the Core beta args pill.
  */
 
 interface Props {
@@ -32,24 +34,29 @@ watch(stringValue, (v) => {
 })
 
 const schema = ref<ComfyArgDef[]>([])
+/** Bumped as each schema load settles, for the beta pill's preview. */
+const schemaVersion = ref(0)
+let schemaSeq = 0
 
 async function loadSchema(id: string | undefined): Promise<void> {
+  const seq = ++schemaSeq
   if (!id) {
     schema.value = []
     return
   }
-  try {
-    const result = await window.api.getComfyArgs(id)
-    schema.value = result?.args ?? []
-  } catch {
-    schema.value = []
-  }
+  const result = await window.api.getComfyArgs(id).catch(() => null)
+  // A reopen can start a newer load while this one is pending; only the latest applies.
+  if (seq !== schemaSeq) return
+  schema.value = result?.args ?? []
+  schemaVersion.value++
 }
 
-onMounted(() => void loadSchema(props.installationId))
+const reopenEpoch = inject(SETTINGS_REOPEN_EPOCH, null)
+// Also on each reopen: the checkout may have moved while the host was hidden.
 watch(
-  () => props.installationId,
-  (id) => void loadSchema(id)
+  () => [props.installationId, reopenEpoch?.value] as const,
+  ([id]) => void loadSchema(id),
+  { immediate: true }
 )
 
 function handleEdit(): void {
@@ -75,6 +82,12 @@ function handleChange(value: string): void {
     @change="handleChange"
   >
     <template #trailing>
+      <BetaArgsPill
+        v-if="installationId"
+        :installation-id="installationId"
+        :args-value="stringValue"
+        :schema-version="schemaVersion"
+      />
       <button
         type="button"
         :aria-label="t('comfyUISettings.configureArgs', 'Configure arguments')"

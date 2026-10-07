@@ -21,14 +21,24 @@ vi.mock('./paths', () => ({
 import {
   CORE_BETA_GRANTABLE_ARGS,
   CORE_BETA_FEATURES_FLAG_KEY,
+  NO_CORE_COMMITS,
   _resetForTest,
+  commitGrantShas,
   getCoreBetaGrantsAsync,
   initCoreBetaGrants,
   parseCoreBetaGrants,
-  selectCoreBetaGrantArgs
+  planCoreBetaArgs,
+  selectCoreBetaGrantArgs,
+  toBetaArgView
 } from './coreBetaGrants'
-import type { CoreVersionState } from './coreBetaGrants'
-import { coreRecordCurrent, coreSemverExact, coreSemverVerified } from './version'
+import type {
+  CoreBetaFacts,
+  CoreBetaGrant,
+  CoreCommitState,
+  CoreVersionState
+} from './coreBetaGrants'
+import type { ComfyArgsSchema } from './comfy-args'
+import { coreGateVersion, coreRecordCurrent } from './version'
 import type { ComfyVersion } from './version'
 import type { InstallationRecord } from '../installations'
 
@@ -43,7 +53,7 @@ afterEach(() => {
 })
 
 describe('parseCoreBetaGrants', () => {
-  it('accepts dashed allowlisted grants, normalizes bounds, and deduplicates by arg', () => {
+  it('accepts dashed allowlisted grants, normalizes bounds, and keeps every entry for an arg', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
@@ -62,7 +72,8 @@ describe('parseCoreBetaGrants', () => {
         arg: '--enable-asset-hashing',
         minCoreVersion: '0.3.81',
         maxCoreVersion: '0.4.0'
-      }
+      },
+      { arg: '--enable-assets', minCoreVersion: '0.3.90' }
     ])
   })
 
@@ -421,12 +432,7 @@ describe('selectCoreBetaGrantArgs', () => {
     expect(
       selectCoreBetaGrantArgs(
         [unboundedGrant],
-        {
-          semver: '0.3.99',
-          exact: false,
-          verified: coreSemverVerified(mergeBaseFallback),
-          current: true
-        },
+        { ...coreGateVersion(mergeBaseFallback), current: true },
         true,
         []
       )
@@ -438,7 +444,7 @@ describe('selectCoreBetaGrantArgs', () => {
     expect(
       selectCoreBetaGrantArgs(
         [unboundedGrant],
-        { semver: '0.3.99', exact: true, verified: coreSemverVerified(legacy), current: true },
+        { ...coreGateVersion(legacy), current: true },
         true,
         []
       )
@@ -455,12 +461,7 @@ describe('selectCoreBetaGrantArgs', () => {
     expect(
       selectCoreBetaGrantArgs(
         [unboundedGrant],
-        {
-          semver: '0.3.99',
-          exact: false,
-          verified: coreSemverVerified(verifiedBase),
-          current: true
-        },
+        { ...coreGateVersion(verifiedBase), current: true },
         true,
         []
       )
@@ -483,9 +484,7 @@ describe('selectCoreBetaGrantArgs', () => {
       selectCoreBetaGrantArgs(
         [unboundedGrant],
         {
-          semver: '0.3.99',
-          exact: coreSemverExact(pulled),
-          verified: coreSemverVerified(pulled),
+          ...coreGateVersion(pulled),
           current: coreRecordCurrent(pulled, { kind: 'head', commit: PULLED_COMMIT })
         },
         true,
@@ -505,9 +504,7 @@ describe('selectCoreBetaGrantArgs', () => {
       selectCoreBetaGrantArgs(
         [unboundedGrant],
         {
-          semver: '0.3.99',
-          exact: coreSemverExact(atRecord),
-          verified: coreSemverVerified(atRecord),
+          ...coreGateVersion(atRecord),
           current: coreRecordCurrent(atRecord, { kind: 'head', commit: COMMIT })
         },
         true,
@@ -517,9 +514,11 @@ describe('selectCoreBetaGrantArgs', () => {
   })
 
   /** Derives exactness the way production does, so these cases pin the real `commitsAhead`
-   *  semantics rather than a hand-set boolean that could drift from `coreSemverExact`. */
+   *  semantics rather than a hand-set boolean that could drift from `coreGateVersion`. */
   function exactnessOf(commitsAhead: number | undefined): boolean {
-    return coreSemverExact(installWith({ commit: COMMIT, baseTag: 'v0.3.99', commitsAhead }))
+    return coreGateVersion(
+      installWith({ commit: COMMIT, baseTag: 'v0.3.99', commitsAhead, baseTagVerified: true })
+    ).exact
   }
 
   it('applies a max-bounded grant when the install sits exactly on its tag', () => {
@@ -548,6 +547,453 @@ describe('selectCoreBetaGrantArgs', () => {
   })
 })
 
+const SHA_A = 'a'.repeat(40)
+const SHA_B = 'b'.repeat(40)
+const SHA_C = 'c'.repeat(40)
+const SHA_D = 'd'.repeat(40)
+
+describe('parseCoreBetaGrants commit ranges', () => {
+  it('parses one lineage per tuple, lowercasing SHAs and keeping an open upper bound', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          {
+            arg: '--enable-assets',
+            commit_ranges: [
+              [SHA_A.toUpperCase(), SHA_B],
+              [SHA_C, null]
+            ],
+            description: 'Asset library'
+          }
+        ]
+      })
+    ).toEqual([
+      {
+        arg: '--enable-assets',
+        commitRanges: [
+          [SHA_A, SHA_B],
+          [SHA_C, null]
+        ],
+        notice: { description: 'Asset library' }
+      }
+    ])
+  })
+
+  it('keeps a version entry and a commit entry for the same arg side by side', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', min_core_version: '0.3.80' },
+          { arg: '--enable-assets', commit_ranges: [[SHA_A, null]] }
+        ]
+      })
+    ).toEqual([
+      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { arg: '--enable-assets', commitRanges: [[SHA_A, null]] }
+    ])
+  })
+
+  it.each([
+    ['an abbreviated SHA', [['aaaaaaa', null]]],
+    ['a non-hex SHA', [['g'.repeat(40), null]]],
+    ['a malformed upper bound', [[SHA_A, 'b'.repeat(39)]]],
+    ['an omitted upper bound', [[SHA_A]]],
+    ['an undefined upper bound', [[SHA_A, undefined]]],
+    ['a three-element tuple', [[SHA_A, SHA_B, SHA_C]]],
+    ['an object instead of a tuple', [{ lower: SHA_A, upper: null }]],
+    [
+      'one bad lineage among good ones',
+      [
+        [SHA_A, null],
+        ['nope', null]
+      ]
+    ],
+    ['an empty list', []],
+    ['a bare string', SHA_A],
+    ['more lineages than the cap', Array.from({ length: 9 }, () => [SHA_A, null])]
+  ])('drops a commit entry with %s', (_label, commitRanges) => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-assets', commit_ranges: commitRanges }]
+      })
+    ).toEqual([])
+  })
+
+  it('drops an entry that carries both a commit range and a version bound', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', min_core_version: '0.3.80', commit_ranges: [[SHA_A, null]] },
+          { arg: '--enable-assets', max_core_version: '0.4.0', commit_ranges: [[SHA_A, null]] }
+        ]
+      })
+    ).toEqual([])
+  })
+
+  it('grants nothing when a commit entry and a version entry name opposite args', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          { arg: '--enable-assets', min_core_version: '0.3.80' },
+          { arg: '--disable-assets', commit_ranges: [[SHA_A, null]] }
+        ]
+      })
+    ).toEqual([])
+  })
+})
+
+describe('selectCoreBetaGrantArgs commit ranges', () => {
+  const HEAD = 'e'.repeat(40)
+  const versionGrant: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.80' }
+  const openGrant: CoreBetaGrant = { arg: '--enable-assets', commitRanges: [[SHA_A, null]] }
+  const closedGrant: CoreBetaGrant = { arg: '--enable-assets', commitRanges: [[SHA_A, SHA_B]] }
+
+  function facts(ancestry: Record<string, boolean>): CoreCommitState {
+    return { head: HEAD, ancestry: new Map(Object.entries(ancestry)) }
+  }
+
+  const version = (semver: string | null = '0.3.81'): CoreVersionState => ({
+    semver,
+    exact: true,
+    verified: true,
+    current: true
+  })
+
+  it.each([
+    ['contains the lower bound', { [SHA_A]: true }, [openGrant]],
+    ['provably lacks the lower bound', { [SHA_A]: false }, []],
+    ['could not relate the lower bound', {}, []]
+  ])('with an open upper bound, grants when HEAD %s', (_label, ancestry, expected) => {
+    expect(selectCoreBetaGrantArgs([openGrant], version(), true, [], facts(ancestry))).toEqual(
+      expected
+    )
+  })
+
+  it.each([
+    ['provably lacks the upper bound', { [SHA_A]: true, [SHA_B]: false }, [closedGrant]],
+    ['already contains the upper bound', { [SHA_A]: true, [SHA_B]: true }, []],
+    ['could not relate the upper bound (unknown is not "before it")', { [SHA_A]: true }, []],
+    ['lacks the lower bound', { [SHA_A]: false, [SHA_B]: false }, []]
+  ])('with a closed upper bound, grants only when HEAD %s', (_label, ancestry, expected) => {
+    expect(selectCoreBetaGrantArgs([closedGrant], version(), true, [], facts(ancestry))).toEqual(
+      expected
+    )
+  })
+
+  it('logs whether HEAD fell inside the ranges, so a refusal is visible', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    selectCoreBetaGrantArgs(
+      [closedGrant],
+      version(),
+      true,
+      [],
+      facts({ [SHA_A]: true, [SHA_B]: true })
+    )
+    selectCoreBetaGrantArgs(
+      [closedGrant],
+      version(),
+      true,
+      [],
+      facts({ [SHA_A]: true, [SHA_B]: false })
+    )
+
+    const lines = log.mock.calls.map((call) => String(call[0])).filter((l) => l.includes('commits'))
+    expect(lines).toEqual([
+      expect.stringMatching(/ in-range=no$/),
+      expect.stringMatching(/ in-range=yes$/)
+    ])
+    log.mockRestore()
+  })
+
+  it('grants when ANY lineage matches', () => {
+    const backported: CoreBetaGrant = {
+      arg: '--enable-assets',
+      commitRanges: [
+        [SHA_A, SHA_B],
+        [SHA_C, SHA_D]
+      ]
+    }
+    const onReleaseBranch = facts({ [SHA_A]: false, [SHA_C]: true, [SHA_D]: false })
+    expect(selectCoreBetaGrantArgs([backported], version(), true, [], onReleaseBranch)).toEqual([
+      backported
+    ])
+    const onNeither = facts({ [SHA_A]: false, [SHA_C]: false })
+    expect(selectCoreBetaGrantArgs([backported], version(), true, [], onNeither)).toEqual([])
+  })
+
+  it('grants nothing from a commit entry when no ancestry was resolved', () => {
+    expect(selectCoreBetaGrantArgs([openGrant], version(), true, [])).toEqual([])
+    expect(selectCoreBetaGrantArgs([openGrant], version(), true, [], NO_CORE_COMMITS)).toEqual([])
+  })
+
+  it('grants nothing when beta features are off, whatever the ancestry', () => {
+    expect(
+      selectCoreBetaGrantArgs([openGrant], version(), false, [], facts({ [SHA_A]: true }))
+    ).toEqual([])
+  })
+
+  it.each([['--enable-assets'], ['--disable-assets']])(
+    'yields a commit grant to the user-supplied %s',
+    (userArg) => {
+      expect(
+        selectCoreBetaGrantArgs([openGrant], version(), true, [userArg], facts({ [SHA_A]: true }))
+      ).toEqual([])
+    }
+  )
+
+  it.each([
+    ['the core version is unknown', { semver: null, exact: true, verified: true, current: true }],
+    [
+      'the base tag is unverified',
+      { semver: '0.3.81', exact: true, verified: false, current: true }
+    ],
+    [
+      'the record is stale against the checkout',
+      { semver: '0.3.81', exact: true, verified: true, current: false }
+    ],
+    [
+      'the install is past its tag',
+      { semver: '0.3.81', exact: false, verified: true, current: true }
+    ]
+  ] satisfies [string, CoreVersionState][])(
+    'measures a commit entry against HEAD even when %s',
+    (_label, core) => {
+      expect(
+        selectCoreBetaGrantArgs(
+          [closedGrant],
+          core,
+          true,
+          [],
+          facts({ [SHA_A]: true, [SHA_B]: false })
+        ),
+        'the version refusals guard the RECORD, which a commit entry never reads'
+      ).toEqual([closedGrant])
+    }
+  )
+
+  describe('OR across entries for one arg', () => {
+    const matching = facts({ [SHA_A]: true })
+
+    it('grants through the commit entry when the version entry does not match', () => {
+      expect(
+        selectCoreBetaGrantArgs([versionGrant, openGrant], version('0.3.79'), true, [], matching)
+      ).toEqual([openGrant])
+    })
+
+    it('grants through the version entry when the commit entry does not match', () => {
+      expect(
+        selectCoreBetaGrantArgs([versionGrant, openGrant], version(), true, [], NO_CORE_COMMITS)
+      ).toEqual([versionGrant])
+    })
+
+    it('grants through the version entry on an install whose version gate is refused', () => {
+      const unverified = { ...version(), verified: false }
+      expect(
+        selectCoreBetaGrantArgs([versionGrant, openGrant], unverified, true, [], matching)
+      ).toEqual([openGrant])
+    })
+
+    it('names the arg once, from the first matching entry, when both match', () => {
+      expect(
+        selectCoreBetaGrantArgs([versionGrant, openGrant], version(), true, [], matching)
+      ).toEqual([versionGrant])
+      expect(
+        selectCoreBetaGrantArgs([openGrant, versionGrant], version(), true, [], matching)
+      ).toEqual([openGrant])
+    })
+
+    it('grants through a later version entry for the same arg', () => {
+      const later: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.70' }
+      const floor: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.90' }
+      expect(selectCoreBetaGrantArgs([floor, later], version('0.3.81'), true, [])).toEqual([later])
+    })
+  })
+})
+
+describe('selectCoreBetaGrantArgs withheld reasons', () => {
+  const HEAD = 'e'.repeat(40)
+  const at: CoreVersionState = { semver: '0.3.81', exact: true, verified: true, current: true }
+
+  function withheldFor(
+    flags: CoreBetaGrant[],
+    ancestry: Record<string, boolean> = {},
+    opts: { core?: CoreVersionState; userArgs?: string[]; head?: string | null } = {}
+  ): string[] {
+    const lines: string[] = []
+    selectCoreBetaGrantArgs(
+      flags,
+      opts.core ?? at,
+      true,
+      opts.userArgs ?? [],
+      {
+        head: opts.head === undefined ? HEAD : opts.head,
+        ancestry: new Map(Object.entries(ancestry))
+      },
+      lines
+    )
+    return lines
+  }
+
+  const commitEntry = (lower: string, upper: string | null): CoreBetaGrant => ({
+    arg: '--enable-assets',
+    commitRanges: [[lower, upper]]
+  })
+
+  it.each([
+    [
+      'HEAD is past the upper bound',
+      { [SHA_A]: true, [SHA_B]: true },
+      'HEAD past upper bbbbbbbbbbbb'
+    ],
+    ['the lower bound is not contained', { [SHA_A]: false }, 'lower aaaaaaaaaaaa not contained'],
+    ['the lower bound is unresolved', {}, 'lower aaaaaaaaaaaa unresolved'],
+    ['the upper bound is unresolved', { [SHA_A]: true }, 'upper bbbbbbbbbbbb unresolved']
+  ])('names the failed bound when %s', (_label, ancestry, reason) => {
+    expect(withheldFor([commitEntry(SHA_A, SHA_B)], ancestry)).toEqual([
+      `[core-beta] --enable-assets withheld: entry 1: commit range aaaaaaaaaaaa..bbbbbbbbbbbb: ${reason}`
+    ])
+  })
+
+  it('says there was no HEAD to measure on a checkout without one', () => {
+    expect(withheldFor([commitEntry(SHA_A, null)], {}, { head: null })).toEqual([
+      '[core-beta] --enable-assets withheld: entry 1: no readable git HEAD to measure'
+    ])
+  })
+
+  it('reports every lineage of a multi-range entry', () => {
+    const entry: CoreBetaGrant = {
+      arg: '--enable-assets',
+      commitRanges: [
+        [SHA_A, null],
+        [SHA_C, SHA_D]
+      ]
+    }
+    expect(withheldFor([entry], { [SHA_A]: false, [SHA_C]: true, [SHA_D]: true })).toEqual([
+      '[core-beta] --enable-assets withheld: entry 1: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa not contained | commit range cccccccccccc..dddddddddddd: HEAD past upper dddddddddddd'
+    ])
+  })
+
+  it.each([
+    [
+      'below the minimum',
+      { arg: '--enable-assets', minCoreVersion: '0.3.90' },
+      at,
+      'version 0.3.81 < min 0.3.90'
+    ],
+    [
+      'at or past the maximum',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80', maxCoreVersion: '0.3.81' },
+      at,
+      'version 0.3.81 >= max 0.3.81'
+    ],
+    [
+      'bounded above on an inexact tag',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80', maxCoreVersion: '0.4.0' },
+      { ...at, exact: false },
+      'max 0.4.0 needs an exact release tag'
+    ],
+    [
+      'on an unknown core version',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { ...at, semver: null },
+      'core version unknown'
+    ],
+    [
+      'on an unverified base',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { ...at, verified: false },
+      'no ancestry-proven release (base 0.3.81)'
+    ],
+    [
+      'on a record the checkout does not confirm',
+      { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+      { ...at, current: false },
+      'checkout does not confirm the record'
+    ]
+  ] satisfies [string, CoreBetaGrant, CoreVersionState, string][])(
+    'names the version shortfall when %s',
+    (_label, entry, core, reason) => {
+      expect(withheldFor([entry], {}, { core })).toEqual([
+        `[core-beta] --enable-assets withheld: entry 1: ${reason}`
+      ])
+    }
+  )
+
+  it('lists each failed entry for an arg on one line', () => {
+    expect(
+      withheldFor(
+        [{ arg: '--enable-assets', minCoreVersion: '0.3.90' }, commitEntry(SHA_A, null)],
+        {
+          [SHA_A]: false
+        }
+      )
+    ).toEqual([
+      '[core-beta] --enable-assets withheld: entry 1: version 0.3.81 < min 0.3.90; entry 2: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa not contained'
+    ])
+  })
+
+  it.each([
+    [['--enable-assets'], 'already in the launch args'],
+    [['--disable-assets'], 'the launch args contain --disable-assets']
+  ])('says the user args won when they contain %s', (userArgs, reason) => {
+    expect(withheldFor([commitEntry(SHA_A, null)], { [SHA_A]: true }, { userArgs })).toEqual([
+      `[core-beta] --enable-assets withheld: ${reason}`
+    ])
+  })
+
+  it('says a grant yielded to its granted opposite', () => {
+    const disable: CoreBetaGrant = { arg: '--disable-assets', minCoreVersion: '0.3.80' }
+    expect(withheldFor([commitEntry(SHA_A, null), disable], { [SHA_A]: true })).toEqual([
+      '[core-beta] --disable-assets withheld: conflicts with granted --enable-assets'
+    ])
+  })
+
+  it('reports nothing for a granted arg, even when an earlier entry for it failed', () => {
+    expect(
+      withheldFor(
+        [{ arg: '--enable-assets', minCoreVersion: '0.3.90' }, commitEntry(SHA_A, null)],
+        {
+          [SHA_A]: true
+        }
+      )
+    ).toEqual([])
+  })
+
+  it('reports nothing when beta features are off', () => {
+    const lines: string[] = []
+    selectCoreBetaGrantArgs([commitEntry(SHA_A, null)], at, false, [], NO_CORE_COMMITS, lines)
+    expect(lines).toEqual([])
+  })
+})
+
+describe('commitGrantShas', () => {
+  it('skips entries whose arg, or its opposite, is already in the user args', () => {
+    const flags: CoreBetaGrant[] = [
+      { arg: '--enable-assets', commitRanges: [[SHA_A, null]] },
+      { arg: '--enable-asset-hashing', commitRanges: [[SHA_B, null]] }
+    ]
+    expect(commitGrantShas(flags, ['--disable-assets'])).toEqual([SHA_B])
+    expect(commitGrantShas(flags, ['--enable-asset-hashing'])).toEqual([SHA_A])
+  })
+
+  it('lists each SHA the commit entries name once, skipping version entries and open bounds', () => {
+    expect(
+      commitGrantShas([
+        { arg: '--enable-assets', minCoreVersion: '0.3.80' },
+        {
+          arg: '--enable-assets',
+          commitRanges: [
+            [SHA_A, SHA_B],
+            [SHA_C, null]
+          ]
+        },
+        { arg: '--enable-asset-hashing', commitRanges: [[SHA_A, SHA_D]] }
+      ])
+    ).toEqual([SHA_A, SHA_B, SHA_C, SHA_D])
+  })
+})
+
 describe('core beta grants fetch', () => {
   it('reads its own PostHog key once at boot', async () => {
     getOpsFlagResult.mockResolvedValue({
@@ -572,5 +1018,115 @@ describe('core beta grants fetch', () => {
     await expect(getCoreBetaGrantsAsync()).resolves.toEqual([
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }
     ])
+  })
+  it('logs the cached commit ranges in full, on one line', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    getOpsFlagResult.mockResolvedValue({
+      kind: 'value',
+      value: true,
+      payload: { flags: [{ arg: '--enable-assets', commit_ranges: [[SHA_A, null]] }] }
+    })
+
+    await initCoreBetaGrants({ distinctId: 'device-id' })
+
+    const init = log.mock.calls.find((call) => String(call[0]).startsWith('[core-beta] init:'))
+    const rendered = init!.map(String).join(' ')
+    expect(rendered, 'the SHA must survive inspection instead of folding to [Array]').toContain(
+      SHA_A
+    )
+    expect(rendered, 'one line, so a [core-beta] grep catches all of it').not.toContain('\n')
+    log.mockRestore()
+  })
+})
+
+describe('planCoreBetaArgs', () => {
+  const HEAD = 'e'.repeat(40)
+  const schemaOf = (...names: string[]): ComfyArgsSchema => ({
+    args: names.map((name) => ({
+      name,
+      flag: `--${name}`,
+      help: '',
+      type: 'boolean' as const,
+      category: 'other'
+    })),
+    knownFlags: new Set(names)
+  })
+  const assets: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.80' }
+  const hashing: CoreBetaGrant = { arg: '--enable-asset-hashing', minCoreVersion: '0.3.80' }
+  const agent: CoreBetaGrant = { arg: '--enable-agent', commitRanges: [[SHA_A, null]] }
+  const facts = (overrides: Partial<CoreBetaFacts> = {}): CoreBetaFacts => ({
+    grants: [assets, hashing, agent],
+    betaEnabled: true,
+    userArgs: [],
+    core: { semver: '0.3.81', exact: true, verified: true, current: true },
+    commits: { head: HEAD, ancestry: new Map([[SHA_A, true]]) },
+    schema: schemaOf('enable-assets', 'enable-asset-hashing', 'enable-agent'),
+    ...overrides
+  })
+
+  it('applies every selected grant the schema accepts, in selection order', () => {
+    expect(planCoreBetaArgs(facts()).applied).toEqual([assets, hashing, agent])
+  })
+
+  it('drops a selected grant this core cannot parse, and reports it as unsupported', () => {
+    const plan = planCoreBetaArgs(facts({ schema: schemaOf('enable-assets', 'enable-agent') }))
+    expect(plan.applied).toEqual([assets, agent])
+    expect(plan.droppedUnsupported).toEqual(['--enable-asset-hashing'])
+  })
+
+  it('applies nothing when opted out', () => {
+    const plan = planCoreBetaArgs(facts({ betaEnabled: false }))
+    expect(plan.applied).toEqual([])
+    expect(plan.droppedUnsupported).toEqual([])
+  })
+
+  it("withholds what the user's own args decide, and says why", () => {
+    const plan = planCoreBetaArgs(facts({ userArgs: ['--disable-assets', '--enable-agent'] }))
+    expect(plan.applied).toEqual([hashing])
+    expect(plan.withheld).toEqual([
+      '[core-beta] --enable-assets withheld: the launch args contain --disable-assets',
+      '[core-beta] --enable-agent withheld: already in the launch args'
+    ])
+  })
+
+  it('withholds a commit grant whose ancestry is unproven', () => {
+    const plan = planCoreBetaArgs(facts({ commits: { head: HEAD, ancestry: new Map() } }))
+    expect(plan.applied).toEqual([assets, hashing])
+  })
+
+  it('withholds version grants when the record no longer describes the checkout', () => {
+    const plan = planCoreBetaArgs(
+      facts({ core: { semver: '0.3.81', exact: true, verified: true, current: false } })
+    )
+    expect(plan.applied).toEqual([agent])
+    expect(plan.trace).toContain(
+      '[core-beta] refused: base 0.3.81 from a record the checkout contradicts'
+    )
+  })
+
+  it('returns its explanation as trace lines instead of logging them', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const plan = planCoreBetaArgs(facts())
+    expect(log).not.toHaveBeenCalled()
+    expect(plan.trace).toEqual([
+      '[core-beta] window --enable-assets: >=0.3.80 version=0.3.81 exact=true',
+      '[core-beta] window --enable-asset-hashing: >=0.3.80 version=0.3.81 exact=true',
+      `[core-beta] commits --enable-agent: ${SHA_A.slice(0, 12)}.. head=${HEAD.slice(0, 12)} in-range=yes`
+    ])
+    log.mockRestore()
+  })
+})
+
+describe('toBetaArgView', () => {
+  it('names a grant by its payload description, and lists a silent grant too', () => {
+    expect(
+      toBetaArgView({
+        ...{ arg: '--enable-assets', minCoreVersion: '0.3.80' },
+        notice: { description: 'Asset library' }
+      })
+    ).toEqual({ arg: '--enable-assets', name: 'Asset library' })
+    expect(
+      toBetaArgView({ arg: '--enable-assets', minCoreVersion: '0.3.80', notice: { silent: true } })
+    ).toEqual({ arg: '--enable-assets', name: null })
   })
 })

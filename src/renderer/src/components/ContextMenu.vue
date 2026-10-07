@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue'
 import { TID } from '../../../shared/testIds'
+import InfoTooltip from './InfoTooltip.vue'
 import type { ContextMenuItem } from '../types/context-menu'
 
 const props = defineProps<{
@@ -53,9 +54,9 @@ function clampToViewport(): void {
 }
 
 function onOutsideClick(e: MouseEvent): void {
-  if (menuRef.value && !menuRef.value.contains(e.target as Node)) {
-    emit('close')
-  }
+  const target = e.target as Element
+  if (menuRef.value?.contains(target) || target.closest('.tooltip-bubble--interactive')) return
+  emit('close')
 }
 
 function onEscape(e: KeyboardEvent): void {
@@ -79,16 +80,31 @@ function handleClick(item: ContextMenuItem): void {
     >
       <template v-for="(item, i) in items" :key="item.id">
         <div v-if="item.separator && i > 0" class="context-menu-separator" />
-        <button
+        <div
           class="context-menu-item"
           :class="{ disabled: item.disabled, 'is-danger': item.style === 'danger' }"
-          :aria-disabled="item.disabled || undefined"
-          :title="item.disabled ? item.title : undefined"
-          :data-testid="TID.contextMenuItem(item.id)"
-          @click="handleClick(item)"
         >
-          {{ item.label }}
-        </button>
+          <button
+            class="context-menu-item-action"
+            :class="{ disabled: item.disabled }"
+            :aria-disabled="item.disabled || undefined"
+            :title="item.disabled ? item.title : undefined"
+            :data-testid="TID.contextMenuItem(item.id)"
+            @click="handleClick(item)"
+          >
+            {{ item.label }}
+          </button>
+          <InfoTooltip
+            v-if="item.hint"
+            class="context-menu-item-info"
+            :text="item.hint"
+            :link-url="item.hintUrl"
+            :link-label="item.hintLinkLabel"
+            icon="info"
+            side="right"
+            @click.stop
+          />
+        </div>
       </template>
     </div>
   </Teleport>
