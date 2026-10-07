@@ -1529,8 +1529,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     // `cloudFreeRuns.ts`.
     void initCloudFreeRuns({ distinctId: installationId })
 
-    // Slot #0 and the campaigns under one id. Campaigns apply only to beta-on launches, so a
-    // beta-off boot spends no requests on them; turning beta on takes effect at the next boot.
     void initCoreBetaFlags({
       distinctId: installationId,
       betaEnabled: settings.peekBetaFeaturesEnabled()

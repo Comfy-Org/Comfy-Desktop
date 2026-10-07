@@ -29,7 +29,6 @@ const schemaOf = (...names: string[]): ComfyArgsSchema => ({
   knownFlags: new Set(names)
 })
 
-/** The agent campaign payload as the runbook writes it: gated on assets. */
 function agentPayload(enrolment: unknown = { epoch: 1, epochs: [1] }, extra: object = {}): object {
   return {
     grants: [
@@ -347,7 +346,6 @@ describe('planCampaignArgs: hold', () => {
     const sixDaysOld = answer('hold', agentPayload(), NOW - 6 * 24 * HOUR_MS)
     const facts6 = hold({ answers: new Map([[KEY, sixDaysOld]]) })
     expect(args(planCampaignArgs(facts6))).toEqual(['--enable-agent'])
-    // The same cached answer, two days later: Desktop never restarted, so nothing reloaded it.
     const later = planCampaignArgs({ ...facts6, now: NOW + 2 * 24 * HOUR_MS })
     expect(later.applied).toEqual([])
     expect(later.misses).toEqual([

@@ -73,10 +73,8 @@ const launchHarness = vi.hoisted(() => ({
   portLockPid: null as null | number,
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
   killExits: true,
-  /** The campaign registry and answers this launch reads. */
   campaigns: { registry: [] as unknown[], answers: new Map<string, unknown>() },
   campaignRecords: {} as Record<string, Record<string, { epoch: number; enrolledAt: number }>>,
-  /** Every enrolment written, as `[key, arg, epoch]`. */
   recordWrites: [] as Array<[string, string, number]>,
   recordWriteThrows: false,
   recordWriteRecovers: false,
@@ -94,7 +92,6 @@ vi.mock('../../coreBetaCampaignFlags', () => ({
     launchHarness.campaignRecords[key]?.[arg]?.epoch === epoch,
   writeCampaignRecord: (key: string, arg: string, epoch: number) => {
     if (launchHarness.recordWriteRecovers) {
-      // The backup landed before the primary write failed: the record reads back.
       launchHarness.campaignRecords = { [key]: { [arg]: { epoch, enrolledAt: 1 } } }
       throw new Error('ENOSPC')
     }
@@ -271,6 +268,7 @@ import {
   emitCoreBetaRecords,
   emitCoreBetaTelemetry,
   handleLaunch,
+  recordCampaignEnrolments,
   isCrashedExit,
   launchedCoreCommit,
   onProcessTerminated,
@@ -299,7 +297,7 @@ import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
 import type { LaunchCommand } from '../../../types/sources'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
-import { parseCampaignAnswer } from '../../coreBetaCampaigns'
+import { appliedPassThrough, parseCampaignAnswer } from '../../coreBetaCampaigns'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
@@ -1263,7 +1261,6 @@ describe('core beta report placement', () => {
             }
           ]
         },
-        // Fetched 5 s before the launch, so `lag_ms` has a known floor.
         Date.now() - 5_000
       )
     const serveCampaign = (variant: string): void => {
@@ -1302,7 +1299,6 @@ describe('core beta report placement', () => {
         campaign_args: [`${KEY}:--enable-agent:1`]
       })
       expect(missedEvent()).toBeUndefined()
-      // The user-visible surfaces see the campaign grant like any other beta grant.
       expect(_runningSessions.get(id)?.coreBetaArgs?.map((view) => view.arg)).toEqual([
         '--enable-assets',
         '--enable-agent'
@@ -1356,12 +1352,11 @@ describe('core beta report placement', () => {
     })
 
     it('leaves a non-member launch exactly as a launch without campaigns', async () => {
-      // The launch writes its final args back onto the command, so each launch gets a fresh one.
-      const command = structuredClone(launchHarness.launchCommand)
+      const commandBeforeLaunchMutatesIt = structuredClone(launchHarness.launchCommand)
       await handleLaunch(ctxFor('campaign-none'))
       const without = spawnArgs
       const withoutApplied = appliedEvent()
-      launchHarness.launchCommand = command
+      launchHarness.launchCommand = commandBeforeLaunchMutatesIt
       serveCampaign('hold')
       await handleLaunch(ctxFor('campaign-non-member'))
       const normalise = (args: string[]): string[] =>
@@ -1420,6 +1415,36 @@ describe('core beta report placement', () => {
       expect(reportedEvents()).toContain('comfy.desktop.core_beta.enrolled')
       expect(appliedEvent()).toMatchObject({ campaign_args: [`${KEY}:--enable-agent:1`] })
       expect(missedEvent()).toBeUndefined()
+    })
+
+    describe('recordCampaignEnrolments', () => {
+      const enrolment = {
+        key: KEY,
+        grant: { arg: '--enable-agent', minCoreVersion: '0.3.60' },
+        epoch: 1,
+        enrolledNow: true,
+        payload: { agent_requirements_override: { 'comfy-agent': '0.2.3' } },
+        fetchedAt: Date.now()
+      }
+
+      it('keeps an unrecorded enrolment in applied, so its pass-through still reaches the override', () => {
+        launchHarness.recordWriteThrows = true
+        const result = recordCampaignEnrolments({ applied: [enrolment], misses: [] })
+        expect(appliedPassThrough(result.applied, '--enable-agent')).toEqual({
+          'comfy-agent': '0.2.3'
+        })
+        expect(result.misses).toEqual([
+          { key: KEY, arg: '--enable-agent', member: false, reason: 'record_failed' }
+        ])
+      })
+
+      it('survives a telemetry sink that throws', () => {
+        vi.mocked(telemetry.emit).mockImplementation(() => {
+          throw new Error('sink down')
+        })
+        expect(() => recordCampaignEnrolments({ applied: [enrolment], misses: [] })).not.toThrow()
+        expect(launchHarness.recordWrites).toEqual([[KEY, '--enable-agent', 1]])
+      })
     })
 
     it('fetches no campaign answer and applies none when beta is off', async () => {
