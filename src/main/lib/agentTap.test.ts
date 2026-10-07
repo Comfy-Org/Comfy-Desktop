@@ -91,7 +91,10 @@ describe('agentTap', () => {
 
     it('names no field that telemetry sets on every event itself', () => {
       for (const name of ALLOWED_FIELD_NAMES) {
-        expect(telemetry.DEFAULT_EVENT_PROPERTY_NAMES.has(name)).toBe(false)
+        expect(
+          telemetry.DEFAULT_EVENT_PROPERTY_NAMES.has(name),
+          `${name} would override telemetry's own default`
+        ).toBe(false)
       }
     })
 
@@ -431,7 +434,9 @@ describe('agentTap', () => {
       tap.ingest('[agent-event] agent_exited code=0', 'stdout')
       tap.beginBoot()
       tap.ingest('\n', 'stdout')
-      expect(captured).toEqual([])
+      expect(captured, "the dead process's partial line must not complete after beginBoot").toEqual(
+        []
+      )
     })
   })
 
