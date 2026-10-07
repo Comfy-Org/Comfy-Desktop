@@ -3,14 +3,22 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WriteStream } from 'fs'
+
+// Electron's userData for this run: a directory of its own, so concurrent runs on one machine
+// never rename each other's settings.json.tmp out from under a write.
+const electronHome = vi.hoisted(() => ({ dir: '' }))
+afterAll(() => {
+  if (electronHome.dir) fs.rmSync(electronHome.dir, { recursive: true, force: true })
+})
 
 // Stub the electron surface ../shared touches so the test needs no runtime.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
-    getPath: () => path.join(os.tmpdir(), 'core-beta-launch-test'),
+    getPath: () =>
+      (electronHome.dir ||= fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-launch-test-'))),
     getVersion: () => '0.0.0-test',
     getLocale: () => 'en',
     on: () => {}
