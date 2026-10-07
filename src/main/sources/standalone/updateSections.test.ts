@@ -60,7 +60,6 @@ interface UpdateAction {
     channel?: string
     isDowngrade?: boolean
     stackId?: string
-    repair?: boolean
     targetTag?: string
   }
   confirm?: { title?: string; message?: string }
@@ -844,23 +843,29 @@ describe('updateSections — Repair ComfyUI files', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true)
   })
 
+  const repairAction = (inst: InstallationRecord, channel: 'stable' | 'latest') =>
+    getChannelAction(inst, channel, 'repair-comfyui')
+
   it('offers a repair pinned to the installed tag on the current channel when nothing is newer', () => {
-    const action = getUpdateAction(baseInstall(), 'stable')
-    expect(action?.data).toEqual({ channel: 'stable', repair: true, targetTag: 'v0.3.20' })
+    const action = repairAction(baseInstall(), 'stable')
+    expect(action?.data).toEqual({ channel: 'stable', targetTag: 'v0.3.20' })
     expect(action?.confirm?.title).toBe('standalone.repairFilesTitle')
+    // Its own id, so the renderer never promotes it as the channel's update.
+    expect(getUpdateAction(baseInstall(), 'stable')).toBeUndefined()
   })
 
-  it('repairs along the channel, without a tag, when the install is between tags', () => {
+  it('offers no repair between tags, where it could not pin the installed version', () => {
     const install = baseInstall({
       updateChannel: 'latest',
       comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 3 }
     } as Partial<InstallationRecord>)
-    expect(getUpdateAction(install, 'latest')?.data).toEqual({ channel: 'latest', repair: true })
+    expect(repairAction(install, 'latest')).toBeUndefined()
   })
 
   it('offers no repair on another channel, or when an update is available', () => {
-    expect(getUpdateAction(baseInstall(), 'latest')).toBeUndefined()
+    expect(repairAction(baseInstall(), 'latest')).toBeUndefined()
     vi.mocked(releaseCache.isUpdateAvailable).mockReturnValue(true)
-    expect(getUpdateAction(baseInstall(), 'stable')?.data?.repair).toBeUndefined()
+    expect(repairAction(baseInstall(), 'stable')).toBeUndefined()
+    expect(getUpdateAction(baseInstall(), 'stable')).toBeDefined()
   })
 })

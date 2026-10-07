@@ -534,6 +534,34 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     })
   })
 
+  describe('repair of the installed version', () => {
+    it('reinstalls both requirement files even though nothing changed, and only when asked', async () => {
+      // HEAD and both requirement files already at v0.2.0: only `repair` forces a sync.
+      execFileSync('git', ['checkout', '-q', 'v0.2.0', '--detach'], {
+        cwd: comfyuiDir,
+        stdio: 'pipe'
+      })
+      spawnState.pythonHandler = () =>
+        fakeProc({
+          stdout: [
+            `[PRE_UPDATE_HEAD] ${repoShas.v2Sha}\n`,
+            `[POST_UPDATE_HEAD] ${repoShas.v2Sha}\n`
+          ],
+          exitCode: 0
+        })
+      spawnState.uvHandler = () => fakeProc({ exitCode: 0 })
+      const installed = (): string[] =>
+        spawnState.uvCalls.filter((a) => a.includes('install')).flat()
+
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
+      expect(installed()).toEqual([])
+
+      expect((await runComfyUIUpdate(makeBaseOpts(installPath, { repair: true }))).ok).toBe(true)
+      expect(installed().some((a) => a.endsWith('.post-install-reqs.txt'))).toBe(true)
+      expect(installed().some((a) => a.endsWith('.post-install-mgr-reqs.txt'))).toBe(true)
+    })
+  })
+
   describe('repairing update', () => {
     it('resyncs dependencies even when HEAD and requirements already match the target', async () => {
       // Desktop was killed mid-update after HEAD and requirements.txt reached

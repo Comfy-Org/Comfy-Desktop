@@ -63,6 +63,7 @@ const VENV_MUTATING_ACTIONS = new Set([
   'snapshot-restore',
   'change-pytorch',
   'update-comfyui',
+  'repair-comfyui',
   'migrate-from'
 ])
 
@@ -1149,12 +1150,13 @@ export async function handleAction(
     return result
   }
 
-  if (actionId === 'update-comfyui') {
+  if (actionId === 'update-comfyui' || actionId === 'repair-comfyui') {
     return handleUpdateComfyUI(installation, actionData, {
       update,
       sendProgress,
       sendOutput,
-      signal
+      signal,
+      repair: actionId === 'repair-comfyui'
     })
   }
 
@@ -1168,7 +1170,7 @@ export async function handleAction(
 async function handleUpdateComfyUI(
   installation: InstallationRecord,
   actionData: Record<string, unknown> | undefined,
-  { update, sendProgress, sendOutput, signal }: ActionTools
+  { update, sendProgress, sendOutput, signal, repair = false }: ActionTools & { repair?: boolean }
 ): Promise<ActionResult> {
   const installPath = installation.installPath
   const comfyuiDir = path.join(installPath, 'ComfyUI')
@@ -1241,13 +1243,13 @@ async function handleUpdateComfyUI(
     dryRunConflictCheck: true,
     saveRollback: true,
     preUpdateSnapshot: true,
-    forceDepsSync: actionData?.repair === true
+    repair
   })
 
   if (!result.ok) {
     return { ok: false, message: result.message }
   }
-  if (actionData?.repair === true && (await hasTrackedChanges(comfyuiDir)) !== false) {
+  if (repair && (await hasTrackedChanges(comfyuiDir)) !== false) {
     return { ok: false, message: t('standalone.repairIncomplete') }
   }
 

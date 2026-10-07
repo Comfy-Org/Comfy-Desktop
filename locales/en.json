@@ -1088,7 +1088,7 @@
     "repairFilesTitle": "Repair ComfyUI files?",
     "repairFilesMessage": "Rewrites every ComfyUI file to match the installed version and reinstalls its dependencies. Use this if ComfyUI fails to start after an update. Your own changes to ComfyUI files are saved on a backup branch.",
     "repairingFiles": "Repairing ComfyUI files…",
-    "repairIncomplete": "Some ComfyUI files could not be repaired. Close anything using the ComfyUI folder and run Repair again.",
+    "repairIncomplete": "Some ComfyUI files still differ from the installed version. Run Repair again; if it keeps failing, close anything using the ComfyUI folder first.",
     "updateConfirmMessage": "Update from {installed} to {latest}?",
     "updateConfirmMessageLatest": "Update {installed} to the latest master commit ({latest})?",
     "updateConfirmMessageDowngrade": "Roll back from {installed} to stable {latest}? Newer commits will be removed.",

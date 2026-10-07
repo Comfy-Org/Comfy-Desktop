@@ -467,6 +467,8 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
   const channelDefs = getChannelDefs()
   const baseCards = buildChannelCards(COMFYUI_REPO, channelDefs, installation)
 
+  const installedCv = installation.comfyVersion as ComfyVersion | undefined
+  const installedTag = installedCv?.commitsAhead === 0 ? installedCv.baseTag : undefined
   const channelOptions = baseCards.map((card) => {
     const actions: Record<string, unknown>[] = []
     if (card.data?.updateAvailable && hasGit) {
@@ -579,18 +581,17 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         enabled: installed,
         data: { channel: card.value }
       })
-    } else if (hasGit) {
-      // Nothing newer: rewrite the installed version's files (pinned to its tag when on one).
-      const cv = installation.comfyVersion as ComfyVersion | undefined
-      const targetTag = cv?.baseTag && cv.commitsAhead === 0 ? cv.baseTag : undefined
+    } else if (hasGit && installedTag) {
+      // Nothing newer: rewrite the installed release's files. Only offered on a
+      // tag, so a repair can never change the version.
       actions.push({
-        id: 'update-comfyui',
+        id: 'repair-comfyui',
         label: t('standalone.repairFiles'),
         style: 'default',
         enabled: installed,
         showProgress: true,
         progressTitle: t('standalone.repairingFiles'),
-        data: { channel, repair: true, ...(targetTag ? { targetTag } : {}) },
+        data: { channel, targetTag: installedTag },
         confirm: {
           title: t('standalone.repairFilesTitle'),
           message: t('standalone.repairFilesMessage')
