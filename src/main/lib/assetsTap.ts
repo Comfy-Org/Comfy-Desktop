@@ -546,19 +546,16 @@ export function createAssetsTap(opts: {
     beginBoot(): void {
       lineBuffer.reset()
     },
+    /**
+     * Emits the summary counts only. An unterminated line is never parsed:
+     * callers flush while core may still be writing, and core's logging ends
+     * every record with a newline, so a tail without one is a write cut short
+     * that can still match the grammar with a truncated value (`count=12` read
+     * as `count=1`). A final line without a newline is dropped. A partial line
+     * waits for its newline, or for `beginBoot` to drop it.
+     */
     flushSummary(): void {
       try {
-        // Process complete-but-unterminated final lines so a trailing record
-        // isn't dropped when the process exits without a newline.
-        for (const source of ['stdout', 'stderr'] as const) {
-          const pending = lineBuffer.takePending(source)
-          // Per-source isolation: a throwing stdout tail must not skip stderr's.
-          try {
-            if (pending.trim()) handleLine(pending)
-          } catch {
-            // ignore - telemetry side effect, not user-visible
-          }
-        }
         if (unknownEventsDropped > 0 && withinRateCap(UNKNOWN_EVENTS_DROPPED)) {
           const count = unknownEventsDropped
           unknownEventsDropped = 0
