@@ -168,6 +168,25 @@ vi.mock('../../comfyProcessRecord', () => ({
   listRecords: () => []
 }))
 
+/** The ComfyUI a database-lock record names (null: none), and the confirmed stops launch asked
+ *  for, with how many children had spawned and whether the cancel had fired at the time. */
+const lockRecord = vi.hoisted(() => ({
+  offer: null as null | Record<string, unknown>,
+  stops: [] as Array<{ offer: unknown; spawned: number; aborted: boolean | undefined }>,
+  stopOk: true,
+  duringStop: null as null | (() => void),
+  children: { count: 0 }
+}))
+vi.mock('../../comfyDbLock', async (importOriginal) => ({
+  ...(await importOriginal<typeof ComfyDbLockModule>()),
+  findDbLockOffer: async () => lockRecord.offer,
+  stopDbLockOffer: async (offer: unknown, signal?: AbortSignal) => {
+    lockRecord.duringStop?.()
+    lockRecord.stops.push({ offer, spawned: lockRecord.children.count, aborted: signal?.aborted })
+    return lockRecord.stopOk && !signal?.aborted
+  }
+}))
+
 vi.mock('../../comfy-args', async (importOriginal) => {
   const actual = await importOriginal<typeof ComfyArgsModule>()
   return {
@@ -256,6 +275,7 @@ import {
 import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
+import type * as ComfyDbLockModule from '../../comfyDbLock'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as HardwareTapModule from '../../hardwareTap'
 
@@ -2673,6 +2693,111 @@ describe('prior ComfyUI process handling at launch', () => {
         })
       ])
     )
+  })
+  describe('a database-lock holder named by its own record', () => {
+    const lockedBoot = async (): Promise<void> => {
+      const first = children[0]!
+      first.stderr.emit(
+        'data',
+        Buffer.from('Database is locked. Another ComfyUI process is already using this database.\n')
+      )
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+    const offer = (dbPath: string, sameInstall = true): Record<string, unknown> => ({
+      pid: 9084,
+      startTime: '134358000923463901',
+      dbPath,
+      process: sameInstall ? 'ComfyUI' : '/elsewhere/ComfyUI/main.py',
+      sameInstall
+    })
+    const ourDb = (): string => path.join(installDir, 'ComfyUI', 'user', 'comfyui.db')
+    afterEach(() => {
+      lockRecord.offer = null
+      lockRecord.stops = []
+      lockRecord.stopOk = true
+      lockRecord.duringStop = null
+    })
+
+    it.each([
+      [true, 'errors.comfyDbLockedSameInstall'],
+      [false, 'errors.comfyDbLockedBy']
+    ] as const)('offers a stop for it on a lock failure (same install: %s)', async (same, key) => {
+      lockRecord.offer = offer(ourDb(), same)
+      launchHarness.waitForPort = lockedBoot
+      const t = vi.spyOn(i18nModule, 't')
+
+      const res = await handleLaunch(ctxFor('db-record-offer'))
+
+      expect(res).toMatchObject({ ok: false, message: key, dbLockHolder: offer(ourDb(), same) })
+      expect(t).toHaveBeenCalledWith(key, { process: offer(ourDb(), same).process, pid: 9084 })
+    })
+
+    it('shows the plain error, with nothing to stop, without a record', async () => {
+      launchHarness.waitForPort = lockedBoot
+      const res = await handleLaunch(ctxFor('db-record-none'))
+      expect(res.message).toBe('errors.comfyDbLocked')
+      expect(res.dbLockHolder).toBeUndefined()
+    })
+
+    it('stops the confirmed holder before it spawns anything, then launches', async () => {
+      lockRecord.duringStop = () => (lockRecord.children.count = children.length)
+      const res = await handleLaunch(ctxFor('db-record-stop', { stopDbLockHolder: offer(ourDb()) }))
+      expect(lockRecord.stops).toEqual([{ offer: offer(ourDb()), spawned: 0, aborted: false }])
+      expect(res.ok).toBe(true)
+    })
+
+    it('launches nothing when the user cancels while the stop runs', async () => {
+      lockRecord.duringStop = () => _operationAborts.get('db-record-cancel')?.abort()
+      const res = await handleLaunch(
+        ctxFor('db-record-cancel', { stopDbLockHolder: offer(ourDb()) })
+      )
+      expect(res).toMatchObject({ ok: false, cancelled: true })
+      // The stop itself saw the cancel, so it could refuse to kill.
+      expect(lockRecord.stops.map((s) => s.aborted)).toEqual([true])
+      expect(children).toHaveLength(0)
+    })
+
+    it.each([
+      ['the stop could not re-prove or stop it', true],
+      ['the offer names a database this launch does not use', false]
+    ])('launches nothing when %s', async (_why, own) => {
+      lockRecord.stopOk = false
+      const t = vi.spyOn(i18nModule, 't')
+      const res = await handleLaunch(
+        ctxFor('db-record-refused', {
+          stopDbLockHolder: offer(own ? ourDb() : '/elsewhere/comfyui.db')
+        })
+      )
+      expect(res.ok).toBe(false)
+      expect(t).toHaveBeenCalledWith('errors.dbLockStopFailed', { pid: 9084 })
+      expect(children).toHaveLength(0)
+      expect(lockRecord.stops).toHaveLength(own ? 1 : 0)
+    })
+
+    it("recognises this install's ComfyUI on the port from its record, without the listeners", async () => {
+      launchHarness.busyPorts = [PORT]
+      ownership.holderIsInstall = false
+      lockRecord.offer = offer(ourDb())
+
+      const res = await handleLaunch(ctxFor('db-record-port'))
+
+      expect(res.message).toBe('errors.portConflictSameInstall')
+      expect(res.dbLockHolder).toEqual(offer(ourDb()))
+      expect(res.portConflict).not.toHaveProperty('nextPort')
+      expect(children).toHaveLength(0)
+    })
+
+    it("does not take another install's record for this one's port holder", async () => {
+      launchHarness.busyPorts = [PORT]
+      ownership.holderIsInstall = false
+      lockRecord.offer = offer(ourDb(), false)
+
+      const res = await handleLaunch(ctxFor('db-record-port-other'))
+
+      expect(res.dbLockHolder).toBeUndefined()
+      expect(res.message).not.toBe('errors.portConflictSameInstall')
+    })
   })
 })
 

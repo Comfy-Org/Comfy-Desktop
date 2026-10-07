@@ -100,7 +100,16 @@ import {
   trackSpawn,
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
-import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
+import {
+  asDbLockOffer,
+  databaseCandidates,
+  findDbLockOffer,
+  identifyDbLockHolder,
+  isDbLockFailure,
+  stopDbLockOffer,
+  type DbLockHolder
+} from '../../comfyDbLock'
+import type { DbLockOffer } from '../../../../types/ipc'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -1492,6 +1501,21 @@ async function runLaunch(
     return { ok: true, mode }
   }
 
+  // The user confirmed stopping the ComfyUI holding this install's database: that process only
+  // (pid and start time, from its own record), on one of this launch's databases, re-proven just
+  // before the kill. A cancel withdraws the go-ahead.
+  const lockOffer = asDbLockOffer(actionData?.stopDbLockHolder)
+  if (lockOffer) {
+    const ours = databaseCandidates(launchCmd.cwd!, launchCmd.args!).includes(lockOffer.dbPath)
+    if (ours) appendLog(sessionId, `[launch] stopping pid ${lockOffer.pid}, which holds the lock\n`)
+    const stopped = ours && (await stopDbLockOffer(lockOffer, abort.signal))
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    if (!stopped) {
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+      return { ok: false, message: i18n.t('errors.dbLockStopFailed', { pid: lockOffer.pid }) }
+    }
+  }
+
   // A ComfyUI an earlier run of this session left behind would hold the install's database
   // lock, so the new one would die at startup (or, in auto port mode, start beside it on the
   // next port and die there). Runs before any port logic: a terminated orphan frees its port.
@@ -1610,11 +1634,23 @@ async function runLaunch(
     // Callers that asked for a port bump explicitly (`autoPortOnConflict`) keep it.
     // Every listener is checked: lsof lists each one, and this install's may not come first.
     let sameInstallPid: number | null = null
+    let dbLockHolder: DbLockOffer | null = null
     if (actionData?.autoPortOnConflict !== true && launchCmd.args!.includes('--enable-assets')) {
+      // This install's ComfyUI saying so itself, in its database-lock record: a bump would die
+      // on that lock, and it can be offered a stop.
+      dbLockHolder = await findDbLockOffer({
+        installationId,
+        installPath: inst.installPath,
+        dbPaths: databaseCandidates(launchCmd.cwd!, launchCmd.args!)
+      }).catch(() => null)
+      if (dbLockHolder?.sameInstall) sameInstallPid = dbLockHolder.pid
+      else dbLockHolder = null
       // The listeners, plus the pid a Desktop's port lock names: the listener list can come back
       // empty (lsof sees only this user's processes, and none inside another namespace).
       const lockPid = pendingPortOwner ? null : (readPortLock(launchCmd.port!)?.pid ?? null)
-      for (const pid of new Set([...existingPids, ...(lockPid ? [lockPid] : [])])) {
+      for (const pid of sameInstallPid
+        ? []
+        : new Set([...existingPids, ...(lockPid ? [lockPid] : [])])) {
         if (await holderIsInstall(pid, inst.installPath).catch(() => false)) {
           sameInstallPid = pid
           break
@@ -1649,7 +1685,8 @@ async function runLaunch(
           process: info ? info.name : `PID ${sameInstallPid}`
         }),
         // No `nextPort`: offering the next port would offer the failure this avoids.
-        portConflict: { port: launchCmd.port, pids: existingPids, isComfy: true }
+        portConflict: { port: launchCmd.port, pids: existingPids, isComfy: true },
+        ...(dbLockHolder ? { dbLockHolder } : {})
       }
     }
     if (portConflictMode === 'auto' && nextPort && !portIsExplicit) {
@@ -2095,7 +2132,19 @@ async function runLaunch(
     }
     // "Process exited with code 1" hides the one thing the user can act on.
     if (dbLocked) {
-      return { ok: false, message: i18n.t('errors.comfyDbLocked') }
+      // Offered a stop only for a ComfyUI that says it holds the lock, in its own record.
+      const holder = await findDbLockOffer({
+        installationId,
+        installPath: inst.installPath,
+        dbPaths: databaseCandidates(launchCmd.cwd!, launchCmd.args!)
+      }).catch(() => null)
+      if (!holder) return { ok: false, message: i18n.t('errors.comfyDbLocked') }
+      const key = holder.sameInstall ? 'errors.comfyDbLockedSameInstall' : 'errors.comfyDbLockedBy'
+      return {
+        ok: false,
+        message: i18n.t(key, { process: holder.process, pid: holder.pid }),
+        dbLockHolder: holder
+      }
     }
     return { ok: false, message: launchResult.message }
   }

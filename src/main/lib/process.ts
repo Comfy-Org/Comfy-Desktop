@@ -9,6 +9,7 @@ import {
   groupHasLiveMembers,
   groupMembers,
   isPidAlive,
+  parseNetstatListeners,
   processGroupOf,
   readStartTimes,
   snapshotWindowsTree
@@ -222,6 +223,24 @@ async function killWindowsTreeVerified(
   return { killed: true, members: pids, ...result }
 }
 
+/** Kill `pid` alone (not its tree or group) and wait for it to be gone. For a caller that has
+ *  just re-proven whose pid it is and had the user confirm that process. A zombie its parent has
+ *  not reaped yet has exited (and released its files), so it counts as gone. */
+export async function killPid(pid: number): Promise<boolean> {
+  if (!(await isSafeToSignal(pid))) return false
+  if (process.platform === 'win32') {
+    await new Promise<void>((resolve) => {
+      execFile('taskkill', ['/F', '/PID', String(pid)], { windowsHide: true }, () => resolve())
+    })
+  } else {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {}
+  }
+  const zombie = async (): Promise<boolean> => (await readStartTimes([pid]))?.has(pid) === false
+  return (await waitUntil(() => !isPidAlive(pid), monotonicNow(), KILL_WAIT_MS, zombie)).exited
+}
+
 export function killProcessTree(proc: ChildProcess | null): Promise<KillResult> {
   const pid = proc?.pid
   if (!proc || !pid) return Promise.resolve({ exited: true, waitMs: 0 })
@@ -311,23 +330,8 @@ export async function killPidTree(pid: number, expectedStart: string): Promise<V
 export function findPidsByPort(port: number): Promise<number[]> {
   return new Promise((resolve) => {
     if (process.platform === 'win32') {
-      execFile('netstat', ['-ano', '-p', 'TCP'], { windowsHide: true }, (err, stdout) => {
-        if (err) return resolve([])
-        const pids = new Set<number>()
-        const target = `:${port}`
-        for (const line of stdout.split('\n')) {
-          const parts = line.trim().split(/\s+/)
-          // Format: Proto  LocalAddress  ForeignAddress  State  PID
-          if (parts.length >= 5 && parts[3] === 'LISTENING') {
-            const addr = parts[1]
-            // Match exactly :port at the end of the address (e.g. 0.0.0.0:8188 or 127.0.0.1:8188)
-            if (addr && addr.endsWith(target)) {
-              const pid = parseInt(parts[4]!, 10)
-              if (pid > 0) pids.add(pid)
-            }
-          }
-        }
-        resolve([...pids])
+      execFile('netstat', ['-ano'], { windowsHide: true }, (err, stdout) => {
+        resolve(err ? [] : parseNetstatListeners(stdout, port))
       })
     } else {
       execFile(

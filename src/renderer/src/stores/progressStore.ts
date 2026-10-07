@@ -323,7 +323,10 @@ export const useProgressStore = defineStore('progress', () => {
 
     p.then((result) => {
       rop.finished = true
-      if (result.ok || result.cancelled || result.portConflict) rop.result = result
+      // A lock failure's holder rides on it: the error view offers to stop it.
+      if (result.ok || result.cancelled || result.portConflict || result.dbLockHolder) {
+        rop.result = result
+      }
       cleanupRop()
 
       sessionStore.clearActiveSession(installationId)

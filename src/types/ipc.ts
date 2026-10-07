@@ -512,6 +512,9 @@ export interface ActionResult {
   message?: string
   mode?: 'console' | 'window'
   portConflict?: PortConflictInfo
+  /** The ComfyUI holding this install's database (or port), from its own lock record: offered
+   *  a stop, which a relaunch carrying it re-proves. */
+  dbLockHolder?: DbLockOffer
   cancelled?: boolean
   running?: boolean
   /** Set by actions that produce a new install record (copy /
@@ -539,6 +542,16 @@ export interface AddResult {
   ok: boolean
   message?: string
   entry?: Installation
+}
+
+/** A ComfyUI found holding an installation's database lock, from its own record. `sameInstall`:
+ *  its `main.py` is this installation's. */
+export interface DbLockOffer {
+  pid: number
+  startTime: string
+  dbPath: string
+  process: string
+  sameInstall: boolean
 }
 
 export interface KillResult {

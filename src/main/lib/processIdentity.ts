@@ -476,3 +476,34 @@ export async function windowsProcessTable(): Promise<WinProcessRowWithCommand[] 
   )
   return stdout == null ? null : parseWinProcessRowsWithCommand(stdout)
 }
+
+/**
+ * Pids listening on TCP `port` in `netstat -ano` output. A listening row is told apart by its
+ * foreign address (`0.0.0.0:0`, or `[::]:0`), not by the state column, which Windows localises
+ * (LISTENING, ABHÖREN, ÉCOUTE, ESCUCHANDO). The pid is the last column.
+ */
+export function parseNetstatListeners(stdout: string, port: number): number[] {
+  const pids = new Set<number>()
+  for (const line of stdout.split(/\r?\n/)) {
+    const parts = line.trim().split(/\s+/)
+    if (parts.length < 4 || !parts[1]!.endsWith(`:${port}`)) continue
+    if (parts[2] !== '0.0.0.0:0' && parts[2] !== '[::]:0') continue
+    const pid = Number(parts[parts.length - 1])
+    if (Number.isInteger(pid) && pid > 0) pids.add(pid)
+  }
+  return [...pids]
+}
+
+/**
+ * `pid`'s start token in the form a ComfyUI writes into its database-lock record: on Windows the
+ * exact creation FILETIME from Get-Process (readable where CIM is not), elsewhere the usual token.
+ * Null when it cannot be read, or the process is gone.
+ */
+export async function holderStartToken(pid: number): Promise<string | null> {
+  if (!Number.isInteger(pid) || pid <= 0) return null
+  if (process.platform !== 'win32') return (await readStartTimes([pid]))?.get(pid) ?? null
+  const stdout = await powershell(
+    `(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).StartTime.ToUniversalTime().ToFileTimeUtc()`
+  )
+  return /^\d+$/.test(stdout?.trim() ?? '') ? stdout!.trim() : null
+}

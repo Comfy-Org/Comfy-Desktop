@@ -1,9 +1,12 @@
 import fs from 'fs'
 import path from 'path'
 import { findLockingProcesses } from './file-lock-info'
-import { holderIsInstall, listRecords } from './comfyProcessRecord'
+import { commandLineIsInstall, holderIsInstall, listRecords } from './comfyProcessRecord'
+import { killPid } from './process'
+import type { DbLockOffer } from '../../types/ipc'
 import {
   commandLinesOf,
+  holderStartToken,
   isPidAlive,
   readStartTimes,
   runsMainPy,
@@ -73,6 +76,84 @@ export interface DbLockHolder {
 }
 
 export { runsMainPy }
+
+/** What a ComfyUI writes beside the database lock it holds: `<db>.lock.json`. */
+interface HolderRecord {
+  pid: number
+  /** Its start token, in the form `holderStartToken` reads. */
+  started: string
+  /** The `main.py` it runs. */
+  main: string
+  port?: number
+}
+
+/**
+ * The ComfyUI a database's lock record names, if it is still that process: same pid, same start
+ * time. A record left by one that crashed (or whose pid is reused) is ignored.
+ */
+export async function readHolderRecord(dbPath: string): Promise<HolderRecord | null> {
+  let record: Partial<HolderRecord>
+  try {
+    record = JSON.parse(fs.readFileSync(`${dbPath}.lock.json`, 'utf-8'))
+  } catch {
+    return null
+  }
+  const { pid, started, main } = record
+  if (!Number.isInteger(pid) || typeof started !== 'string' || typeof main !== 'string') return null
+  return (await holderStartToken(pid!).catch(() => null)) === started
+    ? (record as HolderRecord)
+    : null
+}
+
+/**
+ * The ComfyUI holding one of `dbPaths`, from its own record, to offer the user a stop for. Never
+ * one this Desktop is running in another session. Null without a live record (an older ComfyUI,
+ * or another program holds it): nothing is offered.
+ */
+export async function findDbLockOffer(input: {
+  installationId: string
+  installPath: string
+  dbPaths: readonly string[]
+}): Promise<DbLockOffer | null> {
+  const running = listRecords().some(
+    (r) =>
+      r.installationId === input.installationId &&
+      r.desktopPid === process.pid &&
+      isPidAlive(r.childPid)
+  )
+  if (running) return null
+  for (const dbPath of input.dbPaths) {
+    const record = await readHolderRecord(dbPath)
+    if (!record) continue
+    const sameInstall = commandLineIsInstall(['python', record.main], input.installPath)
+    const shown = sameInstall ? 'ComfyUI' : record.main
+    return { pid: record.pid, startTime: record.started, dbPath, process: shown, sameInstall }
+  }
+  return null
+}
+
+/**
+ * Stops the ComfyUI the user confirmed in `offer`, and only it: its record must still name it,
+ * with the same start time, and `signal` must not have aborted. True when it exited.
+ */
+export async function stopDbLockOffer(offer: DbLockOffer, signal?: AbortSignal): Promise<boolean> {
+  const record = await readHolderRecord(offer.dbPath)
+  if (record?.pid !== offer.pid || record.started !== offer.startTime || signal?.aborted) {
+    return false
+  }
+  return killPid(offer.pid)
+}
+
+/** `value` as a `DbLockOffer` (it crossed IPC), or null. */
+export function asDbLockOffer(value: unknown): DbLockOffer | null {
+  const o = value as DbLockOffer | null
+  return o &&
+    Number.isInteger(o.pid) &&
+    typeof o.startTime === 'string' &&
+    typeof o.dbPath === 'string'
+    ? o
+    : null
+}
 
 /**
  * Best-effort name for whoever holds the database lock after a `comfyui_db_locked` boot

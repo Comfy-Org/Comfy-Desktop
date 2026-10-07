@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import ProgressModal from './ProgressModal.vue'
+import { TID } from '../../../shared/testIds'
 import { useProgressStore } from '../stores/progressStore'
 import type { Operation } from '../stores/progressStore'
 import type { ActionResult, PortConflictInfo } from '../types/ipc'
@@ -78,7 +79,10 @@ const messages = {
       priorProcessUnknownConfirmMessage: 'This stops it and cancels anything it is doing.',
       priorSurvivorsTitle: 'Processes from an earlier ComfyUI are still running',
       priorSurvivorsConfirmMessage: 'This stops those processes and anything they are doing.',
-      priorSurvivorsStop: 'Stop them and launch'
+      priorSurvivorsStop: 'Stop them and launch',
+      portConflictKillConfirmTitle: 'Stop Existing Process',
+      dbLockStopConfirmMessage: 'This will forcefully stop {process} (PID {pid}).',
+      dbLockStopConfirmUnproven: 'This will stop the ComfyUI running {process} (PID {pid}).'
     }
   }
 }
@@ -481,6 +485,110 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__error-message')).toContain(
       'Could not free port 8188.'
     )
+  })
+
+  describe('a database-lock holder named by its own record', () => {
+    const holder = (sameInstall: boolean): Record<string, unknown> => ({
+      pid: 9084,
+      startTime: '134358000923463901',
+      dbPath: '/i/ComfyUI/user/comfyui.db',
+      process: sameInstall ? 'ComfyUI' : '/other/ComfyUI/main.py',
+      sameInstall
+    })
+    const locked = (sameInstall: boolean): Partial<Operation> => ({
+      title: 'Launching',
+      opKind: 'launch',
+      finished: true,
+      error: 'database is locked',
+      result: {
+        ok: false,
+        message: 'database is locked',
+        dbLockHolder: holder(sameInstall)
+      } as ActionResult
+    })
+    const stop = (body: BodyHelpers): Promise<boolean> =>
+      body.click(`[data-testid="${TID.progressDbLockStop}"]`)
+    beforeEach(() => mockModal.confirm.mockClear())
+
+    it.each([
+      [true, 'This will forcefully stop ComfyUI (PID 9084).'],
+      [false, 'This will stop the ComfyUI running /other/ComfyUI/main.py (PID 9084).']
+    ])(
+      'confirms that process, then relaunches once with it (same install: %s)',
+      async (same, message) => {
+        const api = installMockApi()
+        const original = vi.fn().mockResolvedValue({ ok: false, message: 'locked' })
+        const { body } = await mountWithOp('inst-1', { ...locked(same), apiCall: original })
+
+        expect(await stop(body)).toBe(true)
+        await flushPromises()
+
+        expect(mockModal.confirm).toHaveBeenCalledWith(
+          expect.objectContaining({ message, confirmStyle: 'danger' })
+        )
+        expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', {
+          stopDbLockHolder: holder(same)
+        })
+        // A Retry afterwards is the original launch, not the stop again.
+        await useProgressStore().operations.get('inst-1')!.apiCall!()
+        expect(original).toHaveBeenCalledTimes(1)
+        expect(api.runAction).toHaveBeenCalledTimes(1)
+      }
+    )
+
+    it('stops nothing when the user declines', async () => {
+      const api = installMockApi()
+      mockModal.confirm.mockResolvedValueOnce(false)
+      const { body } = await mountWithOp('inst-1', locked(true))
+
+      expect(await stop(body)).toBe(true)
+      await flushPromises()
+
+      expect(api.runAction).not.toHaveBeenCalled()
+    })
+
+    it('acts on nothing once the failure it was shown for was replaced', async () => {
+      const api = installMockApi()
+      let answer!: (v: boolean) => void
+      mockModal.confirm.mockReturnValueOnce(new Promise((r) => (answer = r)))
+      const { body } = await mountWithOp('inst-1', locked(true))
+
+      expect(await stop(body)).toBe(true)
+      snapOp('inst-1', { ...locked(true), title: 'Another launch' })
+      answer(true)
+      await flushPromises()
+
+      expect(api.runAction).not.toHaveBeenCalled()
+    })
+
+    it('offers no stop for a lock failure without a record', async () => {
+      installMockApi()
+      await mountWithOp('inst-1', { ...locked(true), result: { ok: false, message: 'locked' } })
+      expect(document.body.querySelector(`[data-testid="${TID.progressDbLockStop}"]`)).toBeNull()
+    })
+
+    it("stops this install's port holder through its record, never by killing the port", async () => {
+      const api = installMockApi()
+      const portConflict: PortConflictInfo = { port: 8188, pids: [], isComfy: true }
+      const { body } = await mountWithOp('inst-1', {
+        title: 'Launching',
+        finished: true,
+        result: {
+          ok: false,
+          message: 'in use',
+          portConflict,
+          dbLockHolder: holder(true)
+        } as ActionResult
+      })
+
+      expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+      await flushPromises()
+
+      expect(api.killPortProcess).not.toHaveBeenCalled()
+      expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', {
+        stopDbLockHolder: holder(true)
+      })
+    })
   })
 
   it('offers to stop a busy earlier ComfyUI through launch, never by killing the port', async () => {

@@ -79,6 +79,18 @@ const args = process.argv.slice(2)
 const portIndex = args.indexOf('--port')
 const port = portIndex === -1 ? 8188 : Number(args[portIndex + 1])
 const assetsOn = args.includes('--enable-assets')
+// With assets on, ComfyUI takes an OS lock on <user dir>/comfyui.db.lock and refuses to start
+// while another process holds it. \`flock -n\` asks about the same lock (no flock: no check).
+if (assetsOn) {
+  const { dirname, join, resolve } = require('node:path')
+  const userDir = join(dirname(resolve(args[args.indexOf('-s') + 1] || 'main.py')), 'user')
+  require('node:fs').mkdirSync(userDir, { recursive: true })
+  const lockFile = join(userDir, 'comfyui.db.lock')
+  if (require('node:child_process').spawnSync('flock', ['-n', lockFile, 'true']).status === 1) {
+    console.error('Database is locked. Another ComfyUI process is already using this database.')
+    process.exit(1)
+  }
+}
 const body = \`<!doctype html><html><head><meta charset="utf-8"><title>ComfyUI (e2e stub)</title>
 <style>
   html,body{margin:0;height:100%;background:#16121a;color:#cfc8d6;
