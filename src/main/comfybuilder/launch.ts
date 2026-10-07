@@ -42,9 +42,9 @@ const GOVERNANCE_POLICY_RELATIVE = path.join('ComfyUI', 'governance', 'policy.si
 
 /**
  * A governed build's policy, read from the signed policy file its archive
- * carries. ComfyUI enforces that policy itself: from ComfyUI b4de984 on
- * (master), under any custom-node policy it turns ComfyUI-Manager off with a
- * warning, so launch passes the manager flags as the author's answer says.
+ * carries. ComfyUI master 3d9b2d5 (#16167) enforces that policy itself:
+ * under any custom-node policy it turns ComfyUI-Manager off with a warning,
+ * so launch passes the manager flags as the author's answer says.
  * `resolveLauncherModelDirs` in `lib/models.ts` reads it to give a governed
  * install no extra model folders.
  */
