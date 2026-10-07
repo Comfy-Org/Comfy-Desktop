@@ -1,17 +1,12 @@
 /**
- * Temporary override of the agent's versions in core's `agent_requirements.txt`.
+ * TEMPORARY: the agent campaign's `agent_requirements_override` (e.g. `{"comfy-agent": "0.2.3"}`)
+ * ships agent versions faster than core's weekly pins. Every rule about the field lives here;
+ * removing the feature is deleting this module, its hook in `agentRequirementsLaunch.ts` and the
+ * launch wiring.
  *
- * Core pins the agent's packages exactly and moves them weekly. The agent campaign's payload
- * may carry `agent_requirements_override` (e.g. `{"comfy-agent": "0.2.3"}`) to ship a newer
- * version in between; the campaign layer hands the field over untouched and every rule about
- * it lives here. Removing the feature is deleting this module, its hook in
- * `agentRequirementsLaunch.ts` and the launch wiring: nothing else reads it.
- *
- * Going back is always "install core's file": core's lines for overridden packages are exact
- * pins (an override against any other line is refused), and `==` makes `uv pip install -r`
- * move an overridden version back. The install step runs on every agent launch, so a removed
- * or reverted override, or a fallback that did not finish, is repaired by the next launch
- * with no state of its own.
+ * Going back is always "install core's file": an override is only accepted against an exact
+ * `name==x` line, so `uv pip install -r` moves the version back. That install runs on every agent
+ * launch, so a removed or reverted override is repaired by the next launch.
  */
 import type { InstallationRecord } from '../installations'
 import * as telemetry from './telemetry'
@@ -21,9 +16,7 @@ import type { StreamSource } from './stderrTail'
 /** The only packages a payload may name. Each must also already be in core's file. */
 const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries'])
 
-/** PEP 440 public release, pre, post and dev segments only. No operator, local version,
- *  whitespace or separator can match, so nothing but a version reaches the requirements
- *  text: no URL, index, `--find-links`, marker or extra option. */
+/** PEP 440 public versions only, so no operator, URL, index, option or marker can get through. */
 const EXACT_VERSION =
   /^\d{1,6}(?:\.\d{1,6}){0,3}(?:(?:a|b|rc)\d{1,6})?(?:\.post\d{1,6})?(?:\.dev\d{1,6})?$/
 
@@ -32,15 +25,10 @@ const REQUIREMENT_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:==\s*([^\s;#]+))
 const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/
 
 /**
- * Consecutive failed starts of one overridden version before this install goes back to core's.
- *
- * Only a definite failure counts (see `classifyAgentEvent`): a slow start never does, since
- * core keeps waiting for it, and a session that ends first decides nothing. One retry absorbs a
- * one-off at the most fragile moment, the first start of a freshly installed binary, and a
- * second failure in a row of the same version is almost certainly the version. Reverting is
- * cheap, the user keeps core's agent; not reverting leaves the agent broken on every launch
- * until the operator pulls the field. Reasoned, not measured: the agent has no field
- * start-failure data yet.
+ * Consecutive failed starts of one overridden version before the install goes back to core's.
+ * One retry absorbs a one-off on a fresh binary's first start; a slow start never counts. A
+ * false revert only costs the newer version, while a missed one leaves the agent broken until
+ * the operator pulls the field. Reasoned, not measured: there is no field data yet.
  */
 export const START_FAILURES_TO_REVERT = 2
 
@@ -67,8 +55,7 @@ export function normalizePackageName(name: string): string {
   return name.toLowerCase().replace(/[-_.]+/g, '-')
 }
 
-/** Validate the raw payload field. All or nothing: one bad entry refuses the whole payload,
- *  rather than applying the part an operator got right. */
+/** All or nothing: one bad entry refuses the whole payload. */
 export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
   if (raw === undefined || raw === null) return { kind: 'none' }
   if (typeof raw !== 'object' || Array.isArray(raw))
@@ -98,13 +85,8 @@ export function overrideSignature(pins: OverridePins): string {
     .join(',')
 }
 
-/**
- * Core's file with each pinned package's line replaced by `name==version`.
- *
- * Every other line stays exactly as core wrote it. A pinned package must appear exactly once,
- * as a plain `name==x` line: that is what keeps "go back to core's file" a real downgrade, and
- * what stops a payload from adding a package or rewriting a line with extras or markers.
- */
+/** Core's file with each pinned package's line replaced by `name==version`. A pinned package
+ *  must appear exactly once, as a plain `name==x` line, so a payload can never add a package. */
 export function effectiveAgentRequirements(
   coreText: string,
   pins: OverridePins
@@ -150,14 +132,9 @@ export function parseDryRun(output: string): DryRunPlan {
   return { installs, replaces }
 }
 
-/**
- * True when the override would leave an already-installed package outside the payload at a
- * different version than core's own file would.
- *
- * comfy-cli, for one, brings a broad dependency set into ComfyUI's environment, and the
- * override exists precisely to bypass the review core's pins get. Packages only the override
- * pulls in are allowed: they are new, so nothing ComfyUI already runs on changes.
- */
+/** True when the override would leave an installed package outside the payload at a different
+ *  version than core's own file would (comfy-cli brings a broad dependency set). Packages only
+ *  the override adds are allowed: nothing ComfyUI already runs on changes. */
 export function overrideChangesOthers(
   effective: DryRunPlan,
   core: DryRunPlan,
@@ -193,8 +170,7 @@ export function readOverrideState(installation: InstallationRecord): AgentOverri
   return { signature, failures, reverted }
 }
 
-/** True when this install already gave up on exactly these pins. A different version is a
- *  fresh try. */
+/** True when this install already gave up on these pins; a different version is a fresh try. */
 export function isRevertedFor(state: AgentOverrideState | null, pins: OverridePins): boolean {
   return state !== null && state.reverted && state.signature === overrideSignature(pins)
 }
@@ -227,12 +203,9 @@ export function reportOverrideDecision(installationId: string, d: OverrideDecisi
 }
 
 /**
- * Which way one agent start went, from core's `[agent-event]` lines.
- *
- * Only `agent_error` and `health_check_failed` are failures. `agent_exited` is not: core
- * prints it on every stop, including a user quitting during a slow start on macOS and Linux.
- * `package_missing` is core's import check, not the agent starting. `agent_error
- * reason=permission_denied` is the user declining an elevation prompt, which no revert fixes.
+ * Only `agent_error` and `health_check_failed` are failures. `agent_exited` is not (the agent's
+ * own exit after a good start, or an agent stopped during a slow start), nor is
+ * `package_missing` (core's import check), nor `permission_denied` (a declined prompt).
  */
 export type AgentStartOutcome = 'started' | 'failed' | 'inconclusive'
 
@@ -267,13 +240,8 @@ export function classifyAgentEvent(
   }
 }
 
-/**
- * Watch one launch's output for how the overridden agent's first start went.
- *
- * A control loop, deliberately independent of the consent-gated telemetry tap: it has to work
- * for users who never consented. Settles once per launch; a respawn's lines after that are
- * ignored, and a launch that ends with no verdict records nothing.
- */
+/** Watch one launch's output for the agent's first start. Independent of the consent-gated
+ *  telemetry tap, since this has to work without consent. Settles once per launch. */
 export function createAgentStartWatcher(opts: {
   onOutcome: (outcome: AgentStartOutcome) => void
   onAgentVersion?: (version: string) => void
@@ -298,10 +266,8 @@ export function createAgentStartWatcher(opts: {
   }
 }
 
-/**
- * Fold one start outcome into the install's state. Null for an outcome that decides nothing.
- * `reverted` is true only on the failure that tips the count, so the revert is reported once.
- */
+/** Fold one start outcome into the install's state; null when it decides nothing. `reverted`
+ *  is true only on the failure that tips the count, so the revert is reported once. */
 export function nextOverrideState(
   previous: AgentOverrideState | null,
   pins: OverridePins,

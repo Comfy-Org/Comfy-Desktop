@@ -329,13 +329,9 @@ async function runBoundedInstall(
 }
 
 /**
- * Install the planned requirements. Bounded and fail-open, never throws.
- *
- * `override` is the raw `agent_requirements_override` the agent campaign passed through, and
- * `overrideState` this install's record of the last one. An override that validates and passes
- * its check is installed within `OVERRIDE_TIMEOUT_MS`; otherwise core's own file runs, in what
- * is left of the ceiling. Returns the override decision to report, or undefined when no
- * override was in play.
+ * Install the planned requirements. Bounded and fail-open, never throws. An `override` that
+ * validates and passes its check is installed within `OVERRIDE_TIMEOUT_MS`; otherwise core's own
+ * file runs in what is left of the ceiling. Returns the decision to report, if any.
  */
 export async function installAgentRequirements(
   plan: AgentRequirementsInstall,
@@ -367,11 +363,9 @@ export async function installAgentRequirements(
   return decision
 }
 
-/** Share of the ceiling the override gets: its dry-run checks plus the install. What is left
- *  stays for core's file, so a slow link that times the override out still gets a fallback. */
+/** The override's share of the ceiling, so a timed-out override still leaves core's file time. */
 const OVERRIDE_TIMEOUT_MS = 90_000
 
-/** Floor for core's file after an override, so a check that ran long cannot leave it nothing. */
 const MIN_FALLBACK_TIMEOUT_MS = 30_000
 
 /** Where the overridden copy of core's file is written, and the helper's filtered copy of it. */
@@ -385,8 +379,7 @@ type BoundedRun = (
   extraArgs?: string[]
 ) => Promise<{ ok: boolean; output: string }>
 
-/** Validate, check and install the override. Undefined when there is none; otherwise the decision,
- *  where anything but `applied` means core's file still has to run. */
+/** Anything but `applied` means core's file still has to run. */
 async function tryOverride(
   plan: AgentRequirementsInstall,
   raw: unknown,
