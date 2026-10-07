@@ -80,7 +80,8 @@ const launchHarness = vi.hoisted(() => ({
   recordWriteRecovers: false,
   idClass: 'machine_derived' as string,
   campaignFetches: 0,
-  records: null as null | Map<string, Record<string, unknown>>
+  records: null as null | Map<string, Record<string, unknown>>,
+  recordsUpdateThrows: false
 }))
 
 vi.mock('../../coreBetaCampaignFlags', () => ({
@@ -136,6 +137,7 @@ vi.mock('../shared', async (importOriginal) => {
         if (records && key === 'get') return async (id: string) => records.get(id) ?? null
         if (records && key === 'update') {
           return async (id: string, data: Record<string, unknown>) => {
+            if (launchHarness.recordsUpdateThrows) throw new Error('EIO')
             const next = { ...(records.get(id) ?? { id }), ...data }
             records.set(id, next)
             return next
@@ -2666,6 +2668,8 @@ describe('agent requirements at launch', () => {
     const CORE_FILE = 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'
     const OVERRIDDEN = 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'
     let proc: FakeChild | null = null
+    let spawnCount = 0
+    let sessionFile = ''
     const settle = async (): Promise<void> => {
       for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve))
     }
@@ -2707,11 +2711,24 @@ describe('agent requirements at launch', () => {
     })
 
     const launchAndPrint = async (
-      opts: { lines?: string[]; stream?: 'stdout' | 'stderr'; handTyped?: boolean } = {}
+      opts: {
+        lines?: string[]
+        stream?: 'stdout' | 'stderr'
+        handTyped?: boolean
+        portWait?: boolean
+      } = {}
     ): Promise<void> => {
       launchHarness.launchCommand = opts.handTyped
         ? launchCommand('--enable-agent')
         : launchCommand()
+      if (opts.portWait) {
+        launchHarness.launchCommand = {
+          ...launchHarness.launchCommand,
+          skipPortWait: false,
+          port: 48233
+        }
+        launchHarness.waitForPort = async () => {}
+      }
       const ctx = ctxFor(ID)
       ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
       expect((await handleLaunch(ctx)).ok).toBe(true)
@@ -2732,7 +2749,10 @@ describe('agent requirements at launch', () => {
       launchHarness.idClass = 'machine_derived'
       launchHarness.records = new Map([[ID, { id: ID }]])
       const spawn = launchHarness.spawn!
+      spawnCount = 0
       launchHarness.spawn = (...args: unknown[]) => {
+        spawnCount++
+        sessionFile = (args[3] as Record<string, string> | undefined)?.__COMFY_CLI_SESSION__ ?? ''
         proc = spawn(...args) as FakeChild
         return proc
       }
@@ -2747,6 +2767,8 @@ describe('agent requirements at launch', () => {
     afterEach(() => {
       launchHarness.campaigns = { registry: [], answers: new Map() }
       launchHarness.recordWriteThrows = false
+      launchHarness.recordsUpdateThrows = false
+      launchHarness.waitForPort = null
       pipHarness.installed = '[]'
     })
 
@@ -2818,6 +2840,72 @@ describe('agent requirements at launch', () => {
       installed = []
       await launchAndPrint()
       expect(installed).toEqual([CORE_FILE])
+    })
+
+    it('goes back to core file through the standalone launch path too', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint({ portWait: true, lines: ['[agent-event] agent_error reason=crashed'] })
+      await launchAndPrint({ portWait: true, lines: ['[agent-event] agent_error reason=crashed'] })
+
+      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 2 })
+    })
+
+    it("counts a respawned ComfyUI's agent start on its own", async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.launchCommand = { ...launchCommand(), skipPortWait: false, port: 48233 }
+      launchHarness.waitForPort = async () => {}
+      const ctx = ctxFor(ID)
+      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+      expect((await handleLaunch(ctx)).ok).toBe(true)
+
+      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
+      await settle()
+      expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
+
+      // A Manager restart: the reboot marker makes the exit respawn ComfyUI.
+      fs.writeFileSync(`${sessionFile}.reboot`, '')
+      const first = proc!
+      first.emit('exit', 0, null)
+      first.emit('close', 0, null)
+      await vi.waitFor(() => expect(spawnCount).toBe(2))
+      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_started duration_ms=1\n'))
+      await settle()
+
+      expect(overrideState(), 'the respawn started fine, so the count resets').toEqual({
+        signature: 'comfy-agent==0.2.3',
+        failures: 0
+      })
+      proc!.emit('exit', 0, null)
+      proc!.emit('close', 0, null)
+      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
+    })
+
+    it('stops retrying a version that failed to install twice', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.respond = (args) => {
+        installed.push(fs.readFileSync(args[0] as string, 'utf-8'))
+        return { code: (args[8] as string[] | undefined) ? 1 : 0, output: '' }
+      }
+
+      await launchAndPrint()
+      await launchAndPrint()
+      installed = []
+      await launchAndPrint()
+
+      expect(installed, 'no third attempt holds the launch up').toEqual([CORE_FILE])
+      expect(overrideEvents().at(-1)).toEqual(
+        expect.objectContaining({ decision: 'reverted', reason: 'previously_failed' })
+      )
+    })
+
+    it('still launches when the outcome cannot be recorded', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.recordsUpdateThrows = true
+
+      await launchAndPrint({ lines: ['[agent-event] agent_error reason=crashed'] })
+
+      expect(overrideState()).toBeUndefined()
     })
 
     it('reads the agent lines core logs to stdout too', async () => {

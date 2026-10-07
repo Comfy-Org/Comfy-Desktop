@@ -420,10 +420,11 @@ export function agentInstallStatusText(status: AgentInstallStatus): string {
 }
 
 /** Never throws: it runs from ComfyUI's output stream. */
-async function recordAgentStartOutcome(
+async function recordOverrideOutcome(
   installationId: string,
   pins: OverridePins,
-  outcome: AgentStartOutcome
+  outcome: AgentStartOutcome,
+  failedBy: 'start_failed' | 'install_failed' = 'start_failed'
 ): Promise<void> {
   try {
     const current = await installations.get(installationId)
@@ -434,19 +435,19 @@ async function recordAgentStartOutcome(
     if (next.reverted) {
       reportOverrideDecision(installationId, {
         decision: 'reverted',
-        reason: 'start_failed',
+        reason: failedBy,
         pins,
         failures: next.state.failures
       })
     }
   } catch (err) {
-    console.warn('agent requirements override: could not record the start outcome:', err)
+    console.warn('agent requirements override: could not record the outcome:', err)
   }
 }
 
 function watchOverriddenAgentStart(installationId: string, pins: OverridePins): AgentStartWatch {
   return createAgentStartWatcher(
-    (outcome) => void recordAgentStartOutcome(installationId, pins, outcome)
+    (outcome) => void recordOverrideOutcome(installationId, pins, outcome)
   )
 }
 
@@ -1396,7 +1397,7 @@ async function runLaunch(
   // An agent version override rides on the same step: when it went in, this launch's output is
   // watched for how the agent's start went, so a version that keeps failing goes back to core's.
   const agentRequirements = planAgentRequirementsInstall(inst, launchCmd.args ?? [])
-  let agentStartWatch: AgentStartWatch | undefined
+  let overridePins: OverridePins | undefined
   if (agentRequirements) {
     const tracker = await armLaunchTracker()
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
@@ -1416,8 +1417,18 @@ async function runLaunch(
     if (abort.signal.aborted) return { ok: false, cancelled: true }
     if (overrideDecision) {
       reportOverrideDecision(installationId, overrideDecision)
-      if (overrideDecision.decision === 'applied') {
-        agentStartWatch = watchOverriddenAgentStart(installationId, overrideDecision.pins)
+      if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
+      // Counted like a failed start, so a version that cannot install stops costing launch time.
+      if (
+        overrideDecision.decision === 'reverted' &&
+        overrideDecision.reason === 'install_failed'
+      ) {
+        await recordOverrideOutcome(
+          installationId,
+          overrideDecision.pins,
+          'failed',
+          'install_failed'
+        )
       }
     }
   }
@@ -1619,7 +1630,7 @@ async function runLaunch(
               hwTap,
               assetsTap,
               tracker,
-              agentStartWatch
+              overridePins && watchOverriddenAgentStart(installationId, overridePins)
             )
           }
         } catch (err) {
@@ -2014,7 +2025,8 @@ async function runLaunch(
           hwTap,
           assetsTap,
           tracker,
-          agentStartWatch
+          // Per spawn: a respawned ComfyUI's agent start is its own outcome.
+          overridePins && watchOverriddenAgentStart(installationId, overridePins)
         )
       }
     } catch (err) {

@@ -206,8 +206,8 @@ export function planAgentRequirementsInstall(
 }
 
 /**
- * Run one `uv pip install -r`, streaming uv's output into the launch. True when it exited 0,
- * with what it printed; a dry run is driven with no `onStatus` and a silent `sendOutput`.
+ * Run one `uv pip install -r`, streaming uv's output into the launch. True when it exited 0.
+ * `fallbackFollows` words a timeout for the override run, which core's own file follows.
  *
  * Bounded and fail-open. Never throws: neither a failure nor a timeout here may
  * stop the launch. ComfyUI still starts with the
@@ -228,8 +228,10 @@ async function runBoundedInstall(
   sendOutput: (text: string) => void,
   signal?: AbortSignal,
   onStatus?: (status: AgentInstallStatus) => void,
-  extraArgs?: string[]
-): Promise<{ ok: boolean; output: string }> {
+  extraArgs?: string[],
+  fallbackFollows = false
+): Promise<boolean> {
+  const fallback = "falling back to core's versions"
   // uv's own output is the only progress signal available: the download is a
   // single opaque stretch otherwise, and the row would sit on one caption for
   // its whole duration.
@@ -292,12 +294,12 @@ async function runBoundedInstall(
     const outcome = await Promise.race([install, abandoned])
     // A cancelled launch kills uv mid-install, so whatever it reports is the
     // cancellation rather than a failure worth showing.
-    if (signal?.aborted) return { ok: false, output: '' }
+    if (signal?.aborted) return false
     if (outcome.kind === 'abandoned') {
       onStatus?.({ kind: 'failed' })
       await forceStopAgentInstall(uvProc, plan.installPath, tempName)
       sendOutput(
-        `\n⚠ agent requirements install exceeded ${Math.round(timeoutMs / 1000)}s and uv did not stop; hard-stopped it and starting ComfyUI anyway\n`
+        `\n⚠ agent requirements install exceeded ${Math.round(timeoutMs / 1000)}s and uv did not stop; hard-stopped it and ${fallbackFollows ? fallback : 'starting ComfyUI anyway'}\n`
       )
     } else if (outcome.kind === 'failed') {
       onStatus?.({ kind: 'failed' })
@@ -313,13 +315,11 @@ async function runBoundedInstall(
       // error a second time in the log.
       sendOutput(
         timedOut
-          ? `\n⚠ agent requirements install exceeded ${Math.round(timeoutMs / 1000)}s; starting ComfyUI without it\n`
+          ? `\n⚠ agent requirements install exceeded ${Math.round(timeoutMs / 1000)}s; ${fallbackFollows ? fallback : 'starting ComfyUI without it'}\n`
           : `\n⚠ agent requirements install exited with code ${outcome.result.code}\n`
       )
     }
     return outcome.kind === 'settled' && outcome.result.code === 0
-      ? { ok: true, output: outcome.result.output }
-      : { ok: false, output: '' }
   } finally {
     clearTimeout(deadline)
     if (graceTimer !== undefined) clearTimeout(graceTimer)
@@ -341,15 +341,33 @@ export async function installAgentRequirements(
   overrideState: AgentOverrideState | null = null
 ): Promise<OverrideDecision | undefined> {
   sendOutput('\nInstalling agent requirements…\n')
-  const run: BoundedRun = (reqPath, tempName, timeoutMs, extraArgs) =>
-    runBoundedInstall(plan, reqPath, tempName, timeoutMs, sendOutput, signal, onStatus, extraArgs)
+  const runOverride: BoundedRun = (reqPath, tempName, timeoutMs, extraArgs) =>
+    runBoundedInstall(
+      plan,
+      reqPath,
+      tempName,
+      timeoutMs,
+      sendOutput,
+      signal,
+      onStatus,
+      extraArgs,
+      true
+    )
   const startedAt = Date.now()
-  const decision = await tryOverride(plan, override, overrideState, run, sendOutput, signal)
+  const decision = await tryOverride(plan, override, overrideState, runOverride, sendOutput, signal)
   if (signal?.aborted || decision?.decision === 'applied') return decision
   // A failed override left the row on its terminal status; the fallback is a fresh install.
   if (decision) onStatus?.({ kind: 'installing' })
   const remaining = Math.max(MIN_FALLBACK_TIMEOUT_MS, INSTALL_TIMEOUT_MS - (Date.now() - startedAt))
-  await run(plan.reqPath, FILTERED_REQS, remaining)
+  await runBoundedInstall(
+    plan,
+    plan.reqPath,
+    FILTERED_REQS,
+    remaining,
+    sendOutput,
+    signal,
+    onStatus
+  )
   return decision
 }
 
@@ -367,7 +385,7 @@ type BoundedRun = (
   tempName: string,
   timeoutMs: number,
   extraArgs?: string[]
-) => Promise<{ ok: boolean; output: string }>
+) => Promise<boolean>
 
 async function tryOverride(
   plan: AgentRequirementsInstall,
@@ -383,9 +401,9 @@ async function tryOverride(
   const { pins } = parsed
   if (isRevertedFor(state, pins)) {
     sendOutput(
-      `agent version override ${overrideSignature(pins)} failed to start before; using core's versions\n`
+      `agent version override ${overrideSignature(pins)} failed before; using core's versions\n`
     )
-    return { decision: 'reverted', reason: 'start_failed', pins }
+    return { decision: 'reverted', reason: 'previously_failed', pins }
   }
   let coreText: string
   try {
@@ -402,7 +420,7 @@ async function tryOverride(
   const left = (): number => Math.max(0, deadline - Date.now())
   try {
     const listed = await listInstalled(plan, left(), signal)
-    const constraints = listed === null ? null : installedConstraints(listed, effective.text)
+    const constraints = listed === null ? null : installedConstraints(listed)
     if (constraints === null) return refuse(sendOutput, 'check_failed', pins)
     await fs.promises.writeFile(overridePath, effective.text, 'utf-8')
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
@@ -412,7 +430,7 @@ async function tryOverride(
       '--constraint',
       OVERRIDE_CONSTRAINTS
     ])
-    if (!installed.ok) return revertOnInstall(sendOutput, pins)
+    if (!installed) return revertOnInstall(sendOutput, pins)
     return { decision: 'applied', pins }
   } catch {
     return revertOnInstall(sendOutput, pins)

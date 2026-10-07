@@ -804,7 +804,7 @@ describe('installAgentRequirements with a version override', () => {
       state
     )
 
-    expect(decision).toMatchObject({ decision: 'reverted', reason: 'start_failed' })
+    expect(decision).toMatchObject({ decision: 'reverted', reason: 'previously_failed' })
     expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
   })
 
@@ -821,6 +821,27 @@ describe('installAgentRequirements with a version override', () => {
     )
 
     expect(decision?.decision).toBe('applied')
+  })
+
+  it('starts no fallback when the launch is cancelled during the override', async () => {
+    const abort = new AbortController()
+    mockUvPip.mockImplementationOnce(async () => {
+      abort.abort()
+      return { code: 1, output: '' }
+    })
+
+    await installAgentRequirements(plan, vi.fn(), abort.signal, undefined, OVERRIDE)
+
+    expect(calls, 'a cancelled launch installs nothing more').toEqual([])
+  })
+
+  it("says the fallback follows when the override's install fails", async () => {
+    respond = ({ constraints }) => (constraints ? { code: 1, output: '' } : { code: 0, output: '' })
+    const sendOutput = vi.fn()
+
+    await installAgentRequirements(plan, sendOutput, undefined, undefined, OVERRIDE)
+
+    expect(sendOutput.mock.calls.join('')).toContain("did not install; using core's versions")
   })
 
   describe('the time budget', () => {
@@ -877,6 +898,47 @@ describe('installAgentRequirements with a version override', () => {
       ])
     })
 
+    it('gives core file nearly the whole ceiling after an override that fails fast', async () => {
+      const startedAt = Date.now()
+      mockInstall.mockImplementation(async (file, ...rest) => {
+        const signal = rest[5] as AbortSignal
+        const extraArgs = rest[7] as string[] | undefined
+        calls.push({
+          content: fs.readFileSync(file, 'utf-8'),
+          constraints: extraArgs ? 'yes' : null
+        })
+        if (extraArgs) return { code: 1, output: '' }
+        waiting++
+        return new Promise((resolve) =>
+          signal.addEventListener('abort', () => {
+            waiting--
+            calls.at(-1)!.timeoutAt = Date.now() - startedAt
+            resolve({ code: 1, output: '' })
+          })
+        )
+      })
+
+      await settle(installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE))
+
+      expect(calls.at(-1)!.timeoutAt, 'the 30 s floor is a minimum, not the budget').toBe(120_000)
+    })
+
+    it('stops waiting for a package listing that never answers, and refuses', async () => {
+      hangUntilAborted(Date.now())
+      // Never settles, not even when its signal aborts: only the race can end this wait.
+      mockUvPip.mockImplementation(() => {
+        waiting++
+        return new Promise(() => {})
+      })
+
+      const decision = await settle(
+        installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+      )
+
+      expect(decision).toMatchObject({ decision: 'refused', reason: 'check_failed' })
+      expect(calls.map((c) => [c.constraints, c.timeoutAt])).toEqual([[null, 120_000]])
+    })
+
     it('gives core file its full ceiling when there is no override', async () => {
       hangUntilAborted(Date.now())
 
@@ -897,9 +959,27 @@ describe('installAgentRequirements with a version override', () => {
         return { code: 0, output: '' }
       })
 
+      const startedAt = Date.now()
+      let fallbackDeadline = 0
+      const original = mockInstall.getMockImplementation()!
+      mockInstall.mockImplementation(async (file, ...rest) => {
+        if (rest[7]) return original(file, ...rest)
+        const signal = rest[5] as AbortSignal
+        waiting++
+        return new Promise((resolve) =>
+          signal.addEventListener('abort', () => {
+            waiting--
+            fallbackDeadline = Date.now() - startedAt
+            resolve({ code: 0, output: '' })
+          })
+        )
+      })
+
       await settle(installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE))
 
       expect(fs.readdirSync(installDir)).toEqual(['ComfyUI'])
+      // Abandoned at 90 s + 10 s grace, so only the floor is left: 100 s + 30 s.
+      expect(fallbackDeadline, 'the floor still gives core file time').toBe(130_000)
     })
   })
 })

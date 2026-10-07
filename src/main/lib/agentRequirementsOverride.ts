@@ -1,7 +1,7 @@
 /** TEMPORARY: delete with its hook and launch wiring once the agent is on by default. */
 import type { InstallationRecord } from '../installations'
 import * as telemetry from './telemetry'
-import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import { createStreamLineBuffer, stripAnsi } from './stderrTail'
 import type { StreamSource } from './stderrTail'
 
 const OVERRIDABLE = new Set(['comfy-agent', 'comfy-cli', 'nodejs-wheel-binaries'])
@@ -85,8 +85,8 @@ export function effectiveAgentRequirements(
   return { kind: 'text', text: lines.join('\n') }
 }
 
-/** Pins every other installed package where it is, so an override that moves one falls back. */
-export function installedConstraints(pipListOutput: string, effectiveText: string): string | null {
+/** Pins every installed non-agent package where it is, so an override that moves one falls back. */
+export function installedConstraints(pipListOutput: string): string | null {
   // uv's stderr ("Using Python … environment at") shares the captured stream.
   const json = pipListOutput
     .split(/\r?\n/)
@@ -99,18 +99,11 @@ export function installedConstraints(pipListOutput: string, effectiveText: strin
     return null
   }
   if (!Array.isArray(installed)) return null
-  const named = new Set(
-    effectiveText
-      .split(/\r?\n/)
-      .map((line) => line.match(LEADING_NAME)?.[1])
-      .filter((name): name is string => name !== undefined)
-      .map(normalizePackageName)
-  )
   const lines: string[] = []
   for (const entry of installed) {
     const { name, version } = (entry ?? {}) as { name?: unknown; version?: unknown }
     if (typeof name !== 'string' || typeof version !== 'string') return null
-    if (!named.has(normalizePackageName(name))) lines.push(`${name}==${version}`)
+    if (!OVERRIDABLE.has(normalizePackageName(name))) lines.push(`${name}==${version}`)
   }
   return lines.join('\n') + '\n'
 }
@@ -141,7 +134,7 @@ export type OverrideDecision =
   | { decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins }
   | {
       decision: 'reverted'
-      reason: 'install_failed' | 'start_failed'
+      reason: 'install_failed' | 'start_failed' | 'previously_failed'
       pins: OverridePins
       failures?: number
     }
@@ -161,14 +154,20 @@ export function reportOverrideDecision(installationId: string, d: OverrideDecisi
   }
 }
 
-/** Only agent_error and health_check_failed fail: not agent_exited, nor permission_denied. */
+/** Failures: agent_error, health_check_failed, package_missing. Not agent_exited or permission_denied. */
 export type AgentStartOutcome = 'started' | 'failed' | 'inconclusive'
 
 /** Same grammar as the agent telemetry tap: a cross-repo contract with core's emitter. */
 const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
+const RECORD_TAG = '[agent-event] '
+const AGENT_OUTPUT_TAG = '[comfy-agent] '
 
 export function classifyAgentEvent(line: string): AgentStartOutcome | null {
-  const match = stripLogLevelPrefix(stripAnsi(line).trim()).match(AGENT_EVENT_LINE)
+  // Cut at the last tag, as the tap does: a record can land behind a tqdm `\r` redraw.
+  const text = stripAnsi(line)
+  const at = text.lastIndexOf(RECORD_TAG)
+  if (at === -1 || text.lastIndexOf(AGENT_OUTPUT_TAG, at) !== -1) return null
+  const match = text.slice(at).trim().match(AGENT_EVENT_LINE)
   if (!match) return null
   const fields = new Map(
     match[2]!
@@ -181,6 +180,7 @@ export function classifyAgentEvent(line: string): AgentStartOutcome | null {
     case 'agent_started':
       return 'started'
     case 'health_check_failed':
+    case 'package_missing':
       return 'failed'
     case 'agent_error':
       return fields.get('reason') === 'permission_denied' ? 'inconclusive' : 'failed'

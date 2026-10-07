@@ -154,22 +154,20 @@ describe('installedConstraints', () => {
       { name: 'Nodejs_Wheel_Binaries', version: '24.19.0' }
     ])
 
-  it('holds every installed package the file does not name at its installed version', () => {
-    const effective =
-      '# agent\ncomfy-agent==0.2.3\ncomfy-cli==1.21.0\nnodejs-wheel-binaries==24.19.0\n'
-    expect(installedConstraints(LIST, effective)).toBe('requests==2.32.0\nmy-node-dep==0.1.0\n')
+  it("holds every installed package but the agent's own at its installed version", () => {
+    expect(installedConstraints(LIST)).toBe('requests==2.32.0\nmy-node-dep==0.1.0\n')
   })
 
   it('finds the list among the lines uv prints on stderr, before or after it', () => {
-    const after = `${JSON.stringify([{ name: 'comfy-cli', version: '1.21.0' }])}\nwarning: cache is stale\n`
-    expect(installedConstraints(LIST, '')).toContain('comfy-cli==1.21.0')
-    expect(installedConstraints(after, '')).toBe('comfy-cli==1.21.0\n')
+    const after = `${JSON.stringify([{ name: 'requests', version: '2.32.0' }])}\nwarning: cache is stale\n`
+    expect(installedConstraints(LIST)).toContain('requests==2.32.0')
+    expect(installedConstraints(after)).toBe('requests==2.32.0\n')
   })
 
   it('cannot be read from anything but a list of named, versioned packages', () => {
-    expect(installedConstraints('error: no virtual environment found', '')).toBeNull()
-    expect(installedConstraints('[{"name": "requests"}]', '')).toBeNull()
-    expect(installedConstraints('{"name": "requests", "version": "1"}', '')).toBeNull()
+    expect(installedConstraints('error: no virtual environment found')).toBeNull()
+    expect(installedConstraints('[{"name": "requests"}]')).toBeNull()
+    expect(installedConstraints('{"name": "requests", "version": "1"}')).toBeNull()
   })
 })
 
@@ -184,27 +182,36 @@ describe('agent start classification', () => {
     expect(outcome('\u001b[32m[INFO] [agent-event] agent_started\u001b[0m')).toBe('started')
   })
 
-  it('counts an error and a failed health check as failures', () => {
+  it('counts an error, a failed health check and a missing package as failures', () => {
     expect(outcome('[agent-event] agent_error reason=spawn_failed')).toBe('failed')
     expect(outcome('[agent-event] health_check_failed reason=crashed')).toBe('failed')
+    expect(
+      outcome('[agent-event] package_missing'),
+      'an override that broke comfy-cli or node leaves the agent off'
+    ).toBe('failed')
   })
 
   it('does not count a declined permission prompt', () => {
     expect(outcome('[agent-event] agent_error reason=permission_denied')).toBe('inconclusive')
   })
 
-  it('ignores an exit, a missing package and a slow start', () => {
+  it('ignores an exit and a slow start', () => {
     for (const line of [
       '[agent-event] agent_exited code=0',
       '[agent-event] agent_exited code=3',
-      '[agent-event] package_missing',
       '[agent-event] agent_waiting duration_ms=60000'
     ])
       expect(classifyAgentEvent(line)).toBeNull()
   })
 
-  it('ignores lines that only mention an event', () => {
-    expect(classifyAgentEvent('note: [agent-event] agent_started')).toBeNull()
+  it('reads a record logged behind a progress-bar redraw', () => {
+    expect(
+      outcome(' 45%|####      | 9/20 [INFO] [agent-event] health_check_failed reason=crashed')
+    ).toBe('failed')
+  })
+
+  it("ignores the agent's own output relayed by core, and malformed records", () => {
+    expect(classifyAgentEvent('[comfy-agent] [agent-event] agent_started')).toBeNull()
     expect(classifyAgentEvent('[agent-event] agent_started  extra')).toBeNull()
   })
 })
