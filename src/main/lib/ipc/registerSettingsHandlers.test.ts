@@ -29,6 +29,8 @@ vi.mock('./shared', async () => {
     i18n: {
       t: (key: string) => lookupEnMessage(key),
       getLocale: () => 'en',
+      init: vi.fn(),
+      getMessages: () => ({}),
       getAvailableLocales: () => [{ value: 'en', label: 'English' }]
     },
     getAppVersion: () => '0.0.0-test',
@@ -240,6 +242,14 @@ describe('applySettingSet settings.changed telemetry', () => {
     mockSettings.autoUpdate = true
 
     applySettingSet('autoUpdate', true, true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('emits nothing when a user re-picks the default an unset setting shows', () => {
+    // Language is unset, so the field shows the app locale ('en' here); picking it again
+    // stores it but is not a change from what the user saw.
+    applySettingSet('language', 'en', true)
 
     expect(changedEvents()).toEqual([])
   })

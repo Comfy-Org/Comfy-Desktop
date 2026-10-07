@@ -278,6 +278,17 @@ export function buildMediaSections(): SettingsSection[] {
   ]
 }
 
+/** What the Global Settings field showed, which is what a user edit changes from: an unset
+ *  setting can display a fallback (Language shows the system locale). */
+function shownGlobalValue(key: string): unknown {
+  for (const section of buildSettingsSections()) {
+    const fields = section.fields as { id?: string; value?: unknown }[] | undefined
+    const field = fields?.find((f) => f.id === key)
+    if (field) return field.value
+  }
+  return settings.get(key)
+}
+
 // Write a setting and run its side-effect branches (theme/locale/telemetry
 // broadcasts, updater hint, settings-changed) plus the Global Settings refresh.
 // `userEdit` (Global Settings UI only) raises `settings.changed`; set-setting also carries app state.
@@ -290,7 +301,7 @@ export function applySettingSet(key: string, value: unknown, userEdit = false): 
   ) {
     return
   }
-  const before = settings.get(key)
+  const before = userEdit ? shownGlobalValue(key) : undefined
   settings.set(key, value)
   if (key === 'theme') {
     _broadcastToRenderer('theme-changed', resolveTheme())
