@@ -497,7 +497,8 @@ export function createAssetsTap(opts: {
       // Counted, never named: the name is untrusted input, so carrying it in a
       // payload would reintroduce the cardinality blow-up the allow-list exists
       // to prevent. A bare count still answers "is this build behind core?".
-      unknownEventsDropped++
+      // Only while consent is granted: a later grant must not ship the declined period's count.
+      if (telemetry.getConsentState() === 'granted') unknownEventsDropped++
       return
     }
     const parsed = parseFields(tail, baseKeys, reservedKeys, conventionNames)
@@ -505,7 +506,8 @@ export function createAssetsTap(opts: {
     const { fields } = parsed
     // Counted like unknown events, and for the same reason: it says this build
     // is behind core's vocabulary without naming the untrusted value.
-    unknownEnumValuesOmitted += parsed.omittedEnumValues
+    if (telemetry.getConsentState() === 'granted')
+      unknownEnumValuesOmitted += parsed.omittedEnumValues
     if (!withinRateCap(event)) return
     // Charged only now, so a rejected or rate-capped line spends no name budget.
     for (const name of parsed.newNames) conventionNames.add(name)

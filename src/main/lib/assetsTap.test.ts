@@ -125,8 +125,12 @@ describe('assetsTap', () => {
     coreBetaFlags: ['--enable-assets']
   }
 
+  let consent: ReturnType<typeof telemetry.getConsentState> = 'granted'
+
   beforeEach(() => {
     captured = []
+    consent = 'granted'
+    vi.spyOn(telemetry, 'getConsentState').mockImplementation(() => consent)
     vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
       captured.push({ event, ctx: ctx as Record<string, unknown> })
     })
@@ -388,6 +392,26 @@ describe('assetsTap', () => {
       expect(JSON.stringify(captured[0]!.ctx)).not.toContain('exfiltrate')
       expect(JSON.stringify(captured[0]!.ctx)).not.toContain('scan_exploded')
     })
+
+    it.each(['denied', 'undecided'] as const)(
+      'does not count what it saw while consent was %s, once consent is granted',
+      (declined) => {
+        consent = declined
+        const tap = createAssetsTap(baseOpts)
+        tap.ingest(taggedLine('seeder.scan_exploded', { phase: 'fast' }), 'stdout')
+        tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
+
+        consent = 'granted'
+        tap.flushSummary()
+
+        expect(captured.map((c) => c.event)).not.toContain(
+          'comfy.desktop.comfyui.assets.unknown_events_dropped'
+        )
+        expect(captured.map((c) => c.event)).not.toContain(
+          'comfy.desktop.comfyui.assets.unknown_enum_values_omitted'
+        )
+      }
+    )
 
     it('reports omitted enum values as a bare count, never the values', () => {
       const tap = createAssetsTap(baseOpts)
