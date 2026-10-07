@@ -4,6 +4,16 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+function isDownloadUrl(value: unknown): boolean {
+  if (!isNonEmptyString(value)) return false
+  try {
+    const { protocol } = new URL(value)
+    return protocol === 'https:' || protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
 /** Validate fresh standalone installs before persisting or allocating a directory.
  * Tracked/adopted installs use separate entry points and need no download. */
 export function getStandaloneRuntimeError(data: Record<string, unknown>): string | null {
@@ -15,13 +25,13 @@ export function getStandaloneRuntimeError(data: Record<string, unknown>): string
           if (!file || typeof file !== 'object') return false
           return (
             'url' in file &&
-            isNonEmptyString(file.url) &&
+            isDownloadUrl(file.url) &&
             'filename' in file &&
             isNonEmptyString(file.filename)
           )
         })
       : (files === undefined || (Array.isArray(files) && files.length === 0)) &&
-        isNonEmptyString(data.downloadUrl)
+        isDownloadUrl(data.downloadUrl)
   return ['version', 'releaseTag', 'variant', 'pythonVersion'].every((key) =>
     isNonEmptyString(data[key])
   ) && hasDownload

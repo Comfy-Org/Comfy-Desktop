@@ -58,6 +58,10 @@ describe('add-installation standalone runtime validation', () => {
     { downloadFiles: [{}] },
     { downloadFiles: [{ url: '', filename: 'runtime.tar.gz' }] },
     { downloadFiles: [{ url: runtime.downloadUrl, filename: '' }] },
+    { downloadFiles: [{ url: 'not a url', filename: 'runtime.tar.gz' }] },
+    { downloadFiles: [{ url: 'file:///tmp/runtime.tar.gz', filename: 'runtime.tar.gz' }] },
+    { downloadFiles: undefined, downloadUrl: 'not a url' },
+    { downloadFiles: [], downloadUrl: 'ftp://example.com/runtime.tar.gz' },
     { downloadFiles: 'invalid' }
   ])(
     'rejects malformed runtime data before any allocation or record creation: %j',
