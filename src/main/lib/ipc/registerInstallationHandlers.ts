@@ -40,6 +40,7 @@ import { hasGitDir } from '../git'
 import { parseUrl } from '../util'
 import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
 import * as mainTelemetry from '../telemetry'
+import { captureSettingChanged } from '../settingsChangedTelemetry'
 import { buildErrorFields } from '../../../shared/errorEvent'
 import { appendLog } from '../logsBroadcast'
 import { invalidateModelDownloadStartupPass } from '../comfyDownloadManager'
@@ -591,6 +592,9 @@ export function registerInstallationHandlers(): void {
         }
       }
       await installations.update(installationId, filtered)
+      for (const [key, value] of Object.entries(filtered)) {
+        if (key !== 'seen') captureSettingChanged(key, inst[key], value, installationId)
+      }
       return { ok: true }
     }
   )

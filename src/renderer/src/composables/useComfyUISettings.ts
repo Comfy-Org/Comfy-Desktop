@@ -400,11 +400,6 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
         setRestartDirty(installId, field.id, baseline)
       }
     }
-    emitTelemetryAction('comfy.desktop.settings.changed', {
-      setting_key: field.id,
-      value_kind: field.editType || 'text',
-      bool_value: typeof value === 'boolean' ? value : undefined
-    })
     // A field can declare an `onChangeAction` to fire after its value changes
     // (e.g. switching channel triggers `check-update`).
     if (field.onChangeAction) {

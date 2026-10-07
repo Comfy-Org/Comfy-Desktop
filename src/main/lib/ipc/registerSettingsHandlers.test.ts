@@ -24,6 +24,7 @@ vi.mock('./shared', async () => {
       get: (key: string) => mockSettings[key],
       set: (key: string, value: unknown) => mockSettingsSet(key, value),
       getTrackedSettingsTelemetryProperties: () => ({}),
+      isKnownSettingKey: (key: string) => key !== 'notARealSetting',
       resolveBetaFeaturesEnabled: () => mockBeta.resolved
     },
     i18n: {
@@ -40,6 +41,7 @@ vi.mock('./shared', async () => {
 })
 vi.mock('../titleBarOverlay', () => ({ updateTitleBarOverlay: vi.fn() }))
 vi.mock('../telemetry', () => ({
+  capture: vi.fn(),
   setConsentState: vi.fn(),
   registerPersonProperties: vi.fn()
 }))
@@ -52,6 +54,7 @@ vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
 // Values mirror src/main/settings.ts; mocked because the real module imports electron.
 vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: 'last' }))
 
+import * as mainTelemetry from '../telemetry'
 import { applySettingSet, buildSettingsSections } from './registerSettingsHandlers'
 
 function resetMockSettings(): void {
@@ -208,5 +211,54 @@ describe('applySettingSet beta enrolment consent', () => {
 
     expect(mockSettingsSet).toHaveBeenCalledWith('betaFeaturesEnabled', false)
     expect(mockSettings.betaFeaturesEnabled).toBe(false)
+  })
+})
+
+describe('applySettingSet settings.changed telemetry', () => {
+  const capture = vi.mocked(mainTelemetry.capture)
+  const changedEvents = (): unknown[] =>
+    capture.mock.calls.filter(([event]) => event === 'comfy.desktop.settings.changed')
+
+  beforeEach(() => {
+    resetMockSettings()
+    capture.mockClear()
+  })
+
+  it('emits the key and new boolean when a setting changes', () => {
+    mockSettings.autoUpdate = true
+
+    applySettingSet('autoUpdate', false)
+
+    expect(changedEvents()).toEqual([
+      [
+        'comfy.desktop.settings.changed',
+        {
+          scope: 'global',
+          installation_id: undefined,
+          setting_key: 'autoUpdate',
+          bool_value: false
+        }
+      ]
+    ])
+  })
+
+  it('emits nothing when the value is unchanged', () => {
+    mockSettings.autoUpdate = true
+
+    applySettingSet('autoUpdate', true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('reports an unknown key as unknown rather than echoing it', () => {
+    // set-setting accepts any key from a renderer; an arbitrary string is not sent on.
+    applySettingSet('notARealSetting', true)
+
+    expect(changedEvents()).toEqual([
+      [
+        'comfy.desktop.settings.changed',
+        expect.objectContaining({ setting_key: 'unknown', bool_value: true })
+      ]
+    ])
   })
 })

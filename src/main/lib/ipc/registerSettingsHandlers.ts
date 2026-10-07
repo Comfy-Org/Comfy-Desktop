@@ -12,6 +12,7 @@ import {
 } from './shared'
 import { updateTitleBarOverlay } from '../titleBarOverlay'
 import * as mainTelemetry from '../telemetry'
+import { captureSettingChanged } from '../settingsChangedTelemetry'
 import { detectFirstUseState } from '../firstUseDetection'
 import * as updater from '../updater'
 import { globalSettingsEvents } from '../globalSettingsEvents'
@@ -288,7 +289,13 @@ export function applySettingSet(key: string, value: unknown): void {
   ) {
     return
   }
+  const before = settings.get(key)
   settings.set(key, value)
+  captureSettingChanged(
+    settings.isKnownSettingKey(key) ? key : 'unknown',
+    before,
+    settings.get(key)
+  )
   if (key === 'theme') {
     _broadcastToRenderer('theme-changed', resolveTheme())
     updateTitleBarOverlay()
