@@ -261,18 +261,20 @@ async function onWhyCloudTryCloud(): Promise<void> {
     message: t('installShowcase.cloudFailedMessage')
   })
 }
-onMounted(async () => {
-  const [freeRunsResult, userTierResult] = await Promise.allSettled([
-    window.api.getCloudFreeRunsEnabled(),
-    window.api.getCloudUserTier()
-  ])
-  if (freeRunsResult.status === 'fulfilled') {
-    cloudFreeRunsEnabled.value = freeRunsResult.value
-  }
-  if (userTierResult.status === 'fulfilled') {
-    cloudUserTier.value = userTierResult.value
-    cloudUserTierResolved.value = true
-  }
+onMounted(() => {
+  // The free-runs flag can wait for the installation id; the tier must not wait with it.
+  const userTierLoaded = window.api.getCloudUserTier().then(
+    (tier) => {
+      cloudUserTier.value = tier
+      cloudUserTierResolved.value = true
+    },
+    () => {}
+  )
+  void Promise.all([window.api.getCloudFreeRunsEnabled().catch(() => false), userTierLoaded]).then(
+    ([enabled]) => {
+      cloudFreeRunsEnabled.value = enabled
+    }
+  )
 })
 function handleNewInstallClick(): void {
   emit('show-new-install')

@@ -1775,6 +1775,24 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
     vi.useRealTimers()
   })
 
+  it('keeps first_launch out of the write quarantine, so an account switch cannot discard it', () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('install-id')
+    telemetry.applyFirebaseUserConsensus('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    captured.length = 0
+
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+    expect(captured.find((c) => c.event === 'comfy.desktop.app.first_launch')).toBeUndefined()
+
+    telemetry.applyFirebaseUserConsensus('user-b')
+
+    expect(
+      captured.find((c) => c.event === 'comfy.desktop.app.first_launch'),
+      'the once-ever event survives a quarantine that resolves to another account'
+    ).toBeDefined()
+  })
+
   it('counts consent denials', () => {
     const before = telemetry.getConsentDenials()
     telemetry.setConsentState('undecided')

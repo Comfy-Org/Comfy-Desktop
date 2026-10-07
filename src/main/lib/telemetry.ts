@@ -1536,6 +1536,8 @@ export function captureFirstLaunch(properties: TelemetryContext = {}, at = new D
     !canEmit() ||
     !distinctId ||
     consentState !== 'granted' ||
+    // The quarantine discards on an account switch; the one-shot buffer waits it out.
+    firebaseWritesQuarantined() ||
     !captureAt('comfy.desktop.app.first_launch', properties, at)
   ) {
     // Not admitted (deferred or dropped): the on-disk guard is already

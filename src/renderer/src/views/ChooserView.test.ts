@@ -1102,6 +1102,31 @@ describe('ChooserView - why-Cloud explainer', () => {
     expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
   })
 
+  it('offers the explainer once the tier loads, without waiting for the free-runs flag', async () => {
+    const api = installMockApi([cloudInstall()])
+    api.getCloudFreeRunsEnabled.mockReturnValue(new Promise<boolean>(() => {}))
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find(WHY_CLOUD).exists(), 'the tier alone gates the explainer').toBe(true)
+  })
+
+  it('never flashes the pill for a paid user whose tier loads after the flag', async () => {
+    const api = installMockApi([cloudInstall()])
+    api.getCloudFreeRunsEnabled.mockResolvedValue(true)
+    let resolveTier: (tier: string) => void = () => {}
+    api.getCloudUserTier.mockReturnValue(
+      new Promise((r) => {
+        resolveTier = r
+      })
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-cloud-runs-pill"]').exists()).toBe(false)
+    resolveTier('paid')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-cloud-runs-pill"]').exists()).toBe(false)
+  })
+
   it('fails closed until the tier lookup succeeds', async () => {
     const api = installMockApi([cloudInstall()])
     api.getCloudUserTier.mockRejectedValue(new Error('offline'))
