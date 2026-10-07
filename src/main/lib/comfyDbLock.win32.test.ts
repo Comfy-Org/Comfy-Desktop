@@ -247,7 +247,16 @@ describe('stopDbLockOffer on Windows', () => {
     write({ ...record(), started: '134358999999999999' })
     expect(await stopDbLockOffer(offer, db)).toBe(true)
     fake.starts.delete(9084)
+    fake.dead.add(9084)
     expect(await stopDbLockOffer(offer, db)).toBe(true)
+    expect(fake.kills).toEqual([])
+  })
+
+  it('does not take a start time it could not read, for a pid still alive, as an exit', async () => {
+    write(record())
+    // Get-Process failed or timed out: the record can't be re-proven either, so nothing stops.
+    fake.starts.delete(9084)
+    expect(await stopDbLockOffer(offer, db)).toBe(false)
     expect(fake.kills).toEqual([])
   })
 

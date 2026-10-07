@@ -383,6 +383,23 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(isPidAlive(second.pid)).toBe(true)
     }, 20_000)
 
+    it('stops nothing while the confirmed holder lives but its record now names another process', async () => {
+      const first = await hold()
+      const offer = (await find()) as DbLockOffer
+      const other = spawn('sleep', ['60'], { stdio: 'ignore' })
+      spawned.push(other)
+      try {
+        const started = (await readStartTimes([other.pid!]))!.get(other.pid!)!
+        const record = JSON.parse(fs.readFileSync(`${db}.lock.json`, 'utf8'))
+        fs.writeFileSync(`${db}.lock.json`, JSON.stringify({ ...record, pid: other.pid, started }))
+        expect(await stopDbLockOffer(offer, db)).toBe(false)
+        expect(isPidAlive(first.pid)).toBe(true)
+        expect(isPidAlive(other.pid!)).toBe(true)
+      } finally {
+        other.kill('SIGKILL')
+      }
+    }, 20_000)
+
     it('counts a holder its parent never reaps (a zombie) as stopped', async () => {
       const { pid } = await hold({ parent: 'sh' })
       const offer = (await find()) as DbLockOffer

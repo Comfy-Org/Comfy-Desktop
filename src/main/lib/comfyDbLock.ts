@@ -171,8 +171,10 @@ export async function stopDbLockOffer(
   dbPath: string,
   signal?: AbortSignal
 ): Promise<boolean> {
-  // It exited while the user decided: nothing left to stop.
-  if ((await holderStartToken(offer.pid).catch(() => null)) !== offer.startTime) return true
+  // It exited (or its pid was reused) while the user decided: nothing left to stop. A start time
+  // that could not be read proves nothing while the pid lives: the proof below decides.
+  const now = await holderStartToken(offer.pid).catch(() => null)
+  if (now !== offer.startTime && (now !== null || !isPidAlive(offer.pid))) return true
   // Anything slow (the first safety probe runs `ps`) comes before the proof, not between it and
   // the signal.
   if (!(await isSafeToSignal(offer.pid))) return false

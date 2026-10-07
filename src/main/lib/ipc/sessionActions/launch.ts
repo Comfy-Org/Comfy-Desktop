@@ -1524,7 +1524,7 @@ async function runLaunch(
     const stopped = !!dbPath && (await stopDbLockOffer(lockOffer, dbPath, abort.signal))
     // A stop that happened is logged even if the user cancelled while it ran.
     if (stopped)
-      appendLog(sessionId, `[launch] stopped pid ${lockOffer.pid}, which held the database lock\n`)
+      appendLog(sessionId, `[launch] pid ${lockOffer.pid}, which held the database lock, is gone\n`)
     if (abort.signal.aborted) return { ok: false, cancelled: true }
     if (!stopped) {
       appendLog(sessionId, `[launch] could not stop pid ${lockOffer.pid}\n`)

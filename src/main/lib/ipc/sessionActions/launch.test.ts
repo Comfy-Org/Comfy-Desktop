@@ -2752,7 +2752,9 @@ describe('prior ComfyUI process handling at launch', () => {
       lockRecord.duringStop = () => _operationAborts.get('db-record-late-cancel')?.abort()
       const res = await handleLaunch(ctxFor('db-record-late-cancel', { stopDbLockHolder: offer() }))
       expect(res).toMatchObject({ ok: false, cancelled: true })
-      expect(getLogsBuffer('db-record-late-cancel').join('')).toContain('stopped pid 9084')
+      expect(getLogsBuffer('db-record-late-cancel').join('')).toContain(
+        'pid 9084, which held the database lock, is gone'
+      )
       expect(children).toHaveLength(0)
     })
 

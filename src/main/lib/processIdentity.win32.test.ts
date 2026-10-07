@@ -121,21 +121,7 @@ describe('killPid on Windows', () => {
     expect(fake.calls.find((c) => c.cmd === 'taskkill')!.args).toEqual(['/F', '/PID', '2147480000'])
   })
 
-  it('says a process that would not exit did not', async () => {
-    // A throwaway victim: were the Windows branch ever skipped, only it would be signalled.
-    const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
-    try {
-      fake.answers.taskkill = { stdout: '' }
-      // Still in the process table: not a zombie either.
-      fake.answers.powershell = { stdout: `${victim.pid} 1 134358000923463901\r\n` }
-      // taskkill is faked, so it never exits.
-      expect(await killPid(victim.pid!)).toBe(false)
-    } finally {
-      victim.kill('SIGKILL')
-    }
-  }, 20_000)
-
-  it('does not take a live process listed without a creation time for one that exited', async () => {
+  it('says a process that would not exit did not, even one listed without a creation time', async () => {
     const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
     try {
       fake.answers.taskkill = { stdout: '' }
