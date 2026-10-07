@@ -16,6 +16,7 @@ import {
   writeOperationOutput,
   flushOperationOutput,
   getAppLogPath,
+  holdForAppLog,
   resetAppLogForTest
 } from './appLog'
 
@@ -39,6 +40,24 @@ describe('appLog', () => {
     writeAppLog('INFO', 'should not write')
     writeOperationOutput('inst-1', 'nope')
     expect(fs.existsSync(path.join(tmpDir, 'app.log'))).toBe(false)
+  })
+
+  it('writes lines held before init once the log opens, scrubbed, and only once', () => {
+    holdForAppLog('INFO', 'early https://user:tok@mirror.example/simple')
+    initAppLog({ dir: tmpDir })
+    holdForAppLog('INFO', 'late line is left to console capture')
+
+    expect(read()).toContain('[INFO] early')
+    expect(read()).not.toContain('tok@')
+    expect(read()).not.toContain('late line')
+  })
+
+  it('keeps at most 200 early lines', () => {
+    for (let i = 0; i < 250; i++) holdForAppLog('INFO', `early-${i}.`)
+    initAppLog({ dir: tmpDir })
+
+    expect(read()).toContain('early-199.')
+    expect(read()).not.toContain('early-200.')
   })
 
   it('writes a synchronous crash line that survives without a flush', () => {

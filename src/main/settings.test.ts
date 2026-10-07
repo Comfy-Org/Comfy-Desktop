@@ -34,6 +34,7 @@ let settings: {
   defaults: { onAppClose: 'tray' | 'quit' }
   resolveBetaFeaturesEnabled: () => boolean
   peekBetaFeaturesEnabled: () => boolean
+  frameForLog: (frame: string) => string
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
   ) => Record<string, boolean | number | string | null>
@@ -704,6 +705,9 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
 })
 
 describe('persisted-write logging', () => {
+  // A failed assertion would otherwise leak its console spy into the next test.
+  afterEach(() => vi.restoreAllMocks())
+
   const writeLines = (log: { mock: { calls: unknown[][] } }): string[] =>
     log.mock.calls
       .map((call) => String(call[0]))
@@ -722,7 +726,10 @@ describe('persisted-write logging', () => {
     // The point of the log: a stack, so an UNKNOWN writer is named. A per-call-site tag would
     // only ever name the sites someone already thought to annotate. Asserted on the frame
     // marker rather than on line count, which the format guarantees either way.
-    expect(line).toMatch(/\| via .*settings\.ts/)
+    // Reaches past the settings module to the actual writer: this test file.
+    expect(line).toMatch(/\| via .*settings\.test\.ts/)
+    // File names only: a frame's directories hold the install location.
+    expect(line!.split('| via ')[1]).not.toMatch(/[\\/]/)
     log.mockRestore()
   })
 
@@ -817,6 +824,77 @@ describe('persisted-write logging', () => {
     expect(line).not.toContain('hunter2')
     expect(line).not.toContain('secret.example')
     log.mockRestore()
+  })
+
+  it('reduces a stack frame to its function and file name', () => {
+    const { frameForLog } = settings
+    expect(frameForLog('at set (C:\\Clients Acme\\app.asar\\out\\main\\index.js:12:3)')).toBe(
+      'set (index.js:12:3)'
+    )
+    expect(frameForLog('at /home/alice/Comfy/app.asar/out/main/index.js:5:1')).toBe('index.js:5:1')
+    expect(frameForLog('at async Promise.all (index 0)')).toBe('async Promise.all (index 0)')
+  })
+
+  it('reaches app.log when the write happens before the log opens', async () => {
+    // Main reads, and can repair, settings at import time, long before `initAppLog`.
+    const appLog = await import('./lib/appLog')
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-applog-'))
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      settings.set('betaFeaturesEnabled', false)
+      appLog.initAppLog({ dir: logDir })
+      expect(fs.readFileSync(path.join(logDir, 'app.log'), 'utf8')).toContain(
+        '"betaFeaturesEnabled": true -> false'
+      )
+    } finally {
+      appLog.resetAppLogForTest()
+      fs.rmSync(logDir, { recursive: true, force: true })
+    }
+  })
+
+  it('describes an array by its length, not its paths', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('oemManagedModelDirs', ['/private/models-a', '/private/models-b'])
+
+    const line = writeLines(log).find((l) => l.includes('oemManagedModelDirs'))
+    expect(line).toContain('"oemManagedModelDirs": <unset> -> <array:2>')
+    expect(line).not.toContain('private')
+  })
+
+  it('logs a load-time repair once, against the writer that made it', () => {
+    // `loadOutcome` drops `primaryInstallId` and saves. The `set` after it must diff against
+    // what that save wrote, or it repeats the removal under its own caller.
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ betaFeaturesEnabled: true, primaryInstallId: 'inst-1' })
+    )
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', false)
+
+    const repairs = writeLines(log).filter((l) => l.includes('primaryInstallId'))
+    expect(repairs).toHaveLength(1)
+    expect(repairs[0]).toContain('loadOutcome')
+    expect(writeLines(log).some((l) => l.includes('"betaFeaturesEnabled": true -> false'))).toBe(
+      true
+    )
+  })
+
+  it('logs the beta seed', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.resolveBetaFeaturesEnabled()
+
+    const line = writeLines(log).find((l) => l.includes('"betaFeaturesEnabled": <unset> -> true'))
+    expect(line).toContain('resolveBetaFeaturesEnabled')
   })
 
   it('does not log a write that never reached disk', () => {

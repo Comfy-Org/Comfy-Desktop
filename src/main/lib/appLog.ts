@@ -42,6 +42,9 @@ let consolePatched = false
 // partial lines into each other.
 const opPendingById = new Map<string, string>()
 const originalConsole = new Map<ConsoleLevel, (...args: unknown[]) => void>()
+// Lines held by `holdForAppLog` until the log opens; bounded, oldest kept.
+const MAX_EARLY_LINES = 200
+const earlyLines: string[] = []
 
 /** Resolve the directory the global log lives in. Falls back to Electron's
  *  per-user logs path when init hasn't picked a dir yet. */
@@ -70,7 +73,16 @@ export function initAppLog(opts?: { dir?: string }): void {
     closeFd()
   }
   initialized = true
+  for (const line of earlyLines.splice(0)) write(line)
   patchConsole()
+}
+
+/** Keep a line already sent to the console for app.log when the log is not open yet. Main
+ *  reads (and can repair) settings before app ready, long before `initAppLog`. Once the log is
+ *  open, console capture writes the line, so this does nothing. */
+export function holdForAppLog(level: string, text: string): void {
+  if (initialized || earlyLines.length >= MAX_EARLY_LINES) return
+  earlyLines.push(formatLine(level, text))
 }
 
 /** Append a runtime log line. Synchronous; safe on the crash path. */
@@ -221,6 +233,7 @@ export function resetAppLogForTest(): void {
   logDir = null
   currentBytes = 0
   opPendingById.clear()
+  earlyLines.length = 0
   initialized = false
   consolePatched = false
 }

@@ -11,6 +11,7 @@ import {
 } from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
 import { readFileSafe, writeFileSafe } from './lib/safe-file'
+import { holdForAppLog } from './lib/appLog'
 
 export interface KnownSettings {
   cacheDir: string
@@ -476,8 +477,7 @@ function load(): Settings {
 function loadOutcome(): {
   settings: Settings
   unreadable: boolean
-  /** Exactly what was parsed from disk, before defaults are merged in — the baseline the
-   *  change log needs, so a key the file gains for the first time is reported as a change. */
+  /** The change log's baseline: what is on disk now, without defaults merged in. */
   persisted: Record<string, unknown>
 } {
   maybeSeedFromEnv()
@@ -497,11 +497,7 @@ function loadOutcome(): {
       console.warn('Settings: failed to parse settings JSON:', (err as Error).message)
     }
   }
-  // Captured BEFORE the normalisation below, which deletes `null`s that the schema does not
-  // allow. The change log's baseline has to be what the file literally held: a key stored as
-  // `null` would otherwise read as absent, and the line for it would claim `<unset> -> value`
-  // when the truth is `null -> value`. A log whose job is attribution should not quietly
-  // restate the state it is attributing against.
+  // Before the null cleanup below, so a stored `null` is logged as `null`, not as unset.
   const persisted: Record<string, unknown> = { ...(parsed ?? {}) }
   if (parsed) {
     for (const key of KNOWN_SETTING_KEYS) {
@@ -653,21 +649,13 @@ function loadOutcome(): {
       changed = true
     }
   }
-  if (changed && !unreadable) save(result, persisted)
-  return { settings: result, unreadable, persisted }
+  // After a repair save, the next writer's baseline is what that save wrote.
+  const baseline = changed && !unreadable ? save(result, persisted) : persisted
+  return { settings: result, unreadable, persisted: baseline }
 }
 
-/** Describe a value for the log WITHOUT disclosing it.
- *
- *  These lines land in `app.log`, which users attach to support requests. `appLog` runs
- *  `scrubAll` over everything, but that is a best-effort telemetry scrubber for known
- *  credential shapes — it is not a licence to write every setting a user has. Paths, mirror
- *  hosts and anything else bespoke would go straight through it.
- *
- *  Booleans and numbers are logged exactly, because they cannot carry a secret and they are
- *  what this log exists to explain — `betaFeaturesEnabled: true -> false` is the whole
- *  question. Everything else is reduced to its shape, which still answers "did this key
- *  change, and into what kind of thing", without printing the contents. */
+/** Booleans and numbers exactly; anything else by shape only. These lines reach app.log,
+ *  which users attach to support requests, and `scrubAll` does not catch paths or hosts. */
 function describeForLog(v: unknown): string {
   if (v === undefined) return '<unset>'
   if (v === null) return 'null'
@@ -678,80 +666,49 @@ function describeForLog(v: unknown): string {
   return `<${typeof v}>`
 }
 
-/** True when two persisted values differ, order-insensitively for objects.
- *
- *  Comparing serializations would make a key-order change read as a real edit, which would
- *  put a spurious writer in the log — the opposite of useful when the log's whole job is
- *  attributing a change to a caller. */
-function sameValue(a: unknown, b: unknown): boolean {
-  if (a === b) return true
-  if (typeof a !== typeof b || a === null || b === null) return false
-  if (Array.isArray(a) !== Array.isArray(b)) return false
-  if (typeof a !== 'object') return false
-  const ao = a as Record<string, unknown>
-  const bo = b as Record<string, unknown>
-  const ak = Object.keys(ao)
-  const bk = Object.keys(bo)
-  if (ak.length !== bk.length) return false
-  return ak.every((k) => Object.prototype.hasOwnProperty.call(bo, k) && sameValue(ao[k], bo[k]))
+/** A stack frame with its directories dropped: they hold the install location. */
+export function frameForLog(frame: string): string {
+  const m = /^at (?:(.+?) \()?(.+?)\)?$/.exec(frame.trim())
+  if (!m) return '<frame>'
+  const file = m[2]!.split(/[\\/]/).pop()
+  return m[1] ? `${m[1]} (${file})` : `${file}`
 }
 
-/** One line per key whose persisted value actually changes, with the stack that caused it.
- *
- *  Written because a consent-adjacent flag changed itself and nothing in the app could say
- *  what wrote it. Every candidate writer was excluded by reading the code, which is exactly
- *  the situation a log has to cover: the useful question is not "which of the writers I know
- *  about ran" but "who ran", and only a stack answers that.
- *
- *  The baseline is what was actually PARSED FROM DISK, not the defaults-merged view. Merging
- *  first would hide the keys a sparse file gains on its first real write: they are already
- *  present in a merged baseline, so nothing would be logged for them, and "no line for key X"
- *  would stop meaning "X was not written" — which is the only claim this log exists to
- *  support. It is still memory, not a re-read.
- *  Re-reading looked simpler and was wrong three ways: `readFileSafe` increments the
- *  process-wide `.bak`-fallback counter that telemetry reports, it blocks the main thread on
- *  `Atomics.wait` while retrying a locked file, and it cannot tell "no previous value" from
- *  "previous file unparseable". Reading memory has none of those costs. */
+/** One line per key whose value on disk changed, with the stack that wrote it. `before` is
+ *  what was parsed from disk, not the defaults-merged view, so a key a sparse file gains is
+ *  logged too: no line for a key means it was not written. Never throws. */
 function logPersistedChanges(
-  before: Record<string, unknown> | undefined,
-  writtenPayload: string
+  before: Record<string, unknown>,
+  after: Record<string, unknown>
 ): void {
   try {
-    if (!before) return
-    const a = before
-    const parsed: unknown = JSON.parse(writtenPayload)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
-    const b = parsed as Record<string, unknown>
     const changes: string[] = []
-    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
-      if (sameValue(a[key], b[key])) continue
-      changes.push(`${JSON.stringify(key)}: ${describeForLog(a[key])} -> ${describeForLog(b[key])}`)
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue
+      changes.push(
+        `${JSON.stringify(key)}: ${describeForLog(before[key])} -> ${describeForLog(after[key])}`
+      )
     }
     if (changes.length === 0) return
-    // Frames 0-1 are this helper and `save`; the caller starts after them.
-    const stack = (new Error().stack ?? '')
-      .split('\n')
-      .slice(3, 9)
-      .map((line) => line.trim())
-      .join(' <- ')
-    console.log(`Settings: wrote ${changes.join(', ')} | via ${stack}`)
+    // Stack lines 1-2 are this helper and `save`; the writer starts at line 3.
+    const stack = (new Error().stack ?? '').split('\n').slice(3, 9).map(frameForLog).join(' <- ')
+    const line = `Settings: wrote ${changes.join(', ')} | via ${stack}`
+    console.log(line)
+    holdForAppLog('INFO', line)
   } catch {
-    // Diagnostics must never cost a write, and must never be the reason one is lost.
+    // Diagnostics must never cost a write.
   }
 }
 
-/** `before` is the caller's pre-mutation snapshot, used only for the change log. Logged AFTER
- *  the write lands: `writeFileSafe` can throw, and a line saying a value was written when it
- *  was not is worse than no line. */
-function save(settings: Settings, before?: Record<string, unknown>): void {
-  // Serialised once, and the log reads back THAT payload rather than the in-memory object.
-  // `JSON.stringify` turns `NaN` and `Infinity` into `null` and drops `undefined`, so the two
-  // genuinely disagree: a renderer can set a key to `NaN` and the file gets `null`. Logging
-  // the object would report a value the file does not contain — which is the one thing a
-  // change log must never do, since its whole purpose is to say what reached disk.
+/** Writes, logs what changed against `before` once the write has landed, and returns what
+ *  reached disk as the next baseline. The log reads the payload, not the object: JSON turns
+ *  `NaN` into `null`. */
+function save(settings: Settings, before: Record<string, unknown>): Record<string, unknown> {
   const payload = JSON.stringify(settings, null, 2)
   writeFileSafe(dataPath, payload, { backup: true })
-  logPersistedChanges(before, payload)
+  const written = JSON.parse(payload) as Record<string, unknown>
+  logPersistedChanges(before, written)
+  return written
 }
 
 /** Sentinel values for `autoLaunchOnStartup`. Any string OTHER than these
