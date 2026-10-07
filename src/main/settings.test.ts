@@ -913,6 +913,7 @@ describe('persisted-write logging', () => {
     const lines = writeLines(log).filter((l) => l.includes('onAppClose'))
     expect(lines).toHaveLength(1)
     expect(lines[0]).toContain('loadOutcome')
+    expect(lines[0]).toContain('"onAppClose": "tray" -> "quit"')
     expect(settings.get('onAppClose')).toBe('quit')
   })
 
@@ -926,8 +927,55 @@ describe('persisted-write logging', () => {
     settings.set('hideCloudFromPicker', true)
 
     expect(writeLines(log).join('\n')).toContain(
-      `(previous file unparseable, ${corrupt.length} bytes discarded)`
+      `(previous file unparseable, ${corrupt.length} characters discarded)`
     )
+  })
+
+  it('leaves an unchanged array out of the line', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ oemManagedModelDirs: ['/a', '/b'] }))
+    settings.set('betaFeaturesEnabled', true)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', false)
+
+    const lines = writeLines(log)
+    expect(lines.some((l) => l.includes('"betaFeaturesEnabled": true -> false'))).toBe(true)
+    expect(lines.join('\n')).not.toContain('oemManagedModelDirs')
+  })
+
+  it('does not mark a readable file as unparseable', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('betaFeaturesEnabled', false)
+
+    expect(writeLines(log).join('\n')).not.toContain('unparseable')
+  })
+
+  it('reports a removed key named like an Object method as unset, not inherited', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ toString: 'abc' }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('toString', undefined)
+
+    expect(writeLines(log).join('\n')).toContain('"toString": <string:3> -> <unset>')
+  })
+
+  it('prints a token-valued setting exactly, and anything else in it by shape', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ language: 'en' }))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    settings.set('language', 'zh')
+    settings.set('language', 'C:\\Users\\alice\\odd value')
+
+    const lines = writeLines(log).join('\n')
+    expect(lines).toContain('"language": "en" -> "zh"')
+    expect(lines).toContain('"language": "zh" -> <string:')
+    expect(lines).not.toContain('alice')
   })
 
   it('does not log a write that never reached disk', () => {

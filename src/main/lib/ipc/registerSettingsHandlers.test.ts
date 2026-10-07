@@ -248,6 +248,24 @@ describe('set-setting handler', () => {
     expect(requestLine(log)).toContain('<sender gone>')
   })
 
+  it('still writes when logging the request throws', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      throw new Error('console broke')
+    })
+
+    setSettingHandler()({ sender: { getURL: () => 'file:///x/panel.html' } }, 'theme', 'dark')
+
+    expect(mockSettingsSet).toHaveBeenCalledWith('theme', 'dark')
+  })
+
+  it('says when the sender has no URL', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    setSettingHandler()({ sender: { getURL: () => '' } }, 'theme', 'dark')
+
+    expect(requestLine(log)).toContain('requested by <no url>')
+  })
+
   it('names the requesting page without its path', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const sender = {

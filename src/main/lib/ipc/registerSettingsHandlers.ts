@@ -340,7 +340,11 @@ export function registerSettingsHandlers(): void {
     } catch {
       // keep '<sender gone>'
     }
-    console.log(`Settings: set-setting ${JSON.stringify(key)} requested by ${origin}`)
+    try {
+      console.log(`Settings: set-setting ${JSON.stringify(key)} requested by ${origin}`)
+    } catch {
+      // the write below still happens
+    }
     applySettingSet(key, value)
   })
 

@@ -657,16 +657,25 @@ function loadOutcome(): {
   return { settings: result, unreadable, persisted: baseline }
 }
 
-/** Booleans and numbers exactly; anything else by shape only. These lines reach app.log,
- *  which users attach to support requests, and `scrubAll` does not catch paths or hosts. */
-function describeForLog(v: unknown): string {
+/** Settings whose values are short tokens from a fixed set (a locale, a theme, a close
+ *  action, an auto-launch sentinel or install id), printed exactly so a line says which way
+ *  the value went. A value that is not token-shaped is still printed by shape. */
+const TOKEN_VALUED_KEYS = new Set(['language', 'theme', 'onAppClose', 'autoLaunchOnStartup'])
+
+/** Booleans, numbers and token values exactly; anything else by shape only. These lines
+ *  reach app.log, which users attach to support requests, and `scrubAll` does not catch
+ *  paths or hosts. */
+function describeForLog(key: string, v: unknown): string {
   if (v === undefined) return '<unset>'
   if (v === null) return 'null'
   if (typeof v === 'boolean' || typeof v === 'number') return String(v)
-  if (typeof v === 'string') return `<string:${v.length}>`
+  if (typeof v === 'string') {
+    return TOKEN_VALUED_KEYS.has(key) && /^[A-Za-z][\w-]{0,31}$/.test(v)
+      ? JSON.stringify(v)
+      : `<string:${v.length}>`
+  }
   if (Array.isArray(v)) return `<array:${v.length}>`
-  if (typeof v === 'object') return `<object:${Object.keys(v).length}>`
-  return `<${typeof v}>`
+  return `<object:${Object.keys(v as object).length}>`
 }
 
 /** Baselines read from a file that held data but no settings object, with its length: the
@@ -683,15 +692,18 @@ function logPersistedChanges(
 ): void {
   try {
     const changes: string[] = []
+    // Own keys only: an absent `toString` must not read as the inherited function.
+    const own = (o: Record<string, unknown>, k: string): unknown =>
+      Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined
     for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
-      if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue
-      changes.push(
-        `${JSON.stringify(key)}: ${describeForLog(before[key])} -> ${describeForLog(after[key])}`
-      )
+      const a = own(before, key)
+      const b = own(after, key)
+      if (JSON.stringify(a) === JSON.stringify(b)) continue
+      changes.push(`${JSON.stringify(key)}: ${describeForLog(key, a)} -> ${describeForLog(key, b)}`)
     }
     const discarded = unparseableBaselines.get(before)
     if (discarded !== undefined) {
-      changes.unshift(`(previous file unparseable, ${discarded} bytes discarded)`)
+      changes.unshift(`(previous file unparseable, ${discarded} characters discarded)`)
     }
     if (changes.length === 0) return
     // Stack lines 1-2 are this helper and `save`; the writer starts at line 3. The app's own
