@@ -2746,6 +2746,7 @@ describe('agent requirements at launch', () => {
 
     afterEach(() => {
       launchHarness.campaigns = { registry: [], answers: new Map() }
+      launchHarness.recordWriteThrows = false
       pipHarness.installed = '[]'
     })
 
@@ -2759,6 +2760,18 @@ describe('agent requirements at launch', () => {
       expect(overrideEvents()).toEqual([
         expect.objectContaining({ decision: 'applied', pins: 'comfy-agent==0.2.3' })
       ])
+    })
+
+    it('applies the override for an enrolment whose record could not be saved', async () => {
+      launchHarness.recordWriteThrows = true
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+
+      await launchAndPrint()
+
+      expect(spawnArgs, 'the unrecorded enrolment still starts the agent').toContain(
+        '--enable-agent'
+      )
+      expect(installed).toEqual([OVERRIDDEN])
     })
 
     it('installs core file unchanged when the campaign carries no override', async () => {
