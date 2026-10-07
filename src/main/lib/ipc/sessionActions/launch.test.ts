@@ -2863,7 +2863,6 @@ describe('agent requirements at launch', () => {
       await settle()
       expect(overrideState()).toEqual({ signature: 'comfy-agent==0.2.3', failures: 1 })
 
-      // A Manager restart: the reboot marker makes the exit respawn ComfyUI.
       fs.writeFileSync(`${sessionFile}.reboot`, '')
       const first = proc!
       first.emit('exit', 0, null)

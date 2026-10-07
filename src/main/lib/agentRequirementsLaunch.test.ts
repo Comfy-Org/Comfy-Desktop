@@ -925,7 +925,6 @@ describe('installAgentRequirements with a version override', () => {
 
     it('stops waiting for a package listing that never answers, and refuses', async () => {
       hangUntilAborted(Date.now())
-      // Never settles, not even when its signal aborts: only the race can end this wait.
       mockUvPip.mockImplementation(() => {
         waiting++
         return new Promise(() => {})
@@ -978,7 +977,6 @@ describe('installAgentRequirements with a version override', () => {
       await settle(installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE))
 
       expect(fs.readdirSync(installDir)).toEqual(['ComfyUI'])
-      // Abandoned at 90 s + 10 s grace, so only the floor is left: 100 s + 30 s.
       expect(fallbackDeadline, 'the floor still gives core file time').toBe(130_000)
     })
   })
