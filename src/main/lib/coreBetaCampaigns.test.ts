@@ -415,6 +415,47 @@ describe('planCampaignArgs: hold', () => {
   })
 })
 
+describe('planCampaignArgs: members with no answer', () => {
+  const noAnswer = [{ key: KEY, arg: '--enable-agent', member: true, reason: 'no_answer' }]
+
+  it.each([
+    ['unlisted from the registry', { registry: [] }],
+    ['listed, but its answer expired or never arrived', { answers: new Map() }],
+    ['killed: the campaign serves false', { answers: new Map([[KEY, answer(false)]]) }],
+    [
+      'the registry no longer lists its arg for the campaign',
+      {
+        registry: [{ key: KEY, args: ['--enable-assets'] }],
+        answers: new Map([[KEY, answer('hold')]])
+      }
+    ],
+    [
+      'the grant was removed from the payload',
+      { answers: new Map([[KEY, answer('hold', { grants: [] })]]) }
+    ]
+  ])('reports an enrolled machine as idle when %s', (_label, overrides) => {
+    const plan = planCampaignArgs(facts({ records: member, ...overrides }))
+    expect(plan.applied).toEqual([])
+    expect(plan.misses).toEqual(noAnswer)
+  })
+
+  it('reports nothing extra for a held member or a voided epoch', () => {
+    expect(
+      planCampaignArgs(facts({ records: member, answers: new Map([[KEY, answer('hold')]]) })).misses
+    ).toEqual([])
+    const voided = answer('hold', agentPayload({ epoch: 2, epochs: [2] }))
+    expect(
+      planCampaignArgs(facts({ records: member, answers: new Map([[KEY, voided]]) })).misses
+    ).toEqual([])
+  })
+
+  it('reports nothing while beta is off', () => {
+    expect(
+      planCampaignArgs(facts({ records: member, registry: [], betaEnabled: false })).misses
+    ).toEqual([])
+  })
+})
+
 describe('planCampaignArgs: isolation', () => {
   it('refuses a grant its registry entry does not list', () => {
     const plan = planCampaignArgs(facts({ registry: [{ key: KEY, args: ['--enable-assets'] }] }))

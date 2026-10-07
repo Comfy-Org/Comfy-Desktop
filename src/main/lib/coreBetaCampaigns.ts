@@ -201,6 +201,7 @@ export type CampaignMissReason =
   | 'id_class'
   /** Enrolled this launch but unrecorded: running, not counted. */
   | 'record_failed'
+  | 'no_answer'
 
 export interface CampaignMiss {
   readonly key: string
@@ -232,6 +233,7 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
   const trace: string[] = []
   if (!facts.betaEnabled) return { applied, misses, trace }
   const present = new Set(facts.presentArgs)
+  const answered = new Set<string>()
   for (const { key, args } of facts.registry) {
     const answer = facts.answers.get(key)
     if (!answer) continue
@@ -241,6 +243,7 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         trace.push(`[core-campaign] ${key}: ${arg} refused: not listed for this campaign`)
         continue
       }
+      answered.add(`${key}:${arg}`)
       const record = heldRecord(facts.records, key, candidate)
       const member = record !== undefined
       if (!member && !answer.enrol) continue
@@ -302,6 +305,13 @@ export function planCampaignArgs(facts: CampaignFacts): CampaignPlan {
         payload: answer.payload,
         fetchedAt: answer.fetchedAt
       })
+    }
+  }
+  for (const [key, byArg] of Object.entries(facts.records)) {
+    for (const arg of Object.keys(byArg)) {
+      if (answered.has(`${key}:${arg}`)) continue
+      misses.push({ key, arg, member: true, reason: 'no_answer' })
+      trace.push(`[core-campaign] ${key}: ${arg} idle: no live answer grants it`)
     }
   }
   return { applied, misses, trace }

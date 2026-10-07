@@ -1319,6 +1319,16 @@ describe('core beta report placement', () => {
       })
     })
 
+    it('reports an enrolled machine with no campaign answer as idle', async () => {
+      launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+      await handleLaunch(ctxFor('campaign-no-answer'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(missedEvent()).toEqual({
+        idle: [`${KEY}:--enable-agent:no_answer`],
+        enrol_refused: []
+      })
+    })
+
     it('never enrols a random_fallback launch', async () => {
       launchHarness.idClass = 'random_fallback'
       serveCampaign('enrol')
