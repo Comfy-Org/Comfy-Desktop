@@ -1742,24 +1742,46 @@ describe('core beta report placement', () => {
     }
   })
 
-  it("reports the agent tap's dropped-event count when the launched core exits", async () => {
-    vi.spyOn(telemetry, 'getConsentState').mockReturnValue('granted')
-    const child = fakeChild()
-    launchHarness.spawn = () => child
+  it.each([
+    ['the legacy path', true],
+    ['the port path', false]
+  ])(
+    "reports the agent tap's dropped-event count when the launched core exits, on %s",
+    async (_path, skipPortWait) => {
+      vi.spyOn(telemetry, 'getConsentState').mockReturnValue('granted')
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+        cwd: installDir,
+        skipPortWait,
+        ...(skipPortWait ? {} : { port: 48234 })
+      }
+      launchHarness.waitForPort = async () => {}
+      const child = fakeChild()
+      launchHarness.spawn = () => child
 
-    const res = await handleLaunch(ctxFor('harness-agent-summary'))
-    expect(res.ok).toBe(true)
-    child.stdout.emit('data', Buffer.from('[agent-event] mystery_event\n'))
-    child.emit('close', 0, null)
+      const res = await handleLaunch(ctxFor(`harness-agent-summary-${skipPortWait}`))
+      expect(res.ok).toBe(true)
+      child.stdout.emit('data', Buffer.from('[agent-event] mystery_event\n'))
+      child.emit('close', 0, null)
 
-    await vi.waitFor(() =>
-      expect(
-        events
-          .filter((e) => e.event === 'comfy.desktop.comfyui.agent.unknown_events_dropped')
-          .map((e) => e.properties?.count)
-      ).toEqual([1])
-    )
-  })
+      await vi.waitFor(() =>
+        expect(
+          events
+            .filter((e) => e.event === 'comfy.desktop.comfyui.agent.unknown_events_dropped')
+            .map((e) => e.properties)
+        ).toEqual([
+          expect.objectContaining({
+            count: 1,
+            installation_id: `harness-agent-summary-${skipPortWait}`,
+            variant: null,
+            release: null,
+            core_beta_flags: ['--enable-assets']
+          })
+        ])
+      )
+    }
+  )
 
   it("drops a killed attempt's unterminated agent line before a port-conflict retry", async () => {
     const children: FakeChild[] = []
