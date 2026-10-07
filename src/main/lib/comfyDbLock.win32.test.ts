@@ -12,6 +12,8 @@ const fake = vi.hoisted(() => ({
   /** pid -> start token Get-Process reads now. */
   starts: new Map<number, string>(),
   kills: [] as number[],
+  /** The start time each kill was asked to prove (Windows proves it on the killing handle). */
+  killStarts: [] as string[],
   /** What killPid answers. */
   killResult: 'exited' as 'exited' | 'denied' | 'alive',
   /** What the stop did, in order: the safety check, then the proof (start-time read). */
@@ -29,8 +31,9 @@ const fake = vi.hoisted(() => ({
 }))
 vi.mock('./process', async (importOriginal) => ({
   ...(await importOriginal<typeof ProcessModule>()),
-  killPid: async (pid: number) => {
+  killPid: async (pid: number, startTime: string) => {
     fake.kills.push(pid)
+    fake.killStarts.push(startTime)
     return fake.killResult
   },
   isSafeToSignal: async () => {
@@ -89,6 +92,7 @@ beforeEach(() => {
   fs.rmSync(`${db}.lock.json`, { force: true })
   fake.starts = new Map([[9084, STARTED]])
   fake.kills = []
+  fake.killStarts = []
   fake.killResult = 'exited'
   fake.steps = []
   fake.safe = true
@@ -218,6 +222,7 @@ describe('stopDbLockOffer on Windows', () => {
     write(record())
     expect(await stopDbLockOffer(offer, db)).toBe('stopped')
     expect(fake.kills).toEqual([9084])
+    expect(fake.killStarts).toEqual([STARTED])
     // Nothing slow (the first safety probe) sits between the final proof and the signal.
     expect(fake.steps).toEqual(['proof', 'safety', 'proof'])
   })

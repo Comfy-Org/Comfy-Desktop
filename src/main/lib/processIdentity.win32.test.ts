@@ -27,12 +27,7 @@ vi.mock('child_process', async (importOriginal) => {
   }
 })
 
-import {
-  holderStartToken,
-  isPidAlive as isPidAliveReal,
-  parseNetstatListeners,
-  terminateWindowsPid
-} from './processIdentity'
+import { holderStartToken, parseNetstatListeners, terminateWindowsPid } from './processIdentity'
 import { findPidsByPort, killPid } from './process'
 
 const realPlatform = process.platform
@@ -119,7 +114,7 @@ describe('holderStartToken on Windows', () => {
 })
 
 describe('killPid on Windows', () => {
-  it('ends the one pid with TerminateProcess, asking only for PROCESS_TERMINATE, not taskkill', async () => {
+  it('ends the one pid with TerminateProcess, asking to terminate and read its times, not taskkill', async () => {
     fake.answers.powershell = { stdout: 'OK\r\n' }
     // Gone at once: nothing runs at this pid.
     expect(await killPid(2_147_480_000, '134358000923463901')).toBe('exited')
@@ -129,16 +124,21 @@ describe('killPid on Windows', () => {
     expect(script).toContain('GetProcessTimes')
     expect(script).toContain("-ne '134358000923463901'")
     expect(script).toContain('TerminateProcess')
+    // The proof bails out before any terminate: open, then check the times, then (on a mismatch,
+    // or if they cannot be read) close and stop, and only then terminate on that same handle.
+    const at = (piece: string): number => script.indexOf(piece)
+    expect(at('-not $k::GetProcessTimes')).toBeGreaterThan(at('OpenProcess(0x1001'))
+    expect(at("'GONE'; exit")).toBeGreaterThan(at('-not $k::GetProcessTimes'))
+    expect(at('$k::TerminateProcess($h')).toBeGreaterThan(at("'GONE'; exit"))
     expect(fake.calls.some((c) => c.cmd === 'taskkill')).toBe(false)
   })
 
-  it('touches nothing whose creation time is not the confirmed one (its pid was reused)', async () => {
+  it('counts a pid whose creation time is not the confirmed one (reused) as the holder gone', async () => {
     const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
     try {
       fake.answers.powershell = { stdout: 'GONE\r\n' }
       // The confirmed process is gone: nothing left to stop, and no wait for an exit.
       expect(await killPid(victim.pid!, '134358000923463901')).toBe('exited')
-      expect(isPidAliveReal(victim.pid!)).toBe(true)
     } finally {
       victim.kill('SIGKILL')
     }
