@@ -204,11 +204,10 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(offer).toEqual({
         pid,
         startTime: expect.stringMatching(/^[0-9a-f-]+:\d+$/),
-        dbPath: db,
         process: 'ComfyUI',
         sameInstall: true
       })
-      expect(await stopDbLockOffer(offer!)).toBe(true)
+      expect(await stopDbLockOffer(offer!, db)).toBe(true)
       // The stop waited for it: no longer running the moment it answers.
       expect((await readStartTimes([pid]))?.has(pid)).toBe(false)
       // Still running, not a zombie (which `isPidAlive` would also count).
@@ -248,6 +247,16 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       fs.symlinkSync(install, link)
       const { pid } = await hold()
       fs.writeFileSync(db, '')
+      const viaLink = path.join(link, 'ComfyUI', 'user', 'comfyui.db')
+      expect(await readHolderRecord(viaLink)).toMatchObject({ pid })
+    }, 20_000)
+
+    it('matches it through a symlinked install before the database file exists', async () => {
+      // ComfyUI takes the lock (and writes the record) before it creates the database.
+      const link = path.join(root, 'linked')
+      fs.symlinkSync(install, link)
+      const { pid } = await hold()
+      expect(fs.existsSync(db)).toBe(false)
       const viaLink = path.join(link, 'ComfyUI', 'user', 'comfyui.db')
       expect(await readHolderRecord(viaLink)).toMatchObject({ pid })
     }, 20_000)
@@ -314,13 +323,13 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       const offer = (await find()) as DbLockOffer
       const cancelled = new AbortController()
       cancelled.abort()
-      expect(await stopDbLockOffer(offer, cancelled.signal)).toBe(false)
+      expect(await stopDbLockOffer(offer, db, cancelled.signal)).toBe(false)
       expect(isPidAlive(first.pid)).toBe(true)
       process.kill(-first.pid, 'SIGKILL')
       expect(await gone(first.pid)).toBe(true)
       const second = await hold()
-      expect(await stopDbLockOffer(offer)).toBe(false)
-      expect(await stopDbLockOffer({ ...offer, pid: second.pid })).toBe(false)
+      expect(await stopDbLockOffer(offer, db)).toBe(false)
+      expect(await stopDbLockOffer({ ...offer, pid: second.pid }, db)).toBe(false)
       expect(isPidAlive(second.pid)).toBe(true)
     }, 20_000)
 
@@ -328,7 +337,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       const { pid } = await hold({ parent: 'sh' })
       const offer = (await find()) as DbLockOffer
       expect(offer.pid).toBe(pid)
-      expect(await stopDbLockOffer(offer)).toBe(true)
+      expect(await stopDbLockOffer(offer, db)).toBe(true)
       expect(fs.readFileSync(`/proc/${pid}/stat`, 'utf-8').split(' ')[2]).toBe('Z')
     }, 15_000)
   }

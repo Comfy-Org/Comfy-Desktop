@@ -549,7 +549,6 @@ export interface AddResult {
 export interface DbLockOffer {
   pid: number
   startTime: string
-  dbPath: string
   process: string
   sameInstall: boolean
 }

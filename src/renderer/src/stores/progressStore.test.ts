@@ -320,7 +320,6 @@ describe('useProgressStore', () => {
       const dbLockHolder = {
         pid: 9084,
         startTime: '1',
-        dbPath: '/i/comfyui.db',
         process: 'ComfyUI',
         sameInstall: true
       }

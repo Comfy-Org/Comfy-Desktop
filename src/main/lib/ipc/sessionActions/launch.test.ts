@@ -174,7 +174,12 @@ const lockRecord = vi.hoisted(() => ({
   offer: null as null | Record<string, unknown>,
   /** What each lookup was asked. */
   asked: [] as unknown[],
-  stops: [] as Array<{ offer: unknown; spawned: number; aborted: boolean | undefined }>,
+  stops: [] as Array<{
+    offer: unknown
+    dbPath: string
+    spawned: number
+    aborted: boolean | undefined
+  }>,
   stopOk: true,
   duringStop: null as null | (() => void),
   children: { count: 0 }
@@ -185,9 +190,14 @@ vi.mock('../../comfyDbLock', async (importOriginal) => ({
     lockRecord.asked.push(input)
     return lockRecord.offer
   },
-  stopDbLockOffer: async (offer: unknown, signal?: AbortSignal) => {
+  stopDbLockOffer: async (offer: unknown, dbPath: string, signal?: AbortSignal) => {
     lockRecord.duringStop?.()
-    lockRecord.stops.push({ offer, spawned: lockRecord.children.count, aborted: signal?.aborted })
+    lockRecord.stops.push({
+      offer,
+      dbPath,
+      spawned: lockRecord.children.count,
+      aborted: signal?.aborted
+    })
     return lockRecord.stopOk && !signal?.aborted
   }
 }))
@@ -2709,10 +2719,9 @@ describe('prior ComfyUI process handling at launch', () => {
       first.emit('close', 1, null)
       return new Promise<void>(() => {})
     }
-    const offer = (dbPath: string, sameInstall = true): Record<string, unknown> => ({
+    const offer = (sameInstall = true): Record<string, unknown> => ({
       pid: 9084,
       startTime: '134358000923463901',
-      dbPath,
       process: sameInstall ? 'ComfyUI' : '/elsewhere/ComfyUI/main.py',
       sameInstall
     })
@@ -2729,14 +2738,14 @@ describe('prior ComfyUI process handling at launch', () => {
       [true, 'errors.comfyDbLockedSameInstall'],
       [false, 'errors.comfyDbLockedBy']
     ] as const)('offers a stop for it on a lock failure (same install: %s)', async (same, key) => {
-      lockRecord.offer = offer(ourDb(), same)
+      lockRecord.offer = offer(same)
       launchHarness.waitForPort = lockedBoot
       const t = vi.spyOn(i18nModule, 't')
 
       const res = await handleLaunch(ctxFor('db-record-offer'))
 
-      expect(res).toMatchObject({ ok: false, message: key, dbLockHolder: offer(ourDb(), same) })
-      expect(t).toHaveBeenCalledWith(key, { process: offer(ourDb(), same).process, pid: 9084 })
+      expect(res).toMatchObject({ ok: false, message: key, dbLockHolder: offer(same) })
+      expect(t).toHaveBeenCalledWith(key, { process: offer(same).process, pid: 9084 })
     })
 
     it('shows the plain error, with nothing to stop, without a record', async () => {
@@ -2748,8 +2757,11 @@ describe('prior ComfyUI process handling at launch', () => {
 
     it('stops the confirmed holder before it spawns anything, then launches', async () => {
       lockRecord.duringStop = () => (lockRecord.children.count = children.length)
-      const res = await handleLaunch(ctxFor('db-record-stop', { stopDbLockHolder: offer(ourDb()) }))
-      expect(lockRecord.stops).toEqual([{ offer: offer(ourDb()), spawned: 0, aborted: false }])
+      const res = await handleLaunch(ctxFor('db-record-stop', { stopDbLockHolder: offer() }))
+      // Re-proven against the record beside this launch's own database.
+      expect(lockRecord.stops).toEqual([
+        { offer: offer(), dbPath: ourDb(), spawned: 0, aborted: false }
+      ])
       expect(res.ok).toBe(true)
       // Its listening socket can outlive it: launch waits for the port before checking it.
       expect(launchHarness.portFreeWaits).toContain(PORT)
@@ -2757,30 +2769,21 @@ describe('prior ComfyUI process handling at launch', () => {
 
     it('launches nothing when the user cancels while the stop runs', async () => {
       lockRecord.duringStop = () => _operationAborts.get('db-record-cancel')?.abort()
-      const res = await handleLaunch(
-        ctxFor('db-record-cancel', { stopDbLockHolder: offer(ourDb()) })
-      )
+      const res = await handleLaunch(ctxFor('db-record-cancel', { stopDbLockHolder: offer() }))
       expect(res).toMatchObject({ ok: false, cancelled: true })
       // The stop itself saw the cancel, so it could refuse to kill.
       expect(lockRecord.stops.map((s) => s.aborted)).toEqual([true])
       expect(children).toHaveLength(0)
     })
 
-    it.each([
-      ['the stop could not re-prove or stop it', true],
-      ['the offer names a database this launch does not use', false]
-    ])('launches nothing when %s', async (_why, own) => {
+    it('launches nothing when the stop could not re-prove or stop it', async () => {
       lockRecord.stopOk = false
       const t = vi.spyOn(i18nModule, 't')
-      const res = await handleLaunch(
-        ctxFor('db-record-refused', {
-          stopDbLockHolder: offer(own ? ourDb() : '/elsewhere/comfyui.db')
-        })
-      )
+      const res = await handleLaunch(ctxFor('db-record-refused', { stopDbLockHolder: offer() }))
       expect(res.ok).toBe(false)
       expect(t).toHaveBeenCalledWith('errors.dbLockStopFailed', { pid: 9084 })
       expect(children).toHaveLength(0)
-      expect(lockRecord.stops).toHaveLength(own ? 1 : 0)
+      expect(lockRecord.stops).toHaveLength(1)
     })
 
     it.each([true, false])(
@@ -2788,7 +2791,7 @@ describe('prior ComfyUI process handling at launch', () => {
       async (same) => {
         launchHarness.busyPorts = [PORT]
         ownership.holderIsInstall = false
-        lockRecord.offer = offer(ourDb(), same)
+        lockRecord.offer = offer(same)
 
         const res = await handleLaunch(ctxFor('db-record-port'))
 
@@ -2796,7 +2799,7 @@ describe('prior ComfyUI process handling at launch', () => {
         expect(res).toMatchObject({
           ok: false,
           message: same ? 'errors.comfyDbLockedSameInstall' : 'errors.comfyDbLockedBy',
-          dbLockHolder: offer(ourDb(), same)
+          dbLockHolder: offer(same)
         })
         expect(res.portConflict).toBeUndefined()
         expect(children).toHaveLength(0)
@@ -2810,12 +2813,12 @@ describe('prior ComfyUI process handling at launch', () => {
       launchHarness.busyPorts = [PORT]
       launchHarness.busyPids = [9084]
       ownership.holderIsInstall = true
-      lockRecord.offer = offer(ourDb())
+      lockRecord.offer = offer()
 
       const res = await handleLaunch(ctxFor('db-record-port-same'))
 
       expect(res).toMatchObject({ message: 'errors.comfyDbLockedSameInstall' })
-      expect(res.dbLockHolder).toEqual(offer(ourDb()))
+      expect(res.dbLockHolder).toEqual(offer())
       expect(res.portConflict).toBeUndefined()
       expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([
         expect.objectContaining({
@@ -2834,11 +2837,11 @@ describe('prior ComfyUI process handling at launch', () => {
       async (_why, same, pids) => {
         launchHarness.busyPorts = [PORT]
         launchHarness.busyPids = [...pids]
-        lockRecord.offer = offer(ourDb(), same)
+        lockRecord.offer = offer(same)
 
         const res = await handleLaunch(ctxFor('db-record-port-quiet'))
 
-        expect(res.dbLockHolder).toEqual(offer(ourDb(), same))
+        expect(res.dbLockHolder).toEqual(offer(same))
         expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([])
       }
     )
@@ -2852,7 +2855,7 @@ describe('prior ComfyUI process handling at launch', () => {
         setArgs(...extra)
         launchHarness.busyPorts = [PORT]
         ownership.holderIsInstall = true
-        lockRecord.offer = offer(ourDb())
+        lockRecord.offer = offer()
 
         const res = await handleLaunch(ctxFor('db-record-port-bump', { ...actionData }))
 
@@ -2866,11 +2869,11 @@ describe('prior ComfyUI process handling at launch', () => {
       ownership.prior = { ...terminated, pid: 9084, action: 'left', exitedInTime: false }
       launchHarness.busyPorts = [PORT]
       launchHarness.busyPids = [9084]
-      lockRecord.offer = offer(ourDb())
+      lockRecord.offer = offer()
 
       const res = await handleLaunch(ctxFor('db-record-port-left'))
 
-      expect(res.dbLockHolder).toEqual(offer(ourDb()))
+      expect(res.dbLockHolder).toEqual(offer())
       expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toHaveLength(1)
     })
   })

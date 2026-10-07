@@ -1517,19 +1517,18 @@ async function runLaunch(
   }
 
   // The user confirmed stopping the ComfyUI holding this install's database: that process only
-  // (pid and start time, from its own record), on one of this launch's databases, re-proven just
-  // before the kill. A cancel withdraws the go-ahead.
+  // (pid and start time), still named by the record beside this launch's database, re-proven
+  // just before the kill. A cancel withdraws the go-ahead.
   const lockOffer = asDbLockOffer(actionData?.stopDbLockHolder)
   if (lockOffer) {
-    const ours = lockOffer.dbPath === dbPath
+    const stopped = !!dbPath && (await stopDbLockOffer(lockOffer, dbPath, abort.signal))
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
     appendLog(
       sessionId,
-      ours
-        ? `[launch] stopping pid ${lockOffer.pid}, which holds the database lock\n`
-        : `[launch] not stopping pid ${lockOffer.pid}: its database is no longer this launch's\n`
+      stopped
+        ? `[launch] stopped pid ${lockOffer.pid}, which held the database lock\n`
+        : `[launch] did not stop pid ${lockOffer.pid}: this database's lock record no longer names it\n`
     )
-    const stopped = ours && (await stopDbLockOffer(lockOffer, abort.signal))
-    if (abort.signal.aborted) return { ok: false, cancelled: true }
     if (!stopped) {
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return { ok: false, message: i18n.t('errors.dbLockStopFailed', { pid: lockOffer.pid }) }
@@ -1662,6 +1661,11 @@ async function runLaunch(
       const blocked = await dbLockHolderAnswer()
       if (blocked) {
         const holder = blocked.dbLockHolder!
+        appendLog(
+          sessionId,
+          `[launch] port ${launchCmd.port} is busy and pid ${holder.pid} holds this ` +
+            `installation's database (its lock record): asking instead of starting another\n`
+        )
         // Reported as the listener check below would, unless the record check already did.
         if (holder.sameInstall && existingPids.includes(holder.pid) && prior?.action !== 'left')
           emitPriorProcessFound(installationId, {

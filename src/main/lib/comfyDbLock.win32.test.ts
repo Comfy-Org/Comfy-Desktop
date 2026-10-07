@@ -97,7 +97,6 @@ describe('findDbLockOffer on Windows', () => {
     expect(await find()).toEqual({
       pid: 9084,
       startTime: STARTED,
-      dbPath: db,
       process: 'ComfyUI',
       sameInstall: true
     })
@@ -200,7 +199,6 @@ describe('stopDbLockOffer on Windows', () => {
     offer = {
       pid: 9084,
       startTime: STARTED,
-      dbPath: db,
       process: 'ComfyUI',
       sameInstall: true
     }
@@ -208,7 +206,7 @@ describe('stopDbLockOffer on Windows', () => {
 
   it('stops the confirmed ComfyUI once its record still names it, pid and start time', async () => {
     write(record())
-    expect(await stopDbLockOffer(offer)).toBe(true)
+    expect(await stopDbLockOffer(offer, db)).toBe(true)
     expect(fake.kills).toEqual([9084])
     // Nothing slow (the first safety probe) sits between the proof and the signal.
     expect(fake.steps).toEqual(['safety', 'proof'])
@@ -217,28 +215,28 @@ describe('stopDbLockOffer on Windows', () => {
   it('stops nothing when the record now names another process, or none', async () => {
     write({ ...record(), pid: 4242 })
     fake.starts.set(4242, STARTED)
-    expect(await stopDbLockOffer(offer)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe(false)
     write(record())
     fake.starts.set(9084, '134358999999999999')
-    expect(await stopDbLockOffer(offer)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe(false)
     // The pid was reused by a new ComfyUI that wrote its own, live record.
     write({ ...record(), started: '134358999999999999' })
-    expect(await stopDbLockOffer(offer)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe(false)
     fs.rmSync(`${db}.lock.json`)
-    expect(await stopDbLockOffer(offer)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe(false)
     expect(fake.kills).toEqual([])
   })
 
   it("stops nothing the safety check refuses (Desktop's own pid, the System process)", async () => {
     write(record())
     fake.safe = false
-    expect(await stopDbLockOffer(offer)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe(false)
     expect(fake.kills).toEqual([])
   })
 
   it('stops nothing for a record that is not an object', async () => {
     fs.writeFileSync(`${db}.lock.json`, 'null')
-    expect(await stopDbLockOffer(offer)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe(false)
     expect(fake.kills).toEqual([])
   })
 
@@ -246,25 +244,24 @@ describe('stopDbLockOffer on Windows', () => {
     write(record())
     const cancelled = new AbortController()
     cancelled.abort()
-    expect(await stopDbLockOffer(offer, cancelled.signal)).toBe(false)
+    expect(await stopDbLockOffer(offer, db, cancelled.signal)).toBe(false)
     expect(fake.kills).toEqual([])
     fake.killOk = false
-    expect(await stopDbLockOffer(offer)).toBe(false)
+    expect(await stopDbLockOffer(offer, db)).toBe(false)
   })
 })
 
 describe('asDbLockOffer', () => {
-  it('accepts only an offer with a pid, a start time and a database', () => {
+  it('accepts only an offer with a pid and a start time', () => {
     const offer = {
       pid: 9084,
       startTime: STARTED,
-      dbPath: 'C:\\x.db',
       process: 'ComfyUI',
       sameInstall: true
     }
     expect(asDbLockOffer(offer)).toBe(offer)
     const bad = [null, undefined, 'x', { ...offer, pid: '9084' }, { ...offer, startTime: 1 }]
-    for (const value of [...bad, { ...offer, dbPath: undefined }]) {
+    for (const value of bad) {
       expect(asDbLockOffer(value)).toBeNull()
     }
   })

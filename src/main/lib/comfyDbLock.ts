@@ -92,13 +92,19 @@ interface HolderRecord {
 /**
  * Whether two paths name the same file: compared where they lead (the real path sees through
  * symlinks, junctions and 8.3 names, and spells case as the volume stores it), never folding case.
+ * A file not created yet is compared by where its folder leads.
  */
 function samePath(a: string, b: string): boolean {
+  const real = (p: string): string => fs.realpathSync.native(p)
   const canonical = (p: string): string => {
     try {
-      return fs.realpathSync.native(p)
+      return real(p)
     } catch {
-      return path.resolve(p)
+      try {
+        return path.join(real(path.dirname(p)), path.basename(p))
+      } catch {
+        return path.resolve(p)
+      }
     }
   }
   return canonical(a) === canonical(b)
@@ -149,18 +155,23 @@ export async function findDbLockOffer(input: {
   const sameInstall = commandLineIsInstall(['python', record.main], input.installPath)
   const shown = sameInstall ? 'ComfyUI' : record.main
   const { pid, started: startTime } = record
-  return { pid, startTime, dbPath: input.dbPath, process: shown, sameInstall }
+  return { pid, startTime, process: shown, sameInstall }
 }
 
 /**
- * Stops the ComfyUI the user confirmed in `offer`, and only it: its record must still name it,
- * with the same start time, and `signal` must not have aborted. True when it exited.
+ * Stops the ComfyUI the user confirmed in `offer`, and only it: the record beside `dbPath` (this
+ * launch's database) must still name it, with the same start time, and `signal` must not have
+ * aborted. True when it exited.
  */
-export async function stopDbLockOffer(offer: DbLockOffer, signal?: AbortSignal): Promise<boolean> {
+export async function stopDbLockOffer(
+  offer: DbLockOffer,
+  dbPath: string,
+  signal?: AbortSignal
+): Promise<boolean> {
   // Anything slow (the first safety probe runs `ps`) comes before the proof, not between it and
   // the signal.
   if (!(await isSafeToSignal(offer.pid))) return false
-  const record = await readHolderRecord(offer.dbPath)
+  const record = await readHolderRecord(dbPath)
   if (record?.pid !== offer.pid || record.started !== offer.startTime || signal?.aborted) {
     return false
   }
@@ -170,12 +181,7 @@ export async function stopDbLockOffer(offer: DbLockOffer, signal?: AbortSignal):
 /** `value` as a `DbLockOffer` (it crossed IPC), or null. */
 export function asDbLockOffer(value: unknown): DbLockOffer | null {
   const o = value as DbLockOffer | null
-  return o &&
-    Number.isInteger(o.pid) &&
-    typeof o.startTime === 'string' &&
-    typeof o.dbPath === 'string'
-    ? o
-    : null
+  return o && Number.isInteger(o.pid) && typeof o.startTime === 'string' ? o : null
 }
 
 /**

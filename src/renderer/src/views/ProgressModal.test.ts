@@ -491,7 +491,6 @@ describe('ProgressModal — brand branch state transitions', () => {
     const holder = (sameInstall: boolean): Record<string, unknown> => ({
       pid: 9084,
       startTime: '134358000923463901',
-      dbPath: '/i/ComfyUI/user/comfyui.db',
       process: sameInstall ? 'ComfyUI' : '/other/ComfyUI/main.py',
       sameInstall
     })

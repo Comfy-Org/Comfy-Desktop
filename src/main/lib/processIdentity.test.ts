@@ -49,6 +49,12 @@ describe('parseDarwinPs', () => {
     )
     expect([...out]).toEqual([[501, 'Mon Sep 28 10:02:03 2026']])
   })
+
+  it('keeps the padding of a single-digit day, as ComfyUI records lstart', () => {
+    // ComfyUI's token is `ps -o lstart=` output with only its ends stripped.
+    const out = parseDarwinPs('  501 Ss   Tue Oct  6 09:05:07 2026\n')
+    expect(out.get(501)).toBe('Tue Oct  6 09:05:07 2026')
+  })
 })
 
 describe('parseWinProcessRows', () => {

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { spawn as spawnReal } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as ChildProcessModule from 'child_process'
 
@@ -117,10 +118,16 @@ describe('killPid on Windows', () => {
   })
 
   it('says a process that would not exit did not', async () => {
-    fake.answers.taskkill = { stdout: '' }
-    // Still in the process table: not a zombie either.
-    fake.answers.powershell = { stdout: `${process.ppid} 1 134358000923463901\r\n` }
-    // taskkill is faked, so this (live) parent never exits.
-    expect(await killPid(process.ppid)).toBe(false)
+    // A throwaway victim: were the Windows branch ever skipped, only it would be signalled.
+    const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+    try {
+      fake.answers.taskkill = { stdout: '' }
+      // Still in the process table: not a zombie either.
+      fake.answers.powershell = { stdout: `${victim.pid} 1 134358000923463901\r\n` }
+      // taskkill is faked, so it never exits.
+      expect(await killPid(victim.pid!)).toBe(false)
+    } finally {
+      victim.kill('SIGKILL')
+    }
   }, 20_000)
 })
