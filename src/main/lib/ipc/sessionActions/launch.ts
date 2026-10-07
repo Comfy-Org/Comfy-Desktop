@@ -1777,7 +1777,6 @@ async function runLaunch(
     // Reset per-boot accelerator state so each (re)spawn re-emits
     // accelerator_detected.
     hwTap.beginBoot()
-    // Emit the previous attempt's summary before resetting its buffers.
     assetsTap.flushSummary()
     assetsTap.beginBoot()
     const p = spawnProcess(launchCmd.cmd!, launchCmd.args!, launchCmd.cwd!, launchEnv, {

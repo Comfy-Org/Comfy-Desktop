@@ -1778,7 +1778,6 @@ describe('core beta report placement', () => {
     }
     launchHarness.spawn = () => {
       if (children.length === 1) {
-        // The killed attempt's unterminated lines may be cut short, so they are never parsed.
         expect(
           events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled')
         ).toHaveLength(0)
@@ -1821,8 +1820,6 @@ describe('core beta report placement', () => {
       'data',
       Buffer.from('[assets-event] seeder.scan_started root=models\n')
     )
-    // A newline from the new process would complete the killed attempt's tails had
-    // beginBoot not dropped them: both are valid records once terminated.
     children[1]!.stdout.emit('data', Buffer.from('\n'))
     children[1]!.stderr.emit('data', Buffer.from('\n'))
     expect(
