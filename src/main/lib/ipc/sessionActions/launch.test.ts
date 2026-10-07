@@ -1779,10 +1779,12 @@ describe('core beta report placement', () => {
     launchHarness.spawn = () => {
       if (children.length === 1) {
         expect(
-          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled')
+          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.assets.enabled'),
+          "a killed attempt's unterminated line is never parsed"
         ).toHaveLength(0)
         expect(
-          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed')
+          events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed'),
+          "a killed attempt's unterminated line is never parsed"
         ).toHaveLength(0)
       }
       const child = fakeChild()
@@ -1827,7 +1829,8 @@ describe('core beta report placement', () => {
         (e) =>
           e.event === 'comfy.desktop.comfyui.assets.assets.enabled' ||
           e.event === 'comfy.desktop.comfyui.assets.scanner.stat_failed'
-      )
+      ),
+      "beginBoot must drop the killed attempt's tails; each is a valid record once a newline arrives"
     ).toEqual([])
     expect(
       events.filter((e) => e.event === 'comfy.desktop.comfyui.assets.seeder.scan_started')
