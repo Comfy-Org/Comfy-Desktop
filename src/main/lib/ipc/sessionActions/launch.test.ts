@@ -6,11 +6,26 @@ import path from 'path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WriteStream } from 'fs'
 
-// Electron's userData for this run: a directory of its own, so concurrent runs on one machine
-// never rename each other's settings.json.tmp out from under a write.
-const electronHome = vi.hoisted(() => ({ dir: '' }))
+// Electron's home for this run: a directory of its own, so concurrent runs on one machine never
+// rename each other's settings.json.tmp out from under a write. The env overrides paths.ts would
+// prefer over it are cleared before any import reads them (settings.ts fixes its path at import).
+const electronHome = vi.hoisted(() => {
+  const overrides = [
+    'XDG_CONFIG_HOME',
+    'XDG_CACHE_HOME',
+    'XDG_DATA_HOME',
+    'XDG_STATE_HOME',
+    'LOCALAPPDATA'
+  ]
+  const saved = Object.fromEntries(overrides.map((name) => [name, process.env[name]]))
+  for (const name of overrides) delete process.env[name]
+  return { dir: '', saved }
+})
 afterAll(() => {
   if (electronHome.dir) fs.rmSync(electronHome.dir, { recursive: true, force: true })
+  for (const [name, value] of Object.entries(electronHome.saved)) {
+    if (value !== undefined) process.env[name] = value
+  }
 })
 
 // Stub the electron surface ../shared touches so the test needs no runtime.
