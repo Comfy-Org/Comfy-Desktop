@@ -10,3 +10,10 @@ export function performanceTestSessionKey(installationId: string): string {
 export function sessionKindOf(sessionKey: string): SessionKind {
   return sessionKey.startsWith(PERFORMANCE_TEST_SESSION_PREFIX) ? 'performance_test' : 'normal'
 }
+
+/** The installation a session key runs: a Performance Test's key carries it after the prefix. */
+export function installationIdOf(sessionKey: string): string {
+  return sessionKindOf(sessionKey) === 'performance_test'
+    ? sessionKey.slice(PERFORMANCE_TEST_SESSION_PREFIX.length)
+    : sessionKey
+}

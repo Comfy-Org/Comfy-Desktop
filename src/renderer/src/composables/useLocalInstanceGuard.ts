@@ -2,7 +2,7 @@ import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDialogs } from './useDialogs'
-import { sessionKindOf } from '../../../shared/performanceTestSession'
+import { installationIdOf, sessionKindOf } from '../../../shared/performanceTestSession'
 
 // Prompts when another local instance is already running before a new launch.
 export function useLocalInstanceGuard() {
@@ -32,7 +32,8 @@ export function useLocalInstanceGuard() {
         : name
     for (const [id, instance] of sessionStore.runningInstances) {
       if (id === targetId) continue
-      const inst = installationStore.installations.find((i) => i.id === id)
+      // A Performance Test's key names its installation after the prefix.
+      const inst = installationStore.installations.find((i) => i.id === installationIdOf(id))
       if (!inst || inst.sourceCategory === 'local') {
         runningLocal.push({ id, name: label(id, instance.installationName) })
       }
@@ -42,7 +43,7 @@ export function useLocalInstanceGuard() {
       // Skip installs already counted above, to avoid double-listing during
       // the launching→running overlap.
       if (runningLocal.some((r) => r.id === id)) continue
-      const inst = installationStore.installations.find((i) => i.id === id)
+      const inst = installationStore.installations.find((i) => i.id === installationIdOf(id))
       if (!inst || inst.sourceCategory === 'local') {
         runningLocal.push({ id, name: label(id, instance.installationName) })
       }

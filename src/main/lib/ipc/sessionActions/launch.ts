@@ -104,7 +104,7 @@ import {
 } from '../../comfyProcessRecord'
 import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
 import {
-  PERFORMANCE_TEST_SESSION_PREFIX,
+  installationIdOf,
   sessionKindOf,
   type SessionKind
 } from '../../../../shared/performanceTestSession'
@@ -715,11 +715,10 @@ export function otherLocalComfyUIs(sessionId: string, records: InstallationRecor
   const names: string[] = []
   for (const id of ids) {
     const perf = sessionKindOf(id) === 'performance_test'
-    const sourceId = perf ? id.slice(PERFORMANCE_TEST_SESSION_PREFIX.length) : id
-    const inst = records.find((r) => r.id === sourceId)
+    const inst = records.find((r) => r.id === installationIdOf(id))
     if (inst && !isLocalSource(inst.sourceId)) continue
     const name = inst?.name ?? _runningSessions.get(id)?.installationName ?? id
-    names.push(perf ? i18n.t('launch.instanceRunningPerformanceTest', { name }) : name)
+    names.push(perf ? i18n.t('errors.performanceTestOfInstallation', { name }) : `“${name}”`)
   }
   return names
 }
@@ -740,9 +739,14 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
         installation_id: installationId,
         other_count: others.length
       })
+      // "“A”, “B” and “C”" in the user's language, so a comma in a name stays readable.
+      const names = new Intl.ListFormat(i18n.getLocale(), { type: 'conjunction' }).format(others)
       return {
         ok: false,
-        message: i18n.t('errors.performanceTestOtherInstanceRunning', { names: others.join(', ') })
+        message:
+          others.length === 1
+            ? i18n.t('errors.performanceTestOtherInstanceRunningOne', { name: names })
+            : i18n.t('errors.performanceTestOtherInstanceRunning', { names })
       }
     }
   }

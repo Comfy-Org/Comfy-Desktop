@@ -100,6 +100,27 @@ describe('useLocalInstanceGuard', () => {
     ])
   })
 
+  it("does not list a remote installation's Performance Test as a local instance", async () => {
+    installationStore.installations.push(makeInstallation({ id: 'target' }))
+    installationStore.installations.push(
+      makeInstallation({ id: 'remote-1', name: 'Remote Box', sourceCategory: 'remote' })
+    )
+    sessionStore.runningInstances.set('performance-test:remote-1', {
+      installationId: 'performance-test:remote-1',
+      installationName: 'Remote Box',
+      mode: 'console'
+    })
+    sessionStore.launchingInstances.set('performance-test:remote-1', {
+      installationName: 'Remote Box'
+    })
+    const guard = useLocalInstanceGuard()
+
+    const result = await guard.checkBeforeLaunch('target')
+
+    expect(result).toBe(true)
+    expect(mockConfirm).not.toHaveBeenCalled()
+  })
+
   it('allows launch without prompting for non-local (cloud) targets', async () => {
     installationStore.installations.push(
       makeInstallation({ id: 'cloud-1', sourceCategory: 'cloud' })
