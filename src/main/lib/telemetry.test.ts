@@ -1793,6 +1793,39 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
     ).toBeDefined()
   })
 
+  it('sends a first_launch held by the quarantine once it resolves to signed out', () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('install-id')
+    telemetry.applyFirebaseUserConsensus('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+    captured.length = 0
+
+    telemetry.applyFirebaseAnonymousConsensus()
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(ev, 'a sign-out resolution flushes the one-shot buffer').toBeDefined()
+    expect(ev?.distinctId).not.toBe('user-a')
+  })
+
+  it('sends a first_launch held by the quarantine under the clean id when the epoch is discarded', () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('install-id')
+    telemetry.applyFirebaseUserConsensus('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+    captured.length = 0
+
+    expect(telemetry.discardUnmergeableAnonymousEpoch()).toBe(true)
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(ev).toBeDefined()
+    telemetry.capture('comfy.desktop.test.after')
+    expect(ev?.distinctId, 'sent after the rotation, never under the discarded epoch').toBe(
+      captured.at(-1)?.distinctId
+    )
+  })
+
   it('counts consent denials', () => {
     const before = telemetry.getConsentDenials()
     telemetry.setConsentState('undecided')
@@ -1857,7 +1890,7 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(sends).toHaveLength(1)
   })
 
-  it('stamps session.started with the boot time, ahead of the held captures', () => {
+  it('stamps session.started with the boot time', () => {
     vi.useFakeTimers({ now: new Date('2026-10-04T12:00:00Z') })
     telemetry.bindAnonymousId('anon-d', null)
     vi.setSystemTime(new Date('2026-10-04T12:00:01Z'))

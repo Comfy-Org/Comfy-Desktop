@@ -90,7 +90,7 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
           id_class: getIdClass(),
           id_lookup_ms: timing?.idLookupMs ?? null,
           id_lookup_timed_out: timing?.idLookupTimedOut ?? null,
-          boot_to_id_ms: timing?.uptimeAtIdWaitStartMs ?? null,
+          boot_to_id_ms: timing?.uptimeAtIdMs ?? null,
           locale: opts.locale
         },
         launchedAt

@@ -157,7 +157,11 @@ describe('experiments', () => {
         JSON.stringify({ 'flag.a': 'treatment' })
       )
       void experiments.initExperiments(new Promise<never>(() => {}))
-      expect(await experiments.getFlagAsync('flag.a')).toBe('treatment')
+      const sentinel = new Promise((r) => setImmediate(() => r('still waiting')))
+      expect(
+        await Promise.race([experiments.getFlagAsync('flag.a'), sentinel]),
+        'a boot-cached key does not wait for the identity'
+      ).toBe('treatment')
     })
 
     it('makes an uncached key wait for the identity and the fetch', async () => {

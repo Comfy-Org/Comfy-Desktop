@@ -1278,6 +1278,26 @@ describe('core beta report placement', () => {
     ).toBe(true)
   })
 
+  it('reports a null id wait on boot_started for an opted-out launch, which skips the grants wait', async () => {
+    launchHarness.betaEnabled = false
+    launchHarness.idWait = 1234
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48236
+    }
+    launchHarness.waitForPort = async () => {}
+
+    await handleLaunch(ctxFor('harness-launch-id-wait-opted-out'))
+
+    const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
+    expect(boot).toBeDefined()
+    expect(boot!.properties).toMatchObject({ launch_waited_for_id_ms: null })
+    expect(launchHarness.idWaitStart, 'no wait was sampled').toBeNull()
+  })
+
   it('reports a null id wait on boot_started when the launch never reached the grants fetch', async () => {
     launchHarness.schemaThrows = true
     launchHarness.idWait = 1234

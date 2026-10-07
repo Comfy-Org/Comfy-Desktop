@@ -775,10 +775,9 @@ describe('deviceId', () => {
       const timing = mod.getIdLookupTiming()
       expect(timing?.idLookupMs).toBe(1200)
       expect(timing?.idLookupTimedOut).toBe(false)
-      expect(
-        timing?.uptimeAtIdWaitStartMs,
-        'sampled when the id wait starts, not when the lookup answers'
-      ).toBe(3000)
+      expect(timing?.uptimeAtIdMs, 'sampled when the id resolves, not when the wait starts').toBe(
+        4200
+      )
     })
 
     it('records a timeout as no duration', async () => {

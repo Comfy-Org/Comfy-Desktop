@@ -1347,6 +1347,11 @@ function detachFromBoundUser(): void {
  * resolution leaves their attribution ambiguous.
  */
 export function applyFirebaseAnonymousConsensus(): void {
+  detachFromFirebaseUser()
+  tryFlushDeferred()
+}
+
+function detachFromFirebaseUser(): void {
   pendingLoginAttribution = null
   detachFromBoundUser()
 }
@@ -1357,13 +1362,15 @@ export function applyFirebaseAnonymousConsensus(): void {
  * keep the process anonymous and retry before any later Firebase bind.
  */
 export function discardUnmergeableAnonymousEpoch(): boolean {
-  applyFirebaseAnonymousConsensus()
+  detachFromFirebaseUser()
   const cleanAnonymousId = rotatePersistedAnonymousDistinctId()
   if (!cleanAnonymousId) return false
   anonymousDistinctId = cleanAnonymousId
   distinctId = cleanAnonymousId
   nextAnonymousDistinctId = null
-  return clearPersistedUnmergeableAnonymousEpoch()
+  const cleared = clearPersistedUnmergeableAnonymousEpoch()
+  tryFlushDeferred()
+  return cleared
 }
 
 export function hasUnmergeableAnonymousEpoch(): boolean {

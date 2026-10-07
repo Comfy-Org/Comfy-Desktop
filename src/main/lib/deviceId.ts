@@ -188,7 +188,7 @@ export interface IdLookupTiming {
   /** Null when the lookup overran the cutoff. */
   idLookupMs: number | null
   idLookupTimedOut: boolean
-  uptimeAtIdWaitStartMs: number
+  uptimeAtIdMs: number
 }
 
 let lookupTiming: IdLookupTiming | null = null
@@ -245,7 +245,6 @@ interface DerivedMachineId {
 }
 
 async function deriveMachineId(): Promise<DerivedMachineId> {
-  const uptimeAtIdWaitStartMs = Math.round(process.uptime() * 1000)
   const started = startMachineIdLookup()
   let timedOut = false
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -291,7 +290,7 @@ async function deriveMachineId(): Promise<DerivedMachineId> {
       // Null on a timeout: the lookup settles from a later process event.
       idLookupMs: started.durationMs,
       idLookupTimedOut: timedOut,
-      uptimeAtIdWaitStartMs
+      uptimeAtIdMs: Math.round(process.uptime() * 1000)
     }
   }
   // Fallback: random UUID, flagged so dashboards can quarantine.
