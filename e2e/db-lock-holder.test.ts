@@ -21,6 +21,7 @@ import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { byTestId, TID } from './support/testIds'
+import { getRunningSessionSnapshot, hasActiveOperation } from './support/devHooks'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 
 const INSTALL_NAME = 'Database Lock Install'
@@ -128,4 +129,12 @@ test('offers to stop a restarted ComfyUI of this install holding the lock, and l
   expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
   await expect.poll(() => isAlive(holder!.pid!), { timeout: 30_000 }).toBe(false)
   await expect.poll(portAnswers, { timeout: 90_000 }).toBe(true)
+  // Desktop finished the launch: the session runs and no operation is still in flight. Quitting
+  // mid-launch (the stub answering is not the launch's end) can stall the app's teardown.
+  await expect
+    .poll(() => getRunningSessionSnapshot(ctx!.app, 'inst-db-lock'), { timeout: 60_000 })
+    .not.toBeNull()
+  await expect
+    .poll(() => hasActiveOperation(ctx!.app, 'inst-db-lock'), { timeout: 60_000 })
+    .toBe(false)
 })
