@@ -182,12 +182,14 @@ const lockRecord = vi.hoisted(() => ({
   }>,
   stopOk: true,
   duringStop: null as null | (() => void),
+  duringLookup: null as null | (() => void),
   children: { count: 0 }
 }))
 vi.mock('../../comfyDbLock', async (importOriginal) => ({
   ...(await importOriginal<typeof ComfyDbLockModule>()),
   findDbLockOffer: async (input: unknown) => {
     lockRecord.asked.push(input)
+    lockRecord.duringLookup?.()
     return lockRecord.offer
   },
   stopDbLockOffer: async (offer: unknown, dbPath: string, signal?: AbortSignal) => {
@@ -2732,6 +2734,7 @@ describe('prior ComfyUI process handling at launch', () => {
       lockRecord.stops = []
       lockRecord.stopOk = true
       lockRecord.duringStop = null
+      lockRecord.duringLookup = null
     })
 
     it.each([
@@ -2765,6 +2768,24 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(res.ok).toBe(true)
       // Its listening socket can outlive it: launch waits for the port before checking it.
       expect(launchHarness.portFreeWaits).toContain(PORT)
+    })
+
+    it("waits for the stopped holder's port before checking it, so it launches there", async () => {
+      // The holder's socket outlives it for a moment: checked first, the port looks taken.
+      launchHarness.busyPorts = [PORT]
+      ownership.holderIsInstall = false
+      const res = await handleLaunch(ctxFor('db-record-port-wait', { stopDbLockHolder: offer() }))
+      expect(res.ok).toBe(true)
+      expect(res.port).toBe(PORT)
+    })
+
+    it('says cancelled when the user cancels during the busy-port record lookup', async () => {
+      launchHarness.busyPorts = [PORT]
+      lockRecord.offer = offer()
+      lockRecord.duringLookup = () => _operationAborts.get('db-record-lookup-cancel')?.abort()
+      const res = await handleLaunch(ctxFor('db-record-lookup-cancel'))
+      expect(res).toMatchObject({ ok: false, cancelled: true })
+      expect(res.dbLockHolder).toBeUndefined()
     })
 
     it('launches nothing when the user cancels while the stop runs', async () => {

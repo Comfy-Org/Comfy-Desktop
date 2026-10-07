@@ -1522,14 +1522,12 @@ async function runLaunch(
   const lockOffer = asDbLockOffer(actionData?.stopDbLockHolder)
   if (lockOffer) {
     const stopped = !!dbPath && (await stopDbLockOffer(lockOffer, dbPath, abort.signal))
+    // A stop that happened is logged even if the user cancelled while it ran.
+    if (stopped)
+      appendLog(sessionId, `[launch] stopped pid ${lockOffer.pid}, which held the database lock\n`)
     if (abort.signal.aborted) return { ok: false, cancelled: true }
-    appendLog(
-      sessionId,
-      stopped
-        ? `[launch] stopped pid ${lockOffer.pid}, which held the database lock\n`
-        : `[launch] did not stop pid ${lockOffer.pid}: this database's lock record no longer names it\n`
-    )
     if (!stopped) {
+      appendLog(sessionId, `[launch] could not stop pid ${lockOffer.pid}\n`)
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
       return { ok: false, message: i18n.t('errors.dbLockStopFailed', { pid: lockOffer.pid }) }
     }
@@ -1659,6 +1657,7 @@ async function runLaunch(
       // A ComfyUI holding this install's database says so in its record: a bump would die on
       // that lock, so the database is what blocks this launch, and that is what is offered.
       const blocked = await dbLockHolderAnswer()
+      if (abort.signal.aborted) return { ok: false, cancelled: true }
       if (blocked) {
         const holder = blocked.dbLockHolder!
         appendLog(

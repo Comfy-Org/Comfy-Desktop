@@ -155,13 +155,24 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
     const spawned: ReturnType<typeof spawn>[] = []
     /** Run the holder from `script` (inside the install unless told otherwise). */
     const hold = async (
-      opts: { outside?: boolean; child?: boolean; exit?: boolean; parent?: 'sh' } = {}
+      opts: {
+        outside?: boolean
+        child?: boolean
+        exit?: boolean
+        parent?: 'sh'
+        /** The database path the holder is given (default: the real one). */
+        via?: string
+      } = {}
     ): Promise<{ pid: number; child: number }> => {
       const dir = opts.outside ? path.join(root, 'elsewhere') : path.join(install, 'ComfyUI')
       const script = path.join(dir, 'main.py')
       fs.mkdirSync(dir, { recursive: true })
       fs.copyFileSync(RECORDING_HOLDER, script)
-      const args = [script, `${db}.lock`, ...(opts.child ? ['child'] : opts.exit ? ['exit'] : [])]
+      const args = [
+        script,
+        `${opts.via ?? db}.lock`,
+        ...(opts.child ? ['child'] : opts.exit ? ['exit'] : [])
+      ]
       // With `sh` as the parent, it execs into sleep, which never reaps the holder it started.
       const h =
         opts.parent === 'sh'
@@ -251,6 +262,15 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(await readHolderRecord(viaLink)).toMatchObject({ pid })
     }, 20_000)
 
+    it('matches a record that names the database through a symlink (an explicit path)', async () => {
+      const link = path.join(root, 'linked')
+      fs.symlinkSync(install, link)
+      const viaLink = path.join(link, 'ComfyUI', 'user', 'comfyui.db')
+      const { pid } = await hold({ via: viaLink })
+      expect(JSON.parse(fs.readFileSync(`${db}.lock.json`, 'utf8')).db).toBe(viaLink)
+      expect(await readHolderRecord(db)).toMatchObject({ pid })
+    }, 20_000)
+
     it('matches it through a symlinked install before the database file exists', async () => {
       // ComfyUI takes the lock (and writes the record) before it creates the database.
       const link = path.join(root, 'linked')
@@ -281,16 +301,20 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(await readHolderRecord(db)).toMatchObject({ pid })
     }, 20_000)
 
-    it('reads a record it may not open (another account, mode 0600) as none', async () => {
-      await hold()
-      fs.chmodSync(`${db}.lock.json`, 0o000)
-      try {
-        // Root reads anything: only meaningful as an ordinary user.
-        if (process.getuid?.() !== 0) expect(await readHolderRecord(db)).toBeNull()
-      } finally {
-        fs.chmodSync(`${db}.lock.json`, 0o600)
-      }
-    }, 20_000)
+    // Root reads anything: only meaningful as an ordinary user.
+    it.skipIf(process.getuid?.() === 0)(
+      'reads a record it may not open (another account, mode 0600) as none',
+      async () => {
+        await hold()
+        fs.chmodSync(`${db}.lock.json`, 0o000)
+        try {
+          expect(await readHolderRecord(db)).toBeNull()
+        } finally {
+          fs.chmodSync(`${db}.lock.json`, 0o600)
+        }
+      },
+      20_000
+    )
 
     it('offers nothing while a holder keeps the lock with no record, or a stale one: no OS lookup', async () => {
       const { pid } = await hold()
