@@ -5,7 +5,6 @@ import path from 'path'
 import { EventEmitter } from 'events'
 import type { TelemetryValue } from './telemetry'
 
-/** Handlers registered with `app.on`, so a test can fire `before-quit`. */
 const electronAppHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => void>())
 const electronAppQuit = vi.hoisted(() => vi.fn())
 
@@ -92,7 +91,6 @@ const featureFlagResultCalls: Array<{
 const posthogConstructorCalls: Array<{ apiKey: string; options: Record<string, unknown> }> = []
 
 const posthogClientMock = vi.hoisted(() => ({
-  /** When set, `shutdown()` settles only when this does, holding a quit's drain open. */
   shutdownGate: null as Promise<void> | null,
   failNextCaptures: 0,
   failNextFlushes: 0,
@@ -219,7 +217,6 @@ const pendingIdentityMergeMock = vi.hoisted(() => ({
     personSetOnce?: Record<string, boolean | number | string | null>
   }>,
   nextId: 1,
-  /** The last record handed to `reservePendingIdentityMerge`, as the caller built it. */
   lastReserved: null as Record<string, unknown> | null
 }))
 
@@ -1941,10 +1938,8 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     telemetry.bindAnonymousId('anon-d', null)
     let accepted = 0
     for (let i = 0; i < 201; i++) {
-      // Distinct names, so the per-event rate limit is not what refuses the last one.
       if (telemetry.capture(`comfy.desktop.test.e${i}`)) accepted++
     }
-    // session.started took one slot at the bind.
     expect(accepted).toBe(199)
     telemetry.setInstallationId('install-id')
     expect(captured.filter((c) => c.event.startsWith('comfy.desktop.test.e'))).toHaveLength(199)
@@ -1974,7 +1969,6 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(first.preventDefault).toHaveBeenCalledTimes(1)
     expect(telemetry.hasShutDown()).toBe(true)
 
-    // A quit re-fired while the drain is still running must not be held again.
     const second = { preventDefault: vi.fn() }
     beforeQuit(second)
     expect(second.preventDefault).not.toHaveBeenCalled()
@@ -1991,7 +1985,6 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     const preventDefault = vi.fn()
     beforeQuit!({ preventDefault })
     expect(telemetry.hasShutDown()).toBe(true)
-    // Nothing to drain, so the quit is not held.
     expect(preventDefault).not.toHaveBeenCalled()
   })
 
@@ -2051,7 +2044,6 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
       properties: { $anon_distinct_id: 'anon-d' }
     })
     expect(identifies[0]!.properties?.$set).not.toHaveProperty('installation_id')
-    // The persisted merge record omits the key rather than storing a value a reader rejects.
     expect(pendingIdentityMergeMock.lastReserved).not.toBeNull()
     expect(pendingIdentityMergeMock.lastReserved).not.toHaveProperty('installationId')
     telemetry.capture('comfy.desktop.test.signed_in')

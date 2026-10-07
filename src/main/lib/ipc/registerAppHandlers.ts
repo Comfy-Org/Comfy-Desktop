@@ -805,6 +805,5 @@ export function registerAppHandlers(): void {
     buildInstallationDdContext(installationId)
   )
 
-  // Waits for the id: boot no longer resolves it before windows open.
   ipcMain.handle('get-device-id', () => deviceIdReady())
 }

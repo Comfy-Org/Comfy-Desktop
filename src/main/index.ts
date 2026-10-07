@@ -1318,9 +1318,7 @@ const hostReentryGate = createStartupReentryGate()
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  // On Windows the installation id's hardware lookup spawns a cold
-  // PowerShell; run it alongside Electron start-up rather than after it.
-  // macOS and Linux keep starting it from `initDeviceId()`.
+  // Windows only: the cold PowerShell lookup overlaps Electron start-up; elsewhere initDeviceId() starts it.
   if (process.platform === 'win32') startMachineIdLookup()
 
   if (app.isPackaged) {
@@ -1468,9 +1466,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)
 
-    // The installation id resolves in the background: the window opens without
-    // waiting for the hardware lookup, and each consumer waits only when it
-    // needs the id. See `bootIdentity.ts`.
     void startBootIdentity({
       appVersion: APP_VERSION,
       locale,

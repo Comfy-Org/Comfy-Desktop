@@ -408,7 +408,6 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
   flagEvaluationStaff = isStaff
 }
 
-/** The classification `setFlagEvaluationStaff` last bound. */
 export function getFlagEvaluationStaff(): boolean {
   return flagEvaluationStaff
 }
@@ -598,11 +597,7 @@ export function _test_resetVolumeGuards(): void {
 
 let consentDenials = 0
 
-/**
- * How many times consent has been set to `'denied'` in this process. A caller
- * that stages deferred telemetry late compares it against a reading taken
- * earlier: a denial in between would have discarded that telemetry.
- */
+/** Denials so far in this process; a late stager compares it against an earlier reading. */
 export function getConsentDenials(): number {
   return consentDenials
 }
@@ -777,7 +772,6 @@ let pendingSessionStart: Record<string, TelemetryValue> | null = null
  * intended consent outcome.
  */
 let pendingFirstLaunch: TelemetryContext | null = null
-/** When the launch `pendingFirstLaunch` describes happened. */
 let pendingFirstLaunchAt: Date | null = null
 /** Person props collected before login and applied to Firebase UID at bind. */
 let pendingPersonSet: Record<string, TelemetryValue> | null = null
@@ -830,11 +824,9 @@ interface QuarantinedWrite {
   /** Original capture time, restored on replay (events only - the SDK's
    *  captureException accepts no timestamp). */
   timestamp: Date
-  /** The anonymous D a write held for the installation id was captured under;
-   *  it is delivered under that D even if the epoch rotated meanwhile. */
+  /** The anonymous D a held write was captured under; it is delivered under it even after a rotation. */
   distinctId?: string
-  /** Whether a user was bound when a held write was captured, so its
-   *  person-processing policy follows the identity it is delivered under. */
+  /** Whether a user was bound at capture, so its person policy follows the identity it is delivered under. */
   signedIn?: boolean
 }
 
@@ -857,14 +849,7 @@ function queueQuarantinedWrite(write: QuarantinedWrite): boolean {
   return true
 }
 
-/**
- * Writes captured after the anonymous D is bound but before the installation
- * id is known (`bindAnonymousId(d, null)`), held so the first window can open
- * before the id exists without sending what happens in it without
- * `installation_id`. `null` when not holding. `setInstallationId` replays them
- * with their original timestamps and D; a quit before it sends them without
- * `installation_id`.
- */
+/** Writes held until the installation id is set (null when not holding); a quit sends them without it. */
 let heldUntilBound: QuarantinedWrite[] | null = null
 
 function holdingForInstallationId(): boolean {
@@ -881,7 +866,6 @@ function holdWrite(write: QuarantinedWrite): boolean {
   return true
 }
 
-/** Deliver held writes now that the installation id is known, re-checking consent. */
 function replayHeldWrites(): void {
   const writes = heldUntilBound ?? []
   heldUntilBound = null
@@ -924,7 +908,6 @@ function flushQuarantinedWrites(): void {
   quarantinedWrites = []
   if (!canEmit() || !distinctId) return
   for (const write of writes) {
-    // Released while the installation id is still pending: hold them with the rest.
     if (holdingForInstallationId()) {
       holdWrite(write)
       continue
@@ -1084,11 +1067,7 @@ function tryFlushDeferred(): void {
   void flushPendingIdentityMerges()
 }
 
-/**
- * Bind W/D for captures and a separate installation property. No SDK identify.
- * A `null` installation id binds D now and holds captures until
- * `setInstallationId`, for a boot that has not resolved the id yet.
- */
+/** Bind W/D, no SDK identify; a null installation id holds captures until `setInstallationId`. */
 export function bindAnonymousId(
   anonymousId: string,
   installationId: string | null,
@@ -1107,18 +1086,14 @@ export function bindAnonymousId(
   setInstallationId(installationId, properties)
 }
 
-/**
- * Attach the installation id to every capture and the person, and send what
- * was held waiting for it. Leaves the anonymous D as bound (an epoch rotation
- * during the wait stands).
- */
+/** Attach the id and send the held writes; an epoch rotation during the wait stands. */
 export function setInstallationId(
   installationId: string,
   properties: Record<string, TelemetryValue> = {}
 ): void {
   installationIdProperty = installationId
   defaultEventProperties = { ...defaultEventProperties, installation_id: installationId }
-  // Also reaches a person bound before the id resolved (see `applyFirebaseUserBinding`).
+  // Also reaches a person bound before the id resolved (see applyFirebaseUserBinding).
   if (consentState !== 'denied') {
     pendingPersonSet = {
       ...(pendingPersonSet || {}),
@@ -1247,8 +1222,7 @@ function applyFirebaseUserBinding(
   const personSet = scrubProperties({
     ...(pendingPersonSet || {}),
     ...properties,
-    // Not yet known on a launch whose id lookup is still running; `setInstallationId`
-    // attaches it to the bound person when it resolves.
+    // Unknown while the lookup runs; setInstallationId attaches it to the bound person later.
     ...(installationIdProperty ? { installation_id: installationIdProperty } : {}),
     is_authenticated: true
   })
@@ -1467,7 +1441,6 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
   return captureEvent(event, properties, false)
 }
 
-/** `capture()` stamped with when the event happened rather than when it is sent. */
 function captureAt(event: string, properties: TelemetryContext, at: Date): boolean {
   return captureEvent(event, properties, false, at)
 }
@@ -1941,7 +1914,6 @@ export async function getOpsFlagResult(
   distinctId: string,
   timeoutMs: number,
   onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void,
-  /** Evaluate as this classification rather than the current one (see `opsFlag.init`). */
   staff?: boolean
 ): Promise<OpsFlagFetchResult> {
   if (!client) return { kind: 'unreachable' }
@@ -2155,8 +2127,7 @@ export async function shutdown(reason: string): Promise<void> {
       uptime_ms: uptimeMs,
       uptime_seconds: Math.round(uptimeMs / 1000)
     })
-    // A quit before the installation id resolved: send what was held under
-    // its anonymous id, without `installation_id`, rather than lose it.
+    // A quit before the id resolved: send what was held without installation_id rather than lose it.
     if (holdingForInstallationId()) replayHeldWrites()
   } catch {
     // ignore
@@ -2176,7 +2147,6 @@ let beforeQuitHooked = false
 let drainingForQuit = false
 let shutdownStarted = false
 
-/** Whether the app has begun quitting (the quit hook, or `shutdown()`): nothing captured from here on can ship. */
 export function hasShutDown(): boolean {
   return shutdownStarted
 }
@@ -2209,7 +2179,6 @@ export function installAppHooks(): void {
   app.on('before-quit', (event) => {
     if (drainingForQuit) return
     if (!client) {
-      // Nothing to drain, but the quit has begun (see `hasShutDown`).
       shutdownStarted = true
       return
     }

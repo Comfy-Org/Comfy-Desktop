@@ -28,9 +28,7 @@ const captured: CapturedCall[] = []
 
 let mockFlags: Record<string, string | boolean> = {}
 let mockFlagsDelayMs = 0
-/** When set, the flag fetch settles only once this resolves. */
 let mockFlagsGate: Promise<void> | null = null
-/** Distinct ids the flag fetch was made with. */
 const flagRequestIds: string[] = []
 
 vi.mock('posthog-node', () => ({
@@ -182,7 +180,6 @@ describe('experiments', () => {
       expect(value).toBe('pending')
 
       resolveIdentity({ distinctId: 'final-id', personProperties: {} })
-      // The identity alone is not enough: the read also waits for the fetch.
       await new Promise((r) => setImmediate(r))
       expect(flagRequestIds).toContain('final-id')
       expect(value).toBe('pending')

@@ -14,9 +14,7 @@ export interface PendingIdentityMerge {
   anonymousId: string
   userId: string
   nextAnonymousId: string
-  /** Absent for a sign-in bound before this launch resolved its installation id. Versions
-   *  before that change require it: they skip such a record, and their next write of the
-   *  queue drops it, so on a downgrade an unflushed one is lost. */
+  /** Absent when bound before the id resolved; older versions drop such a record, so a downgrade loses it. */
   installationId?: string
   personSet: PendingIdentityProperties
   personSetOnce?: PendingIdentityProperties

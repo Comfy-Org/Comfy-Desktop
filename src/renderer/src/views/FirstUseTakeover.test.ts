@@ -476,7 +476,6 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
     ['never shows it to a paid user', 'paid', false]
   ])('holds the free-runs pill until the tier loads, then %s', async (_label, tier, shown) => {
     const userTier = deferred<string>()
-    // The experiment variant stays pending: the pill must not depend on it.
     const variant = deferred<string | undefined>()
     ;(window.api.telemetryGetExperimentFlag as ReturnType<typeof vi.fn>).mockReturnValue(
       variant.promise

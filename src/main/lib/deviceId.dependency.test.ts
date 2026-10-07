@@ -2,10 +2,6 @@ import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 
-// deviceId.ts reads the Windows hardware UUID through si.uuid() and relies on
-// it being byte-identical to the si.system().uuid that earlier releases
-// hashed. That equivalence lives inside systeminformation and cannot be
-// tested with mocks, so any version change must be rechecked by hand.
 const VERIFIED_SYSTEMINFORMATION_VERSION = '5.31.5'
 
 const LOCKFILE = path.resolve(__dirname, '..', '..', '..', 'pnpm-lock.yaml')

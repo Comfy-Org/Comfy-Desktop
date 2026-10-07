@@ -1,22 +1,4 @@
-/**
- * Boot wiring for the installation id.
- *
- * Boot does not wait for the id. The first window opens while the hardware
- * lookup is still running. The lookup is one promise, and every consumer that
- * needs the id awaits it, with no wait or fallback of its own: the only
- * timeout is `initDeviceId()`'s cutoff, after which the promise resolves to a
- * random id minted once. So nothing ever runs under an id other than the one
- * this launch binds:
- *
- *   - telemetry binds the anonymous id at once and holds captures until the
- *     installation id is set;
- *   - the ops flags fetch once the id resolves (`get()` waits for that);
- *   - the experiments refresh does too, when consent allows one; `getFlag()`
- *     serves the disk cache meanwhile;
- *   - `first_launch` and the legacy-id migration run once the id resolves.
- *
- * Nothing here persists an id; `initDeviceId()` does, once, when it resolves.
- */
+// Boot never waits for the id: every consumer awaits initDeviceId()'s one promise, with no timeout or fallback of its own.
 import {
   clearLegacyIdentityRetryMarker,
   consumeFirstLaunch,
@@ -39,23 +21,15 @@ import { initStaffFlagTargeting } from './staffFlagTargeting'
 
 export interface BootIdentityOptions {
   appVersion: string
-  /** UI locale setting, reported on `first_launch`. */
   locale: string | undefined
-  /** Tracked global settings, registered as person properties at bind. */
   trackedSettings: () => Record<string, TelemetryValue>
 }
 
-/**
- * Start resolving the installation id and wire every boot consumer to it.
- * Returns at once; the returned promise settles when the id is bound.
- */
 export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
-  // `first_launch` is stamped with when this launch started, not when the id resolved.
   const launchedAt = new Date()
   // Read before anything can write device-id.txt or the first-launch guard.
   const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
-  // A denial while the id is pending would have discarded a first_launch
-  // staged at boot, so one staged later must not survive it either.
+  // A denial during the id wait drops first_launch, as it dropped the one base staged at boot.
   const consentDenialsAtLaunch = mainTelemetry.getConsentDenials()
   const anonymousDistinctId = recoverPendingIdentityRotation(
     getInitialAnonymousDistinctId(existingInstallation)
@@ -64,10 +38,7 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
   mainTelemetry.bindAnonymousId(anonymousDistinctId, null)
   const resolved = initDeviceId()
 
-  // Boot the experiments cache. Synchronously loads the on-disk flag values
-  // for `getFlag()`; the background refresh lands on disk for the NEXT boot.
-  // Without consent the fetch returns nothing (as it did when boot waited for
-  // the id), so skip it rather than make readers wait for the id.
+  // Without consent the fetch returns nothing, so skip it rather than make readers wait for the id.
   void initExperiments(
     mainTelemetry.getConsentState() === 'granted'
       ? resolved.then(() => ({
@@ -82,25 +53,16 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
       : null
   )
 
-  // Bind the stored staff classification BEFORE any ops flag is fetched. The
-  // boot evaluation is the only authoritative one, so a property that arrives
-  // after it cannot affect this launch — see `staffFlagTargeting.ts`. Also
-  // subscribes to the identity consensus, which is what reclassifies for the
-  // NEXT launch; this runs before any view exists, so no outcome is missed.
+  // Before any ops flag fetch: the boot evaluation is the only authoritative one (see staffFlagTargeting.ts).
   initStaffFlagTargeting()
 
-  // This ops-flag path is separate from consent-gated experiments: the
-  // first-use picker renders while consent is still `'undecided'`, so the
-  // experiments cache would never have a value to give it. See
-  // `cloudFreeRuns.ts`. The first-use picker shows its free-runs pill once
-  // this resolves.
   const flagId = { distinctId: resolved.then(() => getDeviceId()) }
+  // An ops flag, not an experiment: the picker renders before consent, when experiments have no value (cloudFreeRuns.ts).
   void initCloudFreeRuns(flagId)
   void initCoreBetaGrants(flagId)
 
   return resolved.then(({ legacyId }) => {
     clearLegacyIdentityRetryMarker()
-    // Nothing new is captured once telemetry has started shutting down.
     if (!mainTelemetry.hasShutDown()) {
       mainTelemetry.setInstallationId(getDeviceId(), {
         app_version: opts.appVersion,
@@ -109,34 +71,18 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
         id_class: getIdClass()
       })
 
-      // Durable snapshot of the tracked global settings as person properties
-      // (issues #1220/#1223), so adoption of every setting is queryable across
-      // the whole base. Consent-gated: queued until granted. Re-registered on
-      // change in `applySettingSet`.
+      // Re-registered on change in applySettingSet (#1220/#1223).
       mainTelemetry.registerPersonProperties(opts.trackedSettings())
     }
 
-    // Consumed only now, and not once telemetry has shut down, so a quit
-    // before the id resolves leaves the guard in place and the next launch
-    // fires the event instead of losing it.
+    // Consumed only once the id resolves, so a quit first leaves first_launch for the next launch.
     const isFirstLaunch = !mainTelemetry.hasShutDown() && consumeFirstLaunch()
     if (legacyId) {
-      // Historical random installation ids are reconciled directly in
-      // PostHog, not by Desktop alias writes. Complete only the local migration.
+      // Historical random ids are reconciled in PostHog, not by Desktop alias writes.
       markIdentityMigrationCompleted()
     }
 
-    // Desktop-side anchor of the website → download → first-launch
-    // acquisition funnel. Fires exactly once per installation, ever (guard
-    // file alongside device-id.txt). app_version / app_channel / platform /
-    // arch ride in as default event properties; id_class, the id lookup
-    // timing and locale are added here.
-    //
-    // `captureFirstLaunch` (not plain `capture`) because this fires on a
-    // fresh install, when consent is still `'undecided'` — a plain capture
-    // would be dropped on the consent gate while the once-ever guard stays
-    // burned, losing the event forever. The deferred path ships it on the
-    // first `undecided → granted` transition and never on a decline.
+    // captureFirstLaunch, not capture: consent may still be undecided, and the once-ever guard is already burned.
     if (isFirstLaunch && mainTelemetry.getConsentDenials() === consentDenialsAtLaunch) {
       const timing = getIdLookupTiming()
       mainTelemetry.captureFirstLaunch(

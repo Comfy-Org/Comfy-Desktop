@@ -53,13 +53,9 @@ const launchHarness = vi.hoisted(() => ({
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
   grants: [] as CoreBetaGrant[],
-  /** What `idWaitSince` reports at the grants await: how long the launch waited for the id. */
   idWait: null as number | null,
-  /** `performance.now()` readings: the `start` handed to `idWaitSince`, and when the grants
-   *  fetch was called. */
   idWaitStart: null as number | null,
   grantsCalledAt: null as number | null,
-  /** Whether the grants fetch had settled when `idWaitSince` was read. */
   grantsSettled: false,
   idWaitReadAfterGrants: null as boolean | null,
   /** The boot fetch never settles, as on a link that hangs until its deadline. */
@@ -210,7 +206,6 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
       launchHarness.grantsCalledAt = performance.now()
       launchHarness.grantsSettled = false
       if (launchHarness.grantsPending) return new Promise<CoreBetaGrant[]>(() => {})
-      // A real gap, so a start sampled after the await is strictly later than this call.
       await new Promise((resolve) => setTimeout(resolve, 5))
       launchHarness.grantsSettled = true
       return launchHarness.grants
@@ -1271,16 +1266,13 @@ describe('core beta report placement', () => {
 
     const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
     expect(boot?.properties).toMatchObject({ launch_waited_for_id_ms: idWait })
-    // Started on the monotonic clock, before the grants fetch was called.
     expect(launchHarness.idWaitStart).not.toBeNull()
     expect(launchHarness.idWaitStart!).toBeLessThanOrEqual(launchHarness.grantsCalledAt!)
     expect(launchHarness.idWaitStart!).toBeLessThan(1e10)
-    // Read once the grants fetch, and so the id, has settled.
     expect(launchHarness.idWaitReadAfterGrants).toBe(true)
   })
 
   it('reports a null id wait on boot_started when the launch never reached the grants fetch', async () => {
-    // Schema discovery failing skips the grants await; a sampled wait would be wrong here.
     launchHarness.schemaThrows = true
     launchHarness.idWait = 1234
     launchHarness.launchCommand = {

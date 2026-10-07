@@ -23,13 +23,10 @@ vi.mock('electron', () => ({
 let mockSystemUuid: string | undefined = 'aabbccdd-eeff-0011-2233-445566778899'
 let mockSystemError: Error | null = null
 
-// Both lookups serve the same machine UUID: si.system() on macOS/Linux,
-// si.uuid() on Windows.
 const siSystem = vi.fn(() =>
   mockSystemError ? Promise.reject(mockSystemError) : Promise.resolve({ uuid: mockSystemUuid })
 )
 let mockUuidHangs = false
-// Delays the si.uuid() answer; the timer is faked where it matters.
 let mockUuidDelayMs = 0
 const siUuid = vi.fn(async () => {
   if (mockUuidHangs) return new Promise<never>(() => {})
@@ -46,7 +43,6 @@ vi.mock('systeminformation', () => ({
 }))
 
 const SALT = 'comfy-installation-id-v1'
-// MACHINE_ID_TIMEOUT_MS: the cutoff for deciding the id.
 const CUTOFF_MS = 15_000
 
 const ETC_MACHINE_ID = '/etc/machine-id'
@@ -507,9 +503,6 @@ describe('deviceId', () => {
     })
 
     it('hashes the si.uuid() hardware UUID like any machine UUID', async () => {
-      // Existing installs persisted the hash of si.system().uuid. That the
-      // library returns the same string from si.uuid().hardware is not
-      // provable here (both are mocked); see lookupHardwareUuid().
       const uuid = 'aabbccdd-eeff-0011-2233-445566778899'
       fs.writeFileSync(path.join(testUserData, 'device-id.txt'), expectedIdFor(uuid))
       mockSystemUuid = uuid
@@ -743,7 +736,6 @@ describe('deviceId', () => {
       await vi.advanceTimersByTimeAsync(1000)
       const start = performance.now()
       await vi.advanceTimersByTimeAsync(2000)
-      // Read later than the resolution: the wait still ends when the id resolved.
       await vi.advanceTimersByTimeAsync(500)
       expect(mod.idWaitSince(start)).toBe(2000)
     })
@@ -770,7 +762,6 @@ describe('deviceId', () => {
     })
 
     it('records how long an answered lookup took', async () => {
-      // Uptime follows the fake clock, starting 3 s into the process.
       const t0 = performance.now()
       vi.spyOn(process, 'uptime').mockImplementation(() => 3 + (performance.now() - t0) / 1000)
       mockUuidDelayMs = 1200
@@ -781,7 +772,6 @@ describe('deviceId', () => {
       const timing = mod.getIdLookupTiming()
       expect(timing?.idLookupMs).toBe(1200)
       expect(timing?.idLookupTimedOut).toBe(false)
-      // Sampled when boot starts waiting, not when the lookup answers.
       expect(timing?.bootToIdMs).toBe(3000)
     })
 

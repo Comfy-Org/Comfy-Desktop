@@ -176,9 +176,7 @@ export function getFlag(key: string): FeatureFlagValue | undefined {
  * `getFlag()` stays for hot sync reads.
  */
 export async function getFlagAsync(key: string): Promise<FeatureFlagValue | undefined> {
-  // A key loaded at boot is locked for the session; the refresh cannot change
-  // it, so there is nothing to wait for (and the refresh may be waiting on the
-  // installation id).
+  // A boot-loaded key is locked for the session, so there is nothing to wait for.
   if (cached && key in cached) return cached[key]
   if (initPromise) {
     try {

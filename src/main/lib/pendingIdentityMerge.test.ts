@@ -1,7 +1,3 @@
-// Cross-version compatibility of the persisted identity-merge queue. Records written before a
-// sign-in could bind ahead of the installation id always carry `installationId`; records
-// written in that window omit it. Both must replay, and a record written once the id is known
-// must stay exactly what older versions write and read.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -123,7 +119,6 @@ describe('pendingIdentityMerge record compatibility', () => {
     })
     expect(merge).not.toBeNull()
     const [written] = readQueueFile()
-    // Older versions require a non-empty installationId; key order matches what they wrote.
     expect(Object.keys(written!)).toEqual([
       'id',
       'anonymousId',

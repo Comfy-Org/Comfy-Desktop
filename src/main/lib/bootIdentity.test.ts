@@ -4,8 +4,6 @@ import os from 'os'
 import path from 'path'
 import { createHash } from 'crypto'
 
-// The real deviceId module runs against a temp config dir; only the hardware
-// lookup and the modules boot hands the id to are stubbed.
 let testUserData = ''
 
 vi.mock('./paths', () => ({
@@ -165,7 +163,6 @@ describe('startBootIdentity', () => {
         boot_to_id_ms: expect.any(Number),
         locale: 'en'
       },
-      // Stamped with the launch, 3 s before the id resolved.
       new Date(launchedAt)
     )
     expect(fs.readFileSync(file('device-id.txt'), 'utf-8')).toBe(machineId())
@@ -236,25 +233,20 @@ describe('startBootIdentity', () => {
     expect(h.telemetry.setInstallationId).not.toHaveBeenCalled()
     expect(h.telemetry.registerPersonProperties).not.toHaveBeenCalled()
     expect(fs.existsSync(file('first-launch-completed'))).toBe(false)
-    // Local identity work still runs: the id is persisted.
     expect(fs.readFileSync(file('device-id.txt'), 'utf-8')).toBe(machineId())
   })
 
   it('drops first_launch, as a launch-time one would be, when consent is denied during the wait', async () => {
     lookupDelayMs = 3000
     const bound = mod.startBootIdentity(OPTIONS)
-    // Denied, then granted again (h.consent stays 'granted') before the id resolves.
     h.denials = 1
     await vi.advanceTimersByTimeAsync(3000)
     await bound
     expect(h.telemetry.captureFirstLaunch).not.toHaveBeenCalled()
-    // The guard is still consumed, as the denial discarded this launch's event.
     expect(fs.existsSync(file('first-launch-completed'))).toBe(true)
   })
 
   it('keeps first_launch for a launch whose consent was denied before it started', async () => {
-    // A stored denial is applied before boot identity starts; a grant during the wait
-    // is not a denial during the wait, so the event still ships.
     h.denials = 1
     lookupDelayMs = 3000
     const bound = mod.startBootIdentity(OPTIONS)

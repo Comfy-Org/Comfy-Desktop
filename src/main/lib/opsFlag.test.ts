@@ -61,8 +61,6 @@ beforeEach(() => {
   getOpsFlagResult.mockReset()
   staffClassification.value = false
   vi.spyOn(Date, 'now').mockReturnValue(NOW)
-  // Frozen too: the fetch budget is what remains of it after the id wait, so a test that lets
-  // real time pass would otherwise see a budget slightly under the one it set.
   vi.spyOn(performance, 'now').mockReturnValue(PERF_NOW)
   // Every test, not just the persistence ones: an empty `configDir()` would resolve
   // `ops-flags.json` relative to cwd and drop a file in the repo root.
@@ -840,8 +838,6 @@ describe('makeOpsFlag deadline and expiry', () => {
     })
     vi.mocked(performance.now).mockReturnValue(PERF_NOW + idWaitMs)
     resolveId('final-id')
-    // With no window left, the fetch still goes out (a late answer is saved for the next
-    // launch), and this launch keeps the saved treatment.
     expect(await flag.get()).toBe('granted')
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       'grant-flag',

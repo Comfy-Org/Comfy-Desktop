@@ -150,19 +150,7 @@ function isLegacyUuid(value: string): boolean {
  */
 const MACHINE_ID_TIMEOUT_MS = 15_000
 
-/**
- * On Windows `si.system()` runs three cold `powershell.exe` spawns in
- * sequence (Win32_ComputerSystemProduct, MS_Systeminformation, Win32_bios)
- * and routinely overruns the budget above. `si.uuid()` runs the same
- * Win32_ComputerSystemProduct UUID query with the same parsing and
- * lowercasing in a single PowerShell spawn (plus a quick `reg query`), so it
- * yields a byte-identical UUID and therefore the same installation_id.
- *
- * That equivalence lives inside systeminformation (verified against 5.31.5:
- * both read `getValue(lines, 'uuid', ':').toLowerCase()`). Recheck it on any
- * version bump; a change there silently re-keys every Windows install.
- * Not used on macOS, where `si.uuid().hardware` is the serial number.
- */
+/** win32 uses si.uuid(): one PowerShell spawn, byte-identical to si.system().uuid (verified 5.31.5; recheck on bump). Not macOS (serial). */
 async function lookupHardwareUuid(): Promise<{ uuid?: string }> {
   if (process.platform === 'win32') {
     const ids = await si.uuid()
@@ -174,18 +162,12 @@ async function lookupHardwareUuid(): Promise<{ uuid?: string }> {
 interface MachineIdLookup {
   promise: Promise<{ uuid?: string }>
   startedAt: number
-  /** Set when the lookup settles, whether or not anyone is waiting yet. */
   durationMs: number | null
 }
 
 let lookup: MachineIdLookup | null = null
 
-/**
- * Start the hardware UUID lookup ahead of `initDeviceId()`, so its cold
- * process spawns overlap Electron start-up instead of the pre-window wait.
- * Boot does this on Windows only. Idempotent; `initDeviceId()` starts it
- * itself if nobody did.
- */
+/** Start the lookup ahead of initDeviceId(); idempotent, and initDeviceId() starts it if nobody did. */
 export function startMachineIdLookup(): MachineIdLookup {
   if (lookup) return lookup
   const started: MachineIdLookup = {
@@ -193,7 +175,7 @@ export function startMachineIdLookup(): MachineIdLookup {
     startedAt: performance.now(),
     durationMs: null
   }
-  // Also keeps a rejection before `deriveMachineId` awaits it from being unhandled.
+  // Recorded on both settle paths, which also keeps an early rejection from being unhandled.
   const record = (): void => {
     started.durationMs = Math.round(performance.now() - started.startedAt)
   }
@@ -203,16 +185,14 @@ export function startMachineIdLookup(): MachineIdLookup {
 }
 
 export interface IdLookupTiming {
-  /** Time from lookup start until it answered; null when it overran the budget. */
+  /** Null when the lookup overran the cutoff. */
   idLookupMs: number | null
   idLookupTimedOut: boolean
-  /** Process uptime when boot started waiting on the id. */
   bootToIdMs: number
 }
 
 let lookupTiming: IdLookupTiming | null = null
 
-/** Timing of this launch's lookup, once `initDeviceId()` has resolved. */
 export function getIdLookupTiming(): IdLookupTiming | null {
   return lookupTiming
 }
@@ -486,25 +466,19 @@ export function getDeviceId(): string {
 
 let degradedId: string | null = null
 
-/** `performance.now()` when `initDeviceId()` resolved; null before. */
 let resolvedAt: number | null = null
 
-/**
- * How long something that began waiting at `start` (a `performance.now()`
- * reading) waited for the id: 0 if it was already resolved, null if it has
- * not resolved yet.
- */
+/** How long a wait begun at `start` (performance.now()) lasted: 0 if already resolved, null if not yet. */
 export function idWaitSince(start: number): number | null {
   return resolvedAt === null ? null : Math.max(0, Math.round(resolvedAt - start))
 }
 
-/** The installation id once `initDeviceId()` resolves (it is started if it has not been). */
 export async function deviceIdReady(): Promise<string> {
   await initDeviceId()
   return getDeviceId()
 }
 
-/** The installation id if `initDeviceId()` has resolved, else null. Never waits. */
+/** The installation id if initDeviceId() has resolved, else null. Never waits. */
 export function resolvedDeviceId(): string | null {
   return cached?.installationId ?? null
 }

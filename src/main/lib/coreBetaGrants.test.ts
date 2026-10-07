@@ -1037,7 +1037,6 @@ describe('core beta grants fetch', () => {
       )
     }
     getOpsFlagResult.mockResolvedValue({ kind: 'unreachable' })
-    // Frozen: the fetch gets what remains of the deadline once the id is known.
     const now = vi.spyOn(performance, 'now').mockReturnValue(10_000)
     onTestFinished(() => now.mockRestore())
     await initCoreBetaGrants({ distinctId: 'device-id' })
