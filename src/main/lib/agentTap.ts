@@ -107,8 +107,7 @@ const AGENT_OUTPUT_TAG = '[comfy-agent] '
 
 function parseLine(line: string): AgentEvent | typeof UNKNOWN_EVENT | null {
   const text = stripAnsi(line)
-  // Not anchored at the line start: a tqdm bar redraws as `\r<bar>` with no newline, so a
-  // record logged mid-bar lands behind it. Cutting at the tag also drops a `[LEVEL] ` prefix.
+  // Not anchored: a tqdm bar redraws as `\r<bar>` with no newline, so a record can land behind it.
   const at = text.lastIndexOf(RECORD_TAG)
   if (at === -1 || text.lastIndexOf(AGENT_OUTPUT_TAG, at) !== -1) return null
   const match = text.slice(at).trim().match(AGENT_EVENT_LINE)
