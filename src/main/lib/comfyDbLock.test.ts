@@ -16,7 +16,7 @@ import {
   runsMainPy,
   stopDbLockOffer
 } from './comfyDbLock'
-import { isPidAlive } from './processIdentity'
+import { isPidAlive, readStartTimes } from './processIdentity'
 import type { DbLockOffer } from '../../types/ipc'
 
 describe('isDbLockFailure', () => {
@@ -139,7 +139,8 @@ describe.runIf(
 /**
  * A stand-in ComfyUI holding the lock on argv[1] and writing its holder record exactly as the
  * record contract says (Linux start token: boot id and /proc start ticks), then printing its pid.
- * argv[2] == 'child' also starts a child in its own group, which does not have the file open.
+ * argv[2] == 'child' also starts a child, in the holder's own process group, that does not have
+ * the file open.
  */
 const RECORDING_HOLDER = `import fcntl, json, os, subprocess, sys, time
 lock = sys.argv[1]
@@ -223,7 +224,8 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       })
       expect(await stopDbLockOffer(offer!)).toBe(true)
       expect(await gone(pid)).toBe(true)
-      expect(isPidAlive(child)).toBe(true)
+      // Still running, not a zombie (which `isPidAlive` would also count).
+      expect((await readStartTimes([child]))?.has(child)).toBe(true)
       process.kill(child, 'SIGKILL')
     })
 

@@ -589,8 +589,6 @@ async function handleKillProcess(port: number): Promise<void> {
   const op = progressStore.operations.get(id)
   if (!op) return
   if (op.result?.portConflict?.priorBusy) return handleStopBusyPrior()
-  // This install's ComfyUI named itself in its database-lock record: stop that one, re-proven.
-  if (op.result?.dbLockHolder) return handleStopDbLockHolder()
   const confirmed = await modal.confirm({
     title: t('errors.portConflictKillConfirmTitle'),
     message: t('errors.portConflictKillConfirmMessage'),

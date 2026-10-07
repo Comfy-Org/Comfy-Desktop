@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { findLockingProcesses } from './file-lock-info'
 import { commandLineIsInstall, holderIsInstall, listRecords } from './comfyProcessRecord'
-import { killPid } from './process'
+import { isSafeToSignal, killPid } from './process'
 import type { DbLockOffer } from '../../types/ipc'
 import {
   commandLinesOf,
@@ -84,7 +84,6 @@ interface HolderRecord {
   started: string
   /** The `main.py` it runs. */
   main: string
-  port?: number
 }
 
 /**
@@ -92,12 +91,13 @@ interface HolderRecord {
  * time. A record left by one that crashed (or whose pid is reused) is ignored.
  */
 export async function readHolderRecord(dbPath: string): Promise<HolderRecord | null> {
-  let record: Partial<HolderRecord>
+  let record: Partial<HolderRecord> | null
   try {
     record = JSON.parse(fs.readFileSync(`${dbPath}.lock.json`, 'utf-8'))
   } catch {
     return null
   }
+  if (typeof record !== 'object' || record === null) return null
   const { pid, started, main } = record
   if (!Number.isInteger(pid) || typeof started !== 'string' || typeof main !== 'string') return null
   return (await holderStartToken(pid!).catch(() => null)) === started
@@ -106,9 +106,10 @@ export async function readHolderRecord(dbPath: string): Promise<HolderRecord | n
 }
 
 /**
- * The ComfyUI holding one of `dbPaths`, from its own record, to offer the user a stop for. Never
- * one this Desktop is running in another session. Null without a live record (an older ComfyUI,
- * or another program holds it): nothing is offered.
+ * The ComfyUI holding one of `dbPaths`, from its own record, to offer the user a stop for. The
+ * paths are candidates, so a record counts only when it is the one live record among them: with
+ * two, which database this launch locked is unknown. Never one this Desktop is running in another
+ * session. Null without exactly one live record: nothing is offered.
  */
 export async function findDbLockOffer(input: {
   installationId: string
@@ -122,14 +123,16 @@ export async function findDbLockOffer(input: {
       isPidAlive(r.childPid)
   )
   if (running) return null
+  const live = []
   for (const dbPath of input.dbPaths) {
     const record = await readHolderRecord(dbPath)
-    if (!record) continue
-    const sameInstall = commandLineIsInstall(['python', record.main], input.installPath)
-    const shown = sameInstall ? 'ComfyUI' : record.main
-    return { pid: record.pid, startTime: record.started, dbPath, process: shown, sameInstall }
+    if (record) live.push({ dbPath, record })
   }
-  return null
+  if (live.length !== 1) return null
+  const [{ dbPath, record }] = live as [(typeof live)[0]]
+  const sameInstall = commandLineIsInstall(['python', record.main], input.installPath)
+  const shown = sameInstall ? 'ComfyUI' : record.main
+  return { pid: record.pid, startTime: record.started, dbPath, process: shown, sameInstall }
 }
 
 /**
@@ -137,6 +140,9 @@ export async function findDbLockOffer(input: {
  * with the same start time, and `signal` must not have aborted. True when it exited.
  */
 export async function stopDbLockOffer(offer: DbLockOffer, signal?: AbortSignal): Promise<boolean> {
+  // Anything slow (the first safety probe runs `ps`) comes before the proof, not between it and
+  // the signal.
+  if (!(await isSafeToSignal(offer.pid))) return false
   const record = await readHolderRecord(offer.dbPath)
   if (record?.pid !== offer.pid || record.started !== offer.startTime || signal?.aborted) {
     return false

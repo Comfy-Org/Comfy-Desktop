@@ -13,6 +13,8 @@ const fake = vi.hoisted(() => ({
   starts: new Map<number, string>(),
   kills: [] as number[],
   killOk: true,
+  /** What the stop did, in order: the safety check, then the proof (start-time read). */
+  steps: [] as string[],
   dead: new Set<number>(),
   records: [] as Array<{ installationId: string; childPid: number; desktopPid: number }>
 }))
@@ -21,6 +23,10 @@ vi.mock('./process', async (importOriginal) => ({
   killPid: async (pid: number) => {
     fake.kills.push(pid)
     return fake.killOk
+  },
+  isSafeToSignal: async () => {
+    fake.steps.push('safety')
+    return true
   }
 }))
 vi.mock('./comfyProcessRecord', async (importOriginal) => ({
@@ -29,7 +35,10 @@ vi.mock('./comfyProcessRecord', async (importOriginal) => ({
 }))
 vi.mock('./processIdentity', async (importOriginal) => ({
   ...(await importOriginal<typeof ProcessIdentity>()),
-  holderStartToken: async (pid: number) => fake.starts.get(pid) ?? null,
+  holderStartToken: async (pid: number) => {
+    fake.steps.push('proof')
+    return fake.starts.get(pid) ?? null
+  },
   isPidAlive: (pid: number) => !fake.dead.has(pid)
 }))
 
@@ -69,6 +78,7 @@ beforeEach(() => {
   fake.starts = new Map([[9084, STARTED]])
   fake.kills = []
   fake.killOk = true
+  fake.steps = []
   fake.dead = new Set()
   fake.records = []
 })
@@ -118,6 +128,50 @@ describe('findDbLockOffer on Windows', () => {
   })
 })
 
+describe('findDbLockOffer across candidate databases', () => {
+  const other = (): string => path.join(dir, 'other.db')
+  beforeEach(() => fs.rmSync(`${other()}.lock.json`, { force: true }))
+
+  it('offers the one live record among the candidates, wherever it is', async () => {
+    write(record())
+    expect(
+      await findDbLockOffer({
+        installationId: 'inst-1',
+        installPath: INSTALL,
+        dbPaths: [other(), db]
+      })
+    ).toMatchObject({ pid: 9084, dbPath: db })
+  })
+
+  it('offers nothing when two candidates have live records: which one this launch locked is unknown', async () => {
+    write(record())
+    fs.writeFileSync(`${other()}.lock.json`, JSON.stringify({ ...record(), pid: 4242 }))
+    fake.starts.set(4242, STARTED)
+    expect(
+      await findDbLockOffer({
+        installationId: 'inst-1',
+        installPath: INSTALL,
+        dbPaths: [db, other()]
+      })
+    ).toBeNull()
+  })
+
+  it('reads a record that is not an object as none', async () => {
+    fs.writeFileSync(`${db}.lock.json`, 'null')
+    expect(await find()).toBeNull()
+  })
+
+  it("is not hidden by this Desktop's session of another install; is by a venv-launched one of this install", async () => {
+    write(record())
+    fake.records = [{ installationId: 'inst-2', childPid: 7000, desktopPid: process.pid }]
+    expect(await find()).toMatchObject({ pid: 9084 })
+    // This install's session: its child is the venv launcher (7001), the record names the
+    // interpreter that launcher runs (9084). Still Desktop's own: no offer.
+    fake.records = [{ installationId: 'inst-1', childPid: 7001, desktopPid: process.pid }]
+    expect(await find()).toBeNull()
+  })
+})
+
 describe('stopDbLockOffer on Windows', () => {
   // Built per test: `db` exists only once beforeAll has run.
   let offer: DbLockOffer
@@ -129,6 +183,8 @@ describe('stopDbLockOffer on Windows', () => {
     write(record())
     expect(await stopDbLockOffer(offer)).toBe(true)
     expect(fake.kills).toEqual([9084])
+    // Nothing slow (the first safety probe) sits between the proof and the signal.
+    expect(fake.steps).toEqual(['safety', 'proof'])
   })
 
   it('stops nothing when the record now names another process, or none', async () => {
@@ -142,6 +198,12 @@ describe('stopDbLockOffer on Windows', () => {
     write({ ...record(), started: '134358999999999999' })
     expect(await stopDbLockOffer(offer)).toBe(false)
     fs.rmSync(`${db}.lock.json`)
+    expect(await stopDbLockOffer(offer)).toBe(false)
+    expect(fake.kills).toEqual([])
+  })
+
+  it('stops nothing for a record that is not an object', async () => {
+    fs.writeFileSync(`${db}.lock.json`, 'null')
     expect(await stopDbLockOffer(offer)).toBe(false)
     expect(fake.kills).toEqual([])
   })

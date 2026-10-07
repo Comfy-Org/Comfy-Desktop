@@ -566,29 +566,6 @@ describe('ProgressModal — brand branch state transitions', () => {
       await mountWithOp('inst-1', { ...locked(true), result: { ok: false, message: 'locked' } })
       expect(document.body.querySelector(`[data-testid="${TID.progressDbLockStop}"]`)).toBeNull()
     })
-
-    it("stops this install's port holder through its record, never by killing the port", async () => {
-      const api = installMockApi()
-      const portConflict: PortConflictInfo = { port: 8188, pids: [], isComfy: true }
-      const { body } = await mountWithOp('inst-1', {
-        title: 'Launching',
-        finished: true,
-        result: {
-          ok: false,
-          message: 'in use',
-          portConflict,
-          dbLockHolder: holder(true)
-        } as ActionResult
-      })
-
-      expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
-      await flushPromises()
-
-      expect(api.killPortProcess).not.toHaveBeenCalled()
-      expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', {
-        stopDbLockHolder: holder(true)
-      })
-    })
   })
 
   it('offers to stop a busy earlier ComfyUI through launch, never by killing the port', async () => {

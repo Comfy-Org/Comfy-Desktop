@@ -172,6 +172,8 @@ vi.mock('../../comfyProcessRecord', () => ({
  *  for, with how many children had spawned and whether the cancel had fired at the time. */
 const lockRecord = vi.hoisted(() => ({
   offer: null as null | Record<string, unknown>,
+  /** What each lookup was asked. */
+  asked: [] as unknown[],
   stops: [] as Array<{ offer: unknown; spawned: number; aborted: boolean | undefined }>,
   stopOk: true,
   duringStop: null as null | (() => void),
@@ -179,7 +181,10 @@ const lockRecord = vi.hoisted(() => ({
 }))
 vi.mock('../../comfyDbLock', async (importOriginal) => ({
   ...(await importOriginal<typeof ComfyDbLockModule>()),
-  findDbLockOffer: async () => lockRecord.offer,
+  findDbLockOffer: async (input: unknown) => {
+    lockRecord.asked.push(input)
+    return lockRecord.offer
+  },
   stopDbLockOffer: async (offer: unknown, signal?: AbortSignal) => {
     lockRecord.duringStop?.()
     lockRecord.stops.push({ offer, spawned: lockRecord.children.count, aborted: signal?.aborted })
@@ -2714,6 +2719,7 @@ describe('prior ComfyUI process handling at launch', () => {
     const ourDb = (): string => path.join(installDir, 'ComfyUI', 'user', 'comfyui.db')
     afterEach(() => {
       lockRecord.offer = null
+      lockRecord.asked = []
       lockRecord.stops = []
       lockRecord.stopOk = true
       lockRecord.duringStop = null
@@ -2745,6 +2751,8 @@ describe('prior ComfyUI process handling at launch', () => {
       const res = await handleLaunch(ctxFor('db-record-stop', { stopDbLockHolder: offer(ourDb()) }))
       expect(lockRecord.stops).toEqual([{ offer: offer(ourDb()), spawned: 0, aborted: false }])
       expect(res.ok).toBe(true)
+      // Its listening socket can outlive it: launch waits for the port before checking it.
+      expect(launchHarness.portFreeWaits).toContain(PORT)
     })
 
     it('launches nothing when the user cancels while the stop runs', async () => {
@@ -2775,29 +2783,32 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(lockRecord.stops).toHaveLength(own ? 1 : 0)
     })
 
-    it("recognises this install's ComfyUI on the port from its record, without the listeners", async () => {
-      launchHarness.busyPorts = [PORT]
-      ownership.holderIsInstall = false
-      lockRecord.offer = offer(ourDb())
+    it.each([true, false])(
+      'answers a busy port with the database holder a record names, any install (same install: %s)',
+      async (same) => {
+        launchHarness.busyPorts = [PORT]
+        ownership.holderIsInstall = false
+        lockRecord.offer = offer(ourDb(), same)
 
-      const res = await handleLaunch(ctxFor('db-record-port'))
+        const res = await handleLaunch(ctxFor('db-record-port'))
 
-      expect(res.message).toBe('errors.portConflictSameInstall')
-      expect(res.dbLockHolder).toEqual(offer(ourDb()))
-      expect(res.portConflict).not.toHaveProperty('nextPort')
-      expect(children).toHaveLength(0)
-    })
-
-    it("does not take another install's record for this one's port holder", async () => {
-      launchHarness.busyPorts = [PORT]
-      ownership.holderIsInstall = false
-      lockRecord.offer = offer(ourDb(), false)
-
-      const res = await handleLaunch(ctxFor('db-record-port-other'))
-
-      expect(res.dbLockHolder).toBeUndefined()
-      expect(res.message).not.toBe('errors.portConflictSameInstall')
-    })
+        // The database blocks this launch, not (necessarily) whoever has the port: no port claim.
+        expect(res).toMatchObject({
+          ok: false,
+          message: same ? 'errors.comfyDbLockedSameInstall' : 'errors.comfyDbLockedBy',
+          dbLockHolder: offer(ourDb(), same)
+        })
+        expect(res.portConflict).toBeUndefined()
+        expect(children).toHaveLength(0)
+        expect(lockRecord.asked).toEqual([
+          {
+            installationId: 'db-record-port',
+            installPath: installDir,
+            dbPaths: expect.arrayContaining([ourDb()])
+          }
+        ])
+      }
+    )
   })
 })
 
