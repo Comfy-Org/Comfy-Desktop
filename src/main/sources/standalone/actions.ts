@@ -1220,11 +1220,8 @@ async function handleUpdateComfyUI(
   const rawTargetTag = typeof actionData?.targetTag === 'string' ? actionData.targetTag : undefined
   const targetTag = rawTargetTag && /^v\d+\.\d+\.\d+$/.test(rawTargetTag) ? rawTargetTag : undefined
   // A repair rewrites the installed commit; a pin that is not HEAD would move it.
-  if (
-    repair &&
-    (!targetTag ||
-      (await revParseRef(comfyuiDir, `${targetTag}^{commit}`)) !== readGitHead(comfyuiDir))
-  ) {
+  const pin = repair && targetTag && (await revParseRef(comfyuiDir, `${targetTag}^{commit}`))
+  if (repair && (!pin || pin !== readGitHead(comfyuiDir))) {
     return { ok: false, message: t('standalone.repairNotOnTag') }
   }
 
