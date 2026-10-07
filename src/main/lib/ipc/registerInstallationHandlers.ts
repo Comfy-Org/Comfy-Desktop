@@ -594,11 +594,13 @@ export function registerInstallationHandlers(): void {
           }
         }
       }
-      const updated = await installations.update(installationId, filtered)
-      for (const [key, value] of Object.entries(filtered)) {
-        // Not settings: `seen`, a rename. `updated` is null if the install was removed meanwhile.
-        if (updated && key !== 'seen' && key !== 'name') {
-          captureSettingChanged(key, shown.get(key), value, installationId)
+      // Null if the install was removed meanwhile: nothing was saved.
+      if (await installations.update(installationId, filtered)) {
+        for (const [key, value] of Object.entries(filtered)) {
+          // Not settings: `seen`, a rename.
+          if (key !== 'seen' && key !== 'name') {
+            captureSettingChanged(key, shown.get(key), value, installationId)
+          }
         }
       }
       return { ok: true }

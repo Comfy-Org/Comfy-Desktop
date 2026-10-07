@@ -94,15 +94,16 @@ test('a per-install edit names the install, sends no path, and skips unchanged f
   await resetIpcInvocations(ctx.app, EVENT)
 
   const result = await ctx.panel.evaluate<{ ok: boolean }>(
-    `window.api.updateInstallation(${JSON.stringify(INSTALL_ID)}, { useSharedInput: false, useSharedOutput: true, inputDir: '/tmp/private-in', name: 'Renamed', seen: true })`
+    `window.api.updateInstallation(${JSON.stringify(INSTALL_ID)}, { useSharedInput: false, useSharedOutput: true, inputDir: '/tmp/private-in', outputDir: '/tmp/private-out', name: 'Renamed', seen: true })`
   )
 
   expect(result.ok).toBe(true)
   const events = await getIpcInvocations(ctx.app, EVENT)
   // inputDir is re-sent unchanged, useSharedOutput is unset but already shows as on, and the
-  // rename and `seen` are not settings, so only the toggle counts.
+  // rename and `seen` are not settings. The changed outputDir is reported by key only.
   expect(events).toEqual([
-    { install_id: INSTALL_ID, setting_key: 'useSharedInput', bool_value: false }
+    { install_id: INSTALL_ID, setting_key: 'useSharedInput', bool_value: false },
+    { install_id: INSTALL_ID, setting_key: 'outputDir' }
   ])
-  expect(JSON.stringify(events)).not.toContain('private-in')
+  expect(JSON.stringify(events)).not.toContain('private-out')
 })

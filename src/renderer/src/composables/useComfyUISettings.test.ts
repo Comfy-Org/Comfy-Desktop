@@ -55,6 +55,7 @@ vi.mock('../lib/telemetry', () => ({
   toErrorBucket: () => 'other'
 }))
 
+import { emitTelemetryAction } from '../lib/telemetry'
 import { useComfyUISettings } from './useComfyUISettings'
 import { useSessionStore } from '../stores/sessionStore'
 import type {
@@ -693,6 +694,17 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await nextTick()
     await Promise.resolve()
     expect(vi.mocked(api.getDetailSections).mock.calls.length).toBe(afterLaunch + 1)
+    scope.stop()
+  })
+
+  it('leaves settings.changed to main, so an edit is not counted twice', async () => {
+    const { composable, scope } = await mountWithField('a', 'window')
+    await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
+    expect(vi.mocked(api.updateInstallation)).toHaveBeenCalled()
+    expect(vi.mocked(emitTelemetryAction)).not.toHaveBeenCalledWith(
+      'comfy.desktop.settings.changed',
+      expect.anything()
+    )
     scope.stop()
   })
 
