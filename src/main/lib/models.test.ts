@@ -520,11 +520,15 @@ describe('resolveInstallModelSearchPaths', () => {
     const ext = path.join(tmp, 'ext')
     const inst = makeInstall({ modelDirs: [ext] })
     writePolicy(inst.installPath)
-    const res = resolveInstallModelSearchPaths(inst, shared)
-    expect(res.downloadBaseDir).toBe(path.resolve(shared[0]!))
-    expect(res.modelRoots).toContain(path.resolve(shared[0]!))
-    expect(res.modelRoots).toContain(path.resolve(ext))
-    expect(res.modelRoots).toContain(path.resolve(path.join(inst.installPath, 'ComfyUI', 'models')))
+    expect(resolveInstallModelSearchPaths(inst, shared)).toEqual({
+      downloadBaseDir: path.resolve(shared[0]!),
+      modelRoots: [
+        path.resolve(path.join(inst.installPath, 'ComfyUI', 'models')),
+        path.resolve(shared[0]!),
+        path.resolve(ext)
+      ],
+      extraPaths: []
+    })
   })
 
   it('includes the install own extra_model_paths.yaml dirs', () => {
