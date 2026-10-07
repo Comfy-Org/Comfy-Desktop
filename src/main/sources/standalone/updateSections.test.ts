@@ -56,7 +56,13 @@ import { getDetailSections, getEffectiveChannel } from './updateSections'
 interface UpdateAction {
   id: string
   progressTitle: string
-  data?: { channel?: string; isDowngrade?: boolean; stackId?: string }
+  data?: {
+    channel?: string
+    isDowngrade?: boolean
+    stackId?: string
+    repair?: boolean
+    targetTag?: string
+  }
   confirm?: { title?: string; message?: string }
   prompt?: { defaultValue?: string; uniquifyDefault?: boolean }
 }
@@ -824,5 +830,37 @@ describe('updateSections — PyTorch picker', () => {
       const newer = options.find((o) => o.value === 'pytorch-index:rocm7.2.1:2.10.0')
       expect(newer!.groupPath).toEqual([{ id: 'rocm7.2.1', label: 'ROCm 7.2.1' }])
     })
+  })
+})
+
+describe('updateSections — Repair ComfyUI files', () => {
+  beforeEach(() => {
+    vi.mocked(releaseCache.getEffectiveInfo).mockReset().mockReturnValue({
+      installedTag: 'v0.3.20',
+      latestTag: 'v0.3.20',
+      checkedAt: Date.now()
+    })
+    vi.mocked(releaseCache.isUpdateAvailable).mockReset().mockReturnValue(false)
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+  })
+
+  it('offers a repair pinned to the installed tag on the current channel when nothing is newer', () => {
+    const action = getUpdateAction(baseInstall(), 'stable')
+    expect(action?.data).toEqual({ channel: 'stable', repair: true, targetTag: 'v0.3.20' })
+    expect(action?.confirm?.title).toBe('standalone.repairFilesTitle')
+  })
+
+  it('repairs along the channel, without a tag, when the install is between tags', () => {
+    const install = baseInstall({
+      updateChannel: 'latest',
+      comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 3 }
+    } as Partial<InstallationRecord>)
+    expect(getUpdateAction(install, 'latest')?.data).toEqual({ channel: 'latest', repair: true })
+  })
+
+  it('offers no repair on another channel, or when an update is available', () => {
+    expect(getUpdateAction(baseInstall(), 'latest')).toBeUndefined()
+    vi.mocked(releaseCache.isUpdateAvailable).mockReturnValue(true)
+    expect(getUpdateAction(baseInstall(), 'stable')?.data?.repair).toBeUndefined()
   })
 })

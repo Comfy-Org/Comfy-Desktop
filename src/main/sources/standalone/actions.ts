@@ -5,7 +5,7 @@ import * as releaseCache from '../../lib/release-cache'
 import { formatComfyVersion } from '../../lib/version'
 import type { ComfyVersion } from '../../lib/version'
 import { resolveLocalVersion } from '../../lib/version-resolve'
-import { readGitHead, rollbackComfySource } from '../../lib/git'
+import { hasTrackedChanges, readGitHead, rollbackComfySource } from '../../lib/git'
 import { writeOpMarker, completeOpMarker } from '../../lib/opMarker'
 import { installFilteredRequirementsDetailed } from '../../lib/pip'
 import { withOutputTail } from '../../lib/logged-process'
@@ -1240,11 +1240,15 @@ async function handleUpdateComfyUI(
     signal,
     dryRunConflictCheck: true,
     saveRollback: true,
-    preUpdateSnapshot: true
+    preUpdateSnapshot: true,
+    forceDepsSync: actionData?.repair === true
   })
 
   if (!result.ok) {
     return { ok: false, message: result.message }
+  }
+  if (actionData?.repair === true && (await hasTrackedChanges(comfyuiDir)) !== false) {
+    return { ok: false, message: t('standalone.repairIncomplete') }
   }
 
   // Reconcile installedTag against the new comfyVersion so the "up to date"

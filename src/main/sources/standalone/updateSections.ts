@@ -579,6 +579,23 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         enabled: installed,
         data: { channel: card.value }
       })
+    } else if (hasGit) {
+      // Nothing newer: rewrite the installed version's files (pinned to its tag when on one).
+      const cv = installation.comfyVersion as ComfyVersion | undefined
+      const targetTag = cv?.baseTag && cv.commitsAhead === 0 ? cv.baseTag : undefined
+      actions.push({
+        id: 'update-comfyui',
+        label: t('standalone.repairFiles'),
+        style: 'default',
+        enabled: installed,
+        showProgress: true,
+        progressTitle: t('standalone.repairingFiles'),
+        data: { channel, repair: true, ...(targetTag ? { targetTag } : {}) },
+        confirm: {
+          title: t('standalone.repairFilesTitle'),
+          message: t('standalone.repairFilesMessage')
+        }
+      })
     }
     return {
       ...card,
