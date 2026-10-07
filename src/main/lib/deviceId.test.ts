@@ -737,7 +737,10 @@ describe('deviceId', () => {
       const start = performance.now()
       await vi.advanceTimersByTimeAsync(2000)
       await vi.advanceTimersByTimeAsync(500)
-      expect(mod.idWaitSince(start)).toBe(2000)
+      expect(
+        mod.idWaitSince(start),
+        'the wait ends when the id resolved, not when it is read'
+      ).toBe(2000)
     })
 
     it('is 0 for a wait that began after resolution', async () => {
@@ -772,7 +775,10 @@ describe('deviceId', () => {
       const timing = mod.getIdLookupTiming()
       expect(timing?.idLookupMs).toBe(1200)
       expect(timing?.idLookupTimedOut).toBe(false)
-      expect(timing?.bootToIdMs).toBe(3000)
+      expect(
+        timing?.uptimeAtIdWaitStartMs,
+        'sampled when the id wait starts, not when the lookup answers'
+      ).toBe(3000)
     })
 
     it('records a timeout as no duration', async () => {

@@ -488,7 +488,10 @@ describe('FirstUseTakeover desktop-first-use-fork-default experiment', () => {
 
     userTier.resolve(tier)
     await flushPromises()
-    expect(wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists()).toBe(shown)
+    expect(
+      wrapper.find('[data-testid="first-use-cloud-runs-pill"]').exists(),
+      'the pill must not depend on the pending experiment variant'
+    ).toBe(shown)
 
     variant.resolve(undefined)
     await flushPromises()

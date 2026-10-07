@@ -1940,7 +1940,10 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     for (let i = 0; i < 201; i++) {
       if (telemetry.capture(`comfy.desktop.test.e${i}`)) accepted++
     }
-    expect(accepted).toBe(199)
+    expect(
+      accepted,
+      'session.started took one slot; distinct names, so the hold cap (not the rate limit) refuses the last'
+    ).toBe(199)
     telemetry.setInstallationId('install-id')
     expect(captured.filter((c) => c.event.startsWith('comfy.desktop.test.e'))).toHaveLength(199)
   })
@@ -1967,11 +1970,14 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     const first = { preventDefault: vi.fn() }
     beforeQuit(first)
     expect(first.preventDefault).toHaveBeenCalledTimes(1)
-    expect(telemetry.hasShutDown()).toBe(true)
+    expect(telemetry.hasBegunQuitting()).toBe(true)
 
     const second = { preventDefault: vi.fn() }
     beforeQuit(second)
-    expect(second.preventDefault).not.toHaveBeenCalled()
+    expect(
+      second.preventDefault,
+      'a quit re-fired during the drain is not held again'
+    ).not.toHaveBeenCalled()
 
     releaseDrain()
     await vi.waitFor(() => expect(electronAppQuit).toHaveBeenCalledTimes(1))
@@ -1984,15 +1990,15 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(beforeQuit).toBeDefined()
     const preventDefault = vi.fn()
     beforeQuit!({ preventDefault })
-    expect(telemetry.hasShutDown()).toBe(true)
-    expect(preventDefault).not.toHaveBeenCalled()
+    expect(telemetry.hasBegunQuitting()).toBe(true)
+    expect(preventDefault, 'nothing to drain, so the quit is not held').not.toHaveBeenCalled()
   })
 
   it('reports shutdown as soon as it has begun, before the drain finishes', async () => {
     telemetry.bindAnonymousId('anon-d', 'install-id')
-    expect(telemetry.hasShutDown()).toBe(false)
+    expect(telemetry.hasBegunQuitting()).toBe(false)
     const draining = telemetry.shutdown('quit')
-    expect(telemetry.hasShutDown()).toBe(true)
+    expect(telemetry.hasBegunQuitting()).toBe(true)
     await draining
   })
 
@@ -2045,7 +2051,10 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     })
     expect(identifies[0]!.properties?.$set).not.toHaveProperty('installation_id')
     expect(pendingIdentityMergeMock.lastReserved).not.toBeNull()
-    expect(pendingIdentityMergeMock.lastReserved).not.toHaveProperty('installationId')
+    expect(
+      pendingIdentityMergeMock.lastReserved,
+      'the merge record omits the key rather than storing a value a reader rejects'
+    ).not.toHaveProperty('installationId')
     telemetry.capture('comfy.desktop.test.signed_in')
     expect(captured.find((c) => c.event === 'comfy.desktop.test.signed_in')).toBeUndefined()
 

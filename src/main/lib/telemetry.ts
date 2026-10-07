@@ -1914,7 +1914,7 @@ export async function getOpsFlagResult(
   distinctId: string,
   timeoutMs: number,
   onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void,
-  staff?: boolean
+  evaluateAsStaff?: boolean
 ): Promise<OpsFlagFetchResult> {
   if (!client) return { kind: 'unreachable' }
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -1922,7 +1922,7 @@ export async function getOpsFlagResult(
   try {
     const flagPromise = client.getFeatureFlagResult(key, distinctId, {
       sendFeatureFlagEvents: false,
-      personProperties: opsFlagPersonProperties(staff)
+      personProperties: opsFlagPersonProperties(evaluateAsStaff)
     })
     const timeoutPromise = new Promise<typeof OPS_FLAG_DEADLINE>((resolve) => {
       timer = setTimeout(() => resolve(OPS_FLAG_DEADLINE), timeoutMs)
@@ -2147,7 +2147,7 @@ let beforeQuitHooked = false
 let drainingForQuit = false
 let shutdownStarted = false
 
-export function hasShutDown(): boolean {
+export function hasBegunQuitting(): boolean {
   return shutdownStarted
 }
 

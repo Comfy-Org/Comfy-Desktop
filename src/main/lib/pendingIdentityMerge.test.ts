@@ -119,14 +119,10 @@ describe('pendingIdentityMerge record compatibility', () => {
     })
     expect(merge).not.toBeNull()
     const [written] = readQueueFile()
-    expect(Object.keys(written!)).toEqual([
-      'id',
-      'anonymousId',
-      'userId',
-      'nextAnonymousId',
-      'installationId',
-      'personSet'
-    ])
+    expect(
+      Object.keys(written!),
+      'older versions require installationId; key order matches what they wrote'
+    ).toEqual(['id', 'anonymousId', 'userId', 'nextAnonymousId', 'installationId', 'personSet'])
     expect(written!.installationId).toBe('install-id')
   })
 

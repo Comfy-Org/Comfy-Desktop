@@ -1267,9 +1267,15 @@ describe('core beta report placement', () => {
     const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
     expect(boot?.properties).toMatchObject({ launch_waited_for_id_ms: idWait })
     expect(launchHarness.idWaitStart).not.toBeNull()
-    expect(launchHarness.idWaitStart!).toBeLessThanOrEqual(launchHarness.grantsCalledAt!)
+    expect(
+      launchHarness.idWaitStart!,
+      'sampled on the monotonic clock before the grants fetch was called'
+    ).toBeLessThanOrEqual(launchHarness.grantsCalledAt!)
     expect(launchHarness.idWaitStart!).toBeLessThan(1e10)
-    expect(launchHarness.idWaitReadAfterGrants).toBe(true)
+    expect(
+      launchHarness.idWaitReadAfterGrants,
+      'read once the grants fetch, and so the id, has settled'
+    ).toBe(true)
   })
 
   it('reports a null id wait on boot_started when the launch never reached the grants fetch', async () => {
@@ -1288,7 +1294,9 @@ describe('core beta report placement', () => {
 
     const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
     expect(boot).toBeDefined()
-    expect(boot!.properties).toMatchObject({ launch_waited_for_id_ms: null })
+    expect(boot!.properties, 'schema discovery failing skips the grants await').toMatchObject({
+      launch_waited_for_id_ms: null
+    })
     expect(launchHarness.grantsCalledAt).toBeNull()
   })
 

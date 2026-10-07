@@ -39,7 +39,7 @@ const h = vi.hoisted(() => ({
     registerPersonProperties: vi.fn(),
     captureFirstLaunch: vi.fn(),
     getConsentState: vi.fn(() => h.consent),
-    hasShutDown: vi.fn(() => h.shutDown),
+    hasBegunQuitting: vi.fn(() => h.shutDown),
     getConsentDenials: vi.fn(() => h.denials)
   },
   initExperiments: vi.fn((_opts: unknown) => Promise.resolve()),
@@ -155,7 +155,10 @@ describe('startBootIdentity', () => {
       id_class: 'machine_derived'
     })
     expect(h.telemetry.registerPersonProperties).toHaveBeenCalledWith({ theme: 'dark' })
-    expect(h.telemetry.captureFirstLaunch).toHaveBeenCalledWith(
+    expect(
+      h.telemetry.captureFirstLaunch,
+      'stamped with the launch, not the id resolution'
+    ).toHaveBeenCalledWith(
       {
         id_class: 'machine_derived',
         id_lookup_ms: 3000,
@@ -233,7 +236,10 @@ describe('startBootIdentity', () => {
     expect(h.telemetry.setInstallationId).not.toHaveBeenCalled()
     expect(h.telemetry.registerPersonProperties).not.toHaveBeenCalled()
     expect(fs.existsSync(file('first-launch-completed'))).toBe(false)
-    expect(fs.readFileSync(file('device-id.txt'), 'utf-8')).toBe(machineId())
+    expect(
+      fs.readFileSync(file('device-id.txt'), 'utf-8'),
+      'local identity work still runs after telemetry shut down'
+    ).toBe(machineId())
   })
 
   it('drops first_launch, as a launch-time one would be, when consent is denied during the wait', async () => {
@@ -243,7 +249,10 @@ describe('startBootIdentity', () => {
     await vi.advanceTimersByTimeAsync(3000)
     await bound
     expect(h.telemetry.captureFirstLaunch).not.toHaveBeenCalled()
-    expect(fs.existsSync(file('first-launch-completed'))).toBe(true)
+    expect(
+      fs.existsSync(file('first-launch-completed')),
+      "the guard is consumed: the denial discarded this launch's event"
+    ).toBe(true)
   })
 
   it('keeps first_launch for a launch whose consent was denied before it started', async () => {

@@ -838,7 +838,9 @@ describe('makeOpsFlag deadline and expiry', () => {
     })
     vi.mocked(performance.now).mockReturnValue(PERF_NOW + idWaitMs)
     resolveId('final-id')
-    expect(await flag.get()).toBe('granted')
+    expect(await flag.get(), 'with no window left, this launch keeps the saved treatment').toBe(
+      'granted'
+    )
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       'grant-flag',
       'final-id',

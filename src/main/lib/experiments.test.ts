@@ -182,7 +182,9 @@ describe('experiments', () => {
       resolveIdentity({ distinctId: 'final-id', personProperties: {} })
       await new Promise((r) => setImmediate(r))
       expect(flagRequestIds).toContain('final-id')
-      expect(value).toBe('pending')
+      expect(value, 'the identity alone is not enough: the read also waits for the fetch').toBe(
+        'pending'
+      )
       releaseFetch()
       await read
       expect(value).toBe('variant')

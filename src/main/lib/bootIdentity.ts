@@ -63,7 +63,7 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
 
   return resolved.then(({ legacyId }) => {
     clearLegacyIdentityRetryMarker()
-    if (!mainTelemetry.hasShutDown()) {
+    if (!mainTelemetry.hasBegunQuitting()) {
       mainTelemetry.setInstallationId(getDeviceId(), {
         app_version: opts.appVersion,
         platform: process.platform,
@@ -76,7 +76,7 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
     }
 
     // Consumed only once the id resolves, so a quit first leaves first_launch for the next launch.
-    const isFirstLaunch = !mainTelemetry.hasShutDown() && consumeFirstLaunch()
+    const isFirstLaunch = !mainTelemetry.hasBegunQuitting() && consumeFirstLaunch()
     if (legacyId) {
       // Historical random ids are reconciled in PostHog, not by Desktop alias writes.
       markIdentityMigrationCompleted()
@@ -90,7 +90,7 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
           id_class: getIdClass(),
           id_lookup_ms: timing?.idLookupMs ?? null,
           id_lookup_timed_out: timing?.idLookupTimedOut ?? null,
-          boot_to_id_ms: timing?.bootToIdMs ?? null,
+          boot_to_id_ms: timing?.uptimeAtIdWaitStartMs ?? null,
           locale: opts.locale
         },
         launchedAt
