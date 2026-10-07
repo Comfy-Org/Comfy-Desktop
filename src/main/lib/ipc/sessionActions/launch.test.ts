@@ -22,9 +22,13 @@ const electronHome = vi.hoisted(() => {
   return { dir: '', saved }
 })
 afterAll(() => {
-  if (electronHome.dir) fs.rmSync(electronHome.dir, { recursive: true, force: true })
+  // Env first: it is shared with later files in this worker, and a failed removal must not keep it.
   for (const [name, value] of Object.entries(electronHome.saved)) {
     if (value !== undefined) process.env[name] = value
+  }
+  if (electronHome.dir) {
+    fs.rmSync(electronHome.dir, { recursive: true, force: true, maxRetries: 3 })
+    electronHome.dir = ''
   }
 })
 
