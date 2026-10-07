@@ -490,8 +490,10 @@ export function createAssetsTap(opts: {
     // Strip ANSI then a leading `[LEVEL] ` tag (Desktop's bundled build) so the
     // anchored grammar matches both the prefixed and bare log formats.
     const text = stripLogLevelPrefix(stripAnsi(line).trim())
-    const afterTqdmBar = line.includes('\r') ? Math.max(text.lastIndexOf('[assets-event] '), 0) : 0
-    const match = text.slice(afterTqdmBar).match(ASSETS_EVENT_LINE)
+    const tagAt = text.lastIndexOf('[assets-event] ')
+    // tqdm redraws with \r and no \n: a line logged mid-bar arrives behind a frame ending in `]`.
+    const behindBar = line.includes('\r') && /\] ?$/.test(text.slice(0, tagAt))
+    const match = text.slice(behindBar ? tagAt : 0).match(ASSETS_EVENT_LINE)
     if (!match) return
     const [, event, tail] = match
     if (!event || tail === undefined) return

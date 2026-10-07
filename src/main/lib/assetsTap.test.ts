@@ -157,10 +157,33 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(1)
     })
 
-    it('still rejects other text before the tag on an ordinary line', () => {
+    it.each([
+      [
+        'a \\r and non-bar text before the tag',
+        'foo\rprefix [assets-event] seeder.scan_started phase=fast\n'
+      ],
+      ['a trailing \\r', 'prefix [assets-event] seeder.scan_started phase=fast\r\r\n'],
+      [
+        'a \\r, then text after the bar frame',
+        `${bar}junk [assets-event] seeder.scan_started phase=fast\n`
+      ]
+    ])('still rejects text before the tag on a line with %s', (_case, input) => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('prefix [assets-event] seeder.scan_started phase=fast\n', 'stdout')
+      tap.ingest(input, 'stderr')
       expect(captured).toEqual([])
+    })
+
+    it('still rejects a `]` before the tag on a line with no \\r', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('done] [assets-event] seeder.scan_started phase=fast\n', 'stdout')
+      expect(captured).toEqual([])
+    })
+
+    it('still parses the event when the bar and the line arrive in separate chunks', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(bar, 'stderr')
+      tap.ingest('[assets-event] seeder.scan_started phase=fast\n', 'stderr')
+      expect(captured).toHaveLength(1)
     })
 
     it('ignores a bare progress line', () => {
