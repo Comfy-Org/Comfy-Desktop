@@ -42,7 +42,7 @@ describe('appLog', () => {
     expect(fs.existsSync(path.join(tmpDir, 'app.log'))).toBe(false)
   })
 
-  it('writes lines held before init once the log opens, scrubbed, and only once', () => {
+  it('writes lines held before init once the log opens, scrubbed, and holds none after', () => {
     holdForAppLog('INFO', 'early https://user:tok@mirror.example/simple')
     initAppLog({ dir: tmpDir })
     holdForAppLog('INFO', 'late line is left to console capture')

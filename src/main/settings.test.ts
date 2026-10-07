@@ -34,7 +34,6 @@ let settings: {
   defaults: { onAppClose: 'tray' | 'quit' }
   resolveBetaFeaturesEnabled: () => boolean
   peekBetaFeaturesEnabled: () => boolean
-  frameForLog: (frame: string) => string
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
   ) => Record<string, boolean | number | string | null>
@@ -67,7 +66,8 @@ beforeEach(async () => {
       getPath: (name: string) => {
         if (name === 'home') return homePath
         return userDataPath
-      }
+      },
+      getAppPath: () => process.cwd()
     }
   }))
   settings = await import('./settings')
@@ -728,8 +728,9 @@ describe('persisted-write logging', () => {
     // marker rather than on line count, which the format guarantees either way.
     // Reaches past the settings module to the actual writer: this test file.
     expect(line).toMatch(/\| via .*settings\.test\.ts/)
-    // File names only: a frame's directories hold the install location.
-    expect(line!.split('| via ')[1]).not.toMatch(/[\\/]/)
+    // The app's location is replaced: it can name a private install directory.
+    expect(line).not.toContain(process.cwd())
+    expect(line).toContain('<app>')
     log.mockRestore()
   })
 
@@ -826,15 +827,6 @@ describe('persisted-write logging', () => {
     log.mockRestore()
   })
 
-  it('reduces a stack frame to its function and file name', () => {
-    const { frameForLog } = settings
-    expect(frameForLog('at set (C:\\Clients Acme\\app.asar\\out\\main\\index.js:12:3)')).toBe(
-      'set (index.js:12:3)'
-    )
-    expect(frameForLog('at /home/alice/Comfy/app.asar/out/main/index.js:5:1')).toBe('index.js:5:1')
-    expect(frameForLog('at async Promise.all (index 0)')).toBe('async Promise.all (index 0)')
-  })
-
   it('reaches app.log when the write happens before the log opens', async () => {
     // Main reads, and can repair, settings at import time, long before `initAppLog`.
     const appLog = await import('./lib/appLog')
@@ -895,6 +887,19 @@ describe('persisted-write logging', () => {
 
     const line = writeLines(log).find((l) => l.includes('"betaFeaturesEnabled": <unset> -> true'))
     expect(line).toContain('resolveBetaFeaturesEnabled')
+    // Diffed against the file as it was: telemetryEnabled was already there.
+    expect(line).not.toContain('telemetryEnabled')
+  })
+
+  it('still writes when logging itself throws', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: true }))
+    vi.spyOn(console, 'log').mockImplementation(() => {
+      throw new Error('console broke')
+    })
+
+    expect(() => settings.set('betaFeaturesEnabled', false)).not.toThrow()
+    expect(readPersistedSettings().betaFeaturesEnabled).toBe(false)
   })
 
   it('does not log a write that never reached disk', () => {

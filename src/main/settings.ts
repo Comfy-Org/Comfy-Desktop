@@ -666,17 +666,10 @@ function describeForLog(v: unknown): string {
   return `<${typeof v}>`
 }
 
-/** A stack frame with its directories dropped: they hold the install location. */
-export function frameForLog(frame: string): string {
-  const m = /^at (?:(.+?) \()?(.+?)\)?$/.exec(frame.trim())
-  if (!m) return '<frame>'
-  const file = m[2]!.split(/[\\/]/).pop()
-  return m[1] ? `${m[1]} (${file})` : `${file}`
-}
-
 /** One line per key whose value on disk changed, with the stack that wrote it. `before` is
  *  what was parsed from disk, not the defaults-merged view, so a key a sparse file gains is
- *  logged too: no line for a key means it was not written. Never throws. */
+ *  logged too. Writers that bypass `save` are not logged: the `.bak` restore in
+ *  `readFileSafe` and the Linux cache-dir migration in `paths.ts`. Never throws. */
 function logPersistedChanges(
   before: Record<string, unknown>,
   after: Record<string, unknown>
@@ -690,8 +683,14 @@ function logPersistedChanges(
       )
     }
     if (changes.length === 0) return
-    // Stack lines 1-2 are this helper and `save`; the writer starts at line 3.
-    const stack = (new Error().stack ?? '').split('\n').slice(3, 9).map(frameForLog).join(' <- ')
+    // Stack lines 1-2 are this helper and `save`; the writer starts at line 3. The app's own
+    // location is replaced, since it can name a private install directory.
+    const root = app.getAppPath()
+    const stack = (new Error().stack ?? '')
+      .split('\n')
+      .slice(3, 9)
+      .map((frame) => frame.trim().split(root).join('<app>'))
+      .join(' <- ')
     const line = `Settings: wrote ${changes.join(', ')} | via ${stack}`
     console.log(line)
     holdForAppLog('INFO', line)

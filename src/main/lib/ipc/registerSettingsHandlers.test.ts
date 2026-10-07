@@ -252,13 +252,16 @@ describe('set-setting handler', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const sender = {
       sender: {
-        getURL: () => 'file:///D:/Clients/Acme/resources/app.asar/out/renderer/panel.html?x=1'
+        getURL: () =>
+          'file:///D:/Clients/Acme/resources/app.asar/out/renderer/panel.html?installationId=inst-secret#top'
       }
     }
 
-    setSettingHandler()(sender, 'theme', 'dark')
+    setSettingHandler()(sender, 'inputDir', '/home/alice/private-in')
 
-    expect(requestLine(log)).toContain('requested by panel.html')
+    expect(requestLine(log)).toMatch(/requested by panel\.html$/)
+    expect(requestLine(log)).not.toContain('inst-secret')
+    expect(requestLine(log)).not.toContain('private-in')
     expect(requestLine(log)).not.toContain('Acme')
   })
 })
