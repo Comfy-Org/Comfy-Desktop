@@ -290,9 +290,7 @@ export function buildLaunchArgs(input: {
   }
 }
 
-/** The `enrolled` event fires only once the record is on disk, so it never outnumbers records.
- *  An unrecorded enrolment stays in `applied` (its arg is on the command line) beside a
- *  `record_failed` miss. */
+/** `enrolled` fires only once the record is on disk; an unrecorded one stays applied (its arg runs). */
 export function recordCampaignEnrolments(
   campaign: CoreBetaLaunch['campaign']
 ): CoreBetaLaunch['campaign'] {
