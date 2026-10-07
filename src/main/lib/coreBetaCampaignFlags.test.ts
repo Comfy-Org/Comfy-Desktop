@@ -185,6 +185,16 @@ describe('initCoreBetaCampaigns', () => {
     expect((await getCoreBetaCampaigns()).answers.size).toBe(0)
   })
 
+  it.each([[0], [false], ['x'], [null]])(
+    'a saved registry entry of %j discovers nothing and does not throw',
+    async (entry) => {
+      seed('campaign-flags.json', { desktop_campaigns: entry })
+      serve({})
+      await expect(initCoreBetaCampaigns({ distinctId: 'id' })).resolves.toBeUndefined()
+      expect(fetchedKeys()).toEqual(['desktop_campaigns'])
+    }
+  )
+
   it('an expired saved registry lists nothing offline, but still discovers its keys', async () => {
     seed('campaign-flags.json', {
       desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 8 * DAY_MS },
@@ -406,7 +416,7 @@ describe('enrolment records', () => {
 
     it('enrol: the write is refused and nothing counts, so no second enrolled event', () => {
       expect(() => writeCampaignRecord(KEY, '--enable-agent', 2, NOW + 1)).toThrow(
-        /refusing to modify/
+        /unreadable; not writing/
       )
       expect(campaignRecordSaved(KEY, '--enable-agent', 2)).toBe(false)
       expect(fs.readFileSync(file('campaign-enrolments.json'), 'utf-8')).toBe('not json{')

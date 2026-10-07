@@ -120,7 +120,7 @@ import type { CoreCheckout } from '../../version'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
 import { campaignCandidateGrants, planCampaignArgs } from '../../coreBetaCampaigns'
-import type { CampaignApplied, CampaignFacts, CampaignPlan } from '../../coreBetaCampaigns'
+import type { CampaignFacts, CampaignPlan } from '../../coreBetaCampaigns'
 import {
   campaignRecordSaved,
   getCoreBetaCampaigns,
@@ -290,36 +290,38 @@ export function buildLaunchArgs(input: {
   }
 }
 
-/** The `enrolled` event fires only once the record is on disk, so it never outnumbers records. */
+/** The `enrolled` event fires only once the record is on disk, so it never outnumbers records.
+ *  An unrecorded enrolment stays in `applied` (its arg is on the command line) beside a
+ *  `record_failed` miss. */
 export function recordCampaignEnrolments(
   campaign: CoreBetaLaunch['campaign']
 ): CoreBetaLaunch['campaign'] {
   const now = Date.now()
-  const applied: CampaignApplied[] = []
   const misses = [...campaign.misses]
-  for (const entry of campaign.applied) {
-    const { key, grant, epoch, enrolledNow, fetchedAt } = entry
-    if (enrolledNow) {
-      try {
-        writeCampaignRecord(key, grant.arg, epoch, now)
-      } catch (err) {
-        // On a first enrolment the backup lands first, so the record survives a failed primary write.
-        if (!campaignRecordSaved(key, grant.arg, epoch)) {
-          console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
-          misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
-          continue
-        }
+  for (const { key, grant, epoch, enrolledNow, fetchedAt } of campaign.applied) {
+    if (!enrolledNow) continue
+    try {
+      writeCampaignRecord(key, grant.arg, epoch, now)
+    } catch (err) {
+      // On a first enrolment the backup lands first, so the record survives a failed primary write.
+      if (!campaignRecordSaved(key, grant.arg, epoch)) {
+        console.warn(`[core-campaign] ${key}: ${grant.arg} enrolment not recorded:`, err)
+        misses.push({ key, arg: grant.arg, member: false, reason: 'record_failed' })
+        continue
       }
+    }
+    try {
       telemetry.emit('comfy.desktop.core_beta.enrolled', {
         key,
         arg: grant.arg,
         epoch,
         lag_ms: fetchedAt === undefined ? null : now - fetchedAt
       })
+    } catch {
+      // Reporting must not affect launch.
     }
-    applied.push(entry)
   }
-  return { applied, misses }
+  return { applied: campaign.applied, misses }
 }
 
 /** Put each record in the on-disk log (bug reports) and the user-visible output. */
@@ -354,6 +356,12 @@ export function emitCoreBetaTelemetry(input: {
   campaign?: CoreBetaLaunch['campaign']
 }): void {
   const campaign = input.campaign ?? { applied: [], misses: [] }
+  const unrecorded = new Set(
+    campaign.misses
+      .filter(({ reason }) => reason === 'record_failed')
+      .map(({ key, arg }) => `${key}:${arg}`)
+  )
+  const active = campaign.applied.filter(({ key, grant }) => !unrecorded.has(`${key}:${grant.arg}`))
   if (input.appliedArgs.length > 0 || input.droppedUnsupported.length > 0) {
     telemetry.emit('comfy.desktop.core_beta.applied', {
       args: [...input.appliedArgs],
@@ -362,10 +370,8 @@ export function emitCoreBetaTelemetry(input: {
       core_version_label: input.coreVersionLabel,
       dropped_unsupported: [...input.droppedUnsupported],
       // The active count; only on launches a campaign applied something, so others report as before.
-      ...(campaign.applied.length > 0 && {
-        campaign_args: campaign.applied.map(
-          ({ key, grant, epoch }) => `${key}:${grant.arg}:${epoch}`
-        )
+      ...(active.length > 0 && {
+        campaign_args: active.map(({ key, grant, epoch }) => `${key}:${grant.arg}:${epoch}`)
       })
     })
   }

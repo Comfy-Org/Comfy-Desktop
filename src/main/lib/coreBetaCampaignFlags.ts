@@ -36,10 +36,12 @@ let campaigns = new Map<string, OpsFlag<CampaignAnswer | null>>()
 
 export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promise<void> {
   // Whatever its age: an expired registry still names the keys; only fresh answers decide.
-  const saved = readPersistedFile(CAMPAIGN_FLAGS_FILE).entries[CAMPAIGN_REGISTRY_KEY] as
-    | { value?: FeatureFlagValue; payload?: unknown }
-    | undefined
-  const listed = (saved && parseCampaignRegistry(saved.value, saved.payload)) ?? []
+  const saved: unknown = readPersistedFile(CAMPAIGN_FLAGS_FILE).entries[CAMPAIGN_REGISTRY_KEY]
+  const { value, payload } = (saved ?? {}) as {
+    value?: FeatureFlagValue
+    payload?: unknown
+  }
+  const listed = parseCampaignRegistry(value, payload) ?? []
   for (const { key } of listed) {
     if (campaigns.has(key)) continue
     campaigns.set(
@@ -95,7 +97,9 @@ export function campaignRecordSaved(key: string, arg: string, epoch: number): bo
 
 /** Throws when the file cannot be safely rewritten. */
 export function writeCampaignRecord(key: string, arg: string, epoch: number, now: number): void {
-  const existing = readCampaignRecords()[key] ?? {}
+  const { entries, primaryUnreadable } = readPersistedFile(ENROLMENTS_FILE, true)
+  if (primaryUnreadable) throw new Error('campaign-enrolments.json is unreadable; not writing')
+  const existing = parseCampaignRecords(entries)[key] ?? {}
   writePersistedEntry(
     ENROLMENTS_FILE,
     key,
@@ -105,7 +109,7 @@ export function writeCampaignRecord(key: string, arg: string, epoch: number, now
 }
 
 export function _resetForTest(): void {
-  registry._resetForTest()
+  for (const flag of [registry, ...campaigns.values()]) flag._resetForTest()
   registry = makeRegistryFlag()
   campaigns = new Map()
 }
