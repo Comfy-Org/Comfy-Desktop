@@ -37,9 +37,12 @@ const DEFAULT_TIMEOUT_MS = 2000
 const PERSIST_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 /** Every persisted flag's last fetched result, keyed by flag key. One file rather than one
- *  per flag so the read-modify-write stays a single atomic replace. */
-function persistFilePath(): string {
-  return path.join(configDir(), 'ops-flags.json')
+ *  per flag so the read-modify-write stays a single atomic replace. A flag family that must never
+ *  disturb these entries (Core beta campaigns) names its own file through `persistFile`. */
+export const OPS_FLAGS_FILE = 'ops-flags.json'
+
+function persistFilePath(file: string): string {
+  return path.join(configDir(), file)
 }
 
 interface PersistedFileRead {
@@ -78,7 +81,7 @@ function maybeSeedFromEnv(): void {
     // Hard guard: never run in production builds.
     if (app.isPackaged) return
     JSON.parse(seed) // validate before writing
-    const filePath = persistFilePath()
+    const filePath = persistFilePath(OPS_FLAGS_FILE)
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     // Backup first, then primary — the same ordering `writePersistedResult` relies on, so a
     // seeded run cannot be served a stale `.bak` from a previous one.
@@ -89,9 +92,9 @@ function maybeSeedFromEnv(): void {
   }
 }
 
-function readPersistedFile(): PersistedFileRead {
-  maybeSeedFromEnv()
-  const outcome = readFileSafe(persistFilePath())
+export function readPersistedFile(file: string): PersistedFileRead {
+  if (file === OPS_FLAGS_FILE) maybeSeedFromEnv()
+  const outcome = readFileSafe(persistFilePath(file))
   if (outcome.kind === 'unreadable') return { entries: {}, primaryUnreadable: true }
   if (outcome.kind !== 'data') return { entries: {}, primaryUnreadable: false }
 
@@ -113,11 +116,11 @@ function readPersistedFile(): PersistedFileRead {
  *  from the backup, resurrecting entries the primary had already superseded. Read-only callers
  *  use `readPersistedFile`, which degrades to "no cache". Mirrors `installations.ts`'
  *  `loadForWrite` (issue #1367). */
-function readPersistedFileForWrite(): Record<string, unknown> {
-  const { entries, primaryUnreadable } = readPersistedFile()
+function readPersistedFileForWrite(file: string): Record<string, unknown> {
+  const { entries, primaryUnreadable } = readPersistedFile(file)
   if (primaryUnreadable) {
     throw new Error(
-      'ops-flags.json exists but its entries cannot be recovered right now; refusing to modify it'
+      `${file} exists but its entries cannot be recovered right now; refusing to modify it`
     )
   }
   return entries
@@ -130,14 +133,17 @@ interface PersistedOpsFlagEntry {
 
 /** An entry without `fetchedAt` (written before it existed) reads as expired. Two-sided, so a
  *  stamp from a clock that ran ahead cannot outlive the cap by more than its own skew. */
-function readPersistedResult(key: string): PersistedOpsFlagEntry | undefined {
-  const entry = readPersistedFile().entries[key]
+export function readPersistedResult(
+  file: string,
+  key: string
+): (PersistedOpsFlagEntry & { fetchedAt: number }) | undefined {
+  const entry = readPersistedFile(file).entries[key]
   if (!entry || typeof entry !== 'object') return undefined
   const { value, payload, fetchedAt } = entry as PersistedOpsFlagEntry & { fetchedAt?: unknown }
   if (typeof value !== 'string' && typeof value !== 'boolean') return undefined
   if (typeof fetchedAt !== 'number' || Math.abs(Date.now() - fetchedAt) > PERSIST_MAX_AGE_MS)
     return undefined
-  return { value, payload }
+  return { value, payload, fetchedAt }
 }
 
 /** Writes the backup FIRST, then the primary, both as plain atomic writes. Refuses outright
@@ -152,11 +158,17 @@ function readPersistedResult(key: string): PersistedOpsFlagEntry | undefined {
  *
  *  `writeFileSafe`'s own backup option must NOT be enabled on either call: it copies the OLD
  *  primary over `.bak` at write time, which is the resurrection this ordering prevents. */
-function writePersistedResult(key: string, entry: PersistedOpsFlagEntry): void {
-  const all = readPersistedFileForWrite()
-  all[key] = { ...entry, fetchedAt: Date.now() }
+function writePersistedResult(file: string, key: string, entry: PersistedOpsFlagEntry): void {
+  writePersistedEntry(file, key, { ...entry, fetchedAt: Date.now() })
+}
+
+/** `writePersistedResult`'s read-modify-write for any JSON entry, with the same refusal and the
+ *  same backup-first ordering. */
+export function writePersistedEntry(file: string, key: string, entry: unknown): void {
+  const all = readPersistedFileForWrite(file)
+  all[key] = entry
   const contents = JSON.stringify(all)
-  const filePath = persistFilePath()
+  const filePath = persistFilePath(file)
   writeFileSafe(filePath + '.bak', contents)
   writeFileSafe(filePath, contents)
 }
@@ -180,8 +192,14 @@ export function makeOpsFlag<T>(opts: {
   /** Value held before the fetch resolves, and kept when it fails or returns something
    *  `parse` doesn't recognise. This is the flag's fail direction. */
   fallback: T
-  /** Return `undefined` to retain the fallback. */
-  parse: (value: FeatureFlagValue | undefined, payload: unknown) => T | undefined
+  /** Return `undefined` to retain the fallback. `fetchedAt` is when the server produced the
+   *  answer being parsed: now for a live one, the saved stamp for a stored one, and absent when
+   *  there is no answer at all. */
+  parse: (
+    value: FeatureFlagValue | undefined,
+    payload: unknown,
+    fetchedAt?: number
+  ) => T | undefined
   /** Enables the `[label] init:` / `[label] init error:` boot logs. Omit for no logging. */
   logLabel?: string
   /** Boot deadline, chosen from the saved treatment (`undefined` when there is none or it has
@@ -210,8 +228,11 @@ export function makeOpsFlag<T>(opts: {
    *  Only for flags whose fail direction is a downgrade a returning user would notice; a
    *  fail-closed guard must NOT persist. */
   persist?: true
+  /** The file under `configDir()` that `persist` writes. Defaults to `ops-flags.json`. */
+  persistFile?: string
 }): OpsFlag<T> {
   const { key, fallback, parse, logLabel, deadlineMs, persist } = opts
+  const persistFile = opts.persistFile ?? OPS_FLAGS_FILE
   let cached: T = fallback
   let initPromise: Promise<void> | null = null
   /** Captured by each `init`, bumped by `_resetForTest`. A fetch this flag abandoned at the
@@ -224,8 +245,8 @@ export function makeOpsFlag<T>(opts: {
    *  unreachable server must never overwrite what a successful fetch stored. */
   function readPersisted(): T | undefined {
     if (!persist) return undefined
-    const stored = readPersistedResult(key)
-    return stored && parse(stored.value, stored.payload)
+    const stored = readPersistedResult(persistFile, key)
+    return stored && parse(stored.value, stored.payload, stored.fetchedAt)
   }
 
   /** Store a value the server produced after this launch's deadline, so the NEXT launch reads
@@ -239,13 +260,14 @@ export function makeOpsFlag<T>(opts: {
    *  `writePersistedResult` is a read-modify-write over a single shared `ops-flags.json`, and a
    *  late write is the first thing that makes concurrent writers structurally possible — it can
    *  now land after its own launch has moved on, so two overlapping launches could interleave.
-   *  Left unlocked on purpose: `coreBetaGrants` is the only flag that persists, so there is one
-   *  writer per process, and the loser of such a race re-fetches on the next launch anyway.
-   *  Revisit if a second `persist` flag is ever added. */
+   *  Left unlocked on purpose. Within a process each read-modify-write is synchronous, so the
+   *  campaign flags sharing `campaign-flags.json` cannot interleave, and `ops-flags.json` has a
+   *  single persisting flag. Across two overlapping launches the loser of a race re-fetches on
+   *  the next launch anyway. */
   function persistLate(generationAtInit: number, result: OpsFlagValueResult): void {
     if (generationAtInit !== generation) return
     try {
-      writePersistedResult(key, { value: result.value, payload: result.payload })
+      writePersistedResult(persistFile, key, { value: result.value, payload: result.payload })
     } catch (err) {
       // Same containment as the in-band write: a failed persist costs the next launch its
       // convergence and nothing else, so it must not escape as an unhandled rejection.
@@ -274,11 +296,14 @@ export function makeOpsFlag<T>(opts: {
             const parsed = saved !== undefined ? saved : parse(undefined, undefined)
             if (parsed !== undefined) cached = parsed
           } else {
-            const parsed = parse(result.value, result.payload)
+            const parsed = parse(result.value, result.payload, Date.now())
             if (parsed !== undefined) cached = parsed
             if (persist) {
               try {
-                writePersistedResult(key, { value: result.value, payload: result.payload })
+                writePersistedResult(persistFile, key, {
+                  value: result.value,
+                  payload: result.payload
+                })
               } catch (err) {
                 // A failed write must not cost this launch the value it just fetched.
                 if (logLabel) console.log(`[${logLabel}] persist error:`, err)

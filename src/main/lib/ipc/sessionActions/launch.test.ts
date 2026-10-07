@@ -72,7 +72,28 @@ const launchHarness = vi.hoisted(() => ({
   /** A live Desktop port lock on a busy port (the pid it names); null = none. */
   portLockPid: null as null | number,
   /** What the mocked `killProcessTree` reports: false = the tree outlived the kill wait. */
-  killExits: true
+  killExits: true,
+  /** The campaign registry and answers this launch reads. */
+  campaigns: { registry: [] as unknown[], answers: new Map<string, unknown>() },
+  campaignRecords: {} as Record<string, Record<string, { epoch: number; enrolledAt: number }>>,
+  /** Every enrolment written, as `[key, arg, epoch]`. */
+  recordWrites: [] as Array<[string, string, number]>,
+  recordWriteThrows: false,
+  idClass: 'machine_derived' as string
+}))
+
+vi.mock('../../coreBetaCampaignFlags', () => ({
+  getCoreBetaCampaigns: async () => launchHarness.campaigns,
+  readCampaignRecords: () => launchHarness.campaignRecords,
+  writeCampaignRecord: (key: string, arg: string, epoch: number) => {
+    if (launchHarness.recordWriteThrows) throw new Error('EIO')
+    launchHarness.recordWrites.push([key, arg, epoch])
+  }
+}))
+
+vi.mock('../../deviceId', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getIdClass: () => launchHarness.idClass
 }))
 
 vi.mock('../shared', async (importOriginal) => {
@@ -246,6 +267,7 @@ import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
 import type { LaunchCommand } from '../../../types/sources'
 import { NO_CORE_COMMITS } from '../../coreBetaGrants'
+import { parseCampaignAnswer } from '../../coreBetaCampaigns'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
@@ -1182,6 +1204,163 @@ describe('core beta report placement', () => {
     proc.kill = () => true
     return proc
   }
+
+  describe('campaigns', () => {
+    const KEY = 'desktop_core_beta_agent'
+    const agentAnswer = (variant: string): unknown =>
+      parseCampaignAnswer(
+        variant,
+        {
+          grants: [
+            {
+              arg: '--enable-agent',
+              min_core_version: '0.3.60',
+              requires_args: ['--enable-assets'],
+              enrolment: { epoch: 1, epochs: [1] }
+            }
+          ]
+        },
+        Date.now()
+      )
+    const serveCampaign = (variant: string): void => {
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map([[KEY, agentAnswer(variant)]])
+      }
+    }
+    const appliedEvent = (): Record<string, unknown> | undefined =>
+      events.filter((e) => e.event === 'comfy.desktop.core_beta.applied').at(-1)?.properties
+
+    beforeEach(() => {
+      launchHarness.schemaNames = ['enable-assets', 'enable-agent', 'listen', 'feature-flag']
+      launchHarness.campaigns = { registry: [], answers: new Map() }
+      launchHarness.campaignRecords = {}
+      launchHarness.recordWrites = []
+      launchHarness.recordWriteThrows = false
+      launchHarness.idClass = 'machine_derived'
+    })
+
+    it('enrols an assets-on machine on enrol: arg after slot #0, record, then the event', async () => {
+      serveCampaign('enrol')
+      expect((await handleLaunch(ctxFor('campaign-enrol'))).ok).toBe(true)
+      expect(spawnArgs).toEqual(expect.arrayContaining(['--enable-assets', '--enable-agent']))
+      expect(spawnArgs.indexOf('--enable-agent')).toBe(spawnArgs.indexOf('--enable-assets') + 1)
+      expect(launchHarness.recordWrites).toEqual([[KEY, '--enable-agent', 1]])
+      expect(
+        events.find((e) => e.event === 'comfy.desktop.core_beta.enrolled')?.properties
+      ).toEqual({
+        key: KEY,
+        arg: '--enable-agent',
+        epoch: 1,
+        lag_ms: expect.any(Number)
+      })
+      expect(appliedEvent()).toMatchObject({
+        args: ['--enable-assets', '--enable-agent'],
+        campaign_args: [`${KEY}:--enable-agent:1`],
+        campaign_idle: [],
+        campaign_enrol_refused: []
+      })
+    })
+
+    it('holds for an enrolled machine on hold, writing nothing new', async () => {
+      serveCampaign('hold')
+      launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+      await handleLaunch(ctxFor('campaign-hold'))
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(launchHarness.recordWrites).toEqual([])
+      expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+    })
+
+    it('refuses enrolment while assets is off, and reports why', async () => {
+      launchHarness.grants = []
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-assets-off'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(launchHarness.recordWrites).toEqual([])
+      expect(appliedEvent()).toMatchObject({
+        campaign_enrol_refused: [`${KEY}:--enable-agent:requires_args`]
+      })
+    })
+
+    it('idles an enrolled machine while assets is off, keeping its record', async () => {
+      launchHarness.grants = []
+      serveCampaign('hold')
+      launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+      await handleLaunch(ctxFor('campaign-idle'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(appliedEvent()).toMatchObject({
+        campaign_idle: [`${KEY}:--enable-agent:requires_args`],
+        campaign_enrol_refused: []
+      })
+    })
+
+    it('never enrols a random_fallback launch', async () => {
+      launchHarness.idClass = 'random_fallback'
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-fallback-id'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(launchHarness.recordWrites).toEqual([])
+    })
+
+    it('leaves a non-member launch exactly as a launch without campaigns', async () => {
+      // The launch writes its final args back onto the command, so each launch gets a fresh one.
+      const command = structuredClone(launchHarness.launchCommand)
+      await handleLaunch(ctxFor('campaign-none'))
+      const without = spawnArgs
+      const withoutApplied = appliedEvent()
+      launchHarness.launchCommand = command
+      serveCampaign('hold')
+      await handleLaunch(ctxFor('campaign-non-member'))
+      const normalise = (args: string[]): string[] =>
+        args.map((arg) => arg.replace('campaign-non-member', 'campaign-none'))
+      expect(normalise(spawnArgs)).toEqual(without)
+      expect(appliedEvent()).toEqual(withoutApplied)
+      expect(events.filter((e) => e.event === 'comfy.desktop.core_beta.applied')).toHaveLength(2)
+    })
+
+    it('applies the arg but counts no enrolment when the record cannot be written', async () => {
+      launchHarness.recordWriteThrows = true
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-write-fails'))
+      expect(spawnArgs).toContain('--enable-agent')
+      expect(reportedEvents()).not.toContain('comfy.desktop.core_beta.enrolled')
+    })
+
+    it('proves a campaign commit range against the live HEAD', async () => {
+      const head = gitInitComfyUI()
+      launchHarness.campaigns = {
+        registry: [{ key: KEY, args: ['--enable-agent'] }],
+        answers: new Map([
+          [
+            KEY,
+            parseCampaignAnswer(
+              'enrol',
+              {
+                grants: [
+                  {
+                    arg: '--enable-agent',
+                    commit_ranges: [[head, null]],
+                    enrolment: { epoch: 1, epochs: [1] }
+                  }
+                ]
+              },
+              Date.now()
+            )
+          ]
+        ])
+      }
+      await handleLaunch(ctxFor('campaign-commit-range'))
+      expect(spawnArgs).toContain('--enable-agent')
+    })
+
+    it('fetches no campaign answer and applies none when beta is off', async () => {
+      launchHarness.betaEnabled = false
+      serveCampaign('enrol')
+      await handleLaunch(ctxFor('campaign-beta-off'))
+      expect(spawnArgs).not.toContain('--enable-agent')
+      expect(launchHarness.recordWrites).toEqual([])
+    })
+  })
 
   it('reports on a launch that reaches the skip-port spawn', async () => {
     const res = await handleLaunch(ctxFor('harness-skip-port-spawns'))
