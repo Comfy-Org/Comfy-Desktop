@@ -8,7 +8,8 @@ import type { WriteStream } from 'fs'
 
 // Electron's home for this run: a directory of its own, so concurrent runs on one machine never
 // rename each other's settings.json.tmp out from under a write. The env overrides paths.ts would
-// prefer over it are cleared before any import reads them (settings.ts fixes its path at import).
+// prefer over it are cleared before any import reads them (settings.ts fixes its path at import);
+// cleared rather than pointed at the directory, which only exists from the first getPath call.
 const electronHome = vi.hoisted(() => {
   const overrides = [
     'XDG_CONFIG_HOME',
@@ -22,13 +23,13 @@ const electronHome = vi.hoisted(() => {
   return { dir: '', saved }
 })
 afterAll(() => {
-  // Env first: it is shared with later files in this worker, and a failed removal must not keep it.
+  // Env first, so a failed removal can't keep it cleared. Only matters with --no-isolate: by default
+  // each test file runs in a fresh worker. The retries cover Windows lock errors (EBUSY/EPERM).
   for (const [name, value] of Object.entries(electronHome.saved)) {
     if (value !== undefined) process.env[name] = value
   }
   if (electronHome.dir) {
     fs.rmSync(electronHome.dir, { recursive: true, force: true, maxRetries: 3 })
-    electronHome.dir = ''
   }
 })
 
