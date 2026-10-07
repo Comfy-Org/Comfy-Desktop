@@ -1,6 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+// @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
+// Keep the feedback iframe in the DOM without loading the external support site.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
+import type { ExampleWorkflowDownload, RunPerformanceTestWorkflowResult } from '../types/ipc'
 
 const installWizardOpen = vi.hoisted(() => vi.fn())
+const createResultsPngMock = vi.hoisted(() =>
+  vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer)
+)
+
+vi.mock('../lib/performanceTestResultsSvg', async (importOriginal) => ({
+  ...(await importOriginal<typeof PerformanceTestResultsSvg>()),
+  createResultsPng: createResultsPngMock
+}))
 
 vi.mock('../main', () => ({
   i18n: {
@@ -63,7 +75,7 @@ vi.mock('../views/ChooserView.vue', () => ({
     name: 'ChooserView',
     emits: ['pick', 'show-new-install'],
     template:
-      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\', \'workspace-1\')">New</button></div>'
+      '<div data-testid="chooser-view"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\')">New</button></div>'
   }
 }))
 vi.mock('../views/InstallWizardModal.vue', () => ({
@@ -129,7 +141,12 @@ import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useOverlay } from '../composables/useOverlay'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
+
+// Panel scopes (including queued media prefetches) are disposed before
+// happy-dom tears down document by the suite-wide `enableAutoUnmount` in
+// `vitest.setup.ts` - calling it a second time here throws.
 
 const messages = {
   en: {
@@ -142,6 +159,93 @@ const messages = {
     },
     common: {
       loading: 'Loading…'
+    },
+    settings: {
+      logs: 'Logs'
+    },
+    devPlatform: {
+      workspace: {
+        personalLabel: 'Personal'
+      }
+    },
+    performanceTest: {
+      title: 'Performance Tests',
+      description: 'Run performance tests against your ComfyUI instances.',
+      selectInstance: '1. Select an instance',
+      workspaceLabel: 'Workspace',
+      instanceLabel: 'Instance',
+      selectInstancePlaceholder: 'Select an instance',
+      chooseWorkflow: '2. Choose a workflow',
+      chooseExampleWorkflow: 'Choose an example workflow',
+      loadingExampleWorkflows: 'Loading example workflows...',
+      orImportApiWorkflow: 'or import an API workflow',
+      exampleWorkflowPickerTitle: 'Choose an example workflow',
+      exampleWorkflowPickerDescription: 'Missing models will be downloaded automatically.',
+      useExampleWorkflow: 'Use workflow',
+      noExampleWorkflows: 'No benchmark-ready example workflows are currently available.',
+      exampleWorkflowsOffline:
+        'You need to be connected to the internet to download example workflows.',
+      exampleWorkflowUnavailable: "This example workflow isn't available yet. Choose another one.",
+      exampleWorkflowsNeedInstall: 'Finish installing this instance to use example workflows.',
+      exampleModelsDownload: 'Model download progress',
+      exampleModelsFailed: 'Could not download every model required by this workflow.',
+      exampleModelsNoSpace: "There is not enough disk space for this workflow's models.",
+      cancelExampleDownload: 'Cancel download',
+      dropWorkflowHint: 'Drop a workflow .json file in API format here, or click to browse',
+      importingWorkflow: 'Importing workflow...',
+      preparingExampleWorkflow: 'Preparing workflow and downloading required models...',
+      importFailed: 'Could not import the workflow.',
+      deleteWorkflow: 'Delete workflow',
+      deleteFailed: 'Could not delete the workflow.',
+      run: 'Run',
+      stop: 'Stop',
+      stopping: 'Stopping...',
+      stopFailed: 'Could not stop the instance.',
+      measurementSettings: '3. Set measurement settings',
+      warmupRuns: 'Warm-up runs',
+      warmupRunsHint:
+        'Runs executed first to load models and warm up caches. They are not included in the results.',
+      measuredRuns: 'Measured runs',
+      measuredRunsHint:
+        'Runs timed after the warm-up runs. Their durations are used to calculate the results.',
+      logsPlaceholder: 'Instance logs will appear here.',
+      results: 'Results',
+      resultsPlaceholder: 'Performance test results will appear here.',
+      workflowFileName: 'Workflow file',
+      fastestRun: 'Fastest run',
+      slowestRun: 'Slowest run',
+      averageRunDuration: 'Average run',
+      medianRunDuration: 'Median run',
+      measuredRunCount: 'Measured runs',
+      failedRunCount: 'Failed runs',
+      runProgress: 'Progress',
+      runProgressCount: '{completed} of {total} runs completed',
+      runDurationChart: 'Run duration aggregates',
+      device: 'Compute device',
+      vram: 'VRAM',
+      ram: 'RAM',
+      pytorchVersion: 'PyTorch version',
+      xformersVersion: 'xFormers version',
+      systemInformation: 'System information',
+      cpu: 'CPU',
+      cpuCores: 'CPU cores',
+      operatingSystem: 'Operating system',
+      architecture: 'Architecture',
+      openResultsFolder: 'Open folder',
+      imageTitle: 'Performance Test: {workflowName}',
+      exportResultsImage: 'Export results',
+      exportingImage: 'Exporting image...',
+      exportImageFailed: 'Could not export the results image.',
+      running: 'Running...',
+      launchFailed: 'Failed to start the instance.',
+      submittingRuns: 'Submitting {warmupCount} warm-up runs and {count} measured runs...',
+      completedRuns:
+        'Finished {count} measured runs ({failed} failed). Final response saved to {path}',
+      submitFailed: 'Failed to submit the performance test workflow.'
+    },
+    benchmarks: {
+      title: 'Benchmarks',
+      description: 'Browse and compare results from your performance tests.'
     }
   }
 }
@@ -155,6 +259,11 @@ interface InstallationLike {
   name: string
   sourceLabel: string
   sourceCategory: string
+  sourceId?: string
+  workspaceId?: string
+  status?: string
+  version?: string
+  statusTag?: { style: string; label: string; detail?: string }
 }
 
 type PanelTriggerPayload = {
@@ -169,11 +278,29 @@ type PanelTriggerPayload = {
 }
 
 interface MockApiState {
+  comfybuilder: {
+    getAuthStatus: ReturnType<typeof vi.fn>
+    signIn: ReturnType<typeof vi.fn>
+    signOut: ReturnType<typeof vi.fn>
+    onAuthChanged: ReturnType<typeof vi.fn>
+    listWorkspaces: ReturnType<typeof vi.fn>
+    listBuilds: ReturnType<typeof vi.fn>
+    switchWorkspace: ReturnType<typeof vi.fn>
+  }
   panelSwitchCallbacks: ((data: { panel: string; installationId?: string }) => void)[]
   panelTriggerOverlayCallbacks: ((data: PanelTriggerPayload) => void)[]
   appUpdatePromptRestartCallbacks: ((data: { version: string }) => void)[]
   appUpdateUserActionFailedCallbacks: ((data: { message: string }) => void)[]
   installationsChangedCallbacks: (() => void)[]
+  performanceTestProgressCallbacks: ((data: {
+    sessionId: string
+    completedRuns: number
+    totalRuns: number
+  }) => void)[]
+  performanceTestExampleDownloadCallbacks: ((data: {
+    filePath: string
+    download: ExampleWorkflowDownload
+  }) => void)[]
   /** File-menu Skip Onboarding callbacks. Main fires this when the
    *  user clicks the entry in the waffle popup; tests can simulate
    *  the click by invoking each callback. */
@@ -190,6 +317,7 @@ interface MockApiState {
   getInstallations: ReturnType<typeof vi.fn>
   openExternal: ReturnType<typeof vi.fn>
   getAppVersion: ReturnType<typeof vi.fn>
+  getSetting: ReturnType<typeof vi.fn>
   /** Per-key getSetting values. Tests that need first-use takeover to
    *  auto-mount can flip `firstUseCompleted` to false here. Default is
    *  `true` so existing tests don't trip the takeover. */
@@ -204,11 +332,27 @@ function installMockApi(initial?: {
 }): MockApiState {
   const installations: InstallationLike[] = initial?.installations ?? []
   const state: MockApiState = {
+    comfybuilder: {
+      getAuthStatus: vi.fn().mockResolvedValue({
+        signedIn: true,
+        workspaceId: 'workspace-1',
+        workspaceName: 'Workspace One',
+        workspaceType: 'team'
+      }),
+      signIn: vi.fn(async () => ({ signedIn: true })),
+      signOut: vi.fn(async () => ({ signedIn: false })),
+      onAuthChanged: vi.fn(() => () => {}),
+      listWorkspaces: vi.fn().mockResolvedValue([]),
+      listBuilds: vi.fn().mockResolvedValue([]),
+      switchWorkspace: vi.fn(async () => ({ signedIn: true }))
+    },
     panelSwitchCallbacks: [],
     panelTriggerOverlayCallbacks: [],
     appUpdatePromptRestartCallbacks: [],
     appUpdateUserActionFailedCallbacks: [],
     installationsChangedCallbacks: [],
+    performanceTestProgressCallbacks: [],
+    performanceTestExampleDownloadCallbacks: [],
     firstUseSkipCallbacks: [],
     openFeedbackCallbacks: [],
     closeRequestCallbacks: [],
@@ -216,11 +360,76 @@ function installMockApi(initial?: {
     getInstallations: vi.fn(async () => state.installations),
     openExternal: vi.fn(async () => {}),
     getAppVersion: vi.fn(async () => '0.5.0'),
+    getSetting: vi.fn(async (key: string) => state.settings[key]),
     settings: { firstUseCompleted: true, ...initial?.settings },
     installUpdate: vi.fn(async () => {}),
     downloadUpdate: vi.fn(async () => {})
   }
+  const persistedResultsSummary = {
+    createdAt: '2026-09-07T22:56:00.000Z',
+    instance: { id: 'workspace-install', name: 'Workspace Install' },
+    workspace: { id: 'workspace-1', name: 'Workspace One' },
+    workflowName: 'cat-workflow.json',
+    fastestJobDurationSeconds: 1.25,
+    slowestJobDurationSeconds: 2.75,
+    averageJobDurationSeconds: 2,
+    medianJobDurationSeconds: 1.875,
+    measuredJobCount: 5,
+    failedRunCount: 0,
+    hardware: {
+      deviceType: 'cuda',
+      deviceIndex: 0,
+      deviceName: 'Top-level fallback should not be displayed',
+      backend: 'native',
+      devices: [
+        {
+          deviceType: 'cuda',
+          deviceIndex: 0,
+          deviceName: 'NVIDIA GeForce RTX 4090',
+          backend: 'native'
+        }
+      ],
+      vramMb: 24576,
+      ramMb: 65461,
+      pytorchVersion: '2.10.0+cu130',
+      xformersVersion: '0.0.31',
+      cudaDeviceSet: 0
+    },
+    systemInfo: {
+      gpu_vendor: 'nvidia',
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce RTX 4090',
+      gpu_vram_mb: 24576,
+      gpu_vram_gb: 24,
+      gpu_tier: 'high',
+      gpus: [],
+      nvidia_driver_version: '580.88',
+      nvidia_driver_supported: true,
+      amd_driver_version: null,
+      intel_driver_version: null,
+      platform: 'win32',
+      arch: 'x64',
+      os_version: '10.0.26200',
+      os_distro: 'Microsoft Windows 11 Pro',
+      os_release: '10.0.26200',
+      os_arch: '64-bit',
+      electron_version: '37.2.3',
+      chrome_version: '138.0.7204.100',
+      total_memory_gb: 64,
+      cpu_model: 'AMD Ryzen 9 7950X',
+      cpu_cores: 32,
+      cpu_physical_cores: 16,
+      cpu_speed_ghz: 4.5,
+      cpu_manufacturer: 'AMD',
+      app_version: '1.0.47',
+      auto_update: true,
+      locale: 'en',
+      installation_count: 1,
+      installations: []
+    }
+  } as const
   const api = {
+    comfybuilder: state.comfybuilder,
     getLocaleMessages: vi.fn().mockResolvedValue(messages.en),
     getLocale: vi.fn().mockResolvedValue('en'),
     onLocaleChanged: vi.fn(() => () => {}),
@@ -286,6 +495,8 @@ function installMockApi(initial?: {
     onInstanceStarted: vi.fn(() => () => {}),
     onInstanceStopped: vi.fn(() => () => {}),
     onInstanceStopping: vi.fn(() => () => {}),
+    stopComfyUI: vi.fn(async () => {}),
+    cancelOperation: vi.fn(async () => {}),
     onComfyOutput: vi.fn(() => () => {}),
     onComfyExited: vi.fn(() => () => {}),
     onInstanceCrashed: vi.fn(() => () => {}),
@@ -293,7 +504,7 @@ function installMockApi(initial?: {
     ackAdoptPrompt: vi.fn(),
     respondAdoptPrompt: vi.fn(),
     onErrorDetail: vi.fn(() => () => {}),
-    getSetting: vi.fn(async (key: string) => state.settings[key]),
+    getSetting: state.getSetting,
     setSetting: vi.fn(async (key: string, value: unknown) => {
       state.settings[key] = value
     }),
@@ -320,6 +531,99 @@ function installMockApi(initial?: {
     // Picker thumbnail warm-up fetches the bundled-template options on the
     // first-use cold-start path; returning users must never trigger it.
     getFieldOptions: vi.fn(async () => []),
+    getPathForFile: vi.fn((file: File) => `C:\\incoming\\${file.name}`),
+    importPerformanceTestWorkflow: vi.fn(async () => ({
+      ok: true,
+      filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
+    })),
+    getPerformanceTestExampleWorkflows: vi.fn(async () => ({ options: [], diskSpace: null })),
+    preparePerformanceTestExampleWorkflow: vi.fn(async () => ({
+      ok: true,
+      filePath: 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_turbo.json',
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })),
+    onPerformanceTestExampleDownload: vi.fn((cb) => {
+      state.performanceTestExampleDownloadCallbacks.push(cb)
+      return () => {
+        state.performanceTestExampleDownloadCallbacks =
+          state.performanceTestExampleDownloadCallbacks.filter((callback) => callback !== cb)
+      }
+    }),
+    deletePerformanceTestWorkflow: vi.fn(async () => ({ ok: true, status: 'deleted' as const })),
+    listPerformanceTestBenchmarks: vi.fn(async () => ({ folderPath: '', benchmarks: [] })),
+    onPerformanceTestProgress: vi.fn((cb) => {
+      state.performanceTestProgressCallbacks.push(cb)
+      return () => {
+        state.performanceTestProgressCallbacks = state.performanceTestProgressCallbacks.filter(
+          (callback) => callback !== cb
+        )
+      }
+    }),
+    runPerformanceTestWorkflow: vi.fn(
+      async (
+        _sessionId: string,
+        _filePath: string,
+        measuredRuns: number,
+        warmupRuns: number
+      ): Promise<RunPerformanceTestWorkflowResult> => ({
+        ok: true,
+        submitted: measuredRuns,
+        preparationRuns: warmupRuns,
+        totalSubmitted: measuredRuns + warmupRuns,
+        promptIds: Array.from(
+          { length: measuredRuns + warmupRuns },
+          (_, index) => `prompt-${index + 1}`
+        ),
+        resultPath: 'C:\\ComfyUI\\performance-tests\\20260907225600\\jobs.json',
+        resultsSummaryPath: 'C:\\ComfyUI\\performance-tests\\20260907225600\\results.json',
+        failedRuns: 0,
+        statistics: {
+          fastest: { jobId: 'prompt-3', durationSeconds: 1.25 },
+          slowest: { jobId: 'prompt-7', durationSeconds: 2.75 },
+          averageDurationSeconds: 2,
+          medianDurationSeconds: 1.875,
+          measuredJobCount: measuredRuns
+        },
+        hardware: persistedResultsSummary.hardware,
+        systemInfo: persistedResultsSummary.systemInfo,
+        resultsSummary: persistedResultsSummary
+      })
+    ),
+    savePerformanceTestLogs: vi.fn(async () => ({
+      ok: true,
+      logsPath: 'C:\\ComfyUI\\performance-tests\\20260907225600\\logs.txt'
+    })),
+    readPerformanceTestResultsSummary: vi.fn(async () => ({
+      ...persistedResultsSummary,
+      createdAt: '2001-02-03T04:05:00.000Z',
+      workflowName: 'results-json-workflow.json',
+      fastestJobDurationSeconds: 9.1,
+      slowestJobDurationSeconds: 12.3,
+      averageJobDurationSeconds: 10.2,
+      medianJobDurationSeconds: 10,
+      measuredJobCount: 7,
+      failedRunCount: 2,
+      hardware: {
+        ...persistedResultsSummary.hardware,
+        devices: [
+          {
+            ...persistedResultsSummary.hardware.devices[0],
+            deviceName: 'Results JSON GPU'
+          }
+        ]
+      },
+      systemInfo: {
+        ...persistedResultsSummary.systemInfo,
+        cpu_model: 'Results JSON CPU',
+        os_distro: 'Results JSON OS',
+        os_release: '1.0'
+      }
+    })),
+    openPath: vi.fn(async () => {}),
+    exportResultsImage: vi.fn(async () => ({
+      ok: true,
+      filePath: 'C:\\Exports\\performance-test-results.png'
+    })),
     openGlobalSettings: vi.fn(),
     openInstancePicker: vi.fn()
   }
@@ -333,6 +637,25 @@ function mountPanel() {
   })
 }
 
+const telemetryListeners = new Set<EventListener>()
+
+function captureTelemetry(): TelemetryActionEventDetail[] {
+  const events: TelemetryActionEventDetail[] = []
+  const listener: EventListener = (event) => {
+    events.push((event as CustomEvent<TelemetryActionEventDetail>).detail)
+  }
+  telemetryListeners.add(listener)
+  window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, listener)
+  return events
+}
+
+afterEach(() => {
+  for (const listener of telemetryListeners) {
+    window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, listener)
+  }
+  telemetryListeners.clear()
+})
+
 const SAMPLE_INSTALL: InstallationLike = {
   id: 'test-id',
   name: 'Test Install',
@@ -345,6 +668,7 @@ describe('PanelApp', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
+    installWizardOpen.mockClear()
     // useLauncherPrefs has module-level shared state + memoized load
     // promise — reset both so each test sees a fresh load against the
     // current mock settings (in particular `firstUseCompleted`).
@@ -410,6 +734,568 @@ describe('PanelApp', () => {
     expect(lifecycle.attributes('data-installation-id')).toBe('test-id')
   })
 
+  it('renders the benchmarks body with its branded introduction', async () => {
+    window.history.replaceState({}, '', '/?panel=benchmarks&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="benchmarks"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="benchmarks-logo"]').exists()).toBe(true)
+    expect(wrapper.get('.branded-page-header h1').text()).toBe('Benchmarks')
+    expect(wrapper.get('.branded-page-header__description').text()).toBe(
+      'Browse and compare results from your performance tests.'
+    )
+  })
+
+  it('preserves the dashboard workspace when opening Performance Test', async () => {
+    mockState.installations = [
+      { ...SAMPLE_INSTALL, id: 'workspace-1-install', workspaceId: 'workspace-1' },
+      { ...SAMPLE_INSTALL, id: 'workspace-2-install', workspaceId: 'workspace-2' }
+    ]
+    const listWorkspaces = window.api.comfybuilder.listWorkspaces as ReturnType<typeof vi.fn>
+    listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' },
+      { id: 'workspace-2', name: 'Workspace Two', type: 'team' }
+    ])
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const dashboardScope = useDashboardScopeStore()
+    dashboardScope.selectWorkspace('workspace-2')
+
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'performance-test' }))
+    await flushPromises()
+
+    expect(
+      wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
+    ).toBe('Workspace Two')
+  })
+
+  it('shows only installed Personal instances on Performance Test while signed out', async () => {
+    mockState.comfybuilder.getAuthStatus.mockResolvedValue({ signedIn: false })
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'personal-installed',
+        name: 'Personal Installed',
+        status: 'installed'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'personal-failed',
+        name: 'Personal Failed',
+        status: 'failed'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'team-installed',
+        name: 'Team Installed',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ]
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('.performance-test__content').exists()).toBe(true)
+    expect(
+      wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
+    ).toBe('Personal')
+
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    expect(
+      Array.from(document.querySelectorAll('.ui-select-option-label')).map(
+        (option) => option.textContent
+      )
+    ).toEqual(['Personal Installed'])
+  })
+
+  it('renders the performance test body with scoped instance rows', async () => {
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        version: '0.3.50',
+        statusTag: { style: 'update', label: 'Update to 0.3.51' },
+        workspaceId: 'workspace-1'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'migrate-install',
+        name: 'Legacy Install',
+        sourceId: 'legacy-desktop',
+        sourceCategory: 'local',
+        status: 'installed',
+        statusTag: { style: 'migrate', label: 'Migrate' },
+        workspaceId: 'workspace-1'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'danger-install',
+        name: 'Missing Install',
+        sourceId: 'standalone',
+        sourceCategory: 'local',
+        status: 'installed',
+        statusTag: {
+          style: 'danger',
+          label: 'Folder Not Found',
+          detail: 'The instance folder could not be found.'
+        },
+        workspaceId: 'workspace-1'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'other-workspace-install',
+        name: 'Other Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-2'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'unmanaged-install',
+        name: 'Unmanaged Install',
+        sourceId: 'standalone',
+        status: 'installed'
+      },
+      {
+        ...SAMPLE_INSTALL,
+        id: 'cloud-install',
+        name: 'Comfy Cloud Instance',
+        sourceId: 'cloud',
+        sourceLabel: 'Comfy Cloud',
+        sourceCategory: 'cloud',
+        status: 'installed'
+      }
+    ]
+    const listWorkspaces = window.api.comfybuilder.listWorkspaces as ReturnType<typeof vi.fn>
+    listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' },
+      { id: 'workspace-2', name: 'Workspace Two', type: 'team' }
+    ])
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="performance-test-logo"]').exists()).toBe(true)
+    expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
+    expect(wrapper.find('.performance-test__account').exists()).toBe(true)
+    expect(wrapper.findAll('.performance-test__selection-row')).toHaveLength(2)
+    expect(
+      wrapper.findAll('.performance-test__selection-label').map((label) => label.text())
+    ).toEqual(['Workspace', 'Instance'])
+    expect(wrapper.findAll('.performance-test__selection-control button')).toHaveLength(2)
+    expect(wrapper.find('.performance-test__workspace-select .ui-select-trigger').exists()).toBe(
+      false
+    )
+    expect(
+      wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
+    ).toBe('Workspace One')
+    expect(wrapper.find('.performance-test__columns').exists()).toBe(true)
+    expect(wrapper.findAll('.performance-test__column')).toHaveLength(3)
+    expect(
+      wrapper.findAll('.performance-test__column h2').map((heading) => heading.text())
+    ).toEqual(['1. Select an instance', '2. Choose a workflow', '3. Set measurement settings'])
+    const settings = wrapper.findAll('.performance-test__setting')
+    expect(settings).toHaveLength(2)
+    expect(settings.map((setting) => setting.find('label').text())).toEqual([
+      'Warm-up runs',
+      'Measured runs'
+    ])
+    expect(
+      settings.map((setting) =>
+        setting.get('.info-tooltip-trigger[data-icon="info"]').attributes('aria-label')
+      )
+    ).toEqual([
+      'Runs executed first to load models and warm up caches. They are not included in the results.',
+      'Runs timed after the warm-up runs. Their durations are used to calculate the results.'
+    ])
+    const warmupRunsInput = settings[0]!.get('input')
+    expect(warmupRunsInput.element).toHaveProperty('value', '1')
+    expect(warmupRunsInput.attributes()).toMatchObject({ min: '0', max: '5', step: '1' })
+    await warmupRunsInput.setValue('6')
+    expect(warmupRunsInput.element).toHaveProperty('value', '5')
+    await warmupRunsInput.setValue('0')
+    expect(warmupRunsInput.element).toHaveProperty('value', '0')
+    await warmupRunsInput.setValue('-1')
+    expect(warmupRunsInput.element).toHaveProperty('value', '0')
+    await warmupRunsInput.setValue('')
+    expect(warmupRunsInput.element).toHaveProperty('value', '1')
+    await warmupRunsInput.setValue('3')
+    expect(warmupRunsInput.element).toHaveProperty('value', '3')
+    const measuredRunsInput = settings[1]!.get('input')
+    expect(measuredRunsInput.element).toHaveProperty('value', '5')
+    expect(measuredRunsInput.attributes()).toMatchObject({
+      min: '1',
+      max: '100',
+      step: '1'
+    })
+    await measuredRunsInput.setValue('101')
+    expect(measuredRunsInput.element).toHaveProperty('value', '100')
+    await measuredRunsInput.setValue('0')
+    expect(measuredRunsInput.element).toHaveProperty('value', '1')
+    await measuredRunsInput.setValue('4.6')
+    expect(measuredRunsInput.element).toHaveProperty('value', '5')
+    await measuredRunsInput.setValue('')
+    expect(measuredRunsInput.element).toHaveProperty('value', '5')
+    const logsToggle = wrapper.get('.performance-test__logs-section button')
+    expect(logsToggle.text()).toBe('Logs')
+    expect(logsToggle.attributes('aria-expanded')).toBe('true')
+    const resultsToggle = wrapper.get('.performance-test__results-section button')
+    expect(resultsToggle.text()).toBe('Results')
+    expect(resultsToggle.attributes('aria-expanded')).toBe('true')
+    expect(
+      wrapper.findAll('.performance-test__content > section').map((section) => section.classes()[0])
+    ).toEqual(['performance-test__results-section', 'performance-test__logs-section'])
+    expect(wrapper.get('.performance-test__results').text()).toContain(
+      'Performance test results will appear here.'
+    )
+    await resultsToggle.trigger('click')
+    expect(resultsToggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.performance-test__results').attributes('style')).toContain('display: none')
+    await resultsToggle.trigger('click')
+    expect(
+      wrapper.get('.performance-test__column:nth-child(3) .performance-test__run').exists()
+    ).toBe(true)
+    expect(wrapper.find('.performance-test__drop-zone').text()).toBe(
+      'Drop a workflow .json file in API format here, or click to browse'
+    )
+    expect(wrapper.find('.performance-test__run').text()).toBe('Run')
+    expect(wrapper.find('.performance-test__logs').text()).toBe('Instance logs will appear here.')
+    expect(wrapper.get('.performance-test__logs').classes()).toContain('scroll-visible')
+    await logsToggle.trigger('click')
+    expect(logsToggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.performance-test__logs').attributes('style')).toContain('display: none')
+    await logsToggle.trigger('click')
+    const instanceSelect = wrapper.get('.performance-test__instance-select button')
+    expect(instanceSelect.attributes()).toMatchObject({
+      role: 'combobox',
+      'aria-label': 'Select an instance',
+      'aria-expanded': 'false'
+    })
+    expect(instanceSelect.text()).toBe('Select an instance')
+    await instanceSelect.trigger('click')
+    await flushPromises()
+    expect(
+      Array.from(document.querySelectorAll('.ui-select-option-label')).map(
+        (option) => option.textContent
+      )
+    ).toEqual(['Workspace Install', 'Legacy Install', 'Missing Install'])
+    expect(
+      Array.from(document.querySelectorAll('.ui-select-option-desc')).map(
+        (option) => option.textContent
+      )
+    ).toEqual(['Standalone · 0.3.50', 'Standalone', 'Standalone'])
+    expect(wrapper.text()).not.toContain('Other Workspace Install')
+    expect(wrapper.find('.branded-page-header__description').text()).toBe(
+      'Run performance tests against your ComfyUI instances.'
+    )
+    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
+    ;(document.querySelectorAll('.ui-select-option')[0] as HTMLElement).click()
+    await flushPromises()
+    expect(instanceSelect.text()).toBe('Workspace Install')
+
+    const api = (
+      window as unknown as {
+        api: {
+          openInstancePicker: ReturnType<typeof vi.fn>
+          importPerformanceTestWorkflow: ReturnType<typeof vi.fn>
+          deletePerformanceTestWorkflow: ReturnType<typeof vi.fn>
+          runPerformanceTestWorkflow: ReturnType<typeof vi.fn>
+          getPathForFile: ReturnType<typeof vi.fn>
+          runAction: ReturnType<typeof vi.fn>
+          stopComfyUI: ReturnType<typeof vi.fn>
+          cancelOperation: ReturnType<typeof vi.fn>
+          onInstanceStarted: ReturnType<typeof vi.fn>
+          onInstanceStopped: ReturnType<typeof vi.fn>
+          onComfyOutput: ReturnType<typeof vi.fn>
+          savePerformanceTestLogs: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await flushPromises()
+    expect(api.importPerformanceTestWorkflow).toHaveBeenCalledWith(undefined)
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain('cat-workflow.json')
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
+      'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
+    )
+    expect(wrapper.get('.performance-test__drop-zone').text()).not.toContain(
+      'Drop a workflow .json file in API format here, or click to browse'
+    )
+
+    api.importPerformanceTestWorkflow.mockResolvedValueOnce({
+      ok: true,
+      filePath: 'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json'
+    })
+    const droppedFile = new File(['{}'], 'dropped.json', { type: 'application/json' })
+    await wrapper.get('.performance-test__drop-zone').trigger('drop', {
+      dataTransfer: { files: [droppedFile] }
+    })
+    await flushPromises()
+    expect(api.getPathForFile).toHaveBeenCalledWith(droppedFile)
+    expect(api.importPerformanceTestWorkflow).toHaveBeenLastCalledWith('C:\\incoming\\dropped.json')
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
+      'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json'
+    )
+
+    const telemetryEvents = captureTelemetry()
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+    expect(api.runAction).toHaveBeenCalledWith('workspace-install', 'launch', {
+      launchModeOverride: 'console',
+      autoPortOnConflict: true,
+      sessionIdOverride: 'performance-test:workspace-install'
+    })
+    expect(api.runPerformanceTestWorkflow).toHaveBeenCalledWith(
+      'performance-test:workspace-install',
+      'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json',
+      5,
+      3
+    )
+    expect(wrapper.get('.performance-test__logs').text()).toContain(
+      'Submitting 3 warm-up runs and 5 measured runs...'
+    )
+    expect(wrapper.get('.performance-test__logs').text()).toContain(
+      'Finished 5 measured runs (0 failed). Final response saved to '
+    )
+    expect(wrapper.get('.performance-test__logs').text()).toContain(
+      'C:\\ComfyUI\\performance-tests\\20260907225600\\jobs.json'
+    )
+    expect(api.savePerformanceTestLogs).toHaveBeenCalledWith(
+      'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json',
+      expect.stringContaining('Submitting 3 warm-up runs and 5 measured runs...')
+    )
+    expect(api.savePerformanceTestLogs.mock.calls[0]![1]).toContain(
+      'Finished 5 measured runs (0 failed). Final response saved to '
+    )
+    expect(
+      telemetryEvents.filter(
+        (event) => event.actionName === 'comfy.desktop.performance_test.started'
+      )
+    ).toEqual([
+      {
+        actionName: 'comfy.desktop.performance_test.started',
+        context: {
+          installation_id: 'workspace-install',
+          workflow_name: 'custom',
+          warmup_runs: 3,
+          measured_runs: 5,
+          total_runs: 8
+        }
+      }
+    ])
+    expect(
+      telemetryEvents.filter(
+        (event) => event.actionName === 'comfy.desktop.performance_test.completed'
+      )
+    ).toEqual([
+      {
+        actionName: 'comfy.desktop.performance_test.completed',
+        context: {
+          installation_id: 'workspace-install',
+          workflow_name: 'custom',
+          warmup_runs: 3,
+          measured_runs: 5,
+          successful_runs: 5,
+          failed_runs: 0,
+          duration_ms: expect.any(Number),
+          fastest_run_duration_ms: 1250,
+          average_run_duration_ms: 2000,
+          median_run_duration_ms: 1875,
+          slowest_run_duration_ms: 2750,
+          deviceType: 'cuda',
+          deviceIndex: 0,
+          deviceName: 'Top-level fallback should not be displayed',
+          backend: 'native',
+          devicesDeviceType: ['cuda'],
+          devicesDeviceIndex: [0],
+          devicesDeviceName: ['NVIDIA GeForce RTX 4090'],
+          devicesBackend: ['native'],
+          vramMb: 24576,
+          ramMb: 65461,
+          pytorchVersion: '2.10.0+cu130',
+          xformersVersion: '0.0.31',
+          cudaDeviceSet: 0
+        }
+      }
+    ])
+    expect(
+      telemetryEvents.some((event) => event.actionName === 'comfy.desktop.performance_test.stopped')
+    ).toBe(false)
+    const results = wrapper.get('.performance-test__results').text()
+    expect(results).toContain('Workflow filecat-workflow.json')
+    expect(results).toContain('Fastest run')
+    expect(results).toContain('1.250 s')
+    expect(results).toContain('Slowest run')
+    expect(results).toContain('2.750 s')
+    expect(results).not.toContain('prompt-3')
+    expect(results).not.toContain('prompt-7')
+    expect(results).toContain('Average run')
+    expect(results).toContain('2.000 s')
+    expect(results).toContain('Median run')
+    expect(results).toContain('1.875 s')
+    expect(results).toContain('Measured runs')
+    expect(results).toContain('5')
+    expect(results).toContain('Failed runs')
+    expect(results).toContain('0')
+    expect(wrapper.get('.performance-test__summary').findAll(':scope > *')).toHaveLength(2)
+    expect(
+      wrapper
+        .get('.performance-test__timing-list')
+        .findAll('dt')
+        .map((label) => label.text())
+    ).toEqual([
+      'Measured runs',
+      'Failed runs',
+      'Fastest run',
+      'Average run',
+      'Slowest run',
+      'Median run'
+    ])
+    expect(wrapper.get('.performance-test__aggregate-chart').attributes('aria-label')).toBe(
+      'Run duration aggregates'
+    )
+    expect(wrapper.findAll('.performance-test__aggregate-bar')).toHaveLength(4)
+    expect(wrapper.findAll('.performance-test__results h3')).toHaveLength(1)
+    expect(results).toContain('System information')
+    expect(results).toContain('NVIDIA GeForce RTX 4090')
+    expect(results).not.toContain('Top-level fallback should not be displayed')
+    expect(wrapper.find('.performance-test__result-list--compact').exists()).toBe(true)
+    expect(wrapper.findAll('.performance-test__system-group h4')).toHaveLength(0)
+    const systemGroups = wrapper.findAll('.performance-test__system-group')
+    expect(systemGroups[0]!.text()).toContain('NVIDIA GeForce RTX 4090')
+    expect(systemGroups[0]!.text()).toContain('VRAM24.0 GB')
+    expect(systemGroups[0]!.text()).toContain('RAM63.9 GB')
+    expect(systemGroups[0]!.text()).toContain('PyTorch version2.10.0+cu130')
+    expect(systemGroups[0]!.text()).toContain('xFormers version0.0.31')
+    expect(systemGroups[1]!.text()).toContain('CPUAMD Ryzen 9 7950X')
+    expect(systemGroups[1]!.text()).toContain('CPU cores32')
+    expect(systemGroups[1]!.text()).toContain('Architecturex64')
+    expect(systemGroups[1]!.text()).toContain('Operating systemMicrosoft Windows 11 Pro 10.0.26200')
+    expect(results).not.toContain('GPU driver')
+    expect(results).not.toContain('Device index')
+    expect(results).not.toContain('Backend')
+    expect(results).not.toContain('24576 MB')
+    expect(results).not.toContain('65461 MB')
+    expect(
+      wrapper
+        .get('.performance-test__results')
+        .element.lastElementChild?.classList.contains('performance-test__results-actions')
+    ).toBe(true)
+    const openResultsFolder = wrapper.get('.performance-test__open-results')
+    expect(openResultsFolder.text()).toBe('Open folder')
+    await openResultsFolder.trigger('click')
+    expect(api.openPath).toHaveBeenCalledWith('C:\\ComfyUI\\performance-tests\\20260907225600')
+    const exportResultsImage = wrapper.get('.performance-test__export-results')
+    expect(exportResultsImage.text()).toBe('Export results')
+    await exportResultsImage.trigger('click')
+    await flushPromises()
+    expect(api.readPerformanceTestResultsSummary).toHaveBeenCalledWith(
+      'C:\\ComfyUI\\performance-tests\\20260907225600\\results.json'
+    )
+    expect(api.exportResultsImage).toHaveBeenCalledTimes(1)
+    const [png, imageType, defaultPath] = api.exportResultsImage.mock.calls[0]!
+    expect(imageType).toBe('performance-test')
+    expect(defaultPath).toBe('C:\\ComfyUI\\performance-tests\\20260907225600')
+    expect(png).toBeInstanceOf(ArrayBuffer)
+    expect(createResultsPngMock).toHaveBeenCalledTimes(1)
+    const svg = createResultsPngMock.mock.calls[0]![0]
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('Performance Test: results-json-workflow.json')
+    expect(svg).not.toContain('Performance Test: cat-workflow.json')
+    expect(svg).toContain('role="img" aria-label="Comfy"')
+    expect(svg).toContain('Measured runs')
+    expect(svg).toContain('7')
+    expect(svg).toContain('Failed runs')
+    expect(svg).toContain('2')
+    expect(svg).toContain('9.100 s')
+    expect(svg).toContain('Results JSON GPU')
+    expect(svg).toContain('Results JSON CPU')
+    expect(svg).toContain('Results JSON OS 1.0')
+    expect(svg).toContain('2001')
+    expect(svg).not.toContain('NVIDIA GeForce RTX 4090')
+    expect(svg).not.toContain('AMD Ryzen 9 7950X')
+    expect(svg).not.toContain('Microsoft Windows 11 Pro 10.0.26200')
+
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'chooser' }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
+
+    mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'performance-test' }))
+    await flushPromises()
+    expect(wrapper.get('.performance-test__results').text()).toContain('1.250 s')
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain('cat-workflow.json')
+
+    const outputCallback = api.onComfyOutput.mock.calls[0]![0] as (data: {
+      installationId: string
+      text: string
+    }) => void
+    outputCallback({
+      installationId: 'performance-test:workspace-install',
+      text: 'ComfyUI is ready\n'
+    })
+    await flushPromises()
+    expect(wrapper.get('.performance-test__logs').text()).toContain('ComfyUI is ready')
+    expect(wrapper.get('.performance-test__stop').attributes('disabled')).toBe('')
+    expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
+    expect(api.cancelOperation).toHaveBeenCalledWith('performance-test:workspace-install')
+
+    let resolveDelete!: (result: { ok: true; status: 'preserved'; message: string }) => void
+    api.deletePerformanceTestWorkflow.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDelete = resolve
+        })
+    )
+    const runActionCalls = api.runAction.mock.calls.length
+    await wrapper.get('.performance-test__delete-workflow').trigger('click')
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBe('')
+    await wrapper.get('.performance-test__run').trigger('click')
+    expect(api.runAction).toHaveBeenCalledTimes(runActionCalls)
+    resolveDelete({
+      ok: true,
+      status: 'preserved',
+      message: 'This workflow belongs to a completed test and was kept with its results.'
+    })
+    await flushPromises()
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(
+      'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json'
+    )
+    expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__drop-zone').text()).toContain(
+      'Drop a workflow .json file in API format here, or click to browse'
+    )
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+      'This workflow belongs to a completed test and was kept with its results.'
+    )
+
+    await wrapper.get('.performance-test__workspace-select button').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
+    await flushPromises()
+
+    expect(instanceSelect.text()).toBe('Select an instance')
+    await instanceSelect.trigger('click')
+    await flushPromises()
+    expect(
+      Array.from(document.querySelectorAll('.ui-select-option-label')).map(
+        (option) => option.textContent
+      )
+    ).toEqual(['Unmanaged Install'])
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+  })
+
   it('opens the new-install takeover above the chooser body when show-new-install fires', async () => {
     // Flow modals are Tier 3 takeover overlays. The chooser stays
     // mounted underneath the takeover, so dismissing the takeover
@@ -426,8 +1312,874 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
     expect(installWizardOpen).toHaveBeenCalledWith({
       entrypoint: 'chooser',
-      workspaceId: 'workspace-1'
+      workspaceId: 'personal'
     })
+    expect(mockState.getSetting).toHaveBeenCalledWith('dashboardWorkspaceId')
+  })
+
+  it('opens menu-driven New Instance in the persisted dashboard workspace', async () => {
+    mockState.settings.dashboardWorkspaceId = 'workspace-saved'
+    mockState.comfybuilder.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'workspace-saved',
+      workspaceType: 'team'
+    })
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-saved', name: 'Saved', type: 'team', role: 'owner' }
+    ])
+    mountPanel()
+    await flushPromises()
+    installWizardOpen.mockClear()
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+    await flushPromises()
+
+    expect(installWizardOpen).toHaveBeenCalledWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'workspace-saved'
+    })
+  })
+
+  it('uses the live dashboard selection for both entry points even when persistence fails', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    mockState.comfybuilder.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team'
+    })
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'One', type: 'team', role: 'owner' },
+      { id: 'w2', name: 'Two', type: 'team', role: 'owner' }
+    ])
+    const wrapper = mountPanel()
+    const scope = useDashboardScopeStore()
+    await scope.initialize()
+    await flushPromises()
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(window.api.setSetting).mockRejectedValueOnce(new Error('disk unavailable'))
+    scope.selectWorkspace('w2')
+    await flushPromises()
+    expect(mockState.settings.dashboardWorkspaceId).toBe('w1')
+
+    await wrapper.get('[data-testid="chooser-new-install"]').trigger('click')
+    await flushPromises()
+    expect(installWizardOpen).toHaveBeenLastCalledWith({ entrypoint: 'chooser', workspaceId: 'w2' })
+    await wrapper.findComponent({ name: 'InstallWizardModal' }).vm.$emit('close')
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+    await flushPromises()
+    expect(installWizardOpen).toHaveBeenLastCalledWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'w2'
+    })
+    expect(warning).toHaveBeenCalledOnce()
+    warning.mockRestore()
+  })
+
+  it('opens menu-driven New Instance in the saved scope while membership loads', async () => {
+    mockState.settings.dashboardWorkspaceId = 'w1'
+    mockState.comfybuilder.getAuthStatus.mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team'
+    })
+    let resolveMembership!: (value: unknown[]) => void
+    mockState.comfybuilder.listWorkspaces.mockReturnValue(
+      new Promise((resolve) => {
+        resolveMembership = resolve
+      })
+    )
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+    await flushPromises()
+    expect(installWizardOpen).toHaveBeenCalledExactlyOnceWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'w1'
+    })
+    resolveMembership([{ id: 'w1', name: 'One', type: 'team', role: 'owner' }])
+    await flushPromises()
+    expect(installWizardOpen).toHaveBeenCalledExactlyOnceWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'w1'
+    })
+  })
+
+  it('opens menu-driven New Instance in Personal when the dashboard workspace read fails', async () => {
+    mockState.getSetting.mockImplementation(async (key: string) => {
+      if (key === 'dashboardWorkspaceId') throw new Error('settings unavailable')
+      return mockState.settings[key]
+    })
+    mountPanel()
+    await flushPromises()
+    installWizardOpen.mockClear()
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'new-install' }))
+    await flushPromises()
+
+    expect(installWizardOpen).toHaveBeenCalledWith({
+      entrypoint: 'titlebar',
+      workspaceId: 'personal'
+    })
+  })
+
+  const EXAMPLE_PATH = 'C:\\ComfyUI\\performance-tests\\20260907225500\\image_z_image_int8.json'
+
+  interface ExampleWorkflowApi {
+    getPerformanceTestExampleWorkflows: ReturnType<typeof vi.fn>
+    preparePerformanceTestExampleWorkflow: ReturnType<typeof vi.fn>
+    deletePerformanceTestWorkflow: ReturnType<typeof vi.fn>
+  }
+
+  const downloading = {
+    status: 'downloading',
+    percent: 40,
+    message: 'model.safetensors (1 of 2) — 4 / 10 GB at 50.0 MB/s · 2m remaining'
+  } satisfies ExampleWorkflowDownload
+
+  /** Push model download progress the way the main process does. */
+  async function emitExampleDownload(
+    download: ExampleWorkflowDownload,
+    filePath = EXAMPLE_PATH
+  ): Promise<void> {
+    mockState.performanceTestExampleDownloadCallbacks.forEach((callback) =>
+      callback({ filePath, download })
+    )
+    await flushPromises()
+  }
+
+  /** Mount the performance test page with one local instance selected. */
+  async function mountWithInstance(
+    status = 'installed',
+    otherInstallations: Array<Record<string, unknown>> = []
+  ): Promise<{
+    wrapper: ReturnType<typeof mountPanel>
+    api: ExampleWorkflowApi
+  }> {
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
+    ])
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status,
+        workspaceId: 'workspace-1'
+      },
+      ...otherInstallations
+    ]
+    const api = (window as unknown as { api: ExampleWorkflowApi }).api
+    api.getPerformanceTestExampleWorkflows.mockResolvedValue({
+      options: [
+        {
+          value: 'image_z_image_int8',
+          label: 'Z-Image Int8: Text to Image',
+          recommended: true,
+          data: {
+            modality: 'image',
+            name: 'Z-Image Int8',
+            task: 'Text to Image',
+            sizeBytes: 20_000_000_000
+          }
+        }
+      ],
+      diskSpace: { free: 500_000_000_000, total: 1_000_000_000_000 }
+    })
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: downloading
+    })
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+    return { wrapper, api }
+  }
+
+  async function chooseExampleWorkflow(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+    await flushPromises()
+  }
+
+  it('prepares an example workflow and blocks the run until its models are downloaded', async () => {
+    const { wrapper, api } = await mountWithInstance()
+
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await flushPromises()
+    expect(api.getPerformanceTestExampleWorkflows).toHaveBeenCalledWith('workspace-install')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Z-Image Int8')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Missing models will be downloaded automatically.'
+    )
+    ;(document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).click()
+    await flushPromises()
+
+    expect(api.preparePerformanceTestExampleWorkflow).toHaveBeenCalledWith(
+      'workspace-install',
+      'image_z_image_int8'
+    )
+    const workflow = wrapper.get('.performance-test__workflow-file')
+    expect(workflow.text()).toContain('Z-Image Int8: Text to Image')
+    expect(workflow.text()).toContain(downloading.message)
+    expect(workflow.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('40')
+    expect(wrapper.get('.performance-test__delete-workflow').attributes('aria-label')).toBe(
+      'Cancel download'
+    )
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+
+    await emitExampleDownload({ ...downloading, percent: 80 })
+    expect(
+      wrapper
+        .get('.performance-test__workflow-file [role="progressbar"]')
+        .attributes('aria-valuenow')
+    ).toBe('80')
+
+    await emitExampleDownload({ status: 'done', percent: 100, message: 'Template models ready' })
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(EXAMPLE_PATH)
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+  })
+
+  it('reports a bundled example workflow by its file name in telemetry', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await chooseExampleWorkflow(wrapper)
+    const telemetryEvents = captureTelemetry()
+
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    expect(
+      telemetryEvents.find((event) => event.actionName === 'comfy.desktop.performance_test.started')
+        ?.context?.workflow_name
+    ).toBe('image_z_image_int8.json')
+  })
+
+  it('reports a workflow imported over a bundled example as custom in telemetry', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await chooseExampleWorkflow(wrapper)
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain('cat-workflow.json')
+    const telemetryEvents = captureTelemetry()
+
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    expect(
+      telemetryEvents.find((event) => event.actionName === 'comfy.desktop.performance_test.started')
+        ?.context?.workflow_name
+    ).toBe('custom')
+  })
+
+  it('ignores download progress for a workflow the page no longer shows', async () => {
+    const { wrapper } = await mountWithInstance()
+    await chooseExampleWorkflow(wrapper)
+
+    await emitExampleDownload(
+      { status: 'done', percent: 100, message: 'Template models ready' },
+      'C:\\ComfyUI\\performance-tests\\20260907220000\\image_z_image_int8.json'
+    )
+
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(downloading.message)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+  })
+
+  it('applies a download that settles before the prepare reply arrives', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    let resolvePrepare!: (result: unknown) => void
+    api.preparePerformanceTestExampleWorkflow.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrepare = resolve
+        })
+    )
+    await chooseExampleWorkflow(wrapper)
+
+    await emitExampleDownload({ status: 'done', percent: 100, message: 'Template models ready' })
+    resolvePrepare({ ok: true, filePath: EXAMPLE_PATH, download: downloading })
+    await flushPromises()
+
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+  })
+
+  it('shows a translated message instead of the technical detail when preparing fails', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValueOnce({
+      ok: false,
+      message: 'HTTP 429 (rate limited)'
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await chooseExampleWorkflow(wrapper)
+
+      expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+        'Could not import the workflow.'
+      )
+      expect(warn).toHaveBeenCalledWith(expect.any(String), 'HTTP 429 (rate limited)')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('abandons an unfinished example when the page closes', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    await chooseExampleWorkflow(wrapper)
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+  })
+
+  it('abandons an example whose prepare finishes after the instance changed', async () => {
+    const { wrapper, api } = await mountWithInstance('installed', [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'other-install',
+        name: 'Other Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ])
+    const importedPath = 'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await flushPromises()
+    let resolvePrepare!: (result: unknown) => void
+    api.preparePerformanceTestExampleWorkflow.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrepare = resolve
+        })
+    )
+    await chooseExampleWorkflow(wrapper)
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;[...document.querySelectorAll<HTMLElement>('.ui-select-option')]
+      .find((option) => option.textContent?.includes('Other Install'))!
+      .click()
+    await flushPromises()
+
+    resolvePrepare({ ok: true, filePath: EXAMPLE_PATH, download: downloading })
+    await flushPromises()
+
+    // The late example is dropped without replacing the workflow already chosen.
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalledWith(importedPath)
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(importedPath)
+  })
+
+  it('removes an example prepared for another instance once a launching test releases it', async () => {
+    const { wrapper, api } = await mountWithInstance('installed', [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'other-install',
+        name: 'Other Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ])
+    const runApi = (window as unknown as { api: { runAction: ReturnType<typeof vi.fn> } }).api
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await chooseExampleWorkflow(wrapper)
+    let resolveLaunch!: (result: { ok: false; message: string }) => void
+    runApi.runAction.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLaunch = resolve
+        })
+    )
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    // The launch holds the workflow: switching instance can't remove it yet,
+    // but the example must not run on the other instance.
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;[...document.querySelectorAll<HTMLElement>('.ui-select-option')]
+      .find((option) => option.textContent?.includes('Other Install'))!
+      .click()
+    await flushPromises()
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+
+    resolveLaunch({ ok: false, message: 'Launch failed' })
+    await flushPromises()
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+  })
+
+  it('keeps the run blocked when an example for another instance cannot be removed', async () => {
+    const { wrapper, api } = await mountWithInstance('installed', [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'other-install',
+        name: 'Other Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ])
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
+      ok: true,
+      filePath: EXAMPLE_PATH,
+      download: { status: 'done', percent: 100, message: 'Template models ready' }
+    })
+    await chooseExampleWorkflow(wrapper)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+    api.deletePerformanceTestWorkflow.mockResolvedValueOnce({ ok: false, message: 'File in use' })
+
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;[...document.querySelectorAll<HTMLElement>('.ui-select-option')]
+      .find((option) => option.textContent?.includes('Other Install'))!
+      .click()
+    await flushPromises()
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(wrapper.get('.performance-test__workflow-file').exists()).toBe(true)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+  })
+
+  it('explains that example workflows need an installed instance', async () => {
+    const { wrapper, api } = await mountWithInstance('installing')
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await flushPromises()
+
+    expect(api.getPerformanceTestExampleWorkflows).not.toHaveBeenCalled()
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+      'Finish installing this instance to use example workflows.'
+    )
+  })
+
+  it('explains that an example workflow is not published yet', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValueOnce({
+      ok: false,
+      reason: 'unavailable',
+      message: 'This example workflow is not available yet.'
+    })
+
+    await chooseExampleWorkflow(wrapper)
+
+    expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+      "This example workflow isn't available yet. Choose another one."
+    )
+  })
+
+  it('cancels the model download when the example workflow is removed', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    await chooseExampleWorkflow(wrapper)
+
+    await wrapper.get('.performance-test__delete-workflow').trigger('click')
+    await flushPromises()
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+  })
+
+  it('removes the example workflow and explains why when its models cannot be downloaded', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    await chooseExampleWorkflow(wrapper)
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+
+    await emitExampleDownload({
+      status: 'error',
+      percent: 0,
+      message: 'Not enough disk space',
+      error: 'insufficient-disk'
+    })
+
+    expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
+    expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+      "There is not enough disk space for this workflow's models."
+    )
+  })
+
+  it('blocks an example workflow whose models do not fit on disk', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    api.getPerformanceTestExampleWorkflows.mockResolvedValue({
+      options: [
+        {
+          value: 'image_z_image_int8',
+          label: 'Z-Image Int8: Text to Image',
+          data: { modality: 'image', sizeBytes: 20_000_000_000 }
+        }
+      ],
+      diskSpace: { free: 1_000_000_000, total: 1_000_000_000_000 }
+    })
+
+    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('.performance-test__example-disk-error')).not.toBeNull()
+    expect(
+      (document.querySelector('.base-modal-footer .brand-primary') as HTMLButtonElement).disabled
+    ).toBe(true)
+  })
+
+  it('asks the user to connect to the internet when example workflows cannot be downloaded', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    const offlineMessage = 'You need to be connected to the internet to download example workflows.'
+
+    // The browser knows it is offline: skip the picker entirely.
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      await wrapper.get('.performance-test__example-workflow').trigger('click')
+      await flushPromises()
+      expect(api.getPerformanceTestExampleWorkflows).not.toHaveBeenCalled()
+      expect(wrapper.get('.performance-test__workflow-error').text()).toBe(offlineMessage)
+    } finally {
+      onLine.mockRestore()
+    }
+
+    // The machine reports a connection but GitHub is unreachable when downloading.
+    api.preparePerformanceTestExampleWorkflow.mockResolvedValueOnce({
+      ok: false,
+      reason: 'offline',
+      message: 'Connect to the internet to download example workflows.'
+    })
+    await chooseExampleWorkflow(wrapper)
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(offlineMessage)
+  })
+
+  it('locks workflow changes while a separate performance test process runs', async () => {
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
+    ])
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ]
+    const api = (
+      window as unknown as {
+        api: {
+          getRunningInstances: ReturnType<typeof vi.fn>
+          stopComfyUI: ReturnType<typeof vi.fn>
+          runAction: ReturnType<typeof vi.fn>
+          runPerformanceTestWorkflow: ReturnType<typeof vi.fn>
+          importPerformanceTestWorkflow: ReturnType<typeof vi.fn>
+          deletePerformanceTestWorkflow: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    let resolveLaunch!: (result: { ok: true }) => void
+    api.runAction.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLaunch = resolve
+        })
+    )
+    let resolveSubmission!: (result: RunPerformanceTestWorkflowResult) => void
+    api.runPerformanceTestWorkflow.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSubmission = resolve
+        })
+    )
+    api.getRunningInstances.mockResolvedValueOnce([
+      {
+        installationId: 'workspace-install',
+        installationName: 'Workspace Install',
+        mode: 'window'
+      }
+    ])
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+    const runButton = wrapper.get('.performance-test__run')
+    expect(runButton.attributes('disabled')).toBeUndefined()
+
+    let resolveImport!: (result: { ok: true; filePath: string }) => void
+    api.importPerformanceTestWorkflow.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveImport = resolve
+        })
+    )
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    expect(runButton.attributes('disabled')).toBe('')
+    await runButton.trigger('click')
+    expect(api.runAction).not.toHaveBeenCalled()
+    resolveImport({
+      ok: true,
+      filePath: 'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json'
+    })
+    await flushPromises()
+    expect(runButton.attributes('disabled')).toBeUndefined()
+
+    await runButton.trigger('click')
+    await flushPromises()
+
+    const workflowImportCalls = api.importPerformanceTestWorkflow.mock.calls.length
+    expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBe('')
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await wrapper.get('.performance-test__drop-zone').trigger('drop', {
+      dataTransfer: {
+        files: [new File(['{}'], 'replacement.json', { type: 'application/json' })]
+      }
+    })
+    expect(api.importPerformanceTestWorkflow).toHaveBeenCalledTimes(workflowImportCalls)
+    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(false)
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+    expect(api.stopComfyUI).not.toHaveBeenCalledWith('workspace-install')
+    expect(api.runAction).toHaveBeenCalledWith('workspace-install', 'launch', {
+      launchModeOverride: 'console',
+      autoPortOnConflict: true,
+      sessionIdOverride: 'performance-test:workspace-install'
+    })
+
+    resolveLaunch({ ok: true })
+    await flushPromises()
+    expect(api.runPerformanceTestWorkflow).toHaveBeenCalled()
+    expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBe('')
+    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(false)
+
+    resolveSubmission({
+      ok: true,
+      submitted: 5,
+      preparationRuns: 3,
+      totalSubmitted: 8,
+      promptIds: [],
+      failedRuns: 0,
+      resultPath: 'C:\\ComfyUI\\performance-tests\\20260907225600\\jobs.json'
+    })
+    await flushPromises()
+    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(true)
+  })
+
+  it('restarts an already-running performance test session before running', async () => {
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
+    ])
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ]
+    const api = (
+      window as unknown as {
+        api: {
+          getRunningInstances: ReturnType<typeof vi.fn>
+          stopComfyUI: ReturnType<typeof vi.fn>
+          runAction: ReturnType<typeof vi.fn>
+          runPerformanceTestWorkflow: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    api.getRunningInstances.mockResolvedValueOnce([
+      {
+        installationId: 'performance-test:workspace-install',
+        installationName: 'Workspace Install',
+        mode: 'console'
+      }
+    ])
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+
+    const runButton = wrapper.get('.performance-test__run')
+    expect(runButton.attributes('disabled')).toBeUndefined()
+    await runButton.trigger('click')
+    await flushPromises()
+
+    expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
+    expect(api.stopComfyUI.mock.invocationCallOrder[0]).toBeLessThan(
+      api.runAction.mock.invocationCallOrder[0]!
+    )
+    expect(api.runAction).toHaveBeenCalledWith('workspace-install', 'launch', {
+      launchModeOverride: 'console',
+      autoPortOnConflict: true,
+      sessionIdOverride: 'performance-test:workspace-install'
+    })
+    expect(api.runPerformanceTestWorkflow).toHaveBeenCalledWith(
+      'performance-test:workspace-install',
+      'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json',
+      5,
+      1
+    )
+  })
+
+  it('stops a crashed performance test without emitting completed for a late result', async () => {
+    mockState.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' }
+    ])
+    mockState.installations = [
+      {
+        ...SAMPLE_INSTALL,
+        id: 'workspace-install',
+        name: 'Workspace Install',
+        sourceId: 'standalone',
+        status: 'installed',
+        workspaceId: 'workspace-1'
+      }
+    ]
+    const api = (
+      window as unknown as {
+        api: {
+          runPerformanceTestWorkflow: ReturnType<typeof vi.fn>
+          stopComfyUI: ReturnType<typeof vi.fn>
+          onComfyExited: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+    let resolvePerformanceTest!: (result: RunPerformanceTestWorkflowResult) => void
+    api.runPerformanceTestWorkflow.mockImplementationOnce(
+      () => new Promise((resolve) => (resolvePerformanceTest = resolve))
+    )
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await wrapper.get('.performance-test__instance-select button').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('.ui-select-option') as HTMLElement).click()
+    await flushPromises()
+    const telemetryEvents = captureTelemetry()
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.performance-test__run').text()).toBe('Running...')
+
+    mockState.performanceTestProgressCallbacks.forEach((callback) =>
+      callback({ sessionId: 'different-session', completedRuns: 5, totalRuns: 6 })
+    )
+    mockState.performanceTestProgressCallbacks.forEach((callback) =>
+      callback({
+        sessionId: 'performance-test:workspace-install',
+        completedRuns: 2,
+        totalRuns: 6
+      })
+    )
+    await flushPromises()
+    expect(wrapper.get('.performance-test__progress').text()).toContain('Progress')
+    expect(wrapper.get('.performance-test__progress').text()).toContain('2 of 6 runs completed')
+    const progressBar = wrapper.get('[role="progressbar"]')
+    expect(progressBar.attributes('aria-valuenow')).toBe('2')
+    expect(progressBar.attributes('aria-valuemax')).toBe('6')
+    expect(progressBar.get('i').attributes('style')).toContain('width: 33%')
+
+    const exitedCallback = api.onComfyExited.mock.calls[0]![0] as (data: {
+      installationId: string
+      installationName: string
+      crashed: boolean
+      exitCode: number
+    }) => void
+    exitedCallback({
+      installationId: 'performance-test:workspace-install',
+      installationName: 'Workspace Install',
+      crashed: true,
+      exitCode: 1
+    })
+    await flushPromises()
+
+    const stopButton = wrapper.get('.performance-test__stop')
+    expect(stopButton.attributes('disabled')).toBeUndefined()
+    let resolveStop!: () => void
+    api.stopComfyUI.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStop = resolve
+        })
+    )
+    await stopButton.trigger('click')
+    await flushPromises()
+    expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
+    expect(stopButton.attributes('disabled')).toBe('')
+    expect(
+      telemetryEvents.filter(
+        (event) => event.actionName === 'comfy.desktop.performance_test.stopped'
+      )
+    ).toEqual([
+      {
+        actionName: 'comfy.desktop.performance_test.stopped',
+        context: {
+          installation_id: 'workspace-install',
+          workflow_name: 'custom',
+          warmup_runs: 1,
+          measured_runs: 5,
+          completed_runs: 2,
+          total_runs: 6,
+          duration_ms: expect.any(Number)
+        }
+      }
+    ])
+    resolvePerformanceTest({
+      ok: true,
+      submitted: 5,
+      preparationRuns: 1,
+      totalSubmitted: 6,
+      failedRuns: 0,
+      resultPath: 'C:\\ComfyUI\\performance-tests\\late-result\\jobs.json'
+    })
+    await flushPromises()
+    expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBe('')
+    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(false)
+
+    resolveStop()
+    await flushPromises()
+    expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(true)
+    expect(
+      telemetryEvents.some(
+        (event) => event.actionName === 'comfy.desktop.performance_test.completed'
+      )
+    ).toBe(false)
   })
 
   it('returns to the underlying body when a takeover emits close', async () => {
@@ -1006,14 +2758,6 @@ describe('PanelApp', () => {
   // doesn't have to mock the Datadog / PostHog modules.
   // ---------------------------------------------------------------------------
   describe('telemetry', () => {
-    function captureTelemetry(): TelemetryActionEventDetail[] {
-      const events: TelemetryActionEventDetail[] = []
-      window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, (event) => {
-        events.push((event as CustomEvent<TelemetryActionEventDetail>).detail)
-      })
-      return events
-    }
-
     it('fires comfy.desktop.install.flow.opened with entrypoint=chooser when chooser empty-state CTA fires', async () => {
       window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
       const wrapper = mountPanel()

@@ -8,6 +8,9 @@ out/
 result
 test-results/
 playwright-report/
+# Composited window screenshots from the e2e specs. Generated output like the two above:
+# the specs attach them to the Playwright report (which CI uploads) rather than the tree.
+evidence/
 resources/vc_redist.x64.exe
 resources/vc_redist.x64.exe.tmp
 resources/vc_redist_version.nsh

@@ -57,6 +57,8 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // boot_phase timings so a monitor can alert on boot-failure rate per
   // release / variant and the phase breakdown explains where it stalled.
   'comfy.desktop.comfyui.boot_failed',
+  // Asset scanner failures parsed from ComfyUI's typed, path-free log marker.
+  'comfy.desktop.comfyui.asset_scan_error',
   // Migration pipeline failures (Desktop-1 -> standalone).
   'comfy.desktop.migrate.flow.error',
   'comfy.desktop.migrate.user_files.error',
@@ -90,7 +92,32 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // bootstrap-python copy drift). probe_failed = single-user state;
   // circuit_broken = stop-the-bleeding guard tripped.
   'comfy.desktop.pygit2.probe_failed',
-  'comfy.desktop.pygit2.circuit_broken'
+  'comfy.desktop.pygit2.circuit_broken',
+  // Assets scan-pipeline failures: the fourteen failure names in assetsTap's
+  // ALLOWED_EVENTS. Mirrored for failure-rate monitors; supersedes the
+  // mirroring capability of Comfy-Desktop#1490. The paired
+  // success/informational events (assets.enabled, seeder.scan_started/
+  // scan_completed/scan_cancelled/marked_missing,
+  // scanner.hash_discarded_modified) stay PostHog-only — the same split as
+  // every other group above. Also PostHog-only: scanner.invalid_mtime counts
+  // files skipped for a pre-epoch mtime, a property of the user's files rather
+  // than a scanner fault; scanner.failure_bucket is a per-scan aggregate (one
+  // line per distinct failure classification) for triage, not a per-failure
+  // alerting signal.
+  'comfy.desktop.comfyui.assets.scanner.hash_failed',
+  'comfy.desktop.comfyui.assets.scanner.enrich_failed',
+  'comfy.desktop.comfyui.assets.scanner.fast_scan_failed',
+  'comfy.desktop.comfyui.assets.scanner.temp_sync_failed',
+  'comfy.desktop.comfyui.assets.scanner.mark_missing_failed',
+  'comfy.desktop.comfyui.assets.scanner.stat_failed',
+  'comfy.desktop.comfyui.assets.scanner.watch_stat_failed',
+  'comfy.desktop.comfyui.assets.scanner.watch_spec_failed',
+  'comfy.desktop.comfyui.assets.scanner.watch_seed_failed',
+  'comfy.desktop.comfyui.assets.scanner.root_unreachable',
+  'comfy.desktop.comfyui.assets.scanner.walk_failed',
+  'comfy.desktop.comfyui.assets.scanner.metadata_failed',
+  'comfy.desktop.comfyui.assets.seeder.batch_insert_failed',
+  'comfy.desktop.comfyui.assets.seeder.scan_failed'
 ])
 
 export function isDatadogMirroredEvent(eventName: string): boolean {
@@ -132,3 +159,34 @@ export function stripDatadogDroppedKeys<T extends Record<string, unknown>>(conte
   }
   return out ?? context
 }
+
+/**
+ * Cohort keys the renderer sets as Datadog global context on every RUM event.
+ * `registerCohortContext` in `rendererBootstrap.ts` types its cohort object
+ * with these, so the list cannot drift from what it sets.
+ */
+export const RENDERER_COHORT_CONTEXT_KEYS = [
+  'app_version',
+  'app_channel',
+  'locale',
+  'theme',
+  'telemetry_enabled',
+  'first_use_completed',
+  'local_installation_count',
+  'has_launched_cloud',
+  'has_legacy_install'
+] as const
+
+export type RendererCohortContextKey = (typeof RENDERER_COHORT_CONTEXT_KEYS)[number]
+
+/**
+ * Every Datadog global-context key the renderer sets. An action's own context
+ * wins the merge with global context, so a forwarded event field of the same
+ * name would replace the facet on that action. Main-side taps that forward
+ * untrusted field names reserve these. Only the cohort keys are type-checked:
+ * a new `setGlobalContextProperty` key must be added here by hand.
+ */
+export const DATADOG_GLOBAL_CONTEXT_KEYS: ReadonlySet<string> = new Set([
+  ...RENDERER_COHORT_CONTEXT_KEYS,
+  'renderer_role'
+])

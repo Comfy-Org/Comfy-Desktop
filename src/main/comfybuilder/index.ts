@@ -26,7 +26,12 @@ export { normalizeSha256 } from './integrity'
 export { stageModels, installModelsRoot, StageModelsError } from './models'
 export type { StageModelsOptions, StageModelsErrorKind, ModelJobSurface } from './models'
 export { resolveModelManifest } from './modelManifest'
-export { buildLaunchSpec, venvPython } from './launch'
+export {
+  buildLaunchSpec,
+  launchArgsForManagerAnswer,
+  managerAllowedByPolicy,
+  venvPython
+} from './launch'
 export type { LaunchOptions } from './launch'
 export type {
   Artifact,

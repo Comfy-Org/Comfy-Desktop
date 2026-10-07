@@ -24,6 +24,12 @@ interface UseCentralPillCoachmarkOpts {
   isFirstUseLockdown: Ref<boolean>
   /** Wait out a ProgressModal takeover so the hint fires over real ComfyUI, not the loader. */
   isLoadingLockdown?: Ref<boolean>
+  /** Whether this hint currently owns the window's single coachmark popup. Retiring hides that
+   *  popup, and by the time the pill drawer opens the hint has usually never been on it (it is
+   *  once-ever, and having been seen is exactly what lets another card through) — so without
+   *  this check, acknowledging the hint would hide someone else's card. Defaults to "owns it",
+   *  preserving the original behaviour for callers that do not share the popup. */
+  ownsPopup?: () => boolean
   installPillRef: Readonly<ShallowRef<HTMLElement | null>>
   /** Resolved coachmark copy (i18n done by the caller). */
   title: string
@@ -38,6 +44,9 @@ interface CentralPillCoachmarkApi {
   dismiss: () => Promise<void>
   /** Opening the pill drawer counts as acknowledgement; same as `dismiss`. */
   acknowledgeViaPillOpen: () => Promise<void>
+  /** The popup was hidden by something other than a retirement (the host window moved).
+   *  Clears display state without persisting `seen`, so the hint can be raised again. */
+  forgetWithoutAcknowledging: () => void
   /** `true` between show and dismiss; drives the pill highlight. */
   isShowing: Ref<boolean>
 }
@@ -96,11 +105,28 @@ export function useCentralPillCoachmark(
     })
   }
 
+  /** The popup was pulled out from under this hint by something that is not a retirement —
+   *  main auto-hides it when the host window moves or resizes. Clears the display state
+   *  WITHOUT persisting `seen`, and releases the once-per-renderer show latch so the hint can
+   *  be raised again: the user may never have read it.
+   *
+   *  Leaving this unhandled strands more than the hint. `isShowing` is the beta notice's
+   *  suppression gate, so a hint stuck "showing" with no popup on screen silences the beta
+   *  card for the rest of the renderer's life, and cannot itself be dismissed — there is no
+   *  card left to click. */
+  function forgetWithoutAcknowledging(): void {
+    if (hasCoachmarkRetired) return
+    isShowing.value = false
+    hasCoachmarkShown = false
+  }
+
   async function retire(): Promise<void> {
+    const owned = opts.ownsPopup?.() ?? true
     isShowing.value = false
     if (hasCoachmarkRetired) return
     hasCoachmarkRetired = true
-    opts.bridge?.hideCoachmark()
+    // Only pull down the popup if this hint is what is on it.
+    if (owned) opts.bridge?.hideCoachmark()
     try {
       await window.api.setSetting(CENTRAL_PILL_HINT_SEEN_KEY, true)
     } catch {
@@ -112,6 +138,7 @@ export function useCentralPillCoachmark(
     maybeShow,
     dismiss: retire,
     acknowledgeViaPillOpen: retire,
+    forgetWithoutAcknowledging,
     isShowing
   }
 }

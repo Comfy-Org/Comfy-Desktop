@@ -8,8 +8,13 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { execFile, spawn } from 'child_process'
 import { EventEmitter } from 'events'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import {
   countCommitsAhead,
+  gitDirPresence,
+  resolveGitDir,
   findNearestTag,
   findLatestVersionTag,
   lsRemoteLatestTag,
@@ -17,6 +22,8 @@ import {
   isAncestorOf,
   findMergeBase,
   revParseRef,
+  commitPresence,
+  findMergeBaseOrNone,
   fetchTags,
   configurePygit2,
   isGitAvailable,
@@ -235,6 +242,60 @@ describe('revParseRef', () => {
   })
 })
 
+describe('findMergeBaseOrNone', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it.each([
+    ['exit 1, no merge base', { code: 1 }, null],
+    ['exit 128, a bad ref', { code: 128 }, undefined],
+    ['a timeout', { code: 1, killed: true }, undefined]
+  ])('reads %s as %s', async (_label, props, expected) => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(Object.assign(new Error('git'), props), '', ''))
+    expect(await findMergeBaseOrNone('/repo', 'a', 'b')).toBe(expected)
+  })
+
+  it('returns the merge base on success', async () => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(null, 'abc\n', ''))
+    expect(await findMergeBaseOrNone('/repo', 'a', 'b')).toBe('abc')
+  })
+})
+
+describe('commitPresence', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  const failWith = (props: Record<string, unknown>) =>
+    mockExecFile((_cmd, _args, _opts, cb) => {
+      cb(Object.assign(new Error('git failed'), props), '', '')
+    })
+
+  it('asks git to verify the SHA as a commit, quietly, with options ended', async () => {
+    mockExecFile((_cmd, _args, _opts, cb) => cb(null, 'x\n', ''))
+    expect(await commitPresence('/repo', 'a'.repeat(40))).toBe('present')
+    expect(mockedExecFile.mock.calls[0]![1]).toEqual([
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      '--end-of-options',
+      `${'a'.repeat(40)}^{commit}`
+    ])
+  })
+
+  it.each([
+    ['exit 1, a definite miss', { code: 1 }, 'absent'],
+    ['exit 128, a real failure', { code: 128 }, 'unknown'],
+    ['a timeout', { code: 1, killed: true }, 'unknown'],
+    ['a signal', { code: 1, signal: 'SIGTERM' }, 'unknown'],
+    ['a spawn error', { code: 'ENOENT' }, 'unknown']
+  ])('reads %s as %s', async (_label, props, expected) => {
+    failWith(props)
+    expect(await commitPresence('/repo', 'a'.repeat(40))).toBe(expected)
+  })
+})
+
 describe('fetchTags', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -438,6 +499,71 @@ describe('gitFetchAndCheckout (system git)', () => {
     const result = await gitFetchAndCheckout('/repo', 'abc123', () => {}, controller.signal)
     expect(result.exitCode).toBe(1)
     expect(mockedSpawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('gitDirPresence', () => {
+  let repoDir = ''
+
+  beforeEach(() => {
+    repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-dir-presence-'))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    fs.rmSync(repoDir, { recursive: true, force: true })
+  })
+
+  const dotGit = (): string => path.join(repoDir, '.git')
+
+  it('reports absent when there is no .git entry', () => {
+    expect(gitDirPresence(repoDir)).toBe('absent')
+  })
+
+  it('reports present for a .git directory', () => {
+    fs.mkdirSync(dotGit())
+    expect(gitDirPresence(repoDir)).toBe('present')
+  })
+
+  it('reports present for a .git pointer file, resolvable or not', () => {
+    fs.writeFileSync(dotGit(), 'gitdir: ../.git/worktrees/wt\n')
+    expect(gitDirPresence(repoDir)).toBe('present')
+
+    // Presence is about the entry, not about what it points at: a pointer file with no
+    // `gitdir:` line is still a git-managed checkout, just a broken one. Callers distinguish
+    // the two by then asking `resolveGitDir`, which is null only for this second shape.
+    fs.writeFileSync(dotGit(), 'not a pointer at all\n')
+    expect(gitDirPresence(repoDir)).toBe('present')
+    expect(resolveGitDir(repoDir)).toBeNull()
+  })
+
+  it('reports present for a dangling .git symlink that stat would call absent', () => {
+    try {
+      fs.symlinkSync(path.join(repoDir, 'missing-git-dir'), dotGit())
+    } catch {
+      return // Windows without Developer Mode cannot create a symlink at all.
+    }
+    // The whole reason this probe uses lstat: stat follows the link and raises ENOENT, which
+    // would classify a broken checkout as one that was never a checkout.
+    expect(() => fs.statSync(dotGit())).toThrow(/ENOENT/)
+    expect(gitDirPresence(repoDir)).toBe('present')
+  })
+
+  it('reports indeterminate when the lstat itself fails', () => {
+    // EACCES/EPERM/ELOOP on the entry: it may well exist, we just cannot see it. Injected at
+    // the syscall because no filesystem state produces it on every platform CI runs on — a
+    // chmod-ed parent is a no-op for root, and Windows has no equivalent.
+    vi.spyOn(fs, 'lstatSync').mockImplementation(() => {
+      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+    })
+    expect(gitDirPresence(repoDir)).toBe('indeterminate')
+  })
+
+  it('reports absent only for ENOENT', () => {
+    vi.spyOn(fs, 'lstatSync').mockImplementation(() => {
+      throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' })
+    })
+    expect(gitDirPresence(repoDir)).toBe('absent')
   })
 })
 
@@ -700,6 +826,33 @@ describe('pygit2 fallback', () => {
         cb(errWithCode, '', '')
       })
       expect(await revParseRef('/repo', 'nonexistent')).toBeUndefined()
+    })
+  })
+
+  describe('findMergeBaseOrNone', () => {
+    it.each([
+      [5, null],
+      [1, undefined]
+    ])('maps helper exit %s to %s', async (code, expected) => {
+      mockExecFile((_cmd, _args, _opts, cb) =>
+        cb(Object.assign(new Error('exit'), { code }), '', '')
+      )
+      expect(await findMergeBaseOrNone('/repo', 'a', 'b')).toBe(expected)
+      expect(expectPygit2Call()).toEqual(['merge-base', '/repo', 'a', 'b'])
+    })
+  })
+
+  describe('commitPresence', () => {
+    it.each([
+      [0, 'present'],
+      [3, 'absent'],
+      [1, 'unknown']
+    ])('maps helper exit %s to %s', async (code, expected) => {
+      mockExecFile((_cmd, _args, _opts, cb) => {
+        cb(code === 0 ? null : Object.assign(new Error('exit'), { code }), '', '')
+      })
+      expect(await commitPresence('/repo', 'a'.repeat(40))).toBe(expected)
+      expect(expectPygit2Call()).toEqual(['has-commit', '/repo', 'a'.repeat(40)])
     })
   })
 

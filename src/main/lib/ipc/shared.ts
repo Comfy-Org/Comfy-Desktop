@@ -36,6 +36,7 @@ import { _broadcastToRenderer } from './broadcast'
 import { appendLog } from '../logsBroadcast'
 import { flushOperationOutput } from '../appLog'
 import { stripAnsi } from '../stderrTail'
+import type { AcceleratorSnapshot } from '../hardwareTap'
 import {
   spawnProcess,
   waitForPort,
@@ -48,6 +49,7 @@ import {
   setPortArg,
   findAvailablePort,
   isPortListening,
+  waitForPortFree,
   writePortLock,
   readPortLock,
   removePortLock,
@@ -114,8 +116,9 @@ import type { SnapshotExportEnvelope, Snapshot } from '../snapshots'
 import { getVariantLabel, buildPinnedVariant } from '../../sources/standalone'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
 import { REQUIRES_STOPPED } from '../../../types/ipc'
-import type { Theme, ResolvedTheme, QuitActiveItem } from '../../../types/ipc'
+import type { Theme, ResolvedTheme, QuitActiveItem, BetaArgView } from '../../../types/ipc'
 import { findLockingProcesses } from '../file-lock-info'
+import { markStopRequested } from '../comfyProcessRecord'
 import type { LaunchCmd } from '../process'
 import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
@@ -174,6 +177,7 @@ export {
   setPortArg,
   findAvailablePort,
   isPortListening,
+  waitForPortFree,
   writePortLock,
   readPortLock,
   removePortLock,
@@ -277,9 +281,14 @@ export interface SessionInfo {
   url?: string
   mode: string
   installationName: string
+  sourceInstallationId?: string
   startedAt: number
   /** Synchronously queue final telemetry before app-level shutdown drains the SDK. */
   flushTelemetry?: () => void
+  /** Latest accelerator details parsed from this session's ComfyUI startup logs. */
+  getAcceleratorInfo?: () => AcceleratorSnapshot | null
+  /** Core beta grants on this session's command line, for the settings view's beta-args pill. */
+  coreBetaArgs?: readonly BetaArgView[]
 }
 
 export interface LaunchCallbackInfo {
@@ -1051,13 +1060,24 @@ export {
 
 export function _addSession(
   installationId: string,
-  { proc, port, url, mode, installationName, flushTelemetry }: Omit<SessionInfo, 'startedAt'>,
+  {
+    proc,
+    port,
+    url,
+    mode,
+    installationName,
+    flushTelemetry,
+    getAcceleratorInfo,
+    coreBetaArgs
+  }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
    *  renderer's `instance_started` telemetry can carry them without a
    *  separate `server_ready` event. Omitted for the remote / skip-port paths
    *  (no spawn retry there). */
-  retries?: { portRetries: number; rebootRetries: number }
+  retries?: { portRetries: number; rebootRetries: number },
+  /** Durable installation identity when the runtime session uses an isolated key. */
+  sourceInstallationId: string = installationId
 ): void {
   _runningSessions.set(installationId, {
     proc,
@@ -1065,7 +1085,10 @@ export function _addSession(
     url,
     mode,
     installationName,
+    sourceInstallationId,
     flushTelemetry,
+    getAcceleratorInfo,
+    coreBetaArgs,
     startedAt: Date.now()
   })
   // Clear the launching marker first so subscribers never double-count this id across the
@@ -1087,7 +1110,7 @@ export function _addSession(
   // callback could fire. Fire-and-forget; never blocks the launch.
   if (_onInstanceStarted) {
     _onInstanceStarted({
-      installationId,
+      installationId: sourceInstallationId,
       bootTimeMs,
       portRetries: retries?.portRetries ?? 0,
       rebootRetries: retries?.rebootRetries ?? 0
@@ -1095,7 +1118,7 @@ export function _addSession(
   }
   // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
   installations
-    .markLaunched(installationId, (inst) => sourceMap[inst.sourceId]?.category)
+    .markLaunched(sourceInstallationId, (inst) => sourceMap[inst.sourceId]?.category)
     .then(() => _broadcastToRenderer('installations-changed', {}))
     .catch((err) => {
       console.error('Failed to mark installation launched:', err)
@@ -1124,6 +1147,14 @@ export function _getPublicSessions(): Record<string, unknown>[] {
     installationName: s.installationName,
     startedAt: s.startedAt
   }))
+}
+
+export function hasRunningSessionForInstallation(installationId: string): boolean {
+  return Array.from(
+    _runningSessions,
+    ([sessionId, session]) =>
+      sessionId === installationId || session.sourceInstallationId === installationId
+  ).some(Boolean)
 }
 
 /**
@@ -1357,7 +1388,16 @@ export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): 
       }
       const resolvedStr = formatComfyVersion(resolved, 'short')
       const storedStr = formatComfyVersion(cv, 'short')
-      const versionChanged = resolvedStr !== storedStr
+      // `formatComfyVersion` ignores `baseTagVerified`, so without the second term a record
+      // written before that field existed would keep its fail-closed absence forever on an
+      // install whose displayed version never changes. Re-resolving is the only thing that
+      // can establish it, and the beta-grant gate refuses an unverified base. `ancestorTag` is
+      // the same case one field over: it is what the gate measures when the label is
+      // unverified, and a record written before it existed changes in no other field.
+      const versionChanged =
+        resolvedStr !== storedStr ||
+        resolved.baseTagVerified !== cv.baseTagVerified ||
+        resolved.ancestorTag !== cv.ancestorTag
 
       const existing = inst.updateInfoByChannel as
         | Record<string, Record<string, unknown>>
@@ -1521,6 +1561,9 @@ export async function stopRunning(
     _broadcastToRenderer('instance-stopping', { installationId })
     onEnterStopping?.({ installationId })
     if (session.port) removePortLock(session.port)
+    // Before the kill: quit does not await it, so the record may outlive this Desktop and
+    // must say the process was already being stopped.
+    markStopRequested(installationId)
     _runningSessions.delete(installationId)
     if (session.proc && !session.proc.killed) {
       await killProcessTree(session.proc)
@@ -1538,11 +1581,12 @@ export async function stopRunning(
       _broadcastToRenderer('instance-stopping', { installationId: id })
       onEnterStopping?.({ installationId: id })
     }
-    for (const [, session] of sessions) {
+    for (const [id, session] of sessions) {
       if (session.port) removePortLock(session.port)
+      markStopRequested(id)
     }
     _runningSessions.clear()
-    const kills: Promise<void>[] = []
+    const kills: Promise<unknown>[] = []
     for (const [, session] of sessions) {
       if (session.proc && !session.proc.killed) {
         kills.push(killProcessTree(session.proc))
@@ -1651,7 +1695,8 @@ export async function getActiveDetails(): Promise<QuitActiveItem[]> {
 export function _test_addRunningSession(
   installationId: string,
   installationName: string,
-  flushTelemetry?: () => void
+  flushTelemetry?: () => void,
+  coreBetaArgs?: readonly BetaArgView[]
 ): void {
   _runningSessions.set(installationId, {
     proc: null,
@@ -1660,6 +1705,7 @@ export function _test_addRunningSession(
     mode: 'window',
     installationName,
     flushTelemetry,
+    coreBetaArgs,
     startedAt: Date.now()
   })
   _broadcastToRenderer('instance-started', {
@@ -1681,7 +1727,10 @@ export function _test_clearRunningSessions(): void {
 }
 
 export function cancelAll(): void {
-  for (const [_id, abort] of _operationAborts) {
+  for (const [id, abort] of _operationAborts) {
+    // A booting launch's child is killed by its own abort handler, which quit does not wait
+    // for; the record says it was asked to stop.
+    markStopRequested(id)
     abort.abort()
   }
   _operationAborts.clear()

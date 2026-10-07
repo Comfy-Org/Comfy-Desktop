@@ -22,13 +22,20 @@ interface Props {
   installation: Installation
   showFreeRunsPill?: boolean
   showWhyCloud?: boolean
+  /** Override runtime lifecycle presentation for surfaces that own separate sessions. */
+  lifecycleStatus?: 'idle' | 'launching' | 'running' | 'stopping' | 'error'
   /** True when REQUIRES_STOPPED actions (update / migrate / restore / delete) are gated. */
   isStoppedActionGated: boolean
   /** True while Desktop captures this instance and creates its workspace draft. */
   isPromotingToWorkspace?: boolean
+  /** Hide the card's context/kebab menu while keeping inline action pills enabled. */
+  showMenu?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  lifecycleStatus: undefined,
+  showMenu: true
+})
 
 const emit = defineEmits<{
   pick: [installation: Installation]
@@ -45,9 +52,21 @@ const sessionStore = useSessionStore()
 
 const inst = computed(() => props.installation)
 
-const isRunning = computed(() => sessionStore.isRunning(inst.value.id))
-const isLaunching = computed(() => sessionStore.isLaunching(inst.value.id))
-const isStopping = computed(() => sessionStore.isStopping(inst.value.id))
+const isRunning = computed(() =>
+  props.lifecycleStatus == null
+    ? sessionStore.isRunning(inst.value.id)
+    : props.lifecycleStatus === 'running'
+)
+const isLaunching = computed(() =>
+  props.lifecycleStatus == null
+    ? sessionStore.isLaunching(inst.value.id)
+    : props.lifecycleStatus === 'launching'
+)
+const isStopping = computed(() =>
+  props.lifecycleStatus == null
+    ? sessionStore.isStopping(inst.value.id)
+    : props.lifecycleStatus === 'stopping'
+)
 /* A managed update flips the record to status 'updating'; a standalone
  * update never touches the record and is only visible through main's
  * operation broadcast. Key on both so the tile reports "Updating" the same
@@ -57,7 +76,11 @@ const isUpdating = computed(() => {
   const op = sessionStore.operationInstances.get(inst.value.id)
   return op != null && progressOpKindForActionId(op.actionId) === 'update'
 })
-const hasError = computed(() => sessionStore.errorInstances.has(inst.value.id))
+const hasError = computed(() =>
+  props.lifecycleStatus == null
+    ? sessionStore.errorInstances.has(inst.value.id)
+    : props.lifecycleStatus === 'error'
+)
 
 /* Backend-flagged problem states (failed install, interrupted delete, missing
  * install folder) carry a `danger` statusTag. Surface it as a static red pill —
@@ -176,7 +199,7 @@ function handleClick(): void {
 }
 
 function handleContextMenu(event: MouseEvent): void {
-  if (isUpdating.value) return
+  if (!props.showMenu || isUpdating.value) return
   emit('open-card-menu', event, inst.value)
 }
 
@@ -257,7 +280,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         {{ dangerTag.label }}
       </button>
       <button
-        v-if="!isUpdating"
+        v-if="props.showMenu && !isUpdating"
         type="button"
         class="chooser-tile-kebab"
         :title="t('chooser.moreActions')"

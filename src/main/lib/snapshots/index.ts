@@ -9,6 +9,7 @@ export type {
   SnapshotDetailData,
   SnapshotDiffData,
   RestoreResult,
+  RestoreRevertOutcome,
   NodeRestoreResult
 } from './types'
 
@@ -48,7 +49,9 @@ export {
   restorePipPackages,
   restoreCustomNodes,
   repairNodeRequirements,
-  protectedPackageDrift
+  protectedPackageDrift,
+  describePackageRevert,
+  preexistingOnDisk
 } from './restore'
 export type { RequirementsRepairResult, ProtectedDriftEntry } from './restore'
 

@@ -28,6 +28,34 @@ export function buildElectronApi(): ElectronApi {
 
     // File/URL
     browseFolder: (defaultPath?) => ipcRenderer.invoke('browse-folder', defaultPath),
+    importPerformanceTestWorkflow: (filePath?) =>
+      ipcRenderer.invoke('import-performance-test-workflow', filePath),
+    getPerformanceTestExampleWorkflows: (installationId) =>
+      ipcRenderer.invoke('get-performance-test-example-workflows', installationId),
+    preparePerformanceTestExampleWorkflow: (installationId, templateId) =>
+      ipcRenderer.invoke('prepare-performance-test-example-workflow', installationId, templateId),
+    deletePerformanceTestWorkflow: (filePath) =>
+      ipcRenderer.invoke('delete-performance-test-workflow', filePath),
+    savePerformanceTestLogs: (filePath, logs) =>
+      ipcRenderer.invoke('save-performance-test-logs', filePath, logs),
+    listPerformanceTestBenchmarks: (folderPath?) =>
+      ipcRenderer.invoke('list-performance-test-benchmarks', folderPath),
+    deletePerformanceTestBenchmark: (folderPath, sessionId) =>
+      ipcRenderer.invoke('delete-performance-test-benchmark', folderPath, sessionId),
+    renamePerformanceTestBenchmark: (folderPath, sessionId, newSessionId) =>
+      ipcRenderer.invoke('rename-performance-test-benchmark', folderPath, sessionId, newSessionId),
+    readPerformanceTestResultsSummary: (filePath) =>
+      ipcRenderer.invoke('read-performance-test-results-summary', filePath),
+    runPerformanceTestWorkflow: (sessionId, filePath, measuredRuns, warmupRuns) =>
+      ipcRenderer.invoke(
+        'run-performance-test-workflow',
+        sessionId,
+        filePath,
+        measuredRuns,
+        warmupRuns
+      ),
+    exportResultsImage: (png, imageType, defaultPath?) =>
+      ipcRenderer.invoke('export-results-image', png, imageType, defaultPath),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
@@ -87,8 +115,11 @@ export function buildElectronApi(): ElectronApi {
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
-    openGlobalSettings: (tab) =>
-      ipcRenderer.send('comfy-titlepopup:open-global-settings', tab ? { tab } : undefined),
+    openGlobalSettings: (tab, opts) =>
+      ipcRenderer.send(
+        'comfy-titlepopup:open-global-settings',
+        tab || opts?.highlightField ? { tab, highlightField: opts?.highlightField } : undefined
+      ),
     openInstancePicker: (opts) =>
       ipcRenderer.send('comfy-window:open-instance-picker-for-install', {
         installationId: opts?.installationId ?? null,
@@ -153,6 +184,8 @@ export function buildElectronApi(): ElectronApi {
     getDetailSections: (installationId) =>
       ipcRenderer.invoke('get-detail-sections', installationId),
     getComfyArgs: (installationId) => ipcRenderer.invoke('get-comfy-args', installationId),
+    getCoreBetaArgs: (installationId, launchArgs) =>
+      ipcRenderer.invoke('get-core-beta-args', installationId, launchArgs),
     runAction: (installationId, actionId, actionData?) =>
       ipcRenderer.invoke('run-action', installationId, actionId, actionData),
 
@@ -191,6 +224,10 @@ export function buildElectronApi(): ElectronApi {
     getMediaSections: () => ipcRenderer.invoke('get-media-sections'),
     setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
     getSetting: (key) => ipcRenderer.invoke('get-setting', key),
+    getPendingBetaNotice: (installationId) =>
+      ipcRenderer.invoke('get-pending-beta-notice', installationId),
+    acknowledgeBetaNotice: (installationId, shownArgs) =>
+      ipcRenderer.invoke('acknowledge-beta-notice', installationId, shownArgs),
 
     // Theme
     getResolvedTheme: () => ipcRenderer.invoke('get-resolved-theme'),
@@ -274,6 +311,18 @@ export function buildElectronApi(): ElectronApi {
         callback(data as Parameters<typeof callback>[0])
       ipcRenderer.on('comfy-output', handler)
       return () => ipcRenderer.removeListener('comfy-output', handler)
+    },
+    onPerformanceTestProgress: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as Parameters<typeof callback>[0])
+      ipcRenderer.on('performance-test-progress', handler)
+      return () => ipcRenderer.removeListener('performance-test-progress', handler)
+    },
+    onPerformanceTestExampleDownload: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as Parameters<typeof callback>[0])
+      ipcRenderer.on('performance-test-example-download', handler)
+      return () => ipcRenderer.removeListener('performance-test-example-download', handler)
     },
     onComfyExited: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

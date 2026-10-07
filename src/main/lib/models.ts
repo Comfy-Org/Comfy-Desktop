@@ -539,6 +539,8 @@ export interface LauncherModelDirs {
  * built-in folder as the download target even while shared dirs are included.
  * When absent/stale the first shared dir is primary, and with no shared dirs
  * the install's own models dir stays the default (`null`).
+ * A governed build gets the same dirs: its ComfyUI checks every custom-node pack
+ * against the signed policy when it loads, whichever folder the pack is in.
  * `sharedModelsDirs` is passed in to avoid a settings import cycle.
  */
 export function resolveLauncherModelDirs(

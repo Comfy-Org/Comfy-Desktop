@@ -25,11 +25,19 @@ interface MockDownloadsState {
 type MockPopupConfig =
   | { kind: 'menu'; items: MockMenuItem[]; theme: { bg: string; text: string } }
   | { kind: 'downloads'; theme: { bg: string; text: string } }
+  | {
+      kind: 'global-settings'
+      snapshot: MockGlobalSettingsSnapshot
+      theme: { bg: string; text: string }
+    }
+
+type MockGlobalSettingsSnapshot = Record<string, unknown> & { telemetryGranted: boolean }
 
 interface MockBridgeState {
   configCallbacks: ((cfg: MockPopupConfig) => void)[]
   downloadsCallbacks: ((state: MockDownloadsState) => void)[]
   instancePickerSnapshotCallbacks: ((snapshot: unknown) => void)[]
+  globalSettingsSnapshotCallbacks: ((snapshot: unknown) => void)[]
   willShowCallbacks: ((info: { kind: string }) => void)[]
   dismissModalsCallbacks: (() => void)[]
   activateCalls: string[]
@@ -53,6 +61,7 @@ function installMockBridge(): MockBridgeState {
     configCallbacks: [],
     downloadsCallbacks: [],
     instancePickerSnapshotCallbacks: [],
+    globalSettingsSnapshotCallbacks: [],
     willShowCallbacks: [],
     dismissModalsCallbacks: [],
     activateCalls: [],
@@ -90,7 +99,8 @@ function installMockBridge(): MockBridgeState {
       state.instancePickerSnapshotCallbacks.push(cb)
       return () => {}
     },
-    onGlobalSettingsSnapshot: (_cb: (snapshot: unknown) => void) => {
+    onGlobalSettingsSnapshot: (cb: (snapshot: unknown) => void) => {
+      state.globalSettingsSnapshotCallbacks.push(cb)
       return () => {}
     },
     onWillShow: (cb: (info: { kind: string }) => void) => {
@@ -133,7 +143,14 @@ function installMockBridge(): MockBridgeState {
   return state
 }
 
-describe('TitlePopupApp', () => {
+// `vi.resetModules()` per test means every test re-imports the component, and
+// the first one pays Vite's transform of the whole graph inside its own budget
+// - about 1.2s idle here, ~3s when the machine is saturated (CI gives vitest's
+// 8 workers 4 cores). Against the 5s default that lands close enough to the
+// edge to time out, and a mount interrupted mid-flight then leaks its bridge
+// calls into the next test's counters. A wider budget absorbs the cold
+// transform; a genuinely hung test still fails, just later.
+describe('TitlePopupApp', { timeout: 20_000 }, () => {
   let bridgeState: MockBridgeState
 
   beforeEach(() => {
@@ -399,5 +416,99 @@ describe('TitlePopupApp', () => {
     bridgeState.willShowCallbacks.forEach((cb) => cb({ kind: 'global-settings' }))
     await expect(pending).resolves.toBe(false)
     expect(modal.state.visible).toBe(false)
+  })
+})
+
+// The global-settings view is the popup's `v-else` branch, so it renders from
+// an App-level ref rather than from props main controls directly. Both the ref
+// initializer and the live push have to carry `telemetryGranted` or todo 16's
+// toggle reads `undefined` — which is not `false` to a strict entry rule.
+describe('TitlePopupApp global-settings telemetry grant', { timeout: 20_000 }, () => {
+  let bridgeState: MockBridgeState
+
+  const globalSettingsViewStub = {
+    name: 'GlobalSettingsView',
+    props: ['snapshot'],
+    template: '<div class="global-settings-stub" />'
+  }
+
+  function snapshot(telemetryGranted: boolean): MockGlobalSettingsSnapshot {
+    return {
+      initialTab: null,
+      languageFields: [],
+      generalFields: [],
+      telemetryFields: [],
+      desktopUpdateFields: [],
+      cacheFields: [],
+      advancedFields: [],
+      sharedDirectoriesFields: [],
+      installLocationFields: [],
+      modelsDirs: [],
+      modelsSystemDefault: '',
+      telemetryGranted,
+      appUpdate: {
+        state: {},
+        progress: null,
+        isDownloading: false,
+        capabilities: { systemManaged: false, canSelfUpdate: true },
+        installedVersion: '0.0.0-test',
+        platform: 'linux',
+        lastCheckedAt: null
+      },
+      githubUrl: '',
+      githubStars: null,
+      githubStarsLoading: false,
+      i18n: {
+        overview: '',
+        updates: '',
+        storage: '',
+        models: '',
+        advanced: '',
+        logs: '',
+        sharedDirectories: ''
+      }
+    }
+  }
+
+  beforeEach(() => {
+    bridgeState = installMockBridge()
+    vi.resetModules()
+  })
+
+  it('starts with the grant withheld before main pushes anything', async () => {
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    const wrapper = mount(TitlePopupApp, {
+      global: { stubs: { GlobalSettingsView: globalSettingsViewStub } }
+    })
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      globalSettingsSnapshot: { telemetryGranted: boolean }
+    }
+    expect(vm.globalSettingsSnapshot.telemetryGranted).toBe(false)
+  })
+
+  it('passes a live snapshot grant through to the global-settings view', async () => {
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    const wrapper = mount(TitlePopupApp, {
+      global: { stubs: { GlobalSettingsView: globalSettingsViewStub } }
+    })
+    await flushPromises()
+    bridgeState.configCallbacks.forEach((cb) =>
+      cb({
+        kind: 'global-settings',
+        snapshot: snapshot(false),
+        theme: { bg: '#262729', text: '#dddddd' }
+      })
+    )
+    await flushPromises()
+
+    const view = wrapper.findComponent({ name: 'GlobalSettingsView' })
+    expect((view.props('snapshot') as MockGlobalSettingsSnapshot).telemetryGranted).toBe(false)
+
+    bridgeState.globalSettingsSnapshotCallbacks.forEach((cb) => cb(snapshot(true)))
+    await flushPromises()
+
+    expect((view.props('snapshot') as MockGlobalSettingsSnapshot).telemetryGranted).toBe(true)
   })
 })

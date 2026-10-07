@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useModal } from '../composables/useModal'
@@ -18,8 +19,9 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import DevPlatformAccountChip from './devplatform/DevPlatformAccountChip.vue'
 import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
-import { resolvePickerTab } from '../lib/pickerTabs'
+import { openInstallManager } from '../lib/openInstallManager'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
+import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 
 /**
  * Chooser view - recents grid.
@@ -28,8 +30,9 @@ import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc
  * window hosts this as the Comfy tab body when no install backs the
  * entry.
  *
- * Signed-in users choose either No workspace or one authenticated workspace.
- * The grid contains only installed instances in that scope.
+ * Every user has a local Personal workspace. Signed-in users additionally see
+ * authenticated team workspaces; the server Personal workspace merges into
+ * the local Personal scope.
  * Available Builds belong in the workspace New Instance flow, not this grid.
  */
 
@@ -47,7 +50,7 @@ const emit = defineEmits<{
    *  open a fresh window, or hand off to a launch flow. */
   pick: [installation: Installation]
   /** User triggered the new-install flow in the current dashboard scope. */
-  'show-new-install': [workspaceId?: string]
+  'show-new-install': []
   /** A long-running action was kicked off from the inline Manage...
    *  DetailModal. Forwarded to PanelApp so it can wire the operation
    *  through `progressStore`. */
@@ -59,6 +62,8 @@ const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 const authStore = useAuthStore()
 const modal = useModal()
+const dashboardScope = useDashboardScopeStore()
+void dashboardScope.initialize()
 
 onMounted(() => {
   if (installationStore.installations.length === 0) {
@@ -91,43 +96,53 @@ defineExpose({ activeFilter })
 
 // --- Dashboard scope ---
 
-const selectedWorkspaceId = ref<string | null>(null)
-let dashboardScopeInitialized = false
+const selectedWorkspaceModel = computed({
+  get: () => dashboardScope.selectedWorkspaceId,
+  set: dashboardScope.selectWorkspace
+})
 
+/** Server workspace whose Builds belong to the selected dashboard scope. */
+const selectedManagedWorkspaceId = computed(() => {
+  if (!authStore.isSignedIn) return null
+  if (dashboardScope.selectedWorkspaceId !== PERSONAL_WORKSPACE_ID) {
+    return dashboardScope.selectedWorkspaceId
+  }
+  if (authStore.status.workspaceType === 'personal') return authStore.status.workspaceId ?? null
+  return authStore.personalWorkspace?.id ?? null
+})
+
+// Warm the selected workspace's Build catalog while the user is still on the
+// dashboard. New Instance can then choose its initial tab without waiting for
+// a network request. A generation guard prevents a slower previous selection
+// from fetching after the user has moved to another workspace.
+let buildPrefetchGeneration = 0
 watch(
-  () => ({ signedIn: authStore.isSignedIn, workspaceId: authStore.status.workspaceId }),
-  (next, previous) => {
-    if (!next.signedIn) {
-      selectedWorkspaceId.value = null
-      dashboardScopeInitialized = false
-      return
-    }
-    // Build versions drive each managed instance's Update status tag. Main
-    // warms that synchronous cache during listBuilds and then broadcasts an
-    // installation refresh, so load the active workspace catalog as soon as
-    // the authenticated dashboard has one.
-    if (next.workspaceId && next.workspaceId !== previous?.workspaceId) {
-      void authStore.fetchBuilds()
-    }
-    if (!dashboardScopeInitialized) {
-      selectedWorkspaceId.value = next.workspaceId ?? null
-      dashboardScopeInitialized = true
-      return
-    }
-    // Follow an external authenticated workspace switch only while the user is
-    // viewing that workspace. An explicit No workspace selection remains local.
-    if (selectedWorkspaceId.value !== null && selectedWorkspaceId.value === previous?.workspaceId) {
-      selectedWorkspaceId.value = next.workspaceId ?? null
+  [() => authStore.isSignedIn, selectedManagedWorkspaceId],
+  async ([signedIn, workspaceId]) => {
+    const generation = ++buildPrefetchGeneration
+    if (!signedIn || !workspaceId) return
+    try {
+      if (authStore.status.workspaceId !== workspaceId) {
+        await authStore.switchWorkspace(workspaceId)
+      }
+      if (
+        generation !== buildPrefetchGeneration ||
+        selectedManagedWorkspaceId.value !== workspaceId
+      )
+        return
+      await authStore.fetchBuilds()
+    } catch {
+      // The wizard retains its normal authorization and retry UI when a
+      // background prefetch cannot complete.
     }
   },
   { immediate: true }
 )
 
 function installationIsInSelectedScope(inst: Installation): boolean {
-  if (!authStore.isSignedIn) return inst.workspaceId === undefined
-  return selectedWorkspaceId.value === null
-    ? inst.workspaceId === undefined
-    : inst.workspaceId === selectedWorkspaceId.value
+  return dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID
+    ? inst.workspaceId === undefined || inst.workspaceId === PERSONAL_WORKSPACE_ID
+    : inst.workspaceId === dashboardScope.selectedWorkspaceId
 }
 
 const scopedVisibleInstalls = computed(() =>
@@ -161,29 +176,6 @@ const clusterRows = computed(() => Math.ceil((1 + scopedInstallCount.value) / TI
 // picker popup) - the legacy `useOverlay`-driven `ManageInstallModal`
 // route is retired.
 
-function openManage(
-  installation: Installation,
-  opts: { initialTab?: string; autoAction?: string | null } = {}
-): void {
-  // Every Manage entry - bare "Manage..." and the specialised kebab
-  // items (Update / Migrate / Restore Snapshot / Delete) - routes to
-  // the instance-picker popup. Bare goes to compact (default identity
-  // card + CTAs); specialised paths open the picker directly in
-  // expanded mode on the relevant tab with `autoAction` so the action
-  // fires on mount of `ComfyUISettingsContent`.
-  const hasSpecialisedOpts =
-    opts.initialTab !== undefined || (opts.autoAction !== undefined && opts.autoAction !== null)
-  if (!hasSpecialisedOpts) {
-    window.api.openInstancePicker({ installationId: installation.id })
-    return
-  }
-  window.api.openInstancePicker({
-    installationId: installation.id,
-    initialTab: resolvePickerTab(opts.initialTab, 'status'),
-    autoAction: opts.autoAction ?? null
-  })
-}
-
 function canPromoteToWorkspace(inst: Installation): boolean {
   return (
     authStore.isSignedIn &&
@@ -202,10 +194,12 @@ const {
   handleCtxMenuSelect,
   closeMenu,
   triggerAction,
+  viewError,
+  viewDanger,
   isStoppedActionGated,
   isPromotingToWorkspace
 } = useInstallContextMenu({
-  onManage: (inst, opts) => openManage(inst, opts ?? {}),
+  onManage: openInstallManager,
   // Fast-path for Delete: forwards to PanelApp so the same ProgressModal
   // pipeline used by every other long op fires here too, without the
   // brief ManageInstallModal flash that the autoAction route produced.
@@ -231,41 +225,6 @@ async function pickInstall(inst: Installation): Promise<void> {
     if (focused) return
   }
   emit('pick', inst)
-}
-
-/** Surface a failed install's error so it's readable from the dashboard.
- *  Covers both op failures (which carry a `message`, e.g. a migrate that
- *  silently did nothing but turn the tile red) and crashes (exit code /
- *  signal + captured stderr). */
-function viewError(inst: Installation): void {
-  const err = sessionStore.errorInstances.get(inst.id)
-  if (!err) return
-  let message = err.message
-  if (!message) {
-    if (err.signal && err.exitCode != null) {
-      message = t('comfyLifecycle.crashedDescWithCodeAndSignal', {
-        code: err.exitCode,
-        signal: err.signal
-      })
-    } else if (err.signal) {
-      message = t('comfyLifecycle.crashedDescWithSignal', { signal: err.signal })
-    } else if (err.exitCode != null) {
-      message = t('comfyLifecycle.crashedDescWithCode', { code: err.exitCode })
-    } else {
-      message = t('comfyLifecycle.crashedDesc')
-    }
-  }
-  if (err.lastStderr) message = `${message}\n\n${err.lastStderr}`
-  void modal.alert({ title: t('chooser.errorTitle'), message })
-}
-
-/** Surface a backend-flagged danger state (failed install, interrupted delete,
- *  missing install folder) from its dashboard pill. The label is the short
- *  pill text; `detail` carries the full explanation built in the main process. */
-function viewDanger(inst: Installation): void {
-  const tag = inst.statusTag
-  if (!tag || tag.style !== 'danger') return
-  void modal.alert({ title: tag.label, message: tag.detail || tag.label })
 }
 
 const cloudGate = useCloudGate({ immediate: false })
@@ -316,11 +275,7 @@ onMounted(async () => {
   }
 })
 function handleNewInstallClick(): void {
-  if (authStore.isSignedIn && selectedWorkspaceId.value) {
-    emit('show-new-install', selectedWorkspaceId.value)
-  } else {
-    emit('show-new-install')
-  }
+  emit('show-new-install')
 }
 
 const gridHandlers = {
@@ -338,11 +293,7 @@ const gridHandlers = {
 
 <template>
   <BrandBackground v-show="props.visible" class="chooser-bg">
-    <div
-      class="chooser-view"
-      :class="{ 'chooser-view--workspace': authStore.isSignedIn }"
-      :style="{ '--rows': clusterRows }"
-    >
+    <div class="chooser-view chooser-view--workspace" :style="{ '--rows': clusterRows }">
       <!-- Signed-in account identity, pinned outside the centered content column. -->
       <div class="chooser-account">
         <DevPlatformAccountChip />
@@ -361,33 +312,42 @@ const gridHandlers = {
         </div>
       </div>
 
-      <div v-if="authStore.isSignedIn" class="chooser-workspace-bar">
-        <div class="chooser-workspace-controls">
-          <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
-          <button
-            type="button"
-            class="chooser-workspace-refresh"
-            :disabled="refreshingWorkspace"
-            :aria-label="t('devPlatform.workspace.refresh')"
-            :title="t('devPlatform.workspace.refresh')"
-            data-testid="chooser-workspace-refresh"
-            @click="refreshWorkspace"
+      <div class="chooser-workspace-viewport">
+        <div class="chooser-workspace-bar">
+          <div
+            class="chooser-workspace-controls"
+            :class="{ 'chooser-workspace-controls--no-refresh': !authStore.isSignedIn }"
           >
-            <RefreshCw
-              :size="13"
-              :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
-            />
-          </button>
-        </div>
-        <div class="chooser-workspace-divider" aria-hidden="true" />
-        <div class="chooser-workspace-count">
-          <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
-          <strong>{{ scopedInstallCount }}</strong>
+            <DevPlatformWorkspaceSelector v-model="selectedWorkspaceModel" />
+            <button
+              v-if="authStore.isSignedIn"
+              type="button"
+              class="chooser-workspace-refresh"
+              :disabled="refreshingWorkspace"
+              :aria-label="t('devPlatform.workspace.refresh')"
+              :title="t('devPlatform.workspace.refresh')"
+              data-testid="chooser-workspace-refresh"
+              @click="refreshWorkspace"
+            >
+              <RefreshCw
+                :size="13"
+                :class="{ 'chooser-workspace-refresh__icon--busy': refreshingWorkspace }"
+              />
+            </button>
+          </div>
+          <div class="chooser-workspace-divider" aria-hidden="true" />
+          <div class="chooser-workspace-count">
+            <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
+            <strong>{{ scopedInstallCount }}</strong>
+          </div>
         </div>
       </div>
 
       <div
-        v-if="installationStore.loading && installationStore.installations.length === 0"
+        v-if="
+          !dashboardScope.initialized ||
+          (installationStore.loading && installationStore.installations.length === 0)
+        "
         class="chooser-loading"
       >
         {{ t('common.loading') }}
@@ -572,11 +532,9 @@ const gridHandlers = {
 .chooser-shelves {
   grid-row: 4;
   width: 100%;
-  /* Content box must hold exactly 4 tracks (4 x 280 + 3 x 16 = 1168px), so the
-   * side padding sits OUTSIDE the cap - inside it, `auto-fit` drops to 3
-   * columns on a wide viewport. */
-  --shelf-pad-x: 4px;
-  max-width: calc(1168px + 2 * var(--shelf-pad-x));
+  /* Content box holds exactly 4 tracks (4 x 280 + 3 x 16 = 1168px). */
+  max-width: 1168px;
+  justify-self: center;
   /* Reserve the unfiltered row height so the cluster doesn't jump while typing
    * in search. Tile is 178px tall (280px at the golden-ratio aspect). */
   --tile-h: 178px;
@@ -593,7 +551,7 @@ const gridHandlers = {
    * glide under it rather than clip abruptly. Fluid on height (`--chooser-fade`)
    * so short viewports reclaim the band for an extra tile row. */
   --chooser-fade: clamp(12px, 2.5vh, 24px);
-  padding: var(--chooser-fade) var(--shelf-pad-x);
+  padding-block: var(--chooser-fade);
   /* Size container so each shelf below can snap its width to a whole number
    * of tile columns. */
   container-type: inline-size;
@@ -617,16 +575,14 @@ const gridHandlers = {
   flex-direction: column;
   /* The grid's own row gap, so two stacked grids read as continuous rows. */
   gap: 16px;
-  /* Snap each shelf to a whole number of 280px tracks (16px gaps) and center
-   * the snapped block. Without this, a viewport that fits fewer than 4
-   * columns leaves the start-aligned grids pinned left under the centered
-   * wordmark/search with a dead right gutter. Snapping makes start-aligned
-   * and centered rows coincide, and shelf header rules end at the last
-   * column. Thresholds are `cols * 280 + (cols - 1) * 16` against the
-   * shelves' content box (the container defined above). */
+  /* Snap each shelf to a whole number of 280px tracks (16px gaps) while
+   * keeping partial-width shelves centered as a group. Thresholds are
+   * `cols * 280 + (cols - 1) * 16` against the shelves' content box (the
+   * container defined above). */
   width: 100%;
   max-width: 280px;
-  margin-inline: auto;
+  align-self: center;
+  margin: 0;
 }
 @container (width >= 576px) {
   .chooser-shelf {
@@ -644,13 +600,36 @@ const gridHandlers = {
   }
 }
 
-.chooser-workspace-bar {
+.chooser-workspace-viewport {
   grid-row: 4;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1168px;
+  justify-self: center;
+  container-type: inline-size;
+}
+.chooser-workspace-bar {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  max-width: 1168px;
+  max-width: 280px;
+  margin-inline: auto;
+}
+@container (width >= 576px) {
+  .chooser-workspace-bar {
+    max-width: 576px;
+  }
+}
+@container (width >= 872px) {
+  .chooser-workspace-bar {
+    max-width: 872px;
+  }
+}
+@container (width >= 1168px) {
+  .chooser-workspace-bar {
+    max-width: 1168px;
+  }
 }
 .chooser-workspace-divider {
   flex: 1 1 auto;
@@ -659,11 +638,22 @@ const gridHandlers = {
   background: var(--chooser-surface-border);
 }
 .chooser-workspace-controls {
-  display: flex;
+  --chooser-workspace-refresh-size: 30px;
+  --chooser-workspace-refresh-gap: 8px;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--chooser-workspace-refresh-size);
   flex: 0 1 290px;
   align-items: center;
-  gap: 8px;
+  gap: var(--chooser-workspace-refresh-gap);
   min-width: 0;
+}
+.chooser-workspace-controls--no-refresh {
+  grid-template-columns: minmax(0, 1fr);
+  flex-basis: calc(
+    290px - var(--chooser-workspace-refresh-size) - var(--chooser-workspace-refresh-gap)
+  );
+  gap: 0;
 }
 .chooser-workspace-count {
   display: flex;
@@ -679,7 +669,7 @@ const gridHandlers = {
   font-weight: 600;
 }
 .chooser-workspace-controls :deep(.workspace-selector) {
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
 }
 .chooser-workspace-controls :deep(.workspace-selector__face) {
@@ -689,12 +679,18 @@ const gridHandlers = {
   min-width: 180px;
   padding: 4px 8px;
 }
+.chooser-workspace-controls :deep(.workspace-selector__menu) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
 .chooser-workspace-refresh {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: var(--chooser-workspace-refresh-size);
+  height: var(--chooser-workspace-refresh-size);
   padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -734,6 +730,12 @@ const gridHandlers = {
 
   .chooser-workspace-controls {
     flex-basis: 100%;
+  }
+
+  .chooser-workspace-controls--no-refresh {
+    flex-basis: calc(
+      100% - var(--chooser-workspace-refresh-size) - var(--chooser-workspace-refresh-gap)
+    );
   }
 
   .chooser-workspace-count {

@@ -46,7 +46,7 @@
  * locale; the host calls it post-mount the same way the flow modals
  * are reset.
  */
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, useId, watch } from 'vue'
 import { Check, Copy, FolderInput, Info, Loader2 } from 'lucide-vue-next'
 import TakeoverHeader from '../components/TakeoverHeader.vue'
 import ModalShell from '../components/ModalShell.vue'
@@ -99,6 +99,17 @@ const emit = defineEmits<{
 
 const step = ref<Step>('start')
 const telemetryEnabled = ref(true)
+/** Beta-programme opt-in. Mirrors the telemetry checkbox until the user takes
+ *  it over; `betaTouched` is what separates "never expressed a preference"
+ *  from "chose this", and survives the forced-off below so telemetry coming
+ *  back on can never re-opt a user who already opted out. */
+const betaFeaturesEnabled = ref(true)
+const betaTouched = ref(false)
+/** A stored membership predates this first-use consent gate and remains valid
+ *  without telemetry. Explicit interaction transfers ownership to this UI. */
+const preservePersistedBetaOptIn = ref(false)
+const betaBlocked = computed(() => !telemetryEnabled.value && !betaFeaturesEnabled.value)
+const betaBlockedReasonId = useId()
 const locale = ref('en')
 
 /** A/B/C experiment that varies the pre-selected fork on the merged
@@ -462,6 +473,30 @@ const isBrandStep = computed(() => step.value === 'start' || step.value === 'loc
  *  its current persisted state, not as a freshly-defaulted opt-in).
  *  China-mirror sub-step still runs first when the locale calls for
  *  it; the post-mirror branch reuses the same routing logic. */
+/** Entry rule: joining the beta programme requires telemetry. Existing stored
+ *  membership is independent and survives replay until the user changes it. */
+function applyBetaEntryRule(): void {
+  if (!telemetryEnabled.value) {
+    if (!preservePersistedBetaOptIn.value) betaFeaturesEnabled.value = false
+    return
+  }
+  if (!betaTouched.value) betaFeaturesEnabled.value = true
+}
+
+watch(telemetryEnabled, applyBetaEntryRule)
+
+function onBetaFeaturesToggle(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const next = input.checked
+  if (!telemetryEnabled.value && next) {
+    input.checked = betaFeaturesEnabled.value
+    return
+  }
+  preservePersistedBetaOptIn.value = false
+  betaTouched.value = true
+  betaFeaturesEnabled.value = next
+}
+
 function nudgeTos(): void {
   if (acceptedTos.value) return
   tosNudge.value = true
@@ -489,6 +524,9 @@ async function onContinue(): Promise<void> {
   isContinuing.value = true
 
   await window.api.setSetting('telemetryEnabled', telemetryEnabled.value)
+  // Written explicitly, always — a wizard install must never fall through to
+  // the one-time seeding resolver in `src/main/settings.ts`.
+  await window.api.setSetting('betaFeaturesEnabled', betaFeaturesEnabled.value)
 
   emitTelemetryAction('comfy.desktop.first_use.consent_decision', {
     decision: telemetryEnabled.value ? 'accept' : 'decline',
@@ -722,8 +760,18 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   // user's current persisted choice if the takeover is replaying after
   // a mid-flow cancel (the consent step is the only one that can flip
   // a destructive default).
-  const existing = (await window.api.getSetting('telemetryEnabled')) as boolean | undefined
+  const [existing, existingBeta] = (await Promise.all([
+    window.api.getSetting('telemetryEnabled'),
+    window.api.getSetting('betaFeaturesEnabled')
+  ])) as [boolean | undefined, boolean | undefined]
   telemetryEnabled.value = existing !== false
+  // A stored boolean is a choice the user already made, so it replays as-is
+  // and counts as touched; its absence means the wizard has yet to ask, so it
+  // mirrors. Either way the entry rule gets the final word.
+  betaTouched.value = typeof existingBeta === 'boolean'
+  preservePersistedBetaOptIn.value = existingBeta === true
+  betaFeaturesEnabled.value = betaTouched.value ? existingBeta === true : telemetryEnabled.value
+  applyBetaEntryRule()
   // Locale + hardware detection run non-blocking so the start hero paints
   // on the first frame even if main is slow to resolve (e.g. cold IPC, no
   // GPU on CI). Sensible defaults (`'en'`, `null`) are already in place;
@@ -1052,6 +1100,25 @@ defineExpose({ open, resetContinue })
                 >
                   {{ $t('common.learnMore') }}
                 </button>
+              </span>
+            </label>
+            <label
+              class="brand-checkbox start-consent-row"
+              data-testid="first-use-consent-beta"
+              :title="betaBlocked ? $t('tooltips.betaFeaturesNeedTelemetry') : undefined"
+            >
+              <input
+                type="checkbox"
+                :checked="betaFeaturesEnabled"
+                :aria-disabled="betaBlocked"
+                :aria-describedby="betaBlocked ? betaBlockedReasonId : undefined"
+                @change="onBetaFeaturesToggle"
+              />
+              <span class="start-consent-row__text">
+                {{ $t('firstUse.consentBetaHint') }}
+              </span>
+              <span v-if="betaBlocked" :id="betaBlockedReasonId" class="sr-only">
+                {{ $t('tooltips.betaFeaturesNeedTelemetry') }}
               </span>
             </label>
           </div>

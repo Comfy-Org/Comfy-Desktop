@@ -75,6 +75,8 @@ interface GlobalSettingsModelsDir {
 
 interface GlobalSettingsSnapshot {
   initialTab: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
+  /** Per-open command: a field row to scroll to and flash (settings deep links). */
+  highlightFieldId: string | null
   generalFields: Record<string, unknown>[]
   languageFields: Record<string, unknown>[]
   telemetryFields: Record<string, unknown>[]
@@ -85,6 +87,7 @@ interface GlobalSettingsSnapshot {
   installLocationFields: Record<string, unknown>[]
   modelsDirs: GlobalSettingsModelsDir[]
   modelsSystemDefault: string
+  telemetryGranted: boolean
   appUpdate: {
     state: Record<string, unknown>
     progress: Record<string, unknown> | null
@@ -172,6 +175,7 @@ const pickerSnapshot = ref<PickerSnapshot>({
 })
 const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
   initialTab: null,
+  highlightFieldId: null,
   generalFields: [],
   languageFields: [],
   telemetryFields: [],
@@ -182,6 +186,7 @@ const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
   installLocationFields: [],
   modelsDirs: [],
   modelsSystemDefault: '',
+  telemetryGranted: false,
   appUpdate: {
     state: { kind: null, version: null, autoUpdate: true },
     progress: null,

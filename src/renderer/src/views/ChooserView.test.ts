@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import ChooserView from './ChooserView.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import { useSessionStore } from '../stores/sessionStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { TID } from '../../../shared/testIds'
 import type { DevPlatformBuild, Installation } from '../types/ipc'
 
@@ -70,16 +71,17 @@ const messages = {
     devPlatform: {
       workspace: {
         personalLabel: 'Personal',
-        unmanagedLabel: 'No workspace',
         switchLabel: 'Workspace',
         currentFallback: 'Current workspace',
         instanceCountLabel: 'INSTANCES',
         loadError: "Couldn't load workspaces. Retry",
         refresh: 'Refresh workspaces',
         promoteToWorkspace: 'Create Build',
+        promoteToWorkspaceHint: 'Create a Build from this instance in Comfy Developer Platform.',
+        readMore: 'Read more',
         promoting: 'Creating...',
         promoteFailedTitle: 'Could not create build',
-        promoteFailedMessage: 'Could not create a draft in Comfy Builder.'
+        promoteFailedMessage: 'Could not create a draft in Comfy Developer Platform.'
       },
       build: { version: 'Build v{version}' }
     }
@@ -95,6 +97,8 @@ interface MockApi {
   onInstallationsChanged: ReturnType<typeof vi.fn>
   onInstallationsVersionsUpdated: ReturnType<typeof vi.fn>
   getSetting: ReturnType<typeof vi.fn>
+  setSetting: ReturnType<typeof vi.fn>
+  onSettingsChanged: ReturnType<typeof vi.fn>
   runAction: ReturnType<typeof vi.fn>
   // progressStore subscribes to onErrorDetail at construction time.
   onErrorDetail: ReturnType<typeof vi.fn>
@@ -112,6 +116,8 @@ function installMockApi(initial: Installation[]): MockApi {
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     getSetting: vi.fn().mockResolvedValue(undefined),
+    setSetting: vi.fn().mockResolvedValue(undefined),
+    onSettingsChanged: vi.fn(() => () => {}),
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     onErrorDetail: vi.fn(() => () => {}),
     focusComfyWindow: vi.fn().mockResolvedValue(true),
@@ -208,8 +214,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     await wrapper.find('.chooser-tile-new').trigger('click')
-    expect(wrapper.emitted('show-new-install')).toBeDefined()
-    expect(wrapper.emitted('show-new-install')!.length).toBe(1)
+    expect(wrapper.emitted('show-new-install')).toEqual([[]])
   })
 
   it('renders a cloud install through the same tile component as local installs', async () => {
@@ -629,7 +634,7 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('WrongPlatformThing')
   })
 
-  it('shows only installs without a workspace when signed out', async () => {
+  it('shows the Personal workspace and its legacy and canonical installs when signed out', async () => {
     installMockApi([
       makeInstall({
         id: 'builder-1',
@@ -638,6 +643,12 @@ describe('ChooserView', () => {
         distributionId: 'd-unassigned',
         status: 'installed'
       } as unknown as Partial<Installation>),
+      makeInstall({
+        id: 'personal-1',
+        name: 'Personal Studio',
+        workspaceId: 'personal',
+        status: 'installed'
+      }),
       makeInstall({
         id: 'builder-2',
         name: 'Workspace Studio',
@@ -651,8 +662,15 @@ describe('ChooserView', () => {
     await flushPromises()
     const names = wrapper.findAll('.chooser-tile-name').map((w) => w.text())
     expect(names).toContain('Unassigned Studio')
+    expect(names).toContain('Personal Studio')
     expect(names).not.toContain('Workspace Studio')
-    expect(wrapper.find('[data-testid="devplatform-workspace-selector"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="devplatform-workspace-selector"]').text()).toContain(
+      'Personal'
+    )
+    expect(wrapper.get('.chooser-workspace-controls').classes()).toContain(
+      'chooser-workspace-controls--no-refresh'
+    )
+    expect(wrapper.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(false)
   })
 
   it('renders the dashboard as one left-aligned instance grid', async () => {
@@ -676,6 +694,7 @@ describe('ChooserView', () => {
     const controls = wrapper.get('.chooser-workspace-controls')
     const selector = wrapper.get('[data-testid="devplatform-workspace-selector"]')
     const refresh = wrapper.get('[data-testid="chooser-workspace-refresh"]')
+    expect(controls.classes()).not.toContain('chooser-workspace-controls--no-refresh')
     expect(controls.element.parentElement).toBe(workspaceBar.element)
     expect(selector.element.closest('.chooser-workspace-controls')).toBe(controls.element)
     expect(
@@ -710,9 +729,19 @@ describe('ChooserView', () => {
     const menu = wrapper
       .findAllComponents({ name: 'ContextMenu' })
       .find((candidate) => candidate.props('open') === true)!
-    const items = menu.props('items') as { id: string; label: string; disabled?: boolean }[]
+    const items = menu.props('items') as {
+      id: string
+      label: string
+      hint?: string
+      hintUrl?: string
+      hintLinkLabel?: string
+      disabled?: boolean
+    }[]
     expect(items.find(({ id }) => id === 'promote-to-workspace')).toMatchObject({
       label: 'Create Build',
+      hint: 'Create a Build from this instance in Comfy Developer Platform.',
+      hintUrl: 'https://platform.comfy.org/profile/deploy',
+      hintLinkLabel: 'Read more',
       disabled: false
     })
   })
@@ -740,7 +769,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-unmanaged"]').trigger('click')
+    await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
     await flushPromises()
 
     const tile = wrapper.find(`[data-testid="${TID.dashboardTile('local')}"]`)
@@ -790,7 +819,7 @@ describe('ChooserView', () => {
       await flushPromises()
       if (useUnmanaged) {
         await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-        await wrapper.get('[data-testid="devplatform-workspace-unmanaged"]').trigger('click')
+        await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
         await flushPromises()
       }
 
@@ -812,6 +841,29 @@ describe('ChooserView', () => {
     mountChooser()
     await flushPromises()
 
+    expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
+  })
+
+  it('prefetches Builds when the selected workspace changes', async () => {
+    const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Workspace A' })
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
+      { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
+    ])
+    api.comfybuilder.switchWorkspace.mockImplementation(async (workspaceId: string) => ({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId
+    }))
+    const wrapper = mountChooser()
+    await flushPromises()
+    api.comfybuilder.listBuilds.mockClear()
+
+    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    await wrapper.get('[data-testid="devplatform-workspace-w2"]').trigger('click')
+    await flushPromises()
+
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
     expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
   })
 
@@ -858,7 +910,40 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('AvailableThing')
   })
 
-  it('switches between No workspace and workspaces without leaking other-workspace installs', async () => {
+  it('restores the saved scope and reconciles its grid and label after membership changes', async () => {
+    const api = installMockApiSignedIn(
+      [
+        makeInstall({ id: 'a', name: 'A instance', workspaceId: 'w1' }),
+        makeInstall({ id: 'b', name: 'B instance', workspaceId: 'w2' })
+      ],
+      [],
+      { id: 'w1', name: 'Workspace A' }
+    )
+    api.getSetting.mockResolvedValue('w2')
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'owner' },
+      { id: 'w2', name: 'Workspace B', type: 'team', role: 'owner' }
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.text()).toContain('B instance')
+    expect(wrapper.text()).not.toContain('A instance')
+    expect(wrapper.get('.workspace-selector__name').text()).toBe('Workspace B')
+    expect(api.setSetting).not.toHaveBeenCalled()
+
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'owner' }
+    ])
+    await wrapper.get('[data-testid="chooser-workspace-refresh"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('A instance')
+    expect(wrapper.text()).not.toContain('B instance')
+    expect(wrapper.get('.workspace-selector__name').text()).toBe('Workspace A')
+    expect(api.setSetting).toHaveBeenCalledWith('dashboardWorkspaceId', 'w1')
+    wrapper.unmount()
+  })
+
+  it('switches between Personal and team workspaces without leaking other-workspace installs', async () => {
     const api = installMockApiSignedIn(
       [
         makeInstall({ id: 'local', name: 'LocalThing' }),
@@ -897,7 +982,7 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('LocalThing')
 
     await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-unmanaged"]').trigger('click')
+    await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('LocalThing')
     expect(wrapper.text()).not.toContain('Workspace A Build')
@@ -918,18 +1003,20 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('Workspace B Build')
   })
 
-  it('emits the selected workspace only for workspace-scoped New Instance', async () => {
+  it('keeps the shared New Instance scope in sync with the workspace selector', async () => {
     installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
     const wrapper = mountChooser()
     await flushPromises()
 
     await wrapper.get('.chooser-tile-new').trigger('click')
-    expect(wrapper.emitted('show-new-install')?.at(-1)).toEqual(['w1'])
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('w1')
+    expect(wrapper.emitted('show-new-install')?.at(-1)).toEqual([])
 
     await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
-    await wrapper.get('[data-testid="devplatform-workspace-unmanaged"]').trigger('click')
+    await wrapper.get('[data-testid="devplatform-workspace-personal"]').trigger('click')
     await flushPromises()
     await wrapper.get('.chooser-tile-new').trigger('click')
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('personal')
     expect(wrapper.emitted('show-new-install')?.at(-1)).toEqual([])
   })
 

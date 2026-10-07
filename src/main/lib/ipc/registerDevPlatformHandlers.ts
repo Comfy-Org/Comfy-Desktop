@@ -15,6 +15,8 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
 
 import { comfyWindows } from '../../host/registry'
+import type { ComfyWindowEntry } from '../../host/registry'
+import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
@@ -48,6 +50,11 @@ import { allocateInstallIdentity } from './installIdentity'
 import { COMFYBUILDER_INSTALL_DEFAULTS } from '../../sources/comfybuilder/constants'
 import type { InstallationRecord } from '../../installations'
 import type { InstallBuildRequest, InstallBuildResult } from '../../../types/ipc'
+import {
+  isPersonalWorkspace,
+  PERSONAL_WORKSPACE_ID,
+  workspaceContextId
+} from '../../../shared/workspaces'
 
 /** IPC channels for the dev-platform bridge. Kept together so a rename can't desync. */
 export const DEVPLATFORM_CHANNELS = {
@@ -102,6 +109,7 @@ export function broadcastAuthChanged(status: AuthStatus): void {
     if (panel && !panel.webContents.isDestroyed())
       panel.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
   }
+  void broadcastEmbeddedSessionChanged()
 }
 
 /**
@@ -116,6 +124,53 @@ export async function signInToCloud(): Promise<AuthStatus> {
   clearVersionCache()
   broadcastAuthChanged(status)
   return status
+}
+
+/**
+ * Sign Desktop out of its Cloud account and announce it. Asks first, on
+ * `host`'s window, when an install or update still needs the account; without
+ * a window to ask on, it keeps the session. Shared by the account chip and the
+ * hosted ComfyUI view.
+ */
+export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promise<AuthStatus> {
+  const session = getCloudSession()
+  const installingOperations: Array<[string, AbortController]> = []
+  for (const [installationId, abort] of _operationAborts) {
+    const installation = await installations.get(installationId)
+    // In-place updates ('updating') ride the same install dispatch path and
+    // hold the same auth-dependent downloads, so they need the guard too.
+    if (installation?.status === 'installing' || installation?.status === 'updating') {
+      installingOperations.push([installationId, abort])
+    }
+  }
+  if (installingOperations.length > 0) {
+    if (!host || host.window.isDestroyed()) return session.status()
+    const confirmed = await openSystemModalAsync({
+      parent: host.window,
+      spec: {
+        title: i18n.t('devPlatform.account.installationInProgressTitle'),
+        message: i18n.t('devPlatform.account.installationInProgressMessage'),
+        confirmLabel: i18n.t('devPlatform.account.cancelInstallationAndSignOut'),
+        cancelLabel: i18n.t('common.close'),
+        confirmStyle: 'danger',
+        theme: host.lastTheme
+      }
+    })
+    if (!confirmed) return session.status()
+    for (const [installationId, abort] of installingOperations) {
+      if (_operationAborts.get(installationId) !== abort) continue
+      abort.abort()
+      _broadcastToRenderer('install-progress', {
+        installationId,
+        phase: 'cancelling',
+        cancelRequested: true
+      })
+    }
+  }
+  session.logout()
+  clearVersionCache()
+  broadcastAuthChanged(SIGNED_OUT)
+  return SIGNED_OUT
 }
 
 /** Sign-in state for main-side surfaces that decide what to render (the file
@@ -145,55 +200,24 @@ export function registerDevPlatformHandlers(): void {
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signIn, (): Promise<AuthStatus> => signInToCloud())
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.signOut, async (event): Promise<AuthStatus> => {
-    const installingOperations: Array<[string, AbortController]> = []
-    for (const [installationId, abort] of _operationAborts) {
-      const installation = await installations.get(installationId)
-      // In-place updates ('updating') ride the same install dispatch path and
-      // hold the same auth-dependent downloads, so they need the guard too.
-      if (installation?.status === 'installing' || installation?.status === 'updating') {
-        installingOperations.push([installationId, abort])
-      }
-    }
-    if (installingOperations.length > 0) {
-      const host = [...comfyWindows.values()].find(
-        (entry) => entry.panelView?.webContents === event.sender
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.signOut,
+    (event): Promise<AuthStatus> =>
+      signOutOfCloud(
+        [...comfyWindows.values()].find((entry) => entry.panelView?.webContents === event.sender)
       )
-      if (!host || host.window.isDestroyed()) return session.status()
-      const confirmed = await openSystemModalAsync({
-        parent: host.window,
-        spec: {
-          title: i18n.t('devPlatform.account.installationInProgressTitle'),
-          message: i18n.t('devPlatform.account.installationInProgressMessage'),
-          confirmLabel: i18n.t('devPlatform.account.cancelInstallationAndSignOut'),
-          cancelLabel: i18n.t('common.close'),
-          confirmStyle: 'danger',
-          theme: host.lastTheme
-        }
-      })
-      if (!confirmed) return session.status()
-      for (const [installationId, abort] of installingOperations) {
-        if (_operationAborts.get(installationId) !== abort) continue
-        abort.abort()
-        _broadcastToRenderer('install-progress', {
-          installationId,
-          phase: 'cancelling',
-          cancelRequested: true
-        })
-      }
-    }
-    session.logout()
-    clearVersionCache()
-    broadcastAuthChanged(SIGNED_OUT)
-    return SIGNED_OUT
-  })
+  )
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.getAuthStatus, (): AuthStatus => session.status())
 
-  ipcMain.handle(
-    DEVPLATFORM_CHANNELS.listWorkspaces,
-    (): Promise<Workspace[]> => session.listWorkspaces()
-  )
+  ipcMain.handle(DEVPLATFORM_CHANNELS.listWorkspaces, async (): Promise<Workspace[]> => {
+    const workspaces = await session.listWorkspaces()
+    const personal = workspaces.find(isPersonalWorkspace)
+    if (personal) {
+      await installations.reassignWorkspace(personal.id, PERSONAL_WORKSPACE_ID)
+    }
+    return workspaces
+  })
 
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.openBuildsPage,
@@ -236,7 +260,15 @@ export function registerDevPlatformHandlers(): void {
         }
         const status = session.status()
         if (!status.signedIn) return { ok: false, message: 'Not signed in.' }
-        const workspaceId = inst.workspaceId || status.workspaceId
+        let workspaceId: string | undefined
+        if (!inst.workspaceId || inst.workspaceId === PERSONAL_WORKSPACE_ID) {
+          workspaceId =
+            workspaceContextId(status) === PERSONAL_WORKSPACE_ID
+              ? status.workspaceId
+              : (await session.listWorkspaces()).find(isPersonalWorkspace)?.id
+        } else {
+          workspaceId = inst.workspaceId
+        }
         if (!workspaceId) return { ok: false, message: 'No active workspace.' }
         if (status.workspaceId !== workspaceId) {
           clearVersionCache()
@@ -268,7 +300,7 @@ export function registerDevPlatformHandlers(): void {
         const envelope = buildExportEnvelope(inst.name, [{ filename, snapshot }])
         const draft = await getBuilderClient().createBuildDraft(envelope)
         if (draft.workspaceId !== workspaceId) {
-          throw new Error('Comfy Builder created the draft in a different workspace.')
+          throw new Error('Comfy Developer Platform created the draft in a different workspace.')
         }
         const latest = await installations.get(installationId)
         if (
@@ -281,11 +313,11 @@ export function registerDevPlatformHandlers(): void {
         if (session.status().workspaceId !== workspaceId) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
-        // The portal's detail route processes workspace deep links; the editor
-        // route does not. Open the newly created Build in its owning workspace,
-        // where the Edit action continues into the draft editor in that context.
+        // The portal's draft route receives a hand-off: it processes workspace
+        // deep links, marks the Build as just arrived, and redirects to the
+        // Build page, which opens the "Desktop snapshot received" dialog.
         const url = new URL(
-          `/profile/builds/${encodeURIComponent(draft.buildId)}`,
+          `/profile/builds/${encodeURIComponent(draft.buildId)}/draft`,
           PLATFORM_WEB_BASE_URL
         )
         url.searchParams.set('workspace', workspaceId)
@@ -305,7 +337,12 @@ export function registerDevPlatformHandlers(): void {
   // map lets a row whose newer build runs here surface as `update-available`.
   ipcMain.handle(DEVPLATFORM_CHANNELS.listBuilds, async (): Promise<BuildRow[]> => {
     if (!session.isSignedIn()) return []
-    const workspaceId = session.status().workspaceId
+    const status = session.status()
+    const workspaceId = status.workspaceId
+    const localWorkspaceId = workspaceContextId(status)
+    if (localWorkspaceId === PERSONAL_WORKSPACE_ID && workspaceId) {
+      await installations.reassignWorkspace(workspaceId, PERSONAL_WORKSPACE_ID)
+    }
     const cacheGeneration = getVersionCacheGeneration()
     const host = await resolveHost()
     const client = getBuilderClient()
@@ -321,7 +358,7 @@ export function registerDevPlatformHandlers(): void {
     if (workspaceId && session.status().workspaceId === workspaceId) {
       try {
         await installations.associateUnownedBuildInstalls(
-          workspaceId,
+          localWorkspaceId,
           new Set(builds.map((build) => build.id))
         )
       } catch (err) {
@@ -333,7 +370,7 @@ export function registerDevPlatformHandlers(): void {
         client,
         host,
         builds,
-        await installedBuildVersions(workspaceId),
+        await installedBuildVersions(localWorkspaceId),
         cacheGeneration
       ),
       membersPromise
@@ -358,7 +395,8 @@ export function registerDevPlatformHandlers(): void {
     DEVPLATFORM_CHANNELS.installBuild,
     async (_event, request: InstallBuildRequest): Promise<InstallBuildResult> => {
       if (!session.isSignedIn()) return { ok: false, message: 'Not signed in.' }
-      const workspaceId = session.status().workspaceId
+      const status = session.status()
+      const workspaceId = status.workspaceId
       if (!workspaceId) return { ok: false, message: 'No active workspace.' }
       if (!request || typeof request !== 'object') {
         return { ok: false, message: 'Invalid build install request.' }
@@ -420,7 +458,7 @@ export function registerDevPlatformHandlers(): void {
           sourceId: COMFYBUILDER_SOURCE_ID,
           sourceLabel: COMFYBUILDER_SOURCE_LABEL,
           installPath: identity.installPath,
-          workspaceId,
+          workspaceId: workspaceContextId(status),
           distributionId: buildId,
           distributionName: build.name,
           version: String(resolved.version),

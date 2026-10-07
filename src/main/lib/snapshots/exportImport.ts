@@ -7,6 +7,7 @@ import { isValidAmdMultiArchSource } from '../../sources/standalone/torchStackTy
 import type { TorchStackPackages } from '../../sources/standalone/torchStackTypes'
 import { snapshotsDir, formatTimestamp } from './store'
 import * as telemetry from '../telemetry'
+import { VALID_PIP_NAME } from '../pip'
 import type { Snapshot, SnapshotEntry, SnapshotExportEnvelope } from './types'
 
 export function buildExportEnvelope(
@@ -33,10 +34,6 @@ const VALID_TRIGGERS = new Set([
   'post-update',
   'post-restore'
 ])
-
-// PyPI package names: letters, digits, dots, hyphens, underscores (PEP 508).
-// Must not start with '-' to avoid argument injection when passed to uv pip.
-const VALID_PIP_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 function isValidCustomNode(n: unknown): boolean {
   if (!n || typeof n !== 'object') return false

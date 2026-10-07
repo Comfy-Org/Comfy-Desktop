@@ -4,14 +4,15 @@ import {
   i18n,
   killByPort,
   findPidsByPort,
+  isPortListening,
   removePortLock,
   REQUIRES_STOPPED,
   _onStop,
   _operationAborts,
-  _runningSessions,
   _getPublicSessions,
   _getLaunchingInstances,
   _getStoppingInstallationIds,
+  hasRunningSessionForInstallation,
   stopRunning
 } from './shared'
 import { dispatchSessionAction, _getActiveOperations } from './sessionActions'
@@ -53,11 +54,30 @@ export function registerSessionHandlers(): void {
 
   ipcMain.handle('kill-port-process', async (_event, port: number) => {
     recordIpcInvocation('kill-port-process', port)
-    removePortLock(port)
+    // The user confirmed stopping whatever holds the port: say what that was, for support.
+    const holders = await findPidsByPort(port).catch(() => [] as number[])
+    console.info(
+      `[launch] stopping what holds port ${port} at the user's request: ` +
+        (holders.length > 0 ? `pids ${holders.join(', ')}` : 'no listener could be listed')
+    )
     await killByPort(port)
     await new Promise((r) => setTimeout(r, 500))
     const remaining = await findPidsByPort(port)
-    return { ok: remaining.length === 0 }
+    // An empty listener list is not a free port: lsof sees only this user's processes (and
+    // none in another namespace), so a holder it cannot list survives the kill unseen. Only a
+    // port that is really free counts, and only then is the port lock (which a retry uses to
+    // recognise this installation's ComfyUI) removed.
+    const free = remaining.length === 0 && !(await isPortListening(port))
+    if (free) removePortLock(port)
+    console.info(
+      `[launch] port ${port} ` +
+        (free
+          ? 'is free'
+          : remaining.length > 0
+            ? `is still held by pids ${remaining.join(', ')}`
+            : 'is still in use by a process that could not be listed')
+    )
+    return { ok: free }
   })
 
   ipcMain.handle(
@@ -72,7 +92,7 @@ export function registerSessionHandlers(): void {
       const maybeInst = await installations.get(installationId)
       if (!maybeInst) return { ok: false, message: 'Installation not found.' }
       const inst = maybeInst
-      if (REQUIRES_STOPPED.has(actionId) && _runningSessions.has(installationId)) {
+      if (REQUIRES_STOPPED.has(actionId) && hasRunningSessionForInstallation(installationId)) {
         return { ok: false, message: i18n.t('errors.stopRequired'), running: true }
       }
       if (REQUIRES_STOPPED.has(actionId) && _operationAborts.has(installationId)) {
@@ -84,7 +104,15 @@ export function registerSessionHandlers(): void {
         return { ok: false, message: i18n.t('errors.operationInProgress', { operation }) }
       }
 
-      return dispatchSessionAction({ event: _event, installationId, inst, actionData }, actionId)
+      const requestedSessionId = actionData?.sessionIdOverride
+      const sessionId =
+        actionId === 'launch' && requestedSessionId === `performance-test:${installationId}`
+          ? requestedSessionId
+          : undefined
+      return dispatchSessionAction(
+        { event: _event, installationId, sessionId, inst, actionData },
+        actionId
+      )
     }
   )
 }

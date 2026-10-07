@@ -22,7 +22,8 @@ function loadOverride(value: string): ModelManifest {
   return {
     models: parsed.models ?? [],
     modelPolicy: parsed.modelPolicy ?? null,
-    partnerNodePolicy: parsed.partnerNodePolicy ?? null
+    partnerNodePolicy: parsed.partnerNodePolicy ?? null,
+    customNodePolicy: parsed.customNodePolicy ?? null
   }
 }
 

@@ -68,7 +68,8 @@ import {
   saveSnapshot,
   captureSnapshotIfChanged,
   ensureCurrentSnapshotOnTop,
-  listSnapshots
+  listSnapshots,
+  loadSnapshot
 } from './store'
 import * as telemetry from '../telemetry'
 import type { InstallationRecord } from '../../installations'
@@ -529,6 +530,43 @@ describe('ensureCurrentSnapshotOnTop', () => {
 
     expect(result.saved).toBe(true)
     expect(result.filename).toMatch(/-post-restore-/)
+  })
+
+  // #1514: a restore that failed or was cancelled must not leave a history
+  // entry that reads as a completed restore. The trigger stays `post-restore`
+  // (that IS the state's provenance), and the label carries the caveat.
+  it('labels the written snapshot when the caller supplies one', async () => {
+    const memory = installFsMemory()
+    seedTopSnapshot(
+      memory,
+      { ...liveStateSnapshot, comfyui: { ...liveStateSnapshot.comfyui, commit: 'imported9' } },
+      '20250101_000000_000-manual-imported.json'
+    )
+
+    const result = await ensureCurrentSnapshotOnTop(
+      '/test/install',
+      installation,
+      'Restore did not complete'
+    )
+
+    expect(result.saved).toBe(true)
+    const written = await loadSnapshot('/test/install', result.filename!)
+    expect(written.trigger).toBe('post-restore')
+    expect(written.label).toBe('Restore did not complete')
+  })
+
+  it('leaves the label null when the caller supplies none', async () => {
+    const memory = installFsMemory()
+    seedTopSnapshot(
+      memory,
+      { ...liveStateSnapshot, comfyui: { ...liveStateSnapshot.comfyui, commit: 'imported9' } },
+      '20250101_000000_000-manual-imported.json'
+    )
+
+    const result = await ensureCurrentSnapshotOnTop('/test/install', installation)
+
+    const written = await loadSnapshot('/test/install', result.filename!)
+    expect(written.label).toBeNull()
   })
 
   it('does not pile up duplicates across repeated failed restores (retry)', async () => {

@@ -10,3 +10,8 @@ export const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
 export function isPostHogFlagDisabled(value: string | undefined): boolean {
   return ['0', 'false', 'off'].includes((value || '').trim().toLowerCase())
 }
+
+/** Opt-in counterpart: unset means off, rather than `isPostHogFlagDisabled`'s unset means on. */
+export function isPostHogFlagEnabled(value: string | undefined): boolean {
+  return ['1', 'true', 'on'].includes((value || '').trim().toLowerCase())
+}

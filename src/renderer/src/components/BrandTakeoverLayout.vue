@@ -12,9 +12,10 @@ withDefaults(
   defineProps<{
     theme?: 'dark' | 'light'
     vignette?: boolean
+    scrollContent?: boolean
     ariaLabel?: string
   }>(),
-  { theme: 'dark', vignette: false, ariaLabel: undefined }
+  { theme: 'dark', vignette: false, scrollContent: false, ariaLabel: undefined }
 )
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -56,7 +57,7 @@ onBeforeUnmount(() => {
       :aria-label="ariaLabel"
       tabindex="-1"
     >
-      <BrandBackground :vignette="vignette">
+      <BrandBackground :vignette="vignette" :scroll-content="scrollContent">
         <div class="brand-logo-row">
           <ComfyCLogo class="brand-logo" />
         </div>

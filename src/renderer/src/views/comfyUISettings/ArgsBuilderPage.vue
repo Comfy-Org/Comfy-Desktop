@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
+import { useTimeoutFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { AlertCircle, ArrowLeft, Loader2, Search, SearchX, X } from 'lucide-vue-next'
 import BaseInput from '../../components/ui/BaseInput.vue'
@@ -78,14 +78,35 @@ async function fetchSchema(): Promise<void> {
   }
 }
 
-// Debounced 500ms so text-input args don't emit one event per keystroke.
-const emitArgsChanged = useDebounceFn((argKey: string, valueKind: ComfyArgDef['type']) => {
+/** The edit waiting out the debounce, if any. Deliberately not a `ref` -
+ *  nothing renders it; it exists so `onBeforeUnmount` can still flush it. */
+let pendingArgsChange: { argKey: string; valueKind: ComfyArgDef['type'] } | null = null
+
+function flushArgsChanged(): void {
+  const pending = pendingArgsChange
+  if (!pending) return
+  pendingArgsChange = null
   emitTelemetryAction('comfy.desktop.args.changed', {
     installation_id: props.installationId,
-    arg_key: argKey,
-    value_kind: valueKind
+    arg_key: pending.argKey,
+    value_kind: pending.valueKind
   })
-}, 500)
+}
+
+// `start()` clears any armed timer before setting a new one, which is the
+// 500ms debounce that keeps text-input args from emitting per keystroke.
+// `useDebounceFn` would read more directly but hands back a bare function with
+// no cancel or flush, and this one has to be flushable on unmount.
+const { start: scheduleArgsChanged, stop: cancelArgsChanged } = useTimeoutFn(
+  flushArgsChanged,
+  500,
+  { immediate: false }
+)
+
+function emitArgsChanged(argKey: string, valueKind: ComfyArgDef['type']): void {
+  pendingArgsChange = { argKey, valueKind }
+  scheduleArgsChanged()
+}
 
 onMounted(() => {
   emitTelemetryAction('comfy.desktop.args.builder.opened', {
@@ -97,6 +118,12 @@ onMounted(() => {
 // Flush the final value if the page closes mid-debounced edit.
 onBeforeUnmount(() => {
   if (localValue.value !== props.initialValue) emit('update', localValue.value)
+  // And the same for the debounced telemetry: an edit made in the last 500ms
+  // is still an edit. Left armed it either lands after the user has moved on,
+  // or - when the unmount is the settings window closing - never ships at all,
+  // quietly undercounting exactly the change-then-leave case.
+  cancelArgsChanged()
+  flushArgsChanged()
 })
 
 const parsed = computed(() => parseArgs(localValue.value, schema.value))

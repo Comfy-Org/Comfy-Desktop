@@ -52,6 +52,7 @@ import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { isInstallationVisibleToRenderer } from './installationVisibility'
+import { answerCoreBetaArgs } from '../coreBetaPreview'
 
 /** Fire-and-forget: refresh the shared ComfyUI release cache for the
  *  channels these installs use, then re-broadcast `installations-changed`
@@ -653,6 +654,19 @@ export function registerInstallationHandlers(): void {
       })
     }
     return sections
+  })
+
+  // Asked for only by the beta-args pill, so `get-detail-sections` never waits on it.
+  ipcMain.handle('get-core-beta-args', (_event, installationId: string, launchArgs?: unknown) => {
+    recordIpcInvocation('get-core-beta-args', installationId)
+    return answerCoreBetaArgs(installationId, launchArgs, {
+      sessionArgs: (id) => {
+        const running = _runningSessions.get(id)
+        return running ? (running.coreBetaArgs ?? []) : null
+      },
+      record: (id) => installations.get(id),
+      launchCommand: (inst) => sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
+    })
   })
 
   ipcMain.handle(

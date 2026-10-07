@@ -1,8 +1,17 @@
 // Re-export IPC types from the canonical shared location for renderer convenience.
 export type {
   Unsubscribe,
+  BetaActivationNotice,
+  BetaArgView,
+  CoreBetaArgs,
   Installation,
   RunningInstance,
+  PerformanceTestBenchmark,
+  ExampleWorkflowDownload,
+  PerformanceTestResultValue,
+  PerformanceTestResultsSummary,
+  PerformanceTestStatistics,
+  RunPerformanceTestWorkflowResult,
   Source,
   SourceField,
   FieldOption,

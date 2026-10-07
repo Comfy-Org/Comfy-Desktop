@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'async_hooks'
 import { execFile, spawn, type ExecFileException } from 'child_process'
 import fs from 'fs'
 import path from 'path'
@@ -94,7 +95,16 @@ function disablePygit2(reason: string): void {
   _pygit2 = { status: 'disabled', reason }
 }
 
+const _breakerExempt = new AsyncLocalStorage<true>()
+
+/** Run `work` with its pygit2 calls, across awaits, kept out of the circuit breaker: their
+ *  failures do not count toward disabling the fallback and their successes do not reset it. */
+export function withoutPygit2Breaker<T>(work: () => Promise<T>): Promise<T> {
+  return _breakerExempt.run(true, work)
+}
+
 function recordPygit2Failure(reason: string): void {
+  if (_breakerExempt.getStore()) return
   if (_pygit2.status !== 'healthy') return
   const failures = _pygit2.failures + 1
   _pygit2 = { ..._pygit2, failures }
@@ -104,6 +114,7 @@ function recordPygit2Failure(reason: string): void {
 }
 
 function recordPygit2Success(): void {
+  if (_breakerExempt.getStore()) return
   if (_pygit2.status !== 'healthy' || _pygit2.failures === 0) return
   _pygit2 = { ..._pygit2, failures: 0 }
 }
@@ -467,6 +478,29 @@ function spawnStreamed(
       resolve({ exitCode: code ?? 1, stderr: stderrChunks.join(''), stdout: stdoutChunks.join('') })
     })
   })
+}
+
+/**
+ * Whether a `.git` entry exists at `repoPath` - a different question from whether it resolves.
+ * {@link resolveGitDir} returns null for four unrelated situations (no entry at all, an entry it
+ * could not stat, a pointer file carrying no `gitdir:` line, an unreadable pointer) and only the
+ * first of them means "this is not a git checkout". A caller that must fail closed on a checkout
+ * it cannot establish asks this first, then resolves.
+ *
+ * Deliberately `lstat`, not `stat`: a dangling symlink at `.git` is a BROKEN checkout, not an
+ * absent one. `lstat` sees the symlink itself and reports `present`, so the caller goes on to
+ * fail closed when resolution fails. `stat` would follow the link, throw ENOENT, and report
+ * `absent`, handing a broken checkout whatever the no-git path grants.
+ */
+export function gitDirPresence(repoPath: string): 'absent' | 'present' | 'indeterminate' {
+  try {
+    fs.lstatSync(path.join(repoPath, '.git'))
+    return 'present'
+  } catch (err) {
+    // Any code but ENOENT (EACCES/EPERM on the parent, ELOOP, EIO, ...) means the entry may
+    // well be there and we simply could not look at it: unknowable, not absent.
+    return (err as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'absent' : 'indeterminate'
+  }
 }
 
 /**
@@ -957,6 +991,73 @@ export function revParseRef(repoPath: string, ref: string): Promise<string | und
         }
         const sha = stdout.trim()
         resolve(sha || undefined)
+      }
+    )
+  })
+}
+
+/** Exit code `git_operations.py merge-base` uses when the commits share no ancestor. */
+const MERGE_BASE_NONE = 5
+
+/**
+ * Like {@link findMergeBase}, but separates "no common ancestor" (`null`, a real answer) from
+ * "could not look" (`undefined`: a missing object, timeout or spawn failure).
+ */
+export function findMergeBaseOrNone(
+  repoPath: string,
+  ref1: string,
+  ref2: string
+): Promise<string | null | undefined> {
+  if (isPygit2Configured()) {
+    return runPygit2(['merge-base', repoPath, ref1, ref2]).then(({ exitCode, stdout }) => {
+      if (exitCode === MERGE_BASE_NONE) return null
+      return exitCode === 0 ? stdout.trim() || undefined : undefined
+    })
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['merge-base', ref1, ref2],
+      { cwd: repoPath, encoding: 'utf-8', windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      (error, stdout) => {
+        // `git merge-base` exits 1 for "no merge base" and 128 for a bad ref or repository.
+        if (error) {
+          resolve(error.code === 1 && !error.killed && error.signal == null ? null : undefined)
+          return
+        }
+        resolve(stdout.trim() || undefined)
+      }
+    )
+  })
+}
+
+/** Exit code `git_operations.py has-commit` uses for a definite miss. */
+const HAS_COMMIT_ABSENT = 3
+
+/**
+ * Whether `sha` names a commit in the local object store. `'absent'` only on a definite miss;
+ * `'unknown'` when the lookup itself failed (timeout, spawn error, unreadable repo), which
+ * `revParseRef` would fold into the same `undefined` as a miss.
+ */
+export function commitPresence(
+  repoPath: string,
+  sha: string
+): Promise<'present' | 'absent' | 'unknown'> {
+  if (isPygit2Configured()) {
+    return runPygit2(['has-commit', repoPath, sha]).then(({ exitCode }) =>
+      exitCode === 0 ? 'present' : exitCode === HAS_COMMIT_ABSENT ? 'absent' : 'unknown'
+    )
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['rev-parse', '--verify', '--quiet', '--end-of-options', `${sha}^{commit}`],
+      { cwd: repoPath, windowsHide: true, timeout: LOCAL_GIT_TIMEOUT_MS },
+      (error) => {
+        if (!error) return resolve('present')
+        // `--verify --quiet` exits 1 for "not a valid object name" and 128 for real failures.
+        const miss = error.code === 1 && !error.killed && error.signal == null
+        resolve(miss ? 'absent' : 'unknown')
       }
     )
   })

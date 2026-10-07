@@ -49,10 +49,10 @@ export interface InstallationRecord {
    *  settings; else uses the per-install `outputDir` below or ComfyUI's
    *  `<installPath>/output` default. */
   useSharedOutput?: boolean
-  /** Per-install extra (external) model directories, always applied in
-   *  addition to the shared dirs (when those are enabled). Never includes the
-   *  install's own models dir. Written to the per-install
-   *  `--extra-model-paths-config` YAML at launch. */
+  /** Per-install extra (external) model directories, applied in addition to
+   *  the shared dirs (when those are enabled). Never includes the install's own
+   *  models dir. Written to the per-install `--extra-model-paths-config` YAML at
+   *  launch. */
   modelDirs?: string[]
   /** Effective dir promoted to primary (`is_default`); may point at a shared
    *  or per-install dir. Null/absent means the first shared dir when shared
@@ -314,6 +314,32 @@ export async function update(
     installationEvents.emit('updated', updated)
     installationEvents.emit('changed')
   }
+  return updated
+}
+
+/** Re-key installations from one workspace to another. */
+export async function reassignWorkspace(
+  fromWorkspaceId: string,
+  toWorkspaceId: string
+): Promise<InstallationRecord[]> {
+  if (!fromWorkspaceId || !toWorkspaceId || fromWorkspaceId === toWorkspaceId) return []
+
+  const updated = await enqueue(async () => {
+    const list = await loadForWrite()
+    const changed: InstallationRecord[] = []
+    for (let index = 0; index < list.length; index++) {
+      const existing = list[index]!
+      if (existing.workspaceId !== fromWorkspaceId) continue
+      const next = { ...existing, workspaceId: toWorkspaceId }
+      list[index] = next
+      changed.push(next)
+    }
+    if (changed.length > 0) await save(list)
+    return changed
+  })
+
+  for (const record of updated) installationEvents.emit('updated', record)
+  if (updated.length > 0) installationEvents.emit('changed')
   return updated
 }
 

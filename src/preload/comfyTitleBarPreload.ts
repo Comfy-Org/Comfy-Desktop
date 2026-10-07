@@ -3,7 +3,25 @@ import type { IpcRendererEvent } from 'electron'
 import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
 
-export type ComfyPanelKey = 'comfy' | 'new-install' | 'track' | 'load-snapshot' | 'quick-install'
+export type ComfyPanelKey =
+  | 'comfy'
+  | 'performance-test'
+  | 'benchmarks'
+  | 'new-install'
+  | 'track'
+  | 'load-snapshot'
+  | 'quick-install'
+
+/** Which feature owns a sticky coachmark card. One popup per window serves both, so every
+ *  retirement is addressed with the kind that raised it. Mirrors `CoachmarkKind` in
+ *  `src/main/popups/titleCoachmark.ts`. */
+export type CoachmarkKind = 'pill-hint' | 'beta-notice'
+
+/** Narrow an inbound retirement payload. An unrecognised or missing kind reads as the
+ *  onboarding hint, matching main's own fallback, so a card can never become unretirable. */
+function coachmarkKindOf(payload?: { kind?: unknown }): CoachmarkKind {
+  return payload?.kind === 'beta-notice' ? 'beta-notice' : 'pill-hint'
+}
 
 /** Anchor coordinates for a native title-bar menu — title-bar-local
  *  pixels (x = button left, y = button bottom). The titleBarView sits
@@ -210,25 +228,41 @@ export interface ComfyTitleBarBridge {
   /** Issue #514 — hide the title-bar hover tooltip popup. Sent on
    *  pointer leave, focus loss, menu open, or panel switch. */
   hideTooltip(): void
-  /** First-instance onboarding coachmark (issue #701) — show the sticky
-   *  card pointing at the centre pill. Reuses the clip-escaping tooltip
-   *  popup pipeline (`variant: 'coachmark'`). `leftX`/`rightX` bracket
-   *  the pill's edges, `bottomY` is its bottom edge — title-bar-local
-   *  px (the title-bar view sits at window (0,0)). */
+  /** Sticky title-bar coachmark card (issue #701) — shown pointing at a title-bar
+   *  element. Reuses the clip-escaping tooltip popup pipeline
+   *  (`variant: 'coachmark'`). `leftX`/`rightX` bracket the anchor's edges,
+   *  `bottomY` is its bottom edge — title-bar-local px (the title-bar view sits
+   *  at window (0,0)). `kind` names the owning feature so its retirement comes
+   *  back addressed; `actionLabel` adds a secondary button beside dismiss. */
   showCoachmark(payload: {
+    kind?: CoachmarkKind
     title: string
     body: string
     dismissLabel: string
+    actionLabel?: string
     leftX: number
     rightX: number
     bottomY: number
   }): void
-  /** Hide the onboarding coachmark popup. */
+  /** Hide the coachmark popup. */
   hideCoachmark(): void
   /** Subscribe to the coachmark's own dismiss button. Main forwards this
-   *  after the popup's ✕ / "Got it" is clicked so the renderer flips the
-   *  once-ever `hasSeenCentralPillHint` flag via `window.api`. */
-  onCoachmarkDismissed(cb: () => void): () => void
+   *  after the popup's ✕ / "Got it" is clicked so the renderer can retire the
+   *  card `kind` names (e.g. flipping `hasSeenCentralPillHint` via `window.api`). */
+  onCoachmarkDismissed(cb: (payload: { kind: CoachmarkKind }) => void): () => void
+  /** Subscribe to the coachmark's secondary action. Retires the card the same way
+   *  dismiss does, and additionally lets the owner run its follow-up. */
+  onCoachmarkAction(cb: (payload: { kind: CoachmarkKind }) => void): () => void
+  /** Subscribe to the popup being hidden by something other than a retirement — the host
+   *  window moved or resized, leaving the anchor stale. NOT an acknowledgement: the owner
+   *  should forget the card so it can be raised again, not mark it as seen. */
+  onCoachmarkAutoHidden(cb: (payload: { kind: CoachmarkKind }) => void): () => void
+  /** Subscribe to "the host window has stopped moving", debounced in main across every
+   *  `move`/`resize`. The cue to put a forgotten card back, once and not mid-drag. */
+  onCoachmarkSettled(cb: (payload: { kind: CoachmarkKind }) => void): () => void
+  /** Subscribe to the popup being reconfigured for the OTHER card. `kind` is the owner that
+   *  was displaced. Not a hide, so the auto-hidden channel does not cover it. */
+  onCoachmarkDisplaced(cb: (payload: { kind: CoachmarkKind }) => void): () => void
   /** Tell main this title bar is mounted; main responds with the initial state. */
   ready(): void
 }
@@ -423,9 +457,34 @@ const bridge: ComfyTitleBarBridge = {
     ipcRenderer.send('comfy-window:hide-titlebar-coachmark')
   },
   onCoachmarkDismissed: (cb) => {
-    const handler = (): void => cb()
+    const handler = (_event: IpcRendererEvent, payload?: { kind?: unknown }): void =>
+      cb({ kind: coachmarkKindOf(payload) })
     ipcRenderer.on('comfy-titlebar:coachmark-dismissed', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-dismissed', handler)
+  },
+  onCoachmarkAction: (cb) => {
+    const handler = (_event: IpcRendererEvent, payload?: { kind?: unknown }): void =>
+      cb({ kind: coachmarkKindOf(payload) })
+    ipcRenderer.on('comfy-titlebar:coachmark-action', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-action', handler)
+  },
+  onCoachmarkAutoHidden: (cb: (payload: { kind: CoachmarkKind }) => void) => {
+    const handler = (_e: unknown, payload?: { kind?: unknown }): void =>
+      cb({ kind: coachmarkKindOf(payload) })
+    ipcRenderer.on('comfy-titlebar:coachmark-auto-hidden', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-auto-hidden', handler)
+  },
+  onCoachmarkSettled: (cb: (payload: { kind: CoachmarkKind }) => void) => {
+    const handler = (_e: unknown, payload?: { kind?: unknown }): void =>
+      cb({ kind: coachmarkKindOf(payload) })
+    ipcRenderer.on('comfy-titlebar:coachmark-settled', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-settled', handler)
+  },
+  onCoachmarkDisplaced: (cb: (payload: { kind: CoachmarkKind }) => void) => {
+    const handler = (_e: unknown, payload?: { kind?: unknown }): void =>
+      cb({ kind: coachmarkKindOf(payload) })
+    ipcRenderer.on('comfy-titlebar:coachmark-displaced', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-displaced', handler)
   },
   ready: () => {
     ipcRenderer.send('comfy-window:title-bar-ready')

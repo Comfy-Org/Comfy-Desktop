@@ -17,7 +17,8 @@ import {
   formatRelative as _formatRelative,
   copyReasonLabel as _copyReasonLabel,
   changeSummary as _changeSummary,
-  diffHasChanges
+  diffHasChanges,
+  isDisplayableLabel
 } from '../lib/snapshots'
 import type {
   ActionDef,
@@ -459,13 +460,7 @@ async function confirmImportPreview(): Promise<void> {
                   formatRelative(item.snapshot.createdAt)
                 }}</span>
               </div>
-              <div
-                v-if="
-                  item.snapshot.label &&
-                  !['after-update', 'before-update', 'after-restore'].includes(item.snapshot.label)
-                "
-                class="timeline-label"
-              >
+              <div v-if="isDisplayableLabel(item.snapshot.label)" class="timeline-label">
                 {{ item.snapshot.label }}
               </div>
               <div class="timeline-card-body">

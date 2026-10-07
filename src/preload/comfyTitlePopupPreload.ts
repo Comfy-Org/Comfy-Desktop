@@ -104,6 +104,8 @@ export interface PopupGlobalSettingsSnapshot {
   installLocationFields: Record<string, unknown>[]
   modelsDirs: PopupGlobalSettingsModelsDir[]
   modelsSystemDefault: string
+  /** Mirrors `GlobalSettingsSnapshot.telemetryGranted`. */
+  telemetryGranted: boolean
   appUpdate: {
     state: Record<string, unknown>
     progress: Record<string, unknown> | null
@@ -338,6 +340,10 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsGetComfyArgs(
     installationId: string
   ): Promise<{ args: Record<string, unknown>[]; error?: string } | null>
+  pickerSettingsGetCoreBetaArgs(
+    installationId: string,
+    launchArgs?: string
+  ): Promise<{ timing: 'session' | 'next-launch'; args: { arg: string; name: string | null }[] }>
   pickerSettingsBrowseFolder(opts?: { defaultPath?: string }): Promise<string | null>
   pickerSettingsCancelOperation(installationId: string): Promise<void>
   pickerSettingsPreviewLocalMigration(installationId: string): Promise<Record<string, unknown>>
@@ -352,6 +358,12 @@ export interface ComfyTitlePopupBridge {
   onTerminalExited(callback: (data: { installationId: string }) => void): () => void
   /** Relaunch the app (`app.relaunch()` main-side). */
   pickerSettingsRelaunchApp(): void
+  /** Switch this popup to Global Settings, optionally on a tab and flashing a field. Same
+   *  contract as the panel's `window.api.openGlobalSettings`, which the settings UI calls. */
+  pickerSettingsOpenGlobalSettings(
+    tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
+    opts?: { highlightField?: string }
+  ): void
   /** Pull the panel-side i18n catalog; the popup boots with a minimal static
    *  one and merges this on top once the expanded settings UI opens. */
   pickerSettingsGetLocaleMessages(): Promise<Record<string, unknown>>
@@ -447,6 +459,7 @@ function isGlobalSettingsSnapshot(value: unknown): value is PopupGlobalSettingsS
   if (!Array.isArray(v['installLocationFields'])) return false
   if (!Array.isArray(v['modelsDirs'])) return false
   if (typeof v['modelsSystemDefault'] !== 'string') return false
+  if (typeof v['telemetryGranted'] !== 'boolean') return false
   if (!v['appUpdate'] || typeof v['appUpdate'] !== 'object') return false
   return true
 }
@@ -682,6 +695,8 @@ const bridge: ComfyTitlePopupBridge = {
   pickerSettingsPreviewSnapshotFile: () => ipcRenderer.invoke(CH.previewSnapshotFile),
   pickerSettingsGetComfyArgs: (installationId) =>
     ipcRenderer.invoke(CH.getComfyArgs, { installationId }),
+  pickerSettingsGetCoreBetaArgs: (installationId, launchArgs) =>
+    ipcRenderer.invoke(CH.getCoreBetaArgs, { installationId, launchArgs }),
   pickerSettingsBrowseFolder: (opts) =>
     ipcRenderer.invoke(CH.browseFolder, { defaultPath: opts?.defaultPath }),
   pickerSettingsCancelOperation: (installationId) =>
@@ -710,6 +725,9 @@ const bridge: ComfyTitlePopupBridge = {
   },
   pickerSettingsRelaunchApp: () => {
     ipcRenderer.send(CH.relaunchApp)
+  },
+  pickerSettingsOpenGlobalSettings: (tab, opts) => {
+    ipcRenderer.send(CH.openGlobalSettings, { tab, highlightField: opts?.highlightField })
   },
   pickerSettingsGetLocaleMessages: () => ipcRenderer.invoke(CH.getLocaleMessages),
   pickerSettingsGetLocale: () => ipcRenderer.invoke(CH.getLocale),

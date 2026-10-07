@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { lastNLines, stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import { createStreamLineBuffer, lastNLines, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
 describe('stripAnsi', () => {
   it('removes color codes', () => {
@@ -66,5 +66,72 @@ describe('lastNLines', () => {
 
   it('handles single line', () => {
     expect(lastNLines('only line', 3)).toBe('only line')
+  })
+})
+
+describe('createStreamLineBuffer', () => {
+  it('returns only complete lines and carries the unterminated tail', () => {
+    const buffer = createStreamLineBuffer()
+    expect(buffer.append('stdout', 'first\nsecond\nthi')).toEqual(['first', 'second'])
+    expect(buffer.append('stdout', 'rd\n')).toEqual(['third'])
+  })
+
+  it('reassembles a line split across three chunk boundaries', () => {
+    const buffer = createStreamLineBuffer()
+    expect(buffer.append('stdout', 'Device: ')).toEqual([])
+    expect(buffer.append('stdout', 'cuda')).toEqual([])
+    expect(buffer.append('stdout', ':0\n')).toEqual(['Device: cuda:0'])
+  })
+
+  it('splits on CRLF as well as LF', () => {
+    const buffer = createStreamLineBuffer()
+    expect(buffer.append('stdout', 'a\r\nb\nc\r\n')).toEqual(['a', 'b', 'c'])
+  })
+
+  it('keeps stdout and stderr tails from splicing together', () => {
+    const buffer = createStreamLineBuffer()
+    buffer.append('stdout', 'partial stdout ')
+    expect(buffer.append('stderr', 'unrelated stderr\n')).toEqual(['unrelated stderr'])
+    expect(buffer.append('stdout', 'end\n')).toEqual(['partial stdout end'])
+  })
+
+  it('discards an oversized carried tail while returning that chunk\u2019s complete lines in full', () => {
+    const buffer = createStreamLineBuffer(8)
+    const long = 'A'.repeat(20)
+    expect(buffer.append('stdout', `${long}\nkeep\n${'B'.repeat(20)}`)).toEqual([long, 'keep'])
+    expect(buffer.takePending('stdout')).toBe('')
+    expect(buffer.append('stdout', 'fresh\n')).toEqual(['fresh'])
+  })
+
+  it('discards the rest of an oversized incomplete line through its delimiter', () => {
+    const buffer = createStreamLineBuffer(4)
+    buffer.append('stdout', 'abcdefgh')
+    expect(buffer.append('stdout', 'ij\nnext\n')).toEqual(['next'])
+  })
+
+  it('keeps exact-limit tails and recovers oversized streams independently', () => {
+    const buffer = createStreamLineBuffer(4)
+    buffer.append('stdout', 'abcd')
+    buffer.append('stderr', 'oversized')
+    expect(buffer.append('stdout', '\r')).toEqual([])
+    expect(buffer.append('stdout', '\n')).toEqual(['abcd'])
+    expect(buffer.append('stderr', '\nfresh\n')).toEqual(['fresh'])
+  })
+
+  it('takePending returns the tail and clears it in the same step', () => {
+    const buffer = createStreamLineBuffer()
+    buffer.append('stdout', 'trailing without newline')
+    expect(buffer.takePending('stdout')).toBe('trailing without newline')
+    expect(buffer.takePending('stdout')).toBe('')
+  })
+
+  it('reset drops both streams\u2019 tails', () => {
+    const buffer = createStreamLineBuffer()
+    buffer.append('stdout', 'stdout tail')
+    buffer.append('stderr', 'x'.repeat(20_000))
+    buffer.reset()
+    expect(buffer.takePending('stdout')).toBe('')
+    expect(buffer.takePending('stderr')).toBe('')
+    expect(buffer.append('stdout', 'fresh\n')).toEqual(['fresh'])
   })
 })

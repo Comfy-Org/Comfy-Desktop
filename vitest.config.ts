@@ -12,6 +12,12 @@ export default defineConfig({
   },
   test: {
     environment: 'happy-dom',
+    // Run `afterEach` hooks in registration order rather than vitest's default
+    // reverse ('stack'). The suite-wide unmount in `vitest.setup.ts` registers
+    // first, so under 'stack' it would run LAST - after each file's own
+    // teardown had deleted `window.api`, restored mocks or reset the DOM,
+    // leaving unmount hooks to run against a dismantled environment.
+    sequence: { hooks: 'list' },
     include: ['src/**/*.test.ts'],
     exclude: ['src/**/*.integration.test.ts', 'node_modules'],
     globals: true,

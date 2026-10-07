@@ -207,7 +207,8 @@ describe('ComfyBuilderClient', () => {
     await expect(client.fetchModelManifest('release/one')).resolves.toEqual({
       models: [],
       modelPolicy: null,
-      partnerNodePolicy: null
+      partnerNodePolicy: null,
+      customNodePolicy: null
     })
     await expect(client.resolveDownloadUrl('archive-one')).resolves.toBe(
       'https://storage.test/archive-one'
@@ -277,7 +278,7 @@ describe('ComfyBuilderClient', () => {
       },
       body: JSON.stringify({
         name: 'Local One',
-        definition: resolution.definition
+        definition: { ...resolution.definition, uiOrigin: 'desktop-snapshot' }
       })
     })
     expect(getAccessToken).toHaveBeenCalledOnce()
@@ -363,8 +364,16 @@ describe('ComfyBuilderClient', () => {
     expect(m.models).toHaveLength(1)
     expect(m.modelPolicy).toBeNull()
     expect(m.partnerNodePolicy).toBeNull()
+    expect(m.customNodePolicy).toBeNull()
     const call = (f as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
     expect(call[0]).toBe('https://api.test/builder/v1/releases/ver-9/manifest')
+  })
+
+  it('fetchModelManifest carries the custom-node policy the manager answer rides on', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, { models: [], customNodePolicy: { mode: 'allowlist' } }))
+    const client = new ComfyBuilderClient({ baseUrl: 'https://api.test/builder', auth: auth('t') })
+    const m = await client.fetchModelManifest('ver-9')
+    expect(m.customNodePolicy).toEqual({ mode: 'allowlist' })
   })
 
   it('rejects a manifest response without an explicit model list', async () => {
