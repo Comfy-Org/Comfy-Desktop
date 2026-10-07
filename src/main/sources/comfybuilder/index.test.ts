@@ -1011,7 +1011,8 @@ describe('comfybuilder update-comfyui', () => {
 
   /** Update a real install tree from a release with `oldMode`'s policy file
    *  (none when null) to one whose archive carries `newMode`'s, with the
-   *  release manifest saying Yes. Returns the record writes. */
+   *  release manifest's custom-node policy in `newMode` (a blocklist when
+   *  null). Returns the record writes. */
   async function updateAcrossPolicies(
     oldMode: string | null,
     newMode: string | null,
