@@ -401,6 +401,9 @@ describe('assetsTap', () => {
         tap.ingest(taggedLine('seeder.scan_exploded', { phase: 'fast' }), 'stdout')
         tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
 
+        // Nothing at all leaves the tap for a line seen without consent.
+        expect(captured).toEqual([])
+
         consent = 'granted'
         tap.flushSummary()
 
@@ -430,6 +433,21 @@ describe('assetsTap', () => {
         })
       }
     )
+
+    it('spends no rate-cap budget on lines seen without consent', () => {
+      consent = 'denied'
+      const tap = createAssetsTap(baseOpts)
+      for (let i = 0; i < 61; i++) {
+        tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
+      }
+
+      consent = 'granted'
+      tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
+
+      expect(captured.map((c) => c.event)).toEqual([
+        'comfy.desktop.comfyui.assets.seeder.scan_started'
+      ])
+    })
 
     it('reports omitted enum values as a bare count, never the values', () => {
       const tap = createAssetsTap(baseOpts)
