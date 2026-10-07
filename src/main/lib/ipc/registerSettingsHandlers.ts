@@ -280,7 +280,10 @@ export function buildMediaSections(): SettingsSection[] {
 
 // Write a setting and run its side-effect branches (theme/locale/telemetry
 // broadcasts, updater hint, settings-changed) plus the Global Settings refresh.
-export function applySettingSet(key: string, value: unknown): void {
+// `userEdit` marks a write from the Global Settings UI; only those raise
+// `settings.changed`, since the bare `set-setting` IPC also carries app state
+// (first-use, announcement and coachmark flags, the dashboard workspace).
+export function applySettingSet(key: string, value: unknown, userEdit = false): void {
   if (
     key === 'betaFeaturesEnabled' &&
     value === true &&
@@ -291,11 +294,6 @@ export function applySettingSet(key: string, value: unknown): void {
   }
   const before = settings.get(key)
   settings.set(key, value)
-  captureSettingChanged(
-    settings.isKnownSettingKey(key) ? key : 'unknown',
-    before,
-    settings.get(key)
-  )
   if (key === 'theme') {
     _broadcastToRenderer('theme-changed', resolveTheme())
     updateTitleBarOverlay()
@@ -326,6 +324,10 @@ export function applySettingSet(key: string, value: unknown): void {
   const trackedProps = settings.getTrackedSettingsTelemetryProperties([key])
   if (Object.keys(trackedProps).length > 0) {
     mainTelemetry.registerPersonProperties(trackedProps)
+  }
+  // Not for the consent toggle: an opt-out would otherwise be reported, and an opt-in would not.
+  if (userEdit && key !== 'telemetryEnabled') {
+    captureSettingChanged(key, before, settings.get(key))
   }
   _broadcastToRenderer('settings-changed', { key })
   globalSettingsEvents.emit('changed')

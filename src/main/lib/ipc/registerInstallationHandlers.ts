@@ -593,7 +593,10 @@ export function registerInstallationHandlers(): void {
       }
       await installations.update(installationId, filtered)
       for (const [key, value] of Object.entries(filtered)) {
-        if (key !== 'seen') captureSettingChanged(key, inst[key], value, installationId)
+        // `seen` is bookkeeping and `name` a rename, not a setting.
+        if (key !== 'seen' && key !== 'name') {
+          captureSettingChanged(key, inst[key], value, installationId)
+        }
       }
       return { ok: true }
     }

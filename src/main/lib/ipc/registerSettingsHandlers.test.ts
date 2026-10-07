@@ -24,7 +24,6 @@ vi.mock('./shared', async () => {
       get: (key: string) => mockSettings[key],
       set: (key: string, value: unknown) => mockSettingsSet(key, value),
       getTrackedSettingsTelemetryProperties: () => ({}),
-      isKnownSettingKey: (key: string) => key !== 'notARealSetting',
       resolveBetaFeaturesEnabled: () => mockBeta.resolved
     },
     i18n: {
@@ -224,41 +223,39 @@ describe('applySettingSet settings.changed telemetry', () => {
     capture.mockClear()
   })
 
-  it('emits the key and new boolean when a setting changes', () => {
+  it('emits the key and new boolean for a user edit', () => {
     mockSettings.autoUpdate = true
 
-    applySettingSet('autoUpdate', false)
+    applySettingSet('autoUpdate', false, true)
 
     expect(changedEvents()).toEqual([
       [
         'comfy.desktop.settings.changed',
-        {
-          scope: 'global',
-          installation_id: undefined,
-          setting_key: 'autoUpdate',
-          bool_value: false
-        }
+        { scope: 'global', install_id: undefined, setting_key: 'autoUpdate', bool_value: false }
       ]
     ])
   })
 
-  it('emits nothing when the value is unchanged', () => {
+  it('emits nothing when a user edit leaves the value unchanged', () => {
     mockSettings.autoUpdate = true
 
-    applySettingSet('autoUpdate', true)
+    applySettingSet('autoUpdate', true, true)
 
     expect(changedEvents()).toEqual([])
   })
 
-  it('reports an unknown key as unknown rather than echoing it', () => {
-    // set-setting accepts any key from a renderer; an arbitrary string is not sent on.
-    applySettingSet('notARealSetting', true)
+  it('emits nothing for a write that is not a user edit', () => {
+    // The bare set-setting IPC: first-use, announcement and coachmark flags.
+    applySettingSet('comfyApiAnnouncementSeen', true)
 
-    expect(changedEvents()).toEqual([
-      [
-        'comfy.desktop.settings.changed',
-        expect.objectContaining({ setting_key: 'unknown', bool_value: true })
-      ]
-    ])
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('emits nothing for the consent toggle', () => {
+    mockSettings.telemetryEnabled = true
+
+    applySettingSet('telemetryEnabled', false, true)
+
+    expect(changedEvents()).toEqual([])
   })
 })

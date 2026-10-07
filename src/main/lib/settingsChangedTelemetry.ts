@@ -13,12 +13,13 @@ export function captureSettingChanged(
   key: string,
   before: unknown,
   after: unknown,
-  installationId?: string
+  installId?: string
 ): void {
   if (JSON.stringify(before) === JSON.stringify(after)) return
   telemetry.capture('comfy.desktop.settings.changed', {
-    scope: installationId === undefined ? 'global' : 'install',
-    installation_id: installationId,
+    scope: installId === undefined ? 'global' : 'install',
+    // Not `installation_id`: that is the device id every event carries by default.
+    install_id: installId,
     setting_key: key,
     bool_value: typeof after === 'boolean' ? after : undefined
   })

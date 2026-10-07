@@ -3122,7 +3122,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
         return { ok: false, message: 'Invalid field id.' }
       }
       try {
-        applySettingSet(fieldId, payload.value)
+        applySettingSet(fieldId, payload.value, true)
         return { ok: true }
       } catch (e) {
         return { ok: false, message: e instanceof Error ? e.message : String(e) }
@@ -3139,7 +3139,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       if (!Array.isArray(dirs) || dirs.some((d) => typeof d !== 'string')) {
         return { ok: false }
       }
-      applySettingSet('modelsDirs', dirs)
+      applySettingSet('modelsDirs', dirs, true)
       return { ok: true }
     }
   )

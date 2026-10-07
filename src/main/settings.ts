@@ -337,7 +337,7 @@ export type NullableKnownSettingKey = {
 
 const KNOWN_SETTING_KEYS = Object.keys(SETTINGS_SCHEMA) as KnownSettingKey[]
 
-export function isKnownSettingKey(key: string): key is KnownSettingKey {
+function isKnownSettingKey(key: string): key is KnownSettingKey {
   return Object.prototype.hasOwnProperty.call(SETTINGS_SCHEMA, key)
 }
 
