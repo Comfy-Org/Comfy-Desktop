@@ -1766,6 +1766,39 @@ describe('core beta report placement', () => {
     }
   )
 
+  it.each([
+    ['the legacy path', true],
+    ['the port path', false]
+  ])(
+    "reports the agent tap's dropped-event count from the session's quit-time flush, on %s",
+    async (_path, skipPortWait) => {
+      vi.spyOn(telemetry, 'getConsentState').mockReturnValue('granted')
+      launchHarness.launchCommand = {
+        cmd: process.execPath,
+        args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+        cwd: installDir,
+        skipPortWait,
+        ...(skipPortWait ? {} : { port: 48235 })
+      }
+      launchHarness.waitForPort = async () => {}
+      const child = fakeChild()
+      launchHarness.spawn = () => child
+      const installationId = `harness-agent-quit-${skipPortWait}`
+
+      const res = await handleLaunch(ctxFor(installationId))
+      expect(res.ok).toBe(true)
+      child.stdout.emit('data', Buffer.from('[agent-event] mystery_event\n'))
+      _runningSessions.get(installationId)?.flushTelemetry?.()
+
+      expect(
+        events
+          .filter((e) => e.event === 'comfy.desktop.comfyui.agent.unknown_events_dropped')
+          .map((e) => e.properties?.count),
+        'quit flushes the session synchronously, before PostHog drains'
+      ).toEqual([1])
+    }
+  )
+
   it("drops a killed attempt's unterminated agent line before a port-conflict retry", async () => {
     const children: FakeChild[] = []
     let attempt = 0

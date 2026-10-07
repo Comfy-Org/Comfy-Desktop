@@ -531,13 +531,16 @@ describe('agentTap consent gating', () => {
     expect(agentCaptures()).toEqual([])
   })
 
-  it('never ships a dropped-event count from a period without consent after a later grant', () => {
-    telemetry.setConsentState('denied')
-    telemetry.bindAnonymousId('anon-1', 'anon-1', {})
-    const tap = createAgentTap({ installationId: 'inst-1' })
-    tap.ingest('[agent-event] mystery\n', 'stdout')
-    telemetry.setConsentState('granted')
-    tap.flushSummary()
-    expect(agentCaptures()).toEqual([])
-  })
+  it.each(['denied', 'undecided'] as const)(
+    'never ships a dropped-event count gathered while consent was %s after a later grant',
+    (before) => {
+      telemetry.setConsentState(before)
+      telemetry.bindAnonymousId('anon-1', 'anon-1', {})
+      const tap = createAgentTap({ installationId: 'inst-1' })
+      tap.ingest('[agent-event] mystery\n', 'stdout')
+      telemetry.setConsentState('granted')
+      tap.flushSummary()
+      expect(agentCaptures()).toEqual([])
+    }
+  )
 })
