@@ -306,11 +306,13 @@ export function applySettingSet(key: string, value: unknown, userEdit = false): 
   ) {
     return
   }
-  const before = userEdit ? shownGlobalValue(key) : undefined
+  // Not the consent toggle: consent flips below, so only an opt-in would be reported.
+  const report = userEdit && key !== 'telemetryEnabled'
+  const before = report ? shownGlobalValue(key) : undefined
   settings.set(key, value)
   // Read before the side effects below: switching the locale would change what an unset
   // Language shows even when the write was refused.
-  const after = userEdit ? shownGlobalValue(key) : undefined
+  const after = report ? shownGlobalValue(key) : undefined
   if (key === 'theme') {
     _broadcastToRenderer('theme-changed', resolveTheme())
     updateTitleBarOverlay()
@@ -342,10 +344,7 @@ export function applySettingSet(key: string, value: unknown, userEdit = false): 
   if (Object.keys(trackedProps).length > 0) {
     mainTelemetry.registerPersonProperties(trackedProps)
   }
-  // Consent has flipped above, so only an opt-in would be reported; report neither.
-  if (userEdit && key !== 'telemetryEnabled') {
-    captureSettingChanged(key, before, after)
-  }
+  if (report) captureSettingChanged(key, before, after)
   _broadcastToRenderer('settings-changed', { key })
   globalSettingsEvents.emit('changed')
 }
