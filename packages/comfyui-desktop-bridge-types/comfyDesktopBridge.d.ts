@@ -105,6 +105,35 @@ export type ComfyDesktop2FirebaseAuthState =
       status: 'signed_in'
       userId: string
     }
+/**
+ * Desktop's own Comfy account session, as the hosted local ComfyUI view sees it.
+ * `disabled` means Desktop does not share its session with this view (ops flag
+ * off, or the view is not a trusted loopback ComfyUI).
+ */
+export type ComfyDesktop2AuthState =
+  | {
+      status: 'disabled'
+    }
+  | {
+      status: 'signed_out'
+    }
+  | {
+      status: 'signed_in'
+      /** Comfy user id (the access token's `sub`), not a Firebase uid. */
+      userId: string
+      email?: string
+      workspaceId?: string
+    }
+export interface ComfyDesktop2AuthBridge {
+  getState(): Promise<ComfyDesktop2AuthState>
+  /** A current access token (Desktop refreshes it when due), or null when
+   *  signed out or disabled. The refresh token never leaves Desktop. */
+  getAccessToken(): Promise<string | null>
+  /** Runs Desktop's browser sign-in and resolves with the resulting state. */
+  requestSignIn(): Promise<ComfyDesktop2AuthState>
+  /** Fires when Desktop signs in, signs out or switches workspace. */
+  onChanged(callback: (state: ComfyDesktop2AuthState) => void): () => void
+}
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>
   unsubscribe(installationId?: string): Promise<void>
@@ -161,6 +190,8 @@ export interface ComfyDesktop2Bridge {
   Terminal?: ComfyDesktop2TerminalBridge
   Logs?: ComfyDesktop2LogsBridge
   Telemetry?: ComfyDesktop2TelemetryBridge
+  /** Absent on Desktop builds older than this bridge. */
+  Auth?: ComfyDesktop2AuthBridge
 }
 /**
  * The `-?` mapper intentionally requires every top-level bridge member.
