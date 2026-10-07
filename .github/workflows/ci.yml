@@ -152,7 +152,7 @@ jobs:
           echo "Bridge contract changed and the version moved $BASE_VERSION -> $HEAD_VERSION."
 
   e2e:
-    name: E2E (${{ matrix.platform }})
+    name: E2E (${{ matrix.platform }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -160,13 +160,18 @@ jobs:
         include:
           - platform: macos
             os: macos-latest
-            command: pnpm run test:e2e:macos
           - platform: windows
             os: windows-latest
-            command: pnpm run test:e2e:windows
+            shard: 1/2
+          - platform: windows
+            os: windows-latest
+            shard: 2/2
           - platform: linux
             os: ubuntu-latest
-            command: pnpm run test:e2e:linux
+            shard: 1/2
+          - platform: linux
+            os: ubuntu-latest
+            shard: 2/2
 
     steps:
       - name: Checkout
@@ -184,17 +189,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Not `pnpm run build`: its typecheck duplicates the Typecheck job.
       - name: Build app
-        run: pnpm run build
+        run: pnpm exec electron-vite build
 
       - name: Run E2E (${{ matrix.platform }})
-        run: ${{ matrix.platform == 'linux' && format('xvfb-run --auto-servernum {0}', matrix.command) || matrix.command }}
+        run: ${{ matrix.platform == 'linux' && 'xvfb-run --auto-servernum ' || '' }}pnpm run test:e2e:${{ matrix.platform }}${{ matrix.shard && format(' --shard={0}', matrix.shard) || '' }}
 
       - name: Upload Playwright failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-${{ matrix.platform }}-failure
+          name: playwright-${{ matrix.platform }}-${{ strategy.job-index }}-failure
           path: |
             test-results/
             playwright-report/
