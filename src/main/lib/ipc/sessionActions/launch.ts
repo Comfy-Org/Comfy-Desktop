@@ -1171,11 +1171,15 @@ async function runLaunch(
           }
         }
 
-        // The grants fetch waits for the installation id, which boot resolves in the
+        // Opted out, the grants select nothing, so the launch does not wait on the boot fetch.
+        // Opted in, that fetch waits for the installation id, which boot resolves in the
         // background; record how much of this launch that cost.
-        const idWaitStart = performance.now()
-        const betaFlags = await getCoreBetaGrantsAsync()
-        launchWaitedForIdMs = idWaitSince(idWaitStart)
+        let betaFlags: Awaited<ReturnType<typeof getCoreBetaGrantsAsync>> = []
+        if (betaEnabled) {
+          const idWaitStart = performance.now()
+          betaFlags = await getCoreBetaGrantsAsync()
+          launchWaitedForIdMs = idWaitSince(idWaitStart)
+        }
         // Opted-out launches skip it: the checks can reach the network and could grant nothing.
         const coreCommits = betaEnabled
           ? await resolveCoreCommitState(

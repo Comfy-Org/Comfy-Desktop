@@ -62,6 +62,8 @@ const launchHarness = vi.hoisted(() => ({
   /** Whether the grants fetch had settled when `idWaitSince` was read. */
   grantsSettled: false,
   idWaitReadAfterGrants: null as boolean | null,
+  /** The boot fetch never settles, as on a link that hangs until its deadline. */
+  grantsPending: false,
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
    *  before either path's pre-spawn abort gate, which is exactly the window under test. */
   duringResourceAcquire: null as null | (() => void),
@@ -207,6 +209,7 @@ vi.mock('../../coreBetaGrants', async (importOriginal) => {
     getCoreBetaGrantsAsync: async () => {
       launchHarness.grantsCalledAt = performance.now()
       launchHarness.grantsSettled = false
+      if (launchHarness.grantsPending) return new Promise<CoreBetaGrant[]>(() => {})
       // A real gap, so a start sampled after the await is strictly later than this call.
       await new Promise((resolve) => setTimeout(resolve, 5))
       launchHarness.grantsSettled = true
@@ -1156,6 +1159,7 @@ describe('core beta report placement', () => {
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
     spawnArgs = []
     launchHarness.grants = [HARNESS_GRANT]
+    launchHarness.grantsPending = false
     launchHarness.duringResourceAcquire = null
     launchHarness.waitForPort = null
     // Both halves of the activation-notice state: the in-process pending queue and the
@@ -1445,6 +1449,16 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(peekBetaActivationNotice(id)).toBeNull()
+  })
+
+  it('does not wait on the grant fetch for an install that opted out', async () => {
+    launchHarness.betaEnabled = false
+    launchHarness.grantsPending = true
+
+    const res = await handleLaunch(ctxFor('harness-opted-out-pending'))
+
+    expect(res.ok).toBe(true)
+    expect(spawnArgs).not.toContain('--enable-assets')
   })
 
   it('arms nothing when the payload asked for a silent grant', async () => {

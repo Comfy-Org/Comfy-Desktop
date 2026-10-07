@@ -653,7 +653,7 @@ describe('asset download retries', () => {
       webContents
     } as unknown as Electron.BrowserWindow
 
-    function createItem(itemUrl: string) {
+    function createItem(itemUrl: string, contentDisposition: string | null = null) {
       let done:
         | ((event: unknown, state: 'completed' | 'cancelled' | 'interrupted') => void)
         | undefined
@@ -661,7 +661,7 @@ describe('asset download retries', () => {
       const item = {
         getURLChain: () => [itemUrl],
         getURL: () => itemUrl,
-        getContentDisposition: () => null,
+        getContentDisposition: () => contentDisposition,
         setSavePath,
         on: vi.fn(),
         once: vi.fn((event: string, handler: typeof done) => {
@@ -676,6 +676,416 @@ describe('asset download retries', () => {
 
     return { win, session, send, getWillDownload: () => willDownload, createItem }
   }
+
+  function startExactAssetDownload(
+    harness: ReturnType<typeof makeAssetHarness>,
+    url: string,
+    outputDir: string,
+    templateInput?: { templateId: string; assetId: string }
+  ) {
+    return mod.startManagedAssetDownload(
+      harness.win,
+      url,
+      'sample.png',
+      outputDir,
+      undefined,
+      undefined,
+      { existingFilePolicy: 'skip', templateInput }
+    )
+  }
+
+  function bindAssetItem(
+    harness: ReturnType<typeof makeAssetHarness>,
+    url: string,
+    contentDisposition: string | null = null
+  ) {
+    const item = harness.createItem(url, contentDisposition)
+    harness.getWillDownload()!({}, item.item, null)
+    const tempPath = item.setSavePath.mock.calls[0]?.[0]
+    expect(tempPath).toBeTypeOf('string')
+    return { ...item, tempPath: tempPath! }
+  }
+
+  it('joins only the same URL and exact destination under one download identity', async () => {
+    const firstDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-first-'))
+    const secondDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-second-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      const first = await startExactAssetDownload(h, url, firstDir)
+      const joined = await startExactAssetDownload(h, url, firstDir)
+      const otherDestination = await startExactAssetDownload(h, url, secondDir)
+
+      expect(first).toMatchObject({ status: 'accepted' })
+      expect(joined).toEqual({
+        status: 'joined',
+        downloadId: first.status === 'accepted' ? first.downloadId : 'missing-download-id'
+      })
+      expect(otherDestination).toMatchObject({ status: 'accepted' })
+      if (first.status !== 'accepted' || otherDestination.status !== 'accepted') {
+        throw new Error('Expected two accepted asset downloads')
+      }
+      expect(otherDestination.downloadId).not.toBe(first.downloadId)
+      expect(h.session.downloadURL).toHaveBeenCalledTimes(2)
+
+      const downloads = [firstDir, secondDir].map((outputDir) => {
+        return { item: bindAssetItem(h, url), outputDir }
+      })
+      for (const { item, outputDir } of downloads) {
+        await fs.promises.writeFile(item.tempPath, outputDir)
+      }
+      for (const { item } of downloads) {
+        item.getDone()!({}, 'completed')
+      }
+      await expect(
+        Promise.all(
+          [firstDir, secondDir].map((outputDir) =>
+            fs.promises.readFile(path.join(outputDir, 'sample.png'), 'utf8')
+          )
+        )
+      ).resolves.toEqual([firstDir, secondDir])
+    } finally {
+      await fs.promises.rm(firstDir, { recursive: true, force: true })
+      await fs.promises.rm(secondDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not join an exact request to a deduplicating job at the same destination', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      const deduplicating = await mod.startManagedAssetDownload(h.win, url, 'sample.png', outputDir)
+      const exact = await startExactAssetDownload(h, url, outputDir)
+
+      expect(deduplicating).toMatchObject({ status: 'accepted' })
+      expect(exact).toMatchObject({ status: 'accepted' })
+      if (deduplicating.status !== 'accepted' || exact.status !== 'accepted') {
+        throw new Error('Expected two accepted asset downloads')
+      }
+      expect(exact.downloadId).not.toBe(deduplicating.downloadId)
+      expect(h.session.downloadURL).toHaveBeenCalledTimes(2)
+
+      const first = bindAssetItem(h, url)
+      const second = bindAssetItem(h, url)
+      await fs.promises.writeFile(first.tempPath, 'deduplicating')
+      await fs.promises.writeFile(second.tempPath, 'exact')
+      first.getDone()!({}, 'completed')
+      second.getDone()!({}, 'completed')
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('snapshots only the active download for the exact destination', async () => {
+    const firstDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-first-'))
+    const secondDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-second-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      const admission = await startExactAssetDownload(h, url, firstDir)
+      if (admission.status !== 'accepted') {
+        throw new Error('Expected an accepted asset download')
+      }
+
+      expect(mod.getActiveAssetDownload(url, 'sample.png', firstDir)).toMatchObject({
+        id: admission.downloadId,
+        status: 'pending'
+      })
+      expect(mod.getActiveAssetDownload(url, 'sample.png', secondDir)).toBeUndefined()
+
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'content')
+      item.getDone()!({}, 'completed')
+
+      expect(mod.getActiveAssetDownload(url, 'sample.png', firstDir)).toBeUndefined()
+    } finally {
+      await fs.promises.rm(firstDir, { recursive: true, force: true })
+      await fs.promises.rm(secondDir, { recursive: true, force: true })
+    }
+  })
+
+  it('skips an exact destination that is already present', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      await fs.promises.writeFile(path.join(outputDir, 'sample.png'), 'existing')
+
+      await expect(startExactAssetDownload(h, url, outputDir)).resolves.toEqual({
+        status: 'already-present'
+      })
+      expect(h.session.downloadURL).not.toHaveBeenCalled()
+      await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['sample.png'])
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves the requested filename instead of accepting Content-Disposition', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      await expect(startExactAssetDownload(h, url, outputDir)).resolves.toMatchObject({
+        status: 'accepted'
+      })
+
+      const item = bindAssetItem(h, url, 'attachment; filename="renamed-by-server.png"')
+      await fs.promises.writeFile(item.tempPath, 'content')
+      item.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['sample.png'])
+      await expect(fs.promises.readFile(path.join(outputDir, 'sample.png'), 'utf8')).resolves.toBe(
+        'content'
+      )
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('saves an exact destination that is still free when the transfer lands', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const destination = path.join(outputDir, 'sample.png')
+
+    try {
+      await startExactAssetDownload(h, url, outputDir)
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
+      item.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe('downloaded')
+      await expect(fs.promises.stat(item.tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('still saves when the destination cannot be hard-linked', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const destination = path.join(outputDir, 'sample.png')
+    // A hard link fails across filesystems and on some network shares; the
+    // claim is then simply unresolved, not lost.
+    const link = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('cross-device'), { code: 'EXDEV' })
+    })
+
+    try {
+      await startExactAssetDownload(h, url, outputDir)
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
+      item.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe('downloaded')
+    } finally {
+      link.mockRestore()
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not overwrite a destination that appears while the hard link is failing', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const destination = path.join(outputDir, 'sample.png')
+    // The fallback has to keep the no-clobber guarantee the link gave us: a
+    // plain rename would replace this file on POSIX.
+    const link = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('cross-device'), { code: 'EXDEV' })
+    })
+
+    try {
+      await startExactAssetDownload(h, url, outputDir)
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
+      await fs.promises.writeFile(destination, 'created-during-download')
+      item.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe(
+        'created-during-download'
+      )
+      await expect(fs.promises.stat(item.tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      link.mockRestore()
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not fall back to rename when the copy fails for any other reason', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const destination = path.join(outputDir, 'sample.png')
+    const link = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('cross-device'), { code: 'EXDEV' })
+    })
+    const copy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('no space'), { code: 'ENOSPC' })
+    })
+    const rename = vi.spyOn(fs, 'renameSync')
+
+    try {
+      await startExactAssetDownload(h, url, outputDir)
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
+      await fs.promises.writeFile(destination, 'created-during-download')
+      item.getDone()!({}, 'completed')
+
+      // Rename replaces an existing file on POSIX, so reaching it at all would
+      // undo the guarantee the link and the exclusive copy are here to give.
+      expect(rename).not.toHaveBeenCalled()
+      await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe(
+        'created-during-download'
+      )
+      await expect(fs.promises.stat(item.tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      rename.mockRestore()
+      copy.mockRestore()
+      link.mockRestore()
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not overwrite an exact destination created while the download is in flight', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const destination = path.join(outputDir, 'sample.png')
+
+    try {
+      await expect(startExactAssetDownload(h, url, outputDir)).resolves.toMatchObject({
+        status: 'accepted'
+      })
+
+      const item = bindAssetItem(h, url)
+      await fs.promises.writeFile(item.tempPath, 'downloaded')
+      await fs.promises.writeFile(destination, 'created-during-download')
+      item.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readFile(destination, 'utf8')).resolves.toBe(
+        'created-during-download'
+      )
+      await expect(fs.promises.stat(item.tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps naming the template input a retried download serves', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+    const templateInput = { templateId: 'template-a', assetId: 'asset-a' }
+
+    try {
+      const admission = await startExactAssetDownload(h, url, outputDir, templateInput)
+      if (admission.status !== 'accepted') {
+        throw new Error('Expected an accepted asset download')
+      }
+
+      const first = bindAssetItem(h, url)
+      await fs.promises.writeFile(first.tempPath, 'partial')
+      first.getDone()!({}, 'interrupted')
+
+      expect(mod.retryDownload(admission.downloadId)).toBe(true)
+      await vi.waitFor(() => expect(h.session.downloadURL).toHaveBeenCalledTimes(2))
+
+      const retry = bindAssetItem(h, url)
+      await fs.promises.writeFile(retry.tempPath, 'complete')
+      retry.getDone()!({}, 'completed')
+
+      // The retry is a different job id, so the renderer can only follow it if
+      // the identity rode along in the retry params.
+      const named = h.send.mock.calls
+        .filter((call) => call[0] === 'desktop2-download-progress')
+        .map((call) => call[1] as { id?: string; templateInputs?: unknown })
+        .filter((progress) => progress.id !== admission.downloadId)
+      expect(named.length).toBeGreaterThan(0)
+      for (const progress of named) {
+        expect(progress.templateInputs).toEqual([templateInput])
+      }
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves exact-destination semantics when a failed download is retried', async () => {
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      const admission = await startExactAssetDownload(h, url, outputDir)
+      if (admission.status !== 'accepted') {
+        throw new Error('Expected an accepted asset download')
+      }
+
+      const first = bindAssetItem(h, url)
+      await fs.promises.writeFile(first.tempPath, 'partial')
+      first.getDone()!({}, 'interrupted')
+
+      expect(mod.retryDownload(admission.downloadId)).toBe(true)
+      await vi.waitFor(() => expect(h.session.downloadURL).toHaveBeenCalledTimes(2))
+
+      const retry = bindAssetItem(h, url, 'attachment; filename="renamed-by-server.png"')
+      await fs.promises.writeFile(retry.tempPath, 'complete')
+      retry.getDone()!({}, 'completed')
+
+      await expect(fs.promises.readdir(outputDir)).resolves.toEqual(['sample.png'])
+      await expect(fs.promises.readFile(path.join(outputDir, 'sample.png'), 'utf8')).resolves.toBe(
+        'complete'
+      )
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('allows retry while the same URL is active for a different exact destination', async () => {
+    const firstDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-first-'))
+    const secondDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-input-second-'))
+    const url = 'https://remote.example/input/sample.png'
+    const h = makeAssetHarness()
+
+    try {
+      const failedAdmission = await startExactAssetDownload(h, url, firstDir)
+      if (failedAdmission.status !== 'accepted') {
+        throw new Error('Expected an accepted asset download')
+      }
+
+      const failed = bindAssetItem(h, url)
+      await fs.promises.writeFile(failed.tempPath, 'partial')
+      failed.getDone()!({}, 'interrupted')
+
+      await expect(startExactAssetDownload(h, url, secondDir)).resolves.toMatchObject({
+        status: 'accepted'
+      })
+
+      expect(mod.retryDownload(failedAdmission.downloadId)).toBe(true)
+      await vi.waitFor(() => expect(h.session.downloadURL).toHaveBeenCalledTimes(3))
+
+      const downloads = [secondDir, firstDir].map((outputDir) => {
+        return { item: bindAssetItem(h, url), outputDir }
+      })
+      for (const { item, outputDir } of downloads) {
+        await fs.promises.writeFile(item.tempPath, outputDir)
+      }
+      for (const { item } of downloads) {
+        item.getDone()!({}, 'completed')
+      }
+    } finally {
+      await fs.promises.rm(firstDir, { recursive: true, force: true })
+      await fs.promises.rm(secondDir, { recursive: true, force: true })
+    }
+  })
 
   it('discards the download when an identical file already sits at the requested path', async () => {
     // The "remote" server may be a local ComfyUI writing outputs into the

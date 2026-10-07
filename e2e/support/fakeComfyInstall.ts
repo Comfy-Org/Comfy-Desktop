@@ -234,6 +234,8 @@ export function opsFlagsGrantSeed(opts: {
           },
         ],
       },
+      // An unstamped entry reads as expired.
+      fetchedAt: Date.now(),
     },
   }
 }

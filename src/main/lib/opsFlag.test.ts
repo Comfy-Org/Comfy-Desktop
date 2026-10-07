@@ -51,9 +51,19 @@ function makeTestFlag() {
   })
 }
 
+/** Pinned clock: every entry a test seeds or expects is stamped with it, so a persisted entry
+ *  reads as fresh and a written one compares exactly. */
+const NOW = Date.UTC(2026, 9, 5)
+const DAY_MS = 24 * 60 * 60 * 1000
+const PERF_NOW = 10_000
+
 beforeEach(() => {
   getOpsFlagResult.mockReset()
   staffClassification.value = false
+  vi.spyOn(Date, 'now').mockReturnValue(NOW)
+  // Frozen too: the fetch budget is what remains of it after the id wait, so a test that lets
+  // real time pass would otherwise see a budget slightly under the one it set.
+  vi.spyOn(performance, 'now').mockReturnValue(PERF_NOW)
   // Every test, not just the persistence ones: an empty `configDir()` would resolve
   // `ops-flags.json` relative to cwd and drop a file in the repo root.
   testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-flag-'))
@@ -172,17 +182,11 @@ describe('makeOpsFlag', () => {
     expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 50, undefined, false)
   })
 
-  it('defaults the timeout when the caller omits one', async () => {
+  it('defaults the timeout to 2 s when neither the caller nor the flag sets one', async () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('normal'))
     await flag.init({ distinctId: 'anon' })
-    expect(getOpsFlagResult).toHaveBeenCalledWith(
-      'test-flag',
-      'anon',
-      expect.any(Number),
-      undefined,
-      false
-    )
+    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 2000, undefined, false)
   })
 
   it('hands the matched JSON payload to parse alongside the value', async () => {
@@ -250,7 +254,9 @@ describe('makeOpsFlag persistence', () => {
 
   it('uses the persisted value when the fetch resolves undefined', async () => {
     // Given a treatment persisted by an earlier online launch
-    writeFlagsFile(JSON.stringify({ 'test-flag': { value: 'disabled', payload: null } }))
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
     const flag = makePersistedFlag()
     // When the boot fetch times out — `getOpsFlagResult` classifies that as `unreachable`
     getOpsFlagResult.mockResolvedValue(unreachable())
@@ -262,7 +268,11 @@ describe('makeOpsFlag persistence', () => {
   it('leaves the persisted file untouched when the fetch resolves undefined', async () => {
     // Indented on purpose: a byte comparison against canonical `JSON.stringify` output cannot
     // tell "never written" from "rewritten identically", and rewriting is the bug under test.
-    const stored = JSON.stringify({ 'test-flag': { value: 'disabled', payload: null } }, null, 2)
+    const stored = JSON.stringify(
+      { 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } },
+      null,
+      2
+    )
     writeFlagsFile(stored)
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
@@ -271,7 +281,9 @@ describe('makeOpsFlag persistence', () => {
   })
 
   it('uses the persisted value and leaves the file untouched when the fetch rejects', async () => {
-    const stored = JSON.stringify({ 'test-flag': { value: 'disabled', payload: null } })
+    const stored = JSON.stringify({
+      'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW }
+    })
     writeFlagsFile(stored)
     const flag = makePersistedFlag()
     getOpsFlagResult.mockRejectedValue(new Error('network'))
@@ -281,19 +293,23 @@ describe('makeOpsFlag persistence', () => {
   })
 
   it('overwrites the persisted entry when the fetch resolves a defined result', async () => {
-    writeFlagsFile(JSON.stringify({ 'test-flag': { value: 'disabled', payload: null } }))
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('degraded', { note: 'fresh' }))
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('degraded')
     expect(JSON.parse(readFlagsFile())).toEqual({
-      'test-flag': { value: 'degraded', payload: { note: 'fresh' } }
+      'test-flag': { value: 'degraded', payload: { note: 'fresh' }, fetchedAt: NOW }
     })
   })
 
   it('reuses a persisted payload, not just the value', async () => {
     writeFlagsFile(
-      JSON.stringify({ 'payload-flag': { value: true, payload: { items: ['a', 'b'] } } })
+      JSON.stringify({
+        'payload-flag': { value: true, payload: { items: ['a', 'b'] }, fetchedAt: NOW }
+      })
     )
     const flag = makeOpsFlag<string[]>({
       key: 'payload-flag',
@@ -311,14 +327,17 @@ describe('makeOpsFlag persistence', () => {
 
   it('preserves unrelated keys already in the file', async () => {
     writeFlagsFile(
-      JSON.stringify({ 'other-flag': { value: 'on', payload: null }, 'test-flag': 'stale' })
+      JSON.stringify({
+        'other-flag': { value: 'on', payload: null, fetchedAt: NOW },
+        'test-flag': 'stale'
+      })
     )
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('degraded', null))
     await flag.init({ distinctId: 'anon' })
     expect(JSON.parse(readFlagsFile())).toEqual({
-      'other-flag': { value: 'on', payload: null },
-      'test-flag': { value: 'degraded', payload: null }
+      'other-flag': { value: 'on', payload: null, fetchedAt: NOW },
+      'test-flag': { value: 'degraded', payload: null, fetchedAt: NOW }
     })
   })
 
@@ -338,7 +357,9 @@ describe('makeOpsFlag persistence', () => {
   })
 
   it('falls back to the static fallback when the persisted entry is unrecognised', async () => {
-    writeFlagsFile(JSON.stringify({ 'test-flag': { value: 'garbage', payload: null } }))
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'garbage', payload: null, fetchedAt: NOW } })
+    )
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
@@ -354,7 +375,9 @@ describe('makeOpsFlag persistence', () => {
   })
 
   it('does not read the file for a non-persisted flag', async () => {
-    writeFlagsFile(JSON.stringify({ 'test-flag': { value: 'disabled', payload: null } }))
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
@@ -362,7 +385,9 @@ describe('makeOpsFlag persistence', () => {
   })
 
   it('ignores a persisted entry for a different key', async () => {
-    writeFlagsFile(JSON.stringify({ 'other-flag': { value: 'disabled', payload: null } }))
+    writeFlagsFile(
+      JSON.stringify({ 'other-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
@@ -374,7 +399,9 @@ describe('makeOpsFlag persistence', () => {
     // fail terminally (EISDIR), which is the throw at safe-file.ts:154 the contract must contain.
     // The stale entry is what makes the containment observable: an uncaught write error lands
     // in the miss handler, which would serve `disabled` over the value just fetched.
-    writeFlagsFile(JSON.stringify({ 'test-flag': { value: 'disabled', payload: null } }))
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
     fs.mkdirSync(flagsFilePath() + '.tmp')
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
@@ -410,11 +437,11 @@ describe('makeOpsFlag revocation coherence', () => {
   }
 
   function grantEntry(granted: boolean): string {
-    return JSON.stringify({ 'grant-flag': { value: granted, payload: null } })
+    return JSON.stringify({ 'grant-flag': { value: granted, payload: null, fetchedAt: NOW } })
   }
 
   function parsedGrant(granted: boolean): unknown {
-    return { 'grant-flag': { value: granted, payload: null } }
+    return { 'grant-flag': { value: granted, payload: null, fetchedAt: NOW } }
   }
 
   function seedGrantedFiles(): void {
@@ -573,7 +600,9 @@ describe('makeOpsFlag late results', () => {
   }
 
   function seedGrant(granted: boolean): void {
-    const contents = JSON.stringify({ 'grant-flag': { value: granted, payload: null } })
+    const contents = JSON.stringify({
+      'grant-flag': { value: granted, payload: null, fetchedAt: NOW }
+    })
     fs.writeFileSync(flagsFilePath(), contents, 'utf-8')
     fs.writeFileSync(flagsFilePath() + '.bak', contents, 'utf-8')
   }
@@ -603,7 +632,7 @@ describe('makeOpsFlag late results', () => {
     // Then this launch keeps the grant — the deadline still owns the current decision
     expect(await flag.get()).toBe('granted')
     // And the cache now holds the revocation
-    expect(storedGrant()).toEqual({ 'grant-flag': { value: false, payload: null } })
+    expect(storedGrant()).toEqual({ 'grant-flag': { value: false, payload: null, fetchedAt: NOW } })
 
     // And the next launch, also unreachable, reads it back
     const next = makeGrantFlag()
@@ -620,7 +649,7 @@ describe('makeOpsFlag late results', () => {
 
     lateCallback()?.(flagResult(true, null))
 
-    expect(storedGrant()).toEqual({ 'grant-flag': { value: true, payload: null } })
+    expect(storedGrant()).toEqual({ 'grant-flag': { value: true, payload: null, fetchedAt: NOW } })
   })
 
   it('does not disturb the current launch when the late value contradicts it', async () => {
@@ -643,7 +672,11 @@ describe('makeOpsFlag late results', () => {
   // value arrived, so a test here claiming to cover a specific late outcome would be a fiction.
   it('writes nothing when a launch is never handed a late value', async () => {
     // Given a grant on disk, and a launch whose fetch was abandoned at the deadline
-    const stored = JSON.stringify({ 'grant-flag': { value: true, payload: null } }, null, 2)
+    const stored = JSON.stringify(
+      { 'grant-flag': { value: true, payload: null, fetchedAt: NOW } },
+      null,
+      2
+    )
     fs.writeFileSync(flagsFilePath(), stored, 'utf-8')
     const flag = await launchLosingTheRace()
 
@@ -681,7 +714,7 @@ describe('makeOpsFlag late results', () => {
 
     // Then its late result is discarded rather than written under the state that replaced it
     strandedCallback?.(flagResult(false, null))
-    expect(storedGrant()).toEqual({ 'grant-flag': { value: true, payload: null } })
+    expect(storedGrant()).toEqual({ 'grant-flag': { value: true, payload: null, fetchedAt: NOW } })
   })
 
   it('swallows and logs a failed late write', async () => {
@@ -715,5 +748,173 @@ describe('makeOpsFlag late results', () => {
 
     expect(lateCallback()).toBeUndefined()
     expect(fs.existsSync(flagsFilePath())).toBe(false)
+  })
+})
+
+describe('makeOpsFlag deadline and expiry', () => {
+  function flagsFilePath(): string {
+    return path.join(testConfigDir, 'ops-flags.json')
+  }
+
+  function seedGrant(entry: Record<string, unknown>): void {
+    fs.writeFileSync(flagsFilePath(), JSON.stringify({ 'grant-flag': entry }), 'utf-8')
+  }
+
+  const deadlineMs = vi.fn((saved: 'granted' | 'revoked' | undefined) =>
+    saved === 'granted' ? 5000 : 3000
+  )
+
+  function makeGrantFlag() {
+    return makeOpsFlag<'granted' | 'revoked' | undefined>({
+      key: 'grant-flag',
+      fallback: undefined,
+      parse: (value) => (value === true ? 'granted' : value === false ? 'revoked' : undefined),
+      deadlineMs,
+      persist: true
+    })
+  }
+
+  async function launchOffline(): Promise<'granted' | 'revoked' | undefined> {
+    const flag = makeGrantFlag()
+    getOpsFlagResult.mockResolvedValue(unreachable())
+    await flag.init({ distinctId: 'anon' })
+    return flag.get()
+  }
+
+  beforeEach(() => deadlineMs.mockClear())
+
+  it('picks the deadline from the saved treatment', async () => {
+    seedGrant({ value: true, payload: null, fetchedAt: NOW })
+    expect(await launchOffline()).toBe('granted')
+    expect(deadlineMs).toHaveBeenCalledWith('granted')
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      'grant-flag',
+      'anon',
+      5000,
+      expect.any(Function),
+      false
+    )
+  })
+
+  it('picks the no-treatment deadline when nothing is saved', async () => {
+    expect(await launchOffline()).toBeUndefined()
+    expect(deadlineMs).toHaveBeenCalledWith(undefined)
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      'grant-flag',
+      'anon',
+      3000,
+      expect.any(Function),
+      false
+    )
+  })
+
+  it.each([[50], [10_000]])(
+    'passes an explicit init timeout of %i through unchanged, over the computed deadline',
+    async (timeoutMs) => {
+      seedGrant({ value: true, payload: null, fetchedAt: NOW })
+      const flag = makeGrantFlag()
+      getOpsFlagResult.mockResolvedValue(unreachable())
+      await flag.init({ distinctId: 'anon', timeoutMs })
+      expect(getOpsFlagResult).toHaveBeenCalledWith(
+        'grant-flag',
+        'anon',
+        timeoutMs,
+        expect.any(Function),
+        false
+      )
+    }
+  )
+
+  it.each([
+    ['spends part of the deadline', 3500, 1500],
+    ['outlasts the deadline', 6000, 0]
+  ])('counts the deadline from init when the id wait %s', async (_, idWaitMs, budgetMs) => {
+    seedGrant({ value: true, payload: null, fetchedAt: NOW })
+    const flag = makeGrantFlag()
+    getOpsFlagResult.mockResolvedValue(unreachable())
+    let resolveId: (id: string) => void = () => {}
+    void flag.init({
+      distinctId: new Promise<string>((r) => {
+        resolveId = r
+      })
+    })
+    vi.mocked(performance.now).mockReturnValue(PERF_NOW + idWaitMs)
+    resolveId('final-id')
+    // With no window left, the fetch still goes out (a late answer is saved for the next
+    // launch), and this launch keeps the saved treatment.
+    expect(await flag.get()).toBe('granted')
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      'grant-flag',
+      'final-id',
+      budgetMs,
+      expect.any(Function),
+      false
+    )
+  })
+
+  it('holds a saved treatment for exactly seven days', async () => {
+    seedGrant({ value: true, payload: null, fetchedAt: NOW - 7 * DAY_MS })
+    expect(await launchOffline()).toBe('granted')
+  })
+
+  it.each([
+    ['older than seven days', { value: true, payload: null, fetchedAt: NOW - 7 * DAY_MS - 1 }],
+    ['written before entries were stamped', { value: true, payload: null }],
+    ['stamped with a non-number', { value: true, payload: null, fetchedAt: String(NOW) }],
+    // A clock that ran ahead, since corrected: the cap still applies, measured from either side.
+    [
+      'stamped over seven days ahead',
+      { value: true, payload: null, fetchedAt: NOW + 7 * DAY_MS + 1 }
+    ]
+  ])('treats a treatment %s as nothing saved', async (_, entry) => {
+    seedGrant(entry)
+    // An unreachable client drops the grant instead of holding it forever
+    expect(await launchOffline()).toBeUndefined()
+    // And the shorter no-treatment deadline applies
+    expect(deadlineMs).toHaveBeenCalledWith(undefined)
+  })
+
+  it('holds a treatment stamped slightly ahead of the clock', async () => {
+    // A small backwards clock step (NTP) after the write must not cost an offline launch its grant.
+    seedGrant({ value: true, payload: null, fetchedAt: NOW + 60_000 })
+    expect(await launchOffline()).toBe('granted')
+  })
+
+  it.each([
+    ['answers unreachable', () => getOpsFlagResult.mockResolvedValue(unreachable())],
+    ['rejects', () => getOpsFlagResult.mockRejectedValue(new Error('network'))]
+  ])('holds a saved treatment that parses to null when the fetch %s', async (_, stage) => {
+    // Only `undefined` means "nothing usable"; a flag whose type includes null keeps it offline.
+    seedGrant({ value: false, payload: null, fetchedAt: NOW })
+    const flag = makeOpsFlag<'granted' | null | undefined>({
+      key: 'grant-flag',
+      fallback: undefined,
+      parse: (value) => (value === true ? 'granted' : value === false ? null : undefined),
+      persist: true
+    })
+    stage()
+    await flag.init({ distinctId: 'anon' })
+    expect(await flag.get()).toBeNull()
+  })
+
+  it('treats an overflowing stamp as nothing saved', async () => {
+    // `JSON.parse` reads `1e400` as Infinity, which would otherwise never expire.
+    fs.writeFileSync(
+      flagsFilePath(),
+      '{"grant-flag":{"value":true,"payload":null,"fetchedAt":1e400}}',
+      'utf-8'
+    )
+    expect(await launchOffline()).toBeUndefined()
+  })
+
+  it('replaces an expired treatment with a fresh fetch, stamped now', async () => {
+    seedGrant({ value: true, payload: null, fetchedAt: NOW - 30 * DAY_MS })
+    const flag = makeGrantFlag()
+    getOpsFlagResult.mockResolvedValue(flagResult(false, null))
+    await flag.init({ distinctId: 'anon' })
+    expect(await flag.get()).toBe('revoked')
+    expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual({
+      'grant-flag': { value: false, payload: null, fetchedAt: NOW }
+    })
   })
 })

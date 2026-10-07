@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -1021,6 +1021,35 @@ describe('core beta grants fetch', () => {
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }
     ])
   })
+  it.each([
+    [
+      'a saved grant',
+      { value: true, payload: { flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }] } },
+      5000
+    ],
+    ['a saved revocation', { value: false, payload: null }, 3000],
+    ['nothing saved', undefined, 3000]
+  ])('picks the boot deadline from %s on disk', async (_, entry, deadline) => {
+    if (entry) {
+      fs.writeFileSync(
+        path.join(testConfigDir, 'ops-flags.json'),
+        JSON.stringify({ [CORE_BETA_FEATURES_FLAG_KEY]: { ...entry, fetchedAt: Date.now() } })
+      )
+    }
+    getOpsFlagResult.mockResolvedValue({ kind: 'unreachable' })
+    // Frozen: the fetch gets what remains of the deadline once the id is known.
+    const now = vi.spyOn(performance, 'now').mockReturnValue(10_000)
+    onTestFinished(() => now.mockRestore())
+    await initCoreBetaGrants({ distinctId: 'device-id' })
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      CORE_BETA_FEATURES_FLAG_KEY,
+      'device-id',
+      deadline,
+      expect.any(Function),
+      false
+    )
+  })
+
   it('logs the cached commit ranges in full, on one line', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     getOpsFlagResult.mockResolvedValue({
