@@ -20,7 +20,7 @@ vi.mock('./shared', async () => {
     nativeTheme: {},
     sources: [],
     settings: {
-      getAll: () => mockSettings,
+      getAll: vi.fn(() => mockSettings),
       get: (key: string) => mockSettings[key],
       set: (key: string, value: unknown) => mockSettingsSet(key, value),
       getTrackedSettingsTelemetryProperties: () => ({}),
@@ -56,6 +56,7 @@ vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
 vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: 'last' }))
 
 import * as mainTelemetry from '../telemetry'
+import { settings } from './shared'
 import { applySettingSet, buildSettingsSections } from './registerSettingsHandlers'
 
 function resetMockSettings(): void {
@@ -250,6 +251,36 @@ describe('applySettingSet settings.changed telemetry', () => {
     // Language is unset, so the field shows the app locale ('en' here); picking it again
     // stores it but is not a change from what the user saw.
     applySettingSet('language', 'en', true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('still writes when building the shown value throws', () => {
+    vi.mocked(settings.getAll).mockImplementationOnce(() => {
+      throw new Error('sections broke')
+    })
+
+    expect(() => applySettingSet('autoUpdate', false, true)).not.toThrow()
+    expect(mockSettingsSet).toHaveBeenCalledWith('autoUpdate', false)
+  })
+
+  it('emits nothing when the store refuses the write', () => {
+    // An unreadable settings.json makes `set` a no-op; nothing changed, so nothing is reported.
+    mockSettings.autoUpdate = true
+    mockSettingsSet.mockImplementationOnce(() => {})
+
+    applySettingSet('autoUpdate', false, true)
+
+    expect(changedEvents()).toEqual([])
+  })
+
+  it('emits nothing when whitespace in an empty text field leaves it unset', () => {
+    // The field shows '' for an unset mirror; `set` keeps it unset, which still shows ''.
+    mockSettingsSet.mockImplementationOnce((key: string) => {
+      delete mockSettings[key]
+    })
+
+    applySettingSet('pypiMirror', '   ', true)
 
     expect(changedEvents()).toEqual([])
   })

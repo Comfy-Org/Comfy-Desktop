@@ -278,13 +278,18 @@ export function buildMediaSections(): SettingsSection[] {
   ]
 }
 
-/** What the Global Settings field showed, which is what a user edit changes from: an unset
- *  setting can display a fallback (Language shows the system locale). */
+/** What the Global Settings field shows, so an edit is compared as the user sees it: an unset
+ *  setting can display a fallback (Language shows the system locale). Falls back to the stored
+ *  value if building the sections fails, which must never cost the write. */
 function shownGlobalValue(key: string): unknown {
-  for (const section of buildSettingsSections()) {
-    const fields = section.fields as { id?: string; value?: unknown }[] | undefined
-    const field = fields?.find((f) => f.id === key)
-    if (field) return field.value
+  try {
+    for (const section of buildSettingsSections()) {
+      const fields = section.fields as { id?: string; value?: unknown }[] | undefined
+      const field = fields?.find((f) => f.id === key)
+      if (field) return field.value
+    }
+  } catch {
+    // fall through to the stored value
   }
   return settings.get(key)
 }
@@ -336,7 +341,7 @@ export function applySettingSet(key: string, value: unknown, userEdit = false): 
   }
   // Consent has flipped above, so only an opt-in would be reported; report neither.
   if (userEdit && key !== 'telemetryEnabled') {
-    captureSettingChanged(key, before, settings.get(key))
+    captureSettingChanged(key, before, shownGlobalValue(key))
   }
   _broadcastToRenderer('settings-changed', { key })
   globalSettingsEvents.emit('changed')
