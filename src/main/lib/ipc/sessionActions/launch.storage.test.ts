@@ -257,13 +257,14 @@ describe('applyStorageLaunchArgs', () => {
     expect(state.manageModelFolders).toBe(false)
   })
 
-  it('never adds a model-paths config to a governed build', () => {
+  it('gives a governed build its shared and per-install model dirs', () => {
     const shared = path.join(root, 'governed-shared')
     fs.mkdirSync(shared, { recursive: true })
     mockSettings({ modelsDirs: [shared], inputDir: globalInput, outputDir: globalOutput })
+    const owned = path.join(root, 'governed-owned')
     const launchCmd = makeLaunchCmd()
 
-    const inst = makeInstall({ modelDirs: [path.join(root, 'governed-owned')] })
+    const inst = makeInstall({ modelDirs: [owned] })
     fs.mkdirSync(path.join(inst.installPath, 'ComfyUI', 'governance'))
     fs.writeFileSync(
       path.join(inst.installPath, 'ComfyUI', 'governance', 'policy.signed.json'),
@@ -271,16 +272,35 @@ describe('applyStorageLaunchArgs', () => {
     )
 
     const state = applyStorageLaunchArgs(inst, 'governed', launchCmd)
+    const target = yamlPath('governed')
+    const yaml = fs.readFileSync(target, 'utf8')
 
     expect(launchCmd.args).toEqual([
       'main.py',
+      '--extra-model-paths-config',
+      target,
       '--input-directory',
       globalInput,
       '--output-directory',
       globalOutput
     ])
-    expect(state.manageModelFolders).toBe(false)
-    expect(fs.existsSync(yamlPath('governed'))).toBe(false)
+    // Every section header, root and default in the YAML, in order: one
+    // section per dir, the shared dir first and the default.
+    expect(
+      yaml.split('\n').filter((l) => /^(comfy\.desktop_| {2}base_path:| {2}is_default:)/.test(l))
+    ).toEqual([
+      'comfy.desktop_0:',
+      `  base_path: '${path.resolve(shared)}'`,
+      '  is_default: true',
+      'comfy.desktop_1:',
+      `  base_path: '${path.resolve(owned)}'`
+    ])
+    expect(state).toEqual({
+      preLaunchExtras: [],
+      manageModelFolders: true,
+      modelDirsForLaunch: [path.resolve(shared), path.resolve(owned)],
+      modelSyncOptions: { yamlPath: target, primaryDir: path.resolve(shared) }
+    })
   })
 
   it('falls back to the default input dir when the setting is empty', () => {

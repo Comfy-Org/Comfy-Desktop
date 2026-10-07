@@ -15,6 +15,8 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
 
 import { comfyWindows } from '../../host/registry'
+import type { ComfyWindowEntry } from '../../host/registry'
+import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
@@ -107,6 +109,7 @@ export function broadcastAuthChanged(status: AuthStatus): void {
     if (panel && !panel.webContents.isDestroyed())
       panel.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
   }
+  void broadcastEmbeddedSessionChanged()
 }
 
 /**
@@ -121,6 +124,53 @@ export async function signInToCloud(): Promise<AuthStatus> {
   clearVersionCache()
   broadcastAuthChanged(status)
   return status
+}
+
+/**
+ * Sign Desktop out of its Cloud account and announce it. Asks first, on
+ * `host`'s window, when an install or update still needs the account; without
+ * a window to ask on, it keeps the session. Shared by the account chip and the
+ * hosted ComfyUI view.
+ */
+export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promise<AuthStatus> {
+  const session = getCloudSession()
+  const installingOperations: Array<[string, AbortController]> = []
+  for (const [installationId, abort] of _operationAborts) {
+    const installation = await installations.get(installationId)
+    // In-place updates ('updating') ride the same install dispatch path and
+    // hold the same auth-dependent downloads, so they need the guard too.
+    if (installation?.status === 'installing' || installation?.status === 'updating') {
+      installingOperations.push([installationId, abort])
+    }
+  }
+  if (installingOperations.length > 0) {
+    if (!host || host.window.isDestroyed()) return session.status()
+    const confirmed = await openSystemModalAsync({
+      parent: host.window,
+      spec: {
+        title: i18n.t('devPlatform.account.installationInProgressTitle'),
+        message: i18n.t('devPlatform.account.installationInProgressMessage'),
+        confirmLabel: i18n.t('devPlatform.account.cancelInstallationAndSignOut'),
+        cancelLabel: i18n.t('common.close'),
+        confirmStyle: 'danger',
+        theme: host.lastTheme
+      }
+    })
+    if (!confirmed) return session.status()
+    for (const [installationId, abort] of installingOperations) {
+      if (_operationAborts.get(installationId) !== abort) continue
+      abort.abort()
+      _broadcastToRenderer('install-progress', {
+        installationId,
+        phase: 'cancelling',
+        cancelRequested: true
+      })
+    }
+  }
+  session.logout()
+  clearVersionCache()
+  broadcastAuthChanged(SIGNED_OUT)
+  return SIGNED_OUT
 }
 
 /** Sign-in state for main-side surfaces that decide what to render (the file
@@ -150,48 +200,13 @@ export function registerDevPlatformHandlers(): void {
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signIn, (): Promise<AuthStatus> => signInToCloud())
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.signOut, async (event): Promise<AuthStatus> => {
-    const installingOperations: Array<[string, AbortController]> = []
-    for (const [installationId, abort] of _operationAborts) {
-      const installation = await installations.get(installationId)
-      // In-place updates ('updating') ride the same install dispatch path and
-      // hold the same auth-dependent downloads, so they need the guard too.
-      if (installation?.status === 'installing' || installation?.status === 'updating') {
-        installingOperations.push([installationId, abort])
-      }
-    }
-    if (installingOperations.length > 0) {
-      const host = [...comfyWindows.values()].find(
-        (entry) => entry.panelView?.webContents === event.sender
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.signOut,
+    (event): Promise<AuthStatus> =>
+      signOutOfCloud(
+        [...comfyWindows.values()].find((entry) => entry.panelView?.webContents === event.sender)
       )
-      if (!host || host.window.isDestroyed()) return session.status()
-      const confirmed = await openSystemModalAsync({
-        parent: host.window,
-        spec: {
-          title: i18n.t('devPlatform.account.installationInProgressTitle'),
-          message: i18n.t('devPlatform.account.installationInProgressMessage'),
-          confirmLabel: i18n.t('devPlatform.account.cancelInstallationAndSignOut'),
-          cancelLabel: i18n.t('common.close'),
-          confirmStyle: 'danger',
-          theme: host.lastTheme
-        }
-      })
-      if (!confirmed) return session.status()
-      for (const [installationId, abort] of installingOperations) {
-        if (_operationAborts.get(installationId) !== abort) continue
-        abort.abort()
-        _broadcastToRenderer('install-progress', {
-          installationId,
-          phase: 'cancelling',
-          cancelRequested: true
-        })
-      }
-    }
-    session.logout()
-    clearVersionCache()
-    broadcastAuthChanged(SIGNED_OUT)
-    return SIGNED_OUT
-  })
+  )
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.getAuthStatus, (): AuthStatus => session.status())
 
