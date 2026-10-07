@@ -994,6 +994,18 @@ describe('assetsTap', () => {
         ])
       )
 
+      it('not by a line seen without consent', () => {
+        consent = 'denied'
+        const tap = createAssetsTap(baseOpts)
+        tap.ingest(taggedLine('seeder.scan_completed', sixtyFourNames), 'stdout')
+
+        consent = 'granted'
+        tap.ingest(taggedLine('seeder.scan_completed', { zz_count: 7 }), 'stdout')
+
+        expect(captured).toHaveLength(1)
+        expect(captured[0]!.ctx).toMatchObject({ zz_count: 7 })
+      })
+
       it('not by a line rejected after its convention fields', () => {
         const tap = createAssetsTap(baseOpts)
         // `installation_id` sorts last and rejects the whole line.
