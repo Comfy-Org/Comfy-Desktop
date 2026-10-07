@@ -137,6 +137,40 @@ describe('assetsTap', () => {
     vi.restoreAllMocks()
   })
 
+  describe('a line logged while a tqdm bar is mid-line', () => {
+    // Captured from a real tqdm bar on stderr with Core's logger config (`%(message)s`): the bar
+    // redraws with \r and no \n, and the logged line is appended right after the bar text.
+    const bar =
+      '\r  0%|          | 0/6 [00:00<?, ?it/s]\r 50%|█████     | 3/6 [00:00<00:00, 19.92it/s]'
+
+    it('still parses the event behind the bar', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(`${bar}[assets-event] seeder.scan_started phase=fast\n`, 'stderr')
+      expect(captured.map((c) => [c.event, c.ctx.phase])).toEqual([
+        ['comfy.desktop.comfyui.assets.seeder.scan_started', 'fast']
+      ])
+    })
+
+    it("still parses it with the bundled build's level prefix after the bar", () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(`${bar}[INFO] [assets-event] seeder.scan_started phase=fast\n`, 'stderr')
+      expect(captured).toHaveLength(1)
+    })
+
+    it('still rejects other text before the tag on an ordinary line', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('prefix [assets-event] seeder.scan_started phase=fast\n', 'stdout')
+      expect(captured).toEqual([])
+    })
+
+    it('ignores a bare progress line', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest(`${bar}\r100%|██████████| 6/6 [00:00<00:00, 19.90it/s]\n`, 'stderr')
+      tap.flushSummary()
+      expect(captured).toEqual([])
+    })
+  })
+
   describe('the shared cross-repo line grammar', () => {
     it('exposes an event allowlist that is exactly the core call-site vocabulary', () => {
       expect([...ALLOWED_EVENTS].sort()).toEqual([...CORE_EVENTS].sort())

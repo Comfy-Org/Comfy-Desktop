@@ -489,7 +489,9 @@ export function createAssetsTap(opts: {
   function handleLine(line: string): void {
     // Strip ANSI then a leading `[LEVEL] ` tag (Desktop's bundled build) so the
     // anchored grammar matches both the prefixed and bare log formats.
-    const match = stripLogLevelPrefix(stripAnsi(line).trim()).match(ASSETS_EVENT_LINE)
+    const text = stripLogLevelPrefix(stripAnsi(line).trim())
+    const afterTqdmBar = line.includes('\r') ? Math.max(text.lastIndexOf('[assets-event] '), 0) : 0
+    const match = text.slice(afterTqdmBar).match(ASSETS_EVENT_LINE)
     if (!match) return
     const [, event, tail] = match
     if (!event || tail === undefined) return
