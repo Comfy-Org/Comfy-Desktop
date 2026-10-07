@@ -102,10 +102,14 @@ async function trustedSessionToken(event: EmbeddedSessionSender): Promise<string
   return getCloudSession().getAccessToken()
 }
 
+/** Bumped per broadcast, so a slower earlier read never overwrites a newer state. */
+let broadcastGeneration = 0
+
 /** Push the current session to every comfyView Desktop would serve. No-op while disabled. */
 export async function broadcastEmbeddedSessionChanged(): Promise<void> {
+  const generation = ++broadcastGeneration
   const state = await sessionState()
-  if (state.status === 'disabled') return
+  if (generation !== broadcastGeneration || state.status === 'disabled') return
   for (const entry of comfyWindows.values()) {
     const contents = entry.comfyView.webContents
     if (contents.isDestroyed() || !servesEntry(entry, contents.getURL())) continue

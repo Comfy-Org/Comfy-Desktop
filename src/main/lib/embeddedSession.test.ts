@@ -164,4 +164,28 @@ describe('embeddedSession', () => {
 
     expect(local.webContents.send).not.toHaveBeenCalled()
   })
+
+  it('drops an older broadcast that finishes after a newer one', async () => {
+    const local = view('http://127.0.0.1:8000')
+    let finishOlder: (token: string | null) => void = () => {}
+    mocks.getAccessToken.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishOlder = resolve
+      })
+    )
+    const newer = jwt({ sub: 'user-1', workspace_id: 'ws-2' })
+    mocks.getAccessToken.mockResolvedValueOnce(newer)
+
+    const older = broadcastEmbeddedSessionChanged()
+    await broadcastEmbeddedSessionChanged()
+    finishOlder(null)
+    await older
+
+    expect(local.webContents.send).toHaveBeenCalledOnce()
+    expect(local.webContents.send).toHaveBeenCalledWith(EMBEDDED_SESSION_CHANNELS.changed, {
+      status: 'signed_in',
+      userId: 'user-1',
+      workspaceId: 'ws-2'
+    })
+  })
 })
