@@ -103,6 +103,19 @@ describe('initCoreBetaFlags', () => {
     for (const call of getOpsFlagResult.mock.calls) expect(call[1]).toBe('machine-hash')
   })
 
+  it('starts the campaigns on first use when beta was turned on after a beta-off boot', async () => {
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW }
+    })
+    serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('hold', AGENT) })
+    await initCoreBetaFlags({ distinctId: 'machine-hash', betaEnabled: false })
+    expect(fetchedKeys()).toEqual(['desktop_core_beta_features'])
+    const { answers } = await getCoreBetaCampaigns()
+    expect(answers.get(KEY)?.grants).toHaveLength(1)
+    for (const call of getOpsFlagResult.mock.calls)
+      expect(call[1], 'the boot id').toBe('machine-hash')
+  })
+
   it('fetches no campaign flag on a beta-off boot', async () => {
     serve({})
     await initCoreBetaFlags({ distinctId: 'id', betaEnabled: false })
@@ -334,6 +347,13 @@ describe('enrolment records', () => {
     expect(Object.keys(records['__proto__']!)).toEqual(['__proto__', '--enable-agent'])
     expect(records['constructor']).toEqual({ '--enable-agent': { epoch: 2, enrolledAt: 2 } })
     expect(records[KEY]).toBeUndefined()
+  })
+
+  it('does not rewrite a record that already exists for the epoch', () => {
+    expect(writeCampaignRecord(KEY, '--enable-agent', 1, NOW)).toBe(true)
+    expect(writeCampaignRecord(KEY, '--enable-agent', 1, NOW + 5)).toBe(false)
+    expect(readCampaignRecords()[KEY]).toEqual({ '--enable-agent': { epoch: 1, enrolledAt: NOW } })
+    expect(writeCampaignRecord(KEY, '--enable-agent', 2, NOW + 6), 'a new epoch writes').toBe(true)
   })
 
   it('round-trips a record and keeps the other campaigns', () => {

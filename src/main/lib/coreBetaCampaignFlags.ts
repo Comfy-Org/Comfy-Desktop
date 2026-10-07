@@ -33,8 +33,11 @@ function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
 
 let registry = makeRegistryFlag()
 let campaigns = new Map<string, OpsFlag<CampaignAnswer | null>>()
+let bootId: string | null = null
+let started = false
 
 export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promise<void> {
+  started = true
   // Whatever its age: an expired registry still names the keys; only fresh answers decide.
   const saved: unknown = readPersistedFile(CAMPAIGN_FLAGS_FILE).entries[CAMPAIGN_REGISTRY_KEY]
   const { value, payload } = (saved ?? {}) as {
@@ -66,6 +69,7 @@ export async function initCoreBetaFlags(opts: {
   betaEnabled: boolean
 }): Promise<void> {
   const distinctId = await opts.distinctId
+  bootId = distinctId
   await Promise.all([
     initCoreBetaGrants({ distinctId }),
     opts.betaEnabled ? initCoreBetaCampaigns({ distinctId }) : undefined
@@ -76,6 +80,8 @@ export async function getCoreBetaCampaigns(): Promise<{
   registry: CampaignRegistryEntry[]
   answers: Map<string, CampaignAnswer>
 }> {
+  // Beta turned on after a beta-off boot: start the campaigns now, under the boot's id.
+  if (!started && bootId !== null) await initCoreBetaCampaigns({ distinctId: bootId })
   const entries = await registry.get()
   const answers = new Map<string, CampaignAnswer>()
   for (const { key } of entries) {
@@ -95,19 +101,24 @@ export function campaignRecordSaved(key: string, arg: string, epoch: number): bo
   return !primaryUnreadable && parseCampaignRecords(entries)[key]?.[arg]?.epoch === epoch
 }
 
-/** Throws when the file cannot be safely rewritten. */
-export function writeCampaignRecord(key: string, arg: string, epoch: number, now: number): void {
+/** Throws when the file cannot be safely rewritten. Returns `false`, writing nothing, when the
+ *  record already exists: a concurrent launch enrolled first, and keeps its `enrolledAt`. */
+export function writeCampaignRecord(key: string, arg: string, epoch: number, now: number): boolean {
   const existing = parseCampaignRecords(readPersistedFile(ENROLMENTS_FILE, true).entries)[key] ?? {}
+  if (existing[arg]?.epoch === epoch) return false
   writePersistedEntry(
     ENROLMENTS_FILE,
     key,
     { ...existing, [arg]: { epoch, enrolledAt: now } },
     true
   )
+  return true
 }
 
 export function _resetForTest(): void {
   for (const flag of [registry, ...campaigns.values()]) flag._resetForTest()
   registry = makeRegistryFlag()
   campaigns = new Map()
+  bootId = null
+  started = false
 }

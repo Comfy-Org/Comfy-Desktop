@@ -254,8 +254,11 @@ export function buildLaunchArgs(input: {
     schema
   })
   for (const line of plan.trace) console.log(line)
-  const campaign: CampaignPlan = input.campaign
-    ? planCampaignArgs({
+  let campaign: CampaignPlan = { applied: [], misses: [], trace: [] }
+  // Its own try: a campaign failure must never cost slot #0's args.
+  try {
+    if (input.campaign)
+      campaign = planCampaignArgs({
         ...input.campaign,
         betaEnabled: input.betaEnabled,
         presentArgs: [...userArgs, ...plan.applied.map((grant) => grant.arg)],
@@ -268,7 +271,9 @@ export function buildLaunchArgs(input: {
         commits: input.coreCommits,
         schema
       })
-    : { applied: [], misses: [], trace: [] }
+  } catch (err) {
+    console.warn('[core-campaign] planning failed; no campaign args this launch:', err)
+  }
   for (const line of campaign.trace) console.log(line)
   const applied = [...plan.applied, ...campaign.applied.map((entry) => entry.grant)]
   return {
@@ -299,7 +304,7 @@ export function recordCampaignEnrolments(
   for (const { key, grant, epoch, enrolledNow, fetchedAt } of campaign.applied) {
     if (!enrolledNow) continue
     try {
-      writeCampaignRecord(key, grant.arg, epoch, now)
+      if (!writeCampaignRecord(key, grant.arg, epoch, now)) continue
     } catch (err) {
       // On a first enrolment the backup lands first, so the record survives a failed primary write.
       if (!campaignRecordSaved(key, grant.arg, epoch)) {

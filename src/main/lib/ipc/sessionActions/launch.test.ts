@@ -96,7 +96,9 @@ vi.mock('../../coreBetaCampaignFlags', () => ({
       throw new Error('ENOSPC')
     }
     if (launchHarness.recordWriteThrows) throw new Error('EIO')
+    if (launchHarness.campaignRecords[key]?.[arg]?.epoch === epoch) return false
     launchHarness.recordWrites.push([key, arg, epoch])
+    return true
   }
 }))
 
@@ -769,6 +771,7 @@ const build = (over: {
   coreVersionCurrent?: boolean
   coreCommits?: CoreCommitState
   betaEnabled?: boolean
+  campaign?: Parameters<typeof buildLaunchArgs>[0]['campaign']
 }): ReturnType<typeof buildLaunchArgs> =>
   buildLaunchArgs({
     prefixArgs: PREFIX,
@@ -781,8 +784,64 @@ const build = (over: {
     coreVersionVerified: over.coreVersionVerified ?? true,
     coreVersionCurrent: over.coreVersionCurrent ?? true,
     coreCommits: over.coreCommits ?? NO_CORE_COMMITS,
-    betaEnabled: over.betaEnabled ?? true
+    betaEnabled: over.betaEnabled ?? true,
+    ...(over.campaign && { campaign: over.campaign })
   })
+
+describe('buildLaunchArgs campaigns', () => {
+  const KEY = 'desktop_core_beta_agent'
+  const schema = schemaOf('enable-assets', 'enable-agent', 'disable-agent')
+  const campaign = (variant = 'enrol', answer?: unknown) => ({
+    registry: [{ key: KEY, args: ['--enable-agent'] }],
+    answers: new Map([
+      [
+        KEY,
+        (answer ??
+          parseCampaignAnswer(
+            variant,
+            {
+              grants: [
+                {
+                  arg: '--enable-agent',
+                  min_core_version: '0.3.60',
+                  requires_args: ['--enable-assets'],
+                  enrolment: { epoch: 1, epochs: [1] }
+                }
+              ]
+            },
+            Date.now()
+          )) as NonNullable<ReturnType<typeof parseCampaignAnswer>>
+      ]
+    ]),
+    records: {},
+    idClass: 'machine_derived' as const,
+    now: Date.now()
+  })
+
+  it("never injects the arg when the user's own args opt out", () => {
+    const built = build({ userArgs: ['--disable-agent'], schema, campaign: campaign() })
+    expect(built.args, 'the user opt-out wins').not.toContain('--enable-agent')
+    expect(built.beta.campaign.misses).toMatchObject([{ reason: 'present' }])
+  })
+
+  it("counts the user's own --enable-assets for requires_args while slot #0 grants nothing", () => {
+    const built = build({
+      userArgs: ['--enable-assets'],
+      betaFlags: [],
+      schema,
+      campaign: campaign()
+    })
+    expect(built.args).toContain('--enable-agent')
+    expect(built.beta.campaign.applied).toMatchObject([{ key: KEY, enrolledNow: true }])
+  })
+
+  it("keeps slot #0's args when campaign planning throws", () => {
+    const broken = { enrol: true, grants: null, payload: null }
+    const built = build({ schema, campaign: campaign('enrol', broken) })
+    expect(built.args, 'slot #0 survives a campaign failure').toContain('--enable-assets')
+    expect(built.beta.campaign).toEqual({ applied: [], misses: [] })
+  })
+})
 
 describe('buildLaunchArgs core beta injection', () => {
   afterEach(() => {
@@ -1422,6 +1481,16 @@ describe('core beta report placement', () => {
         expect(result.misses).toEqual([
           { key: KEY, arg: '--enable-agent', member: false, reason: 'record_failed' }
         ])
+      })
+
+      it('writes and counts nothing when a concurrent launch already recorded it', () => {
+        launchHarness.campaignRecords = { [KEY]: { '--enable-agent': { epoch: 1, enrolledAt: 7 } } }
+        const result = recordCampaignEnrolments({ applied: [enrolment], misses: [] })
+        expect(launchHarness.recordWrites).toEqual([])
+        expect(reportedEvents(), 'one enrolled event per enrolment').not.toContain(
+          'comfy.desktop.core_beta.enrolled'
+        )
+        expect(result).toEqual({ applied: [enrolment], misses: [] })
       })
 
       it('survives a telemetry sink that throws', () => {

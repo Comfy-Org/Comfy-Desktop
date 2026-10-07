@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   prove: vi.fn(),
   exempt: vi.fn(),
   campaigns: { registry: [] as unknown[], answers: new Map<string, unknown>() },
+  idClass: 'machine_derived',
   records: {} as Record<string, unknown>
 }))
 
@@ -25,7 +26,7 @@ vi.mock('./coreBetaCampaignFlags', () => ({
   getCoreBetaCampaigns: async () => h.campaigns,
   readCampaignRecords: () => h.records
 }))
-vi.mock('./deviceId', () => ({ getIdClass: () => 'machine_derived' }))
+vi.mock('./deviceId', () => ({ getIdClass: () => h.idClass }))
 
 vi.mock('./coreBetaGrants', async (importOriginal) => ({
   ...(await importOriginal<typeof CoreBetaGrantsModule>()),
@@ -108,6 +109,7 @@ beforeEach(() => {
   h.exempt.mockReset()
   h.campaigns = { registry: [], answers: new Map() }
   h.records = {}
+  h.idClass = 'machine_derived'
   proven({ [SHA_A]: true, [SHA_B]: false })
 })
 
@@ -148,6 +150,10 @@ describe('previewCoreBetaArgs', () => {
     await expect(preview()).resolves.toEqual([
       { arg: '--enable-assets', name: 'Asset library' },
       { arg: '--enable-agent', name: null }
+    ])
+    h.idClass = 'random_fallback'
+    await expect(preview(), 'a fallback id cannot enrol at launch either').resolves.toEqual([
+      { arg: '--enable-assets', name: 'Asset library' }
     ])
   })
 
