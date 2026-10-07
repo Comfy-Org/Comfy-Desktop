@@ -21,9 +21,10 @@ import type { OpsFlag } from './opsFlag'
 const CAMPAIGN_FLAGS_FILE = 'campaign-flags.json'
 const ENROLMENTS_FILE = 'campaign-enrolments.json'
 
-/** #1649's budget for 898480: wait longer while something is saved, so a cut lands this launch. */
-function deadlineMs(saved: boolean): number {
-  return saved ? 5000 : 3000
+/** #1649's budget for 898480: wait longer while this machine holds something, so a cut lands
+ *  this launch. Holding is a record here, not a saved answer: every machine saves the answer. */
+function deadlineMs(enrolled: boolean): number {
+  return enrolled ? 5000 : 3000
 }
 
 function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
@@ -32,7 +33,7 @@ function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
     fallback: [],
     parse: parseCampaignRegistry,
     logLabel: 'core-campaigns',
-    deadlineMs: (saved) => deadlineMs(Boolean(saved?.length)),
+    deadlineMs: () => deadlineMs(Object.keys(readCampaignRecords()).length > 0),
     persist: true,
     persistFile: CAMPAIGN_FLAGS_FILE
   })
@@ -55,7 +56,7 @@ export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promi
         fallback: null,
         parse: parseCampaignAnswer,
         logLabel: `core-campaign ${key}`,
-        deadlineMs: (answer) => deadlineMs(Boolean(answer?.grants.length)),
+        deadlineMs: () => deadlineMs(readCampaignRecords()[key] !== undefined),
         persist: true,
         persistFile: CAMPAIGN_FLAGS_FILE
       })

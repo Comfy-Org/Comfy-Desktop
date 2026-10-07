@@ -55,6 +55,8 @@ const readJson = (name: string): Record<string, unknown> =>
 function seed(name: string, entries: object): void {
   fs.writeFileSync(file(name), JSON.stringify(entries))
 }
+const deadlines = (): Record<string, unknown> =>
+  Object.fromEntries(getOpsFlagResult.mock.calls.map((call) => [call[0], call[2]]))
 const fetchedKeys = (): string[] => getOpsFlagResult.mock.calls.map((call) => call[0] as string)
 
 function reset(): void {
@@ -115,16 +117,32 @@ describe('initCoreBetaCampaigns', () => {
     expect(fetchedKeys().sort()).toEqual(['desktop_campaigns', KEY].sort())
   })
 
-  it('waits 5 s for a flag with something saved, 3 s otherwise', async () => {
+  it('waits 3 s for every campaign flag on a machine that holds nothing', async () => {
     seed('campaign-flags.json', {
-      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW }
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
+      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW }
     })
     serve({})
     await initCoreBetaCampaigns({ distinctId: 'id' })
-    const deadlines = Object.fromEntries(
-      getOpsFlagResult.mock.calls.map((call) => [call[0], call[2]])
-    )
-    expect(deadlines).toEqual({ desktop_campaigns: 5000, [KEY]: 3000 })
+    expect(deadlines()).toEqual({ desktop_campaigns: 3000, [KEY]: 3000 })
+  })
+
+  it('waits 5 s for the registry and the campaign this machine is enrolled in', async () => {
+    seed('campaign-flags.json', {
+      desktop_campaigns: {
+        value: true,
+        payload: [...REGISTRY, { key: 'desktop_core_beta_other', args: ['--enable-agent'] }],
+        fetchedAt: NOW
+      }
+    })
+    writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
+    serve({})
+    await initCoreBetaCampaigns({ distinctId: 'id' })
+    expect(deadlines()).toEqual({
+      desktop_campaigns: 5000,
+      [KEY]: 5000,
+      desktop_core_beta_other: 3000
+    })
   })
 
   it('discovers a newly listed key one launch late', async () => {
@@ -221,7 +239,7 @@ describe('two cache files', () => {
     ])
   })
 
-  it('a failing campaign write never touches ops-flags.json or its backup', async () => {
+  it('a failing campaign write leaves ops-flags.json to slot #0 alone', async () => {
     seed('ops-flags.json', {
       desktop_core_beta_features: { value: true, payload: ASSETS, fetchedAt: NOW }
     })
@@ -261,6 +279,19 @@ describe('two cache files', () => {
 })
 
 describe('enrolment records', () => {
+  it('treats __proto__ and constructor in the file as plain keys', () => {
+    fs.writeFileSync(
+      file('campaign-enrolments.json'),
+      '{"__proto__":{"__proto__":{"epoch":1,"enrolledAt":1},"--enable-agent":{"epoch":1,"enrolledAt":1}},' +
+        '"constructor":{"--enable-agent":{"epoch":2,"enrolledAt":2}}}'
+    )
+    const records = readCampaignRecords()
+    expect(({} as Record<string, unknown>)['--enable-agent']).toBeUndefined()
+    expect(Object.keys(records['__proto__']!)).toEqual(['__proto__', '--enable-agent'])
+    expect(records['constructor']).toEqual({ '--enable-agent': { epoch: 2, enrolledAt: 2 } })
+    expect(records[KEY]).toBeUndefined()
+  })
+
   it('round-trips a record and keeps the other campaigns', () => {
     writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
     writeCampaignRecord('desktop_core_beta_other', '--enable-agent', 3, NOW + 1)

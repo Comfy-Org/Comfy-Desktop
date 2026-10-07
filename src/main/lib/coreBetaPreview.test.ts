@@ -116,6 +116,50 @@ afterEach(() => {
 })
 
 describe('previewCoreBetaArgs', () => {
+  const CAMPAIGN = 'desktop_core_beta_agent'
+  const serveCampaign = (variant: string): void => {
+    h.campaigns = {
+      registry: [{ key: CAMPAIGN, args: ['--enable-agent'] }],
+      answers: new Map([
+        [
+          CAMPAIGN,
+          parseCampaignAnswer(
+            variant,
+            {
+              grants: [
+                {
+                  arg: '--enable-agent',
+                  min_core_version: '0.3.60',
+                  requires_args: ['--enable-assets'],
+                  enrolment: { epoch: 1, epochs: [1] }
+                }
+              ]
+            },
+            Date.now()
+          )
+        ]
+      ])
+    }
+  }
+
+  it('lists the arg a fresh enrol draw would get at the next launch', async () => {
+    h.grants = [versionGrant]
+    serveCampaign('enrol')
+    await expect(preview()).resolves.toEqual([
+      { arg: '--enable-assets', name: 'Asset library' },
+      { arg: '--enable-agent', name: null }
+    ])
+  })
+
+  it('lists a held campaign arg when slot #0 grants nothing and the user passes assets', async () => {
+    h.grants = []
+    serveCampaign('hold')
+    h.records = { [CAMPAIGN]: { '--enable-agent': { epoch: 1, enrolledAt: 1 } } }
+    await expect(preview(launchCmd('--enable-assets'))).resolves.toEqual([
+      { arg: '--enable-agent', name: null }
+    ])
+  })
+
   it("lists a held campaign arg after slot #0's, and none for a machine that is not enrolled", async () => {
     const key = 'desktop_core_beta_agent'
     h.grants = [versionGrant]

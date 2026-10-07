@@ -14,7 +14,7 @@ import {
 } from './coreBetaGrants'
 import type { CoreCommitState } from './coreBetaGrants'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from './coreBetaInputs'
-import { planCampaignArgs } from './coreBetaCampaigns'
+import { campaignCandidateGrants, planCampaignArgs } from './coreBetaCampaigns'
 import { getCoreBetaCampaigns, readCampaignRecords } from './coreBetaCampaignFlags'
 import { getIdClass } from './deviceId'
 import { peekComfyArgsSchema } from './comfy-args'
@@ -99,9 +99,8 @@ export async function previewCoreBetaArgs(
   if (!split) return []
   if (!peekBetaFeaturesEnabled()) return []
   const [grants, campaigns] = await Promise.all([getCoreBetaGrantsAsync(), getCoreBetaCampaigns()])
-  const campaignGrants = [...campaigns.answers.values()].flatMap((answer) =>
-    answer.grants.map((candidate) => candidate.grant)
-  )
+  const records = campaigns.answers.size > 0 ? readCampaignRecords() : {}
+  const campaignGrants = campaignCandidateGrants(campaigns.registry, campaigns.answers, records)
   if (grants.length === 0 && campaignGrants.length === 0) return []
   // A launch without a schema injects no managed args; the args field fills this cache.
   const schema = peekComfyArgsSchema(
@@ -128,7 +127,7 @@ export async function previewCoreBetaArgs(
   // What the next launch would apply, enrolments included; only a launch writes a record.
   const campaign = planCampaignArgs({
     ...campaigns,
-    records: campaigns.answers.size > 0 ? readCampaignRecords() : {},
+    records,
     idClass: getIdClass(),
     now: Date.now(),
     betaEnabled: true,
