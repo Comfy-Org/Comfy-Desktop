@@ -150,13 +150,16 @@ boot = open('/proc/sys/kernel/random/boot_id').read().strip()
 stat = open('/proc/self/stat').read()
 ticks = stat[stat.rindex(')') + 2:].split()[19]
 record = {'version': 1, 'pid': os.getpid(), 'started': boot + ':' + ticks,
-          'main': os.path.abspath(sys.argv[0]), 'argv': sys.argv, 'port': 8188, 'listen': '127.0.0.1'}
+          'db': os.path.abspath(lock[:-len('.lock')]),
+          'main': os.path.abspath(sys.argv[0]), 'argv': sys.argv}
 tmp = lock + '.json.' + str(os.getpid()) + '.tmp'
 with open(tmp, 'w') as f:
     json.dump(record, f)
 os.replace(tmp, lock + '.json')
 child = subprocess.Popen(['sleep', '60']).pid if sys.argv[2:] == ['child'] else 0
 print(os.getpid(), child, flush=True)
+if sys.argv[2:] == ['exit']:
+    sys.exit(0)
 time.sleep(60)
 `
 
@@ -169,13 +172,13 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
     const spawned: ReturnType<typeof spawn>[] = []
     /** Run the holder from `script` (inside the install unless told otherwise). */
     const hold = async (
-      opts: { outside?: boolean; child?: boolean; parent?: 'sh' } = {}
+      opts: { outside?: boolean; child?: boolean; exit?: boolean; parent?: 'sh' } = {}
     ): Promise<{ pid: number; child: number }> => {
       const dir = opts.outside ? path.join(root, 'elsewhere') : path.join(install, 'ComfyUI')
       const script = path.join(dir, 'main.py')
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(script, RECORDING_HOLDER)
-      const args = [script, `${db}.lock`, ...(opts.child ? ['child'] : [])]
+      const args = [script, `${db}.lock`, ...(opts.child ? ['child'] : opts.exit ? ['exit'] : [])]
       // With `sh` as the parent, it execs into sleep, which never reaps the holder it started.
       const h =
         opts.parent === 'sh'
@@ -190,7 +193,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       return { pid: pid!, child: child! }
     }
     const find = (): ReturnType<typeof findDbLockOffer> =>
-      findDbLockOffer({ installationId: 'inst-1', installPath: install, dbPaths: [db] })
+      findDbLockOffer({ installationId: 'inst-1', installPath: install, dbPath: db })
     const gone = async (pid: number): Promise<boolean> => {
       for (let i = 0; i < 100 && isPidAlive(pid); i++) await new Promise((r) => setTimeout(r, 50))
       return !isPidAlive(pid)
@@ -223,11 +226,12 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
         sameInstall: true
       })
       expect(await stopDbLockOffer(offer!)).toBe(true)
-      expect(await gone(pid)).toBe(true)
+      // The stop waited for it: gone (not even a zombie) the moment it answers.
+      expect((await readStartTimes([pid]))?.has(pid)).toBe(false)
       // Still running, not a zombie (which `isPidAlive` would also count).
       expect((await readStartTimes([child]))?.has(child)).toBe(true)
       process.kill(child, 'SIGKILL')
-    })
+    }, 20_000)
 
     it("names a ComfyUI of another install by its main.py, as not this install's", async () => {
       const { pid } = await hold({ outside: true })
@@ -236,7 +240,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
         process: path.join(root, 'elsewhere', 'main.py'),
         sameInstall: false
       })
-    })
+    }, 20_000)
 
     it('ignores a record whose process is gone or whose pid now names another process', async () => {
       const { pid } = await hold()
@@ -253,7 +257,33 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(await find()).toBeNull()
       fs.writeFileSync(`${db}.lock.json`, '{not json')
       expect(await readHolderRecord(db)).toBeNull()
-    })
+    }, 20_000)
+
+    it('offers nothing while a holder keeps the lock with no record, or a stale one: no OS lookup', async () => {
+      const { pid } = await hold()
+      fs.rmSync(`${db}.lock.json`)
+      // A fallback to lsof would name it: it holds the lock right now.
+      expect(await find()).toBeNull()
+      fs.writeFileSync(`${db}.lock.json`, JSON.stringify({ pid, started: 'x:1', db, main: 'm' }))
+      expect(await find()).toBeNull()
+      expect(isPidAlive(pid)).toBe(true)
+    }, 20_000)
+
+    it('ignores the record of a holder that exited cleanly (ComfyUI never removes it)', async () => {
+      const { pid } = await hold({ exit: true })
+      expect(await gone(pid)).toBe(true)
+      expect(fs.existsSync(`${db}.lock.json`)).toBe(true)
+      expect(await find()).toBeNull()
+    }, 20_000)
+
+    it('ignores a live record copied beside another database (an install copied while running)', async () => {
+      const { pid } = await hold()
+      const copy = path.join(root, 'copy', 'ComfyUI', 'user', 'comfyui.db')
+      fs.mkdirSync(path.dirname(copy), { recursive: true })
+      fs.copyFileSync(`${db}.lock.json`, `${copy}.lock.json`)
+      expect(await readHolderRecord(copy)).toBeNull()
+      expect(await readHolderRecord(db)).toMatchObject({ pid })
+    }, 20_000)
 
     it('stops nothing once another ComfyUI took the lock, or after a cancel', async () => {
       const first = await hold()
@@ -268,7 +298,7 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(await stopDbLockOffer(offer)).toBe(false)
       expect(await stopDbLockOffer({ ...offer, pid: second.pid })).toBe(false)
       expect(isPidAlive(second.pid)).toBe(true)
-    })
+    }, 20_000)
 
     it('counts a holder its parent never reaps (a zombie) as stopped', async () => {
       const { pid } = await hold({ parent: 'sh' })

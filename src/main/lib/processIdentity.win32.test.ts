@@ -109,12 +109,18 @@ describe('holderStartToken on Windows', () => {
 })
 
 describe('killPid on Windows', () => {
-  it("kills the one pid (no /T), and never Desktop's own pid or the System process", async () => {
-    for (const pid of [process.pid, 4, 0, -1]) expect(await killPid(pid)).toBe(false)
-    expect(fake.calls.filter((c) => c.cmd === 'taskkill')).toEqual([])
+  it('kills the one pid, not its tree (no /T)', async () => {
     fake.answers.taskkill = { stdout: '' }
     // Gone at once: nothing runs at this pid.
     expect(await killPid(2_147_480_000)).toBe(true)
     expect(fake.calls.find((c) => c.cmd === 'taskkill')!.args).toEqual(['/F', '/PID', '2147480000'])
   })
+
+  it('says a process that would not exit did not', async () => {
+    fake.answers.taskkill = { stdout: '' }
+    // Still in the process table: not a zombie either.
+    fake.answers.powershell = { stdout: `${process.ppid} 1 134358000923463901\r\n` }
+    // taskkill is faked, so this (live) parent never exits.
+    expect(await killPid(process.ppid)).toBe(false)
+  }, 20_000)
 })

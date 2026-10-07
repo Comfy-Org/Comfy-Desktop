@@ -16,7 +16,13 @@ const fake = vi.hoisted(() => ({
   /** What the stop did, in order: the safety check, then the proof (start-time read). */
   steps: [] as string[],
   dead: new Set<number>(),
-  records: [] as Array<{ installationId: string; childPid: number; desktopPid: number }>
+  safe: true,
+  records: [] as Array<{
+    installationId: string
+    childPid: number
+    desktopPid: number
+    installPath: string
+  }>
 }))
 vi.mock('./process', async (importOriginal) => ({
   ...(await importOriginal<typeof ProcessModule>()),
@@ -26,7 +32,7 @@ vi.mock('./process', async (importOriginal) => ({
   },
   isSafeToSignal: async () => {
     fake.steps.push('safety')
-    return true
+    return fake.safe
   }
 }))
 vi.mock('./comfyProcessRecord', async (importOriginal) => ({
@@ -56,13 +62,14 @@ const record = (main = `${INSTALL}\\ComfyUI\\main.py`): Record<string, unknown> 
   version: 1,
   pid: 9084,
   started: STARTED,
+  db,
   main,
   argv: [main, '--enable-assets'],
   port: 8188,
   listen: '127.0.0.1'
 })
 const find = (): ReturnType<typeof findDbLockOffer> =>
-  findDbLockOffer({ installationId: 'inst-1', installPath: INSTALL, dbPaths: [db] })
+  findDbLockOffer({ installationId: 'inst-1', installPath: INSTALL, dbPath: db })
 
 beforeAll(() => {
   Object.defineProperty(process, 'platform', { value: 'win32' })
@@ -79,6 +86,7 @@ beforeEach(() => {
   fake.kills = []
   fake.killOk = true
   fake.steps = []
+  fake.safe = true
   fake.dead = new Set()
   fake.records = []
 })
@@ -116,58 +124,62 @@ describe('findDbLockOffer on Windows', () => {
 
   it('offers nothing for a ComfyUI this Desktop is running, but does for an orphan', async () => {
     write(record())
-    fake.records = [{ installationId: 'inst-1', childPid: 7000, desktopPid: process.pid }]
+    fake.records = [
+      { installationId: 'inst-1', childPid: 7000, desktopPid: process.pid, installPath: INSTALL }
+    ]
     expect(await find()).toBeNull()
     // A crashed Desktop's record, and one whose child is gone, hide nothing.
     fake.records = [
-      { installationId: 'inst-1', childPid: 7000, desktopPid: 999_999 },
-      { installationId: 'inst-1', childPid: 7001, desktopPid: process.pid }
+      { installationId: 'inst-1', childPid: 7000, desktopPid: 999_999, installPath: INSTALL },
+      { installationId: 'inst-1', childPid: 7001, desktopPid: process.pid, installPath: INSTALL }
     ]
     fake.dead.add(7001)
     expect(await find()).toMatchObject({ pid: 9084 })
   })
 })
 
-describe('findDbLockOffer across candidate databases', () => {
-  const other = (): string => path.join(dir, 'other.db')
-  beforeEach(() => fs.rmSync(`${other()}.lock.json`, { force: true }))
-
-  it('offers the one live record among the candidates, wherever it is', async () => {
-    write(record())
-    expect(
-      await findDbLockOffer({
-        installationId: 'inst-1',
-        installPath: INSTALL,
-        dbPaths: [other(), db]
-      })
-    ).toMatchObject({ pid: 9084, dbPath: db })
-  })
-
-  it('offers nothing when two candidates have live records: which one this launch locked is unknown', async () => {
-    write(record())
-    fs.writeFileSync(`${other()}.lock.json`, JSON.stringify({ ...record(), pid: 4242 }))
-    fake.starts.set(4242, STARTED)
-    expect(
-      await findDbLockOffer({
-        installationId: 'inst-1',
-        installPath: INSTALL,
-        dbPaths: [db, other()]
-      })
-    ).toBeNull()
-  })
-
-  it('reads a record that is not an object as none', async () => {
-    fs.writeFileSync(`${db}.lock.json`, 'null')
+describe('findDbLockOffer: a record is about its own database', () => {
+  it('ignores a live record about another database (copied along with an install)', async () => {
+    write({ ...record(), db: 'C:\\c\\source\\ComfyUI\\user\\comfyui.db' })
     expect(await find()).toBeNull()
+    write({ ...record(), db: undefined })
+    expect(await find()).toBeNull()
+  })
+
+  it('matches its database case-blind and either slash, as Windows paths are', async () => {
+    write({ ...record(), db: db.toUpperCase().replace(/\//g, '\\') })
+    expect(await find()).toMatchObject({ pid: 9084 })
   })
 
   it("is not hidden by this Desktop's session of another install; is by a venv-launched one of this install", async () => {
     write(record())
-    fake.records = [{ installationId: 'inst-2', childPid: 7000, desktopPid: process.pid }]
+    fake.records = [
+      {
+        installationId: 'inst-2',
+        childPid: 7000,
+        desktopPid: process.pid,
+        installPath: 'C:\\c\\other'
+      }
+    ]
     expect(await find()).toMatchObject({ pid: 9084 })
     // This install's session: its child is the venv launcher (7001), the record names the
     // interpreter that launcher runs (9084). Still Desktop's own: no offer.
-    fake.records = [{ installationId: 'inst-1', childPid: 7001, desktopPid: process.pid }]
+    fake.records = [
+      { installationId: 'inst-1', childPid: 7001, desktopPid: process.pid, installPath: INSTALL }
+    ]
+    expect(await find()).toBeNull()
+  })
+
+  it('offers nothing for a ComfyUI this Desktop runs as another install sharing the database', async () => {
+    write(record('C:\\c\\two\\ComfyUI\\main.py'))
+    fake.records = [
+      {
+        installationId: 'inst-2',
+        childPid: 7000,
+        desktopPid: process.pid,
+        installPath: 'C:\\c\\two'
+      }
+    ]
     expect(await find()).toBeNull()
   })
 })
@@ -198,6 +210,13 @@ describe('stopDbLockOffer on Windows', () => {
     write({ ...record(), started: '134358999999999999' })
     expect(await stopDbLockOffer(offer)).toBe(false)
     fs.rmSync(`${db}.lock.json`)
+    expect(await stopDbLockOffer(offer)).toBe(false)
+    expect(fake.kills).toEqual([])
+  })
+
+  it("stops nothing the safety check refuses (Desktop's own pid, the System process)", async () => {
+    write(record())
+    fake.safe = false
     expect(await stopDbLockOffer(offer)).toBe(false)
     expect(fake.kills).toEqual([])
   })

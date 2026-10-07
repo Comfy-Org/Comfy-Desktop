@@ -82,13 +82,28 @@ interface HolderRecord {
   pid: number
   /** Its start token, in the form `holderStartToken` reads. */
   started: string
+  /** The database it locked (absolute). */
+  db: string
   /** The `main.py` it runs. */
   main: string
 }
 
+/** A path as compared here: forward slashes, and case-blind where the file system is. */
+function samePath(a: string, b: string): boolean {
+  const norm = (p: string): string => {
+    const slashed = p.replace(/\\/g, '/')
+    return process.platform === 'win32' || process.platform === 'darwin'
+      ? slashed.toLowerCase()
+      : slashed
+  }
+  return norm(a) === norm(b)
+}
+
 /**
- * The ComfyUI a database's lock record names, if it is still that process: same pid, same start
- * time. A record left by one that crashed (or whose pid is reused) is ignored.
+ * The ComfyUI a database's lock record names, if it is still that process holding that database:
+ * the record must be about this database (a record copied along with an install is not), and its
+ * pid must still have the recorded start time (one that exited, crashed, or whose pid was reused
+ * is not).
  */
 export async function readHolderRecord(dbPath: string): Promise<HolderRecord | null> {
   let record: Partial<HolderRecord> | null
@@ -98,41 +113,38 @@ export async function readHolderRecord(dbPath: string): Promise<HolderRecord | n
     return null
   }
   if (typeof record !== 'object' || record === null) return null
-  const { pid, started, main } = record
+  const { pid, started, db, main } = record
   if (!Number.isInteger(pid) || typeof started !== 'string' || typeof main !== 'string') return null
+  if (typeof db !== 'string' || !samePath(db, dbPath)) return null
   return (await holderStartToken(pid!).catch(() => null)) === started
     ? (record as HolderRecord)
     : null
 }
 
 /**
- * The ComfyUI holding one of `dbPaths`, from its own record, to offer the user a stop for. The
- * paths are candidates, so a record counts only when it is the one live record among them: with
- * two, which database this launch locked is unknown. Never one this Desktop is running in another
- * session. Null without exactly one live record: nothing is offered.
+ * The ComfyUI holding `dbPath` (this launch's database), from its own record, to offer the user a
+ * stop for. Never one this Desktop is running, as this install or another sharing the database:
+ * Desktop stops those itself. Null without a live record: nothing is offered.
  */
 export async function findDbLockOffer(input: {
   installationId: string
   installPath: string
-  dbPaths: readonly string[]
+  dbPath: string
 }): Promise<DbLockOffer | null> {
+  const record = await readHolderRecord(input.dbPath)
+  if (!record) return null
   const running = listRecords().some(
     (r) =>
-      r.installationId === input.installationId &&
       r.desktopPid === process.pid &&
-      isPidAlive(r.childPid)
+      isPidAlive(r.childPid) &&
+      (r.installationId === input.installationId ||
+        commandLineIsInstall(['python', record.main], r.installPath))
   )
   if (running) return null
-  const live = []
-  for (const dbPath of input.dbPaths) {
-    const record = await readHolderRecord(dbPath)
-    if (record) live.push({ dbPath, record })
-  }
-  if (live.length !== 1) return null
-  const [{ dbPath, record }] = live as [(typeof live)[0]]
   const sameInstall = commandLineIsInstall(['python', record.main], input.installPath)
   const shown = sameInstall ? 'ComfyUI' : record.main
-  return { pid: record.pid, startTime: record.started, dbPath, process: shown, sameInstall }
+  const { pid, started: startTime } = record
+  return { pid, startTime, dbPath: input.dbPath, process: shown, sameInstall }
 }
 
 /**

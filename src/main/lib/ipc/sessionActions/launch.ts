@@ -1500,13 +1500,15 @@ async function runLaunch(
     return { ok: true, mode }
   }
 
-  // This launch's candidate databases, and the answer when a ComfyUI's record says it holds one.
-  const dbPaths = databaseCandidates(launchCmd.cwd!, launchCmd.args!)
+  // This launch's database (where a ComfyUI that writes holder records keeps it; older ones,
+  // which write none, may use the legacy path), and the answer when its record names a holder.
+  const dbPath = databaseCandidates(launchCmd.cwd!, launchCmd.args!)[0]
   const dbLockHolderAnswer = async (): Promise<ActionResult | null> => {
+    if (!dbPath) return null
     const holder = await findDbLockOffer({
       installationId,
       installPath: inst.installPath,
-      dbPaths
+      dbPath
     }).catch(() => null)
     if (!holder) return null
     const key = holder.sameInstall ? 'errors.comfyDbLockedSameInstall' : 'errors.comfyDbLockedBy'
@@ -1519,8 +1521,13 @@ async function runLaunch(
   // before the kill. A cancel withdraws the go-ahead.
   const lockOffer = asDbLockOffer(actionData?.stopDbLockHolder)
   if (lockOffer) {
-    const ours = dbPaths.includes(lockOffer.dbPath)
-    if (ours) appendLog(sessionId, `[launch] stopping pid ${lockOffer.pid}, which holds the lock\n`)
+    const ours = lockOffer.dbPath === dbPath
+    appendLog(
+      sessionId,
+      ours
+        ? `[launch] stopping pid ${lockOffer.pid}, which holds the database lock\n`
+        : `[launch] not stopping pid ${lockOffer.pid}: its database is no longer this launch's\n`
+    )
     const stopped = ours && (await stopDbLockOffer(lockOffer, abort.signal))
     if (abort.signal.aborted) return { ok: false, cancelled: true }
     if (!stopped) {
@@ -1654,6 +1661,19 @@ async function runLaunch(
       // that lock, so the database is what blocks this launch, and that is what is offered.
       const blocked = await dbLockHolderAnswer()
       if (blocked) {
+        const holder = blocked.dbLockHolder!
+        // Reported as the listener check below would, unless the record check already did.
+        if (holder.sameInstall && prior?.action !== 'left')
+          emitPriorProcessFound(installationId, {
+            action: 'left',
+            proof: 'none',
+            pid: holder.pid,
+            port: launchCmd.port!,
+            ageMs: null,
+            waitMs: 0,
+            exitedInTime: false,
+            blocked: null
+          })
         if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
         return blocked
       }

@@ -2801,14 +2801,29 @@ describe('prior ComfyUI process handling at launch', () => {
         expect(res.portConflict).toBeUndefined()
         expect(children).toHaveLength(0)
         expect(lockRecord.asked).toEqual([
-          {
-            installationId: 'db-record-port',
-            installPath: installDir,
-            dbPaths: expect.arrayContaining([ourDb()])
-          }
+          { installationId: 'db-record-port', installPath: installDir, dbPath: ourDb() }
         ])
       }
     )
+
+    it('lets the record answer before the same-install listener check, and still reports it', async () => {
+      launchHarness.busyPorts = [PORT]
+      ownership.holderIsInstall = true
+      lockRecord.offer = offer(ourDb())
+
+      const res = await handleLaunch(ctxFor('db-record-port-same'))
+
+      expect(res).toMatchObject({ message: 'errors.comfyDbLockedSameInstall' })
+      expect(res.dbLockHolder).toEqual(offer(ourDb()))
+      expect(res.portConflict).toBeUndefined()
+      expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([
+        expect.objectContaining({
+          action: 'left',
+          proof: 'none',
+          installation_id: 'db-record-port-same'
+        })
+      ])
+    })
   })
 })
 

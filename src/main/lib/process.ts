@@ -224,10 +224,10 @@ async function killWindowsTreeVerified(
 }
 
 /** Kill `pid` alone (not its tree or group) and wait for it to be gone. For a caller that has
- *  just re-proven whose pid it is and had the user confirm that process. A zombie its parent has
- *  not reaped yet has exited (and released its files), so it counts as gone. */
+ *  checked `isSafeToSignal`, just re-proven whose pid it is, and had the user confirm that
+ *  process. A zombie its parent has not reaped yet has exited (and released its files), so it
+ *  counts as gone. */
 export async function killPid(pid: number): Promise<boolean> {
-  if (!(await isSafeToSignal(pid))) return false
   if (process.platform === 'win32') {
     await new Promise<void>((resolve) => {
       execFile('taskkill', ['/F', '/PID', String(pid)], { windowsHide: true }, () => resolve())
