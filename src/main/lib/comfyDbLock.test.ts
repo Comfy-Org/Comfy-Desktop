@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const dirs = vi.hoisted(() => ({ state: '' }))
 vi.mock('./paths', () => ({ stateDir: () => dirs.state }))
+// The real OS lookup, watched: the record path must never consult it.
+vi.mock('./file-lock-info', async (importOriginal) => {
+  const real = await importOriginal<typeof FileLockInfo>()
+  return { ...real, findLockingProcesses: vi.fn(real.findLockingProcesses) }
+})
 
 import {
   databaseCandidates,
@@ -17,6 +22,8 @@ import {
   stopDbLockOffer
 } from './comfyDbLock'
 import { isPidAlive, readStartTimes } from './processIdentity'
+import { findLockingProcesses } from './file-lock-info'
+import type * as FileLockInfo from './file-lock-info'
 import type { DbLockOffer } from '../../types/ipc'
 
 describe('isDbLockFailure', () => {
@@ -318,12 +325,14 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
 
     it('offers nothing while a holder keeps the lock with no record, or a stale one: no OS lookup', async () => {
       const { pid } = await hold()
+      vi.mocked(findLockingProcesses).mockClear()
       fs.rmSync(`${db}.lock.json`)
       // A fallback to lsof would name it: it holds the lock right now.
       expect(await find()).toBeNull()
       fs.writeFileSync(`${db}.lock.json`, JSON.stringify({ pid, started: 'x:1', db, main: 'm' }))
       expect(await find()).toBeNull()
       expect(isPidAlive(pid)).toBe(true)
+      expect(findLockingProcesses).not.toHaveBeenCalled()
     }, 20_000)
 
     it('ignores the record of a holder that exited cleanly (ComfyUI never removes it)', async () => {

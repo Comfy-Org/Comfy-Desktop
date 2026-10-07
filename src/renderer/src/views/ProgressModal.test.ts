@@ -560,6 +560,22 @@ describe('ProgressModal — brand branch state transitions', () => {
       expect(api.runAction).not.toHaveBeenCalled()
     })
 
+    it('acts on nothing once another install is displayed', async () => {
+      const api = installMockApi()
+      let answer!: (v: boolean) => void
+      mockModal.confirm.mockReturnValueOnce(new Promise((r) => (answer = r)))
+      const { wrapper, body } = await mountWithOp('inst-1', locked(true))
+
+      expect(await stop(body)).toBe(true)
+      // The failure stays as it was; the modal now shows another install.
+      snapOp('inst-2', locked(true))
+      await wrapper.setProps({ installationId: 'inst-2' })
+      answer(true)
+      await flushPromises()
+
+      expect(api.runAction).not.toHaveBeenCalled()
+    })
+
     it('offers no stop for a lock failure without a record', async () => {
       installMockApi()
       await mountWithOp('inst-1', { ...locked(true), result: { ok: false, message: 'locked' } })

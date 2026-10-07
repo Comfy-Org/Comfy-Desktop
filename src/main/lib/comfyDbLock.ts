@@ -92,7 +92,8 @@ interface HolderRecord {
 /**
  * Whether two paths name the same file: compared where they lead (the real path sees through
  * symlinks, junctions and 8.3 names, and spells case as the volume stores it), never folding case.
- * A file not created yet is compared by where its folder leads.
+ * A file not created yet is compared by where its folder leads; a path whose folder cannot be
+ * resolved names nothing.
  */
 function samePath(a: string, b: string): boolean {
   const real = (p: string): string => fs.realpathSync.native(p)
@@ -100,14 +101,14 @@ function samePath(a: string, b: string): boolean {
     try {
       return real(p)
     } catch {
-      try {
-        return path.join(real(path.dirname(p)), path.basename(p))
-      } catch {
-        return path.resolve(p)
-      }
+      return path.join(real(path.dirname(p)), path.basename(p))
     }
   }
-  return canonical(a) === canonical(b)
+  try {
+    return canonical(a) === canonical(b)
+  } catch {
+    return false
+  }
 }
 
 /**

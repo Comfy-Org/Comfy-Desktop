@@ -181,6 +181,9 @@ const lockRecord = vi.hoisted(() => ({
     aborted: boolean | undefined
   }>,
   stopOk: true,
+  /** Whether the stop killed it even though the cancel fired meanwhile (null: it refused). */
+  stoppedDespiteCancel: null as null | boolean,
+  lookupThrows: false,
   duringStop: null as null | (() => void),
   duringLookup: null as null | (() => void),
   children: { count: 0 }
@@ -190,6 +193,7 @@ vi.mock('../../comfyDbLock', async (importOriginal) => ({
   findDbLockOffer: async (input: unknown) => {
     lockRecord.asked.push(input)
     lockRecord.duringLookup?.()
+    if (lockRecord.lookupThrows) throw new Error('lookup failed')
     return lockRecord.offer
   },
   stopDbLockOffer: async (offer: unknown, dbPath: string, signal?: AbortSignal) => {
@@ -200,6 +204,8 @@ vi.mock('../../comfyDbLock', async (importOriginal) => ({
       spawned: lockRecord.children.count,
       aborted: signal?.aborted
     })
+    if (signal?.aborted && lockRecord.stoppedDespiteCancel !== null)
+      return lockRecord.stoppedDespiteCancel
     return lockRecord.stopOk && !signal?.aborted
   }
 }))
@@ -269,6 +275,7 @@ import {
 } from '../../betaActivationNotice'
 import * as settingsModule from '../../../settings'
 import { previewCoreBetaArgs } from '../../coreBetaPreview'
+import { getLogsBuffer } from '../../logsBroadcast'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import type { createExecutionTap } from '../../executionTap'
@@ -2735,6 +2742,42 @@ describe('prior ComfyUI process handling at launch', () => {
       lockRecord.stopOk = true
       lockRecord.duringStop = null
       lockRecord.duringLookup = null
+      lockRecord.stoppedDespiteCancel = null
+      lockRecord.lookupThrows = false
+      launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
+    })
+
+    it('logs a stop that happened though the user cancelled while it ran, and launches nothing', async () => {
+      lockRecord.stoppedDespiteCancel = true
+      lockRecord.duringStop = () => _operationAborts.get('db-record-late-cancel')?.abort()
+      const res = await handleLaunch(ctxFor('db-record-late-cancel', { stopDbLockHolder: offer() }))
+      expect(res).toMatchObject({ ok: false, cancelled: true })
+      expect(getLogsBuffer('db-record-late-cancel').join('')).toContain('stopped pid 9084')
+      expect(children).toHaveLength(0)
+    })
+
+    it('shows the plain error when the record lookup itself fails', async () => {
+      lockRecord.lookupThrows = true
+      launchHarness.waitForPort = lockedBoot
+      const res = await handleLaunch(ctxFor('db-record-lookup-throws'))
+      expect(res.message).toBe('errors.comfyDbLocked')
+      expect(res.dbLockHolder).toBeUndefined()
+    })
+
+    it('has nothing to look up or stop without a database file', async () => {
+      // A launch arg the schema knows, so launch keeps it.
+      launchHarness.schemaNames = [...launchHarness.schemaNames, 'database-url']
+      setArgs('--enable-assets', '--database-url', 'sqlite:///:memory:')
+      launchHarness.waitForPort = lockedBoot
+      const res = await handleLaunch(ctxFor('db-record-no-file'))
+      expect(res.message).toBe('errors.comfyDbLocked')
+      expect(lockRecord.asked).toEqual([])
+      lockRecord.stopOk = true
+      const stop = await handleLaunch(
+        ctxFor('db-record-no-file-stop', { stopDbLockHolder: offer() })
+      )
+      expect(stop.ok).toBe(false)
+      expect(lockRecord.stops).toEqual([])
     })
 
     it.each([

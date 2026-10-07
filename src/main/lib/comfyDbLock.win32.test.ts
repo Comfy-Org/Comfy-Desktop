@@ -119,6 +119,10 @@ describe('findDbLockOffer on Windows', () => {
     expect(await find()).toBeNull()
     write({ ...record(), started: undefined })
     expect(await find()).toBeNull()
+    // A record that is live but does not say which main.py it runs.
+    fake.starts = new Map([[9084, STARTED]])
+    write({ ...record(), main: undefined })
+    expect(await find()).toBeNull()
   })
 
   it('offers nothing for a ComfyUI this Desktop is running, but does for an orphan', async () => {
