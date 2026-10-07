@@ -559,7 +559,7 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       expect((await runComfyUIUpdate(opts())).ok).toBe(true)
       expect(spawnState.uvCalls.filter((a) => a.includes('install'))).toEqual([])
 
-      expect((await runComfyUIUpdate(opts({ repair: true }))).ok).toBe(true)
+      expect((await runComfyUIUpdate(opts({ resyncAllDeps: true }))).ok).toBe(true)
       expect(installed().some((a) => a.endsWith('.comfyui-reqs-filtered.txt'))).toBe(true)
       expect(installed().some((a) => a.endsWith('.manager-reqs-filtered.txt'))).toBe(true)
     })

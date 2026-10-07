@@ -1248,7 +1248,7 @@ async function handleUpdateComfyUI(
     dryRunConflictCheck: true,
     saveRollback: true,
     preUpdateSnapshot: true,
-    repair
+    resyncAllDeps: repair
   })
 
   if (!result.ok) {

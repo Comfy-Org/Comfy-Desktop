@@ -90,7 +90,7 @@ describe('standalone handleAction(repair-comfyui)', () => {
   it('runs the update pinned to the installed tag as a repair, and reports a clean tree as repaired', async () => {
     vi.mocked(hasTrackedChanges).mockResolvedValue(false)
     expect((await run('repair-comfyui')).ok).toBe(true)
-    expect(lastRunOptions()).toMatchObject({ targetTag: 'v0.39.1', repair: true })
+    expect(lastRunOptions()).toMatchObject({ targetTag: 'v0.39.1', resyncAllDeps: true })
     expect(revParseRef).toHaveBeenCalledWith(comfyuiDir(), 'v0.39.1^{commit}')
     expect(readGitHead).toHaveBeenCalledWith(comfyuiDir())
     expect(hasTrackedChanges).toHaveBeenCalledWith(comfyuiDir())
@@ -152,7 +152,7 @@ describe('standalone handleAction(repair-comfyui)', () => {
 
   it('leaves a normal update as it was: no repair, no tree check', async () => {
     expect((await run('update-comfyui')).ok).toBe(true)
-    expect(lastRunOptions()).toMatchObject({ repair: false })
+    expect(lastRunOptions()).toMatchObject({ resyncAllDeps: false })
     expect(revParseRef).not.toHaveBeenCalled()
     expect(hasTrackedChanges).not.toHaveBeenCalled()
   })
