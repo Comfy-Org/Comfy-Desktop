@@ -259,7 +259,7 @@ const DISABLE_PREFIX = '--disable-'
  *  the `--enable-`/`--disable-` prefix pair rather than a hardcoded table, so a new allowlist
  *  entry gets its conflict rule for free. Swapping only the prefix keeps the stem exact, so
  *  `--enable-assets` pairs with `--disable-assets` and never with `--disable-asset-hashing`. */
-function oppositeArg(arg: string): string | null {
+export function oppositeArg(arg: string): string | null {
   if (arg.startsWith(ENABLE_PREFIX)) return DISABLE_PREFIX + arg.slice(ENABLE_PREFIX.length)
   if (arg.startsWith(DISABLE_PREFIX)) return ENABLE_PREFIX + arg.slice(DISABLE_PREFIX.length)
   return null
@@ -560,11 +560,14 @@ export function toBetaArgView(grant: CoreBetaGrant): BetaArgView {
 // outruns the boot deadline used to lose the revocation on every launch and hold the grant
 // forever. It now persists the late `false` and picks it up on the next launch, so expect a
 // retraction to take one extra restart rather than never arriving.
+//
+// The deadline is longer while a grant is saved, so a cut usually lands on the launch it is made.
 const flag = makeOpsFlag<CoreBetaGrant[]>({
   key: CORE_BETA_FEATURES_FLAG_KEY,
   fallback: [],
   parse: parseCoreBetaGrants,
   logLabel: 'core-beta',
+  deadlineMs: (saved) => (saved?.length ? 5000 : 3000),
   persist: true
 })
 

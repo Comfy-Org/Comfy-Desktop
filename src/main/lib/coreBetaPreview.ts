@@ -14,6 +14,9 @@ import {
 } from './coreBetaGrants'
 import type { CoreCommitState } from './coreBetaGrants'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from './coreBetaInputs'
+import { campaignCandidateGrants, planCampaignArgs } from './coreBetaCampaigns'
+import { getCoreBetaCampaigns, readCampaignRecords } from './coreBetaCampaignFlags'
+import { getIdClass } from './deviceId'
 import { peekComfyArgsSchema } from './comfy-args'
 import { withoutPygit2Breaker } from './git'
 import { peekBetaFeaturesEnabled } from '../settings'
@@ -95,8 +98,10 @@ export async function previewCoreBetaArgs(
   const split = splitLaunchCommand(launchCmd)
   if (!split) return []
   if (!peekBetaFeaturesEnabled()) return []
-  const grants = await getCoreBetaGrantsAsync()
-  if (grants.length === 0) return []
+  const [grants, campaigns] = await Promise.all([getCoreBetaGrantsAsync(), getCoreBetaCampaigns()])
+  const records = campaigns.answers.size > 0 ? readCampaignRecords() : {}
+  const campaignGrants = campaignCandidateGrants(campaigns.registry, campaigns.answers, records)
+  if (grants.length === 0 && campaignGrants.length === 0) return []
   // A launch without a schema injects no managed args; the args field fills this cache.
   const schema = peekComfyArgsSchema(
     split.mainPyAbs,
@@ -108,17 +113,30 @@ export async function previewCoreBetaArgs(
   const commits = await previewCommits(
     split.comfyuiDir,
     checkout,
-    commitGrantShas(grants, split.userArgs)
+    commitGrantShas([...grants, ...campaignGrants], split.userArgs)
   )
+  const core = coreVersionState(inst, checkout)
   const plan = planCoreBetaArgs({
     grants,
     betaEnabled: true,
     userArgs: split.userArgs,
-    core: coreVersionState(inst, checkout),
+    core,
     commits,
     schema
   })
-  return plan.applied.map(toBetaArgView)
+  // What the next launch would apply, enrolments included; only a launch writes a record.
+  const campaign = planCampaignArgs({
+    ...campaigns,
+    records,
+    idClass: getIdClass(),
+    now: Date.now(),
+    betaEnabled: true,
+    presentArgs: [...split.userArgs, ...plan.applied.map((grant) => grant.arg)],
+    core,
+    commits,
+    schema
+  })
+  return [...plan.applied, ...campaign.applied.map((entry) => entry.grant)].map(toBetaArgView)
 }
 
 /** The beta-args pill's answer: the running session's grants, else the next-launch preview.
