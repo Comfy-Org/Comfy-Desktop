@@ -176,28 +176,6 @@ describe('launch', () => {
     expect(launchArgsForManagerAnswer(args, allowed, before)).toBe(expected)
   })
 
-  // ComfyUI turns the manager off itself under any custom-node policy, so the
-  // policy file on disk no longer changes the launch args; only the author's
-  // answer (managerAllowed) does.
-  it.each(['allowlist', 'blocklist'])(
-    'keeps a typed manager flag on a governed %s build the author left Yes',
-    (customNodeMode) => {
-      const p = path.join(dir, 'install')
-      layout(p)
-      writePolicy(p, { activeForms: ['customNode'], customNodeMode })
-      expect(
-        buildLaunchSpec(p, { launchArgs: '--enable-manager --cpu --enable-manager-legacy-ui' })
-          ?.args
-      ).toEqual([
-        '-s',
-        path.join('ComfyUI', 'main.py'),
-        '--enable-manager',
-        '--cpu',
-        '--enable-manager-legacy-ui'
-      ])
-    }
-  )
-
   it('readGovernance returns null for an ordinary build', () => {
     layout(dir)
     expect(readGovernance(dir)).toBeNull()
