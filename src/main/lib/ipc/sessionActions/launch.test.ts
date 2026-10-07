@@ -2808,6 +2808,7 @@ describe('prior ComfyUI process handling at launch', () => {
 
     it('lets the record answer before the same-install listener check, and still reports it', async () => {
       launchHarness.busyPorts = [PORT]
+      launchHarness.busyPids = [9084]
       ownership.holderIsInstall = true
       lockRecord.offer = offer(ourDb())
 
@@ -2824,6 +2825,23 @@ describe('prior ComfyUI process handling at launch', () => {
         })
       ])
     })
+
+    it.each([
+      ['it does not listen on the port', true, [31337]],
+      ["it is another install's", false, [9084]]
+    ] as const)(
+      'does not report the record holder as the port holder when %s',
+      async (_why, same, pids) => {
+        launchHarness.busyPorts = [PORT]
+        launchHarness.busyPids = [...pids]
+        lockRecord.offer = offer(ourDb(), same)
+
+        const res = await handleLaunch(ctxFor('db-record-port-quiet'))
+
+        expect(res.dbLockHolder).toEqual(offer(ourDb(), same))
+        expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([])
+      }
+    )
   })
 })
 

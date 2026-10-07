@@ -52,6 +52,13 @@ describe('databaseCandidates', () => {
     ])
   })
 
+  it('takes the last of a repeated flag, as ComfyUI does', () => {
+    const a = path.resolve('/a/comfyui.db')
+    const b = path.resolve('/b/comfyui.db')
+    const args = ['-s', main, '--database-url', `sqlite:///${a}`, `--database-url=sqlite:///${b}`]
+    expect(databaseCandidates(cwd, args)).toEqual([b])
+  })
+
   it('uses a pinned sqlite --database-url and ignores non-file databases', () => {
     const db = path.resolve('/legacy/user/comfyui.db')
     expect(databaseCandidates(cwd, ['-s', main, `--database-url=sqlite:///${db}`])).toEqual([db])
@@ -150,7 +157,7 @@ boot = open('/proc/sys/kernel/random/boot_id').read().strip()
 stat = open('/proc/self/stat').read()
 ticks = stat[stat.rindex(')') + 2:].split()[19]
 record = {'version': 1, 'pid': os.getpid(), 'started': boot + ':' + ticks,
-          'db': os.path.abspath(lock[:-len('.lock')]),
+          'db': os.path.realpath(lock[:-len('.lock')]),
           'main': os.path.abspath(sys.argv[0]), 'argv': sys.argv}
 tmp = lock + '.json.' + str(os.getpid()) + '.tmp'
 with open(tmp, 'w') as f:
@@ -223,10 +230,11 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
         startTime: expect.stringMatching(/^[0-9a-f-]+:\d+$/),
         dbPath: db,
         process: 'ComfyUI',
-        sameInstall: true
+        sameInstall: true,
+        installationId: 'inst-1'
       })
       expect(await stopDbLockOffer(offer!)).toBe(true)
-      // The stop waited for it: gone (not even a zombie) the moment it answers.
+      // The stop waited for it: no longer running the moment it answers.
       expect((await readStartTimes([pid]))?.has(pid)).toBe(false)
       // Still running, not a zombie (which `isPidAlive` would also count).
       expect((await readStartTimes([child]))?.has(child)).toBe(true)
@@ -257,6 +265,47 @@ describe.runIf(process.platform === 'linux' && hasTool('python3', '--version'))(
       expect(await find()).toBeNull()
       fs.writeFileSync(`${db}.lock.json`, '{not json')
       expect(await readHolderRecord(db)).toBeNull()
+    }, 20_000)
+
+    it('matches its database through a symlinked install, as ComfyUI resolves it', async () => {
+      // ComfyUI records the resolved path; Desktop reaches the install through the link.
+      const link = path.join(root, 'linked')
+      fs.symlinkSync(install, link)
+      const { pid } = await hold()
+      fs.writeFileSync(db, '')
+      const viaLink = path.join(link, 'ComfyUI', 'user', 'comfyui.db')
+      expect(await readHolderRecord(viaLink)).toMatchObject({ pid })
+    }, 20_000)
+
+    it('tells apart databases whose paths differ only by case on a case-sensitive file system', async () => {
+      const { pid } = await hold()
+      fs.writeFileSync(db, '')
+      const other = path.join(root, 'INSTALL', 'ComfyUI', 'user', 'comfyui.db')
+      fs.mkdirSync(path.dirname(other), { recursive: true })
+      fs.writeFileSync(other, '')
+      fs.copyFileSync(`${db}.lock.json`, `${other}.lock.json`)
+      expect(await readHolderRecord(other)).toBeNull()
+      expect(await readHolderRecord(db)).toMatchObject({ pid })
+    }, 20_000)
+
+    it('tells them apart too before either database file exists (compared by path, not case-folded)', async () => {
+      const { pid } = await hold()
+      const other = path.join(root, 'INSTALL', 'ComfyUI', 'user', 'comfyui.db')
+      fs.mkdirSync(path.dirname(other), { recursive: true })
+      fs.copyFileSync(`${db}.lock.json`, `${other}.lock.json`)
+      expect(await readHolderRecord(other)).toBeNull()
+      expect(await readHolderRecord(db)).toMatchObject({ pid })
+    }, 20_000)
+
+    it('reads a record it may not open (another account, mode 0600) as none', async () => {
+      await hold()
+      fs.chmodSync(`${db}.lock.json`, 0o000)
+      try {
+        // Root reads anything: only meaningful as an ordinary user.
+        if (process.getuid?.() !== 0) expect(await readHolderRecord(db)).toBeNull()
+      } finally {
+        fs.chmodSync(`${db}.lock.json`, 0o600)
+      }
     }, 20_000)
 
     it('offers nothing while a holder keeps the lock with no record, or a stale one: no OS lookup', async () => {

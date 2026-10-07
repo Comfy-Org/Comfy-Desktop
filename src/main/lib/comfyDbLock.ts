@@ -28,8 +28,9 @@ export function isDbLockFailure(stderr: string | undefined): boolean {
   return !!stderr && DB_LOCK_LINES.some((re) => re.test(stderr))
 }
 
+/** The flag's value as ComfyUI's argparse takes it: the last occurrence wins. */
 function argValue(args: readonly string[], flag: string): string | null {
-  for (let i = 0; i < args.length; i++) {
+  for (let i = args.length - 1; i >= 0; i--) {
     const a = args[i]!
     if (a === flag) return args[i + 1] ?? null
     if (a.startsWith(`${flag}=`)) return a.slice(flag.length + 1)
@@ -88,15 +89,26 @@ interface HolderRecord {
   main: string
 }
 
-/** A path as compared here: forward slashes, and case-blind where the file system is. */
+/**
+ * Whether two paths name the same file, as the file system says: by identity (device and inode),
+ * which sees through symlinks, junctions, 8.3 names and the volume's own case rules. Before the
+ * file exists (or where there is no inode), by canonical path, never folding case.
+ */
 function samePath(a: string, b: string): boolean {
-  const norm = (p: string): string => {
-    const slashed = p.replace(/\\/g, '/')
-    return process.platform === 'win32' || process.platform === 'darwin'
-      ? slashed.toLowerCase()
-      : slashed
+  try {
+    const [x, y] = [fs.statSync(a, { bigint: true }), fs.statSync(b, { bigint: true })]
+    if (x.ino !== 0n && y.ino !== 0n) return x.dev === y.dev && x.ino === y.ino
+  } catch {
+    // Not there yet: compare where the paths lead.
   }
-  return norm(a) === norm(b)
+  const canonical = (p: string): string => {
+    try {
+      return fs.realpathSync.native(p)
+    } catch {
+      return path.resolve(p)
+    }
+  }
+  return canonical(a) === canonical(b)
 }
 
 /**
@@ -144,7 +156,8 @@ export async function findDbLockOffer(input: {
   const sameInstall = commandLineIsInstall(['python', record.main], input.installPath)
   const shown = sameInstall ? 'ComfyUI' : record.main
   const { pid, started: startTime } = record
-  return { pid, startTime, dbPath: input.dbPath, process: shown, sameInstall }
+  const { installationId, dbPath } = input
+  return { pid, startTime, dbPath, process: shown, sameInstall, installationId }
 }
 
 /**

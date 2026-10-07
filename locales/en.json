@@ -1408,7 +1408,7 @@
     "priorProcessBusyConfirmMessage": "This stops the earlier ComfyUI and cancels the prompts it is working on.",
     "priorProcessStuck": "An earlier ComfyUI for this installation (PID {pid}) did not exit after being stopped. Launching now would fail because it still holds the installation's database. Try again in a moment, or end the process manually.",
     "comfyDbLocked": "Another ComfyUI is using this installation's database, so this one could not start. Close the other ComfyUI, or the app that started it, and try again. If you want both to run at the same time, give one of them its own database location with the --database-url startup argument.",
-    "comfyDbLockedSameInstall": "A ComfyUI of this installation that is still running from earlier ({process}, PID {pid}) is using its database, so this one could not start. Stop it and try again.",
+    "comfyDbLockedSameInstall": "A ComfyUI of this installation that is still running from earlier (PID {pid}) is using its database, so this one could not start. Stop it and try again.",
     "comfyDbLockedBy": "Another ComfyUI ({process}, PID {pid}) is using this installation's database, so this one could not start.",
     "dbLockStopConfirmMessage": "This will forcefully stop {process} (PID {pid}). Any unsaved work in that ComfyUI will be lost.",
     "dbLockStopConfirmUnproven": "This will forcefully stop the ComfyUI running {process} (PID {pid}), which is not this installation's. Any unsaved work in it will be lost.",

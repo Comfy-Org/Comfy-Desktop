@@ -99,7 +99,8 @@ describe('findDbLockOffer on Windows', () => {
       startTime: STARTED,
       dbPath: db,
       process: 'ComfyUI',
-      sameInstall: true
+      sameInstall: true,
+      installationId: 'inst-1'
     })
   })
 
@@ -146,11 +147,6 @@ describe('findDbLockOffer: a record is about its own database', () => {
     expect(await find()).toBeNull()
   })
 
-  it('matches its database case-blind and either slash, as Windows paths are', async () => {
-    write({ ...record(), db: db.toUpperCase().replace(/\//g, '\\') })
-    expect(await find()).toMatchObject({ pid: 9084 })
-  })
-
   it("is not hidden by this Desktop's session of another install; is by a venv-launched one of this install", async () => {
     write(record())
     fake.records = [
@@ -188,7 +184,14 @@ describe('stopDbLockOffer on Windows', () => {
   // Built per test: `db` exists only once beforeAll has run.
   let offer: DbLockOffer
   beforeEach(() => {
-    offer = { pid: 9084, startTime: STARTED, dbPath: db, process: 'ComfyUI', sameInstall: true }
+    offer = {
+      pid: 9084,
+      startTime: STARTED,
+      dbPath: db,
+      process: 'ComfyUI',
+      sameInstall: true,
+      installationId: 'inst-1'
+    }
   })
 
   it('stops the confirmed ComfyUI once its record still names it, pid and start time', async () => {

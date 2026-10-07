@@ -1663,7 +1663,7 @@ async function runLaunch(
       if (blocked) {
         const holder = blocked.dbLockHolder!
         // Reported as the listener check below would, unless the record check already did.
-        if (holder.sameInstall && prior?.action !== 'left')
+        if (holder.sameInstall && existingPids.includes(holder.pid) && prior?.action !== 'left')
           emitPriorProcessFound(installationId, {
             action: 'left',
             proof: 'none',
