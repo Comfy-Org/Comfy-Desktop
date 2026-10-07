@@ -698,13 +698,11 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
   })
 
   it('leaves settings.changed to main, so an edit is not counted twice', async () => {
-    const { composable, scope } = await mountWithField('a', 'window')
+    const { composable, api, scope } = await mountWithField('a', 'window')
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(vi.mocked(api.updateInstallation)).toHaveBeenCalled()
-    expect(vi.mocked(emitTelemetryAction)).not.toHaveBeenCalledWith(
-      'comfy.desktop.settings.changed',
-      expect.anything()
-    )
+    const events = vi.mocked(emitTelemetryAction).mock.calls.map(([name]) => name)
+    expect(events).not.toContain('comfy.desktop.settings.changed')
     scope.stop()
   })
 
