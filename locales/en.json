@@ -1088,7 +1088,7 @@
     "repairFilesTitle": "Repair ComfyUI files?",
     "repairFilesMessage": "Restores the files that ship with the installed ComfyUI version and re-checks its dependencies. Use this if ComfyUI fails to start after an update. It first tries to save your own changes to ComfyUI files on a backup branch.",
     "repairingFiles": "Repairing ComfyUI files…",
-    "repairNotOnTag": "ComfyUI is no longer on the version this repair was offered for. Reopen this page and try again.",
+    "repairNotOnTag": "ComfyUI is no longer on the version this repair was offered for. Click Check for updates, then try again.",
     "repairIncomplete": "Some ComfyUI files still differ from the installed version. Run Repair again; if it keeps failing, close anything using the ComfyUI folder first.",
     "updateConfirmMessage": "Update from {installed} to {latest}?",
     "updateConfirmMessageLatest": "Update {installed} to the latest master commit ({latest})?",
