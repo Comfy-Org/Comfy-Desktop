@@ -1726,6 +1726,25 @@ describe('core beta report placement', () => {
     }
   })
 
+  it("reports the agent tap's dropped-event count when the launched core exits", async () => {
+    vi.spyOn(telemetry, 'getConsentState').mockReturnValue('granted')
+    const child = fakeChild()
+    launchHarness.spawn = () => child
+
+    const res = await handleLaunch(ctxFor('harness-agent-summary'))
+    expect(res.ok).toBe(true)
+    child.stdout.emit('data', Buffer.from('[agent-event] mystery_event\n'))
+    child.emit('close', 0, null)
+
+    await vi.waitFor(() =>
+      expect(
+        events
+          .filter((e) => e.event === 'comfy.desktop.comfyui.agent.unknown_events_dropped')
+          .map((e) => e.properties?.count)
+      ).toEqual([1])
+    )
+  })
+
   it("drops a killed attempt's unterminated agent line before a port-conflict retry", async () => {
     const children: FakeChild[] = []
     let attempt = 0

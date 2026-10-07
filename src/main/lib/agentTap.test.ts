@@ -73,6 +73,7 @@ describe('agentTap', () => {
     vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
       captured.push({ event, ctx: ctx as Record<string, unknown> })
     })
+    vi.spyOn(telemetry, 'getConsentState').mockReturnValue('granted')
   })
 
   afterEach(() => {
@@ -143,7 +144,8 @@ describe('agentTap', () => {
       '1.2.0-rc.1+build.5',
       '22.11',
       '1.2.3rc1',
-      'v23.0.0-nightly20240814a4b1ad2b68'
+      'v23.0.0-nightly20240814a4b1ad2b68',
+      `1.0.0-${'a'.repeat(40)}`
     ])('accepts the version string %s', (version) => {
       ingestLine(`[agent-event] node_found node_version=${version}`)
       expect(captured[0]?.ctx['node_version']).toBe(version)
@@ -196,6 +198,11 @@ describe('agentTap', () => {
     it('strips the bundled build\u2019s [INFO] prefix and ANSI colour', () => {
       ingestLine('\u001b[32m[INFO] [agent-event] node_fetched duration_ms=40\u001b[0m')
       expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.comfyui.agent.node_fetched'])
+    })
+
+    it('ignores whitespace around the record', () => {
+      ingestLine('  [agent-event] node_fetched duration_ms=40  ')
+      expect(captured.map((c) => c.ctx['duration_ms'])).toEqual([40])
     })
 
     it('defaults the optional base context fields', () => {
@@ -333,6 +340,32 @@ describe('agentTap', () => {
     })
   })
 
+  describe('rate window', () => {
+    it('keeps the cap until a full hour has passed', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(0)
+      const tap = createAgentTap(baseOpts)
+      tap.ingest('[agent-event] health_check_failed\n'.repeat(60), 'stdout')
+      vi.setSystemTime(60 * 60_000 - 1)
+      tap.ingest('[agent-event] health_check_failed\n', 'stdout')
+      expect(captured).toHaveLength(60)
+    })
+
+    it('caps the dropped-event summary too, carrying the count to the next window', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(0)
+      const tap = createAgentTap(baseOpts)
+      for (let i = 0; i < 61; i++) {
+        tap.ingest('[agent-event] mystery\n', 'stdout')
+        tap.flushSummary()
+      }
+      expect(captured).toHaveLength(60)
+      vi.setSystemTime(60 * 60_000)
+      tap.flushSummary()
+      expect(captured.map((c) => c.ctx['count'])).toEqual([...Array(60).fill(1), 1])
+    })
+  })
+
   describe('rate cap buckets', () => {
     it('caps each event separately, and keeps the cap across beginBoot', () => {
       vi.useFakeTimers()
@@ -450,6 +483,16 @@ describe('agentTap consent gating', () => {
     telemetry.bindAnonymousId('anon-1', 'anon-1', {})
     const tap = createAgentTap({ installationId: 'inst-1' })
     tap.ingest('[agent-event] agent_started\n[agent-event] mystery\n', 'stdout')
+    tap.flushSummary()
+    expect(agentCaptures()).toEqual([])
+  })
+
+  it('never ships a dropped-event count from a period without consent after a later grant', () => {
+    telemetry.setConsentState('denied')
+    telemetry.bindAnonymousId('anon-1', 'anon-1', {})
+    const tap = createAgentTap({ installationId: 'inst-1' })
+    tap.ingest('[agent-event] mystery\n', 'stdout')
+    telemetry.setConsentState('granted')
     tap.flushSummary()
     expect(agentCaptures()).toEqual([])
   })

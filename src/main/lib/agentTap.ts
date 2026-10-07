@@ -3,11 +3,14 @@
  * lines as `comfy.desktop.comfyui.agent.<event>` through the consent-gated
  * `telemetry.emit`, like the assets tap does for `[assets-event]`.
  *
- * Core's output is UNTRUSTED INPUT. No field accepts free text: every string
- * is a closed-set member or a version number, so a path, prompt or model
- * output has nowhere to ride. Unknown fields are omitted for version skew;
- * invalid values and malformed or spoofing keys drop the whole line silently,
- * since reporting the rejection would forward the untrusted content.
+ * Core's output is UNTRUSTED INPUT. Every string field is a closed-set member
+ * or a version number with no path separators, spaces or `:`, so a path,
+ * prompt or model output can't ride along by accident. Like the assets tap,
+ * this catches accidental leakage, not deliberately encoded text (a version
+ * suffix is up to 40 letters, digits, dots and dashes). Unknown fields are
+ * omitted for version skew; invalid values and malformed or spoofing keys drop
+ * the whole line silently, since reporting the rejection would forward the
+ * untrusted content.
  */
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
@@ -188,8 +191,9 @@ export function createAgentTap(opts: {
   function handleLine(line: string): void {
     const parsed = parseLine(line)
     if (parsed === UNKNOWN_EVENT) {
-      // Counted, never named: the name is untrusted input.
-      unknownEventsDropped++
+      // Counted, never named: the name is untrusted input. Only with consent, so
+      // a later grant can't ship a count from a period the user declined.
+      if (telemetry.getConsentState() === 'granted') unknownEventsDropped++
       return
     }
     if (!parsed || !withinRateCap(parsed.event)) return
