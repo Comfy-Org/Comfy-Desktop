@@ -90,6 +90,13 @@ describe('agentTap', () => {
       expect([...ALLOWED_EVENTS].sort()).toEqual([...AGENT_EVENTS].sort())
     })
 
+    it('names no field that telemetry sets on every event itself', () => {
+      // A forwarded field wins the merge over telemetry's own defaults.
+      for (const name of ALLOWED_FIELD_NAMES) {
+        expect(telemetry.DEFAULT_EVENT_PROPERTY_NAMES.has(name)).toBe(false)
+      }
+    })
+
     it('exposes exactly the agent field allowlist', () => {
       expect([...ALLOWED_FIELD_NAMES].sort()).toEqual(
         ['agent_version', 'code', 'duration_ms', 'node_version', 'reason'].sort()
@@ -228,7 +235,13 @@ describe('agentTap', () => {
       tap.flushSummary()
       expect(captured).toHaveLength(1)
       expect(captured[0]?.event).toBe('comfy.desktop.comfyui.agent.unknown_events_dropped')
-      expect(captured[0]?.ctx['count']).toBe(2)
+      expect(captured[0]?.ctx).toEqual({
+        count: 2,
+        installation_id: 'inst-1',
+        variant: 'desktop',
+        release: '1.0.47-rc.1',
+        core_beta_flags: ['--enable-agent']
+      })
       expect(JSON.stringify(captured[0]?.ctx)).not.toContain('prompt_submitted')
       tap.flushSummary()
       expect(captured).toHaveLength(1)
