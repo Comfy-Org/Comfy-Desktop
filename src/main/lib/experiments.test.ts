@@ -28,6 +28,8 @@ const captured: CapturedCall[] = []
 
 let mockFlags: Record<string, string | boolean> = {}
 let mockFlagsDelayMs = 0
+/** When set, the flag fetch settles only once this resolves. */
+let mockFlagsGate: Promise<void> | null = null
 /** Distinct ids the flag fetch was made with. */
 const flagRequestIds: string[] = []
 
@@ -52,6 +54,7 @@ vi.mock('posthog-node', () => ({
     }
     getAllFlags(distinctId: string, _opts: unknown): Promise<Record<string, string | boolean>> {
       flagRequestIds.push(distinctId)
+      if (mockFlagsGate) return mockFlagsGate.then(() => ({ ...mockFlags }))
       if (mockFlagsDelayMs > 0) {
         return new Promise((resolve) =>
           setTimeout(() => resolve({ ...mockFlags }), mockFlagsDelayMs)
@@ -74,6 +77,7 @@ describe('experiments', () => {
     captured.length = 0
     mockFlags = {}
     mockFlagsDelayMs = 0
+    mockFlagsGate = null
     flagRequestIds.length = 0
     process.env['POSTHOG_API_KEY'] = 'test-key'
     process.env['POSTHOG_ENABLED'] = '1'
@@ -115,6 +119,18 @@ describe('experiments', () => {
       await refresh
     })
 
+    it('serves the cache without fetching when given no identity', async () => {
+      fs.writeFileSync(
+        path.join(testUserData, 'experiment-flags.json'),
+        JSON.stringify({ 'flag.a': 'treatment' })
+      )
+      mockFlags = { 'flag.a': 'variant' }
+      await experiments.initExperiments(null)
+      expect(experiments.getFlag('flag.a')).toBe('treatment')
+      expect(await experiments.getFlagAsync('flag.a')).toBe('treatment')
+      expect(flagRequestIds).toEqual([])
+    })
+
     it('loads the cache at once and fetches with the id once it resolves', async () => {
       fs.writeFileSync(
         path.join(testUserData, 'experiment-flags.json'),
@@ -148,7 +164,10 @@ describe('experiments', () => {
 
     it('makes an uncached key wait for the identity and the fetch', async () => {
       mockFlags = { 'flag.c': 'variant' }
-      mockFlagsDelayMs = 50
+      let releaseFetch: () => void = () => {}
+      mockFlagsGate = new Promise<void>((r) => {
+        releaseFetch = r
+      })
       let resolveIdentity: (identity: ExperimentsModule.ExperimentsIdentity) => void = () => {}
       void experiments.initExperiments(
         new Promise((r) => {
@@ -165,7 +184,9 @@ describe('experiments', () => {
       resolveIdentity({ distinctId: 'final-id', personProperties: {} })
       // The identity alone is not enough: the read also waits for the fetch.
       await new Promise((r) => setImmediate(r))
+      expect(flagRequestIds).toContain('final-id')
       expect(value).toBe('pending')
+      releaseFetch()
       await read
       expect(value).toBe('variant')
     })

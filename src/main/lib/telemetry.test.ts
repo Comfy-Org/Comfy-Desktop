@@ -1820,6 +1820,19 @@ describe('telemetry.bindAnonymousId without an installation id yet', () => {
     expect(ev?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
   })
 
+  it('defers emit() renderer forwarding with the held write until it ships', () => {
+    const { wc, sends } = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(wc)
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.emit('comfy.desktop.execution.error', { variant: 'standalone' })
+    expect(sends).toHaveLength(0)
+
+    telemetry.setInstallationId('install-id')
+
+    expect(captured.map((call) => call.event)).toContain('comfy.desktop.execution.error')
+    expect(sends).toHaveLength(1)
+  })
+
   it('stamps session.started with the boot time, ahead of the held captures', () => {
     vi.useFakeTimers({ now: new Date('2026-10-04T12:00:00Z') })
     telemetry.bindAnonymousId('anon-d', null)

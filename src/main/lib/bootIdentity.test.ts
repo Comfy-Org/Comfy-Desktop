@@ -134,7 +134,7 @@ describe('startBootIdentity', () => {
     expect(staff).toBeLessThan(h.initCoreBetaGrants.mock.invocationCallOrder[0]!)
   })
 
-  it('persists nothing while the lookup is pending, and quitting then leaves no trace', async () => {
+  it('persists nothing and fires no first_launch while the lookup is pending', async () => {
     lookupHangs = true
     void mod.startBootIdentity(OPTIONS)
     await vi.advanceTimersByTimeAsync(CUTOFF_MS - 1)
