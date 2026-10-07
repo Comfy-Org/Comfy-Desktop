@@ -208,6 +208,35 @@ describe('agentTap', () => {
       expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.comfyui.agent.node_fetched'])
     })
 
+    it('forwards a record logged while a tqdm bar is mid-line on stderr', () => {
+      const tap = createAgentTap(baseOpts)
+      tap.ingest('\r 50%|#####| 3/6 [00:01<00:01,  2.95it/s]', 'stderr')
+      tap.ingest('[INFO] [agent-event] agent_started duration_ms=5\n', 'stderr')
+      expect(
+        captured.map((c) => [c.event, c.ctx['duration_ms']]),
+        'a progress bar must not hide the record behind it'
+      ).toEqual([['comfy.desktop.comfyui.agent.agent_started', 5]])
+    })
+
+    it('forwards the complete record after a cut-off one on the same line', () => {
+      ingestLine('[agent-event] agent_exi[INFO] [agent-event] agent_started duration_ms=5')
+      expect(
+        captured.map((c) => c.event),
+        'only the last tag starts a whole record'
+      ).toEqual(['comfy.desktop.comfyui.agent.agent_started'])
+    })
+
+    it('forwards a record redrawn after a carriage return', () => {
+      ingestLine('tqdm 50%|#####|\r[agent-event] agent_exited code=108')
+      expect(captured.map((c) => c.ctx['code'])).toEqual([108])
+    })
+
+    it("never forwards a record inside the agent's relayed output", () => {
+      ingestLine('[INFO] [comfy-agent] {"msg":"x"} [agent-event] agent_started duration_ms=5')
+      ingestLine('[comfy-agent] [INFO] [agent-event] agent_exited code=1')
+      expect(captured, "core's relay prefix must keep the agent from forging a record").toEqual([])
+    })
+
     it('ignores whitespace around the record', () => {
       ingestLine('  [agent-event] node_fetched duration_ms=40  ')
       expect(captured.map((c) => c.ctx['duration_ms'])).toEqual([40])
@@ -257,7 +286,7 @@ describe('agentTap', () => {
       const tap = createAgentTap(baseOpts)
       tap.ingest('[assets-event] assets.enabled hashing_enabled=true\n', 'stdout')
       tap.ingest('agent: loaded /home/user/models/secret.safetensors\n', 'stdout')
-      tap.ingest('prefix [agent-event] agent_started\n', 'stdout')
+      tap.ingest('[comfy-agent] [agent-event] agent_started\n', 'stdout')
       tap.flushSummary()
       expect(captured).toEqual([])
     })
@@ -502,13 +531,16 @@ describe('agentTap consent gating', () => {
     expect(agentCaptures()).toEqual([])
   })
 
-  it('never ships a dropped-event count from a period without consent after a later grant', () => {
-    telemetry.setConsentState('denied')
-    telemetry.bindAnonymousId('anon-1', 'anon-1', {})
-    const tap = createAgentTap({ installationId: 'inst-1' })
-    tap.ingest('[agent-event] mystery\n', 'stdout')
-    telemetry.setConsentState('granted')
-    tap.flushSummary()
-    expect(agentCaptures()).toEqual([])
-  })
+  it.each(['denied', 'undecided'] as const)(
+    'never ships a dropped-event count gathered while consent was %s after a later grant',
+    (before) => {
+      telemetry.setConsentState(before)
+      telemetry.bindAnonymousId('anon-1', 'anon-1', {})
+      const tap = createAgentTap({ installationId: 'inst-1' })
+      tap.ingest('[agent-event] mystery\n', 'stdout')
+      telemetry.setConsentState('granted')
+      tap.flushSummary()
+      expect(agentCaptures()).toEqual([])
+    }
+  )
 })

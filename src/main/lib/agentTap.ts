@@ -1,7 +1,7 @@
 // Core's output is untrusted: this catches accidental leakage, not deliberately encoded text.
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
-import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
+import { createStreamLineBuffer, stripAnsi } from './stderrTail'
 
 // Contract with core's emitter: the grammar and vocabulary change on both sides or not at all.
 export const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
@@ -101,8 +101,16 @@ export interface AgentEvent {
 
 const UNKNOWN_EVENT = Symbol('unknown event')
 
+const RECORD_TAG = '[agent-event] '
+// Core relays the agent's own output behind this tag so it can never pass as a record.
+const AGENT_OUTPUT_TAG = '[comfy-agent] '
+
 function parseLine(line: string): AgentEvent | typeof UNKNOWN_EVENT | null {
-  const match = stripLogLevelPrefix(stripAnsi(line).trim()).match(AGENT_EVENT_LINE)
+  const text = stripAnsi(line)
+  // Not anchored: a tqdm bar redraws as `\r<bar>` with no newline, so a record can land behind it.
+  const at = text.lastIndexOf(RECORD_TAG)
+  if (at === -1 || text.lastIndexOf(AGENT_OUTPUT_TAG, at) !== -1) return null
+  const match = text.slice(at).trim().match(AGENT_EVENT_LINE)
   if (!match) return null
   const [, event, tail] = match
   if (!event || tail === undefined) return null
