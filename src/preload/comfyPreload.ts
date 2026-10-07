@@ -310,6 +310,7 @@ const Auth: ComfyDesktop2AuthBridge = {
   getState: () => ipcRenderer.invoke('desktop2-auth:get-state'),
   getAccessToken: () => ipcRenderer.invoke('desktop2-auth:get-access-token'),
   requestSignIn: () => ipcRenderer.invoke('desktop2-auth:request-sign-in'),
+  signOut: () => ipcRenderer.invoke('desktop2-auth:sign-out'),
   onChanged: (callback) => {
     const handler = (_event: IpcRendererEvent, state: ComfyDesktop2AuthState) => callback(state)
     ipcRenderer.on('desktop2-auth:changed', handler)

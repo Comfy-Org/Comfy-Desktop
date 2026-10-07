@@ -21,6 +21,7 @@ export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
   getAccessToken: 'desktop2-auth:get-access-token',
   requestSignIn: 'desktop2-auth:request-sign-in',
+  signOut: 'desktop2-auth:sign-out',
   changed: 'desktop2-auth:changed'
 } as const
 

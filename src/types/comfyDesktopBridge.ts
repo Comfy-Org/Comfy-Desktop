@@ -130,6 +130,9 @@ export interface ComfyDesktop2AuthBridge {
   getAccessToken(): Promise<string | null>
   /** Runs Desktop's browser sign-in and resolves with the resulting state. */
   requestSignIn(): Promise<ComfyDesktop2AuthState>
+  /** Signs Desktop out of its account (every view follows) and resolves with
+   *  the resulting state; Desktop may keep the session if an install needs it. */
+  signOut(): Promise<ComfyDesktop2AuthState>
   /** Fires when Desktop signs in, signs out or switches workspace. */
   onChanged(callback: (state: ComfyDesktop2AuthState) => void): () => void
 }

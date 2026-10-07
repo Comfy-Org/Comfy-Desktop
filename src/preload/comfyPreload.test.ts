@@ -390,11 +390,13 @@ describe('comfyPreload auth bridge', () => {
     await Auth.getState()
     await Auth.getAccessToken()
     await Auth.requestSignIn()
+    await Auth.signOut()
 
     expect(mocks.invoke.mock.calls).toEqual([
       ['desktop2-auth:get-state'],
       ['desktop2-auth:get-access-token'],
-      ['desktop2-auth:request-sign-in']
+      ['desktop2-auth:request-sign-in'],
+      ['desktop2-auth:sign-out']
     ])
   })
 
