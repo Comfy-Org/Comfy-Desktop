@@ -2238,6 +2238,17 @@ describe('Performance Test guardrail', () => {
     await expectRefused(refusalOne(perfLabel('Other Install')))
   })
 
+  it('lists Performance Tests after the installations, so the list cannot read as one test of all', async () => {
+    runSession('performance-test:guard-other', 'Other Install')
+    runSession('guard-gone', 'Gone Install')
+    await expectRefused(
+      `errors.performanceTestOtherInstanceRunning ${JSON.stringify({
+        names: `“Gone Install” and ${perfLabel('Other Install')}`
+      })}`,
+      2
+    )
+  })
+
   it('counts an installation of an unknown source as local', async () => {
     runSession('guard-unknown', 'Unknown Source')
     await expectRefused(refusalOne('“Unknown Source”'))

@@ -715,14 +715,18 @@ export function otherLocalComfyUIs(sessionId: string, records: InstallationRecor
   ])
   ids.delete(sessionId)
   const names: string[] = []
+  // Listed after the installations, so "the Performance Test of “A”, “B” and “C”" can't read as
+  // one Performance Test of all three.
+  const perfTests: string[] = []
   for (const id of ids) {
     const perf = sessionKindOf(id) === 'performance_test'
     const inst = records.find((r) => r.id === installationIdOf(id))
     if (inst && !isLocalSource(inst.sourceId)) continue
     const name = inst?.name ?? _runningSessions.get(id)?.installationName ?? id
-    names.push(perf ? i18n.t('errors.performanceTestOfInstallation', { name }) : `“${name}”`)
+    if (perf) perfTests.push(i18n.t('errors.performanceTestOfInstallation', { name }))
+    else names.push(`“${name}”`)
   }
-  return names
+  return [...names, ...perfTests]
 }
 
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
