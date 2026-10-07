@@ -9,9 +9,10 @@ import type { ComfyDesktop2AuthState } from '../../../types/comfyDesktopBridge'
 import {
   EMBEDDED_SESSION_CHANNELS,
   stateForSender,
+  switchWorkspaceForSender,
   workspaceTokenForSender
 } from '../embeddedSession'
-import { signInToCloud, signOutOfCloud } from './registerDevPlatformHandlers'
+import { signInToCloud, signOutOfCloud, switchCloudWorkspace } from './registerDevPlatformHandlers'
 
 export function registerEmbeddedSessionHandlers(): void {
   ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getState, (event) => stateForSender(event))
@@ -36,5 +37,9 @@ export function registerEmbeddedSessionHandlers(): void {
       await signOutOfCloud(findEntryByComfySender(event.sender) ?? undefined)
       return stateForSender(event)
     }
+  )
+
+  ipcMain.handle(EMBEDDED_SESSION_CHANNELS.switchWorkspace, (event, workspaceId: unknown) =>
+    switchWorkspaceForSender(event, workspaceId, switchCloudWorkspace)
   )
 }
