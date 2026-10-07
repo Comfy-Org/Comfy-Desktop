@@ -131,7 +131,7 @@ import { coreSemver, formatComfyVersion } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
 import { resolveCoreCommitState } from '../../coreBetaAncestry'
-import { planCampaignArgs } from '../../coreBetaCampaigns'
+import { appliedPassThrough, planCampaignArgs } from '../../coreBetaCampaigns'
 import type { CampaignApplied, CampaignFacts, CampaignPlan } from '../../coreBetaCampaigns'
 import {
   getCoreBetaCampaigns,
@@ -411,13 +411,6 @@ export function agentInstallStatusText(status: AgentInstallStatus): string {
     case 'failed':
       return i18n.t('launch.agentRequirements.failed')
   }
-}
-
-/** The agent campaign's `agent_requirements_override` for this launch: the raw value from the
- *  campaign whose grant applied `--enable-agent`, untouched. Wired to the campaign plan's
- *  `appliedPassThrough('--enable-agent')`; nothing supplies one until that lands. */
-function agentRequirementsOverrideFor(_beta: CoreBetaLaunch): unknown {
-  return undefined
 }
 
 /** Fold how an overridden agent's start went into the install's record. Never throws: it runs
@@ -1418,7 +1411,9 @@ async function runLaunch(
           percent: -1,
           status: agentInstallStatusText(status)
         }),
-      agentRequirementsOverrideFor(coreBeta),
+      // Only the campaign that applied the flag may carry an override; a hand-typed or slot #0
+      // flag never does.
+      appliedPassThrough(coreBeta.campaign.applied, '--enable-agent'),
       readOverrideState(inst)
     )
     if (abort.signal.aborted) return { ok: false, cancelled: true }
