@@ -1717,7 +1717,6 @@ describe('core beta report placement', () => {
       ['comfy.desktop.comfyui.agent.agent_started', expect.objectContaining({ duration_ms: 12 })],
       ['comfy.desktop.comfyui.agent.agent_exited', expect.objectContaining({ code: 1 })]
     ])
-    // The launch's own attribution, not a default.
     for (const { properties } of agentEvents) {
       expect(properties).toMatchObject({
         installation_id: 'harness-agent-events',
@@ -1796,7 +1795,6 @@ describe('core beta report placement', () => {
 
     expect(res.ok).toBe(true)
     expect(children).toHaveLength(2)
-    // Would complete the cut-off line as `code=12` had the buffer survived the respawn.
     children[1]!.stdout.emit('data', Buffer.from('2\n'))
     children[1]!.stdout.emit('data', Buffer.from('[agent-event] agent_started\n'))
     expect(

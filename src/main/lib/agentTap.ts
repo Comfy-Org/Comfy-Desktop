@@ -1,30 +1,13 @@
-/**
- * Local agent event-log tap: forwards core's `[agent-event] <event> key=value`
- * lines as `comfy.desktop.comfyui.agent.<event>` through the consent-gated
- * `telemetry.emit`, like the assets tap does for `[assets-event]`.
- *
- * Core's output is UNTRUSTED INPUT. Every string field is a closed-set member
- * or a version number with no path separators, spaces or `:`, so a path,
- * prompt or model output can't ride along by accident. Like the assets tap,
- * this catches accidental leakage, not deliberately encoded text (a version
- * suffix is up to 40 letters, digits, dots and dashes). Unknown fields are
- * omitted for version skew; invalid values and malformed or spoofing keys drop
- * the whole line silently, since reporting the rejection would forward the
- * untrusted content.
- */
+// Core's output is untrusted: this catches accidental leakage, not deliberately encoded text.
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
 import { createStreamLineBuffer, stripAnsi, stripLogLevelPrefix } from './stderrTail'
 
-/**
- * CROSS-REPO CONTRACT with core's emitter: the
- * grammar and the vocabulary below change on both sides or not at all.
- */
+// Contract with core's emitter: the grammar and vocabulary change on both sides or not at all.
 export const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
 
 const EVENT_PREFIX = 'comfy.desktop.comfyui.agent.'
 
-/** An event outside this set is dropped, so a newer core can't send unreviewed events. */
 export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'flag_enabled',
   'package_missing',
@@ -41,13 +24,9 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'agent_error'
 ])
 
-/** Emitted by the tap itself; absent from `ALLOWED_EVENTS` so no line can forge it. */
+// Absent from ALLOWED_EVENTS, so no line can forge it.
 const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
 
-/**
- * Any other `reason` is forwarded as `unknown`, so a newer core's new failure
- * reason still reports the failure without leaking the raw value.
- */
 export const REASONS: ReadonlySet<string> = new Set([
   'timeout',
   'not_found',
@@ -65,7 +44,7 @@ export const REASONS: ReadonlySet<string> = new Set([
   'unknown'
 ])
 
-/** A Set, not an object literal: untrusted keys like `constructor` can't hit the prototype. */
+// A Set, not an object literal, so untrusted keys like `constructor` can't hit the prototype.
 export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'code',
   'duration_ms',
@@ -74,7 +53,6 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'reason'
 ])
 
-/** Trusted properties the tap attaches to every event. A line may not name one. */
 const BASE_CONTEXT_KEYS: ReadonlySet<string> = new Set([
   'installation_id',
   'variant',
@@ -82,19 +60,13 @@ const BASE_CONTEXT_KEYS: ReadonlySet<string> = new Set([
   'core_beta_flags'
 ])
 
-/**
- * `0.4.2`, `v22.11.0`, `1.2.0-rc.1+build.5`, PEP 440 `1.2.3rc1`, a Node
- * nightly `v23.0.0-nightly20240814a4b1ad2b68`. At least one dot.
- */
 const VERSION = /^v?\d{1,6}(?:\.\d{1,6}){1,3}(?:[-+.]?[0-9A-Za-z][0-9A-Za-z.+-]{0,39})?$/
 
-/** The value to forward for an allowlisted field, or `undefined` to reject the line. */
 function fieldValue(key: string, rawValue: string): TelemetryValue | undefined {
   if (key === 'reason') return REASONS.has(rawValue) ? rawValue : 'unknown'
   if (key === 'agent_version' || key === 'node_version') {
     return VERSION.test(rawValue) ? rawValue : undefined
   }
-  // `code` and `duration_ms`: integers only, and a duration is never negative.
   const value = /^-?\d+$/.test(rawValue) ? Number(rawValue) : NaN
   if (!Number.isSafeInteger(value) || (key === 'duration_ms' && value < 0)) return undefined
   return value
@@ -107,7 +79,7 @@ function parseFields(tail: string): Record<string, TelemetryValue> | null {
     const separatorIndex = pair.indexOf('=')
     const key = pair.slice(0, separatorIndex)
     const rawValue = pair.slice(separatorIndex + 1)
-    // Context spoofing, even though the merge order already defeats it.
+    // Rejected as spoofing even though the merge order already defeats it.
     if (BASE_CONTEXT_KEYS.has(key)) return null
     if (!ALLOWED_FIELD_NAMES.has(key)) {
       if (Object.hasOwn(Object.prototype, key)) return null
@@ -130,7 +102,6 @@ export interface AgentEvent {
 const UNKNOWN_EVENT = Symbol('unknown event')
 
 function parseLine(line: string): AgentEvent | typeof UNKNOWN_EVENT | null {
-  // ANSI and the bundled build's `[LEVEL] ` prefix, so the anchored grammar matches.
   const match = stripLogLevelPrefix(stripAnsi(line).trim()).match(AGENT_EVENT_LINE)
   if (!match) return null
   const [, event, tail] = match
@@ -150,7 +121,7 @@ export function parseAgentEventLine(line: string): AgentEvent | null {
   return parsed === UNKNOWN_EVENT ? null : parsed
 }
 
-/** Per-event budget on top of telemetry's own rate limit. */
+// Per-event budget on top of telemetry's own per-minute limit.
 const PER_EVENT_HOURLY_CAP = 60
 const RATE_WINDOW_MS = 60 * 60_000
 
@@ -171,7 +142,7 @@ export function createAgentTap(opts: {
     core_beta_flags: [...(opts.coreBetaFlags ?? [])]
   }
 
-  // Per event name, and NOT reset by beginBoot: a restart loop is when the cap matters.
+  // Not reset by beginBoot: a restart loop is when the cap matters.
   const rateBuckets = new Map<string, { windowStart: number; count: number }>()
 
   let unknownEventsDropped = 0
@@ -191,14 +162,13 @@ export function createAgentTap(opts: {
   function handleLine(line: string): void {
     const parsed = parseLine(line)
     if (parsed === UNKNOWN_EVENT) {
-      // Counted, never named: the name is untrusted input. Only with consent, so
-      // a later grant can't ship a count from a period the user declined.
+      // Counted, never named (untrusted), and only with consent so a later grant can't ship it.
       if (telemetry.getConsentState() === 'granted') unknownEventsDropped++
       return
     }
     if (!parsed || !withinRateCap(parsed.event)) return
     try {
-      // Base context merged LAST so parsed fields can never override it.
+      // Base context merged last so parsed fields can never override it.
       telemetry.emit(`${EVENT_PREFIX}${parsed.event}`, { ...parsed.fields, ...baseContext })
     } catch {
       // ignore - telemetry side effect, and the next line must still parse
@@ -216,16 +186,10 @@ export function createAgentTap(opts: {
         // ignore - telemetry side effect, not user-visible
       }
     },
-    /** Drop the previous (dead) process's partial lines; the rate buckets survive. */
     beginBoot(): void {
       lineBuffer.reset()
     },
-    /**
-     * Emits the dropped-event count only. An unterminated line is never parsed:
-     * callers flush while core may still be writing, and core's logging ends
-     * every record with a newline, so a tail without one is a write cut short
-     * (`code=12` read as `code=1`). It waits for its newline or `beginBoot`.
-     */
+    // Never parses an unterminated line: a tail without a newline is a write cut short.
     flushSummary(): void {
       try {
         if (unknownEventsDropped > 0 && withinRateCap(UNKNOWN_EVENTS_DROPPED)) {

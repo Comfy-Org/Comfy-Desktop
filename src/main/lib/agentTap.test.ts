@@ -11,7 +11,6 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] }
 }))
 
-/** What reached the PostHog SDK, for the consent tests that run the real `emit`. */
 const sdkCaptures = vi.hoisted(() => [] as Array<{ event: string }>)
 
 vi.mock('posthog-node', () => ({
@@ -91,7 +90,6 @@ describe('agentTap', () => {
     })
 
     it('names no field that telemetry sets on every event itself', () => {
-      // A forwarded field wins the merge over telemetry's own defaults.
       for (const name of ALLOWED_FIELD_NAMES) {
         expect(telemetry.DEFAULT_EVENT_PROPERTY_NAMES.has(name)).toBe(false)
       }
@@ -432,7 +430,6 @@ describe('agentTap', () => {
       const tap = createAgentTap(baseOpts)
       tap.ingest('[agent-event] agent_exited code=0', 'stdout')
       tap.beginBoot()
-      // Would complete the dead process's line had the buffer survived.
       tap.ingest('\n', 'stdout')
       expect(captured).toEqual([])
     })
