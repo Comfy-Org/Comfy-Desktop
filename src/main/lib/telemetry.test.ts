@@ -1787,10 +1787,12 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
 
     telemetry.applyFirebaseUserConsensus('user-b')
 
+    const sent = captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')
     expect(
-      captured.find((c) => c.event === 'comfy.desktop.app.first_launch'),
-      'the once-ever event survives a quarantine that resolves to another account'
-    ).toBeDefined()
+      sent,
+      'the once-ever event survives a quarantine that resolves to another account, once'
+    ).toHaveLength(1)
+    expect(sent[0]?.properties).toMatchObject({ installation_id: 'install-id' })
   })
 
   it('sends a first_launch held by the quarantine once it resolves to signed out', () => {

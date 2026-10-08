@@ -144,7 +144,10 @@ describe('startBootIdentity', () => {
   it('binds the resolved id and fires first_launch once it resolves', async () => {
     lookupDelayMs = 3000
     const launchedAt = Date.now()
-    const uptime = vi.spyOn(process, 'uptime').mockReturnValue(12.345)
+    const t0 = performance.now()
+    const uptime = vi
+      .spyOn(process, 'uptime')
+      .mockImplementation(() => 12 + (performance.now() - t0) / 1000)
     onTestFinished(() => uptime.mockRestore())
     const bound = mod.startBootIdentity(OPTIONS)
     await vi.advanceTimersByTimeAsync(3000)
@@ -165,7 +168,7 @@ describe('startBootIdentity', () => {
         id_class: 'machine_derived',
         id_lookup_ms: 3000,
         id_lookup_timed_out: false,
-        boot_to_id_ms: 12345,
+        boot_to_id_ms: 15000,
         locale: 'en'
       },
       new Date(launchedAt)
