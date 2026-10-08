@@ -850,6 +850,44 @@ describe('makeOpsFlag deadline and expiry', () => {
     )
   })
 
+  it('settles readers at the deadline while the id is still pending, then fetches once it resolves', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      seedGrant({ value: true, payload: null, fetchedAt: NOW })
+      const flag = makeGrantFlag()
+      getOpsFlagResult.mockResolvedValue(unreachable())
+      let resolveId: (id: string) => void = () => {}
+      void flag.init({
+        distinctId: new Promise<string>((r) => {
+          resolveId = r
+        })
+      })
+      let value: unknown = 'pending'
+      void flag.get().then((v) => {
+        value = v
+      })
+
+      await vi.advanceTimersByTimeAsync(4999)
+      expect(value).toBe('pending')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(value, 'readers do not wait for the id past the deadline').toBe('granted')
+      expect(getOpsFlagResult).not.toHaveBeenCalled()
+
+      vi.mocked(performance.now).mockReturnValue(PERF_NOW + 9000)
+      resolveId('final-id')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(getOpsFlagResult).toHaveBeenCalledWith(
+        'grant-flag',
+        'final-id',
+        0,
+        expect.any(Function),
+        false
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('holds a saved treatment for exactly seven days', async () => {
     seedGrant({ value: true, payload: null, fetchedAt: NOW - 7 * DAY_MS })
     expect(await launchOffline()).toBe('granted')

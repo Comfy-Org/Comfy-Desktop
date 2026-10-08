@@ -263,7 +263,8 @@ export function makeOpsFlag<T>(opts: {
       const generationAtInit = generation
       const saved = readPersisted()
       const budgetMs = initOpts.timeoutMs ?? deadlineMs?.(saved) ?? DEFAULT_TIMEOUT_MS
-      // The budget counts from init, so an id wait past it leaves no fetch window and the saved treatment is used.
+      // The budget counts from init and bounds the id wait too: at expiry readers get the saved
+      // treatment, and the fetch still goes out once the id resolves, saving a late answer.
       const startedAt = performance.now()
       // Non-persisting flags pass no callback at all, so they stay write-free structurally
       // rather than by a guard inside one — no write path is attached to the abandoned fetch.
@@ -273,11 +274,17 @@ export function makeOpsFlag<T>(opts: {
         ? (late: OpsFlagValueResult) => persistLate(generationAtInit, late)
         : undefined
       const staffAtInit = mainTelemetry.getFlagEvaluationStaff()
-      initPromise = Promise.resolve(initOpts.distinctId)
-        .then((id) => {
-          const remainingMs = Math.max(0, budgetMs - (performance.now() - startedAt))
-          return mainTelemetry.getOpsFlagResult(key, id, remainingMs, onLate, staffAtInit)
-        })
+      const fetched = Promise.resolve(initOpts.distinctId).then((id) => {
+        const remainingMs = Math.max(0, budgetMs - (performance.now() - startedAt))
+        return mainTelemetry.getOpsFlagResult(key, id, remainingMs, onLate, staffAtInit)
+      })
+      let deadlineTimer: ReturnType<typeof setTimeout> | undefined
+      const deadline = new Promise<{ kind: 'unreachable' }>((resolve) => {
+        deadlineTimer = setTimeout(() => resolve({ kind: 'unreachable' }), budgetMs)
+      })
+      fetched.catch(() => {})
+      initPromise = Promise.race([fetched, deadline])
+        .finally(() => clearTimeout(deadlineTimer))
         .then((result) => {
           if (result.kind === 'unreachable') {
             const parsed = saved !== undefined ? saved : parse(undefined, undefined)
