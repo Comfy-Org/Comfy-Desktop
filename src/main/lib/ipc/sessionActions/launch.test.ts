@@ -1278,6 +1278,25 @@ describe('core beta report placement', () => {
     ).toBe(true)
   })
 
+  it('reports the time spent when the grants answered at their deadline with the id still pending', async () => {
+    launchHarness.idWait = null
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48237
+    }
+    launchHarness.waitForPort = async () => {}
+
+    await handleLaunch(ctxFor('harness-launch-id-wait-deadline'))
+
+    const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
+    const waited = boot?.properties?.['launch_waited_for_id_ms']
+    expect(typeof waited, 'a wait cut short by the deadline is still a wait').toBe('number')
+    expect(waited as number).toBeGreaterThanOrEqual(1)
+  })
+
   it('reports a null id wait on boot_started for an opted-out launch, which skips the grants wait', async () => {
     launchHarness.betaEnabled = false
     launchHarness.idWait = 1234

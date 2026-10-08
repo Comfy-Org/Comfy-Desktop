@@ -1178,7 +1178,8 @@ async function runLaunch(
         if (betaEnabled) {
           const idWaitStart = performance.now()
           betaFlags = await getCoreBetaGrantsAsync()
-          launchWaitedForIdMs = idWaitSince(idWaitStart)
+          launchWaitedForIdMs =
+            idWaitSince(idWaitStart) ?? Math.round(performance.now() - idWaitStart)
         }
         // Opted-out launches skip it: the checks can reach the network and could grant nothing.
         const coreCommits = betaEnabled
