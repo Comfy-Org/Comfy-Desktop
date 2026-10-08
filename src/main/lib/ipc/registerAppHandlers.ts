@@ -34,7 +34,7 @@ import type { RunPerformanceTestWorkflowResult, SystemInfo } from '../../../type
 import type { FieldOption } from './shared'
 import type { InstallationRecord } from '../../installations'
 import * as mainTelemetry from '../telemetry'
-import { getDeviceId } from '../deviceId'
+import { deviceIdReady } from '../deviceId'
 import { getCachedWorkspaceName } from '../../cloud/tokenStore'
 import { getCloudSession } from '../../devplatform/session'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
@@ -805,5 +805,5 @@ export function registerAppHandlers(): void {
     buildInstallationDdContext(installationId)
   )
 
-  ipcMain.handle('get-device-id', () => getDeviceId())
+  ipcMain.handle('get-device-id', () => deviceIdReady())
 }

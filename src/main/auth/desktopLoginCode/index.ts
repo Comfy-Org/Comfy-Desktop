@@ -36,7 +36,7 @@ import {
 } from '../firebaseBridge/inject'
 import { extractProviderId } from '../firebaseBridge/intercept'
 import { restoreParentWindow } from '../firebaseBridge/restoreParentWindow'
-import { getDeviceId } from '../../lib/deviceId'
+import { resolvedDeviceId } from '../../lib/deviceId'
 import * as mainTelemetry from '../../lib/telemetry'
 import * as settings from '../../settings'
 
@@ -134,8 +134,12 @@ export async function signInViaDesktopLoginCode(
   // installation_id enables the web->desktop identity stitch. Consent-gated
   // like every other telemetry write ('undecided' omits too); the auth
   // handoff itself works without it.
-  if (settings.get('telemetryEnabled') === true) {
-    request.installation_id = getDeviceId()
+  // Boot resolves the id in the background. A sign-in in the first seconds
+  // of a slow launch goes without it rather than waiting; the desktop's own
+  // sign-in binding attaches the id to the user once it resolves.
+  const installationId = resolvedDeviceId()
+  if (installationId && settings.get('telemetryEnabled') === true) {
+    request.installation_id = installationId
   }
 
   let grant: DesktopLoginCodeGrant

@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const getOpsFlagResult = vi.fn()
 vi.mock('./telemetry', () => ({
-  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
+  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args),
+  getFlagEvaluationStaff: () => false
 }))
 
 function flagResult(value: unknown): unknown {
@@ -51,7 +52,8 @@ describe('cloudFreeRuns', () => {
       CLOUD_FREE_RUNS_FLAG_KEY,
       'anon',
       expect.any(Number),
-      undefined
+      undefined,
+      false
     )
   })
 

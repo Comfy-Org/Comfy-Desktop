@@ -115,6 +115,7 @@ import {
 } from '../../coreBetaGrants'
 import { armBetaActivationNotice, clearBetaActivationClaim } from '../../betaActivationNotice'
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
+import { idWaitSince } from '../../deviceId'
 import { coreSemver, formatComfyVersion } from '../../version'
 import type { CoreCheckout } from '../../version'
 import { coreVersionState, resolveCoreCheckout, splitLaunchCommand } from '../../coreBetaInputs'
@@ -722,6 +723,8 @@ async function runLaunch(
   abort: AbortController
 ): Promise<ActionResult> {
   let inst = instArg
+  /** See `boot_started`; null when this launch never waited on the beta-grants fetch. */
+  let launchWaitedForIdMs: number | null = null
   const sessionId = runtimeSessionId ?? installationId
   // Synthetic repair steps that ran during launch prep, prepended to the launch
   // progress in display order (e.g. a source rollback, then a PyTorch restore).
@@ -1169,7 +1172,15 @@ async function runLaunch(
         }
 
         // Opted out, the grants select nothing, so the launch does not wait on the boot fetch.
-        const betaFlags = betaEnabled ? await getCoreBetaGrantsAsync() : []
+        // Opted in, that fetch waits for the installation id, which boot resolves in the
+        // background; record how much of this launch that cost.
+        let betaFlags: Awaited<ReturnType<typeof getCoreBetaGrantsAsync>> = []
+        if (betaEnabled) {
+          const idWaitStart = performance.now()
+          betaFlags = await getCoreBetaGrantsAsync()
+          launchWaitedForIdMs =
+            idWaitSince(idWaitStart) ?? Math.round(performance.now() - idWaitStart)
+        }
         // Opted-out launches skip it: the checks can reach the network and could grant nothing.
         const coreCommits = betaEnabled
           ? await resolveCoreCommitState(
@@ -1859,7 +1870,8 @@ async function runLaunch(
       port_retry_count: portRetries,
       reboot_retry_count: rebootRetries,
       port: launchCmd.port ?? null,
-      port_bumped_from: portBumpedFrom
+      port_bumped_from: portBumpedFrom,
+      launch_waited_for_id_ms: launchWaitedForIdMs
     })
     // Begin (re)buffering per-phase timings for THIS attempt. On a port /
     // reboot retry this resets so the buffer reflects the attempt that

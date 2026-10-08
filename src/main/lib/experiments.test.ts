@@ -28,6 +28,8 @@ const captured: CapturedCall[] = []
 
 let mockFlags: Record<string, string | boolean> = {}
 let mockFlagsDelayMs = 0
+let mockFlagsGate: Promise<void> | null = null
+const flagRequestIds: string[] = []
 
 vi.mock('posthog-node', () => ({
   PostHog: class {
@@ -48,7 +50,9 @@ vi.mock('posthog-node', () => ({
     getFeatureFlag(): Promise<undefined> {
       return Promise.resolve(undefined)
     }
-    getAllFlags(_distinctId: string, _opts: unknown): Promise<Record<string, string | boolean>> {
+    getAllFlags(distinctId: string, _opts: unknown): Promise<Record<string, string | boolean>> {
+      flagRequestIds.push(distinctId)
+      if (mockFlagsGate) return mockFlagsGate.then(() => ({ ...mockFlags }))
       if (mockFlagsDelayMs > 0) {
         return new Promise((resolve) =>
           setTimeout(() => resolve({ ...mockFlags }), mockFlagsDelayMs)
@@ -71,6 +75,8 @@ describe('experiments', () => {
     captured.length = 0
     mockFlags = {}
     mockFlagsDelayMs = 0
+    mockFlagsGate = null
+    flagRequestIds.length = 0
     process.env['POSTHOG_API_KEY'] = 'test-key'
     process.env['POSTHOG_ENABLED'] = '1'
 
@@ -109,6 +115,83 @@ describe('experiments', () => {
       expect(experiments.getFlag('flag.a')).toBe('treatment')
       expect(experiments.getFlag('flag.b')).toBe(true)
       await refresh
+    })
+
+    it('serves the cache without fetching when given no identity', async () => {
+      fs.writeFileSync(
+        path.join(testUserData, 'experiment-flags.json'),
+        JSON.stringify({ 'flag.a': 'treatment' })
+      )
+      mockFlags = { 'flag.a': 'variant' }
+      await experiments.initExperiments(null)
+      expect(experiments.getFlag('flag.a')).toBe('treatment')
+      expect(await experiments.getFlagAsync('flag.a')).toBe('treatment')
+      expect(flagRequestIds).toEqual([])
+    })
+
+    it('loads the cache at once and fetches with the id once it resolves', async () => {
+      fs.writeFileSync(
+        path.join(testUserData, 'experiment-flags.json'),
+        JSON.stringify({ 'flag.a': 'treatment' })
+      )
+      mockFlags = { 'flag.b': 'variant' }
+      let resolveIdentity: (identity: ExperimentsModule.ExperimentsIdentity) => void = () => {}
+      const refresh = experiments.initExperiments(
+        new Promise((r) => {
+          resolveIdentity = r
+        })
+      )
+      expect(experiments.getFlag('flag.a')).toBe('treatment')
+      await new Promise((r) => setImmediate(r))
+      expect(flagRequestIds).toEqual([])
+
+      resolveIdentity({ distinctId: 'final-id', personProperties: {} })
+      await refresh
+      expect(flagRequestIds).toEqual(['final-id'])
+      expect(experiments.getFlag('flag.b')).toBe('variant')
+    })
+
+    it('answers a boot-cached key at once while the identity is still pending', async () => {
+      fs.writeFileSync(
+        path.join(testUserData, 'experiment-flags.json'),
+        JSON.stringify({ 'flag.a': 'treatment' })
+      )
+      void experiments.initExperiments(new Promise<never>(() => {}))
+      const sentinel = new Promise((r) => setImmediate(() => r('still waiting')))
+      expect(
+        await Promise.race([experiments.getFlagAsync('flag.a'), sentinel]),
+        'a boot-cached key does not wait for the identity'
+      ).toBe('treatment')
+    })
+
+    it('makes an uncached key wait for the identity and the fetch', async () => {
+      mockFlags = { 'flag.c': 'variant' }
+      let releaseFetch: () => void = () => {}
+      mockFlagsGate = new Promise<void>((r) => {
+        releaseFetch = r
+      })
+      let resolveIdentity: (identity: ExperimentsModule.ExperimentsIdentity) => void = () => {}
+      void experiments.initExperiments(
+        new Promise((r) => {
+          resolveIdentity = r
+        })
+      )
+      let value: unknown = 'pending'
+      const read = experiments.getFlagAsync('flag.c').then((v) => {
+        value = v
+      })
+      await new Promise((r) => setImmediate(r))
+      expect(value).toBe('pending')
+
+      resolveIdentity({ distinctId: 'final-id', personProperties: {} })
+      await new Promise((r) => setImmediate(r))
+      expect(flagRequestIds).toContain('final-id')
+      expect(value, 'the identity alone is not enough: the read also waits for the fetch').toBe(
+        'pending'
+      )
+      releaseFetch()
+      await read
+      expect(value).toBe('variant')
     })
 
     it('returns undefined for unknown flags', async () => {

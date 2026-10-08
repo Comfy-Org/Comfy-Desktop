@@ -5,11 +5,17 @@ import path from 'path'
 import { EventEmitter } from 'events'
 import type { TelemetryValue } from './telemetry'
 
+const electronAppHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => void>())
+const electronAppQuit = vi.hoisted(() => vi.fn())
+
 vi.mock('electron', () => ({
   app: {
     getPath: () => path.join(os.tmpdir(), 'launcher-test'),
     isPackaged: true,
-    on: () => {}
+    on: (event: string, handler: (...args: unknown[]) => void) => {
+      electronAppHandlers.set(event, handler)
+    },
+    quit: electronAppQuit
   },
   BrowserWindow: { getAllWindows: () => [] }
 }))
@@ -85,6 +91,7 @@ const featureFlagResultCalls: Array<{
 const posthogConstructorCalls: Array<{ apiKey: string; options: Record<string, unknown> }> = []
 
 const posthogClientMock = vi.hoisted(() => ({
+  shutdownGate: null as Promise<void> | null,
   failNextCaptures: 0,
   failNextFlushes: 0,
   autoFailNextIdentifies: 0,
@@ -166,7 +173,7 @@ vi.mock('posthog-node', () => ({
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
-      return Promise.resolve()
+      return posthogClientMock.shutdownGate ?? Promise.resolve()
     }
     getFeatureFlagResult(
       key: string,
@@ -209,14 +216,16 @@ const pendingIdentityMergeMock = vi.hoisted(() => ({
     personSet: Record<string, boolean | number | string | null>
     personSetOnce?: Record<string, boolean | number | string | null>
   }>,
-  nextId: 1
+  nextId: 1,
+  lastReserved: null as Record<string, unknown> | null
 }))
 
 vi.mock('./anonymousIdentity', () => ({
   rotatePersistedAnonymousDistinctId: () => {
     if (anonymousIdentityMock.fail) return null
     return anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
-  }
+  },
+  clearPersistedUnmergeableAnonymousEpoch: () => true
 }))
 
 vi.mock('./pendingIdentityMerge', () => ({
@@ -224,6 +233,7 @@ vi.mock('./pendingIdentityMerge', () => ({
   reservePendingIdentityMerge: (
     merge: Omit<(typeof pendingIdentityMergeMock.entries)[number], 'id' | 'nextAnonymousId'>
   ) => {
+    pendingIdentityMergeMock.lastReserved = merge
     if (anonymousIdentityMock.fail) return null
     const nextAnonymousId = anonymousIdentityMock.rotations[anonymousIdentityMock.index++] ?? null
     if (!nextAnonymousId) return null
@@ -304,6 +314,7 @@ afterEach(() => {
   anonymousIdentityMock.fail = false
   posthogClientMock.failNextCaptures = 0
   posthogClientMock.failNextFlushes = 0
+  posthogClientMock.shutdownGate = null
   posthogClientMock.autoFailNextIdentifies = 0
   posthogClientMock.featureFlagResult = undefined
   posthogClientMock.featureFlagBehavior = 'resolve'
@@ -311,6 +322,7 @@ afterEach(() => {
   posthogClientMock.deferred = null
   pendingIdentityMergeMock.entries = []
   pendingIdentityMergeMock.nextId = 1
+  pendingIdentityMergeMock.lastReserved = null
   delete process.env['POSTHOG_API_KEY']
   delete process.env['POSTHOG_ENABLED']
   delete process.env['POSTHOG_EXCEPTIONS']
@@ -631,6 +643,29 @@ describe('ops-flag person targeting', () => {
     await evaluate()
 
     expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
+  })
+
+  it('evaluates as the classification it is given, not the one bound now', async () => {
+    setupTelemetry({ consent: 'granted' })
+    telemetry.setFlagEvaluationStaff(false)
+    await telemetry.getOpsFlagResult(
+      'desktop_core_beta_features',
+      'installation-id',
+      100,
+      undefined,
+      true
+    )
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0', comfy_staff: 'true' })
+
+    telemetry.setFlagEvaluationStaff(true)
+    await telemetry.getOpsFlagResult(
+      'desktop_core_beta_features',
+      'installation-id',
+      100,
+      undefined,
+      false
+    )
+    expect(lastPersonProperties()).toEqual({ app_version: '0.0.0' })
   })
 
   it('leaves the distinct id the installation hash, so bucketing is unchanged', async () => {
@@ -1698,6 +1733,10 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
     setupTelemetry({ consent: null, bind: null })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('queues on a fresh install (undecided) and ships on the grant transition', () => {
     // This is the real first-boot path: consent undecided, guard already
     // consumed. A plain capture would be dropped here and never re-fire.
@@ -1715,6 +1754,79 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
     expect(ev?.properties).toMatchObject({ id_class: 'machine_derived', locale: 'en' })
   })
 
+  it('stamps a deferred first_launch with the launch time, not the grant time', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-04T12:00:30Z') })
+    telemetry.setConsentState('undecided')
+    bindTestAnonymous('install-id')
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' }, new Date('2026-10-04T12:00:00Z'))
+    vi.setSystemTime(new Date('2026-10-04T12:05:00Z'))
+    telemetry.setConsentState('granted')
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(ev?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
+    vi.useRealTimers()
+  })
+
+  it('stamps first_launch with the launch time when consent is already granted', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-04T12:00:30Z') })
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('install-id')
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' }, new Date('2026-10-04T12:00:00Z'))
+    const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(ev?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
+    vi.useRealTimers()
+  })
+
+  it('keeps first_launch out of the write quarantine, so an account switch cannot discard it', () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('install-id')
+    telemetry.applyFirebaseUserConsensus('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    captured.length = 0
+
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+    expect(captured.find((c) => c.event === 'comfy.desktop.app.first_launch')).toBeUndefined()
+
+    telemetry.applyFirebaseUserConsensus('user-b')
+
+    const sent = captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(
+      sent,
+      'the once-ever event survives a quarantine that resolves to another account, once'
+    ).toHaveLength(1)
+    expect(sent[0]?.properties).toMatchObject({ installation_id: 'install-id' })
+  })
+
+  it('sends a first_launch held by the quarantine once it resolves to signed out', () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('install-id')
+    telemetry.applyFirebaseUserConsensus('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
+    captured.length = 0
+
+    telemetry.applyFirebaseAnonymousConsensus()
+
+    const sent = captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(sent, 'a sign-out resolution flushes the one-shot buffer, once').toHaveLength(1)
+    const ev = sent[0]
+    expect(ev?.properties).toMatchObject({ installation_id: 'install-id' })
+    telemetry.capture('comfy.desktop.test.after')
+    expect(ev?.distinctId, 'sent under the post-sign-out anonymous id').toBe(
+      captured.at(-1)?.distinctId
+    )
+    expect(ev?.distinctId).not.toBe('user-a')
+  })
+
+  it('counts consent denials', () => {
+    const before = telemetry.getConsentDenials()
+    telemetry.setConsentState('undecided')
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+    telemetry.setConsentState('denied')
+    expect(telemetry.getConsentDenials()).toBe(before + 2)
+  })
+
   it('captures immediately when consent is already granted', () => {
     telemetry.setConsentState('granted')
     bindTestAnonymous('install-id')
@@ -1724,6 +1836,339 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
 
     const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
     expect(ev?.properties).toMatchObject({ id_class: 'random_uuid', locale: 'fr' })
+  })
+})
+
+describe('telemetry.bindAnonymousId without an installation id yet', () => {
+  beforeEach(() => {
+    setupTelemetry({ bind: null })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('drops a capture before any bind', () => {
+    expect(telemetry.capture('comfy.desktop.test.early')).toBe(false)
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.early')).toBeUndefined()
+  })
+
+  it('holds a capture until the installation id, then sends it with that id and its own time', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-04T12:00:00Z') })
+    telemetry.bindAnonymousId('anon-d', null)
+    expect(telemetry.capture('comfy.desktop.test.early', { n: 1 })).toBe(true)
+    expect(captured).toHaveLength(0)
+
+    vi.setSystemTime(new Date('2026-10-04T12:00:05Z'))
+    telemetry.setInstallationId('install-id')
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.test.early')
+    expect(ev?.distinctId).toBe('anon-d')
+    expect(ev?.properties).toMatchObject({ n: 1, installation_id: 'install-id' })
+    expect(ev?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
+  })
+
+  it('defers emit() renderer forwarding with the held write until it ships', () => {
+    const { wc, sends } = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(wc)
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.emit('comfy.desktop.execution.error', { variant: 'standalone' })
+    expect(sends).toHaveLength(0)
+
+    telemetry.setInstallationId('install-id')
+
+    expect(captured.map((call) => call.event)).toContain('comfy.desktop.execution.error')
+    expect(sends).toHaveLength(1)
+  })
+
+  it('stamps session.started with the boot time', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-04T12:00:00Z') })
+    telemetry.bindAnonymousId('anon-d', null)
+    vi.setSystemTime(new Date('2026-10-04T12:00:01Z'))
+    telemetry.capture('comfy.desktop.test.early')
+    vi.setSystemTime(new Date('2026-10-04T12:00:05Z'))
+    telemetry.setInstallationId('install-id')
+
+    const started = captured.find((c) => c.event === 'comfy.desktop.session.started')
+    expect(started?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
+    expect(started?.properties).toMatchObject({ installation_id: 'install-id' })
+  })
+
+  it('keeps an anonymous id rotated during the wait, and sends each capture under its own', () => {
+    telemetry.bindAnonymousId('anon-old', null)
+    telemetry.capture('comfy.desktop.test.before')
+    telemetry.discardUnmergeableAnonymousEpoch()
+    telemetry.capture('comfy.desktop.test.after')
+    telemetry.setInstallationId('install-id')
+
+    const before = captured.find((c) => c.event === 'comfy.desktop.test.before')
+    const after = captured.find((c) => c.event === 'comfy.desktop.test.after')
+    expect(before?.distinctId).toBe('anon-old')
+    expect(after?.distinctId).not.toBe('anon-old')
+    expect(after?.properties).toMatchObject({ installation_id: 'install-id' })
+    telemetry.capture('comfy.desktop.test.late')
+    expect(captured.at(-1)?.distinctId).toBe(after?.distinctId)
+  })
+
+  it('sends held captures once, in order', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.capture('comfy.desktop.test.a')
+    telemetry.capture('comfy.desktop.test.b')
+    telemetry.setInstallationId('install-id')
+    telemetry.setInstallationId('install-id')
+
+    const events = captured.map((c) => c.event).filter((e) => e.startsWith('comfy.desktop.test.'))
+    expect(events).toEqual(['comfy.desktop.test.a', 'comfy.desktop.test.b'])
+  })
+
+  it('holds an exception until the installation id', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    expect(telemetry.captureException(new Error('early'))).toBe(true)
+    expect(exceptions).toHaveLength(0)
+    telemetry.setInstallationId('install-id')
+    expect(exceptions).toHaveLength(1)
+    expect(exceptions[0]!.distinctId).toBe('anon-d')
+  })
+
+  it('discards held captures when consent is withdrawn before the installation id', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.capture('comfy.desktop.test.early')
+    telemetry.setConsentState('denied')
+    telemetry.setInstallationId('install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.early')).toBeUndefined()
+  })
+
+  it('does not send held captures after consent is withdrawn and granted again', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.capture('comfy.desktop.test.early')
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+    telemetry.setInstallationId('install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.early')).toBeUndefined()
+  })
+
+  it('re-checks consent when the installation id arrives', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.capture('comfy.desktop.test.early')
+    telemetry.setConsentState('undecided')
+    telemetry.setInstallationId('install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.early')).toBeUndefined()
+  })
+
+  it('sends a consent decline captured after the denial once the installation id arrives', () => {
+    telemetry.setConsentState('undecided')
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.setConsentState('denied')
+    expect(
+      telemetry.capture('comfy.desktop.first_use.consent_decision', { decision: 'decline' })
+    ).toBe(true)
+    telemetry.setInstallationId('install-id')
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.first_use.consent_decision')
+    expect(ev?.properties).toMatchObject({ decision: 'decline', installation_id: 'install-id' })
+  })
+
+  it('drops a held exception when consent is no longer granted at the installation id', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.captureException(new Error('early'))
+    telemetry.setConsentState('undecided')
+    telemetry.setInstallationId('install-id')
+    expect(exceptions).toHaveLength(0)
+  })
+
+  it('caps the hold at 200 captures', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    let accepted = 0
+    for (let i = 0; i < 201; i++) {
+      if (telemetry.capture(`comfy.desktop.test.e${i}`)) accepted++
+    }
+    expect(
+      accepted,
+      'session.started took one slot; distinct names, so the hold cap (not the rate limit) refuses the last'
+    ).toBe(199)
+    telemetry.setInstallationId('install-id')
+    expect(captured.filter((c) => c.event.startsWith('comfy.desktop.test.e'))).toHaveLength(199)
+  })
+
+  it('sends held captures without installation_id when the app quits first', async () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.capture('comfy.desktop.test.early')
+    await telemetry.shutdown('quit')
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.test.early')
+    expect(ev?.distinctId).toBe('anon-d')
+    expect(ev?.properties).not.toHaveProperty('installation_id')
+  })
+
+  it('holds a quit once to drain a live client, then lets the re-issued quit through', async () => {
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    telemetry.installAppHooks()
+    electronAppQuit.mockClear()
+    let releaseDrain: () => void = () => {}
+    posthogClientMock.shutdownGate = new Promise<void>((resolve) => {
+      releaseDrain = resolve
+    })
+    const beforeQuit = electronAppHandlers.get('before-quit')!
+    const first = { preventDefault: vi.fn() }
+    beforeQuit(first)
+    expect(first.preventDefault).toHaveBeenCalledTimes(1)
+    expect(telemetry.hasBegunQuitting()).toBe(true)
+
+    const second = { preventDefault: vi.fn() }
+    beforeQuit(second)
+    expect(
+      second.preventDefault,
+      'a quit re-fired during the drain is not held again'
+    ).not.toHaveBeenCalled()
+
+    releaseDrain()
+    await vi.waitFor(() => expect(electronAppQuit).toHaveBeenCalledTimes(1))
+  })
+
+  it('marks shutdown when the app quits without a telemetry client', () => {
+    telemetry.installAppHooks()
+    telemetry._resetForTest()
+    const beforeQuit = electronAppHandlers.get('before-quit')
+    expect(beforeQuit).toBeDefined()
+    const preventDefault = vi.fn()
+    beforeQuit!({ preventDefault })
+    expect(telemetry.hasBegunQuitting()).toBe(true)
+    expect(preventDefault, 'nothing to drain, so the quit is not held').not.toHaveBeenCalled()
+  })
+
+  it('reports shutdown as soon as it has begun, before the drain finishes', async () => {
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    expect(telemetry.hasBegunQuitting()).toBe(false)
+    const draining = telemetry.shutdown('quit')
+    expect(telemetry.hasBegunQuitting()).toBe(true)
+    await draining
+  })
+
+  it('keeps an anonymous held write personless after a sign-in during the wait', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.capture('comfy.desktop.test.anonymous')
+    telemetry.bindUserId('user-a')
+    telemetry.setInstallationId('install-id')
+    const ev = captured.find((c) => c.event === 'comfy.desktop.test.anonymous')
+    expect(ev?.distinctId).toBe('anon-d')
+    expect(ev?.properties).toMatchObject({ $process_person_profile: false })
+  })
+
+  it('keeps an anonymous held exception personless after a sign-in during the wait', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.captureException(new Error('early'))
+    telemetry.bindUserId('user-a')
+    telemetry.setInstallationId('install-id')
+    expect(exceptions).toHaveLength(1)
+    expect(exceptions[0]!.distinctId).toBe('anon-d')
+    expect(exceptions[0]!.properties).toMatchObject({ $process_person_profile: false })
+  })
+
+  it('keeps a signed-in held write person-processed after a sign-out during the wait', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.capture('comfy.desktop.test.signed_in_write')
+    telemetry.applyFirebaseAnonymousConsensus()
+    telemetry.setInstallationId('install-id')
+    const ev = captured.find((c) => c.event === 'comfy.desktop.test.signed_in_write')
+    expect(ev?.distinctId).toBe('user-a')
+    expect(ev?.properties).not.toHaveProperty('$process_person_profile')
+  })
+
+  it('stops holding once the installation id is set', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.setInstallationId('install-id')
+    captured.length = 0
+    telemetry.capture('comfy.desktop.test.late')
+    expect(captured.map((c) => c.event)).toEqual(['comfy.desktop.test.late'])
+  })
+
+  it('binds a sign-in at once, then attaches the installation id to that person', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    expect(identifies).toHaveLength(1)
+    expect(identifies[0]).toMatchObject({
+      distinctId: 'user-a',
+      properties: { $anon_distinct_id: 'anon-d' }
+    })
+    expect(identifies[0]!.properties?.$set).not.toHaveProperty('installation_id')
+    expect(pendingIdentityMergeMock.lastReserved).not.toBeNull()
+    expect(
+      pendingIdentityMergeMock.lastReserved,
+      'the merge record omits the key rather than storing a value a reader rejects'
+    ).not.toHaveProperty('installationId')
+    telemetry.capture('comfy.desktop.test.signed_in')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.signed_in')).toBeUndefined()
+
+    telemetry.setInstallationId('install-id', { id_class: 'machine_derived' })
+    const held = captured.find((c) => c.event === 'comfy.desktop.test.signed_in')
+    expect(held?.distinctId).toBe('user-a')
+    expect(held?.properties).toMatchObject({ installation_id: 'install-id' })
+    const personSet = captured.find((c) => c.event === 'comfy.desktop.person.set')
+    expect(personSet?.distinctId).toBe('user-a')
+    expect(personSet?.properties?.$set).toMatchObject({
+      installation_id: 'install-id',
+      id_class: 'machine_derived'
+    })
+  })
+
+  it('attaches the installation id to a bound person even with no other properties', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.setInstallationId('install-id')
+    const personSet = captured.find((c) => c.event === 'comfy.desktop.person.set')
+    expect(personSet?.properties?.$set).toMatchObject({ installation_id: 'install-id' })
+  })
+
+  it('discards writes quarantined during the wait when consensus resolves to another account', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('comfy.desktop.test.ambiguous')
+    telemetry.applyFirebaseUserConsensus('user-b')
+    telemetry.setInstallationId('install-id')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.ambiguous')).toBeUndefined()
+  })
+
+  it('rotates the anonymous id when a sign-in made during the wait signs out', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.capture('comfy.desktop.test.before')
+    telemetry.bindUserId('user-a')
+    telemetry.applyFirebaseAnonymousConsensus()
+    telemetry.bindUserId('user-b')
+    telemetry.setInstallationId('install-id')
+
+    const merge = identifies.find((i) => i.distinctId === 'user-b')
+    expect(merge?.properties?.$anon_distinct_id).toBeDefined()
+    expect(merge?.properties?.$anon_distinct_id).not.toBe('anon-d')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.before')?.distinctId).toBe('anon-d')
+  })
+
+  it('holds writes a quarantine releases while the installation id is pending', () => {
+    telemetry.bindAnonymousId('anon-d', null)
+    telemetry.bindUserId('user-a')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('comfy.desktop.test.quarantined')
+    telemetry.applyFirebaseUserConsensus('user-a')
+    expect(captured.find((c) => c.event === 'comfy.desktop.test.quarantined')).toBeUndefined()
+
+    telemetry.setInstallationId('install-id')
+    const ev = captured.find((c) => c.event === 'comfy.desktop.test.quarantined')
+    expect(ev?.distinctId).toBe('user-a')
+    expect(ev?.properties).toMatchObject({ installation_id: 'install-id' })
+  })
+
+  it('stamps login_attributed with when the sign-in was staged', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-04T12:00:00Z') })
+    telemetry.bindAnonymousId('anon-d', 'install-id')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.stageLoginAttribution('user-a', { via: 'desktop_login_code' })
+    vi.setSystemTime(new Date('2026-10-04T12:00:09Z'))
+    telemetry.applyFirebaseUserConsensus('user-a')
+
+    const ev = captured.find((c) => c.event === 'comfy.desktop.identity.login_attributed')
+    expect(ev?.timestamp).toEqual(new Date('2026-10-04T12:00:00Z'))
   })
 })
 

@@ -18,7 +18,7 @@ const h = vi.hoisted(() => ({
   runBannerCleanup: vi.fn(),
   closeActiveBridge: vi.fn(),
   settingsGet: vi.fn(),
-  getDeviceId: vi.fn(() => 'machine-hash-1234'),
+  resolvedDeviceId: vi.fn((): string | null => 'machine-hash-1234'),
   createDesktopLoginCode: vi.fn(),
   exchangeDesktopLoginCode: vi.fn(),
   signInWithCustomToken: vi.fn(),
@@ -43,7 +43,7 @@ vi.mock('../../lib/telemetry', () => ({
   bucketError: h.bucketError
 }))
 
-vi.mock('../../lib/deviceId', () => ({ getDeviceId: h.getDeviceId }))
+vi.mock('../../lib/deviceId', () => ({ resolvedDeviceId: h.resolvedDeviceId }))
 
 vi.mock('../../settings', () => ({ get: h.settingsGet }))
 
@@ -83,6 +83,7 @@ const GRANT = {
 }
 
 function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
+  isDestroyed: ReturnType<typeof vi.fn>
   executeJavaScript: ReturnType<typeof vi.fn>
   getURL: ReturnType<typeof vi.fn>
   mainFrame: {
@@ -102,6 +103,7 @@ function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
     executeJavaScript: vi.fn(() => Promise.resolve()),
     mainFrame
   } as unknown as WebContents & {
+    isDestroyed: ReturnType<typeof vi.fn>
     executeJavaScript: ReturnType<typeof vi.fn>
     getURL: ReturnType<typeof vi.fn>
     mainFrame: typeof mainFrame
@@ -361,6 +363,27 @@ describe('signInViaDesktopLoginCode', () => {
     )
   })
 
+  it('creates the code at once without installation_id while the id is unresolved', async () => {
+    h.settingsGet.mockReturnValue(true)
+    h.resolvedDeviceId.mockReturnValue(null)
+    h.createDesktopLoginCode.mockResolvedValue(GRANT)
+    h.exchangeDesktopLoginCode.mockResolvedValue({
+      status: 'complete',
+      custom_token: 'custom-token-value'
+    })
+    mockSignInChain({ uid: 'uid-1' })
+    const mod = await loadOrchestrator()
+
+    const promise = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.createDesktopLoginCode).toHaveBeenCalledTimes(1)
+    const request = h.createDesktopLoginCode.mock.lastCall![1] as Record<string, unknown>
+    expect(request).not.toHaveProperty('installation_id')
+
+    await vi.runAllTimersAsync()
+    expect(await promise).toBe('handled')
+  })
+
   it('omits installation_id when telemetry consent is off or undecided', async () => {
     for (const consent of [false, undefined]) {
       h.settingsGet.mockReturnValue(consent)
@@ -378,7 +401,6 @@ describe('signInViaDesktopLoginCode', () => {
 
       const request = h.createDesktopLoginCode.mock.lastCall![1] as Record<string, unknown>
       expect(request).not.toHaveProperty('installation_id')
-      expect(h.getDeviceId).not.toHaveBeenCalled()
     }
   })
 

@@ -53,6 +53,11 @@ const launchHarness = vi.hoisted(() => ({
    *  read, so a read-only or full disk surfaces here. */
   betaEnabledThrows: false,
   grants: [] as CoreBetaGrant[],
+  idWait: null as number | null,
+  idWaitStart: null as number | null,
+  grantsCalledAt: null as number | null,
+  grantsSettled: false,
+  idWaitReadAfterGrants: null as boolean | null,
   /** The boot fetch never settles, as on a link that hangs until its deadline. */
   grantsPending: false,
   /** Runs while `acquireLaunchResources` is in flight — after the launching marker exists and
@@ -184,14 +189,27 @@ vi.mock('../../comfy-args', async (importOriginal) => {
   }
 })
 
+vi.mock('../../deviceId', async (importOriginal) => ({
+  ...(await importOriginal<typeof DeviceIdModule>()),
+  idWaitSince: (start: number) => {
+    launchHarness.idWaitStart = start
+    launchHarness.idWaitReadAfterGrants = launchHarness.grantsSettled
+    return launchHarness.idWait
+  }
+}))
+
 vi.mock('../../coreBetaGrants', async (importOriginal) => {
   const actual = await importOriginal<typeof CoreBetaGrantsModule>()
   return {
     ...actual,
-    getCoreBetaGrantsAsync: () =>
-      launchHarness.grantsPending
-        ? new Promise<CoreBetaGrant[]>(() => {})
-        : Promise.resolve(launchHarness.grants),
+    getCoreBetaGrantsAsync: async () => {
+      launchHarness.grantsCalledAt = performance.now()
+      launchHarness.grantsSettled = false
+      if (launchHarness.grantsPending) return new Promise<CoreBetaGrant[]>(() => {})
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      launchHarness.grantsSettled = true
+      return launchHarness.grants
+    },
     planCoreBetaArgs: (facts: Parameters<typeof actual.planCoreBetaArgs>[0]) => {
       launchHarness.plans.push(facts)
       return actual.planCoreBetaArgs(facts)
@@ -262,6 +280,7 @@ import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
+import type * as DeviceIdModule from '../../deviceId'
 import type * as HardwareTapModule from '../../hardwareTap'
 
 const installOf = (sourceId: string) => ({ sourceId }) as InstallationRecord
@@ -1125,6 +1144,11 @@ describe('core beta report placement', () => {
     launchHarness.schemaThrows = false
     launchHarness.registryThrows = false
     launchHarness.registryCalls = 0
+    launchHarness.idWait = null
+    launchHarness.idWaitStart = null
+    launchHarness.grantsCalledAt = null
+    launchHarness.grantsSettled = false
+    launchHarness.idWaitReadAfterGrants = null
     launchHarness.betaEnabled = true
     launchHarness.betaEnabledThrows = false
     launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
@@ -1222,6 +1246,97 @@ describe('core beta report placement', () => {
     expect(sent.join('')).toContain(
       `[core-beta] --enable-assets (core ${head.slice(0, 12)} in a granted commit range`
     )
+  })
+
+  it.each([
+    ['how long the launch waited for the installation id', 1234],
+    ['0 when the id was already resolved', 0]
+  ])('reports on boot_started %s', async (_label, idWait) => {
+    launchHarness.idWait = idWait
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48234
+    }
+    launchHarness.waitForPort = async () => {}
+
+    await handleLaunch(ctxFor(`harness-launch-id-wait-${idWait}`))
+
+    const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
+    expect(boot?.properties).toMatchObject({ launch_waited_for_id_ms: idWait })
+    expect(launchHarness.idWaitStart).not.toBeNull()
+    expect(
+      launchHarness.idWaitStart!,
+      'sampled on the monotonic clock before the grants fetch was called'
+    ).toBeLessThanOrEqual(launchHarness.grantsCalledAt!)
+    expect(launchHarness.idWaitStart!).toBeLessThan(1e10)
+    expect(
+      launchHarness.idWaitReadAfterGrants,
+      'read once the grants fetch, and so the id, has settled'
+    ).toBe(true)
+  })
+
+  it('reports the time spent when the grants answered at their deadline with the id still pending', async () => {
+    launchHarness.idWait = null
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48237
+    }
+    launchHarness.waitForPort = async () => {}
+
+    await handleLaunch(ctxFor('harness-launch-id-wait-deadline'))
+
+    const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
+    const waited = boot?.properties?.['launch_waited_for_id_ms']
+    expect(typeof waited, 'a wait cut short by the deadline is still a wait').toBe('number')
+    expect(waited as number).toBeGreaterThanOrEqual(1)
+  })
+
+  it('reports a null id wait on boot_started for an opted-out launch, which skips the grants wait', async () => {
+    launchHarness.betaEnabled = false
+    launchHarness.idWait = 1234
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48236
+    }
+    launchHarness.waitForPort = async () => {}
+
+    await handleLaunch(ctxFor('harness-launch-id-wait-opted-out'))
+
+    const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
+    expect(boot).toBeDefined()
+    expect(boot!.properties).toMatchObject({ launch_waited_for_id_ms: null })
+    expect(launchHarness.idWaitStart, 'no wait was sampled').toBeNull()
+  })
+
+  it('reports a null id wait on boot_started when the launch never reached the grants fetch', async () => {
+    launchHarness.schemaThrows = true
+    launchHarness.idWait = 1234
+    launchHarness.launchCommand = {
+      cmd: process.execPath,
+      args: ['-s', path.join(installDir, 'ComfyUI', 'main.py'), '--listen'],
+      cwd: installDir,
+      skipPortWait: false,
+      port: 48235
+    }
+    launchHarness.waitForPort = async () => {}
+
+    await handleLaunch(ctxFor('harness-launch-id-wait-unreached'))
+
+    const boot = events.find((e) => e.event === 'comfy.desktop.comfyui.boot_started')
+    expect(boot).toBeDefined()
+    expect(boot!.properties, 'schema discovery failing skips the grants await').toMatchObject({
+      launch_waited_for_id_ms: null
+    })
+    expect(launchHarness.grantsCalledAt).toBeNull()
   })
 
   it('attributes the beta and boot events to the live HEAD, not the recorded commit', async () => {

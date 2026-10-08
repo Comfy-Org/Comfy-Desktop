@@ -23,10 +23,11 @@
  * every such machine the same installation id, so a placeholder counts as
  * "no machine id" and the install keeps its own random id instead.
  *
- * Synchronous `getDeviceId()` is preserved for backward compatibility with
- * the existing IPC handler and main-process call sites. It must only be
- * called after `initDeviceId()` has resolved; if called earlier it falls back
- * to a random UUID flagged as `'random_fallback'` so dashboards can spot it.
+ * Boot does not wait for the id: consumers await `deviceIdReady()` when they
+ * need it. Nothing persists an id before `initDeviceId()` resolves, so a
+ * consumer that runs early cannot fix a random id in place of the machine's.
+ * Synchronous `getDeviceId()` must only be called after that; earlier, it
+ * returns the on-disk id or an unpersisted random one.
  */
 import { randomUUID, createHash } from 'crypto'
 import path from 'path'
@@ -139,13 +140,62 @@ function isLegacyUuid(value: string): boolean {
 }
 
 /**
- * Hard cap on how long we block boot waiting for `systeminformation`'s
- * platform-specific lookups (SMBIOS / WMI / `/sys/class/dmi/id/...`).
- * On VMs and certain firmwares this call can stall for several seconds;
- * past this budget we fall through to `random_fallback` so the splash
- * screen does not freeze on a slow `dmidecode` shell-out.
+ * Cutoff for `systeminformation`'s platform-specific lookups (SMBIOS / WMI /
+ * `/sys/class/dmi/id/...`), which can stall for seconds on cold starts, VMs
+ * and some firmware. Past it the id falls through to `random_fallback`, which
+ * is persisted, so a later launch that does read the hardware id switches
+ * once. Boot does not wait for it (the window opens first), so it is set long
+ * enough to cover slow cold starts; tune it from `first_launch`'s
+ * `id_lookup_ms`. Counted from `startMachineIdLookup()`.
  */
-const MACHINE_ID_TIMEOUT_MS = 2000
+const MACHINE_ID_TIMEOUT_MS = 15_000
+
+/** win32 uses si.uuid(): one PowerShell spawn, byte-identical to si.system().uuid (verified 5.31.5; recheck on bump). Not macOS (serial). */
+async function lookupHardwareUuid(): Promise<{ uuid?: string }> {
+  if (process.platform === 'win32') {
+    const ids = await si.uuid()
+    return { uuid: ids.hardware }
+  }
+  return si.system()
+}
+
+interface MachineIdLookup {
+  promise: Promise<{ uuid?: string }>
+  startedAt: number
+  durationMs: number | null
+}
+
+let lookup: MachineIdLookup | null = null
+
+/** Start the lookup ahead of initDeviceId(); idempotent, and initDeviceId() starts it if nobody did. */
+export function startMachineIdLookup(): MachineIdLookup {
+  if (lookup) return lookup
+  const started: MachineIdLookup = {
+    promise: lookupHardwareUuid(),
+    startedAt: performance.now(),
+    durationMs: null
+  }
+  // Recorded on both settle paths, which also keeps an early rejection from being unhandled.
+  const record = (): void => {
+    started.durationMs = Math.round(performance.now() - started.startedAt)
+  }
+  started.promise.then(record, record)
+  lookup = started
+  return started
+}
+
+export interface IdLookupTiming {
+  /** Null when the lookup overran the cutoff. */
+  idLookupMs: number | null
+  idLookupTimedOut: boolean
+  uptimeAtIdMs: number
+}
+
+let lookupTiming: IdLookupTiming | null = null
+
+export function getIdLookupTiming(): IdLookupTiming | null {
+  return lookupTiming
+}
 
 /**
  * Placeholder UUIDs that firmware ships unchanged on many boards, beyond the
@@ -195,13 +245,19 @@ interface DerivedMachineId {
 }
 
 async function deriveMachineId(): Promise<DerivedMachineId> {
+  const started = startMachineIdLookup()
+  let timedOut = false
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const sysPromise = si.system()
+    // Monotonic, so a wall-clock correction cannot stretch the wait.
+    const remainingMs = Math.max(0, MACHINE_ID_TIMEOUT_MS - (performance.now() - started.startedAt))
     const timeoutPromise = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), MACHINE_ID_TIMEOUT_MS)
+      timer = setTimeout(() => {
+        timedOut = true
+        resolve(null)
+      }, remainingMs)
     })
-    const sys = await Promise.race([sysPromise, timeoutPromise])
+    const sys = await Promise.race([started.promise, timeoutPromise])
     if (sys) {
       const uuid = (sys.uuid || '').trim()
       // Reject anything that isn't the full 36-char UUID shape (covers
@@ -230,6 +286,12 @@ async function deriveMachineId(): Promise<DerivedMachineId> {
     // fall through to fallback
   } finally {
     if (timer !== undefined) clearTimeout(timer)
+    lookupTiming = {
+      // Null on a timeout: the lookup settles from a later process event.
+      idLookupMs: started.durationMs,
+      idLookupTimedOut: timedOut,
+      uptimeAtIdMs: Math.round(process.uptime() * 1000)
+    }
   }
   // Fallback: random UUID, flagged so dashboards can quarantine.
   return { machineId: randomUUID(), idClass: 'random_fallback' }
@@ -341,6 +403,7 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
         : computeInstallationId(machineId)
 
     cached = { installationId: newId, idClass }
+    resolvedAt = performance.now()
 
     // If an older build recorded a legacy-id retry marker, surface it once so
     // boot can remove that obsolete state. Takes precedence because by
@@ -378,30 +441,45 @@ export function initDeviceId(): Promise<{ legacyId: string | null }> {
 /**
  * Synchronous accessor for the bound installation id.
  *
- * Must only be called after `initDeviceId()` has resolved. If called earlier,
- * falls back to a random UUID flagged as `'random_fallback'` so a misordered
- * call never throws and the data is still distinguishable from machine-derived
- * ids in PostHog.
+ * Must only be called after `initDeviceId()` has resolved; await
+ * `deviceIdReady()` otherwise. Called earlier, it returns the on-disk id or a
+ * random one, persisting neither, so a misordered call never throws and never
+ * fixes an id in place of the machine-derived one.
  */
 export function getDeviceId(): string {
   if (cached) return cached.installationId
 
   // Degraded path — getDeviceId() was called before initDeviceId() resolved.
-  // Try the on-disk value first; if it's a previously-computed id, use it.
-  // Otherwise produce a random UUID (flagged) and persist it best-effort.
+  // Use the on-disk value if there is one, else a random UUID. Neither is
+  // cached or written: persisting here, while the lookup may still answer,
+  // would fix a random id in place of the machine-derived one.
   try {
     const raw = fs.readFileSync(deviceIdPath(), 'utf-8').trim()
-    if (raw.length > 0) {
-      cached = { installationId: raw, idClass: 'random_fallback' }
-      return raw
-    }
+    if (raw.length > 0) return raw
   } catch {
     // fall through
   }
-  const id = randomUUID()
-  cached = { installationId: id, idClass: 'random_fallback' }
-  writeIdFile(id)
-  return id
+  degradedId ??= randomUUID()
+  return degradedId
+}
+
+let degradedId: string | null = null
+
+let resolvedAt: number | null = null
+
+/** How long a wait begun at `start` (performance.now()) lasted: 0 if already resolved, null if not yet. */
+export function idWaitSince(start: number): number | null {
+  return resolvedAt === null ? null : Math.max(0, Math.round(resolvedAt - start))
+}
+
+export async function deviceIdReady(): Promise<string> {
+  await initDeviceId()
+  return getDeviceId()
+}
+
+/** The installation id if initDeviceId() has resolved, else null. Never waits. */
+export function resolvedDeviceId(): string | null {
+  return cached?.installationId ?? null
 }
 
 export function getIdClass(): IdClass {
@@ -424,4 +502,8 @@ export function markIdentityMigrationCompleted(): void {
 export function _resetForTest(): void {
   cached = null
   initPromise = null
+  lookup = null
+  lookupTiming = null
+  degradedId = null
+  resolvedAt = null
 }

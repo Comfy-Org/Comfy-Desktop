@@ -188,6 +188,7 @@ export function _resetTelemetryRelayTargets(): void {
  * close an in-flight PostHog client - tests bring their own mocked one.
  */
 export function _resetForTest(): void {
+  consentDenials = 0
   client = null
   distinctId = null
   anonymousDistinctId = null
@@ -204,9 +205,11 @@ export function _resetForTest(): void {
   pendingPersonSetOnce = null
   pendingUserBinding = null
   quarantinedWrites = []
+  heldUntilBound = null
   defaultEventProperties = {}
   initialized = false
   drainingForQuit = false
+  shutdownStarted = false
   pendingIdentityMergeFlush = null
   pendingIdentityMergeFileDirty = true
   queuedPendingIdentityMergeIds.clear()
@@ -274,7 +277,7 @@ function canEmit(): boolean {
  * profile (PostHog person properties are joined at query time and are
  * point-in-time as of write - releasing a new app version while the user
  * still has events from the old one would mis-attribute without this).
- * `installation_id` is added by `bindAnonymousId()` once installation metadata is known
+ * `installation_id` is added by `setInstallationId()` once installation metadata is known
  * at boot, so renderer events (routed in over IPC) and main events share the
  * machine hash as the default join key. Call sites that override it per-call
  * with a per-install record id still split that key - #1159 moves those
@@ -405,6 +408,10 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
   flagEvaluationStaff = isStaff
 }
 
+export function getFlagEvaluationStaff(): boolean {
+  return flagEvaluationStaff
+}
+
 /**
  * Person properties for an ops-flag evaluation request.
  *
@@ -437,10 +444,10 @@ export function setFlagEvaluationStaff(isStaff: boolean): void {
  * form is equivalent for targeting and puts nothing on the wire for the
  * overwhelming majority of users.
  */
-function opsFlagPersonProperties(): Record<string, string> {
+function opsFlagPersonProperties(staff = flagEvaluationStaff): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
-  if (consentState === 'granted' && flagEvaluationStaff) properties['comfy_staff'] = 'true'
+  if (consentState === 'granted' && staff) properties['comfy_staff'] = 'true'
   return properties
 }
 
@@ -506,8 +513,11 @@ function _bypassRateLimit(event: string): boolean {
   return event.endsWith('.error') || event.startsWith('comfy.desktop.telemetry.')
 }
 
-function enforcePersonProcessingPolicy(properties: TelemetryContext): TelemetryContext {
-  if (boundUserId) return properties
+function enforcePersonProcessingPolicy(
+  properties: TelemetryContext,
+  signedIn = boundUserId !== null
+): TelemetryContext {
+  if (signedIn) return properties
   // Force this after all caller/default merges so no anonymous callsite can
   // accidentally opt back into person-profile creation.
   return { ...properties, $process_person_profile: false }
@@ -585,6 +595,13 @@ export function _test_resetVolumeGuards(): void {
   _sessionCapWarned = false
 }
 
+let consentDenials = 0
+
+/** Denials so far in this process; a late stager compares it against an earlier reading. */
+export function getConsentDenials(): number {
+  return consentDenials
+}
+
 /**
  * Set the current consent state. Undecided data may fire on grant; denied data
  * is discarded.
@@ -596,7 +613,10 @@ export function setConsentState(state: ConsentState): void {
     // Best-effort flush so already-queued events still go out before we
     // start suppressing.
     void client?.flush().catch(() => {})
-    if (state === 'denied') discardDeferredTelemetry()
+    if (state === 'denied') {
+      consentDenials++
+      discardDeferredTelemetry()
+    }
     return
   }
   // Transitioned to granted. Ship anything we held back.
@@ -752,6 +772,7 @@ let pendingSessionStart: Record<string, TelemetryValue> | null = null
  * intended consent outcome.
  */
 let pendingFirstLaunch: TelemetryContext | null = null
+let pendingFirstLaunchAt: Date | null = null
 /** Person props collected before login and applied to Firebase UID at bind. */
 let pendingPersonSet: Record<string, TelemetryValue> | null = null
 /** Same, for write-once (`$set_once`) markers. */
@@ -775,21 +796,21 @@ const FIREBASE_LOGIN_ATTRIBUTION_EVENT = 'comfy.desktop.identity.login_attribute
  * else or to anonymous, and drained at shutdown when the quit outruns the
  * confirming re-report.
  */
-let pendingLoginAttribution: { userId: string; context: TelemetryContext } | null = null
+let pendingLoginAttribution: { userId: string; context: TelemetryContext; at: Date } | null = null
 
 export function stageLoginAttribution(userId: string, context: TelemetryContext): void {
   // A 'denied' choice never defers a login conversion for later.
   if (consentState === 'denied') return
-  pendingLoginAttribution = { userId, context }
+  pendingLoginAttribution = { userId, context, at: new Date() }
 }
 
 /** A confirmation for any user settles the staged attribution: emitted for
  *  the same UID, discarded as contradicted for any other. */
 function emitStagedLoginAttribution(confirmedUserId: string): void {
   if (!pendingLoginAttribution) return
-  const { userId, context } = pendingLoginAttribution
+  const { userId, context, at } = pendingLoginAttribution
   pendingLoginAttribution = null
-  if (userId === confirmedUserId) capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context)
+  if (userId === confirmedUserId) captureAt(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context, at)
 }
 
 interface QuarantinedWrite {
@@ -803,6 +824,10 @@ interface QuarantinedWrite {
   /** Original capture time, restored on replay (events only - the SDK's
    *  captureException accepts no timestamp). */
   timestamp: Date
+  /** The anonymous D a held write was captured under; it is delivered under it even after a rotation. */
+  distinctId?: string
+  /** Whether a user was bound at capture, so its person policy follows the identity it is delivered under. */
+  signedIn?: boolean
 }
 
 /**
@@ -824,6 +849,53 @@ function queueQuarantinedWrite(write: QuarantinedWrite): boolean {
   return true
 }
 
+/** Writes held until the installation id is set (null when not holding); a quit sends them without it. */
+let heldUntilBound: QuarantinedWrite[] | null = null
+
+function holdingForInstallationId(): boolean {
+  return heldUntilBound !== null && installationIdProperty === null
+}
+
+function holdWrite(write: QuarantinedWrite): boolean {
+  if (!heldUntilBound || heldUntilBound.length >= QUARANTINED_WRITES_CAP) return false
+  heldUntilBound.push({
+    ...write,
+    distinctId: distinctId ?? undefined,
+    signedIn: boundUserId !== null
+  })
+  return true
+}
+
+function replayHeldWrites(): void {
+  const writes = heldUntilBound ?? []
+  heldUntilBound = null
+  for (const write of writes) {
+    const allowed =
+      write.kind === 'exception'
+        ? consentState === 'granted'
+        : !!write.event && isAllowedToFire(write.event)
+    if (!allowed) continue
+    if (write.kind === 'exception') {
+      deliverException(
+        write.error,
+        write.properties,
+        write.forward,
+        write.distinctId,
+        write.signedIn
+      )
+    } else if (write.event) {
+      deliverEvent(
+        write.event,
+        write.properties,
+        write.forward,
+        write.timestamp,
+        write.distinctId,
+        write.signedIn
+      )
+    }
+  }
+}
+
 /**
  * Only call with the quarantine already lifted. Replays deliver directly,
  * bypassing the rate limiter — each write was already charged against it at
@@ -836,6 +908,10 @@ function flushQuarantinedWrites(): void {
   quarantinedWrites = []
   if (!canEmit() || !distinctId) return
   for (const write of writes) {
+    if (holdingForInstallationId()) {
+      holdWrite(write)
+      continue
+    }
     if (write.kind === 'exception') {
       if (consentState === 'granted') deliverException(write.error, write.properties, write.forward)
     } else if (write.event && isAllowedToFire(write.event)) {
@@ -869,6 +945,7 @@ function discardDeferredTelemetry(): void {
   pendingUserBinding = null
   pendingLoginAttribution = null
   quarantinedWrites = []
+  if (heldUntilBound) heldUntilBound = []
 }
 
 function acknowledgeDeliveredIdentityMerges(messages: unknown): void {
@@ -969,7 +1046,14 @@ function tryFlushDeferred(): void {
   if (pendingSessionStart && capture('comfy.desktop.session.started', pendingSessionStart)) {
     pendingSessionStart = null
   }
-  if (pendingFirstLaunch && capture('comfy.desktop.app.first_launch', pendingFirstLaunch)) {
+  if (
+    pendingFirstLaunch &&
+    captureAt(
+      'comfy.desktop.app.first_launch',
+      pendingFirstLaunch,
+      pendingFirstLaunchAt ?? new Date()
+    )
+  ) {
     pendingFirstLaunch = null
   }
   // The binding flush also waits on the raw flag: consensus can be pending
@@ -983,26 +1067,45 @@ function tryFlushDeferred(): void {
   void flushPendingIdentityMerges()
 }
 
-/** Bind W/D for captures and a separate installation property. No SDK identify. */
+/** Bind W/D, no SDK identify; a null installation id holds captures until `setInstallationId`. */
 export function bindAnonymousId(
   anonymousId: string,
-  installationId: string,
+  installationId: string | null,
   properties: Record<string, TelemetryValue> = {}
 ): void {
   distinctId = anonymousId
   anonymousDistinctId = anonymousId
   nextAnonymousDistinctId = null
   boundUserId = null
+  if (installationId === null) {
+    installationIdProperty = null
+    heldUntilBound ??= []
+    tryFlushDeferred()
+    return
+  }
+  setInstallationId(installationId, properties)
+}
+
+/** Attach the id and send the held writes; an epoch rotation during the wait stands. */
+export function setInstallationId(
+  installationId: string,
+  properties: Record<string, TelemetryValue> = {}
+): void {
   installationIdProperty = installationId
   defaultEventProperties = { ...defaultEventProperties, installation_id: installationId }
-  if (consentState !== 'denied' && Object.keys(properties).length > 0) {
+  // Also reaches a person bound before the id resolved (see applyFirebaseUserBinding).
+  if (consentState !== 'denied') {
     pendingPersonSet = {
       ...(pendingPersonSet || {}),
       installation_id: installationId,
       ...properties
     }
   }
-  if (!canEmit()) return
+  if (!canEmit()) {
+    heldUntilBound = null
+    return
+  }
+  replayHeldWrites()
   tryFlushDeferred()
 }
 
@@ -1090,7 +1193,7 @@ function applyFirebaseUserBinding(
     return
   }
 
-  if (!canEmit() || !anonymousDistinctId || !installationIdProperty) {
+  if (!canEmit() || !anonymousDistinctId) {
     queuePendingUserBinding(normalizedUserId, emitLoginEvent, properties)
     return
   }
@@ -1119,7 +1222,8 @@ function applyFirebaseUserBinding(
   const personSet = scrubProperties({
     ...(pendingPersonSet || {}),
     ...properties,
-    installation_id: installationIdProperty,
+    // Unknown while the lookup runs; setInstallationId attaches it to the bound person later.
+    ...(installationIdProperty ? { installation_id: installationIdProperty } : {}),
     is_authenticated: true
   })
   const personSetOnce = pendingPersonSetOnce
@@ -1129,7 +1233,7 @@ function applyFirebaseUserBinding(
   const pendingMerge = reservePendingIdentityMerge({
     anonymousId,
     userId: normalizedUserId,
-    installationId: installationIdProperty,
+    ...(installationIdProperty ? { installationId: installationIdProperty } : {}),
     personSet: persistablePersonProperties(personSet),
     ...(personSetOnce ? { personSetOnce: persistablePersonProperties(personSetOnce) } : {})
   })
@@ -1245,6 +1349,7 @@ function detachFromBoundUser(): void {
 export function applyFirebaseAnonymousConsensus(): void {
   pendingLoginAttribution = null
   detachFromBoundUser()
+  tryFlushDeferred()
 }
 
 /**
@@ -1337,7 +1442,16 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
   return captureEvent(event, properties, false)
 }
 
-function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
+function captureAt(event: string, properties: TelemetryContext, at: Date): boolean {
+  return captureEvent(event, properties, false, at)
+}
+
+function captureEvent(
+  event: string,
+  properties: TelemetryContext,
+  forward: boolean,
+  at?: Date
+): boolean {
   // E2E only (no-op otherwise): lets a spec assert an event was raised without consent or a
   // reachable PostHog.
   recordIpcInvocation(`telemetry:${event}`, properties)
@@ -1346,13 +1460,25 @@ function captureEvent(event: string, properties: TelemetryContext, forward: bool
   if (!_checkRateLimit(event)) return false
   if (firebaseWritesQuarantined()) {
     if (
-      !queueQuarantinedWrite({ kind: 'event', event, properties, forward, timestamp: new Date() })
+      !queueQuarantinedWrite({
+        kind: 'event',
+        event,
+        properties,
+        forward,
+        timestamp: at ?? new Date()
+      })
     )
       return false
     _recordCapturedEvent(event)
     return true
   }
-  if (!deliverEvent(event, properties, forward, null)) return false
+  if (holdingForInstallationId()) {
+    if (!holdWrite({ kind: 'event', event, properties, forward, timestamp: at ?? new Date() }))
+      return false
+    _recordCapturedEvent(event)
+    return true
+  }
+  if (!deliverEvent(event, properties, forward, at ?? null)) return false
   _recordCapturedEvent(event)
   return true
 }
@@ -1361,7 +1487,9 @@ function deliverEvent(
   event: string,
   properties: TelemetryContext,
   forward: boolean,
-  timestamp: Date | null
+  timestamp: Date | null,
+  asDistinctId?: string,
+  asSignedIn?: boolean
 ): boolean {
   try {
     // Per-call properties override defaults on key collision - callers
@@ -1371,9 +1499,12 @@ function deliverEvent(
     // to derive country (`disableGeoip: false` at init). The raw IP and all
     // sub-country geo are then discarded by an ingestion transformation, so
     // only the country code/name is retained. See the init comment.
-    const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+    const merged = enforcePersonProcessingPolicy(
+      { ...defaultEventProperties, ...properties },
+      asSignedIn
+    )
     client!.capture({
-      distinctId: distinctId!,
+      distinctId: asDistinctId ?? distinctId!,
       event,
       properties: scrubProperties(merged),
       ...(timestamp ? { timestamp } : {})
@@ -1400,17 +1531,20 @@ function deliverEvent(
  * consent is already `'granted'` (returning user who reinstalled after opting
  * in, or the rare migrator), it captures immediately.
  */
-export function captureFirstLaunch(properties: TelemetryContext = {}): void {
+export function captureFirstLaunch(properties: TelemetryContext = {}, at = new Date()): void {
   if (consentState === 'denied') return
   if (
     !canEmit() ||
     !distinctId ||
     consentState !== 'granted' ||
-    !capture('comfy.desktop.app.first_launch', properties)
+    // The quarantine discards on an account switch; the one-shot buffer waits it out.
+    firebaseWritesQuarantined() ||
+    !captureAt('comfy.desktop.app.first_launch', properties, at)
   ) {
     // Not admitted (deferred or dropped): the on-disk guard is already
     // burned, so keep the payload queued for the next flush trigger.
     pendingFirstLaunch = { ...(pendingFirstLaunch || {}), ...properties }
+    pendingFirstLaunchAt = at
   }
 }
 
@@ -1467,7 +1601,7 @@ export type InstallMethod = 'express' | 'manual' | 'adopt' | 'migrate'
  * than inlined at each completion site: express/manual, adopt, migrate) so
  * the event's property shape can't drift between the three call sites.
  *
- * `installation_id` is already an event-level default once `bindAnonymousId()` ran
+ * `installation_id` is already an event-level default once `setInstallationId()` ran
  * at boot; it's passed explicitly here too so the event is self-describing
  * even in queries that don't rely on the default (and so the value is the
  * specific install that completed, not just the device).
@@ -1530,6 +1664,12 @@ function captureExceptionWrite(
     _recordCapturedEvent('comfy.desktop.exception.error')
     return true
   }
+  if (holdingForInstallationId()) {
+    if (!holdWrite({ kind: 'exception', error, properties, forward, timestamp: new Date() }))
+      return false
+    _recordCapturedEvent('comfy.desktop.exception.error')
+    return true
+  }
   if (!deliverException(error, properties, forward)) return false
   _recordCapturedEvent('comfy.desktop.exception.error')
   return true
@@ -1546,7 +1686,13 @@ function isPostHogExceptionCaptureEnabled(): boolean {
   return isFlagEnabled(process.env['POSTHOG_EXCEPTIONS'])
 }
 
-function deliverException(error: unknown, properties: TelemetryContext, forward: boolean): boolean {
+function deliverException(
+  error: unknown,
+  properties: TelemetryContext,
+  forward: boolean,
+  asDistinctId?: string,
+  asSignedIn?: boolean
+): boolean {
   try {
     // Same default merge as capture() so exception events stay filterable by
     // the shared axes (app_version, client, ...) instead of arriving bare.
@@ -1563,9 +1709,9 @@ function deliverException(error: unknown, properties: TelemetryContext, forward:
     if (isPostHogExceptionCaptureEnabled()) {
       client!.captureException(
         safeError,
-        distinctId!,
+        asDistinctId ?? distinctId!,
         normalizeExceptionContext(
-          enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+          enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties }, asSignedIn)
         ) as TelemetryContext
       )
     }
@@ -1770,7 +1916,8 @@ export async function getOpsFlagResult(
   key: string,
   distinctId: string,
   timeoutMs: number,
-  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void
+  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void,
+  evaluateAsStaff?: boolean
 ): Promise<OpsFlagFetchResult> {
   if (!client) return { kind: 'unreachable' }
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -1778,7 +1925,7 @@ export async function getOpsFlagResult(
   try {
     const flagPromise = client.getFeatureFlagResult(key, distinctId, {
       sendFeatureFlagEvents: false,
-      personProperties: opsFlagPersonProperties()
+      personProperties: opsFlagPersonProperties(evaluateAsStaff)
     })
     const timeoutPromise = new Promise<typeof OPS_FLAG_DEADLINE>((resolve) => {
       timer = setTimeout(() => resolve(OPS_FLAG_DEADLINE), timeoutMs)
@@ -1958,6 +2105,7 @@ export function emit(event: string, context: TelemetryContext = {}): void {
  */
 export async function shutdown(reason: string): Promise<void> {
   if (!client) return
+  shutdownStarted = true
   const uptimeMs = Date.now() - bootstrapTimeMs
   try {
     // A quit mid-navigation must not strand quarantined writes (or the
@@ -1971,10 +2119,10 @@ export async function shutdown(reason: string): Promise<void> {
     // Unbound is safe - the event lands on the anonymous id, which only
     // ever merges into the staged user if they are later confirmed.
     if (pendingLoginAttribution) {
-      const { userId, context } = pendingLoginAttribution
+      const { userId, context, at } = pendingLoginAttribution
       pendingLoginAttribution = null
       if (boundUserId === null || userId === boundUserId) {
-        capture(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context)
+        captureAt(FIREBASE_LOGIN_ATTRIBUTION_EVENT, context, at)
       }
     }
     capture('comfy.desktop.session.ended', {
@@ -1982,6 +2130,8 @@ export async function shutdown(reason: string): Promise<void> {
       uptime_ms: uptimeMs,
       uptime_seconds: Math.round(uptimeMs / 1000)
     })
+    // A quit before the id resolved: send what was held without installation_id rather than lose it.
+    if (holdingForInstallationId()) replayHeldWrites()
   } catch {
     // ignore
   }
@@ -1998,6 +2148,11 @@ export async function shutdown(reason: string): Promise<void> {
 
 let beforeQuitHooked = false
 let drainingForQuit = false
+let shutdownStarted = false
+
+export function hasBegunQuitting(): boolean {
+  return shutdownStarted
+}
 
 /**
  * Maximum time we'll block the quit on draining queued PostHog events.
@@ -2025,7 +2180,11 @@ export function installAppHooks(): void {
   beforeQuitHooked = true
 
   app.on('before-quit', (event) => {
-    if (drainingForQuit || !client) return
+    if (drainingForQuit) return
+    if (!client) {
+      shutdownStarted = true
+      return
+    }
     drainingForQuit = true
     event.preventDefault()
     const drainPromise = shutdown('quit').catch(() => {})

@@ -9,8 +9,10 @@ import path from 'path'
 import * as safeFile from './safe-file'
 
 const getOpsFlagResult = vi.fn()
+const staffClassification = { value: false }
 vi.mock('./telemetry', () => ({
-  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
+  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args),
+  getFlagEvaluationStaff: () => staffClassification.value
 }))
 
 /** The `onLateResult` callback `init` handed to the fetch, or `undefined` when it passed none.
@@ -52,13 +54,16 @@ function makeTestFlag() {
 /** Pinned clock, so a written entry's `fetchedAt` stamp compares exactly. */
 const NOW = Date.UTC(2026, 9, 5)
 const DAY_MS = 24 * 60 * 60 * 1000
+const PERF_NOW = 10_000
 
 /** Lets a detached refresh settle: with a saved treatment, `init` resolves before the fetch. */
 const settle = () => new Promise((resolve) => setImmediate(resolve))
 
 beforeEach(() => {
   getOpsFlagResult.mockReset()
+  staffClassification.value = false
   vi.spyOn(Date, 'now').mockReturnValue(NOW)
+  vi.spyOn(performance, 'now').mockReturnValue(PERF_NOW)
   // Every test, not just the persistence ones: an empty `configDir()` would resolve
   // `ops-flags.json` relative to cwd and drop a file in the repo root.
   testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-flag-'))
@@ -67,6 +72,53 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   fs.rmSync(testConfigDir, { recursive: true, force: true })
+})
+
+describe('makeOpsFlag with a distinct id still resolving', () => {
+  it('makes get() wait for the id and then the fetch', async () => {
+    const flag = makeTestFlag()
+    getOpsFlagResult.mockResolvedValue(flagResult('disabled'))
+    let resolveId: (id: string) => void = () => {}
+    void flag.init({
+      distinctId: new Promise<string>((r) => {
+        resolveId = r
+      })
+    })
+    let settled = false
+    const value = flag.get().finally(() => {
+      settled = true
+    })
+    await new Promise((r) => setImmediate(r))
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+    expect(settled).toBe(false)
+
+    resolveId('final-id')
+    expect(await value).toBe('disabled')
+    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'final-id', 2000, undefined, false)
+  })
+
+  it('evaluates with the staff classification bound at init, not one bound while waiting', async () => {
+    const flag = makeTestFlag()
+    getOpsFlagResult.mockResolvedValue(flagResult('normal'))
+    staffClassification.value = true
+    let resolveId: (id: string) => void = () => {}
+    void flag.init({
+      distinctId: new Promise<string>((r) => {
+        resolveId = r
+      })
+    })
+    staffClassification.value = false
+    resolveId('final-id')
+    await flag.get()
+    expect(getOpsFlagResult.mock.calls[0]![4]).toBe(true)
+  })
+
+  it('falls back when the id promise rejects', async () => {
+    const flag = makeTestFlag()
+    await flag.init({ distinctId: Promise.reject(new Error('no id')) })
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+    expect(await flag.get()).toBe('normal')
+  })
 })
 
 describe('makeOpsFlag', () => {
@@ -130,7 +182,7 @@ describe('makeOpsFlag', () => {
     // The trailing `undefined` is the late-result callback, which only a persisted flag gets —
     // see `makeOpsFlag late results`. Asserted rather than elided so a callback handed to a
     // non-persisting flag fails here.
-    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 50, undefined)
+    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 50, undefined, false)
   })
 
   it('defaults the timeout to 2 s when neither the caller nor the flag sets one', async () => {
@@ -138,7 +190,7 @@ describe('makeOpsFlag', () => {
     getOpsFlagResult.mockResolvedValue(flagResult('normal'))
     await flag.init({ distinctId: 'anon' })
     await settle()
-    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 2000, undefined)
+    expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 2000, undefined, false)
   })
 
   it('hands the matched JSON payload to parse alongside the value', async () => {
@@ -787,7 +839,13 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('granted')
     // The refresh keeps the flag's deadline; an answer past it still lands through the late path
-    expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 5000, expect.any(Function))
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      'grant-flag',
+      'anon',
+      5000,
+      expect.any(Function),
+      false
+    )
   })
 
   it.each([
@@ -845,6 +903,103 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     expect(storedGrant()).toEqual({ 'grant-flag': { value: true, payload: null, fetchedAt: NOW } })
   })
 
+  it('answers a saved treatment while the id is pending, then refreshes with the full budget once it resolves', async () => {
+    seedGrant({ value: true, payload: null, fetchedAt: NOW })
+    pendingFetch()
+    const flag = makeGrantFlag()
+    let resolveId: (id: string) => void = () => {}
+    await flag.init({
+      distinctId: new Promise<string>((r) => {
+        resolveId = r
+      })
+    })
+    expect(await flag.get(), 'a saved grant never waits for the id').toBe('granted')
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+
+    vi.mocked(performance.now).mockReturnValue(PERF_NOW + 9000)
+    resolveId('final-id')
+    await settle()
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      'grant-flag',
+      'final-id',
+      5000,
+      expect.any(Function),
+      false
+    )
+  })
+
+  it.each([
+    ['spends part of the deadline', 3500, 1500],
+    ['outlasts the deadline', 6000, 0]
+  ])(
+    'with nothing saved, counts the deadline from init when the id wait %s',
+    async (_, idWaitMs, budgetMs) => {
+      const fetch = pendingFetch()
+      const flag = makeGrantFlag()
+      let resolveId: (id: string) => void = () => {}
+      void flag.init({
+        distinctId: new Promise<string>((r) => {
+          resolveId = r
+        })
+      })
+      vi.mocked(performance.now).mockReturnValue(PERF_NOW + idWaitMs)
+      resolveId('final-id')
+      await settle()
+      expect(getOpsFlagResult).toHaveBeenCalledWith(
+        'grant-flag',
+        'final-id',
+        budgetMs,
+        expect.any(Function),
+        false
+      )
+      fetch.answer(unreachable())
+      expect(await flag.get()).toBeUndefined()
+    }
+  )
+
+  it('with nothing saved, settles readers at the deadline while the id is pending, and saves the late answer', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      getOpsFlagResult.mockResolvedValue(unreachable())
+      const flag = makeGrantFlag()
+      let resolveId: (id: string) => void = () => {}
+      void flag.init({
+        distinctId: new Promise<string>((r) => {
+          resolveId = r
+        })
+      })
+      let read: unknown = 'pending'
+      void flag.get().then((v) => {
+        read = v
+      })
+
+      await vi.advanceTimersByTimeAsync(4999)
+      expect(read).toBe('pending')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(read, 'readers do not wait for the id past the deadline').toBeUndefined()
+      expect(getOpsFlagResult).not.toHaveBeenCalled()
+
+      resolveId('final-id')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(getOpsFlagResult).toHaveBeenCalledWith(
+        'grant-flag',
+        'final-id',
+        0,
+        expect.any(Function),
+        false
+      )
+      lateCallback()!({ kind: 'value', value: true, payload: null })
+      expect(
+        storedGrant(),
+        'the answer that missed the deadline is saved for the next launch'
+      ).toEqual({
+        'grant-flag': { value: true, payload: null, fetchedAt: NOW }
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('waits on the flag deadline when nothing is saved', async () => {
     const fetch = pendingFetch()
     const flag = makeGrantFlag()
@@ -854,7 +1009,13 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     await settle()
     // Still waiting: nothing saved, so this launch needs the answer
     expect(read).toBe('pending')
-    expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 5000, expect.any(Function))
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      'grant-flag',
+      'anon',
+      5000,
+      expect.any(Function),
+      false
+    )
 
     fetch.answer(flagResult(true, null))
     await settle()
@@ -870,7 +1031,13 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     void flag.get().then((value) => (read = value))
     await settle()
     expect(read).toBe('pending')
-    expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 5000, expect.any(Function))
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      'grant-flag',
+      'anon',
+      5000,
+      expect.any(Function),
+      false
+    )
 
     fetch.answer(flagResult(true, null))
     await settle()
@@ -885,7 +1052,13 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     getOpsFlagResult.mockResolvedValue(unreachable())
     await makeGrantFlag().init({ distinctId: 'anon', timeoutMs: 50 })
     await settle()
-    expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 50, expect.any(Function))
+    expect(getOpsFlagResult).toHaveBeenCalledWith(
+      'grant-flag',
+      'anon',
+      50,
+      expect.any(Function),
+      false
+    )
   })
 
   it.each([

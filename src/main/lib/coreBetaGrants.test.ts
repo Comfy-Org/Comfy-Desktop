@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
 const getOpsFlagResult = vi.fn()
 vi.mock('./telemetry', () => ({
-  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
+  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args),
+  getFlagEvaluationStaff: () => false
 }))
 
 // `coreBetaGrants` is the one flag that persists, so resolving a value here writes `ops-flags.json`
@@ -1013,7 +1014,8 @@ describe('core beta grants fetch', () => {
       CORE_BETA_FEATURES_FLAG_KEY,
       'device-id',
       expect.any(Number),
-      expect.any(Function)
+      expect.any(Function),
+      false
     )
     await expect(getCoreBetaGrantsAsync()).resolves.toEqual([
       { arg: '--enable-assets', minCoreVersion: '0.3.80' }
@@ -1035,12 +1037,15 @@ describe('core beta grants fetch', () => {
       )
     }
     getOpsFlagResult.mockResolvedValue({ kind: 'unreachable' })
+    const now = vi.spyOn(performance, 'now').mockReturnValue(10_000)
+    onTestFinished(() => now.mockRestore())
     await initCoreBetaGrants({ distinctId: 'device-id' })
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       CORE_BETA_FEATURES_FLAG_KEY,
       'device-id',
       deadline,
-      expect.any(Function)
+      expect.any(Function),
+      false
     )
   })
 

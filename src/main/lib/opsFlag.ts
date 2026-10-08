@@ -157,8 +157,12 @@ function writePersistedResult(key: string, entry: PersistedOpsFlagEntry): void {
 export interface OpsFlag<T> {
   /** Boot-time fetch. The returned promise is cached so the IPC handler can await it: a
    *  renderer query landing before the fetch settles sees the resolved value, not the
-   *  fallback. Idempotent within a process; never rejects. */
-  init(opts: { distinctId: string; timeoutMs?: number }): Promise<void>
+   *  fallback. Idempotent within a process; never rejects.
+   *
+   *  `distinctId` may still be pending at boot; the fetch waits for it (`get()` with it),
+   *  and is evaluated with the staff classification bound when `init` was called, so how
+   *  long the id takes cannot change which classification this launch uses. */
+  init(opts: { distinctId: string | Promise<string>; timeoutMs?: number }): Promise<void>
   /** Awaits the in-flight boot fetch so renderer queries landing before it settles still get
    *  the resolved value, not the fallback. No synchronous counterpart on purpose: every
    *  caller so far reads from an IPC handler, where racing the boot fetch to the fallback is
@@ -166,6 +170,19 @@ export interface OpsFlag<T> {
   get(): Promise<T>
   /** @internal — exposed for tests. */
   _resetForTest(): void
+}
+
+function raceIdAgainstDeadline(
+  idPromise: Promise<string>,
+  budgetMs: number
+): Promise<{ id: string } | null> {
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<null>((resolve) => {
+    deadlineTimer = setTimeout(() => resolve(null), budgetMs)
+  })
+  return Promise.race([idPromise.then((id) => ({ id })), deadline]).finally(() =>
+    clearTimeout(deadlineTimer)
+  )
 }
 
 export function makeOpsFlag<T>(opts: {
@@ -246,17 +263,40 @@ export function makeOpsFlag<T>(opts: {
       const generationAtInit = generation
       const saved = readPersisted()
       if (saved !== undefined) cached = saved
-      const fetched = mainTelemetry
-        .getOpsFlagResult(
-          key,
-          initOpts.distinctId,
-          initOpts.timeoutMs ?? timeoutMs ?? DEFAULT_TIMEOUT_MS,
-          // Non-persisting flags pass no callback at all, so they stay write-free structurally
-          // rather than by a guard inside one — no write path is attached to the abandoned fetch.
-          // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
-          // not a write, and deliberately does not depend on whether the flag persists.)
-          persist ? (late) => persistLate(generationAtInit, late) : undefined
-        )
+      const budgetMs = initOpts.timeoutMs ?? timeoutMs ?? DEFAULT_TIMEOUT_MS
+      const startedAt = performance.now()
+      // Non-persisting flags pass no callback at all, so they stay write-free structurally
+      // rather than by a guard inside one — no write path is attached to the abandoned fetch.
+      // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
+      // not a write, and deliberately does not depend on whether the flag persists.)
+      const onLate = persist
+        ? (late: OpsFlagValueResult) => persistLate(generationAtInit, late)
+        : undefined
+      const staffAtInit = mainTelemetry.getFlagEvaluationStaff()
+      const idPromise = Promise.resolve(initOpts.distinctId)
+      // Saved: answer now, refresh once the id resolves. Unsaved: id wait + fetch share the budget; a late answer still persists.
+      const fetched = (
+        saved !== undefined
+          ? idPromise.then((id) =>
+              mainTelemetry.getOpsFlagResult(key, id, budgetMs, onLate, staffAtInit)
+            )
+          : raceIdAgainstDeadline(idPromise, budgetMs).then((idInTime) => {
+              if (idInTime) {
+                const remainingMs = Math.max(0, budgetMs - (performance.now() - startedAt))
+                return mainTelemetry.getOpsFlagResult(
+                  key,
+                  idInTime.id,
+                  remainingMs,
+                  onLate,
+                  staffAtInit
+                )
+              }
+              void idPromise
+                .then((id) => mainTelemetry.getOpsFlagResult(key, id, 0, onLate, staffAtInit))
+                .catch(() => {})
+              return { kind: 'unreachable' as const }
+            })
+      )
         .then((result) => {
           // A refresh runs detached, so it can outlive a `_resetForTest`.
           if (generationAtInit !== generation) return

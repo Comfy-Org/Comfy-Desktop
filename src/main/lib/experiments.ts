@@ -101,6 +101,12 @@ function backfillSessionCache(flags: Record<string, FeatureFlagValue>): void {
   }
 }
 
+export interface ExperimentsIdentity {
+  distinctId: string
+  personProperties: Record<string, string>
+  timeoutMs?: number
+}
+
 /**
  * Initialise the experiments module. Synchronously loads the on-disk
  * cache so `getFlag()` is usable immediately, then kicks off a background
@@ -112,13 +118,14 @@ function backfillSessionCache(flags: Record<string, FeatureFlagValue>): void {
  * renderer query landing before the fetch settles then sees the resolved
  * value instead of falling back to control.
  *
+ * The identity may still be pending at boot: the cache loads at once and the
+ * fetch waits for it. `null` loads the cache without fetching.
+ *
  * Idempotent within a process.
  */
-export function initExperiments(opts: {
-  distinctId: string
-  personProperties: Record<string, string>
-  timeoutMs?: number
-}): Promise<void> {
+export function initExperiments(
+  opts: ExperimentsIdentity | Promise<ExperimentsIdentity> | null
+): Promise<void> {
   // Idempotent within a process: repeated calls return the same in-flight
   // promise without re-running the cache load or fetch. The `opts.distinctId`
   // and `opts.personProperties` of subsequent calls are intentionally ignored.
@@ -126,11 +133,17 @@ export function initExperiments(opts: {
   // rotation and Firebase consensus changes cannot move experiment arms.
   if (initPromise) return initPromise
   cached = readCacheSync() ?? {}
-  initPromise = mainTelemetry
-    .loadFeatureFlagsImmediate(
-      opts.distinctId,
-      opts.personProperties,
-      opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  if (opts === null) {
+    initPromise = Promise.resolve()
+    return initPromise
+  }
+  initPromise = Promise.resolve(opts)
+    .then((identity) =>
+      mainTelemetry.loadFeatureFlagsImmediate(
+        identity.distinctId,
+        identity.personProperties,
+        identity.timeoutMs ?? DEFAULT_TIMEOUT_MS
+      )
     )
     .then((flags) => {
       if (Object.keys(flags).length === 0) return
@@ -163,6 +176,8 @@ export function getFlag(key: string): FeatureFlagValue | undefined {
  * `getFlag()` stays for hot sync reads.
  */
 export async function getFlagAsync(key: string): Promise<FeatureFlagValue | undefined> {
+  // A boot-loaded key is locked for the session, so there is nothing to wait for.
+  if (cached && key in cached) return cached[key]
   if (initPromise) {
     try {
       await initPromise
