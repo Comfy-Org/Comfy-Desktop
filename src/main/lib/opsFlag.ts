@@ -273,17 +273,29 @@ export function makeOpsFlag<T>(opts: {
         ? (late: OpsFlagValueResult) => persistLate(generationAtInit, late)
         : undefined
       const staffAtInit = mainTelemetry.getFlagEvaluationStaff()
-      const fetched = Promise.resolve(initOpts.distinctId).then((id) => {
-        const remainingMs = Math.max(0, budgetMs - (performance.now() - startedAt))
-        return mainTelemetry.getOpsFlagResult(key, id, remainingMs, onLate, staffAtInit)
-      })
+      const idPromise = Promise.resolve(initOpts.distinctId)
       let deadlineTimer: ReturnType<typeof setTimeout> | undefined
-      const deadline = new Promise<{ kind: 'unreachable' }>((resolve) => {
-        deadlineTimer = setTimeout(() => resolve({ kind: 'unreachable' }), budgetMs)
+      const deadline = new Promise<null>((resolve) => {
+        deadlineTimer = setTimeout(() => resolve(null), budgetMs)
       })
-      fetched.catch(() => {})
-      initPromise = Promise.race([fetched, deadline])
+      initPromise = Promise.race([idPromise.then((id) => ({ id })), deadline])
         .finally(() => clearTimeout(deadlineTimer))
+        .then((idInTime) => {
+          if (idInTime) {
+            const remainingMs = Math.max(0, budgetMs - (performance.now() - startedAt))
+            return mainTelemetry.getOpsFlagResult(
+              key,
+              idInTime.id,
+              remainingMs,
+              onLate,
+              staffAtInit
+            )
+          }
+          void idPromise
+            .then((id) => mainTelemetry.getOpsFlagResult(key, id, 0, onLate, staffAtInit))
+            .catch(() => {})
+          return { kind: 'unreachable' as const }
+        })
         .then((result) => {
           if (result.kind === 'unreachable') {
             const parsed = saved !== undefined ? saved : parse(undefined, undefined)

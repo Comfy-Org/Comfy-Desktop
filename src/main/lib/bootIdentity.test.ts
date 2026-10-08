@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -144,6 +144,8 @@ describe('startBootIdentity', () => {
   it('binds the resolved id and fires first_launch once it resolves', async () => {
     lookupDelayMs = 3000
     const launchedAt = Date.now()
+    const uptime = vi.spyOn(process, 'uptime').mockReturnValue(12.345)
+    onTestFinished(() => uptime.mockRestore())
     const bound = mod.startBootIdentity(OPTIONS)
     await vi.advanceTimersByTimeAsync(3000)
     await bound
@@ -163,7 +165,7 @@ describe('startBootIdentity', () => {
         id_class: 'machine_derived',
         id_lookup_ms: 3000,
         id_lookup_timed_out: false,
-        boot_to_id_ms: expect.any(Number),
+        boot_to_id_ms: 12345,
         locale: 'en'
       },
       new Date(launchedAt)

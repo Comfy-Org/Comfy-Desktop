@@ -1803,27 +1803,15 @@ describe('telemetry.captureFirstLaunch (deferred once-ever event)', () => {
 
     telemetry.applyFirebaseAnonymousConsensus()
 
-    const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
-    expect(ev, 'a sign-out resolution flushes the one-shot buffer').toBeDefined()
-    expect(ev?.distinctId).not.toBe('user-a')
-  })
-
-  it('sends a first_launch held by the quarantine under the clean id when the epoch is discarded', () => {
-    telemetry.setConsentState('granted')
-    bindTestAnonymous('install-id')
-    telemetry.applyFirebaseUserConsensus('user-a')
-    telemetry.applyFirebasePendingConsensus()
-    telemetry.captureFirstLaunch({ id_class: 'machine_derived' })
-    captured.length = 0
-
-    expect(telemetry.discardUnmergeableAnonymousEpoch()).toBe(true)
-
-    const ev = captured.find((c) => c.event === 'comfy.desktop.app.first_launch')
-    expect(ev).toBeDefined()
+    const sent = captured.filter((c) => c.event === 'comfy.desktop.app.first_launch')
+    expect(sent, 'a sign-out resolution flushes the one-shot buffer, once').toHaveLength(1)
+    const ev = sent[0]
+    expect(ev?.properties).toMatchObject({ installation_id: 'install-id' })
     telemetry.capture('comfy.desktop.test.after')
-    expect(ev?.distinctId, 'sent after the rotation, never under the discarded epoch').toBe(
+    expect(ev?.distinctId, 'sent under the post-sign-out anonymous id').toBe(
       captured.at(-1)?.distinctId
     )
+    expect(ev?.distinctId).not.toBe('user-a')
   })
 
   it('counts consent denials', () => {

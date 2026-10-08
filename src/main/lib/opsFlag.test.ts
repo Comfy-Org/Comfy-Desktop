@@ -883,6 +883,12 @@ describe('makeOpsFlag deadline and expiry', () => {
         expect.any(Function),
         false
       )
+      lateCallback()!({ kind: 'value', value: false, payload: null })
+      expect(
+        JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8')),
+        'the answer that missed the deadline is saved for the next launch'
+      ).toEqual({ 'grant-flag': { value: false, payload: null, fetchedAt: NOW } })
+      expect(await flag.get(), 'this launch keeps the saved treatment').toBe('granted')
     } finally {
       vi.useRealTimers()
     }
