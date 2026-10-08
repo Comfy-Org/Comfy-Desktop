@@ -139,6 +139,17 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
         self.assertEqual(read(self.repo, "collide.txt"), "from v2\n")
         self.assertEqual(git(self.repo, "show", "%s:collide.txt" % backup), "user file")
 
+    def test_files_staged_by_an_earlier_failed_update_survive(self):
+        # The previous updater wrote its add_all() staging to the on-disk
+        # index; a run that then failed (e.g. at the fetch) left user files
+        # staged for the next update.
+        write(self.repo, {"outputs/ComfyUI_00001_.png": "image\n"})
+        git(self.repo, "add", "outputs")
+        self.update()
+        self.assertEqual(read(self.repo, "outputs/ComfyUI_00001_.png"), "image\n")
+        self.assertIn("?? outputs/ComfyUI_00001_.png",
+                      git(self.repo, "status", "--porcelain", "-uall").splitlines())
+
 
 if __name__ == "__main__":
     unittest.main()
