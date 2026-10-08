@@ -1023,9 +1023,9 @@ describe('core beta grants fetch', () => {
     [
       'a saved grant',
       { value: true, payload: { flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }] } },
-      10_000
+      5000
     ],
-    ['a saved revocation', { value: false, payload: null }, 10_000],
+    ['a saved revocation', { value: false, payload: null }, 5000],
     ['nothing saved', undefined, 5000]
   ])('fetches with the right timeout for %s on disk', async (_, entry, deadline) => {
     if (entry) {

@@ -31,10 +31,6 @@ type OpsFlagValueResult = Extract<OpsFlagFetchResult, { kind: 'value' }>
 
 const DEFAULT_TIMEOUT_MS = 2000
 
-/** A refresh behind a saved treatment blocks nothing, so it waits as long as the SDK's own
- *  `/flags` ceiling (`featureFlagsRequestTimeoutMs` in telemetry.ts). */
-const REFRESH_TIMEOUT_MS = 10_000
-
 /** Every persisted flag's last fetched result, keyed by flag key. One file rather than one
  *  per flag so the read-modify-write stays a single atomic replace. */
 function persistFilePath(): string {
@@ -253,8 +249,7 @@ export function makeOpsFlag<T>(opts: {
         .getOpsFlagResult(
           key,
           initOpts.distinctId,
-          initOpts.timeoutMs ??
-            (saved !== undefined ? REFRESH_TIMEOUT_MS : (timeoutMs ?? DEFAULT_TIMEOUT_MS)),
+          initOpts.timeoutMs ?? timeoutMs ?? DEFAULT_TIMEOUT_MS,
           // Non-persisting flags pass no callback at all, so they stay write-free structurally
           // rather than by a guard inside one — no write path is attached to the abandoned fetch.
           // (`getOpsFlagResult` still observes that fetch to report how it settled; reporting is
@@ -292,8 +287,7 @@ export function makeOpsFlag<T>(opts: {
         })
         .catch((err) => {
           if (logLabel) console.log(`[${logLabel}] init error:`, err)
-          // Keep the saved treatment if there is one; otherwise `cached` stays at `fallback`.
-          if (saved !== undefined) cached = saved
+          // `cached` keeps what it holds: the saved treatment, or `fallback`.
         })
       // A saved treatment answers now; the fetch above only refreshes it.
       initPromise = saved !== undefined ? Promise.resolve() : fetched

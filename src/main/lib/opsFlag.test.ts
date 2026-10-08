@@ -682,6 +682,15 @@ describe('makeOpsFlag late results', () => {
     // Then its late result is discarded rather than written under the state that replaced it
     strandedCallback?.(flagResult(false, null))
     expect(storedGrant()).toEqual({ 'grant-flag': { value: true, payload: null, fetchedAt: NOW } })
+    // Nor applied to the reset flag, which is back at its fallback
+    expect(await flag.get()).toBe('unknown')
+  })
+
+  it('ignores a late value parse does not recognise', async () => {
+    seedGrant(true)
+    const flag = await launchLosingTheRace()
+    lateCallback()?.(flagResult('garbage', null))
+    expect(await flag.get()).toBe('granted')
   })
 
   it('swallows and logs a failed late write', async () => {
@@ -704,6 +713,8 @@ describe('makeOpsFlag late results', () => {
     // an uncaught error becomes an unhandled rejection rather than a caught test failure.
     expect(() => lateCallback()?.(flagResult(false, null))).not.toThrow()
     expect(logs.mock.calls.some(([msg]) => msg === '[grant] late persist error:')).toBe(true)
+    // And the failed write does not cost later reads the value
+    expect(await flag.get()).toBe('revoked')
   })
 
   it('hands a non-persisting flag no late callback at all', async () => {
@@ -760,13 +771,8 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     const flag = makeGrantFlag()
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('granted')
-    // The refresh waits as long as the SDK allows, since nothing is blocked on it
-    expect(getOpsFlagResult).toHaveBeenCalledWith(
-      'grant-flag',
-      'anon',
-      10_000,
-      expect.any(Function)
-    )
+    // The refresh keeps the flag's deadline; an answer past it still lands through the late path
+    expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 5000, expect.any(Function))
   })
 
   it.each([
