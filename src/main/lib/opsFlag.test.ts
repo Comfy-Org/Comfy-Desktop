@@ -686,6 +686,19 @@ describe('makeOpsFlag late results', () => {
     expect(await flag.get()).toBe('unknown')
   })
 
+  it('keeps a late value that lands before the deadline handler runs', async () => {
+    seedGrant(true)
+    let answer: (result: unknown) => void = () => {}
+    getOpsFlagResult.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    const flag = makeGrantFlag()
+    await flag.init({ distinctId: 'anon' })
+    // The late revocation is delivered first, then the deadline's `unreachable` settles
+    lateCallback()?.(flagResult(false, null))
+    answer(unreachable())
+    await settle()
+    expect(await flag.get()).toBe('revoked')
+  })
+
   it('ignores a late value parse does not recognise', async () => {
     seedGrant(true)
     const flag = await launchLosingTheRace()

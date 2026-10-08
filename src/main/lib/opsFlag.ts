@@ -260,7 +260,9 @@ export function makeOpsFlag<T>(opts: {
           // A refresh runs detached, so it can outlive a `_resetForTest`.
           if (generationAtInit !== generation) return
           if (result.kind === 'unreachable') {
-            const parsed = saved !== undefined ? saved : parse(undefined, undefined)
+            // Only when nothing is saved: a saved treatment is already in `cached`, and re-applying
+            // it here could undo a late value that landed first.
+            const parsed = saved === undefined ? parse(undefined, undefined) : undefined
             if (parsed !== undefined) cached = parsed
           } else {
             const parsed = parse(result.value, result.payload)
