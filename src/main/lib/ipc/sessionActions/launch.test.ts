@@ -81,7 +81,8 @@ const launchHarness = vi.hoisted(() => ({
   idClass: 'machine_derived' as string,
   campaignFetches: 0,
   records: null as null | Map<string, Record<string, unknown>>,
-  recordsUpdateThrows: false
+  recordsUpdateThrows: false,
+  recordsUpdateGate: null as null | Promise<void>
 }))
 
 vi.mock('../../coreBetaCampaignFlags', () => ({
@@ -138,6 +139,7 @@ vi.mock('../shared', async (importOriginal) => {
         if (records && key === 'update') {
           return async (id: string, data: Record<string, unknown>) => {
             if (launchHarness.recordsUpdateThrows) throw new Error('EIO')
+            await launchHarness.recordsUpdateGate
             const next = { ...(records.get(id) ?? { id }), ...data }
             records.set(id, next)
             return next
@@ -2768,6 +2770,7 @@ describe('agent requirements at launch', () => {
       launchHarness.campaigns = { registry: [], answers: new Map() }
       launchHarness.recordWriteThrows = false
       launchHarness.recordsUpdateThrows = false
+      launchHarness.recordsUpdateGate = null
       launchHarness.waitForPort = null
       launchHarness.records = null
       pipHarness.installed = '[]'
@@ -2881,6 +2884,35 @@ describe('agent requirements at launch', () => {
       await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
     })
 
+    it('counts two outcomes that land at once, one after the other', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      launchHarness.launchCommand = { ...launchCommand(), skipPortWait: false, port: 48233 }
+      launchHarness.waitForPort = async () => {}
+      let release = (): void => {}
+      launchHarness.recordsUpdateGate = new Promise((resolve) => (release = resolve))
+      const ctx = ctxFor(ID)
+      ctx.inst = { ...harnessInstall(), ...launchHarness.records!.get(ID), id: ID } as never
+      expect((await handleLaunch(ctx)).ok).toBe(true)
+
+      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
+      fs.writeFileSync(`${sessionFile}.reboot`, '')
+      const first = proc!
+      first.emit('exit', 0, null)
+      first.emit('close', 0, null)
+      await vi.waitFor(() => expect(spawnCount).toBe(2))
+      proc!.stderr.emit('data', Buffer.from('[INFO] [agent-event] agent_error reason=crashed\n'))
+      release()
+      await vi.waitFor(() =>
+        expect(overrideState(), 'neither failure is lost').toEqual({
+          signature: 'comfy-agent==0.2.3',
+          failures: 2
+        })
+      )
+      proc!.emit('exit', 0, null)
+      proc!.emit('close', 0, null)
+      await vi.waitFor(() => expect(_runningSessions.has(ID)).toBe(false))
+    })
+
     it('stops retrying a version that failed to install twice', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
       pipHarness.respond = (args) => {
@@ -2957,6 +2989,7 @@ describe('agent requirements at launch', () => {
 
       expect(await handleLaunch(ctx)).toEqual({ ok: false, cancelled: true })
       expect(overrideState(), 'a cancel is not a failed install').toBeUndefined()
+      expect(overrideEvents(), 'a cancelled launch reports no decision').toEqual([])
     })
 
     it('still launches when an install failure cannot be recorded', async () => {
@@ -2975,10 +3008,14 @@ describe('agent requirements at launch', () => {
     it('still launches when the outcome cannot be recorded', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
       launchHarness.recordsUpdateThrows = true
+      const warn = vi.spyOn(console, 'warn')
 
       await launchAndPrint({ lines: ['[agent-event] agent_error reason=crashed'] })
 
-      expect(overrideState()).toBeUndefined()
+      expect(warn).toHaveBeenCalledWith(
+        'agent requirements override: could not record the outcome:',
+        expect.any(Error)
+      )
     })
 
     it('reads the agent lines core logs to stdout too', async () => {

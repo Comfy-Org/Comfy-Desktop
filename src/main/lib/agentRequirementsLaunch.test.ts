@@ -738,7 +738,9 @@ describe('installAgentRequirements with a version override', () => {
 
   it('stops waiting on the package listing as soon as the launch is cancelled', async () => {
     const abort = new AbortController()
-    mockUvPip.mockImplementationOnce(() => {
+    let listing: AbortSignal | undefined
+    mockUvPip.mockImplementationOnce((...args) => {
+      listing = args[4]
       queueMicrotask(() => abort.abort())
       return new Promise(() => {})
     })
@@ -746,6 +748,29 @@ describe('installAgentRequirements with a version override', () => {
     await installAgentRequirements(plan, vi.fn(), abort.signal, undefined, OVERRIDE)
 
     expect(calls).toEqual([])
+    expect(listing?.aborted, 'the uv pip list process is told to stop too').toBe(true)
+  })
+
+  it('starts no uv for an attempt the launch already gave up on', async () => {
+    const abort = new AbortController()
+    const sendOutput = vi.fn()
+    let listed = (): void => {}
+    mockUvPip.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          listed = () => resolve({ code: 0, output: INSTALLED })
+        })
+    )
+    const pending = installAgentRequirements(plan, sendOutput, abort.signal, undefined, OVERRIDE)
+    await vi.waitFor(() => expect(mockUvPip).toHaveBeenCalled())
+
+    abort.abort()
+    listed()
+    await pending
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(calls, 'the late listing must not lead to an install').toEqual([])
+    expect(sendOutput.mock.calls.join('')).not.toContain('Applying agent version override')
   })
 
   it("passes the constraints relative to the install dir, which is uv's cwd", async () => {
@@ -1021,14 +1046,15 @@ describe('installAgentRequirements with a version override', () => {
       })
 
       await settle(installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE))
-      for (let i = 0; i < 500 && fs.readdirSync(installDir).length > 1; i++) {
-        await new Promise((resolve) => setImmediate(resolve))
-      }
-
-      expect(
-        fs.readdirSync(installDir),
-        'the abandoned attempt still cleans up, after the launch has moved on'
-      ).toEqual(['ComfyUI'])
+      vi.useRealTimers()
+      await vi.waitFor(
+        () =>
+          expect(
+            fs.readdirSync(installDir),
+            'the abandoned attempt still cleans up, after the launch has moved on'
+          ).toEqual(['ComfyUI']),
+        { timeout: 5_000 }
+      )
       expect(fallbackDeadline, 'the floor still gives core file time').toBeGreaterThanOrEqual(
         130_000
       )

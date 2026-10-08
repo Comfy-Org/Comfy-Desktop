@@ -296,6 +296,15 @@ describe('the start-failure latch', () => {
   })
 })
 
+describe('overrideSignature', () => {
+  it('names one override the same whatever order the payload listed it in', () => {
+    const a = overrideSignature(pins({ 'comfy-cli': '1.22.0', 'comfy-agent': '0.2.3' }))
+    const b = overrideSignature(pins({ 'comfy-agent': '0.2.3', 'comfy-cli': '1.22.0' }))
+    expect(a).toBe('comfy-agent==0.2.3,comfy-cli==1.22.0')
+    expect(b).toBe(a)
+  })
+})
+
 describe('compareVersions', () => {
   it('orders versions the way pip does', () => {
     const ascending = [

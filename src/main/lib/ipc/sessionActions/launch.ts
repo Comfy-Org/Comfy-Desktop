@@ -419,12 +419,28 @@ export function agentInstallStatusText(status: AgentInstallStatus): string {
   }
 }
 
-/** Never throws: it runs from ComfyUI's output stream. */
-async function recordOverrideOutcome(
+const overrideRecording = new Map<string, Promise<void>>()
+
+/** Queued per install: two outcomes folding the same count at once would lose one. */
+function recordOverrideOutcome(
   installationId: string,
   pins: OverridePins,
   outcome: AgentStartOutcome,
   failedBy: 'start_failed' | 'install_failed' | 'check_failed' = 'start_failed'
+): Promise<void> {
+  const queued = (overrideRecording.get(installationId) ?? Promise.resolve()).then(() =>
+    foldOverrideOutcome(installationId, pins, outcome, failedBy)
+  )
+  overrideRecording.set(installationId, queued)
+  return queued
+}
+
+/** Never throws: it runs from ComfyUI's output stream. */
+async function foldOverrideOutcome(
+  installationId: string,
+  pins: OverridePins,
+  outcome: AgentStartOutcome,
+  failedBy: 'start_failed' | 'install_failed' | 'check_failed'
 ): Promise<void> {
   try {
     const current = await installations.get(installationId)
@@ -1421,7 +1437,7 @@ async function runLaunch(
       // Counted like a failed start, so a version that cannot install stops costing launch time.
       const costly = 'reason' in overrideDecision ? overrideDecision.reason : undefined
       if (overrideDecision.pins && (costly === 'install_failed' || costly === 'check_failed')) {
-        await recordOverrideOutcome(installationId, overrideDecision.pins, 'failed', costly)
+        void recordOverrideOutcome(installationId, overrideDecision.pins, 'failed', costly)
       }
     }
   }
