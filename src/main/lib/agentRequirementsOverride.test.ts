@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import * as telemetry from './telemetry'
 import {
   START_FAILURES_TO_REVERT,
   classifyAgentEvent,
@@ -10,7 +11,8 @@ import {
   overrideSignature,
   parseAgentRequirementsOverride,
   compareVersions,
-  readOverrideState
+  readOverrideState,
+  reportOverrideDecision
 } from './agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from './agentRequirementsOverride'
 import type { InstallationRecord } from '../installations'
@@ -335,5 +337,17 @@ describe('compareVersions', () => {
   it('treats trailing zero release segments as equal', () => {
     expect(compareVersions('1.0', '1.0.0.0')).toBe(0)
     expect(compareVersions('2', '2.0')).toBe(0)
+  })
+})
+
+describe('reportOverrideDecision', () => {
+  it('never lets a failing telemetry sink reach the launch', () => {
+    vi.spyOn(telemetry, 'emit').mockImplementation(() => {
+      throw new Error('sink down')
+    })
+
+    expect(() =>
+      reportOverrideDecision('i', { decision: 'refused', reason: 'bad_version' })
+    ).not.toThrow()
   })
 })

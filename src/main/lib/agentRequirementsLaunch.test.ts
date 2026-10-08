@@ -751,7 +751,41 @@ describe('installAgentRequirements with a version override', () => {
     expect(listing?.aborted, 'the uv pip list process is told to stop too').toBe(true)
   })
 
-  it('starts no uv for an attempt the launch already gave up on', async () => {
+  it('falls back to core file when the override files cannot be written', async () => {
+    fs.mkdirSync(path.join(installDir, '.launch-agent-reqs-override-src.txt'))
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
+
+    expect(decision, 'a directory in the way makes the override write fail').toMatchObject({
+      decision: 'reverted',
+      reason: 'install_failed'
+    })
+    expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+  })
+
+  it('says nothing about a fallback when the launch is cancelled during the override install', async () => {
+    const abort = new AbortController()
+    const sendOutput = vi.fn()
+    respond = ({ constraints }) => {
+      if (constraints) abort.abort()
+      return { code: 1, output: '' }
+    }
+
+    await installAgentRequirements(plan, sendOutput, abort.signal, undefined, OVERRIDE)
+
+    expect(sendOutput.mock.calls.join('')).not.toContain('did not install')
+  })
+
+  it('lists nothing for a launch that was cancelled before the override began', async () => {
+    const abort = new AbortController()
+    abort.abort()
+
+    await installAgentRequirements(plan, vi.fn(), abort.signal, undefined, OVERRIDE)
+
+    expect(mockUvPip).not.toHaveBeenCalled()
+  })
+
+  it('starts no install when the launch is cancelled while the packages are listed', async () => {
     const abort = new AbortController()
     const sendOutput = vi.fn()
     let listed = (): void => {}
@@ -769,7 +803,7 @@ describe('installAgentRequirements with a version override', () => {
     await pending
     await new Promise((resolve) => setTimeout(resolve, 20))
 
-    expect(calls, 'the late listing must not lead to an install').toEqual([])
+    expect(calls, 'a listing that answers after the cancel must not lead to an install').toEqual([])
     expect(sendOutput.mock.calls.join('')).not.toContain('Applying agent version override')
   })
 
@@ -785,7 +819,7 @@ describe('installAgentRequirements with a version override', () => {
   it('leaves no overridden copy or constraints behind', async () => {
     await installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
 
-    expect(fs.readdirSync(installDir)).toEqual(['ComfyUI'])
+    await vi.waitFor(() => expect(fs.readdirSync(installDir)).toEqual(['ComfyUI']))
   })
 
   it('installs core file alone, exactly as before, when there is no override', async () => {
@@ -992,9 +1026,12 @@ describe('installAgentRequirements with a version override', () => {
     })
 
     it('gives up on a package listing that never answers, and refuses', async () => {
-      hangUntilAborted(Date.now())
-      mockUvPip.mockImplementation(() => {
+      const startedAt = Date.now()
+      hangUntilAborted(startedAt)
+      let listingStoppedAt = 0
+      mockUvPip.mockImplementation((...args) => {
         waiting++
+        args[4]!.addEventListener('abort', () => (listingStoppedAt = Date.now() - startedAt))
         return new Promise(() => {})
       })
 
@@ -1003,6 +1040,7 @@ describe('installAgentRequirements with a version override', () => {
       )
 
       expect(decision).toMatchObject({ decision: 'refused', reason: 'check_failed' })
+      expect(listingStoppedAt, 'a stuck listing is stopped at its own 30 s bound').toBe(30_000)
       expect(
         calls.map((c) => [c.constraints, c.timeoutAt]),
         'the listing stops at 30 s and core file gets the rest of the 120 s ceiling'

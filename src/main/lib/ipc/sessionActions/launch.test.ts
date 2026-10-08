@@ -2999,10 +2999,15 @@ describe('agent requirements at launch', () => {
         code: (args[8] as string[] | undefined) ? 1 : 0,
         output: ''
       })
+      const warn = vi.spyOn(console, 'warn')
 
       await launchAndPrint()
 
       expect(spawnArgs).toContain('--enable-agent')
+      expect(warn).toHaveBeenCalledWith(
+        'agent requirements override: could not record the outcome:',
+        expect.any(Error)
+      )
     })
 
     it('still launches when the outcome cannot be recorded', async () => {

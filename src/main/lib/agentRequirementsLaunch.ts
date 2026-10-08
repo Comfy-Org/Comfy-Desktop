@@ -428,13 +428,14 @@ async function tryOverride(
       '--constraint',
       OVERRIDE_CONSTRAINTS
     ])
+    if (signal?.aborted) return { decision: 'reverted', reason: 'install_failed', pins }
     if (!installed) return revertOnInstall(sendOutput, pins)
     return { decision: 'applied', pins }
   } catch {
     return revertOnInstall(sendOutput, pins)
   } finally {
-    await fs.promises.unlink(overridePath).catch(() => {})
-    await fs.promises.unlink(constraintsPath).catch(() => {})
+    void fs.promises.unlink(overridePath).catch(() => {})
+    void fs.promises.unlink(constraintsPath).catch(() => {})
   }
 }
 
