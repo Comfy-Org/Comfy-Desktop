@@ -170,7 +170,16 @@ def main():
     try:
         repo.branches.local.create(backup_name, repo.head.peel())
         print("[BACKUP_BRANCH] %s" % backup_name)
-        repo.index.add_all()
+        # Stage edits to tracked files only. Untracked files stay out of the
+        # index: the forced checkout below removes anything staged that the
+        # new commit doesn't track, which would delete a user's files kept
+        # inside the checkout (e.g. an output folder). Unstaged, they're left
+        # in place.
+        for path, flags in repo.status().items():
+            if flags & pygit2.GIT_STATUS_WT_DELETED:
+                repo.index.remove(path)
+            elif flags & pygit2.GIT_STATUS_WT_MODIFIED:
+                repo.index.add(path)
         repo.index.write()
         if repo.index.diff_to_tree(repo.head.peel().tree):
             tree = repo.index.write_tree()
