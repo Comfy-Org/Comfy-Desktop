@@ -234,6 +234,14 @@ const fieldOptions = ref(new Map<string, FieldOption[]>())
 const fieldLoading = ref(new Map<string, boolean>())
 const fieldErrors = ref(new Map<string, string>())
 const textFieldValues = ref(new Map<string, string>())
+/** Main-process rejection of the current selections; stale once they change. */
+const buildError = ref('')
+const clearBuildError = (): void => {
+  buildError.value = ''
+}
+// Depth 1: option data can carry a release's whole bundle history.
+watch(selections, clearBuildError, { deep: 1 })
+watch(textFieldValues, clearBuildError, { deep: 1 })
 
 // Disk space and path validation
 const {
@@ -1194,20 +1202,18 @@ async function handleSave(): Promise<void> {
   // the template id, so "Skip & Install" (template = None) means no download.
   // The renderer doesn't sync a separate consent field.
 
-  let instData: Record<string, unknown>
-  try {
-    const buildResult = await window.api.buildInstallation(source.id, rawSelections())
-    if (!buildResult.ok) {
-      sourceError.value = buildResult.message
-      step.value = 'configure'
-      return
-    }
-    instData = buildResult.data
-  } catch (error) {
-    sourceError.value = error instanceof Error ? error.message : String(error)
+  const buildResult = await window.api
+    .buildInstallation(source.id, rawSelections())
+    .catch((error: unknown) => ({
+      ok: false as const,
+      message: error instanceof Error ? error.message : String(error)
+    }))
+  if (!buildResult.ok) {
+    buildError.value = buildResult.message
     step.value = 'configure'
     return
   }
+  const instData = buildResult.data
   const baseName = instName.value.trim() || DEFAULT_INSTALL_NAME
   const name = await window.api.getUniqueName(baseName)
 
@@ -1476,8 +1482,12 @@ defineExpose({ open })
           <div v-if="!managedBuildMode" class="config-advanced config-advanced--direct is-open">
             <div class="config-advanced__wrap">
               <div class="config-advanced__body">
-                <div v-if="sourceError || runtimeUnavailable" class="wizard-error" role="alert">
-                  {{ sourceError || $t('standalone.runtimeUnavailable') }}
+                <div
+                  v-if="sourceError || buildError || runtimeUnavailable"
+                  class="wizard-error"
+                  role="alert"
+                >
+                  {{ sourceError || buildError || $t('standalone.runtimeUnavailable') }}
                 </div>
                 <div v-if="currentSource" id="source-fields">
                   <div
