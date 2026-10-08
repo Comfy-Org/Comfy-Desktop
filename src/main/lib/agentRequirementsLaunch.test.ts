@@ -991,7 +991,7 @@ describe('installAgentRequirements with a version override', () => {
       expect(output).toContain('exceeded 30s; starting ComfyUI without it')
     })
 
-    it('gives up on a package listing that never answers, at the attempt bound', async () => {
+    it('gives up on a package listing that never answers, and refuses', async () => {
       hangUntilAborted(Date.now())
       mockUvPip.mockImplementation(() => {
         waiting++
@@ -1002,11 +1002,11 @@ describe('installAgentRequirements with a version override', () => {
         installAgentRequirements(plan, vi.fn(), undefined, undefined, OVERRIDE)
       )
 
-      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed' })
+      expect(decision).toMatchObject({ decision: 'refused', reason: 'check_failed' })
       expect(
         calls.map((c) => [c.constraints, c.timeoutAt]),
-        'given up at 90 s + 10 s grace + 5 s force-stop, then the 30 s floor'
-      ).toEqual([[null, 135_000]])
+        'the listing stops at 30 s and core file gets the rest of the 120 s ceiling'
+      ).toEqual([[null, 120_000]])
     })
 
     it('gives core file its full ceiling when there is no override', async () => {

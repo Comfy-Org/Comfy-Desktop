@@ -405,36 +405,6 @@ async function tryOverride(
     )
     return { decision: 'reverted', reason: 'previously_failed', pins }
   }
-  // One race over the whole attempt, file I/O included; abandoned work may not start uv.
-  const abandon = new AbortController()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const onLaunchAbort = (): void => abandon.abort()
-  const gaveUp = new Promise<OverrideDecision>((resolve) => {
-    abandon.signal.addEventListener('abort', () => resolve(revertOnInstall(sendOutput, pins)))
-    timer = setTimeout(onLaunchAbort, OVERRIDE_TIMEOUT_MS + KILL_GRACE_MS + FORCE_STOP_TIMEOUT_MS)
-  })
-  if (signal?.aborted) abandon.abort()
-  signal?.addEventListener('abort', onLaunchAbort, { once: true })
-  try {
-    return await Promise.race([
-      attemptOverride(plan, pins, run, sendOutput, abandon.signal),
-      gaveUp
-    ])
-  } finally {
-    clearTimeout(timer)
-    signal?.removeEventListener('abort', onLaunchAbort)
-  }
-}
-
-async function attemptOverride(
-  plan: AgentRequirementsInstall,
-  pins: OverridePins,
-  run: BoundedRun,
-  sendOutput: (text: string) => void,
-  abandoned: AbortSignal
-): Promise<OverrideDecision> {
-  const deadline = Date.now() + OVERRIDE_TIMEOUT_MS
-  const left = (): number => Math.max(0, deadline - Date.now())
   let coreText: string
   try {
     coreText = await fs.promises.readFile(plan.reqPath, 'utf-8')
@@ -447,21 +417,14 @@ async function attemptOverride(
   const overridePath = path.join(plan.installPath, OVERRIDE_REQS)
   const constraintsPath = path.join(plan.installPath, OVERRIDE_CONSTRAINTS)
   try {
-    const listed = await runUvPipDetailed(
-      plan.uvPath,
-      ['pip', 'list', '--format', 'json', '--python', plan.pythonPath],
-      plan.installPath,
-      () => {},
-      abandoned
-    )
-    const constraints = listed.code === 0 ? installedConstraints(listed.output) : null
+    const listed = await listInstalled(plan, signal)
+    const constraints = listed === null ? null : installedConstraints(listed)
     if (constraints === null) return refuse(sendOutput, 'check_failed', pins)
     await fs.promises.writeFile(overridePath, effective.text, 'utf-8')
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
-    if (abandoned.aborted) return revertOnInstall(sendOutput, pins)
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
     // Relative to uv's cwd (the install dir): uv splits an absolute --constraint path on spaces.
-    const installed = await run(overridePath, OVERRIDE_FILTERED_REQS, left(), [
+    const installed = await run(overridePath, OVERRIDE_FILTERED_REQS, OVERRIDE_TIMEOUT_MS, [
       '--constraint',
       OVERRIDE_CONSTRAINTS
     ])
@@ -472,6 +435,37 @@ async function attemptOverride(
   } finally {
     await fs.promises.unlink(overridePath).catch(() => {})
     await fs.promises.unlink(constraintsPath).catch(() => {})
+  }
+}
+
+/** A `uv pip list` is local and fast; this only stops a stuck one holding the launch. */
+const LIST_TIMEOUT_MS = 30_000
+
+/** `uv pip list` of the install's environment, or null if it failed, stalled or was cancelled. */
+async function listInstalled(
+  plan: AgentRequirementsInstall,
+  signal: AbortSignal | undefined
+): Promise<string | null> {
+  if (signal?.aborted) return null
+  const stop = new AbortController()
+  const onStop = (): void => stop.abort()
+  const timer = setTimeout(onStop, LIST_TIMEOUT_MS)
+  signal?.addEventListener('abort', onStop, { once: true })
+  const stopped = new Promise<null>((resolve) =>
+    stop.signal.addEventListener('abort', () => resolve(null), { once: true })
+  )
+  try {
+    const listed = runUvPipDetailed(
+      plan.uvPath,
+      ['pip', 'list', '--format', 'json', '--python', plan.pythonPath],
+      plan.installPath,
+      () => {},
+      stop.signal
+    ).then((result) => (result.code === 0 ? result.output : null))
+    return await Promise.race([listed, stopped])
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onStop)
   }
 }
 
