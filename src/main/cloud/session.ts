@@ -8,7 +8,8 @@
  */
 import type { TokenProvider } from '../comfybuilder'
 import { workspaceIdOf } from './claims'
-import { refresh, signIn } from './oauth'
+import type { OAuthOptions } from './oauth'
+import { openAuthorizePage, refresh, signIn } from './oauth'
 import {
   activateWorkspace,
   clearTokens,
@@ -29,25 +30,41 @@ export class CloudSession {
   /** Refresh rotations are single-flight per workspace token family. */
   private readonly refreshing = new Map<string, Promise<AuthTokens | null>>()
   private loginInFlight: Promise<AuthStatus> | null = null
+  private loginAuthorizeUrl: string | null = null
 
   /** Latest browser-auth intent. Older flows may finish, but cannot replace
    *  tokens chosen by a newer login, workspace switch, or logout. */
   private authGeneration = 0
 
-  /** Start the PKCE sign-in (system browser); persists tokens on success. */
+  /** Start the PKCE sign-in (system browser); persists tokens on success.
+   *  A repeat request while one is pending reopens its browser page, since the
+   *  user may have closed it or hit an IdP error there. */
   login(): Promise<AuthStatus> {
-    if (this.loginInFlight) return this.loginInFlight
-    const login = this.authenticate().finally(() => {
-      if (this.loginInFlight === login) this.loginInFlight = null
+    if (this.loginInFlight) {
+      if (this.loginAuthorizeUrl) void openAuthorizePage(this.loginAuthorizeUrl).catch(() => {})
+      return this.loginInFlight
+    }
+    const generation = ++this.authGeneration
+    const login = this.authenticateAtGeneration(generation, {
+      onAuthorizeUrl: (url) => {
+        if (generation === this.authGeneration) this.loginAuthorizeUrl = url
+      }
+    }).finally(() => {
+      if (this.loginInFlight === login) this.clearPendingLogin()
     })
     this.loginInFlight = login
     return login
   }
 
+  private clearPendingLogin(): void {
+    this.loginInFlight = null
+    this.loginAuthorizeUrl = null
+  }
+
   /** Forget tokens. Installed environments are untouched. */
   logout(): void {
     this.authGeneration += 1
-    this.loginInFlight = null
+    this.clearPendingLogin()
     clearTokens()
   }
 
@@ -131,7 +148,7 @@ export class CloudSession {
 
   /** Activate cached workspace credentials, using browser auth only when needed. */
   async switchWorkspace(workspaceId: string): Promise<AuthStatus> {
-    this.loginInFlight = null
+    this.clearPendingLogin()
     const generation = ++this.authGeneration
     const current = loadTokens()
     let cached =
@@ -146,19 +163,15 @@ export class CloudSession {
       if (cached !== current) activateWorkspace(workspaceId)
       return this.status()
     }
-    return this.authenticateAtGeneration(generation, workspaceId)
-  }
-
-  private async authenticate(workspaceId?: string): Promise<AuthStatus> {
-    const generation = ++this.authGeneration
-    return this.authenticateAtGeneration(generation, workspaceId)
+    return this.authenticateAtGeneration(generation, { workspaceId })
   }
 
   private async authenticateAtGeneration(
     generation: number,
-    workspaceId?: string
+    options: OAuthOptions
   ): Promise<AuthStatus> {
-    const { tokens, status } = workspaceId ? await signIn({ workspaceId }) : await signIn()
+    const { workspaceId } = options
+    const { tokens, status } = await signIn(options)
     if (generation !== this.authGeneration) return this.status()
     if (workspaceId && status.workspaceId !== workspaceId) return this.status()
     saveTokens(tokens)
