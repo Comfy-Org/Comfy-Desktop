@@ -27,9 +27,11 @@ const ENABLE_AGENT_ARG = '--enable-agent'
 /** Requirements file Core ships beside `main.py` for the agent. */
 const AGENT_REQUIREMENTS = 'agent_requirements.txt'
 
-/** Name the shared helper writes the PyTorch-filtered copy under. Unique to
- *  this call site, which is what makes it usable as a process marker below. */
-const FILTERED_REQS = '.launch-agent-reqs.txt'
+let attempts = 0
+
+function attemptTag(): string {
+  return `${process.pid}-${++attempts}`
+}
 
 /** Cap on the force-stop itself, so hard-stopping a uv cannot become the very
  *  open-ended wait the grace period exists to end. */
@@ -375,7 +377,7 @@ export async function installAgentRequirements(
   await runBoundedInstall(
     plan,
     plan.reqPath,
-    FILTERED_REQS,
+    `.launch-agent-reqs-${attemptTag()}.txt`,
     remaining,
     sendOutput,
     signal,
@@ -388,8 +390,6 @@ export async function installAgentRequirements(
 const OVERRIDE_TIMEOUT_MS = 90_000
 
 const MIN_FALLBACK_TIMEOUT_MS = 30_000
-
-let overrideAttempts = 0
 
 type BoundedRun = (
   reqPath: string,
@@ -427,7 +427,7 @@ async function tryOverride(
   if (effective.kind === 'refused') return refuse(sendOutput, effective.reason, pins)
 
   // Per attempt: two sessions of one install can run at once, and must not share these files.
-  const tag = `${process.pid}-${++overrideAttempts}`
+  const tag = attemptTag()
   const constraintsName = `.launch-agent-reqs-override-${tag}-constraints.txt`
   const overridePath = path.join(plan.installPath, `.launch-agent-reqs-override-${tag}-src.txt`)
   const constraintsPath = path.join(plan.installPath, constraintsName)

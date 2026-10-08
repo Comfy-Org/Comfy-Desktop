@@ -187,7 +187,7 @@ describe('installAgentRequirements', () => {
       plan.uvPath,
       plan.pythonPath,
       plan.installPath,
-      '.launch-agent-reqs.txt',
+      expect.stringMatching(/^\.launch-agent-reqs-[\w-]+\.txt$/),
       sendOutput,
       expect.any(AbortSignal),
       mirrors,
@@ -593,12 +593,13 @@ describe('force-stopping an abandoned install', () => {
     vi.useFakeTimers()
     const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
     try {
-      const filtered = path.join(installDir, '.launch-agent-reqs.txt')
-      fs.writeFileSync(filtered, 'comfyui-agent==1.0.0\n')
       deliverThenHang(4242)
       const sendOutput = vi.fn()
 
       const pending = installAgentRequirements(planFor(installDir), sendOutput)
+      await vi.waitFor(() => expect(mockInstall).toHaveBeenCalled())
+      const filtered = path.join(installDir, mockInstall.mock.calls[0]![4] as string)
+      fs.writeFileSync(filtered, 'comfyui-agent==1.0.0\n')
       await vi.advanceTimersByTimeAsync(120_000)
       await vi.advanceTimersByTimeAsync(10_000)
       await expect(pending).resolves.toBeUndefined()
@@ -656,6 +657,25 @@ describe('force-stopping an abandoned install', () => {
     } finally {
       kill.mockRestore()
     }
+  })
+})
+
+describe("core file's temporary copy", () => {
+  it('is named per attempt, so two sessions of one install cannot remove each other', async () => {
+    vi.clearAllMocks()
+    const plan = {
+      reqPath: '/inst/ComfyUI/agent_requirements.txt',
+      uvPath: '/uv',
+      pythonPath: '/py',
+      installPath: '/inst'
+    }
+
+    await installAgentRequirements(plan, vi.fn())
+    await installAgentRequirements(plan, vi.fn())
+
+    const names = mockInstall.mock.calls.map((args) => args[4])
+    expect(names).toHaveLength(2)
+    expect(names[0]).not.toBe(names[1])
   })
 })
 
