@@ -14,7 +14,6 @@ import type { FeatureFlagValue } from './telemetry'
 const CAMPAIGN_FLAGS_FILE = 'campaign-flags.json'
 const ENROLMENTS_FILE = 'campaign-enrolments.json'
 
-// Slot #0's budget: a saved answer applies at once; only an install with nothing saved waits.
 const TIMEOUT_MS = 5000
 
 function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
