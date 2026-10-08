@@ -87,6 +87,9 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
         self.update()
         for rel, content in user_files.items():
             self.assertEqual(read(self.repo, rel), content, rel)
+        status = git(self.repo, "status", "--porcelain", "-uall").splitlines()
+        for rel in user_files:
+            self.assertIn("?? " + rel, status)
         self.assertEqual(read(self.repo, "main.py"), "v2\n")
 
     def test_backup_branch_captures_tracked_edits(self):
