@@ -1,0 +1,175 @@
+// @vitest-environment node
+import { spawn as spawnReal } from 'child_process'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as ChildProcessModule from 'child_process'
+
+/** The Windows port and start-time lookups, with `execFile` faked: each command answers from
+ *  `fake.answers`, keyed by the program it runs. */
+type Answer = { err?: { code?: string; killed?: boolean; signal?: string }; stdout?: string }
+const fake = vi.hoisted(() => ({
+  answers: {} as Record<string, Answer>,
+  calls: [] as Array<{ cmd: string; args: string[]; opts: unknown }>
+}))
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof ChildProcessModule>()
+  return {
+    ...actual,
+    execFile: (
+      cmd: string,
+      args: string[],
+      opts: unknown,
+      cb: (err: unknown, stdout: string) => void
+    ) => {
+      fake.calls.push({ cmd, args, opts })
+      const a = fake.answers[cmd] ?? { err: { code: 'ENOENT' } }
+      setImmediate(() => cb(a.err ? Object.assign(new Error('x'), a.err) : null, a.stdout ?? ''))
+    }
+  }
+})
+
+import { holderStartToken, parseNetstatListeners, terminateWindowsPid } from './processIdentity'
+import { findPidsByPort, killPid } from './process'
+
+const realPlatform = process.platform
+
+// `netstat -ano` rows; only the state word differs between UI languages.
+const netstat = (state: string): string =>
+  [
+    '',
+    'Active Connections',
+    '',
+    '  Proto  Local Address          Foreign Address        State           PID',
+    `  TCP    0.0.0.0:135            0.0.0.0:0              ${state}       1012`,
+    `  TCP    0.0.0.0:8188           0.0.0.0:0              ${state}       9084`,
+    `  TCP    0.0.0.0:18188          0.0.0.0:0              ${state}       4242`,
+    '  TCP    127.0.0.1:8188         127.0.0.1:50211        ESTABLISHED     9084',
+    '  TCP    127.0.0.1:50211        127.0.0.1:8188         ESTABLISHED     5000',
+    `  TCP    [::]:8188              [::]:0                 ${state}       9090`,
+    '  UDP    0.0.0.0:8188           *:*                                    1412',
+    ''
+  ].join('\r\n')
+
+beforeEach(() => {
+  Object.defineProperty(process, 'platform', { value: 'win32' })
+  fake.answers = {}
+  fake.calls = []
+})
+afterEach(() => {
+  Object.defineProperty(process, 'platform', { value: realPlatform })
+})
+
+describe('parseNetstatListeners', () => {
+  it.each(['LISTENING', 'ABHÖREN', 'ÉCOUTE', 'ESCUCHANDO', 'NASŁUCHIWANIE', '侦听'])(
+    'finds the IPv4 and IPv6 listeners whatever the state word (%s)',
+    (state) => {
+      expect(parseNetstatListeners(netstat(state), 8188).sort()).toEqual([9084, 9090])
+    }
+  )
+
+  it('ignores connections to or from the port, UDP, and ports that merely end in it', () => {
+    const rows = netstat('LISTENING')
+      .split('\r\n')
+      .filter((l) => !/TCP\s+\S+:8188\s+\S+:0\s/.test(l))
+      .join('\r\n')
+    expect(parseNetstatListeners(rows, 8188)).toEqual([])
+  })
+})
+
+describe('findPidsByPort on Windows', () => {
+  it('reads localised netstat, every protocol, without PowerShell', async () => {
+    fake.answers.netstat = { stdout: netstat('ABHÖREN') }
+    expect((await findPidsByPort(8188)).sort()).toEqual([9084, 9090])
+    expect(fake.calls.map(({ cmd, args }) => ({ cmd, args }))).toEqual([
+      { cmd: 'netstat', args: ['-ano'] }
+    ])
+    // Every protocol's rows: well past the default 1 MiB buffer on a busy machine.
+    expect(fake.calls[0]!.opts).toMatchObject({ maxBuffer: 32 * 1024 * 1024 })
+  })
+
+  it('names nobody when netstat cannot run', async () => {
+    fake.answers.netstat = { err: { code: 'ENOENT' } }
+    expect(await findPidsByPort(8188)).toEqual([])
+  })
+})
+
+describe('holderStartToken on Windows', () => {
+  it('reads the exact creation FILETIME from Get-Process, not CIM', async () => {
+    fake.answers.powershell = { stdout: '134358000923463901\r\n' }
+    expect(await holderStartToken(9084)).toBe('134358000923463901')
+    const script = fake.calls[0]!.args.join(' ')
+    expect(script).toContain('Get-Process -Id 9084 -ErrorAction Stop')
+    expect(script).toContain('.ToUniversalTime().ToFileTimeUtc()')
+    expect(script).not.toContain('Cim')
+  })
+
+  it('is null for a process that is gone, an unreadable answer, or no PowerShell', async () => {
+    fake.answers.powershell = { stdout: '\r\n' }
+    expect(await holderStartToken(9084)).toBeNull()
+    fake.answers.powershell = { stdout: 'Access is denied.' }
+    expect(await holderStartToken(9084)).toBeNull()
+    fake.answers.powershell = { err: { code: 'ENOENT' } }
+    expect(await holderStartToken(9084)).toBeNull()
+    expect(await holderStartToken(0)).toBeNull()
+  })
+})
+
+describe('killPid on Windows', () => {
+  it('ends the one pid with TerminateProcess, asking to terminate and read its times, not taskkill', async () => {
+    fake.answers.powershell = { stdout: 'OK\r\n' }
+    // Gone at once: nothing runs at this pid.
+    expect(await killPid(2_147_480_000, '134358000923463901')).toBe('exited')
+    const script = fake.calls.find((c) => c.cmd === 'powershell')!.args.join(' ')
+    // Terminate + limited query only, and the start time proven on that same handle.
+    expect(script).toContain('OpenProcess(0x1001, $false, 2147480000)')
+    expect(script).toContain('GetProcessTimes')
+    expect(script).toContain("-ne '134358000923463901'")
+    expect(script).toContain('TerminateProcess')
+    // The proof bails out before any terminate: open, then check the times, then (on a mismatch,
+    // or if they cannot be read) close and stop, and only then terminate on that same handle.
+    const at = (piece: string): number => script.indexOf(piece)
+    expect(at('-not $k::GetProcessTimes')).toBeGreaterThan(at('OpenProcess(0x1001'))
+    expect(at("'GONE'; exit")).toBeGreaterThan(at('-not $k::GetProcessTimes'))
+    expect(at('$k::TerminateProcess($h')).toBeGreaterThan(at("'GONE'; exit"))
+    expect(fake.calls.some((c) => c.cmd === 'taskkill')).toBe(false)
+  })
+
+  it('counts a pid whose creation time is not the confirmed one (reused) as the holder gone', async () => {
+    const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+    try {
+      fake.answers.powershell = { stdout: 'GONE\r\n' }
+      // The confirmed process is gone: nothing left to stop, and no wait for an exit.
+      expect(await killPid(victim.pid!, '134358000923463901')).toBe('exited')
+    } finally {
+      victim.kill('SIGKILL')
+    }
+  })
+
+  it('never builds a script around a start time that is not a FILETIME', async () => {
+    fake.answers.powershell = { stdout: 'OK\r\n' }
+    expect(await terminateWindowsPid(4242, "1'; Remove-Item x; '")).toBeNull()
+    expect(fake.calls.some((c) => c.cmd === 'powershell')).toBe(false)
+  })
+
+  it('says at once that Windows refused the stop, without waiting for an exit', async () => {
+    const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+    try {
+      fake.answers.powershell = { stdout: 'E5\r\n' }
+      const t0 = Date.now()
+      expect(await killPid(victim.pid!, '134358000923463901')).toBe('denied')
+      expect(Date.now() - t0).toBeLessThan(1_000)
+    } finally {
+      victim.kill('SIGKILL')
+    }
+  })
+
+  it('says a process that would not exit did not, even one listed without a creation time', async () => {
+    const victim = spawnReal(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'])
+    try {
+      // CIM can list a process without its creation time (e.g. a protected one).
+      fake.answers.powershell = { stdout: `${victim.pid} 1 \r\n` }
+      expect(await killPid(victim.pid!, '134358000923463901')).toBe('alive')
+    } finally {
+      victim.kill('SIGKILL')
+    }
+  }, 20_000)
+})

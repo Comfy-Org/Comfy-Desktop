@@ -170,6 +170,50 @@ vi.mock('../../comfyProcessRecord', () => ({
   listRecords: () => []
 }))
 
+/** The ComfyUI a database-lock record names (null: none), and the confirmed stops launch asked
+ *  for, with how many children had spawned and whether the cancel had fired at the time. */
+const lockRecord = vi.hoisted(() => ({
+  offer: null as null | Record<string, unknown>,
+  /** What each lookup was asked. */
+  asked: [] as unknown[],
+  stops: [] as Array<{
+    offer: unknown
+    dbPath: string
+    spawned: number
+    aborted: boolean | undefined
+  }>,
+  stopOk: true,
+  /** Whether the stop killed it even though the cancel fired meanwhile (null: it refused). */
+  stoppedDespiteCancel: null as null | boolean,
+  lookupThrows: false,
+  stopDenied: false,
+  duringStop: null as null | (() => void),
+  duringLookup: null as null | (() => void),
+  children: { count: 0 }
+}))
+vi.mock('../../comfyDbLock', async (importOriginal) => ({
+  ...(await importOriginal<typeof ComfyDbLockModule>()),
+  findDbLockOffer: async (input: unknown) => {
+    lockRecord.asked.push(input)
+    lockRecord.duringLookup?.()
+    if (lockRecord.lookupThrows) throw new Error('lookup failed')
+    return lockRecord.offer
+  },
+  stopDbLockOffer: async (offer: unknown, dbPath: string, signal?: AbortSignal) => {
+    lockRecord.duringStop?.()
+    lockRecord.stops.push({
+      offer,
+      dbPath,
+      spawned: lockRecord.children.count,
+      aborted: signal?.aborted
+    })
+    if (lockRecord.stopDenied) return 'denied'
+    if (signal?.aborted && lockRecord.stoppedDespiteCancel !== null)
+      return lockRecord.stoppedDespiteCancel ? 'stopped' : 'failed'
+    return lockRecord.stopOk && !signal?.aborted ? 'stopped' : 'failed'
+  }
+}))
+
 vi.mock('../../comfy-args', async (importOriginal) => {
   const actual = await importOriginal<typeof ComfyArgsModule>()
   return {
@@ -238,6 +282,7 @@ import {
 } from '../../betaActivationNotice'
 import * as settingsModule from '../../../settings'
 import { previewCoreBetaArgs } from '../../coreBetaPreview'
+import { getLogsBuffer } from '../../logsBroadcast'
 import type { ActionContext } from './types'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import type { createExecutionTap } from '../../executionTap'
@@ -261,6 +306,7 @@ import {
 import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
 import type * as ComfyArgsModule from '../../comfy-args'
+import type * as ComfyDbLockModule from '../../comfyDbLock'
 import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as HardwareTapModule from '../../hardwareTap'
 
@@ -2689,6 +2735,250 @@ describe('prior ComfyUI process handling at launch', () => {
         })
       ])
     )
+  })
+  describe('a database-lock holder named by its own record', () => {
+    const lockedBoot = async (): Promise<void> => {
+      const first = children[0]!
+      first.stderr.emit(
+        'data',
+        Buffer.from('Database is locked. Another ComfyUI process is already using this database.\n')
+      )
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+    const offer = (sameInstall = true): Record<string, unknown> => ({
+      pid: 9084,
+      startTime: '134358000923463901',
+      process: sameInstall ? 'ComfyUI' : '/elsewhere/ComfyUI/main.py',
+      sameInstall
+    })
+    const ourDb = (): string => path.join(installDir, 'ComfyUI', 'user', 'comfyui.db')
+    afterEach(() => {
+      lockRecord.offer = null
+      lockRecord.asked = []
+      lockRecord.stops = []
+      lockRecord.stopOk = true
+      lockRecord.duringStop = null
+      lockRecord.duringLookup = null
+      lockRecord.stoppedDespiteCancel = null
+      lockRecord.lookupThrows = false
+      lockRecord.stopDenied = false
+      launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag']
+    })
+
+    it('logs a stop that happened though the user cancelled while it ran, and launches nothing', async () => {
+      lockRecord.stoppedDespiteCancel = true
+      lockRecord.duringStop = () => _operationAborts.get('db-record-late-cancel')?.abort()
+      const res = await handleLaunch(ctxFor('db-record-late-cancel', { stopDbLockHolder: offer() }))
+      expect(res).toMatchObject({ ok: false, cancelled: true })
+      expect(getLogsBuffer('db-record-late-cancel').join('')).toContain(
+        'pid 9084, which held the database lock, is gone'
+      )
+      expect(children).toHaveLength(0)
+    })
+
+    it('shows the plain error when the record lookup itself fails', async () => {
+      lockRecord.lookupThrows = true
+      launchHarness.waitForPort = lockedBoot
+      const res = await handleLaunch(ctxFor('db-record-lookup-throws'))
+      expect(res.message).toBe('errors.comfyDbLocked')
+      expect(res.dbLockHolder).toBeUndefined()
+    })
+
+    it('has nothing to look up or stop without a database file', async () => {
+      // A launch arg the schema knows, so launch keeps it.
+      launchHarness.schemaNames = [...launchHarness.schemaNames, 'database-url']
+      setArgs('--enable-assets', '--database-url', 'sqlite:///:memory:')
+      launchHarness.waitForPort = lockedBoot
+      const res = await handleLaunch(ctxFor('db-record-no-file'))
+      expect(res.message).toBe('errors.comfyDbLocked')
+      expect(lockRecord.asked).toEqual([])
+      lockRecord.stopOk = true
+      const stop = await handleLaunch(
+        ctxFor('db-record-no-file-stop', { stopDbLockHolder: offer() })
+      )
+      expect(stop.ok).toBe(false)
+      expect(lockRecord.stops).toEqual([])
+    })
+
+    it.each([
+      [true, 'errors.comfyDbLockedSameInstall'],
+      [false, 'errors.comfyDbLockedBy']
+    ] as const)('offers a stop for it on a lock failure (same install: %s)', async (same, key) => {
+      lockRecord.offer = offer(same)
+      launchHarness.waitForPort = lockedBoot
+      const t = vi.spyOn(i18nModule, 't')
+
+      const res = await handleLaunch(ctxFor('db-record-offer'))
+
+      expect(res).toMatchObject({ ok: false, message: key, dbLockHolder: offer(same) })
+      expect(t).toHaveBeenCalledWith(key, { process: offer(same).process, pid: 9084 })
+    })
+
+    it('shows the plain error, with nothing to stop, without a record', async () => {
+      launchHarness.waitForPort = lockedBoot
+      const res = await handleLaunch(ctxFor('db-record-none'))
+      expect(res.message).toBe('errors.comfyDbLocked')
+      expect(res.dbLockHolder).toBeUndefined()
+    })
+
+    it('stops the confirmed holder before it spawns anything, then launches', async () => {
+      lockRecord.duringStop = () => (lockRecord.children.count = children.length)
+      const res = await handleLaunch(ctxFor('db-record-stop', { stopDbLockHolder: offer() }))
+      // Re-proven against the record beside this launch's own database.
+      expect(lockRecord.stops).toEqual([
+        { offer: offer(), dbPath: ourDb(), spawned: 0, aborted: false }
+      ])
+      expect(res.ok).toBe(true)
+      // Its listening socket can outlive it: launch waits for the port before checking it.
+      expect(launchHarness.portFreeWaits).toContain(PORT)
+    })
+
+    it("waits for the stopped holder's port before checking it, so it launches there", async () => {
+      // The holder's socket outlives it for a moment: checked first, the port looks taken.
+      launchHarness.busyPorts = [PORT]
+      ownership.holderIsInstall = false
+      const res = await handleLaunch(ctxFor('db-record-port-wait', { stopDbLockHolder: offer() }))
+      expect(res.ok).toBe(true)
+      expect(res.port).toBe(PORT)
+    })
+
+    it('says cancelled when the user cancels during the busy-port record lookup', async () => {
+      launchHarness.busyPorts = [PORT]
+      lockRecord.offer = offer()
+      lockRecord.duringLookup = () => _operationAborts.get('db-record-lookup-cancel')?.abort()
+      const res = await handleLaunch(ctxFor('db-record-lookup-cancel'))
+      expect(res).toMatchObject({ ok: false, cancelled: true })
+      expect(res.dbLockHolder).toBeUndefined()
+    })
+
+    it('launches nothing when the user cancels while the stop runs', async () => {
+      lockRecord.duringStop = () => _operationAborts.get('db-record-cancel')?.abort()
+      const res = await handleLaunch(ctxFor('db-record-cancel', { stopDbLockHolder: offer() }))
+      expect(res).toMatchObject({ ok: false, cancelled: true })
+      // The stop itself saw the cancel, so it could refuse to kill.
+      expect(lockRecord.stops.map((s) => s.aborted)).toEqual([true])
+      expect(children).toHaveLength(0)
+      const log = getLogsBuffer('db-record-cancel').join('')
+      expect(log).toContain('stopping pid 9084 (confirmed)')
+      expect(log).toContain('stopping pid 9084 was cancelled')
+    })
+
+    it('says Windows (or the OS) would not let it stop the holder, and launches nothing', async () => {
+      lockRecord.stopDenied = true
+      const t = vi.spyOn(i18nModule, 't')
+      const res = await handleLaunch(ctxFor('db-record-denied', { stopDbLockHolder: offer() }))
+      expect(res.ok).toBe(false)
+      expect(t).toHaveBeenCalledWith('errors.dbLockStopDenied', { pid: 9084 })
+      expect(getLogsBuffer('db-record-denied').join('')).toContain(
+        'could not stop pid 9084 (denied)'
+      )
+      expect(children).toHaveLength(0)
+    })
+
+    it('launches nothing when the stop could not re-prove or stop it', async () => {
+      lockRecord.stopOk = false
+      const t = vi.spyOn(i18nModule, 't')
+      const res = await handleLaunch(ctxFor('db-record-refused', { stopDbLockHolder: offer() }))
+      expect(res.ok).toBe(false)
+      expect(t).toHaveBeenCalledWith('errors.dbLockStopFailed', { pid: 9084 })
+      expect(children).toHaveLength(0)
+      expect(lockRecord.stops).toHaveLength(1)
+      const log = getLogsBuffer('db-record-refused').join('')
+      expect(log).toContain('stopping pid 9084 (confirmed)')
+      expect(log).toContain('could not stop pid 9084')
+    })
+
+    it.each([true, false])(
+      'answers a busy port with the database holder a record names, any install (same install: %s)',
+      async (same) => {
+        launchHarness.busyPorts = [PORT]
+        ownership.holderIsInstall = false
+        lockRecord.offer = offer(same)
+
+        const res = await handleLaunch(ctxFor('db-record-port'))
+
+        // The database blocks this launch, not (necessarily) whoever has the port: no port claim.
+        expect(res).toMatchObject({
+          ok: false,
+          message: same ? 'errors.comfyDbLockedSameInstall' : 'errors.comfyDbLockedBy',
+          dbLockHolder: offer(same)
+        })
+        expect(res.portConflict).toBeUndefined()
+        expect(children).toHaveLength(0)
+        expect(lockRecord.asked).toEqual([
+          { installationId: 'db-record-port', installPath: installDir, dbPath: ourDb() }
+        ])
+      }
+    )
+
+    it('lets the record answer before the same-install listener check, and still reports it', async () => {
+      launchHarness.busyPorts = [PORT]
+      launchHarness.busyPids = [9084]
+      ownership.holderIsInstall = true
+      lockRecord.offer = offer()
+
+      const res = await handleLaunch(ctxFor('db-record-port-same'))
+
+      expect(res).toMatchObject({ message: 'errors.comfyDbLockedSameInstall' })
+      expect(res.dbLockHolder).toEqual(offer())
+      expect(res.portConflict).toBeUndefined()
+      expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([
+        expect.objectContaining({
+          action: 'left',
+          proof: 'none',
+          installation_id: 'db-record-port-same'
+        })
+      ])
+    })
+
+    it.each([
+      ['it does not listen on the port', true, [31337]],
+      ["it is another install's", false, [9084]]
+    ] as const)(
+      'does not report the record holder as the port holder when %s',
+      async (_why, same, pids) => {
+        launchHarness.busyPorts = [PORT]
+        launchHarness.busyPids = [...pids]
+        lockRecord.offer = offer(same)
+
+        const res = await handleLaunch(ctxFor('db-record-port-quiet'))
+
+        expect(res.dbLockHolder).toEqual(offer(same))
+        expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toEqual([])
+      }
+    )
+
+    it.each([
+      ['assets are off', [], {}],
+      ['the caller asked for a bump', ['--enable-assets'], { autoPortOnConflict: true }]
+    ] as const)(
+      'bumps past a busy port when %s, record or not',
+      async (_why, extra, actionData) => {
+        setArgs(...extra)
+        launchHarness.busyPorts = [PORT]
+        ownership.holderIsInstall = true
+        lockRecord.offer = offer()
+
+        const res = await handleLaunch(ctxFor('db-record-port-bump', { ...actionData }))
+
+        expect(res.ok).toBe(true)
+        expect(res.port).toBe(launchHarness.nextPort)
+        expect(lockRecord.asked).toEqual([])
+      }
+    )
+
+    it('reports a holder the prior-process check already left only once', async () => {
+      ownership.prior = { ...terminated, pid: 9084, action: 'left', exitedInTime: false }
+      launchHarness.busyPorts = [PORT]
+      launchHarness.busyPids = [9084]
+      lockRecord.offer = offer()
+
+      const res = await handleLaunch(ctxFor('db-record-port-left'))
+
+      expect(res.dbLockHolder).toEqual(offer())
+      expect(eventsNamed('comfy.desktop.comfyui.prior_process_found')).toHaveLength(1)
+    })
   })
 })
 

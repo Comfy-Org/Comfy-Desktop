@@ -79,6 +79,7 @@ export const TID = {
   progressPortConflictUsePort: 'progress-port-conflict-use-port',
   /** Visible only when `portConflict.isComfy` is true. */
   progressPortConflictKill: 'progress-port-conflict-kill',
+  progressDbLockStop: 'progress-db-lock-stop',
 
   /** Feature carousel in the install takeover, above the wordmark. Passive:
    *  rotation has no dots, arrows or pause button - see InstallShowcase.vue. */

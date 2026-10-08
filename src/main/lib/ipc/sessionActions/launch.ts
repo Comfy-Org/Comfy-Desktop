@@ -100,7 +100,15 @@ import {
   trackSpawn,
   type PriorProcessOutcome
 } from '../../comfyProcessRecord'
-import { identifyDbLockHolder, isDbLockFailure, type DbLockHolder } from '../../comfyDbLock'
+import {
+  asDbLockOffer,
+  databaseCandidates,
+  findDbLockOffer,
+  identifyDbLockHolder,
+  isDbLockFailure,
+  stopDbLockOffer,
+  type DbLockHolder
+} from '../../comfyDbLock'
 import { migrateEnvLayout } from '../../../sources/standalone/install'
 import { writeComfyEnvironment } from '../../../sources/standalone/envPaths'
 import type { PersistedTorchStack } from '../../../sources/standalone/torchStackTypes'
@@ -1493,6 +1501,50 @@ async function runLaunch(
     return { ok: true, mode }
   }
 
+  // This launch's database (where a ComfyUI that writes holder records keeps it; older ones,
+  // which write none, may use the legacy path), and the answer when its record names a holder.
+  const dbPath = databaseCandidates(launchCmd.cwd!, launchCmd.args!)[0]
+  const dbLockHolderAnswer = async (): Promise<ActionResult | null> => {
+    if (!dbPath) return null
+    const holder = await findDbLockOffer({
+      installationId,
+      installPath: inst.installPath,
+      dbPath
+    }).catch(() => null)
+    if (!holder) return null
+    const key = holder.sameInstall ? 'errors.comfyDbLockedSameInstall' : 'errors.comfyDbLockedBy'
+    const message = i18n.t(key, { process: holder.process, pid: holder.pid })
+    return { ok: false, message, dbLockHolder: holder }
+  }
+
+  // The user confirmed stopping the ComfyUI holding this install's database: that process only
+  // (pid and start time), still named by the record beside this launch's database, re-proven
+  // just before the kill. A cancel withdraws the go-ahead.
+  const lockOffer = asDbLockOffer(actionData?.stopDbLockHolder)
+  if (lockOffer) {
+    appendLog(
+      sessionId,
+      `[launch] stopping pid ${lockOffer.pid} (confirmed): it holds the database lock\n`
+    )
+    const outcome = dbPath ? await stopDbLockOffer(lockOffer, dbPath, abort.signal) : 'failed'
+    const stopped = outcome === 'stopped'
+    // A stop that happened is logged even if the user cancelled while it ran.
+    if (stopped)
+      appendLog(sessionId, `[launch] pid ${lockOffer.pid}, which held the database lock, is gone\n`)
+    if (abort.signal.aborted) {
+      if (!stopped) appendLog(sessionId, `[launch] stopping pid ${lockOffer.pid} was cancelled\n`)
+      return { ok: false, cancelled: true }
+    }
+    if (!stopped) {
+      appendLog(sessionId, `[launch] could not stop pid ${lockOffer.pid} (${outcome})\n`)
+      if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+      const key = outcome === 'denied' ? 'errors.dbLockStopDenied' : 'errors.dbLockStopFailed'
+      return { ok: false, message: i18n.t(key, { pid: lockOffer.pid }) }
+    }
+    // Its listening socket can outlive it by a few milliseconds.
+    await waitForPortFree(launchCmd.port!)
+  }
+
   // A ComfyUI an earlier run of this session left behind would hold the install's database
   // lock, so the new one would die at startup (or, in auto port mode, start beside it on the
   // next port and die there). Runs before any port logic: a terminated orphan frees its port.
@@ -1612,6 +1664,32 @@ async function runLaunch(
     // Every listener is checked: lsof lists each one, and this install's may not come first.
     let sameInstallPid: number | null = null
     if (actionData?.autoPortOnConflict !== true && launchCmd.args!.includes('--enable-assets')) {
+      // A ComfyUI holding this install's database says so in its record: a bump would die on
+      // that lock, so the database is what blocks this launch, and that is what is offered.
+      const blocked = await dbLockHolderAnswer()
+      if (abort.signal.aborted) return { ok: false, cancelled: true }
+      if (blocked) {
+        const holder = blocked.dbLockHolder!
+        appendLog(
+          sessionId,
+          `[launch] port ${launchCmd.port} is busy and pid ${holder.pid} holds this ` +
+            `installation's database (its lock record): asking instead of starting another\n`
+        )
+        // Reported as the listener check below would, unless the record check already did.
+        if (holder.sameInstall && existingPids.includes(holder.pid) && prior?.action !== 'left')
+          emitPriorProcessFound(installationId, {
+            action: 'left',
+            proof: 'none',
+            pid: holder.pid,
+            port: launchCmd.port!,
+            ageMs: null,
+            waitMs: 0,
+            exitedInTime: false,
+            blocked: null
+          })
+        if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
+        return blocked
+      }
       // The listeners, plus the pid a Desktop's port lock names: the listener list can come back
       // empty (lsof sees only this user's processes, and none inside another namespace).
       const lockPid = pendingPortOwner ? null : (readPortLock(launchCmd.port!)?.pid ?? null)
@@ -2096,7 +2174,8 @@ async function runLaunch(
     }
     // "Process exited with code 1" hides the one thing the user can act on.
     if (dbLocked) {
-      return { ok: false, message: i18n.t('errors.comfyDbLocked') }
+      // Offered a stop only for a ComfyUI that says it holds the lock, in its own record.
+      return (await dbLockHolderAnswer()) ?? { ok: false, message: i18n.t('errors.comfyDbLocked') }
     }
     return { ok: false, message: launchResult.message }
   }

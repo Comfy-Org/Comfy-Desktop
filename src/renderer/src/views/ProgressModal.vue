@@ -613,6 +613,39 @@ async function handleKillProcess(port: number): Promise<void> {
   }
 }
 
+/** Have the user confirm the ComfyUI named by its database-lock record, then relaunch once with it:
+ *  launch re-proves and stops exactly that process. A Retry afterwards is the original launch. */
+async function handleStopDbLockHolder(): Promise<void> {
+  const id = displayId.value
+  const op = id ? progressStore.operations.get(id) : undefined
+  const holder = op?.result?.dbLockHolder
+  if (!id || !op || !holder || resolvingConflict.value) return
+  const confirmed = await modal.confirm({
+    title: t('errors.portConflictKillConfirmTitle'),
+    message: t(
+      holder.sameInstall ? 'errors.dbLockStopConfirmMessage' : 'errors.dbLockStopConfirmUnproven',
+      { process: holder.process, pid: holder.pid }
+    ),
+    confirmLabel: t('errors.portConflictKill'),
+    confirmStyle: 'danger'
+  })
+  if (!confirmed || progressStore.operations.get(id) !== op || displayId.value !== id) return
+  resolvingConflict.value = true
+  const retry = op.apiCall || (() => window.api.runAction(id, 'launch'))
+  let offer: typeof holder | null = { ...holder }
+  startOperation({
+    installationId: id,
+    title: op.title,
+    apiCall: () => {
+      const once = offer
+      offer = null
+      return once ? window.api.runAction(id, 'launch', { stopDbLockHolder: once }) : retry()
+    },
+    returnTo: op.returnTo,
+    opKind: op.opKind
+  })
+}
+
 watch(
   () => currentOp.value?.result,
   () => {
@@ -793,9 +826,23 @@ defineExpose({ startOperation, showOperation })
             {{ $t('common.back') }}
           </button>
           <button
-            v-if="!currentOp.destroysInstance"
+            v-if="currentOp.result?.dbLockHolder"
             type="button"
             class="brand-primary brand-progress__footer-btn"
+            :data-testid="TID.progressDbLockStop"
+            @click="handleStopDbLockHolder"
+          >
+            {{ $t('errors.portConflictKill') }}
+          </button>
+          <!-- With a holder to stop, a plain restart only meets the same lock: Stop leads. -->
+          <button
+            v-if="!currentOp.destroysInstance"
+            type="button"
+            :class="
+              currentOp.result?.dbLockHolder
+                ? 'brand-ghost brand-progress__footer-btn'
+                : 'brand-primary brand-progress__footer-btn'
+            "
             :data-testid="TID.progressReboot"
             @click="handleReboot"
           >

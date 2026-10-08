@@ -1,9 +1,12 @@
 import fs from 'fs'
 import path from 'path'
 import { findLockingProcesses } from './file-lock-info'
-import { holderIsInstall, listRecords } from './comfyProcessRecord'
+import { commandLineIsInstall, holderIsInstall, listRecords } from './comfyProcessRecord'
+import { isSafeToSignal, killPid } from './process'
+import type { DbLockOffer } from '../../types/ipc'
 import {
   commandLinesOf,
+  holderStartToken,
   isPidAlive,
   readStartTimes,
   runsMainPy,
@@ -25,8 +28,9 @@ export function isDbLockFailure(stderr: string | undefined): boolean {
   return !!stderr && DB_LOCK_LINES.some((re) => re.test(stderr))
 }
 
+/** The flag's value as ComfyUI's argparse takes it: the last occurrence wins. */
 function argValue(args: readonly string[], flag: string): string | null {
-  for (let i = 0; i < args.length; i++) {
+  for (let i = args.length - 1; i >= 0; i--) {
     const a = args[i]!
     if (a === flag) return args[i + 1] ?? null
     if (a.startsWith(`${flag}=`)) return a.slice(flag.length + 1)
@@ -73,6 +77,138 @@ export interface DbLockHolder {
 }
 
 export { runsMainPy }
+
+/** What a ComfyUI writes beside the database lock it holds: `<db>.lock.json`. */
+interface HolderRecord {
+  pid: number
+  /** Its start token, in the form `holderStartToken` reads. */
+  started: string
+  /** The database it locked (absolute). */
+  db: string
+  /** The `main.py` it runs. */
+  main: string
+}
+
+/** Record reads still running, by database: a dead mount holds one pool thread, not one a launch. */
+const pendingReads = new Map<string, Promise<HolderRecord | null>>()
+
+/** How long reading a holder record may take before it counts as absent. */
+const RECORD_READ_MS = 2000
+
+/** A holder record is a few hundred bytes; anything far larger is not one. */
+const MAX_RECORD_BYTES = 64 * 1024
+
+/**
+ * Whether two paths name the same file: compared where they lead (the real path sees through
+ * symlinks, junctions and 8.3 names, and spells case as the volume stores it), never folding case.
+ * A file not created yet is compared by where its folder leads; a path whose folder cannot be
+ * resolved names nothing.
+ */
+async function samePath(a: string, b: string): Promise<boolean> {
+  const real = fs.promises.realpath
+  const canonical = async (p: string): Promise<string> =>
+    real(p).catch(async () => path.join(await real(path.dirname(p)), path.basename(p)))
+  try {
+    return (await canonical(a)) === (await canonical(b))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The ComfyUI a database's lock record names, if it is still that process holding that database:
+ * the record must be about this database (a record copied along with an install is not), and its
+ * pid must still have the recorded start time (one that exited, crashed, or whose pid was reused
+ * is not).
+ */
+export async function readHolderRecord(dbPath: string): Promise<HolderRecord | null> {
+  // A slow or unreachable path must not hold the launch: past the cap there is no record.
+  const timeout = new Promise<null>((r) => setTimeout(() => r(null), RECORD_READ_MS).unref?.())
+  let read = pendingReads.get(dbPath)
+  if (!read) {
+    read = readRecordFile(dbPath).finally(() => pendingReads.delete(dbPath))
+    pendingReads.set(dbPath, read)
+  }
+  const record = await Promise.race([read, timeout])
+  if (!record) return null
+  return (await holderStartToken(record.pid).catch(() => null)) === record.started ? record : null
+}
+
+/** The record beside `dbPath`, if it is well-formed and about that database (not yet proven live). */
+async function readRecordFile(dbPath: string): Promise<HolderRecord | null> {
+  const file = `${dbPath}.lock.json`
+  let record: Partial<HolderRecord> | null
+  try {
+    // Read off the main thread, and only a small regular file (never a FIFO or a huge one).
+    const st = await fs.promises.stat(file)
+    if (!st.isFile() || st.size > MAX_RECORD_BYTES) return null
+    record = JSON.parse(await fs.promises.readFile(file, 'utf-8'))
+  } catch {
+    return null
+  }
+  if (typeof record !== 'object' || record === null) return null
+  const { pid, started, db, main } = record
+  if (!Number.isInteger(pid) || typeof started !== 'string' || typeof main !== 'string') return null
+  if (typeof db !== 'string' || !(await samePath(db, dbPath))) return null
+  return record as HolderRecord
+}
+
+/**
+ * The ComfyUI holding `dbPath` (this launch's database), from its own record, to offer the user a
+ * stop for. Never one this Desktop is running, as this install or another sharing the database:
+ * Desktop stops those itself. Null without a live record: nothing is offered.
+ */
+export async function findDbLockOffer(input: {
+  installationId: string
+  installPath: string
+  dbPath: string
+}): Promise<DbLockOffer | null> {
+  const record = await readHolderRecord(input.dbPath)
+  if (!record) return null
+  const running = listRecords().some(
+    (r) =>
+      r.desktopPid === process.pid &&
+      isPidAlive(r.childPid) &&
+      (r.installationId === input.installationId ||
+        commandLineIsInstall(['python', record.main], r.installPath))
+  )
+  if (running) return null
+  const sameInstall = commandLineIsInstall(['python', record.main], input.installPath)
+  const shown = sameInstall ? 'ComfyUI' : record.main
+  const { pid, started: startTime } = record
+  return { pid, startTime, process: shown, sameInstall }
+}
+
+/**
+ * Stops the ComfyUI the user confirmed in `offer`, and only it: the record beside `dbPath` (this
+ * launch's database) must still name it, with the same start time, and `signal` must not have
+ * aborted. 'stopped' when it is gone; 'denied' when the OS would not let Desktop stop it.
+ */
+export async function stopDbLockOffer(
+  offer: DbLockOffer,
+  dbPath: string,
+  signal?: AbortSignal
+): Promise<'stopped' | 'denied' | 'failed'> {
+  // It exited (or its pid was reused) while the user decided: nothing left to stop. A start time
+  // that could not be read proves nothing while the pid lives: the proof below decides.
+  const now = await holderStartToken(offer.pid).catch(() => null)
+  if (now !== offer.startTime && (now !== null || !isPidAlive(offer.pid))) return 'stopped'
+  // Anything slow (the first safety probe runs `ps`) comes before the proof, not between it and
+  // the signal.
+  if (!(await isSafeToSignal(offer.pid))) return 'failed'
+  const record = await readHolderRecord(dbPath)
+  if (record?.pid !== offer.pid || record.started !== offer.startTime || signal?.aborted) {
+    return 'failed'
+  }
+  const killed = await killPid(offer.pid, offer.startTime)
+  return killed === 'exited' ? 'stopped' : killed === 'denied' ? 'denied' : 'failed'
+}
+
+/** `value` as a `DbLockOffer` (it crossed IPC), or null. */
+export function asDbLockOffer(value: unknown): DbLockOffer | null {
+  const o = value as DbLockOffer | null
+  return o && Number.isInteger(o.pid) && typeof o.startTime === 'string' ? o : null
+}
 
 /**
  * Best-effort name for whoever holds the database lock after a `comfyui_db_locked` boot

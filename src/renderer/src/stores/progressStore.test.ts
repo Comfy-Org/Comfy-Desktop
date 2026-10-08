@@ -316,6 +316,28 @@ describe('useProgressStore', () => {
       expect(sessionStore.errorInstances.has('inst-1')).toBe(false)
     })
 
+    it('keeps a database-lock holder on a failed result, which stays an error', async () => {
+      const dbLockHolder = {
+        pid: 9084,
+        startTime: '1',
+        process: 'ComfyUI',
+        sameInstall: true
+      }
+      store.startOperation({
+        installationId: 'inst-1',
+        title: 'Launch',
+        apiCall: vi.fn().mockResolvedValue({ ok: false, message: 'locked', dbLockHolder })
+      })
+
+      await vi.waitFor(() => {
+        expect(store.operations.get('inst-1')?.finished).toBe(true)
+      })
+
+      const op = store.operations.get('inst-1')!
+      expect(op.error).toBe('locked')
+      expect(op.result?.dbLockHolder).toEqual(dbLockHolder)
+    })
+
     it('handles synchronous apiCall throw', () => {
       const apiCall = () => {
         throw new Error('Sync boom')

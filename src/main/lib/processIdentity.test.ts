@@ -10,9 +10,21 @@ import {
   parseLinuxStatPgid,
   parseWinProcessRows,
   parseWinProcessRowsWithCommand,
+  holderStartToken,
   readStartTimes,
   startTokenToEpochMs
 } from './processIdentity'
+
+import { statSync } from 'fs'
+
+/** pid 1 is root's here, not (in a pid namespace) a sandbox's own init we must never signal. */
+const rootOwnsPid1 = (): boolean => {
+  try {
+    return statSync('/proc/1').uid === 0
+  } catch {
+    return false
+  }
+}
 
 describe('parseLinuxStat', () => {
   // Fields after the command: state(3) ... starttime(22) is the 20th.
@@ -48,6 +60,12 @@ describe('parseDarwinPs', () => {
       '  501 Ss   Mon Sep 28 10:02:03 2026\n  777 Z    Mon Sep 28 10:02:04 2026\n'
     )
     expect([...out]).toEqual([[501, 'Mon Sep 28 10:02:03 2026']])
+  })
+
+  it('keeps the padding of a single-digit day, as ComfyUI records lstart', () => {
+    // ComfyUI's token is `ps -o lstart=` output with only its ends stripped.
+    const out = parseDarwinPs('  501 Ss   Tue Oct  6 09:05:07 2026\n')
+    expect(out.get(501)).toBe('Tue Oct  6 09:05:07 2026')
   })
 })
 
@@ -144,6 +162,20 @@ describe.runIf(process.platform !== 'win32')('groupHasLiveMembers (real processe
     }
   })
 })
+
+describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0 && rootOwnsPid1())(
+  'holderStartToken (real processes)',
+  () => {
+    it("names no holder Desktop may not stop: another user's or root's process", async () => {
+      // pid 1 is root's: its start time reads fine, but Desktop could not signal it.
+      expect((await readStartTimes([1]))?.get(1)).toBeTruthy()
+      expect(await holderStartToken(1)).toBeNull()
+      expect(await holderStartToken(process.pid)).toBe(
+        (await readStartTimes([process.pid]))?.get(process.pid)
+      )
+    })
+  }
+)
 
 describe('startTokenToEpochMs', () => {
   it('converts a Windows FILETIME', () => {

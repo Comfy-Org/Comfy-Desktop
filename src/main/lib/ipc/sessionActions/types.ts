@@ -1,3 +1,4 @@
+import type { DbLockOffer } from '../../../../types/ipc'
 import type { InstallationRecord } from '../shared'
 
 export interface ActionContext {
@@ -19,6 +20,7 @@ export interface ActionResult {
   port?: number
   url?: string
   portConflict?: Record<string, unknown>
+  dbLockHolder?: DbLockOffer
   /** Set by actions producing a new install record so the renderer can open it in its own window. */
   newInstallationId?: string
 }
