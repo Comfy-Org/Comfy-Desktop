@@ -154,7 +154,7 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
         self.assertIn("?? outputs/ComfyUI_00001_.png",
                       git(self.repo, "status", "--porcelain", "-uall").splitlines())
 
-    @unittest.skipIf(os.name == "nt", "needs a POSIX unreadable file")
+    @unittest.skipIf(os.name == "nt" or os.geteuid() == 0, "needs a file this user can't read")
     def test_untracked_files_survive_a_failed_backup(self):
         # add_all() stages outputs/ and then fails on the unreadable file.
         write(self.repo, {"outputs/ComfyUI_00001_.png": "image\n", "zz_unreadable.txt": "x\n"})
