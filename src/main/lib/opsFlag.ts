@@ -172,7 +172,6 @@ export interface OpsFlag<T> {
   _resetForTest(): void
 }
 
-/** The id if it resolves within `budgetMs`, else null at the deadline. */
 function raceIdAgainstDeadline(
   idPromise: Promise<string>,
   budgetMs: number
@@ -275,8 +274,7 @@ export function makeOpsFlag<T>(opts: {
         : undefined
       const staffAtInit = mainTelemetry.getFlagEvaluationStaff()
       const idPromise = Promise.resolve(initOpts.distinctId)
-      // Bounds the id wait too; a fetch that misses the deadline still saves a late answer.
-      // A saved treatment answers at once, so its background refresh just waits for the id.
+      // Saved: answer now, refresh once the id resolves. Unsaved: id wait + fetch share the budget; a late answer still persists.
       const fetched = (
         saved !== undefined
           ? idPromise.then((id) =>
