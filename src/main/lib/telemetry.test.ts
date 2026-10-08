@@ -1278,6 +1278,8 @@ describe('late ops-flag results reaching real persistence', () => {
     captured.length = 0
     const flag = makeGrantFlag()
     await flag.init({ distinctId: 'installation-id', timeoutMs: 0 })
+    // A saved grant answers `init` at once, so let the 0 ms deadline fire before the test answers.
+    await new Promise((resolve) => setTimeout(resolve, 0))
     return flag
   }
 
@@ -1313,8 +1315,8 @@ describe('late ops-flag results reaching real persistence', () => {
     // Stamped with the real clock, not carried over or zeroed
     expect(stored[KEY].fetchedAt).toBeGreaterThanOrEqual(answeredAt)
     expect(stored[KEY].fetchedAt).toBeLessThanOrEqual(Date.now())
-    // And this launch keeps what the deadline decided — convergence happens on the NEXT one
-    expect(await flag.get()).toBe('granted')
+    // And later reads in this session see it too
+    expect(await flag.get()).toBe('revoked')
   })
 
   it('reports a late MISS without letting it reach the file', async () => {

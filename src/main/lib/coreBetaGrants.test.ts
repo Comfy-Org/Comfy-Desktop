@@ -1027,9 +1027,9 @@ describe('core beta grants fetch', () => {
       { value: true, payload: { flags: [{ arg: '--enable-assets', min_core_version: '0.3.80' }] } },
       5000
     ],
-    ['a saved revocation', { value: false, payload: null }, 3000],
-    ['nothing saved', undefined, 3000]
-  ])('picks the boot deadline from %s on disk', async (_, entry, deadline) => {
+    ['a saved revocation', { value: false, payload: null }, 5000],
+    ['nothing saved', undefined, 5000]
+  ])('fetches with the right timeout for %s on disk', async (_, entry, deadline) => {
     if (entry) {
       fs.writeFileSync(
         path.join(testConfigDir, 'ops-flags.json'),
