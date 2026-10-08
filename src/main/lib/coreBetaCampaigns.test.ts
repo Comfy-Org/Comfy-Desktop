@@ -188,18 +188,30 @@ describe('campaignCandidateGrants', () => {
     new Map([[KEY, answer(variant, payload)]])
 
   it('lists an enrol draw and a held member, and nothing for a non-member on hold', () => {
-    expect(campaignCandidateGrants(registry, grantOf('enrol'), {})).toHaveLength(1)
-    expect(campaignCandidateGrants(registry, grantOf('hold'), member)).toHaveLength(1)
-    expect(campaignCandidateGrants(registry, grantOf('hold'), {})).toEqual([])
+    expect(campaignCandidateGrants(registry, grantOf('enrol'), {}, NOW)).toHaveLength(1)
+    expect(campaignCandidateGrants(registry, grantOf('hold'), member, NOW)).toHaveLength(1)
+    expect(campaignCandidateGrants(registry, grantOf('hold'), {}, NOW)).toEqual([])
+  })
+
+  it('skips answers the planner would drop as stale, so their commits are never proven', () => {
+    const old = (variant: string, age: number) =>
+      new Map([[KEY, answer(variant, agentPayload(), NOW - age)]])
+    expect(campaignCandidateGrants(registry, old('hold', 8 * 24 * HOUR_MS), member, NOW)).toEqual(
+      []
+    )
+    expect(campaignCandidateGrants(registry, old('enrol', 49 * HOUR_MS), {}, NOW)).toEqual([])
+    expect(
+      campaignCandidateGrants(registry, old('hold', 6 * 24 * HOUR_MS), member, NOW)
+    ).toHaveLength(1)
   })
 
   it('skips a void record, an unlisted arg and an unlisted key', () => {
     const voided = grantOf('hold', agentPayload({ epoch: 2, epochs: [2] }))
-    expect(campaignCandidateGrants(registry, voided, member)).toEqual([])
+    expect(campaignCandidateGrants(registry, voided, member, NOW)).toEqual([])
     expect(
-      campaignCandidateGrants([{ key: KEY, args: ['--enable-assets'] }], grantOf('enrol'), {})
+      campaignCandidateGrants([{ key: KEY, args: ['--enable-assets'] }], grantOf('enrol'), {}, NOW)
     ).toEqual([])
-    expect(campaignCandidateGrants([], grantOf('enrol'), {})).toEqual([])
+    expect(campaignCandidateGrants([], grantOf('enrol'), {}, NOW)).toEqual([])
   })
 })
 

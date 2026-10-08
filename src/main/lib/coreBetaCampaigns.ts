@@ -156,17 +156,19 @@ function heldRecord(
 export function campaignCandidateGrants(
   registry: readonly CampaignRegistryEntry[],
   answers: ReadonlyMap<string, CampaignAnswer>,
-  records: CampaignRecords
+  records: CampaignRecords,
+  now: number
 ): CoreBetaGrant[] {
   return registry.flatMap(({ key, args }) => {
     const answer = answers.get(key)
     if (!answer) return []
     return answer.grants
-      .filter(
-        (candidate) =>
-          args.includes(candidate.grant.arg) &&
-          (answer.enrol || heldRecord(records, key, candidate) !== undefined)
-      )
+      .filter((candidate) => {
+        if (!args.includes(candidate.grant.arg)) return false
+        if (heldRecord(records, key, candidate) !== undefined)
+          return answerFresh(answer, now, HOLD_MAX_AGE_MS, HOLD_MAX_AGE_MS)
+        return answer.enrol && answerFresh(answer, now, ENROL_MAX_AGE_MS, ENROL_FUTURE_SKEW_MS)
+      })
       .map((candidate) => candidate.grant)
   })
 }

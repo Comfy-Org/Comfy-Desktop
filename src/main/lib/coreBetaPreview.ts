@@ -100,7 +100,12 @@ export async function previewCoreBetaArgs(
   if (!peekBetaFeaturesEnabled()) return []
   const [grants, campaigns] = await Promise.all([getCoreBetaGrantsAsync(), getCoreBetaCampaigns()])
   const records = campaigns.answers.size > 0 ? readCampaignRecords() : {}
-  const campaignGrants = campaignCandidateGrants(campaigns.registry, campaigns.answers, records)
+  const campaignGrants = campaignCandidateGrants(
+    campaigns.registry,
+    campaigns.answers,
+    records,
+    Date.now()
+  )
   if (grants.length === 0 && campaignGrants.length === 0) return []
   // A launch without a schema injects no managed args; the args field fills this cache.
   const schema = peekComfyArgsSchema(

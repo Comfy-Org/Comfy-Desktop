@@ -305,7 +305,12 @@ async function loadCampaignInputs(): Promise<
   try {
     const campaigns = await getCoreBetaCampaigns()
     const records = readCampaignRecords()
-    const grants = campaignCandidateGrants(campaigns.registry, campaigns.answers, records)
+    const grants = campaignCandidateGrants(
+      campaigns.registry,
+      campaigns.answers,
+      records,
+      Date.now()
+    )
     return { ...campaigns, records, grants }
   } catch (err) {
     console.warn('[core-campaign] inputs unavailable; no campaign args this launch:', err)
