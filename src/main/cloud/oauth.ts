@@ -16,7 +16,8 @@ import {
 } from './pkce'
 import type { AuthStatus, AuthTokens } from './types'
 
-const DEFAULT_SIGN_IN_TIMEOUT_MS = 120_000
+/** Matches ingest's OAuth request TTL; a first SSO sign-in runs well past 2 min. */
+const DEFAULT_SIGN_IN_TIMEOUT_MS = 600_000
 const TOKEN_REQUEST_TIMEOUT_MS = 15_000
 
 export interface OAuthOptions {
