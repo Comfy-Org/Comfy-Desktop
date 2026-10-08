@@ -215,6 +215,41 @@ describe('initCoreBetaCampaigns', () => {
     }
   )
 
+  it('a member back after more than 7 days idles on a launch that beats the refresh, then holds', async () => {
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 8 * DAY_MS },
+      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - 8 * DAY_MS }
+    })
+    writeCampaignRecord(KEY, '--enable-agent', 1, NOW - 9 * DAY_MS)
+    getOpsFlagResult.mockImplementation(() => new Promise(() => {}))
+    await initCoreBetaCampaigns({ distinctId: 'id' })
+    const plan = async () => {
+      const { registry, answers } = await getCoreBetaCampaigns()
+      return planCampaignArgs({
+        registry,
+        answers,
+        records: readCampaignRecords(),
+        betaEnabled: true,
+        presentArgs: ['--enable-assets'],
+        core: { semver: '0.3.61', exact: true, verified: true, current: true },
+        commits: NO_CORE_COMMITS,
+        schema: { args: [], knownFlags: new Set(['enable-agent', 'enable-assets']) },
+        idClass: 'machine_derived',
+        now: NOW
+      })
+    }
+    expect((await plan()).misses, 'the first launch reads the 8-day-old answer').toMatchObject([
+      { member: true, reason: 'stale_answer' }
+    ])
+    const late = getOpsFlagResult.mock.calls.find((call) => call[0] === KEY)?.[3] as (
+      result: unknown
+    ) => void
+    late(value('hold', AGENT))
+    expect((await plan()).applied, 'the next launch holds on the refreshed answer').toMatchObject([
+      { key: KEY, enrolledNow: false }
+    ])
+  })
+
   it('lists and discovers a saved registry of any age, offline', async () => {
     seed('campaign-flags.json', {
       desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 30 * DAY_MS },
