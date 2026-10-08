@@ -21,6 +21,7 @@ export type OverrideRefusal =
   | 'bad_version'
   | 'not_in_core_file'
   | 'unsupported_line'
+  | 'not_newer'
   | 'check_failed'
 
 export type OverridePins = ReadonlyMap<string, string>
@@ -55,6 +56,32 @@ export function parseAgentRequirementsOverride(raw: unknown): ParsedOverride {
   return { kind: 'pins', pins }
 }
 
+const VERSION_PARTS = /^([\d.]+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$/
+const PRE_RANK = { a: 0, b: 1, rc: 2 } as const
+
+/** PEP 440 order for the versions EXACT_VERSION admits (`packaging`'s comparison key). */
+function versionKey(version: string): number[] {
+  const [, release, pre, preNum, post, dev] = version.match(VERSION_PARTS)!
+  const parts = release!.split('.').map(Number)
+  while (parts.length < 4) parts.push(0)
+  // A bare X.devN sorts before X's pre-releases; a final release after them.
+  const preRank = pre ? PRE_RANK[pre as keyof typeof PRE_RANK] : dev && !post ? -1 : 3
+  return [
+    ...parts,
+    preRank,
+    pre ? Number(preNum) : 0,
+    post === undefined ? -1 : Number(post),
+    dev === undefined ? Infinity : Number(dev)
+  ]
+}
+
+export function compareVersions(a: string, b: string): number {
+  const ka = versionKey(a)
+  const kb = versionKey(b)
+  for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i]! < kb[i]! ? -1 : 1
+  return 0
+}
+
 export function overrideSignature(pins: OverridePins): string {
   return [...pins]
     .map(([name, version]) => `${name}==${version}`)
@@ -78,6 +105,7 @@ export function effectiveAgentRequirements(
     if (!line || !EXACT_VERSION.test(line[2] ?? '') || seen.has(normalized)) {
       return { kind: 'refused', reason: 'unsupported_line' }
     }
+    if (compareVersions(version, line[2]!) <= 0) return { kind: 'refused', reason: 'not_newer' }
     seen.add(normalized)
     lines[i] = `${name}==${version}`
   }
@@ -134,7 +162,7 @@ export type OverrideDecision =
   | { decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins }
   | {
       decision: 'reverted'
-      reason: 'install_failed' | 'start_failed' | 'previously_failed'
+      reason: 'install_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
       failures?: number
     }

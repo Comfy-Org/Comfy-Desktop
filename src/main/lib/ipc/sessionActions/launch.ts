@@ -424,7 +424,7 @@ async function recordOverrideOutcome(
   installationId: string,
   pins: OverridePins,
   outcome: AgentStartOutcome,
-  failedBy: 'start_failed' | 'install_failed' = 'start_failed'
+  failedBy: 'start_failed' | 'install_failed' | 'check_failed' = 'start_failed'
 ): Promise<void> {
   try {
     const current = await installations.get(installationId)
@@ -1419,16 +1419,9 @@ async function runLaunch(
       reportOverrideDecision(installationId, overrideDecision)
       if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
       // Counted like a failed start, so a version that cannot install stops costing launch time.
-      if (
-        overrideDecision.decision === 'reverted' &&
-        overrideDecision.reason === 'install_failed'
-      ) {
-        await recordOverrideOutcome(
-          installationId,
-          overrideDecision.pins,
-          'failed',
-          'install_failed'
-        )
+      const costly = 'reason' in overrideDecision ? overrideDecision.reason : undefined
+      if (overrideDecision.pins && (costly === 'install_failed' || costly === 'check_failed')) {
+        await recordOverrideOutcome(installationId, overrideDecision.pins, 'failed', costly)
       }
     }
   }

@@ -9,6 +9,7 @@ import {
   nextOverrideState,
   overrideSignature,
   parseAgentRequirementsOverride,
+  compareVersions,
   readOverrideState
 } from './agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from './agentRequirementsOverride'
@@ -119,6 +120,18 @@ describe('effectiveAgentRequirements', () => {
         effectiveAgentRequirements(core, pins({ 'comfy-agent': '0.2.3' })),
         `going back to "${core.trim()}" would not undo the override`
       ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
+  })
+
+  it('refuses an override that is not newer than core pins', () => {
+    for (const version of ['0.2.0', '0.2', '0.1.9', '0.2.0rc1', '0.2.0.dev1'])
+      expect(
+        effectiveAgentRequirements('comfy-agent==0.2.0\n', pins({ 'comfy-agent': version })),
+        `${version} would not be an upgrade over core's 0.2.0`
+      ).toEqual({ kind: 'refused', reason: 'not_newer' })
+    expect(
+      effectiveAgentRequirements('comfy-agent==0.2.0\n', pins({ 'comfy-agent': '0.2.0.post1' }))
+        .kind
+    ).toBe('text')
   })
 
   it('refuses a line with an environment marker', () => {
@@ -280,5 +293,38 @@ describe('the start-failure latch', () => {
     expect(readOverrideState(record(state))).toEqual(state)
     expect(readOverrideState(record(undefined))).toBeNull()
     expect(readOverrideState(record({ signature: 'x', failures: '1' }))).toBeNull()
+  })
+})
+
+describe('compareVersions', () => {
+  it('orders versions the way pip does', () => {
+    const ascending = [
+      '0.9.9',
+      '1.0.dev1',
+      '1.0a1.dev1',
+      '1.0a1',
+      '1.0a2',
+      '1.0b1',
+      '1.0rc1',
+      '1.0rc1.post1',
+      '1.0',
+      '1.0.post1.dev1',
+      '1.0.post1',
+      '1.0.1',
+      '1.10',
+      '2'
+    ]
+    for (let i = 1; i < ascending.length; i++) {
+      expect(
+        compareVersions(ascending[i - 1]!, ascending[i]!),
+        `${ascending[i - 1]} < ${ascending[i]}`
+      ).toBe(-1)
+      expect(compareVersions(ascending[i]!, ascending[i - 1]!)).toBe(1)
+    }
+  })
+
+  it('treats trailing zero release segments as equal', () => {
+    expect(compareVersions('1.0', '1.0.0.0')).toBe(0)
+    expect(compareVersions('2', '2.0')).toBe(0)
   })
 })

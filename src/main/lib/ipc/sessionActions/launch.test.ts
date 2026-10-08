@@ -2899,6 +2899,22 @@ describe('agent requirements at launch', () => {
       )
     })
 
+    it('stops retrying a version whose environment could not be listed twice', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.installed = 'error: no virtual environment found'
+
+      await launchAndPrint()
+      await launchAndPrint()
+      await launchAndPrint()
+
+      expect(overrideEvents().map((e) => [e.decision, e.reason])).toEqual([
+        ['refused', 'check_failed'],
+        ['refused', 'check_failed'],
+        ['reverted', 'check_failed'],
+        ['reverted', 'previously_failed']
+      ])
+    })
+
     it('reports the fallback, then the latch, on the launch that trips it', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
       pipHarness.respond = (args) => ({
