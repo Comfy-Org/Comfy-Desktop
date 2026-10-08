@@ -405,8 +405,7 @@ async function tryOverride(
     )
     return { decision: 'reverted', reason: 'previously_failed', pins }
   }
-  // One race over the whole attempt, file I/O included: work past it is abandoned and may not
-  // start uv. The bound covers the install's own kill grace and force-stop.
+  // One race over the whole attempt, file I/O included; abandoned work may not start uv.
   const abandon = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   const onLaunchAbort = (): void => abandon.abort()
