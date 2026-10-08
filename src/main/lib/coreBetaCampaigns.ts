@@ -3,8 +3,8 @@
  * the registry, or serve `false` from a flag that stays ENABLED (a 0% release condition). Never
  * disable or delete a campaign flag or the registry: PostHog omits a disabled flag from `/flags`,
  * which reads as unreachable, so every machine keeps its saved answer for up to seven days.
- * Members of a key that is unlisted, serves `false` or loses its grant keep reporting idle
- * (`no_answer`) on every launch; members voided by dropping their epoch report nothing.
+ * Retire a finished campaign by voiding its epoch: members go silent. Unlisting, serving `false`
+ * or removing the grant are emergency levers that leave ex-members reporting idle `no_answer`.
  */
 import {
   CORE_BETA_FEATURES_FLAG_KEY,
