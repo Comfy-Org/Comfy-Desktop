@@ -726,6 +726,8 @@ describe('makeOpsFlag late results', () => {
     // an uncaught error becomes an unhandled rejection rather than a caught test failure.
     expect(() => lateCallback()?.(flagResult(false, null))).not.toThrow()
     expect(logs.mock.calls.some(([msg]) => msg === '[grant] late persist error:')).toBe(true)
+    // A late value is logged, so a boot log reading `unreachable` is not the last word
+    expect(logs).toHaveBeenCalledWith('[grant] late: fetched=', false)
     // And the failed write does not cost later reads the value
     expect(await flag.get()).toBe('revoked')
   })

@@ -230,6 +230,7 @@ export function makeOpsFlag<T>(opts: {
     if (generationAtInit !== generation) return
     const parsed = parse(result.value, result.payload)
     if (parsed !== undefined) cached = parsed
+    if (logLabel) console.log(`[${logLabel}] late: fetched=`, result.value)
     try {
       writePersistedResult(key, { value: result.value, payload: result.payload })
     } catch (err) {
