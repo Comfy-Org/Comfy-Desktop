@@ -441,7 +441,6 @@ async function tryOverride(
 /** A `uv pip list` is local and fast; this only stops a stuck one holding the launch. */
 const LIST_TIMEOUT_MS = 30_000
 
-/** `uv pip list` of the install's environment, or null if it failed, stalled or was cancelled. */
 async function listInstalled(
   plan: AgentRequirementsInstall,
   signal: AbortSignal | undefined
