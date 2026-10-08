@@ -263,8 +263,7 @@ export function makeOpsFlag<T>(opts: {
       const generationAtInit = generation
       const saved = readPersisted()
       const budgetMs = initOpts.timeoutMs ?? deadlineMs?.(saved) ?? DEFAULT_TIMEOUT_MS
-      // The budget counts from init and bounds the id wait too: at expiry readers get the saved
-      // treatment, and the fetch still goes out once the id resolves, saving a late answer.
+      // Bounds the id wait too; a fetch that misses the deadline still saves a late answer.
       const startedAt = performance.now()
       // Non-persisting flags pass no callback at all, so they stay write-free structurally
       // rather than by a guard inside one — no write path is attached to the abandoned fetch.
