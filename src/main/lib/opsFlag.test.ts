@@ -49,10 +49,12 @@ function makeTestFlag() {
   })
 }
 
-/** Pinned clock: every entry a test seeds or expects is stamped with it, so a persisted entry
- *  reads as fresh and a written one compares exactly. */
+/** Pinned clock, so a written entry's `fetchedAt` stamp compares exactly. */
 const NOW = Date.UTC(2026, 9, 5)
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Lets a detached refresh settle: with a saved treatment, `init` resolves before the fetch. */
+const settle = () => new Promise((resolve) => setImmediate(resolve))
 
 beforeEach(() => {
   getOpsFlagResult.mockReset()
@@ -72,6 +74,7 @@ describe('makeOpsFlag', () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('disabled'))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('disabled')
   })
 
@@ -83,6 +86,7 @@ describe('makeOpsFlag', () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(value))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('normal')
   })
 
@@ -93,6 +97,7 @@ describe('makeOpsFlag', () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockRejectedValue(new Error('network'))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('normal')
   })
 
@@ -121,6 +126,7 @@ describe('makeOpsFlag', () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('normal'))
     await flag.init({ distinctId: 'anon', timeoutMs: 50 })
+    await settle()
     // The trailing `undefined` is the late-result callback, which only a persisted flag gets —
     // see `makeOpsFlag late results`. Asserted rather than elided so a callback handed to a
     // non-persisting flag fails here.
@@ -131,6 +137,7 @@ describe('makeOpsFlag', () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('normal'))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(getOpsFlagResult).toHaveBeenCalledWith('test-flag', 'anon', 2000, undefined)
   })
 
@@ -145,6 +152,7 @@ describe('makeOpsFlag', () => {
     })
     getOpsFlagResult.mockResolvedValue(flagResult(true, { items: ['a', 'b'] }))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toEqual(['a', 'b'])
   })
 
@@ -153,6 +161,7 @@ describe('makeOpsFlag', () => {
     const b = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('disabled'))
     await a.init({ distinctId: 'anon' })
+    await settle()
     expect(await a.get()).toBe('disabled')
     // `b` was never inited, so it has no fetch to await and reports its own fallback.
     expect(await b.get()).toBe('normal')
@@ -162,11 +171,13 @@ describe('makeOpsFlag', () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('disabled'))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     flag._resetForTest()
     expect(await flag.get()).toBe('normal')
     // A fresh init must actually re-fetch rather than short-circuit on the old promise.
     getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('degraded')
     expect(getOpsFlagResult).toHaveBeenCalledTimes(2)
   })
@@ -206,6 +217,7 @@ describe('makeOpsFlag persistence', () => {
     // When the boot fetch times out — `getOpsFlagResult` classifies that as `unreachable`
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
     // Then the offline launch keeps the treatment instead of dropping to the fail direction
     expect(await flag.get()).toBe('disabled')
   })
@@ -222,6 +234,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(readFlagsFile()).toBe(stored)
   })
 
@@ -233,6 +246,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockRejectedValue(new Error('network'))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('disabled')
     expect(readFlagsFile()).toBe(stored)
   })
@@ -244,6 +258,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('degraded', { note: 'fresh' }))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('degraded')
     expect(JSON.parse(readFlagsFile())).toEqual({
       'test-flag': { value: 'degraded', payload: { note: 'fresh' }, fetchedAt: NOW }
@@ -267,6 +282,7 @@ describe('makeOpsFlag persistence', () => {
     })
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toEqual(['a', 'b'])
   })
 
@@ -280,6 +296,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('degraded', null))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(JSON.parse(readFlagsFile())).toEqual({
       'other-flag': { value: 'on', payload: null, fetchedAt: NOW },
       'test-flag': { value: 'degraded', payload: null, fetchedAt: NOW }
@@ -290,6 +307,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+    await settle()
     expect(await flag.get()).toBe('normal')
   })
 
@@ -298,6 +316,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+    await settle()
     expect(await flag.get()).toBe('normal')
   })
 
@@ -308,6 +327,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('normal')
   })
 
@@ -315,6 +335,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('degraded')
     expect(fs.existsSync(flagsFilePath())).toBe(false)
   })
@@ -326,6 +347,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('normal')
   })
 
@@ -336,6 +358,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
     expect(await flag.get()).toBe('normal')
   })
 
@@ -351,6 +374,7 @@ describe('makeOpsFlag persistence', () => {
     const flag = makePersistedFlag()
     getOpsFlagResult.mockResolvedValue(flagResult('degraded'))
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+    await settle()
     expect(await flag.get()).toBe('degraded')
   })
 })
@@ -398,12 +422,14 @@ describe('makeOpsFlag revocation coherence', () => {
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(false, null))
     await flag.init({ distinctId: 'anon' })
+    await settle()
   }
 
   async function launchOffline(): Promise<'granted' | 'revoked' | 'unknown'> {
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
     return flag.get()
   }
 
@@ -453,6 +479,7 @@ describe('makeOpsFlag revocation coherence', () => {
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(false, null))
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+    await settle()
 
     // Then this launch still uses what it fetched, and the primary was never reached — proving
     // the backup is written first, so the two files can never disagree in the resurrecting
@@ -476,6 +503,7 @@ describe('makeOpsFlag revocation coherence', () => {
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(false, null))
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+    await settle()
 
     // Then the launch still uses what it just fetched — refusing to persist is not refusing
     // to apply.
@@ -497,6 +525,7 @@ describe('makeOpsFlag revocation coherence', () => {
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(false, null))
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+    await settle()
 
     expect(await flag.get()).toBe('revoked')
     expect(JSON.parse(fs.readFileSync(flagsFilePath(), 'utf-8'))).toEqual(parsedGrant(true))
@@ -511,6 +540,7 @@ describe('makeOpsFlag revocation coherence', () => {
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(false, null))
     await expect(flag.init({ distinctId: 'anon' })).resolves.toBeUndefined()
+    await settle()
 
     // Then the backup already holds the revocation, so a later backup-served read cannot
     // resurrect the grant. The stale primary is the accepted residual: two files cannot be
@@ -524,8 +554,8 @@ describe('makeOpsFlag revocation coherence', () => {
 // A cold `/flags` POST measured ~2572 ms on Windows and is always cold at boot, so the 2000 ms
 // deadline loses every launch: the fetch is abandoned mid-flight, the launch reads `unreachable`,
 // and a cached grant survives every restart. The deadline still governs THIS launch's decision —
-// what changes is that an explicit value arriving after it is persisted for the NEXT one, so a
-// revocation converges in one extra launch instead of never.
+// what changes is that an explicit value arriving after it is persisted for the NEXT one and
+// applied for later reads, so a revocation converges instead of never landing.
 //
 // Only `kind: 'value'` may be written late. A late miss or rejection classifies as `unreachable`,
 // which must never be persisted by any route — otherwise deleting a flag would revoke it, which
@@ -562,6 +592,7 @@ describe('makeOpsFlag late results', () => {
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
     return flag
   }
 
@@ -583,6 +614,7 @@ describe('makeOpsFlag late results', () => {
     const next = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await next.init({ distinctId: 'anon' })
+    await settle()
     expect(await next.get()).toBe('revoked')
   })
 
@@ -631,6 +663,7 @@ describe('makeOpsFlag late results', () => {
     const flag = makeGrantFlag()
     getOpsFlagResult.mockResolvedValue(flagResult(true, null))
     await flag.init({ distinctId: 'anon' })
+    await settle()
 
     // Then the in-band write is the only one. A late callback firing here too would double it.
     expect(writes.mock.calls.filter(([file]) => file === flagsFilePath())).toHaveLength(1)
@@ -664,6 +697,7 @@ describe('makeOpsFlag late results', () => {
     })
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
     fs.mkdirSync(flagsFilePath() + '.bak.tmp')
 
     // When the late result lands, the throw must not escape — nothing awaits this callback, so
@@ -679,6 +713,7 @@ describe('makeOpsFlag late results', () => {
     const flag = makeTestFlag()
     getOpsFlagResult.mockResolvedValue(unreachable())
     await flag.init({ distinctId: 'anon' })
+    await settle()
 
     expect(lateCallback()).toBeUndefined()
     expect(fs.existsSync(flagsFilePath())).toBe(false)
@@ -718,8 +753,6 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     )
     return { answer: (result) => answer(result) }
   }
-
-  const settle = () => new Promise((resolve) => setImmediate(resolve))
 
   it('answers from a saved treatment without waiting for the fetch', async () => {
     seedGrant({ value: true, payload: null, fetchedAt: NOW })
@@ -807,6 +840,22 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     expect(read).toBe('granted')
   })
 
+  it('waits on the deadline when the saved entry is not one parse recognises', async () => {
+    seedGrant({ value: 'garbage', payload: null, fetchedAt: NOW })
+    const fetch = pendingFetch()
+    const flag = makeGrantFlag()
+    void flag.init({ distinctId: 'anon' })
+    let read: unknown = 'pending'
+    void flag.get().then((value) => (read = value))
+    await settle()
+    expect(read).toBe('pending')
+    expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 5000, expect.any(Function))
+
+    fetch.answer(flagResult(true, null))
+    await settle()
+    expect(read).toBe('granted')
+  })
+
   it.each([
     ['nothing saved', undefined],
     ['a saved treatment', { value: true, payload: null, fetchedAt: NOW }]
@@ -814,6 +863,7 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     if (entry) seedGrant(entry)
     getOpsFlagResult.mockResolvedValue(unreachable())
     await makeGrantFlag().init({ distinctId: 'anon', timeoutMs: 50 })
+    await settle()
     expect(getOpsFlagResult).toHaveBeenCalledWith('grant-flag', 'anon', 50, expect.any(Function))
   })
 
@@ -832,6 +882,19 @@ describe('makeOpsFlag stale-while-revalidate', () => {
     stage()
     await flag.init({ distinctId: 'anon' })
     await settle()
+    expect(await flag.get()).toBeNull()
+  })
+
+  it('answers from a saved treatment that parses to null before the fetch settles', async () => {
+    seedGrant({ value: false, payload: null, fetchedAt: NOW })
+    pendingFetch()
+    const flag = makeOpsFlag<'granted' | null | undefined>({
+      key: 'grant-flag',
+      fallback: undefined,
+      parse: (value) => (value === true ? 'granted' : value === false ? null : undefined),
+      persist: true
+    })
+    await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBeNull()
   })
 })

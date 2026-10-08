@@ -10,8 +10,8 @@
  * are disabled.
  *
  * Kept separate from `experiments.ts` (locked variant assignment, next-boot cache) so an
- * operational override isn't accidentally consent-gated. Fetched once at boot; running apps
- * pick up new values on restart.
+ * operational override isn't accidentally consent-gated. Fetched once at boot; a `persist` flag
+ * answers from its saved treatment at once and refreshes it in the background.
  *
  * Each flag supplies its own key, fail-direction (`fallback`), and `parse`. The shared part is
  * the plumbing every one of them needs: a single in-flight fetch, an accessor that awaits it
@@ -292,7 +292,7 @@ export function makeOpsFlag<T>(opts: {
         })
         .catch((err) => {
           if (logLabel) console.log(`[${logLabel}] init error:`, err)
-          // Otherwise fail to `fallback`: `cached` is only ever assigned on the resolved path.
+          // Keep the saved treatment if there is one; otherwise `cached` stays at `fallback`.
           if (saved !== undefined) cached = saved
         })
       // A saved treatment answers now; the fetch above only refreshes it.
