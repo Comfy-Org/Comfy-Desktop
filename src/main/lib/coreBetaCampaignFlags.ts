@@ -14,10 +14,8 @@ import type { FeatureFlagValue } from './telemetry'
 const CAMPAIGN_FLAGS_FILE = 'campaign-flags.json'
 const ENROLMENTS_FILE = 'campaign-enrolments.json'
 
-/** Holding means a record here, not a saved answer as for slot #0: every machine saves one. */
-function deadlineMs(enrolled: boolean): number {
-  return enrolled ? 5000 : 3000
-}
+// Slot #0's budget: a saved answer applies at once; only an install with nothing saved waits.
+const TIMEOUT_MS = 5000
 
 function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
   return makeOpsFlag({
@@ -25,7 +23,7 @@ function makeRegistryFlag(): OpsFlag<CampaignRegistryEntry[]> {
     fallback: [],
     parse: parseCampaignRegistry,
     logLabel: 'core-campaigns',
-    deadlineMs: () => deadlineMs(Object.keys(readCampaignRecords()).length > 0),
+    timeoutMs: TIMEOUT_MS,
     persist: true,
     persistFile: CAMPAIGN_FLAGS_FILE
   })
@@ -54,7 +52,7 @@ export async function initCoreBetaCampaigns(opts: { distinctId: string }): Promi
         fallback: null,
         parse: parseCampaignAnswer,
         logLabel: `core-campaign ${key}`,
-        deadlineMs: () => deadlineMs(readCampaignRecords()[key] !== undefined),
+        timeoutMs: TIMEOUT_MS,
         persist: true,
         persistFile: CAMPAIGN_FLAGS_FILE
       })

@@ -143,32 +143,16 @@ describe('initCoreBetaCampaigns', () => {
     expect(fetchedKeys().sort()).toEqual(['desktop_campaigns', KEY].sort())
   })
 
-  it('waits 3 s for every campaign flag on a machine that holds nothing', async () => {
+  it('applies saved answers at once and refreshes them in the background', async () => {
     seed('campaign-flags.json', {
       desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
-      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW }
+      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - DAY_MS }
     })
-    serve({})
+    getOpsFlagResult.mockImplementation(() => new Promise(() => {}))
     await initCoreBetaCampaigns({ distinctId: 'id' })
-    expect(deadlines()).toEqual({ desktop_campaigns: 3000, [KEY]: 3000 })
-  })
-
-  it('waits 5 s for the registry and the campaign this machine is enrolled in', async () => {
-    seed('campaign-flags.json', {
-      desktop_campaigns: {
-        value: true,
-        payload: [...REGISTRY, { key: 'desktop_core_beta_other', args: ['--enable-agent'] }],
-        fetchedAt: NOW
-      }
-    })
-    writeCampaignRecord(KEY, '--enable-agent', 1, NOW)
-    serve({})
-    await initCoreBetaCampaigns({ distinctId: 'id' })
-    expect(deadlines()).toEqual({
-      desktop_campaigns: 5000,
-      [KEY]: 5000,
-      desktop_core_beta_other: 3000
-    })
+    const { answers } = await getCoreBetaCampaigns()
+    expect(answers.get(KEY), 'no wait on the fetch').toMatchObject({ fetchedAt: NOW - DAY_MS })
+    expect(deadlines()).toEqual({ desktop_campaigns: 5000, [KEY]: 5000 })
   })
 
   it('discovers a newly listed key one launch late', async () => {
@@ -196,14 +180,29 @@ describe('initCoreBetaCampaigns', () => {
     expect(answers.get(KEY)).toMatchObject({ enrol: false, fetchedAt: NOW - 2 * DAY_MS })
   })
 
-  it('drops a campaign answer saved more than 7 days ago (decision 2)', async () => {
+  it('serves an answer saved more than 7 days ago with its age, which the planner drops (decision 2)', async () => {
     seed('campaign-flags.json', {
       desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - DAY_MS },
       [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - 8 * DAY_MS }
     })
+    writeCampaignRecord(KEY, '--enable-agent', 1, NOW - 9 * DAY_MS)
     serve({})
     await initCoreBetaCampaigns({ distinctId: 'id' })
-    expect((await getCoreBetaCampaigns()).answers.size).toBe(0)
+    const { registry, answers } = await getCoreBetaCampaigns()
+    const plan = planCampaignArgs({
+      registry,
+      answers,
+      records: readCampaignRecords(),
+      betaEnabled: true,
+      presentArgs: ['--enable-assets'],
+      core: { semver: '0.3.61', exact: true, verified: true, current: true },
+      commits: NO_CORE_COMMITS,
+      schema: { args: [], knownFlags: new Set(['enable-agent', 'enable-assets']) },
+      idClass: 'machine_derived',
+      now: NOW
+    })
+    expect(plan.applied, 'an 8-day-old answer no longer holds the arg').toEqual([])
+    expect(plan.misses).toMatchObject([{ member: true, reason: 'stale_answer' }])
   })
 
   it.each([[0], [false], ['x'], [null]])(
@@ -216,15 +215,19 @@ describe('initCoreBetaCampaigns', () => {
     }
   )
 
-  it('an expired saved registry lists nothing offline, but still discovers its keys', async () => {
+  it('lists and discovers a saved registry of any age, offline', async () => {
     seed('campaign-flags.json', {
-      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 8 * DAY_MS },
-      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - 8 * DAY_MS }
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW - 30 * DAY_MS },
+      [KEY]: { value: 'hold', payload: AGENT, fetchedAt: NOW - 30 * DAY_MS }
     })
     serve({})
     await initCoreBetaCampaigns({ distinctId: 'id' })
     expect(fetchedKeys().sort()).toEqual(['desktop_campaigns', KEY].sort())
-    expect(await getCoreBetaCampaigns()).toEqual({ registry: [], answers: new Map() })
+    const { registry, answers } = await getCoreBetaCampaigns()
+    expect(registry).toEqual(REGISTRY)
+    expect(answers.get(KEY), 'its age is for the planner to judge').toMatchObject({
+      fetchedAt: NOW - 30 * DAY_MS
+    })
   })
 
   it('a machine back after more than 7 days gets its campaign answer on the first boot online', async () => {

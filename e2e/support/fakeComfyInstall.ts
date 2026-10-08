@@ -203,7 +203,8 @@ export async function writeFakeComfyInstall(opts: {
   return { installPath, port }
 }
 
-/** The persisted ops-flag entry `coreBetaGrants` reads when PostHog is unreachable. Handed to
+/** The persisted ops-flag entry `coreBetaGrants` applies at launch, before any fetch. Unstamped,
+ *  as v1.1.6 wrote it: any saved entry counts. Handed to
  *  `launchApp`'s `opsFlags`, which delivers it through `E2E_OPS_FLAGS_SEED` so MAIN writes it to
  *  the real `configDir()`. The harness cannot write it itself: that path is Electron's
  *  `userData` off Linux, and macOS ignores the HOME override for it, so a hand-placed file is
@@ -234,8 +235,6 @@ export function opsFlagsGrantSeed(opts: {
           },
         ],
       },
-      // An unstamped entry reads as expired.
-      fetchedAt: Date.now(),
     },
   }
 }
