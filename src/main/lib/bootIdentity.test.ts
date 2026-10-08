@@ -45,6 +45,7 @@ const h = vi.hoisted(() => ({
   initExperiments: vi.fn((_opts: unknown) => Promise.resolve()),
   initCloudFreeRuns: vi.fn((_opts: { distinctId: Promise<string> }) => Promise.resolve()),
   initCoreBetaGrants: vi.fn((_opts: { distinctId: Promise<string> }) => Promise.resolve()),
+  initEmbeddedSessionFlag: vi.fn((_opts: { distinctId: Promise<string> }) => Promise.resolve()),
   initStaffFlagTargeting: vi.fn(),
   getInitialAnonymousDistinctId: vi.fn((_existing: boolean) => 'anon-d'),
   recoverPendingIdentityRotation: vi.fn((id: string) => id)
@@ -54,6 +55,7 @@ vi.mock('./telemetry', () => h.telemetry)
 vi.mock('./experiments', () => ({ initExperiments: h.initExperiments }))
 vi.mock('./cloudFreeRuns', () => ({ initCloudFreeRuns: h.initCloudFreeRuns }))
 vi.mock('./coreBetaGrants', () => ({ initCoreBetaGrants: h.initCoreBetaGrants }))
+vi.mock('./embeddedSessionFlag', () => ({ initEmbeddedSessionFlag: h.initEmbeddedSessionFlag }))
 vi.mock('./staffFlagTargeting', () => ({ initStaffFlagTargeting: h.initStaffFlagTargeting }))
 vi.mock('./websiteAnonymousIdentity', () => ({
   getInitialAnonymousDistinctId: h.getInitialAnonymousDistinctId
@@ -111,6 +113,7 @@ describe('startBootIdentity', () => {
     expect(h.initExperiments).toHaveBeenCalledTimes(1)
     expect(h.initCloudFreeRuns).toHaveBeenCalledTimes(1)
     expect(h.initCoreBetaGrants).toHaveBeenCalledTimes(1)
+    expect(h.initEmbeddedSessionFlag).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(CUTOFF_MS - 1)
     expect(bound).toBe(false)
     expect(h.telemetry.setInstallationId).not.toHaveBeenCalled()
@@ -124,12 +127,13 @@ describe('startBootIdentity', () => {
     expect(bind).toBeLessThan(h.initStaffFlagTargeting.mock.invocationCallOrder[0]!)
   })
 
-  it('binds the stored staff classification before either ops flag is initialised', () => {
+  it('binds the stored staff classification before any ops flag is initialised', () => {
     lookupHangs = true
     void mod.startBootIdentity(OPTIONS)
     const staff = h.initStaffFlagTargeting.mock.invocationCallOrder[0]!
     expect(staff).toBeLessThan(h.initCloudFreeRuns.mock.invocationCallOrder[0]!)
     expect(staff).toBeLessThan(h.initCoreBetaGrants.mock.invocationCallOrder[0]!)
+    expect(staff).toBeLessThan(h.initEmbeddedSessionFlag.mock.invocationCallOrder[0]!)
   })
 
   it('persists nothing and fires no first_launch while the lookup is pending', async () => {
@@ -215,12 +219,13 @@ describe('startBootIdentity', () => {
   it.each([
     ['a fresh install', null],
     ['an install with a stored id', 'stored']
-  ])('hands both ops flags only the final id, however long it takes, on %s', async (_l, stored) => {
+  ])('hands every ops flag only the final id, however long it takes, on %s', async (_l, stored) => {
     if (stored) fs.writeFileSync(file('device-id.txt'), machineId())
     lookupDelayMs = 14_000
     void mod.startBootIdentity(OPTIONS)
     const cloud = h.initCloudFreeRuns.mock.calls[0]![0].distinctId
     expect(h.initCoreBetaGrants.mock.calls[0]![0].distinctId).toBe(cloud)
+    expect(h.initEmbeddedSessionFlag.mock.calls[0]![0].distinctId).toBe(cloud)
     let early: string | null = null
     void cloud.then((id) => {
       early = id

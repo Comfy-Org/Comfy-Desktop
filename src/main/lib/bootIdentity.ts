@@ -17,6 +17,7 @@ import { recoverPendingIdentityRotation } from './pendingIdentityMerge'
 import { initExperiments } from './experiments'
 import { initCloudFreeRuns } from './cloudFreeRuns'
 import { initCoreBetaGrants } from './coreBetaGrants'
+import { initEmbeddedSessionFlag } from './embeddedSessionFlag'
 import { initStaffFlagTargeting } from './staffFlagTargeting'
 
 export interface BootIdentityOptions {
@@ -60,6 +61,7 @@ export function startBootIdentity(opts: BootIdentityOptions): Promise<void> {
   // An ops flag, not an experiment: the picker renders before consent, when experiments have no value (cloudFreeRuns.ts).
   void initCloudFreeRuns(flagId)
   void initCoreBetaGrants(flagId)
+  void initEmbeddedSessionFlag(flagId)
 
   return resolved.then(({ legacyId }) => {
     clearLegacyIdentityRetryMarker()
